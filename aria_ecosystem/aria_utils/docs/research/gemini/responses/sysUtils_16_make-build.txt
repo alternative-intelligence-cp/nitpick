@@ -1,0 +1,406 @@
+﻿Architectural Specification and Implementation Strategy for the AriaBuild (abuild) Utility Utilizing Hex-Stream I/O
+1. Executive Summary and Strategic Architectural Context
+The domain of software construction has long been plagued by the conflation of concerns within build tool output. Legacy systems, typified by GNU Make, CMake, and Ninja, rely on a tripartite I/O model (stdin, stdout, stderr) which forces a commingling of radically different data streams. In these traditional environments, human-readable progress indicators, fatal error messages, compiler warnings, and diagnostic telemetry are interleaved into a single, chaotic text stream. This architectural limitation necessitates the use of fragile regular expressions and screen-scraping techniques to extract meaningful analytics, rendering the build pipeline opaque to automated tooling and integrated development environments (IDEs).
+The Aria programming language ecosystem introduces a paradigm shift through its Hex-Stream (Six-Stream) I/O Topology. By extending the POSIX standard to include three additional dedicated file descriptors—stddbg (FD 3) for telemetry, stddati (FD 4) for binary input, and stddato (FD 5) for binary output—Aria enables a level of semantic separation previously unattainable in systems programming.1
+This report articulates the comprehensive design and implementation specification for abuild (also referred to as AriaBuild), the native build system for the Aria language. Unlike its predecessors, abuild is architected from the ground up to leverage the Hex-Stream topology. It functions not merely as a task runner, but as a structured data processor that orchestrates compilation while simultaneously emitting rich, machine-readable telemetry and dependency graphs on dedicated channels. This design fulfills the requirement for a tool where stdout acts strictly as the User Interface (UI), stddato serves as the payload channel for build artifacts and databases, and stddbg provides a real-time, structured telemetry stream for analytics.1
+The implementation strategy detailed herein synthesizes the graph-theoretic underpinnings of the dependency engine with the low-level kernel primitives required to manage the six-stream process lifecycle. It leverages Aria's unique features, such as Twisted Balanced Binary (TBB) arithmetic for overflow-safe metric calculation and the "Configuration as Data" philosophy of the ABC format, to deliver a build system that is deterministic, observable, and highly performant. The architecture described explicitly addresses the user's need to pipe abuild output into filtering tools without parsing overhead, fundamentally transforming the build process from an opaque black box into a transparent, instrumented pipeline.
+2. The Pathology of Legacy Build Systems
+To appreciate the necessity of the abuild architecture, one must first deconstruct the failures of the status quo. The "chaos" referenced in the problem statement is not merely a cosmetic annoyance; it is a structural deficiency in how Unix-like systems have historically handled process output.
+2.1. The Conflation of Control and Data
+In a typical make or ninja execution, the stdout stream serves conflicting masters. It is expected to display a user-friendly progress bar for the developer watching the terminal. Simultaneously, it is the conduit for the compiler's output, which may include warnings, errors, and informational messages. If a build script needs to generate a file (e.g., generating a header), it might also print to stdout.
+When these streams merge, information is lost. A progress bar update (e.g., [50%]) might overwrite a critical warning if buffering is not perfectly managed. Conversely, a flood of compiler warnings can scroll the progress indicator off the screen. For automated tools attempting to parse this output—such as CI/CD runners or IDEs trying to populate an "Error List" window—the result is fragile. They must rely on heuristic regex matching (e.g., looking for strings like error: or warning:), which is easily broken by compiler localization or formatting changes.
+2.2. The Invisibility of Build Metrics
+Legacy build tools are notoriously opaque regarding performance metrics. While one can measure the total wall-clock time of a build, granular data—such as "how long did module_x.c take to compile?" or "what was the peak RSS memory usage of the linker?"—is typically lost. To gather this data, developers often resort to wrapping compiler invocations in time commands or using external profilers, which further pollutes the stderr stream and complicates the build definition.
+2.3. The Solution: Semantic Channel Separation
+abuild solves these problems not by adding more flags or parsing logic, but by fundamentally changing the transport layer. By adopting the Hex-Stream model, abuild enforces a strict segregation of data types at the file descriptor level.
+Stream
+	FD
+	Role
+	Data Format
+	Audience
+	stdout
+	1
+	User Interface
+	Human-readable text (ANSI)
+	The Developer (Terminal)
+	stderr
+	2
+	Critical Failure
+	Plain text
+	The Developer (Terminal)
+	stddbg
+	3
+	Telemetry
+	Structured Data (NDJSON)
+	Analytics Tools / IDEs
+	stddato
+	5
+	Payload
+	Binary / Serialized
+	Linkers / Packaging Tools
+	This topology ensures that a developer can pipe the build output to a log file (abuild > build.log) and receive a clean, readable summary, while simultaneously piping the telemetry to an analytics engine (abuild 3| analytics-agent) without any cross-contamination.1
+3. The Hex-Stream Topology in the Build Context
+The implementation of abuild relies on a rigorous definition of the operational semantics for each of the six streams. This section details how abuild utilizes these streams internally and how it manages them for child processes (the compiler, linker, etc.).
+3.1. The Control Plane: Standard Streams (FD 0-2)
+In the abuild architecture, the traditional streams are reclaimed for their original, literal purposes, stripped of the auxiliary duties they have accumulated over decades of Unix evolution.
+* Standard Input (stdin, FD 0): Reserved for interactive prompts or piped input from upstream configuration generators. In a CI/CD context, this is typically closed or connected to /dev/null.
+* Standard Output (stdout, FD 1): Strictly reserved for the User Interface (UI). This stream emits the human-readable representation of the build progress. This includes progress bars (e.g., [ 45% ] Compiling core/parser.aria), summary tables, and final success/failure notifications. Crucially, abuild ensures that no machine-readable data or debug logs pollute this stream. This guarantees that abuild > build.log produces a clean, readable artifact for human consumption.1
+* Standard Error (stderr, FD 2): Reserved exclusively for critical failures and panics that prevent the build tool itself from functioning. Compiler errors (syntax errors in source code) are not necessarily emitted here; they are captured and routed via stddbg or structured formats to prevent interleaving, though fatal system errors (e.g., "Out of Memory", "Permission Denied") remain on stderr.
+3.2. The Observability Plane: stddbg (FD 3)
+The inclusion of stddbg is the single most transformative element for build analytics. In legacy systems, extracting "time per compilation unit" or "cache hit ratios" requires parsing stdout. In abuild, stddbg serves as a dedicated Telemetry Channel.
+* Protocol: JSON-Lines (NDJSON) or a high-performance binary logging format.
+* Content:
+   * Start/End Events: Precise nanosecond-resolution timestamps for the start and finish of every subprocess (compiler, linker, test runner).
+   * Resource Usage: CPU time (user/sys) and Peak RSS (memory usage) for each task, retrieved via getrusage on the child process.
+   * Compiler Diagnostics: Warnings and errors emitted by ariac are captured and wrapped in JSON structures ({ "file": "main.aria", "line": 10, "severity": "error", "msg": "..." }).
+   * Cache Telemetry: Cache hit/miss status for incremental build steps.
+* Implementation: abuild opens a pipe for FD 3 for every child process it spawns. A dedicated thread in the build orchestrator reads from these pipes, aggregates the JSON objects, and emits them to the abuild process's own stddbg. This allows downstream tools to perform real-time analytics (e.g., abuild | filter --warnings | group-by --file).1
+3.3. The Data Plane: stddati (FD 4) and stddato (FD 5)
+The Data Plane segregates the actual artifacts of the build from the control messages.
+* stddati (FD 4 - Input): Used by abuild to ingest external dependency graphs or cached object files without filesystem overhead. For distributed builds, a remote coordinator can pipe a binary compilation plan directly into abuild via FD 4.
+* stddato (FD 5 - Output): This is the Payload Channel. Instead of writing auxiliary files like compile_commands.json or dependency graphs to disk (where they might be stale or corrupted), abuild can stream these structured datasets directly to FD 5.
+   * Use Case: An IDE (AriaLS) spawns abuild --emit-graph. abuild writes the dependency graph in a binary serialized format to stddato. The IDE reads this directly into memory. This avoids disk I/O and synchronization issues.
+   * Artifact Streaming: In a "pipe-build" mode, abuild could stream the final linked binary to stddato, allowing constructs like abuild src/main.aria | deploy-to-server.
+4. The Aria Build Configuration (ABC) Specification
+The foundation of abuild is its configuration format. Rejecting the fragility of Makefiles and the verbosity of XML, abuild utilizes the Aria Build Configuration (ABC) format. This format is a syntactic subset of Aria itself, treating "Configuration as Data."
+4.1. Lexical Structure and Whitespace Independence
+Legacy build tools often fail due to invisible whitespace errors (e.g., the infamous tab-vs-space issue in Make). The ABC format is strictly whitespace-insensitive.
+* Delimiters: Structure is defined solely by C-style delimiters: braces {} for objects/scopes, brackets `` for lists, colons : for key-value pairs, and commas , for separation.
+* Comments: Support for // single-line comments allows for inline documentation of build logic.
+* Identifiers: Keys in key-value pairs do not require quotes if they are valid identifiers (alphanumeric + underscore), reducing syntactic noise (e.g., name: "project" vs "name": "project").
+4.2. Configuration Schema
+An ABC file (typically build.aria) is structured into three primary sections: project, variables, and targets.
+4.2.1. Project Metadata
+This section establishes the context for the build, including compatibility constraints.
+
+
+Code snippet
+
+
+
+
+project: {
+   name: "AriaCore",
+   version: "0.1.0",
+   aria_version: ">=0.0.7"
+}
+
+4.2.2. Variable Symbol Table
+The variables section defines reusable string constants. Crucially, abuild implements a Template Literal Interpolation engine. Variables are referenced using the &{...} syntax, identical to Aria's string interpolation.
+* Scope Resolution: Variables are resolved in a specific order:
+   1. Local Scope: Variables defined within a specific target.
+   2. Global Scope: Variables defined in the root variables block.
+   3. Environment Scope: System environment variables, accessed via the ENV. prefix (e.g., &{ENV.HOME}).
+
+
+Code snippet
+
+
+
+
+variables: {
+   src: "src",
+   out: "build",
+   flags: "-O3 --enable-safety",
+   cc: "ariac"
+}
+
+4.2.3. Target Definitions
+The targets list defines the nodes of the dependency graph. Each target specifies its inputs, outputs, and dependencies.
+
+
+Code snippet
+
+
+
+
+targets: [
+   {
+       name: "core_lib",
+       type: "library",
+       sources: ["&{src}/core/**/*.aria"], // Recursive globbing
+       flags: ["&{flags}"],
+       output: "&{out}/libcore.a"
+   },
+   {
+       name: "main_app",
+       type: "binary",
+       sources: ["&{src}/main.aria"],
+       depends_on: ["core_lib"],
+       output: "&{out}/app"
+   }
+]
+
+4.3. The Globbing Subsystem
+A critical feature of abuild is native support for recursive globbing (e.g., **/*.aria). Since the Aria standard library currently lacks advanced directory iteration, abuild implements this in the host C++ layer using std::filesystem::recursive_directory_iterator.
+* Determinism: To ensure reproducible builds, abuild enforces a strict policy: the list of files resulting from a glob expansion is sorted alphabetically before being processed. This prevents nondeterministic linking orders caused by filesystem driver differences between Linux (ext4) and Windows (NTFS).
+5. The Dependency Engine and Scheduler
+The core intelligence of abuild resides in its dependency engine, which transforms the declarative ABC config into an imperative execution plan. This engine uses advanced graph theory to ensure build correctness and efficiency.
+5.1. Graph Theoretic Model
+The build state is modeled as a Directed Acyclic Graph (DAG) $G = (V, E)$.
+* Vertices ($V$): Represent entities: Source Files (.aria), Intermediate Artifacts (.ll, .o), and Final Targets (Binaries).
+* Edges ($E$): Represent dependency constraints. An edge $A \rightarrow B$ implies that $B$ is a dependency of $A$ and must be built before $A$.
+5.2. Dependency Discovery
+Dependencies are discovered via two mechanisms:
+1. Explicit Dependencies: Defined in the depends_on array in the ABC file. These typically represent link-time dependencies between libraries.
+2. Implicit Dependencies: abuild parses the source code of input files to find use statements (e.g., use std.io;). This requires a lightweight lexer pass over the source files during the graph construction phase to extract import paths without full compilation.
+5.3. Topological Sort and Cycle Detection
+To derive a valid execution order, abuild implements Kahn’s Algorithm for topological sorting. This algorithm is favored for its ability to naturally detect cycles and process nodes in "layers" suitable for parallel execution.
+1. In-Degree Calculation: Calculate the in-degree (number of incoming dependencies) for all nodes in the graph.
+2. Initialization: Initialize a ReadyQueue with all nodes having an in-degree of 0 (leaf nodes with no dependencies).
+3. Processing Loop: While ReadyQueue is not empty:
+a. Dequeue a node $N$ and add it to the ExecutionPlan.
+b. For each neighbor $M$ dependent on $N$, decrement $M$'s in-degree.
+c. If $M$'s in-degree becomes 0, it means all its dependencies are satisfied. Enqueue $M$ into the ReadyQueue.
+Cycle Detection Strategy: If the ReadyQueue becomes empty but the ExecutionPlan does not contain all nodes in the graph (i.e., $|Plan| < |V|$), a cycle exists. This indicates a "deadlock" where nodes are waiting on each other. abuild handles this by performing a Depth First Search (DFS) on the set of remaining unvisited nodes to identify the specific cycle path (e.g., Module A -> Module B -> Module C -> Module A). This path is then formatted and emitted to stderr as a critical build error, guiding the user to the exact location of the circular dependency.
+5.4. Incremental Build Logic (The "Dirty" Check)
+To optimize build times, abuild minimizes redundant work by only rebuilding targets that are out of date. A target $T$ is considered "dirty" (requiring rebuild) if any of the following conditions are met:
+   1. Missing Artifact: The output artifact (file) does not exist on the filesystem.
+   2. Stale Timestamp: The modification timestamp ($M_{time}$) of any input source $S$ is strictly greater than the $M_{time}$ of the output ($M_{time}(S) > M_{time}(T)$).
+   3. Dependency Cascade: Any dependency target $D$ of target $T$ was marked as dirty and rebuilt in the current session. This ensures changes propagate up the dependency tree.
+The implementation utilizes std::filesystem::last_write_time to perform these checks efficiently against the OS filesystem.
+6. Process Orchestration and Concurrency Model
+This section details the actual execution of the build plan, specifically focusing on how abuild manages the 6-stream topology during process creation. The orchestrator is the component that bridges the abstract build graph with the concrete reality of the operating system.
+6.1. The Work-Stealing Scheduler
+For maximum throughput, abuild utilizes a thread pool architecture mirroring the Aria runtime's own concurrency model. The scheduler maintains a TaskQueue populated by the topological sort. Worker threads pull compilation tasks from this queue.
+   * Concurrency Level: Defaults to $N$ threads, where $N$ is the number of logical CPU cores (std::thread::hardware_concurrency). This ensures optimal CPU utilization without oversubscription.
+   * Wild Affinity: If a build task involves "Wild" memory or thread-local storage constraints (common in Aria's hybrid memory model), the scheduler has the capability to pin the task to a specific worker thread. This prevents allocator corruption issues that can arise from migrating thread-local heaps between cores.
+6.2. Process Spawning with Hex-Stream Support
+When a worker thread executes a task (e.g., compiling main.aria), it does not simply call the standard C system() function, as that would only preserve the standard 3 streams. It must explicitly establish the 6-stream environment. The implementation differs significantly between POSIX (Linux/macOS) and Windows, requiring a robust abstraction layer within abuild.
+6.2.1. POSIX Implementation (Linux/macOS)
+On POSIX systems, abuild acts as the supervisor process. The spawning sequence for a child process (e.g., ariac) is as follows:
+   1. Pipe Creation: abuild creates six separate pipes using the pipe2() system call with the O_CLOEXEC flag. The O_CLOEXEC flag is critical for security and resource management; it ensures that file descriptors are not inadvertently leaked to other child processes if abuild spawns multiple tasks simultaneously.
+   * The pipes created are: pipe_stdin, pipe_stdout, pipe_stderr, pipe_stddbg, pipe_stddati, pipe_stddato.
+   2. Forking: fork() is called to create the child process.
+   3. File Descriptor Mapping (Child Side): Inside the child process (before exec), dup2() is used to map the read or write ends of the pipes to the fixed integer file descriptors mandated by the Aria runtime specification:
+   * dup2(pipe_stddbg, 3): Maps the write end of the debug pipe to FD 3.
+   * dup2(pipe_stddati, 4): Maps the read end of the data-in pipe to FD 4.
+   * dup2(pipe_stddato, 5): Maps the write end of the data-out pipe to FD 5.
+   * (Standard FDs 0, 1, and 2 are mapped similarly).
+   4. Execution: Finally, execve() is called to replace the child process image with the compiler binary (ariac).
+6.2.2. Windows Implementation
+Windows does not use integer file descriptors in the kernel; it uses opaque HANDLE pointers. Therefore, dup2 is not directly applicable. abuild utilizes the Bootstrap Protocol defined in the Aria Shell research to achieve equivalent functionality.
+   1. Handle Creation: abuild creates 6 anonymous pipes using CreatePipe.
+   2. Inheritance: The handles meant for the child process are marked as inheritable (bInheritHandle = TRUE).
+   3. Attribute List: abuild uses the STARTUPINFOEX structure and UpdateProcThreadAttribute with the PROC_THREAD_ATTRIBUTE_HANDLE_LIST flag. This allows abuild to explicitly whitelist only the specific 6 handles that should be inherited by the child. This is a crucial step to prevent handle leaks, where a child process might accidentally keep open a file handle belonging to the parent or a sibling process.
+   4. Environment Injection: Since the child process cannot guess which handle corresponds to "FD 3", abuild injects a special environment variable __ARIA_FD_MAP into the child's environment block.
+   * Format: __ARIA_FD_MAP=3:<HandleValue>;4:<HandleValue>;5:<HandleValue>
+   * The Aria runtime (linked into ariac) checks for this variable at startup. If found, it parses the handle values and wraps them in Aria File objects, assigning them to io.stddbg, io.stddati, and io.stddato respectively.
+6.3. Stream Aggregation and Deadlock Prevention
+A critical risk in multi-pipe Inter-Process Communication (IPC) is Pipe Deadlock. If a child process writes a large amount of data to stddbg and fills the kernel pipe buffer (typically 64KB on Linux), it will block waiting for the buffer to drain. If the parent process (abuild) is blocked waiting for the child to finish (e.g., waitpid) and is not actively reading from stddbg, a deadlock occurs.
+Solution: Threaded Stream Drainers
+To prevent this, abuild employs a non-blocking I/O model. For every spawned child process, abuild spawns dedicated "drainer" threads (or uses a reactor pattern with epoll/io_uring) to continuously consume data from all output pipes (stdout, stderr, stddbg, stddato).
+   * Buffer Management: Data is read immediately into circular buffers in user space memory.
+   * Non-Blocking I/O: The pipes are set to non-blocking mode to allow a single thread to multiplex reads if using epoll. This ensures that the child process never blocks on I/O, allowing compilation to proceed at maximum speed.
+7. Telemetry and Analytics: The stddbg Protocol
+The specific user request is to enable build analytics like abuild | filter --warnings | group-by --file. This is achieved through the structured data emitted on stddbg (FD 3). This stream transforms the build from a text processing problem into a data processing problem.
+7.1. The Telemetry Schema
+abuild mandates that all tools in the chain (compiler, linker, linter) emit telemetry on FD 3 as NDJSON (Newline Delimited JSON). This format is robust, easy to parse, and allows for stream processing (filtering line-by-line).
+Definition of a Telemetry Record:
+
+
+JSON
+
+
+
+
+{
+ "ts": 1679812345000123,       // Nanosecond timestamp (TBB 64-bit int)
+ "source": "ariac",            // Source tool identifier
+ "pid": 12345,                 // Process ID
+ "type": "diagnostic",         // Event type: diagnostic, metric, lifecycle
+ "data": {... }               // Payload specific to the event type
+}
+
+7.2. Event Types
+   1. Lifecycle Events: These events are emitted by abuild itself to track the duration of tasks.
+JSON
+{ "type": "lifecycle", "event": "start", "target": "core_lib" }
+{ "type": "lifecycle", "event": "finish", "target": "core_lib", "duration_ns": 45000000, "exit_code": 0 }
+
+   2. Diagnostic Events: These are emitted by ariac when it encounters issues. This replaces the need to parse stderr for error messages.
+JSON
+{
+ "type": "diagnostic",
+ "severity": "warning",
+ "file": "src/parser.aria",
+ "line": 42,
+ "col": 10,
+ "message": "Unused variable 'x'",
+ "code": "W001"
+}
+
+   3. Metric Events: These provide quantitative performance data.
+JSON
+{ "type": "metric", "name": "cache_hit", "value": true }
+{ "type": "metric", "name": "memory_peak_rss", "value": 1048576 }
+
+7.3. Aggregation Logic
+abuild acts as a proxy and aggregator. When it runs multiple parallel compile jobs, it reads the stddbg stream from each child. It injects a task_id into the JSON objects to identify which compilation unit generated the log (disambiguating the stream), and then writes the merged stream to its own stddbg (FD 3). This ensures the downstream consumer receives a single, coherent JSON stream representing the entire parallel build, ordered roughly by time.
+8. Binary Payload Management: The stddato Protocol
+The stddato stream (FD 5) is utilized for high-throughput data transfer that should not be serialized to text. This is the "Payload" channel requested by the user.
+8.1. Compilation Database Export
+Instead of writing a compile_commands.json file to disk, which involves filesystem overhead and synchronization locks, abuild supports a mode to emit the compilation database directly to stddato. This allows tools like the Aria Language Server (AriaLS) to invoke abuild --emit-db and read the database directly from the pipe into memory.
+Protocol Specification:
+      1. Header: A 4-byte magic sequence ADBG (Aria Database Graph).
+      2. Length: An 8-byte TBB64 integer specifying the size of the subsequent JSON payload. Using a TBB type here ensures that if the size calculation overflowed (unlikely, but possible with massive builds), it would contain the ERR sentinel, causing the reader to immediately detect the corruption.
+      3. Payload: The JSON compilation database payload.
+8.2. Dependency Graph Visualization
+Running abuild --graph utilizes stddato to emit the DOT (Graphviz) representation of the dependency DAG. This separates the visual graph data from the user messages on stdout, allowing commands like:
+
+
+Bash
+
+
+
+
+abuild --graph 5> graph.dot
+dot -Tpng graph.dot -o graph.png
+
+9. Reference Implementation Strategy
+This section provides the internal architectural layout for the abuild utility, written in C++. It synthesizes the concepts of the dependency graph, process orchestration, and hex-stream I/O into a concrete implementation plan.
+9.1. Data Structures
+The core data structures utilize modern C++ features to represent the build state.
+
+
+C++
+
+
+
+
+namespace aria::build {
+
+   // Represents a node in the dependency graph
+   struct Target {
+       std::string name;
+       std::string type; // binary, library
+       std::vector<std::string> sources;
+       std::vector<std::string> dependencies;
+       std::string output_path;
+       
+       // Runtime state for topological sort
+       std::atomic<int> in_degree;
+       bool is_dirty;
+       std::vector<Target*> dependents; // Adjacency list for graph traversal
+   };
+
+   // Configuration parsed from build.aria
+   struct ProjectConfig {
+       std::string name;
+       std::map<std::string, std::string> variables;
+       std::vector<Target> targets;
+   };
+
+   // Manages the 6-stream context for a child process
+   struct ProcessContext {
+       int pipes; // 6 streams, read/write ends
+       pid_t pid;
+       
+       // Setup pipes with O_CLOEXEC
+       void setup_pipes() {
+           for(int i=0; i<6; i++) pipe2(pipes[i], O_CLOEXEC);
+       }
+       
+       // Called inside the child process after fork()
+       void map_in_child() {
+           // Map pipe ends to standard FDs 0-5
+           dup2(pipes, 0); // stdin read
+           dup2(pipes, 1); // stdout write
+           dup2(pipes, 2); // stderr write
+           dup2(pipes, 3); // stddbg write
+           dup2(pipes, 4); // stddati read
+           dup2(pipes, 5); // stddato write
+       }
+   };
+}
+
+9.2. The Build Pipeline Loop
+The main execution loop of abuild orchestrates the phases defined in the research.
+
+
+C++
+
+
+
+
+int main(int argc, char** argv) {
+   // 1. Initialize Global Streams (Runtime bootstrap)
+   aria_streams_init(); 
+
+   // 2. Parse Configuration
+   // Parses build.aria into the ProjectConfig structure
+   auto config = parse_abc_file("build.aria");
+   
+   // 3. Build Dependency Graph
+   // Constructs the DAG from targets and implicit 'use' dependencies
+   DependencyGraph graph;
+   graph.build(config);
+   
+   // 4. Dirty Checking
+   // Checks timestamps to mark nodes as needing rebuild
+   graph.mark_dirty_nodes();
+   
+   // 5. Topological Sort
+   // Returns a vector of batches, where each batch contains targets 
+   // that can be built in parallel.
+   auto execution_plan = graph.sort(); // Kahn's Algorithm
+   
+   // 6. Execution (Thread Pool)
+   ThreadPool pool(std::thread::hardware_concurrency());
+   
+   for (auto& batch : execution_plan) {
+       // Parallel execution of independent nodes in the current batch
+       std::vector<std::future<Result>> futures;
+       
+       for (auto& target : batch) {
+           futures.push_back(pool.submit([&target]() {
+               // 6a. Prepare 6-Stream Context
+               ProcessContext ctx;
+               ctx.setup_pipes();
+               
+               // 6b. Spawn Compiler (ariac)
+               if (fork() == 0) {
+                   ctx.map_in_child();
+                   // Construct command line and execute
+                   execlp("ariac", "ariac", target.sources..., "-o", target.output_path...);
+               }
+               
+               // 6c. Stream Aggregation (Parent)
+               // Spawn lightweight threads to drain ctx.pipes (stddbg) 
+               // and forward the JSON to the main process's stddbg
+               drain_and_forward_telemetry(ctx.pipes);
+               
+               // Wait for completion
+               int status;
+               waitpid(ctx.pid, &status, 0);
+               return parse_status(status);
+           }));
+       }
+       
+       // Wait for all tasks in the batch to complete before moving to the next layer
+       for (auto& f : futures) {
+           if (!f.get().success) return 1; // Fast fail on error
+       }
+   }
+   
+   return 0;
+}
+
+9.3. Handling TBB Types in Build Logic
+Aria uses TBB (Twisted Balanced Binary) types with sticky errors. While abuild is implemented in C++ (host language), it must respect TBB semantics when parsing binary data from stddato or stddati if it interacts with Aria tools that emit TBB integers.
+      * Sentinel Check: When reading file sizes or counts from an Aria-generated binary stream (e.g., from stddato of a child process), abuild must check against the defined sentinels (e.g., 0x80 for tbb8).
+      * Error Propagation: If abuild performs arithmetic on these values (e.g., summing build artifact sizes for a summary report), it must implement the sticky error logic: if (val == ERR) result = ERR;. This ensures that if a single file size was reported as ERR (perhaps due to an I/O error in the child), the total size is also reported as ERR rather than a corrupted value.
+10. Integration and Ecosystem Compatibility
+10.1. Interoperability with aria_shell
+abuild is designed to be a first-class citizen within aria_shell. Since the shell also respects the 6-stream topology, running abuild inside aria_shell preserves the separation of streams. The shell automatically maps the stddbg output of abuild to its own telemetry display or log file, enabling transparent monitoring of the build process without user intervention. If abuild is run in a legacy shell (bash/zsh), only stdout/stderr will be visible unless the user explicitly redirects FD 3, 4, and 5.
+10.2. Watch Mode Implementation
+Leveraging the stddati (Input) stream, abuild implements a continuous "Watch Mode" for rapid development cycles.
+      1. abuild starts and builds the initial graph.
+      2. It spawns a lightweight file watcher thread (using OS primitives like inotify on Linux or ReadDirectoryChangesW on Windows).
+      3. When a file changes, the watcher writes a binary "Change Event" packet to the main loop via an internal pipe.
+      4. The Scheduler invalidates the dirty state of the modified node and its dependents.
+      5. Recompilation is triggered incrementally, using the existing graph structure.
+11. Conclusion
+The architecture of abuild represents a rigorous application of the Aria language's core philosophies to the domain of build automation. By adopting the Hex-Stream topology, abuild eliminates the historical ambiguity of build output, providing distinct channels for UI, Data, and Telemetry. The use of the whitespace-insensitive ABC configuration format ensures deterministic parsing and a developer-friendly experience. Combined with a graph-theoretic dependency engine and a work-stealing concurrency model, abuild provides the high-performance, observable, and robust foundation required for the Aria ecosystem. This implementation transforms the build process from a chaotic script execution into a structured, instrumented data processing pipeline, directly satisfying the requirement for build analytics without parsing compiler output.
+Works cited
+      1. aria_shell_research_full.txt

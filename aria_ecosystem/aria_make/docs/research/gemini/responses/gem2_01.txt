@@ -1,0 +1,441 @@
+﻿Architectural Implementation of Command Signature Hashing for Hermetic Build Incrementalism in AriaBuild
+1. Executive Summary: The Imperative for Semantic State Tracking
+The evolution of software construction tools has progressively moved from imperative, script-based execution models toward declarative, graph-based dependency engines. Within the Aria programming language ecosystem, the aria_make build system represents a critical infrastructure component designed to enforce determinism and reproducibility.1 However, the current architectural reliance on filesystem timestamps for incremental build logic introduces a significant vulnerability known as the "Flag Change" vector. This vulnerability manifests when a developer modifies build instructions—such as compiler optimization flags, preprocessor definitions, or include paths—without altering the modification times of the source files. Under the legacy timestamp-based model, the build system incorrectly identifies the artifacts as up-to-date, resulting in a "clean" build state that does not reflect the current configuration. This violation of hermeticity leads to non-deterministic behavior, where the binary output depends not only on the current source and configuration but also on the hidden history of previous builds.
+This report articulates a comprehensive architectural strategy to eliminate this vulnerability through the implementation of Command Signature Hashing. The proposed solution fundamentally redefines the concept of "build state" within the Aria ecosystem. By transitioning from a purely temporal model (checking mtime) to a hybrid semantic-temporal model, the system ensures that the build command itself is treated as a first-class dependency of the target artifact. The core of this implementation involves the integration of the FNV-1a non-cryptographic hash function to generate deterministic 64-bit signatures of command strings 2, and the deployment of a persistent state manager utilizing the nlohmann/json library to serialize these signatures across build invocations.4
+The technical analysis presented herein provides a rigorous deconstruction of the problem space, evaluating the algorithmic trade-offs between cryptographic collision resistance and execution latency. It details the implementation of the BuildState class, the refactoring of the check_is_dirty logic within src/build/incremental_logic.cpp 1, and the necessary C++17 infrastructure to support this architectural shift. By updating the in-memory hash immediately upon dirty detection, the system prepares for an atomic state commitment, ensuring that subsequent build phases operate on a consistent verification plane. This report serves as both a theoretical justification and a practical implementation guide for hardening the AriaBuild infrastructure against configuration drift.
+2. Theoretical Framework: Dependency Graphs and State Determinism
+To understand the necessity of Command Signature Hashing, one must first analyze the theoretical underpinnings of the AriaBuild dependency engine. The system models the build process as a Directed Acyclic Graph (DAG), where nodes ($V$) represent entities such as source files, intermediate artifacts, and final executables, and edges ($E$) represent dependency relationships.1
+2.1 The Limitations of Temporal Dependency Models
+The classical model of dependency resolution, popularized by GNU Make, relies on the axiom that an output is a function of its inputs' content, and that a change in content is strictly correlated with a change in the file's modification timestamp. Mathematically, for a target $T$ and a set of prerequisites $P = \{p_1, p_2,..., p_n\}$, the build predicate $B(T)$ is defined as:
+
+
+$$B(T) \iff (\neg \exists T) \lor (\exists p_i \in P : \text{mtime}(p_i) > \text{mtime}(T))$$
+This model, while computationally efficient effectively utilizing the stat system call 1, suffers from a semantic gap. It assumes that the transformation function $F$ (the compiler invocation) is constant. In reality, the build process is $T = F(C, P)$, where $C$ represents the configuration context (flags, environment variables, toolchain version). The timestamp model fails to capture changes in $C$. If the user changes an optimization flag from -O0 to -O3 in the build configuration 1, the source files $P$ remain untouched ($mtime$ is unchanged). Consequently, the system evaluates the predicate as false, skipping the rebuild, and leaving the user with a debug binary despite a release configuration.
+2.2 The "Flag Change" Vulnerability Vector
+The "Flag Change" vulnerability is not merely a nuisance; it is a structural defect that undermines trust in the build tool. In the Aria ecosystem, where "Configuration as Data" is a core tenet 1, changes to the build.aria file are frequent. A developer might toggle assertions, change the target architecture, or modify include paths. If the build system ignores these changes, the developer is forced to perform a clean build manually, negating the performance benefits of an incremental build system.
+To close this gap, the build predicate must be expanded to include the command signature $S_C$:
+
+
+$$B(T) \iff B_{temporal}(T) \lor (S_C(current) \neq S_C(stored))$$
+This hybrid approach restores hermeticity. The build state is no longer determined solely by the filesystem but by the union of the filesystem state and the configuration state.
+2.3 System Capabilities and Constraints
+The implementation of this logic must navigate the specific constraints of the Aria runtime environment. As detailed in the architectural specifications, the Aria standard library currently lacks advanced directory iteration and metadata capabilities.1 Therefore, the build tool must be implemented in the host language, C++17, leveraging std::filesystem for timestamp retrieval and std::fstream for state persistence.5 The solution must be self-contained, avoiding heavy dependencies like OpenSSL, which drives the selection of lightweight hashing algorithms and header-only serialization libraries.
+3. Cryptographic Strategy: The FNV-1a Algorithm
+The selection of a hashing algorithm for command signatures involves balancing three competing requirements: collision resistance, performance, and implementation simplicity. Unlike security protocols where cryptographic hardness is required to prevent intentional forgery, a build system primarily defends against accidental collisions caused by valid configuration changes.
+3.1 Algorithmic Selection Analysis
+We evaluated several hashing candidates based on the specific workload of hashing command-line strings:
+Algorithm
+	Type
+	Bit Width
+	Performance
+	Implementation Cost
+	Suitability
+	MD5
+	Cryptographic
+	128-bit
+	Low
+	High (External Lib)
+	Low
+	SHA-256
+	Cryptographic
+	256-bit
+	Very Low
+	High (External Lib)
+	Low
+	CRC32
+	Checksum
+	32-bit
+	High
+	Low
+	Medium
+	FNV-1a
+	Non-Cryptographic
+	64-bit
+	Very High
+	Very Low
+	High
+	Cryptographic hashes like SHA-256 are computationally expensive and require complex implementations that would bloat the build tool's codebase. CRC32, while fast, suffers from higher collision rates on short strings and does not possess the avalanche characteristics desirable for detecting single-character flag changes (e.g., changing -g to -O).
+3.2 The Fowler–Noll–Vo (FNV-1a) Architecture
+The FNV-1a algorithm is selected for its exceptional dispersion properties on ASCII data and its minimal resource footprint. It operates on a byte-by-byte basis, utilizing two primary constants: the FNV Prime and the Offset Basis.2
+The algorithm differs from FNV-1 by the order of operations. FNV-1a performs the XOR operation before the multiplication, which improves the avalanching effect for input data with low entropy, such as command-line flags that often share common prefixes (e.g., /usr/bin/ariac).
+The mathematical definition for the 64-bit FNV-1a hash is:
+
+
+$$\text{hash} = \text{offset\_basis}$$
+
+
+$$\text{for each byte } b \text{ in data:}$$
+
+
+$$\quad \text{hash} = \text{hash} \oplus b$$
+
+
+$$\quad \text{hash} = \text{hash} \times \text{FNV\_prime}$$
+According to the IETF and technical documentation 3, the standard constants for 64-bit arithmetic are:
+* FNV_Offset_Basis: 14695981039346656037 (decimal) or 0xcbf29ce484222325 (hex).
+* FNV_Prime: 1099511628211 (decimal) or 0x100000001b3 (hex).
+Implementation traces suggest that FNV-1a is significantly faster than FNV-1 for the specific string lengths typical of build commands.7 Furthermore, the implementation requires no lookup tables or complex bitwise rotations, making it ideal for inclusion directly in the src/build/ source tree without external dependencies.
+4. State Persistence Architecture: The JSON Store
+To validate the current command against the previous build's command, the system requires a persistent memory mechanism. This "Build State" acts as the source of truth for the previous configuration.
+4.1 Selection of nlohmann/json
+The requirement specifies the use of nlohmann/json for serialization.4 This choice is architecturally sound for several reasons:
+1. Header-Only Integration: The library requires no complex linking or build configuration, aligning with the "Trivial integration" design goal of AriaBuild.4
+2. STL Compatibility: It offers seamless integration with C++ containers, allowing std::map and std::vector to be serialized directly.
+3. Human Readability: Storing the build state in JSON (.aria_build_state.json) allows developers to inspect the state for debugging. If a build is behaving strangely, a developer can open the JSON file and verify the stored hash or timestamp.
+4.2 Schema Design and Serialization Challenges
+The state file must map a unique target identifier to its command hash. The proposed schema is:
+
+
+JSON
+
+
+
+
+{
+ "targets": {
+   "main_app": {
+     "command_hash": 12847392019384,
+     "timestamp": 167890000
+   }
+ }
+}
+
+A critical implementation detail regarding nlohmann::json is its handling of associative containers. As noted in technical discussions 8, JSON object keys must be strings. If the internal representation of the target map uses integer IDs, they must be converted to strings during serialization. However, AriaBuild identifies targets by name (e.g., "main", "utils"), which maps naturally to JSON object keys.
+The BuildState class must encapsulate this serialization logic, providing a strongly typed C++ interface to the rest of the system while managing the loosely typed JSON conversion internally. This isolation protects the core logic from parsing errors or schema evolution.
+5. Architectural Implementation: C++17 Specifications
+The implementation phase translates these theoretical models into concrete C++17 code. This involves creating a new header for the hashing algorithm, a new class for state management, and refactoring the existing incremental logic.
+5.1 Component: Cryptographic Primitives
+The hashing function is implemented as a constexpr-capable inline function to maximize compiler optimization opportunities. By utilizing std::string_view, we avoid unnecessary memory allocations during the hashing of long command strings.10
+File: include/crypto/hash.h
+
+
+C++
+
+
+
+
+/**
+* @file include/crypto/hash.h
+* @brief FNV-1a Hashing Implementation for Command Signatures.
+* 
+* Implements the 64-bit Fowler–Noll–Vo (FNV-1a) hash function.
+* Constants derived from IETF drafts and technical literature.
+*/
+
+#pragma once
+
+#include <string_view>
+#include <cstdint>
+
+namespace aria::crypto {
+
+   // FNV-1a 64-bit Constants
+   constexpr uint64_t FNV_OFFSET_BASIS_64 = 14695981039346656037ULL;
+   constexpr uint64_t FNV_PRIME_64 = 1099511628211ULL;
+
+   /**
+    * @brief Computes the 64-bit FNV-1a hash of a string view.
+    * 
+    * Performs XOR then Multiply to ensure optimal avalanche effect for
+    * short ASCII strings (like command flags).
+    * 
+    * @param data The input string to hash.
+    * @return uint64_t The deterministic hash signature.
+    */
+   inline uint64_t fnv1a_64(std::string_view data) noexcept {
+       uint64_t hash = FNV_OFFSET_BASIS_64;
+       
+       for (const char c : data) {
+           hash ^= static_cast<uint8_t>(c);
+           hash *= FNV_PRIME_64;
+       }
+       
+       return hash;
+   }
+
+} // namespace aria::crypto
+
+5.2 Component: Build State Manager
+The BuildState class manages the lifecycle of the .aria_build_state.json file. It handles the loading of state on startup and the saving of state upon completion. It utilizes std::unordered_map for O(1) lookups during the build process.9
+File: include/build/build_state.h
+
+
+C++
+
+
+
+
+/**
+* @file include/build/build_state.h
+* @brief Persistent State Manager for Incremental Builds.
+*/
+
+#pragma once
+
+#include <string>
+#include <unordered_map>
+#include <filesystem>
+#include <optional>
+#include <nlohmann/json.hpp>
+
+namespace aria::build {
+
+   /**
+    * @class BuildState
+    * @brief Manages the in-memory representation of build metadata and its
+    * persistence to disk via JSON.
+    */
+   class BuildState {
+   public:
+       // Standard filename for state persistence
+       static constexpr const char* STATE_FILENAME = ".aria_build_state.json";
+
+       /**
+        * @brief Initialize BuildState from the project root.
+        * Loads existing state if available.
+        */
+       explicit BuildState(const std::filesystem::path& project_root);
+
+       /**
+        * @brief Retrieve the stored command signature for a target.
+        * @return std::nullopt if the target has no history.
+        */
+       [[nodiscard]] std::optional<uint64_t> get_command_hash(const std::string& target_name) const;
+
+       /**
+        * @brief Update the command hash for a target in the in-memory store.
+        * This marks the state as modified but does not write to disk immediately.
+        */
+       void update_command_hash(const std::string& target_name, uint64_t hash);
+
+       /**
+        * @brief Serialize the current state to JSON and flush to disk.
+        * Should be called at the end of the build session.
+        */
+       void save();
+
+   private:
+       std::filesystem::path state_file_path_;
+       std::unordered_map<std::string, uint64_t> command_hashes_;
+       
+       // Helper to populate the map from JSON
+       void load_from_disk();
+   };
+
+} // namespace aria::build
+
+File: src/build/build_state.cpp
+
+
+C++
+
+
+
+
+#include "build/build_state.h"
+#include <fstream>
+#include <iostream>
+
+namespace aria::build {
+
+   BuildState::BuildState(const std::filesystem::path& project_root) 
+       : state_file_path_(project_root / STATE_FILENAME) {
+       load_from_disk();
+   }
+
+   std::optional<uint64_t> BuildState::get_command_hash(const std::string& target_name) const {
+       if (auto it = command_hashes_.find(target_name); it!= command_hashes_.end()) {
+           return it->second;
+       }
+       return std::nullopt;
+   }
+
+   void BuildState::update_command_hash(const std::string& target_name, uint64_t hash) {
+       command_hashes_[target_name] = hash;
+   }
+
+   void BuildState::load_from_disk() {
+       if (!std::filesystem::exists(state_file_path_)) return;
+
+       std::ifstream file(state_file_path_);
+       if (!file.is_open()) return;
+
+       try {
+           nlohmann::json j;
+           file >> j;
+           
+           // Deserialize "targets" map
+           // We expect: { "targets": { "name": { "hash": 123 } } }
+           if (j.contains("targets") && j["targets"].is_object()) {
+               for (const auto& [name, meta] : j["targets"].items()) {
+                   if (meta.contains("hash") && meta["hash"].is_number_unsigned()) {
+                       command_hashes_[name] = meta["hash"].get<uint64_t>();
+                   }
+               }
+           }
+       } catch (const nlohmann::json::parse_error& e) {
+           // If state is corrupt, we discard it and start fresh (safest option)
+           std::cerr << "Warning: Corrupt build state (" << e.what() << "). Performing clean build.\n";
+           command_hashes_.clear();
+       }
+   }
+
+   void BuildState::save() {
+       nlohmann::json j;
+       j["targets"] = nlohmann::json::object();
+
+       for (const auto& [name, hash] : command_hashes_) {
+           j["targets"][name] = {
+               {"hash", hash}
+           };
+       }
+
+       std::ofstream file(state_file_path_);
+       if (file.is_open()) {
+           file << j.dump(4); // Pretty print with 4-space indent
+       }
+   }
+
+} // namespace aria::build
+
+5.3 Component: Enhanced Incremental Logic
+The check_is_dirty function serves as the decision gate for the build scheduler. The refactoring introduces a dependency on the BuildState object. It now evaluates the "dirty" predicate based on the hybrid model defined in Section 2.2.
+A crucial requirement of the prompt is to "Update the in-memory hash upon dirty detection." This design choice ensures that if the scheduler proceeds to build the target, the state object already holds the correct new hash associated with the current configuration. This essentially "pre-commits" the state in memory, which is then persisted to disk only if the build completes successfully (via the save() call).
+File: src/build/incremental_logic.cpp
+
+
+C++
+
+
+
+
+/**
+* @file src/build/incremental_logic.cpp
+* @brief Logic for determining target invalidation based on timestamps and signatures.
+*/
+
+#include "graph/dependency_graph.h" // Assuming Node definition here 
+#include "build/build_state.h"
+#include "crypto/hash.h"
+#include <filesystem>
+#include <system_error>
+
+namespace aria::build {
+
+   namespace fs = std::filesystem;
+
+   /**
+    * @brief Determines if a target node requires rebuilding.
+    * 
+    * Implements the hybrid incremental logic:
+    * 1. Existence Check: Output file must exist.
+    * 2. Signature Check: Command hash must match stored state (Fixes Flag Change).
+    * 3. Timestamp Check: Output must be newer than all inputs.
+    * 
+    * @param node The build target to check.
+    * @param state The persistent state manager.
+    * @return true if the target is dirty (needs build).
+    */
+   bool check_is_dirty(graph::Node* node, BuildState& state) {
+       // 1. Calculate the hash of the current command configuration
+       // 'command' member contains the full CLI string (e.g., "ariac -O3...")
+       const uint64_t current_hash = crypto::fnv1a_64(node->command);
+       
+       bool is_dirty = false;
+       bool signature_changed = false;
+
+       // 2. Signature Verification (The "Flag Change" Check)
+       const auto stored_hash = state.get_command_hash(node->name());
+       
+       if (!stored_hash.has_value()) {
+           // New target or first run
+           is_dirty = true;
+           signature_changed = true;
+       } else if (stored_hash.value()!= current_hash) {
+           // Command string has changed (e.g., flags modified)
+           is_dirty = true;
+           signature_changed = true;
+       }
+
+       // 3. Timestamp Verification (Legacy Logic)
+       // Only perform filesystem checks if signature matches (optimization)
+       if (!is_dirty) {
+           if (node->output_file.empty()) {
+               // Phony targets are always dirty
+               is_dirty = true;
+           } else {
+               std::error_code ec;
+               const fs::path output_path = node->output_file;
+
+               if (!fs::exists(output_path, ec)) {
+                   is_dirty = true;
+               } else {
+                   const auto output_time = fs::last_write_time(output_path, ec);
+                   
+                   // Check against all source inputs
+                   for (const auto& src : node->source_files) {
+                       const fs::path src_path = src;
+                       if (fs::exists(src_path, ec)) {
+                           const auto src_time = fs::last_write_time(src_path, ec);
+                           // If source is newer than output, rebuild
+                           if (src_time > output_time) {
+                               is_dirty = true;
+                               break;
+                           }
+                       }
+                   }
+               }
+           }
+       }
+
+       // 4. State Update Logic
+       // The requirement is to "Update the in-memory hash upon dirty detection".
+       // This ensures the BuildState reflects the CURRENT configuration.
+       // If the build fails later, the state file won't be saved, preserving consistency.
+       if (is_dirty) {
+           state.update_command_hash(node->name(), current_hash);
+       }
+
+       return is_dirty;
+   }
+
+} // namespace aria::build
+
+6. Integration and Concurrency Considerations
+Integrating this logic into the broader aria_make system requires careful consideration of the build lifecycle and thread safety.
+6.1 Lifecycle Hooks within the Compiler Driver
+The main.cpp driver 1 must be updated to instantiate the BuildState early in the process.
+1. Initialization: BuildState is constructed immediately after parsing arguments. This triggers the JSON load from disk.
+2. Graph Traversal: The BuildScheduler iterates over the DAG. For each node, it calls check_is_dirty, passing the BuildState reference.
+3. In-Memory Update: If check_is_dirty returns true, the hash is updated in the BuildState object's memory. This is a fast, non-blocking operation.
+4. Persistence: Once the build loop completes successfully (exit code 0), state.save() is called. This atomic write ensures that the .aria_build_state.json file is only updated if the build was valid.
+6.2 Thread Safety
+The BuildState object acts as a shared resource. While check_is_dirty is typically called during the scheduling phase (which is often single-threaded before dispatching jobs), if the architecture allows parallel dirty-checking, access to command_hashes_ must be synchronized.
+However, based on the standard architecture of topological sorts (Kahn's Algorithm) described in the research 1, the "dirty" check usually happens as nodes are dequeued. If multiple threads dequeue nodes simultaneously, BuildState::update_command_hash requires a std::mutex to prevent race conditions during the unordered_map insertion. Given the context of C++17, a std::shared_mutex would allow multiple concurrent readers (get_command_hash) while serializing writers.
+Recommendation: For the initial implementation, assuming the scheduler performs dirty checks sequentially before dispatching the compile job to the thread pool, no mutex is required. If the check is moved inside the worker thread, a mutex must be added to BuildState.
+6.3 Handling Filesystem Quirks
+The use of std::filesystem::last_write_time introduces potential portability issues regarding clock resolution.5 On some filesystems (e.g., FAT32), timestamp resolution is 2 seconds. If a build is very fast, the output timestamp might equal the input timestamp. The logic src_time > output_time handles this safely (strict inequality), but users should be advised to use modern filesystems (NTFS, ext4, APFS) where resolution is nanoseconds.
+7. Performance and Complexity Analysis
+The introduction of hashing adds computational overhead. It is vital to quantify this to ensure it does not regress the "high-performance" goal of AriaBuild.1
+7.1 Hashing Overhead
+The FNV-1a algorithm processes data at a rate of approximately 1 cycle per byte. For a typical command string of 200 characters, hashing takes roughly 200 cycles (nanoseconds). In contrast, a stat system call to check a file timestamp costs microseconds to milliseconds depending on disk I/O and caching. Therefore, the signature check is orders of magnitude faster than the filesystem check.
+7.2 Serialization Overhead
+Parsing the JSON state file is linear with respect to the number of targets ($O(N)$). For a project with 10,000 targets, the JSON file might be 1-2 MB. nlohmann/json can parse this in tens of milliseconds. This is a one-time cost at startup and shutdown, negligible compared to the compilation time of even a single C++ or Aria file.
+7.3 Space Complexity
+The state file stores a map of strings to 64-bit integers. The space complexity is $O(N \times L)$, where $N$ is the number of targets and $L$ is the average length of a target name. This is highly efficient and scalable.
+8. Conclusion
+The implementation of Command Signature Hashing marks a pivotal maturation point for the AriaBuild system. By moving beyond the naive file-timestamp model, the system gains the ability to detect semantic changes in the build configuration—fixing the "Flag Change" vulnerability that has plagued legacy build tools. The architectural solution leverages the speed of the FNV-1a hashing algorithm and the robust serialization capabilities of nlohmann/json to provide a seamless, hermetic build experience.
+The provided C++17 implementation is modular, type-safe, and designed for immediate integration into the src/build/ directory structure. By strictly separating the concerns of cryptography, state persistence, and incremental logic, the codebase remains maintainable and extensible. Future enhancements could leverage this state infrastructure to store additional metadata, such as file sizes or dependency lists, further hardening the build system against environmental inconsistencies. This solution ensures that Aria developers can trust their build tool to produce correct binaries, regardless of how often they toggle compiler flags or modify build scripts.
+Works cited
+1. compiled.txt
+2. Non-crypto hashes in C++: FNV 1/1a - ASecuritySite.com, accessed December 19, 2025, https://asecuritysite.com/encryption/smh_fnv
+3. FNV Hash - isthe.com, accessed December 19, 2025, http://www.isthe.com/chongo/tech/comp/fnv/
+4. nlohmann/json: JSON for Modern C++ - GitHub, accessed December 19, 2025, https://github.com/nlohmann/json
+5. std::filesystem::last_write_time - cppreference.com - C++ Reference, accessed December 19, 2025, https://en.cppreference.com/w/cpp/filesystem/last_write_time.html
+6. C++17 in Detail: Filesystem in The Standard Library - C++ Stories, accessed December 19, 2025, https://www.cppstories.com/2017/08/cpp17-details-filesystem/
+7. Improved hashing and replacing std::hash | Zandro Fargnoli, accessed December 19, 2025, https://zandrofargnoli.co.uk/posts/2021/04/improved-hashing/
+8. (Constructor) - JSON for Modern C++, accessed December 19, 2025, https://json.nlohmann.me/api/basic_json/basic_json/
+9. How to serialize/deserialize std::map
+10. C++ 32bit FNV-1a string hashing. Support both compile-time and runtime calulations., accessed December 19, 2025, https://gist.github.com/hwei/1950649d523afd03285c
+11. Serialize map as object and not array of pair for non std::string keys · nlohmann json · Discussion #3886 - GitHub, accessed December 19, 2025, https://github.com/nlohmann/json/discussions/3886
+12. C++ std::filesystem::last_write_time operator< sometimes not correct? - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/71350914/c-stdfilesystemlast-write-time-operator-sometimes-not-correct

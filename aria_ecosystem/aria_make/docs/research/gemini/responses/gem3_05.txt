@@ -1,0 +1,514 @@
+﻿Architectural Specification and Implementation Strategy for the AriaBuild Test Automation Subsystem: A Comprehensive Report
+1. Executive Summary and Strategic Context
+The software development lifecycle (SDLC) for high-performance systems languages is inextricably linked to the robustness of the underlying build and verification infrastructure. For the Aria programming language ecosystem, currently maturing through version v0.0.7 toward the pivotal v0.1.0 milestone, the transition from ad-hoc compilation scripts to a declarative, deterministic build system—AriaBuild (aria_make)—represents a foundational shift in engineering capability. While the primary function of AriaBuild is the transformation of source artifacts into intermediate representations (LLVM IR), its role extends to the comprehensive orchestration of the development lifecycle, of which automated regression testing is the critical validation gate.
+This report articulates the exhaustive architectural specification and implementation strategy for the TestRunner class, the execution engine responsible for the verification phase within AriaBuild. As the Aria language introduces novel and complex paradigms—specifically Twisted Balanced Binary (TBB) arithmetic with sticky error propagation, a hybrid memory model distinguishing between garbage-collected and "wild" manual allocation, and a result-oriented error handling philosophy—the test runner must possess a nuanced understanding of the runtime environment to accurately assess correctness. Unlike conventional unit test runners that might link directly against test code (e.g., GoogleTest in C++), the Aria ecosystem operates on a "meta-execution" model where compiled bitcode is executed via the LLVM Interpreter (lli). This separation of concerns necessitates a robust Process Abstraction Layer (PAL) to bridge the gap between the build tool’s orchestration logic and the runtime’s execution behavior.
+The architecture proposed herein addresses the user's specific requirements for a parallelized, process-isolated test execution engine. It leverages the C++17 standard for portability and performance, utilizing std::future and std::async primitives to implement a scatter-gather concurrency model that maximizes hardware utilization on modern multi-core workstations. The design prioritizes three core operational pillars: Isolation, ensuring that test failures or runtime crashes do not destabilize the build tool; Fidelity, guaranteeing that the execution environment mirrors the production runtime via Just-In-Time (JIT) compilation; and Observability, capturing standard output streams to provide actionable diagnostics for assertion failures, a critical requirement given Aria’s reliance on puts() and fail() for error signaling.
+By synthesizing the constraints of the Aria language specification 1 with the architectural patterns established in the AriaBuild design documents 1, this report provides a definitive implementation blueprint. It details the interaction between the TestRunner and the existing Process class, the logic for exit code interpretation, and the mechanisms for thread-safe result aggregation, ensuring that the Aria ecosystem possesses a verification toolchain capable of scaling to thousands of concurrent tests.
+________________
+2. Architectural Analysis of the Testing Domain in Aria
+To engineer a TestRunner that is both robust and ergonomic, one must first deconstruct the theoretical and practical constraints of testing within the Aria ecosystem. The testing domain is defined not just by the code being tested, but by the runtime mechanisms used to execute it and the signals available to determine success or failure.
+2.1 The Execution Target: The LLVM Interpreter (lli)
+Aria’s compilation model diverges from traditional compiled languages that output platform-specific machine code (ELF on Linux, PE on Windows) immediately. Instead, the ariac compiler targets LLVM Intermediate Representation (IR), stored in .ll or .bc files.1 This architectural decision decouples the language frontend from architecture-specific backend concerns during the early development phases. Consequently, "running a program" in the current Aria v0.0.7 ecosystem is synonymous with invoking the LLVM Interpreter, lli.
+The TestRunner therefore functions as a meta-driver. It does not execute the test targets directly via OS system calls like execve; rather, it spawns lli as a parent process, passing the path to the compiled test target as an argument. This indirection introduces several critical considerations for the test runner's design:
+* JIT vs. Interpretation: The lli tool supports both pure bytecode interpretation and Just-In-Time (JIT) compilation. Pure interpretation is significantly slower, often by orders of magnitude, which can render extensive regression suites prohibitively slow. To ensure the test environment accurately reflects the performance characteristics and potential optimization bugs of the production environment, the TestRunner must strictly enforce JIT compilation. This is achieved via the flag -force-interpreter=false 1, which mandates the generation of native machine code in memory.
+* Process Isolation: Because lli runs as a separate OS process, the test code is completely isolated from the AriaBuild process. A segmentation fault (segfault) or wild pointer access within the test code will crash the lli instance, but the build tool itself remains stable. This is a desirable property for a test runner, as it prevents a single catastrophic test failure from aborting the entire test run.
+* Exit Code Propagation: The lli tool is designed to propagate the return value of the interpreted program's main function as its own process exit code. In Aria, the main function signature typically returns an integer status (or a result type that lowers to an integer).1 The TestRunner relies on this propagation mechanism to determine the pass/fail status of a test.
+2.2 The Signal Analysis: Exit Codes vs. Output Streams
+Determining the outcome of a test requires analyzing the signals emitted by the lli process. Aria’s error handling philosophy heavily influences this analysis.
+2.2.1 The Semantics of Exit Codes
+In Aria, the concept of success is formalized through the result type, which contains an err code and a val value. The standard library provides helper functions pass(val) and fail(code) to construct these results.1
+* Exit Code 0: Represents success. It implies that the func:main executed to completion and returned pass(0).
+* Exit Code > 0: Represents a logical failure. It implies the test code explicitly called fail(code), likely due to an assertion failure or a setup error.
+* Exit Code < 0 (or specific large integers on Windows): Represents a runtime crash. This occurs if the test code triggers a hardware trap, such as a null pointer dereference in "wild" memory or a TBB overflow that wasn't caught by software checks.
+The TestRunner must treat any non-zero exit code as a failure, but distinguishing between logical failures (assertions) and runtime crashes (segfaults) provides valuable context to the developer.
+2.2.2 The Role of Standard Output
+While the exit code indicates that a failure occurred, it rarely explains why. Aria programs utilize puts() for string output to the console.1 A typical test pattern in Aria involves checking a condition and printing a diagnostic message before failing:
+
+
+Code snippet
+
+
+
+
+// Example Aria Test Logic
+if (calculated!= expected) {
+   puts("Assertion Failed: Expected 10, got 5");
+   fail(1);
+}
+
+If the TestRunner ignores standard output, the developer sees only "Test Failed (Exit Code 1)". By capturing standard output, the runner can present the critical context ("Assertion Failed...") alongside the status. This requirement necessitates a process execution architecture capable of capturing stdout and stderr streams without blocking or deadlocking, even when the output volume is large (e.g., dumping a large TBB array state).
+2.3 Concurrency and Throughput
+Modern hardware architecture relies on parallelism rather than clock speed frequency scaling. A test runner that executes tests sequentially is fundamentally inefficient, leaving most CPU cores idle while waiting for single-threaded compilation or execution steps. To respect the user's requirement for "Handle parallel test execution," the TestRunner must implement a concurrent execution model.
+The architecture leverages a "Scatter-Gather" pattern. The runner scatters test tasks across a pool of worker threads—aligned with the hardware concurrency limits—and gathers the results into a centralized report. This approach reduces the "Wall Clock Time" of the test suite linearly with the core count, provided the tests themselves are independent. However, parallelism introduces synchronization challenges:
+* Output Interleaving: If multiple threads print to the console simultaneously, the output becomes a garbled stream of characters. The TestRunner must buffer the output of each test in memory and print it atomically upon completion.
+* Resource Contention: Spawning thousands of lli processes simultaneously (the "thundering herd" problem) can exhaust system file descriptors or memory. The concurrency model must be bounded, typically by the number of logical cores.
+________________
+3. The Process Abstraction Layer (PAL): Interface Specification
+The TestRunner implementation is predicated on the existence of a Process class created in "Step 1" of the AriaBuild development roadmap. To ensure this report is self-contained and implementable, we must define the exact interface contract of this Process class, deriving its capabilities from the architectural needs identified in the compiled.txt research material.1
+3.1 The ExecResult Structure
+The ExecResult structure acts as the Data Transfer Object (DTO) between the operating system's process execution primitives and the application logic. It decouples the mechanism of execution (pipes, file descriptors, handles) from the result of execution.
+
+
+C++
+
+
+
+
+/**
+* @struct ExecResult
+* @brief Encapsulates the outcome of an external process execution.
+*/
+struct ExecResult {
+   int exit_code;          // The process exit code (0-255) or signal.
+   std::string out_output; // Content captured from Standard Output (stdout).
+   std::string err_output; // Content captured from Standard Error (stderr).
+   bool success;           // Convenience flag: true if exit_code == 0.
+};
+
+This structure implies that the underlying Process implementation handles the complexity of separating stdout and stderr. In build systems, stderr typically carries compiler diagnostics or runtime warnings, while stdout carries program output. Keeping them separate allows the TestRunner to format them differently (e.g., printing stderr in red).
+3.2 The ExecOptions Configuration
+To control the execution environment, the Process class consumes an options structure. This is critical for testing, as tests often require specific environment variables or working directories to locate fixtures.
+
+
+C++
+
+
+
+
+/**
+* @struct ExecOptions
+* @brief Configuration parameters for process spawning.
+*/
+struct ExecOptions {
+   // The directory to switch to before executing the binary.
+   std::string working_directory;
+   
+   // Environment variables to inject or overwrite.
+   std::map<std::string, std::string> env_vars;
+   
+   // If true, redirects stderr to stdout (2>&1), merging streams.
+   bool merge_outputs = false; 
+};
+
+3.3 The Process::execute_command Interface
+The primary entry point is a static method that abstracts the platform-specific fork/exec (Linux/macOS) or CreateProcess (Windows) logic.
+
+
+C++
+
+
+
+
+class Process {
+public:
+   /**
+    * @brief Spawns a child process, waits for completion, and captures output.
+    * 
+    * @param command The binary to execute (e.g., "lli").
+    * @param args A list of arguments passed to the binary.
+    * @param options Configuration for the execution environment.
+    * @return ExecResult containing code and captured streams.
+    */
+   static ExecResult execute_command(
+       const std::string& command, 
+       const std::vector<std::string>& args, 
+       const ExecOptions& options = {}
+   );
+};
+
+This synchronous (blocking) interface is intentional. In the context of a thread-pooled test runner, the worker thread blocks waiting for the process, while the OS scheduler yields the CPU to the lli process. This ensures efficient resource utilization without the complexity of asynchronous I/O callbacks within the build logic itself.
+________________
+4. TestRunner Class Architecture and Design
+The TestRunner class is the orchestrator. It resides in the aria::build namespace and is responsible for managing the lifecycle of the test session.
+4.1 Design Principles
+1. Immutability of Inputs: The list of test targets is read-only. The runner does not modify the .ll files.
+2. Thread Safety: Since multiple tests execute in parallel, access to shared resources (like the success/failure counters and the result list) must be synchronized.
+3. Fail-Safe: A failure in one test must not stop the execution of others. The runner collects all results before exiting.
+4.2 Class Definition
+The following C++ class definition outlines the internal structure required to support the requirements.
+
+
+C++
+
+
+
+
+namespace aria {
+namespace build {
+
+// Forward declaration of internal stats structure
+struct TestSessionStats;
+
+class TestRunner {
+public:
+   /**
+    * @brief Constructor configuring the parallelism level.
+    * @param concurrency The maximum number of concurrent test processes.
+    *        Defaults to std::thread::hardware_concurrency().
+    */
+   explicit TestRunner(size_t concurrency = 0);
+
+   /**
+    * @brief Main entry point to execute a suite of tests.
+    * 
+    * @param test_targets A list of file paths to compiled.ll files.
+    * @return true if ALL tests passed, false if ANY failed.
+    */
+   bool run_tests(const std::vector<std::string>& test_targets);
+
+private:
+   // The configured concurrency limit (number of threads).
+   size_t concurrency_;
+
+   // Shared state for the current test session.
+   struct TestStats {
+       std::atomic<int> total{0};
+       std::atomic<int> passed{0};
+       std::atomic<int> failed{0};
+       
+       // Detailed failure reports. 
+       // Protected by a mutex to prevent interleaved writes.
+       std::vector<std::string> failed_tests; 
+   } stats_;
+
+   // Mutex to protect the failed_tests vector and console output.
+   std::mutex results_mutex_;
+
+   /**
+    * @brief Internal logic to run a single test target.
+    *        This method is executed by worker threads.
+    * 
+    * @param target_path The filesystem path to the.ll file.
+    */
+   void execute_single_test(const std::string& target_path);
+
+   /**
+    * @brief Validates that the target file exists and is readable.
+    */
+   bool validate_target(const std::string& target_path);
+
+   /**
+    * @brief Prints the final summary report to stdout.
+    */
+   void print_summary();
+};
+
+} // namespace build
+} // namespace aria
+
+4.3 Parallel Execution Strategy
+The requirement to handle parallel test execution can be met using several C++ primitives. While std::thread is the most basic, std::future via std::async provides a higher-level abstraction that fits the "task-based" nature of running tests.
+The Strategy:
+The run_tests method acts as the dispatcher. It iterates through the list of test_targets and launches an asynchronous task for each.
+* Limiting Concurrency: Simply launching std::async for every file in a loop (e.g., 5000 files) can cause resource exhaustion (too many threads created at once if the implementation policy is std::launch::async). To respect the concurrency_ limit, the implementation must batch the futures or use a semaphore-like mechanism. For this implementation, we will use a chunking strategy or rely on the Process class's blocking nature within a fixed-size std::vector<std::future<void>> that is refilled as tasks complete.
+Why std::future over Raw Threads:
+std::future allows exception propagation. If the execute_single_test method throws an exception (e.g., std::bad_alloc), it is captured in the future and can be rethrown in the main thread when .get() is called. This ensures that internal errors in the runner itself are reported correctly, rather than causing a silent thread termination via std::terminate.
+________________
+5. Implementation Specification
+The following sections detail the logic for the implementation file (src/build/test_runner.cpp).
+5.1 Constructor and Initialization
+The constructor initializes the concurrency limit. It defaults to std::thread::hardware_concurrency(), which queries the OS for the number of logical cores. This is the optimal default for CPU-bound tasks (like JIT compilation) or mixed workloads.
+
+
+C++
+
+
+
+
+aria::build::TestRunner::TestRunner(size_t concurrency) {
+   if (concurrency == 0) {
+       concurrency_ = std::thread::hardware_concurrency();
+       // Fallback for systems where hardware_concurrency returns 0
+       if (concurrency_ == 0) concurrency_ = 4; 
+   } else {
+       concurrency_ = concurrency;
+   }
+}
+
+5.2 The Execution Core: execute_single_test
+This method contains the business logic for running a specific test. It bridges the Process abstraction and the Aria runtime requirements.
+1. Command Construction: The command is lli. The arguments are critical.
+   * -force-interpreter=false: As identified in the research 1, this flag forces LLVM to use the JIT compiler. Without it, lli might interpret the bitcode, which is significantly slower.
+   * target_path: The absolute or relative path to the .ll file.
+2. Environment Setup: The working directory is set to the parent directory of the test file. This allows the test to load fixture files using relative paths (e.g., io.open("fixtures/data.txt")).
+3. Process Invocation: Process::execute_command is called. This blocks the worker thread but not the main thread.
+4. Result Analysis:
+   * If exit_code == 0, the test is marked passed.
+   * If exit_code!= 0, the test is marked failed. The stdout and stderr are captured into a failure report string.
+5. Synchronization: Access to the stats_ object (specifically the vector of failure messages) is guarded by results_mutex_ to prevent race conditions.
+
+
+C++
+
+
+
+
+void aria::build::TestRunner::execute_single_test(const std::string& target_path) {
+   // 1. Validation
+   if (!validate_target(target_path)) {
+       // Validation failure is treated as a test failure for safety
+       std::lock_guard<std::mutex> lock(results_mutex_);
+       stats_.total++;
+       stats_.failed++;
+       stats_.failed_tests.push_back(" File not found or invalid: " + target_path);
+       std::cout << "E" << std::flush; // Error indicator
+       return;
+   }
+
+   // 2. Command Construction
+   std::string cmd = "lli";
+   std::vector<std::string> args = {
+       "-force-interpreter=false", // Force JIT for performance
+       target_path
+   };
+
+   // 3. Environment Options
+   aria::runtime::ExecOptions opts;
+   // Set CWD to the test file's directory for relative file I/O
+   namespace fs = std::filesystem;
+   opts.working_directory = fs::path(target_path).parent_path().string();
+
+   // 4. Execution
+   auto result = aria::runtime::Process::execute_command(cmd, args, opts);
+
+   // 5. Result Aggregation
+   {
+       std::lock_guard<std::mutex> lock(results_mutex_);
+       stats_.total++;
+
+       if (result.exit_code == 0) {
+           stats_.passed++;
+           std::cout << "." << std::flush; // Progress dot
+       } else {
+           stats_.failed++;
+           std::cout << "F" << std::flush; // Failure indicator
+
+           // Format the failure report
+           std::stringstream ss;
+           ss << "\n" << std::string(60, '-') << "\n";
+           ss << "FAIL: " << target_path << "\n";
+           ss << "Exit Code: " << result.exit_code << "\n";
+           
+           if (!result.out_output.empty()) {
+               ss << "--- STDOUT ---\n" << result.out_output << "\n";
+           }
+           if (!result.err_output.empty()) {
+               ss << "--- STDERR ---\n" << result.err_output << "\n";
+           }
+           stats_.failed_tests.push_back(ss.str());
+       }
+   }
+}
+
+5.3 The Orchestrator: run_tests
+This method manages the parallelism. To avoid managing complex future vectors with resizing logic, we can leverage a simple chunking loop or a dedicated library if available. However, given the constraints of using standard libraries (std::future), we implement a sliding window approach to limit concurrency.
+Insight: While std::async handles thread creation, managing the number of active futures allows us to respect the concurrency_ limit explicitly preventing system overload.
+
+
+C++
+
+
+
+
+bool aria::build::TestRunner::run_tests(const std::vector<std::string>& targets) {
+   std::cout << "Running " << targets.size() << " tests (Concurrency: " 
+             << concurrency_ << ")...\n";
+
+   // A list of active futures
+   std::vector<std::future<void>> active_futures;
+
+   auto target_iter = targets.begin();
+   
+   // While we have targets to process or futures running
+   while (target_iter!= targets.end() ||!active_futures.empty()) {
+       
+       // 1. Fill the slots: Launch new tasks if we are below concurrency limit
+       while (active_futures.size() < concurrency_ && target_iter!= targets.end()) {
+           std::string current_target = *target_iter;
+           
+           // Launch async task
+           active_futures.push_back(std::async(
+               std::launch::async, 
+               [this, current_target]() { 
+                   execute_single_test(current_target); 
+               }
+           ));
+           
+           ++target_iter;
+       }
+
+       // 2. Wait logic: Check for completed futures
+       // We iterate backwards to safely remove completed futures
+       for (auto it = active_futures.begin(); it!= active_futures.end(); ) {
+           // Check if future is ready (wait_for 0s)
+           if (it->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+               it->get(); // Propagate any exceptions
+               it = active_futures.erase(it); // Remove from active list
+           } else {
+               ++it;
+           }
+       }
+
+       // Slight sleep to prevent CPU spinning in the main loop while waiting
+       if (!active_futures.empty()) {
+           std::this_thread::sleep_for(std::chrono::milliseconds(10));
+       }
+   }
+
+   print_summary();
+   return stats_.failed == 0;
+}
+
+5.4 Reporting and Summary
+The summary report aggregates the results. It prints the detailed failure messages captured during execution. This provides an immediate feedback loop for the developer.
+
+
+C++
+
+
+
+
+void aria::build::TestRunner::print_summary() {
+   std::cout << "\n\n" << std::string(60, '=') << "\n";
+   std::cout << "TEST SUMMARY\n";
+   std::cout << std::string(60, '=') << "\n";
+
+   // Print Failures Details
+   for (const auto& report : stats_.failed_tests) {
+       std::cout << report;
+   }
+   if (!stats_.failed_tests.empty()) {
+       std::cout << "\n" << std::string(60, '-') << "\n";
+   }
+
+   // Statistics
+   std::cout << "Total:  " << stats_.total << "\n";
+   std::cout << "Passed: " << stats_.passed << "\n";
+   std::cout << "Failed: " << stats_.failed << "\n";
+
+   if (stats_.failed == 0) {
+       std::cout << "\nSUCCESS: All tests passed.\n";
+   } else {
+       std::cout << "\nFAILURE: " << stats_.failed << " tests failed.\n";
+   }
+}
+
+________________
+6. Deep Dive: Aria Language Specifics and Testing
+Implementing a test runner requires understanding the quirks of the language being tested. Aria introduces several unique features that impact how tests are written and how failures manifest.1
+6.1 TBB Error Propagation and Assertion Logic
+Aria features Twisted Balanced Binary (TBB) integers (e.g., tbb8, tbb64). These types include a dedicated error sentinel value ERR (typically the minimum representable integer, e.g., -128 for tbb8).
+In standard languages, an integer overflow wraps around. In Aria, 127 + 1 (for tbb8) results in ERR. Furthermore, ERR + 1 results in ERR. This "sticky" error propagation allows a sequence of calculations to proceed without intermediate checks, with the final result indicating if any step failed.
+Implication for Testing:
+Aria tests for math libraries will often assert that a result is ERR.
+
+
+Code snippet
+
+
+
+
+// Test case for overflow
+func:test_overflow = int8() {
+   tbb8:val = 127;
+   tbb8:res = val + 1;
+   if (res!= ERR) {
+       puts("Expected ERR, got value");
+       fail(1);
+   }
+   pass(0);
+};
+
+The TestRunner must robustly capture the stdout because fail(1) only tells the user that it failed. The puts output is essential to know why (e.g., did it wrap? did it stay at 127?).
+6.2 The result Keyword and Parsing Conflicts
+The Aria guide 1 highlights that result is a reserved keyword representing the return type {err, val}. Using result as a variable name causes a parse error.
+Impact on TestRunner:
+While TestRunner executes compiled .ll files, it sits downstream of the compiler. If a developer writes a test using result as a variable:
+1. ariac fails to compile the test.
+2. The .ll file is not generated.
+3. AriaBuild (the parent system) should ideally halt.
+However, if AriaBuild passes a non-existent file path to TestRunner, the runner's validate_target method (Section 5.2) catches this and reports it as an error. This robust handling ensures that compilation failures in tests are flagged visibly in the test report.
+6.3 Memory Model Interactions (Wild vs. GC)
+Aria supports both Garbage Collection (gc) and manual memory management (wild).1 Tests involving wild pointers are prone to segfaults (Runtime Crashes) if memory is mishandled (e.g., use-after-free).
+The TestRunner distinguishes these via exit codes.
+   * Assertion Failure: Exit code 1 (or user defined).
+   * Segfault (Linux): Exit code 139 (128 + 11 SIGSEGV).
+   * Access Violation (Windows): Large negative numbers.
+By reporting the exact exit code in the summary, the TestRunner helps developers distinguish between logic bugs and memory safety violations.
+________________
+7. Integration with the AriaBuild Ecosystem
+The TestRunner is a component of the larger AriaBuild system described in compiled.txt.1 It interacts with the Dependency Graph and the Scheduler.
+7.1 The test Target Type
+The Aria Build Configuration (ABC) supports a target type specifically for tests:
+
+
+JSON
+
+
+
+
+{
+   "name": "core_tests",
+   "type": "test",
+   "sources": ["tests/*.aria"],
+   "output": "build/tests/core.ll"
+}
+
+When the user invokes aria_make test:
+   1. Build Phase: The BuildScheduler orchestrates the compilation of core_tests using ariac.
+   2. Collection: AriaBuild collects the output paths of all targets with type: "test".
+   3. Execution Phase: AriaBuild instantiates TestRunner and calls run_tests with this list.
+7.2 Scalability Considerations
+As the project grows, the number of tests may reach thousands. The "globbing" subsystem 1 resolves wildcards like tests/**/*.aria. The TestRunner architecture is designed to handle this scale:
+   * Memory: It stores only the paths (strings) and failure reports. Successful tests (the vast majority) leave no trace in memory other than a counter increment, ensuring the runner processes stays lightweight.
+   * Throughput: The lli JIT execution is CPU intensive. The concurrency limit ensures the system remains responsive (no mouse lag) while tests run in the background.
+________________
+8. Conclusion
+The architectural specification provided in this report delivers a high-performance, integrated test automation subsystem for the Aria language. By building upon the Process abstraction layer, the design ensures cross-platform compatibility and deadlock-free stream capture. The use of std::future-based concurrency maximizes throughput, respecting the hardware constraints of the developer's machine. Crucially, the system aligns with Aria's specific language features—interpreting result-based exit codes and capturing puts output—to provide a developer experience that is both rigorous and transparent. This implementation closes the loop on the Aria development cycle, enabling the safe evolution of the language and its applications.
+________________
+9. Appendix: Support Data and Tables
+Table 1: Process Exit Code Interpretation Strategy
+Exit Code Range
+	Interpretation
+	Aria Semantic Source
+	Runner Action
+	0
+	Success
+	pass(0) / return {err:0, val:x}
+	Increment Passed counter. Print ..
+	1 - 127
+	Logical Failure
+	fail(code)
+	Increment Failed counter. Capture/Print stdout.
+	128 - 255
+	Signal / Crash
+	OS Signal (e.g., SIGSEGV)
+	Increment Failed counter. Report "Runtime Crash".
+	< 0
+	System Error
+	lli invocation failure or Windows exception
+	Increment Failed counter. Report "System Error".
+	Table 2: Comparison of Execution Models
+Feature
+	Interpreter Mode
+	JIT Mode (-force-interpreter=false)
+	Selected Strategy
+	Startup Time
+	Fast
+	Slower (compilation overhead)
+	JIT
+	Execution Speed
+	Slow
+	Native Speed
+	JIT
+	Fidelity
+	Low (emulated)
+	High (matches production)
+	JIT
+	Debuggability
+	High
+	Medium
+	JIT
+	Rationale: The primary purpose of the test runner is to verify the behavior of the code as it will run in production. Therefore, JIT mode is mandatory despite the slight startup penalty.
+Works cited
+   1. rcfull.txt

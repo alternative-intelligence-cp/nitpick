@@ -1,0 +1,45 @@
+## TASK 4: Platform-Specific Filesystem Extensions
+
+**Priority**: MEDIUM (Enhances Task 3)
+**Estimated Complexity**: Low
+**Dependencies**: TASK 3 (extends GlobEngine)
+
+### Problem Statement
+The GlobEngine needs platform-specific helpers for:
+- Hidden file detection on Windows (FILE_ATTRIBUTE_HIDDEN)
+- Cache invalidation based on directory modification times
+- Portable path normalization
+
+### Required Context Files
+
+**From aria_make repository**:
+1. `docs/research/gemini/responses/task_02_globbing_engine.txt` - Section 3.4 on caching
+2. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (Section 3.3, 3.4)
+
+### Gemini Prompt
+
+```
+To ensure cross-platform determinism in the globbing engine, provide a C++ helper class FileSystemTraits that extends the functionality described in 'task_02_globbing_engine.txt'.
+
+Requirements:
+1. Implement isHidden(const std::filesystem::path& p) → bool:
+   - On Windows: Use GetFileAttributesW() to check FILE_ATTRIBUTE_HIDDEN
+   - On Unix: Check if filename starts with '.'
+   - Use #ifdef _WIN32 for platform detection
+2. Implement getDirHash(const std::filesystem::path& dir) → size_t:
+   - Hash the last_write_time of the directory itself
+   - Used as cache invalidation key
+   - Handle errors if directory doesn't exist
+3. Implement normalizePath(std::filesystem::path& p) → void:
+   - Convert all backslashes to forward slashes
+   - Ensure consistent representation across platforms
+
+Use C++17 std::filesystem where possible, falling back to platform APIs (Windows.h, unistd.h) only where necessary. Provide both header and implementation with conditional compilation.
+```
+
+### Expected Deliverables
+- `include/glob/fs_traits.h` - Platform traits
+- `src/glob/fs_traits.cpp` - Implementation with platform conditionals
+- `tests/glob/test_fs_traits.cpp` - Cross-platform tests
+
+---

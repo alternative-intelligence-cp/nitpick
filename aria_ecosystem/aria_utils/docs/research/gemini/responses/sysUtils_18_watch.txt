@@ -1,0 +1,602 @@
+﻿Architectural Specification and Implementation Strategy for awatch: A Hex-Stream Native File System Observability Utility
+1. Executive Summary
+In the domain of modern systems programming, the traditional Unix pipeline model faces a critical bottleneck: the conflation of human-readable diagnostics with machine-readable payloads. As distributed systems and containerized environments grow in complexity, the "everything is a file" abstraction—specifically the reliance on untyped byte streams—manifests as fragility in automation pipelines. This report articulates a comprehensive architectural design and implementation strategy for awatch, a next-generation file system monitoring utility designed specifically for the Aria programming language ecosystem.
+awatch is not merely a reimplementation of legacy tools like inotifywait or fswatch; it serves as the canonical reference implementation for Aria’s "Systems-First" philosophy. It leverages the language’s native support for Twisted Balanced Binary (TBB) arithmetic, Wild Memory management, and the revolutionary Six-Stream (Hex-Stream) I/O topology to provide a tool that is simultaneously user-friendly, mechanically rigorous, and highly performant. By deconstructing the limitations of the 50-year-old 3-stream model, awatch demonstrates how semantic segregation of data planes can eliminate the class of bugs associated with output parsing and stream corruption.
+The utility acts as the producer in reactive pipelines (e.g., awatch /src | filter --event CREATE | build_runner), necessitating a strict separation of concerns implemented through Aria's extended file descriptor set:
+* Control Plane (stdout): Provides a human-readable, ANSI-colored event log for operators, optimized for immediate visual cognition.
+* Data Plane (stddato): Streams a typed, binary sequence of FileEvent objects for downstream consumption, eliminating parsing overhead and encoding ambiguities.
+* Telemetry Plane (stddbg): Emits structured JSON diagnostics regarding the health of the watcher itself, such as queue depth and kernel descriptor limits.
+This document details the theoretical underpinnings of cross-platform file observation, the specific binary protocols required for stddato, and the precise Aria source code implementation required to realize this utility. It synthesizes research from kernel-level documentation, Aria language specifications, and asynchronous runtime architecture to provide a blueprint that is both exhaustive and immediately actionable.
+2. Theoretical Framework: The Hex-Stream Observability Model
+To appreciate the architectural necessity of awatch, one must first deconstruct the limitations of the traditional standard streams in the context of high-frequency event monitoring. The legacy model, while elegant in its simplicity, collapses distinct semantic intents into shared channels, leading to the "noisy channel" problem in modern software engineering.1
+2.1 The "Noisy Channel" Problem in Legacy File Watching
+In standard Unix environments, utilities like inotifywait are forced to multiplex logically distinct information onto stdout. A typical output stream might look like this:
+/tmp/ CREATE file1
+/tmp/ OPEN file1
+/tmp/ MODIFY file1
+For a downstream program to consume this, it must spawn a subprocess, pipe stdout, and implement a text parser. This introduces several critical failure modes. First, latency is incurred by the serialization and deserialization of text. Second, fragility is introduced; if a filename contains a newline character or a delimiter used by the parser, the stream becomes corrupted, potentially leading to command injection vulnerabilities. Third, if the user desires debug information (e.g., "Watch limit reached"), this is often interleaved on stderr or stdout, further corrupting the data stream intended for the consumer. This conflation of "Data for Humans" and "Data for Machines" forces developers to write defensive, brittle parsing logic rather than robust systems integration code.
+2.2 The Aria Solution: Semantic Stream Segregation
+awatch utilizes the full spectrum of Aria’s I/O topology to solve these issues at the architectural level. By assigning specific semantic roles to extended file descriptors, the utility ensures that data integrity is preserved regardless of user interaction or debug verbosity.1
+Descriptor
+	Stream
+	Semantic Role
+	Protocol / Format
+	Buffer Strategy
+	FD 1
+	stdout
+	User Interface: Live, scrolling log of events with ANSI colors.
+	UTF-8 Text
+	Line Buffered
+	FD 2
+	stderr
+	Critical Errors: Panics, permission failures preventing startup.
+	UTF-8 Text
+	Unbuffered
+	FD 3
+	stddbg
+	Telemetry: Real-time metrics (events/sec, buffer depth).
+	JSON Lines (ndjson)
+	Ring Buffered (Async)
+	FD 5
+	stddato
+	Machine Interface: The event stream for pipelines.
+	Binary Structs (TLV)
+	Block Buffered (Zero-Copy)
+	This topology allows a developer to construct sophisticated orchestration commands such as:
+
+
+Bash
+
+
+
+
+awatch./src 5> events.bin 3> metrics.log
+
+In this scenario, the operator observes events on the screen via stdout. Simultaneously, the binary events are piped cleanly to another process via stddato, and performance metrics are logged to a file via stddbg. No stream corruption occurs, and no parsing overhead is incurred by the consumer. This model aligns with the "Twelve-Factor App" methodology regarding treating logs as event streams but refines it by acknowledging that debug events are semantically distinct from error events and payload data.1
+3. Kernel-Level Mechanisms and Abstraction Strategy
+Implementing awatch requires bridging Aria’s high-level abstractions with divergent operating system primitives. The Aria runtime must normalize these behaviors into a coherent event stream, managing the intricacies of kernel interfaces to present a unified API to the developer.1
+3.1 Linux: inotify and fanotify Integration
+On Linux, the primary mechanism for file system monitoring is inotify. It operates on inodes and provides fine-grained events, making it the ideal backend for awatch.
+* Mechanism: The utility invokes inotify_init1 to create a file descriptor. Paths are added via inotify_add_watch. A blocking read() on the file descriptor returns a stream of variable-length inotify_event structures. The integration with Aria’s async scheduler is achieved by registering this file descriptor with the epoll event loop, ensuring that the watcher does not block the entire runtime while waiting for filesystem activity.2
+* The Recursion Deficit: A significant limitation of inotify is its lack of native recursion. Watching a directory does not automatically watch subdirectories. awatch must implement user-space recursion: upon receiving an IN_CREATE, IS_DIR event, it must dynamically add a new watch descriptor. This requires maintaining a rigorous map of Watch Descriptors (WD) to paths in user space to resolve the event context.1
+* Buffer Overflow Management: The kernel maintains a queue of events for the inotify descriptor. If the user-space reader (awatch) is too slow, the queue overflows, triggering an IN_Q_OVERFLOW event. Aria’s use of "Wild Memory" (unmanaged heap) is critical here. By allocating large, pinned wild buffers, the application can drain the kernel queue with zero garbage collection overhead, minimizing the risk of lost events during high-throughput bursts.1
+3.2 Windows: ReadDirectoryChangesW and IOCP
+Windows offers ReadDirectoryChangesW, which is robust and supports deep recursion natively within the kernel driver, a significant advantage over inotify.1
+* Asynchronous Model: The API operates asynchronously, filling a user-provided buffer with FILE_NOTIFY_INFORMATION structures.
+* Integration with IOCP: This mechanism must be integrated with Aria’s I/O Completion Port (IOCP) event loop. The "Wild" pointer passed to the kernel as the buffer must remain pinned until the completion packet arrives. The Aria runtime handles the translation of the Windows UTF-16 filenames into Aria’s native UTF-8 string format, normalizing the data before it reaches the awatch logic.1
+3.3 macOS: FSEvents and the RunLoop
+macOS provides FSEvents, which is efficient but historically difficult to integrate into standard select/poll loops because it relies on the Core Foundation CFRunLoop.
+* Abstraction: The Aria runtime spawns a dedicated thread to run the CFRunLoop, bridging events back to the main scheduler via a thread-safe queue. Unlike inotify, FSEvents can report historical events, a feature that awatch can expose via specific configuration flags if the platform supports it.1
+3.4 The FileEvent Abstraction
+To normalize these disparities, awatch defines a canonical Aria struct that represents the superset of all platform capabilities. This abstraction ensures that downstream consumers of the stddato stream do not need to handle platform-specific logic.
+
+
+Code snippet
+
+
+
+
+pub enum EventType {
+   Create,
+   Modify,
+   Delete,
+   Move,
+   Attrib, // Metadata change (chmod/chown)
+   Overflow, // Kernel buffer overflow
+}
+
+pub struct FileEvent {
+   tbb64: timestamp;   // Nanoseconds since epoch (TBB for overflow safety)
+   EventType: type;    // Enumerated type
+   u32: cookie;        // Correlation ID for Rename events (MoveFrom -> MoveTo)
+   string: path;       // Normalized absolute path
+   string: name;       // Filename
+   bool: is_dir;       // True if the subject is a directory
+}
+
+4. The Binary Protocol: stddato Specification
+The strict definition of the stddato wire format is crucial for interoperability. Unlike text streams, where a byte is just a char, binary protocols require alignment and endianness guarantees to be portable across architectures. awatch utilizes a fixed-header, variable-payload packet structure designed for zero-copy deserialization.4
+4.1 Wire Format Layout
+Each event written to stddato adheres to the following byte layout. All multi-byte integers are serialized in Big-Endian (Network Byte Order) to ensure consistency regardless of the host CPU architecture.
+Offset
+	Field
+	Type
+	Size (Bytes)
+	Description
+	Header
+	
+
+	
+
+	
+
+	
+
+	0x00
+	Magic
+	u32
+	4
+	0x41 0x57 0x43 0x48 ("AWCH"). Identifies the stream type.
+	0x04
+	Timestamp
+	tbb64
+	8
+	TBB-encoded timestamp (Nanoseconds).
+	0x0C
+	Type
+	u8
+	1
+	Enum value (0=Create, 1=Modify, etc.).
+	0x0D
+	Flags
+	u8
+	1
+	Bitmask (Bit 0: is_dir, Bits 1-7: Reserved).
+	0x0E
+	Cookie
+	u32
+	4
+	Correlation ID for moves.
+	0x12
+	PathLen
+	u16
+	2
+	Length of the Path string (Max 65KB).
+	Payload
+	
+
+	
+
+	
+
+	
+
+	0x14
+	Path
+	u8
+	N
+	UTF-8 encoded path string (No NULL terminator).
+	4.2 TBB Integration and Sticky Errors
+The timestamp utilizes tbb64 (Twisted Balanced Binary). This choice is significant for system reliability. If the system clock is invalid or unset, the value transmits as the ERR sentinel (0x8000... equivalent). Downstream consumers checking event.timestamp will automatically inherit this error state via Aria's sticky error propagation mechanics. This prevents logic from executing on invalid time data without requiring explicit error checking code at every step of the pipeline.1
+4.3 Zero-Copy IO Strategy
+For high-throughput environments, awatch employs a zero-copy strategy for the stddato stream. By utilizing "Wild Memory" buffers allocated via std.mem.alloc_wild, the application bypasses the Garbage Collector entirely. The read buffer from the kernel (inotify read) is parsed, and the relevant segments are written directly to the output buffer for stddato using splice or sendfile where applicable, or efficient memcpy operations that do not trigger GC write barriers. This allows awatch to saturate the I/O bandwidth of the stddato pipe, enabling it to keep up with massive filesystem events (e.g., git checkout of a large repo).1
+5. Implementation Specification
+The implementation of awatch requires a synthesis of low-level FFI (to access kernel watchers), high-level concurrency (to handle the event loop), and streams (to dispatch data). The following sections detail the code structure and logic required.
+5.1 Dependencies and Imports
+The utility relies on the core Aria standard library and the platform-specific FFI modules.
+
+
+Code snippet
+
+
+
+
+module tools.awatch;
+
+import std.io;          // for stdin, stdout, stddato, stddbg
+import std.os.linux;    // for inotify constants (conditional compilation)
+import std.mem;         // for wild allocation
+import std.time;        // for high-resolution clock
+import std.collections; // for map (watch descriptors)
+
+5.2 Data Structures
+We define the internal state of the watcher. Note the use of wild pointers for the read buffer to avoid GC latency spikes during high-throughput file events. The watches map is crucial for inotify to resolve the integer Watch Descriptor (WD) back to a full string path.1
+
+
+Code snippet
+
+
+
+
+// Configuration derived from CLI arguments
+struct Config {
+   bool: recursive = false;
+   bool: timestamps = true;
+   bool: binary_output = true;
+   array<string>: paths;
+}
+
+// Global Watcher State
+struct Watcher {
+   int32: fd;                      // inotify file descriptor
+   map<int32, string>: watches;    // Map WD (Watch Descriptor) -> Path
+   wild byte*: buffer;             // Zero-copy read buffer
+   int64: buffer_size;             // Capacity (e.g., 64KB)
+}
+
+5.3 Core Logic: The Event Loop
+The heart of awatch is an infinite loop that performs a blocking read on the inotify descriptor. In Aria, this integration with the async scheduler ensures that while awatch blocks on file I/O, it yields the CPU to other tasks (though awatch is primarily single-tasked, the scheduler allows for the telemetry coroutine to run concurrently).1
+5.3.1 Initialization (Linux Implementation)
+The initialization phase establishes the connection to the kernel subsystem.
+
+
+Code snippet
+
+
+
+
+func init_watcher() -> result<Watcher> {
+   // 1. Create inotify instance (Non-blocking for async integration)
+   // FFI call to C runtime wrapper
+   int32:fd = extern.inotify_init1(extern.IN_NONBLOCK);
+   if (fd < 0) return fail("Failed to initialize inotify");
+
+   // 2. Allocate Wild Memory for the event buffer
+   // We use 64KB to capture bursts of events without syscall overhead.
+   int64:buf_len = 65536;
+   wild byte*:buf = std.mem.alloc_wild(buf_len);
+
+   return Watcher {
+       fd: fd,
+       watches: map<int32, string>.new(),
+       buffer: buf,
+       buffer_size: buf_len
+   };
+}
+
+5.3.2 Adding Watches (Recursive)
+Since inotify is not recursive, awatch must traverse directories. The fs.walk iterator (if available) or a manual recursive function is used to register every subdirectory.
+
+
+Code snippet
+
+
+
+
+func add_watch(Watcher: w, string: path) -> result<void> {
+   // Mask: Create, Delete, Modify, Move, OnlyDir (for recursion)
+   u32:mask = extern.IN_MODIFY | extern.IN_CREATE | extern.IN_DELETE | extern.IN_MOVE;
+   
+   int32:wd = extern.inotify_add_watch(w.fd, path, mask);
+   if (wd < 0) {
+       // Log structured error to stddbg
+       io.stddbg.write_json({
+           "level": "error", 
+           "msg": "Failed to watch path", 
+           "path": path,
+           "errno": extern.get_errno()
+       });
+       return fail("Permission denied");
+   }
+
+   w.watches.insert(wd, path);
+   
+   // Log telemetry to stddbg
+   io.stddbg.write_json({
+       "event": "watch_added",
+       "path": path,
+       "total_watches": w.watches.size()
+   });
+
+   return pass(void);
+}
+
+5.4 Processing the Stream
+The main loop reads from the wild buffer and creates Aria FileEvent objects. Crucially, it dispatches to both stdout (text) and stddato (binary). This dual dispatch is what separates the user experience from the data pipeline.2
+
+
+Code snippet
+
+
+
+
+func process_events(Watcher: w) -> void {
+   while (true) {
+       // Blocking read (bridged to epoll in runtime)
+       int64:bytes_read = io.read_wild(w.fd, w.buffer, w.buffer_size);
+       
+       if (bytes_read < 0) {
+           // Handle error, e.g., EINTR
+           continue;
+       }
+
+       int64:offset = 0;
+       while (offset < bytes_read) {
+           // Cast wild pointer to inotify_event struct layout
+           // Safe because we know the kernel ABI
+           wild extern.inotify_event*: raw_event = (w.buffer + offset);
+           
+           // Resolve path from Watch Descriptor map
+           string:root = w.watches.get(raw_event.wd)?? "UNKNOWN";
+           string:filename = raw_event.name; // C-string to Aria string conversion
+           string:full_path = root + "/" + filename;
+
+           // Construct generic FileEvent
+           FileEvent: evt = FileEvent {
+               timestamp: std.time.now_tbb(),
+               type: map_mask_to_type(raw_event.mask),
+               cookie: raw_event.cookie,
+               path: full_path,
+               is_dir: (raw_event.mask & extern.IN_ISDIR)!= 0
+           };
+
+           // Dispatch to Outputs
+           emit_ui(evt);
+           emit_binary(evt);
+
+           // Handle Recursion: If a directory is created, watch it immediately
+           if (evt.type == EventType.Create && evt.is_dir) {
+               add_watch(w, full_path);
+           }
+
+           // Advance offset: sizeof(inotify_event) + len
+           offset += (sizeof(extern.inotify_event) + raw_event.len);
+       }
+   }
+}
+
+5.5 Output Dispatchers
+5.5.1 The UI Dispatcher (stdout)
+This function formats the event for human consumption using ANSI escape codes for visual distinction. It ensures stdout remains a "clean" user interface.
+
+
+Code snippet
+
+
+
+
+func emit_ui(FileEvent: evt) -> void {
+   string:color = "";
+   string:action = "";
+
+   // Pattern matching on Event Enum
+   pick (evt.type) {
+       (EventType.Create) => { color = "\u001b ACTION Path
+   // Using stdout.printf allows line buffering
+   io.stdout.printf("%s[%d] %s %s\u001b
+
+### 6.1 Telemetry Metrics
+
+The watcher tracks critical metrics to detect saturation or resource exhaustion:
+1.  **Active Watch Count:** Tracks how close the system is to `/proc/sys/fs/inotify/max_user_watches`.
+2.  **Event Rate:** Events processed per second (throughput).
+3.  **Buffer Health:** How full the wild memory buffer is (preventing `IN_Q_OVERFLOW`).
+4.  **Dropped Events:** Counter of events lost due to buffer overflow.
+
+### 6.2 Implementation
+
+```aria
+async func telemetry_loop(Watcher: w) -> void {
+   while (true) {
+       await std.time.sleep(1000); // Report every second
+       
+       // Write structured JSON to FD 3
+       io.stddbg.write_json({
+           "ts": std.time.now_tbb(),
+           "type": "metric",
+           "active_watches": w.watches.size(),
+           "buffer_capacity": w.buffer_size,
+           "pending_kernel_events": extern.ioctl_fionread(w.fd) 
+       });
+   }
+}
+
+This output allows an administrator to monitor the watcher itself using a tool like jq:
+
+
+Bash
+
+
+
+
+awatch /var/log 3> | jq 'select(.active_watches > 8000)'
+
+7. Advanced Use Cases and Integration
+7.1 Reactive Pipelines
+The binary output of awatch enables high-performance reactive pipelines. Consider a scenario where a build system must trigger only when .aria files change.
+
+
+Bash
+
+
+
+
+# Aria Pipeline
+awatch./src \
+
+| afilter --binary --type MODIFY --suffix.aria \
+| abuild --stream-input
+
+In this pipeline, afilter consumes stddato. It does not need to parse text; it simply reads the TLV header (14 bytes), checks the type byte, and checks the path extension. This operation is orders of magnitude faster than grep on text streams and completely immune to filename escaping issues.
+7.2 The Build Server Integration
+The AriaBuild specification highlights the need for a "Watch Mode".1 awatch fills this gap perfectly. The build server spawns awatch as a child process and listens on its stddato pipe.
+* Synchronization: When awatch emits a MODIFY event, the build server marks the corresponding node in its Dependency Graph as "dirty."
+* Debouncing: awatch handles raw kernel events (which often fire multiple times for a single file save, e.g., MODIFY then CLOSE_WRITE). The build server implements a debounce timer (e.g., 50ms) based on the timestamp in the FileEvent struct before triggering recompilation.
+8. Performance Considerations
+8.1 Zero-Copy Architecture
+Aria’s "Wild Memory" allows awatch to potentially pass the read buffer directly to the write syscall for stddato if no transformation were needed. However, since inotify structs differ from the stddato wire format, a transformation is required. To minimize overhead, awatch avoids intermediate allocations. It reads from the wild input buffer and writes directly to the stddato output buffer. The standard library ensures that stddato uses a large (e.g., 64KB) buffer to minimize syscalls.1
+8.2 Watch Descriptor Limits
+On Linux, the default limit for watch descriptors is often 8192. awatch detects when it approaches this limit (via the telemetry_loop) and emits a warning on stddbg. If the limit is hit, inotify_add_watch returns ENOSPC. awatch catches this error and prints a specific remediation suggestion to stderr ("Increase fs.inotify.max_user_watches in sysctl"), distinguishing this configuration error from a runtime failure.
+9. Conclusion
+The awatch utility represents a canonical implementation of Aria’s design philosophy. By leveraging the Six-Stream I/O Topology, it disentangles the conflicting requirements of User Interface (Text), Machine Interface (Binary), and Observability (Telemetry). The use of TBB types ensures robust handling of timestamps and error states, while Wild Memory management allows the utility to handle bursty filesystem loads without garbage collection pauses. This architectural blueprint provides the complete roadmap for implementing awatch as a core component of the Aria system utilities suite, filling the critical observability gap identified in the build system research.
+________________
+Appendix A: Full Aria Source Code (awatch.aria)
+
+
+Code snippet
+
+
+
+
+module tools.awatch;
+
+// Import Standard Library
+use std.io;
+use std.mem;
+use std.os.linux; // Assumes Linux backend for this reference
+use std.time;
+use std.process;
+
+// --- Constants & Enums ---
+
+// Magic Number for Binary Protocol "AWCH"
+const MAGIC: u32 = 0x41574348;
+
+enum EventType: u8 {
+   Create = 1,
+   Modify = 2,
+   Delete = 3,
+   Move   = 4,
+   Unknown = 255
+}
+
+// --- Data Structures ---
+
+struct Config {
+   paths: array<string>;
+   recursive: bool;
+}
+
+struct Watcher {
+   fd: int32;
+   watches: map<int32, string>; // WD -> Path
+   buf: wild byte*;
+   buf_cap: int64;
+}
+
+// --- Main Entry Point ---
+
+func main(args: array<string>) -> int32 {
+   // 1. Parse Arguments
+   if (args.len() < 2) {
+       io.stderr.write_line("Usage: awatch <path> [path...]");
+       return 1;
+   }
+   
+   // 2. Initialize Watcher
+   Watcher:w = init_watcher()?;
+   defer close_watcher(w);
+
+   // 3. Add initial paths
+   for (path in args) {
+       add_watch(w, path, true)?; // true for recursive
+   }
+
+   io.stdout.write_line("awatch started. Monitoring " + args.len() + " paths.");
+
+   // 4. Start Telemetry (Background)
+   async_spawn(telemetry_loop(w));
+
+   // 5. Run Event Loop (Blocking)
+   return process_events(w);
+}
+
+// --- Implementation Details ---
+
+func init_watcher() -> result<Watcher> {
+   int32:fd = extern.inotify_init1(extern.IN_NONBLOCK);
+   if (fd < 0) return fail("inotify_init failed");
+
+   // Allocate 64KB Wild Buffer
+   return Watcher {
+       fd: fd,
+       watches: map<int32, string>.new(),
+       buf: std.mem.alloc_wild(65536),
+       buf_cap: 65536
+   };
+}
+
+func add_watch(Watcher: w, string: path, bool: recurse) -> result<void> {
+   // Add watch to kernel
+   u32:mask = extern.IN_ALL_EVENTS;
+   int32:wd = extern.inotify_add_watch(w.fd, path, mask);
+   
+   if (wd < 0) {
+       io.stddbg.write_json({"error": "add_watch_failed", "path": path});
+       return fail("Failed to watch");
+   }
+   
+   w.watches.insert(wd, path);
+
+   // Recurse if directory
+   if (recurse) {
+       // Pseudo-code for directory iteration
+       // In real implementation, use std.fs.walk
+       for (sub in std.fs.list_dir(path)) {
+           if (sub.is_dir) {
+               add_watch(w, sub.full_path, true);
+           }
+       }
+   }
+   return pass(void);
+}
+
+func process_events(Watcher: w) -> int32 {
+   while (true) {
+       // Read into wild buffer
+       int64:len = io.read_wild(w.fd, w.buf, w.buf_cap);
+       
+       if (len < 0) {
+           if (extern.errno == extern.EAGAIN) {
+               // No data, yield to scheduler (if async I/O supported)
+               std.process.yield();
+               continue;
+           }
+           return 1; // Fatal error
+       }
+
+       // Iterate events in buffer
+       wild byte*: ptr = w.buf;
+       while (ptr < w.buf + len) {
+           // Cast to C struct
+           wild extern.inotify_event*: ev = ptr;
+           
+           // Dispatch
+           handle_event(w, ev);
+
+           // Move pointer
+           ptr += sizeof(extern.inotify_event) + ev.len;
+       }
+   }
+   return 0;
+}
+
+func handle_event(Watcher: w, wild extern.inotify_event*: ev) -> void {
+   // 1. Resolve Path
+   string:root = w.watches.get(ev.wd);
+   string:name = string.from_cstr(ev.name);
+   string:full_path = root + "/" + name;
+
+   // 2. Determine Type
+   EventType:type = EventType.Unknown;
+   if (ev.mask & extern.IN_CREATE) type = EventType.Create;
+   else if (ev.mask & extern.IN_MODIFY) type = EventType.Modify;
+   else if (ev.mask & extern.IN_DELETE) type = EventType.Delete;
+
+   // 3. Emit UI (Text)
+   string:color = get_color(type);
+   io.stdout.printf("%s%s %s\n", color, type, full_path);
+
+   // 4. Emit Payload (Binary)
+   // Packet: Magic(4) + TS(8) + Type(1) + Flags(1) + Cookie(4) + PathLen(2) + Path(N)
+   io.stddato.write_u32(MAGIC);
+   io.stddato.write_tbb64(std.time.now_tbb());
+   io.stddato.write_u8(cast<u8>(type));
+   io.stddato.write_u8(0); // Flags
+   io.stddato.write_u32(ev.cookie);
+   io.stddato.write_u16(cast<u16>(full_path.len));
+   io.stddato.write_bytes(full_path.bytes());
+   io.stddato.flush();
+
+   // 5. Handle New Directories (Recursion)
+   if ((ev.mask & extern.IN_ISDIR) && (ev.mask & extern.IN_CREATE)) {
+       add_watch(w, full_path, true);
+   }
+}
+
+async func telemetry_loop(Watcher: w) -> void {
+   loop {
+       io.stddbg.write_json({
+           "active_watches": w.watches.size(),
+           "status": "healthy"
+       });
+       std.time.sleep(1000);
+   }
+}
+
+Works cited
+1. ariax_research_full.txt
+2. inotify(7) - Linux manual page - man7.org, accessed December 23, 2025, https://man7.org/linux/man-pages/man7/inotify.7.html
+3. Kernel Korner - Intro to inotify - Linux Journal, accessed December 23, 2025, https://www.linuxjournal.com/article/8478
+4. Understanding C Struct Binary Representation - Robopenguins, accessed December 23, 2025, https://www.robopenguins.com/cpp-data-memory/
+5. Binary protocol : r/C_Programming - Reddit, accessed December 23, 2025, https://www.reddit.com/r/C_Programming/comments/1cui89q/binary_protocol/

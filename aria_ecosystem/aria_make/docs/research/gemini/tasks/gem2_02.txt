@@ -1,0 +1,11 @@
+Native Process Spawning (PAL) Implementation
+Context: Replaces popen to fix stream merging, deadlocks, and environment variable race conditions.
+Priority: Critical
+Components: src/runtime/process.cpp
+Prompt:
+"You are a low-level systems programmer specializing in cross-platform C++. Replace the execute_command function in src/runtime/process.cpp with a robust Platform Abstraction Layer (PAL).
+Interface: ExecResult execute(string cmd, vector<string> args, map<string,string> env). Return separated stdout and stderr strings.
+Windows (#ifdef _WIN32): Use CreateProcessW. Implement STARTUPINFOW to redirect hStdOutput and hStdError to separate anonymous pipes. Use SetHandleInformation to ensure parent-side pipe ends are NOT inherited. Construct the environment block manually (double-null terminated).
+POSIX (#else): Use pipe() (x2), fork(), and execve(). In the child, use dup2 to map pipes to FD 1 and 2. Construct the char* envp array from the map.
+Deadlock Prevention: In the parent, use two std::thread instances to read from the stdout/stderr pipe FDs simultaneously until EOF. Join threads before returning.
+Provide the full, thread-safe implementation."

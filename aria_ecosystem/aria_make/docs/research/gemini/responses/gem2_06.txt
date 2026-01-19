@@ -1,0 +1,378 @@
+﻿Architectural Specification and Implementation of the CycleDetector Subsystem for the Aria Build Ecosystem
+1. Introduction and Ecosystem Context
+The maturation of the Aria programming language ecosystem, currently iterating toward version 0.1.0, has necessitated a fundamental paradigm shift in the underlying infrastructure used to orchestrate software compilation, linkage, and execution. As the language specification evolves to encompass advanced semantic features—such as Twisted Balanced Binary (TBB) arithmetic, explicit NIL versus NULL semantics, and a rigorous module system driven by use directives—the limitations of legacy, imperative build tools have become acute.1 The aria_make project, architected to replace general-purpose utilities like GNU Make, aims to provide a deterministic, declarative, and high-performance build environment specifically optimized for the Aria language syntax and semantic requirements.1
+The complexity of modern software systems is rarely confined to the source code itself; it is intrinsically bound to the graph of dependencies that structure the project. In the Aria ecosystem, where modules interact through explicitly defined interfaces (via TOKEN_KW_USE and TOKEN_KW_MOD), the build system must model these interactions with mathematical precision.1 Dependencies are not merely file lists; they are directed edges in a complex graph that dictates the temporal order of compilation. If this graph is well-formed—specifically, if it is a Directed Acyclic Graph (DAG)—the build can proceed, often exploiting parallelism to saturate hardware threads. However, if the graph contains logical contradictions in the form of circular dependencies, the build process is mathematically impossible to resolve linearly.1
+Central to the reliability of aria_make is the DependencyGraph engine and its associated diagnostic subsystem, the CycleDetector. While the primary execution flow of aria_make utilizes Kahn's Algorithm for topological sorting to schedule parallel tasks, a critical deficiency exists in the detection and reporting of invalid graph topologies.1 Specifically, when a circular dependency is introduced by a user (e.g., Target A depends on Target B, which depends on Target A), simple sorting algorithms fail to produce a valid schedule but often lack the diagnostic capability to explain why the failure occurred. This leads to opaque error states, timeouts, or stack overflows that frustrate developers and hinder productivity.
+This report details the comprehensive architectural design and implementation of the CycleDetector class within the src/graph/dependency_graph.cpp module. Addressing the specific requirements of the AriaBuild specification, this implementation leverages a recursive Depth-First Search (DFS) algorithm augmented with Tri-Color Marking (White, Gray, Black). This approach is mathematically proven to distinguish between valid "diamond" dependencies—common in modular software architectures—and invalid circular dependencies.1 Furthermore, the implementation focuses on the reconstruction of the cycle path, ensuring that the system provides developers with actionable, precise error messages rather than generic failure notifications.
+The analysis provided herein synthesizes the theoretical underpinnings of graph traversal algorithms, the specific syntactic and semantic constraints of the Aria language (as defined in the Lexer and Parser specifications), and the low-level implementation details required for a high-performance C++17 build tool. It serves as the definitive reference for the integration of cycle detection logic into the Aria toolchain.
+2. Theoretical Framework of Dependency Resolution
+To understand the necessity and mechanics of the CycleDetector implementation, one must first establish the theoretical framework governing dependency resolution in build systems. The build process is fundamentally a graph reduction problem where nodes represent computational units (parsing, semantic analysis, IR generation, linking) and edges represent temporal constraints (Target B must exist before Target A can be built).
+2.1 The Directed Acyclic Graph (DAG) Requirement
+For a build configuration to be executable, the dependency graph $G = (V, E)$ must be a Directed Acyclic Graph. The set $V$ represents the artifacts defined in the Aria Build Configuration (ABC) file, and the set $E$ represents the depends_on relationships derived from TOKEN_KW_USE statements or explicit configuration.1 Mathematically, a topological sort of $G$ is a linear ordering of its vertices such that for every directed edge $uv$ from vertex $u$ to vertex $v$, $u$ comes before $v$ in the ordering. This linear order dictates the build schedule.
+If the graph contains a cycle—a non-empty path in which the first and last vertices are identical—no such topological ordering exists. In the context of aria_make, a cycle implies a deadlock: Thread 1 waiting for Target A cannot proceed until Thread 2 finishes Target B, but Thread 2 is waiting for Target A.
+2.2 Algorithm Selection: Kahn’s vs. DFS
+The aria_make architecture employs a dual-algorithm strategy to balance performance and diagnostic capability.
+Feature
+	Kahn's Algorithm
+	Depth-First Search (DFS)
+	Primary Use Case
+	Topological Sorting & Scheduling
+	Cycle Detection & Path Reconstruction
+	Traversal Logic
+	Iterative (Queue-based)
+	Recursive (Stack-based)
+	State Tracking
+	In-Degree Counters
+	Visited/Recursion Sets
+	Parallelism
+	Naturally identifies parallel tasks (in-degree 0)
+	Sequential traversal
+	Cycle Detection
+	Implicit (Queue empty, nodes remain)
+	Explicit (Back-edge detection)
+	Error Reporting
+	Poor (Identifies "a cycle exists")
+	Excellent (Identifies "A -> B -> A")
+	Kahn's Algorithm:
+The standard execution path utilizes Kahn's Algorithm.1 This algorithm works by iteratively removing nodes with an in-degree of zero (nodes with no unsatisfied dependencies) and adding them to the build queue. This approach is optimal for scheduling because it naturally identifies parallelizable tasks; if multiple nodes reach an in-degree of zero simultaneously, they can be dispatched to the ThreadPool concurrently. However, when Kahn’s algorithm terminates prematurely due to a cycle, the remaining nodes in the graph all have non-zero in-degrees, forming a "knot" of interdependence. Disentangling this knot to present a clean error message is computationally expensive and complex within the constraints of the topological sort.
+Depth-First Search (DFS):
+To address the reporting limitations of Kahn's algorithm, aria_make delegates the diagnostic responsibility to the CycleDetector class. When the scheduler detects a build failure or graph inconsistency, it invokes the CycleDetector to perform a targeted traversal. This separation of concerns allows the scheduler to remain lightweight and fast, while the detector can afford the memory and time overhead required to reconstruct detailed error paths using DFS.1
+2.3 The Diamond Dependency Ambiguity
+A naive DFS implementation that tracks only "Visited" nodes is insufficient for a build system due to the prevalence of "Diamond Dependencies." This structure is ubiquitous in software engineering, particularly in the standard library modules of Aria (e.g., std.io and std.math might both depend on std.core).1
+Consider the following dependency structure:
+* Target App depends on LibA and LibB.
+* Target LibA depends on Core.
+* Target LibB depends on Core.
+In this graph, Core is a shared dependency. A standard DFS traversal starting from App might proceed App -> LibA -> Core. At this point, Core is marked as Visited. The traversal backtracks to App and descends App -> LibB -> Core. If the algorithm treats any encounter with a "Visited" node as a cycle, it will erroneously flag the valid dependency on Core as a circular reference because it has been seen before. This false positive prevents the compilation of valid modular software, a critical failure for a build tool intended for the Aria ecosystem where foundational modules like aria_runtime are shared across the stack.1
+3. The Tri-Color Marking Algorithm
+To resolve the ambiguity between cycles and diamond dependencies, the CycleDetector implements the Tri-Color Marking algorithm. This algorithm extends the state space of a node during traversal from binary (Unvisited/Visited) to ternary (White, Gray, Black). This granularity allows the detector to distinguish between a node that is currently being visited (part of the active recursion stack) and a node that has already been fully processed (safe to revisit).
+3.1 State Definitions and Semantics
+Color State
+	Definition
+	Semantic Meaning in Build Graph
+	White
+	Unvisited
+	The node has not yet been processed. It represents a potential start of a new dependency chain.
+	Gray
+	Visiting (Active)
+	The node is currently in the recursion stack. We have entered the node but have not yet exited. It is an ancestor of the current node.
+	Black
+	Visited (Finished)
+	The node and all its descendants have been fully processed and verified as cycle-free (or already reported).
+	3.2 Transition Logic
+The cycle detection logic relies on specific transitions between these states during the recursive DFS visit(u) operation:
+1. White $\to$ Gray: Upon entering a node u that is White, we mark it Gray. This signifies that u is now part of the active dependency chain. Any node reachable from u that points back to u creates a cycle.
+2. Gray $\to$ Black: Once all children (dependencies) of u have been processed, we mark u as Black. This signifies that the subgraph rooted at u is valid and contains no back-edges to the current stack.
+3. Encountering Gray (Cycle Detected): If the traversal encounters a neighbor v that is already marked Gray, a Back-Edge exists ($u \to v$). Since Gray nodes represent the current recursion stack, this implies a path exists from the descendant u back to the ancestor v. This confirms a cycle.
+4. Encountering Black (Safe): If the traversal encounters a neighbor v marked Black, it has found a Cross-Edge or Forward-Edge to a previously verified subgraph. Since Black nodes are guaranteed to be fully processed, the traversal can safely ignore this edge and backtrack. This logic correctly handles the Diamond Dependency scenario; the second path reaching the shared Core library finds it Black and returns immediately, avoiding a false positive.
+3.3 Path Reconstruction Mechanics
+Detecting a cycle is only half the requirement; the CycleDetector must also explain it. The Aria specification explicitly requires a reconstruct_path() function that returns a vector<string> of targets.1 This diagnostic capability is essential for developers debugging complex import loops in large projects (e.g., frontend/parser depending on frontend/ast which depends on frontend/parser).
+To support this, the implementation must maintain a path_stack. Unlike the implicit call stack of the recursion, this is an explicit data structure (typically a std::vector<Node*>) that records the sequence of nodes in the current traversal branch.
+Reconstruction Algorithm:
+1. Snapshot: When a back-edge to a Gray node v is detected, the path_stack contains the complete traversal history: ``.
+2. Backtracking: The algorithm identifies v as the "closure node" of the cycle.
+3. Extraction: It iterates backwards or slices the stack to extract the segment starting from v and ending at u, then appends v again to close the visual loop: v ->... -> u -> v.
+4. Formatting: The node pointers are resolved to their string names (e.g., "lib_core") for user display.
+4. Architectural Implementation Requirements
+The implementation of the CycleDetector must adhere to the broader architectural constraints of the aria_make system as defined in the compiled design documents.1 These include C++17 compliance, integration with the DependencyGraph memory model, and strict type safety.
+4.1 Dependency Graph Memory Model
+The DependencyGraph class serves as the container for all build targets. To ensure memory safety and prevent dangling pointers, the graph utilizes std::unique_ptr for ownership of nodes, while the nodes themselves maintain adjacency lists using raw pointers (Node*). This design pattern implies that the CycleDetector acts as a non-owning "visitor" algorithm that observes the graph structure without modifying its topology or ownership.
+Class Structure Context:
+* Node: Contains std::vector<Node*> dependencies (outgoing edges) and std::string name.
+* DependencyGraph: Contains std::vector<std::unique_ptr<Node>> nodes_.
+* CycleDetector: Transient object instantiated to perform analysis on a const DependencyGraph&.
+4.2 C++17 Features and Optimization
+The implementation utilizes modern C++ features to ensure performance and readability:
+* std::unordered_map and std::unordered_set: Used for the Tri-Color state tracking to ensure $O(1)$ average time complexity for state lookups. This is crucial for performance, as a linear scan of a visited list would degrade the algorithm to $O(V^2)$.
+* std::vector: Used for the path_stack to ensure cache locality and low allocation overhead compared to std::list or std::deque.
+* enum class: Strongly typed enums for White, Gray, Black states to prevent integer conversion errors.
+5. Implementation Specification: CycleDetector
+The following section provides the comprehensive C++17 implementation for the CycleDetector class. This code is designed to be integrated into src/graph/dependency_graph.cpp and its corresponding header. It satisfies all requirements: Tri-Color marking, path stack maintenance, back-edge identification, and path reconstruction.
+5.1 Header Definition (include/graph/cycle_detector.h)
+The header file defines the interface for the detector. It decouples the detection logic from the node storage, allowing for better testability.
+
+
+C++
+
+
+
+
+#ifndef ARIA_GRAPH_CYCLE_DETECTOR_H
+#define ARIA_GRAPH_CYCLE_DETECTOR_H
+
+#include <vector>
+#include <string>
+#include <unordered_map>
+#include "graph/dependency_graph.h"
+
+namespace aria {
+namespace graph {
+
+/**
+* @class CycleDetector
+* @brief Implements Tri-Color DFS to detect and reconstruct circular dependencies.
+*
+* This class performs a deep analysis of the dependency graph to identify
+* cycles that prevent topological sorting. It uses the Tri-Color Marking
+* algorithm (White, Gray, Black) to distinguish between valid diamond
+* dependencies and invalid cycles.
+*
+* The implementation maintains an explicit path stack to reconstruct the
+* exact sequence of targets forming the loop, enabling actionable error reporting.
+*
+* Reference: AriaBuild Architecture, Section 4.2.2 
+*/
+class CycleDetector {
+public:
+   /**
+    * @brief Detects if a cycle exists in the provided graph.
+    * 
+    * Iterates through all nodes in the graph (handling disjoint components)
+    * and performs a DFS traversal. If a cycle is found, it is immediately
+    * reconstructed and returned.
+    *
+    * @param graph The dependency graph to analyze.
+    * @return A vector of target names representing the cycle path (e.g., "A", "B", "A").
+    *         Returns an empty vector if the graph is acyclic.
+    */
+   std::vector<std::string> detect_cycle(const DependencyGraph& graph);
+
+private:
+   // Tri-Color Marking States
+   enum class MarkState {
+       White, // Unvisited: Initial state
+       Gray,  // Visiting: Active in recursion stack (Cycle detection state)
+       Black  // Visited: Fully processed (Safe state)
+   };
+
+   // State tracking for each node.
+   // Using unordered_map for O(1) lookup.
+   // Note: Pointers are stable due to unique_ptr ownership in DependencyGraph.
+   std::unordered_map<const Node*, MarkState> marks_;
+
+   // Path stack for reconstructing the error trace.
+   // We use a vector to maintain order and allow backtracking.
+   std::vector<const Node*> path_stack_;
+
+   // Buffer to store the detected cycle once found.
+   std::vector<std::string> cycle_result_;
+
+   /**
+    * @brief Recursive Depth-First Search helper.
+    * 
+    * Transitions nodes from White -> Gray -> Black.
+    * Checks for back-edges to Gray nodes.
+    * 
+    * @param current The node currently being visited.
+    * @return true if a cycle is detected in the subgraph rooted at current.
+    */
+   bool dfs(const Node* current);
+
+   /**
+    * @brief Reconstructs the cycle path from the recursion stack.
+    * 
+    * Called when a back-edge to `loop_start` is detected.
+    * Extracts the path segment from `loop_start` to the top of the stack.
+    * 
+    * @param loop_start The node where the back-edge connected (closing the loop).
+    * @return Vector of strings representing the cycle.
+    */
+   std::vector<std::string> reconstruct_path(const Node* loop_start);
+};
+
+} // namespace graph
+} // namespace aria
+
+#endif // ARIA_GRAPH_CYCLE_DETECTOR_H
+
+5.2 Source Implementation (src/graph/dependency_graph.cpp)
+The implementation file contains the core logic. It is structured to handle disjoint graphs (where the graph consists of multiple independent clusters of dependencies) by iterating over all nodes in detect_cycle rather than starting from a single root.
+
+
+C++
+
+
+
+
+#include "graph/cycle_detector.h"
+#include <algorithm>
+#include <iostream>
+
+namespace aria {
+namespace graph {
+
+// ============================================================================
+// CycleDetector Implementation
+// ============================================================================
+
+std::vector<std::string> CycleDetector::detect_cycle(const DependencyGraph& graph) {
+   // 1. Reset Internal State
+   // Clear any markings or stacks from previous runs to ensure a fresh analysis.
+   marks_.clear();
+   path_stack_.clear();
+   cycle_result_.clear();
+
+   // 2. Initialize Markings
+   // Explicitly mark all nodes as White (Unvisited).
+   // While std::unordered_map access creates default values, explicit initialization
+   // ensures clarity and handles edge cases where graph mutation might have occurred.
+   // We access the nodes via the graph's public accessor.
+   for (const auto& node_ptr : graph.nodes()) {
+       marks_[node_ptr.get()] = MarkState::White;
+   }
+
+   // 3. Iterate over all nodes (Handle Disjoint Graphs)
+   // The dependency graph might consist of multiple disconnected components 
+   // (e.g., a main application and a separate, independent utility tool).
+   // A cycle could exist in any component. We must ensure DFS is triggered 
+   // for every component.
+   for (const auto& node_ptr : graph.nodes()) {
+       const Node* node = node_ptr.get();
+
+       // Only start a traversal if the node is still Unvisited (White).
+       // If it is Black, it was already checked as part of a previous component.
+       // If it is Gray, that would imply a logic error in the outer loop (should be impossible).
+       if (marks_[node] == MarkState::White) {
+           if (dfs(node)) {
+               // If dfs returns true, a cycle was found and reconstructed
+               // into `cycle_result_`. We return it immediately.
+               return cycle_result_;
+           }
+       }
+   }
+
+   return {}; // No cycle found in any component
+}
+
+bool CycleDetector::dfs(const Node* current) {
+   // TRANSITION: White -> Gray
+   // Mark current node as Visiting. It is now part of the active path.
+   marks_[current] = MarkState::Gray;
+   
+   // Push to path stack for trace reconstruction.
+   path_stack_.push_back(current);
+
+   // Iterate over dependencies (outgoing edges).
+   // These are the targets that `current` depends on.
+   for (const Node* neighbor : current->dependencies) {
+       MarkState neighbor_state = marks_[neighbor];
+
+       if (neighbor_state == MarkState::Gray) {
+           // CASE 1: BACK-EDGE DETECTED (Cycle)
+           // The neighbor is already Gray, meaning it is in the current recursion stack.
+           // This confirms a path exists from neighbor ->... -> current -> neighbor.
+           
+           // We reconstruct the path immediately while the stack is intact.
+           cycle_result_ = reconstruct_path(neighbor);
+           
+           // Return true to stop traversal and propagate the detection up the stack.
+           return true; 
+       }
+
+       if (neighbor_state == MarkState::White) {
+           // CASE 2: TREE EDGE (Unvisited)
+           // The neighbor is unvisited. Recurse deeper into the graph.
+           if (dfs(neighbor)) {
+               return true; // Cycle found in subtree, bubble up
+           }
+       }
+
+       // CASE 3: CROSS/FORWARD EDGE (Black)
+       // The neighbor is Black, meaning it and its subtree have been fully processed
+       // and verified cycle-free in a previous traversal.
+       // This represents a "Diamond Dependency" (e.g., reaching a shared library via a second path).
+       // We safely ignore this edge and continue to the next neighbor.
+   }
+
+   // TRANSITION: Gray -> Black
+   // We have finished processing all dependencies of `current`.
+   // It is now safe and removed from the active path.
+   marks_[current] = MarkState::Black;
+
+   // Backtracking: Remove from path stack.
+   path_stack_.pop_back();
+
+   return false;
+}
+
+std::vector<std::string> CycleDetector::reconstruct_path(const Node* loop_start) {
+   // The path_stack_ contains the full history of the traversal:.
+   // If 'loop_start' corresponds to node B, the cycle is B -> C -> Current -> B.
+   
+   std::vector<std::string> path;
+   bool recording = false;
+
+   // 1. Iterate through the path stack to extract the cycle segment.
+   for (const Node* node : path_stack_) {
+       // Start recording when we encounter the closure node (the target of the back-edge).
+       if (node == loop_start) {
+           recording = true;
+       }
+
+       if (recording) {
+           path.push_back(node->name);
+       }
+   }
+
+   // 2. Close the loop visually.
+   // The cycle logically returns to the start node. Adding it to the end of the list
+   // makes the error message explicit: "A -> B -> A".
+   if (recording) {
+       path.push_back(loop_start->name);
+   }
+   
+   return path;
+}
+
+} // namespace graph
+} // namespace aria
+
+6. Analysis of Implementation Details
+6.1 Path Stack Maintenance and Efficiency
+The requirement to maintain a path stack is satisfied by std::vector<const Node*> path_stack_. While a std::stack might seem semantically appropriate, std::vector is chosen for two specific reasons:
+1. Iteration: The reconstruct_path function requires iterating through the stack from the bottom up to find the loop_start node. std::stack does not expose iterators, whereas std::vector allows standard iteration.
+2. Performance: Vectors are contiguous in memory, offering superior cache locality compared to node-based containers like std::list. Since the depth of the dependency tree corresponds to the recursion depth, maintaining this vector incurs minimal overhead ($O(D)$ where $D$ is graph depth).1
+6.2 Back-Edge Identification
+The core of the detection logic lies in the check: if (neighbor_state == MarkState::Gray). This specific condition uniquely identifies a back-edge.
+* White: A forward edge into unexplored territory.
+* Black: A cross edge to an already-verified subgraph (the Diamond Dependency case).
+* Gray: A back edge to an ancestor.
+By strictly separating Gray and Black states, the algorithm is immune to the false positives that plague binary (Visited/Unvisited) DFS implementations. This ensures that shared modules like std.io or std.core 1 do not trigger cycle errors when included by multiple parts of the application.
+6.3 Integration with the Parser and Symbol Table
+The CycleDetector does not operate in a vacuum. It relies on the DependencyGraph being correctly populated by the Parser.
+* Parser Role: As detailed in the frontend parser specification 1, the parser identifies TOKEN_KW_USE statements. When parsing use math;, the parser resolves the symbol math and creates a dependency edge in the graph node for the current file.
+* Graph Construction: The DependencyGraph::get_or_create_node method ensures that nodes are unique entities. The CycleDetector relies on the pointer identity of these nodes (marks_[node]) to track state. If the parser were to create duplicate nodes for the same module, the graph would be disjoint, and cycles might be missed or falsely reported. The std::unique_ptr ownership model in DependencyGraph enforces this uniqueness constraints.1
+6.4 Handling Complex Cycle Topologies
+The algorithm is robust against various cycle topologies:
+* Self-Loops ($A \to A$): Detected immediately when checking neighbors of $A$, as $A$ is Gray.
+* Simple Cycles ($A \to B \to A$): Detected when processing $B$, finding $A$ is Gray.
+* Complex/Nested Cycles: The DFS approach naturally finds the first cycle encountered. While a graph may contain multiple cycles, reporting one is sufficient to invalidate the build. The user fixes the reported cycle and re-runs the build to find others.
+7. Performance and Complexity Analysis
+The aria_make system aims for high performance, requiring graph analysis to be negligible compared to compilation time.
+7.1 Time Complexity
+The Tri-Color DFS algorithm visits every node and every edge exactly once in the worst case (an acyclic graph).
+* Initialization: $O(V)$ to set initial marks.
+* Traversal: Each node transitions White $\to$ Gray $\to$ Black exactly once. The inner loop over neighbors processes each edge exactly once across the entire execution.
+* Total Time: $O(V + E)$, where $V$ is the number of targets and $E$ is the number of dependencies.
+For a massive project with 10,000 targets and 50,000 dependencies, this complexity ensures sub-millisecond execution time on modern hardware, satisfying the performance requirements of the build system.1
+7.2 Space Complexity
+* Recursion Stack: $O(D)$ where $D$ is the maximum depth of the dependency chain. In the worst case (a line graph), $D = V$.
+* Marks Map: $O(V)$ to store the state of each node.
+* Path Stack: $O(V)$ in the worst case.
+The space usage allows the algorithm to scale effectively even for very large build graphs without exhausting system memory.
+8. Error Diagnostics and User Experience
+The primary value add of this implementation over Kahn's algorithm is the quality of error reporting. When reconstruct_path returns ["lib_math", "lib_core", "lib_math"], the build system can format this into a highly readable diagnostic:
+ERROR: Circular dependency detected.
+The build cannot proceed because the following targets form a cycle:
+lib_math
+↓ (depends on)
+lib_core
+↓ (depends on)
+lib_math
+Resolution: Refactor 'lib_core' to remove the dependency on 'lib_math',
+or move shared logic to a new common module.
+This transforms the error from a system failure ("Build hanged") into an architectural insight, guiding the developer toward modularity improvements.
+9. Conclusion
+The implementation of the CycleDetector class presented in this report provides a mathematically rigorous, performant, and user-centric solution to dependency cycle management in the Aria build ecosystem. By distinguishing between active recursion states (Gray) and completed states (Black), it successfully solves the Diamond Dependency problem that affects simpler algorithms. The integration of path reconstruction logic ensures that the tool is not just a gatekeeper, but a guide, helping developers maintain clean and acyclic architectures. This component serves as the robust foundation upon which the parallel execution engine of aria_make is built, ensuring determinism and stability for the entire Aria language lifecycle.
+Works cited
+1. compiled.txt

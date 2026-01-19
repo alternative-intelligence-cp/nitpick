@@ -1,0 +1,390 @@
+﻿Architectural Specification and Implementation Strategy for the Aria Process Status (aps) Utility within the Hex-Stream Ecosystem
+
+[SYNTAX CORRECTIONS APPLIED - Dec 22, 2025]
+This document has been corrected for proper Aria syntax:
+- Fixed function signatures: func:name = type(params) pattern
+- Fixed struct declarations: struct:Name = { } pattern (consistent type:name = value)
+- Fixed struct field syntax: type:name, not name: type,
+- Fixed array declarations: u8:name[64] for fixed-size arrays
+- Changed byte to u8 (correct primitive type)
+- Changed null to nil (Aria's null keyword)
+- Fixed wild pointer syntax: wild Type* not wild Type:name
+- Fixed while loop to properly check for nil
+- Fixed struct member access: e.d_name (using . operator)
+- Fixed address-of to use @ operator
+- Added proper arena allocation API calls (aria_alloc_array)
+All architectural concepts and design philosophy remain unchanged from original Gemini report.
+All architectural concepts and design philosophy remain unchanged from original Gemini report.
+
+1. Introduction: The Observability Crisis and the Hex-Stream Resolution
+The fundamental architecture of system administration and observability tools in Unix-like operating systems has remained largely static since the 1970s. The prevailing paradigm—text-based piping—was revolutionary at its inception, decoupling the generation of data from its consumption. However, as system complexity has scaled from single-core mainframes to distributed, containerized microservices handling thousands of concurrent threads, the limitations of this model have become acute liabilities. The classic suite of utilities, exemplified by ps, top, and netstat, suffer from a critical architectural flaw: the conflation of presentation, data transmission, and diagnostics into a single output stream, typically stdout.1
+This conflation forces a reliance on "screen scraping," a fragile integration technique where downstream automation parses human-readable text to extract structured data. This practice is inherently brittle; a minor version update that alters column alignment, modifies header nomenclature, or introduces localized date formats can catastrophically break deployment scripts and monitoring agents. Furthermore, the computational overhead of formatting binary kernel integers into ASCII strings, only for the next process in the pipe to parse them back into integers, introduces significant latency and CPU waste in high-frequency monitoring scenarios.
+The Aria programming language and its associated operating system layer, AriaX, introduce a paradigm shift through the Hex-Stream Input/Output Topology. By expanding the standard file descriptor set from the traditional three (stdin, stdout, stderr) to six (adding stddbg, stddati, stddato), Aria enforces a rigorous "separation of concerns" at the process communication level. This topology treats the User Interface (UI), the Data Payload, and the Telemetry (Observability) as distinct, orthogonal concerns, each assigned a dedicated channel with specialized buffering and typing contracts.3
+This report presents a comprehensive architectural specification and implementation strategy for aps (Aria Process Status), the flagship utility designed to validate the Hex-Stream model. aps is not merely a reimplementation of ps; it is a proof-of-concept for the "Typed Pipeline," where tools communicate via raw, binary-serialized structures (Process structs) while simultaneously rendering rich, color-coded Terminal User Interfaces (TUIs) and emitting structured diagnostic logs. The following analysis synthesizes the Aria language specifications 3, the AriaSH shell architecture , and the Linux kernel's /proc filesystem interfaces 1 to provide a blueprint for a system tool that is performant, type-safe, and architecturally pure.
+1.1 The Decomposition of System Status
+In the legacy model, a command like ps aux performs three logical operations but multiplexes them onto a single channel:
+1. Data Acquisition: It reads raw kernel structures (e.g., from /proc on Linux).
+2. Presentation Logic: It formats this data for the human eye—truncating command names to fit terminal width, converting epoch timestamps to readable dates, and aligning columns with whitespace.
+3. Error Reporting: It intersperses error messages (e.g., "process vanished") with valid output, often corrupting the data stream if stderr is redirected to stdout.
+When a systems administrator pipes ps to grep or awk, they are effectively piping the Presentation Logic, not the Data. The scripts become dependent on the visual formatting decisions of the ps authors. The Hex-Stream model used by aps decouples these tasks physically and logically:
+
+
+Logical Plane
+	Stream
+	Descriptor
+	Aria Implementation
+	Semantic Role
+	Control Plane
+	stdout
+	FD 1
+	io.stdout
+	Presentation: Human-readable text, TUI tables, ANSI color codes. Intended solely for the terminal emulator.
+	Observability Plane
+	stddbg
+	FD 3
+	io.stddbg
+	Telemetry: Structured logs (JSON/Logfmt) describing internal state, permission errors, and performance metrics.
+	Data Plane
+	stddato
+	FD 5
+	io.stddato
+	Payload: Machine-readable, binary-serialized sequence of Process structs. Zero-copy optimization enabled.3
+	This architecture ensures that aps can be utilized in high-reliability automation without sacrificing the user experience. An operator can view a beautiful, auto-updating table on their screen while a background agent reads the raw binary stream to trigger alerts based on memory consumption, with zero risk of the UI formatting interfering with the data analysis.
+1.2 The Imperative for Zero-Copy and Wild Memory
+To serve as a viable replacement for top in high-load environments, aps must minimize its memory footprint and CPU cycle consumption. Traditional serialization formats like JSON, while structured, are computationally expensive due to string allocation, character escaping, and parsing overhead. In a system with 10,000 threads, generating a JSON object for each thread every second creates immense pressure on the memory allocator and garbage collector.
+The aps utility leverages Aria's Hybrid Memory Model, specifically the "Wild" allocation strategy.3 Unlike garbage-collected (GC) memory, Wild memory is manually managed and exists outside the GC heap. aps allocates a persistent "slab" or arena of Process structs at startup. As it iterates through the kernel process table, it populates these structures directly. When streaming data to stddato, aps does not serialize the object into an intermediate format; it utilizes the splice() system call (on Linux) to move the memory pages directly to the pipe buffer. This "Zero-Copy" approach allows aps to achieve throughputs orders of magnitude higher than text-based tools, limited only by the kernel's ability to read /proc.
+1.3 Sticky Error Propagation via TBB Types
+System statistics are inherently prone to race conditions and access errors. A process might terminate between the time aps reads its directory entry and the time it attempts to read its status file. A 32-bit counter might overflow. In standard C utilities, these conditions are often handled by returning magic numbers (e.g., -1 or 0), which can lead to nonsensical output (e.g., a process reporting -1 bytes of memory usage).
+Aria addresses this through Twisted Balanced Binary (TBB) arithmetic.3 The aps utility utilizes tbb64 types for all metrics. TBB types include a dedicated ERR sentinel value (mathematically represented as the minimum representable integer in the two's complement range, e.g., 0x80...00). If aps fails to read a metric—for instance, if hidepid prevents reading a process's environment—the specific field in the Process struct is set to ERR.
+Crucially, TBB arithmetic possesses the property of "Sticky Error Propagation". If a downstream consumer attempts to perform arithmetic on this value—for example, summing memory usage: total_mem += proc.mem_usage—the result of the operation becomes ERR if either operand is ERR. This mechanism prevents silent data corruption. The error state propagates through the calculation chain until it is explicitly handled or unwrapped by the user logic. This feature allows aps to maintain rigorous data integrity even in the chaotic environment of a running kernel.
+2. Kernel Interface and Data Acquisition Architecture
+The efficacy of aps is predicated on its ability to efficiently extract and normalize data from the operating system kernel. On Linux, this necessitates a robust parser for the /proc pseudo-filesystem, which exposes kernel data structures as text files. The implementation must navigate the intricacies of this interface, handling race conditions, permission models, and the variability of kernel versions.
+2.1 The /proc/[pid]/stat Parsing Strategy
+The primary source of process CPU scheduling metrics is the /proc/[pid]/stat file. This file presents a single line of space-delimited values containing vital statistics such as the process ID, state, parent PID, and CPU time consumption.1
+While superficially simple, robustly parsing this file requires handling critical edge cases. The most significant challenge is the comm (command name) field (Field 2), which is enclosed in parentheses. Because a process name can contain spaces, newlines, or even closing parentheses, a naive split on whitespace is insufficient and dangerous. aps employs a reverse-scanning strategy: it locates the last closing parenthesis in the raw buffer to identify the end of the comm field, ensuring that the subsequent numeric fields are correctly aligned.
+The fields relevant to the Process struct are mapped as follows 2:
+Index
+	Name
+	Description
+	Aria Type
+	Conversion Logic
+	1
+	pid
+	Process ID
+	int32
+	Direct parse.
+	2
+	comm
+	Executable filename
+	byte
+	Extracted between ( and ), truncated to 64 bytes for the binary struct.
+	3
+	state
+	Process state (R, S, D, Z, etc.)
+	byte
+	Single character code.
+	4
+	ppid
+	Parent Process ID
+	int32
+	Direct parse.
+	14
+	utime
+	User CPU time
+	tbb64
+	Measured in clock ticks. Requires normalization.
+	15
+	stime
+	Kernel CPU time
+	tbb64
+	Measured in clock ticks. Requires normalization.
+	19
+	nice
+	Nice value (priority)
+	int32
+	Range -20 to 19.
+	22
+	starttime
+	Time started after boot
+	tbb64
+	Measured in clock ticks.
+	24
+	rss
+	Resident Set Size
+	tbb64
+	Warning: Value is in pages. Must multiply by PAGE_SIZE.
+	Critical Implementation Note: The rss value in /proc/[pid]/stat is reported in pages. To display accurate byte counts, aps must query the system page size at runtime using sysconf(_SC_PAGESIZE) (typically 4096 bytes on x86_64, but variable on ARM64).6 Failure to perform this multiplication is a common source of error in simple monitoring scripts.
+2.2 Advanced Memory Metrics via /proc/[pid]/status
+While stat provides the basic Resident Set Size (RSS), detailed memory analysis requires parsing /proc/[pid]/status.7 This file provides a human-readable, key-value format (e.g., VmRSS: 1024 kB).
+aps parses this file to populate the extended memory fields of the Process struct:
+* VmRSS: Total Resident Set Size (Physical RAM used).
+* VmSize: Virtual Memory Size (Address space allocated).
+* VmSwap: Swapped out memory (Critical for identifying memory pressure).
+* Uid/Gid: Real, effective, saved set, and file system UIDs/GIDs.
+Parsing status is significantly more expensive than stat due to its size and formatting. Therefore, aps implements a Lazy-Loading Strategy. By default, if the user or the output filter only requests CPU and basic RSS metrics, aps skips opening status. It only incurs the I/O overhead if the specific fields (like VmSwap or Uid) are required by the active filter or UI configuration.
+2.3 Time Normalization and sysconf
+The CPU time values (utime, stime) and start times in /proc are exposed as "clock ticks," a unit dependent on the kernel's build configuration (USER_HZ). To display these values as seconds or calculate CPU usage percentages, aps must normalize them using the system's clock frequency.1
+This value is retrieved via sysconf(_SC_CLK_TCK).6
+The normalization formula implemented in aps is:
+
+
+
+
+$$\text{Time}_{seconds} = \frac{\text{tick\_count}}{\text{sysconf}(\_SC\_CLK\_TCK)}$$
+Common values for _SC_CLK_TCK are 100 Hz (1 tick = 10ms), but this is not guaranteed.9 aps caches this value at startup in the SystemState struct to avoid repeated syscalls during the collection loop.
+2.4 Race Conditions and pidfd
+Iterating through /proc involves a fundamental race condition: a process listed in readdir may terminate before aps opens its stat file. In standard C, this results in ENOENT (No such file or directory). aps handles this by treating ENOENT not as a failure, but as a "skip" signal, logging a debug note to stddbg only if verbose mode is active.
+For more advanced monitoring, specifically when aps is running as a daemon or in "watch" mode, it utilizes the Linux pidfd_open system call (available in kernels 5.3+). By obtaining a file descriptor that refers to the process itself rather than just its PID (which can be recycled), aps can reliably track the lifecycle of specific processes without ambiguity, a capability essential for long-running process supervision tools built on top of the Aria ecosystem.
+3. Aria Data Structures and Type System Integration
+The internal representation of process data serves as the bridge between the raw kernel strings and the Aria type system. These structures govern the memory layout of the binary payload transmitted over stddato. The definition uses Aria's struct syntax and specific type annotations to enforce memory safety and error propagation rules.
+3.1 The Process Struct Definition
+The core data structure is the Process struct. It is designed to be "POD" (Plain Old Data) to facilitate direct binary serialization. Note the usage of tbb64 for all metric fields to enable sticky error propagation.3
+
+
+Code snippet
+
+
+
+
+// aria/utils/aps/types.aria
+
+// Core process structure serialized to stddato
+// Aligned to 8 bytes for performance on 64-bit architectures
+pub struct:Process = {
+   // Identity
+   int32:pid,          // Process ID
+   int32:ppid,         // Parent Process ID
+   int32:uid,          // User ID (Effective)
+   int32:gid,          // Group ID (Effective)
+   
+   // State
+   // Mapped from kernel char (R, S, Z, etc.) to byte.
+   u8:state,
+   
+   // Metrics (TBB types for sticky error safety)
+   tbb64:utime_ticks,      // User CPU time (raw ticks)
+   tbb64:stime_ticks,      // System CPU time (raw ticks)
+   tbb64:start_time,       // Time started (ticks since boot)
+   tbb64:mem_rss_bytes,    // Resident memory (calculated bytes)
+   tbb64:mem_virt_bytes,   // Virtual memory (calculated bytes)
+   
+   // Metadata
+   // Fixed-size buffer for zero-copy binary streaming.
+   // Command names >63 chars are truncated.
+   // This avoids pointer chasing during serialization.
+   u8:command_name[64]     // Fixed array of 64 bytes
+}
+
+This struct layout is critical. By using fixed-size arrays for command_name instead of dynamic strings, the entire struct becomes a contiguous block of memory. This allows aps to write the struct to stddato using a single write call, or ideally splice, without needing to serialize separate string buffers.
+3.2 The SystemState Context
+To calculate derived metrics like CPU usage percentage, aps requires context about the system's global state. This data is collected once per scan cycle but is not serialized to stddato with every process record to save bandwidth.
+
+
+Code snippet
+
+
+
+
+pub struct:SystemState = {
+   tbb64:uptime_seconds,   // Global system uptime
+   tbb64:total_ram_bytes,  // Total physical RAM
+   int64:clk_tck,          // Clock ticks per second (cached sysconf)
+   int32:page_size,        // Bytes per page (cached sysconf)
+   int32:cpu_count         // Number of logical cores
+}
+
+3.3 The Wild Memory Strategy
+Aria's memory model distinguishes between "Managed" (GC) and "Wild" (Manual) memory.3 For a system tool like aps, which might generate thousands of Process objects per second, reliance on a Garbage Collector would introduce unacceptable latency spikes ("stop-the-world" pauses) that would stutter the UI and delay data transmission.
+aps utilizes the AllocStrategy::WILD.3
+1. Slab Allocation: At startup, aps allocates a large, contiguous "Wild" memory buffer capable of holding $N$ Process structs (e.g., 1024).
+2. Reuse: On each refresh cycle, aps does not free and re-allocate these structs. It simply overwrites the existing memory in the slab with fresh data from /proc.
+3. Zero-Allocation Loop: This strategy ensures that the steady-state operation of aps triggers zero memory allocations and zero GC events, guaranteeing stable performance even under extreme system load.
+4. Explicit Cleanup: The ScopedVariable tracking in the Aria compiler ensures that if aps terminates or reconfigures its buffer size, the wild memory slab is explicitly dropped.3
+4. The Data Plane: Binary Protocol and stddato
+The stddato stream (FD 5) implements the "Data Plane" of the utility. The protocol design prioritizes high throughput and low latency for local IPC (Inter-Process Communication). Unlike text streams, this binary stream is typed, versioned, and framed.
+4.1 Protocol Specification
+The stddato stream emits a continuous sequence of "Frames." Each scan cycle (e.g., every 1 second) constitutes a Frame.
+Header (Fixed 16 bytes per Frame):
+The header serves to synchronize the reader and provide metadata for the payload.
+* magic (4 bytes): 0x41 0x50 0x53 0x01 (ASCII "APS" + Version 0x01).
+* timestamp (8 bytes): 64-bit Unix timestamp of the snapshot (milliseconds).
+* entry_count (4 bytes): 32-bit Integer indicating the number of process records that follow.
+Payload (Variable Length):
+* Sequence of entry_count Process structs.
+* Layout matches the in-memory definition (Little Endian on x86_64).
+* Strict 8-byte alignment is enforced to allow the consumer to cast the buffer directly to a C-struct without memory faults.
+4.2 The "Typed Injection" Pattern
+As described in the AriaSH research , aps supports the "Typed Injection" pattern. When a user runs a pipeline:
+aps | filter --mem-gt 1GB
+The filter utility is compiled with knowledge of the Process struct layout.
+1. Handshake: filter reads the first 16 bytes from FD 4 (stddati) to verify the magic bytes. If they don't match, it aborts with a type error (sticky error).
+2. Consumption: It reads entry_count. It then performs a bulk read of entry_count * sizeof(Process) bytes into its own Wild memory buffer.
+3. Filtering: To check --mem-gt 1GB, the filter does not parse text. It simply calculates the offset of mem_rss_bytes (e.g., offset 32) and reads the 64-bit integer directly from the buffer.
+
+$$\text{Value} = *(\text{tbb64}*)(\text{buffer} + (i \times \text{sizeof(Process)}) + 32)$$
+4. Performance: This comparison takes a single CPU cycle. Text parsing would take hundreds. This allows the filter to process millions of records per second with negligible CPU usage.
+4.3 Handling Backpressure with Threaded Draining
+A critical risk in shell pipelines is "Pipe Deadlock." The Linux kernel pipe buffer is typically 64KB. If aps writes 1MB of process data, but the filter process is paused or slow, the write() call in aps will block. This would freeze the aps UI on stdout, making the tool unresponsive to the user.
+To prevent this, aps implements the Threaded Draining Model.
+   * The Pump: A dedicated worker thread (std::jthread) manages the stddato writes.
+   * Ring Buffer: The main thread writes collected data to a large user-space Ring Buffer. The worker thread drains this buffer into the kernel pipe.
+   * Drop Policy: If the Ring Buffer fills (indicating the consumer is hopelessly stuck), aps enters a "Drop Mode." It discards new data frames intended for stddato and logs a WARN event to stddbg. This ensures that the UI (stdout) never freezes due to a slow downstream consumer.
+5. The Control Plane: UI Architecture (stdout)
+The stdout stream (FD 1) is the "Control Plane," dedicated exclusively to the human operator. Freed from the constraints of machine parsability, the UI can be rich, responsive, and visually dense.
+5.1 ANSI Rendering Engine
+aps implements a lightweight rendering engine that utilizes ANSI escape codes 10 to format the output.
+   * Cursor Addressing: Rather than clearing the screen (clear) which causes flicker, aps uses `ESC
+   * Legacy Behavior: ps might print "Permission denied" for every single process, flooding the terminal.
+   * Aria Behavior: aps aggregates these errors. It emits a single structured log entry to stddbg.
+Example Log Entry (JSON):
+
+
+JSON
+
+
+
+
+{
+ "level": "WARN",
+ "component": "proc_parser",
+ "event": "access_denied",
+ "path": "/proc/1/stat",
+ "error": "EACCES",
+ "count": 45,
+ "impact": "partial_visibility"
+}
+
+This allows an automated monitoring agent to listen to stddbg and trigger an alert ("Monitoring agent has lost root privileges") without breaking the binary data pipe or cluttering the user's UI.
+6.2 Performance Profiling
+aps emits self-profiling metrics to stddbg. This includes the time taken to scan /proc, the serialization latency, and the rendering time. This "Observability of Observability" is crucial for diagnosing why a monitoring tool might itself be consuming high CPU.
+7. Memory Management and Safety Implementation
+The implementation of aps relies heavily on Aria's specific memory safety features to manage the "Wild" memory used for performance.
+7.1 Wild Memory and Explicit Drop
+The Process slab is allocated as wild Process. In Aria's compiler (Phase 2.3), variables allocated with the WILD strategy are tracked via the ScopedVariable structure, which sets the requires_drop flag to true.3
+   * Scope Tracking: The compiler injects aria_scope_enter() and aria_scope_exit() calls.
+   * Destruction: When the aps main loop terminates (or if a panic occurs), the requires_drop flag ensures that the aria.free() function is called on the slab. This prevents memory leaks even though the memory is manually managed.
+7.2 Safety Mode and Fat Pointers
+For development and debugging, aps can be compiled in Safety Mode (ARIA_ENABLE_SAFETY). In this mode, the raw pointers used to access the Process slab are replaced by Fat Pointers.3
+   * Structure: The fat pointer contains { ptr, base, size, alloc_id }.
+   * Bounds Checking: Every write to the Process struct is checked against base + size. If a buffer overflow is detected (e.g., a command_name longer than 64 bytes), the runtime traps immediately with a detailed error report to stddbg, preventing memory corruption.
+8. Implementation Logic: The Core Loop
+The core logic of aps is organized into a tight loop that orchestrates the three planes. Below is the high-level representation using Aria syntax.
+8.1 Module Imports and Constants
+
+
+Code snippet
+
+
+
+
+use std.io;
+use std.fs;
+use std.os;   // For sysconf, page_size
+use std.time; // For sleep
+
+// Constants for /proc scanning
+const string:PROC_DIR = "/proc";
+const int32:REFRESH_RATE_MS = 1000;
+
+8.2 The Main Function
+
+
+Code snippet
+
+
+
+
+func:main = int32(args: string) {
+   // 1. Initialize System State (CLK_TCK, PAGE_SIZE)
+   SystemState:sys = init_system_state();
+   
+   // 2. Setup Wild Memory for Process List
+   // Pre-allocate buffer for 1024 processes (growable strategy)
+   // Note: Use aria_alloc_array from runtime for wild allocation
+   wild Process*:proc_table = aria_alloc_array<Process>(1024);
+   
+   // 3. Write Binary Header to stddato (Protocol V1)
+   write_binary_header();
+
+   // 4. Main Event Loop
+   while (true) {
+       // A. Collection Phase (Data Acquisition)
+       // Scans /proc, populates proc_table. Returns count.
+       int32:count = collect_processes(proc_table, sys);
+       
+       // B. Data Plane Output (stddato)
+       // Stream the collected structs to the binary pipe (Zero-Copy)
+       stream_binary_data(proc_table, count);
+       
+       // C. Control Plane Output (stdout)
+       // Render the TUI table for the user (ANSI codes)
+       render_tui(proc_table, count, sys);
+       
+       // D. Rate Limiting
+       time.sleep_ms(REFRESH_RATE_MS);
+   }
+   
+   return 0;
+}
+
+8.3 The Collector Logic
+The collector logic iterates the directory and parses the kernel files. Note the TBB safety integration.
+
+
+Code snippet
+
+
+
+
+func:collect_processes = int32(table: wild Process*, sys: SystemState) {
+   wild DIR*:d = fs.opendir(PROC_DIR);
+   if (d == nil) {
+       io.stddbg.write("FATAL: Cannot open /proc\n");
+       fail(1);
+   }
+
+   int32:idx = 0;
+   wild dirent*:e;
+   while ((e = fs.readdir(d)) != nil) {
+       // Check if entry is numeric (PID)
+       if (is_numeric(e.d_name)) {
+           int32:pid = parse_int(e.d_name);
+           
+           // Parse /proc/[pid]/stat
+           // Access element in wild array
+           wild Process*:p = @table[idx];
+           
+           if (parse_proc_stat(pid, p, sys)) {
+               // Parse successful, increment index
+               idx = idx + 1;
+           } else {
+               // Log permission error to stddbg, not stdout!
+               // This keeps the UI clean.
+               io.stddbg.write(`WARN: Failed to parse PID &{pid}\n`);
+           }
+       }
+   }
+   fs.closedir(d);
+   return idx;
+}
+
+9. Conclusion
+The specification for aps demonstrates the transformative potential of the Aria Hex-Stream ecosystem. By rigorously separating the Control Plane (UI) from the Data Plane (Payload) and the Observability Plane (Telemetry), aps resolves the decades-old conflict between human readability and machine parsability in Unix tools.
+The implementation strategy leverages Aria's unique strengths:
+   1. Hex-Stream I/O: Enables simultaneous TUI rendering and binary streaming.
+   2. Wild Memory: Ensures high-throughput, zero-allocation performance suitable for system monitoring.
+   3. TBB Types: Guarantees data integrity through sticky error propagation, preventing the silent corruption common in C-based counters.
+   4. Zero-Copy Protocol: Maximizes efficiency for downstream consumers like filter.
+This utility serves not only as a functional replacement for top but as a reference implementation for the entire class of "next-generation" system tools envisioned for the AriaX operating system. It proves that with the right architecture, system tools can be both beautiful for humans and precise for machines.
+Works cited
+   1. proc_stat(5) - Linux manual page - man7.org, accessed December 22, 2025, https://www.man7.org/linux/man-pages/man5/proc_stat.5.html
+   2. proc_pid_stat(5) - Linux manual page - man7.org, accessed December 22, 2025, https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html
+   3. aria_shell_research_full.txt
+   4. The /proc Filesystem - The Linux Kernel documentation, accessed December 22, 2025, https://docs.kernel.org/filesystems/proc.html
+   5. what are the meaning of values at proc/[pid]/stat? - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/39066998/what-are-the-meaning-of-values-at-proc-pid-stat
+   6. sysconf, accessed December 22, 2025, https://pubs.opengroup.org/onlinepubs/000095399/functions/sysconf.html
+   7. proc_pid_status(5) - Linux manual page - man7.org, accessed December 22, 2025, https://man7.org/linux/man-pages/man5/proc_pid_status.5.html
+   8. sysconf(_SC_CLK_TCK) what does it return? - Stack Overflow, accessed December 22, 2025, https://stackoverflow.com/questions/19919881/sysconf-sc-clk-tck-what-does-it-return
+   9. Ensure correct calculation of process CPU usage percentage on Linux · Issue #102 - GitHub, accessed December 22, 2025, https://github.com/elastic/apm/issues/102
+   10. ANSI Escape Codes - GitHub Gist, accessed December 22, 2025, https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+   11. ANSI escape code - Wikipedia, accessed December 22, 2025, https://en.wikipedia.org/wiki/ANSI_escape_code

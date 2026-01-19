@@ -1,0 +1,519 @@
+// ============================================================================
+// ARIA NETSTAT IMPLEMENTATION (Syntax-Corrected)
+// ============================================================================
+// Based on: sysUtils_12_netstat.txt
+// Corrected: December 23, 2025
+// Status: Ready for implementation
+// ============================================================================
+
+// File: net/types.aria
+// ============================================================================
+// Type Definitions and Enumerations
+// ============================================================================
+
+// Matches Linux kernel TCP states (include/net/tcp_states.h)
+// We use u8 to minimize space in the binary stream.
+enum:TcpState = {
+    UNKNOWN = 0,
+    ESTABLISHED = 1,
+    SYN_SENT = 2,
+    SYN_RECV = 3,
+    FIN_WAIT1 = 4,
+    FIN_WAIT2 = 5,
+    TIME_WAIT = 6,
+    CLOSE = 7,
+    CLOSE_WAIT = 8,
+    LAST_ACK = 9,
+    LISTEN = 10,
+    CLOSING = 11,
+    NEW_SYN_RECV = 12
+};
+
+// ============================================================================
+// The Connection Structure Layout (72 bytes, POD)
+// ============================================================================
+// This struct is Plain Old Data - no pointers, can be serialized directly
+// Layout: 16 + 16 (IPs) + 2 + 2 (Ports) + 1 + 1 + 2 (State/Proto/Pad) +
+//         4 + 4 (PID/UID) + 8 (Inode) + 8 + 8 (Queues) = 72 bytes
+struct:Connection = {
+    // Network Layer (IP Addressing) - 16 bytes each for IPv4/IPv6 support
+    array<u8, 16>:local_ip;
+    array<u8, 16>:remote_ip;
+
+    // Transport Layer (Ports)
+    u16:local_port;
+    u16:remote_port;
+
+    // Metadata & State
+    TcpState:state;           // TCP state enum (u8)
+    u8:protocol;              // Protocol ID (6=TCP, 17=UDP)
+    array<u8, 2>:_padding;    // Alignment padding
+
+    // Process & Kernel Metadata
+    u32:pid;                  // Process ID
+    u32:uid;                  // User ID
+    u64:inode;                // Socket inode number
+
+    // Queue Depths (Buffer Bloat metrics)
+    u64:rx_queue;             // Receive queue bytes
+    u64:tx_queue;             // Transmit queue bytes
+};
+
+// ============================================================================
+// Module: parsers/proc.aria
+// The Kernel Reader - Parses /proc/net/tcp
+// ============================================================================
+
+// use std.io;
+// use std.string;
+// use std.convert;
+
+// Helper: Parse Hex String to u32 (Little Endian for /proc IP)
+// Input: "0100007F" -> Output: 0x7F000001 (127.0.0.1)
+// Note: Linux /proc stores IP as raw memory dump (Little Endian)
+func:parse_hex_ip_le = u32(string:s) {
+    if (s.length() != 8) {
+        pass(0);
+    };
+    
+    // Parse byte pairs in reverse order
+    // String index 6,7 is Byte 0 (LSB)
+    // String index 0,1 is Byte 3 (MSB)
+    u8:b0 = std.convert.hex_to_u8(s.substring(6, 2) ? "");
+    u8:b1 = std.convert.hex_to_u8(s.substring(4, 2) ? "");
+    u8:b2 = std.convert.hex_to_u8(s.substring(2, 2) ? "");
+    u8:b3 = std.convert.hex_to_u8(s.substring(0, 2) ? "");
+    
+    // Construct u32
+    u32:result = (b3 << 24) | (b2 << 16) | (b1 << 8) | b0;
+    pass(result);
+};
+
+// Helper: Parse Hex String to u16 (Big Endian for Port)
+// Input: "0019" -> Output: 25
+func:parse_hex_port = u16(string:s) {
+    u16:port = std.convert.hex_to_u16(s);
+    pass(port);
+};
+
+// Helper: Convert u32 IP to byte array
+func:ip_to_bytes = void(u32:ip, u8:dest) {
+    // Store as IPv4-mapped IPv6 (::ffff:x.x.x.x)
+    // First 10 bytes: zeros
+    for (int32:i = 0; i < 10; i = i + 1) {
+        dest = 0;
+    };
+    // Bytes 10-11: 0xFF
+    dest = 0xFF;
+    dest = 0xFF;
+    // Bytes 12-15: IPv4 address (big endian)
+    dest = (ip >> 24) & 0xFF;
+    dest = (ip >> 16) & 0xFF;
+    dest = (ip >> 8) & 0xFF;
+    dest = ip & 0xFF;
+};
+
+// Main Parser Function
+func:parse_line = result<Connection>(string:line) {
+    // Split by whitespace - CORRECTED: returns array<string>
+    array<string>:parts = line.split_whitespace();
+    
+    if (parts.length() < 10) {
+        // Return error result
+        result<Connection>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Insufficient fields in line";
+        pass(err_result);
+    };
+
+    // Part 1: Local Address "IP:Port"
+    array<string>:local_parts = parts.split(":");
+    u32:local_ip = parse_hex_ip_le(local_parts);
+    u16:local_port = parse_hex_port(local_parts);
+
+    // Part 2: Remote Address
+    array<string>:remote_parts = parts.split(":");
+    u32:remote_ip = parse_hex_ip_le(remote_parts);
+    u16:remote_port = parse_hex_port(remote_parts);
+
+    // Part 3: State
+    u8:state = std.convert.hex_to_u8(parts);
+
+    // Part 4: Queues "TX:RX"
+    array<string>:queue_parts = parts.split(":");
+    u64:tx_q = std.convert.hex_to_u64(queue_parts);
+    u64:rx_q = std.convert.hex_to_u64(queue_parts);
+
+    // Part 9: Inode
+    u64:inode = std.convert.to_u64(parts);
+
+    // Construct Connection struct
+    Connection:conn;
+    ip_to_bytes(local_ip, conn.local_ip);
+    conn.local_port = local_port;
+    ip_to_bytes(remote_ip, conn.remote_ip);
+    conn.remote_port = remote_port;
+    conn.state = cast(TcpState, state);
+    conn.tx_queue = tx_q;
+    conn.rx_queue = rx_q;
+    conn.inode = inode;
+    
+    // PID is resolved later
+    conn.pid = 0;
+    
+    // Return success result
+    result<Connection>:success;
+    success.is_error = false;
+    success.value = conn;
+    pass(success);
+};
+
+// ============================================================================
+// Module: net/pid_resolver.aria
+// The Inode Walker - Builds PID->Inode mapping
+// ============================================================================
+
+// use std.io;
+// use std.fs;
+// use std.time;
+// use std.collections;
+
+struct:PidMap = {
+    map<int32, string>:data;
+};
+
+func:build_map = PidMap() {
+    tbb64:start_time = std.time.now();
+    PidMap:pid_map;
+    
+    // Initialize the map
+    pid_map.cache = map<u64, u32>.new();
+    
+    // Iterate /proc - CORRECTED: use Result type
+    result<directory>:proc_result = std.fs.read_dir("/proc");
+    if (proc_result.is_error) {
+        std.io.stddbg.write("{\"event\": \"proc_read_fail\", \"error\": \"");
+        std.io.stddbg.write(proc_result.error);
+        std.io.stddbg.write("\"}\n");
+        pass(pid_map);
+    };
+    
+    directory:proc_dir = proc_result.value;
+    
+    for (entry:e in proc_dir) {
+        if (!e.is_dir()) continue;
+        if (!is_numeric(e.name)) continue;
+        
+        u32:pid = std.convert.to_u32(e.name);
+        string:fd_path = "/proc/" + e.name + "/fd";
+        
+        // Permission Check - CORRECTED: use Result
+        result<bool>:access_result = std.fs.access(fd_path, "r");
+        if (access_result.is_error || !access_result.value) {
+            // Log to stddbg: Access Denied
+            std.io.stddbg.write("{\"event\": \"access_denied\", \"path\": \"");
+            std.io.stddbg.write(fd_path);
+            std.io.stddbg.write("\"}\n");
+            continue;
+        };
+
+        result<directory>:fds_result = std.fs.read_dir(fd_path);
+        if (fds_result.is_error) continue;
+        
+        directory:fds = fds_result.value;
+        
+        for (fd_entry:fd in fds) {
+            // readlink /proc/PID/fd/N -> socket:[inode]
+            result<string>:link_result = std.fs.read_link(fd.path);
+            if (link_result.is_error) continue;
+            
+            string:link = link_result.value;
+            
+            if (link.starts_with("socket:")) {
+                // Parse out the inode from "socket:[18678]"
+                string:inode_str = link.substring(8, link.length() - 9);
+                u64:inode = std.convert.to_u64(inode_str);
+                
+                // Insert into map
+                pid_map.cache.insert(inode, pid);
+            };
+        };
+    };
+    
+    // Log completion telemetry
+    tbb64:end_time = std.time.now();
+    tbb64:duration = end_time - start_time;
+    
+    std.io.stddbg.write("{\"event\": \"inode_map_built\", \"entries\": ");
+    std.io.stddbg.write(std.string.from_int(pid_map.cache.size()));
+    std.io.stddbg.write(", \"duration_ns\": ");
+    std.io.stddbg.write(std.string.from_int64(duration));
+    std.io.stddbg.write("}\n");
+    
+    pass(pid_map);
+};
+
+// ============================================================================
+// Module: anetstat.aria
+// Main Entry Point
+// ============================================================================
+
+// use std.io;
+// use net.types;
+// use parsers.proc;
+// use net.pid_resolver;
+
+func:main = int32(array<string>:args) {
+    // 1. Build PID Map (Heavy lifting first)
+    PidMap:pid_map = net.pid_resolver.build_map();
+
+    // 2. Open Kernel Interface - CORRECTED: use Result type
+    result<file>:tcp_result = std.io.open("/proc/net/tcp", "r");
+    if (tcp_result.is_error) {
+        std.io.stderr.write("Fatal: Cannot access kernel TCP table.\n");
+        std.io.stderr.write(tcp_result.error);
+        std.io.stderr.write("\n");
+        pass(1);
+    };
+    
+    file:tcp_file = tcp_result.value;
+
+    // 3. Header Handshake (for Data Plane)
+    // Write a Magic Byte sequence to stddato so downstream tools know the schema.
+    // "ANET" + Version 0x01
+    array<u8>:magic = [0x41, 0x4E, 0x45, 0x54, 0x01];
+    std.io.stddato.write_bytes(magic);
+
+    // 4. Processing Loop
+    // Skip header line - CORRECTED: use Result
+    result<string>:header_result = tcp_file.read_line();
+    if (header_result.is_error) {
+        std.io.stderr.write("Error reading header line\n");
+        pass(1);
+    };
+
+    while (true) {
+        result<string>:line_result = tcp_file.read_line();
+        
+        // CORRECTED: Check for EOF via result
+        if (line_result.is_error) break;
+        
+        string:line = line_result.value;
+        
+        // Empty line check
+        if (line.length() == 0) break;
+
+        // A. Parse
+        result<Connection>:parse_result = parsers.proc.parse_line(line);
+        if (parse_result.is_error) {
+            std.io.stddbg.write("{\"event\": \"parse_error\", \"line\": \"");
+            std.io.stddbg.write(line);
+            std.io.stddbg.write("\"}\n");
+            continue;
+        };
+        
+        Connection:conn = parse_result.value;
+
+        // B. Enrich (PID Lookup)
+        if (pid_map.cache.contains(conn.inode)) {
+            result<u32>:pid_result = pid_map.cache.get(conn.inode);
+            if (!pid_result.is_error) {
+                conn.pid = pid_result.value;
+            };
+        } else {
+            conn.pid = 0; // Or use TBB ERR sentinel if pid is tbb32
+        };
+
+        // C. Dispatch - Control Plane (UI)
+        // Format and print to stdout
+        print_connection_row(conn);
+
+        // D. Dispatch - Data Plane (Binary)
+        // Serialize the struct directly to FD 5
+        // CORRECTED: Use proper binary write
+        unsafe {
+            wild u8:raw_ptr = cast(wild u8, &conn);
+            std.io.stddato.write_raw(raw_ptr, sizeof(Connection));
+        };
+    };
+
+    pass(0);
+};
+
+// Helper: Print connection row to stdout
+func:print_connection_row = void(Connection:conn) {
+    // Format IP addresses
+    string:local_ip = format_ipv6(conn.local_ip);
+    string:remote_ip = format_ipv6(conn.remote_ip);
+    
+    // Color code based on state
+    string:state_str = format_state_colored(conn.state);
+    
+    // Print row
+    std.io.stdout.write(local_ip);
+    std.io.stdout.write(":");
+    std.io.stdout.write(std.string.from_int(conn.local_port));
+    std.io.stdout.write("  ");
+    std.io.stdout.write(remote_ip);
+    std.io.stdout.write(":");
+    std.io.stdout.write(std.string.from_int(conn.remote_port));
+    std.io.stdout.write("  ");
+    std.io.stdout.write(state_str);
+    std.io.stdout.write("  PID:");
+    std.io.stdout.write(std.string.from_int(conn.pid));
+    std.io.stdout.write("\n");
+};
+
+// Helper: Format IPv6 address (or IPv4-mapped)
+func:format_ipv6 = string(u8:bytes) {
+    // Check if IPv4-mapped (first 10 bytes zero, bytes 10-11 are 0xFF)
+    bool:is_ipv4 = true;
+    for (int32:i = 0; i < 10; i = i + 1) {
+        if (bytes != 0) {
+            is_ipv4 = false;
+            break;
+        };
+    };
+    
+    if (is_ipv4 && bytes == 0xFF && bytes == 0xFF) {
+        // Format as IPv4
+        string:result = std.string.from_int(bytes);
+        result = result + "." + std.string.from_int(bytes);
+        result = result + "." + std.string.from_int(bytes);
+        result = result + "." + std.string.from_int(bytes);
+        pass(result);
+    } else {
+        // Format as IPv6 (simplified - full implementation would compress zeros)
+        string:result = "";
+        for (int32:i = 0; i < 16; i = i + 2) {
+            if (i > 0) result = result + ":";
+            u16:word = (bytes << 8) | bytes;
+            result = result + std.string.to_hex(word);
+        };
+        pass(result);
+    };
+};
+
+// Helper: Format state with ANSI colors
+func:format_state_colored = string(TcpState:state) {
+    string:name = "";
+    
+    // Determine state name (color codes removed for now)
+    if (state == TcpState.ESTABLISHED) {
+        name = "ESTABLISHED";
+    } else if (state == TcpState.LISTEN) {
+        name = "LISTEN";
+    } else if (state == TcpState.SYN_SENT) {
+        name = "SYN_SENT";
+    } else if (state == TcpState.TIME_WAIT) {
+        name = "TIME_WAIT";
+    } else if (state == TcpState.CLOSE_WAIT) {
+        name = "CLOSE_WAIT";
+    } else {
+        name = "OTHER";
+    };
+    
+    pass(name);
+};
+
+// ============================================================================
+// Module: filter.aria
+// Downstream Pipeline Filter
+// ============================================================================
+
+// use std.io;
+// use net.types;
+
+func:main = int32(array<string>:args) {
+    // Parse args: --state ESTABLISHED --port 443
+    TcpState:target_state = parse_state_arg(args);
+    u16:target_port = parse_port_arg(args);
+
+    // Read Header
+    array<u8>:header;
+    int64:header_bytes = std.io.stddati.read_bytes(header, 5) ? -1;
+    if (header_bytes != 5) {
+        std.io.stderr.write("Invalid header\n");
+        pass(1);
+    };
+    
+    // Pass header through to stddato
+    std.io.stddato.write_bytes(header);
+
+    while (true) {
+        Connection:c;
+        
+        // Read exactly sizeof(Connection) bytes
+        unsafe {
+            wild u8:conn_ptr = cast(wild u8, &c);
+            int64:bytes = std.io.stddati.read_raw(conn_ptr, sizeof(Connection)) ? -1;
+            if (bytes < sizeof(Connection)) break; // EOF
+        };
+
+        bool:keep = true;
+        if (target_state != TcpState.UNKNOWN && c.state != target_state) {
+            keep = false;
+        };
+        if (target_port != 0 && c.remote_port != target_port) {
+            keep = false;
+        };
+
+        if (keep) {
+            // Pass the binary struct to the next tool via FD 5
+            unsafe {
+                wild u8:conn_ptr = cast(wild u8, &c);
+                std.io.stddato.write_raw(conn_ptr, sizeof(Connection));
+            };
+        };
+    };
+    
+    pass(0);
+};
+
+func:parse_state_arg = TcpState(array<string>:args) {
+    // Simplified - real implementation would parse --state flag
+    pass(TcpState.UNKNOWN);
+};
+
+func:parse_port_arg = u16(array<string>:args) {
+    // Simplified - real implementation would parse --port flag
+    pass(0);
+};
+
+// ============================================================================
+// Module: count.aria
+// Generic Counter for Binary Streams
+// ============================================================================
+
+// use std.io;
+
+func:main = int32() {
+    u64:count = 0;
+    
+    // Read header (5 bytes magic)
+    array<u8>:header;
+    int64:header_bytes = std.io.stddati.read_bytes(header, 5) ? -1;
+    if (header_bytes != 5) {
+        std.io.stderr.write("Invalid stream header\n");
+        pass(1);
+    };
+
+    // Read Connection structs (72 bytes each)
+    array<u8>:buffer;
+    
+    while (true) {
+        int64:bytes_read = std.io.stddati.read_bytes(buffer, 72) ? -1;
+        if (bytes_read != 72) break;
+        count = count + 1;
+    };
+    
+    // Print result to stdout (UI)
+    std.io.stdout.write(std.string.from_int64(count));
+    std.io.stdout.write("\n");
+    
+    pass(0);
+};
+
+// ============================================================================
+// END OF CORRECTED NETSTAT IMPLEMENTATION
+// ============================================================================

@@ -1,0 +1,337 @@
+﻿Architectural Specification and Implementation Strategy for the AriaBuild Test Automation Subsystem
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language ecosystem, currently navigating the transition from version v0.0.7 toward the 0.1.0 milestone, necessitates a fundamental evolution in its development infrastructure. While the core compiler (ariac) and language specifications have achieved a degree of stability—evidenced by the implementation of sophisticated features such as Twisted Balanced Binary (TBB) arithmetic and hybrid memory models—the surrounding tooling remains nascent. Specifically, the build system, AriaBuild (internally aria_make), currently functions primarily as an artifact generator, lacking the integrated verification capabilities required for a production-grade systems language.1
+In modern software engineering, particularly within the domain of compiled systems languages like Rust, Go, and C++, the build system serves as the central nervous system of the development lifecycle. It is not merely responsible for transforming source code into machine code but is also the orchestrator of correctness verification. The current state of the Aria ecosystem, where tests are compiled into LLVM Intermediate Representation (IR) but require manual invocation via the LLVM interpreter (lli), represents a critical fissure in the Continuous Integration (CI) loop.1 This manual intervention introduces latency, invites human error, and prevents the scalable regression testing necessary to validate complex runtime behaviors like TBB error propagation and "wild" memory safety.1
+This report articulates an exhaustive architectural specification for the Test Automation Subsystem, a new component of AriaBuild designed to close this capability gap. The specification centers on the creation of a TestRunner class within src/test/runner.cpp, engineered to act as a robust bridge between the declarative build graph and the imperative runtime environment.
+The proposed architecture leverages the llvm::sys::ExecuteAndWait primitive to implement a secure, cross-platform process execution model. This choice moves beyond simplistic shell invocation, offering precise control over standard I/O streams—essential for capturing Aria’s puts() based diagnostics—and process isolation, which protects the build tool from experimental test code crashes. Furthermore, the design integrates deeply with Aria’s unique result type semantics, translating runtime exit codes into actionable "PASS/FAIL" metrics compatible with standard CI protocols.
+By formalizing the interaction between the build system’s dependency engine and the lli runtime, this strategy not only satisfies the immediate requirement for automated testing but also establishes the foundation for future advanced capabilities, such as parallel test sharding, coverage analysis, and integration with the Aria Language Server (AriaLS).1
+2. The Role of Automated Verification in Systems Language Ecosystems
+To understand the gravity of the proposed implementation, one must situate it within the broader context of systems language tooling. Languages targeting the system layer—where direct memory access, manual resource management, and hardware proximity are paramount—require verification frameworks that are far more rigorous than their managed-language counterparts.
+2.1 The "Meta-Execution" Paradigm
+Aria operates on a "Meta-Execution" model during its developmental phase. Unlike C or Rust, which typically compile directly to platform-native machine code (ELF on Linux, PE on Windows, Mach-O on macOS) linked against a system C runtime, Aria currently targets the LLVM Intermediate Representation (IR).1 The artifacts produced by the ariac compiler are .ll or .bc files, which are not directly executable by the operating system kernel.
+This architecture necessitates a test runner that functions as a hypervisor of sorts. It cannot simply exec() the target; it must instantiate a virtual machine—the LLVM Interpreter (lli)—to host the execution.1 This adds a layer of indirection that the TestRunner must manage transparently. The runner is responsible for configuring this environment, specifically enforcing Just-In-Time (JIT) compilation (via -force-interpreter=false) to ensure that the performance characteristics and optimization semantics mirror the eventual native compilation pipeline.1
+2.2 Feedback Loops and CI Compatibility
+The primary driver for this architectural upgrade is compatibility with automated Continuous Integration (CI) systems. In a manual workflow, a developer might tolerate running lli build/test_core.ll and visually inspecting the output. In a CI environment (e.g., GitHub Actions, Jenkins), this is impossible. The build tool must return a non-zero exit code to the shell if any logic within the dependency tree fails.
+The current disconnect—where tests are compiled but not run—means a commit that introduces a regression in the TBB arithmetic logic 1 would still pass the "Build" stage of a CI pipeline, only to fail in production or during ad-hoc manual checks. The TestRunner closes this loop by promoting testing to a first-class citizen of the aria_make command, ensuring that aria_make test is semantically equivalent to cargo test or go test: a comprehensive assertion of project health.
+3. Architectural Audit of AriaBuild (aria_make)
+The implementation of the TestRunner cannot happen in a vacuum; it must integrate seamlessly with the existing architecture of AriaBuild. An analysis of the system reveals a declarative, graph-based engine designed for extensibility.
+3.1 The Aria Build Configuration (ABC) and Target Schema
+AriaBuild abandons the whitespace-sensitive, imperative nature of GNU Make in favor of the Aria Build Configuration (ABC) format—a JSON-derivative structure that treats configuration as data.1 The core unit of this configuration is the Target.
+Table 1: Target Definition Schema Analysis
+Field
+	Type
+	Description
+	Relevance to TestRunner
+	name
+	String
+	Unique identifier
+	Used for reporting ("TEST FAILED: core_math")
+	type
+	Enum
+	Artifact kind (binary, library, test)
+	Critical filter: Runner iterates only type == "test"
+	sources
+	List
+	Source files (globs supported)
+	Defines the scope of the test compilation unit
+	output
+	String
+	Path to artifact
+	The path passed to lli for execution
+	depends_on
+	List
+	Dependency names
+	Ensures test runner waits for compilation
+	The existence of the test enumeration in the target type 1 is a pivotal architectural advantage. It means the configuration schema does not need modification. The TestRunner can simply query the existing Dependency Graph for nodes of this type.
+3.2 The Dependency Graph Engine
+AriaBuild models the build process as a Directed Acyclic Graph (DAG), utilizing Kahn’s Algorithm for topological sorting.1 This ensures that dependencies are built before dependents.
+* Implication for Testing: A test target (e.g., math_tests) will logically depend on the library it tests (e.g., math_lib). The ToolchainOrchestrator respects this graph, ensuring math_lib.ll is generated before math_tests.ll is compiled.1
+* The Execution Boundary: The TestRunner operates after the compilation phase of the DAG. While compilation can be fully parallelized based on the graph topology, test execution is logically a distinct phase that occurs once all artifacts in the test subset are successfully generated (or "dirty" checked via timestamps).1
+3.3 System Capabilities and C++ Implementation
+AriaBuild is implemented in C++17, utilizing the std::filesystem library for platform-agnostic path handling and globbing.1 This choice of host language is strategic; it allows the build tool to link directly against LLVM support libraries, providing access to robust system primitives that the Aria standard library (still in development) lacks. The TestRunner will continue this pattern, implemented in C++ to leverage llvm::sys for process management.
+4. Runtime Environment Analysis: The LLVM Interpreter (lli) as a Test Harness
+The TestRunner acts as a meta-driver. It does not execute the code directly; it orchestrates the lli tool. Understanding lli is crucial for designing the runner.
+4.1 JIT vs. Interpretation
+The LLVM Interpreter (lli) supports multiple execution modes.
+1. Interpreter Mode: Executes LLVM bytecode instruction by instruction. It is slow and does not accurately model CPU behavior (e.g., memory ordering, SIMD).
+2. JIT Mode (Just-In-Time): Compiles IR to native host machine code in memory and executes it.
+For verification to be meaningful, tests must run in JIT mode. This aligns the test environment with the production environment (where code would eventually be static compiled). The TestRunner must enforce this by passing specific flags, historically -force-interpreter=false or utilizing the newer ORC JIT interfaces if available.1 Failing to do so could hide bugs related to backend code generation or optimization passes.
+4.2 Error Propagation and Signals
+Aria programs, including tests, communicate success or failure via the process exit code.
+* Exit Code 0: Logic Success. The main function returned pass(0).
+* Exit Code Non-Zero: Logic Failure. The main function returned fail(code) due to an assertion error.
+* Signal/Crash: The process terminated abnormally (Segmentation Fault, Illegal Instruction).
+The TestRunner must differentiate these. A crash indicates a potential compiler bug or a memory safety violation in "wild" code sections 1, whereas a non-zero exit code indicates a functional regression in the user's logic.
+5. Process Execution Primitives: A Deep Dive into llvm::sys
+The user requirement mandates the use of llvm::sys::ExecuteAndWait [User Query]. This function is part of the LLVM Support library (libLLVMSupport) and provides a highly robust abstraction over OS-specific process creation APIs.
+5.1 Technical Superiority over std::system
+Standard C++ std::system is insufficient for a build tool for several reasons:
+1. Shell Injection: std::system invokes the default shell (/bin/sh or cmd.exe). If a file path contains spaces or unchecked characters, it opens the door to command injection.
+2. Blocking I/O: std::system inherits the parent's stdout/stderr. Capturing this output for analysis (to detect "Assertion Failed" messages) is extremely difficult and non-portable.
+3. Signal Handling: It provides poor visibility into how a process died (signal vs exit code).
+5.2 Anatomy of llvm::sys::ExecuteAndWait
+The function signature reveals its capabilities 2:
+
+
+C++
+
+
+
+
+int llvm::sys::ExecuteAndWait(
+   StringRef Program,
+   ArrayRef<StringRef> Args,
+   Optional<ArrayRef<StringRef>> Env = None,
+   ArrayRef<Optional<StringRef>> Redirects = {},
+   unsigned SecondsToWait = 0,
+   unsigned MemoryLimit = 0,
+   std::string *ErrMsg = nullptr,
+   bool *ExecutionFailed = nullptr,
+   Optional<ProcessStatistics> *ProcStat = nullptr,
+   BitVector *AffinityMask = nullptr
+);
+
+Key Parameters Analysis:
+* Program: The absolute path to the executable (lli). This bypasses PATH lookup issues and security risks.
+* Args: An array of arguments. LLVM handles the platform-specific escaping (e.g., handling quotes in Windows vs Unix), ensuring arguments are passed literally.2
+* Redirects: This is the most critical parameter for the TestRunner. It accepts an array of Optional<StringRef> corresponding to stdin, stdout, and stderr. By passing file paths here, the function automatically redirects the child process's I/O to these files.3
+* Env: Allows controlling the environment variables. This is vital for hermetic testing—ensuring tests don't depend on random variables in the user's shell.2
+* SecondsToWait: Provides a built-in timeout mechanism. If a test enters an infinite loop, the build system can kill it rather than hanging indefinitely.4
+5.3 The Output Capture Strategy: Files vs. Pipes
+While ExecuteAndWait supports redirection, it redirects to files (paths), not memory buffers or pipes directly in the simplified API.3 To capture the output of lli (which contains the Aria puts() assertion messages), the TestRunner must implement a Temporary File Pattern:
+1. Create a temporary file for stdout (e.g., /tmp/aria_test_out_X).
+2. Create a temporary file for stderr.
+3. Pass these paths to ExecuteAndWait.
+4. After the function returns, read the files into C++ strings.
+5. Delete the files.
+This approach is superior to manual pipe management (using pipe(), fork(), dup2()) because it avoids the "Deadlock Risk." If a child process writes more data to a pipe than the buffer can hold, and the parent is not actively reading (because it is waiting), the child blocks forever. File redirection effectively gives infinite buffering, decoupling the child's execution from the parent's reading logic.
+6. Architectural Specification of the TestRunner Class
+The TestRunner is designed as a standalone component within the aria::test namespace, adhering to the modular architecture of AriaBuild.
+6.1 Class Structure
+The class encapsulates the configuration (path to lli, concurrency limits) and the state of the current test run (results, failure counts).
+
+
+C++
+
+
+
+
+namespace aria {
+namespace test {
+
+struct TestResult {
+   std::string target_name;
+   bool passed;
+   int exit_code;
+   std::string output;       // Combined stdout
+   std::string error_output; // Combined stderr
+   std::string failure_message; // Logic-level error description
+};
+
+class TestRunner {
+public:
+   // Initialize with the path to the runtime environment (lli)
+   explicit TestRunner(const std::string& lli_path);
+
+   // Main orchestration method
+   // Returns true if all tests passed
+   bool run_all(const std::vector<aria::build::Target>& test_targets);
+
+private:
+   std::string lli_path_;
+
+   // Executes a single target.
+   // This function is designed to be thread-safe for future parallelization.
+   TestResult execute_target(const aria::build::Target& target);
+
+   // Aggregates and formats the final report
+   void print_summary(const std::vector<TestResult>& results);
+};
+
+} // namespace test
+} // namespace aria
+
+6.2 Data Flow
+1. Input: A std::vector<Target> filtered from the build configuration where type == "test".
+2. Transformation: Each target is transformed into a system process execution.
+3. Output: A structured TestResult object containing the binary exit status and text logs.
+4. Aggregation: Results are collected into a summary report printed to stdout.
+7. Implementation Strategy: src/test/runner.cpp
+This section details the concrete implementation logic required to satisfy the user request.
+7.1 Path Resolution and Initialization
+The TestRunner must locate lli. Relying on PATH is acceptable for a developer tool, but explicit configuration is better. The implementation uses llvm::sys::findProgramByName 5 to resolve lli robustly.
+
+
+C++
+
+
+
+
+// Logic for constructor
+TestRunner::TestRunner() {
+   auto path = llvm::sys::findProgramByName("lli");
+   if (path) lli_path_ = *path;
+   else { /* Handle error: Runtime not found */ }
+}
+
+7.2 The Execution Core (execute_target)
+This method implements the llvm::sys::ExecuteAndWait logic.
+Detailed Workflow:
+1. Verify Artifact: Check if target.output (the .ll file) exists using llvm::sys::fs::exists.
+2. Setup Redirection:
+   * Use llvm::sys::fs::createTemporaryFile to generate unique paths for stdout and stderr.
+   * Construct the Redirects array: {std::nullopt, out_path, err_path}.
+3. Construct Arguments:
+   * Program: lli_path_
+   * Args: {"lli", "-force-interpreter=false", target.output}.
+4. Execute: Call ExecuteAndWait.
+5. Harvest Results:
+   * Use llvm::MemoryBuffer::getFile to read the temporary files.
+   * Store contents in TestResult.output.
+   * Delete temporary files using llvm::sys::fs::remove.
+6. Interpret Exit Code:
+   * If ret_code == 0: Status PASSED.
+   * If ret_code!= 0: Status FAILED. Populate failure_message with "Exit code X".
+7.3 The Orchestration Loop (run_all)
+The run_all method iterates through the targets.
+* Iteration: Loop through the provided test_targets.
+* Feedback: Print a minimal progress indicator (e.g., . for pass, F for fail) to stdout immediately after each test finishes. This provides visual feedback during long runs.
+* Collection: Push TestResult objects into a vector.
+* Summary: Call print_summary after the loop.
+* Final Return: Return false if the failed_count > 0.
+7.4 The Summary Report
+The requirement specifies printing "PASS:, FAIL:". The print_summary method iterates the results vector:
+* Calculates totals.
+* Prints a formatted header.
+* Failure Drill-down: For every failed test, it prints the Target Name, the Exit Code, and critically, the Captured Output. This allows the developer to see the "Assertion Failed" message from Aria code without re-running the test manually.
+* Prints the final counts.
+8. Concurrency Model and Scalability
+While the initial implementation may iterate sequentially, the architectural requirement for "AriaBuild" emphasizes parallel execution (DAG scheduling). The TestRunner must support this.
+8.1 Scatter-Gather Concurrency
+To minimize wall-clock time, the TestRunner should employ a Scatter-Gather pattern.
+* Scatter: Instead of calling execute_target synchronously in the loop, the runner can launch each test in a separate thread (using std::async or a thread pool).
+* Gather: The main thread waits for all futures to complete.
+8.2 Resource Contention and Limits
+Spawning 1000 processes via std::async simultaneously (the "Thundering Herd") can exhaust system resources (file descriptors, RAM).
+* Strategy: The concurrency level should be bounded, ideally defaulting to std::thread::hardware_concurrency().
+* Implementation: The integration with the aria_make main loop can reuse the existing ThreadPool used for compilation 1, or use llvm::sys::ExecuteNoWait to manage a pool of PIDs manually. For the immediate implementation of ExecuteAndWait, strictly bounded parallelism or sequential execution is safer to avoid OOM scenarios during JIT compilation.
+8.3 Thread Safety in Reporting
+If tests run in parallel, they cannot print to stdout directly (the . and F progress indicators would interleave).
+* Solution: The execute_target function must be pure—it returns data, it does not print. The run_all loop handles the printing. Access to the shared results vector must be protected by a std::mutex if std::async is used.
+9. Error Analysis and Reporting Taxonomy
+The TestRunner acts as a translation layer for errors. It must map low-level system signals to high-level developer feedback.
+Table 2: Error Taxonomy and Reporting Strategy
+Event
+	Signal
+	Aria Context
+	Report Strategy
+	Logic Pass
+	Exit 0
+	pass(0) called
+	Count as PASS. No output shown.
+	Assertion Fail
+	Exit 1-127
+	fail(1) called
+	Count as FAIL. Show stdout (contains puts msg).
+	TBB Overflow
+	Exit 1 (typ.)
+	Sticky ERR not handled
+	Count as FAIL. Show stdout (trace of calculation).
+	Segfault
+	Exit -2 / 139
+	Wild ptr access / Stack overflow
+	Count as CRASH. Explicitly label "Segmentation Fault".
+	Execution Error
+	Exit -1
+	lli not found / permission denied
+	Count as ERROR. Report system error string.
+	Timeout
+	Exit -2
+	Infinite loop in test
+	Count as TIMEOUT.
+	This taxonomy ensures that the developer knows why a test failed, distinguishing between a math error (TBB) and a memory safety violation (Segfault), a distinction critical in hybrid memory languages like Aria.1
+10. Integration with Continuous Integration (CI) and Future Roadmaps
+The implementation of the TestRunner satisfies the "Incompatible with automated CI" issue [User Query].
+* Exit Codes: By returning a non-zero exit code from the aria_make process if any test fails, the system correctly signals failure to CI orchestrators like Jenkins or GitHub Actions.
+* Output Parsing: The structured "PASS/FAIL" summary is easily parsable by log scrapers.
+Future Roadmap:
+1. JUnit XML Output: Future iterations should support an --output-xml flag to generate JUnit-compatible reports for richer CI integration.
+2. LSP Integration: The Aria Language Server 1 can integrate with this runner. By parsing the captured stdout, the LSP could highlight the exact line of an assertion failure in the IDE.
+3. Distributed Testing: For massive codebases, the artifact-based design allows tests to be compiled on one machine and executed on a farm of test runners, passing only the .ll files.
+11. Conclusion
+The architectural specification for the AriaBuild Test Automation Subsystem represents a decisive step toward maturity for the Aria ecosystem. By wrapping the powerful llvm::sys::ExecuteAndWait primitive in a semantic TestRunner class, the design bridges the gap between the graph-based build system and the JIT-based runtime.
+The solution ensures rigorous process isolation, precise control over execution environments, and high-fidelity reporting of Aria's unique error states. It transforms verification from a manual, error-prone chore into a deterministic, automated gatekeeper. This implementation not only satisfies the immediate functional requirements but establishes a scalable foundation for the rigorous testing demands of a systems programming language.
+Detailed Implementation Logic (Pseudocode/C++)
+Based on the specification, the core logic for src/test/runner.cpp is derived:
+
+
+C++
+
+
+
+
+// src/test/runner.cpp
+#include "test/runner.h"
+#include "llvm/Support/Program.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
+
+namespace aria::test {
+
+bool TestRunner::execute(const build::Target& target) {
+   // 1. Resolve lli
+   auto lli = llvm::sys::findProgramByName("lli");
+   if (!lli) {
+       std::cerr << "Error: lli not found in PATH\n";
+       return false;
+   }
+
+   // 2. Setup Temp Files for Redirection
+   llvm::SmallString out_file, err_file;
+   llvm::sys::fs::createTemporaryFile("aria_test_out", "txt", out_file);
+   llvm::sys::fs::createTemporaryFile("aria_test_err", "txt", err_file);
+
+   // 3. Configure Redirection Array
+   // 0: stdin (null), 1: stdout, 2: stderr
+   std::optional<llvm::StringRef> redirects = {
+       std::nullopt, 
+       llvm::StringRef(out_file), 
+       llvm::StringRef(err_file)
+   };
+
+   // 4. Construct Args
+   std::vector<llvm::StringRef> args = {
+       *lli,
+       "-force-interpreter=false",
+       target.output
+   };
+
+   // 5. Execute
+   std::string err_msg;
+   bool exec_failed = false;
+   int ret = llvm::sys::ExecuteAndWait(
+       *lli, args, std::nullopt, redirects, 0, 0, &err_msg, &exec_failed
+   );
+
+   // 6. Harvest Output
+   auto out_buf = llvm::MemoryBuffer::getFile(out_file);
+   auto err_buf = llvm::MemoryBuffer::getFile(err_file);
+   
+   // Store results in member result list...
+   
+   // 7. Cleanup
+   llvm::sys::fs::remove(out_file);
+   llvm::sys::fs::remove(err_file);
+
+   return (ret == 0);
+}
+
+}
+
+This logic ensures strict adherence to the requirements of the original query while respecting the architectural constraints identified in the research.
+Works cited
+1. compiled.txt
+2. function ExecuteAndWait: LLVM/Clang 15.x documentation, accessed December 20, 2025, https://docs.hdoc.io/hdoc/llvm-project/fDC2FF79EAC7F1E2C.html
+3. llvm::sys Namespace Reference, accessed December 20, 2025, https://llvm.org/doxygen/namespacellvm_1_1sys.html
+4. llvm::sys Namespace Reference, accessed December 20, 2025, http://www.few.vu.nl/~lsc300/LLVM/doxygen/namespacellvm_1_1sys.html
+5. include/llvm/Support/Program.h Source File, accessed December 20, 2025, https://llvm.org/doxygen/Program_8h_source.html

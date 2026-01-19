@@ -1,0 +1,57 @@
+## TASK 1: Configuration Parser and AST Visitor
+
+**Priority**: CRITICAL (Blocks all other features)
+**Estimated Complexity**: High
+**Dependencies**: None
+
+### Problem Statement
+The current aria::Parser is designed for the Aria language, not for the ABC (Aria Build Configuration) format. We need a specialized ConfigParser that can handle:
+- JSON-superset syntax with unquoted keys
+- Top-level sections: `project:`, `variables:`, `targets:`
+- Object and array literals (currently stubbed)
+- Visitor pattern for AST traversal
+
+### Required Context Files
+
+**From aria repository**:
+1. `include/frontend/ast/ast_node.h` - Base AST structure
+2. `include/frontend/ast/expr.h` - Expression nodes
+3. `src/frontend/lexer/lexer.cpp` - Token scanning logic
+4. `src/frontend/parser/parser.h` - Current parser interface
+5. `src/frontend/parser/parser.cpp` - Parser implementation (partial)
+6. `include/frontend/token.h` - Token definitions
+
+**From aria_make repository**:
+1. `docs/research/gemini/responses/task_01_parser_implementation.txt` - Detailed design spec
+2. `docs/info/Designing a JSON-like Build Tool.txt` - ABC syntax specification
+3. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (Section 2)
+
+### Gemini Prompt
+
+```
+You have identified a critical gap between the general-purpose Aria language parser and the specific requirements for the Aria Build Configuration (ABC) format. Based on the design in 'task_01_parser_implementation.txt' and the ABC specification, generate the complete C++ header and implementation for the ConfigParser class.
+
+Requirements:
+1. Reuse the aria::frontend::Lexer but implement a LexerAdapter to filter language-specific tokens
+2. Implement recursive descent methods for:
+   - parseProjectSection() - handles project metadata
+   - parseVariablesBlock() - handles variable definitions
+   - parseTargetsBlock() - handles build target definitions
+3. Implement the missing parseObjectLiteral() and parseArrayLiteral() logic specifically for build configurations, supporting unquoted keys (e.g., name: "value" not just "name": "value")
+4. Define a BuildFileAST structure distinct from the language AST
+5. Define a Visitor interface (abstract base class) with methods like visit(ProjectNode*), visit(TargetNode*), visit(VariableNode*)
+6. Implement accept() methods in each AST node to dispatch to the visitor
+7. Ensure strict error recovery using "panic mode" synchronization points at section boundaries
+
+The parser must handle the ABC grammar without triggering errors on valid build files. Provide both header (.h) and implementation (.cpp) files with detailed comments explaining the grammar rules.
+```
+
+### Expected Deliverables
+- `include/config/config_parser.h` - ConfigParser class declaration
+- `src/config/config_parser.cpp` - Implementation
+- `include/config/build_ast.h` - Build-specific AST nodes
+- `include/config/visitor.h` - Visitor pattern interface
+- Example usage code showing parsing of a sample build.aria file
+
+---
+

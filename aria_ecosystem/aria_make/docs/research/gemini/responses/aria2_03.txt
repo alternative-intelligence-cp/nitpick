@@ -1,0 +1,236 @@
+﻿Architectural Specification: Error Handling Architecture for aria_make and the Aria Ecosystem
+1. Executive Summary and Strategic Architectural Vision
+The development of the Aria programming language ecosystem has reached a critical inflection point. As the language matures through version v0.0.7, the supporting infrastructure must evolve from ad-hoc experimentation to enterprise-grade robustness. Central to this evolution is the transition from legacy build orchestration—typified by the whitespace-sensitive fragility of GNU Make—to a bespoke, deterministic build system designated as AriaBuild (internally referenced as aria_make). This report presents an exhaustive architectural specification for the error handling mechanisms within aria_make and its integrated components, the Aria Compiler (ariac) and the Aria Language Server (AriaLS).
+The architecture proposed herein is not merely a mechanism for catching bugs; it is a foundational philosophy that treats the "Error State" as a first-class citizen of the domain model. We introduce a Bifurcated Error Model that rigorously distinguishes between recoverable semantic failures, which are managed via the language's native result types and Twisted Balanced Binary (TBB) sticky propagation, and systemic operational failures, which utilize C++ host exceptions for robust resource cleanup and thread cancellation. This duality ensures that the toolchain provides the "native feel" of Aria—explicit, value-based error handling—while leveraging the mature, RAII-compliant exception mechanisms of C++17 to manage the complexity of concurrent build scheduling and language server responsiveness.
+By analyzing the deficiencies of current systems—such as the "invisible" syntax errors of Makefiles and the "spiral of death" in single-threaded language servers—this report articulates a comprehensive design. It encompasses the whitespace-insensitive parsing of the Aria Build Configuration (ABC) format, the graph-theoretic detection of circular dependencies, the cooperative cancellation patterns of the multi-threaded Language Server, and the rigorous handling of OS signals during process orchestration. The objective is to construct a hermetic, resilient toolchain that maximizes developer velocity by transforming opaque failures into actionable, structured intelligence.
+2. Theoretical Framework: The Bifurcated Error Model
+The architectural design of aria_make must bridge two distinct worlds: the internal logic of the Aria language it compiles, and the external reality of the C++ host environment in which it executes. This necessity drives the Bifurcated Error Model, a strategy that assigns specific error-handling paradigms to specific domains of the toolchain.
+2.1 The Native Aria Paradigm: Explicit Results and Sticky Arithmetic
+Aria rejects the "invisible control flow" of unchecked exceptions for standard runtime logic. In many legacy systems, an exception thrown deep within a call stack can unwind the application state unpredictably, making it difficult to reason about control flow and resource safety. Aria mandates a strict adherence to explicit, value-based error propagation, a philosophy that aria_make must respect and emulate in its handling of build scripts and user configurations.
+2.1.1 The result Structure and Reserved Keywords
+At the core of Aria's function contract is the result type. Unlike C, where return codes are often integers that ambiguously represent either data or status (e.g., -1), or Java, where exceptions are hidden from the function signature, every Aria function implicitly returns a compound structure comprising an error code and a value: {err, val}.1 This architectural decision forces the programmer to acknowledge the possibility of failure at every call site, eliminating the class of bugs caused by ignored return codes.
+To ensure this pattern is ergonomic and ubiquitous, the language reserves specific keywords that the build system must parse and validate:
+* pass(value): This is a syntactic helper that constructs a success result ({err: 0, val: value}). It signals semantic correctness and valid data flow.1
+* fail(code): The inverse helper, constructing a failure result ({err: code, val: 0}). This standardizes error reporting, preventing ad-hoc error codes.1
+* result: This is a reserved type keyword. By enforcing this reservation at the lexer level, the language prevents variable shadowing (e.g., int32:result = 5 is a parse error), ensuring the integrity of the return mechanism.1
+This "Result Monad" pattern aligns with modern systems programming trends seen in Rust (Result<T, E>) and C++23 (std::expected). It prioritizes explicit control flow over implicit handling, ensuring that the "happy path" and the "failure path" are equally visible to the developer.2 For aria_make, this means that when it parses and executes build scripts (which may eventually be written in Aria itself), it must support this unwrapping logic natively.
+2.1.2 Twisted Balanced Binary (TBB): The Sticky Error
+Aria introduces a novel arithmetic paradigm: Twisted Balanced Binary (TBB). In traditional systems, integer overflow is a dangerous edge case—often undefined behavior in C/C++ or a runtime panic in Rust debug builds. Aria addresses this by integrating error states directly into the numeric representation through "sticky" propagation.
+* The Sentinel: TBB types (e.g., tbb8) utilize the minimum representable value (e.g., -128) as a designated ERR sentinel.1 This value is topologically distinct from the valid numeric range [-127, +127].
+* Sticky Propagation: The arithmetic logic unit (ALU) semantics are redefined such that any operation involving ERR results in ERR. If a + b overflows, the result is ERR. Subsequently, (a + b) * 10 is also ERR.1
+This has profound implications for aria_make. When the build system evaluates configuration variables (e.g., calculating buffer sizes or timeout thresholds defined in the build script), it cannot simply use host hardware arithmetic. If a user defines timeout_ms: 100 + 50 in a context limited to tbb8, the result must be ERR, not a wrapped negative number. Therefore, aria_make must implement a "TBB Emulator" to accurately replicate this sticky behavior during the evaluation of build-time logic. This ensures that a build script logic error propagates cleanly, halting the build with a deterministic overflow message rather than causing the build tool to crash or produce invalid artifacts with wrapped values.
+2.2 The Host Paradigm: C++17 Exceptions for Systemic Control
+While Aria code avoids exceptions, aria_make itself is implemented in C++17. Here, the architecture leverages C++ exceptions strictly for systemic control flow and resource lifecycle management, specifically relying on Resource Acquisition Is Initialization (RAII). This distinction is critical: exceptions are not used for user errors (like a syntax error in a build file), but for fatal system states (like an Out Of Memory condition) or control flow interruptions (like thread cancellation).
+2.2.1 RAII and Stack Unwinding
+In complex tooling, an error often requires the immediate release of multiple resources: open file descriptors, locked mutexes, and allocated memory buffers. C++ exceptions provide the only mechanism to guarantee that destructors are called deterministically as the stack unwinds.4
+* Usage in aria_make: If the configuration parser encounters a fatal schema violation that renders the internal state inconsistent, throwing a ConfigurationException allows the system to clean up the partially constructed Dependency Graph before exiting. This prevents memory leaks and ensures that lock files (e.g., build.lock) are released, preventing the build directory from becoming stale or locked.
+* Usage in AriaLS: As detailed later in the Language Server section, exceptions are the mandatory mechanism for safely cancelling worker threads without corrupting shared state. By throwing an exception, we force the unwinding of the stack, which invokes the destructors of std::unique_lock or std::shared_lock, ensuring that a thread never dies while holding a mutex.1
+3. AriaBuild (aria_make): Architecture of a Robust Builder
+The legacy build infrastructure for Aria relied on GNU Make, a tool whose rigid adherence to significant whitespace (the distinction between tabs and spaces) created a class of "invisible" syntax errors.1 These errors are notoriously difficult to debug because they are visually indistinguishable. aria_make addresses this by adopting a rigorous "Configuration as Data" philosophy, supported by a fault-tolerant parsing engine and a graph-theoretic dependency resolver.
+3.1 The Aria Build Configuration (ABC) Parser
+The entry point for aria_make is the build.aria file, defined in the Aria Build Configuration (ABC) format. This format is a JSON-derivative designed for human ergonomics and machine validation.
+3.1.1 Structural Delimiters and Error Recovery
+To eliminate the "invisible error" vector, ABC is strictly whitespace-insensitive. It relies on C-style structural delimiters—braces {} for objects and brackets `` for lists—to define scope and hierarchy.1 This design choice is not merely aesthetic; it fundamentally changes the error recovery capabilities of the parser.
+* Parser Architecture: The parser utilizes a recursive descent algorithm. Unlike standard JSON parsers which typically abort on the first error, the ABC parser is designed for robust error recovery.1
+* Synchronization Points: Upon encountering a syntax error (e.g., a missing colon or an unexpected token), the parser enters "Panic Mode." Instead of crashing, it attempts to synchronize the token stream to the next stable structural delimiter (e.g., the next closing brace }).
+* Diagnostic Aggregation: This recovery strategy allows aria_make to continue parsing the rest of the file, collecting and reporting multiple syntax errors in a single pass. This significantly reduces the "edit-compile-debug" cycle time for developers, as they can fix multiple configuration issues in one iteration rather than fixing one, re-running, and finding the next.
+3.1.2 Schema Validation and Type Safety
+Parsing validates structure, but not intent. To ensure semantic correctness, the parsed configuration object is validated against a strict schema.1 This schema enforces type safety on the build definitions before any execution logic is triggered.
+* Constraint Enforcement: The targets list must contain objects with specific mandatory fields (name, type, sources).
+* Type Checking: If a user provides a string where a list is expected (e.g., sources: "main.aria" instead of sources: ["main.aria"]), the validation engine reports a precise type mismatch error. This prevents the build from proceeding with malformed data that would otherwise cause an obscure C++ std::bad_cast exception deep in the execution engine.
+* Early Rejection: This "fail-fast" validation ensures that the build system never attempts to construct a dependency graph from invalid data, preserving the integrity of the internal state.
+3.2 The Dependency Graph Engine
+The core intelligence of aria_make resides in its Dependency Graph Engine, which models the build as a Directed Acyclic Graph (DAG).1 Handling errors in this graph is critical for ensuring deterministic builds.
+3.2.1 Cycle Detection Algorithms
+A critical failure mode in build systems is the circular dependency (e.g., Module A imports B, B imports A). If left unchecked, this leads to infinite recursion during the build process or linker errors.
+* Kahn’s Algorithm: aria_make employs Kahn’s Algorithm for topological sorting to determine the build order. This algorithm calculates the in-degree of every node. Nodes with zero in-degree are added to the build queue. As nodes are processed, they "release" their dependents.
+* Cycle Detection: Kahn's algorithm naturally detects cycles: if the sort completes but there are still nodes with non-zero in-degrees that were never added to the queue, a cycle exists.1
+* Diagnostic DFS: Merely detecting that a cycle exists is insufficient for the user; they need to know where it is. Upon detecting a cycle via Kahn's algorithm, aria_make triggers a secondary diagnostic pass using Depth First Search (DFS).
+   * Tri-Color Marking: This DFS utilizes a tri-color marking scheme (White, Gray, Black) to distinguish between visited nodes, unvisited nodes, and nodes currently in the recursion stack. A cycle is confirmed when the traversal encounters a "Gray" node.
+   * Path Reconstruction: This traversal isolates the specific strongly connected component forming the loop and reports the exact path (e.g., Cycle detected: Core -> Network -> Utils -> Core).1 This "Descriptive Error Reporting" is a defined requirement for the system.1
+3.2.2 Globbing and Determinism
+File discovery in aria_make is handled via glob patterns (e.g., src/**/*.aria). A common source of "works on my machine" errors is non-determinism in filesystem iteration order, which varies between file systems (ext4, NTFS, APFS).
+* The Sorting Invariant: To prevent linkage errors that vary across operating systems (where file A links before file B on Linux but after on Windows), aria_make enforces a strict invariant: the results of any glob expansion are sorted alphabetically before being committed to the build graph.1 This ensures that the inputs to the compiler and linker are deterministic, making build failures reproducible across all environments.
+* Capability Gap Implementation: The Aria standard library (v0.0.7) currently lacks directory iteration functions (readdir). Therefore, this logic is implemented in the C++ host layer using std::filesystem. The build tool acts as a bridge, compensating for the runtime's immaturity and ensuring that errors during file discovery (e.g., permission denied) are caught and reported by the host system.1
+3.3 Execution and Toolchain Orchestration
+aria_make acts as a meta-driver, orchestrating the invocation of the ariac compiler and lli runtime.1 Handling the errors of these child processes is paramount.
+3.3.1 Process Spawning and Exit Codes
+When aria_make spawns a child process (e.g., ariac), it must interpret the exit codes robustly to determine the next step.
+* Fail-Fast Strategy: If a compilation unit fails (returns a non-zero exit code), aria_make halts the build immediately. This prevents cascading errors where a linker attempts to link non-existent object files, which would generate a flood of confusing secondary error messages.
+* Internal Compiler Errors (ICE): aria_make distinguishes between a standard error code (1) and a crash code (e.g., 139 for SIGSEGV). If ariac crashes, aria_make reports a specific "Internal Compiler Error" message, guiding the user to report a bug rather than look for syntax errors.
+3.3.2 Debug Mode and Preprocessing
+To aid in debugging complex macro expansions, aria_make supports a --debug-macro flag. This alters the orchestration logic to invoke ariac with the -E (preprocess only) flag. Crucially, this mode is designed to bypass standard compilation halts.1 Even if the macro expansion results in invalid syntax that would cause the compiler to error out during the semantic phase, the preprocessor output is preserved and displayed. This allows the user to inspect the generated code and debug the macro logic itself.
+3.4 Lifecycle Management Errors
+Beyond construction, aria_make manages the destruction of artifacts via the clean target. Error handling here is subtle but vital.
+* Idempotency: The clean operation must be idempotent. If a file does not exist, aria_make must not report an error; it should treat this as a success condition (the goal is for the file to be gone).
+* Locking and Permissions: If aria_make cannot delete a file due to file locking (common on Windows) or permission issues, it must report a warning but continue attempting to clean other artifacts. A "best-effort" error model is applied here to maximize the cleanliness of the state even in the presence of partial failures.
+4. The Aria Language Server: Concurrency and Cancellation
+The transition from a command-line compiler to an interactive Language Server (AriaLS) introduces a new dimension of error handling: concurrency. AriaLS must handle errors that arise not from the code itself, but from the asynchronous nature of user interaction (e.g., typing, hovering, cancelling requests).
+4.1 The Concurrency Conundrum and the "Spiral of Death"
+The Aria compiler frontend is currently designed as a single-pass, blocking system.1 It requires a complete source string to generate an AST and Diagnostic Set. In a naive single-threaded server, parsing a large file creates a "stop-the-world" event.
+* Input Buffer Saturation: If the user types quickly, sending multiple textDocument/didChange events, these requests accumulate in the input buffer while the main thread is blocked parsing the first update.
+* The Spiral: If the server processes these events sequentially, it falls behind the user, validating stale versions of the document. This leads to Desynchronization Errors, where diagnostics point to incorrect lines (e.g., checking code on line 10 that the user has already moved to line 12). This degrades the developer experience significantly.1
+4.2 Thread Pool Architecture and Stale State Discard
+To resolve this, AriaLS implements a Thread Pool architecture with a specific error-prevention strategy for stale tasks.
+* Versioning: Every task pushed to the Global Work Queue is tagged with a document version ID derived from the LSP didChange parameters.
+* Discard-Stale Strategy: When a worker thread dequeues a task, it compares the task's version ID against the latest version tracked by the Main Thread. If task.version < latest.version, the task is immediately discarded. This optimization prevents the computation of diagnostics for obsolete code.1
+* Coalescing: The Work Queue logic proactively coalesces multiple pending didChange events for the same document into a single task representing the final state, effectively debouncing the input and preventing the "spiral of death."
+4.3 Cooperative Cancellation via Exceptions
+The Language Server Protocol (LSP) includes a $/cancelRequest notification, allowing the client to signal that a result (e.g., "Hover info") is no longer needed because the user has moved the cursor. Implementing this in C++ requires a careful balance between responsiveness and safety.
+4.3.1 The OperationCancelledException
+AriaLS utilizes a Cooperative Cancellation pattern anchored by a specific C++ exception class: OperationCancelledException.1
+1. Token Creation: The Main Thread creates a CancellationToken (containing an std::atomic<bool>) for each request.
+2. Parser Integration: The Aria Parser is modified to accept this token. Inside its main loops (e.g., parseBlock, parseStatement), it checks the token periodically—heuristically every ~100 statements or at the entry of major parsing functions (parseFunctionDefinition).1
+3. The Throw: If the token signals cancellation, the parser throws OperationCancelledException.
+4.3.2 Why Exceptions? (The RAII Imperative)
+Using a C++ exception for cancellation is a deliberate architectural choice over thread termination APIs like pthread_cancel or TerminateThread.
+* Stack Unwinding: Throwing an exception triggers stack unwinding. This ensures that C++ destructors for all objects on the stack—smart pointers, file handles, and critically, mutex locks—are executed.1
+* Mutex Safety: If a thread were forcibly terminated while holding a lock (e.g., the std::shared_mutex guarding the Symbol Table), that lock would remain held forever, causing a deadlock for the entire server. Exception-based cancellation guarantees the lock's destructor is called, releasing the resource safely and preserving system integrity.1
+4.4 Global State Synchronization and Locking
+The results of compilation (AST, Symbol Table, Diagnostic Set) are stored in a Global State accessible by multiple threads.
+* Read-Write Locking: Access is protected by std::shared_mutex.1
+   * Writers (Worker threads updating the AST after a parse) acquire std::unique_lock to ensure exclusive access. This prevents readers from seeing partially written or inconsistent data structures.
+   * Readers (Features like "Go to Definition" or "Hover") acquire std::shared_lock, allowing concurrent access to the read-mostly data.
+* VFS Integrity: The Virtual File System (VFS) also uses this pattern. Even const methods like get_content perform internal locking to ensure thread safety, preventing race conditions when reading source text while a didChange event is processing.1
+5. Process Supervision: Signal Handling and IPC
+aria_make operates as a parent process, orchestrating compilers and tests. Robust error handling requires managing the lifecycle of these child processes, particularly when interrupted.
+5.1 Signal Handling and Zombie Reaping
+When a user presses Ctrl+C, the OS sends a SIGINT signal to aria_make. A naive implementation would simply exit, leaving child processes (like ariac) running in the background as orphans or "zombies."
+* Signal Interception: aria_make implements a signal handler that intercepts SIGINT and SIGTERM.
+* Process Group Termination: Instead of just exiting, the handler sends a termination signal to the entire process group of the active job.5 This ensures that all children (and their children) are terminated.
+* Waiting: The handler then waits for the children to exit (waitpid), reaping their exit codes to prevent zombie processes from cluttering the system table.
+5.2 Pipe Draining and Deadlock Prevention
+aria_make captures stdout and stderr from child processes to display build progress. A common error mode in build tools is the Pipe Deadlock. This occurs if the child writes more data to the pipe than the OS buffer (typically 64KB on Linux) can hold, blocking the child. If the parent is also blocked waiting for the child to exit and not reading the pipe, a deadlock ensues.1
+* Threaded Draining Model: To prevent this, aria_make employs a threaded draining model. For every spawned process, it spins up dedicated worker threads that continuously read from the child's stdout and stderr pipes.1 This ensures the pipes never fill up, preventing deadlocks and allowing aria_make to capture massive amounts of log output without stalling.
+6. Comparative Analysis: Aria vs. The Ecosystem
+To contextualize the architectural decisions of aria_make and AriaLS, it is instructive to compare them with established systems.
+Feature
+	GNU Make
+	CMake
+	AriaBuild
+	Error Syntax
+	Opaque (Tab vs Space)
+	Explicit (FATAL_ERROR)
+	Whitespace Insensitive (ABC)
+	Cycle Detection
+	Limited
+	Configuration phase only
+	Runtime Graph Analysis (Kahn + DFS)
+	Determinism
+	OS-dependent
+	Generator-dependent
+	Strictly Sorted Globbing
+	Concurrency
+	Process-based
+	Generator-based
+	Thread Pool + Cooperative Cancellation
+	6.1 Compiler Error Propagation
+* C++ (Exceptions): C++ uses exceptions for runtime errors. This requires heavy runtime support (unwinding tables) and makes control flow implicit.
+* Rust (Result/Panic): Rust uses Result<T, E> for recoverable errors and panic! for unrecoverable ones. It enforces handling via the compiler.
+* Aria (Result/TBB): Aria aligns closely with Rust regarding the Result type but introduces TBB Sticky Errors. In Rust, 255u8 + 1 panics in debug mode. In Aria, 255tbb8 + 1 becomes ERR.1 This allows calculations to proceed to a logical check point without crashing, a feature unique to Aria's design philosophy that favors continuity in data processing pipelines.
+7. Implementation Roadmap and Specifications
+The following section outlines the concrete C++ implementation details required to realize this architecture.
+7.1 The DiagnosticEngine Class
+The aria_make and ariac host code must implement a unified DiagnosticEngine to collect and report errors.
+
+
+C++
+
+
+
+
+class DiagnosticEngine {
+public:
+   enum class Level { Note, Warning, Error, Fatal };
+
+   struct Diagnostic {
+       Level level;
+       std::string message;
+       SourceLocation loc;
+       std::vector<FixItHint> fixits;
+   };
+
+   // Reports an error but allows execution to continue (Panic Mode recovery)
+   void report(Level lvl, SourceLocation loc, const std::string& msg);
+   
+   // Returns true if any errors have been reported
+   bool hasErrors() const;
+   
+   // Renders formatted, colored output with carets pointing to source
+   void print(std::ostream& out); 
+};
+
+This structure allows the collection of multiple errors during parsing before halting, significantly improving the user experience compared to tools that abort on the first error.1
+7.2 The CancellationToken Implementation
+For AriaLS, the token passed to the parser should rely on std::atomic for thread-safe lock-free checking.
+
+
+C++
+
+
+
+
+class CancellationToken {
+   std::shared_ptr<std::atomic<bool>> cancelled_;
+public:
+   CancellationToken() : cancelled_(std::make_shared<std::atomic<bool>>(false)) {}
+   
+   void cancel() {
+       // Relaxed ordering is sufficient; we don't need strict synchronization
+       // for a simple boolean flag used for cancellation.
+       cancelled_->store(true, std::memory_order_relaxed);
+   }
+
+   bool isCancelled() const {
+       return cancelled_->load(std::memory_order_relaxed);
+   }
+
+   void throwIfCancelled() const {
+       if (isCancelled()) {
+           throw OperationCancelledException();
+       }
+   }
+};
+
+The use of std::memory_order_relaxed minimizes the CPU overhead of the check, ensuring that the high-frequency checks inside the parser loop do not degrade compilation performance.1
+7.3 TBB Sticky Error Simulation
+To support build-time logic involving TBB types (e.g., checking valid ranges for configuration values), aria_make must implement a simulation class in C++.
+
+
+C++
+
+
+
+
+struct TBB8 {
+   int8_t value;
+   static const int8_t ERR = -128;
+
+   TBB8 operator+(const TBB8& other) const {
+       // Sticky Error Propagation
+       if (value == ERR |
+
+| other.value == ERR) return {ERR};
+       
+       int16_t res = (int16_t)value + other.value;
+       // Overflow Detection
+       if (res > 127 |
+
+| res < -127) return {ERR}; 
+       
+       return {(int8_t)res};
+   }
+};
+
+This C++ implementation ensures that the build tool's logic strictly mirrors the runtime behavior of the language it is building, preventing discrepancies where a calculation succeeds in the build script but fails in the compiled binary.
+8. Conclusion
+The architecture of aria_make and the Aria Language Server represents a significant maturation of the Aria ecosystem. By moving away from the fragile, string-based processing of legacy tools and embracing a strongly-typed, graph-based approach, AriaBuild ensures that the build process is as reliable as the code it compiles.
+The error handling strategy effectively bifurcates the domain: utilizing Result types and TBB sentinels for the "Business Logic" of the language (preserving the "native feel"), while deploying C++ Exceptions and RAII for the "Infrastructure Logic" of the toolchain (ensuring resource safety and thread cancellation).
+Crucially, the integration of Cycle Detection via DFS, Stale State Discarding in the Language Server, and Threaded Pipe Draining in the build executor addresses the complex, emergent failure modes of modern development workflows. This comprehensive specification provides the roadmap for engineering a toolchain that not only builds code but actively guides the developer towards correctness through precise, actionable, and robust error handling.
+Works cited
+1. rcfull.txt
+2. std::expected - cppreference.com - C++ Reference, accessed December 21, 2025, https://en.cppreference.com/w/cpp/utility/expected.html
+3. Using std::expected from C++23 - C++ Stories, accessed December 21, 2025, https://www.cppstories.com/2024/expected-cpp23/
+4. Modern C++ best practices for exceptions and error handling | Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/cpp/cpp/errors-and-exception-handling-modern-cpp?view=msvc-170
+5. 20.3 - Graceful Shutdown and Cleanup | The rs Book - Jason Walton, accessed December 21, 2025, https://www.jasonwalton.ca/rust-book-abridged/ch20/ch20-03-graceful-shutdown
+6. Testing Proper Thread Shutdown Sequence in C++ ThreadPool Implementation - ProjectAI, accessed December 21, 2025, https://projectai.in/projects/cbca01c9-f7c6-42fa-a3a6-504fe50c0ce9/tasks/0af5922a-42d4-47bf-83b6-4fc194a7c85c

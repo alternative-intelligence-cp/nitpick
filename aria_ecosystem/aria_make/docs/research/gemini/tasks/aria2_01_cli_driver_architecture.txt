@@ -1,0 +1,241 @@
+Research Task: CLI Driver Architecture for aria_make Build System
+
+PRIORITY: CRITICAL
+ESTIMATED COMPLEXITY: HIGH
+ESTIMATED TIME: 3-4 hours
+
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+aria_make is a modern build automation tool for the Aria programming language. The complete architecture exists (parser, dependency graph, execution engine, incremental builds), but there is NO specification for the CLI driver - the actual aria_make executable that users invoke.
+
+This is the primary user-facing interface. Without it, all the backend components are unusable.
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH OBJECTIVES
+═══════════════════════════════════════════════════════════════════════════════
+
+Design a comprehensive CLI driver architecture that provides:
+
+1. **Subcommand System**
+   - Primary commands: build, clean, test, install
+   - How they map to internal components
+   - Subcommand-specific options
+   - Default behavior (no subcommand = build?)
+
+2. **Argument Parsing**
+   - Library selection (getopt_long, CLI11, TCLAP, custom)
+   - Short flags (-v, -j) vs long flags (--verbose, --jobs)
+   - Required vs optional arguments
+   - Mutually exclusive options
+   - Validation and error reporting
+
+3. **Global Flags**
+   - --help, --version (standard)
+   - --verbose, --quiet, --debug (logging control)
+   - --jobs=N (parallelism)
+   - --config=FILE (alternate build file)
+   - --directory=DIR (-C for working directory)
+   - --dry-run (show what would be built)
+   - --force (ignore incremental logic)
+
+4. **Configuration File Discovery**
+   - Search order: build.aria → aria.json → .aria/build.aria
+   - Current directory vs parent directory traversal
+   - Explicit --config flag override
+   - Error when no config found
+
+5. **Exit Code Conventions**
+   - 0: Success
+   - 1: Build failed (compilation errors)
+   - 2: Configuration error (parse failure, missing file)
+   - 3: Dependency error (cycles, missing targets)
+   - 125-127: System errors (reserved by POSIX)
+
+6. **Help Text Generation**
+   - Usage format: aria_make [OPTIONS] [SUBCOMMAND] [ARGS]
+   - Automatic help for each subcommand
+   - Example usage section
+   - Man page generation (optional)
+
+7. **Version Information**
+   - aria_make version string
+   - LLVM version compatibility
+   - Build timestamp/git commit
+   - Platform information
+
+8. **Environment Variable Integration**
+   - ARIA_MAKE_JOBS (default parallelism)
+   - ARIA_MAKE_CONFIG (default config file)
+   - Integration with &{ENV.VAR} in config
+
+═══════════════════════════════════════════════════════════════════════════════
+EXPECTED USAGE PATTERNS
+═══════════════════════════════════════════════════════════════════════════════
+
+# Basic usage
+aria_make                    # Build all targets (discover config)
+aria_make build              # Explicit build command
+aria_make clean              # Remove all build artifacts
+aria_make test               # Run all test targets
+
+# With options
+aria_make --jobs=8           # Parallel build
+aria_make --verbose          # Show detailed output
+aria_make -j8 -v build       # Combine flags
+
+# Target-specific
+aria_make build myapp        # Build single target
+aria_make clean myapp        # Clean single target
+
+# Advanced
+aria_make --config=custom.aria build
+aria_make --dry-run          # Show what would happen
+aria_make --force clean      # Force clean (ignore state)
+aria_make -C /path/to/project build
+
+# Help
+aria_make --help
+aria_make build --help
+aria_make --version
+
+═══════════════════════════════════════════════════════════════════════════════
+INTEGRATION REQUIREMENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+The CLI driver must integrate with existing components:
+
+1. **ConfigParser** - Parse discovered build.aria file
+2. **BuildScheduler** - Execute build with --jobs parameter
+3. **CleanTargetRegistry** - Handle clean subcommand
+4. **TestRunner** - Handle test subcommand with test_mode
+5. **Logging System** (to be designed) - Control verbosity
+
+Data flow:
+```
+main(argc, argv)
+  ↓
+parseArgs() → CLIOptions struct
+  ↓
+discoverConfig() → path to build.aria
+  ↓
+ConfigParser::parse() → BuildFileAST
+  ↓
+[subcommand dispatcher]
+  ↓
+buildCommand() / cleanCommand() / testCommand()
+  ↓
+exit(code)
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH DELIVERABLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide:
+
+1. **Argument Parsing Library Comparison**
+   - Evaluate: getopt_long, CLI11, TCLAP, Boost.Program_options, custom
+   - Criteria: C++17 compat, header-only vs compiled, ease of use, help generation
+   - Recommendation with rationale
+
+2. **CLIOptions Data Structure**
+   ```cpp
+   struct CLIOptions {
+       std::string subcommand;  // "build", "clean", "test"
+       std::optional<std::string> config_path;
+       std::optional<std::filesystem::path> working_dir;
+       unsigned int jobs;
+       bool verbose;
+       bool quiet;
+       bool dry_run;
+       bool force;
+       std::vector<std::string> targets;  // Specific targets to build
+   };
+   ```
+
+3. **Configuration Discovery Algorithm**
+   Pseudocode for finding build.aria
+
+4. **Subcommand Handler Architecture**
+   How to dispatch to buildCommand(), cleanCommand(), testCommand()
+
+5. **Help Text Format**
+   Example of --help output for aria_make and each subcommand
+
+6. **Error Handling Strategy**
+   How to map internal errors to appropriate exit codes
+
+7. **Main Function Structure**
+   Complete pseudocode for main() entry point
+
+8. **Testing Strategy**
+   How to test CLI parsing without running full builds
+
+═══════════════════════════════════════════════════════════════════════════════
+CONSTRAINTS
+═══════════════════════════════════════════════════════════════════════════════
+
+- C++17 only (no C++20 features)
+- Must work on Linux, macOS, Windows
+- POSIX-compliant exit codes
+- Should feel familiar to Make/CMake/Cargo users
+- No external dependencies for core CLI parsing (prefer header-only)
+- Graceful handling of invalid arguments (no crashes)
+
+═══════════════════════════════════════════════════════════════════════════════
+EXAMPLE WORKFLOWS TO SUPPORT
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **First-time user**
+   ```bash
+   cd my_project
+   aria_make --help       # Learn usage
+   aria_make              # Auto-discover build.aria, build all
+   ```
+
+2. **Iterative development**
+   ```bash
+   aria_make              # Quick rebuild (incremental)
+   # ... edit source ...
+   aria_make -v           # Rebuild with verbose output
+   ```
+
+3. **CI/CD pipeline**
+   ```bash
+   aria_make clean
+   aria_make --jobs=16 build
+   aria_make test
+   ```
+
+4. **Multi-project workspace**
+   ```bash
+   aria_make -C project1 build
+   aria_make -C project2 test
+   ```
+
+═══════════════════════════════════════════════════════════════════════════════
+SUCCESS CRITERIA
+═══════════════════════════════════════════════════════════════════════════════
+
+A successful design will:
+✓ Support all listed subcommands and flags
+✓ Provide clear, helpful error messages
+✓ Auto-discover configuration files intelligently
+✓ Match conventions of existing build tools
+✓ Generate comprehensive help text
+✓ Handle edge cases gracefully (no config, invalid flags, etc.)
+✓ Integrate cleanly with backend components
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide a detailed specification document covering all research objectives with:
+- Architecture diagrams
+- Data structure definitions (C++ code)
+- Algorithm pseudocode
+- Usage examples
+- Integration points
+- Testing strategy

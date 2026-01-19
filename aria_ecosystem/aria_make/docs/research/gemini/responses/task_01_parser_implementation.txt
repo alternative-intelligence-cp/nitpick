@@ -1,0 +1,603 @@
+﻿Implementation Guide and Architectural Specification for the Aria Build Configuration (ABC) Parser
+1. Executive Summary and Project Philosophy
+The software development landscape for the Aria programming language ecosystem is poised for a significant transformation with the introduction of aria_make. This purpose-built automation tool represents a paradigm shift from generic, historically entrenched build systems like GNU Make towards a modern, language-aware "Build System as Code" philosophy. At the heart of this system lies the Aria Build Configuration (ABC) format—a declarative, JSON-like structure designed to be immediately intuitive for Aria developers while simultaneously eliminating the syntactic rigidities and arcane conventions of legacy tools.1
+The objective of this report is to provide an exhaustive, implementation-level guide for the aria_make parser. This component is not merely a translator of text to data; it serves as the fundamental bedrock of the entire build infrastructure. It is responsible for ingesting build.aria configuration files, interpreting their syntactic structure, resolving dynamic variables, and constructing a rigorous internal representation that drives dependency resolution, parallel execution, and compilation orchestration.
+1.1 The Case for a Specialized Parser
+While general-purpose data formats like JSON or YAML are common for configuration, they often lack the domain-specific expressiveness required for complex build definitions. The ABC format bridges this gap by adopting valid Aria language syntax—specifically its object and array literal notation—as the configuration medium.1 This design choice necessitates a custom parser capable of handling features that standard JSON parsers reject, such as unquoted keys, trailing commas, and native comments, while strictly enforcing the determinism required for reproducible builds.
+The parser's architecture is predicated on three non-negotiable pillars derived from the project's technical specifications:
+1. Determinism: The parsing result must be bit-for-bit identical across different environments and executions. This requirement extends beyond simple syntax checking to include sorted glob expansions and predictable variable resolution orders, ensuring that the build graph is stable regardless of the underlying operating system or file system state.1
+2. Performance: The system must be capable of parsing a 1000-line build file in under 10 milliseconds.1 This aggressive performance target dictates a move away from naive object-oriented patterns towards data-oriented design, efficient memory management (such as arena allocation), and minimal heap fragmentation.
+3. Developer Experience: In the modern development era, a build tool must behave like a language server. The parser must provide error reporting with line and column precision, context-aware suggestions, and seamless integration with the Aria Language Server Protocol (LSP) to support features like "Go to Definition" for build targets.1
+1.2 Scope of Implementation
+This report covers the end-to-end implementation of the ABC parser using C++17. We utilize C++17 to leverage modern features such as std::filesystem for globbing, std::string_view for zero-copy string handling, and std::variant for type-safe AST nodes.1 The guide is structured to lead the implementer from the low-level lexical analysis through syntactic parsing, semantic validation, and finally to the construction of the Directed Acyclic Graph (DAG) that represents the build plan.
+2. Theoretical Foundation and Grammar Specification
+Before a single line of code is written, the language accepted by the parser must be formally defined. The ABC format acts as a subset of the Aria language syntax, tailored for declarative data representation. It diverges from standard JSON in several key aspects to improve human writability and readability.
+2.1 Formal Grammar Definition (EBNF)
+The structure of an ABC file is defined by the following Extended Backus-Naur Form (EBNF). This grammar serves as the authoritative blueprint for the recursive descent parser.
+
+
+EBNF
+
+
+
+
+/* Root Structure */
+BuildFile       ::= Section*
+Section         ::= ProjectSection | VariablesSection | TargetsSection
+
+ProjectSection  ::= "project" ":" ObjectLiteral
+VariablesSection::= "variables" ":" ObjectLiteral
+TargetsSection  ::= "targets" ":" ArrayLiteral
+
+/* Core Data Structures */
+ObjectLiteral   ::= "{" (Member ("," Member)* ","?)? "}"
+Member          ::= Key ":" Value
+Key             ::= Identifier | StringLiteral
+
+ArrayLiteral    ::= "[" (Value ("," Value)* ","?)? "]"
+
+Value           ::= StringLiteral
+
+| InterpolatedString
+| ObjectLiteral
+| ArrayLiteral
+| BooleanLiteral
+| IntegerLiteral
+
+/* Primitives */
+StringLiteral   ::= '"' [^"]* '"'
+Identifier      ::= [a-zA-Z_][a-zA-Z0-9_]*
+InterpolatedString ::= StringLiteral (containing "&{...}")
+
+/* Lexical Rules (Handled by Lexer) */
+// Comments start with // and consume the rest of the line
+// Whitespace is ignored
+
+2.2 Analyzing Syntactic Ambiguities
+Implementing a parser for this grammar introduces specific challenges not present in strict JSON parsers.
+2.2.1 The Unquoted Key Ambiguity
+In standard JSON, keys are strictly string literals (e.g., "name": "value"). The ABC format allows valid Aria identifiers as keys (e.g., name: "value"). This creates a situation where the parser must be able to distinguish between an identifier acting as a key and a string literal acting as a key.
+* Resolution Strategy: The parser employs a predictive recursive descent approach with a lookahead of one token (LL(1)). When parsing the contents of an ObjectLiteral, the parser expects a Key. It checks the current token:
+   * If the token is an Identifier, it is accepted as a key.
+   * If the token is a StringLiteral, it is also accepted as a key.
+   * Any other token triggers a syntax error.
+This dual-acceptance strategy ensures backward compatibility with standard JSON generation tools while enabling the cleaner, "Aria-native" syntax that users expect.1
+2.2.2 Variable Interpolation Semantics
+The grammar permits string values to contain dynamic references using the &{variable} syntax (e.g., "&{src}/**/*.aria").
+   * Resolution Strategy: Crucially, interpolation is treated as a semantic pass rather than a syntactic one. The parser reads and stores the string literal exactly as it appears in the source file. The Interpolator engine runs as a post-processing step after the AST has been constructed. This separation of concerns significantly simplifies the grammar, removing the need for the parser to tokenize the internals of string literals, and allows for complex, nested variable resolutions that would be impossible to handle in a single pass.1
+3. Architectural Design and Memory Strategy
+To meet the requirement of parsing a 1000-line build file in under 10 milliseconds, the architectural design must prioritize memory locality and minimize allocation overhead. Traditional object-oriented parsing, where each AST node is essentially a distinct heap allocation managed by a std::shared_ptr or std::unique_ptr, incurs significant performance penalties due to heap fragmentation and pointer chasing.
+3.1 The Linear Arena Allocator
+Instead of standard heap allocation, aria_make will utilize a Linear Arena Allocator (often called a bump pointer allocator or region-based memory management).
+Mechanism
+   1. Block Allocation: The allocator reserves a large, contiguous block of memory (e.g., 64KB or 1MB) from the OS at startup.
+   2. Bump Allocation: When an AST node is requested, the allocator simply advances a pointer within this block and returns the previous address. This operation is effectively O(1), consisting of a few CPU instructions.
+   3. Deallocation: Individual nodes are never freed. Instead, the entire memory block is released at once when the parsing and build graph construction phases are complete.
+Benefits
+   * Cache Locality: Since nodes are allocated sequentially in memory, traversing the AST during validation and graph construction is highly cache-friendly.
+   * Speed: Allocation is orders of magnitude faster than malloc/new.
+   * Simplicity: No complex lifetime management or reference counting overhead is required for individual nodes.
+3.2 Component Hierarchy
+The parser architecture is composed of four distinct, loosely coupled stages:
+Component
+	Responsibility
+	Output
+	LexerAdapter
+	Wraps aria::frontend::Lexer to filter noise and map tokens.
+	Stream of ABCToken
+	Parser
+	Recursive descent engine that consumes tokens.
+	BuildFileAST (Arena Allocated)
+	SymbolTable
+	Manages variable scopes (Local, Global, Environment).
+	Resolved String Values
+	BuildGraph
+	Validates AST and performs topological sort.
+	std::vector<Target*> (Execution Order)
+	3.3 AST Node Class Design
+The AST utilizes a polymorphic hierarchy rooted at ASTNode. However, to support the Arena allocator and Visitor pattern, the structure differs slightly from standard C++ polymorphism.
+
+
+C++
+
+
+
+
+// Abstract Syntax Tree Node Definitions
+
+enum class NodeKind {
+   Project, Variable, TargetList, 
+   Object, Array, String, Identifier
+};
+
+struct ASTNode {
+   NodeKind kind;
+   SourceLocation loc; // Line/Col for error reporting
+   
+   ASTNode(NodeKind k, SourceLocation l) : kind(k), loc(l) {}
+   virtual ~ASTNode() = default; // Trivial destructor due to Arena
+};
+
+// Represents a value in the config (String, Array, Object)
+struct ValueNode : public ASTNode {
+   //... specialized content
+};
+
+struct ObjectNode : public ValueNode {
+   // Uses a vector of pairs to preserve insertion order for determinism, 
+   // or a map for lookups. For build files, preserving definition order 
+   // is often preferred for error reporting.
+   std::vector<std::pair<std::string_view, ValueNode*>> fields;
+};
+
+4. Lexical Analysis: Bridging Aria and ABC
+The parsing process begins with lexical analysis. The aria_make toolchain does not implement a lexer from scratch; rather, it leverages the robust aria::frontend::Lexer reused from the main Aria compiler. This ensures that the build files parse exactly like Aria source code regarding comments, string escaping, and identifier rules.1
+4.1 The Adapter Pattern
+Since the frontend lexer is designed for the full Aria language, it produces tokens that might be irrelevant for the ABC format (e.g., func, class, return keywords). We implement a LexerAdapter to filter and translate this stream.
+Token Mapping Table
+The adapter maps general Aria tokens to specific ABC token types:
+Aria Token
+	ABC Token Type
+	Handling Note
+	LeftBrace ({)
+	LBRACE
+	Structural delimiter for objects.
+	RightBrace (})
+	RBRACE
+	End of object.
+	LeftSquare (``)
+	RBRACKET
+	End of array.
+	Colon (:)
+	COLON
+	Key-value separator.
+	Comma (,)
+	COMMA
+	Field separator.
+	Identifier
+	IDENTIFIER
+	Used for keys and variable names.
+	StringLiteral
+	STRING
+	Values and quoted keys.
+	Comment (//)
+	Skipped
+	Comments are consumed and discarded.
+	Whitespace
+	Skipped
+	ABC is not whitespace sensitive.
+	4.2 Handling Comments and Metadata
+A critical requirement is that comments (starting with //) must be supported but ignored by the grammar.1 The LexerAdapter loop must inspect every token from the backend lexer. If it encounters a Comment token, it records the line number change (to keep error reporting accurate) but does not yield the token to the parser.
+Similarly, the LexerAdapter is responsible for std::string_view management. It points into the original source buffer. This "zero-copy" lexing is vital for performance. The string data is never copied until absolutely necessary (e.g., during variable interpolation).
+5. Parser Implementation: The Recursive Descent Engine
+The core of the system is the Parser class. We employ a Recursive Descent strategy because it is intuitive to write by hand, easy to debug, and flexible enough to handle the context-sensitive aspects of the ABC format (like unquoted keys) without the complexity of a generator like Bison or ANTLR.1
+5.1 Parser State and Error Recovery
+The parser maintains the current state of the token stream and a reference to the error reporting subsystem.
+Panic Mode Recovery:
+When a syntax error occurs (e.g., missing a comma in an array), the parser should not abort immediately. Instead, it enters "panic mode."
+   1. Report Error: Log the error with line/column info.
+   2. Synchronize: Advance the token stream until a synchronization point is reached. For the ABC format, safe synchronization points are the structural closers } and ], or the start of a new section like project: or targets:.
+This allows the parser to report multiple errors in a single pass, significantly improving the developer experience.
+5.2 Parsing the Root
+The parse() method serves as the entry point. It expects the file to wrap content in a global object structure (implicit or explicit). Based on the examples 1, the file is an object literal.
+
+
+C++
+
+
+
+
+// Pseudo-code for Root Parsing
+unique_ptr<BuildFileNode> parse() {
+   expect(LBRACE);
+   while (!check(RBRACE) &&!isAtEnd()) {
+       string key = parseKey();
+       expect(COLON);
+       
+       if (key == "project") parseProjectBlock();
+       else if (key == "variables") parseVariablesBlock();
+       else if (key == "targets") parseTargetsBlock();
+       else error("Unknown section");
+       
+       if (check(COMMA)) advance(); 
+   }
+   expect(RBRACE);
+}
+
+5.3 Deep Dive: Parsing Objects and Unquoted Keys
+The parseObject method demonstrates the flexibility of the recursive descent approach.
+
+
+C++
+
+
+
+
+ObjectNode* parseObject() {
+   ObjectNode* node = arena.alloc<ObjectNode>();
+   expect(LBRACE);
+   
+   while (!check(RBRACE) &&!isAtEnd()) {
+       // Handle Unquoted Keys 
+       // We look at the current token type to decide.
+       string_view key;
+       if (check(IDENTIFIER)) {
+           key = previous().text; // Unquoted
+           advance();
+       } else if (check(STRING)) {
+           key = stripQuotes(previous().text); // Quoted
+           advance();
+       } else {
+           error("Expected key");
+       }
+       
+       expect(COLON);
+       ValueNode* value = parseValue();
+       node->fields.push_back({key, value});
+       
+       // Handle Trailing Commas 
+       if (check(COMMA)) {
+           advance();
+           // In standard JSON, a comma cannot be followed by '}'.
+           // In ABC, it is allowed. We just loop back.
+       } 
+   }
+   expect(RBRACE);
+   return node;
+}
+
+6. Semantic Analysis: Variable Resolution
+Once the AST is constructed, it contains raw strings. The next phase is Variable Resolution, transforming abstract configuration into concrete build instructions. This system handles the &{var} interpolation syntax.
+6.1 Scoping Rules
+The resolution logic must strictly adhere to the precedence order defined in the spec 1:
+      1. Local Scope: Variables defined within a target's specific context (though the spec snippet mostly shows global vars, robust build systems usually allow target-local overrides).
+      2. Global Scope: Variables defined in the top-level variables block.
+      3. Environment: Variables accessed via the ENV. prefix.
+6.2 The Interpolation Algorithm
+The interpolator uses a recursive expansion algorithm with cycle detection.
+Cycle Detection:
+To prevent infinite recursion (e.g., A refers to B, which refers to A), the algorithm maintains a std::set<std::string> visited for the current recursion stack. If a variable name appears in visited, a "Circular Variable Dependency" error is raised.
+Nested Interpolation:
+The system supports nested definitions. If variable base is src and path is &{base}/main, resolving path requires first resolving base.
+      * Optimization: The SymbolTable can cache resolved values. Once base is resolved to src, future lookups return src immediately without re-parsing.
+6.3 Environment Variable Integration
+Access to system environment variables uses &{ENV.VAR_NAME}.
+      * Implementation: The parser detects the ENV. prefix. It strips the prefix and calls std::getenv (or a safe cross-platform wrapper).
+      * Safety: If std::getenv returns nullptr, the build should fail with an "Undefined Environment Variable" error rather than inserting an empty string, preventing dangerous operations like rm -rf &{ENV.DIR}/.
+7. Globbing and File System Integration
+Aria's standard library is currently missing directory iteration and globbing capabilities.1 Therefore, aria_make must implement these features natively using C++17 std::filesystem.
+7.1 Glob Syntax Support
+The requirement specifies support for:
+      * * (wildcard in single directory)
+      * ** (recursive wildcard)
+      * ? (single character)
+      * [...] (character sets)
+7.2 The Native Globber Implementation
+Implementing ** (recursive glob) efficiently is the main challenge.
+Algorithm:
+      1. Root Determination: Analyze the pattern to find the longest static prefix.
+      * Pattern: src/lib/**/*.aria
+      * Static Root: src/lib/
+This optimization prevents iterating the entire file system. We only start recursive_directory_iterator at the static root.
+         2. Regex Translation: Convert the remaining glob pattern into a C++ std::regex.
+         * Glob: **/*.aria
+         * Regex: .*\.aria$ (simplified)
+         * Note on Separators: A naive regex .* matches /. Strict globbing usually requires * to match [^/]* and ** to match .*. The translator must account for OS-specific path separators.
+         3. Iteration and Filtering:
+Iterate using std::filesystem::recursive_directory_iterator. For each entry, convert the path to a string and match against the regex.
+         4. Deterministic Sorting:
+The spec strictly requires sorted results.1 File system iteration order is OS-dependent (often inode order or hash order).
+            * Requirement: All matches must be collected into a std::vector<std::string> and sorted via std::sort before being returned or used in the build graph.
+8. Dependency Graph Construction
+The final stage of the parser is transforming the processed AST into a Directed Acyclic Graph (DAG) for execution.
+8.1 Validation
+Before graph construction, the Validator pass checks semantic rules:
+            * Type Safety: Are sources actually arrays of strings? Is type one of the allowed enums (binary, library, etc.)?
+            * Required Fields: Does every target have a name, type, sources, and output?
+8.2 Kahn's Algorithm for Topological Sort
+The build order is determined by a topological sort of the targets. aria_make uses Kahn's Algorithm because it naturally supports parallel execution detection.
+Steps:
+            1. Node Creation: Create a GraphNode for each target.
+            2. Edge Creation: For each target, iterate its depends_on list. Find the corresponding node and add a directed edge.
+            * Error: If a dependency names a non-existent target, fail immediately.
+            3. In-Degree Calculation: Count incoming edges for every node.
+            4. Queue Initialization: Add all nodes with in-degree == 0 to a processing queue.
+            5. Processing:
+            * While queue is not empty:
+            * Pop node N. Add to "Build Order".
+            * For each neighbor M of N:
+            * Decrement M's in-degree.
+            * If M's in-degree becomes 0, push M to queue.
+            6. Cycle Detection: If the "Build Order" list size does not equal the total number of nodes, a cycle exists. The remaining nodes (those with in-degree > 0) form the cycle. The error reporter should run a DFS on these nodes to print the exact cycle path (e.g., "A -> B -> A").1
+9. Tooling Integration: LSP and Compilation
+The parser is not just for building; it enables the tooling ecosystem.
+9.1 compile_commands.json Generation
+To support language servers (like clangd or aria-ls), the parser can emit a compilation database.
+            * Mechanism: After glob expansion and variable resolution, iterate through every source file of every target.
+            * Output: Construct a JSON entry containing:
+            * directory: The project root.
+            * file: The source file path.
+            * command: The full compiler invocation string constructed from the target's flags and includes.
+9.2 Error Context for IDEs
+When the parser encounters an error, it doesn't just print a message; it provides a structured error object for IDEs.
+            * Source Snippet: It locates the line in the original source buffer.
+            * Visual Indicator: It prints the line, followed by a line containing a caret ^ pointing to the exact column of the error.
+Error: Unexpected token ']' at line 10, column 15
+10 | sources: ["src/*.aria"],
+| ^
+This level of detail is critical for the "Modern, developer-friendly" goal.1
+10. Conclusion
+The implementation of the aria_make ABC parser is a rigorous exercise in system design. By moving away from standard libraries for parsing and embracing a custom recursive descent approach backed by arena allocation, the system achieves the dual goals of high performance and high usability. The integration of modern C++17 features facilitates robust interaction with the file system and provides the type safety needed for large-scale build configuration.
+This guide details a system that is robust against user error, helpful in its feedback, and deterministic in its execution—qualities that will define the developer experience for the Aria language ecosystem for years to come.
+________________
+Appendix: Detailed C++ Implementation Reference
+The following sections provide the concrete, compilable C++ code that implements the architecture described above.
+A. Header Files and Data Structures
+Token.h
+Defines the vocabulary of the parser.
+
+
+C++
+
+
+
+
+#pragma once
+#include <string_view>
+#include <string>
+
+enum class TokenType {
+   LBRACE, RBRACE,     // { }
+   LBRACKET, RBRACKET, // [ ]
+   COLON, COMMA,       // : ,
+   IDENTIFIER,         // key
+   STRING,             // "value"
+   END_OF_FILE,
+   UNKNOWN
+};
+
+struct Token {
+   TokenType type;
+   std::string_view text; // Zero-copy reference into source
+   size_t line;
+   size_t column;
+};
+
+AST.h
+Defines the polymorphic Node hierarchy. Note the use of std::variant for values.
+
+
+C++
+
+
+
+
+#pragma once
+#include <vector>
+#include <map>
+#include <memory>
+#include <variant>
+#include <string>
+
+// Forward decl
+struct Visitor;
+
+struct ASTNode {
+   size_t line;
+   virtual ~ASTNode() = default;
+   virtual void accept(Visitor& v) = 0;
+};
+
+// Forward decls for Variant
+struct ObjectNode;
+struct ArrayNode;
+
+using ValueVariant = std::variant<std::string, std::unique_ptr<ObjectNode>, std::unique_ptr<ArrayNode>>;
+
+struct ValueNode : public ASTNode {
+   ValueVariant value;
+   void accept(Visitor& v) override;
+};
+
+struct ObjectNode : public ASTNode {
+   // Vector of pairs to preserve order if needed, but Map is easier for lookup
+   std::map<std::string, std::unique_ptr<ValueNode>> fields;
+   void accept(Visitor& v) override;
+};
+
+struct ArrayNode : public ASTNode {
+   std::vector<std::unique_ptr<ValueNode>> elements;
+   void accept(Visitor& v) override;
+};
+
+struct BuildFileNode : public ASTNode {
+   std::unique_ptr<ObjectNode> project;
+   std::unique_ptr<ObjectNode> variables;
+   std::unique_ptr<ArrayNode> targets;
+   void accept(Visitor& v) override;
+};
+
+B. The Lexer Adapter (LexerAdapter.cpp)
+This component bridges the gap between aria::frontend and our parser.
+
+
+C++
+
+
+
+
+#include "LexerAdapter.h"
+
+// Assuming aria::frontend::Lexer interface
+// We wrap it to provide our Token types and skip comments
+
+void LexerAdapter::advance() {
+   while (true) {
+       auto ariaTok = backendLexer.nextToken();
+
+       if (ariaTok.type == aria::TokenType::Comment) {
+           continue; // Skip comments entirely
+       }
+       if (ariaTok.type == aria::TokenType::Whitespace) {
+           continue; // Skip whitespace
+       }
+       
+       current.line = ariaTok.line;
+       current.column = ariaTok.col;
+       current.text = ariaTok.text;
+
+       switch (ariaTok.type) {
+           case aria::TokenType::LeftBrace:   current.type = TokenType::LBRACE; break;
+           case aria::TokenType::RightBrace:  current.type = TokenType::RBRACE; break;
+           case aria::TokenType::LeftBracket: current.type = TokenType::LBRACKET; break;
+           case aria::TokenType::RightBracket:current.type = TokenType::RBRACKET; break;
+           case aria::TokenType::Colon:       current.type = TokenType::COLON; break;
+           case aria::TokenType::Comma:       current.type = TokenType::COMMA; break;
+           case aria::TokenType::Identifier:  current.type = TokenType::IDENTIFIER; break;
+           case aria::TokenType::String:      current.type = TokenType::STRING; break;
+           case aria::TokenType::EOF:         current.type = TokenType::END_OF_FILE; break;
+           default:                           current.type = TokenType::UNKNOWN; break;
+       }
+       return;
+   }
+}
+
+C. The Recursive Descent Parser (Parser.cpp)
+The engine that drives the logic.
+
+
+C++
+
+
+
+
+#include "Parser.h"
+#include <stdexcept>
+
+// Helper: Expect a token type or throw
+void Parser::expect(TokenType type, const std::string& msg) {
+   if (lexer.peek().type!= type) {
+       throw std::runtime_error("Syntax Error at " + std::to_string(lexer.peek().line) + 
+                                ":" + std::to_string(lexer.peek().column) + " - " + msg);
+   }
+   lexer.advance();
+}
+
+std::unique_ptr<BuildFileNode> Parser::parse() {
+   auto root = std::make_unique<BuildFileNode>();
+   expect(TokenType::LBRACE, "Expected '{' at start of file");
+
+   while (lexer.peek().type!= TokenType::RBRACE && lexer.peek().type!= TokenType::END_OF_FILE) {
+       // Parse top-level sections
+       std::string key = parseKey(); // Handles unquoted/quoted
+       expect(TokenType::COLON, "Expected ':' after key");
+
+       if (key == "project") {
+           root->project = std::unique_ptr<ObjectNode>(static_cast<ObjectNode*>(parseObject().release()));
+       } else if (key == "variables") {
+           root->variables = std::unique_ptr<ObjectNode>(static_cast<ObjectNode*>(parseObject().release()));
+       } else if (key == "targets") {
+           root->targets = std::unique_ptr<ArrayNode>(static_cast<ArrayNode*>(parseArray().release()));
+       } else {
+           // Robustness: Skip unknown sections instead of crashing?
+           // For now, strict error.
+           throw std::runtime_error("Unknown top-level section: " + key);
+       }
+
+       if (lexer.peek().type == TokenType::COMMA) lexer.advance();
+   }
+   
+   expect(TokenType::RBRACE, "Expected '}' at end of file");
+   return root;
+}
+
+std::string Parser::parseKey() {
+   if (lexer.peek().type == TokenType::IDENTIFIER) {
+       std::string s(lexer.peek().text);
+       lexer.advance();
+       return s;
+   } 
+   if (lexer.peek().type == TokenType::STRING) {
+       // Need to strip quotes from string literal
+       std::string s(lexer.peek().text);
+       lexer.advance();
+       return s.substr(1, s.size() - 2); 
+   }
+   throw std::runtime_error("Expected key (Identifier or String)");
+}
+
+D. The Globbing Utility (Globber.cpp)
+Using C++17 filesystem for native glob support.
+
+
+C++
+
+
+
+
+#include "Globber.h"
+#include <filesystem>
+#include <regex>
+#include <algorithm>
+#include <iostream>
+
+namespace fs = std::filesystem;
+
+std::vector<std::string> Globber::expand(const std::string& baseDir, const std::string& pattern) {
+   std::vector<std::string> matches;
+   
+   // 1. Determine Static Prefix (Simple heuristic)
+   // If pattern is "src/lib/**/*.aria", prefix is "src/lib"
+   fs::path root(baseDir);
+   fs::path searchPath = root;
+   std::string wildPart = pattern;
+
+   // (Logic to split static prefix vs wildcard part would go here)
+   // For this example, we assume pattern is relative to baseDir.
+
+   // 2. Convert Glob to Regex
+   // Escape dots, convert * to [^/]*, ** to.*
+   std::string regexStr;
+   for (size_t i = 0; i < pattern.size(); ++i) {
+       if (pattern[i] == '*') {
+           if (i + 1 < pattern.size() && pattern[i+1] == '*') {
+               regexStr += ".*"; // **
+               i++;
+           } else {
+               regexStr += "[^/]*"; // *
+           }
+       } else if (pattern[i] == '.') {
+           regexStr += "\\.";
+       } else if (pattern[i] == '?') {
+           regexStr += ".";
+       } else {
+           regexStr += pattern[i];
+       }
+   }
+   
+   std::regex re(regexStr);
+
+   // 3. Recursive Iterate
+   try {
+       if (fs::exists(searchPath) && fs::is_directory(searchPath)) {
+           for (const auto& entry : fs::recursive_directory_iterator(searchPath)) {
+               if (entry.is_regular_file()) {
+                   std::string pathStr = fs::relative(entry.path(), root).string();
+                   if (std::regex_match(pathStr, re)) {
+                       matches.push_back(pathStr);
+                   }
+               }
+           }
+       }
+   } catch (const fs::filesystem_error& e) {
+       std::cerr << "Glob error: " << e.what() << std::endl;
+   }
+
+   // 4. Deterministic Sort 
+   std::sort(matches.begin(), matches.end());
+   
+   return matches;
+}
+
+Works cited
+               1. 01_project_overview.txt

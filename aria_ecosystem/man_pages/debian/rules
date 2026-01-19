@@ -1,0 +1,19 @@
+#!/usr/bin/make -f
+# Debian rules file for aria-man-pages
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Build man pages from markdown
+	$(MAKE) all
+
+override_dh_auto_install:
+	# Install man pages to debian package directory
+	mkdir -p debian/aria-man-pages/usr/share/man/man7
+	install -m 644 build/man7/*.7.gz debian/aria-man-pages/usr/share/man/man7/
+
+override_dh_auto_clean:
+	# Clean build artifacts
+	$(MAKE) clean
+	dh_auto_clean

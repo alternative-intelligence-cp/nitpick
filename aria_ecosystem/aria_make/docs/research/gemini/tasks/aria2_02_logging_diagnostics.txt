@@ -1,0 +1,277 @@
+Research Task: Logging and Diagnostics System for aria_make
+
+PRIORITY: HIGH
+ESTIMATED COMPLEXITY: MEDIUM
+ESTIMATED TIME: 2-3 hours
+
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+aria_make is a multi-threaded build system with parallel compilation. During builds, multiple worker threads compile files simultaneously, and users need clear, organized output to:
+
+1. Understand build progress
+2. Debug compilation failures
+3. Track incremental build decisions
+4. Diagnose performance issues
+
+Currently, there is NO specification for how logging should work. Without a unified logging system, the codebase will accumulate inconsistent std::cout/cerr calls that are impossible to control or format consistently.
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH OBJECTIVES
+═══════════════════════════════════════════════════════════════════════════════
+
+Design a thread-safe, performant logging system that provides:
+
+1. **Log Levels**
+   - ERROR: Compilation failures, missing files, system errors
+   - WARN: Deprecated flags, missing optional features
+   - INFO: Target building, file discovery results (default level)
+   - DEBUG: Incremental build decisions, graph traversal
+   - TRACE: Low-level details (command execution, timestamps)
+
+2. **Verbosity Control**
+   - --quiet: Only errors
+   - (default): Errors + warnings + info
+   - --verbose: Add debug level
+   - --debug: Add trace level (full verbosity)
+
+3. **Thread Safety**
+   - Multiple worker threads logging simultaneously
+   - No interleaved/corrupted output
+   - Solution: mutex-protected logger or per-thread buffers
+
+4. **Output Formatting**
+   - Timestamps (optional, for debugging)
+   - Log level indicators [INFO], [ERROR]
+   - Thread IDs (optional, for multi-threaded debugging)
+   - ANSI color codes (errors=red, warnings=yellow, info=white)
+   - Platform-aware (Windows doesn't support ANSI without VT100 mode)
+
+5. **Progress Indicators**
+   - Show "Building X/Y files" for parallel builds
+   - Update in-place (use \r carriage return)
+   - Detect TTY vs pipe (disable animations for pipes)
+   - Example: [=====>    ] 50% (4/8 files)
+
+6. **Structured Error Messages**
+   - File:Line:Column precision
+   - Caret pointer to error location
+   - Context lines (before/after)
+   - Example:
+     ```
+     ERROR: src/main.aria:42:15
+         40 | project: {
+         41 |     name: "MyApp",
+         42 |     version: 1.0
+                          ^
+         43 | }
+     Expected string value, got number
+     ```
+
+7. **Log File Persistence**
+   - Optional --log-file=path flag
+   - Write all output to file (even if --quiet)
+   - Useful for CI/CD artifact collection
+
+8. **Performance**
+   - Minimal overhead when logging disabled
+   - No string formatting if message won't be printed
+   - Use std::format or fmt library for efficient formatting
+
+═══════════════════════════════════════════════════════════════════════════════
+EXAMPLE USAGE
+═══════════════════════════════════════════════════════════════════════════════
+
+From user's perspective:
+
+```bash
+# Default output (INFO level)
+$ aria_make
+[INFO] Parsing build.aria (12 targets found)
+[INFO] Discovered 47 source files
+[INFO] Building target 'libutils' (8 sources)
+[PROGRESS] [=====>    ] 50% (4/8 files)
+[INFO] Building target 'myapp' (3 sources)
+[SUCCESS] Build completed in 2.3s
+
+# Verbose output (DEBUG level)
+$ aria_make --verbose
+[INFO] Parsing build.aria
+[DEBUG] Resolved &{src} → /home/user/project/src
+[DEBUG] Glob expanded: src/**/*.aria → 47 files
+[INFO] Building target 'libutils'
+[DEBUG] Target 'libutils' is dirty (source modified: src/utils.aria)
+[DEBUG] Command hash: 0x1234567890abcdef
+...
+
+# Quiet output (ERROR only)
+$ aria_make --quiet
+[ERROR] Compilation failed: src/main.aria:42:15
+        Expected string value, got number
+Build failed.
+
+# Full debug trace
+$ aria_make --debug
+[TRACE] main() entered
+[TRACE] Parsing arguments: [--debug]
+[DEBUG] Config discovery: checking ./build.aria
+[DEBUG] Config found: ./build.aria
+[TRACE] ConfigParser::parse() entered
+...
+```
+
+From code perspective:
+
+```cpp
+// Simple logging
+Logger::info("Building target '{}'", target_name);
+Logger::error("File not found: {}", path);
+
+// Conditional logging (avoid formatting if disabled)
+if (Logger::isDebugEnabled()) {
+    Logger::debug("Resolved {} → {}", var, value);
+}
+
+// Structured errors
+Logger::errorAt(path, line, col, "Expected string value, got number");
+
+// Progress tracking
+ProgressBar progress(total_files);
+for (...) {
+    progress.update(current_file);
+}
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+INTEGRATION REQUIREMENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+The logging system must integrate with:
+
+1. **CLI Driver** - Set verbosity level from --verbose, --quiet flags
+2. **BuildScheduler** - Progress updates from worker threads
+3. **ConfigParser** - Structured error messages with line/column
+4. **All Components** - Replace std::cout/cerr with Logger calls
+
+Thread safety requirements:
+- BuildScheduler spawns N worker threads
+- Each worker may log compilation output simultaneously
+- Must not interleave log lines (atomic writes)
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH DELIVERABLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide:
+
+1. **Logger Class Design**
+   ```cpp
+   class Logger {
+   public:
+       enum class Level { TRACE, DEBUG, INFO, WARN, ERROR };
+       
+       static void setLevel(Level level);
+       static void enableColors(bool enable);
+       static void setLogFile(const std::filesystem::path& path);
+       
+       template<typename... Args>
+       static void trace(fmt::format_string<Args...> fmt, Args&&... args);
+       
+       template<typename... Args>
+       static void debug(fmt::format_string<Args...> fmt, Args&&... args);
+       
+       // ... (similar for info, warn, error)
+       
+       static void errorAt(const fs::path& file, size_t line, size_t col,
+                           const std::string& message);
+   };
+   ```
+
+2. **Thread Safety Strategy**
+   - Option A: Mutex-protected singleton logger
+   - Option B: Per-thread buffers, flush on sync points
+   - Option C: Lock-free queue with dedicated writer thread
+   - Recommendation with rationale
+
+3. **Color Support Detection**
+   - How to detect ANSI color support (isatty, Windows VT100 mode)
+   - Fallback for non-TTY output (pipes, redirects)
+
+4. **Progress Bar Implementation**
+   - How to update in-place without cluttering output
+   - Detection of TTY vs non-TTY
+   - Integration with threaded builds
+
+5. **Structured Error Formatting**
+   - Algorithm for extracting context lines from source file
+   - Caret positioning calculation
+   - Color highlighting
+
+6. **Performance Optimization**
+   - Compile-time level filtering (macros)
+   - Runtime level filtering (if checks)
+   - Lazy string formatting
+
+7. **Log File Format**
+   - Plain text vs structured (JSON?)
+   - Timestamps, thread IDs
+   - ANSI codes in file or stripped?
+
+8. **Testing Strategy**
+   - How to unit test logging output
+   - Mock logger for tests
+   - Capture and assert log messages
+
+═══════════════════════════════════════════════════════════════════════════════
+CONSTRAINTS
+═══════════════════════════════════════════════════════════════════════════════
+
+- C++17 (no C++20 std::format yet - use fmt library or fallback)
+- Thread-safe (no data races, no interleaved output)
+- Minimal performance overhead
+- Cross-platform (Linux, macOS, Windows)
+- Header-only preferred (avoid linking against logging library)
+- No heavy dependencies (spdlog is OK if justified, but prefer simple)
+
+═══════════════════════════════════════════════════════════════════════════════
+COMPARISON TO EXISTING TOOLS
+═══════════════════════════════════════════════════════════════════════════════
+
+Research how these tools handle logging:
+
+1. **CMake** - Verbose levels, colored output, progress
+2. **Cargo** - Clean progress bars, emoji icons, color themes
+3. **Ninja** - Minimal output, focus on errors
+4. **Bazel** - Structured output, progress percentage
+
+What can we learn from their approaches?
+
+═══════════════════════════════════════════════════════════════════════════════
+SUCCESS CRITERIA
+═══════════════════════════════════════════════════════════════════════════════
+
+A successful design will:
+✓ Provide 5 log levels with clear semantics
+✓ Support verbosity flags (quiet, verbose, debug)
+✓ Thread-safe output (no garbled messages)
+✓ Colored output with auto-detection
+✓ Clean progress indicators for parallel builds
+✓ Structured error messages with context
+✓ Optional log file persistence
+✓ Minimal performance overhead (<1% of build time)
+✓ Easy to use from any component
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide a detailed specification document covering:
+- Logger class API and implementation
+- Thread safety architecture
+- Color detection algorithm
+- Progress bar rendering
+- Structured error formatting
+- Performance optimization techniques
+- Integration examples
+- Testing approach

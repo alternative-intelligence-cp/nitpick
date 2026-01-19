@@ -1,0 +1,14 @@
+Implement Linker Driver & Object Emission
+Context: Enables creation of native executables instead of interpreted scripts.
+Priority: High
+Components: src/build/toolchain.cpp, ariac driver
+Prompt:
+"You are a compiler toolchain architect. Extend the ToolchainOrchestrator in src/build/toolchain.cpp.
+Object Phase: Modify construct_compile_cmd to emit object files (.o/.obj) instead of .ll. Add a flag --emit-obj to the compiler command.
+Linker Phase: Implement construct_link_cmd(Node* target, vector<string> objects).
+Detect system linker: lld (preferred), ld, or link.exe.
+Construct the CLI: linker -o target.exe obj1.o obj2.o -Llibpaths -l libraries.
+Add standard library linking (e.g., -lc or msvcrt.lib).
+Orchestration: Update build_node: If target.type == BINARY, first build all sources to objects, then invoke the linker command.
+Provide the updated C++ implementation."
+

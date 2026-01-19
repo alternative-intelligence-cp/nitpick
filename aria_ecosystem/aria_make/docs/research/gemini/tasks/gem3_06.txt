@@ -1,0 +1,5 @@
+5. Compiler Stability: Macro Hygiene
+Gap: High-severity bug where macro internal variables collide upon multiple invocations.1
+Dependency: Required for standard library stability (collections.aria).
+* Step 6: Create a Macro Hygiene Validator / Fixer.
+   * Prompt: "Act as a Compiler Language Designer. Address the 'Macro Internal Variable Collision' bug in Aria v0.0.7. Write a C++ patch for the Preprocessor::expandMacro function. The patch should either: 1. Implement automatic variable renaming (hygiene) by appending a unique counter to internal variables declared in macros (e.g., converting temp to temp_1, temp_2 on subsequent invocations), OR 2. Implement a static analysis check that warns the user if they use the generic parameter %1 for variable type declarations inside a macro, suggesting the use of fixed types (int32) instead. Provide the code for the chosen solution."

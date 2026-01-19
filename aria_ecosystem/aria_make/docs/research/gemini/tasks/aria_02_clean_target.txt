@@ -1,0 +1,51 @@
+Clean Target Lifecycle Implementation
+
+PRIORITY: MEDIUM
+STATUS: Not in Plan
+SOURCE: gem4_02.txt, Verification Chunk 5
+
+PROBLEM:
+No automated artifact removal mechanism. Developers must manually delete build directories, leading to stale artifact pollution, globbing errors, and ABI mismatches.
+
+REQUIREMENTS:
+1. CLI interface:
+   - aria_make clean (global clean)
+   - aria_make clean <target> (targeted clean)
+
+2. clean_target(Target* t) primitive:
+   - Delete physical artifact (output file)
+   - Remove entry from .aria_build_state.json
+   - Transactional (both or neither)
+
+3. Safety constraints:
+   - Prevent deletion of filesystem root
+   - Verify paths are within project boundaries
+   - Skip if target has no output (phony targets)
+
+IMPLEMENTATION TASKS:
+- [ ] Extend BuildScheduler class with execute_clean() method
+- [ ] Implement clean_target(Target* t) using std::filesystem::remove
+- [ ] Add CLI argument parsing for "clean" verb
+- [ ] Implement safety checks (path validation)
+- [ ] Update BuildState to support entry removal
+- [ ] Add cleanup phase to scheduler lifecycle
+- [ ] Implement selective clean (by target name)
+
+FILES TO CREATE/MODIFY:
+- src/build/scheduler.cpp (add cleanup logic)
+- src/cli/main.cpp (add clean command)
+- include/build/state.h (add remove_entry method)
+- docs/info/plan/40_EXECUTION_ENGINE.md (add Cleanup section)
+
+RESEARCH REFERENCE:
+gem4_02.txt provides:
+- Artifact pollution analysis (globbing errors, stale links)
+- Tabula Rasa pattern for guaranteed clean state
+- Transaction semantics for physical+logical deletion
+
+ACCEPTANCE CRITERIA:
+- aria_make clean removes all build artifacts
+- aria_make clean math_lib removes only math_lib outputs
+- .aria_build_state stays synchronized with filesystem
+- Cannot delete files outside project root
+- Idempotent (safe to run multiple times)

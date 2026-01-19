@@ -1,0 +1,503 @@
+﻿Architectural Remediation of Macro Hygiene in the Aria v0.0.7 Compiler Frontend: A Comprehensive Engineering Report
+1. Executive Summary
+The evolution of the Aria programming language, specifically in its version 0.0.7 iteration, represents a concerted effort to reconcile the performance imperatives of systems programming with the safety guarantees of modern managed runtimes. By introducing novel paradigms such as Twisted Balanced Binary (TBB) arithmetic and a Hybrid Memory Model that bifurcates the heap into Garbage Collected (GC) and Wild (manual) regions, Aria attempts to offer a "best of both worlds" solution.1 However, the integrity of this ecosystem is currently compromised by a significant structural defect within the compiler’s frontend infrastructure: the "Macro Internal Variable Collision" bug.
+This defect, documented in the language specifications as a "Critical Macro Limitation" discovered in December 2025, manifests when the textual macro system is utilized to generate polymorphic code via generic parameters.1 Specifically, when a macro defines internal variables using dynamic types (e.g., %1:temp) and is invoked multiple times within a single compilation unit, the unhygienic nature of the preprocessor results in symbol collisions. These collisions trigger parse errors—most notably "Unexpected token after type in parentheses"—or semantic ambiguities that destabilize the build process.1
+The current mitigation strategy, which advises developers to eschew generic parameters in favor of fixed types (e.g., int32) for internal variables, is architecturally creating a technical debt. It forces library authors to violate the "Don't Repeat Yourself" (DRY) principle and limits the utility of the macro system for generating type-agnostic algorithms, such as those found in the Collections and Math standard libraries.1
+This research report rejects the passive mitigation strategy in favor of active architectural remediation. Acting in the capacity of the Lead Compiler Language Designer, this document specifies the implementation of Automatic Hygienic Renaming within the Preprocessor::expandMacro function.
+The proposed solution introduces a deterministic, counter-based symbol mangling mechanism. By intercepting variable declarations within the macro body during expansion and appending a unique generation counter (e.g., transforming temp to temp_h1024), the preprocessor guarantees symbol uniqueness across all macro invocations. This approach effectively implements the "Gensym" pattern found in Lisp and Scheme systems but adapts it to the textual, token-based constraints of the Aria preprocessor.
+The following sections provide an exhaustive analysis of the Aria compiler architecture, the theoretical underpinnings of macro hygiene, the specific mechanics of the collision bug, and the production-grade C++ implementation of the patch. This remediation ensures that Aria v0.0.7 meets the robustness standards required for critical systems engineering without altering the user-facing syntax of the language.
+________________
+2. The Aria Language Architecture: Context and Constraints
+To effectively engineer a patch for the preprocessor, one must first understand the environment in which it operates. The Aria compiler (ariac) is not a monolithic entity but a pipelined translation engine designed to handle specific linguistic features that set it apart from C++ or Rust.
+2.1 The Core Compilation Pipeline
+The architectural specification for the Aria Language Server (AriaLS) and the AriaBuild system provides a clear reconstruction of the compilation phases.1 The compiler operates as a single-pass, blocking system, a design choice that prioritizes throughput over incrementalism in its current v0.0.7 state.
+1. Source Ingestion: The driver reads the source file into a memory buffer. This is the raw material for the compilation.1
+2. Preprocessing (The Target Domain): Before lexical analysis, the source code undergoes textual transformation. This phase handles directives such as %macro and %include. The AriaBuild specification reveals that this phase can be isolated via the -E flag, which outputs a preprocessed.aria file.1 This isolation is critical for our verification strategy, as it allows us to inspect the output of our patch before it hits the parser.
+3. Lexical Analysis (Lexing): The Lexer converts the expanded character stream into a vector of Token objects. It is at this stage that identifier rules are enforced—valid identifiers must contain alphanumeric characters and underscores but cannot start with a digit.1 Our patch must respect these lexical constraints when generating unique variable names.
+4. Parsing: The Parser consumes the token vector to construct the Abstract Syntax Tree (AST). The parser is described as "non-incremental" and "blocking," meaning it expects a fully coherent token stream.1 Any ambiguity introduced by the preprocessor here results in immediate failure, as the parser cannot backtrack or infer intent from colliding symbols.
+5. Semantic Analysis (Type Checking): This phase validates the AST against the type system, including TBB arithmetic and Borrow Checking rules.1
+2.2 The Role of Macros in a Generic System
+Aria supports two forms of polymorphism: Generics (Template Functions) and Macros. It is crucial to distinguish why Macros are still heavily used despite the existence of Generics, as this justifies the effort to fix them.
+Generics in Aria use a monomorphization strategy, generating code at the call site during compilation.1 They are type-safe and hygienic by default. However, Macros operate at the textual level, allowing for code generation that transcends simple type substitution. For example, the GEN_BIT_COUNT macro described in the documentation takes a numeric parameter %2 to control a loop structure (while (i < %2)).1 Generics in v0.0.7 do not yet support const-generics or value parameters to this extent.
+Furthermore, the implementation of Twisted Balanced Binary (TBB) types necessitates complex handling of "Sticky Errors" and sentinel values (ERR).1 Often, the logic for checking an int32 is structurally different from checking a tbb8 due to the overflow behavior. Macros allow library authors to generate these specialized implementations efficiently. The collections.aria library, for instance, relies on macros to generate 130 functions across 10 different types.1 If the macro system is fragile, the standard library cannot scale.
+2.3 The Hybrid Memory Model Constraints
+Aria's memory model distinguishes between gc (Garbage Collected) and wild (Manual) memory.1 This distinction is enforced via keywords and type annotations. Macros often encapsulate patterns for manual memory management, such as the defer pattern for resource cleanup:
+
+
+Code snippet
+
+
+
+
+%macro SAFE_ALLOC 1
+   wild %1*:ptr = aria.alloc(size);
+   defer aria.free(ptr);
+%endmacro
+
+If this macro is unhygienic, and ptr collides with a user variable, the wrong pointer might be freed, or the user's variable might be shadowed, leading to memory leaks or double-free corruptions. Thus, macro hygiene in Aria is not just a syntactic convenience; it is a memory safety imperative.
+________________
+3. Theoretical Framework: The Hygiene Problem in Systems Languages
+The problem identified in Aria v0.0.7 is a classic instance of "Variable Capture," a phenomenon well-documented in the literature of programming language theory, particularly within the Lisp and Scheme communities.2
+3.1 Taxonomy of Macro Systems
+Macro systems are generally categorized by their awareness of the language's syntax:
+* Textual Macros (The Aria Model): Similar to the C Preprocessor (CPP), these operate on strings or simple token streams. They are agnostic to the AST. When GEN_ABS(int32) is invoked, the preprocessor performs a blind search-and-replace of %1 with int32.1 This is powerful but dangerous because the preprocessor does not understand scopes.
+* Syntactic/Hygienic Macros: Common in Rust (macro_rules!) and Scheme (syntax-rules). These macros operate on the AST. The compiler automatically "colors" identifiers introduced by the macro, ensuring they are distinct from identifiers in the call site, even if they share the same name.2
+Aria's decision to use %macro with positional arguments (%1, %2) places it firmly in the textual category. While simpler to implement, it imposes the burden of hygiene on the compiler designer rather than the macro system itself.
+3.2 The Mechanics of Collision
+Collision occurs when two identifiers that should refer to different memory locations are mapped to the same symbol string. In the context of the reported bug, the collision is "Internal-Internal" rather than "Internal-External."
+Consider the problematic code provided in the documentation 1:
+
+
+Code snippet
+
+
+
+
+%macro GEN_POPCOUNT 1
+func:popcount_%1 = int32(%1:x) {
+   %1:val = x; // Problematic Declaration
+   pass(0);
+};
+%endmacro
+
+GEN_POPCOUNT(int8)
+GEN_POPCOUNT(uint8)
+
+Expansion Trace:
+1. First Invocation (int8):
+Code snippet
+func:popcount_int8 = int32(int8:x) {
+   int8:val = x;
+   pass(0);
+};
+
+2. Second Invocation (uint8):
+Code snippet
+func:popcount_uint8 = int32(uint8:x) {
+   uint8:val = x;
+   pass(0);
+};
+
+In a standard C-like block scoping rules, this should be fine because val is local to the function block {... }. However, the documentation explicitly states this causes a Parse Error. This suggests that the parser or the preprocessor's symbol table might be leaking state, or that the preprocessor is generating code that violates the parser's lookahead.
+A more likely scenario for the reported error "Unexpected token after type in parentheses" involves how the tokens are injected. If the preprocessor handles %1 substitution by creating a token that is physically shared or malformed in the internal buffer, the parser might see uint8:val as an invalid redeclaration if it hasn't fully cleared the context of the previous int8:val.
+However, the most severe form of collision—and the one we must fix to ensure robustness—is when macros inject code into the same scope.
+
+
+Code snippet
+
+
+
+
+%macro SWAP 1
+   %1:temp = a;
+   a = b;
+   b = temp;
+%endmacro
+
+If the user writes:
+
+
+Code snippet
+
+
+
+
+int32:temp = 10;
+SWAP(int32)
+
+The expansion becomes:
+
+
+Code snippet
+
+
+
+
+int32:temp = 10;
+int32:temp = a; // Redefinition Error! Collision!
+
+3.3 The Gensym Solution
+The standard solution to this, dating back to the Kohlbecker algorithm for Scheme, is gensym (Generated Symbol). The preprocessor generates a globally unique name for every variable declared within a macro.
+   * temp becomes temp_7382
+   * Next invocation, temp becomes temp_7383
+By guaranteeing that the suffix is unique for every expansion, collisions are mathematically impossible. The challenge in Aria is implementing this transformation in a C++ codebase that operates on tokens, ensuring we identify declarations correctly without running a full parser.
+________________
+4. Diagnostic Analysis of the "Variable Collision" Defect
+The "Critical Macro Limitation" discovered on December 7, 2025, provides specific symptoms that guide our architectural remediation.1
+4.1 Symptom Analysis
+The reported error is Parse Error: Unexpected token after type in parentheses. This implies the parser is looking at a variable declaration and getting confused.
+Aria's variable declaration syntax is strictly Type:Name.1 There are no spaces around the colon in canonical examples (int32:value).
+If we have:
+
+
+Code snippet
+
+
+
+
+%macro TEST 1
+   %1:v = 0;
+%endmacro
+TEST(int32)
+
+Expansion: int32:v = 0;.
+If the user follows the "bad" pattern:
+
+
+Code snippet
+
+
+
+
+%macro BAD 1
+func:f_%1 = void() {
+   %1:x = 0;
+}
+%endmacro
+BAD(int32)
+BAD(int32)
+
+The parser sees two functions. Both use x. If the parser's symbol table logic is flawed regarding function locality during the parsing phase 1, x might be flagged as a duplicate if the scope isn't popped correctly.
+However, a more insidious issue arises with Reserved Keywords. The documentation warns against using %1:result because result is a keyword.1 A hygienic preprocessor should theoretically handle this, or at least the compiler should allow result as a variable name if it's hygienic (though Aria forbids it). Our patch focuses on collision between user variables, but we must also ensure we don't accidentally rename keywords or rename variables that should be visible (like function arguments).
+4.2 The "Fixed Type" Workaround
+The documentation suggests: "Use fixed types (like int32) for internal variables instead of %1".1
+Why does this work?
+
+
+Code snippet
+
+
+
+
+func:popcount_%1 = int32(%1:x) {
+   int32:val = x;
+   pass(0);
+};
+
+If this works, it implies the parser can handle val appearing in multiple functions. The bug specifically triggers when %1 (the parameter) is used for the type. This points to a subtle interaction in the preprocessor's token substitution logic—perhaps the token created by %1 substitution carries metadata that confuses the parser when it appears in a declaration position Type:Name.
+Regardless of the parser's specific quirk, implementing strict hygiene via renaming renders the issue moot. If val becomes val_1 and val_2, they are distinct identifiers. The parser, no matter how fragile, treats them as separate entities. This "brute force" correctness is preferred in systems languages over relying on subtle parser behaviors.
+________________
+5. Architectural Design of the Remediation
+We will modify the Preprocessor class to perform Automatic Hygienic Renaming. This solution is chosen over Static Analysis (Option 2) because Static Analysis merely warns the user of a limitation, whereas Hygiene fixes the limitation, enabling richer metaprogramming.
+5.1 Integration Point: expandMacro
+The Preprocessor class acts as the bridge between the raw source string and the Lexer. The expandMacro function is the engine of this transformation.
+Input:
+   * macroName: String (e.g., "GEN_ABS")
+   * args: Vector of strings (e.g., ["int32"])
+Output:
+   * A stream (vector) of Token objects representing the expanded code.
+5.2 The 3-Pass Algorithm
+To ensure correctness, the expansion logic is divided into three distinct passes. This separation of concerns simplifies maintenance and debugging.
+   1. Pass 1: Parameter Substitution (The Substitution Pass)
+   * Iterate through the macro body tokens.
+   * If a token matches a parameter pattern (%1, %2), replace it with the corresponding argument from args.
+   * Constraint: This mimics the current behavior.
+   2. Pass 2: Hygiene Analysis (The Detection Pass)
+   * Scan the token stream generated by Pass 1.
+   * Identify internal variable declarations.
+   * Heuristic: Look for the pattern [:][Identifier].
+   * Constraint: We must strictly adhere to the Type:Name syntax defined in.1
+   * Safety: We must NOT rename variables that are actually arguments. If the macro is func(%1:x), x is an argument provided by the caller (or defined in the signature). We generally want to avoid renaming arguments unless we rename them everywhere. However, the request specifically targets "internal variables declared in macros."
+   * Safety: Do not rename Reserved Keywords.1
+   3. Pass 3: Renaming (The Mangling Pass)
+   * Generate a unique suffix for this specific expansion invocation (e.g., _h<atomic_counter>).
+   * Iterate through the token stream.
+   * If a token matches an identifier flagged in Pass 2, append the suffix.
+   * Return the modified stream.
+5.3 Thread Safety and Determinism
+The Aria Language Server uses a thread pool.1 Multiple worker threads might be parsing different files or processing different macro expansions simultaneously.
+   * Requirement: The unique ID generator must be thread-safe.
+   * Solution: Use std::atomic<uint64_t> for the global counter.
+   * Determinism: While std::atomic ensures safety, the order of IDs depends on thread scheduling. For a build system AriaBuild, determinism is key.1 However, since these IDs are internal to the compilation unit and usually stripped or resolved to addresses during CodeGen, the exact ID number matters less than its uniqueness within the scope.
+5.4 Syntax Compliance for Mangled Names
+Aria identifiers allow alphanumeric characters and underscores.1
+   * Mangled Name: temp_h1024.
+   * Prefix _h: Stands for "hygiene," alerting developers inspecting the -E output 1 that this variable was modified by the preprocessor.
+________________
+6. Implementation: The C++ Patch
+The following C++ implementation provides the Preprocessor class and the expandMacro function. Since the original source code is not provided in the snippets, we define the necessary support structures (Token, MacroDefinition) based on the architectural reconstruction.
+6.1 Data Structures (Reconstructed)
+
+
+C++
+
+
+
+
+/**
+* Aria Compiler Frontend - Preprocessor Patch
+* Targeted Fix: Macro Internal Variable Collision (Dec 2025)
+*/
+
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <unordered_set>
+#include <atomic>
+#include <iostream>
+#include <sstream>
+
+// Token structure reconstructed from AriaBuild specs  and Lexer descriptions
+struct Token {
+   enum Type {
+       IDENTIFIER,
+       KEYWORD,
+       SYMBOL,     // :, =, {, }, etc.
+       LITERAL,    // Numbers, Strings
+       WHITESPACE,
+       UNKNOWN
+   };
+   
+   Type type;
+   std::string text;
+   int line;
+   int col;
+
+   // Helper for debugging
+   std::string toString() const {
+       return text;
+   }
+};
+
+// Macro definition storage
+struct MacroDefinition {
+   std::string name;
+   int paramCount;
+   std::vector<Token> body; // The pre-tokenized body of the macro
+};
+
+6.2 The Preprocessor Class Definition
+The class encapsulates the macro registry and the global hygiene counter.
+
+
+C++
+
+
+
+
+class Preprocessor {
+private:
+   // Atomic counter for thread-safe unique ID generation 
+   static std::atomic<uint64_t> expansionCounter;
+
+   // Macro Registry
+   std::unordered_map<std::string, MacroDefinition> macros;
+
+   // Reserved Keywords Set 
+   // Used to prevent accidental renaming of language keywords
+   const std::unordered_set<std::string> reservedKeywords = {
+       "result", "func", "wild", "defer", "async", "const", "use", 
+       "mod", "pub", "extern", "ERR", "stack", "gc", "wildx", 
+       "struct", "enum", "type", "is", "in", "fall", "pass", "fail"
+   };
+
+   /**
+    * Checks if a string is a reserved keyword.
+    */
+   bool isReserved(const std::string& text) const {
+       return reservedKeywords.find(text)!= reservedKeywords.end();
+   }
+
+public:
+   void registerMacro(const MacroDefinition& def) {
+       macros[def.name] = def;
+   }
+
+   // Core function to be patched
+   std::vector<Token> expandMacro(const std::string& macroName, const std::vector<std::string>& args);
+};
+
+// Initialize the static counter
+std::atomic<uint64_t> Preprocessor::expansionCounter{0};
+
+6.3 The Patched expandMacro Implementation
+This function implements the 3-pass algorithm designed in Section 5.2.
+
+
+C++
+
+
+
+
+/**
+* @brief Expands a macro with Automatic Hygienic Renaming.
+* 
+* This function addresses the 'Macro Internal Variable Collision' bug by detecting
+* internal variable declarations and appending a unique, thread-safe counter
+* to their identifiers.
+* 
+* @param macroName The identifier of the macro to expand.
+* @param args The list of arguments passed to the macro.
+* @return std::vector<Token> The expanded, hygienic token stream.
+*/
+std::vector<Token> Preprocessor::expandMacro(const std::string& macroName, const std::vector<std::string>& args) {
+   // 1. Validation
+   if (macros.find(macroName) == macros.end()) {
+       std::cerr << "Error: Undefined macro '" << macroName << "'" << std::endl;
+       return {};
+   }
+
+   const MacroDefinition& def = macros[macroName];
+   if (args.size()!= def.paramCount) {
+       std::cerr << "Error: Macro '" << macroName << "' expects " << def.paramCount 
+                 << " arguments, got " << args.size() << std::endl;
+       return {};
+   }
+
+   // 2. Generate Unique Hygiene ID
+   // Utilizes atomic fetch_add to ensure uniqueness across threads in AriaLS 
+   uint64_t uniqueId = ++expansionCounter;
+   std::string hygieneSuffix = "_h" + std::to_string(uniqueId); 
+
+   // -------------------------------------------------------------------------
+   // PASS 1: Parameter Substitution
+   // Replace %1, %2 with provided arguments.
+   // -------------------------------------------------------------------------
+   std::vector<Token> substTokens;
+   substTokens.reserve(def.body.size());
+
+   for (const auto& token : def.body) {
+       Token processedToken = token;
+       
+       // Check for parameter placeholders (%1, %2...)
+       // Note: In Aria, these might be parsed as identifiers or special tokens depending on the lexer.
+       // We assume they appear as IDENTIFIER or SYMBOL tokens starting with %.
+       if (token.text.size() >= 2 && token.text == '%') {
+           try {
+               // Parse index (1-based)
+               std::string indexStr = token.text.substr(1);
+               // Simple check if it's a number
+               if (isdigit(indexStr)) {
+                   int index = std::stoi(indexStr) - 1;
+                   if (index >= 0 && index < args.size()) {
+                       // Replace text with argument
+                       processedToken.text = args[index];
+                       // Reset type to IDENTIFIER (or parse the arg type if complex)
+                       // For hygiene, we treat it as an opaque identifier for now.
+                       processedToken.type = Token::IDENTIFIER;
+                   }
+               }
+           } catch (...) {
+               // Ignore parsing errors, assume not a parameter (e.g. %macro keyword)
+           }
+       }
+       substTokens.push_back(processedToken);
+   }
+
+   // -------------------------------------------------------------------------
+   // PASS 2: Hygiene Analysis (Internal Variable Detection)
+   // Identify variables declared as 'Type:Name'.
+   // -------------------------------------------------------------------------
+   std::unordered_map<std::string, std::string> renameMap;
+
+   // We scan windows of 3 meaningful tokens:[:][Name]
+   // Note: We skip whitespace in logic but preserve it in output.
+   // Since substTokens contains everything, we need an index-based scan.
+   
+   for (size_t i = 0; i < substTokens.size(); ++i) {
+       // Look ahead for declaration pattern: Type : Name
+       // We need to skip potential whitespace between tokens if the lexer preserves it.
+       
+       // Find T1 (Type)
+       if (substTokens[i].type!= Token::IDENTIFIER && substTokens[i].type!= Token::KEYWORD) continue;
+       const Token& tType = substTokens[i];
+
+       // Find T2 (Colon)
+       size_t j = i + 1;
+       while (j < substTokens.size() && substTokens[j].type == Token::WHITESPACE) j++;
+       if (j >= substTokens.size()) break;
+       if (substTokens[j].text!= ":") continue;
+
+       // Find T3 (Name)
+       size_t k = j + 1;
+       while (k < substTokens.size() && substTokens[k].type == Token::WHITESPACE) k++;
+       if (k >= substTokens.size()) break;
+       const Token& tName = substTokens[k];
+
+       // Validation: Is this a variable declaration?
+       if (tName.type == Token::IDENTIFIER) {
+           // CRITICAL: Do not rename if the name matches one of the macro arguments.
+           // Example: %macro F 1... int32:%1... %endmacro
+           // Here %1 becomes the variable name. We respect the caller's choice of name.
+           bool isArg = false;
+           for (const auto& arg : args) {
+               if (arg == tName.text) {
+                   isArg = true;
+                   break;
+               }
+           }
+
+           // Do not rename reserved keywords (e.g. 'result:val' -> result is keyword, val is name)
+           // But 'int32:result' -> result is name, and is RESERVED.
+           // The parser handles reserved word errors. We only care about valid user variables.
+           // We specifically avoid renaming if the variable name itself is reserved to avoid confusing error messages.
+           
+           if (!isArg &&!isReserved(tName.text)) {
+               // Found a candidate! 'temp' -> 'temp_h101'
+               if (renameMap.find(tName.text) == renameMap.end()) {
+                   renameMap[tName.text] = tName.text + hygieneSuffix;
+               }
+           }
+       }
+   }
+
+   // -------------------------------------------------------------------------
+   // PASS 3: Renaming Application
+   // Replace identifiers present in the renameMap.
+   // -------------------------------------------------------------------------
+   std::vector<Token> finalTokens;
+   finalTokens.reserve(substTokens.size());
+
+   for (const auto& token : substTokens) {
+       Token outToken = token;
+       if (token.type == Token::IDENTIFIER) {
+           auto it = renameMap.find(token.text);
+           if (it!= renameMap.end()) {
+               outToken.text = it->second;
+           }
+       }
+       finalTokens.push_back(outToken);
+   }
+
+   return finalTokens;
+}
+
+6.4 Implementation Analysis and Compliance
+This implementation directly addresses the constraints identified in the Aria architecture:
+   1. Syntactic Pattern Matching: The logic specifically looks for the Type:Name pattern. Aria's guide 1 confirms this is the canonical declaration syntax. By handling the colon delimiter, we differentiate between declaring temp (int32:temp) and using temp (val = temp). Note that since we rename all instances of temp in the macro body once we detect it is declared there, usage sites are automatically updated to val = temp_h101, maintaining consistency.
+   2. Generic Parameter Compatibility: The "Critical Macro Limitation" involved internal variables defined with generic types (%1:val). Our Pass 1 resolves %1 to int32 before Pass 2 scans for declarations. This ensures that int32:val is correctly identified as a declaration, triggering the renaming of val.
+   3. Thread Safety: The use of std::atomic satisfies the concurrency requirements of the Aria Language Server 1, preventing race conditions when multiple worker threads trigger macro expansion.
+   4. Zero-Cost Philosophy: This operation happens entirely at compile-time (preprocessing). The resulting code is plain, flat Aria source code. There is absolutely no runtime overhead, aligning with Aria's performance goals.
+________________
+7. Integration and Verification Strategy
+Deploying this patch into the ariac codebase requires a structured verification approach, leveraging the existing tooling described in the AriaBuild specification.1
+7.1 The -E Debugging Flag
+AriaBuild supports a --debug-macro mode which invokes ariac -E.1 This is the primary verification tool.
+   * Action: Create a test file test_macro.aria containing the failing GEN_POPCOUNT macro.1
+   * Command: aria_make --debug-macro
+   * Verification: Open preprocessed.aria.
+   * Before Patch: The output would show duplicate val definitions in the expanded scope.
+   * After Patch: The output should show val_h1 in the first function and val_h2 in the second.
+7.2 Regression Testing
+We must ensure we haven't broken valid macros.
+   * Argument Preservation: Verify that variables passed into the macro are not renamed.
+   * Macro: func:test = void(int32:%1) { print(%1); }
+   * Call: TEST(myVar)
+   * Result: func:test = void(int32:myVar) { print(myVar); }. myVar must NOT be renamed because it appears as an argument. The !isArg check in our code enforces this.
+7.3 Performance Impact
+The 3-pass algorithm is $O(N)$ where $N$ is the number of tokens in the macro body. Given that macros are typically short snippets of code, this overhead is negligible compared to the $O(N)$ complexity of the Lexer and Parser.1 The memory footprint involves a small map for renamed variables, which is cleared after each expansion.
+________________
+8. Conclusion and Future Outlook
+The "Macro Internal Variable Collision" bug is a significant impediment to the maturity of the Aria programming language. By relying on a naive textual substitution model without hygiene, the v0.0.7 compiler limits the expressiveness of its standard library and forces developers into unsafe coding patterns.
+The architectural solution presented in this report—Automatic Hygienic Renaming via Counter-Based Mangling—provides a robust, thread-safe, and syntactically compliant fix. It leverages the existing token structure of the compiler and integrates seamlessly with the parallel architecture of the Aria Language Server.
+Implementing this patch allows the deprecation of the "Fixed Type" limitation 1, empowering library authors to write truly generic, reusable macros for TBB arithmetic and hybrid memory management. This moves Aria closer to its goal of being a premier systems language, offering the raw power of C with the safety and ergonomics of modern tooling.
+________________
+References:
+1 Aria Programming Language v0.0.7 - Complete Programming Guide
+1 Comprehensive Architectural Specification for Aria Language Server
+1 Architectural Specification for AriaBuild
+1 Aria Variable Declaration Syntax Analysis
+2 Theoretical Foundations of Macro Hygiene
+Works cited
+   1. rcfull.txt
+   2. How valuable are schemes hygienic macros? : r/lisp - Reddit, accessed December 20, 2025, https://www.reddit.com/r/lisp/comments/1dnzrzz/how_valuable_are_schemes_hygienic_macros/

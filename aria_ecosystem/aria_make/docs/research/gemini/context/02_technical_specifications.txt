@@ -1,0 +1,218 @@
+aria_make Technical Specifications
+===================================
+
+ABC FORMAT (Aria Build Configuration):
+
+File Structure:
+{
+    project: { ... },      // Metadata
+    variables: { ... },    // Symbol table
+    targets: [ ... ]       // Build target definitions
+}
+
+SYNTAX FEATURES:
+
+Comments: // (Aria-style, single-line)
+Variable Interpolation: &{variable_name}
+Structural Delimiters: {} for objects, [] for arrays
+Unquoted Keys: name: "value" (not "name": "value")
+Trailing Commas: Allowed in all contexts
+Whitespace: Completely insignificant (can minify)
+
+VARIABLE SYSTEM:
+
+Resolution Order:
+1. Local Scope (target-specific)
+2. Global Scope (variables block)
+3. Environment (&{ENV.VAR})
+
+Examples:
+variables: {
+    src: "src",
+    cc: "ariac",
+    home: "&{ENV.HOME}"
+}
+
+Usage:
+sources: ["&{src}/**/*.aria"]
+command: "&{cc} -o output"
+
+GLOB PATTERNS:
+
+Supported Syntax:
+* - Matches any characters in single directory
+  Example: src/*.aria → src/main.aria (not src/utils/helper.aria)
+
+** - Recursive wildcard (crosses directories)
+  Example: src/**/*.aria → ALL .aria files under src/
+
+? - Exactly one character
+  Example: test?.aria → test1.aria, testA.aria
+
+[...] - Character class
+  Example: file[0-9].aria → file0.aria through file9.aria
+
+Implementation Requirements:
+- Must use C++ std::filesystem (not in Aria stdlib yet)
+- Results must be sorted alphabetically (determinism)
+- Cache expansion with invalidation strategy
+- Handle symlinks appropriately
+- Respect .gitignore patterns (optional feature)
+
+DEPENDENCY GRAPH:
+
+Structure: Directed Acyclic Graph (DAG)
+Nodes: Source files, intermediate artifacts, targets
+Edges: Dependencies (A→B means "A depends on B")
+
+Sources of Dependencies:
+1. Explicit: depends_on field in target
+   Example: depends_on: ["lib_target"]
+
+2. Implicit: Parsed from Aria use statements
+   Example: use std.io; creates dependency on io module
+
+Algorithm: Kahn's Topological Sort
+
+Pseudocode:
+1. Calculate in-degree for all nodes
+2. Enqueue nodes with in-degree 0
+3. Process:
+   - Dequeue node N
+   - Add to build queue
+   - For each neighbor M of N:
+     * Decrement M's in-degree
+     * If in-degree becomes 0, enqueue M
+4. If all nodes processed: success
+5. If nodes remain: circular dependency detected
+
+Cycle Detection:
+- If queue empties with nodes remaining
+- Perform DFS to identify cycle path
+- Report error: "A → B → C → A"
+
+Incremental Builds:
+- Timestamp comparison
+- Rebuild if max(source_times) > output_time
+- Use C++ stat() (not available in Aria stdlib)
+
+TARGET SCHEMA:
+
+Required Fields:
+- name: string (unique identifier)
+- type: enum (binary, library, test, custom)
+- sources: array of strings (supports globs)
+- output: string (destination path)
+
+Optional Fields:
+- depends_on: array of strings (target names)
+- flags: array of strings (compiler flags)
+- env: object (environment variables)
+- pre_build: array of strings (commands before build)
+- post_build: array of strings (commands after build)
+
+Example:
+{
+    name: "core_lib",
+    type: "library",
+    sources: ["lib/**/*.aria"],
+    output: "build/core.ll",
+    flags: ["-O2", "-Wall"],
+    depends_on: []
+}
+
+PARALLEL EXECUTION:
+
+Thread Pool:
+- Size: std::thread::hardware_concurrency()
+- Execute independent targets concurrently
+- Track completion, update graph dynamically
+
+Scheduling:
+1. Identify targets with in-degree 0
+2. Assign to worker threads
+3. On completion, remove edges from graph
+4. Repeat until graph empty
+
+INTEGRATION WITH ARIAC:
+
+Compiler Invocation:
+ariac [sources] -o [output] [-I includes] [flags]
+
+Flags:
+-o: Output file path
+-I: Include directories (from depends_on)
+-E: Preprocessor only (debug macros)
+-O2, -O3: Optimization levels
+
+Include Path Resolution:
+For each dependency in depends_on:
+- Find output directory of dependency target
+- Add to -I flags
+- Example: -I build/lib/core
+
+INTEGRATION WITH LLI:
+
+Execution:
+lli [llvm_ir_file]
+
+Usage in aria_make:
+- For type: "binary" targets
+- Run after successful build
+- Capture and stream output
+- Report exit code
+
+TEST EXECUTION:
+
+For type: "test" targets:
+1. Build test binary
+2. Execute via lli
+3. Capture output
+4. Parse for test framework results
+5. Report pass/fail summary
+
+LSP SUPPORT (compile_commands.json):
+
+Format:
+[
+  {
+    "directory": "/path/to/project",
+    "command": "ariac src/main.aria -I lib -o build/main.ll",
+    "file": "src/main.aria"
+  }
+]
+
+Generation:
+- Create entry for each source file
+- Include all flags and include paths
+- Write to project root
+- aria-ls reads this for IDE features
+
+ERROR HANDLING:
+
+Parse Errors:
+- Line and column numbers
+- Context snippet (surrounding lines)
+- Helpful suggestions
+
+Build Errors:
+- Show compiler output
+- Indicate which target failed
+- Suggest fixes
+
+Graph Errors:
+- Circular dependency with path
+- Missing dependencies
+- Ambiguous target names
+
+PERFORMANCE:
+
+Goals:
+- Parse build file in <10ms
+- Expand globs in <100ms for typical projects
+- Build scheduling overhead <1% of total build time
+
+Optimizations:
+- Cache glob expansions
+- Lazy evaluation of variables
+- Parallel file metadata checks

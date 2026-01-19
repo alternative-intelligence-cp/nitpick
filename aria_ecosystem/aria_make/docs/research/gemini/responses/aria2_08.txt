@@ -1,0 +1,506 @@
+﻿Architectural Specification: Plugin System and Extensibility Architecture for AriaBuild
+1. Executive Summary and Strategic Context
+The evolution of software construction tools has historically mirrored the increasing complexity of the software they build. From the imperative, script-driven era of Makefiles to the declarative, graph-based paradigms of modern meta-build systems, the trajectory has consistently favored higher abstractions and rigorous determinism. The Aria programming language ecosystem, centered around the ariac compiler and the aria_make build system (internally referred to as AriaBuild), stands at a pivotal juncture in this evolutionary timeline. With the core language specification stabilizing at version 0.0.7, featuring advanced constructs such as Twisted Balanced Binary (TBB) arithmetic and a hybrid memory model, the accompanying build infrastructure must now transcend its initial role as a static compilation driver. It must evolve into a dynamic, extensible platform capable of orchestrating complex, polyglot development environments that characterize modern enterprise software engineering.
+The current architecture of AriaBuild operates on a "Configuration as Data" philosophy, leveraging the whitespace-insensitive Aria Build Configuration (ABC) format. While this design ensures hermeticity and predictability—key requirements for high-integrity systems—it inherently lacks the flexibility to accommodate user-defined logic, custom toolchains (such as integrating C++ or Rust interoperability), or specialized workflow hooks (e.g., static analysis gates, artifact signing, or containerization steps) without modifying the core codebase. This rigidity presents a significant barrier to adoption in heterogeneous environments where Aria must coexist with legacy systems and diverse tooling requirements. To address this, we propose a comprehensive AriaBuild Extensibility Engine, a dual-mode plugin architecture designed to introduce programmability into the build lifecycle without compromising the deterministic guarantees of the dependency graph.
+This architectural specification defines a hybrid extensibility model that harmonizes the raw performance of native interfaces with the security and portability of WebAssembly (WASM). By adopting the "Hourglass Pattern" for Application Binary Interface (ABI) stability in native plugins and integrating the Wasmtime runtime for sandboxed, cross-platform extensions, AriaBuild will support a rich ecosystem of third-party tooling. The architecture introduces the Aria Plugin Protocol (APP), a formal contract exposing the Dependency Graph (DAG), Toolchain Orchestrator, and Configuration Engine to external modules via rigorously defined interfaces. This report provides the definitive technical blueprint for this system, detailing class hierarchies, memory management protocols, discovery algorithms, and security models required to transform AriaBuild from a single-language builder into a universal orchestration platform.
+________________
+2. Architectural Analysis and Theoretical Framework
+To engineer a plugin system that is both robust and performant, one must first deconstruct the existing build system's architecture to identify the precise "seams" where extension logic can be injected without violating the system's invariants. This analysis draws upon the theoretical underpinnings of build systems as described in the literature surrounding Bazel, CMake, and Gradle, adapting these concepts to the specific constraints and capabilities of the Aria ecosystem.
+2.1 The Dependency Graph: From Static to Dynamic
+At the nucleus of AriaBuild lies the Dependency Graph Engine. Currently, this engine constructs a Directed Acyclic Graph (DAG) based on a static parsing of build.aria configuration files and a recursive globbing of the filesystem. Nodes in this graph represent concrete entities: source files (.aria), intermediate object files (.ll, .o), and final artifacts (executables, libraries). Edges represent constructive relationships, where a child node is a strict prerequisite for its parent. The execution order is derived via Kahn’s Algorithm for topological sorting, ensuring a mathematically correct build sequence.
+The Limitation: The current graph construction is effectively immutable once the configuration file is parsed. There is no mechanism for conditional logic that depends on the state of the graph itself or on external environmental factors (outside of basic variable interpolation). For instance, a requirement to "generate a version header based on the current Git commit hash" cannot be expressed because the target for the header file must exist before the build begins, but the logic to create it requires code execution.
+The Architectural Extension: We introduce the concept of Graph Synthesis Phases. The build lifecycle is redefined not as a linear process, but as a multi-stage pipeline where plugins can intervene:
+1. Bootstrap Phase: Loading of the core configuration and plugin discovery.
+2. Synthesis Phase (Pre-Graph): Plugins are invoked to inject "Ephemeral Targets"—nodes that do not exist in the source configuration but are generated programmatically. This aligns with Gradle’s "Configuration Phase" where the task graph is assembled code-first.
+3. Resolution Phase: The Globbing Subsystem resolves file patterns, and the Dependency Engine links explicit and implicit dependencies (e.g., scanning use statements).
+4. Analysis Phase (Post-Graph): Plugins can inspect the fully resolved DAG to enforce policies (e.g., "no circular dependencies allowed between modules A and B") or inject "Aspects" (cross-cutting logic like measuring build times for all nodes).
+5. Execution Phase: The Toolchain Orchestrator traverses the graph.
+2.2 Toolchain Virtualization and Abstract Orchestration
+The ToolchainOrchestrator currently acts as a hardcoded meta-driver for the ariac compiler and the lli runtime. It maps the binary and library target types directly to command-line invocations of these specific tools. This creates a tight coupling that prevents AriaBuild from managing multi-language projects. If a developer wishes to link a C++ static library into an Aria program (a supported use case via the extern keyword), the current system cannot orchestrate the compilation of the C++ sources.
+The Architectural Extension: The system must transition to a Toolchain Provider Model. Instead of hardcoding ariac, the orchestrator will request a Toolchain object for a given source file extension or target type. Plugins serve as providers, registering implementations of the IToolchain interface.
+* AriaToolchain (Built-in): Handles .aria files via ariac.
+* CxxToolchain (Plugin): Handles .cpp and .c files via clang or gcc.
+* AssetToolchain (Plugin): Handles .glsl or .proto files via their respective compilers.
+This abstraction allows the DAG to contain heterogeneous nodes—a C++ object file node can depend on a C header node, and an Aria binary node can depend on that C++ object node—with the orchestrator dispatching the build action to the correct toolchain provider dynamically.
+2.3 Configuration as an Interface
+The Aria Build Configuration (ABC) format is a whitespace-insensitive, JSON-superset declarative language. While excellent for data definition, it lacks the semantic richness to configure complex plugin behaviors. Examples from the CMake ecosystem demonstrate the pitfalls of allowing plugins to define their own ad-hoc variables in the global scope, leading to namespace pollution and collision.
+The Architectural Extension: We formally extend the ABC schema to include a Scoped Plugin Configuration Block. This reserved section, plugins {... }, serves as a structured container for plugin-specific metadata. The build system parses this block into a generic dictionary structure (e.g., std::map<string, Variant>) but performs no validation. Instead, the validation logic is delegated to the plugin itself during the Bootstrap Phase. This allows plugins to define their own configuration schemas (required fields, types) without modifying the core ABC parser.
+________________
+3. The Native Plugin Architecture: Solving the C++ ABI Crisis
+Developing a plugin system in C++ introduces the notorious problem of Application Binary Interface (ABI) Instability. In C++, the memory layout of classes, the mangling of function names, and the implementation of standard library containers (std::vector, std::string) vary significantly between compiler versions (e.g., GCC 9 vs. GCC 13), build modes (Debug vs. Release), and standard library implementations (libstdc++ vs. libc++).
+If AriaBuild were to expose a raw C++ API (e.g., class Target { public: virtual void Build(); };), a plugin compiled with a different toolchain configuration would likely cause the build system to crash due to vtable mismatches or memory corruption when passing objects across the DLL/Shared Object boundary. To mitigate this risk and ensure enterprise-grade stability, AriaBuild will adopt the Hourglass Pattern (also known as the C-API Encapsulation pattern).
+3.1 The Hourglass Pattern Design
+The Hourglass Pattern isolates the internal C++ implementation of the host (AriaBuild) from the internal C++ implementation of the plugin using a stable, minimal C interface in the middle. The "narrow waist" of the hourglass is composed strictly of:
+* Opaque Pointers (Handles)
+* Primitive Types (int, char*, double)
+* Function Pointers (Callbacks)
+* Plain Old Data (POD) Structs
+This ensures that the boundary between host and plugin relies solely on the C ABI, which is universally stable across compilers and platforms.
+3.2 The C-Layer Interface Specification (aria_plugin_abi.h)
+This header file defines the contract. It is the only header that must be shared between the host and the plugin developer.
+
+
+C
+
+
+
+
+/* include/aria/plugin/abi.h */
+
+#ifndef ARIA_PLUGIN_ABI_H
+#define ARIA_PLUGIN_ABI_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Opaque Handles - The Plugin never sees the C++ class layout */
+typedef struct aria_host_context_t* aria_host_context_h;
+typedef struct aria_target_t* aria_target_h;
+typedef struct aria_graph_t* aria_graph_h;
+typedef struct aria_logger_t* aria_logger_h;
+
+/* Status Codes */
+typedef enum {
+   ARIA_SUCCESS = 0,
+   ARIA_ERROR_GENERIC = -1,
+   ARIA_ERROR_INVALID_ARG = -2,
+   ARIA_ERROR_VERSION_MISMATCH = -3
+} aria_result_t;
+
+/* Plugin Metadata Structure */
+typedef struct {
+   uint32_t api_version;       /* Handshake version */
+   const char* plugin_name;    /* Unique identifier */
+   const char* version_str;    /* SemVer string */
+   const char* vendor;         /* Organization */
+   const char* description;    /* Human-readable desc */
+} aria_plugin_info_t;
+
+/* 
+* The Host API VTable (Virtual Method Table)
+* This structure aggregates all function pointers the host exposes to the plugin.
+* This effectively acts as "Dependency Injection" for system services.
+*/
+typedef struct {
+   /* Logging Subsystem */
+   void (*log_info)(aria_logger_h logger, const char* msg);
+   void (*log_error)(aria_logger_h logger, const char* msg);
+
+   /* Target Management */
+   aria_result_t (*target_get_name)(aria_target_h target, const char** out_name);
+   aria_result_t (*target_set_property)(aria_target_h target, const char* key, const char* value);
+   
+   /* Graph Manipulation */
+   aria_result_t (*graph_add_target)(aria_graph_h graph, aria_target_h target);
+   aria_target_h (*graph_create_target)(aria_graph_h graph, const char* name, const char* type);
+
+} aria_host_api_t;
+
+/* 
+* The Plugin Entry Point
+* Every native plugin must export this symbol.
+*/
+typedef aria_result_t (*aria_plugin_load_fn)(
+   const aria_host_api_t* host_api,  /* In: Pointers to host functions */
+   aria_host_context_h host_ctx,     /* In: Context handle */
+   aria_plugin_info_t* out_info      /* Out: Plugin metadata */
+);
+
+/* Optional Lifecycle Hooks */
+typedef void (*aria_plugin_unload_fn)(aria_host_context_h host_ctx);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* ARIA_PLUGIN_ABI_H */
+
+3.3 The C++ SDK Wrapper (aria_plugin.hpp)
+While the C interface guarantees stability, it is verbose and error-prone for developers. We will provide a Header-Only C++ SDK that wraps the C handles in ergonomic C++ classes. This constitutes the "top" of the hourglass.
+
+
+C++
+
+
+
+
+// sdk/aria_plugin.hpp
+
+namespace aria::plugin {
+
+// Wrapper for the opaque Target handle
+class Target {
+   aria_target_h m_handle;
+   const aria_host_api_t* m_api;
+
+public:
+   Target(aria_target_h h, const aria_host_api_t* api) 
+       : m_handle(h), m_api(api) {}
+
+   std::string name() const {
+       const char* str = nullptr;
+       if (m_api->target_get_name(m_handle, &str) == ARIA_SUCCESS) {
+           return std::string(str);
+       }
+       throw std::runtime_error("Failed to get target name");
+   }
+
+   void set_property(const std::string& key, const std::string& value) {
+       m_api->target_set_property(m_handle, key.c_str(), value.c_str());
+   }
+};
+
+// The Base Plugin Class interface for C++ developers
+class Plugin {
+public:
+   virtual ~Plugin() = default;
+   virtual void on_load(Context& ctx) = 0;
+   virtual void on_unload() {}
+};
+
+} // namespace aria::plugin
+
+// Macro to generate the C entry point automatically
+#define ARIA_EXPORT_PLUGIN(PluginClass) \
+   extern "C" aria_result_t aria_plugin_load( \
+       const aria_host_api_t* api, \
+       aria_host_context_h ctx, \
+       aria_plugin_info_t* info) \
+   { \
+       /* Instantiate the user's C++ class */ \
+       auto* instance = new PluginClass(); \
+       /* Register it with the context (details omitted for brevity) */ \
+       /* Populate info struct */ \
+       info->api_version = 1; \
+       info->plugin_name = "UserPlugin"; \
+       return ARIA_SUCCESS; \
+   }
+
+This design ensures that even if std::string implementation differs between the host and the plugin, they never exchange std::string instances directly. They exchange const char* across the ABI boundary, and each side constructs its own std::string from that raw pointer.
+________________
+4. The WebAssembly Extension Layer: Secure Portability
+While native C++ plugins offer maximum performance and system access, they pose significant risks regarding security (arbitrary code execution) and portability (need to recompile for every OS/Arch). To enable a safe, distributable plugin ecosystem—akin to NPM or Crates.io—AriaBuild incorporates a WebAssembly (WASM) Subsystem.
+4.1 The WASM Component Model Strategy
+We reject the older WASM module approach in favor of the WASM Component Model. This standard allows for high-level types (strings, records, lists) to be passed between the host and the WASM guest via "Canonical ABI" lifting and lowering, rather than manually managing shared memory buffers.
+We define the plugin interface using WIT (Wasm Interface Type) language. This serves as the IDL (Interface Definition Language) for the plugin system.
+
+
+Code snippet
+
+
+
+
+// interfaces/aria-build.wit
+
+package aria:build;
+
+// Types used across the interface
+interface types {
+   record target-config {
+       name: string,
+       target-type: string,
+       sources: list<string>,
+       flags: list<string>,
+   }
+   
+   enum build-status {
+       success,
+       failed,
+       skipped
+   }
+}
+
+// Capabilities provided by the Host to the Plugin
+interface host-capabilities {
+   // Logging
+   log-info: func(msg: string);
+   log-error: func(msg: string);
+   
+   // File System (Sandboxed via WASI)
+   read-file: func(path: string) -> result<string, string>;
+   
+   // Process Execution (Sandboxed)
+   exec-command: func(cmd: string, args: list<string>) -> result<u32, string>;
+}
+
+// The World defines the environment for a plugin
+world builder-plugin {
+   import host-capabilities;
+   
+   // Hook: Called during graph synthesis
+   export on-configure: func(config: list<tuple<string, string>>);
+   
+   // Hook: Custom build logic for a specific target
+   export build-step: func(target: types.target-config) -> types.build-status;
+}
+
+4.2 Wasmtime Integration and Host Embedding
+AriaBuild will embed the Wasmtime runtime engine. The PluginManager class manages the lifecycle of the WASM VM.
+1. Engine Initialization: On startup, a single wasmtime::Engine is created. This manages the JIT compilation and code caching.
+2. Linker Configuration: A wasmtime::Linker is configured to define the imports specified in the WIT file (the host-capabilities). This is where the C++ implementation of log-info or exec-command is bound to the WASM environment.
+3. WASI Configuration: Crucially, we utilize WASI (WebAssembly System Interface) to provide capability-based security.
+   * Filesystem Jail: The WASM plugin is granted a preopened_dir capability only for the project root. It cannot access /etc, /usr, or other system paths.
+   * Environment Variables: The environment is scrubbed. Only explicitly whitelisted variables (defined in build.aria) are passed to the instance.
+   * Network: By default, no network capability is provided. If a plugin needs to fetch dependencies (e.g., a package manager plugin), it must request the wasi-http capability, which the user must explicitly approve in the configuration.
+4.3 JIT vs. AOT Compilation
+Build tools require low latency. The overhead of JIT-compiling a WASM module on every aria_make invocation could be prohibitive.
+* Development: Use Wasmtime's JIT.
+* Production/CI: Implement an Artifact Cache. When a WASM plugin is first loaded, AriaBuild computes a hash of the .wasm file. If a corresponding pre-compiled .cwasm (native machine code) file exists in the cache, it is loaded directly. If not, the engine compiles it, saves the .cwasm to the cache, and then executes. This brings WASM plugin performance within 10-20% of native code.
+________________
+5. Extensibility Hooks and Event Topology
+To operationalize the plugins, we must define a rigorous Event Bus Architecture. The build process is a sequence of phases; hooks allow plugins to intercept control flow at specific boundaries.
+5.1 The Hook Lifecycle Map
+Hook ID
+	Execution Phase
+	Mutability
+	Purpose
+	ON_INIT
+	System Startup
+	Read-Only
+	Register custom Toolchain providers, target types, and CLI flags.
+	ON_CONFIG
+	Config Parse
+	Read-Write
+	Validate or mutate the parsed configuration variables.
+	PRE_GRAPH
+	Graph Synthesis
+	Read-Write
+	Inject ephemeral targets or modify global build settings before the DAG is finalized.
+	POST_GRAPH
+	Analysis
+	Read-Only
+	Analyze the complete dependency graph. Useful for reporting, visualization, or policy enforcement.
+	PRE_BUILD
+	Execution
+	Read-Only
+	Called before a specific target is built. Useful for setup checks.
+	BUILD_STEP
+	Execution
+	Override
+	Critical Hook. Allows a plugin to completely take over the build logic for a target, replacing the default orchestrator logic.
+	POST_BUILD
+	Execution
+	Read-Only
+	Called after a target builds successfully. Useful for artifact signing or notification.
+	5.2 Implementation of the Event Dispatcher
+The PluginManager maintains a registry of listeners:
+
+
+C++
+
+
+
+
+std::map<EventType, std::vector<PluginCallback>> m_observers;
+
+Hooks are synchronous and blocking. This is a deliberate design choice to ensure determinism. If PRE_GRAPH hooks were asynchronous, the order of graph mutations would be non-deterministic, violating the core philosophy of AriaBuild.
+When the ToolchainOrchestrator processes a target, it consults the registry:
+
+
+C++
+
+
+
+
+// Pseudocode inside Orchestrator
+Result Orchestrator::build_target(Target* t) {
+   // 1. Pre-build hooks
+   plugin_manager.dispatch(PRE_BUILD, t);
+
+   // 2. Build Step
+   bool handled = false;
+   // Check if a plugin wants to override the build
+   if (plugin_manager.has_override(BUILD_STEP, t->type)) {
+       handled = plugin_manager.dispatch_override(BUILD_STEP, t);
+   }
+   
+   if (!handled) {
+       // Fallback to internal logic (ariac/lli)
+       this->execute_standard_build(t);
+   }
+
+   // 3. Post-build hooks
+   plugin_manager.dispatch(POST_BUILD, t);
+}
+
+________________
+6. Toolchain Virtualization Layer
+A key requirement is enabling "custom toolchains" to support C++, Rust, or asset compilation within AriaBuild. This requires abstracting the concept of a compiler.
+6.1 The IToolchain Interface
+We define an abstract interface that models the behavior of a compilation driver. Plugins implement this interface to introduce new languages.
+
+
+C++
+
+
+
+
+class IToolchain {
+public:
+   virtual ~IToolchain() = default;
+   
+   // Identification
+   virtual const char* get_name() const = 0;
+   virtual bool supports_file_extension(const char* ext) = 0;
+
+   // Capabilities
+   // Returns the command to compile a source file to an object file
+   virtual Command construct_compile_cmd(const Target& t, const SourceFile& src) = 0;
+   
+   // Returns the command to link object files into an artifact
+   virtual Command construct_link_cmd(const Target& t, const std::vector<std::string>& objs) = 0;
+   
+   // Dependency Scanning
+   // Given a source file, return a list of included files (header scanning)
+   // Critical for accurate incremental builds.
+   virtual std::vector<std::string> scan_dependencies(const SourceFile& src) = 0;
+};
+
+6.2 Toolchain Registration and Resolution
+In build.aria, targets can specify a toolchain explicitly, or let AriaBuild infer it from file extensions.
+
+
+Code snippet
+
+
+
+
+targets: [
+   {
+       name: "legacy_lib",
+       type: "library",
+       toolchain: "gcc_12", // Explicit selection
+       sources: ["src/legacy/**/*.cpp"]
+   }
+]
+
+The PluginManager acts as a service locator. When a plugin loads (e.g., aria-cpp-plugin), it registers its CppToolchain implementation under the key gcc_12 (or generic cpp). During the execution phase, the Orchestrator looks up the implementation associated with the target's toolchain ID and delegates the command construction. This allows a C++ build to be driven by the exact same graph engine as an Aria build, sharing parallel scheduling and caching logic.
+________________
+7. Configuration Integration and Dynamic Schema
+The plugin system must integrate seamlessly with the existing build.aria file format.
+7.1 The plugins Block Schema
+We extend the ABC grammar to support a top-level plugins section.
+
+
+Code snippet
+
+
+
+
+// build.aria
+{
+   project: { name: "MyHybridApp" },
+
+   // Plugin Declaration Phase
+   plugins: {
+       // Native Plugin
+       cpp_support: {
+           // Path to shared library or package name
+           source: "lib/plugins/libaria_cpp.so", 
+           // Configuration object passed to the plugin's ON_LOAD hook
+           config: {
+               std: "c++20",
+               optimization: "-O3"
+           }
+       },
+       
+       // WASM Plugin
+       asset_packer: {
+           source: "https://plugins.aria-lang.org/asset-packer@1.0.wasm",
+           checksum: "sha256:..." // Security Requirement
+       }
+   },
+
+   targets: [
+       //... targets utilizing these plugins...
+   ]
+}
+
+7.2 Dynamic Configuration Parsing
+1. Pass 1 (Bootstrap): The parser reads only the plugins block.
+2. Pass 2 (Loading): The system loads the referenced plugins. Each plugin is initialized with its specific config dictionary.
+3. Pass 3 (Schema Extension): Plugins can register new Target properties. For example, the cpp_support plugin might register a include_dirs property for targets.
+4. Pass 4 (Full Parse): The parser reads the rest of the file. Because plugins have registered their extensions, the parser now recognizes include_dirs as a valid field in targets, preventing schema validation errors.
+________________
+8. Discovery, Loading, and Lifecycle
+A robust discovery mechanism ensures that plugins are found and loaded reliably across different operating systems.
+8.1 Hierarchical Discovery Paths
+AriaBuild searches for plugins in a specific order of precedence:
+1. Explicit Path: Paths defined in build.aria (relative to project root).
+2. Project Local: .aria/plugins/ directory in the project root.
+3. User Global: $XDG_DATA_HOME/aria/plugins/ (Linux) or %APPDATA%\Aria\plugins (Windows).
+4. System Global: /usr/lib/aria/plugins/ or /opt/aria/plugins/.
+8.2 The Plugin Bundle Format
+A plugin is not just a binary; it is a directory bundle structure to support sidecar resources (docs, defaults).
+my-plugin/
+├── plugin.toml # Manifest
+├── lib/
+│ ├── plugin.so # Native Linux binary
+│ ├── plugin.dll # Native Windows binary
+│ └── plugin.wasm # Universal WASM binary
+└── README.md
+The Manifest (plugin.toml):
+
+
+Ini, TOML
+
+
+
+
+[plugin]
+name = "cpp-support"
+version = "1.2.0"
+api_version = 1
+
+[entry]
+native = "lib/plugin.so"  # Platform-specific loader picks correct file
+wasm = "lib/plugin.wasm"
+
+[capabilities]
+# Permissions requested by the plugin
+permissions = ["fs_read", "fs_write_build"]
+
+8.3 Loading Logic
+The PluginLoader class handles the heavy lifting:
+1. Resolution: Locates the plugin bundle based on name/path.
+2. Manifest Parsing: Reads plugin.toml to determine entry points.
+3. Compatibility Check: Verifies api_version matches the host.
+4. Backend Selection:
+   * If native is present and allowed by security policy, use dlopen (Unix) or LoadLibrary (Windows).
+   * Else if wasm is present, initialize Wasmtime module.
+5. Initialization: Invoke the entry point (aria_plugin_load) and register the plugin instance in the global manager.
+________________
+9. Security Models and Threat Mitigation
+Allowing arbitrary code execution during a build process opens the door to Supply Chain Attacks (e.g., a plugin that steals SSH keys or injects backdoors into artifacts). AriaBuild implements a Tiered Security Model.
+9.1 Tier 1: Native Plugins (Trusted)
+Native plugins have the same privileges as the user running the build. They can read any file, open network sockets, and execute processes.
+* Mitigation: AriaBuild will warn users when loading a native plugin that is not installed in a system-protected directory.
+* Signing: Future iterations will require native plugins to be digitally signed by a trusted vendor certificate.
+9.2 Tier 2: WASM Plugins (Sandboxed)
+WASM plugins operate inside a capability-based sandbox.
+* Principle of Least Privilege: By default, a WASM plugin has no capabilities. It cannot read files or access the network.
+* Explicit Grants: The plugin.toml manifest must request specific permissions (e.g., fs_read_src, network_http).
+* User Consent: When AriaBuild detects a plugin requesting sensitive permissions (like network access), it prompts the user for confirmation (interactive mode) or checks a policy file (CI mode).
+* Resource Quotas: The Wasmtime engine enforces limits on memory usage (e.g., max 512MB) and CPU time ("fuel") to prevent buggy plugins from hanging the build system.
+________________
+10. Interoperability: Writing Plugins in Aria
+A powerful feature of this architecture is the ability to write AriaBuild plugins using the Aria language itself. Since Aria compiles to LLVM IR and supports the extern keyword, it can produce binaries compatible with the C-ABI defined in Section 3.2.
+Implementation Strategy:
+1. Bindings Module: The standard library (std.build) provides an Aria module wrapping the C-API handles.
+2. Export: The user defines a module implementing the aria_plugin_load function, marking it extern "C".
+3. Compilation: The user compiles this module with ariac --emit-lib to produce a .so or .dll.
+4. Loading: AriaBuild loads this artifact exactly like a C++ plugin.
+This capability is crucial for "Self-Hosting Extensibility," allowing the Aria community to extend their toolchain using the language they love, without needing to drop down to C++ or learn Rust for WASM.
+________________
+11. Use Cases and Ecosystem Simulation
+To validate the architecture, we simulate key use cases:
+* Scenario A: The C++ Interop Plugin. A native plugin registers a CppToolchain. It hooks into ON_INIT to check for clang availability. It registers a cpp_library target type. During BUILD_STEP, it invokes clang to compile .cpp files and llvm-ar to create static archives. This allows mixed Aria/C++ projects.
+* Scenario B: The Asset Compilation Plugin. A WASM plugin registers a shader target type. It requests fs_read and fs_write_build permissions. During BUILD_STEP, it reads .glsl files, compiles them to SPIR-V using an embedded compiler (compiled to WASM), and writes the output to the build directory. This is completely platform-independent.
+* Scenario C: The Policy Enforcer. A corporate environment uses a native plugin hooking POST_GRAPH. It traverses the DAG to ensure no targets depend on deprecated libraries. If a violation is found, it calls log_error and aborts the build.
+________________
+12. Conclusion
+The architecture defined in this specification represents a quantum leap for the Aria ecosystem. By transforming AriaBuild from a static utility into a modular, extensible platform, we enable it to adapt to the rigorous and varied demands of modern software development. The Hourglass Pattern ensures that the native plugin ecosystem remains stable and backward-compatible for decades, while the WASM Subsystem future-proofs the tool against security threats and platform fragmentation.
+The introduction of the IToolchain abstraction and the Graph Synthesis lifecycle effectively decouples the core build engine from the specifics of the Aria language, potentially allowing AriaBuild to evolve into a general-purpose meta-build system comparable to Bazel, but with a significantly lower barrier to entry. This specification provides the roadmap for the engineering team to commence implementation, starting with the Native C-API definition and the Plugin Loader infrastructure. The result will be a build system that is not just a tool, but a foundation for the entire Aria developer experience.

@@ -1,0 +1,261 @@
+﻿Architectural Specification for the Advanced Aria Globbing Engine: Enhanced Exclusion Syntax and High-Performance Filesystem Traversal
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language ecosystem, currently advancing towards its pivotal v0.1.0 release, necessitates a fundamental re-engineering of its build infrastructure. At the core of any build system lies the file discovery mechanism—the subsystem responsible for identifying the "compilation unit set," comprising source code, assets, and configuration files required to produce a valid software artifact. The current iteration of AriaBuild utilizes a naive globbing implementation that, while functional for trivial projects, lacks the expressive power and performance characteristics required for enterprise-scale software development. As project repositories grow into monolithic structures containing hundreds of thousands of files, heterogenous languages, and complex dependency graphs, the inability to precisely filter files becomes a critical bottleneck. This limitation manifests in two primary forms: the accidental inclusion of build artifacts or temporary files, which pollutes the dependency graph and compromises hermeticity; and the inability to efficiently prune large directory trees during traversal, which introduces unacceptable latency during the configuration phase of the build lifecycle.
+This report presents a comprehensive architectural specification for the next-generation Aria Globbing Engine. This subsystem is engineered to support Advanced Exclusion Pattern Syntax (AEGS), a superset of standard shell globbing that brings AriaBuild into functional parity with industry-standard tooling such as Git, Bazel, and Cargo. The specification directly addresses four mandatory requirements derived from core engineering needs: logical negation for re-inclusion of files, directory-only matching to enable subtree pruning, rooted patterns for precise anchoring, and character classes for granular lexical filtering.
+The strategic imperative behind this upgrade is the enforcement of Build Hermeticity. A reproducible build system must operate on a strict "deny-by-default" or "precisely managed" set of inputs. Without robust exclusion logic—specifically the ability to interpret .gitignore-style syntax—AriaBuild cannot guarantee that a build produced on a developer's machine matches a build produced in a CI/CD environment, as local temporary files might be inadvertently consumed by the compiler.1 Furthermore, the performance requirement dictates that the "configure" phase of the build must complete in sub-second timeframes even for repositories with massive node_modules or target directories. This necessitates an algorithmic shift from simple filtering (checking every file) to active pruning (skipping entire directory trees based on exclusion patterns).
+The architectural decisions detailed herein prioritize zero-cost abstractions. We reject the usage of the C++ standard library's std::regex for the hot path of file matching due to its inherent compilation overhead and backtracking performance costs. Instead, we specify the implementation of a bespoke FastMatcher kernel based on the "Shifting Wildcard" algorithm, integrated directly with C++17's std::filesystem iterators.2 This approach ensures that the complexity of file discovery remains linear with respect to the number of relevant files, rather than the total number of files on disk.
+2. Theoretical Framework of Pattern Matching and Traversal
+To engineer a robust globbing system, one must first establish a rigorous theoretical understanding of pattern matching automata and filesystem interaction. The distinction between globbing and regular expressions is not merely syntactic but algorithmic, influencing memory usage, worst-case time complexity, and security against denial-of-service vectors.
+2.1 The Algorithmic Divergence: Glob vs. Regex
+In the domain of string analysis, Regular Expressions (Regex) represent a Type-3 grammar in the Chomsky hierarchy (Regular Languages), typically implemented using Nondeterministic Finite Automata (NFA) or Deterministic Finite Automata (DFA). While Regex provides Turing-complete power for string parsing (with extensions), it carries significant overhead. The construction of an NFA/DFA state table for every exclusion pattern defined in a .ariaignore file would introduce a measurable startup latency. Furthermore, standard Regex engines are designed for searching substrings within larger texts, whereas globbing is strictly anchored—a pattern must match the entire filename or path segment from start to finish.2
+Glob patterns, conversely, are a specialized subset of regular languages optimized for hierarchical path matching. The semantics of the path separator (/ or \) are central to globbing but alien to Regex. In a Regex, the dot . matches any character, potentially crossing directory boundaries unless explicitly handled. In globbing, the wildcard * is defined specifically to match characters within a path segment but stop at a separator.5 This distinction is crucial for correctness. Implementing globbing via Regex translation (e.g., converting *.c to ^.*\.c$) often leads to subtle bugs regarding hidden files, path separators on different operating systems (Windows backslash vs. POSIX slash), and performance degradation due to excessive backtracking in the Regex engine.7
+Consequently, the Aria Globbing Engine will utilize a custom matching kernel. This kernel will treat the pattern and the target string as streams of characters and consume them using a greedy algorithm with limited backtracking, known as the "Shifting Wildcard" or "Krauss" algorithm. This approach avoids the memory allocation associated with constructing state machines and leverages the CPU's branch prediction and cache locality effectively.9 By operating directly on std::string_view, the matcher achieves zero-copy execution, a necessity when processing millions of paths.1
+2.2 The Filesystem as a Graph
+Filesystems are effectively directed graphs (specifically, trees or forests, potentially with cycles if symlinks are permitted). The naive approach to file discovery—iterating every node in the graph and checking it against a list of patterns—is $O(N)$ where $N$ is the total number of nodes (files and directories). In modern development environments, $N$ can easily exceed $10^5$ or $10^6$ due to package manager dependencies (e.g., node_modules, vendor).
+However, the build system is typically interested in a very small subset of this graph ($M$, where $M \ll N$). The goal of the Globbing Engine is to reduce the traversal cost from $O(N)$ to approximately $O(M)$. This is achieved through Pruning. If the engine can determine that a directory node $D$ matches an exclusion pattern (e.g., build/), it can skip the traversal of the entire subgraph rooted at $D$. The cost saving is proportional to the size of the subgraph. This optimization relies heavily on the Directory-Only Matching syntax (/ suffix), which semantically distinguishes between a file named build (which must be checked) and a directory named build (which can be pruned).3
+The traversal mechanism leverages C++17's std::filesystem::recursive_directory_iterator. This iterator provides the disable_recursion_pending() method, which allows the engine to signal the underlying OS traversal logic to skip the current directory's contents. This is not merely a filter; it prevents the readdir and stat system calls for the children, resulting in a massive reduction in I/O latency.3
+2.3 Exclusion Logic and Precedence
+The logic for exclusion is rarely as simple as a single blocklist. It involves a layered precedence system where specific rules override general ones. This is codified in the gitignore specification, which AriaBuild aims to emulate. The core conflict arises between Exclusion and Negation.
+Consider the following rule set:
+1. exclude/ (Exclude the directory exclude)
+2. !exclude/important.txt (But include the file important.txt inside it)
+If the engine naively prunes exclude/ upon encountering it (because of Rule 1), it will never visit important.txt to apply Rule 2. This creates a "Soft Pruning" dilemma. The engine must look ahead or maintain a state that indicates "this directory is excluded, unless a child is explicitly included." Standard Git behavior is actually strict: if a directory is excluded, Git will not descend into it to find negated files, unless the directory itself is re-included or the negation effectively forces a re-scan.12 However, user expectation often varies. AriaBuild will adopt the strict Git semantic for performance reasons: to re-include a file in an excluded directory, the directory itself must not be totally excluded, or the negation rule must be structured to "un-exclude" the parent chain.
+This interaction defines the complexity of the matching logic. It is not a stateless boolean check; it is an ordered evaluation of a list of rules where the "Last Match Wins" principle applies.14
+________________
+3. Syntactic Specification: The Aria Extended Glob (AEGS)
+The Aria Extended Glob Syntax (AEGS) is designed to be familiar to developers accustomed to .gitignore, .dockerignore, and shell expansion, while removing ambiguities that exist in inconsistent implementations across different tools. The syntax is whitespace-insensitive within the pattern but sensitive to line breaks in the configuration file.
+3.1 Formal Grammar Definition
+The following Extended Backus-Naur Form (EBNF) provides the precise grammar for an exclusion pattern string within the AriaBuild configuration. This grammar dictates how the parser decomposes a string into actionable tokens.
+
+
+EBNF
+
+
+
+
+ExclusionPattern ::= NegationToken? AnchorToken? Segment (Separator Segment)* DirectoryToken?
+NegationToken    ::= "!"
+AnchorToken      ::= "/"
+Separator        ::= "/"
+DirectoryToken   ::= "/"
+Segment          ::= (LiteralChar | Wildcard | RecursiveWildcard | CharacterClass)+
+Wildcard         ::= "*" | "?"
+RecursiveWildcard::= "**"
+CharacterClass   ::= ""
+NegateClass      ::= "!" | "^"
+ClassRange       ::= Char "-" Char | Char
+LiteralChar      ::= [^/*?!] | EscapedChar
+EscapedChar      ::= "\" AnyChar
+
+3.2 Feature Specification and Semantics
+The implementation of these syntactic elements requires specific handling in the parser and matcher logic.
+3.2.1 Logical Negation (!)
+The exclamation mark ! at the start of a pattern inverts the matching logic.
+* Semantics: If a file matches a negation pattern, it is marked as INCLUDED, overriding any previous exclusion patterns that matched it.
+* Precedence: Patterns are evaluated sequentially from top to bottom. A negation rule appearing before an exclusion rule has no effect if the exclusion rule subsequently matches the file. A negation rule appearing after an exclusion rule effectively "rescues" the file.16
+* Implementation Detail: This requires the GlobEngine to iterate through the entire list of patterns for every path check, updating a mutable state (is_excluded) based on the latest match. It cannot return early upon the first exclusion match unless it can guarantee no subsequent negations apply.17
+3.2.2 Directory-Only Matching (/ Suffix)
+A trailing slash / explicitly restricts the match to directory entities.
+* Semantics: The pattern foo/ matches a directory named foo. It does not match a file named foo.
+* Optimization: This syntax is the primary heuristic for pruning. When the traversal engine encounters a directory, it checks against patterns ending in /. If a match is found (and not negated), the directory is pruned. If the engine encounters a file, patterns ending in / are ignored during the check, ensuring that a file named build is not accidentally excluded by a rule intended for the build/ directory.11
+* Ambiguity Resolution: A pattern foo (no slash) matches both files and directories named foo. This is a "floating" match.
+3.2.3 Rooted Patterns (/ Prefix)
+A leading slash / anchors the pattern to the project root (the location of the configuration file).
+* Semantics: The pattern /debug.log matches a file named debug.log only in the root directory. It does not match src/debug.log or lib/debug.log.
+* Contrast: The pattern debug.log (floating) matches debug.log anywhere in the repository tree.
+* Implementation Detail: The matcher must distinguish between the "full relative path" and the "filename". Rooted patterns are matched against the full path relative to the project root. Floating patterns are matched against the filename component of the path, or (if they contain a slash like src/*.o) against the relative path.18
+3.2.4 Character Classes ([...])
+Square brackets define a set of allowed characters for a single position in the filename.
+* Semantics:
+   * [abc] matches 'a', 'b', or 'c'.
+   * [a-z] matches any character in the ASCII range 'a' through 'z'.
+   * [0-9] matches any digit.
+* Inversion: The syntax [!abc] or [^abc] matches any character except those in the set. AriaBuild supports both ! (standard glob/POSIX) and ^ (regex style) to minimize user friction, though ! is the canonical POSIX definition.20
+* Edge Cases: To match a literal dash -, it must be placed at the beginning or end of the class (e.g., [-az]). To match a literal bracket ], it must be the first character (e.g., abc]).22
+________________
+4. Architectural Design: The GlobEngine Components
+The GlobEngine is not a monolithic function but a subsystem composed of three distinct classes, each with single responsibilities: parsing, matching, and traversing. This modular design ensures testability and separation of concerns.
+4.1 The GlobPattern Class (The Data Model)
+This class is responsible for parsing a raw pattern string into a structured representation that the matching kernel can consume efficiently. It handles the lexical analysis of the AEGS grammar.
+Responsibilities:
+1. Normalization: Convert all path separators to the internal canonical format (forward slash /) regardless of the host OS (Windows/Linux). This ensures consistent behavior across platforms.1
+2. Flag Extraction: Detect and strip leading ! (negation) and / (root anchor), and trailing / (directory marker). Store these as boolean flags (is_negated, is_rooted, is_dir_only).
+3. Segmentation: Split the remaining string into segments based on the separator. For example, src/**/*.aria becomes a vector: ["src", "**", "*.aria"]. This pre-computation avoids repeated string splitting during the hot loop of traversal.
+Data Structure Layout:
+
+
+C++
+
+
+
+
+class GlobPattern {
+   std::string original_pattern;
+   std::vector<std::string> segments;
+   bool is_negated;
+   bool is_rooted;
+   bool is_dir_only;
+   bool has_recursive_wildcard; // Optimization hint
+   //... Parsing logic...
+};
+
+4.2 The FastMatcher Class (The Kernel)
+The FastMatcher class replaces the heavy std::regex engine. It implements a static matching function optimized for wildcard handling. This is the computational core of the engine.
+The "Shifting Wildcard" Algorithm:
+The matching logic relies on a greedy backtracking approach. It maintains pointers to the text (filename) and the pattern.
+1. Linear Match: Characters are compared one-by-one. Literal characters must match exactly. Question marks ? match any single character.
+2. Wildcard *: When a * is encountered, the algorithm enters a speculative state. It assumes the * matches zero characters initially. It records the current position in the pattern and the text (a "save point").
+3. Mismatch & Backtracking: If a mismatch occurs later (e.g., the pattern expects 'a' but text has 'b'), the algorithm checks if it has a saved * state. If so, it "backtracks": it restores the pattern pointer to the *, advances the text pointer by one (consuming one more character into the * match), and retries.
+4. Failure: If a mismatch occurs and there is no active * to consume the error, the match fails.2
+Character Class Logic:
+When the matcher encounters `
+4.3 The GlobEngine Orchestrator (The Traversal)
+The GlobEngine ties everything together. It manages the std::filesystem::recursive_directory_iterator and applies the patterns to the paths yielded by the iterator.
+The Traversal Loop:
+The engine does not simply iterate and filter; it actively prunes.
+1. Anchor Resolution: Before starting, the engine analyzes the inclusion patterns to find a common root. If patterns are src/foo/* and src/bar/*, the engine starts traversal at src/, avoiding a scan of the root directory.
+2. Iteration: The loop advances the iterator. For each entry:
+   * Step 1: Relative Path Computation. The path is converted to a string relative to the project root.
+   * Step 2: Exclusion Check (The Hot Path). The engine iterates through the list of exclusion patterns.
+      * If a pattern matches and is is_dir_only, and the entry is a directory, it flags for pruning.
+      * If a pattern matches and is is_negated, it clears the exclusion flag.
+   * Step 3: Pruning. If the entry is a directory and the final verdict is "Excluded," the engine calls it.disable_recursion_pending(). This prevents the iterator from descending into that directory.1
+   * Step 4: Inclusion. If the entry is not excluded and is a file, it is checked against the inclusion patterns. If it matches, it is added to the result set.
+Deterministic Sorting:
+The recursive_directory_iterator returns files in the order they appear in the filesystem directory entry list. This order is non-deterministic (dependent on creation order, OS hashing, etc.). To ensure Deterministic Builds, the GlobEngine must collect all valid paths into a buffer, sort them alphabetically using std::sort, and only then return them to the build system.1
+________________
+5. Pruning Optimization and Soft Exclusion
+The interaction between directory exclusion and file negation represents the most significant algorithmic challenge. The "Pruning Optimization" is the primary factor in achieving the required performance targets, but strict pruning conflicts with the flexibility of negation.
+5.1 The Pruning Dilemma
+Consider the patterns:
+
+
+
+
+
+
+node_modules/
+!node_modules/package-lock.json
+
+If the engine prunes node_modules/ immediately upon matching the first rule, it will never see package-lock.json. However, if it descends into node_modules/ to look for exceptions, it may scan 50,000 files unnecessarily, negating the performance benefit.
+5.2 Algorithmic Solution: "Soft Pruning" or "Lookahead"
+Standard gitignore logic dictates that if a parent directory is excluded, files inside it cannot be re-included unless the directory itself is re-included. However, many users find this confusing. AriaBuild has a choice:
+1. Strict Behavior (Git-like): Fast and simple. If node_modules/ matches an exclude pattern, prune it. The user must write !node_modules/ to allow the engine to descend.
+2. Smart Behavior (Lookahead): The engine checks if any negation pattern starts with the excluded directory's path.
+   * When node_modules/ is encountered and matched against exclusions:
+   * The engine scans the negation list.
+   * Does any negation pattern start with node_modules/?
+   * If YES: Do not prune. Enter the directory. The individual files inside will effectively be excluded (because they match the parent exclusion and not the negation), but the specific file package-lock.json will match the negation and be included.
+   * If NO: Prune immediately.
+Decision: AriaBuild will implement the Smart Behavior (Lookahead) logic for exclusions defined in aria.json. This provides a better user experience (Less "Why is my file ignored?") at the cost of a slightly more expensive check during directory visits. Since the number of exclusion patterns is typically small (< 100), iterating them to check for prefix matches is negligible compared to the cost of I/O.23
+5.3 Implementation Logic for check_exclusions
+The check_exclusions method returns a tristate: INCLUDE, EXCLUDE, or PRUNE.
+Path Type
+	Pattern Match
+	Negation Match
+	Result
+	Action
+	Directory
+	build/
+	None
+	PRUNE
+	Call disable_recursion_pending()
+	Directory
+	src/
+	None
+	INCLUDE
+	Continue traversal
+	Directory
+	lib/
+	!lib/public
+	INCLUDE
+	Continue (Descend to find target)
+	File
+	*.log
+	None
+	EXCLUDE
+	Skip file
+	File
+	error.log
+	!error.log
+	INCLUDE
+	Add to sources
+	This table illustrates the decision matrix. The PRUNE state is reserved strictly for directories that match an exclusion pattern AND are not prefixes of any active negation pattern.
+________________
+6. Integration Architecture and Ecosystem
+The Globbing Engine does not exist in isolation. It is a subsystem of AriaBuild, and its output feeds directly into the dependency graph and compiler driver.
+6.1 Integration with ConfigParser
+The ConfigParser, responsible for reading aria.json, must be updated to handle the complexity of the sources array. Previously, this array contained only inclusion paths. With AEGS, it may contain mixed inclusions and exclusions.
+Parsing Strategy:
+1. The parser iterates the sources list.
+2. Strings starting with ! are identified as Global Exclusions (negated inclusions).
+   * Correction: In standard build configuration, typically sources defines what to include, and a separate excludes list defines what to drop. However, allowing mixed .gitignore syntax in sources is powerful.
+   * The parser will separate the input into two internal vectors: inclusion_patterns and exclusion_patterns.
+   * Any pattern in sources starting with ! is added to exclusion_patterns (stripping the !).
+   * Standard patterns are added to inclusion_patterns.
+3. The parser instantiates GlobEngine with both lists.
+6.2 Caching and Invalidation
+Globbing is a structural operation. Unlike reading a file, where the timestamp indicates change, the result of a glob depends on the existence of files. If a user adds src/new.aria, the build is "dirty," but the aria.json timestamp hasn't changed.
+Manifest Hash Strategy:
+1. Generation: Every time GlobEngine runs, it produces a canonical list of files.
+2. Hashing: This list is serialized and hashed (SHA-256).
+3. Storage: The hash is stored in .aria/build.lock or similar cache metadata.
+4. Check: On the next build, the engine re-scans (fast, due to caching) and re-hashes. If the hash matches the stored hash, the Dependency Graph generation phase can optionally be skipped if individual file timestamps are also unchanged.
+5. Fast Mode: If the aria.json globs haven't changed, and filesystem watchers (if available) report no structure changes, the glob scan itself can be bypassed, using the cached file list directly.1
+6.3 Security and Safety
+Allowing arbitrary pattern matching introduces security risks, particularly Path Traversal.
+* Restriction: The engine must strictly forbid patterns that ascend above the project root (e.g., ../secrets.txt). The GlobPattern parser must validate that no segment is .. unless it resolves to a path still within the root.
+* Symlink Cycles: Malicious or accidental symlink loops can cause infinite recursion. The recursive_directory_iterator has options to follow directory symlinks. For safety, AriaBuild should default to NOT following symlinks, or track visited inodes to detect cycles and abort.1
+________________
+7. Performance Benchmarks and Validation
+To ensure the implementation meets the requirement of supporting "advanced file filtering requirements" without regression, the following metrics and tests are defined.
+7.1 Performance Targets
+* Throughput: The engine must scan a repository of 100,000 files in under 50ms on standard hardware (NVMe SSD), assuming a "warm" OS page cache.
+* Pruning Efficiency: Scanning a repository with a 1GB node_modules folder (containing 50k files) must complete in under 10ms if node_modules/ is excluded. This validates that the $O(N)$ traversal has effectively become $O(1)$ for that subgraph.
+* Memory Footprint: The GlobEngine should not consume more than 50MB of RAM during the configuration phase for a typical large project.
+7.2 Regression Test Suite
+The following test vectors must be part of the CI pipeline:
+1. The "Deny All" Test: Pattern *, Exclude *. Result: Empty set.
+2. The "Hole in the Wall" Test: Exclude src/, Include !src/main.aria. Result: Only src/main.aria is found. (Verifies Soft Pruning).
+3. The "Deep Nesting" Test: Pattern src/**/*.aria. Structure src/a/b/c/d/e/f.aria. Result: Found. (Verifies Recursive Wildcard).
+4. The "Character Class" Test: Pattern test[1-3].aria. Files test1.aria, test2.aria, test4.aria. Result: test1 and test2 only.
+5. The "Rooting" Test: Pattern /README.md. Files README.md, lib/README.md. Result: Only the root README.
+________________
+8. Conclusion
+The specification outlined in this report represents a necessary and significant evolution of the AriaBuild infrastructure. By transitioning from a naive wildcard implementation to a fully-featured Globbing Engine capable of negation, rooting, and pruning, AriaBuild aligns itself with the expectations of modern systems programming. The architectural choice to implement a custom FastMatcher on top of C++17 filesystem primitives ensures that this expressivity comes with zero runtime penalty, maintaining the "snappy" developer experience that is a core tenet of the Aria language.
+This design solves the "Hermeticity Gap" by allowing precise exclusion of artifacts, and the "Performance Gap" by enabling intelligent subtree pruning. It provides a stable, deterministic foundation upon which the rest of the compilation toolchain can rely, ensuring that as Aria projects scale in complexity, their build tools scale in capability.
+References
+* AriaBuild Architecture: 1
+* Gitignore Semantics & Logic: 11
+* Filesystem Traversal & Optimization: 3
+* Glob Algorithms & Theory: 2
+* Character Classes & POSIX: 20
+* Glob Syntax Standards: 5
+Works cited
+1. compiled.txt
+2. Matching wildcards - Wikipedia, accessed December 21, 2025, https://en.wikipedia.org/wiki/Matching_wildcards
+3. recursive_directory_iterator Class | Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/cpp/standard-library/recursive-directory-iterator-class?view=msvc-170
+4. Glob matching - Gmarik Info, accessed December 21, 2025, https://www.gmarik.info/blog/2020/understanding-glob-matching/
+5. glob (programming) - Wikipedia, accessed December 21, 2025, https://en.wikipedia.org/wiki/Glob_(programming)
+6. Glob Patterns Reference - Visual Studio Code, accessed December 21, 2025, https://code.visualstudio.com/docs/editor/glob-patterns
+7. Glob Matching Can Be Simple And Fast Too - research!rsc, accessed December 21, 2025, https://research.swtch.com/glob
+8. Glob Matching Can Be Simple and Fast Too | Hacker News, accessed December 21, 2025, https://news.ycombinator.com/item?id=14184528
+9. kirkjkrauss/MatchingWildcards: Matching wildcards: an improved algorithm for big data - GitHub, accessed December 21, 2025, https://github.com/kirkjkrauss/MatchingWildcards
+10. Matching Wildcards - An Improved Algorithm for Big Data - Develop for Performance, accessed December 21, 2025, https://developforperformance.com/MatchingWildcards_AnImprovedAlgorithmForBigData.html
+11. What you need to know about gitignore pattern - hilman.io, accessed December 21, 2025, https://www.hilman.io/blog/2015/09/what-you-need-to-know-about-gitignore/
+12. How to use a .gitignore file - Graphite, accessed December 21, 2025, https://graphite.com/guides/gitignore
+13. Make .gitignore ignore everything except a few files - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/987142/make-gitignore-ignore-everything-except-a-few-files
+14. Understanding Git-Ignore and Its Usage - GeeksforGeeks, accessed December 21, 2025, https://www.geeksforgeeks.org/git/what-is-git-ignore-and-how-to-use-it/
+15. gitignore Documentation - Git, accessed December 21, 2025, https://git-scm.com/docs/gitignore
+16. .gitignore file - ignoring files in Git | Atlassian Git Tutorial, accessed December 21, 2025, https://www.atlassian.com/git/tutorials/saving-changes/gitignore
+17. groda/the_ultimate_gitignore_guide: .gitignore Tutorial — Everything you never knew you needed to know about .gitignore! This beginner-friendly guide offers practical tips to keep your Git repos clean and your workflow efficient, with clear examples to help you master the basics and best practices of managing ignored files. - GitHub, accessed December 21, 2025, https://github.com/groda/the_ultimate_gitignore_guide
+18. When to use leading slash in gitignore - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/24139478/when-to-use-leading-slash-in-gitignore
+19. git - difference between * and /* in gitignore - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/49280614/difference-between-and-in-gitignore
+20. llvm::GlobPattern Class Reference, accessed December 21, 2025, https://llvm.org/doxygen/classllvm_1_1GlobPattern.html
+21. p-ranav/glob: Glob for C++17 - GitHub, accessed December 21, 2025, https://github.com/p-ranav/glob
+22. Fastest Way to Determine if Character Belongs to a Set of Known Characters C++, accessed December 21, 2025, https://stackoverflow.com/questions/29068130/fastest-way-to-determine-if-character-belongs-to-a-set-of-known-characters-c
+23. How do negated patterns work in .gitignore? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/2820255/how-do-negated-patterns-work-in-gitignore
+24. Ignoring files - GitHub Docs, accessed December 21, 2025, https://docs.github.com/en/get-started/git-basics/ignoring-files
+25. How do .gitignore exclusion rules actually work? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/3001888/how-do-gitignore-exclusion-rules-actually-work
+26. 7.14. Character classification — How to Think Like a Computer Scientist - C++, accessed December 21, 2025, https://runestone.academy/ns/books/published/thinkcpp/Chapter7/character_classification.html
+27. A Beginner's Guide: Glob Patterns | Malik Browne, accessed December 21, 2025, https://www.malikbrowne.com/blog/a-beginners-guide-glob-patterns

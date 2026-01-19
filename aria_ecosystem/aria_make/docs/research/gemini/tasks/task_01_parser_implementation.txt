@@ -1,0 +1,185 @@
+Gemini Deep Research Task: aria_make Parser Implementation
+===========================================================
+
+RESEARCH OBJECTIVE:
+Provide complete implementation guide for the ABC (Aria Build Configuration) parser that processes build.aria files and constructs the internal representation for the build system.
+
+SCOPE:
+1. Parser architecture and design patterns
+2. Integration with aria::frontend::Lexer
+3. AST (Abstract Syntax Tree) construction for build files
+4. Variable resolution and interpolation
+5. Error handling and recovery
+6. Performance optimization
+
+REQUIRED DELIVERABLES:
+
+1. Parser Architecture:
+   - High-level design pattern (recursive descent, etc.)
+   - Class structure and relationships
+   - Integration with existing Aria frontend
+   - Memory management strategy
+
+2. Lexer Integration:
+   - How to use aria::frontend::Lexer for ABC format
+   - Token types needed for build files
+   - Custom token handling (if needed)
+   - Relationship between Aria source tokens and ABC tokens
+
+3. Grammar Specification:
+   - Formal grammar for ABC format
+   - EBNF or similar notation
+   - Differences from standard Aria grammar
+   - Ambiguity resolution
+
+4. AST Node Definitions:
+   Complete C++ class definitions for:
+   - ProjectNode (project metadata)
+   - VariablesNode (symbol table)
+   - TargetNode (build target)
+   - ArrayNode (lists)
+   - ObjectNode (key-value maps)
+   - StringNode (with interpolation support)
+
+5. Parsing Algorithm:
+   Step-by-step implementation for:
+   - Parse project section
+   - Parse variables section
+   - Parse targets array
+   - Handle nested objects and arrays
+   - Validate required fields
+
+6. Variable Interpolation:
+   - Detection of &{var} patterns in strings
+   - Resolution algorithm
+   - Scope management
+   - Environment variable access
+   - Circular reference detection
+   - Error handling for undefined variables
+
+7. Error Handling:
+   - Syntax error reporting with line/column
+   - Context display (show surrounding code)
+   - Recovery strategies
+   - Multiple error accumulation
+   - Helpful error messages
+
+8. Validation:
+   - Required field checking
+   - Type validation (string, array, object)
+   - Semantic validation (unique target names, etc.)
+   - Dependency validation (no circular references)
+
+9. Code Examples:
+   Complete C++ implementation for:
+   - Parser class definition
+   - Main parsing functions
+   - Error handling
+   - Integration with Aria lexer
+   - Usage examples
+
+RESEARCH QUESTIONS TO ANSWER:
+
+1. How exactly does aria::frontend::Lexer work?
+2. What token types does it support?
+3. Can we extend it or must we wrap it?
+4. How to handle unquoted keys (not standard JSON)?
+5. How to implement &{var} scanning efficiently?
+6. What data structures for symbol table?
+7. How to handle nested variable references: &{base}/&{sub}?
+8. Performance: parse 1000-line build file in <10ms?
+
+PARSING CHALLENGES TO ADDRESS:
+
+Challenge 1: Unquoted Keys
+problem: name: "value" vs "name": "value"
+How to distinguish identifier from string?
+
+Challenge 2: Trailing Commas
+{
+    name: "value",
+}
+Must handle optional comma after last element
+
+Challenge 3: Comments
+// This is a comment
+How to skip without breaking line tracking?
+
+Challenge 4: Variable Interpolation
+"&{src}/**/*.aria"
+Must scan string contents for &{...} patterns
+
+Challenge 5: Environment Variables
+&{ENV.HOME}/project
+Special case for ENV. prefix
+
+EXAMPLE PARSING SCENARIOS:
+
+Scenario 1: Minimal Build File
+{
+    project: { name: "test" },
+    targets: []
+}
+
+Scenario 2: With Variables
+{
+    variables: {
+        src: "src",
+        nested: "&{src}/sub"
+    },
+    targets: []
+}
+
+Scenario 3: Complex Target
+{
+    targets: [
+        {
+            name: "app",
+            type: "binary",
+            sources: ["&{src}/**/*.aria"],
+            depends_on: ["lib1", "lib2"],
+            flags: ["-O2", "-Wall"]
+        }
+    ]
+}
+
+Scenario 4: Error Cases
+- Missing required field
+- Undefined variable reference
+- Invalid type (string where array expected)
+- Duplicate target names
+
+INTEGRATION POINTS:
+
+1. With Lexer:
+   - Token stream input
+   - Position tracking for errors
+   - Handling of whitespace and comments
+
+2. With Build System:
+   - AST to internal graph conversion
+   - Target registration
+   - Dependency resolution
+
+3. With Error Reporter:
+   - Line/column information
+   - Context extraction
+   - Error formatting
+
+PERFORMANCE REQUIREMENTS:
+
+- Parse 1000-line build file: <10ms
+- Variable resolution: <1ms per reference
+- Memory usage: <1MB for typical project
+- No unnecessary allocations
+
+DELIVERABLE FORMAT:
+- Complete parser implementation in C++
+- Header (.h) and implementation (.cpp) files
+- Unit tests for parsing different scenarios
+- Error case handling
+- Integration example with Aria lexer
+- Performance benchmarks
+
+DEPTH:
+Production-quality code that can be directly integrated into aria_make. Include all edge cases, error conditions, and performance optimizations.

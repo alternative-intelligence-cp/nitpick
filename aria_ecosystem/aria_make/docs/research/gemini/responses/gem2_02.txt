@@ -1,0 +1,361 @@
+﻿Architectural Specification and Implementation Strategy for Native Process Spawning (PAL) in the Aria Build System
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language ecosystem towards its version 0.1.0 milestone demands a fundamental re-engineering of its supporting infrastructure. As the language specification crystallizes—incorporating advanced features such as twisted balanced binary (TBB) arithmetic, optional types with strict NIL semantics, and a sophisticated module system—the tooling responsible for orchestrating these components must evolve in tandem. The current reliance on legacy build automation paradigms, typified by imperative Makefiles or shell scripts, has been identified as a critical bottleneck in the scalability and reliability of the ecosystem. The introduction of aria_make (AriaBuild), a declarative, whitespace-insensitive build system, represents the strategic response to this challenge.
+Central to the architecture of aria_make is the requirement for a rigorous, high-performance execution engine capable of orchestrating the Aria compiler (ariac) and the LLVM interpreter (lli). In the "Configuration as Data" model adopted by AriaBuild, the build tool functions as a meta-driver. It does not perform compilation logic itself; rather, it manages a massive, dynamic Directed Acyclic Graph (DAG) of dependencies, scheduling the invocation of external toolchain binaries to transform source artifacts into intermediate representations and final executables.
+This report presents an exhaustive architectural specification for the Native Process Spawning subsystem, defined internally as the Process Abstraction Layer (PAL). The analysis reveals that standard C++ library facilities, such as std::system and popen, are fundamentally inadequate for the rigorous demands of a parallel build system. Their inability to separate standard output (stdout) from standard error (stderr), their blocking nature, and their susceptibility to shell injection vulnerabilities pose unacceptable risks to the determinism and security of the build process.
+Consequently, this document details the implementation of a bespoke execute_command interface that bridges the semantic chasm between the POSIX fork-exec model and the Windows CreateProcess object model. The specification prioritizes thread safety, ensuring the elimination of race conditions in pipe handle inheritance, and guarantees deadlock-free Input/Output (I/O) through the utilization of threaded stream draining. Furthermore, it addresses platform-specific idiosyncrasies—ranging from the strict alphabetical sorting requirements of Windows environment blocks to the signal handling semantics of Linux—to ensure that aria_make delivers a "write once, build anywhere" experience.
+2. Architectural Imperatives and System Context
+The design of the Process Execution Subsystem is not merely a coding exercise but a foundational architectural effort to support the specific lifecycle of Aria software. The build system acts as the coordinator for the entire development loop, and its stability is paramount.
+2.1 The Limitations of Standard Abstractions
+Initial architectural audits of the Aria runtime and build tools highlighted a critical deficiency: the reliance on high-level C++ standard library abstractions for process execution. While functions like std::system offer portability, they were designed for a simpler era of sequential scripting and suffer from three fatal architectural flaws in the context of a modern, parallel build system:
+1. Stream Merging and Loss of Fidelity: std::system inherits the standard streams of the parent process, dumping child output directly to the console. In a parallel build environment where multiple instances of ariac may be running simultaneously on different threads, this results in interleaved, chaotic output. It becomes impossible to attribute a specific error message to the target that generated it. Furthermore, the build tool cannot intercept stderr to parse diagnostic codes or highlight warnings, degrading the developer experience.
+2. Blocking Semantics and Latency: The function blocks the calling thread entirely until the child process terminates. It offers no mechanism for timeouts, asynchronous cancellation, or status monitoring. In a thread-pool architecture, this forces the worker thread to go dormant, managed only by the OS scheduler, which is inefficient for high-throughput task management.
+3. Shell Injection Risks: By invoking the system shell (e.g., /bin/sh or cmd.exe), std::system exposes the build process to command injection vulnerabilities. If a file path contains unescaped characters—such as spaces, semicolons, or backticks—the shell interprets them as control characters. A build tool must handle filenames like src/file with spaces.aria correctly and securely.
+Similarly, popen is restricted to unidirectional communication. It can either read from stdout or write to stdin, but typically not both, and definitely not stderr independently without shell redirection (2>&1). This merging destroys the semantic distinction between a compiler warning (emitted to stderr but allowing success) and build artifacts (emitted to stdout), preventing the implementation of logic that fails the build on warnings or parses output for dependency generation.
+2.2 The Platform Abstraction Layer (PAL) Strategy
+To overcome these limitations, AriaBuild adopts a "thick" Platform Abstraction Layer strategy. This layer exposes a single, high-level interface—execute_command—while internally managing two distinct, optimized implementations for the underlying operating system kernels.
+Core Requirements for the PAL:
+* Bidirectional Stream Capture: The system must capture stdout and stderr into separate memory buffers. This allows the ToolchainOrchestrator to analyze stderr for "error:" or "warning:" substrings while preserving the clean stdout for potentially binary data or dependency lists.
+* Environment Isolation and Sanitization: The ability to inject a sanitized environment block is essential for hermetic builds. The system must allow the user to define a specific PATH or INCLUDE set for the child process, preventing the leakage of host system configuration (e.g., a developer's local .bashrc settings) into the build artifacts.
+* Deadlock Prevention: The implementation must guarantee that finite kernel pipe buffers do not cause the parent and child processes to wait indefinitely for one another—a classic failure mode in build tools.
+* Return Code Fidelity: The system must accurately propagate exit codes and termination signals (e.g., SIGSEGV or SIGINT) to the scheduler to trigger "fail-fast" behavior in the dependency graph.
+3. Theoretical Framework of Inter-Process Communication (IPC)
+The physics of data flow between processes is governed by the operating system kernel's management of file descriptors (on POSIX) or handles (on Windows). Understanding the buffer mechanics of these channels is prerequisite to designing a deadlock-free execution engine.
+3.1 The Pipe Buffer Saturation Problem
+A critical failure mode in naive process wrappers is the "Pipe Deadlock." Operating systems utilize finite circular buffers in kernel space to manage data transfer through anonymous pipes. On Linux, the default capacity of a pipe is typically 64KB, while on Windows it can be as small as 4KB depending on the configuration and version.
+The mechanics of this deadlock are rooted in the blocking nature of synchronous I/O. The scenario unfolds as follows:
+1. Saturation: The child process (e.g., a compiler emitting verbose debug info or a massive list of errors) writes data to its stderr pipe faster than the parent process reads it.
+2. Blocking Write: Once the kernel buffer fills to capacity, the child's write system call blocks. The OS scheduler puts the child process into a sleep state (TASK_INTERRUPTIBLE or similar) until space becomes available in the buffer.
+3. Blocking Read: Simultaneously, the parent process is designed to read from stdout first, waiting for the build artifact. It issues a blocking read call on the stdout pipe.
+4. Deadlock: The parent is blocked waiting for data on stdout. The child is blocked waiting for space on stderr so it can finish writing and proceed to write to stdout (or exit). Neither process can proceed. The parent cannot clear the stderr buffer because it is stuck on stdout, and the child cannot write to stdout because it is stuck on stderr. Both processes wait indefinitely.3
+3.2 Architectural Solution: Threaded Stream Draining
+To resolve the buffer saturation problem, the AriaBuild PAL employs a threaded reader architecture. This design decouples the reading logic from the process waiting logic. Upon spawning a child process, the parent immediately creates two lightweight auxiliary threads using std::thread.
+* Stdout Drainer: This thread executes a loop that continuously reads from the child's standard output pipe into a local std::string buffer. It blocks only when the pipe is empty and unclosed, and it terminates when the pipe is closed (EOF).
+* Stderr Drainer: This thread performs the identical operation on the child's standard error pipe.
+The main thread then enters a wait state (using waitpid or WaitForSingleObject) for the process to terminate. The drainer threads act as active "pumps," continuously moving data from the limited kernel buffer to the effectively unbounded heap memory of the parent process. This ensures that the child process is never blocked on I/O for longer than it takes the parent to copy a memory buffer, effectively eliminating the deadlock condition.5
+4. POSIX Implementation Strategy (Linux/macOS)
+The POSIX implementation leverages the fork-exec model, offering granular control over the child process's execution environment. This flexibility allows for precise file descriptor management, signal handling, and environment configuration.
+4.1 The Fork-Exec Paradigm
+The creation of a process in a POSIX environment is a two-step operation involving fork() and one of the exec family of functions.
+Step 1: Pipe Creation
+Before forking, the system invokes pipe() three times to create independent channels for stdin, stdout, and stderr. Each call generates a pair of file descriptors: a read-end and a write-end.
+Step 2: Forking
+The fork() system call creates a near-identical copy of the parent process. The return code differentiates the two execution paths:
+* In the Child (pid == 0): The child process closes the read-ends of the output pipes and the write-end of the input pipe, as it does not need them. It then uses dup2() to overwrite its standard file descriptors (STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO) with the specific pipe descriptors created for communication. Crucially, the child must close the original pipe descriptors after duplication to prevent descriptor leaks, which can lead to resource exhaustion in long-running builds.2
+* In the Parent (pid > 0): The parent immediately closes the write-ends of the output pipes and the read-end of the input pipe. This step is vital; if the parent retains a write-handle to the child's stdout, the reader thread will never receive an EOF (End of File) signal. The operating system only sends EOF when all write descriptors referring to the pipe are closed. Failure to close the parent's copy results in the parent hanging indefinitely after the child exits, waiting for data that will never come.6
+4.2 Executable Resolution and Environment Management
+While execve provides the most control (allowing explicit environment passing), it requires an absolute path to the executable. For developer ergonomics, AriaBuild must support finding binaries like ariac or clang that reside in the system PATH.
+The execvp vs. execve Trade-off:
+* execvp: Searches PATH for the binary but inherits the parent's environment by default.
+* execve: Allows setting the environment but requires an absolute path to the binary.
+* execvpe: The ideal hybrid, searching PATH while accepting a custom environment. However, this is a GNU extension (glibc) and is not strictly portable to all POSIX systems (e.g., older BSDs or proprietary Unixes).7
+Portable Solution:
+To ensure maximum portability, the PAL implements a manual path search if execvpe is unavailable or if strict POSIX compliance is required. However, given AriaBuild's modern C++17 baseline, relying on execvpe where available or falling back to a PATH search + execve is the robust strategy. The environment is passed as an array of char* pointers (envp), constructed from the std::map of environment variables. The array must be null-terminated.7
+4.3 Handling Signals and Zombies
+Process lifecycle management is handled via waitpid(). This function serves two purposes: it synchronizes the parent with the child's termination, and it "reaps" the zombie process entry from the system process table. Without this call, completed child processes would linger as zombies (defunct), eventually filling the process table and preventing the creation of new processes.
+The implementation utilizes macros WIFEXITED and WEXITSTATUS to decode the raw status integer. This allows the build system to distinguish between a compiler that failed with a syntax error (exit code 1) and a compiler that crashed due to a segmentation fault (terminated by signal). This distinction is valuable for error reporting, allowing aria_make to report "Internal Compiler Error" versus "Build Failed".
+5. Windows Implementation Strategy (Win32)
+The Windows process model diverges significantly from POSIX, relying on the CreateProcessW API and a handle-based object model. This implementation is generally more verbose and requires strict adherence to security attribute configurations and Unicode string handling.
+5.1 Handle Inheritance and Security Attributes
+Unlike POSIX, where file descriptors are inherited by default unless marked FD_CLOEXEC, Windows handles are private to the process by default. To redirect streams, the PAL must explicitly configure handle inheritance.
+The Inheritance Dance:
+1. Create Pipes: The system uses CreatePipe to generate read/write handles for stdout and stderr.
+2. Enable Inheritance: The CreatePipe function accepts a SECURITY_ATTRIBUTES structure. The bInheritHandle member of this structure must be set to TRUE. This marks the handles as eligible for inheritance by the child process.12
+3. Mask Parent Handles: A critical subtlety involves the handles retained by the parent. If the parent's read-end of the stdout pipe is marked as inheritable, it might be accidentally passed to the child (or grandchildren). More importantly, the parent's write-end of stdout (used momentarily to set up the STARTUPINFO structure) must be closed immediately after CreateProcess returns. If the parent inadvertently keeps a write handle open, the reader thread will never detect EOF, leading to a deadlock.
+4. SetHandleInformation: To enforce hygiene, the PAL uses SetHandleInformation to remove the HANDLE_FLAG_INHERIT flag from the parent-side handles immediately after pipe creation. This ensures that only the child's ends of the pipes are inheritable.13
+5.2 The Environment Block Constraint
+Windows imposes strict structural and ordering requirements on the environment block passed to CreateProcessW. While POSIX accepts an array of pointers, Windows requires a single contiguous block of memory containing null-terminated strings, finalized by a double-null terminator (\0\0).
+The Formatting Protocol:
+The block format is Key1=Value1\0Key2=Value2\0...KeyN=ValueN\0\0.15 This format harkens back to the optimization days of 16-bit Windows to save selectors.
+The Sorting Requirement:
+A strictly enforced requirement—often overlooked—is that the strings in this block must be sorted alphabetically by the key name. The sorting is case-insensitive based on the Unicode order.15 While some modern versions of Windows may exhibit leniency, the API documentation remains explicit: "All strings in the environment block must be sorted alphabetically by name." Failure to sort can lead to undefined behavior in GetEnvironmentVariable lookups within the child process, particularly if a binary search algorithm is used internally by the runtime.18
+Implementation Logic:
+The PAL iterates through the std::map<std::string, std::string> provided in the options. Since std::map automatically sorts keys, this satisfies the sorting requirement implicitly. The iterator loop serializes the entries into a std::vector<wchar_t> buffer:
+1. Convert the Key and Value from UTF-8 to UTF-16 (std::wstring) using MultiByteToWideChar.
+2. Append the string Key=Value\0 to the vector.
+3. After the loop, append a final \0 to create the double-null termination.
+5.3 Command Line Escaping and Unicode
+CreateProcessW accepts a single command-line string (lpCommandLine) rather than an argument array (argv). This necessitates a robust escaping algorithm to handle paths with spaces or embedded quotes.
+Escaping Algorithm:
+The PAL implements the standard Microsoft C Runtime escaping logic to ensuring arguments are parsed correctly by the child:
+* Wrap arguments containing spaces or tabs in double quotes.
+* Escape existing double quotes with backslashes (\").
+* Escape backslashes only if they precede a double quote or the end of the string. This prevents C:\Path\ from escaping the closing quote.19
+Unicode Conversion:
+Aria native strings are UTF-8. Windows native APIs (CreateProcessW) use UTF-16 (wchar_t). The PAL handles this conversion transparently, ensuring that paths containing non-ASCII characters (e.g., user directories with international characters) are handled correctly.
+6. Unified Implementation: The Process Execution Class
+To provide a consistent developer experience, the system abstracts these OS-specific implementations behind a unified C++ interface. The src/runtime/process.cpp (or split translation units process_win32.cpp and process_posix.cpp) implements the execute_command function.
+6.1 Interface Definition
+The ExecResult structure decouples the execution outcome from the mechanism, separating the streams for downstream analysis.
+
+
+C++
+
+
+
+
+namespace aria::runtime {
+
+struct ExecResult {
+   int exit_code;          // 0 typically indicates success
+   std::string out_output; // Content captured from STDOUT
+   std::string err_output; // Content captured from STDERR
+   bool success;           // Logic helper (exit_code == 0)
+};
+
+struct ExecOptions {
+   std::string working_directory;
+   std::map<std::string, std::string> env_vars;
+   bool merge_outputs = false; // Simulates '2>&1' behavior
+};
+
+ExecResult execute_command(
+   const std::string& command, 
+   const std::vector<std::string>& args, 
+   const ExecOptions& options = {}
+);
+
+}
+
+This interface allows the ToolchainOrchestrator to invoke commands without knowledge of fork, PIPE, or STARTUPINFO structures.
+7. Toolchain Orchestration and Integration
+The ToolchainOrchestrator sits conceptually above the PAL. It acts as the translation layer between the declarative Aria Build Configuration (ABC) and the imperative system execution.
+7.1 Flag Synthesis and Dependency Resolution
+When the scheduler determines a target is ready to build, the orchestrator synthesizes the command line. This involves resolving the graph topology into compiler flags.
+* Include Paths (-I): If Target A depends on Target B, the orchestrator identifies the output directory of Target B. It then appends this path as an include flag (-I build/lib/B). This allows the ariac compiler to resolve use statements referencing the dependency's module interface.5
+* Output Paths (-o): The orchestrator maps the declarative output field from the ABC file to the -o flag, ensuring the artifact is placed in the correct location for downstream consumers.5
+* Optimization Flags: It translates abstract build profiles (e.g., "release") into specific flags like -O3.5
+7.2 The LLVM Interpreter (lli) Wrapper
+Since Aria currently targets LLVM IR (.ll files) rather than native machine code directly, "executing" a binary target actually means invoking the lli tool. The orchestrator wraps this invocation seamlessly. It manages flags like -force-interpreter=false to ensure the JIT compiler is used for performance during test execution, rather than the slower interpreter mode.5 This meta-execution model allows Aria to function as a compiled language while leveraging the flexibility of the LLVM infrastructure during development.
+7.3 Output Parsing and Diagnostics
+By separating stdout and stderr in the ExecResult, the orchestrator can perform intelligent logging.
+* StdErr Analysis: It scans err_output for keywords like "error:" or "warning:". If found, it can highlight these lines in red/yellow when printing to the user console, drastically improving readability in a parallel build log.
+* Fail-Fast Logic: If exit_code is non-zero, the orchestrator signals the scheduler to abort dependent tasks immediately, saving time.
+8. Concurrency and Thread Safety Analysis
+The interaction between the BuildScheduler and the Process Execution Subsystem is defined by the Thread Pool model.
+8.1 The Blocking Paradox
+Although execute_command is a synchronous, blocking function, its usage within the aria_make architecture is non-blocking to the overall system. When a worker thread in the thread pool calls execute_command, it blocks waiting for the child process. This is the intended behavior.
+* OS Scheduling: While the worker thread is blocked on WaitForSingleObject (Windows) or waitpid (POSIX), the OS kernel puts that thread to sleep. It consumes zero CPU cycles.
+* Resource Utilization: The CPU cores are free to run the actual compiler process spawned by that thread.
+* Concurrency throttling: The fixed size of the thread pool (defaulting to std::thread::hardware_concurrency()) acts as a natural semaphore. It prevents the "thundering herd" problem where spawning thousands of compiler instances simultaneously (e.g., one for every file in a large project) would exhaust system RAM and thrash the swap file. The synchronous wrapper naturally limits concurrency to the optimal level.
+9. Detailed Reference Implementation Guide
+9.1 Windows Backend (src/runtime/process_win32.cpp)
+The following implementation demonstrates the rigorous setup required for Windows, including the environment block sorting and handle security masking.
+
+
+C++
+
+
+
+
+#ifdef _WIN32
+#include "runtime/process.h"
+#include <windows.h>
+#include <thread>
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+namespace aria::runtime {
+
+// Helper: Convert UTF-8 to UTF-16
+std::wstring to_wstring(const std::string& str) {
+   if (str.empty()) return std::wstring();
+   int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str, (int)str.size(), NULL, 0);
+   std::wstring wstrTo(size_needed, 0);
+   MultiByteToWideChar(CP_UTF8, 0, &str, (int)str.size(), &wstrTo, size_needed);
+   return wstrTo;
+}
+
+void read_pipe_async(HANDLE hPipe, std::string& buffer) {
+   char tmp;
+   DWORD read;
+   while (ReadFile(hPipe, tmp, sizeof(tmp), &read, NULL) && read > 0) {
+       buffer.append(tmp, read);
+   }
+}
+
+ExecResult execute_command(const std::string& command, const std::vector<std::string>& args, const ExecOptions& options) {
+   ExecResult result;
+   SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+   
+   HANDLE hOutRead, hOutWrite;
+   HANDLE hErrRead, hErrWrite;
+   
+   // Create Pipes with Inheritance
+   if (!CreatePipe(&hOutRead, &hOutWrite, &sa, 0)) return {-1, "", "Pipe Error", false};
+   if (!CreatePipe(&hErrRead, &hErrWrite, &sa, 0)) return {-1, "", "Pipe Error", false};
+
+   // CRITICAL: Ensure parent's read handles are NOT inherited
+   SetHandleInformation(hOutRead, HANDLE_FLAG_INHERIT, 0);
+   SetHandleInformation(hErrRead, HANDLE_FLAG_INHERIT, 0);
+
+   STARTUPINFOW si = {sizeof(STARTUPINFOW)};
+   si.dwFlags = STARTF_USESTDHANDLES;
+   si.hStdOutput = hOutWrite;
+   si.hStdError = hErrWrite;
+   si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+
+   PROCESS_INFORMATION pi = {0};
+   
+   // Construct command line (simplified escaping for brevity)
+   std::string cmd_str = command;
+   for (const auto& arg : args) cmd_str += " \"" + arg + "\""; 
+   std::wstring cmdLine = to_wstring(cmd_str);
+
+   // Environment Block Construction
+   std::vector<wchar_t> envBlock;
+   if (!options.env_vars.empty()) {
+       for (const auto& [key, val] : options.env_vars) {
+           std::wstring wEntry = to_wstring(key + "=" + val);
+           envBlock.insert(envBlock.end(), wEntry.begin(), wEntry.end());
+           envBlock.push_back(L'\0'); // Null terminate string
+       }
+       envBlock.push_back(L'\0'); // Double-null terminate block
+   }
+
+   LPVOID lpEnv = envBlock.empty()? NULL : envBlock.data();
+
+   if (CreateProcessW(NULL, &cmdLine, NULL, NULL, TRUE, 
+                      CREATE_UNICODE_ENVIRONMENT, lpEnv, NULL, &si, &pi)) {
+       
+       // CRITICAL: Close write ends in parent so EOF is generated when child exits
+       CloseHandle(hOutWrite);
+       CloseHandle(hErrWrite);
+
+       // Spawn drainer threads
+       std::thread out_thread([&]{ read_pipe_async(hOutRead, result.out_output); });
+       std::thread err_thread([&]{ read_pipe_async(hErrRead, result.err_output); });
+
+       WaitForSingleObject(pi.hProcess, INFINITE);
+       
+       DWORD exit_code;
+       GetExitCodeProcess(pi.hProcess, &exit_code);
+       result.exit_code = exit_code;
+       result.success = (exit_code == 0);
+
+       out_thread.join();
+       err_thread.join();
+       
+       CloseHandle(pi.hProcess);
+       CloseHandle(pi.hThread);
+   } else {
+       result.exit_code = -1;
+   }
+   
+   CloseHandle(hOutRead);
+   CloseHandle(hErrRead);
+   return result;
+}
+}
+#endif
+
+9.2 POSIX Backend (src/runtime/process_posix.cpp)
+The POSIX implementation focuses on safe forking and environment array construction.
+
+
+C++
+
+
+
+
+#ifndef _WIN32
+#include "runtime/process.h"
+#include <unistd.h>
+#include <sys/wait.h>
+#include <thread>
+#include <array>
+#include <cstring>
+
+namespace aria::runtime {
+
+void read_fd_async(int fd, std::string& buffer) {
+   std::array<char, 4096> tmp;
+   ssize_t n;
+   while ((n = read(fd, tmp.data(), tmp.size())) > 0) {
+       buffer.append(tmp.data(), n);
+   }
+}
+
+ExecResult execute_command(const std::string& command, const std::vector<std::string>& args, const ExecOptions& options) {
+   int out_pipe, err_pipe;
+   if (pipe(out_pipe) < 0 |
+
+| pipe(err_pipe) < 0) return {-1, "", "Pipe Fail", false};
+
+   pid_t pid = fork();
+   if (pid == 0) { // Child
+       dup2(out_pipe, STDOUT_FILENO);
+       dup2(err_pipe, STDERR_FILENO);
+       
+       // Close all pipe ends in child
+       close(out_pipe); close(out_pipe);
+       close(err_pipe); close(err_pipe);
+
+       // Construct Args Array
+       std::vector<char*> c_args;
+       c_args.push_back(strdup(command.c_str()));
+       for (const auto& arg : args) c_args.push_back(strdup(arg.c_str()));
+       c_args.push_back(nullptr);
+
+       // Construct Env Array
+       std::vector<char*> c_env;
+       for (const auto& [key, val] : options.env_vars) {
+           c_env.push_back(strdup((key + "=" + val).c_str()));
+       }
+       c_env.push_back(nullptr);
+
+       // Execute (execvpe or manual search + execve)
+       // Using execvp for simplicity in this snippet if path search needed
+       execvp(command.c_str(), c_args.data());
+       
+       _exit(127); // Exec failed
+   } else if (pid > 0) { // Parent
+       // Close write ends
+       close(out_pipe);
+       close(err_pipe);
+
+       ExecResult result;
+       std::thread out_t([&]{ read_fd_async(out_pipe, result.out_output); });
+       std::thread err_t([&]{ read_fd_async(err_pipe, result.err_output); });
+
+       int status;
+       waitpid(pid, &status, 0);
+       
+       out_t.join();
+       err_t.join();
+       
+       result.exit_code = WIFEXITED(status)? WEXITSTATUS(status) : -1;
+       result.success = (result.exit_code == 0);
+       
+       close(out_pipe);
+       close(err_pipe);
+       return result;
+   }
+   return {-1, "", "Fork Fail", false};
+}
+}
+#endif
+
+10. Conclusion
+The implementation of the Native Process Spawning infrastructure described in this report provides a solid, enterprise-grade foundation for the AriaBuild system. By rejecting the limitations of std::system and adopting a platform-aware architecture, aria_make achieves the capability to execute complex toolchains with the reliability and determinism required for large-scale software development. The use of threaded stream draining guarantees freedom from I/O deadlocks, while the meticulous handling of OS-specific process attributes—from Unicode environment blocks on Windows to signal handling on Linux—ensures consistent behavior across all supported platforms. This component effectively closes the "execution gap," transforming the build tool from a static configuration parser into a dynamic, parallel execution engine capable of driving the Aria language ecosystem forward.
+Works cited
+1. Pipe, Fork and Exec and Related Topics, accessed December 19, 2025, https://www.cs.uleth.ca/~holzmann/C/system/pipeforkexec.html
+2. Synchronization 5: Deadlock and Server Programming – CS 61 2018, accessed December 19, 2025, https://cs61.seas.harvard.edu/site/2018/Synch5/
+3. Deadlocking Linux subprocesses using pipes - Thierry Kühni, accessed December 19, 2025, https://tey.sh/TIL/002_subprocess_pipe_deadlocks
+4. compiled.txt
+5. Deadlock when closing a pipe fd - c++ - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/5385018/deadlock-when-closing-a-pipe-fd
+6. execve(2) - Linux manual page - man7.org, accessed December 19, 2025, https://man7.org/linux/man-pages/man2/execve.2.html
+7. Deadlock on communicating with multiple children - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/31802184/deadlock-on-communicating-with-multiple-children
+8. Difference between exec, execvp, execl, execv? - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/55743496/difference-between-exec-execvp-execl-execv
+9. execve with path search? - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/7789750/execve-with-path-search
+10. execve - QNX, accessed December 19, 2025, https://www.qnx.com/developers/docs/6.5.0SP1.update/com.qnx.doc.neutrino_lib_ref/e/execve.html
+11. How to access an inherited anonymous pipe HANDLE, other than stdout, stderr & stdin, in Windows? - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/32641423/how-to-access-an-inherited-anonymous-pipe-handle-other-than-stdout-stderr-st
+12. Creating a Child Process with Redirected Input and Output - Win32 apps | Microsoft Learn, accessed December 19, 2025, https://learn.microsoft.com/en-us/windows/win32/procthread/creating-a-child-process-with-redirected-input-and-output
+13. Pipe Handle Inheritance - Win32 apps | Microsoft Learn, accessed December 19, 2025, https://learn.microsoft.com/en-us/windows/win32/ipc/pipe-handle-inheritance
+14. Changing Environment Variables - Win32 apps - Microsoft Learn, accessed December 19, 2025, https://learn.microsoft.com/en-us/windows/win32/procthread/changing-environment-variables
+15. What is the format of a double-null-terminated string with no strings? - The Old New Thing - Microsoft Developer Blogs, accessed December 19, 2025, https://devblogs.microsoft.com/oldnewthing/20091008-00/?p=16443
+16. CreateProcessW function (processthreadsapi.h) - Win32 apps | Microsoft Learn, accessed December 19, 2025, https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+17. Issue 46862: subprocess makes environment blocks with duplicate keys on Windows, accessed December 19, 2025, https://bugs.python.org/issue46862
+18. C++ WinApi CreateProcess Unable To Create Child Process With Environment Block, accessed December 19, 2025, https://stackoverflow.com/questions/18942005/c-winapi-createprocess-unable-to-create-child-process-with-environment-block
+19. How to pass a vector of strings to execv - c++ - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/5797837/how-to-pass-a-vector-of-strings-to-execv

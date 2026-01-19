@@ -1,0 +1,249 @@
+Research Task: Build and Distribution Strategy for aria_make
+
+PRIORITY: MEDIUM
+ESTIMATED COMPLEXITY: MEDIUM
+ESTIMATED TIME: 2 hours
+
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+aria_make itself needs to be built and distributed to users. Currently, there is no specification for:
+- How to build aria_make from source
+- How to install it on user systems
+- How to manage dependencies (LLVM, nlohmann/json)
+- How to package it for distribution
+- How to handle versioning
+
+This is a "meta-build" problem: using CMake (or other tool) to build the build tool.
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH OBJECTIVES
+═══════════════════════════════════════════════════════════════════════════════
+
+Design a build and distribution strategy covering:
+
+1. **Build System Selection**
+   - CMake (industry standard for C++)
+   - Meson (modern alternative)
+   - Custom Makefile
+   - Recommendation with rationale
+
+2. **Source Structure**
+   ```
+   aria_make/
+   ├── CMakeLists.txt
+   ├── src/
+   │   ├── parser/
+   │   ├── graph/
+   │   ├── scheduler/
+   │   └── main.cpp
+   ├── include/
+   │   └── aria_make/
+   ├── tests/
+   ├── docs/
+   └── external/  (vendored dependencies?)
+   ```
+
+3. **Dependency Management**
+   - **LLVM** - Required for compiler integration, large dependency
+     - System package vs vendored vs git submodule
+     - Version compatibility (LLVM 18, 19, 20?)
+   - **nlohmann/json** - Optional for BuildState persistence
+     - Header-only, easy to vendor
+   - **fmt** or std::format - String formatting
+     - C++20 std::format vs backport
+   - Decision: Vendor small deps, require LLVM as system dependency?
+
+4. **CMakeLists.txt Structure**
+   - Top-level project definition
+   - Compiler flags (-std=c++17, -Wall, -Wextra)
+   - Dependency finding (find_package(LLVM))
+   - Library targets (static libaria_make.a?)
+   - Executable target (aria_make)
+   - Install rules
+   - Test integration (CTest)
+
+5. **Installation Paths**
+   - Binary: /usr/local/bin/aria_make (or /usr/bin)
+   - Libraries: /usr/local/lib/ (if shipping static lib)
+   - Headers: /usr/local/include/aria_make/ (for programmatic use?)
+   - Man pages: /usr/local/share/man/man1/aria_make.1
+   - Configuration: /etc/aria_make/ or ~/.config/aria_make/
+
+6. **Version Management**
+   - Semantic versioning (v0.1.0, v0.2.0, v1.0.0)
+   - Version embedded in binary (--version flag)
+   - Git tag vs version.txt vs CMake variable
+   - Build metadata (commit hash, build date)
+
+7. **Packaging**
+   - **Linux**: .deb (Debian/Ubuntu), .rpm (Red Hat/Fedora)
+     - Use CPack (CMake packaging)
+     - AUR package (Arch User Repository)
+   - **macOS**: Homebrew formula
+     - Bottle (pre-compiled binary)
+   - **Windows**: .exe installer or portable zip
+     - LLVM dependency handling (ship with installer?)
+   - **Cross-platform**: Static binary (musl libc on Linux?)
+
+8. **Continuous Integration**
+   - GitHub Actions workflow
+   - Build matrix: Linux (Ubuntu 20.04, 22.04), macOS (Intel, ARM), Windows
+   - Run tests on all platforms
+   - Generate release artifacts
+
+9. **Release Process**
+   - Tag release in git
+   - CI builds binaries for all platforms
+   - Upload to GitHub Releases
+   - Update package managers (Homebrew, AUR)
+   - Changelog generation
+
+═══════════════════════════════════════════════════════════════════════════════
+BUILD SCENARIOS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **Developer building from source**
+   ```bash
+   git clone https://github.com/aria-lang/aria_make
+   cd aria_make
+   mkdir build && cd build
+   cmake .. -DCMAKE_BUILD_TYPE=Debug
+   make -j8
+   ./aria_make --version
+   ```
+
+2. **System-wide installation**
+   ```bash
+   cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+   make -j8
+   sudo make install
+   aria_make --version  # Now in PATH
+   ```
+
+3. **User installing from package**
+   ```bash
+   # Linux
+   sudo apt install aria-make
+   
+   # macOS
+   brew install aria-make
+   
+   # Windows
+   winget install aria-make
+   ```
+
+4. **Cross-compilation** (optional)
+   ```bash
+   cmake .. -DCMAKE_TOOLCHAIN_FILE=arm64-linux.cmake
+   make
+   ```
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH DELIVERABLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide:
+
+1. **Build System Recommendation**
+   - CMake vs alternatives
+   - Minimum CMake version (3.15? 3.20?)
+   - Rationale
+
+2. **Complete CMakeLists.txt Template**
+   Including:
+   - Project definition
+   - C++17 requirement
+   - Dependency finding (LLVM, optional fmt)
+   - Compiler warnings
+   - Library and executable targets
+   - Install rules
+   - Testing integration
+
+3. **Dependency Strategy**
+   - LLVM: System package (apt, brew) or custom?
+   - nlohmann/json: Vendored or system?
+   - fmt: Required or fallback to std::stringstream?
+
+4. **Version Embedding Technique**
+   How to get git commit hash into --version output
+
+5. **CPack Configuration**
+   For generating .deb, .rpm, .dmg packages
+
+6. **Homebrew Formula Template**
+   For macOS distribution
+
+7. **GitHub Actions Workflow**
+   YAML file for CI/CD (build, test, release)
+
+8. **Installation Documentation**
+   User-facing guide: "Installing aria_make"
+
+═══════════════════════════════════════════════════════════════════════════════
+CONSTRAINTS
+═══════════════════════════════════════════════════════════════════════════════
+
+- Must support Linux, macOS, Windows
+- C++17 compiler required (GCC 7+, Clang 5+, MSVC 2017+)
+- LLVM 18+ required (for Aria compiler compatibility)
+- Minimal dependencies (avoid heavy libraries)
+- Respect standard installation paths (FHS on Linux)
+- Support both system-wide and user-local installation
+
+═══════════════════════════════════════════════════════════════════════════════
+ADVANCED CONSIDERATIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **Static vs Dynamic Linking**
+   - Static binary = easier distribution (no dependency hell)
+   - Dynamic binary = smaller, shares LLVM with other tools
+   - Recommendation?
+
+2. **Bootstrapping**
+   - Can aria_make build itself? (dogfooding)
+   - How to handle circular dependency (need aria_make to build aria_make)
+   - Initial bootstrap uses CMake/Make, then switch to aria_make?
+
+3. **Plugin Support** (future)
+   - If aria_make supports plugins, need shared library (.so, .dylib, .dll)
+   - CMake LIBRARY target
+
+4. **Docker Image**
+   - Official Docker image with aria_make + LLVM pre-installed
+   - Useful for CI/CD
+
+5. **Portable Builds**
+   - AppImage (Linux)
+   - macOS application bundle
+   - Windows installer (NSIS, WiX)
+
+═══════════════════════════════════════════════════════════════════════════════
+SUCCESS CRITERIA
+═══════════════════════════════════════════════════════════════════════════════
+
+A successful design will:
+✓ Provide clear build instructions for developers
+✓ Support installation on Linux, macOS, Windows
+✓ Handle LLVM dependency cleanly
+✓ Generate versioned releases automatically
+✓ Integrate with package managers (apt, brew, etc.)
+✓ Support both Debug and Release builds
+✓ Enable testing via CTest
+✓ Produce portable binaries when possible
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide a detailed specification document covering:
+- Complete CMakeLists.txt with comments
+- Dependency management strategy
+- Installation path structure
+- Version embedding technique
+- CPack configuration for packaging
+- Homebrew formula template
+- GitHub Actions workflow
+- User installation guide
+- Developer build guide

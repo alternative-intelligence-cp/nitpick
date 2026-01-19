@@ -1,0 +1,302 @@
+Research Task: Configuration Schema Validation for aria_make
+
+PRIORITY: MEDIUM
+ESTIMATED COMPLEXITY: LOW-MEDIUM
+ESTIMATED TIME: 1-2 hours
+
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+Currently, aria_make's ConfigParser only validates syntax (valid JSON/ABC format). It does NOT validate:
+- Required fields exist (project.name, target.type)
+- Field types are correct (sources is array, not string)
+- Values are valid (type: "executable" not "foo")
+- Paths are accessible
+- No duplicate target names
+- Unknown fields (typo detection)
+
+This leads to confusing errors later in the build process instead of clear, upfront validation.
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH OBJECTIVES
+═══════════════════════════════════════════════════════════════════════════════
+
+Design a configuration schema validation system that:
+
+1. **Schema Definition**
+   - Define expected structure of build.aria
+   - Required vs optional fields
+   - Field types (string, array, object, enum)
+   - Value constraints (non-empty, valid path, etc.)
+
+2. **Validation Rules**
+
+   **Project Section:**
+   ```javascript
+   project: {
+       name: string (required, non-empty)
+       version: string (required, semver format)
+       test_mode: enum("jit", "interpreter") (optional, default: "jit")
+   }
+   ```
+
+   **Variables Section:**
+   ```javascript
+   variables: {
+       [key: string]: string  // Any string key/value
+   }
+   ```
+
+   **Targets Section:**
+   ```javascript
+   targets: [
+       {
+           name: string (required, unique across targets)
+           type: enum("executable", "static_library", "shared_library", "test")
+           sources: string | array<string> (required, non-empty)
+           output: string (required, valid path)
+           dependencies: array<string> (optional, references to existing targets)
+           flags: string | array<string> (optional)
+           libraries: array<string> (optional, for FFI linking)
+           lib_search_paths: array<string> (optional)
+       }
+   ]
+   ```
+
+3. **Validation Levels**
+   - **Syntax**: Valid JSON/ABC (already done by parser)
+   - **Schema**: Fields exist, types correct
+   - **Semantic**: Values make sense (paths exist, no duplicate names)
+   - **Warning**: Unknown fields, deprecated options
+
+4. **Error Reporting**
+   ```
+   ERROR: Invalid configuration at build.aria:15
+       Field 'project.version' is required
+   
+   ERROR: Invalid type at build.aria:22
+       Field 'targets[0].sources' must be string or array, got number
+   
+   ERROR: Invalid value at build.aria:30
+       Field 'targets[1].type' must be one of:
+         - "executable"
+         - "static_library"  
+         - "shared_library"
+         - "test"
+       Got: "binary"
+   
+   WARNING: Unknown field at build.aria:18
+       Field 'targets[0].compiler' is not recognized
+       Did you mean 'flags'?
+   ```
+
+5. **Unknown Field Handling**
+   - Strict mode: Error on unknown fields
+   - Permissive mode: Warn on unknown fields (default)
+   - Ignore mode: No warnings (for forward compatibility)
+
+6. **Type Coercion**
+   - Should `sources: "main.aria"` auto-convert to `["main.aria"]`?
+   - Or require array syntax?
+   - Trade-off: convenience vs strictness
+
+7. **Typo Detection**
+   - Levenshtein distance for field names
+   - Suggest similar fields ("Did you mean 'dependencies'?")
+
+8. **Semantic Validation**
+   - All dependencies reference existing targets
+   - No duplicate target names
+   - Output paths are writable (or warn)
+   - Source glob patterns match at least one file (or warn)
+
+═══════════════════════════════════════════════════════════════════════════════
+IMPLEMENTATION APPROACHES
+═══════════════════════════════════════════════════════════════════════════════
+
+**Option A: JSON Schema (external library)**
+- Use standard JSON Schema format
+- Libraries: nlohmann/json-schema-validator, valijson
+- Pros: Standard, well-defined, tooling support
+- Cons: Extra dependency, may not support ABC extensions
+
+**Option B: Custom Validator (bespoke)**
+- Write custom validation logic
+- Pros: Full control, no dependencies, ABC-aware
+- Cons: More code to maintain
+
+**Option C: Hybrid**
+- Parse to AST first (existing ConfigParser)
+- Then validate AST with custom rules
+- Pros: Best of both worlds
+
+Recommendation needed.
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH DELIVERABLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide:
+
+1. **Schema Specification**
+   Complete schema definition for build.aria
+   (JSON Schema format OR custom format)
+
+2. **Validator Class Design**
+   ```cpp
+   class ConfigValidator {
+   public:
+       struct ValidationResult {
+           std::vector<ValidationError> errors;
+           std::vector<ValidationWarning> warnings;
+           
+           bool isValid() const { return errors.empty(); }
+       };
+       
+       ValidationResult validate(const BuildFileAST* ast);
+       
+   private:
+       void validateProject(const ProjectNode* node, ValidationResult& result);
+       void validateTargets(const TargetsNode* node, ValidationResult& result);
+       void checkDuplicateNames(const TargetsNode* node, ValidationResult& result);
+       void checkDependencyReferences(const TargetsNode* node, ValidationResult& result);
+   };
+   ```
+
+3. **Validation Rules Matrix**
+   | Field | Required | Type | Constraints | Default |
+   |-------|----------|------|-------------|---------|
+   | project.name | Yes | string | Non-empty | N/A |
+   | project.version | Yes | string | Semver? | N/A |
+   | targets[].type | Yes | enum | 4 values | N/A |
+   | ... | ... | ... | ... | ... |
+
+4. **Type Coercion Strategy**
+   - Which fields support single-value → array conversion?
+   - Recommendation: permissive vs strict
+
+5. **Unknown Field Handling**
+   - Default behavior (warn? error?)
+   - CLI flag to control (--strict-config?)
+
+6. **Typo Detection Algorithm**
+   - Levenshtein distance implementation
+   - Threshold for suggestions
+
+7. **Error Message Templates**
+   Examples of clear, helpful error messages
+
+8. **Integration with ConfigParser**
+   Where does validation happen in the pipeline?
+   ```
+   parse() → AST → validate() → BuildContext
+   ```
+
+9. **Testing Strategy**
+   - Test cases for each validation rule
+   - Invalid configs that should fail
+   - Valid configs that should pass
+
+═══════════════════════════════════════════════════════════════════════════════
+EXAMPLE VALIDATION SCENARIOS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **Missing Required Field**
+   ```javascript
+   project: {
+       // Missing 'name' and 'version'
+   }
+   ```
+   Expected: ERROR
+
+2. **Invalid Type**
+   ```javascript
+   targets: [
+       {
+           name: "app",
+           sources: 42  // Should be string or array
+       }
+   ]
+   ```
+   Expected: ERROR
+
+3. **Invalid Enum Value**
+   ```javascript
+   targets: [
+       {
+           type: "binary"  // Should be "executable"
+       }
+   ]
+   ```
+   Expected: ERROR with suggestions
+
+4. **Unknown Field**
+   ```javascript
+   targets: [
+       {
+           name: "app",
+           compiler: "gcc"  // Unknown field
+       }
+   ]
+   ```
+   Expected: WARNING
+
+5. **Duplicate Target Names**
+   ```javascript
+   targets: [
+       { name: "app", ... },
+       { name: "app", ... }  // Duplicate!
+   ]
+   ```
+   Expected: ERROR
+
+6. **Dangling Dependency**
+   ```javascript
+   targets: [
+       {
+           name: "app",
+           dependencies: ["libfoo"]  // 'libfoo' not defined
+       }
+   ]
+   ```
+   Expected: ERROR
+
+═══════════════════════════════════════════════════════════════════════════════
+CONSTRAINTS
+═══════════════════════════════════════════════════════════════════════════════
+
+- Should NOT require external validation library (prefer custom)
+- Must integrate with existing ConfigParser (AST-based)
+- Validation should be fast (< 5ms for typical config)
+- Error messages must be user-friendly
+- Support for future schema evolution (forward compatibility)
+
+═══════════════════════════════════════════════════════════════════════════════
+SUCCESS CRITERIA
+═══════════════════════════════════════════════════════════════════════════════
+
+A successful design will:
+✓ Define complete schema for build.aria
+✓ Validate all required fields exist
+✓ Check types and value constraints
+✓ Detect duplicate target names
+✓ Verify dependency references
+✓ Warn on unknown fields with suggestions
+✓ Provide clear, actionable error messages
+✓ Be easily extensible for new fields
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide a detailed specification document covering:
+- Complete schema specification
+- Validator class API and implementation
+- Validation rules matrix
+- Type coercion strategy
+- Unknown field handling approach
+- Typo detection algorithm
+- Error message examples
+- Integration with parser
+- Testing approach

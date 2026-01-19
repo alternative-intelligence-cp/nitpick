@@ -1,0 +1,351 @@
+Research Task: Plugin System and Extensibility Architecture for aria_make
+
+PRIORITY: OPTIONAL (POST-v1.0 FEATURE)
+ESTIMATED COMPLEXITY: HIGH
+ESTIMATED TIME: 4-5 hours
+
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+aria_make currently supports fixed target types (executable, library, test). Users may want:
+- Custom build steps (code generation, asset compilation)
+- Integration with external tools (protobuf, webpack, etc.)
+- Language-specific toolchains (C++, Rust, Python)
+- Pre/post-build hooks
+
+A plugin system would enable extensibility without modifying core aria_make code.
+
+This is a post-v1.0 feature but worth researching early to avoid architectural lock-in.
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH OBJECTIVES
+═══════════════════════════════════════════════════════════════════════════════
+
+Design a plugin architecture that enables:
+
+1. **Plugin Types**
+   - **Target Type Plugins**: Define new target types (e.g., "protobuf", "webpack")
+   - **Task Plugins**: Custom build steps (e.g., "generate code", "run linter")
+   - **Hook Plugins**: Pre/post-build callbacks
+   - **Toolchain Plugins**: Language-specific compilation (C++, Rust, Go)
+
+2. **Plugin Interface**
+   What methods must a plugin implement?
+   ```cpp
+   class ITargetPlugin {
+   public:
+       virtual std::string name() const = 0;
+       virtual std::string description() const = 0;
+       
+       // Validate target configuration
+       virtual bool validate(const TargetNode* target) = 0;
+       
+       // Build command construction
+       virtual std::string buildCommand(const TargetNode* target) = 0;
+       
+       // Dependency resolution
+       virtual std::vector<fs::path> getDependencies(const TargetNode* target) = 0;
+       
+       virtual ~ITargetPlugin() = default;
+   };
+   ```
+
+3. **Plugin Discovery**
+   - Where do plugins live? (~/.aria/plugins/, /usr/lib/aria/plugins/)
+   - Naming convention (libaria_plugin_protobuf.so)
+   - Manifest file (plugin.json with metadata)
+   - Auto-discovery vs explicit loading
+
+4. **Plugin Loading**
+   - Dynamic library loading (dlopen on POSIX, LoadLibrary on Windows)
+   - Symbol resolution (entry point: aria_plugin_init())
+   - Version compatibility (plugin ABI version)
+   - Error handling (missing symbols, crashes)
+
+5. **Configuration Integration**
+   ```javascript
+   // build.aria with custom target type
+   targets: [
+       {
+           name: "proto",
+           type: "protobuf",  // Custom type from plugin
+           sources: "schema/**/*.proto",
+           output: "generated/",
+           plugin_config: {
+               language: "cpp",
+               optimize_for: "speed"
+           }
+       }
+   ]
+   ```
+
+6. **Dependency Management**
+   - Plugin declares dependencies (requires libprotobuf)
+   - aria_make verifies dependencies available
+   - Plugin can invoke external tools (protoc)
+
+7. **Sandboxing and Security**
+   - Plugins run in same process (dangerous!)
+   - Can crash aria_make or corrupt state
+   - Isolation options:
+     - Separate process (IPC communication)
+     - WASM sandbox (WebAssembly plugins)
+     - Rust FFI (safer than C++)
+   - Permission model (what can plugins access?)
+
+8. **Hook System**
+   ```cpp
+   enum class HookPoint {
+       PRE_PARSE,       // Before parsing build.aria
+       POST_PARSE,      // After AST constructed
+       PRE_BUILD,       // Before starting build
+       PRE_TARGET,      // Before building specific target
+       POST_TARGET,     // After target built
+       POST_BUILD,      // After entire build
+       ON_ERROR         // When error occurs
+   };
+   
+   class IHookPlugin {
+   public:
+       virtual void onHook(HookPoint point, void* context) = 0;
+   };
+   ```
+
+9. **Plugin Manager**
+   ```cpp
+   class PluginManager {
+   public:
+       void loadPlugin(const fs::path& plugin_path);
+       void loadAll(const fs::path& plugin_dir);
+       
+       ITargetPlugin* getTargetPlugin(const std::string& type);
+       void registerHook(HookPoint point, IHookPlugin* plugin);
+       
+       void triggerHooks(HookPoint point, void* context);
+       
+   private:
+       std::map<std::string, std::unique_ptr<ITargetPlugin>> target_plugins_;
+       std::multimap<HookPoint, IHookPlugin*> hooks_;
+       std::vector<void*> loaded_libraries_;  // dlopen handles
+   };
+   ```
+
+10. **Plugin Metadata**
+    ```json
+    {
+      "name": "aria-protobuf-plugin",
+      "version": "1.0.0",
+      "api_version": "1.0",
+      "description": "Protocol Buffers support for aria_make",
+      "author": "Alice",
+      "entry_point": "aria_protobuf_init",
+      "dependencies": ["protoc"],
+      "target_types": ["protobuf"]
+    }
+    ```
+
+═══════════════════════════════════════════════════════════════════════════════
+EXAMPLE USE CASES
+═══════════════════════════════════════════════════════════════════════════════
+
+**1. Protocol Buffers Plugin**
+```javascript
+targets: [
+    {
+        name: "api_proto",
+        type: "protobuf",
+        sources: "proto/**/*.proto",
+        output: "generated/proto/",
+        plugin_config: {
+            language: "cpp",
+            plugins: ["grpc"]
+        }
+    }
+]
+```
+
+**2. Asset Compilation Plugin**
+```javascript
+targets: [
+    {
+        name: "assets",
+        type: "webpack",
+        sources: "assets/**/*.ts",
+        output: "dist/bundle.js",
+        plugin_config: {
+            mode: "production",
+            minify: true
+        }
+    }
+]
+```
+
+**3. Pre-Build Hook (Linter)**
+```javascript
+hooks: [
+    {
+        plugin: "aria-lint",
+        on: "pre_build",
+        config: {
+            rules: "strict"
+        }
+    }
+]
+```
+
+**4. Custom Toolchain (Rust)**
+```javascript
+targets: [
+    {
+        name: "rust_lib",
+        type: "rust_library",
+        sources: "src/**/*.rs",
+        output: "target/release/librust.a",
+        plugin_config: {
+            cargo_flags: "--release"
+        }
+    }
+]
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH DELIVERABLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide:
+
+1. **Plugin Interface Specification**
+   - ITargetPlugin, IHookPlugin, IToolchainPlugin
+   - Complete C++ header files
+
+2. **Plugin ABI Versioning**
+   - How to ensure plugin compatibility across aria_make versions
+   - Semantic versioning for plugin API
+
+3. **Plugin Discovery Algorithm**
+   - Search paths, naming conventions
+   - Manifest parsing
+
+4. **Dynamic Loading Implementation**
+   - Cross-platform dlopen/LoadLibrary wrapper
+   - Symbol resolution
+   - Error handling
+
+5. **Sandboxing Strategy**
+   - In-process vs out-of-process plugins
+   - WASM sandbox feasibility
+   - Permission model
+
+6. **PluginManager Class Design**
+   - Registration, loading, querying
+   - Hook triggering
+
+7. **Configuration Schema Extension**
+   - How to support plugin-specific config in build.aria
+   - Validation of plugin_config
+
+8. **Example Plugin Implementation**
+   - Complete working example (e.g., protobuf plugin)
+   - Demonstrates all interface methods
+
+9. **Security Considerations**
+   - Malicious plugin risks
+   - Code signing, verification
+   - User consent for plugin installation
+
+10. **Testing Strategy**
+    - Mock plugins for testing
+    - Plugin crash resilience
+    - ABI compatibility testing
+
+═══════════════════════════════════════════════════════════════════════════════
+ADVANCED FEATURES (OPTIONAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **Plugin Marketplace**
+   - Central registry of community plugins
+   - Easy installation: aria_make plugin install protobuf
+
+2. **Hot Reload**
+   - Update plugins without restarting aria_make
+   - Useful for plugin development
+
+3. **Language Bindings**
+   - Write plugins in Python, JavaScript, Rust
+   - FFI bridge to C++ core
+
+4. **IDE Integration**
+   - Plugins can extend LSP server
+   - Syntax highlighting, autocomplete for plugin configs
+
+5. **Telemetry**
+   - Plugins report usage statistics
+   - Help prioritize plugin development
+
+═══════════════════════════════════════════════════════════════════════════════
+COMPARISON TO EXISTING SYSTEMS
+═══════════════════════════════════════════════════════════════════════════════
+
+Research plugin systems in:
+
+1. **CMake** - Modules and find_package()
+2. **Bazel** - Starlark rules (custom build logic)
+3. **Gradle** - Groovy/Kotlin DSL plugins
+4. **Webpack** - JavaScript plugin system
+5. **LLVM** - Pass plugins (opt -load)
+
+What patterns are successful? What causes problems?
+
+═══════════════════════════════════════════════════════════════════════════════
+CONSTRAINTS
+═══════════════════════════════════════════════════════════════════════════════
+
+- Must not break core aria_make functionality
+- Must be opt-in (plugins not required)
+- Should be secure (don't trust plugins blindly)
+- Should be cross-platform (Windows .dll, Linux .so, macOS .dylib)
+- Should have minimal performance overhead when no plugins loaded
+
+═══════════════════════════════════════════════════════════════════════════════
+ARCHITECTURAL CONSIDERATIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+**Tension: Flexibility vs Stability**
+- Rich plugin API = powerful but fragile (breaking changes)
+- Minimal plugin API = stable but limited
+
+**Tension: Performance vs Safety**
+- In-process plugins = fast but crash-prone
+- Out-of-process plugins = safe but slow (IPC overhead)
+
+**Recommendation:** Start minimal, expand carefully
+
+═══════════════════════════════════════════════════════════════════════════════
+SUCCESS CRITERIA
+═══════════════════════════════════════════════════════════════════════════════
+
+A successful design will:
+✓ Define clear plugin interfaces (Target, Hook, Toolchain)
+✓ Support dynamic plugin loading (dlopen/LoadLibrary)
+✓ Provide plugin discovery mechanism
+✓ Enable custom target types in build.aria
+✓ Support pre/post-build hooks
+✓ Address security concerns (sandboxing, verification)
+✓ Maintain ABI compatibility across versions
+✓ Be documented with example plugin
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide a detailed specification document covering:
+- Plugin interface definitions (C++ headers)
+- Plugin ABI versioning strategy
+- Discovery and loading mechanism
+- PluginManager class implementation
+- Sandboxing and security model
+- Configuration schema extensions
+- Example plugin (protobuf or similar)
+- Comparison to existing plugin systems
+- Migration path from v1.0 (no plugins) to v2.0 (with plugins)

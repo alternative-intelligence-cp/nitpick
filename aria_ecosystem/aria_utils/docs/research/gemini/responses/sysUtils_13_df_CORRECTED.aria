@@ -1,0 +1,570 @@
+// ============================================================================
+// ARIA DF (Disk Free) IMPLEMENTATION (Syntax-Corrected)
+// ============================================================================
+// Based on: sysUtils_13_df.txt
+// Corrected: December 23, 2025
+// Status: Ready for implementation
+// ============================================================================
+
+// File: sys/fs.aria
+// ============================================================================
+// Low-level bindings to Linux filesystem APIs
+// Requires linking against libc
+// ============================================================================
+
+// use std.mem; // For wild pointers and unsafe blocks
+
+// -----------------------------------------------------------------------------
+// FFI Declarations
+// -----------------------------------------------------------------------------
+
+// Opaque handle for the FILE* stream returned by setmntent
+extern struct:FILE = opaque;
+
+// The mntent struct matches <mntent.h> layout.
+// Strings are wild byte* because they point to static libc memory.
+extern struct:mntent = {
+    mnt_fsname: wild byte*,  // Device/Server
+    mnt_dir:    wild byte*,  // Mount path
+    mnt_type:   wild byte*,  // FS Type (ext4, tmpfs, etc)
+    mnt_opts:   wild byte*,  // Options string
+    mnt_freq:   int32,       // Dump freq
+    mnt_passno: int32        // Fsck pass
+};
+
+// The statvfs struct matches <sys/statvfs.h> on x86_64.
+// Using uint64 for all unsigned long fields to ensure 64-bit alignment.
+extern struct:statvfs_t = {
+    f_bsize:    uint64,     // Filesystem block size
+    f_frsize:   uint64,     // Fragment size (Use this for calculations!)
+    f_blocks:   uint64,     // Total blocks
+    f_bfree:    uint64,     // Free blocks
+    f_bavail:   uint64,     // Free blocks for unprivileged users
+    f_files:    uint64,     // Total inodes
+    f_ffree:    uint64,     // Free inodes
+    f_favail:   uint64,     // Free inodes for unprivileged users
+    f_fsid:     uint64,     // Filesystem ID
+    f_flag:     uint64,     // Mount flags
+    f_namemax:  uint64      // Max filename length
+};
+
+extern "C" {
+    // Open the mount table. Usually "/proc/mounts" and "r".
+    func:setmntent = wild FILE*(wild byte*:filename, wild byte*:type);
+    
+    // Iterate to next entry. Returns NULL on EOF.
+    func:getmntent = wild mntent*(wild FILE*:stream);
+    
+    // Close the handle.
+    func:endmntent = int32(wild FILE*:stream);
+    
+    // Query filesystem stats. Returns 0 on success, -1 on error.
+    func:statvfs = int32(wild byte*:path, wild statvfs_t*:buf);
+};
+
+// -----------------------------------------------------------------------------
+// High-Level Wrappers
+// -----------------------------------------------------------------------------
+
+// A safe, GC-managed representation of a mount point.
+struct:MountPoint = {
+    device: string,
+    path:   string,
+    fstype: string,
+    options: string
+};
+
+// Usage statistics utilizing TBB types for safety.
+struct:UsageStats = {
+    total_bytes: tbb64,
+    used_bytes:  tbb64,
+    avail_bytes: tbb64,
+    usage_pct:   flt32
+};
+
+// Generator that yields MountPoints
+func:get_mounts = result<array<MountPoint>>() {
+    unsafe {
+        // String literals are converted to C-strings
+        wild byte*:proc_path = "/proc/mounts".to_c_str();
+        wild byte*:mode = "r".to_c_str();
+        
+        wild FILE*:fp = setmntent(proc_path, mode);
+        if (fp == wild_null) {
+            result<array<MountPoint>>:err_result;
+            err_result.is_error = true;
+            err_result.error = "Could not open /proc/mounts";
+            pass(err_result);
+        };
+        
+        defer endmntent(fp); // RAII cleanup
+        
+        array<MountPoint>:list = array<MountPoint>.new();
+        
+        while (true) {
+            wild mntent*:entry = getmntent(fp);
+            if (entry == wild_null) break;
+            
+            // Promotion: Copy wild C-strings to safe Aria Strings
+            MountPoint:mp;
+            mp.device = string.from_c_str(entry->mnt_fsname);
+            mp.path = string.from_c_str(entry->mnt_dir);
+            mp.fstype = string.from_c_str(entry->mnt_type);
+            mp.options = string.from_c_str(entry->mnt_opts);
+            
+            list.push(mp);
+        };
+        
+        result<array<MountPoint>>:success;
+        success.is_error = false;
+        success.value = list;
+        pass(success);
+    };
+};
+
+// Query statistics for a path. Returns TBB types.
+func:get_stats = result<UsageStats>(string:path) {
+    unsafe {
+        stack statvfs_t:buf; // Allocate struct on stack for speed
+        wild byte*:c_path = path.to_c_str();
+        
+        int32:res = statvfs(c_path, &buf);
+        if (res != 0) {
+            result<UsageStats>:err_result;
+            err_result.is_error = true;
+            err_result.error = "statvfs failed";
+            pass(err_result);
+        };
+        
+        // Convert to TBB64. If values are impossibly large, TBB logic 
+        // could be extended here to validate, but we trust the kernel mostly.
+        tbb64:blk_size = buf.f_frsize; 
+        tbb64:total = buf.f_blocks * blk_size;
+        tbb64:free  = buf.f_bfree * blk_size;   // Total free
+        tbb64:avail = buf.f_bavail * blk_size;  // User free
+        
+        // Sticky Error logic: if total is 0 or ERR, this propagates.
+        tbb64:used = total - free;
+        
+        // Calculate percentage for UI
+        flt32:pct = 0.0;
+        if (total > 0) {
+            // TBB to Float conversion
+            pct = (used.to_flt32() / total.to_flt32()) * 100.0;
+        };
+        
+        UsageStats:stats;
+        stats.total_bytes = total;
+        stats.used_bytes = used;
+        stats.avail_bytes = avail;
+        stats.usage_pct = pct;
+        
+        result<UsageStats>:success;
+        success.is_error = false;
+        success.value = stats;
+        pass(success);
+    };
+};
+
+// ============================================================================
+// Module: adf/core.aria
+// Business Logic
+// ============================================================================
+
+// use sys.fs;
+// use std.io;
+
+// Filesystems to ignore to reduce noise
+const array<string>:PSEUDO_FS = [
+    "sysfs", "proc", "devtmpfs", "devpts", "tmpfs", "cgroup", 
+    "pstore", "bpf", "configfs", "debugfs", "tracefs", "autofs",
+    "mqueue", "hugetlbfs", "fusectl", "rpc_pipefs", "overlay"
+];
+
+func:is_interesting = bool(sys.fs.MountPoint:mnt) {
+    // 1. Filter by Type
+    for (string:ignore in PSEUDO_FS) {
+        if (mnt.fstype == ignore) {
+            pass(false);
+        };
+    };
+    
+    // 2. Filter by Path (Snap packages clutter /snap)
+    if (mnt.path.starts_with("/snap")) {
+        pass(false);
+    };
+    if (mnt.path.starts_with("/var/lib/docker")) {
+        pass(false);
+    };
+    
+    pass(true);
+};
+
+// Serialize to stddato (FD 5) using TLV format
+func:emit_data_packet = void(sys.fs.MountPoint:mnt, sys.fs.UsageStats:stats) {
+    // Header: Magic (4) + PathLen (2)
+    std.io.stddato.write_uint32(0xADDA7001); 
+    std.io.stddato.write_uint16(mnt.path.length().to_uint16());
+    
+    // Body: Path String
+    std.io.stddato.write_bytes(mnt.path.to_bytes());
+    
+    // Body: Metrics (Little Endian)
+    // TBB types handled: if ERR, write MAX_UINT64 as sentinel
+    if (stats.total_bytes == ERR) {
+        std.io.stddato.write_uint64(0xFFFFFFFFFFFFFFFF);
+        std.io.stddato.write_uint64(0);
+        std.io.stddato.write_uint64(0);
+    } else {
+        std.io.stddato.write_uint64(stats.total_bytes.to_uint64());
+        std.io.stddato.write_uint64(stats.used_bytes.to_uint64());
+        std.io.stddato.write_uint64(stats.avail_bytes.to_uint64());
+    };
+};
+
+// Telemetry to stddbg (FD 3)
+func:log_telemetry = void(string:event, string:msg) {
+    // Optimization: check if stddbg is /dev/null
+    if (std.io.stddbg.is_null_device()) {
+        pass();
+    };
+    
+    int64:now = std.time.now_ns() ? 0;
+    
+    // Use string concatenation for JSON construction
+    string:json = "{\"ts\": ";
+    json = json + std.string.from_int64(now);
+    json = json + ", \"evt\": \"";
+    json = json + event;
+    json = json + "\", \"msg\": \"";
+    json = json + msg;
+    json = json + "\"}\n";
+    
+    std.io.stddbg.write(json);
+};
+
+// ============================================================================
+// Module: adf/ui.aria
+// Rendering Layer
+// ============================================================================
+
+// use std.math;
+// use std.io;
+
+// ANSI Escape Codes
+const string:RESET = "\033[0m";
+const string:GREEN = "\033[32m";
+const string:YELLOW = "\033[33m";
+const string:RED = "\033[31m";
+
+// IEC Unit suffixes (powers of 1024)
+const array<string>:UNITS = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+
+// Format bytes to human-readable string
+func:format_bytes = string(tbb64:bytes) {
+    // Handle TBB ERR sentinel
+    if (bytes == ERR) {
+        pass("ERR");
+    };
+    
+    flt32:val = bytes.to_flt32() ? 0.0;
+    int32:idx = 0;
+    
+    while (val >= 1024.0 && idx < 5) {
+        val = val / 1024.0;
+        idx = idx + 1;
+    };
+    
+    // Format: " 123.4GiB" (fixed width 9 chars)
+    string:num_part = std.string.format_float(val, 1) ? "0.0";  // 1 decimal place
+    string:result = num_part + UNITS;
+    pass(result);
+};
+
+func:draw_bar = string(flt32:pct, int32:width) {
+    int32:fill_chars = ((pct / 100.0) * (width.to_flt32() ? 0.0)).to_int32() ? 0;
+    if (fill_chars > width) {
+        fill_chars = width;
+    };
+    
+    // Determine Color
+    string:color = GREEN;
+    if (pct >= 90.0) {
+        color = RED;
+    } else if (pct >= 75.0) {
+        color = YELLOW;
+    };
+    
+    // Build bar string
+    string:bar = color;
+    bar = bar + "[";
+    
+    for (int32:i = 0; i < fill_chars; i = i + 1) {
+        bar = bar + "|";
+    };
+    for (int32:i = fill_chars; i < width; i = i + 1) {
+        bar = bar + ".";
+    };
+    
+    bar = bar + "]";
+    bar = bar + RESET;
+    
+    pass(bar);
+};
+
+func:render_header = void() {
+    std.io.stdout.write("Filesystem      Size    Used   Avail Use% Mounted on\n");
+};
+
+func:render_row = void(sys.fs.MountPoint:mnt, sys.fs.UsageStats:stats) {
+    // Format device name (truncate if too long)
+    string:device = mnt.device;
+    if (device.length() > 15) {
+        device = device.substring(0, 12) + "...";
+    };
+    
+    // Pad to 15 chars
+    while (device.length() < 15) {
+        device = device + " ";
+    };
+    
+    // Format sizes
+    string:size_str = format_bytes(stats.total_bytes);
+    string:used_str = format_bytes(stats.used_bytes);
+    string:avail_str = format_bytes(stats.avail_bytes);
+    
+    // Format percentage
+    string:pct_str = (std.string.from_int((stats.usage_pct.to_int32() ? 0)) ? "0") + "%";
+    
+    // Draw progress bar
+    string:bar = draw_bar(stats.usage_pct, 20);
+    
+    // Print row
+    std.io.stdout.write(device);
+    std.io.stdout.write(" ");
+    std.io.stdout.write(size_str);
+    std.io.stdout.write(" ");
+    std.io.stdout.write(used_str);
+    std.io.stdout.write(" ");
+    std.io.stdout.write(avail_str);
+    std.io.stdout.write(" ");
+    std.io.stdout.write(pct_str);
+    std.io.stdout.write(" ");
+    std.io.stdout.write(bar);
+    std.io.stdout.write(" ");
+    std.io.stdout.write(mnt.path);
+    std.io.stdout.write("\n");
+};
+
+// ============================================================================
+// Module: adf.aria
+// Main Entry Point
+// ============================================================================
+
+// use sys.fs;
+// use adf.core;
+// use adf.ui;
+// use std.io;
+
+func:main = int32(array<string>:args) {
+    // Parse arguments (simplified - real impl would handle flags)
+    bool:show_all = false;
+    bool:human_readable = true;
+    
+    // Get mount points
+    result<array<sys.fs.MountPoint>>:mounts_result = sys.fs.get_mounts();
+    if (mounts_result.is_error) {
+        std.io.stderr.write("Error: ");
+        std.io.stderr.write(mounts_result.error);
+        std.io.stderr.write("\n");
+        pass(1);
+    };
+    
+    array<sys.fs.MountPoint>:all_mounts = mounts_result.value;
+    
+    // Log telemetry
+    adf.core.log_telemetry("startup", "adf started");
+    
+    // Render UI header
+    adf.ui.render_header();
+    
+    // Process each mount point
+    for (sys.fs.MountPoint:mnt in all_mounts) {
+        // Filter pseudo filesystems
+        if (!show_all && !adf.core.is_interesting(mnt)) {
+            continue;
+        };
+        
+        // Query statistics
+        result<sys.fs.UsageStats>:stats_result = sys.fs.get_stats(mnt.path);
+        
+        if (stats_result.is_error) {
+            // Log error but continue
+            adf.core.log_telemetry("stat_error", mnt.path);
+            continue;
+        };
+        
+        sys.fs.UsageStats:stats = stats_result.value;
+        
+        // Render to stdout (UI)
+        adf.ui.render_row(mnt, stats);
+        
+        // Emit to stddato (Data Plane)
+        adf.core.emit_data_packet(mnt, stats);
+    };
+    
+    // Log completion
+    adf.core.log_telemetry("complete", "adf finished");
+    
+    pass(0);
+};
+
+// ============================================================================
+// Downstream Utilities
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Module: df_filter.aria
+// Filter disk usage entries by threshold
+// ----------------------------------------------------------------------------
+
+// use std.io;
+
+func:main = int32(array<string>:args) {
+    // Parse threshold (e.g., --threshold 90)
+    flt32:threshold = 90.0;
+    
+    // Read from stddati (binary stream)
+    while (true) {
+        // Read header: Magic (4) + PathLen (2)
+        result<uint32>:magic_result = std.io.stddati.read_uint32();
+        if (magic_result.is_error) break;
+        
+        uint32:magic = magic_result.value;
+        if (magic != 0xADDA7001) {
+            std.io.stderr.write("Invalid magic number\n");
+            pass(1);
+        };
+        
+        result<uint16>:pathlen_result = std.io.stddati.read_uint16();
+        if (pathlen_result.is_error) break;
+        
+        uint16:path_len = pathlen_result.value;
+        
+        // Read path
+        result<array<byte>>:path_result = std.io.stddati.read_bytes(path_len.to_int32());
+        if (path_result.is_error) break;
+        
+        string:path = string.from_bytes(path_result.value);
+        
+        // Read metrics
+        result<uint64>:total_result = std.io.stddati.read_uint64();
+        result<uint64>:used_result = std.io.stddati.read_uint64();
+        result<uint64>:avail_result = std.io.stddati.read_uint64();
+        
+        if (total_result.is_error || used_result.is_error || avail_result.is_error) break;
+        
+        uint64:total = total_result.value;
+        uint64:used = used_result.value;
+        uint64:avail = avail_result.value;
+        
+        // Calculate percentage
+        flt32:pct = 0.0;
+        if (total > 0) {
+            pct = (used.to_flt32() / total.to_flt32()) * 100.0;
+        };
+        
+        // Filter based on threshold
+        if (pct >= threshold) {
+            // Pass through to stddato
+            std.io.stddato.write_uint32(magic);
+            std.io.stddato.write_uint16(path_len);
+            std.io.stddato.write_bytes(path.to_bytes());
+            std.io.stddato.write_uint64(total);
+            std.io.stddato.write_uint64(used);
+            std.io.stddato.write_uint64(avail);
+            
+            // Also print warning to stdout
+            std.io.stdout.write("WARNING: ");
+            std.io.stdout.write(path);
+            std.io.stdout.write(" is ");
+            std.io.stdout.write(std.string.from_int(pct.to_int32()));
+            std.io.stdout.write("% full\n");
+        };
+    };
+    
+    pass(0);
+};
+
+// ----------------------------------------------------------------------------
+// Module: df_alert.aria
+// Alert on low disk space
+// ----------------------------------------------------------------------------
+
+// use std.io;
+
+func:main = int32(array<string>:args) {
+    bool:alert_triggered = false;
+    
+    // Read from stddati
+    while (true) {
+        // Read TLV packet
+        result<uint32>:magic_result = std.io.stddati.read_uint32();
+        if (magic_result.is_error) break;
+        
+        uint32:magic = magic_result.value;
+        if (magic != 0xADDA7001) break;
+        
+        result<uint16>:pathlen_result = std.io.stddati.read_uint16();
+        if (pathlen_result.is_error) break;
+        
+        uint16:path_len = pathlen_result.value;
+        
+        result<array<byte>>:path_result = std.io.stddati.read_bytes(path_len.to_int32());
+        if (path_result.is_error) break;
+        
+        string:path = string.from_bytes(path_result.value);
+        
+        // Skip metrics (we just need to know something passed the filter)
+        std.io.stddati.skip(24); // 3 * uint64
+        
+        // Trigger alert
+        alert_triggered = true;
+        
+        // Send alert (simplified - real impl would use notification system)
+        std.io.stdout.write("ALERT: Disk space critical on ");
+        std.io.stdout.write(path);
+        std.io.stdout.write("\n");
+    };
+    
+    if (alert_triggered) {
+        pass(1); // Exit with error code to signal alert
+    } else {
+        pass(0);
+    };
+};
+
+// ============================================================================
+// Example Pipeline Usage
+// ============================================================================
+//
+// # Show all filesystems with human-readable sizes
+// adf
+//
+// # Binary output only (no UI)
+// adf 2>/dev/null 5> disk_stats.bin
+//
+// # Filter filesystems over 90% full
+// adf | df_filter --threshold 90
+//
+// # Alert on critical disk usage
+// adf | df_filter --threshold 95 | df_alert
+//
+// # Combined: UI + filter + alert with telemetry
+// adf 3> telemetry.log | df_filter --threshold 90 | df_alert
+//
+// ============================================================================
+
+// ============================================================================
+// END OF CORRECTED DF IMPLEMENTATION
+// ============================================================================

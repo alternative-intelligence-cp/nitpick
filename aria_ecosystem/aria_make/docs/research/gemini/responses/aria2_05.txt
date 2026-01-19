@@ -1,0 +1,532 @@
+﻿Architectural Specification: Configuration Schema Validation System for AriaBuild
+1. Executive Summary
+The integrity of a build system is foundational to the software development lifecycle. In the context of the Aria programming language ecosystem, aria_make serves as the primary orchestration tool, translating high-level project definitions into executable artifacts. Currently, the aria_make infrastructure relies on a ConfigParser that enforces syntactic correctness—ensuring that build.aria files adhere to the JSON-derivative Aria Build Configuration (ABC) format—but fails to verify semantic validity. This architectural gap permits structurally malformed, logically inconsistent, or incomplete configurations to permeate the build pipeline, resulting in late-stage failures that are often obscure, cryptic, and frustrating for the developer.
+This report presents a comprehensive architectural specification for a Configuration Schema Validation System designed to remediate these deficiencies. The proposed system introduces a distinct ConfigValidator phase into the aria_make compilation pipeline, situated immediately post-parsing and pre-execution. This validator operates on the principles of Fail-Fast and Fail-Friendly, utilizing static analysis techniques to enforce a rigorous schema upon the Abstract Syntax Tree (AST) generated from the configuration file.
+The specification defines a strict yet ergonomic schema for the project, variables, and targets sections of the build configuration. It details the implementation of a bespoke, zero-dependency C++17 validator class that leverages the Visitor pattern to traverse the AST. Key features of this design include automatic type coercion for user convenience (e.g., promoting single strings to arrays), algorithmic typo detection using Levenshtein distance to suggest corrections for unknown fields, and a semantic analysis layer that verifies referential integrity within the dependency graph.
+By adopting this specification, aria_make will evolve from a passive execution engine into an intelligent build assistant. The resulting system will guarantee that any build process initiated with a valid configuration is semantically sound, thereby reducing the "Time to First Error" and significantly enhancing the developer experience (DX). This report provides the theoretical framework, detailed design, implementation strategy, and testing protocols required to realize this vision within the estimated timeline of 1-2 hours of engineering effort for the initial prototype, scaling to a robust production-grade system.
+________________
+2. Theoretical Framework and Design Philosophy
+To architect a robust validation system, one must first establish the theoretical underpinnings that govern configuration management in modern build systems. The design of the ConfigValidator is not merely an exercise in coding defensive checks; it is an application of formal language theory and usability engineering.
+2.1 The Hierarchy of Correctness
+In language processing, correctness is stratified into distinct layers. The current aria_make implementation satisfies only the first layer, leaving the subsequent layers undefined and unchecked.
+1. Lexical Correctness: The input stream consists of valid tokens (identifiers, literals, symbols). This is handled by the Lexer.
+2. Syntactic Correctness: The tokens form a valid structure according to the grammar (e.g., proper nesting of braces, correct key-value delimiters). This is currently handled by the ConfigParser.
+3. Structural (Schema) Correctness: The structured data adheres to a defined schema. Required fields are present; fields have the correct data types (e.g., version is a string, not an integer); and arrays contain uniform elements. This is the primary domain of the proposed ConfigValidator.
+4. Semantic Correctness: The values within the valid structure make logical sense in the context of the domain. For example, a dependency named in depends_on must actually exist in the targets list; a file path in output must be writable. This is the secondary domain of the ConfigValidator.
+2.2 Configuration as Data vs. Configuration as Code
+AriaBuild adopts the "Configuration as Data" philosophy. Unlike "Configuration as Code" (e.g., using Python or Lua for builds), where the configuration file is an imperative script capable of arbitrary execution, "Configuration as Data" relies on declarative structures. This distinction is crucial for validation. Because the configuration is declarative data, it is finite and fully knowable via static analysis. We do not need to execute the config to validate it; we only need to inspect its state. This allows for extremely fast validation (< 5ms) and deterministic results.
+2.3 The "Fail-Friendly" Imperative
+A primary objective of this research is to improve the error reporting mechanism. A build system is often the first tool a developer interacts with. If the error messages are hostile (e.g., Segmentation fault or KeyError: 'name'), user trust is eroded. A "Fail-Friendly" system must:
+* Locate: Point to the exact line and column of the error.
+* Explain: State clearly why the input is invalid (e.g., "Expected a String, got an Integer").
+* Suggest: Offer a path to resolution (e.g., "Did you mean 'dependencies'?").
+2.4 Zero-Dependency Architecture
+Given the constraints of the Aria runtime environment, adding heavy external dependencies like nlohmann/json-schema-validator 2 or valijson is undesirable. These libraries often bring significant compile-time overhead and binary bloat. Furthermore, they are designed for standard JSON and may not natively support the ABC format's idiosyncrasies (like unquoted keys or comments). Therefore, the recommended approach is Option B: Custom Validator. This allows for tight integration with the existing AST classes, optimal performance, and no external dependencies, aligning with the "batteries included" philosophy of Aria.
+________________
+3. The Aria Build Configuration (ABC) Schema Specification
+This section defines the canonical schema for build.aria files. This definition serves as the "truth" against which the validator operates. The schema is divided into three top-level sections: project, variables, and targets.
+3.1 The Project Section
+The project object encapsulates global metadata about the software being built. This data is essential not just for the build process, but for future packaging, versioning, and distribution tooling.
+Schema Definition:
+
+
+JavaScript
+
+
+
+
+project: {
+   name: string,       // REQUIRED. The identifier of the project.
+                       // Constraint: Non-empty, valid alphanumeric identifier.
+   
+   version: string,    // REQUIRED. The release version.
+                       // Constraint: Must follow Semantic Versioning 2.0.0 (X.Y.Z).
+   
+   description: string,// OPTIONAL. A human-readable summary.
+                       // Constraint: None (free text).
+   
+   author: string,     // OPTIONAL. Contact info for the maintainer.
+                       // Constraint: None.
+   
+   test_mode: enum     // OPTIONAL. execution strategy for tests.
+                       // Values: "jit", "interpreter"
+                       // Default: "jit"
+}
+
+Rationale:
+* name: Essential for generating default binary names and for package registry identification.
+* version: Enforcing SemVer 3 at the build level prevents downstream dependency hell. If a developer tries to release version "beta-1", the build should fail and prompt for "0.1.0-beta.1".
+* test_mode: As identified in previous research, the Aria runtime supports both JIT compilation and an interpreter. Tests should default to JIT to match production behavior, but the interpreter is useful for debugging compiler crashes.1
+3.2 The Variables Section
+The variables section acts as a symbol table for string interpolation. It allows users to define reusable constants (e.g., src_dir, cc_flags).
+Schema Definition:
+
+
+JavaScript
+
+
+
+
+variables: {
+   [key: string]: string  // OPTIONAL. Dynamic key-value pairs.
+                          // Constraint: Keys must be valid identifiers.
+                          // Constraint: Values must be strings.
+}
+
+Rationale:
+* Type Constraint: Currently, AriaBuild's interpolation engine (&{var}) handles string substitution. Allowing arrays or objects here would complicate the substitution logic without immediate benefit. Therefore, the schema strictly enforces string values for all variables.
+3.3 The Targets Section
+The targets array defines the directed acyclic graph (DAG) of build artifacts. Each object in this array represents a node in the graph.
+Schema Definition:
+
+
+JavaScript
+
+
+
+
+targets:.
+       
+       output: string,         // REQUIRED. Path to the generated artifact.
+                               // Constraint: Valid file path syntax.
+       
+       depends_on: array,      // OPTIONAL. Dependencies on other targets.
+                               // Constraint: Must reference valid target `name`s.
+       
+       flags: string|array,    // OPTIONAL. Compiler flags (e.g., "-O3").
+                               // Coercion: "-O3" -> ["-O3"].
+       
+       libraries: array,       // OPTIONAL. System libraries for FFI linking.
+                               // Constraint: List of strings (e.g., ["curl", "m"]).
+       
+       lib_search_paths: array // OPTIONAL. Paths to search for system libs.
+                               // Constraint: List of valid directory paths.
+   }
+]
+
+Rationale:
+* type: Restricting this to an enum prevents typo-induced build logic failures (e.g., type: "binary" failing silently in the backend).
+* sources: The "String or Array" flexibility is a key ergonomic feature. For single-file programs, sources: "main.aria" is cleaner than sources: ["main.aria"]. The schema explicitly permits this.
+* output: Mandatory because AriaBuild does not assume directory structures.
+* libraries & lib_search_paths: These are critical for the FFI linking architecture enhancements. They must be validated as arrays of strings.
+________________
+4. Architectural Design of the Validator Subsystem
+The ConfigValidator acts as a gatekeeper between the ConfigParser and the BuildContext. It is designed to be stateless and side-effect-free, accepting an AST and returning a validation report.
+4.1 Integration Pipeline
+The validation step is injected into the main build lifecycle:
+1. Read: Load build.aria content.
+2. Lex/Parse: ConfigParser::parse() produces a BuildFileAST.
+   * Result: A tree of ProjectNode, VariablesNode, TargetsNode, composed of ObjectNode, ArrayNode, StringNode, etc.
+3. Validate: ConfigValidator::validate(ast) traverses the AST.
+   * Result: A ValidationResult containing errors and warnings.
+4. Decision:
+   * If errors.size() > 0: Print errors and exit (Return Code 1).
+   * If warnings.size() > 0: Print warnings and proceed.
+   * Else: Proceed.
+5. Build: BuildScheduler initializes using the validated AST.
+4.2 Class Design and API
+The class design utilizes the Visitor Pattern 4 to traverse the heterogeneous AST nodes. This allows the validation logic to be separated from the AST data structures, adhering to the Open/Closed Principle.
+
+
+C++
+
+
+
+
+/**
+* @class ConfigValidator
+* @brief Semantic validator for the Aria Build Configuration AST.
+* 
+* Implements the Visitor pattern to traverse the AST and enforce schema constraints.
+*/
+class ConfigValidator : public aria::config::ASTVisitor {
+public:
+   struct ValidationError {
+       std::string message;
+       std::string suggestion; // Optional: "Did you mean...?"
+       std::string context;    // Optional: "In target 'app'"
+       int line;
+       int column;
+   };
+
+   struct ValidationResult {
+       std::vector<ValidationError> errors;
+       std::vector<std::string> warnings;
+       
+       bool isValid() const { return errors.empty(); }
+   };
+
+   // Main Entry Point
+   ValidationResult validate(const BuildFileAST* ast);
+
+private:
+   // --- Visitor Implementation ---
+   void visit(const ProjectNode* node) override;
+   void visit(const VariablesNode* node) override;
+   void visit(const TargetsNode* node) override;
+   
+   // --- Internal Validation Logic ---
+   void validateProjectFields(const ObjectNode* obj);
+   void validateTargetObject(const ObjectNode* obj, size_t index);
+   
+   // Checks if a required field exists and has the correct type
+   bool requireField(const ObjectNode* obj, const std::string& fieldName, 
+                     NodeType expectedType, const std::string& context);
+   
+   // Checks if an optional field has the correct type (if present)
+   void checkOptionalField(const ObjectNode* obj, const std::string& fieldName, 
+                           NodeType expectedType, const std::string& context);
+
+   // Validates enum values against a permitted set
+   void validateEnum(const ASTNode* node, const std::string& fieldName, 
+                     const std::set<std::string>& allowedValues);
+
+   // --- Semantic Check Helpers ---
+   void checkDuplicateTargetNames();
+   void checkDependencyReferences(); // Verifies 'depends_on' links
+   
+   // --- State ---
+   ValidationResult result_;
+   std::set<std::string> declaredTargetNames_;
+   std::vector<std::pair<std::string, const ASTNode*>> dependencyReferences_;
+};
+
+4.3 Data Structures for Validation Rules
+To avoid hardcoding logic for every field, the validator can utilize a data-driven approach for field definitions using static maps or sets.
+
+
+C++
+
+
+
+
+// Static definitions of valid fields for typo detection
+static const std::set<std::string> VALID_PROJECT_FIELDS = {
+   "name", "version", "description", "author", "test_mode"
+};
+
+static const std::set<std::string> VALID_TARGET_FIELDS = {
+   "name", "type", "sources", "output", "depends_on", 
+   "flags", "libraries", "lib_search_paths"
+};
+
+static const std::set<std::string> VALID_TARGET_TYPES = {
+   "executable", "static_library", "shared_library", "test"
+};
+
+________________
+5. Algorithmic Core and Implementation Details
+This section details the specific algorithms required to implement the validation logic, addressing the "HOW" of the specification.
+5.1 Levenshtein Distance for Typo Detection
+To provide "Did you mean?" suggestions, we implement the Wagner-Fischer algorithm for Levenshtein distance.6 Since configuration keys are short strings, we can optimize the space complexity from $O(MN)$ to $O(min(M,N))$ by using only two rows for the dynamic programming matrix.
+Implementation Logic:
+1. When an unknown field key is encountered in an ObjectNode.
+2. Iterate through the VALID_X_FIELDS set.
+3. Calculate the edit distance between the unknown key and each valid key.
+4. If the distance is below a threshold (e.g., distance <= 2 or distance < len/3), add it to a list of candidates.
+5. Select the best candidate (lowest distance) and attach it to the Warning message.
+C++17 Implementation Snippet:
+
+
+C++
+
+
+
+
+size_t levenshtein_distance(std::string_view s1, std::string_view s2) {
+   const size_t m = s1.size();
+   const size_t n = s2.size();
+   if (m == 0) return n;
+   if (n == 0) return m;
+
+   std::vector<size_t> costs(n + 1);
+   std::iota(costs.begin(), costs.end(), 0);
+
+   for (size_t i = 0; i < m; ++i) {
+       size_t prev = costs;
+       costs = i + 1;
+       for (size_t j = 0; j < n; ++j) {
+           size_t temp = costs[j + 1];
+           if (s1[i] == s2[j]) {
+               costs[j + 1] = prev;
+           } else {
+               costs[j + 1] = std::min({prev, costs[j], costs[j + 1]}) + 1;
+           }
+           prev = temp;
+       }
+   }
+   return costs[n];
+}
+
+5.2 SemVer Validation Algorithm
+The project.version field must be validated against the Semantic Versioning 2.0.0 specification.3 While full SemVer parsing can be complex, a regex-based approach is sufficient for validation purposes.
+Regex Pattern:
+^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
+Logic:
+The validator utilizes std::regex (available in C++11 and later) to match the version string against this pattern. If the match fails, an error "Field 'version' must follow SemVer 2.0.0 format (e.g., 1.0.0)" is generated.
+5.3 Semantic Validation: Graph Integrity
+Validating the dependency graph requires a two-pass approach within the validator.
+1. Pass 1 (Harvesting): As the validator visits each TargetNode, it collects the name into the declaredTargetNames_ set. It simultaneously validates that the name is unique; if it's already in the set, a "Duplicate Target Name" error is recorded immediately.
+2. Pass 2 (Verification): As the validator visits the depends_on array of a target, it stores the referenced name and the source AST node in dependencyReferences_.
+3. Resolution: After the entire AST has been traversed (in validate()), the validator iterates through dependencyReferences_. For each reference, it checks if the name exists in declaredTargetNames_. If not, a "Dangling Dependency" error is recorded, pointing to the line number of the dependency string in the config file.
+5.4 Type Coercion Strategy
+The "Permissive" type checking strategy is implemented via logical helpers. The validator allows specific fields to accept either a StringNode or an ArrayNode.
+Logic:
+
+
+C++
+
+
+
+
+bool isTypeOrArrayOf(const ASTNode* node, NodeType type) {
+   if (node->type == type) return true;
+   if (node->type == NodeType::ARRAY) {
+       const ArrayNode* arr = static_cast<const ArrayNode*>(node);
+       // Check if all elements are of 'type'
+       for (const auto& elem : arr->elements) {
+           if (elem->type!= type) return false;
+       }
+       return true;
+   }
+   return false;
+}
+
+If this check passes, the validation succeeds. The transformation (String -> Single Element Array) is implicitly handled here by acknowledging validity; the actual structural transformation usually happens in the ConfigParser or the BuildContext builder to keep the AST immutable during validation. However, marking it valid here is the critical step.
+________________
+6. Validation Rules Matrix
+The following table summarizes the comprehensive rule set enforced by the ConfigValidator.
+Context
+	Field
+	Required
+	Allowed Types
+	Constraints
+	Coercion
+	Default
+	Project
+	name
+	Yes
+	String
+	Non-empty, Identifier chars
+	No
+	-
+	
+
+	version
+	Yes
+	String
+	SemVer Regex
+	No
+	-
+	
+
+	test_mode
+	No
+	String
+	Enum: jit, interpreter
+	No
+	jit
+	
+
+	Unknown
+	-
+	-
+	Warning + Typo Suggestion
+	-
+	-
+	Variables
+	*
+	No
+	String
+	Keys: Identifiers
+	No
+	-
+	Targets
+	name
+	Yes
+	String
+	Unique in file
+	No
+	-
+	
+
+	type
+	Yes
+	String
+	Enum: executable, static_library, shared_library, test
+	No
+	-
+	
+
+	sources
+	Yes
+	String, Array
+	Non-empty
+	Yes
+	-
+	
+
+	output
+	Yes
+	String
+	Valid path syntax
+	No
+	-
+	
+
+	depends_on
+	No
+	Array
+	Must refer to existing target
+	Yes
+	``
+	
+
+	flags
+	No
+	String, Array
+	-
+	Yes
+	``
+	
+
+	libraries
+	No
+	Array
+	-
+	No
+	``
+	
+
+	lib_search_paths
+	No
+	Array
+	-
+	No
+	``
+	
+
+	Unknown
+	-
+	-
+	Warning + Typo Suggestion
+	-
+	-
+	________________
+7. Error Reporting and User Experience
+The quality of error messages determines the usability of the build tool. This system generates structured, contextual errors.
+7.1 Error Message Templates
+Template 1: Type Mismatch
+ERROR: Type Mismatch at build.aria:22:15
+Field 'targets.sources' expects a String or Array of Strings.
+Found: Integer (42)
+Template 2: Invalid Enum
+ERROR: Invalid Value at build.aria:30:12
+Field 'targets.type' has invalid value "binary".
+Allowed values are:
+- executable
+- static_library
+- shared_library
+- test
+Template 3: Unknown Field (Typo)
+WARNING: Unknown Field at build.aria:18:8
+Field 'compiler' is not recognized in target 'app'.
+Did you mean 'flags'?
+Template 4: Dangling Dependency
+ERROR: Invalid Dependency at build.aria:45:20
+Target 'app' depends on 'libfoo', which is not defined in this configuration.
+7.2 Severity Levels
+* ERROR: Blocking. The build cannot proceed safely. (e.g., wrong types, missing fields).
+* WARNING: Non-blocking. The build might succeed, but the configuration is suspicious (e.g., unknown fields, empty arrays).
+________________
+8. Implementation Guide
+8.1 Header Specification
+The following C++17 header defines the interface for the validator.
+
+
+C++
+
+
+
+
+// include/build/config_validator.h
+#pragma once
+
+#include "parser/ast.h"
+#include <vector>
+#include <string>
+#include <set>
+#include <map>
+
+namespace aria::build {
+
+enum class ValidationSeverity { ERROR, WARNING };
+
+struct ValidationIssue {
+   ValidationSeverity severity;
+   std::string message;
+   std::string filename;
+   int line;
+   int column;
+   
+   std::string toString() const;
+};
+
+class ConfigValidator : public aria::parser::ASTVisitor {
+public:
+   ConfigValidator() = default;
+   
+   // Returns true if no ERRORS were found (warnings are ok)
+   bool validate(const std::shared_ptr<aria::parser::BuildFileAST>& ast);
+   
+   const std::vector<ValidationIssue>& getIssues() const { return issues_; }
+
+private:
+   // AST Traversal
+   void visit(const aria::parser::ProjectNode* node) override;
+   void visit(const aria::parser::VariablesNode* node) override;
+   void visit(const aria::parser::TargetsNode* node) override;
+
+   // Helpers
+   void validateTarget(const aria::parser::ObjectNode* target, int index);
+   void reportError(const std::string& msg, const aria::parser::ASTNode* node);
+   void reportWarning(const std::string& msg, const aria::parser::ASTNode* node);
+   
+   // Data
+   std::vector<ValidationIssue> issues_;
+   std::set<std::string> definedTargets_;
+   // Store dependency refs for second-pass validation: <TargetName, Node>
+   std::vector<std::pair<std::string, const aria::parser::ASTNode*>> dependencyRefs_;
+};
+
+} // namespace aria::build
+
+8.2 Unknown Field Handling Strategy
+The system adopts a Permissive Mode with Warnings.
+* Rationale: Strict mode (Error on unknown) makes forward compatibility difficult. If a newer aria_make introduces a compression_level field, an older aria_make running on that config would crash if strict. By warning, we alert the user to potential typos while allowing the build to proceed if the field is simply "future-proofing" or ignored metadata.
+* Implementation: In validateTarget, iterate over all keys in the object. If a key is not in VALID_TARGET_FIELDS, calculate Levenshtein distance. If close match found, report Warning with suggestion. If no match, report Warning "Unknown field ignored".
+________________
+9. Testing Strategy
+A robust validation system requires rigorous testing to ensure it catches invalid configs without flagging valid ones.
+9.1 Unit Test Cases
+1. Golden Path: A perfectly valid build.aria with all fields, mixed string/array inputs, and comments. -> Expect SUCCESS.
+2. Missing Project Name: Config with empty project block. -> Expect ERROR.
+3. Invalid SemVer: version: "v1.0". -> Expect ERROR (regex mismatch).
+4. Enum Violation: type: "dll". -> Expect ERROR with list of allowed types.
+5. Type Coercion: sources: "main.aria". -> Expect SUCCESS.
+6. Typo Detection: dependences: [...]. -> Expect WARNING "Did you mean 'dependencies'?".
+7. Deep Type Mismatch: flags: . -> Expect ERROR "Element at index 0 must be string".
+9.2 Integration Testing
+* Graph Cycles: Define A->B, B->A. While ConfigValidator checks existence, the BuildScheduler handles cycle detection. Verify that ConfigValidator passes this (valid schema, invalid logic handled later) OR extend ConfigValidator to perform a topological sort check if immediate feedback is desired.
+* Performance: Run validation on a synthetic 10,000-line config. Ensure execution time remains < 100ms (given linear complexity $O(N)$ of traversal).
+________________
+10. Conclusion
+The specification presented herein details a robust, secure, and user-friendly configuration validation system for aria_make. By adhering to the "Schema Validation" tier of correctness, AriaBuild will eliminate a broad class of runtime errors, providing developers with immediate, actionable feedback on their build configurations. The use of the Visitor pattern ensures the system is extensible for future schema changes, while the custom C++ implementation guarantees high performance and zero external dependencies. This design meets all stated objectives and constraints, positioning AriaBuild as a mature, enterprise-grade build tool.
+Works cited
+1. compiled.txt
+2. JSON schema validator for JSON for Modern C++ - GitHub, accessed December 21, 2025, https://github.com/pboettch/json-schema-validator
+3. Semantic Versioning 2.0.0 | Semantic Versioning, accessed December 21, 2025, https://semver.org/
+4. C++ Visitor Design Pattern: A Comprehensive Deep Dive | by Chetanp Verma - Medium, accessed December 21, 2025, https://medium.com/@chetanp.verma98/c-visitor-design-pattern-a-comprehensive-deep-dive-ba71a13209bf
+5. CS453 Abstract Syntax tree (AST) Visitor patterns, accessed December 21, 2025, https://www.cs.colostate.edu/~cs453/yr2014/Slides/10-AST-visitor.ppt.pdf
+6. Using the Levenshtein distance in a spell checker - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/5398722/using-the-levenshtein-distance-in-a-spell-checker
+7. Most efficient way to calculate Levenshtein distance - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/3183149/most-efficient-way-to-calculate-levenshtein-distance

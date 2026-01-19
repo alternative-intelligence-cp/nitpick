@@ -1,0 +1,342 @@
+﻿Architectural Specification: Cross-Platform FileWatcher Subsystem for AriaBuild and AriaLS
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language ecosystem, currently navigating the critical transition from version v0.0.7 toward the v0.1.0 milestone, necessitates a fundamental evolution in its development infrastructure. While the core compiler infrastructure has achieved stability in generating LLVM Intermediate Representation (IR) and the aria_make build system successfully orchestrating deterministic, graph-based compilations 1, the focus of architectural development must now shift decisively toward developer velocity and the "Inner Development Loop."
+In the contemporary landscape of systems software engineering, the viability of a programming language is predicated not merely on the efficiency of its generated machine code or the theoretical elegance of its type system, but significantly on the responsiveness of its tooling. The "Inner Loop"—the iterative cycle of writing code, building artifacts, executing tests, and debugging failures—constitutes the primary constraint on developer productivity. Latency in this loop disrupts cognitive flow, introduces friction, and ultimately hinders adoption.
+Currently, the Aria build ecosystem operates primarily as a transient, on-demand utility. aria_make requires manual invocation after every source code modification.1 Similarly, the Aria Language Server (AriaLS), while transitioning to a sophisticated multi-threaded architecture to handle document synchronization and semantic analysis 1, lacks a unified mechanism to monitor the broader file system for external changes—such as git checkouts, code generation by external tools, or dependency updates in the aria.toml manifest. To bridge this gap and achieve parity with modern tooling standards exemplified by Rust's cargo watch, Go's air, or the TypeScript compiler's watch mode, the Aria ecosystem must integrate a resident, high-performance FileWatcher Subsystem.
+This report presents an exhaustive architectural specification for this subsystem. It addresses the formidable engineering challenge of unifying disparate operating system primitives—Linux's inode-based inotify, macOS's path-based FSEvents, and Windows's directory-based ReadDirectoryChangesW—into a coherent, type-safe C++17 interface.1 The specification details the resolution of critical platform-specific anomalies, such as the recursive deficit of inotify, the "mkdir -p" race condition, and the buffer overflow hazards of Windows asynchronous I/O. Furthermore, it articulates the integration of this subsystem with the BuildScheduler and DependencyGraph engines, ensuring that file system events trigger precise, incremental recompilations that respect the strict dependency ordering of the Aria module system. Finally, it aligns these implementations with Aria's unique features, including Twisted Balanced Binary (TBB) arithmetic for timestamp calculations and the "Six-Stream" I/O topology for observability.1
+2. Theoretical Framework: The Physics of File Observation
+To architect a robust file watching system, one must first deconstruct the underlying mechanisms by which operating systems track and report mutations to the file system. Unlike file Input/Output (I/O), which is reasonably abstracted by the C++17 std::filesystem library or the POSIX standard, filesystem observation lacks a unified interface, forcing the implementation to interact directly with divergent kernel subsystems that operate on fundamentally different theoretical models.
+2.1 The Taxonomy of Observation Primitives
+The fundamental difficulty in cross-platform file watching lies in the variance of the "unit of observation" and the semantic guarantees provided by the kernel. We can categorize the major operating systems into three distinct theoretical models:
+1. The Inode-Centric Model (Linux/inotify):
+In the Linux kernel, the unit of observation is the Inode. The inotify subsystem allows a process to place a watch on a specific inode associated with a directory. This model is conceptually "flat." It is non-recursive by design; watching a directory only reports events for the immediate children (files or subdirectories) linked within that directory. It does not report events in sub-subdirectories unless those inodes are explicitly watched as well.3 This creates a massive state management burden in user space, necessitating a "Tree Walker" that mirrors the filesystem structure in memory.
+2. The Path-Hierarchy Model (macOS/FSEvents):
+Apple's FSEvents API operates on the Directory Hierarchy. It is natively recursive and log-based. Rather than reporting "Inode X changed," it reports "Something changed in the path /A/B/C." The kernel maintains a persistent log of file system events (stored in .fseventsd), and the API allows applications to replay these events or subscribe to new ones.4 This model is highly efficient for watching large trees but provides less granularity than inotify, often requiring the user-space application to scan the changed directory to determine the exact file that was modified.
+3. The Handle-Centric Model (Windows/ReadDirectoryChangesW):
+The Windows NT kernel operates on the Directory Handle. The ReadDirectoryChangesW API allows an application to open a handle to a root directory and issue an overlapped I/O request to monitor that directory and its entire subtree (bWatchSubtree = TRUE).5 While this supports deep recursion natively, it is fundamentally a buffer-based transaction. The kernel fills a user-provided buffer with event records. If the filesystem activity exceeds the throughput of the user-space reader, the fixed-size buffer overflows, leading to data loss.6
+2.2 The Consistency Requirement and "Eventual Truth"
+For a build system like aria_make, the FileWatcher must provide Strong Eventual Consistency. If a file is modified, created, or deleted, the system must eventually trigger a rebuild of the affected dependency graph.
+   * Acceptable Latency: It is acceptable to coalesce multiple rapid edits (e.g., the intermediate states of a file being written to disk) into a single build trigger. This is the principle of "Debouncing."
+   * Unacceptable Loss: It is unacceptable to drop an event entirely ("Silence"). Dropped events lead to "Stale Artifacts," where the binary does not reflect the source code. This is a catastrophic failure mode for a compiler, as it creates unreproducible bugs that erode developer trust.
+Therefore, the architecture must implement a multi-layered defense strategy:
+   1. Kernel Buffering: Configuring OS-level buffers to their maximum safe limits.
+   2. User-Space Queueing: Decoupling the event consumption (OS callback) from event processing (Build Scheduler) via high-performance, thread-safe queues.1
+   3. Resilience Modes: Implementing "Panic Modes" where, upon detecting buffer overflows or ambiguous error states (IN_Q_OVERFLOW on Linux, lpBytesReturned == 0 on Windows), the system abandons the event stream and falls back to a full filesystem scan ("Safe Mode") to restore truth.1
+2.3 Integration with Aria's "Six-Stream" Topology
+A unique constraint of the Aria ecosystem is the "Six-Stream" I/O topology defined in.1 Standard applications use stdout and stderr. Aria introduces stddbg (FD 3) for structured telemetry and stddati/stddato (FD 4/5) for raw data pipes. The FileWatcher must be rigorously integrated with this topology.
+   * Logging: Debug logs (e.g., "Watcher started on /src") must be routed exclusively to stddbg. Routing them to stdout would corrupt the output of build tools designed to be piped into other processes.
+   * Errors: Critical failures (e.g., "Permission denied on /src/secret") utilize stderr.
+   * Data: If the watcher is used in a "pipe mode" (e.g., aria_watch | build_tool), the file paths should be emitted to stddato or stdout depending on the configuration, ensuring binary cleanliness.
+3. Architectural Design: The FileWatcher Interface
+The FileWatcher is engineered as a standalone, polymorphic component within the aria::build namespace. It encapsulates the platform-specific implementations using the Pimpl (Pointer to Implementation) idiom, ensuring that the BuildScheduler remains completely platform-agnostic while adhering to C++17 RAII principles.
+3.1 The Observer Pattern and Asynchronous Dispatch
+The interaction between the watcher and the build system is modeled on the Asynchronous Observer Pattern. The FileWatcher acts as the event producer (Subject), and the BuildScheduler acts as the consumer (Observer). Unlike synchronous callbacks which block the emitter, the Aria watcher utilizes a concurrent dispatch mechanism.
+To maintain strict architectural layering and testability, the FileWatcher does not hold a direct reference to the BuildScheduler class. Instead, it accepts a generic std::function callback during its initialization. This design decision effectively decouples the watching logic from the building logic, allowing the FileWatcher to be utilized in other tools—such as the Language Server for workspace synchronization or the aria_sh shell—without introducing circular dependencies.1
+
+
+C++
+
+
+
+
+namespace aria::build {
+
+   // Detailed event types allow the Scheduler to optimize its response
+   enum class EventType {
+       Created,    // Re-evaluate glob patterns
+       Modified,   // Re-compile specific targets
+       Deleted,    // Invalidate targets and re-evaluate globs
+       Renamed,    // Complex: treat as Delete + Create
+       Overflow    // Critical: Signals lost events, triggers full rescan
+   };
+
+   struct FileEvent {
+       EventType type;
+       std::string path; // Absolute path
+       // TBB-based timestamp for high-precision comparison
+       // Maps to Aria's tbb64 time representation
+       int64_t timestamp_ticks; 
+   };
+
+   // Callback signature: Batch processing for efficiency
+   using WatchCallback = std::function<void(const std::vector<FileEvent>&)>;
+
+   class FileWatcher {
+   public:
+       FileWatcher();
+       ~FileWatcher();
+
+       // Prevent copying to ensure unique ownership of OS handles
+       FileWatcher(const FileWatcher&) = delete;
+       FileWatcher& operator=(const FileWatcher&) = delete;
+
+       /**
+        * @brief Adds a directory to the watch list.
+        * @param path The absolute path to watch.
+        * @param recursive Whether to watch subdirectories.
+        * Note: On Linux, 'recursive' implies an initial tree walk.
+        */
+       void add_watch(const std::string& path, bool recursive = true);
+
+       /**
+        * @brief Starts the watcher thread.
+        * @param callback The function to invoke when changes are detected.
+        * WARNING: Called from a background thread. Must be thread-safe.
+        */
+       void start(WatchCallback callback);
+
+       /**
+        * @brief Signals the thread to exit and cleans up OS resources.
+        * This method blocks until the background thread joins.
+        */
+       void stop();
+
+   private:
+       class Impl; // Forward declaration for Pimpl
+       std::unique_ptr<Impl> m_impl;
+   };
+
+} // namespace aria::build
+
+3.2 The Threading Model
+The FileWatcher launches a dedicated OS thread (std::thread) upon start(). This thread runs the platform-specific event loop (e.g., epoll_wait on Linux, CFRunLoopRun on macOS, or GetQueuedCompletionStatus on Windows).1
+This isolation is critical for two reasons:
+   1. Non-Blocking behavior: The watcher must never block the main aria_make execution thread (which may be running a compiler process) or the AriaLS message dispatch loop. Blocking the LSP loop results in UI freezes in the IDE.1
+   2. OS Constraints: Some APIs, specifically macOS FSEvents and Windows APCS, have thread-affinity requirements. FSEvents schedules streams onto a CFRunLoop associated with a specific thread. By owning the thread, the FileWatcher guarantees the lifecycle of this loop.
+Events detected on the watcher thread are normalized into FileEvent structures and dispatched via the callback. To prevent blocking the watcher thread, the callback implementation in BuildScheduler should simply push the events into a concurrent queue and return immediately.1
+4. Linux Implementation: The inotify Backend
+The Linux implementation faces the most significant algorithmic challenges due to the non-recursive nature of inotify. While inotify is performant and precise, handling millions of watches, it requires the application to explicitly register a watch descriptor (wd) for every directory in the tree.3
+4.1 The Recursive Deficit and Dynamic Tree Walking
+To implement recursive=true, the FileWatcher::Impl on Linux must maintain a bidirectional mapping system:
+   * std::map<int, std::string> wd_to_path: Maps the integer Watch Descriptor to the absolute directory path.
+   * std::map<std::string, int> path_to_wd: Maps the path to the Watch Descriptor (to prevent duplicate watches).
+Algorithm: Recursive Watch Establishment
+   1. Initial Scan: Upon add_watch(root), the system utilizes std::filesystem::recursive_directory_iterator to traverse the entire directory tree.1
+   2. Registration: For every directory encountered, inotify_add_watch is called with the mask IN_MODIFY | IN_CREATE | IN_DELETE | IN_MOVE | IN_MOVE_SELF | IN_DELETE_SELF | IN_ONLYDIR.7
+   3. Error Handling: The implementation must robustly handle EACCES (Permission Denied) by logging to stddbg and continuing, rather than aborting the entire watch. ENOSPC (No space left on device) indicates the user has hit the max_user_watches limit and requires a specific user-facing error message.8
+4.2 The "mkdir -p" Race Condition (The Gap of Invisibility)
+A critical vulnerability exists in naive inotify recursive implementations known as the "mkdir -p" race. When a user executes mkdir -p a/b/c, the kernel creates a, then b, then c in rapid succession.
+   1. inotify fires IN_CREATE for a.
+   2. The user-space watcher receives this event and calls inotify_add_watch("a").
+   3. The Gap: Between the kernel creating a and the user adding the watch on a, the kernel may have already created b and c (and files inside them). Since there was no watch on a at that exact nanosecond, the creation of b generates no event.9
+Solution: The "Scan-after-Watch" Heuristic
+The Aria implementation handles IN_CREATE | IN_ISDIR events with a rigorous process to close this gap:
+   1. Add Watch Immediately: Call inotify_add_watch on the new path to start monitoring as soon as possible.
+   2. Rescan: Immediately perform a std::filesystem::directory_iterator on the new directory. Any subdirectories found during this scan that are not already in the path_to_wd map are treated as "missed" events.
+   3. Synthetic Events: The watcher recursively adds watches for these missed directories and emits synthetic Created events for them and any files found within them.12 This ensures that b and c are eventually watched and reported, guaranteeing eventual consistency.
+4.3 Handling IN_Q_OVERFLOW
+The inotify mechanism communicates via a fixed-size kernel buffer associated with the file descriptor. If aria_make is slow to process events (e.g., blocked by a massive garbage collection cycle or CPU starvation), the buffer overflows. The kernel emits a special IN_Q_OVERFLOW event (wd = -1).8
+   * Aria Response: The watcher emits a FileEvent with type EventType::Overflow. The BuildScheduler consumes this by invalidating the entire state of the DependencyGraph and triggering a full "Safe Mode" filesystem scan.1 This relies on the timestamp comparison logic defined in compiled.txt to restore the correct build state. This guarantees correctness at the cost of temporary performance degradation.
+4.4 Thread Interruption via eventfd
+To stop the Linux watcher, we cannot simply close the inotify file descriptor, as concurrent operations might lead to undefined behavior or EBADF. A robust pattern uses eventfd (or a self-pipe).13
+   * Setup: Create an eventfd for termination signals.
+   * Polling: Use epoll or select to monitor both the inotify fd and the eventfd.
+   * Termination: stop() writes to the eventfd. The watcher thread wakes up, sees the termination signal, closes all descriptors, and exits cleanly.
+5. Windows Implementation: The ReadDirectoryChangesW Backend
+The Windows implementation leverages ReadDirectoryChangesW, a powerful kernel API that supports recursive directory monitoring natively (bWatchSubtree = TRUE).5 However, its asynchronous model using Overlapped I/O is complex and prone to buffer management pitfalls that can lead to silent data loss.
+5.1 The Asynchronous I/O Model (Overlapped)
+The watcher opens the root directory using CreateFileW with the FILE_FLAG_OVERLAPPED and FILE_FLAG_BACKUP_SEMANTICS flags. FILE_FLAG_BACKUP_SEMANTICS is strictly required to open a handle to a directory.14
+It then issues a call to ReadDirectoryChangesW, passing a 64KB buffer (aligned to DWORD boundaries as required by the API 5) and an OVERLAPPED structure.
+   * Waiting: The thread waits on the event handle associated with the OVERLAPPED structure using WaitForMultipleObjects (allowing it to wait on a "Stop Event" simultaneously).15
+5.2 The Buffer Overflow Handling Strategy
+Unlike inotify, which drops events and sends an explicit overflow signal, ReadDirectoryChangesW behaves uniquely on overflow: it returns success (TRUE) but sets the lpBytesReturned parameter to zero.6
+   * Interpretation: A zero-byte return with a success code means "Changes happened, but they didn't fit in your buffer." This is often misunderstood as a "keep alive" or error, but it is a critical signal.
+   * Aria Response: Upon detecting lpBytesReturned == 0, the watcher triggers the EventType::Overflow event. As with Linux, the BuildScheduler interprets this as a "World Invalidated" signal and initiates a full incremental scan.
+5.3 Short File Names and NTFS Idiosyncrasies
+NTFS supports "8.3" short filenames (e.g., PROGRA~1). ReadDirectoryChangesW may report changes using either the long or short name.
+   * Normalization: The Aria FileWatcher must normalize all paths to their long form using GetLongPathNameW before emitting events. This ensures that the DependencyGraph, which likely uses canonical paths, can correctly match the event to a build target.
+5.4 Handling Root Directory Deletion
+ReadDirectoryChangesW monitors changes within a directory. It does not explicitly report if the root directory itself is deleted or renamed.16
+   * Detection: If the root directory is deleted, the directory handle becomes invalid. The next call to ReadDirectoryChangesW or GetOverlappedResult will fail with a specific error code (e.g., ERROR_ACCESS_DENIED or ERROR_INVALID_HANDLE).
+   * Recovery: The watcher thread catches this error, emits a Deleted event for the root, and terminates the watch loop. The BuildScheduler can then decide whether to terminate the watch mode or wait for the directory to reappear.
+6. macOS Implementation: The FSEvents Backend
+The macOS implementation utilizes FSEvents, which is natively recursive and highly efficient, but imposes a strict threading model based on the Core Foundation (CF) RunLoop.17
+6.1 The RunLoop Constraint
+FSEvents does not provide a simple blocking read() interface like Linux or a handle-wait model like Windows. Instead, it operates by scheduling a stream callback onto a CFRunLoop.
+   * Challenge: Integrating a CFRunLoop into a standard C++ std::thread.
+   * Implementation: The watcher thread must explicitly initialize and run a loop.
+C++
+// file_watcher_macos.cpp
+void FileWatcher::Impl::run() {
+   // Context allows passing 'this' to the C callback
+   FSEventStreamContext context = {0, this, NULL, NULL, NULL};
+
+   // Create the stream watching the path
+   m_stream = FSEventStreamCreate(..., &callback,..., kFSEventStreamCreateFlagFileEvents);
+
+   // Schedule on the CURRENT thread's run loop
+   // CFRunLoopGetCurrent() creates a loop if one doesn't exist for this thread
+   FSEventStreamScheduleWithRunLoop(m_stream, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+
+   FSEventStreamStart(m_stream);
+
+   // Block the thread and enter the OS event loop
+   CFRunLoopRun(); 
+}
+
+This design effectively transforms the worker thread into a specialized macOS system thread.19
+6.2 Latency and Kernel-Side Coalescing
+One advantage of FSEvents is native event coalescing. When creating the stream, a latency parameter (e.g., 0.1 seconds) is specified.20 The kernel buffers events for this duration and delivers them in a single batch.
+      * Optimization: This effectively implements "Debouncing" at the kernel level, simplifying the user-space logic compared to Linux. However, aria_make should still implement application-level debouncing (Section 7) to ensure consistent behavior across platforms and to handle the specific semantic requirements of the build graph.
+6.3 Thread Interruption
+Stopping the watcher requires signaling the run loop from another thread. Since CFRunLoopRun() blocks indefinitely, we cannot simply join the thread.
+      * Mechanism: The stop() method must access the CFRunLoopRef stored during initialization. It calls FSEventStreamStop and FSEventStreamInvalidate, followed by CFRunLoopStop(m_runLoopRef).21 This breaks the run loop, allowing the std::thread function to return and be joined safely.
+7. Event Coalescing and Debouncing Algorithms
+Raw filesystem events are noisy and granular. A simple "Save" operation in a text editor (like Vim or VS Code) often triggers a rapid sequence of atomic operations: CREATE.tmp, WRITE.tmp, CLOSE.tmp, DELETE original, RENAME.tmp -> original.22 Triggering a build for each of these 5 events would be disastrously inefficient and potentially race-prone.
+7.1 The Debounce Algorithm
+AriaBuild implements a Trailing Edge Debouncer within the BuildScheduler.
+      * Mechanism:
+      1. Ingest: Upon receiving a FileEvent from the OS watcher, the scheduler acquires a lock and inserts the path into a std::set<std::string> (to deduplicate paths).23
+      2. Timer Reset: It starts or resets a "quiet period" timer (e.g., using std::chrono::steady_clock) for a duration $T_{debounce}$ (e.g., 100ms or 200ms).24
+      3. Wait: If another event arrives before $T_{debounce}$ elapses, the timer is reset, extending the wait.
+      4. Trigger: When the timer finally expires (absolute silence for 200ms), the scheduler takes the set of unique paths, clears the set, and triggers the dependency analysis.
+7.2 Implementation with std::chrono and std::condition_variable
+The debouncer runs on a dedicated coordinator thread to avoid blocking the OS watcher threads.
+
+
+C++
+
+
+
+
+// Logic derived from research [25]
+void BuildScheduler::on_file_event(const FileEvent& event) {
+   std::lock_guard<std::mutex> lock(m_mutex);
+   m_pending_changes.insert(event.path);
+   m_last_event_time = std::chrono::steady_clock::now();
+   
+   // Notify the coordinator thread that work is pending
+   m_cv.notify_one(); 
+}
+
+// Coordinator Thread Loop
+void BuildScheduler::coordinator_loop() {
+   while (m_running) {
+       std::unique_lock<std::mutex> lock(m_mutex);
+       
+       // Wait until we have changes
+       m_cv.wait(lock, [this]{ return!m_pending_changes.empty() ||!m_running; });
+       if (!m_running) break;
+
+       // Check time elapsed since last event
+       auto now = std::chrono::steady_clock::now();
+       auto elapsed = now - m_last_event_time;
+
+       if (elapsed < m_debounce_window) {
+           // Not enough time passed, sleep for the remainder
+           // usage of wait_for handles spurious wakeups and new events arriving
+           m_cv.wait_for(lock, m_debounce_window - elapsed);
+       } else {
+           // Quiescence detected! Fire build.
+           std::set<std::string> changes = std::move(m_pending_changes);
+           m_pending_changes.clear();
+           
+           lock.unlock(); // Release lock during build
+           fire_build(changes);
+       }
+   }
+}
+
+This logic effectively filters out the high-frequency noise of temporary files and partial writes, ensuring the compiler only sees a consistent filesystem state.
+8. Integration with BuildScheduler (aria_make)
+The BuildScheduler is the orchestration layer that translates file events into build actions. Its integration with FileWatcher is the key to the --watch mode.
+8.1 Graph Invalidation Logic
+AriaBuild relies on a DependencyGraph where nodes represent files and edges represent use dependencies.1 The Watcher acts as the "Sensory Input" for this graph.
+      1. Input: A set of changed paths from the Debouncer.
+      2. Lookup: For each path, the scheduler queries the DependencyGraph.
+      3. Invalidation: The node corresponding to the file is marked as "Dirty."
+      4. Transitive Closure: The scheduler performs a reverse traversal (up the dependency edges) to mark all ancestors (reverse dependencies) of the node as "Dirty." If lib/math.aria changes, src/main.aria (which uses it) must also be marked for recompilation.26
+      5. Execution: The set of dirty nodes constitutes the "Build Set." This set is passed to the execution engine (Thread Pool) for parallel recompilation.
+8.2 Handling Glob Patterns
+AriaBuild uses glob patterns (e.g., src/**/*.aria) to define targets.1
+      * New Files: If a Created event occurs for src/new_module.aria, the scheduler must re-evaluate the glob patterns. If the new file matches a pattern, a new Node is added to the DependencyGraph, and the graph structure is updated.
+      * Optimization: To avoid re-scanning the disk, the FileWatcher event provides the path directly. The Glob Engine can check this path against the cached glob patterns in memory to decide if the graph needs structural updating.
+8.3 Incremental vs. Full Rebuilds
+The system distinguishes between "Fast Incremental" and "Safe Incremental."
+      * Modified/Created: If the event is a simple modification or creation, only the dirty subgraph is rebuilt.
+      * Overflow/Error: If FileWatcher reports EventType::Overflow (Linux/Windows), the Scheduler discards the dirty set and performs a global stat check on all source files.1 This relies on the timestamp comparison logic (Output vs. Input modification time) to restore a correct state. This self-healing capability is essential for robustness in the face of OS-level buffer exhaustion.
+9. Integration with Aria Language Server (AriaLS)
+The integration with AriaLS differs from aria_make because the Language Server Protocol (LSP) is primarily document-driven (textDocument/didChange), but modern IDEs also support workspace events.
+9.1 The Global Work Queue Bridge
+Phase 7.3.6 of the AriaLS roadmap introduces a Thread Pool Architecture with a Global Work Queue.1 The FileWatcher integrates here as a secondary producer, alongside the LSP I/O pump.
+      * Producer: The FileWatcher callback wraps the filesystem events into a Task object (e.g., TaskType::FileSystemEvent).
+      * Routing: The Main Thread (I/O Pump) routes these tasks to the Worker Pool.
+      * Coalescing: The Work Queue's debouncing logic is extended. If a didChange (from the editor buffer) and a FileEvent (from disk) arrive for the same file, the didChange takes precedence. The in-memory buffer in the editor is the "Source of Truth" for the Language Server; the disk event is secondary until the file is saved.
+9.2 Handling workspace/didChangeWatchedFiles
+The LSP client (e.g., VS Code) acts as a file watcher and sends workspace/didChangeWatchedFiles notifications. However, relying solely on the client is insufficient for dependencies outside the workspace (e.g., the standard library in /usr/lib/aria) or generated files.
+      * Hybrid Strategy: AriaLS uses the client's notifications for workspace files (reducing overhead) but instantiates its own FileWatcher for external dependency paths defined in aria.toml.
+      * Synchronization: Events from the internal watcher are injected into the Global State, acquiring the Writer Lock on the Virtual File System (VFS) to update the server's view of the world.1
+10. Security and Performance Considerations
+10.1 Resource Limits
+On Linux, the number of inotify watches is capped by /proc/sys/fs/inotify/max_user_watches (default often 8192).8 Watching a large project (like node_modules in JS, or large C++ trees) can exhaust this limit.
+      * Mitigation: The FileWatcher implementation tracks the number of watches. If the limit is approached, it logs a warning to stddbg (using the 6-stream topology 1) advising the user to increase the sysctl limit. It does not crash; instead, it falls back to a "Polling Mode" for the overflowed directories or fails gracefully for those specific paths.
+10.2 Symlink Traversal
+AriaBuild must handle symbolic links carefully. inotify does not traverse symlinks by default (IN_DONT_FOLLOW).
+      * Policy: aria_make follows the convention of "Logical Project Structure." It does not recursively watch symlinked directories by default to avoid infinite loops (cycles) and to respect the boundary of the project root.11 Explicit dependencies on external paths (e.g., linked modules) are watched via separate watch roots.
+11. Conclusion
+The specification outlined herein provides a definitive path for implementing a production-grade FileWatcher Subsystem for the Aria language. By explicitly tackling the platform-specific idiosyncrasies—the non-recursive nature of Linux's inotify, the run-loop constraints of macOS's FSEvents, and the buffer management of Windows's ReadDirectoryChangesW—this architecture ensures a consistent and robust developer experience.
+The integration of this watcher with the BuildScheduler's dependency graph and the AriaLS's thread pool architecture transforms the Aria toolchain from a static, batch-oriented compiler into a dynamic, reactive environment. This capability is not merely a convenience; it is a prerequisite for the high-velocity, modern development workflows that the Aria language aims to enable. The detailed handling of race conditions ("mkdir -p"), buffer overflows, and event debouncing establishes a foundation of reliability that will scale with the complexity of user projects.
+Table 1: Cross-Platform Implementation Matrix
+Feature
+	Linux
+	macOS
+	Windows
+	API
+	inotify
+	FSEvents
+	ReadDirectoryChangesW
+	Recursion
+	Manual (User-space Tree Walk)
+	Native (Kernel)
+	Native (Kernel)
+	Race Handling
+	"Scan-after-Watch" for mkdir -p
+	N/A (Native)
+	N/A (Native)
+	Overflow
+	IN_Q_OVERFLOW (Event)
+	History Done / Root Changed
+	lpBytesReturned == 0
+	Threading
+	epoll or read() on std::thread
+	CFRunLoop on std::thread
+	Overlapped I/O on std::thread
+	Debouncing
+	User-space (Required)
+	Kernel (Latency param) + User
+	User-space (Required)
+	Stop Mechanism
+	eventfd or pipe
+	CFRunLoopStop
+	CancelIoEx / CloseHandle
+	Granularity
+	Inode / File
+	Directory
+	File / Directory
+	This specification stands ready for immediate implementation by the Aria systems engineering team.
+Works cited
+      1. compiled.txt
+      2. efsw is a C++ cross-platform file system watcher and notifier. - GitHub, accessed December 21, 2025, https://github.com/SpartanJ/efsw
+      3. inotify(7) - Linux manual page - man7.org, accessed December 21, 2025, https://man7.org/linux/man-pages/man7/inotify.7.html
+      4. fsevents package - github.com/fsnotify/fsevents - Go Packages, accessed December 21, 2025, https://pkg.go.dev/github.com/fsnotify/fsevents
+      5. ReadDirectoryChangesW function (winbase.h) - Win32 apps | Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-readdirectorychangesw
+      6. ReadDirectoryChangesW stops working on large amount of Files - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/77502002/readdirectorychangesw-stops-working-on-large-amount-of-files
+      7. How to recursively monitor an directory besides using inotify - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/25524995/how-to-recursively-monitor-an-directory-besides-using-inotify
+      8. Understanding inotifywait, pipes and buffers - Unix & Linux Stack Exchange, accessed December 21, 2025, https://unix.stackexchange.com/questions/235466/understanding-inotifywait-pipes-and-buffers
+      9. include doesn't fire for files in newly created directories. Bug (in inotifywait) or PEBKAC?, accessed December 21, 2025, https://unix.stackexchange.com/questions/780150/inotifywait-include-doesnt-fire-for-files-in-newly-created-directories-bug
+      10. inotify not registering all events - c++ - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/67474689/inotify-not-registering-all-events
+      11. Use INotify to watch a file with multiple symlinks - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/28769503/use-inotify-to-watch-a-file-with-multiple-symlinks
+      12. Mkdir -p are not correctly reported on Linux · Issue #60 · Axosoft/nsfw - GitHub, accessed December 21, 2025, https://github.com/Axosoft/nsfw/issues/60
+      13. How to interrupt synchronous inotify read? - c++ - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/70382533/how-to-interrupt-synchronous-inotify-read
+      14. Understanding ReadDirectoryChangesW - Part 1 - Technical Blog for Jim Beveridge, accessed December 21, 2025, https://qualapps.blogspot.com/2010/05/understanding-readdirectorychangesw.html
+      15. ReadDirectoryChangesW and GetOverlappedResult - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/43664998/readdirectorychangesw-and-getoverlappedresult
+      16. Using ReadDirectoryChangesW to read changes to the folder itself (WINDOWS), accessed December 21, 2025, https://stackoverflow.com/questions/36175185/using-readdirectorychangesw-to-read-changes-to-the-folder-itself-windows
+      17. FSEvents C++ Example - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/11556545/fsevents-c-example
+      18. Run Loops - Apple Developer, accessed December 21, 2025, https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/Multithreading/RunLoopManagement/RunLoopManagement.html
+      19. macOS CFRunLoop Internals: Scheduling High-Precision Timers and Recurring Tasks, accessed December 21, 2025, https://meldstudio.co/blog/macos-cfrunloop-internals-scheduling-high-precision-timers-and-recurring-tasks/
+      20. Mac FSEvents wrapper - GitHub Gist, accessed December 21, 2025, https://gist.github.com/3149811
+      21. objective c - Polling for FSEvents from C++ - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/26393186/polling-for-fsevents-from-c
+      22. FileSystemWatcher Changed event is raised twice - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/1764809/filesystemwatcher-changed-event-is-raised-twice
+      23. Rust Notify (Filewatcher) is not debouncing events - Reddit, accessed December 21, 2025, https://www.reddit.com/r/rust/comments/wq0oy2/rust_notify_filewatcher_is_not_debouncing_events/
+      24. Time in C++: Understanding
+      25. 33.5. Construction of the Build Set - SourceForge, accessed December 21, 2025, https://abuild.sourceforge.io/files/doc/html/ch33s05.html

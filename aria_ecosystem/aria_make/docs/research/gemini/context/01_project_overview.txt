@@ -1,0 +1,147 @@
+aria_make - Project Overview
+============================
+
+PROJECT GOAL:
+Build a modern, developer-friendly build system specifically designed for the Aria programming language ecosystem.
+
+WHAT IS ARIA_MAKE:
+aria_make is a custom build automation tool that replaces GNU Make for Aria projects. It provides dependency management, task execution, and build orchestration with a clean, JSON-like syntax that is NOT whitespace-sensitive.
+
+KEY REQUIREMENTS:
+
+1. NOT Whitespace Sensitive (CRITICAL):
+   - GNU Make's tab requirement is a major pain point
+   - aria_make uses structural delimiters (braces, brackets)
+   - Tabs vs spaces completely irrelevant
+   - Minify-safe, format-independent
+
+2. Variable Support:
+   - Dynamic values and substitution
+   - Uses Aria's template literal syntax: &{var}
+   - Resolution order: local scope → global scope → environment
+   - Example: &{src}/main.aria, &{ENV.HOME}/project
+
+3. Glob Support:
+   - Pattern matching for files
+   - Single level: *.aria
+   - Recursive: src/**/*.aria
+   - Must be deterministic (sorted results)
+   - Native implementation (not shell-based)
+
+4. JSON-like Style:
+   - Actually using Aria's own syntax (ABC format)
+   - Unquoted keys allowed
+   - Trailing commas allowed
+   - Comments with // (Aria-style)
+   - Feels native to Aria developers
+
+DESIGN PHILOSOPHY:
+"Build system as code" inspired by Tsoding's NOB (Nobuild) library for C, but with declarative structure optimized for Aria.
+
+TECHNICAL ARCHITECTURE:
+
+File Format: Aria Build Configuration (ABC)
+- File name: build.aria or aria.json
+- Three main sections:
+  * project: Metadata (name, version, Aria compatibility)
+  * variables: Symbol table for reusable constants
+  * targets: Array of build targets (dependency graph nodes)
+
+Implementation Language: C++17
+Why C++:
+- Can reuse aria::frontend::Lexer for parsing
+- Has std::filesystem for globbing (Aria stdlib doesn't)
+- Can link against aria_frontend library
+- Good performance for build tool
+
+Dependency Graph: Directed Acyclic Graph (DAG)
+Algorithm: Kahn's topological sort
+- Detects circular dependencies
+- Provides clear error messages
+- Enables parallel builds
+
+Globbing: Native C++ implementation
+- Uses std::filesystem::recursive_directory_iterator
+- Supports * and ** wildcards
+- Deterministic ordering (sorted)
+- Caching with invalidation
+
+LSP Integration:
+- Auto-generates compile_commands.json
+- Enables IDE features (Go to Definition, etc.)
+- Compatible with aria-ls (Aria Language Server)
+
+EXAMPLE BUILD FILE:
+
+{
+    project: {
+        name: "MyAriaApp",
+        version: "0.1.0"
+    },
+
+    variables: {
+        src: "src",
+        build: "build",
+        opt: "-O3"
+    },
+
+    targets: [
+        {
+            name: "main_app",
+            type: "binary",
+            sources: ["&{src}/**/*.aria"],
+            output: "&{build}/app.ll",
+            flags: ["&{opt}", "-Wall"]
+        }
+    ]
+}
+
+COMPARISON WITH EXISTING BUILD SYSTEMS:
+
+vs GNU Make:
+- No whitespace sensitivity (huge win)
+- Modern syntax (JSON-like vs arcane Makefile)
+- Better error messages
+- Aria-native integration
+
+vs CMake:
+- Simpler syntax
+- No meta-build step
+- Direct compilation control
+- Aria-specific features
+
+vs Ninja:
+- Human-writable (Ninja is machine code)
+- Declarative and readable
+- Integrated with Aria toolchain
+
+STDLIB GAP IDENTIFIED:
+Aria's standard library currently lacks:
+- Directory iteration functions
+- Globbing/pattern matching
+- stat() equivalent for file metadata
+
+This is WHY aria_make must be implemented in C++ initially, with a path to self-hosting in Aria once stdlib is complete.
+
+TOOLCHAIN INTEGRATION:
+
+With ariac (Aria Compiler):
+- Invoke with correct flags (-o, -I)
+- Handle include paths from dependencies
+- Support debug flag -E for macro expansion
+
+With lli (LLVM Interpreter):
+- Wrap execution of .ll files
+- Stream stdout/stderr to user
+- Handle exit codes
+
+With aria-ls (Language Server):
+- Generate compile_commands.json
+- Provide project structure information
+- Enable IDE integration
+
+CURRENT STATUS:
+- Infrastructure complete
+- Website live at https://aria.make.ai-liberation-platform.org
+- Research complete (80-page architectural spec received)
+- Ready for implementation planning

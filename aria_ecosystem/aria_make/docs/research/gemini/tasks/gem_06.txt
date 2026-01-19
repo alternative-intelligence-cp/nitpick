@@ -1,0 +1,76 @@
+## TASK 6: Build Scheduler and Thread Pool
+
+**Priority**: CRITICAL (Execution engine)
+**Estimated Complexity**: Very High
+**Dependencies**: TASK 5 (needs DependencyGraph)
+
+### Problem Statement
+The build execution system is entirely missing:
+- ThreadPool for parallel task execution
+- BuildScheduler implementing dynamic Kahn's algorithm
+- Incremental build logic (dirty checking)
+- Thread-safe graph updates during execution
+
+### Required Context Files
+
+**From aria_make repository**:
+1. `docs/research/gemini/responses/task_03_dependency_graph.txt` - Partial scheduler design
+2. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (Section 4.2, 4.3)
+
+### Gemini Prompt
+
+```
+The execution engine for AriaBuild is missing from the provided documentation. Based on the requirements in 'task_03_dependency_graph.txt', provide the complete C++17 implementation for the ThreadPool and BuildScheduler classes.
+
+Requirements:
+
+**ThreadPool Class**:
+1. Use std::thread, std::mutex, std::condition_variable
+2. Fixed worker count (default: std::thread::hardware_concurrency())
+3. Task queue: std::queue<std::function<void()>>
+4. Submit method: enqueue(std::function<void()> task)
+5. Worker thread loop:
+   - Wait on condition variable for tasks
+   - Pop and execute task
+   - Handle exceptions gracefully
+6. Destructor: Join all threads cleanly
+
+**BuildScheduler Class**:
+1. Implement schedule(DependencyGraph& graph):
+   - Calculate initial in-degrees for all nodes
+   - Populate ReadyQueue with nodes having in-degree 0
+2. Execute loop:
+   - Pop task from ReadyQueue
+   - Check is_dirty (using check_is_dirty function)
+   - If dirty, submit to ThreadPool
+   - On task completion:
+     * Lock graph mutex
+     * For each dependent, decrement in-degree
+     * If in-degree reaches 0, add to ReadyQueue
+3. Thread-safe queue operations:
+   - Use std::mutex for ReadyQueue access
+   - Use std::condition_variable to signal new tasks
+4. Error handling:
+   - If any task fails, set global error flag
+   - Continue executing independent tasks
+   - Propagate failure to final status
+
+**Incremental Build Logic** (check_is_dirty function):
+1. For each source file, compare std::filesystem::last_write_time
+2. If source is newer than output → dirty
+3. If any dependency is dirty → transitively dirty
+4. Cache dirty status in Node structure
+
+Provide complete implementation with detailed comments on the synchronization strategy. Include example showing how BuildScheduler interacts with DependencyGraph and ThreadPool.
+```
+
+### Expected Deliverables
+- `include/scheduler/thread_pool.h` - ThreadPool class
+- `include/scheduler/build_scheduler.h` - BuildScheduler class
+- `src/scheduler/thread_pool.cpp` - Implementation
+- `src/scheduler/build_scheduler.cpp` - Implementation with Kahn's algorithm
+- `tests/scheduler/test_thread_pool.cpp` - Concurrency tests
+- `tests/scheduler/test_scheduler.cpp` - Integration tests
+
+---
+

@@ -1,0 +1,12 @@
+Implement Compiler Dependency Generation Flags
+Context: Fixes the "Comptime" blind spot and implicit dependency issues.
+Priority: High
+Components: src/main.cpp (Compiler Driver)
+Prompt:
+"You are a compiler engineer working on the Aria driver (src/main.cpp). Implement dependency tracking flags similar to GCC.
+Add CLI flags: -M (generate makefile-style deps) and -MF <file> (output file).
+Integrate a DependencyTracker singleton. Hook into Lexer::tokenize (to catch use imports) and Runtime::embed_file (to catch comptime reads).
+In main, after compilation, serialize the tracked paths to the -MF file if -M is set.
+Format: output.o: source.aria dep1.aria dep2.json...
+Provide the C++ code modification for the compiler driver."
+

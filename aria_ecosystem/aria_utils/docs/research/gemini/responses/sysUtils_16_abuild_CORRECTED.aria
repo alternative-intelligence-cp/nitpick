@@ -1,0 +1,842 @@
+// ============================================================================
+// ARIABUILD (abuild) - BUILD SYSTEM IMPLEMENTATION (Syntax-Corrected)
+// ============================================================================
+// Based on: sysUtils_16_make-build.txt
+// Corrected: December 23, 2025
+// Status: Ready for implementation
+// ============================================================================
+
+// File: tools/build/target.aria
+// ============================================================================
+// Build Target Representation
+// ============================================================================
+
+// use std.io;
+// use std.fs;
+// use std.time;
+// use std.string;
+
+enum:TargetType = {
+    BINARY = 0,
+    LIBRARY = 1,
+    OBJECT = 2,
+    CUSTOM = 3
+};
+
+struct:Target = {
+    string:name;
+    TargetType:target_type;
+    array<string>:sources;
+    array<string>:dependencies;
+    string:output_path;
+    array<string>:flags;
+    int32:in_degree;
+    bool:is_dirty;
+    array<Target>  // Adjacency list for graph traversal:dependents;
+};
+
+struct:ProjectConfig = {
+    string:name;
+    string:version;
+    string:aria_version;
+    map<string:variables;
+    array<Target>:targets;
+};
+
+// ============================================================================
+// Module: tools/build/abc_parser.aria
+// ============================================================================
+// ABC (Aria Build Configuration) Parser
+// ============================================================================
+
+// Reuse ACL parser from aeon implementation
+// use frontend.config.ConfigParser;
+// use frontend.config.ConfigNode;
+// use frontend.config.ConfigObject;
+// use frontend.config.NodeType;
+
+// Parse ABC file (build.aria)
+func:parse_abc_file = result<ProjectConfig>(string:filename) {
+    // Read file
+    result<string>:content_result = std.fs.read_to_string(filename);
+    
+    if (content_result.is_error) {
+        result<ProjectConfig>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Failed to read build.aria: " + content_result.error;
+        pass(err_result);
+    };
+    
+    string:content = content_result.value;
+    
+    // Parse with ACL parser
+    ConfigParser:parser = frontend.config.new_parser(content, filename);
+    result<ConfigNode>:parse_result = frontend.config.parse(parser);
+    
+    if (parse_result.is_error) {
+        result<ProjectConfig>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Parse failed: " + parse_result.error;
+        pass(err_result);
+    };
+    
+    // Extract configuration
+    result<ProjectConfig>:config_result = extract_project_config(parse_result.value);
+    pass(config_result);
+};
+
+// Extract ProjectConfig from parsed AST
+func:extract_project_config = result<ProjectConfig>(ConfigNode:root) {
+    if (root.node_type != NodeType.OBJECT) {
+        result<ProjectConfig>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Root must be an object";
+        pass(err_result);
+    };
+    
+    ProjectConfig:config;
+    config.variables = map<string, string>.new();
+    config.targets = array<Target>.new();
+    
+    // Cast to ConfigObject
+    ConfigObject:obj = root;  // Safe cast since we checked type
+    
+    // Extract project section
+    result<ConfigNode>:project_result = get_member(obj, "project");
+    if (!project_result.is_error) {
+        extract_project_metadata(project_result.value, config);
+    };
+    
+    // Extract variables section
+    result<ConfigNode>:vars_result = get_member(obj, "variables");
+    if (!vars_result.is_error) {
+        extract_variables(vars_result.value, config);
+    };
+    
+    // Extract targets section
+    result<ConfigNode>:targets_result = get_member(obj, "targets");
+    if (!targets_result.is_error) {
+        extract_targets(targets_result.value, config);
+    };
+    
+    result<ProjectConfig>:success;
+    success.is_error = false;
+    success.value = config;
+    pass(success);
+};
+
+// Helper to get object member
+func:get_member = result<ConfigNode>(ConfigObject:obj, string:key) {
+    result<int32>:index_result = obj.lookup.get(key);
+    
+    if (index_result.is_error) {
+        result<ConfigNode>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Key not found: " + key;
+        pass(err_result);
+    };
+    
+    int32:index = index_result.value;
+    KeyValuePair:pair = obj.members.at(index);
+    
+    result<ConfigNode>:success;
+    success.is_error = false;
+    success.value = pair.value;
+    pass(success);
+};
+
+// Extract project metadata
+func:extract_project_metadata = void(ConfigNode:node, ProjectConfig:config) {
+    if (node.node_type != NodeType.OBJECT) {
+        pass();
+    };
+    
+    ConfigObject:obj = node;
+    
+    // Extract name
+    result<ConfigNode>:name_result = get_member(obj, "name");
+    if (!name_result.is_error && name_result.value.node_type == NodeType.STRING) {
+        ConfigString:str = name_result.value;
+        config.name = str.value;
+    };
+    
+    // Extract version
+    result<ConfigNode>:ver_result = get_member(obj, "version");
+    if (!ver_result.is_error && ver_result.value.node_type == NodeType.STRING) {
+        ConfigString:str = ver_result.value;
+        config.version = str.value;
+    };
+    
+    // Extract aria_version
+    result<ConfigNode>:aria_ver_result = get_member(obj, "aria_version");
+    if (!aria_ver_result.is_error && aria_ver_result.value.node_type == NodeType.STRING) {
+        ConfigString:str = aria_ver_result.value;
+        config.aria_version = str.value;
+    };
+};
+
+// Extract variables
+func:extract_variables = void(ConfigNode:node, ProjectConfig:config) {
+    if (node.node_type != NodeType.OBJECT) {
+        pass();
+    };
+    
+    ConfigObject:obj = node;
+    
+    // Iterate through all key-value pairs
+    int32:i = 0;
+    while (i < obj.members.length()) {
+        KeyValuePair:pair = obj.members.at(i);
+        
+        if (pair.value.node_type == NodeType.STRING) {
+            ConfigString:str = pair.value;
+            config.variables.insert(pair.key, str.value);
+        };
+        
+        i = i + 1;
+    };
+};
+
+// Extract targets
+func:extract_targets = void(ConfigNode:node, ProjectConfig:config) {
+    if (node.node_type != NodeType.ARRAY) {
+        pass();
+    };
+    
+    ConfigArray:arr = node;
+    
+    int32:i = 0;
+    while (i < arr.elements.length()) {
+        ConfigNode:elem = arr.elements.at(i);
+        
+        if (elem.node_type == NodeType.OBJECT) {
+            Target:target = extract_single_target(elem);
+            config.targets.push(target);
+        };
+        
+        i = i + 1;
+    };
+};
+
+// Extract single target definition
+func:extract_single_target = Target(ConfigNode:node) {
+    Target:target;
+    target.sources = array<string>.new();
+    target.dependencies = array<string>.new();
+    target.flags = array<string>.new();
+    target.dependents = array<Target>.new();
+    target.in_degree = 0;
+    target.is_dirty = false;
+    
+    ConfigObject:obj = node;
+    
+    // Extract name
+    result<ConfigNode>:name_result = get_member(obj, "name");
+    if (!name_result.is_error && name_result.value.node_type == NodeType.STRING) {
+        ConfigString:str = name_result.value;
+        target.name = str.value;
+    };
+    
+    // Extract type
+    result<ConfigNode>:type_result = get_member(obj, "type");
+    if (!type_result.is_error && type_result.value.node_type == NodeType.STRING) {
+        ConfigString:str = type_result.value;
+        
+        if (str.value == "binary") {
+            target.target_type = TargetType.BINARY;
+        } else if (str.value == "library") {
+            target.target_type = TargetType.LIBRARY;
+        } else if (str.value == "object") {
+            target.target_type = TargetType.OBJECT;
+        } else {
+            target.target_type = TargetType.CUSTOM;
+        };
+    };
+    
+    // Extract output path
+    result<ConfigNode>:output_result = get_member(obj, "output");
+    if (!output_result.is_error && output_result.value.node_type == NodeType.STRING) {
+        ConfigString:str = output_result.value;
+        target.output_path = str.value;
+    };
+    
+    // Extract sources (array of strings)
+    result<ConfigNode>:sources_result = get_member(obj, "sources");
+    if (!sources_result.is_error && sources_result.value.node_type == NodeType.ARRAY) {
+        ConfigArray:sources_arr = sources_result.value;
+        
+        int32:i = 0;
+        while (i < sources_arr.elements.length()) {
+            ConfigNode:elem = sources_arr.elements.at(i);
+            
+            if (elem.node_type == NodeType.STRING) {
+                ConfigString:str = elem;
+                target.sources.push(str.value);
+            };
+            
+            i = i + 1;
+        };
+    };
+    
+    // Extract dependencies
+    result<ConfigNode>:deps_result = get_member(obj, "depends_on");
+    if (!deps_result.is_error && deps_result.value.node_type == NodeType.ARRAY) {
+        ConfigArray:deps_arr = deps_result.value;
+        
+        int32:i = 0;
+        while (i < deps_arr.elements.length()) {
+            ConfigNode:elem = deps_arr.elements.at(i);
+            
+            if (elem.node_type == NodeType.STRING) {
+                ConfigString:str = elem;
+                target.dependencies.push(str.value);
+            };
+            
+            i = i + 1;
+        };
+    };
+    
+    // Extract flags
+    result<ConfigNode>:flags_result = get_member(obj, "flags");
+    if (!flags_result.is_error && flags_result.value.node_type == NodeType.ARRAY) {
+        ConfigArray:flags_arr = flags_result.value;
+        
+        int32:i = 0;
+        while (i < flags_arr.elements.length()) {
+            ConfigNode:elem = flags_arr.elements.at(i);
+            
+            if (elem.node_type == NodeType.STRING) {
+                ConfigString:str = elem;
+                target.flags.push(str.value);
+            };
+            
+            i = i + 1;
+        };
+    };
+    
+    pass(target);
+};
+
+// ============================================================================
+// Module: tools/build/variable_expansion.aria
+// ============================================================================
+// Template Variable Expansion (&{var})
+// ============================================================================
+
+// Expand template variables in string
+func:expand_variables = string(string:template_str, map<string, string>:vars) {
+    string:result = "";
+    int32:i = 0;
+    
+    while (i < (template_str.length() ? 0)) {
+        byte:ch = template_str.char_at(i) ? 0;
+        
+        // Check for &{ sequence
+        if (ch == '&' && i + 1 < (template_str.length() ? 0)) {
+            byte:next_ch = template_str.char_at(i + 1) ? 0;
+            
+            if (next_ch == '{') {
+                // Find closing }
+                int32:start = i + 2;
+                int32:end = start;
+                
+                while (end < (template_str.length() ? 0) && (template_str.char_at(end) ? 0) != '}') {
+                    end = end + 1;
+                };
+                
+                if (end < (template_str.length() ? 0)) {
+                    // Extract variable name
+                    string:var_name = template_str.substring(start, end) ? "";
+                    
+                    // Look up variable
+                    result<string>:var_result = vars.get(var_name);
+                    
+                    if (!var_result.is_error) {
+                        result = result + var_result.value;
+                    } else {
+                        // Check environment variables (ENV. prefix)
+                        if (var_name.starts_with("ENV.")) {
+                            string:env_name = var_name.substring(4, (var_name.length() ? 0)) ? "";
+                            result<string>:env_result = std.os.getenv(env_name);
+                            
+                            if (!env_result.is_error) {
+                                result = result + env_result.value;
+                            };
+                        };
+                    };
+                    
+                    i = end + 1;
+                    continue;
+                };
+            };
+        };
+        
+        // Regular character
+        result = result + string.from_char(ch);
+        i = i + 1;
+    };
+    
+    pass(result);
+};
+
+// ============================================================================
+// Module: tools/build/dependency_graph.aria
+// ============================================================================
+// Dependency Graph Construction and Topological Sort
+// ============================================================================
+
+struct:DependencyGraph = {
+    array<Target>:targets;
+    map<string:target_map;
+};
+
+// Build dependency graph from configuration
+func:build_graph = DependencyGraph(ProjectConfig:config) {
+    DependencyGraph:graph;
+    graph.targets = array<Target>.new();
+    graph.target_map = map<string, int32>.new();
+    
+    // First pass: Add all targets and build name map
+    int32:i = 0;
+    while (i < config.targets.length()) {
+        Target:target = config.targets.at(i);
+        
+        // Expand variables in paths
+        target.output_path = expand_variables(target.output_path, config.variables);
+        
+        // Expand sources (with glob support)
+        array<string>:expanded_sources = array<string>.new();
+        int32:j = 0;
+        while (j < (target.sources.length() ? 0)) {
+            string:source_pattern = expand_variables((target.sources.at(j) ? ""), config.variables);
+            
+            // Check if pattern contains glob
+            if (source_pattern.contains("*")) {
+                array<string>:matched_files = expand_glob(source_pattern);
+                
+                int32:k = 0;
+                while (k < (matched_files.length() ? 0)) {
+                    expanded_sources.push(matched_files.at(k));
+                    k = k + 1;
+                };
+            } else {
+                expanded_sources.push(source_pattern);
+            };
+            
+            j = j + 1;
+        };
+        
+        target.sources = expanded_sources;
+        
+        int32:index = graph.targets.length();
+        graph.targets.push(target);
+        graph.target_map.insert(target.name, index);
+        
+        i = i + 1;
+    };
+    
+    // Second pass: Build adjacency lists and calculate in-degrees
+    i = 0;
+    while (i < graph.targets.length()) {
+        Target:target = graph.targets.at(i);
+        
+        int32:j = 0;
+        while (j < target.dependencies.length()) {
+            string:dep_name = target.dependencies.at(j);
+            
+            result<int32>:dep_index_result = graph.target_map.get(dep_name);
+            
+            if (!dep_index_result.is_error) {
+                int32:dep_index = dep_index_result.value;
+                Target:dep_target = graph.targets.at(dep_index);
+                
+                // Add edge: dep_target -> target
+                dep_target.dependents.push(target);
+                target.in_degree = target.in_degree + 1;
+            };
+            
+            j = j + 1;
+        };
+        
+        i = i + 1;
+    };
+    
+    pass(graph);
+};
+
+// Expand glob pattern (e.g., src/**/*.aria)
+func:expand_glob = array<string>(string:pattern) {
+    array<string>:files = array<string>.new();
+    
+    // Parse pattern to extract directory and file pattern
+    // For simplicity, handle basic case: dir/**/*.ext
+    
+    if (pattern.contains("**")) {
+        // Recursive glob
+        int32:star_pos = pattern.find("**");
+        string:base_dir = pattern.substring(0, star_pos - 1);  // Remove trailing /
+        string:suffix = pattern.substring(star_pos + 3);  // Skip **/
+        
+        // Get extension from suffix (*.aria -> aria)
+        string:ext = "";
+        if (suffix.starts_with("*.")) {
+            ext = suffix.substring(2, suffix.length());
+        };
+        
+        // Recursively walk directory
+        result<array<string>>:walk_result = std.fs.walk_recursive(base_dir);
+        
+        if (!walk_result.is_error) {
+            array<string>:all_files = walk_result.value;
+            
+            // Sort for deterministic builds
+            std.algorithm.sort(all_files);
+            
+            int32:i = 0;
+            while (i < all_files.length()) {
+                string:file = all_files.at(i);
+                
+                if (file.ends_with(ext)) {
+                    files.push(file);
+                };
+                
+                i = i + 1;
+            };
+        };
+    } else {
+        // Simple glob in single directory
+        // Implementation omitted for brevity
+    };
+    
+    pass(files);
+};
+
+// Mark dirty nodes (need rebuild)
+func:mark_dirty_nodes = void(DependencyGraph:graph) {
+    int32:i = 0;
+    while (i < graph.targets.length()) {
+        Target:target = graph.targets.at(i);
+        
+        // Check if output exists
+        result<bool>:exists_result = std.fs.exists(target.output_path);
+        
+        if (exists_result.is_error || !exists_result.value) {
+            // Output doesn't exist - rebuild required
+            target.is_dirty = true;
+        } else {
+            // Check timestamps
+            result<int64>:output_time_result = std.fs.modified_time(target.output_path);
+            
+            if (!output_time_result.is_error) {
+                int64:output_time = output_time_result.value;
+                bool:needs_rebuild = false;
+                
+                // Check all sources
+                int32:j = 0;
+                while (j < target.sources.length()) {
+                    string:source = target.sources.at(j);
+                    result<int64>:source_time_result = std.fs.modified_time(source);
+                    
+                    if (!source_time_result.is_error) {
+                        int64:source_time = source_time_result.value;
+                        
+                        if (source_time > output_time) {
+                            needs_rebuild = true;
+                            break;
+                        };
+                    };
+                    
+                    j = j + 1;
+                };
+                
+                target.is_dirty = needs_rebuild;
+            };
+        };
+        
+        i = i + 1;
+    };
+    
+    // Propagate dirty state up dependency tree
+    propagate_dirty(graph);
+};
+
+// Propagate dirty state to dependents
+func:propagate_dirty = void(DependencyGraph:graph) {
+    bool:changed = true;
+    
+    while (changed) {
+        changed = false;
+        
+        int32:i = 0;
+        while (i < graph.targets.length()) {
+            Target:target = graph.targets.at(i);
+            
+            if (target.is_dirty) {
+                // Mark all dependents as dirty
+                int32:j = 0;
+                while (j < target.dependents.length()) {
+                    Target:dependent = target.dependents.at(j);
+                    
+                    if (!dependent.is_dirty) {
+                        dependent.is_dirty = true;
+                        changed = true;
+                    };
+                    
+                    j = j + 1;
+                };
+            };
+            
+            i = i + 1;
+        };
+    };
+};
+
+// Topological sort using Kahn's algorithm
+func:topological_sort = result<array<array<Target>>>(DependencyGraph:graph) {
+    array<array<Target>>:batches = array<array<Target>>.new();
+    array<Target>:ready_queue = array<Target>.new();
+    int32:processed_count = 0;
+    
+    // Initialize ready queue with nodes having in-degree 0
+    int32:i = 0;
+    while (i < graph.targets.length()) {
+        Target:target = graph.targets.at(i);
+        
+        if (target.in_degree == 0) {
+            ready_queue.push(target);
+        };
+        
+        i = i + 1;
+    };
+    
+    // Process in layers (enables parallelization)
+    while (ready_queue.length() > 0) {
+        array<Target>:current_batch = array<Target>.new();
+        
+        // Move all ready nodes to current batch
+        int32:j = 0;
+        while (j < ready_queue.length()) {
+            current_batch.push(ready_queue.at(j));
+            j = j + 1;
+        };
+        
+        batches.push(current_batch);
+        processed_count = processed_count + current_batch.length();
+        
+        // Clear ready queue
+        ready_queue = array<Target>.new();
+        
+        // Process current batch
+        int32:k = 0;
+        while (k < current_batch.length()) {
+            Target:target = current_batch.at(k);
+            
+            // Decrement in-degree of dependents
+            int32:m = 0;
+            while (m < target.dependents.length()) {
+                Target:dependent = target.dependents.at(m);
+                dependent.in_degree = dependent.in_degree - 1;
+                
+                if (dependent.in_degree == 0) {
+                    ready_queue.push(dependent);
+                };
+                
+                m = m + 1;
+            };
+            
+            k = k + 1;
+        };
+    };
+    
+    // Check for cycles
+    if (processed_count < graph.targets.length()) {
+        result<array<array<Target>>>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Circular dependency detected in build graph";
+        pass(err_result);
+    };
+    
+    result<array<array<Target>>>:success;
+    success.is_error = false;
+    success.value = batches;
+    pass(success);
+};
+
+// ============================================================================
+// Module: tools/build/telemetry.aria
+// ============================================================================
+// Build Telemetry (stddbg stream)
+// ============================================================================
+
+// Telemetry event types
+enum:EventType = {
+    LIFECYCLE = 0,
+    DIAGNOSTIC = 1,
+    METRIC = 2
+};
+
+// Emit lifecycle event
+func:emit_lifecycle = void(string:event, string:target_name) {
+    int64:timestamp = std.time.nanos_since_epoch() ? 0;
+    
+    std.io.stddbg.write("{");
+    std.io.stddbg.write("\"ts\":");
+    std.io.stddbg.write(std.string.from_int(timestamp) ? "0");
+    std.io.stddbg.write(",\"source\":\"abuild\"");
+    std.io.stddbg.write(",\"type\":\"lifecycle\"");
+    std.io.stddbg.write(",\"event\":\"");
+    std.io.stddbg.write(event);
+    std.io.stddbg.write("\",\"target\":\"");
+    std.io.stddbg.write(target_name);
+    std.io.stddbg.write("\"}\n");
+};
+
+// Emit metric event
+func:emit_metric = void(string:name, int64:value) {
+    int64:timestamp = std.time.nanos_since_epoch();
+    
+    std.io.stddbg.write("{");
+    std.io.stddbg.write("\"ts\":");
+    std.io.stddbg.write(std.string.from_int(timestamp));
+    std.io.stddbg.write(",\"source\":\"abuild\"");
+    std.io.stddbg.write(",\"type\":\"metric\"");
+    std.io.stddbg.write(",\"name\":\"");
+    std.io.stddbg.write(name);
+    std.io.stddbg.write("\",\"value\":");
+    std.io.stddbg.write(std.string.from_int(value));
+    std.io.stddbg.write("}\n");
+};
+
+// ============================================================================
+// Module: tools/build/executor.aria (FFI Required)
+// ============================================================================
+// Process Execution with 6-Stream Support
+// ============================================================================
+
+// NOTE: This requires FFI to fork/exec on POSIX or CreateProcess on Windows
+// Implementation would use 'wild' memory and extern functions
+
+// Execute compilation task
+func:execute_target = result<int32>(Target:target, map<string, string>:vars) {
+    emit_lifecycle("start", target.name);
+    
+    // Build command line
+    array<string>:args = array<string>.new();
+    args.push("ariac");  // Aria compiler
+    
+    // Add sources
+    int32:i = 0;
+    while (i < target.sources.length()) {
+        args.push(target.sources.at(i));
+        i = i + 1;
+    };
+    
+    // Add flags
+    i = 0;
+    while (i < target.flags.length()) {
+        args.push(expand_variables(target.flags.at(i), vars));
+        i = i + 1;
+    };
+    
+    // Add output
+    args.push("-o");
+    args.push(target.output_path);
+    
+    // Execute (FFI call - platform specific)
+    // result<int32>:exit_code = std.process.spawn_with_streams(args);
+    
+    // For now, placeholder
+    result<int32>:success;
+    success.is_error = false;
+    success.value = 0;
+    
+    emit_lifecycle("finish", target.name);
+    
+    pass(success);
+};
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
+
+func:main = int32() {
+    // Parse build.aria
+    result<ProjectConfig>:config_result = parse_abc_file("build.aria");
+    
+    if (config_result.is_error) {
+        std.io.stderr.write("Error: ");
+        std.io.stderr.write(config_result.error);
+        std.io.stderr.write("\n");
+        pass(1);
+    };
+    
+    ProjectConfig:config = config_result.value;
+    
+    // Build dependency graph
+    DependencyGraph:graph = build_graph(config);
+    
+    // Mark dirty nodes
+    mark_dirty_nodes(graph);
+    
+    // Topological sort
+    result<array<array<Target>>>:sort_result = topological_sort(graph);
+    
+    if (sort_result.is_error) {
+        std.io.stderr.write("Error: ");
+        std.io.stderr.write(sort_result.error);
+        std.io.stderr.write("\n");
+        pass(1);
+    };
+    
+    array<array<Target>>:batches = sort_result.value;
+    
+    // Execute batches
+    int32:i = 0;
+    while (i < batches.length()) {
+        array<Target>:batch = batches.at(i);
+        
+        std.io.stdout.write("[ ");
+        std.io.stdout.write(std.string.from_int((i * 100) / batches.length()));
+        std.io.stdout.write("% ] Building batch ");
+        std.io.stdout.write(std.string.from_int(i + 1));
+        std.io.stdout.write("/");
+        std.io.stdout.write(std.string.from_int(batches.length()));
+        std.io.stdout.write("\n");
+        
+        // Execute targets in parallel (would use thread pool)
+        int32:j = 0;
+        while (j < batch.length()) {
+            Target:target = batch.at(j);
+            
+            if (target.is_dirty) {
+                std.io.stdout.write("  Compiling: ");
+                std.io.stdout.write(target.name);
+                std.io.stdout.write("\n");
+                
+                result<int32>:exec_result = execute_target(target, config.variables);
+                
+                if (exec_result.is_error || exec_result.value != 0) {
+                    std.io.stderr.write("Build failed!\n");
+                    pass(1);
+                };
+            } else {
+                std.io.stdout.write("  Cached: ");
+                std.io.stdout.write(target.name);
+                std.io.stdout.write("\n");
+                
+                emit_metric("cache_hit", 1);
+            };
+            
+            j = j + 1;
+        };
+        
+        i = i + 1;
+    };
+    
+    std.io.stdout.write("[ 100% ] Build complete!\n");
+    pass(0);
+};
+
+// ============================================================================
+// END OF CORRECTED ABUILD IMPLEMENTATION
+// ============================================================================

@@ -1,0 +1,68 @@
+## TASK 7: Process Execution and Toolchain Orchestration
+
+**Priority**: HIGH (Required for actual compilation)
+**Estimated Complexity**: Medium
+**Dependencies**: TASK 6 (invoked by scheduler)
+
+### Problem Statement
+AriaBuild must spawn external processes (ariac, lli) and capture their output:
+- std::system is blocking and dumps to console (breaks parallelism)
+- popen only captures stdout by default (stderr has errors)
+- Need separate stdout/stderr capture for colored output
+- Need proper exit code handling
+
+### Required Context Files
+
+**From aria repository**:
+1. `docs/info/aria_specs.txt` - Compiler CLI interface
+2. Documentation on ariac command-line flags
+
+**From aria_make repository**:
+1. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (Section 5)
+
+### Gemini Prompt
+
+```
+AriaBuild requires a robust mechanism to spawn child processes (compilers, interpreters) and capture their output. Provide a complete C++ implementation for process execution and toolchain orchestration.
+
+Requirements:
+
+**execute_command function**:
+1. Signature: execute_command(const std::string& cmd, std::string& stdout_capture, std::string& stderr_capture) → int (exit code)
+2. Implementation options:
+   - Preferred: Use popen with shell redirection to capture both streams
+   - Alternative: Platform-specific (fork/exec/pipe on POSIX, CreateProcess on Windows)
+3. Requirements:
+   - Non-blocking from ThreadPool perspective (can block calling thread)
+   - Capture stdout to stdout_capture
+   - Capture stderr to stderr_capture
+   - Return exit code (0 = success)
+   - Handle command not found (e.g., ariac missing)
+4. Provide both a C++17-only version (using popen with 2>&1) and a platform-specific version for separate stream capture if feasible
+
+**ToolchainOrchestrator Class**:
+1. Method: build_aria_binary(const TargetConfig& target) → bool
+   - Construct ariac command line:
+     * Source files from glob expansion
+     * -o flag for output path
+     * --emit-llvm if target type is "library"
+     * Include directories from target.includes
+   - Execute command via execute_command
+   - Parse stderr for errors/warnings
+   - Return true if exit code == 0
+2. Method: run_with_lli(const std::filesystem::path& ll_file) → int
+   - Construct lli command: "lli <file.ll>"
+   - Execute and capture output
+   - Return exit code
+
+Provide implementation with error handling for missing tools, detailed logging, and example usage showing compilation of a multi-file Aria project.
+```
+
+### Expected Deliverables
+- `include/toolchain/process_executor.h` - execute_command function
+- `include/toolchain/toolchain_orchestrator.h` - ToolchainOrchestrator class
+- `src/toolchain/process_executor.cpp` - Implementation (portable)
+- `src/toolchain/toolchain_orchestrator.cpp` - CLI construction
+- `tests/toolchain/test_executor.cpp` - Process spawn tests
+
+---

@@ -1,0 +1,241 @@
+﻿Comprehensive Architectural Audit and Gap Analysis: AriaBuild & Compiler Integration Strategy
+1. Executive Introduction and Systemic Context
+The maturation of the Aria programming language ecosystem, currently versioned at v0.0.7, necessitates a foundational transformation in its supporting infrastructure. As the language specification evolves to include advanced features such as Twisted Balanced Binary (TBB) arithmetic, optional types utilizing strictly defined NIL semantics, and a sophisticated module system dependent on use directives, the limitations of legacy build automation tools have become critically apparent. The proposed AriaBuild system (internally referred to as aria_make) represents a strategic pivot from imperative, fragile build scripts typified by GNU Make toward a declarative, deterministic "Build System as Code" paradigm. This report serves as an exhaustive architectural audit of the proposed AriaBuild specifications, cross-referenced against the existing Aria compiler source code (ariac).1
+The objective of this analysis is to rigorously identify discrepancies between the theoretical design of AriaBuild and the implementation reality of the Aria compiler. While the "Configuration as Data" philosophy utilizing the Aria Build Configuration (ABC) format effectively mitigates the syntactic fragility of Makefiles—specifically the whitespace sensitivity that violates the Principle of Least Astonishment—a deep technical review reveals significant architectural gaps. These gaps, if left unaddressed, will result in a toolchain that is superficially modern but functionally brittle, incapable of supporting the concurrency, incremental correctness, and native binary generation required for a systems programming language.
+The audit identifies a series of high-severity deficits in the current research trajectory. Foremost among these is the "Incremental Validity Crisis," where the reliance on timestamp-based dirty checking fails to account for command-line mutations, leading to stale artifacts. Furthermore, the proposed process execution model based on standard library facilities (popen) introduces unavoidable race conditions and stream merging issues that compromise the hermeticity of parallel builds. Crucially, the current specification treats the compiler as a black box interpreter (lli invocation), neglecting the essential systems engineering task of linking native object files to produce standalone executables—a requirement for Aria's classification as a systems language capable of wild memory management.1
+This document deconstructs these failure modes through the lens of systems theory, graph algorithms, and operating system internals. It provides a corrective architectural roadmap, synthesizing advanced concepts from modern meta-build systems (Ninja, Bazel) with the specific constraints of the Aria runtime environment. The findings culminate in a precise remediation plan, formatted as a series of actionable prompts, to bridge the chasm between the current research state and a production-ready build infrastructure.
+2. The Incremental Build Validity Engine: Beyond Timestamps
+The central promise of any modern build system is the minimization of redundant computation. An efficient build system must strictly adhere to the principle that a target should only be rebuilt if its inputs or its definition have changed. The current AriaBuild specification, as detailed in the architectural research 1, defines an incremental build model predicated exclusively on Timestamp Comparison. While checking file modification times ($mtime$) is a necessary first-order heuristic, it is architecturally insufficient for guaranteeing build correctness in a complex, flag-dependent compiler environment.
+2.1 The "Command Line Change" Vulnerability
+The specification for the check_is_dirty function 1 establishes a Boolean logic for rebuilding: a target is "dirty" if the output is missing, or if the maximum modification time of the source files exceeds the modification time of the output artifact. This logic assumes a bijective mapping where $f(SourceContent) \rightarrow Artifact$. However, compilation is a multivariate function: $f(SourceContent, CompilerFlags, Environment, ToolchainVersion) \rightarrow Artifact$.
+The current architecture possesses a critical blind spot regarding the Command Line Context. Consider the following operational scenario common in systems programming:
+1. A developer initializes the build configuration for a debug session. The flags variable in build.aria is set to ["-g", "-O0"].
+2. AriaBuild executes, invoking ariac src/main.aria -o build/main.ll -g -O0. The output file main.ll is created with timestamp $T_1$.
+3. The developer, wishing to profile the application's performance with Aria's specialized TBB types, edits build.aria to change the flags to ``. Crucially, they do not touch the source code main.aria.
+4. AriaBuild scans the graph. It compares the timestamp of main.aria ($T_{source} < T_1$) against main.ll ($T_1$).
+5. System Failure: The timestamp check indicates the target is "clean." The build system skips recompilation. The developer is left running an unoptimized debug build while believing they are profiling release code. This non-determinism erodes trust in the toolchain and leads to "clean build" rituals where developers manually delete build directories to ensure correctness.
+Architectural Remediation: Command Signature Hashing
+To resolve this, AriaBuild must implement a Command Signature Verification layer. For every target node in the dependency graph, the system must compute a cryptographic hash (e.g., SHA-256 or BLAKE3 for performance) of the complete command string that would be executed. This includes the compiler executable path, all flags, define macros, and include paths.
+This hash must be serialized to a persistent state store (e.g., .aria_build_state.json) keyed by the target name. During the "dirty check" phase, the scheduler must:
+1. Load the previous command hash from the persistent store.
+2. Compute the current command hash from the active configuration.
+3. Compare the hashes. If $H_{prev} \neq H_{curr}$, the target is effectively dirty, regardless of file timestamps.
+This necessitates a significant expansion of the IncrementalLogic component described in the research 1, moving from simple std::filesystem calls to a stateful management system.
+2.2 The "Comptime" Dependency Blind Spot
+The Aria language specification includes the TOKEN_KW_CONST and TOKEN_KW_COMPTIME tokens 1, indicating support for compile-time execution similar to Zig or C++ constexpr. This feature introduces Dynamic Dependencies—dependencies that are not visible in the static source code but are discovered only during compilation.
+Consider a scenario where an Aria program uses comptime to embed a resource:
+
+
+Code snippet
+
+
+
+
+const asset = comptime {
+   return embed_file("assets/model.json");
+};
+
+In this snippet, main.aria depends on assets/model.json. However, no use statement exists for the assets file. The current AriaBuild research relies on a "Lexer Reuse Strategy" 1 to scan for TOKEN_KW_USE to build the dependency graph. This static analysis is structurally incapable of detecting dependencies formed by arbitrary code execution within comptime blocks.
+System Failure: If model.json is modified, the timestamp of main.aria remains unchanged. The build system, unaware of the connection, will not trigger a rebuild. The resulting binary will contain stale data.
+Architectural Remediation: Dynamic Dependency Discovery (dyndep)
+To address this, AriaBuild must adopt the dyndep model popularized by Ninja and Fortran build systems. The architecture must be updated to support a Two-Phase Dependency Graph:
+1. Static Phase: The graph is initialized with explicit dependencies (depends_on in ABC) and static imports (use in source).
+2. Dynamic Phase: The ariac compiler must be instrumented to track every file opened during comptime evaluation. Upon successful compilation, it must emit a dependency manifest (e.g., .d file or JSON) listing these files.
+3. Graph Update: AriaBuild must read this manifest after a build step to update the persistent dependency graph for subsequent runs. This ensures that future modifications to model.json correctly invalidate main.aria.
+2.3 Implicit Dependency Resolution & Conditional Compilation
+The Aria source code reveals the existence of TOKEN_KW_CFG 1, enabling conditional compilation (e.g., use cfg(target_os = "linux") std.os.linux). The naive "Lexer Reuse" strategy proposed in the research 1 treats the source file as a linear stream of tokens. It lacks the semantic context to evaluate cfg predicates.
+The Flaw: A build running on Windows might see use... std.os.linux in the token stream and erroneously add a dependency on a Linux-specific module that does not exist or should not be built. This leads to "false positive" dependency edges, creating cycles or build failures in cross-platform projects.
+Architectural Remediation: The dependency scanner cannot be a simple Lexer. It must be a Pre-processor Aware Parser. However, duplicating the compiler's semantic logic into the build tool violates the Single Source of Truth principle. The correct architectural approach is to offload dependency generation to the compiler itself. The ariac driver 1 requires flags analogous to GCC's -M and -MM to emit the exact list of active dependencies based on the current build configuration, which AriaBuild then consumes.
+Feature
+	Timestamp Only (Current)
+	Command Hashing (Required)
+	Compiler-Emitted Deps (Required)
+	Source Change Detection
+	✅ Yes
+	✅ Yes
+	✅ Yes
+	Compiler Flag Change
+	❌ No
+	✅ Yes
+	✅ Yes
+	System Lib Updates
+	❌ No
+	❌ No
+	✅ Yes
+	Comptime/Embeds
+	❌ No
+	❌ No
+	✅ Yes
+	Conditional Imports
+	❌ No (False Positives)
+	❌ No
+	✅ Yes
+	________________
+3. Process Execution Architecture: The Concurrency-Determinism Trap
+The execution engine is the actuator of the build system. The research specification 1 proposes a "pragmatic" implementation using popen to invoke the compiler. While popen is part of the C standard library, its use in a highly concurrent, multi-threaded build system constitutes a severe architectural anti-pattern that jeopardizes the system's reliability and user experience.
+3.1 The Semantics of Stream Capture
+A modern build tool must function as a multiplexer for output streams. When running $N$ parallel compilation jobs, the output (stdout) and error (stderr) streams of child processes must be captured independently, buffered, and then printed atomically to the user's console to prevent character interleaving ("garbled text").
+The popen Failure Mode:
+The standard popen(cmd, "r") function creates a pipe to the child's standard output. To capture standard error, the shell syntax 2>&1 is universally used to redirect stderr into stdout.
+* Semantic Erasure: By merging streams, AriaBuild loses the ability to distinguish between distinct classes of information. A compiler warning (stderr) becomes indistinguishable from a linker artifact path (stdout). This prevents the build tool from implementing features like "Fail on Error," syntax highlighting (red for errors, yellow for warnings), or structured log parsing.
+* Blocking I/O: popen utilizes blocking file descriptors. If the build tool reads from the pipe slower than the compiler produces output (a scenario likely under high load), the compiler process blocks. Conversely, if the compiler produces no output, the build tool blocks on read().
+3.2 The Deadlock Mechanics
+The most critical risk in process orchestration is the Pipe Buffer Deadlock. Operating system kernels maintain a finite buffer for pipes (typically 4KB to 64KB).
+* Scenario: A child process writes copious debug info to stdout and simultaneously writes errors to stderr.
+* Deadlock: If the parent process is reading stdout but ignoring stderr (or waiting for stdout to close before reading stderr), the stderr pipe buffer fills up. The child process blocks on write(stderr). The parent process blocks on read(stdout) waiting for the child to finish. Both processes hang indefinitely.
+To strictly avoid this, the execution engine must implement Threaded Pump Logic. The parent process must spawn two auxiliary threads for every child process: one dedicated to draining stdout and one for stderr. These threads continuously read from the raw file descriptors into memory buffers. The popen abstraction does not expose the separate file descriptors necessary to implement this safely.
+3.3 Thread-Safety of Environment Variables
+AriaBuild's ABC format allows defining environment variables per target (e.g., env: { CFLAGS: "-O3" }). In a POSIX environment, popen inherits the environment of the parent process. To modify the environment for a specific child, the parent would ostensibly call setenv() before popen().
+The Concurrency Hazard: The global environ pointer in C/C++ is not thread-safe. If Thread A calls setenv("CFLAGS", "-O3") for Target A, and Thread B simultaneously calls setenv("CFLAGS", "-g") for Target B, the resulting behavior is undefined. Target A might inherit Target B's flags, or the build tool might crash.
+Since AriaBuild is explicitly designed as a parallel scheduler 1, modifying the global environment is strictly prohibited.
+Architectural Remediation: Native Platform Abstraction Layer (PAL)
+The implementation must bypass popen entirely in favor of a zero-overhead PAL that interacts directly with kernel APIs.
+* Windows Implementation: Must utilize CreateProcessW.2 This API accepts an lpEnvironment parameter, allowing the parent to pass a distinct, isolated environment block to the child without modifying its own state. It also supports explicit handle inheritance control via STARTUPINFO, enabling the separation of stdout/stderr pipes.
+* POSIX Implementation: Must utilize the fork() / execve() pattern. In the child branch (post-fork, pre-exec), the process is single-threaded and has its own copy of the memory space. It can safely call setenv() or construct the envp array passed to execve without affecting other threads in the parent build tool.
+________________
+4. The Dependency Graph & Cycle Detection Subsystem
+The Dependency Graph is the mathematical heart of the build system. The research 1 correctly identifies the need for a Directed Acyclic Graph (DAG) and suggests Kahn's Algorithm for scheduling. However, the implementation of cycle detection and graph validation requires greater rigor to handle the specific complexities of the Aria module system.
+4.1 The Diamond Dependency Ambiguity
+A frequent pathology in dependency resolution is the "Diamond Dependency" problem, where A depends on B and C, and both B and C depend on D.
+* Naive DFS Failure: A simple Depth-First Search (DFS) that marks nodes as "Visited" will flag the second arrival at D (via path A->C->D) as a cycle or a redundant build, potentially pruning valid parts of the graph.
+* AriaBuild Requirement: The Cycle Detector must implement a Tri-Color Marking Algorithm (White, Gray, Black).
+   * White: Unvisited.
+   * Gray: Visiting (currently in the recursion stack).
+   * Black: Visited (processing complete).
+   * Cycle Condition: A cycle is detected if and only if the traversal encounters a Gray node. Encountering a Black node indicates a valid diamond dependency (shared library usage) and should be ignored.
+The current research notes "incomplete DFS logic".1 Remediation requires replacing the binary visited state with this tri-state logic to accurately distinguish between modular code reuse (valid) and circular recursion (invalid).
+4.2 Path Reconstruction for Diagnostics
+When a cycle is detected (e.g., A -> B -> A), simply reporting "Cycle Detected" is hostile to the developer. The build tool must provide the exact path causing the cycle.
+Implementation Detail: The CycleDetector class must maintain a std::vector<Node*> path_stack. When a Gray node is encountered, the stack contains the precise lineage of the cycle. The remediation plan must include logic to slice this stack from the first occurrence of the recurring node to the end, enabling error messages like:
+Error: Circular dependency detected: Module 'Network' -> Module 'HTTP' -> Module 'Network'.
+________________
+5. The Runtime Gap: Orchestration of Linking & Native Binaries
+Perhaps the most significant gap in the current research is the implicit assumption that the build process ends with the generation of LLVM IR (.ll) files, which are then executed via the interpreter lli. This model effectively reduces Aria to a scripting language, contradicting its design goals as a systems language featuring wild memory management, stack allocation, and direct pointer manipulation.1
+5.1 The "Interpreter Trap"
+Running code via lli involves significant overhead (JIT compilation latency) and prevents the creation of standalone distributable artifacts. For Aria to interface with the operating system loader and interact with C libraries (extern "libc" 1), it must produce native executable binaries (ELF on Linux, PE on Windows, Mach-O on macOS).
+The Missing Linker: The current ToolchainOrchestrator 1 lacks any concept of a Linker. It maps dependencies to -I (Include) flags, which is sufficient for the compiler to resolve symbol declarations but insufficient for the runtime to resolve symbol definitions.
+In a native build pipeline:
+1. Compilation: ariac converts source.aria $\rightarrow$ object.o (Machine Code).
+2. Linking: A system linker (ld, lld, link.exe) combines object.o + dependency.o + runtime.lib $\rightarrow$ executable.
+Architectural Remediation: Linker Orchestration
+The build architecture must be extended to support a "Link" phase.
+1. Target Machine Emission: The ariac driver must be updated to invoke LLVM's TargetMachine::emit pipeline to generate object files (.o / .obj) instead of, or in addition to, IR.
+2. Linker Node: The dependency graph for a binary target must explicitly include a Linker Node that depends on the object files of all transitive dependencies.
+3. Driver Integration: The orchestrator must detect the platform's linker (preferring LLVM's lld for performance) and construct the appropriate command line, handling library paths (-L) and library inputs (-l).
+5.2 Compile Commands Database (compile_commands.json)
+Modern developer tooling (LSP, IDEs) relies on a standardized database to understand how to parse a project. The compile_commands.json standard is the industry norm. While mentioned in the research context 1, the logic for generating this is absent from the provided source code.
+Implementation: AriaBuild must aggregate the compilation commands for all source files—complete with the resolved include paths and flags determined by the dependency graph—and serialize this to a JSON file in the build root. This enables the Aria Language Server to provide accurate "Go to Definition" and autocompletion features.
+________________
+6. Ecosystem Integration: Globbing & File System Abstraction
+AriaBuild implements a custom globbing engine using C++17 std::filesystem because the Aria standard library lacks these facilities. While the "Shifting Wildcard" algorithm 1 is performant, the integration lacks exclusion logic (.gitignore).
+6.1 The "Build Directory" Infinite Loop
+Without exclusion logic, a recursive glob pattern src/**/*.aria might accidentally traverse into the build/ directory if it is nested within the project root. This effectively causes the build system to index its own intermediate artifacts, leading to potential infinite loops or cache trashing.
+Architectural Remediation: The GlobEngine must accept a list of exclusion patterns. Crucially, this exclusion must happen during traversal (pruning the tree), not as a post-processing filter. Using entry.disable_recursion_pending() in recursive_directory_iterator is required to physically prevent the iterator from entering excluded directories like .git or build, yielding massive performance gains on large repositories.
+6.2 Deterministic Sorting
+The file system on Linux (ext4) and Windows (NTFS) returns directory entries in different orders (hash order vs B-tree order). To ensure the build is deterministic across platforms, the Globbing Engine must buffer all matches and strictly sort them alphabetically before returning them to the Dependency Graph. This prevents the "flaky build" syndrome where linking order changes randomly.
+________________
+7. Remediation Plan: Todo with Prompts
+The following section translates the architectural gaps identified above into a concrete engineering plan. Each item includes a specific prompt designed to generate the missing code or logic.
+Todo Item 1: Implement Command Signature Hashing
+Context: Fixes the "Flag Change" vulnerability where changing compiler flags doesn't trigger a rebuild.
+Priority: Critical
+Components: src/build/incremental_logic.cpp, DependencyGraph
+Prompt:
+"You are an expert C++ build system engineer. Modify the IncrementalLogic subsystem in src/build/incremental_logic.cpp.
+1. Define a BuildState structure mapping TargetName -> CommandHash (using std::hash<std::string> or a stronger hash like FNV-1a).
+2. Implement a StatePersistence class using nlohmann/json to serialize this map to disk (.aria_build_state.json).
+3. Refactor check_is_dirty(Node* node) to accept the current_command_string.
+   * Logic: Return true (dirty) if saved_hash!= hash(current_command_string), IGNORING timestamps.
+   * Logic: Return true if check_timestamps(node) is true.
+   * Update the in-memory hash if dirty.
+4. Provide the complete C++17 implementation."
+Todo Item 2: Native Process Spawning (PAL) Implementation
+Context: Replaces popen to fix stream merging, deadlocks, and environment variable race conditions.
+Priority: Critical
+Components: src/runtime/process.cpp
+Prompt:
+"You are a low-level systems programmer specializing in cross-platform C++. Replace the execute_command function in src/runtime/process.cpp with a robust Platform Abstraction Layer (PAL).
+1. Interface: ExecResult execute(string cmd, vector<string> args, map<string,string> env). Return separated stdout and stderr strings.
+2. Windows (#ifdef _WIN32): Use CreateProcessW. Implement STARTUPINFOW to redirect hStdOutput and hStdError to separate anonymous pipes. Use SetHandleInformation to ensure parent-side pipe ends are NOT inherited. Construct the environment block manually (double-null terminated).
+3. POSIX (#else): Use pipe() (x2), fork(), and execve(). In the child, use dup2 to map pipes to FD 1 and 2. Construct the char* envp array from the map.
+4. Deadlock Prevention: In the parent, use two std::thread instances to read from the stdout/stderr pipe FDs simultaneously until EOF. Join threads before returning.
+Provide the full, thread-safe implementation."
+Todo Item 3: Implement Linker Driver & Object Emission
+Context: Enables creation of native executables instead of interpreted scripts.
+Priority: High
+Components: src/build/toolchain.cpp, ariac driver
+Prompt:
+"You are a compiler toolchain architect. Extend the ToolchainOrchestrator in src/build/toolchain.cpp.
+   1. Object Phase: Modify construct_compile_cmd to emit object files (.o/.obj) instead of .ll. Add a flag --emit-obj to the compiler command.
+   2. Linker Phase: Implement construct_link_cmd(Node* target, vector<string> objects).
+   * Detect system linker: lld (preferred), ld, or link.exe.
+   * Construct the CLI: linker -o target.exe obj1.o obj2.o -Llibpaths -l libraries.
+   * Add standard library linking (e.g., -lc or msvcrt.lib).
+   3. Orchestration: Update build_node: If target.type == BINARY, first build all sources to objects, then invoke the linker command.
+Provide the updated C++ implementation."
+Todo Item 4: Implement Compiler Dependency Generation Flags
+Context: Fixes the "Comptime" blind spot and implicit dependency issues.
+Priority: High
+Components: src/main.cpp (Compiler Driver)
+Prompt:
+"You are a compiler engineer working on the Aria driver (src/main.cpp). Implement dependency tracking flags similar to GCC.
+      1. Add CLI flags: -M (generate makefile-style deps) and -MF <file> (output file).
+      2. Integrate a DependencyTracker singleton. Hook into Lexer::tokenize (to catch use imports) and Runtime::embed_file (to catch comptime reads).
+      3. In main, after compilation, serialize the tracked paths to the -MF file if -M is set.
+      * Format: output.o: source.aria dep1.aria dep2.json...
+Provide the C++ code modification for the compiler driver."
+Todo Item 5: Globbing Exclusion Logic
+Context: Prevents infinite recursion into build/ or .git/.
+Priority: Medium
+Components: src/glob/glob_engine.cpp
+Prompt:
+"You are a C++ algorithm specialist. Update the GlobEngine in src/glob/glob_engine.cpp to support exclusions.
+         1. Modify GlobEngine constructor to accept vector<string> exclusions (e.g., build/, .git/).
+         2. In recursive_directory_iterator loop:
+         * Check entry.path() against exclusion patterns.
+         * If a directory matches, call it.disable_recursion_pending() to prune the tree efficiently.
+         * Ensure platform-agnostic matching (handle / vs \).
+Provide the optimized C++17 implementation."
+Todo Item 6: Cycle Detection with Path Reconstruction
+Context: Upgrades the cycle detector to provide actionable error messages.
+Priority: Medium
+Components: src/graph/dependency_graph.cpp
+Prompt:
+"You are a Graph Theory specialist. Implement the CycleDetector class in src/graph/dependency_graph.cpp.
+            1. Implement find_cycle(nodes) using a recursive DFS with Tri-Color Marking (White/Gray/Black).
+            2. Maintain a path_stack. When a Gray node is encountered (back-edge), strictly identify the cycle.
+            3. Implement reconstruct_path(): Slice the stack from the first occurrence of the recurring node to the top.
+            4. Return vector<string> containing the names of the targets in the cycle loop.
+Provide the algorithm implementation."
+Todo Item 7: Environment Variable Scope Resolution
+Context: Implements &{ENV.VAR} resolution logic correctly.
+Priority: Low (Functional Requirement)
+Components: src/config/interpolator.cpp
+Prompt:
+"You are a C++ developer. Implement the environment variable logic in Interpolator (src/config/interpolator.cpp).
+               1. Implement get_env_var(string key) using std::getenv. Ensure it returns an empty string (or throws, based on config) if null.
+               2. Update resolve_var_key: Detect ENV. prefix.
+               3. Update Target struct to include a map<string, string> env overlay from the build file.
+               4. Update the Orchestrator to merge Process Environment + Target Environment before spawning processes.
+Provide the implementation code."
+Todo Item 8: compile_commands.json Generator
+Context: Enables LSP support for the build tool.
+Priority: Low (Tooling)
+Components: src/build/compile_db.cpp
+Prompt:
+"You are a tools engineer. Implement CompilationDatabase generation in src/build/compile_db.cpp.
+                  1. Define a class CompileDBWriter.
+                  2. After the graph is resolved, iterate all targets.
+                  3. For each source file in a target, create a JSON entry:
+                  * directory: Absolute path to project root.
+                  * file: Absolute path to source file.
+                  * command: The full compiler command string (as generated by ToolchainOrchestrator).
+                  4. Serialize the array to compile_commands.json in the root.
+Provide the C++ implementation using nlohmann/json or manual string formatting."
+________________
+8. Conclusion
+This audit has revealed that while the AriaBuild specification correctly identifies the user experience friction of legacy tools, its initial technical implementation plan focuses too heavily on syntactic ergonomics (parsing, JSON format) and insufficiently on systems reliability (execution, linking, incremental correctness). The current design creates a build system that reads well but executes poorly.
+By implementing the eight remediation items detailed above—specifically moving to native process spawning, implementing command signature hashing, and introducing a formal linker phase—the AriaBuild system can evolve from a prototype into a robust, enterprise-grade toolchain capable of supporting the Aria language's ambitions in systems programming. This remediation plan shifts the architectural weight from the "frontend" of the build tool (parsing configs) to the "backend" (reliable execution), ensuring a stable foundation for the ecosystem.
+Works cited
+                     1. aria_source_part1_frontend_lexer.txt
+                     2. CreateProcessW function (processthreadsapi.h) - Win32 apps | Microsoft Learn, accessed December 19, 2025, https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw

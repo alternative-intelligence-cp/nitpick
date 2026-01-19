@@ -1,0 +1,219 @@
+Gemini Deep Research Task: Globbing Engine Implementation
+==========================================================
+
+RESEARCH OBJECTIVE:
+Provide complete implementation guide for a robust, deterministic globbing engine using C++17 std::filesystem to support recursive pattern matching for aria_make.
+
+SCOPE:
+1. Glob pattern parsing and interpretation
+2. Filesystem traversal with std::filesystem
+3. Pattern matching algorithms
+4. Performance optimization and caching
+5. Edge case handling
+6. Cross-platform compatibility
+
+REQUIRED DELIVERABLES:
+
+1. Glob Pattern Grammar:
+   - Formal specification of supported patterns
+   - * (single-level wildcard)
+   - ** (recursive wildcard)
+   - ? (single character)
+   - [...] (character class)
+   - Escaping special characters
+
+2. Pattern Parser:
+   - Parse glob string into components
+   - Split on directory separators
+   - Identify wildcard segments
+   - Detect ** for recursion
+   - Validate pattern syntax
+
+3. Matching Algorithm:
+   Complete C++ implementation for:
+   - Pattern matching (fnmatch-style)
+   - Handle * wildcards
+   - Handle ? wildcards
+   - Handle character classes [...]
+   - Case sensitivity options
+   - Directory separator handling
+
+4. Filesystem Traversal:
+   Using std::filesystem::recursive_directory_iterator:
+   - Recursive directory walking
+   - Symlink handling
+   - Permission error handling
+   - Hidden file handling
+   - Performance optimization (early termination)
+
+5. Glob Expansion Algorithm:
+   Step-by-step implementation:
+   1. Parse pattern into segments
+   2. Find fixed anchor point (first non-wildcard segment)
+   3. Start traversal from anchor
+   4. For each entry:
+      - Check if matches current segment
+      - If directory and more segments, recurse
+      - If file and last segment, add to results
+   5. Sort results alphabetically
+   6. Return
+
+6. Caching Strategy:
+   - Cache expanded file lists
+   - Invalidation triggers (file system changes)
+   - Cache key generation (pattern + timestamp)
+   - Memory management for large projects
+   - Optional vs required caching
+
+7. Determinism Guarantees:
+   - Alphabetical sorting of results
+   - Consistent ordering across platforms
+   - Handling of OS-specific directory order
+   - Reproducible builds requirement
+
+8. Edge Cases:
+   - Empty pattern
+   - Pattern matches nothing
+   - Infinite recursion prevention (symlink cycles)
+   - Permission denied on directories
+   - Very deep directory trees
+   - Many matches (thousands of files)
+
+9. Performance Optimization:
+   - Early termination (pattern can't match)
+   - Parallel directory scanning
+   - Lazy evaluation
+   - Minimizing stat() calls
+   - Benchmarks and profiling
+
+10. Complete C++ Implementation:
+    - GlobEngine class
+    - expand() method
+    - Pattern class
+    - Matcher class
+    - Cache class
+    - Error handling
+
+RESEARCH QUESTIONS TO ANSWER:
+
+1. How does std::filesystem::recursive_directory_iterator work exactly?
+2. What are its performance characteristics?
+3. How to handle symlinks safely (avoid cycles)?
+4. What's the best algorithm for fnmatch-style matching?
+5. Can we use std::regex or is custom faster?
+6. How to make this cross-platform (Windows vs Unix paths)?
+7. What about case sensitivity differences (macOS vs Linux)?
+8. How to integrate with .gitignore patterns (optional feature)?
+
+PATTERN MATCHING EXAMPLES:
+
+Example 1: Simple Wildcard
+Pattern: src/*.aria
+Should Match: src/main.aria, src/utils.aria
+Should NOT Match: src/sub/file.aria, other/file.aria
+
+Example 2: Recursive
+Pattern: src/**/*.aria
+Should Match: src/main.aria, src/a/b/c/deep.aria
+Should NOT Match: lib/file.aria, src/test.cc
+
+Example 3: Character Class
+Pattern: test[0-9].aria
+Should Match: test0.aria, test5.aria, test9.aria
+Should NOT Match: testA.aria, test.aria, test10.aria
+
+Example 4: Mixed
+Pattern: src/**/test_*.aria
+Should Match: src/test_main.aria, src/sub/test_util.aria
+Should NOT Match: src/main.aria, test/file.aria
+
+EXCLUSION PATTERNS (Future Feature):
+
+Support for exclusion:
+Pattern: src/**/*.aria !src/vendor/**
+Should Match: src/main.aria
+Should NOT Match: src/vendor/lib.aria
+
+Integration with .gitignore:
+- Read .gitignore files
+- Apply exclusion rules
+- Combine with build patterns
+
+FILESYSTEM ERROR HANDLING:
+
+Errors to Handle:
+- Permission denied (skip directory)
+- File not found (pattern matched nothing)
+- Too many open files (OS limit)
+- Symlink cycle (infinite loop)
+- Disk I/O errors
+
+Recovery Strategies:
+- Continue on permission errors
+- Warn user about inaccessible paths
+- Fail on critical errors
+
+CROSS-PLATFORM CONSIDERATIONS:
+
+Path Separators:
+- Unix: /
+- Windows: \ or /
+- Normalize internally
+
+Case Sensitivity:
+- Linux: case-sensitive
+- macOS: case-insensitive by default
+- Windows: case-insensitive
+- Provide option for matching behavior
+
+Hidden Files:
+- Unix: start with .
+- Windows: hidden attribute
+- Default: skip hidden files
+- Option: include hidden files
+
+INTEGRATION WITH BUILD SYSTEM:
+
+When to Expand Globs:
+- Build file parsing (immediate)
+- First build (on-demand)
+- Cache and reuse
+- Invalidate on file system changes
+
+Source List Construction:
+targets: [
+    {
+        sources: ["src/**/*.aria"]
+    }
+]
+
+Expands to:
+sources_resolved: [
+    "src/main.aria",
+    "src/utils/helper.aria",
+    "src/lib/math.aria"
+]
+
+PERFORMANCE BENCHMARKS:
+
+Test Cases:
+1. Small project (10 files): <1ms
+2. Medium project (1000 files): <50ms
+3. Large project (10000 files): <500ms
+
+Goals:
+- Linear scaling with file count
+- Early termination when possible
+- Minimal memory overhead
+
+DELIVERABLE FORMAT:
+- Complete C++ implementation
+- Header and source files
+- Unit tests for all pattern types
+- Performance benchmarks
+- Cross-platform testing results
+- Integration example with aria_make
+- Documentation for usage
+
+DEPTH:
+Production-ready implementation with complete error handling, edge cases covered, and optimized for real-world projects. Must be deterministic and performant.

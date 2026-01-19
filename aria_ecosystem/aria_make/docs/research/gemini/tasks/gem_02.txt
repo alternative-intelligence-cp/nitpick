@@ -1,0 +1,60 @@
+## TASK 2: Variable Interpolation Engine
+
+**Priority**: HIGH (Required for usable build files)
+**Estimated Complexity**: Medium
+**Dependencies**: TASK 1 (needs AST structure)
+
+### Problem Statement
+The ABC format supports variable substitution using `&{var_name}` syntax. This requires:
+- Recursive variable resolution (variables can reference other variables)
+- Environment variable access via `ENV.` prefix
+- Cycle detection to prevent infinite loops
+- Proper scoping (local > global > environment)
+
+### Required Context Files
+
+**From aria repository**:
+1. `include/frontend/sema/symbol_table.h` - For reference (not direct reuse)
+2. `src/frontend/sema/symbol_table.cpp` - Symbol lookup patterns
+
+**From aria_make repository**:
+1. `docs/info/Designing a JSON-like Build Tool.txt` - Section 2.3 on variable substitution
+2. `docs/research/gemini/responses/task_01_parser_implementation.txt` - Section 6 on interpolation
+3. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (Section 2.2)
+
+### Gemini Prompt
+
+```
+The variable substitution logic for the AriaBuild system is missing. Using the specification in 'Designing a JSON-like Build Tool.txt' (Section 2.3) and 'task_01_parser_implementation.txt' (Section 6), provide the complete C++ implementation for the Interpolator class.
+
+Requirements:
+1. Accept a raw string containing &{...} tokens and a VariableMap (std::map<std::string, std::string>)
+2. Recursively resolve variable references:
+   - If &{A} contains &{B}, resolve B first, then substitute into A
+   - Handle multi-level nesting (A→B→C)
+3. Support environment variable access:
+   - Detect ENV. prefix (e.g., &{ENV.HOME})
+   - Use std::getenv() for lookups
+   - Throw clear error if env var doesn't exist
+4. Implement strict cycle detection:
+   - Use a std::unordered_set<std::string> for the current resolution path
+   - Detect if a variable references itself (directly or transitively)
+   - Generate human-readable error: "Cycle detected: A → B → C → A"
+5. Handle undefined variables:
+   - Throw exception with variable name and location if possible
+6. Optimization: Cache resolved values to avoid redundant resolution
+
+Provide header and implementation with unit test examples showing:
+- Simple substitution: &{src} → "src/"
+- Nested: &{output} = "&{build}/bin" where build="build/"
+- Environment: &{home} = "&{ENV.HOME}"
+- Cycle detection: A=&{B}, B=&{A} → error
+```
+
+### Expected Deliverables
+- `include/config/interpolator.h` - Interpolator class
+- `src/config/interpolator.cpp` - Implementation
+- `tests/config/test_interpolator.cpp` - Unit tests
+
+---
+

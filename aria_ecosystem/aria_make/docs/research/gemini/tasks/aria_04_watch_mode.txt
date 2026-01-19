@@ -1,0 +1,59 @@
+Cross-Platform FileWatcher for Incremental Builds
+
+PRIORITY: LOW (Nice-to-Have)
+STATUS: Not in Plan
+SOURCE: gem3_08.txt, Verification Chunk 4
+
+PROBLEM:
+Developers must manually re-run aria_make after file changes. No continuous build mode like cargo watch or tsc --watch.
+
+REQUIREMENTS:
+1. Watch mode CLI:
+   - aria_make --watch (monitor entire project)
+   - aria_make --watch <target> (monitor specific target)
+
+2. Platform-specific event systems:
+   - Linux: inotify API
+   - macOS: FSEvents framework
+   - Windows: ReadDirectoryChangesW
+
+3. Event handling:
+   - Debouncing (ignore rapid-fire saves)
+   - Recursive directory monitoring
+   - Filter events (only .aria, .json files)
+   - Trigger incremental rebuild on changes
+
+IMPLEMENTATION TASKS:
+- [ ] Create FileWatcher abstraction class
+- [ ] Implement Linux inotify backend
+- [ ] Implement macOS FSEvents backend
+- [ ] Implement Windows ReadDirectoryChangesW backend
+- [ ] Add debouncing logic (300-500ms window)
+- [ ] Integrate with BuildScheduler for triggered builds
+- [ ] Implement event filtering (.aria, aria.json only)
+- [ ] Add dedicated watcher thread (non-blocking)
+- [ ] Implement graceful shutdown (Ctrl+C handling)
+
+FILES TO CREATE:
+- src/watch/file_watcher.h (platform abstraction)
+- src/watch/inotify_watcher.cpp (Linux)
+- src/watch/fsevents_watcher.cpp (macOS)
+- src/watch/win_watcher.cpp (Windows)
+- src/cli/watch_command.cpp (CLI integration)
+
+RESEARCH REFERENCE:
+gem3_08.txt provides:
+- Complete platform API comparison
+- Event debouncing algorithm
+- Thread safety considerations
+- Signal handling for graceful shutdown
+
+DEFERRED RATIONALE:
+Not critical for MVP. Developers can use external tools (entr, watchexec) or IDE integration. Adds significant platform-specific complexity.
+
+ACCEPTANCE CRITERIA (if implemented):
+- aria_make --watch rebuilds on .aria file save
+- Debounces rapid saves (save 10 times = 1 rebuild)
+- Works on Linux, macOS, Windows
+- Low CPU overhead (<1% when idle)
+- Graceful exit with Ctrl+C

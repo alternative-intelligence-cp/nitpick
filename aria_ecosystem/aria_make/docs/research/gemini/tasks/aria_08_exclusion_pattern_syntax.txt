@@ -1,0 +1,51 @@
+Enhanced Exclusion Pattern Syntax
+
+PRIORITY: LOW
+STATUS: Basic exclusions work, advanced syntax missing
+SOURCE: Verification analysis (all chunks)
+
+PROBLEM:
+Exclusion patterns in aria.json limited to simple strings. No support for negation (!pattern), complex wildcards, or directory-specific exclusions.
+
+REQUIREMENTS:
+1. Negation patterns:
+   - exclude: ["*.o", "!important.o"]
+   - Include exceptions to exclusion rules
+
+2. Directory-only matching:
+   - exclude: ["build/"] (directories only)
+   - Distinguish from files named "build"
+
+3. Rooted vs floating patterns:
+   - exclude: ["/vendor"] (only root vendor/)
+   - exclude: ["vendor"] (any vendor/ directory)
+
+4. Character classes:
+   - exclude: ["test[0-9].aria"]
+   - exclude: ["[abc]*.tmp"]
+
+IMPLEMENTATION TASKS:
+- [ ] Extend FastMatcher to support negation logic
+- [ ] Add directory-only flag to exclusion rules
+- [ ] Implement rooted pattern detection (leading /)
+- [ ] Add character class support to glob parser
+- [ ] Update documentation with pattern examples
+- [ ] Add validation for exclusion pattern syntax
+
+FILES TO MODIFY:
+- src/glob/fast_matcher.cpp (pattern matching)
+- src/glob/glob_engine.cpp (negation logic)
+- src/parse/abc_parser.cpp (validate patterns)
+- docs/info/plan/20_FILE_DISCOVERY.md (document syntax)
+
+RELATED:
+Complements aria_03 (.gitignore integration) which already implements some of these patterns for git files.
+
+DEFERRED RATIONALE:
+Basic exclusions work. Advanced patterns nice-to-have for complex projects. Can be added incrementally based on user requests.
+
+ACCEPTANCE CRITERIA (if implemented):
+- exclude: ["*.tmp", "!keep.tmp"] includes keep.tmp
+- exclude: ["build/"] skips directories only
+- exclude: ["/node_modules"] skips only root node_modules
+- Syntax validated at parse time with helpful errors

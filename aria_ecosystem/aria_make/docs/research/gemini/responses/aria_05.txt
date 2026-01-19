@@ -1,0 +1,461 @@
+﻿Architectural Specification: Implementation of Preprocessing Pipeline Inspection (-E) for the Aria Toolchain
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language ecosystem, currently navigating the critical transition from version v0.0.7 toward the v0.1.0 milestone, necessitates a rigorous alignment between its architectural specifications and its operational toolchain capabilities. As the language adopts advanced metaprogramming features—specifically a NASM-style textual macro system and compile-time template instantiation—the opacity of the intermediate translation units has emerged as a significant impediment to developer productivity and system reliability.
+The current architectural analysis reveals a critical discrepancy between the high-level design specifications defined in the AriaBuild documentation 1 and the functional reality of the Command Line Interface (CLI) implementation. While the architectural standard mandates the existence of a --debug-macro mode within the build system (aria_make) and a corresponding -E flag within the compiler driver (ariac), the verification analysis confirms that the concrete implementation of these flags within src/cli/main.cpp and src/build/toolchain.cpp is effectively absent in the current codebase.1
+This report provides a comprehensive, expert-level implementation blueprint for rectifying this capability gap. It articulates the theoretical necessity of preprocessing transparency in a language utilizing textual macro substitution, details the architectural changes required within the ToolchainOrchestrator to support non-compiling build targets, and provides precise C++17 implementation logic for the flag parsing, pipeline interruption mechanisms, and stream redirection strategies.
+The successful integration of the -E flag is not merely a tooling enhancement; it is a structural prerequisite for debugging the "Critical Macro Limitation" identified in the language core 1, where internal variable collisions in unhygienic macros currently result in cryptic parse errors. By exposing the preprocessed translation unit, we empower developers to audit macro expansion logic, verify module import resolution, and ensure the correctness of generated code prior to the semantic analysis phase.
+Furthermore, this report synthesizes the implementation with Aria's unique architectural features, including the "Configuration as Data" philosophy of AriaBuild 1, the hybrid memory model distinguishing between garbage-collected and wild pointers 1, and the advanced six-stream I/O topology native to the Aria runtime.1
+________________
+2. Theoretical Framework: The Role of Preprocessing in Aria
+To architect a robust solution for the -E flag, one must first deconstruct the specific role of preprocessing within the Aria compilation pipeline. Unlike languages with purely semantic macro systems (like Rust's AST-based macros) or languages with no preprocessing step (like Go), Aria employs a hybrid model heavily influenced by assembly preprocessors, integrated into a modern systems language context.
+2.1 The Phase 0 Transformation Logic
+The Aria compiler infrastructure explicitly defines "Phase 0" as the Preprocessing stage.1 This phase precedes Lexical Analysis (Phase 1) and Parsing (Phase 2). This ordering is architecturally significant because it implies that the preprocessor operates on a raw character stream or a very rudimentary token stream, rather than a structured Abstract Syntax Tree (AST).
+The operations performed during this phase include:
+1. Textual Macro Expansion: The substitution of %macro definitions with their bodies, replacing positional parameters %1, %2, etc., with provided arguments.1 This is a string-level or token-level operation that occurs before the parser verifies syntax.
+2. Context Stack Management: Handling %push, %pop, and %repl directives to manage context stacks.1 This is crucial for state-aware code generation, allowing macros to behave differently depending on their nesting level or surrounding control flow structures.
+3. Variable Hygiene Enforcement: The execution of "hygienic renaming" strategies to prevent symbol collisions—a known fragility in the current ecosystem.1 The preprocessor must generate unique identifiers (e.g., temp_h1024) to ensure that variables declared inside macros do not shadow or collide with variables in the user's code or other macro instantiations.
+4. Conditional Compilation: Evaluation of %ifdef, %if, and %include directives to determine the effective source code sent to the lexer.
+Because these transformations occur before the construction of the AST, errors introduced during this phase (e.g., generating invalid syntax or colliding identifiers) manifest as baffling parsing errors in Phase 2.1 The compiler receives the expanded, potentially malformed code, but the developer sees only their clean source macros. This "visibility gap" is the primary driver for the -E requirement.
+2.2 The "Noisy Channel" and Debugging Transparency
+The problem of debugging preprocessed code is analogous to the "Noisy Channel" problem identified in the Aria I/O research corpus.1 In the traditional compilation model, the transformation from source to AST is a black box. If the preprocessor (the channel) introduces noise (syntax errors or logic bugs via expansion), the receiver (the parser) fails, but the sender (the developer) cannot see the distorted message.
+The implementation of -E serves as a "wiretap" on this channel. It allows the developer to inspect the exact byte stream that the parser will receive. This is standard in systems programming toolchains (GCC, Clang, MSVC) 2, but for Aria, it is critical due to the "Critical Macro Limitation" documented in the release candidates.1
+The specific issue identified involves the error Parse Error: Unexpected token after type in parentheses when macros use %1:varname for internal variables across multiple invocations.1 This suggests that the preprocessor's hygiene mechanism—intended to rename varname to a unique symbol—is failing or colliding under specific generic instantiation patterns. Without -E, debugging this requires blind trial-and-error. With -E, the developer can immediately see if the preprocessor output contains int32:varname (collision) or int32:varname_h1 (success).
+2.3 Integration with Module Import Resolution
+The requirement to "inspect module import resolution" adds another layer of complexity. In C/C++, #include is a preprocessor directive that physically copies file content. In modern modular languages (like Rust or Go), imports are a semantic linking step.
+Aria's module system uses the use keyword.1 The research indicates that use binds symbols rather than copying text. However, the preprocessor does support an %include directive 1 which mirrors the NASM/C behavior of textual inclusion.
+Therefore, the -E flag implementation must distinguish between:
+* %include "file.aria": This must be recursively expanded in the output. The content of file.aria should appear inline in the preprocessed output.
+* use std.io;: This statement should generally remain valid source code in the output, as it is handled by the semantic analyzer (Phase 3).
+However, a robust -E implementation might optionally annotate use statements with comments indicating the resolved physical path of the module (e.g., use std.io; // Resolved to /usr/lib/aria/std/io.aria), fulfilling the requirement to "inspect module resolution" without breaking the code's valid syntax.
+________________
+3. Architectural Analysis of the Build Ecosystem
+Implementing this feature requires modifying two distinct components of the Aria ecosystem: the build system (aria_make / AriaBuild) and the compiler driver (ariac). Understanding the relationship between these two is critical for a correct implementation.
+3.1 The Meta-Driver Architecture (AriaBuild)
+aria_make (internally referred to as AriaBuild in the architectural specs 1) acts as a meta-driver. It does not possess an internal compiler engine; it orchestrates the invocation of the underlying toolchain binaries (ariac, lli, llc) based on a dependency graph.
+The current architecture of AriaBuild relies on a "Configuration as Data" model using the ABC (Aria Build Configuration) format.1 The ToolchainOrchestrator is the C++ component responsible for translating this configuration into process execution calls.
+Current Deficiency: The architectural standard 1 mentions a --debug-macro mode that maps to ariac -E. However, the implementation tasks reveal that src/cli/main.cpp lacks the argument parsing logic to trigger this, and src/build/toolchain.cpp lacks the logic to construct the -E command line.
+Implication: The implementation task involves "filling in" this missing logic in the orchestrator. The build system must be taught that when -E is present, the target is not a binary .ll file, but a text file (source code), and the subsequent linking steps must be skipped.
+3.2 The Compiler Driver Architecture (ariac)
+The ariac binary is the actual compiler. Its entry point is typically src/driver/main.cpp. Research snippets 1 confirm that ariac uses a CompilerOptions structure to hold configuration state.
+The structure definition found in the research 1 is:
+
+
+C++
+
+
+
+
+struct CompilerOptions {
+   std::vector<std::string> input_files;
+   std::string output_file;
+   bool emit_llvm_ir = false;
+   bool emit_llvm_bc = false;
+   bool emit_asm = false;
+   bool dump_ast = false;
+   bool dump_tokens = false;
+   bool preprocess_only = false; // NEW: -E flag for preprocessed output
+   bool verbose = false;
+   int opt_level = 0;
+   std::vector<std::string> warning_flags;
+};
+
+The presence of bool preprocess_only = false; in the struct suggests that the data model for this feature exists, likely added during the "Phase 0" implementation mentioned in the source headers. However, the control flow support to halt the pipeline after Phase 0 and dump the output is identified as "Not Found" or incomplete in the verification analysis.
+3.3 The Data Flow of Preprocessing
+The architectural data flow for a -E execution path is distinct from a standard build.
+Standard Build Pipeline:
+1. Source Input
+2. Phase 0 (Preprocessor): Expands macros, handles includes. -> Output: Expanded Source String
+3. Phase 1 (Lexer): Tokenizes the expanded source. -> Output: Token Vector
+4. Phase 2 (Parser): Consumes tokens, builds AST. -> Output: AST
+5. Phase 3 (Sema): Type checking, borrow checking. -> Output: Decorated AST
+6. Phase 4 (Codegen): Lowers to LLVM IR. -> Output:.ll File
+Preprocessing-Only Build (-E):
+1. Source Input
+2. Phase 0 (Preprocessor): Expands macros, handles includes. -> Output: Expanded Source String
+3. **** Pipeline Interruption.
+4. Output Generation: Write Expanded Source String to stdout or File.
+The architecture must ensure that the pipeline is explicitly severed after Step 2. Instantiating the Lexer or Parser on the output of -E is an unnecessary waste of CPU cycles and might trigger errors if the preprocessor output is intended for human inspection rather than immediate compilation (e.g., if we decide to inject debug markers).
+3.4 Globbing and Multi-File Context
+AriaBuild supports recursive globbing (e.g., src/**/*.aria).1 This presents a unique challenge for -E.
+* Standard compilers (gcc -E file.c) output to stdout.
+* If a user runs aria_make -E on a target with 50 source files, dumping all 50 preprocessed streams to stdout results in unusable chaos.
+Architectural Decision: aria_make -E must behave differently than ariac -E.
+* ariac -E file.aria: Outputs to stdout by default (standard Unix philosophy).
+* aria_make -E: Must redirect output to files, preserving the directory structure or using a suffix (e.g., .preprocessed.aria), mirroring the behavior of the artifact generation logic but stopping early. The specification 1 mandates generating preprocessed.aria files for inspection.
+________________
+4. Implementation Specification: CLI and Orchestration (aria_make)
+This section details the specific C++ implementation logic required to enable the -E flag functionality in aria_make and ensure it propagates correctly to ariac.
+4.1 Modifying src/cli/main.cpp
+The entry point for the build system must be updated to recognize the -E flag. Given that AriaBuild uses a custom argument parser 1, we must inject a handler that sets a global debug mode in the BuildContext or BuildSettings.
+Requirements:
+1. Detect -E or --debug-macro in argv.
+2. Set a preprocess_only flag in the BuildSettings struct.
+3. Propagate this setting to the ToolchainOrchestrator.
+Implementation Logic (C++17):
+
+
+C++
+
+
+
+
+// File: src/cli/main.cpp
+
+#include "build/settings.h"
+#include "build/orchestrator.h"
+#include <vector>
+#include <string>
+#include <iostream>
+
+// Helper to parse arguments
+void parse_cli_args(int argc, char** argv, aria::build::BuildSettings& settings) {
+   for (int i = 1; i < argc; ++i) {
+       std::string arg = argv[i];
+       
+       if (arg == "-E" |
+
+| arg == "--debug-macro") {
+           settings.preprocess_only = true;
+           // Note: We do not consume the next arg as a target here necessarily,
+           // standard parsing logic continues.
+       } else if (arg == "-o") {
+           if (i + 1 < argc) {
+               settings.custom_output = argv[++i];
+           } else {
+               std::cerr << "Error: -o requires an argument\n";
+               exit(1);
+           }
+       }
+       //... handling for target names and other flags
+   }
+}
+
+int main(int argc, char** argv) {
+   aria::build::BuildSettings settings;
+   
+   // Initialize defaults
+   settings.preprocess_only = false;
+   
+   // Parse
+   parse_cli_args(argc, argv, settings);
+   
+   // Instantiate Orchestrator
+   aria::build::ToolchainOrchestrator orchestrator(settings);
+   
+   // Run
+   if (!orchestrator.run()) {
+       return 1;
+   }
+   return 0;
+}
+
+4.2 Updating src/build/toolchain.cpp
+The ToolchainOrchestrator class is responsible for constructing the command strings passed to std::system, execvp, or CreateProcess.1 It must be made aware of the preprocess_only setting and alter the command construction logic accordingly.
+Critical Logic Change:
+When preprocess_only is true, the orchestrator must:
+1. Inject -E: Append -E to the ariac command line arguments.
+2. Output Redirection Strategy:
+   * The specification 1 states: "When enabled, it invokes ariac with the -E flag to generate preprocessed.aria."
+   * The orchestrator typically maps output: "bin/app.ll".
+   * In -E mode, it should override this to bin/app.preprocessed.aria (or similar) to prevent overwriting valid build artifacts with intermediate source text.
+   * Alternatively, for single-file targets, if the user requested stdout (implicit in some CLI usages), it might need to pipe. However, for a build system, file generation is safer.
+Implementation Snippet:
+
+
+C++
+
+
+
+
+// File: src/build/toolchain.cpp
+
+namespace aria::build {
+
+std::pair<std::string, std::vector<std::string>> 
+ToolchainOrchestrator::construct_compile_cmd(const graph::Node* node) {
+   std::vector<std::string> args;
+   
+   // 1. Source Inputs (Resolved from Globbing)
+   for (const auto& src : node->source_files) {
+       args.push_back(src);
+   }
+
+   // 2. Output and Mode Handling
+   if (m_settings.preprocess_only) {
+       // Mode: Preprocess Only
+       args.push_back("-E");
+       
+       // Preserve comments if requested (assuming logic exists in settings)
+       if (m_settings.preserve_comments) {
+           args.push_back("-C"); 
+       }
+
+       // Determine output path for preprocessed file
+       // We modify the extension to indicate it's not an object file
+       std::filesystem::path output_path = node->output_file;
+       if (output_path.has_extension()) {
+           output_path.replace_extension(".preprocessed.aria");
+       } else {
+           output_path += ".preprocessed.aria";
+       }
+       
+       args.push_back("-o");
+       args.push_back(output_path.string());
+       
+       // Logging for user awareness
+       std::cout << "[INFO] Preprocessing target '" << node->name 
+                 << "' to " << output_path.string() << "\n";
+
+   } else {
+       // Mode: Standard Compilation
+       args.push_back("-o");
+       args.push_back(node->output_file);
+   }
+
+   // 3. Include Paths (-I) derived from dependencies
+   //... (Existing logic utilizing depends_on graph)...
+   for (const auto& inc : resolve_includes(node)) {
+       args.push_back("-I");
+       args.push_back(inc);
+   }
+
+   // 4. User-defined Flags
+   for (const auto& flag : node->flags) {
+       args.push_back(flag);
+   }
+
+   return {"ariac", args};
+}
+
+} // namespace aria::build
+
+Globbing Integration Insight:
+Since AriaBuild supports globbing (e.g., sources: ["src/**/*.aria"]), a target might contain multiple source files. If ariac supports multi-file input yielding a single linked IR module 1, then ariac -E will likely concatenate the preprocessed output of all inputs. This is acceptable for inspection. If ariac requires one-to-one compilation, the Orchestrator loop inside build_target must be adapted to iterate over sources. Assuming the standard "single module" compilation model of Aria 1, concatenation is the expected behavior.
+________________
+5. Architectural Specification: Compiler Driver (ariac)
+The build system changes described above rely entirely on ariac supporting the -E flag. If this support is missing or partial (as implied by the "Not Found" research status), it must be implemented in the driver's main entry point src/driver/main.cpp.
+5.1 The CompilerOptions Structure
+As seen in research snippet 1, the CompilerOptions struct is the central configuration object. It must contain the boolean trigger and potentially a comment-preservation flag.
+
+
+C++
+
+
+
+
+// File: src/driver/options.h
+
+struct CompilerOptions {
+   std::vector<std::string> input_files;
+   std::string output_file;
+   //... existing flags...
+   bool preprocess_only = false; // -E
+   bool preserve_comments = false; // -C (New Requirement)
+   //...
+};
+
+5.2 The Pipeline Modification in src/driver/main.cpp
+The function compile_to_module (or equivalent driver logic) typically orchestrates the phases. We must inject an "early exit" mechanism immediately after Phase 0 (Preprocessing).
+Implementation Logic:
+
+
+C++
+
+
+
+
+// File: src/driver/main.cpp
+
+//... inside main execution flow...
+
+// Phase 0: Preprocessing
+// The Preprocessor class manages macro expansion, context stacks, and hygiene.
+aria::frontend::Preprocessor preprocessor;
+
+// Configure Preprocessor based on flags
+if (opts.preserve_comments) {
+   preprocessor.setPreserveComments(true);
+}
+
+// Process the source
+// Note: If multiple input files exist, this loop accumulates the output
+std::stringstream full_preprocessed_output;
+
+for (const auto& input_file : opts.input_files) {
+   std::string source_code = read_file(input_file);
+   try {
+       std::string processed = preprocessor.process(source_code, input_file);
+       full_preprocessed_output << processed << "\n";
+   } catch (const std::exception& e) {
+       diags.error(aria::SourceLocation(input_file, 0, 0), e.what());
+       return 1;
+   }
+}
+
+// CHECK: Is -E enabled?
+if (opts.preprocess_only) {
+   // Requirements:
+   // 1. If -o is specified, write to that file.
+   // 2. If -o is NOT specified, write to stdout (standard Unix compiler behavior).
+   
+   std::string final_output = full_preprocessed_output.str();
+   
+   if (!opts.output_file.empty()) {
+       std::ofstream out(opts.output_file);
+       if (!out) {
+           std::cerr << "Error: Could not open output file " << opts.output_file << "\n";
+           return 1;
+       }
+       out << final_output;
+       out.close();
+   } else {
+       // Write to stdout
+       std::cout << final_output;
+   }
+   
+   // CRITICAL: Halt pipeline. 
+   // Do not proceed to Lexer/Parser instantiation.
+   return 0; 
+}
+
+//... Phase 1: Lexer...
+//... Phase 2: Parser...
+
+5.3 Comment Preservation Strategy
+The user requirement specifically asks to "Preserve comments or strip based on flag variant." The standard behavior of -E (in GCC/Clang) is to preserve line markers (# 1 "file.c") and often comments if -C is passed.
+Aria's preprocessor implementation details 1 indicate that comments (starting with // or /* */) are handled during the preprocessor's scan. Currently, they are likely skipped/consumed to produce clean code for the lexer. To support comment preservation, the Preprocessor class needs a configuration toggle.
+Proposed Flag Variant:
+* -E: Preprocess, strip comments (default for cleaner macro inspection).
+* -E -C: Preprocess, preserve comments (useful for documentation generation or debugging annotated code).
+Implementation Update for src/frontend/preprocessor.cpp:
+The Preprocessor class logic must conditionally skip the comment stripping block based on a m_preserve_comments member variable.
+
+
+C++
+
+
+
+
+// File: src/frontend/preprocessor.cpp
+
+void Preprocessor::process(const std::string& source, const std::string& filename) {
+   //... setup...
+   while (peek()!= 0) {
+       char c = peek();
+       
+       // Handle Line Comments
+       if (c == '/' && peekNext() == '/') { 
+           if (m_preserve_comments) {
+               // Echo the comment to output
+               output << readLine(); 
+           } else {
+               // Default: Skip
+               skipLine(); 
+           }
+           continue;
+       }
+       
+       // Handle Block Comments
+       if (c == '/' && peekNext() == '*') {
+           if (m_preserve_comments) {
+               output << readBlockComment();
+           } else {
+               skipBlockComment();
+           }
+           continue;
+       }
+       
+       //... handle macros, directives, etc.
+   }
+   //...
+}
+
+This modification ensures that documentation generation tools (which might parse preprocessed output to extract API docs) can still access the comments, satisfying one of the key use cases.
+________________
+6. Advanced Integration and Use Cases
+6.1 Debugging Macro Hygiene
+The primary driver for this feature is the "Critical Macro Limitation" discovered in December 2025.1 When a developer writes:
+
+
+Code snippet
+
+
+
+
+%macro GEN_POPCOUNT 1
+func:popcount_%1 = int32(%1:x) {
+   %1:val = x; // Potential collision if %1 is generic parameter syntax
+   pass(0);
+};
+%endmacro
+
+Using ariac -E allows the developer to see exactly what %1:val expanded to.
+* Without -E: Compile fails with cryptic Parse Error: Unexpected token after type.
+* With -E: Output might show int32:val = x; vs int32:val_h1 = x;.
+* Analysis: If the hygiene system (atomic counter described in 1) is working, the output of -E will show unique identifiers (e.g., _h123). If it fails, the developer sees the collision and can switch to fixed types (e.g., int32) as recommended in the workaround.1
+6.2 Stream Redirection and the Six-Stream Topology
+Aria runs on a custom six-stream I/O topology (stdin, stdout, stderr, stddbg, stddati, stddato).1 A sophisticated implementation of -E could leverage this.
+* Standard -E: Writes to stdout (Text Output).
+* Machine-Readable Output: If the preprocessed output is intended for another tool (e.g., a static analyzer or linter), it might be more appropriate to direct it to stddato (FD 5) if it is being piped to a binary processor, or keep it on stdout if it is text.
+* Debug Info: The ToolchainOrchestrator logs its actions ("Preprocessing target...") to stddbg (FD 3) rather than polluting stdout, ensuring that aria_make -E target > output.aria produces a clean file without build logs mixed in. This adherence to the Aria I/O discipline is a mark of a high-quality integration.
+6.3 IDE Integration ("Expand Macro")
+Modern IDEs (VS Code with Aria extension) utilize the Language Server Protocol (LSP). The -E feature in the compiler enables a "Show Macro Expansion" feature in the editor.
+Implementation Strategy:
+1. User hovers over a macro invocation GEN_MAX(int32) and selects "Expand Macro".
+2. The Language Server (aria-ls) creates a temporary file with the current document content.
+3. It invokes ariac -E temp.aria via the ToolchainOrchestrator.
+4. It captures the output and extracts the relevant lines corresponding to the macro.
+5. It displays the expanded code in a hover tooltip or a peek window.
+This closes the loop between the compiler toolchain and the developer experience, making the macro system usable in large projects.
+________________
+7. Verification Strategy and Acceptance Criteria
+To ensure the implementation meets the rigorous standards of a systems language toolchain, the following acceptance tests must be executed.
+7.1 Unit Testing (CLI)
+* Test: Invoke aria_make -E target.
+* Expectation: aria_make parses the flag, identifies the target, and executes ariac -E.
+* Artifact: Verify bin/target.preprocessed.aria exists in the build output directory and contains expanded code.
+7.2 Functional Testing (Compiler)
+* Test: Invoke ariac -E source.aria with a file containing comments.
+* Expectation: Preprocessed code dumps to stdout. Comments are stripped. No .ll file is generated.
+* Test: Invoke ariac -E -C source.aria.
+* Expectation: Preprocessed code dumps to stdout. Comments are preserved.
+* Test: Invoke ariac -E source.aria -o output.txt.
+* Expectation: Preprocessed code is in output.txt. Stdout is silent.
+7.3 Integration Testing (Macro Debugging)
+* Scenario: Create a file with a complex, nested macro definition using %rep loops 1 and %include.
+* Action: Run ariac -E.
+* Verification:
+   * %include directives are replaced by file content.
+   * %rep loops are unrolled into repeated code blocks.
+   * %macro definitions are stripped (consumed).
+   * Hygiene suffixes (e.g., _h1) are present on internal variables.
+________________
+8. Conclusion
+The implementation of the -E flag is a high-priority architectural enhancement for the Aria toolchain. It bridges the gap between the high-level language specification and the low-level debugging realities of systems programming. By exposing the intermediate state of the preprocessor, we provide developers with the observability needed to master Aria's powerful, yet complex, textual macro system and resolve the critical hygiene issues identified in v0.0.7.
+This specification leverages the existing CompilerOptions infrastructure 1 and the ToolchainOrchestrator design pattern 1 to deliver a feature that is both robust and consistent with standard industry practices. The implementation requires precise modifications to src/cli/main.cpp for argument parsing and src/driver/main.cpp for pipeline control, alongside the introduction of the -C flag for comment preservation.
+Component
+	File
+	Responsibility
+	Required Change
+	CLI
+	src/cli/main.cpp
+	Argument Parsing
+	Add -E / --debug-macro parsing to BuildSettings.
+	Orchestrator
+	src/build/toolchain.cpp
+	Command Construction
+	Inject -E into ariac cmd; map output to .preprocessed.aria.
+	Driver
+	src/driver/main.cpp
+	Pipeline Control
+	Check opts.preprocess_only; dump output; halt pipeline before Lexer.
+	Preprocessor
+	src/frontend/preprocessor.cpp
+	Text Transformation
+	Implement -C flag logic for comment preservation.
+	The execution of this plan will immediately resolve the "Not Found" status of the implementation, aligning the codebase with the architectural vision of the Aria ecosystem and enabling the next generation of tooling features.
+Works cited
+1. compiled.txt
+2. Compiler driver and cross compilation - MaskRay, accessed December 21, 2025, https://maskray.me/blog/2021-03-28-compiler-driver-and-cross-compilation
+3. Options to Request or Suppress Warnings - Using the GNU Compiler Collection (GCC), accessed December 21, 2025, https://gcc.gnu.org/onlinedocs/gcc-3.1/gcc/Warning-Options.html
+4. pp-trace User's Manual — Extra Clang Tools 22.0.0git documentation - LLVM, accessed December 21, 2025, https://clang.llvm.org/extra/pp-trace.html

@@ -1,0 +1,48 @@
+Import Alias Configuration Support
+
+PRIORITY: LOW (Nice-to-Have)
+STATUS: Mentioned in gem3_02
+SOURCE: Verification Chunk 4
+
+PROBLEM:
+No ergonomic way to create short aliases for long module paths. Developers must type full paths like std.collections.vector repeatedly.
+
+REQUIREMENTS:
+1. aria.json configuration:
+   - import_aliases: { "vec": "std.collections.vector" }
+   - Applies project-wide
+
+2. Compiler integration:
+   - Pass aliases to ariac via flags or config file
+   - Allow use vec; instead of use std.collections.vector;
+
+3. IDE support:
+   - Export aliases to compile_commands.json
+   - Enable auto-completion for aliased names
+
+IMPLEMENTATION TASKS:
+- [ ] Add import_aliases field to Target schema
+- [ ] Update ABC parser to read aliases
+- [ ] Design flag format for passing to ariac (e.g., --alias vec=std.collections.vector)
+- [ ] Implement in ariac compiler (if not already present)
+- [ ] Export aliases to compile_commands.json for AriaLS
+- [ ] Document in user guide
+
+FILES TO MODIFY:
+- include/build/target.h (add aliases field)
+- src/parse/abc_parser.cpp
+- src/build/toolchain.cpp (pass aliases to ariac)
+- src/build/compile_db.cpp (export to JSON)
+
+RESEARCH REFERENCE:
+gem3_02.txt mentions import_aliases in aria.json schema example but doesn't detail implementation.
+
+DEFERRED RATIONALE:
+Ergonomic feature, not critical. Module system works without aliases. Can be added post-MVP based on user feedback.
+
+ACCEPTANCE CRITERIA (if implemented):
+- Can define alias in aria.json
+- use vec; resolves to std.collections.vector
+- Works in IDE (AriaLS recognizes aliases)
+- Multiple aliases per module allowed
+- Aliases scoped to project (not global)

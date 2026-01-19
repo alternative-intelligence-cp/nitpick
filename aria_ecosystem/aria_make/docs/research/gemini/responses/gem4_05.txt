@@ -1,0 +1,342 @@
+﻿Architectural Specification: Native Binary Linking Strategy and Toolchain Orchestration Refactoring for AriaBuild
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language ecosystem, currently transitioning from the v0.0.7 prototype phase toward the pivotal v0.1.0 release, necessitates a fundamental architectural paradigm shift in its artifact generation capabilities. The current build infrastructure, AriaBuild (internally referenced as aria_make), operates on an "Interpretation-First" model. This architecture relies exclusively on the ariac compiler to emit LLVM Intermediate Representation (IR) bitcode and the lli interpreter for immediate execution.1 While this "compile-to-IR-and-interpret" loop provides rapid feedback cycles beneficial for language design and initial debugging, it presents critical barriers to production deployment, software distribution, and performance optimization. The inability to ship standalone, native executables renders Aria unsuitable for systems programming tasks where zero-dependency deployment is a strict prerequisite.
+Task 2.2, "Native Binary Linking Strategy," addresses this critical capability gap. It mandates the refactoring of the ToolchainOrchestrator—the central nervous system of AriaBuild—to support a "Distribution Mode" (dist). This mode introduces a multi-stage compilation pipeline that extends beyond IR generation to include native object emission via llc (the LLVM Static Compiler) and system-level linking via host-native linkers (ld, link.exe, or compiler drivers like clang/gcc).
+This report provides an exhaustive, expert-level specification for implementing this strategy. It dissects the theoretical underpinnings of native code generation, analyzes the platform-specific divergences between ELF (Executable and Linkable Format) on Linux/Unix and PE/COFF (Portable Executable / Common Object File Format) on Windows, and provides concrete C++17 implementation blueprints for upgrading the ToolchainOrchestrator. Furthermore, it defines the schema extensions required for the Aria Build Configuration (ABC) format, specifically the addition of linker_flags, to empower developers with granular control over the final binary layout and library dependencies (e.g., linking against -lm or -lpthread).
+2. Introduction: The Compilation Paradigm Shift
+The evolution of a programming language's toolchain often mirrors the evolution of the language itself. In its nascent stages, flexibility and introspection are paramount; interpretation or bytecode execution allows for rich debugging and simplified runtime environments. However, as the language stabilizes—indicated by Aria's core features and generics reaching completion 1—the focus must shift toward performance, portability, and integration with the host operating system.
+2.1 The "Interpretation Barrier"
+The current AriaBuild pipeline relies on a single-pass transformation: Source (.aria) -> Compiler (ariac) -> LLVM IR (.ll) -> Interpreter (lli).1 This pipeline creates what is known as the "Interpretation Barrier." The end-user must possess the LLVM runtime environment (lli) to execute any Aria program. This violation of the "hermetic binary" principle—where a binary contains all necessary code to execute on the target OS without external dependencies—limits Aria's adoption in containerized environments, embedded systems, and commercial software distribution. Furthermore, while lli employs a Just-In-Time (JIT) compiler, the startup overhead of compiling IR to machine code at runtime occurs every time the program is launched. For Command Line Interface (CLI) tools or short-lived processes—a primary target for systems languages—this latency is unacceptable. Additionally, lli execution masks the intricacies of the operating system's loader, handling symbol resolution internally. This abstraction prevents the use of advanced OS features like specific subsystem targeting (Windows GUI vs. Console), custom section alignments, or the embedding of resources (icons, manifests) that are typically handled during the link phase.2
+2.2 The Ahead-of-Time (AOT) Imperative
+To resolve these limitations, AriaBuild must embrace Ahead-of-Time (AOT) compilation. This involves lowering the high-level LLVM IR into architecture-specific machine code (Object Files) and then linking these objects with the necessary system libraries to create a native executable. This process leverages the modular design of the LLVM infrastructure, where the frontend (ariac) is decoupled from the backend (llc) and the linker (lld or system linkers).3 The proposed dist mode introduces this decoupled, multi-stage pipeline:
+1. Frontend Compilation: ariac compiles Source (.aria) to LLVM IR (.ll). This stage remains largely unchanged, preserving the stability of the semantic analysis and IR generation logic.1
+2. Static Compilation (Lowering): ToolchainOrchestrator invokes llc to compile the LLVM IR (.ll) into a native Object File (.o or .obj). This stage performs instruction selection, register allocation, and scheduling specific to the target architecture (e.g., x86-64, AArch64).4
+3. Linkage: ToolchainOrchestrator invokes the host Linker (ld, link.exe, gcc) to combine the Object File with system libraries (CRT, libm, libpthread) into a native Executable (.exe or ELF binary).
+3. Theoretical Framework: The Anatomy of a Native Toolchain
+To engineer a robust ToolchainOrchestrator, one must understand the underlying mechanics of the tools being orchestrated. The build system acts as a sophisticated wrapper around these low-level utilities, and a failure to understand their flags and behaviors will lead to fragile or broken builds.
+3.1 The LLVM Static Compiler (llc)
+The llc tool is the backend of the LLVM compiler infrastructure. It translates LLVM bitcode or IR into assembly language or object code.5 It is the bridge between the abstract, infinite-register machine of LLVM IR and the concrete, physical reality of the CPU.
+3.1.1 Instruction Selection and Scheduling
+When llc runs, it performs three primary tasks:
+* Instruction Selection: It maps LLVM IR operations (like add, load, getelementptr) to target-specific machine instructions (like addq, mov, lea on x86).
+* Register Allocation: It maps the infinite virtual registers of LLVM IR to the limited set of physical registers available on the processor, handling spills to the stack when registers are exhausted.
+* Instruction Scheduling: It reorders instructions to maximize pipeline utilization and minimize latency, adhering to the specific micro-architectural constraints of the target CPU (e.g., Skylake vs. Zen 3).
+3.1.2 Object Emission vs. Assembly
+By default, llc emits textual assembly files (.s).4 Historically, build systems would generate assembly and then invoke an assembler (as) to create object files. However, this introduces an "Assembly Bottleneck"—the overhead of serializing internal binary representations to text and then parsing that text back into binary is significant. Modern toolchains prefer Direct Object Emission. By passing -filetype=obj to llc, the tool writes the machine code directly to an ELF or COFF object file.5 This bypasses the assembler entirely, reducing I/O and CPU usage, and is the recommended strategy for AriaBuild's dist mode.
+3.2 The Linker (ld, link.exe)
+The linker is perhaps the most misunderstood component of the toolchain. Its primary role is not just to "combine files," but to perform symbol resolution and relocation.
+* Symbol Resolution: When main.o calls printf, it creates an undefined reference to the symbol printf. The linker searches through other object files and libraries (like libc.a or msvcrt.lib) to find the definition of printf and matches the call to the definition.6
+* Relocation: The compiler generates code that assumes it starts at offset zero. The linker assigns final memory addresses to functions and variables and updates (relocates) all instructions that reference these addresses.7
+3.2.1 The C Runtime (CRT) Initialization
+A critical aspect of linking native binaries is the initialization sequence. A C/C++ program does not start at main(). It starts at an entry point typically named _start (on Linux) or mainCRTStartup (on Windows).2 This entry point is provided by the C Runtime (CRT) startup files (often crt0.o, crt1.o). These routines initialize the stack, setup standard I/O streams, initialize global variables, and then call main(). If one attempts to link an object file using ld directly without including these startup files, the resulting binary will crash or fail to execute.8 This necessitates a "Compiler Driver" approach on Linux, where gcc or clang is used to drive the linker, as they automatically inject the correct CRT files.
+4. Architectural Refactoring of ToolchainOrchestrator
+The ToolchainOrchestrator class, defined in src/build/toolchain.cpp 1, must evolve from a simple command runner into a state-aware pipeline manager. The refactoring involves supporting the dist mode flag, detecting the host environment to select the correct tools, and constructing complex, multi-argument command lines.
+4.1 Pipeline Design for dist Mode
+In the current build mode, the orchestrator performs:
+Source -> ariac ->.ll
+In dist mode, the pipeline expands:
+Source -> ariac ->.ll (intermediate) -> llc ->.o (intermediate) -> linker ->.exe (artifact)
+The orchestrator must manage the temporary files generated during this process. Intermediate artifacts (.ll, .o) should be placed in a build/obj/ directory to keep the source tree clean, while the final executable goes to build/bin/.
+4.2 Handling System Libraries via Target Schema
+The original request explicitly highlights the need to support system libraries like -lm (Math Library) and -lpthread (POSIX Threads). In the current Target schema defined in the Aria Build Configuration (ABC) 1, there is a generic flags field passed to ariac. However, linker flags are distinct from compiler flags. Passing -lm to ariac (the frontend) would be semantically incorrect as ariac generates IR and does not perform linking.
+Therefore, the schema must be extended with a linker_flags field.
+* Purpose: To carry flags that are opaque to the compiler but essential for the linker.
+* Examples: -lm, -lpthread, -L/usr/local/lib, -lssl.
+* Processing: These flags are ignored during the ariac and llc phases and are injected only during the final link step.
+5. Phase 1 Implementation: Static Compilation (llc)
+The first step in the dist pipeline is invoking llc. This requires the ToolchainOrchestrator to locate the llc binary and construct a command line that ensures the generated object file is compatible with the target system's linker.
+5.1 Object Emission Strategy
+The orchestrator must enforce direct object emission to avoid the assembly bottleneck.
+* Flag: -filetype=obj. This tells llc to write a native object file (.o on Linux, .obj on Windows) instead of an assembly text file.5
+* Output Naming: The orchestrator must automatically deduce the output filename. If the input is main.ll, the output should be main.o (Linux) or main.obj (Windows).
+5.2 Relocation Models and Security
+Modern operating systems employ Address Space Layout Randomization (ASLR) as a security measure. For ASLR to work, executables must be Position Independent (PIE).
+* The Issue: If llc generates code with absolute addresses, the linker may fail to create a PIE executable, or the OS may refuse to run it.
+* The Fix: The orchestrator must pass -relocation-model=pic (Position Independent Code) to llc.9 This ensures that all memory accesses are relative to the instruction pointer (RIP-relative on x86-64), allowing the code to be loaded at any memory address. While this serves primarily for shared libraries, strictly enforcing PIC for executables is the standard best practice on modern Linux distributions (like Fedora and Debian) and macOS.
+5.3 Optimization Mirroring
+The Target schema allows an optimization level (e.g., -O3).1 If ariac is invoked with -O3 to generate optimized IR, llc must also be invoked with -O3. While ariac optimizes the IR structure (dead code elimination, constant folding), llc optimizes the machine code (instruction scheduling, register coloring). Neglecting to pass optimization flags to llc would result in an executable with optimized logic but inefficient machine instructions.
+5.4 Implementation Logic (C++ Blueprint)
+
+
+C++
+
+
+
+
+// Within ToolchainOrchestrator class
+
+std::vector<std::string> ToolchainOrchestrator::construct_llc_cmd(
+   const std::string& input_ir, 
+   const std::string& output_obj,
+   const std::vector<std::string>& compiler_flags) 
+{
+   std::vector<std::string> cmd;
+   cmd.push_back("llc"); // Binary name
+   
+   // 1. Enforce Object Emission
+   cmd.push_back("-filetype=obj");
+   
+   // 2. Enforce PIC for ASLR compatibility
+   cmd.push_back("-relocation-model=pic");
+   
+   // 3. Mirror Optimization Level
+   // Simple heuristic: check if flags contain -O1/2/3
+   for (const auto& flag : compiler_flags) {
+       if (flag.rfind("-O", 0) == 0) {
+           cmd.push_back(flag);
+       }
+   }
+   
+   // 4. Input and Output
+   cmd.push_back(input_ir);
+   cmd.push_back("-o");
+   cmd.push_back(output_obj);
+   
+   return cmd;
+}
+
+6. Phase 2 Implementation: Native Linking Strategies
+The linking phase is where the divergence between operating systems becomes most acute. The ToolchainOrchestrator cannot use a single logic path; it must detect the host OS and branch into a "Unix Strategy" or a "Windows Strategy."
+6.1 The Linux/Unix Strategy: The Compiler Driver Approach
+On Linux, the standard linker is ld (GNU ld). However, identifying the correct path to the CRT startup files (crt0.o, crti.o, etc.) is notoriously difficult, as their location varies by distribution and glibc version.8
+* The CRT Trap: Invoking ld main.o -o main will invariably fail with "entry symbol _start not found" or cause a segmentation fault immediately upon execution because the C library was not initialized.
+* The Recommended Pattern: The standard engineering solution is to use the Compiler Driver (clang or gcc) to perform the link step.10 When clang is passed a set of .o files, it knows exactly where the CRT files reside on the specific system and injects them into the internal ld command.
+Orchestration Logic:
+1. Detect clang or gcc in the system PATH.
+2. Construct the command: clang main.o -o main -lm -lpthread.
+3. The driver implicitly adds -lc (standard C library) and handles the startup objects.
+Handling Libraries (-lm, -lpthread):
+The linker_flags from the Target schema are passed directly to the driver.
+* -lm: This links the math library. On Linux, this is distinct from libc.
+* -lpthread: This links the POSIX threads library. It effectively links libpthread and sets preprocessor defines.11
+6.2 The Windows Strategy: link.exe and the COFF World
+On Windows, the build environment is fundamentally different. The linker is link.exe (part of MSVC) or lld-link.exe (LLVM). The file format is PE/COFF.
+* Flag Syntax: Windows flags use forward slashes (e.g., /OUT:filename).12
+* Subsystems: A critical concept in Windows linking is the Subsystem. The linker must be told whether the application is a Console application (/SUBSYSTEM:CONSOLE) or a GUI application (/SUBSYSTEM:WINDOWS). For Aria's current use case as a systems language, defaulting to /SUBSYSTEM:CONSOLE is appropriate, but this should arguably be configurable via the Target schema in the future.2
+* The CRT (Again): Windows also requires CRT linking. This typically involves linking libucrt.lib (Universal CRT), libvcruntime.lib, and libcmt.lib (for static linking) or msvcrt.lib (for dynamic linking). Unlike gcc, link.exe usually relies on "autolinking" pragmas embedded in object files, but explicitly linking default libraries is safer for a robust build tool.
+Orchestration Logic:
+1. Detect link.exe. (Note: This often requires running from a Developer Command Prompt or locating the Visual Studio installation via vswhere).
+2. Construct the command: link.exe /NOLOGO /OUT:main.exe /SUBSYSTEM:CONSOLE main.obj user32.lib kernel32.lib.
+3. Inject linker_flags. Note that flags like -lm do not exist on Windows (math is in the CRT). Flags like -lpthread must be mapped to Windows equivalents (e.g., pthreadVC2.lib if using a port) or ignored if using native Windows threads.
+6.3 The Universal Linker Option: lld
+To mitigate the platform divergence, AriaBuild can prioritize the use of lld (the LLVM Linker) if available.13 lld is a cross-platform linker that supports ELF, COFF, and Mach-O.
+* ELF (Linux): Invoke as ld.lld. Compatible with GNU ld flags.
+* COFF (Windows): Invoke as lld-link. Compatible with MSVC link.exe flags.
+Using lld provides faster link times and more consistent error messages, but the orchestrator must still generate the correct flag syntax (hyphens vs slashes) based on the target binary format.14
+7. Schema Extension Implementation
+To support the requirement: "Add a linker_flags field to the Target schema," the Aria Build Configuration (ABC) parser and data structures must be updated.
+7.1 Schema Definition
+The Target struct in include/build/target.h (inferred) currently holds:
+
+
+C++
+
+
+
+
+struct Target {
+   std::string name;
+   TargetType type;
+   std::vector<std::string> sources;
+   std::vector<std::string> flags; // Compiler flags
+   std::string output;
+};
+
+We extend this struct:
+
+
+C++
+
+
+
+
+struct Target {
+   //... existing fields...
+   std::vector<std::string> linker_flags; // New field
+};
+
+7.2 Configuration Parsing
+The parser (likely in src/build/parser.cpp) must recognize the linker_flags key in the JSON-like ABC format.
+   * Input:
+Code snippet
+targets: [
+   {
+       name: "math_app",
+       type: "binary",
+       sources: ["src/main.aria"],
+       flags: ["-O3"],
+       linker_flags: ["-lm", "-lpthread"] // New Requirement
+   }
+]
+
+   * Validation: The parser should verify that linker_flags is a list of strings. It should allow variable interpolation (e.g., &{libs_dir}) just like source paths 1, enabling dynamic library paths.
+7.3 Usage in Orchestrator
+The ToolchainOrchestrator receives the Target object. It must split the flags:
+      * target.flags -> Passed to ariac and mirrored to llc (optimization levels).
+      * target.linker_flags -> Passed exclusively to the Linker (ld/link.exe).
+8. Detailed C++ Implementation Strategy
+The following section provides the architectural blueprint for the C++ implementation of the refactored ToolchainOrchestrator.
+8.1 Platform Detection
+We need a robust way to detect the platform to select the correct linker strategy.
+
+
+C++
+
+
+
+
+enum class TargetPlatform {
+   Linux,
+   Windows,
+   MacOS,
+   Unknown
+};
+
+TargetPlatform detect_platform() {
+   #ifdef _WIN32
+       return TargetPlatform::Windows;
+   #elif defined(__APPLE__)
+       return TargetPlatform::MacOS;
+   #elif defined(__linux__)
+       return TargetPlatform::Linux;
+   #else
+       return TargetPlatform::Unknown;
+   #endif
+}
+
+8.2 The ToolchainOrchestrator Class Refactoring
+The class must handle the conditional logic for dist mode.
+
+
+C++
+
+
+
+
+class ToolchainOrchestrator {
+public:
+   bool build_target(const Target& target, bool dist_mode) {
+       if (dist_mode) {
+           return build_target_native(target);
+       } else {
+           return build_target_ir(target); // Existing logic
+       }
+   }
+
+private:
+   bool build_target_native(const Target& target) {
+       // 1. Compile Source -> IR (.ll)
+       // (Reuses existing ariac invocation logic)
+       std::string ir_file = target.output + ".ll"; 
+       
+       // 2. Lower IR -> Object (.o /.obj)
+       std::string obj_ext = (detect_platform() == TargetPlatform::Windows)? ".obj" : ".o";
+       std::string obj_file = target.output + obj_ext;
+       
+       std::vector<std::string> llc_cmd = construct_llc_cmd(ir_file, obj_file, target.flags);
+       if (execute(llc_cmd)!= 0) return false;
+       
+       // 3. Link Object -> Executable
+       std::string exe_file = target.output;
+       if (detect_platform() == TargetPlatform::Windows) exe_file += ".exe";
+       
+       std::vector<std::string> link_cmd = construct_link_cmd(obj_file, exe_file, target.linker_flags);
+       return execute(link_cmd) == 0;
+   }
+
+   std::vector<std::string> construct_link_cmd(
+       const std::string& obj_file, 
+       const std::string& exe_file,
+       const std::vector<std::string>& user_linker_flags) 
+   {
+       std::vector<std::string> cmd;
+       TargetPlatform os = detect_platform();
+
+       if (os == TargetPlatform::Windows) {
+           // Windows Strategy: link.exe
+           cmd.push_back("link.exe");
+           cmd.push_back("/NOLOGO");
+           cmd.push_back("/OUT:" + exe_file);
+           cmd.push_back("/SUBSYSTEM:CONSOLE"); // Essential for CLI apps
+           cmd.push_back(obj_file);
+           
+           // Add user flags (assuming they are Windows-compatible or mapped)
+           for (const auto& flag : user_linker_flags) {
+               cmd.push_back(flag);
+           }
+           
+           // Explicitly link CRT if needed (though link.exe usually infers)
+           // cmd.push_back("libucrt.lib"); 
+       } 
+       else {
+           // Linux/Unix Strategy: Compiler Driver (clang/gcc)
+           // Using 'cc' usually symlinks to the system compiler
+           const char* driver = std::getenv("CC");
+           cmd.push_back(driver? driver : "clang"); 
+           
+           cmd.push_back("-o");
+           cmd.push_back(exe_file);
+           cmd.push_back(obj_file);
+           
+           // Add user flags (-lm, -lpthread, etc.)
+           for (const auto& flag : user_linker_flags) {
+               cmd.push_back(flag);
+           }
+       }
+       return cmd;
+   }
+};
+
+9. Validation and Future Outlook
+9.1 Verification of Hermeticity
+To verify the success of the Native Binary Linking Strategy, the engineering team must validate the resulting artifacts.
+      * On Linux: Use ldd <binary>. The output should list only system shared libraries (e.g., libc.so.6, libm.so.6, libpthread.so.0) and not libLLVM.so (unless explicitly linked). This proves the dependency on lli is removed.
+      * On Windows: Use dumpbin /dependents <binary.exe>. It should list KERNEL32.dll, UCRTBASE.dll, etc.
+9.2 The "Thundering Herd" Risk
+As noted in previous architectural analyses, linking is a resource-intensive operation (high RAM usage). Moving to dist mode introduces a synchronization point in the build graph. While compilation (ariac) and lowering (llc) are embarrassingly parallel and can run on all cores, linking often cannot. The ToolchainOrchestrator should ideally serialize link steps or limit concurrent link jobs to prevent Out-Of-Memory (OOM) situations on build servers.
+9.3 Conclusion
+The refactoring of ToolchainOrchestrator to support dist mode represents a critical maturity milestone for Aria. By orchestrating llc for object emission and leveraging system linkers for executable generation, AriaBuild eliminates the "Interpretation Barrier." The introduction of linker_flags in the ABC schema provides the necessary escape hatch for developers to integrate with the rich ecosystem of existing system libraries, ensuring Aria can function as a true systems language. This specification provides the complete roadmap for implementing these changes in a robust, cross-platform manner.
+10. Appendix: Linker Flag Reference Table
+Feature
+	GNU ld / Clang Driver
+	MSVC link.exe
+	Flag Prefix
+	- (e.g., -o)
+	/ (e.g., /OUT:)
+	Output Flag
+	-o filename
+	/OUT:filename
+	Lib Search Path
+	-L/path
+	/LIBPATH:path
+	Link Library
+	-lname (links libname.so)
+	name.lib (passed as arg)
+	Entry Point
+	_start (via CRT)
+	mainCRTStartup / WinMainCRTStartup
+	Subsystem
+	N/A (Handled by libs/kernel)
+	/SUBSYSTEM:CONSOLE or WINDOWS
+	Math Lib
+	-lm (Explicit)
+	Implicit in CRT
+	Threads
+	-lpthread
+	Implicit / libcmt.lib
+	This table serves as a quick reference for engineers implementing the construct_link_cmd logic to ensure flag translation accuracy across platforms.
+Works cited
+      1. rcfull.txt
+      2. link.exe cheatsheet - aria, accessed December 20, 2025, https://aria.uber.space/blog/008-link-exe.html
+      3. Getting Started with the LLVM System — LLVM 22.0.0git documentation, accessed December 20, 2025, https://llvm.org/docs/GettingStarted.html
+      4. llc - LLVM static compiler — LLVM 22.0.0git documentation, accessed December 20, 2025, https://llvm.org/docs/CommandGuide/llc.html
+      5. Generating object files — Tutorial: Creating an LLVM Backend for the Cpu0 Architecture, accessed December 20, 2025, https://jonathan2251.github.io/lbd/genobj.html
+      6. Is it True That the Linker Puts All .o Files Together into One File? : r/Compilers - Reddit, accessed December 20, 2025, https://www.reddit.com/r/Compilers/comments/1m5fbgu/is_it_true_that_the_linker_puts_all_o_files/
+      7. How does the linker actually link object files together? : r/C_Programming - Reddit, accessed December 20, 2025, https://www.reddit.com/r/C_Programming/comments/18buyoi/how_does_the_linker_actually_link_object_files/
+      8. Linking an object file that contains stdio functions with ld, no crt0.o found - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/60608284/linking-an-object-file-that-contains-stdio-functions-with-ld-no-crt0-o-found
+      9. create position independent object file from LLVM bit code - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/15985186/create-position-independent-object-file-from-llvm-bit-code
+      10. Linking an object file to the C standard library with ld - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/77567333/linking-an-object-file-to-the-c-standard-library-with-ld
+      11. Significance of -pthread flag when compiling - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/2127797/significance-of-pthread-flag-when-compiling
+      12. MSVC Linker options - Microsoft Learn, accessed December 20, 2025, https://learn.microsoft.com/en-us/cpp/build/reference/linker-options?view=msvc-170
+      13. LLD - The LLVM Linker — lld 22.0.0git documentation, accessed December 20, 2025, https://lld.llvm.org/
+      14. The ELF, COFF and Wasm Linkers — lld 20.0.0git documentation, accessed December 20, 2025, https://rocm.docs.amd.com/projects/llvm-project/en/latest/LLVM/lld/html/NewLLD.html

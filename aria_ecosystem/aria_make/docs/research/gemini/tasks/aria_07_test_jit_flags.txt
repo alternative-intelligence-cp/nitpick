@@ -1,0 +1,42 @@
+Test Execution JIT Flag Configuration
+
+PRIORITY: MEDIUM
+STATUS: Resolved in gem4_03, needs plan update
+SOURCE: Verification Chunks 2 and 5
+
+PROBLEM:
+Plan doesn't specify JIT flags for lli when running tests. Tests may run in interpreter mode (slow, inaccurate) instead of JIT mode.
+
+REQUIREMENTS:
+1. Enforce JIT compilation for tests:
+   - Pass -force-interpreter=false to lli
+   - Ensures performance matches eventual native compilation
+   - Catches backend code generation bugs
+
+2. Configurable execution mode:
+   - Default: JIT mode (fast, accurate)
+   - Optional: Interpreter mode (debugging, compatibility)
+
+IMPLEMENTATION TASKS:
+- [ ] Update TestRunner to pass -force-interpreter=false
+- [ ] Add configuration option in aria.json (test_mode: "jit" | "interpreter")
+- [ ] Document flag in test execution section
+- [ ] Verify JIT mode works on target platforms
+
+FILES TO MODIFY:
+- src/test/runner.cpp (add JIT flag)
+- docs/info/plan/60_TOOLING_INTEGRATION.md (document flag)
+- examples/aria.json (show test_mode configuration)
+
+RESEARCH REFERENCE:
+gem4_03.txt (Test Automation Subsystem) explicitly specifies:
+"The TestRunner must enforce this by passing specific flags, historically -force-interpreter=false"
+
+RESOLUTION STATUS:
+Gap identified in Chunk 2, resolved in Chunk 5. Implementation details available, just needs to be added to plan and code.
+
+ACCEPTANCE CRITERIA:
+- aria_make test runs with JIT mode by default
+- Tests execute at near-native speed
+- Backend optimization bugs are caught
+- Optional interpreter mode for debugging edge cases

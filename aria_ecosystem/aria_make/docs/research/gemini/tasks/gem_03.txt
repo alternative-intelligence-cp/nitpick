@@ -1,0 +1,81 @@
+## TASK 3: Globbing Engine and FastMatcher
+
+**Priority**: CRITICAL (Required for source file discovery)
+**Estimated Complexity**: Very High
+**Dependencies**: None (standalone component)
+
+### Problem Statement
+AriaBuild needs a high-performance, non-regex globbing engine for pattern matching like `src/**/*.aria`. The system must:
+- Implement the "Shifting Wildcard" algorithm for efficiency
+- Handle recursive globstar `**` correctly
+- Support POSIX character classes `[a-z]`, `[!abc]`
+- Provide platform-independent hidden file detection
+- Implement caching with proper invalidation
+
+### Required Context Files
+
+**From aria repository**:
+None directly needed (this is a standalone C++ component)
+
+**From aria_make repository**:
+1. `docs/research/gemini/responses/task_02_globbing_engine.txt` - Complete design specification
+2. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (Section 3)
+
+### Gemini Prompt
+
+```
+The build system requires a high-performance, non-regex globbing engine as detailed in 'task_02_globbing_engine.txt'. The provided specification is incomplete (missing character class logic and cache invalidation). Provide the complete C++17 implementation for the GlobPattern, FastMatcher, and GlobEngine classes.
+
+Requirements:
+
+**GlobPattern Class**:
+1. Parse a glob pattern string (e.g., "src/**/*.aria")
+2. Normalize path separators (Windows \ → Unix /)
+3. Tokenize into segments, identifying:
+   - Static segments: "src", "core"
+   - Wildcard segments: "*", "**"
+   - Character class segments: "[a-z]", "[!0-9]"
+4. Calculate anchor point (longest static prefix for optimization)
+
+**FastMatcher Class** (the "Shifting Wildcard" algorithm):
+1. Implement match(const std::string& text, const std::string& pattern)
+2. Handle * (matches any characters except /)
+3. Handle ? (matches single character except /)
+4. Handle ** (matches zero or more directory levels)
+5. Implement match_class(char c, const std::string& class_pattern):
+   - Parse character ranges: [a-z] matches 'a' through 'z'
+   - Parse negation: [!abc] or [^abc] matches anything except a, b, c
+   - Parse literal characters: [abc] matches a, b, or c
+   - Handle special cases: []] (bracket as first char), [-] (dash as first/last)
+   - Return true if character matches the class
+6. Ensure / (path separator) is never matched by *, ?, or character classes
+
+**GlobEngine Class**:
+1. Implement expand(const std::string& pattern) returning std::vector<std::filesystem::path>
+2. Use segment-based traversal:
+   - Start at anchor point (don't scan from root)
+   - For ** segments, recursively descend
+   - For * segments, list directory and filter
+3. Implement platform-specific hidden file detection:
+   - Unix: starts with '.'
+   - Windows: use GetFileAttributesW() to check FILE_ATTRIBUTE_HIDDEN
+4. Sort results lexicographically for determinism
+5. Implement caching:
+   - Key: hash of (pattern + last modified time of anchor directory)
+   - Invalidate cache if directory timestamp changes
+   - Store in std::unordered_map<size_t, std::vector<path>>
+
+Provide detailed comments explaining the algorithm, particularly the match_class logic which was omitted in the specification.
+```
+
+### Expected Deliverables
+- `include/glob/glob_pattern.h` - Pattern parser
+- `include/glob/fast_matcher.h` - Matching algorithm
+- `include/glob/glob_engine.h` - Engine with caching
+- `src/glob/glob_pattern.cpp` - Implementation
+- `src/glob/fast_matcher.cpp` - Implementation
+- `src/glob/glob_engine.cpp` - Implementation
+- `tests/glob/test_glob_engine.cpp` - Comprehensive unit tests
+- Performance benchmarks comparing to std::regex
+
+---

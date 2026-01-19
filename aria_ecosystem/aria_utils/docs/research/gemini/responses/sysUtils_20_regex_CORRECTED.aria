@@ -1,0 +1,1197 @@
+// ============================================================================
+// AGREP - ARIA PREFIX-BASED REGULAR EXPRESSION ENGINE (Syntax-Corrected)
+// ============================================================================
+// Based on: sysUtils_20_regex.txt
+// Corrected: December 23, 2025
+// Status: Ready for implementation
+// ============================================================================
+// Architecture: APRE (Aria Prefix-Based Regular Expression Engine)
+// Syntax: Literal-by-Default with @ prefix for metacharacters
+// Engine: Pike VM (Thompson NFA) - O(nm) guaranteed, no backtracking
+// ============================================================================
+
+// File: tools/regex/ast.aria
+// ============================================================================
+// Abstract Syntax Tree for Prefix-Based Syntax (PBS)
+// ============================================================================
+
+// use std.io;
+// use std.string;
+
+// AST Node Types
+enum:NodeType = {
+    LITERAL = 1,
+    CONCAT = 2,
+    ALTERNATION = 3,
+    QUANTIFIER = 4,
+    CLASS = 5,
+    ANCHOR = 6,
+    CAPTURE = 7,
+    GROUP = 8
+};
+
+// Character class definitions
+enum:ClassType = {
+    ANY = 1,      // @any - matches any byte
+    DIGIT = 2,    // @digit - [0-9]
+    ALPHA = 3,    // @alpha - [a-zA-Z]
+    LOWER = 4,    // @lower - [a-z]
+    UPPER = 5,    // @upper - [A-Z]
+    WORD = 6,     // @word - [a-zA-Z0-9_]
+    SPACE = 7,    // @space - whitespace
+    HEX = 8,      // @hex - [0-9a-fA-F]
+    OCTAL = 9,    // @octal - [0-7]
+    USER_SET = 10 // @set{a-z0-9}
+};
+
+// Anchor types
+enum:AnchorType = {
+    START = 1,   // @start - Start of string/line
+    END = 2,     // @end - End of string/line
+    WBOUND = 3   // @wbound - Word boundary
+};
+
+// Character range for custom sets
+struct:CharRange = {
+    byte:start;
+    byte:end;
+};
+
+// Base AST node structure
+struct:ASTNode = {
+    NodeType:node_type;
+    wild void:data;              // Type-specific payload (wild pointer)
+};
+
+// Literal node data
+struct:LiteralData = {
+    string:content;
+};
+
+// Class node data
+struct:ClassData = {
+    ClassType:class_type;
+    array<CharRange>:ranges;
+    bool:inverted;
+};
+
+// Quantifier node data
+struct:QuantData = {
+    wild ASTNode:target;
+    tbb64:min;
+    tbb64:max;
+    bool:greedy;
+};
+
+// Concat/Alternation node data
+struct:SequenceData = {
+    array<wild ASTNode>:children;
+};
+
+// Capture node data
+struct:CaptureData = {
+    wild ASTNode:child;
+    tbb64:index;
+};
+
+// Anchor node data
+struct:AnchorData = {
+    AnchorType:anchor_type;
+};
+
+// ============================================================================
+// Module: tools/regex/parser.aria
+// ============================================================================
+// Recursive Descent Parser for Prefix-Based Syntax
+// ============================================================================
+
+// Token types
+enum:TokenType = {
+    LITERAL = 1,
+    META = 2,
+    LBRACE = 3,
+    RBRACE = 4,
+    PIPE = 5,
+    STAR = 6,
+    PLUS = 7,
+    QUESTION = 8,
+    EOF = 9
+};
+
+// Token structure
+struct:Token = {
+    TokenType:token_type;
+    string:value;
+    tbb64:position;
+};
+
+// Lexer state
+struct:Lexer = {
+    string:input;
+    tbb64:position;
+    array<Token>:tokens;
+};
+
+// Initialize lexer
+func:init_lexer = Lexer(string:input) {
+    Lexer:lex;
+    lex.input = input;
+    lex.position = tbb64.from_int(0);
+    lex.tokens = array<Token>.new();
+    pass(lex);
+};
+
+// Peek next character
+func:peek_char = result<byte>(Lexer:lex) {
+    tbb64:pos = lex.position;
+    
+    if (tbb64.is_err(pos)) {
+        result<byte>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Position overflow";
+        pass(err_result);
+    };
+    
+    int64:idx = tbb64.to_int(pos) ? 0;
+    
+    if (idx >= lex.input.length()) {
+        result<byte>:err_result;
+        err_result.is_error = true;
+        err_result.error = "EOF";
+        pass(err_result);
+    };
+    
+    result<byte>:success;
+    success.is_error = false;
+    success.value = lex.input.at(idx);
+    pass(success);
+};
+
+// Advance position
+func:advance = void(Lexer:lex) {
+    lex.position = tbb64.add(lex.position, tbb64.from_int(1));
+};
+
+// Tokenize input string
+func:tokenize = result<void>(Lexer:lex) {
+    while (true) {
+        result<byte>:char_result = peek_char(lex);
+        
+        if (char_result.is_error) {
+            break;  // EOF
+        };
+        
+        byte:ch = char_result.value;
+        
+        // Check for @ prefix (metacharacter)
+        if (ch == 64) {  // '@'
+            advance(lex);
+            
+            // Check for @@  (literal @)
+            result<byte>:next_result = peek_char(lex);
+            
+            if (!next_result.is_error && next_result.value == 64) {
+                Token:tok;
+                tok.token_type = TokenType.LITERAL;
+                tok.value = "@";
+                tok.position = lex.position;
+                lex.tokens.push(tok);
+                advance(lex);
+                continue;
+            };
+            
+            // Parse metacharacter sequence
+            string:meta_name = "";
+            
+            while (true) {
+                result<byte>:meta_char_result = peek_char(lex);
+                
+                if (meta_char_result.is_error) {
+                    break;
+                };
+                
+                byte:meta_ch = meta_char_result.value;
+                
+                // Check if alpha
+                if ((meta_ch >= 65 && meta_ch <= 90) ||  // A-Z
+                    (meta_ch >= 97 && meta_ch <= 122)) { // a-z
+                    meta_name = meta_name + std.string.from_byte(meta_ch);
+                    advance(lex);
+                } else {
+                    break;
+                };
+            };
+            
+            Token:tok;
+            tok.token_type = TokenType.META;
+            tok.value = meta_name;
+            tok.position = lex.position;
+            lex.tokens.push(tok);
+        } else if (ch == 123) {  // '{'
+            Token:tok;
+            tok.token_type = TokenType.LBRACE;
+            tok.value = "{";
+            tok.position = lex.position;
+            lex.tokens.push(tok);
+            advance(lex);
+        } else if (ch == 125) {  // '}'
+            Token:tok;
+            tok.token_type = TokenType.RBRACE;
+            tok.value = "}";
+            tok.position = lex.position;
+            lex.tokens.push(tok);
+            advance(lex);
+        } else if (ch == 124) {  // '|'
+            Token:tok;
+            tok.token_type = TokenType.PIPE;
+            tok.value = "|";
+            tok.position = lex.position;
+            lex.tokens.push(tok);
+            advance(lex);
+        } else if (ch == 42) {  // '*'
+            Token:tok;
+            tok.token_type = TokenType.STAR;
+            tok.value = "*";
+            tok.position = lex.position;
+            lex.tokens.push(tok);
+            advance(lex);
+        } else if (ch == 43) {  // '+'
+            Token:tok;
+            tok.token_type = TokenType.PLUS;
+            tok.value = "+";
+            tok.position = lex.position;
+            lex.tokens.push(tok);
+            advance(lex);
+        } else if (ch == 63) {  // '?'
+            Token:tok;
+            tok.token_type = TokenType.QUESTION;
+            tok.value = "?";
+            tok.position = lex.position;
+            lex.tokens.push(tok);
+            advance(lex);
+        } else {
+            // Literal character
+            Token:tok;
+            tok.token_type = TokenType.LITERAL;
+            tok.value = std.string.from_byte(ch);
+            tok.position = lex.position;
+            lex.tokens.push(tok);
+            advance(lex);
+        };
+    };
+    
+    // Add EOF token
+    Token:eof_tok;
+    eof_tok.token_type = TokenType.EOF;
+    eof_tok.value = "";
+    eof_tok.position = lex.position;
+    lex.tokens.push(eof_tok);
+    
+    result<void>:success;
+    success.is_error = false;
+    pass(success);
+};
+
+// Parser state
+struct:Parser = {
+    array<Token>:tokens;
+    tbb64:current;
+    tbb64:capture_count;
+};
+
+// Initialize parser
+func:init_parser = Parser(array<Token>:tokens) {
+    Parser:p;
+    p.tokens = tokens;
+    p.current = tbb64.from_int(0);
+    p.capture_count = tbb64.from_int(0);
+    pass(p);
+};
+
+// Create AST node
+func:create_node = wild ASTNode(NodeType:nt) {
+    wild ASTNode:node = std.mem.alloc_wild(64);  // Allocate wild memory
+    node.node_type = nt;
+    node.data = wild_null;
+    pass(node);
+};
+
+// Parse pattern (top-level)
+func:parse_pattern = result<wild ASTNode>(Parser:p) {
+    wild ASTNode:concat = create_node(NodeType.CONCAT);
+    
+    wild SequenceData:seq_data = std.mem.alloc_wild(32);
+    seq_data.children = array<wild ASTNode>.new();
+    
+    concat.data = seq_data;
+    
+    // Parse segments until EOF or terminator
+    while (true) {
+        result<Token>:peek_result = peek_token(p);
+        
+        if (peek_result.is_error) {
+            break;
+        };
+        
+        Token:tok = peek_result.value;
+        
+        if (tok.token_type == TokenType.EOF || 
+            tok.token_type == TokenType.RBRACE ||
+            tok.token_type == TokenType.PIPE) {
+            break;
+        };
+        
+        result<wild ASTNode>:segment_result = parse_segment(p);
+        
+        if (!segment_result.is_error) {
+            seq_data.children.push(segment_result.value);
+        } else {
+            pass(segment_result);
+        };
+    };
+    
+    result<wild ASTNode>:success;
+    success.is_error = false;
+    success.value = concat;
+    pass(success);
+};
+
+// Parse single segment
+func:parse_segment = result<wild ASTNode>(Parser:p) {
+    result<Token>:tok_result = peek_token(p);
+    
+    if (tok_result.is_error) {
+        pass(tok_result);
+    };
+    
+    Token:tok = tok_result.value;
+    
+    if (tok.token_type == TokenType.LITERAL) {
+        pass(parse_literal(p));
+    } else if (tok.token_type == TokenType.META) {
+        pass(parse_meta(p));
+    } else {
+        result<wild ASTNode>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Unexpected token";
+        pass(err_result);
+    };
+};
+
+// Parse literal
+func:parse_literal = result<wild ASTNode>(Parser:p) {
+    result<Token>:tok_result = consume_token(p);
+    
+    if (tok_result.is_error) {
+        pass(tok_result);
+    };
+    
+    Token:tok = tok_result.value;
+    
+    wild ASTNode:node = create_node(NodeType.LITERAL);
+    
+    wild LiteralData:lit_data = std.mem.alloc_wild(16);
+    lit_data.content = tok.value;
+    
+    node.data = lit_data;
+    
+    result<wild ASTNode>:success;
+    success.is_error = false;
+    success.value = node;
+    pass(success);
+};
+
+// Parse metacharacter (@any, @digit, etc.)
+func:parse_meta = result<wild ASTNode>(Parser:p) {
+    result<Token>:tok_result = consume_token(p);
+    
+    if (tok_result.is_error) {
+        pass(tok_result);
+    };
+    
+    Token:tok = tok_result.value;
+    string:meta_name = tok.value;
+    
+    // Check for character class
+    if (meta_name == "any") {
+        pass(create_class_node(ClassType.ANY, p));
+    } else if (meta_name == "digit") {
+        pass(create_class_node(ClassType.DIGIT, p));
+    } else if (meta_name == "alpha") {
+        pass(create_class_node(ClassType.ALPHA, p));
+    } else if (meta_name == "word") {
+        pass(create_class_node(ClassType.WORD, p));
+    } else if (meta_name == "space") {
+        pass(create_class_node(ClassType.SPACE, p));
+    } else if (meta_name == "hex") {
+        pass(create_class_node(ClassType.HEX, p));
+    } else if (meta_name == "lower") {
+        pass(create_class_node(ClassType.LOWER, p));
+    } else if (meta_name == "upper") {
+        pass(create_class_node(ClassType.UPPER, p));
+    } else if (meta_name == "group") {
+        pass(parse_group(p));
+    } else if (meta_name == "capture") {
+        pass(parse_capture(p));
+    } else if (meta_name == "either") {
+        pass(parse_alternation(p));
+    } else if (meta_name == "start") {
+        pass(create_anchor_node(AnchorType.START));
+    } else if (meta_name == "end") {
+        pass(create_anchor_node(AnchorType.END));
+    } else if (meta_name == "wbound") {
+        pass(create_anchor_node(AnchorType.WBOUND));
+    } else {
+        result<wild ASTNode>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Unknown metacharacter";
+        pass(err_result);
+    };
+};
+
+// Helper: Create class node
+func:create_class_node = result<wild ASTNode>(ClassType:ct, Parser:p) {
+    wild ASTNode:node = create_node(NodeType.CLASS);
+    
+    wild ClassData:class_data = std.mem.alloc_wild(32);
+    class_data.class_type = ct;
+    class_data.ranges = array<CharRange>.new();
+    class_data.inverted = false;
+    
+    node.data = class_data;
+    
+    // Check for quantifier
+    result<Token>:peek_result = peek_token(p);
+    
+    if (!peek_result.is_error) {
+        Token:next_tok = peek_result.value;
+        
+        if (next_tok.token_type == TokenType.STAR ||
+            next_tok.token_type == TokenType.PLUS ||
+            next_tok.token_type == TokenType.QUESTION) {
+            pass(apply_quantifier(node, p));
+        };
+    };
+    
+    result<wild ASTNode>:success;
+    success.is_error = false;
+    success.value = node;
+    pass(success);
+};
+
+// Helper: Create anchor node
+func:create_anchor_node = result<wild ASTNode>(AnchorType:at) {
+    wild ASTNode:node = create_node(NodeType.ANCHOR);
+    
+    wild AnchorData:anchor_data = std.mem.alloc_wild(8);
+    anchor_data.anchor_type = at;
+    
+    node.data = anchor_data;
+    
+    result<wild ASTNode>:success;
+    success.is_error = false;
+    success.value = node;
+    pass(success);
+};
+
+// Apply quantifier to node
+func:apply_quantifier = result<wild ASTNode>(wild ASTNode:target, Parser:p) {
+    result<Token>:tok_result = consume_token(p);
+    
+    if (tok_result.is_error) {
+        pass(tok_result);
+    };
+    
+    Token:tok = tok_result.value;
+    
+    wild ASTNode:quant_node = create_node(NodeType.QUANTIFIER);
+    
+    wild QuantData:quant_data = std.mem.alloc_wild(32);
+    quant_data.target = target;
+    quant_data.greedy = true;
+    
+    if (tok.token_type == TokenType.STAR) {
+        quant_data.min = tbb64.from_int(0);
+        quant_data.max = tbb64.ERR;  // Infinity
+    } else if (tok.token_type == TokenType.PLUS) {
+        quant_data.min = tbb64.from_int(1);
+        quant_data.max = tbb64.ERR;  // Infinity
+    } else if (tok.token_type == TokenType.QUESTION) {
+        quant_data.min = tbb64.from_int(0);
+        quant_data.max = tbb64.from_int(1);
+    };
+    
+    quant_node.data = quant_data;
+    
+    result<wild ASTNode>:success;
+    success.is_error = false;
+    success.value = quant_node;
+    pass(success);
+};
+
+// Parse @group{...}
+func:parse_group = result<wild ASTNode>(Parser:p) {
+    // Expect '{'
+    result<Token>:lbrace_result = expect_token(p, TokenType.LBRACE);
+    
+    if (lbrace_result.is_error) {
+        pass(lbrace_result);
+    };
+    
+    // Parse inner pattern
+    result<wild ASTNode>:inner_result = parse_pattern(p);
+    
+    if (inner_result.is_error) {
+        pass(inner_result);
+    };
+    
+    // Expect '}'
+    result<Token>:rbrace_result = expect_token(p, TokenType.RBRACE);
+    
+    if (rbrace_result.is_error) {
+        pass(rbrace_result);
+    };
+    
+    pass(inner_result);
+};
+
+// Parse @capture{...}
+func:parse_capture = result<wild ASTNode>(Parser:p) {
+    // Expect '{'
+    result<Token>:lbrace_result = expect_token(p, TokenType.LBRACE);
+    
+    if (lbrace_result.is_error) {
+        pass(lbrace_result);
+    };
+    
+    // Parse inner pattern
+    result<wild ASTNode>:inner_result = parse_pattern(p);
+    
+    if (inner_result.is_error) {
+        pass(inner_result);
+    };
+    
+    // Expect '}'
+    result<Token>:rbrace_result = expect_token(p, TokenType.RBRACE);
+    
+    if (rbrace_result.is_error) {
+        pass(rbrace_result);
+    };
+    
+    // Increment capture count
+    p.capture_count = tbb64.add(p.capture_count, tbb64.from_int(1));
+    
+    wild ASTNode:capture_node = create_node(NodeType.CAPTURE);
+    
+    wild CaptureData:cap_data = std.mem.alloc_wild(16);
+    cap_data.child = inner_result.value;
+    cap_data.index = p.capture_count;
+    
+    capture_node.data = cap_data;
+    
+    result<wild ASTNode>:success;
+    success.is_error = false;
+    success.value = capture_node;
+    pass(success);
+};
+
+// Parse @either{A|B|C}
+func:parse_alternation = result<wild ASTNode>(Parser:p) {
+    // Expect '{'
+    result<Token>:lbrace_result = expect_token(p, TokenType.LBRACE);
+    
+    if (lbrace_result.is_error) {
+        pass(lbrace_result);
+    };
+    
+    wild ASTNode:alt_node = create_node(NodeType.ALTERNATION);
+    
+    wild SequenceData:seq_data = std.mem.alloc_wild(32);
+    seq_data.children = array<wild ASTNode>.new();
+    
+    alt_node.data = seq_data;
+    
+    // Parse alternatives separated by |
+    while (true) {
+        result<wild ASTNode>:branch_result = parse_pattern(p);
+        
+        if (!branch_result.is_error) {
+            seq_data.children.push(branch_result.value);
+        };
+        
+        result<Token>:peek_result = peek_token(p);
+        
+        if (peek_result.is_error) {
+            break;
+        };
+        
+        Token:next_tok = peek_result.value;
+        
+        if (next_tok.token_type == TokenType.PIPE) {
+            consume_token(p);  // Consume '|'
+        } else {
+            break;
+        };
+    };
+    
+    // Expect '}'
+    result<Token>:rbrace_result = expect_token(p, TokenType.RBRACE);
+    
+    if (rbrace_result.is_error) {
+        pass(rbrace_result);
+    };
+    
+    result<wild ASTNode>:success;
+    success.is_error = false;
+    success.value = alt_node;
+    pass(success);
+};
+
+// Helper: Peek current token
+func:peek_token = result<Token>(Parser:p) {
+    tbb64:idx = p.current;
+    
+    if (tbb64.is_err(idx)) {
+        result<Token>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Index overflow";
+        pass(err_result);
+    };
+    
+    int64:i = tbb64.to_int(idx) ? 0;
+    
+    if (i >= p.tokens.length()) {
+        result<Token>:err_result;
+        err_result.is_error = true;
+        err_result.error = "EOF";
+        pass(err_result);
+    };
+    
+    result<Token>:success;
+    success.is_error = false;
+    success.value = p.tokens.at(i);
+    pass(success);
+};
+
+// Helper: Consume token
+func:consume_token = result<Token>(Parser:p) {
+    result<Token>:tok_result = peek_token(p);
+    
+    if (!tok_result.is_error) {
+        p.current = tbb64.add(p.current, tbb64.from_int(1));
+    };
+    
+    pass(tok_result);
+};
+
+// Helper: Expect specific token type
+func:expect_token = result<Token>(Parser:p, TokenType:expected) {
+    result<Token>:tok_result = consume_token(p);
+    
+    if (tok_result.is_error) {
+        pass(tok_result);
+    };
+    
+    Token:tok = tok_result.value;
+    
+    if (tok.token_type != expected) {
+        result<Token>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Unexpected token type";
+        pass(err_result);
+    };
+    
+    pass(tok_result);
+};
+
+// ============================================================================
+// Module: tools/regex/vm.aria
+// ============================================================================
+// Pike Virtual Machine (Thompson NFA Simulation)
+// ============================================================================
+
+// VM Instruction OpCodes
+enum:OpCode = {
+    OP_CHAR = 1,      // Match specific byte
+    OP_CLASS = 2,     // Match character class
+    OP_MATCH = 3,     // Success
+    OP_JMP = 4,       // Unconditional jump
+    OP_SPLIT = 5,     // Fork execution (NFA branching)
+    OP_SAVE = 6,      // Save capture position
+    OP_TBB_CHK = 7    // TBB error check
+};
+
+// VM Instruction
+struct:Instruction = {
+    OpCode:opcode;
+    tbb64:operand1;
+    tbb64:operand2;
+    wild void:data;              // For class definitions
+};
+
+// VM Program
+struct:Program = {
+    array<Instruction>:instructions;
+    tbb64:capture_slots;
+};
+
+// VM Thread (execution state)
+struct:VMThread = {
+    tbb64:ip;
+    array<tbb64>:captures;       // Capture slot positions
+};
+
+// VM State
+struct:VM = {
+    Program:program;
+    wild byte:input;
+    tbb64:input_len;
+    tbb64:cursor;
+    array<VMThread>:current_list;
+    array<VMThread>:next_list;
+};
+
+// Initialize VM
+func:init_vm = VM(Program:prog, wild byte:input_buf, tbb64:len) {
+    VM:vm;
+    vm.program = prog;
+    vm.input = input_buf;
+    vm.input_len = len;
+    vm.cursor = tbb64.from_int(0);
+    vm.current_list = array<VMThread>.new();
+    vm.next_list = array<VMThread>.new();
+    pass(vm);
+};
+
+// Execute VM
+func:execute_vm = result<bool>(VM:vm) {
+    // Add initial thread
+    VMThread:initial_thread;
+    initial_thread.ip = tbb64.from_int(0);
+    initial_thread.captures = array<tbb64>.new();
+    vm.current_list.push(initial_thread);
+    
+    // Main execution loop
+    while (true) {
+        // Check TBB safety
+        if (tbb64.is_err(vm.cursor)) {
+            std.io.stddbg.write("{\"event\":\"vm_error\",\"reason\":\"cursor_overflow\"}\n");
+            
+            result<bool>:err_result;
+            err_result.is_error = true;
+            err_result.error = "TBB cursor overflow";
+            pass(err_result);
+        };
+        
+        // Get current byte
+        int64:cursor_idx = tbb64.to_int(vm.cursor) ? 0;
+        
+        byte:current_byte = 0;
+        bool:eof = false;
+        
+        if (cursor_idx < tbb64.to_int(vm.input_len)) {
+            current_byte = vm.input[cursor_idx];
+        } else {
+            eof = true;
+        };
+        
+        // Process current threads
+        int32:i = 0;
+        
+        while (i < vm.current_list.length()) {
+            VMThread:thread = vm.current_list.at(i);
+            
+            // Execute instruction
+            result<bool>:exec_result = execute_instruction(vm, thread, current_byte, eof);
+            
+            if (!exec_result.is_error && exec_result.value) {
+                // Match found!
+                result<bool>:success;
+                success.is_error = false;
+                success.value = true;
+                pass(success);
+            };
+            
+            i = i + 1;
+        };
+        
+        // Swap lists
+        vm.current_list = vm.next_list;
+        vm.next_list = array<VMThread>.new();
+        
+        // Check if we have active threads
+        if (vm.current_list.length() == 0) {
+            break;
+        };
+        
+        // Advance cursor
+        if (!eof) {
+            vm.cursor = tbb64.add(vm.cursor, tbb64.from_int(1));
+        } else {
+            break;
+        };
+    };
+    
+    // No match
+    result<bool>:success;
+    success.is_error = false;
+    success.value = false;
+    pass(success);
+};
+
+// Execute single instruction
+func:execute_instruction = result<bool>(VM:vm, VMThread:thread, byte:current_byte, bool:eof) {
+    int64:ip_idx = tbb64.to_int(thread.ip) ? 0;
+    
+    if (ip_idx >= vm.program.instructions.length()) {
+        result<bool>:err_result;
+        err_result.is_error = true;
+        err_result.error = "IP out of bounds";
+        pass(err_result);
+    };
+    
+    Instruction:inst = vm.program.instructions.at(ip_idx);
+    
+    if (inst.opcode == OpCode.OP_CHAR) {
+        // Match specific byte
+        byte:expected = tbb64.to_int(inst.operand1) ? 0;
+        
+        if (!eof && current_byte == expected) {
+            VMThread:new_thread;
+            new_thread.ip = tbb64.add(thread.ip, tbb64.from_int(1));
+            new_thread.captures = thread.captures;
+            vm.next_list.push(new_thread);
+        };
+    } else if (inst.opcode == OpCode.OP_CLASS) {
+        // Match character class
+        // (Would check class type and ranges)
+        if (!eof) {
+            VMThread:new_thread;
+            new_thread.ip = tbb64.add(thread.ip, tbb64.from_int(1));
+            new_thread.captures = thread.captures;
+            vm.next_list.push(new_thread);
+        };
+    } else if (inst.opcode == OpCode.OP_MATCH) {
+        // Success!
+        result<bool>:success;
+        success.is_error = false;
+        success.value = true;
+        pass(success);
+    } else if (inst.opcode == OpCode.OP_JMP) {
+        // Unconditional jump
+        VMThread:new_thread;
+        new_thread.ip = inst.operand1;
+        new_thread.captures = thread.captures;
+        vm.current_list.push(new_thread);
+    } else if (inst.opcode == OpCode.OP_SPLIT) {
+        // Fork execution (NFA branching)
+        VMThread:thread_a;
+        thread_a.ip = inst.operand1;
+        thread_a.captures = thread.captures;
+        vm.current_list.push(thread_a);
+        
+        VMThread:thread_b;
+        thread_b.ip = inst.operand2;
+        thread_b.captures = thread.captures;
+        vm.current_list.push(thread_b);
+    };
+    
+    result<bool>:success;
+    success.is_error = false;
+    success.value = false;
+    pass(success);
+};
+
+// ============================================================================
+// Module: tools/regex/compiler.aria
+// ============================================================================
+// AST -> Pike VM Bytecode Compiler
+// ============================================================================
+
+// Compiler state
+struct:Compiler = {
+    Program:program;
+    tbb64:pc;                    // Program counter
+};
+
+// Initialize compiler
+func:init_compiler = Compiler(void) {
+    Compiler:c;
+    c.program.instructions = array<Instruction>.new();
+    c.program.capture_slots = tbb64.from_int(0);
+    c.pc = tbb64.from_int(0);
+    pass(c);
+};
+
+// Emit instruction
+func:emit = void(Compiler:c, OpCode:op, tbb64:op1, tbb64:op2) {
+    Instruction:inst;
+    inst.opcode = op;
+    inst.operand1 = op1;
+    inst.operand2 = op2;
+    inst.data = wild_null;
+    
+    c.program.instructions.push(inst);
+    c.pc = tbb64.add(c.pc, tbb64.from_int(1));
+};
+
+// Compile AST to bytecode
+func:compile_ast = result<Program>(wild ASTNode:ast) {
+    Compiler:c = init_compiler();
+    
+    result<void>:compile_result = compile_node(c, ast);
+    
+    if (compile_result.is_error) {
+        pass(compile_result);
+    };
+    
+    // Emit final MATCH
+    emit(c, OpCode.OP_MATCH, tbb64.from_int(0), tbb64.from_int(0));
+    
+    result<Program>:success;
+    success.is_error = false;
+    success.value = c.program;
+    pass(success);
+};
+
+// Compile single node
+func:compile_node = result<void>(Compiler:c, wild ASTNode:node) {
+    if (wild_null == node) {
+        result<void>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Null node";
+        pass(err_result);
+    };
+    
+    if (node.node_type == NodeType.LITERAL) {
+        pass(compile_literal(c, node));
+    } else if (node.node_type == NodeType.CLASS) {
+        pass(compile_class(c, node));
+    } else if (node.node_type == NodeType.CONCAT) {
+        pass(compile_concat(c, node));
+    } else if (node.node_type == NodeType.QUANTIFIER) {
+        pass(compile_quantifier(c, node));
+    } else if (node.node_type == NodeType.ALTERNATION) {
+        pass(compile_alternation(c, node));
+    };
+    
+    result<void>:success;
+    success.is_error = false;
+    pass(success);
+};
+
+// Compile literal
+func:compile_literal = result<void>(Compiler:c, wild ASTNode:node) {
+    wild LiteralData:lit_data = node.data;
+    string:content = lit_data.content;
+    
+    int32:i = 0;
+    
+    while (i < content.length()) {
+        byte:ch = content.at(i) ? 0;
+        emit(c, OpCode.OP_CHAR, tbb64.from_int(ch) ? ERR, tbb64.from_int(0) ? ERR);
+        i = i + 1;
+    };
+    
+    result<void>:success;
+    success.is_error = false;
+    pass(success);
+};
+
+// Compile class
+func:compile_class = result<void>(Compiler:c, wild ASTNode:node) {
+    emit(c, OpCode.OP_CLASS, tbb64.from_int(0), tbb64.from_int(0));
+    
+    result<void>:success;
+    success.is_error = false;
+    pass(success);
+};
+
+// Compile concatenation
+func:compile_concat = result<void>(Compiler:c, wild ASTNode:node) {
+    wild SequenceData:seq_data = node.data;
+    
+    int32:i = 0;
+    
+    while (i < seq_data.children.length()) {
+        wild ASTNode:child = seq_data.children.at(i);
+        
+        result<void>:compile_result = compile_node(c, child);
+        
+        if (compile_result.is_error) {
+            pass(compile_result);
+        };
+        
+        i = i + 1;
+    };
+    
+    result<void>:success;
+    success.is_error = false;
+    pass(success);
+};
+
+// Compile quantifier (A*)
+func:compile_quantifier = result<void>(Compiler:c, wild ASTNode:node) {
+    wild QuantData:quant_data = node.data;
+    
+    // Simplified: Assumes * quantifier
+    tbb64:loop_start = c.pc;
+    tbb64:split_addr = c.pc;
+    
+    // Emit SPLIT (fork)
+    emit(c, OpCode.OP_SPLIT, tbb64.from_int(0), tbb64.from_int(0));  // Patch later
+    
+    tbb64:body_start = c.pc;
+    
+    // Compile target
+    result<void>:compile_result = compile_node(c, quant_data.target);
+    
+    if (compile_result.is_error) {
+        pass(compile_result);
+    };
+    
+    // Emit JMP back to loop
+    emit(c, OpCode.OP_JMP, loop_start, tbb64.from_int(0));
+    
+    tbb64:after_loop = c.pc;
+    
+    // Patch SPLIT
+    int64:split_idx = tbb64.to_int(split_addr) ? 0;
+    wild Instruction:split_inst = c.program.instructions.at(split_idx) ? c.program.instructions.at(0);
+    split_inst.operand1 = body_start;
+    split_inst.operand2 = after_loop;
+    
+    result<void>:success;
+    success.is_error = false;
+    pass(success);
+};
+
+// Compile alternation (@either{A|B})
+func:compile_alternation = result<void>(Compiler:c, wild ASTNode:node) {
+    wild SequenceData:seq_data = node.data;
+    
+    int32:branch_count = seq_data.children.length() ? 0;
+    
+    if (branch_count < 2) {
+        result<void>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Alternation requires at least 2 branches";
+        pass(err_result);
+    };
+    
+    // Simplified: Two-way alternation
+    tbb64:split_addr = c.pc;
+    emit(c, OpCode.OP_SPLIT, tbb64.from_int(0), tbb64.from_int(0));  // Patch
+    
+    tbb64:branch_a_start = c.pc;
+    compile_node(c, seq_data.children.at(0));
+    
+    tbb64:jmp_addr = c.pc;
+    emit(c, OpCode.OP_JMP, tbb64.from_int(0), tbb64.from_int(0));  // Patch
+    
+    tbb64:branch_b_start = c.pc;
+    compile_node(c, seq_data.children.at(1));
+    
+    tbb64:after_alt = c.pc;
+    
+    // Patch
+    int64:split_idx = tbb64.to_int(split_addr) ? 0;
+    wild Instruction:split_inst = c.program.instructions.at(split_idx) ? c.program.instructions.at(0);
+    split_inst.operand1 = branch_a_start;
+    split_inst.operand2 = branch_b_start;
+    
+    int64:jmp_idx = tbb64.to_int(jmp_addr) ? 0;
+    wild Instruction:jmp_inst = c.program.instructions.at(jmp_idx) ? c.program.instructions.at(0);
+    jmp_inst.operand1 = after_alt;
+    
+    result<void>:success;
+    success.is_error = false;
+    pass(success);
+};
+
+// ============================================================================
+// Main Entry Point: agrep
+// ============================================================================
+
+func:main = int32(array<string>:args) {
+    if (args.length() < 2) {
+        std.io.stderr.write("Usage: agrep <pattern> [file...]\n");
+        std.io.stderr.write("Options:\n");
+        std.io.stderr.write("  --pattern <pat>   Specify pattern\n");
+        std.io.stderr.write("  --replace <rep>   Replacement string\n");
+        pass(1);
+    };
+    
+    string:pattern = args.at(1) ? "";
+    
+    // Tokenize
+    Lexer:lex = init_lexer(pattern);
+    result<void>:tokenize_result = tokenize(lex);
+    
+    if (tokenize_result.is_error) {
+        std.io.stderr.write("Error: Failed to tokenize pattern\n");
+        pass(1);
+    };
+    
+    // Parse
+    Parser:p = init_parser(lex.tokens);
+    result<wild ASTNode>:parse_result = parse_pattern(p);
+    
+    if (parse_result.is_error) {
+        std.io.stderr.write("Error: ");
+        std.io.stderr.write(parse_result.error);
+        std.io.stderr.write("\n");
+        pass(1);
+    };
+    
+    wild ASTNode:ast = parse_result.value;
+    
+    // Compile
+    result<Program>:compile_result = compile_ast(ast);
+    
+    if (compile_result.is_error) {
+        std.io.stderr.write("Error: Compilation failed\n");
+        pass(1);
+    };
+    
+    Program:prog = compile_result.value;
+    
+    // Log telemetry
+    std.io.stddbg.write("{\"event\":\"pattern_compiled\",\"instructions\":");
+    std.io.stddbg.write(std.string.from_int(prog.instructions.length()));
+    std.io.stddbg.write("}\n");
+    
+    // Read input (simplified: from stdin)
+    int64:buffer_size = 1048576;  // 1MB
+    wild byte:input_buf = std.mem.alloc_wild(buffer_size);
+    
+    result<int64>:read_result = std.io.stdin.read_wild(input_buf, buffer_size);
+    
+    if (read_result.is_error) {
+        std.io.stderr.write("Error: Failed to read input\n");
+        pass(1);
+    };
+    
+    tbb64:input_len = tbb64.from_int(read_result.value);
+    
+    // Execute VM
+    VM:vm = init_vm(prog, input_buf, input_len);
+    result<bool>:exec_result = execute_vm(vm);
+    
+    if (exec_result.is_error) {
+        std.io.stderr.write("Error: VM execution failed\n");
+        pass(1);
+    };
+    
+    if (exec_result.value) {
+        std.io.stdout.write("Match found!\n");
+        pass(0);
+    } else {
+        std.io.stdout.write("No match\n");
+        pass(1);
+    };
+};
+
+// ============================================================================
+// END OF CORRECTED ARIA PREFIX-BASED REGEX ENGINE
+// ============================================================================

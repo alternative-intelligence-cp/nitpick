@@ -1,0 +1,413 @@
+﻿Architectural Specification and Implementation Report: High-Performance Exclusion Logic in the AriaBuild Globbing Engine via C++17
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language ecosystem has necessitated a fundamental re-engineering of its supporting infrastructure. As the language specification evolves toward its v0.1.0 milestone, encompassing advanced features such as twisted balanced binary (TBB) arithmetic and optional types, the requirements for its build system, AriaBuild (internally designated as aria_make), have transcended the capabilities of legacy compilation orchestration. The system now demands enterprise-grade capabilities, including hermeticity, reproducibility, and high-throughput filesystem traversal. A critical bottleneck identified in recent architectural audits is the efficiency of the source file discovery mechanism—the "Globbing Engine." Specifically, the inability of the current architecture to efficiently prune large, irrelevant directory trees (such as node_modules, .git, or target directories) during the discovery phase imposes a severe I/O penalty on large monorepos.
+This report presents a comprehensive architectural design and implementation guide for upgrading the GlobEngine within src/glob/glob_engine.cpp. The core objective is to integrate robust exclusion logic using C++17's std::filesystem::recursive_directory_iterator, leveraging the disable_recursion_pending() method to achieve $O(1)$ pruning of excluded directory subtrees. This optimization transforms the algorithmic complexity of file discovery from being linear with respect to the total file count ($O(N_{total})$) to being linear only with respect to the relevant source tree ($O(N_{relevant})$).
+The analysis detailed herein synthesizes theoretical graph traversal principles, low-level C++17 filesystem mechanics, and the specific architectural constraints of the AriaBuild system. It provides a complete specification for modifying the GlobEngine constructor to accept exclusion patterns and re-engineering the traversal loop to enforce these exclusions at the iterator level. Furthermore, this report explores the second-order implications of this change, including impacts on cache invalidation strategies, cross-platform path normalization between Windows and POSIX environments, and the deterministic sorting guarantees required for reproducible builds.
+2. Architectural Context: The AriaBuild Ecosystem
+To fully comprehend the necessity and technical implementation of the proposed changes, one must first situate the Globbing Engine within the broader context of the AriaBuild architecture. AriaBuild is designed as a declarative, data-driven build system, rejecting the imperative scripting models of legacy tools like GNU Make in favor of a rigid, analyze-able configuration format known as the Aria Build Configuration (ABC).
+2.1 The "Configuration as Data" Philosophy
+AriaBuild operates on the fundamental principle that a build definition should be a static data structure rather than an executable program. This philosophy enables advanced tooling features such as queryable dependency graphs, automatic parallelism, and Integrated Development Environment (IDE) integration via the Language Server Protocol (LSP). In this model, the "Glob" is a declarative primitive: a string pattern representing a set of files. The build system is responsible for expanding this pattern into a concrete list of artifacts.1
+Because the build configuration is declarative, the user defines what to include (e.g., src/**/*.aria) and what to exclude (e.g., !tests/**), but does not define how to find them. This shifts the burden of optimization entirely onto the build tool's internal engine. If the engine naïvely iterates every file and filters the list post-hoc, the user perceives the build tool as sluggish, particularly on Windows filesystems (NTFS) where metadata operations are significantly more expensive than on ext4 or APFS. The architectural specification explicitly notes that globbing introduces non-determinism if files are added or removed without updating the configuration file, necessitating a snapshot mechanism.1
+2.2 The Gap in the Aria Standard Library
+A critical architectural constraint identified in the system specifications is the capability gap within the Aria standard library itself. The current runtime implementation (src/runtime/io/) provides basic file I/O operations such as readFile and fileExists, but it explicitly lacks advanced directory iteration or pattern matching functions.1 Consequently, the globbing subsystem cannot be "self-hosted" (written in Aria) at this stage of the ecosystem's lifecycle. It must be implemented in the host language of the compiler driver—C++17.
+This constraint mandates that the GlobEngine be a standalone C++ component, managing its own memory, filesystem interactions, and platform abstractions. It serves as the bridge between the messy, non-deterministic reality of the physical filesystem and the clean, ordered abstractions of the Dependency Graph. The reliance on C++17 allows the engine to utilize std::filesystem, a library that was standardized to provide portable filesystem operations, although, as subsequent sections will detail, "portable" often requires careful handling of edge cases like path separators and hidden file attributes.1
+2.3 The Imperative for Exclusion Pruning
+In modern development environments, source trees are often co-located with build artifacts and external dependencies. A typical project structure might look like the following:
+Directory
+	Content Type
+	Relevance to Build
+	Estimated File Count
+	src/
+	Source Code
+	High (Include)
+	100 - 1,000
+	tests/
+	Test Suites
+	Medium (Exclude from binary)
+	50 - 500
+	build/
+	Artifacts (.o,.ll)
+	None (Exclude)
+	10,000+
+	.git/
+	Version Control
+	None (Exclude)
+	50,000+
+	node_modules/
+	JS Dependencies
+	None (Exclude)
+	100,000+
+	A glob pattern like **/*.aria effectively requests a traversal of the entire tree. Without exclusion logic, the iterator enters build/, node_modules/, and .git/, performing stat calls on potentially hundreds of thousands of files only to discard them later because they do not match the suffix *.aria. This behavior is disastrous for "configure-time" latency.
+The solution requires "pruning": detecting that a directory matches an exclusion pattern before entering it, and instructing the filesystem iterator to skip that entire branch of the tree. C++17 provides exactly this mechanism via disable_recursion_pending().
+3. Theoretical Framework of Filesystem Traversal
+Optimizing file discovery requires a rigorous understanding of the underlying traversal algorithms. The file system can be modeled as a tree (or a directed graph, if symbolic links are considered), where directories are nodes and files are leaves. The efficiency of any globbing engine is determined by how it navigates this graph.
+3.1 Iterator Semantics and State
+The std::filesystem::recursive_directory_iterator is an Input Iterator that flattens the traversal of this hierarchy. Internally, the iterator maintains a stack of open directory handles to manage the recursion state.2
+1. Construction: The iterator opens the root directory and reads the first entry.
+2. Increment (++): The iterator advances to the next entry.
+   * If the current entry is a directory, the iterator pushes a new handle onto the stack and descends immediately (depth-first traversal).
+   * If the current directory is exhausted, it pops the stack and continues in the parent directory.
+3. Dereference (*): The iterator returns a directory_entry object containing metadata (path, attributes).
+The critical behavior for optimization is the default recursion strategy. By default, operator++ automatically descends into directories. The method disable_recursion_pending() sets a flag in the iterator's internal state.3 When operator++ is subsequently called, the iterator checks this flag. If set, it clears the flag and skips the descent, moving instead to the next sibling in the current directory. This effectively prunes the traversal tree at the current node.
+3.2 Complexity Analysis of Pruning
+To quantify the benefits of pruning, we consider the complexity relative to the filesystem structure. Let $D$ be the maximum depth of the directory tree, and $B$ be the average branching factor (number of files/subdirectories per directory).
+* Naive Traversal (Filter after collect): The complexity is $O(B^D)$. Every node in the tree is visited. For a tree with a large node_modules directory, $B^D$ can easily exceed $10^5$ or $10^6$.
+* Pruned Traversal: If an exclusion pattern matches a directory at depth $d$, the subtree rooted at that node is skipped. The cost of that subtree ($B^{D-d}$) is eliminated.
+For high-branching directories near the root (like node_modules or build), $d$ is small (often 1 or 2), meaning the savings are exponential relative to the depth of the skipped tree. This theoretical advantage confirms that disable_recursion_pending() is not merely a micro-optimization but an algorithmic necessity for scalability.
+3.3 Platform Divergence and Path Normalization
+A significant challenge in implementing a cross-platform globbing engine is the handling of path separators. Windows systems use the backslash (\) as the directory separator, while POSIX systems use the forward slash (/). C++17's std::filesystem::path abstracts this storage difference, but when paths are converted to strings for pattern matching, the separators typically reflect the native format.4
+The AriaBuild specification mandates that build configurations use forward slashes for all paths to ensure portability.1 Therefore, the GlobEngine must perform normalization. std::filesystem::path::generic_string() is intended to return a path with forward slashes, but implementation quirks in some compilers (like GCC 9.2) have historically caused issues.5 A robust implementation must explicit sanitize paths before passing them to the matching logic.
+4. Architectural Design: The GlobEngine Class
+The implementation of src/glob/glob_engine.cpp must be robust, thread-safe (conceptually, for future parallelization), and platform-agnostic. We will redesign the class to support exclusions via constructor injection, adhering to the RAII (Resource Acquisition Is Initialization) principle.
+4.1 Class Architecture
+The GlobEngine interacts with helper classes defined in the architectural specifications 1:
+1. GlobPattern: Handles parsing of the pattern string, path normalization, and anchor point calculation. This class is responsible for decomposing a pattern like src/**/*.aria into a static root (src) and a dynamic suffix (**/*.aria).
+2. FastMatcher: A zero-allocation string matcher implementing the "Shifting Wildcard" algorithm. This avoids the compilation overhead of std::regex.
+The GlobEngine itself orchestrates the traversal.
+Header Design (include/glob/glob_engine.h)
+The header must be updated to store exclusion patterns. We use std::vector<std::string> to hold the raw patterns. During traversal, these might be parsed into GlobPattern objects for efficiency, or matched directly if simple.
+
+
+C++
+
+
+
+
+#ifndef ARIA_GLOB_ENGINE_H
+#define ARIA_GLOB_ENGINE_H
+
+#include <vector>
+#include <string>
+#include <filesystem>
+#include <functional>
+
+namespace aria::glob {
+
+/**
+* @class GlobEngine
+* @brief High-performance filesystem traversal engine with exclusion support.
+* 
+* This class implements the core logic for discovering source files based on 
+* declarative glob patterns. It utilizes C++17 filesystem iterators for 
+* efficient directory walking and supports "pruning" of excluded subtrees
+* to minimize I/O overhead.
+*/
+class GlobEngine {
+public:
+   /**
+    * @brief Constructs a GlobEngine with explicit exclusion patterns.
+    * 
+    * @param excludes A list of glob patterns (e.g., "tests/**", ".git") 
+    *                 that should be pruned during traversal.
+    */
+   explicit GlobEngine(std::vector<std::string> excludes = {});
+
+   /**
+    * @brief Expands a glob pattern into a list of matching file paths.
+    * 
+    * @param pattern The glob pattern to match (e.g., "src/**\/*.aria").
+    * @return A sorted list of unique paths matching the pattern.
+    */
+   std::vector<std::filesystem::path> expand(const std::string& pattern);
+
+private:
+   std::vector<std::string> m_excludes;
+
+   /**
+    * @brief Checks if a path matches any of the exclusion patterns.
+    * 
+    * @param path The path to check.
+    * @return true if the path should be excluded.
+    */
+   bool is_excluded(const std::filesystem::path& path) const;
+};
+
+} // namespace aria::glob
+
+#endif // ARIA_GLOB_ENGINE_H
+
+4.2 Handling Exclusion Semantics
+The definition of "exclusion" is subtle. Does !src/foo exclude src/foo explicitly, or does it exclude src/foo and all its children? In the context of disable_recursion_pending(), we are primarily interested in directory exclusions.
+If a directory matches an exclusion pattern, we prune it. If a file matches an exclusion pattern, we simply do not add it to the result list. The implementation needs to distinguish between these two cases during the walk. Standard globbing exclusion usually implies: "If a file or directory matches this pattern, ignore it."
+* If tests matches the exclusion list, and it is a directory, we prune.
+* If main.test.cpp matches the exclusion list, and it is a file, we skip.
+5. Detailed Implementation: src/glob/glob_engine.cpp
+The implementation involves several critical steps: path normalization, establishing the anchor point (to optimize the start of traversal), and the recursive iteration loop.
+5.1 Constructor and Initialization
+The constructor serves as the initialization point for the engine's exclusion logic. It receives a vector of exclusion strings and normalizes them. This normalization is crucial because the FastMatcher relies on consistent path separators. If the user provides tests\** on Windows, but the internal engine converts filesystem paths to tests/**, the match will fail.
+
+
+C++
+
+
+
+
+#include "glob/glob_engine.h"
+#include "glob/glob_pattern.h" // Assumed existence based on specs 
+#include "glob/fast_matcher.h" // Assumed existence based on specs 
+#include <algorithm>
+#include <iostream>
+#include <system_error>
+
+namespace fs = std::filesystem;
+
+namespace aria::glob {
+
+GlobEngine::GlobEngine(std::vector<std::string> excludes)
+   : m_excludes(std::move(excludes)) 
+{
+   // Normalize exclusions to internal representation (forward slashes).
+   // This ensures that exclusions defined in ABC files work cross-platform
+   // regardless of the host OS separator.
+   for (auto& exc : m_excludes) {
+       // Platform-agnostic normalization logic:
+       // Replace all backslashes with forward slashes.
+       std::replace(exc.begin(), exc.end(), '\\', '/');
+   }
+}
+
+5.2 The Traversal Logic (expand)
+The expand method is the operational heart of the GlobEngine. It orchestrates the filesystem walk. The algorithm proceeds as follows:
+1. Parse Pattern: The input glob is decomposed into segments. For example, src/**/*.aria is split into an Anchor (src) and a Suffix (**/*.aria). This optimization ensures that traversal begins as deep in the directory tree as possible, avoiding a scan from the filesystem root.
+2. Anchor Check: The engine verifies the existence of the anchor directory. If it is missing, an empty result set is returned immediately.
+3. Iterate: A recursive_directory_iterator is initialized at the anchor.
+4. Prune: For each entry, the engine checks is_excluded(entry). If true, and the entry is a directory, disable_recursion_pending() is called. The loop then continues to the next entry.
+5. Match: If the entry is not excluded and is a regular file, it is checked against the inclusion pattern.
+Implementation of expand
+
+
+C++
+
+
+
+
+std::vector<fs::path> GlobEngine::expand(const std::string& pattern_str) {
+   std::vector<fs::path> results;
+   
+   // 1. Parse the main inclusion pattern to find the static root
+   GlobPattern pattern(pattern_str);
+   fs::path anchor = pattern.get_anchor(); // e.g., "src" from "src/**/*.aria"
+
+   // Guard: Anchor must exist and be a directory
+   std::error_code ec;
+   if (!fs::exists(anchor, ec) ||!fs::is_directory(anchor, ec)) {
+       return {};
+   }
+
+   // 2. Configure Directory Options
+   // We explicitly skip permission denied errors to prevent the iterator from
+   // throwing exceptions when encountering locked system directories.
+   // This aligns with the robustness requirements of a build tool.
+   auto opts = fs::directory_options::skip_permission_denied;
+
+   // 3. Recursive Iteration
+   // We use the iterator directly to control recursion state.
+   // Note: The increment happens explicitly inside the loop or at the end
+   // to allow for logic that might advance the iterator differently.
+   for (auto it = fs::recursive_directory_iterator(anchor, opts, ec);
+        it!= fs::recursive_directory_iterator();
+        it.increment(ec)) 
+   {
+       if (ec) {
+           // Log error or ignore based on policy. For now, reset and continue.
+           // A robust implementation might log warnings for specific error codes.
+           ec.clear();
+           continue;
+       }
+
+       const auto& entry = *it;
+       const fs::path& path = entry.path();
+       
+       // --- EXCLUSION LOGIC ---
+       // Check if the current entry matches any exclusion pattern.
+       // We act on the relative path from the project root or anchor to ensure 
+       // patterns like "build" match "src/build" if strictly recursive.
+       if (is_excluded(path)) {
+           if (entry.is_directory(ec)) {
+               // CRITICAL: Disable recursion into this directory.
+               // The iterator will skip the children of 'path' on the next increment.
+               // This transforms O(N_total) to O(N_relevant).
+               it.disable_recursion_pending();
+           }
+           
+           // Skip processing this entry entirely (don't add to results)
+           // The loop continues, incrementing the iterator to the next sibling.
+           continue;
+       }
+
+       // --- INCLUSION LOGIC ---
+       // If we are here, the entry is not excluded.
+       
+       // Only regular files are typically added to build targets.
+       // Directories are traversed but not added as "source files" themselves.
+       if (entry.is_regular_file(ec)) {
+           // Normalize path for matching (Windows backslash to forward slash)
+           // AriaBuild requires internal paths to be POSIX-style.
+           // We assume GlobPattern/FastMatcher handles string_view efficient matching.
+           
+           // The pattern object performs the matching against the filename or full path.
+           if (pattern.matches(path)) {
+               results.push_back(path);
+           }
+       }
+   }
+
+   // 4. Deterministic Sort
+   // Filesystem iteration order is non-deterministic (OS dependent).
+   // To ensure reproducible builds, we MUST sort the output alphabetically. 
+   std::sort(results.begin(), results.end());
+
+   return results;
+}
+
+5.3 Implementing is_excluded
+The is_excluded helper is the decision engine for pruning. It iterates through the exclusion patterns provided in the constructor. A key technical detail here is the handling of platform-specific path separators.
+
+
+C++
+
+
+
+
+bool GlobEngine::is_excluded(const fs::path& path) const {
+   // Optimization: Convert path to generic string once.
+   // generic_string() attempts to return paths with forward slashes,
+   // which matches our normalized exclusion patterns.
+   std::string path_str = path.generic_string();
+
+   for (const auto& exclude_pat : m_excludes) {
+       // Use FastMatcher to check if the path matches the exclusion glob.
+       // FastMatcher::match implements the "Shifting Wildcard" algorithm 
+       // which avoids regex overhead.
+       if (FastMatcher::match(path_str, exclude_pat)) {
+           return true;
+       }
+   }
+   return false;
+}
+
+6. Technical Analysis of disable_recursion_pending()
+Understanding the exact mechanics of disable_recursion_pending() is crucial for implementing this logic correctly. This method was introduced in C++17 specifically to address the inefficiency of recursive_directory_iterator in pruning scenarios.3
+6.1 State Modification Mechanics
+When a recursive_directory_iterator visits a directory, it internally sets a flag (conceptually recursion_pending = true).
+* Normal Increment (++): The iterator checks recursion_pending. If true, it opens the directory entry.path(), pushes the new handle to the internal stack, and moves to the first child of that new directory.
+* With disable_recursion_pending(): The method sets recursion_pending = false.
+* Subsequent Increment: The iterator checks recursion_pending. Finding it false, it ignores the subdirectory's contents. It calls the underlying increment on the current directory handle, moving to the next sibling of the pruned directory.3
+6.2 Edge Cases and Undefined Behavior
+1. End Iterator: Calling disable_recursion_pending() on an end iterator results in undefined behavior. The loop condition it!= fs::recursive_directory_iterator() serves as a guard against this.3
+2. Symlinks: If the iterator is configured to follow symlinks (directory_options::follow_directory_symlink), it might visit directories that form cycles. While std::filesystem handles basic loops, disable_recursion_pending can be used to manually break cycles if detected via an external visited set.6
+3. Post-Increment: Calling disable_recursion_pending() after incrementing is ineffective for the previous directory. It affects the next increment operation. This dictates that the call must occur inside the loop body before ++it.2
+6.3 Platform Specifics (Windows vs. POSIX)
+On Windows, path separators are backslashes (\). The std::filesystem::path::generic_string() function converts these to forward slashes (/).7 This conversion is critical for matching against patterns defined in build.aria files, which mandate forward slashes.1 By utilizing path.generic_string() in is_excluded, we ensure that an exclusion pattern like src/tests correctly matches src\tests on Windows without requiring the user to write platform-specific logic.
+Additionally, the concept of "hidden files" varies. On POSIX systems, files starting with a dot (.) are hidden. On Windows, hidden status is a file attribute. The GlobEngine logic presented here treats "hidden" as an explicit exclusion category. If the AriaBuild specification requires ignoring hidden files by default, the is_excluded method would need to be augmented to check for dot-prefixes or Windows attributes.8
+7. Performance and Scalability Implications
+The architectural shift to exclusion-aware pruning has profound performance implications for the AriaBuild system, particularly for the "Configure" phase where the dependency graph is constructed.
+7.1 Algorithmic Complexity Shift
+Consider a project with a node_modules/ directory containing 10,000 files.
+* Without Pruning: The iterator performs 10,000 readdir calls and 10,000 stat calls. It generates 10,000 strings, passes them to FastMatcher, fails the inclusion check, and discards them. This creates high I/O pressure and CPU usage.
+* With Pruning: The iterator visits node_modules/. is_excluded("node_modules") returns true. disable_recursion_pending() is called. The iterator skips the directory contents entirely. The cost is reduced to 1 stat call and 1 Match check.
+This effectively reduces the complexity of the file discovery phase from unbounded (dependent on build artifact count) to bounded (dependent on source file count).
+7.2 Determinism and Caching
+The AriaBuild specification strictly requires deterministic builds.1 The GlobEngine enforces this by sorting the results vector. Pruning significantly reduces the size of the initial vector before sorting, which improves the sort performance ($O(N \log N)$).
+Furthermore, AriaBuild utilizes timestamp-based cache invalidation. By skipping excluded directories, the system avoids checking timestamps on volatile files (like build artifacts in target/) that change frequently. This stabilizes the build graph's "dirty" state calculation, ensuring that a rebuild is only triggered when actual source files change, not when the build directory itself is modified.
+8. Integration with the Aria Compiler Driver
+The updated GlobEngine integrates directly into the ariac driver described in src/main.cpp.1 The integration flow is as follows:
+1. Config Parsing: The ConfigParser reads build.aria. It encounters a target definition with sources (globs) and excludes (globs).
+2. Instantiation: The parser instantiates GlobEngine, passing the excludes vector to the constructor.
+3. Expansion: It calls engine.expand(source_pattern) for each source glob.
+4. Graph Construction: The resulting paths are fed into the DependencyGraph to build the DAG.
+This flow ensures that the exclusion logic is applied at the earliest possible moment in the build lifecycle, minimizing memory usage and startup time.
+9. Conclusion
+The modification of src/glob/glob_engine.cpp to leverage C++17's disable_recursion_pending() represents a decisive optimization for the AriaBuild infrastructure. It aligns the system with modern "Configuration as Data" paradigms by ensuring that the build tool respects user intent (exclusions) at the lowest level of filesystem interaction.
+This report has detailed the theoretical justification, the specific C++17 mechanisms, and the complete code structure required to implement this feature. By adopting this architecture, AriaBuild moves significantly closer to its goal of being a high-performance, deterministic, and developer-friendly build tool capable of scaling to the demands of the Aria language ecosystem.
+Citations
+1
+10. Appendix: Complete Reference Implementation
+For clarity, the following is the consolidated source code structure for the proposed update to src/glob/glob_engine.cpp.
+
+
+C++
+
+
+
+
+#include "glob/glob_engine.h"
+#include "glob/glob_pattern.h"
+#include "glob/fast_matcher.h"
+#include <algorithm>
+#include <system_error>
+
+namespace aria::glob {
+
+GlobEngine::GlobEngine(std::vector<std::string> excludes)
+   : m_excludes(std::move(excludes)) {
+   // Normalize exclusions for consistent matching
+   for (auto& exc : m_excludes) {
+       std::replace(exc.begin(), exc.end(), '\\', '/');
+   }
+}
+
+std::vector<std::filesystem::path> GlobEngine::expand(const std::string& pattern_str) {
+   namespace fs = std::filesystem;
+   std::vector<fs::path> results;
+   
+   GlobPattern pattern(pattern_str);
+   fs::path anchor = pattern.get_anchor();
+
+   std::error_code ec;
+   // Safety check: Anchor must exist and be a directory
+   if (!fs::exists(anchor, ec) ||!fs::is_directory(anchor, ec)) {
+       return {};
+   }
+
+   auto opts = fs::directory_options::skip_permission_denied; // Safe default
+
+   for (auto it = fs::recursive_directory_iterator(anchor, opts, ec);
+        it!= fs::recursive_directory_iterator();
+        it.increment(ec)) 
+   {
+       if (ec) { ec.clear(); continue; }
+
+       // Exclusion Pruning
+       if (is_excluded(it->path())) {
+           if (it->is_directory()) {
+               // The core optimization: Skip the subtree
+               it.disable_recursion_pending();
+           }
+           continue; 
+       }
+
+       // Inclusion Matching
+       if (it->is_regular_file()) {
+           if (pattern.matches(it->path())) {
+               results.push_back(it->path());
+           }
+       }
+   }
+
+   // Deterministic Sort for Reproducible Builds
+   std::sort(results.begin(), results.end());
+   return results;
+}
+
+bool GlobEngine::is_excluded(const std::filesystem::path& path) const {
+   std::string path_str = path.generic_string();
+   for (const auto& exc : m_excludes) {
+       if (FastMatcher::match(path_str, exc)) return true;
+   }
+   return false;
+}
+
+} // namespace aria::glob
+
+Works cited
+1. compiled.txt
+2. recursive_directory_iterator Class | Microsoft Learn, accessed December 19, 2025, https://learn.microsoft.com/en-us/cpp/standard-library/recursive-directory-iterator-class?view=msvc-170
+3. std::filesystem::recursive_directory_iterator::disable_recursion_pending - cppreference.com, accessed December 19, 2025, https://en.cppreference.com/w/cpp/filesystem/recursive_directory_iterator/disable_recursion_pending.html
+4. std::filesystem::path - cppreference.com - C++ Reference, accessed December 19, 2025, https://en.cppreference.com/w/cpp/filesystem/path.html
+5. 93244 – std::filesystem::path::generic_string doesn't convert the first slash on Windows, accessed December 19, 2025, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=93244
+6. recursive_directory_iterator's skip_permission_denied option appears to be ignored on macOS? - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/70382262/recursive-directory-iterators-skip-permission-denied-option-appears-to-be-ignor
+7. path Class | Microsoft Learn, accessed December 19, 2025, https://learn.microsoft.com/en-us/cpp/standard-library/path-class?view=msvc-170
+8. std::filesystem::recursive_directory_iterator and read permision - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/74875924/stdfilesystemrecursive-directory-iterator-and-read-permision
+9. std::filesystem::recursive_directory_iterator - cppreference.com - C++ Reference, accessed December 19, 2025, https://en.cppreference.com/w/cpp/filesystem/recursive_directory_iterator.html
+10. glob (programming) - Wikipedia, accessed December 19, 2025, https://en.wikipedia.org/wiki/Glob_(programming)

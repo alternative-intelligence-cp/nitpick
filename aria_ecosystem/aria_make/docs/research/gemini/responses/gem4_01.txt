@@ -1,0 +1,503 @@
+﻿Architectural Implementation of Command Signature Hashing for Hermetic Build Incrementalism in AriaBuild
+1. Executive Summary: The Imperative for Semantic State Tracking
+The evolution of software construction tools has progressively moved from imperative, script-based execution models toward declarative, graph-based dependency engines. Within the Aria programming language ecosystem, the aria_make build system (also referred to as AriaBuild) represents a critical infrastructure component designed to enforce determinism and reproducibility.1 As the ecosystem matures to support the unique features of Aria version 0.0.7—such as Twisted Balanced Binary (TBB) arithmetic, hybrid memory models involving both garbage-collected and wild pointers, and rigorous module systems—the reliability of the build tool becomes paramount.1
+However, the current architectural reliance on filesystem timestamps (mtime) for incremental build logic introduces a significant vulnerability known as the "Flag Change" vector. This vulnerability manifests when a developer modifies build instructions—such as compiler optimization flags, preprocessor definitions, or include paths—without altering the modification times of the source files. Under the legacy timestamp-based model, the build system incorrectly identifies the artifacts as up-to-date because the source timestamp remains older than the output timestamp. This results in a "clean" build state that does not reflect the current configuration, leading to non-deterministic behavior where the binary output depends not only on the current source and configuration but also on the hidden history of previous builds.
+The consequences of this vulnerability are severe in a systems programming context. If a developer toggles a flag to enable runtime bounds checking for wild pointers but the system fails to rebuild the affected modules, the resulting binary will lack the expected safety guarantees, potentially masking critical memory defects during testing. Furthermore, in a Continuous Integration (CI) environment, this non-determinism can lead to "works on my machine" syndromes where local builds (which might have stale artifacts) differ from clean CI builds.
+This report articulates a comprehensive architectural strategy to eliminate this vulnerability through the implementation of Command Signature Hashing. The proposed solution fundamentally redefines the concept of "build state" within the Aria ecosystem. By transitioning from a purely temporal model (checking mtime) to a hybrid semantic-temporal model, the system ensures that the build command itself is treated as a first-class dependency of the target artifact. The core of this implementation involves the introduction of a CommandHasher class, the integration of the SHA-256 cryptographic hash function to generate deterministic signatures of command strings, and the deployment of a persistent state manager utilizing the nlohmann/json library to serialize these signatures across build invocations.1
+The technical analysis presented herein provides a rigorous deconstruction of the problem space, evaluating the algorithmic trade-offs between cryptographic collision resistance and execution latency. It details the implementation of the BuildState class, the refactoring of the check_is_dirty logic within src/build/incremental.cpp (and associated logic files), and the necessary C++17 infrastructure to support this architectural shift. By updating the in-memory hash immediately upon dirty detection, the system prepares for an atomic state commitment, ensuring that subsequent build phases operate on a consistent verification plane. This report serves as both a theoretical justification and a practical implementation guide for hardening the AriaBuild infrastructure against configuration drift.
+2. Theoretical Framework: Dependency Graphs and State Determinism
+To understand the necessity of Command Signature Hashing, one must first analyze the theoretical underpinnings of the AriaBuild dependency engine and the limitations of purely temporal incrementality within the context of a modern, safety-critical language like Aria.
+2.1 The Limitations of Temporal Dependency Models
+The classical model of dependency resolution, popularized by legacy tools such as GNU Make, relies on the axiom that an output artifact is a function of its input files' content, and that a change in content is strictly correlated with a change in the file's modification timestamp. Mathematically, for a target $T$ (e.g., an object file) and a set of prerequisites $P = \{p_1, p_2,..., p_n\}$ (source files and headers), the build predicate $B(T)$ is defined as:
+
+
+$$B(T) \iff (\neg \exists T) \lor (\exists p_i \in P : \text{mtime}(p_i) > \text{mtime}(T))$$
+This model leverages the operating system's filesystem metadata, specifically the stat system call or std::filesystem::last_write_time 1, to perform rapid staleness checks ($O(1)$ per file). It assumes that the transformation function $F$ (the compiler invocation) is constant. However, in the Aria build ecosystem, the build process is more accurately defined as:
+
+
+$$T = F(C, P)$$
+Where $C$ represents the configuration context—the set of compiler executables, flags, environment variables, and preprocessor definitions used to generate $T$. The timestamp model fundamentally fails to capture changes in $C$.
+The Vulnerability Scenario:
+Consider a developer compiling an Aria module with optimization level -O0 (Debug) and specific TBB safety checks enabled. The artifact module.ll is generated with mtime $t_1$. The source file module.aria has mtime $t_0$, where $t_1 > t_0$. The system considers the target up-to-date.
+The developer then modifies the build configuration file (build.aria) to enable -O3 (Release) optimization, which might aggressively inline functions and remove certain runtime safety checks.1 The source file module.aria is untouched ($mtime = t_0$). The timestamp logic compares $t_0$ vs $t_1$, sees that the source is older than the artifact, and incorrectly skips the rebuild. The result is a binary that ostensibly represents the Release build but actually contains Debug code for that specific module. This violation of hermeticity undermines the entire development lifecycle.
+2.2 The "Flag Change" Vulnerability Vector
+The "Flag Change" vulnerability is not merely a nuisance; it is a structural defect that undermines trust in the build tool. In the Aria ecosystem, where "Configuration as Data" is a core tenet and build configurations are defined in the whitespace-insensitive ABC format 1, changes to the build.aria file are frequent. A developer might toggle assertions, change the target architecture (e.g., from x86_64 to aarch64), or modify include paths to point to a different version of the standard library.
+If the build system ignores these changes, the developer is forced to perform a clean build manually (rm -rf build/). This negation of the performance benefits of an incremental build system is particularly damaging given the non-incremental nature of the current Aria compiler frontend.1 Since the compiler requires a full pass for every file, minimizing redundant builds via an accurate incremental system is crucial for developer velocity.
+To close this gap, the build predicate must be expanded to include the Command Signature $S_C$, which is a cryptographic hash of the serialized configuration $C$. The new build predicate becomes:
+
+
+$$B(T) \iff B_{\text{temporal}}(T) \lor (S_C(\text{current}) \neq S_C(\text{stored}))$$
+This hybrid approach restores hermeticity. The build state is no longer determined solely by the filesystem but by the union of the filesystem state and the configuration state.
+2.3 System Capabilities and Constraints
+The implementation of this logic must navigate the specific constraints of the Aria runtime environment and the C++ host toolchain:
+* Host Language: AriaBuild is implemented in C++17.1 The solution must leverage standard C++ idioms and avoid heavy external dependencies that would complicate the bootstrapping process.
+* Persistence: The Aria standard library currently lacks robust serialization capabilities 1, necessitating the use of the nlohmann/json library for storing build states. This library is already integrated into the Aria Language Server (AriaLS) infrastructure, making it a compliant choice for the ecosystem.1
+* Performance: While the Aria compiler itself is non-incremental and blocking 1, the build tool acts as the orchestrator. It must minimize its own overhead. The hashing algorithm must be fast enough not to introduce perceptible latency during the "checking" phase of large builds, yet robust enough to avoid collisions.
+* Algorithm Selection: The request specifically mandates SHA-256. While non-cryptographic hashes like FNV-1a are explored for directory content hashing in other parts of AriaBuild 1, SHA-256 provides a virtually collision-proof guarantee. This is critical because the "key" being hashed is a complex string of compiler flags where a single bit flip (e.g., changing -DDEBUG to -DNDEBUG) changes the semantic meaning entirely.
+2.4 The Role of Hermeticity in Aria
+Aria aims to be a safe systems language. Safety extends beyond the language semantics (like the borrow checker and TBB types) to the tooling itself. A "safe" build system is one that never produces an incorrect binary. If a user changes the definition of a macro in the build configuration, and that macro controls the memory layout of a struct, failing to rebuild could lead to ABI incompatibilities between object files.
+For example, consider a macro MAX_BUFFER defined as 1024 in a Debug build and 4096 in a Release build. If file A uses the old definition and file B uses the new definition due to a partial rebuild failure, passing a buffer from A to B could result in a buffer overflow—precisely the kind of error Aria is designed to prevent. Therefore, Command Signature Hashing is not just a build feature; it is a safety feature.
+3. Cryptographic Strategy and Component Architecture
+The transition to a semantic state model requires the introduction of distinct architectural components responsible for generating signatures, managing persistent state, and integrating this logic into the existing dependency graph traversal.
+3.1 Hashing Strategy: SHA-256 Analysis
+The selection of SHA-256 over faster, non-cryptographic algorithms like FNV-1a or MurmurHash is a deliberate architectural decision driven by the requirement for collision resistance.
+Collision Resistance vs. Performance:
+* FNV-1a (64-bit): Fast, simple to implement 2, but has a non-negligible collision probability when hashing millions of strings, or when inputs share long common prefixes (which build commands often do). A collision here would mean a configuration change is ignored, reintroducing the vulnerability.
+* SHA-256: Cryptographic hash function. The probability of collision is astronomically low ($1$ in $2^{256}$). While computationally more expensive (requiring more cycles per byte), the inputs in this domain (command lines) are typically small (measured in kilobytes).
+Performance Quantification:
+Modern CPUs can compute SHA-256 at rates exceeding hundreds of megabytes per second. A typical compiler invocation string is rarely longer than 32KB.
+
+
+
+
+$$\text{Time}_{hash} \approx \frac{32 \text{ KB}}{500 \text{ MB/s}} \approx 64 \mu s$$
+
+
+This overhead is undetectable compared to the file I/O operations required to check timestamps (stat calls take microseconds to milliseconds depending on caching) and orders of magnitude less than the compiler execution time. Thus, the safety guarantees of SHA-256 come at effectively zero cost to the user experience.
+3.2 The CommandHasher Component
+The CommandHasher class serves as the cryptographic engine for the build system. It encapsulates the SHA-256 implementation details, providing a clean API to the rest of the build logic.
+Serialization Logic:
+The hasher must serialize the command in a canonical format. It is not sufficient to simply hash the concatenated string of flags. The logic must handle:
+1. Executable Path: The absolute path to ariac. If the user upgrades the compiler, the path or version string changes, triggering a rebuild.
+2. Flags: All flags (-O, -I, etc.) must be included.
+3. Input Paths: The source files.
+4. Output Path: The target destination.
+Delimiter Injection:
+To prevent concatenation collisions (where str1 + str2 equals str3 + str4), the hasher must inject unique delimiters between fields. For example, hashing "A", "B" should be distinct from hashing "AB". The CommandHasher will insert a non-printable or reserved character (e.g., | or \0) between tokens during the update phase.
+3.3 The BuildState Manager
+The persistence layer is managed by the BuildState class. This component is responsible for maintaining the mapping between build targets and their associated metadata (signatures and timestamps).
+Persistence Schema (.aria_build_state.json):
+The state is stored in a JSON file at the root of the build directory. JSON is chosen for its human readability, which is vital for debugging build issues. If a build behaves strangely, a developer can inspect this file to see exactly what hash was recorded.
+
+
+JSON
+
+
+
+
+{
+ "version": 1,
+ "targets": {
+   "src/main.aria": {
+     "command_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "timestamp": 1705324000
+   },
+   "lib/utils.aria": {
+     "command_hash": "a1b2c3d4...",
+     "timestamp": 1705324005
+   }
+ }
+}
+
+* Version Field: Allows for schema evolution. If future versions of AriaBuild add fields (e.g., dependency lists), the version number allows for backward-compatible parsing or graceful migration.
+* Target Key: The unique identifier for the target, typically the output file path or the logical target name defined in build.aria.
+3.4 Integration with IncrementalLogic
+The existing IncrementalLogic class, likely residing in src/build/incremental.cpp (or incremental_logic.cpp as referenced in snippets 1), contains the is_dirty predicate. This function currently performs the timestamp comparison.
+The refactoring involves:
+1. Injecting BuildState: The IncrementalLogic instance must have access to the BuildState object.
+2. Computing Current Hash: Before checking timestamps, the logic must construct the command string for the current target and compute its SHA-256 hash.
+3. Comparison: Retrieve the stored hash from BuildState. If they differ, the target is dirty.
+4. State Update: If the target is dirty due to a hash mismatch, update the in-memory state immediately. This ensures that the state reflects the intent to build with the new configuration.
+Table 1: Logic Truth Table for Incremental Builds
+Output Exists?
+	Input > Output (Time)?
+	Hashes Match?
+	Build Decision
+	Reason
+	No
+	N/A
+	N/A
+	REBUILD
+	Missing artifact
+	Yes
+	Yes
+	Yes
+	REBUILD
+	Source modified
+	Yes
+	No
+	No
+	REBUILD
+	Flag Change (New Logic)
+	Yes
+	No
+	Yes
+	SKIP
+	Up-to-date
+	4. Implementation Specification
+This section provides the detailed C++17 implementation for the proposed architecture. It assumes a standard directory structure for the Aria compiler project.
+4.1 Prerequisites and Dependencies
+The implementation relies on nlohmann/json for serialization. Since C++17 does not include a native SHA-256 implementation, we will define a self-contained CommandHasher interface that would typically wrap a library like OpenSSL (<openssl/sha.h>) or a vendored implementation. For the purpose of this report, we assume the availability of openssl or a similar crypto library in the build environment.
+File: src/build/command_hasher.h
+
+
+C++
+
+
+
+
+#pragma once
+#include <string>
+#include <vector>
+#include <sstream>
+#include <iomanip>
+// Assuming OpenSSL is available for SHA256. 
+// In a hermetic build, this might be a vendored sha256.c file.
+#include <openssl/sha.h> 
+
+namespace aria::build {
+
+/**
+* @class CommandHasher
+* @brief Generates deterministic SHA-256 signatures for compilation commands.
+*/
+class CommandHasher {
+public:
+   CommandHasher();
+   
+   // Reset the internal hasher state
+   void reset();
+
+   // Update the hash with command components
+   void update(const std::string& data);
+   
+   // Overload for vector of flags to ensure orderly hashing
+   void update(const std::vector<std::string>& flags);
+
+   // Finalize the hash and return the hex-encoded string
+   std::string finalize();
+
+private:
+   SHA256_CTX ctx_;
+   bool finalized_ = false;
+};
+
+} // namespace aria::build
+
+File: src/build/command_hasher.cpp
+
+
+C++
+
+
+
+
+#include "command_hasher.h"
+
+namespace aria::build {
+
+CommandHasher::CommandHasher() {
+   reset();
+}
+
+void CommandHasher::reset() {
+   SHA256_Init(&ctx_);
+   finalized_ = false;
+}
+
+void CommandHasher::update(const std::string& data) {
+   if (finalized_) reset();
+   // Update with data
+   SHA256_Update(&ctx_, data.c_str(), data.size());
+   // Inject a delimiter to prevent concatenation collisions
+   // e.g., prevents "flag" + "A" == "fla" + "gA"
+   const char delimiter = '|';
+   SHA256_Update(&ctx_, &delimiter, 1);
+}
+
+void CommandHasher::update(const std::vector<std::string>& flags) {
+   for (const auto& flag : flags) {
+       update(flag);
+   }
+}
+
+std::string CommandHasher::finalize() {
+   unsigned char hash;
+   SHA256_Final(hash, &ctx_);
+   finalized_ = true;
+
+   // Convert to hex string
+   std::stringstream ss;
+   ss << std::hex << std::setfill('0');
+   for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+       ss << std::setw(2) << static_cast<int>(hash[i]);
+   }
+   return ss.str();
+}
+
+} // namespace aria::build
+
+4.2 State Persistence: The BuildState Class
+This class abstracts the JSON file operations. It handles the reading of the state file at startup and the atomic writing of the file at shutdown.
+File: src/build/build_state.h
+
+
+C++
+
+
+
+
+#pragma once
+#include <string>
+#include <unordered_map>
+#include <filesystem>
+#include <nlohmann/json.hpp>
+
+namespace aria::build {
+
+using json = nlohmann::json;
+namespace fs = std::filesystem;
+
+class BuildState {
+public:
+   explicit BuildState(const fs::path& project_root);
+   ~BuildState();
+
+   // Retrieve the stored hash for a target
+   std::string get_command_hash(const std::string& target_name) const;
+
+   // Update the hash in memory
+   void update_command_hash(const std::string& target_name, const std::string& hash);
+
+   // Persist to disk
+   void save();
+
+private:
+   fs::path state_file_path_;
+   json state_cache_;
+   
+   void load();
+};
+
+} // namespace aria::build
+
+File: src/build/build_state.cpp
+
+
+C++
+
+
+
+
+#include "build_state.h"
+#include <fstream>
+#include <iostream>
+
+namespace aria::build {
+
+const std::string STATE_FILENAME = ".aria_build_state.json";
+
+BuildState::BuildState(const fs::path& project_root) 
+   : state_file_path_(project_root / STATE_FILENAME) {
+   load();
+}
+
+BuildState::~BuildState() {
+   save();
+}
+
+void BuildState::load() {
+   if (fs::exists(state_file_path_)) {
+       try {
+           std::ifstream f(state_file_path_);
+           state_cache_ = json::parse(f);
+       } catch (const std::exception& e) {
+           std::cerr << " Warning: Corrupt build state (" 
+                     << e.what() << "). Starting fresh.\n";
+           state_cache_ = json::object();
+       }
+   } else {
+       state_cache_ = json::object();
+   }
+}
+
+void BuildState::save() {
+   try {
+       std::ofstream f(state_file_path_);
+       if (f.is_open()) {
+           f << state_cache_.dump(4); // Pretty print for debuggability
+       }
+   } catch (const std::exception& e) {
+       std::cerr << " Error saving build state: " << e.what() << "\n";
+   }
+}
+
+std::string BuildState::get_command_hash(const std::string& target_name) const {
+   if (state_cache_.contains("targets") && 
+       state_cache_["targets"].contains(target_name) &&
+       state_cache_["targets"][target_name].contains("command_hash")) {
+       return state_cache_["targets"][target_name]["command_hash"];
+   }
+   return "";
+}
+
+void BuildState::update_command_hash(const std::string& target_name, const std::string& hash) {
+   state_cache_["targets"][target_name]["command_hash"] = hash;
+   // We could also track timestamp of check here if needed
+}
+
+} // namespace aria::build
+
+4.3 Refactoring src/build/incremental.cpp
+This is the integration point. We augment the existing logic to calculate the hash and consult the BuildState.
+File: src/build/incremental.cpp
+
+
+C++
+
+
+
+
+#include "incremental.h"
+#include "command_hasher.h"
+#include "build_state.h"
+#include <filesystem>
+#include <vector>
+
+namespace aria::build {
+
+namespace fs = std::filesystem;
+
+class IncrementalLogic {
+public:
+   IncrementalLogic(BuildState& state) : state_(state) {}
+
+   /**
+    * @brief Determines if a target needs to be rebuilt.
+    * 
+    * @param target_name Unique identifier for the target (e.g., from build.aria)
+    * @param output_path Path to the artifact
+    * @param input_paths List of source dependencies
+    * @param compiler_cmd The executable (e.g., "ariac")
+    * @param flags Vector of compiler flags
+    * @return true if dirty, false otherwise
+    */
+   bool is_dirty(const std::string& target_name,
+                 const fs::path& output_path,
+                 const std::vector<fs::path>& input_paths,
+                 const std::string& compiler_cmd,
+                 const std::vector<std::string>& flags) {
+
+       // 1. Compute the Command Signature
+       CommandHasher hasher;
+       hasher.update(compiler_cmd);
+       hasher.update(flags);
+       
+       // Include input paths in hash to detect reordering or addition/removal
+       // even if timestamps are old (e.g., reverting a git commit)
+       for (const auto& input : input_paths) {
+           hasher.update(input.string());
+       }
+       hasher.update(output_path.string());
+       
+       std::string current_hash = hasher.finalize();
+
+       // 2. Retrieve Stored Signature
+       std::string stored_hash = state_.get_command_hash(target_name);
+       bool hash_mismatch = (stored_hash!= current_hash);
+
+       // 3. Update State Logic
+       // If the hash is different, we MUST update the state to the new hash.
+       // This ensures that if the build proceeds (and succeeds), the new state is saved.
+       // If the build fails later, the tool crashes, and state isn't saved (transactional).
+       if (hash_mismatch) {
+           state_.update_command_hash(target_name, current_hash);
+       }
+
+       // 4. Check Artifact Existence
+       if (!fs::exists(output_path)) {
+           return true;
+       }
+
+       // 5. Evaluate Dirty Condition
+       // Condition A: Command changed
+       if (hash_mismatch) {
+           return true;
+       }
+
+       // Condition B: Source Timestamps (Classic Logic)
+       auto output_time = fs::last_write_time(output_path);
+       for (const auto& input : input_paths) {
+           if (!fs::exists(input)) {
+               // Missing input is a build error, but we mark dirty to let compiler handle it
+               return true;
+           }
+           if (fs::last_write_time(input) > output_time) {
+               return true;
+           }
+       }
+
+       return false;
+   }
+
+private:
+   BuildState& state_;
+};
+
+} // namespace aria::build
+
+5. Ecosystem Impact and Advanced Scenarios
+The integration of Command Signature Hashing has profound ripple effects across the Aria development ecosystem, influencing not just the CLI build tool but also the Language Server (AriaLS) and potential future CI infrastructures.
+5.1 Implications for the Aria Language Server (AriaLS)
+The Aria Language Server (AriaLS) relies on the build system to understand the project structure for features like "Go to Definition" and "Hover".1 AriaLS currently uses a thread pool to perform compilation phases in the background.
+With the introduction of .aria_build_state.json, AriaLS can now share the "build wisdom" with the CLI tool.
+1. Shared State: If the developer runs aria_make in the terminal, the state file is updated. When AriaLS spins up, it can read this file. If the command hashes match, AriaLS knows that the artifacts in build/ are valid and correspond to the current source/configuration.
+2. Optimization: AriaLS can skip expensive re-indexing operations if it detects that the build state matches the current editor configuration. Conversely, if the user changes the build.aria configuration in the editor, AriaLS can immediately detect the hash mismatch and prompt the user to rebuild or trigger a background re-indexing, keeping the IDE in sync with the build definition.
+5.2 Interaction with Generics and TBB
+Aria's type system includes Twisted Balanced Binary (TBB) types and extensive support for Generics via monomorphization.1 These features are highly sensitive to compiler flags.
+* TBB Safety: Compiler flags might control whether TBB overflow checks are emitted or elided for performance. If a flag changes from -safe-tbb to -unsafe-tbb, the generated machine code for every TBB arithmetic operation changes. The timestamp model would miss this. Command hashing captures it.
+* Monomorphization: Generics generate specialized code at the call site. If the optimization level changes, the inlining heuristics for these specializations change. Command hashing guarantees that all generic instantiations are regenerated with the correct optimization profile.
+5.3 Distributed Compilation Readiness
+The move to content/context-addressable builds lays the groundwork for distributed compilation, similar to ccache or Bazel.
+Once the build system knows:
+1. The Input Content (Source Hash)
+2. The Transformation Context (Command Hash)
+It can deterministically predict the output. This allows aria_make to query a remote cache:
+CacheKey = SHA256(CommandHash + SourceHash)
+If the key exists, the object file can be downloaded rather than compiled. This capability is impossible with timestamp-based builds because the local timestamp has no meaning on a remote server. Thus, Command Signature Hashing is the prerequisite for scaling Aria builds to enterprise clusters.
+6. Migration and Compatibility Strategy
+Deploying this architectural change to the existing user base requires a seamless migration path.
+6.1 First-Run Behavior
+Upon upgrading to the version of aria_make containing this logic, existing projects will lack the .aria_build_state.json file.
+1. BuildState initializes with an empty cache.
+2. IncrementalLogic computes the current hash for all targets.
+3. The lookup get_command_hash returns empty.
+4. The comparison current!= stored evaluates to true.
+5. Result: The system triggers a full rebuild of the project.
+This is the desired behavior. It ensures that any latent inconsistencies from the old timestamp-based system are flushed out, and the project starts with a known-good, cryptographically verified state.
+6.2 Handling Parallel Builds
+AriaBuild uses a thread pool for parallel execution.1 The BuildState class, as currently designed, uses a standard std::unordered_map. If multiple threads call is_dirty (and subsequently update_command_hash) concurrently, race conditions will occur.
+Concurrency Fix:
+The BuildState implementation must be hardened with a std::shared_mutex (Read-Write Lock) to allow concurrent readers (is_dirty checks) while serializing writers (update_command_hash).
+
+
+C++
+
+
+
+
+#include <shared_mutex>
+
+class BuildState {
+   //...
+   mutable std::shared_mutex mutex_;
+   //...
+   
+   std::string get_command_hash(...) const {
+       std::shared_lock lock(mutex_); // Shared read access
+       //... logic...
+   }
+
+   void update_command_hash(...) {
+       std::unique_lock lock(mutex_); // Exclusive write access
+       state_cache_["targets"][name]["hash"] = hash;
+   }
+};
+
+This ensures thread safety without creating a bottleneck, as reads significantly outnumber writes in an incremental build scenario.
+7. Conclusion
+The implementation of Command Signature Hashing represents a pivotal maturation point for the AriaBuild infrastructure. By abandoning the naive reliance on filesystem timestamps in favor of a cryptographic assertion of configuration state, the system eliminates the "Flag Change" vulnerability and achieves true hermeticity.
+The solution leverages the collision resistance of SHA-256 and the interoperability of JSON to create a state management layer that is robust, debuggable, and future-proof. It aligns the build tool with the high safety standards of the Aria language itself, ensuring that developers can trust the binary artifacts produced by their tools implicitly. Furthermore, this architecture paves the way for advanced ecosystem features such as distributed caching and deeper IDE integration, solidifying Aria's position as a modern, professional-grade systems programming language.
+Works cited
+1. compiled.txt
+2. Non-crypto hashes in C++: FNV 1/1a - ASecuritySite.com, accessed December 20, 2025, https://asecuritysite.com/encryption/smh_fnv

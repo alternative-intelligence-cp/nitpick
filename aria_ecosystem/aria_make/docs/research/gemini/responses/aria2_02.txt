@@ -1,0 +1,317 @@
+﻿Architectural Specification for the AriaBuild (aria_make) Logging and Diagnostics Subsystem
+1. Executive Summary and Strategic Mandate
+The maturation of the Aria programming language ecosystem, moving from its experimental v0.0.7 phase toward a production-grade v0.1.0 release, necessitates a fundamental transformation in its supporting infrastructure. While the core compiler, ariac, has achieved stability in code generation and semantic analysis, the build orchestration layer—aria_make (internally referred to as AriaBuild)—remains a critical friction point. The current build experience, characterized by interleaved output streams, opaque progress reporting, and a lack of semantic awareness regarding Aria's unique type system, falls short of the standards set by modern toolchains like Rust's Cargo or Google's Bazel. This report articulates a comprehensive architectural specification for the Logging and Diagnostics Subsystem of aria_make, designed to bridge the gap between low-level compilation mechanics and high-level developer cognition.
+AriaBuild operates as a high-concurrency meta-driver, managing a Directed Acyclic Graph (DAG) of dependencies and scheduling compilation units across a thread pool sized to the host's hardware concurrency.1 This parallelism, while essential for performance, introduces significant complexity in output management. Without a rigorous architectural intervention, the output from multiple concurrent ariac processes becomes indistinguishable, resulting in a "race to the console" where error messages and warnings corrupt one another. Furthermore, the specific semantic constraints of the Aria language—specifically Twisted Balanced Binary (TBB) arithmetic with "sticky" error propagation, the hex-stream I/O topology (incorporating stddbg, stddati, and stddato), and the hybrid memory model distinguishing "wild" from "managed" memory 1—impose unique requirements that generic C++ logging libraries cannot satisfy without significant adaptation.
+The mandate for this subsystem is to deliver a thread-safe, high-performance, and semantically rich logging environment that guarantees output determinism, enforcing a strict serialization of console events even under heavy parallel load. It must implement the Aria "Hex-Stream" topology, leveraging kernel-level file descriptor reservations for telemetry and data separation.1 It must provide a "Sticky Status" user interface that offers real-time, flicker-free progress tracking similar to Ninja and Cargo.2 Finally, it must integrate deeply with the Aria type system, providing custom formatters for TBB sentinels and Result structs to transform raw memory states into actionable diagnostic information. This document serves as the definitive implementation guide for the aria::logging namespace within the AriaBuild C++17 codebase, prioritizing zero-cost abstractions and lock-free concurrency patterns where applicable.
+________________
+2. Theoretical Framework of High-Concurrency Build Logging
+To design a robust logging system for aria_make, one must first deconstruct the theoretical challenges inherent in parallel build environments. The logging subsystem is not merely a utility for printing text; it is a distributed system component responsible for serialization, state synchronization, and user experience (UX) management under resource contention.
+2.1 The "Noisy Channel" and the Concurrency Conflict
+The primary challenge in parallel build systems is the "Noisy Channel" problem.1 In a serial build (like make without -j), the causality of events is strictly linear: Target A compiles, prints warnings, and finishes; then Target B begins. The console output perfectly mirrors the temporal execution of the build. In a parallel build, however, causality is partially ordered. Target A and Target B may execute simultaneously on different cores. If both processes write to stdout or stderr directly, the operating system's scheduler determines the interleaving of bytes.
+This results in "garbled" output, where a line from Compiler A is bisected by a line from Compiler B. For example:
+Unused variab Syntax error inle 'x'
+Such output is machine-unreadable and human-indecipherable.
+* Architectural Implication: The logging system must enforce atomicity at the line or block level. Access to the final output sink (the console) must be serialized via a mutual exclusion mechanism or a dedicated coordinator thread.
+* Performance Implication: While serialization is necessary for correctness, it introduces a bottleneck. If worker threads (which should be compiling code) block waiting for the console lock, the build throughput degrades (Amdahl's Law). Therefore, the submission of log events must be decoupled from their display.4
+2.2 The Hex-Stream Topology Requirement
+Traditional Unix systems utilize a tripartite I/O model (stdin, stdout, stderr). However, the Aria ecosystem introduces a "Hex-Stream Topology" to resolve semantic ambiguity in inter-process communication.1 AriaBuild must adopt this topology to function correctly within the ecosystem.
+* stdout (FD 1): Reserved exclusively for User-Facing Status. This stream carries the "Sticky Status Bar" and high-level lifecycle events (e.g., "Build Successful"). It is line-buffered or unbuffered depending on TTY detection.1
+* stderr (FD 2): Reserved exclusively for Fatal Errors. Only messages that require immediate operator intervention or signal a build failure are routed here.
+* stddbg (FD 3): A dedicated Telemetry and Debug channel. Verbose trace information, dependency graph dumps, and internal scheduler state transitions are routed to FD 3. This allows developers to capture deep diagnostics (3> build.trace) without polluting the visual interface on stdout.1
+* stddati (FD 4) & stddato (FD 5): These streams are reserved for binary data piping. If aria_make is used in a pipeline (e.g., streaming build artifacts to a deployment agent), stddato carries the raw object code or tarball, ensuring stdout remains clean for textual status updates.1
+2.3 The Determinism Imperative
+AriaBuild aims to be a "Hermetic" and "Deterministic" build system.1 This philosophy extends to logging. Ideally, running the same build twice should produce identical logs, even if the thread scheduling differs.
+* Requirement: The logging system must support Deterministic Ordering for buffered output. When multiple jobs complete simultaneously, the logger should ideally flush their output in a stable order (e.g., sorted by Target ID or topological definition order) rather than arrival time, although strictly enforcing this can incur significant latency penalties. A compromise is to ensure that within a single target's context, logs are strictly ordered, and that target outputs are grouped atomically.
+________________
+3. Architectural Design: The Asynchronous Log Dispatcher
+To reconcile the conflicting requirements of non-blocking submission and serialized output, the AriaBuild logging subsystem adopts an Asynchronous Log Dispatcher architecture. This pattern segregates the system into two distinct domains: the Frontend (submission) and the Backend (processing).
+3.1 The Frontend: Macro-Based Submission and Lazy Evaluation
+The entry point for any log operation is the Frontend. Performance analysis of high-performance C++ loggers like spdlog and NanoLog reveals that the cost of parameter evaluation and string formatting on the "hot path" (the worker thread) is a primary source of overhead.5 If a log statement is below the current verbosity threshold (e.g., a DEBUG log in a RELEASE build), the runtime cost must be effectively zero.
+We implement this via a set of preprocessor macros: ARIA_LOG_INFO, ARIA_LOG_WARN, ARIA_LOG_ERROR, etc.
+Mechanism of Lazy Evaluation:
+1. Atomic Threshold Check: The macro first checks a global std::atomic<LogLevel> against the message's severity. This check utilizes std::memory_order_relaxed to minimize CPU cache coherency traffic.7 If the check fails, the branch is skipped entirely.
+2. Capture, Don't Format: If the log is active, the system does not immediately format the string. String formatting (allocating memory, parsing format specifiers) is expensive. Instead, the Frontend captures the raw arguments and the format string into a lightweight, stack-allocated LogEvent structure. This aligns with the "Lazy Evaluation" pattern 8, deferring the heavy lifting to the background thread.
+3. Submission: The LogEvent is moved into a thread-safe queue.
+3.2 The Queue: MPSC Ring Buffer
+The connection between the high-speed worker threads (Producers) and the logging thread (Consumer) is the critical performance junction.
+* Topology: We require a Multi-Producer, Single-Consumer (MPSC) queue.
+* Lock-Free vs. Locking: While std::mutex is robust, it introduces context switching overhead under high contention.9 For AriaBuild, which may have 32+ threads hammering the logger during a dependency scan, a lock-free approach is superior. We specify the use of a Bounded MPSC Ring Buffer.
+   * Implementation Details: The buffer uses atomic head and tail indices. Producers claim a slot using std::atomic::fetch_add. If the buffer is full, the producer yields (std::this_thread::yield()) or blocks on a condition variable, implementing a backpressure mechanism to prevent memory exhaustion.10
+   * Fallback: Given the C++17 constraint and the desire to minimize external dependencies 11, a std::mutex guarded std::deque is an acceptable baseline for the initial implementation, provided the critical section is minimized to just the push_back operation.12
+3.3 The Backend: The Background Logger Thread
+A dedicated std::thread, initialized at startup, runs the Backend loop. This thread is the "Sole Owner" of the output streams, eliminating the need for further locking on stdout.4
+Responsibilities:
+1. Dequeue: Batch-retrieve events from the queue to minimize locking frequency (if using mutexes).
+2. Format: Use the fmt library (either vendored or linked) to interpolate the captured arguments into the format string.13 This centralizes the CPU cost of text processing to a single core, leaving other cores free for compilation.
+3. Filter & Route: Dispatch the formatted string to the appropriate sinks based on configuration (Console, File, SystemD).
+4. Drain on Exit: Implementing a robust shutdown sequence is critical. The logger must ensure that upon receiving a termination signal (SIGINT/SIGTERM) or reaching end-of-execution, the queue is fully drained so no diagnostics are lost.14
+________________
+4. Semantic Integration: TBB and Aria Types
+A generic logging system is insufficient for Aria because of the language's specialized type system. The logger must provide "Semantic Awareness" to translate internal compiler states into readable diagnostics.
+4.1 Twisted Balanced Binary (TBB) Formatting
+Aria's TBB types (tbb8, tbb16, etc.) are signed integers that utilize a specific bit pattern (typically the minimum representable value, e.g., -128 for 8-bit) as a sentinel for ERR.1
+* The Problem: A standard C++ logger printing a tbb8 variable will output -128. This hides the semantic reality that the value represents an error state, confusing the developer.
+* The Solution: The logging system must implement custom fmt::formatter specializations for all TBB types.
+
+
+C++
+
+
+
+
+// C++17 Implementation Sketch for TBB Formatting
+template <>
+struct fmt::formatter<aria::types::tbb8> {
+   constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+   template <typename FormatContext>
+   auto format(const aria::types::tbb8& val, FormatContext& ctx) {
+       if (val.is_err()) { 
+           // Semantic formatting: Render as red "ERR"
+           return fmt::format_to(ctx.out(), "\033
+
+### 4.2 Result Struct Unwrapping
+All Aria functions return a `result` struct `{err, val}`. Debugging these often involves checking the `err` field. The logger should provide a formatter for `result<T>` that automatically unwraps this.
+*   *If Error:* Format as `Err(code: 5)` in red.
+*   *If Success:* Format as `Ok(value)` in green.
+This reduces the boilerplate required in `aria_make` source code, encouraging developers to log full result objects rather than manually branching.
+
+### 4.3 Wild vs. Managed Pointer Visualization
+Aria's memory model distinguishes between "wild" (unmanaged) and "gc" (managed) pointers. Logging a raw pointer address `0x7ffee...` provides little context.
+*   **Wild Pointers:** Should be formatted with a specific prefix, e.g., `wild(0x...)`, to indicate they are outside the GC's purview.
+*   **GC Pointers:** Should be formatted as `gc(0x...)` and, if possible, the logger should attempt to resolve the object header (metadata) to print the object's type or generation, aiding in debugging memory leaks or pinning issues.
+
+---
+
+## 5. Hex-Stream I/O Implementation Strategy
+
+The implementation of the Hex-Stream topology requires interacting with the OS kernel's file descriptor table. This is a platform-specific endeavor.
+
+### 5.1 Linux/POSIX Implementation
+On Linux, file descriptors are integer indices. `aria_make` must probe and manage FDs 3, 4, and 5.
+*   **Detection:** On startup, the `LogManager` uses `fcntl(3, F_GETFD)` to determine if the `stddbg` channel is open.[15]
+   *   *Case A (Managed Environment):* If `aria_make` is invoked by `AriaSH` or a compatible IDE, FD 3 will be open and pointing to a log pipe or file. The logger simply `dup`s this descriptor.
+   *   *Case B (Legacy Environment):* If invoked from `bash`, FD 3 is likely closed. The logger must open `/dev/null` (or a fallback log file) and `dup2` it to FD 3. This ensures that internal writes to `stddbg` never fail with `EBADF`.
+*   **Sanitization:** Before spawning child processes that *are not* Aria-aware (e.g., `gcc` or `ld`), `aria_make` must set the `FD_CLOEXEC` flag on FDs 3-5. This prevents leaking internal telemetry channels to tools that might misuse them. For Aria-aware children (e.g., `ariac`), these descriptors are left open to allow the child to inherit the logging topology.
+
+### 5.2 Windows Implementation
+Windows does not use the integer FD model natively; it uses `HANDLE`s. However, the C runtime (CRT) emulates FDs.
+*   **The Mapping Problem:** There is no automatic mapping of `HANDLE` to FD 3.
+*   **The Bootstrap Protocol:** AriaBuild must implement a bootstrap mechanism. When spawning `ariac`, it opens the debug pipe, converts the `HANDLE` to an inheritable form, and passes the handle value via an environment variable (e.g., `ARIA_FD_3_HANDLE`).
+*   **Runtime Initialization:** The `aria` runtime (linked into `ariac`) reads this environment variable on startup and calls `_open_osfhandle` to associate the handle with CRT FD 3. This creates a seamless cross-platform experience where application code simply writes to `fd 3` regardless of the OS.
+
+### 5.3 Zero-Copy Data Piping (`stddati`/`stddato`)
+For the data streams (FD 4/5), `aria_make` should utilize zero-copy system calls where possible.
+*   **Linux:** Use `splice()` to move data between the input pipe (FD 4) and an output file/socket (FD 5) without copying data into user-space memory buffers. This maximizes throughput for large build artifacts.
+*   **Windows:** Use `TransmitFile` or memory-mapped files to achieve similar efficiency.
+
+---
+
+## 6. User Experience: The "Sticky Status" Interface
+
+Modern developers expect build tools to provide rich, transient feedback. A scrolling wall of text is acceptable for logs, but progress ("Compiling [45/100]...") should update in-place. This is the "Sticky Status" pattern.
+
+### 6.1 The VT100 State Machine
+To implement a sticky status bar, the logger must act as a terminal emulator controller.
+*   **Capabilities Detection:** Use `isatty(1)` to confirm `stdout` is a terminal.[15] On Windows 10+, use `SetConsoleMode` with `ENABLE_VIRTUAL_TERMINAL_PROCESSING` to enable ANSI escape codes. Without this, the status bar must be disabled to prevent printing garbage escape sequences.
+*   **The "Lift" Algorithm:** The challenge is printing a log message *without* destroying the status bar.
+   1.  **Cursor Reset:** Emit `\r` (Carriage Return) to move the cursor to the start of the line.
+   2.  **Clear Line:** Emit `\033[K` (Erase Line) to wipe the current status bar text.[18]
+   3.  **Print Log:** Write the log line (e.g., `[INFO] Linked core_lib`) followed by `\n`. This scrolls the terminal buffer up.
+   4.  **Restore Status:** Re-print the current status bar text (e.g., `[===>  ] 45%`) *without* a newline.
+   5.  **Flush:** Force a `std::cout.flush()` to ensure the user sees the update immediately.
+
+### 6.2 Progress Mathematics
+The `BuildScheduler` provides the raw data for progress tracking.
+*   **Count-Weighted vs. Time-Weighted:** Initially, `aria_make` will use a Count-Weighted model ($Progress = \frac{Completed}{Total}$).
+*   **Future Optimization:** To improve accuracy, the system can record build durations in the `.aria_build_state` file. On subsequent builds, the progress bar can use these historical durations to calculate a Time-Weighted progress ($Progress = \frac{\sum T_{completed}}{\sum T_{total}}$).[19] This prevents the "99% stall" where the final, largest link step takes 50% of the wall time.
+*   **Smoothing:** Use a **Simple Moving Average (SMA)** over the last 5 seconds of task completions to calculate the estimated time remaining (ETA). This dampens volatility caused by tiny files compiling instantly versus large files taking seconds.
+
+### 6.3 CI/CD Mode
+In Continuous Integration (CI) environments (Jenkins, GitHub Actions), "Sticky" features are harmful. They result in log files filled with thousands of `\r` characters and duplicate lines.
+*   **Detection:** Check for environment variables `CI=true`, `GITHUB_ACTIONS`, `TRAVIS`, etc.
+*   **Fallback:** If CI is detected, disable the status bar. Switch to a "Milestone" logging strategy: print progress only at significant increments (e.g., every 10% or every 50 targets) or only when a target fails.[20]
+
+---
+
+## 7. Output Buffering and Process Grouping
+
+A critical requirement for parallel builds is ensuring that the output from a single subprocess remains contiguous.
+
+### 7.1 The Interleaving Problem
+If `aria_make` runs `ariac -c file1.aria` and `ariac -c file2.aria` in parallel, and both emit warnings, unbuffered output results in character-level interleaving. This renders compiler errors unreadable.
+
+### 7.2 The Buffer-and-Dump Strategy
+`aria_make` must capture the `stdout` and `stderr` of every child process into memory buffers.
+*   **Memory Management:** To prevent OOM on massive outputs (e.g., a verbose linker map), implement a **Circular Cap**. Limit the buffer to e.g., 4MB. If output exceeds this, overwrite the oldest data or truncate with a marker ``.
+*   **Atomic Flush:** Output is only printed to the main console **after** the child process terminates.
+   *   *If Success:* The output is generally discarded (unless `-v` is active), keeping the console clean.
+   *   *If Failure:* The `ProcessManager` acquires the main logging mutex and dumps the entire `stderr` buffer at once, prefixed with the target name (e.g., `[FAIL] src/main.aria:`).
+
+### 7.3 Streaming Long-Running Tasks
+For tasks that are known to be long-running (e.g., downloading a dependency), buffering is bad UX because the user sees nothing for minutes.
+*   **Passthrough Mode:** The logger supports a "Passthrough" flag for specific targets. For these, the output is not buffered but is instead prefixed line-by-line in real-time. The logger acquires the mutex for *each line*, ensuring line-level atomicity even if not block-level atomicity.
+
+---
+
+## 8. Configuration and Verbosity Control
+
+The system requires a flexible configuration model to suit different environments (local dev, CI, debug).
+
+### 8.1 Log Levels and Filtering
+We define a superset of standard log levels:
+*   `TRACE`: Internal mutex locks, queue depths. (Writes to `stddbg`).
+*   `DEBUG`: Command lines, file paths, env vars. (Writes to `stddbg`).
+*   `INFO`: High-level lifecycle events ("Compiling X", "Linking Y"). (Writes to `stdout`).
+*   `WARN`: Compiler warnings, deprecations. (Writes to `stdout`).
+*   `ERROR`: Compilation failures. (Writes to `stderr`).
+*   `FATAL`: Internal tool crashes. (Writes to `stderr`).
+
+### 8.2 Configuration DSL (`aria.toml`)
+The user configures logging via the project's `aria.toml` file.
+```toml
+[build.logging]
+level = "info"          # Default console level
+debug_file = "build.log" # Redirect stddbg to file
+colors = "auto"         # auto, always, never
+status_bar = true       # Enable sticky status
+timestamp = false       # Prefix logs with time
+
+8.3 Command Line Overrides
+CLI flags override configuration files:
+* -v / --verbose: Sets level to DEBUG.
+* -q / --quiet: Sets level to WARN and disables status bar.21
+* --trace: Sets level to TRACE.
+________________
+9. Implementation Specifications (C++17)
+This section details the concrete C++ class structures and interfaces required to implement the architecture.
+9.1 The Logger Singleton
+The Logger class manages the sink registry, the background thread, and the configuration state.
+
+
+C++
+
+
+
+
+namespace aria::logging {
+
+   struct LogEvent {
+       LogLevel level;
+       std::chrono::system_clock::time_point timestamp;
+       std::string payload; // The formatted message
+       std::string_view category; // e.g., "scheduler", "compiler"
+   };
+
+   class Logger {
+   public:
+       static Logger& instance();
+       
+       // The primary submission API (thread-safe, non-blocking)
+       template <typename... Args>
+       void log(LogLevel level, std::string_view fmt, Args&&... args) {
+           if (level < current_level_.load(std::memory_order_relaxed)) return;
+           
+           // Lazy formatting happens here or is deferred depending on strategy
+           // Ideally, capture args and format in background to minimize latency
+           submit_event(level, fmt::format(fmt, std::forward<Args>(args)...));
+       }
+
+       // Status Bar API
+       void set_status(std::string_view status);
+       void clear_status();
+
+   private:
+       // MPSC Queue
+       moodycamel::ConcurrentQueue<LogEvent> queue_; 
+       std::thread worker_thread_;
+       std::atomic<bool> shutdown_requested_{false};
+       
+       void worker_loop(); // Consumes queue, writes to sinks
+   };
+}
+
+9.2 The ProcessDrainer Class
+This class manages the output buffering for child processes.
+
+
+C++
+
+
+
+
+class ProcessDrainer {
+public:
+   ProcessDrainer(int pipe_fd, std::string target_name);
+   
+   // Reads from pipe until EOF, storing data in buffer_
+   void drain(); 
+   
+   // Returns captured output
+   std::string get_output() const;
+
+private:
+   int fd_;
+   std::string target_name_;
+   std::vector<char> buffer_;
+   size_t max_buffer_size_ = 4 * 1024 * 1024; // 4MB cap
+};
+
+9.3 Platform Abstraction Layer (Console.cpp)
+This component isolates OS-specific terminal manipulation code.
+* Windows: Wraps GetConsoleScreenBufferInfo, SetConsoleMode, WriteConsole. Handles the conversion of UTF-8 log strings to UTF-16 (std::wstring) for correct display on Windows consoles.16
+* Linux: Wraps tcgetattr, tcsetattr, ioctl (for window size). Handles ANSI escape sequence generation.
+________________
+10. Security Implications
+Logging presents a significant information leakage risk in build systems.
+10.1 Secret Sanitization
+Builds often require secrets (API keys, signing certificates). If these are passed as environment variables, a DEBUG log dumping the environment would leak them.
+* Mitigation: The logger must implement a "Redaction Filter". It scans all log payloads for known patterns (e.g., KEY=..., TOKEN=...) or variables explicitly flagged as [secret] in the aria.toml config. These are replaced with ``.
+10.2 Wild Memory Safety
+Logging a "Wild" pointer dereference (e.g., log("Value: {}", *wild_ptr)) is unsafe. If the pointer is invalid, the logger itself crashes the build tool.
+* Mitigation: The fmt specialization for wild pointers must verify the pointer against the memory map (if possible) or the logging operation should be wrapped in a signal handler/structured exception handler (SEH) block to catch segmentation faults during log formatting. If a fault occurs, log `` instead of crashing.
+________________
+11. Conclusion and Implementation Roadmap
+This specification elevates aria_make from a simple process spawner to a sophisticated piece of systems engineering. By adopting the Hex-Stream topology, it ensures deep integration with the Aria kernel ecosystem. By implementing an asynchronous, lock-free logging dispatcher, it guarantees that the build tool's observability never becomes a bottleneck for compilation performance.
+Phased Implementation Plan:
+1. Phase 1 (Foundation): Implement the Logger singleton, the MPSC queue (using mutex fallback initially), and basic fmt integration. Deliver basic thread-safe printing.
+2. Phase 2 (Semantic Layer): Implement the TBB and Result formatters. Implement the stddbg (FD 3) detection and routing logic.
+3. Phase 3 (UX Polish): Implement the "Sticky Status" bar, VT100 abstractions, and the Buffer-and-Dump strategy for child processes.
+4. Phase 4 (Performance & Windows): Optimize the queue to be lock-free. Finalize the HANDLE-to-FD mapping for Windows support and zero-copy splicing for data streams.
+This roadmap provides a clear path to delivering a build tool that offers the transparency, reliability, and speed required for the next generation of Aria development.
+________________
+12. References
+* 1: AriaBuild Architectural Specification.
+* 1: Aria Programming Guide v0.0.7.
+* 1: Aria Kernel/Bash Hex-Stream Specification.
+* 1: AriaSH Architectural Specification.
+* 2: Ninja/Cargo Progress Implementation details.
+* 13: fmt library benchmarks and usage.
+* 9: Lock-free queue performance analysis.
+* 24: spdlog thread safety and architecture.
+* 16: Windows Console API documentation.
+* 18: ANSI Escape Code references.
+Works cited
+1. compiled.txt
+2. How Ninja works - Fuchsia, accessed December 21, 2025, https://fuchsia.dev/fuchsia-src/development/build/ninja_how
+3. Progress in cargo::util::progress - Rust, accessed December 21, 2025, https://doc.rust-lang.org/beta/nightly-rustc/cargo/util/progress/struct.Progress.html
+4. Best Creational Pattern for loggers in a multi-threaded system?, accessed December 21, 2025, https://softwareengineering.stackexchange.com/questions/170058/best-creational-pattern-for-loggers-in-a-multi-threaded-system
+5. Fast logging benchmark : r/cpp - Reddit, accessed December 21, 2025, https://www.reddit.com/r/cpp/comments/anxlyg/fast_logging_benchmark/
+6. The world's fastest logger vs G3log - Kjellkod's Blog, accessed December 21, 2025, https://kjellkod.wordpress.com/2015/06/30/the-worlds-fastest-logger-vs-g3log/
+7. Mutex vs Atomic - CoffeeBeforeArch.github.io, accessed December 21, 2025, https://coffeebeforearch.github.io/2020/08/04/atomic-vs-mutex.html
+8. Lazy Logging Parameter Evaluation With Variadic Macros - Solid Angle, accessed December 21, 2025, https://solid-angle.blogspot.com/2011/02/lazy-logging-parameter-evaluation-with.html
+9. Using Boost.Lockfree queue is slower than using mutexes - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/43540943/using-boost-lockfree-queue-is-slower-than-using-mutexes
+10. A Fast General Purpose Lock-Free Queue for C++ - moodycamel.com, accessed December 21, 2025, https://moodycamel.com/blog/2014/a-fast-general-purpose-lock-free-queue-for-c++
+11. ChristianPanov/lwlog: Very fast synchronous and asynchronous C++17 logging library - GitHub, accessed December 21, 2025, https://github.com/ChristianPanov/lwlog
+12. How to implement a thread safe logging? - c++ - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/63840842/how-to-implement-a-thread-safe-logging
+13. fmtlib/fmt: A modern formatting library - GitHub, accessed December 21, 2025, https://github.com/fmtlib/fmt
+14. Creating a thread safe logger class : r/cpp_questions - Reddit, accessed December 21, 2025, https://www.reddit.com/r/cpp_questions/comments/iq8vts/creating_a_thread_safe_logger_class/
+15. c++ - ENABLE_VIRTUAL_TERMINAL_PROCESSING and DISABLE_NEWLINE_AUTO_RETURN failing - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/46030331/enable-virtual-terminal-processing-and-disable-newline-auto-return-failing
+16. Console Virtual Terminal Sequences - Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
+17. ANSI escape code - Wikipedia, accessed December 21, 2025, https://en.wikipedia.org/wiki/ANSI_escape_code
+18. CMake & Visual Studio: How to get a quick, quiet command line build? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/48344456/cmake-visual-studio-how-to-get-a-quick-quiet-command-line-build
+19. The Complete C++ Build System: CMake & Ninja Part 1 | by CodeInSeoul | Medium, accessed December 21, 2025, https://medium.com/@codeinseoul/the-complete-c-build-system-cmake-ninja-part-1-b7309be1a11e
+20. Andres6936/Flossy: String Formatting Library for C++17 - GitHub, accessed December 21, 2025, https://github.com/Andres6936/Flossy
+21. Thread Safety · gabime/spdlog Wiki - GitHub, accessed December 21, 2025, https://github.com/gabime/spdlog/wiki/Thread-Safety
+22. gabime/spdlog: Fast C++ logging library. - GitHub, accessed December 21, 2025, https://github.com/gabime/spdlog
+23. How can I clear a line in console after using \r and printing some text? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/25142958/how-can-i-clear-a-line-in-console-after-using-r-and-printing-some-text

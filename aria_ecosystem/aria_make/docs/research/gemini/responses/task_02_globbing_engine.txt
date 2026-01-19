@@ -1,0 +1,446 @@
+﻿Architecting a Deterministic, High-Performance Globbing Engine for the Aria Build System: A C++17 Implementation Strategy
+1. Introduction: The Strategic Imperative of Native Globbing
+The development of aria_make, a modern build automation tool designed to replace GNU Make within the Aria programming language ecosystem, necessitates the creation of a proprietary, high-performance globbing engine. As identified in the project's technical overview, the Aria standard library currently lacks native capabilities for filesystem traversal and complex pattern matching, creating a functional gap that must be bridged via a robust C++17 implementation.1 While general-purpose scripting languages often rely on shell expansion or interpreted libraries for wildcard matching, a build system requires a distinct set of operational characteristics: absolute determinism to ensure reproducible builds, cross-platform consistency between Unix-like environments and Windows, and high-throughput filesystem traversal capable of indexing tens of thousands of source files with negligible latency.1
+The reliance on std::regex or naive iteration strategies, common in ad-hoc solutions, proves insufficient for enterprise-scale build infrastructure. Regular expressions fundamentally misalign with glob semantics—specifically regarding directory separators and period literals—and introduce significant compilation overhead that degrades performance during the "configure" phase of a build.2 Furthermore, the requirement to support fnmatch-style expansion (e.g., src/**/*.aria) demands a sophisticated traversal algorithm that can "prune" the directory tree, avoiding the IO costs associated with entering irrelevant subdirectories.
+This report provides an exhaustive architectural blueprint for the aria_make Globbing Engine. It synthesizes advanced C++17 std::filesystem techniques, algorithmic optimizations for pattern matching without regex, and rigorous error handling strategies to navigate the complexities of modern filesystems—including symbolic link cycles, permission locking, and hidden file attributes across disparate operating systems.
+2. Theoretical Framework and Formal Grammar
+2.1 The Divergence of Glob and Regex Semantics
+A fundamental architectural decision in the design of the aria_make engine is the rejection of std::regex as the underlying matching mechanism. While it is theoretically possible to transpile glob patterns into regular expressions (e.g., converting *.aria to ^[^/]*\.aria$), this approach introduces subtle but critical semantic mismatches and performance cliffs.
+The primary distinction lies in the handling of the directory separator. In a standard glob pattern, the wildcard * matches any sequence of characters except the directory separator (/ or \).1 In contrast, the regex wildcard . matches any character, including separators (depending on flags). Enforcing this exclusion in regex requires constructing complex character classes (e.g., [^/\\]*), which increases the complexity of the internal state machine. Furthermore, std::regex implementations in the C++ standard library (particularly libstdc++ and libc++) have historically suffered from poor performance and ABI stability issues compared to dedicated string matching algorithms.2
+Benchmarks comparing ls (globbing) against grep (regex) demonstrate that specialized glob algorithms can outperform regex-based approaches by orders of magnitude, particularly when the pattern complexity increases.4 For aria_make, which may need to resolve thousands of patterns during a dependency calculation, this efficiency is non-negotiable.
+2.2 Formal Specification of the Aria Glob Grammar
+To guarantee deterministic behavior, the engine must adhere to a strict formal grammar. The aria_make glob syntax is a superset of the standard POSIX glob(7) specification, extended with the recursive globstar (**) operator popularized by shells like zsh and tools like rsync.
+The supported tokens and their operational semantics are defined as follows:
+Token
+	Semantic Definition
+	Complexity Impact
+	*
+	Wildcard: Matches zero or more characters within a single path segment. Strictly delimited by directory separators.
+	Linear $O(N)$ with backtracking for multiple stars.
+	**
+	Globstar: Matches zero or more path segments. This operator bridges directory boundaries and triggers recursive traversal.
+	Exponential $O(B^D)$ worst-case (branching factor $B$, depth $D$), mitigated by pruning.
+	?
+	Unit Wildcard: Matches exactly one character, excluding directory separators.
+	Linear $O(N)$.
+	[...]
+	Character Class: Matches exactly one character from the specified set or range (e.g., [a-z0-9]). Supports negation via ! or ^.
+	Constant $O(1)$ relative to set size (using bitsets).
+	\
+	Escape Sequence: Forces the following character to be treated as a literal. Essential for matching filenames containing special characters.
+	Linear $O(N)$ parsing overhead.
+	Character Class Syntax Details:
+The engine must support standard POSIX character class behavior:
+* Ranges: [a-z] matches any character with an ASCII value between 'a' and 'z' inclusive.
+* Negation: [!abc] or [^abc] matches any character except 'a', 'b', or 'c'.
+* Literals in Brackets: To match a literal ], it must be placed immediately after the opening bracket (or the negation operator). To match a literal -, it must be placed first or last within the brackets.5
+2.3 Path Normalization and Separator Handling
+A significant source of non-determinism in cross-platform build systems is the variance in directory separators. Windows utilizes the backslash (\) while Unix-like systems utilize the forward slash (/). aria_make enforces a unified build file syntax requiring forward slashes, but the engine must handle user input or environment variables that may contain backslashes.1
+The implementation must strictly normalize all input paths to a single internal representation (forward slash /) before parsing. This normalization allows the parser to split patterns into segments deterministically. However, purely replacing separators is insufficient; the engine must respect escape sequences. For example, on a Unix system, a filename can legally contain a backslash. The normalization routine must distinguish between a path separator \ (on Windows) and an escaped character \*.6
+3. The Matching Algorithm: A Non-Regex Implementation
+The core computational kernel of the globbing engine is the matcher—the function that determines if a specific filename matches a specific pattern segment. To maximize performance and maintain strict adherence to the grammar, we employ a "Shifting Wildcard" greedy algorithm with backtracking support.
+3.1 The "Shifting Wildcard" Algorithm
+This algorithm avoids the overhead of constructing a Nondeterministic Finite Automaton (NFA) or compiling a regex. It maintains two pointers: one for the input string (filename) and one for the pattern. It also maintains state variables to track the position of the last encountered wildcard (*), allowing the algorithm to backtrack and retry matches when a mismatch occurs.8
+The logic proceeds as follows:
+1. Initialize: str_idx = 0, pat_idx = 0, last_star = -1, match_pos = 0.
+2. Iterate: While str_idx is within the string bounds:
+   * Exact Match/Question Mark: If the characters match or the pattern character is ?, advance both pointers.
+   * Wildcard (*): If the pattern character is *, record the current pattern index (last_star = pat_idx) and the current string index (match_pos = str_idx). Advance the pattern pointer only. This represents the * matching zero characters.
+   * Mismatch (Recovery): If a mismatch occurs and last_star is valid (not -1), backtrack. Reset pat_idx to last_star + 1. Increment match_pos (effectively consuming one more character of the string into the * match). Reset str_idx to match_pos.
+   * Mismatch (Failure): If a mismatch occurs and no wildcard has been seen, the match fails immediately.
+3. Termination: Once the string is exhausted, check if any remaining characters in the pattern are *. If so, they match the empty suffix. If non-wildcard characters remain, the match fails.
+This algorithm effectively handles complex cases like *a*b matching aaabbbaaabbb without the memory allocation overhead of regex engines. It runs in effectively linear time for typical build patterns, though pathological cases can approach $O(N \times M)$.10
+3.2 High-Performance Character Class Matching
+Matching [...] requires parsing the set definition. Instead of expanding ranges into full sets of characters (which consumes memory), the engine should evaluate the condition logically.
+* Constraint Check: Verify if the current string character falls within any start-end range or equals any literal char in the set.
+* Optimization: For ASCII characters, a std::bitset or a lookup table can be pre-calculated if the pattern is reused frequently. However, given that glob patterns in build systems change rarely during a single execution but match against thousands of files, compiling the pattern into a lightweight intermediate representation (IR) is beneficial.11
+3.3 Utilizing std::string_view
+To further optimize the matching process, the C++17 std::string_view component should be utilized for all internal string manipulations. std::string_view provides a lightweight, non-owning reference to a string, eliminating the need for heap allocations during substring operations or recursive calls.12 The match function signature should be:
+
+
+C++
+
+
+
+
+static bool match(std::string_view str, std::string_view pattern);
+
+This ensures that iterating over directory_entry paths (which provide references to the stored path) does not trigger unnecessary string copying.
+4. Filesystem Traversal Architecture
+The efficiency of the globbing engine is determined not by how fast it matches strings, but by how effectively it minimizes filesystem I/O. A naive implementation that iterates every file in the project root and checks it against the pattern is prohibitively slow for large repositories. The aria_make engine must employ a "Segment-Driven Traversal" strategy.
+4.1 Segment-Based Parsing and Anchoring
+The pattern is first split into segments based on the normalized separator.
+* Pattern: src/core/**/*.aria
+* Segments: ["src", "core", "**", "*.aria"]
+The engine analyzes the segments to find the "Anchor Point" or "Fixed Root." The anchor is the longest prefix of the pattern that contains no wildcards.
+* Anchor: src/core
+* Dynamic Suffix: **/*.aria
+The traversal initiates only at the anchor. If src/core does not exist or is not a directory, the engine terminates immediately, performing zero iterations. This optimization transforms the complexity from linear in the size of the repository to linear in the size of the candidate subtree.1
+4.2 Recursive Traversal Logic
+The traversal engine maintains a recursive state consisting of the current_path and the remaining_segments. The logic branches based on the type of the next segment:
+1. Literal Segment (e.g., utils):
+   * Construct the path current_path / "utils".
+   * Check existence and type (directory vs file).
+   * If valid, recurse with the new path and the next segment. This avoids iterating the directory contents entirely.
+2. Wildcard Segment (e.g., *.aria or test_?):
+   * This requires iteration. Create a std::filesystem::directory_iterator for current_path.
+   * For each entry, check if the filename matches the segment using the match algorithm.
+   * If it matches and is a directory (and more segments follow), recurse.
+   * If it matches and is a file (and this is the last segment), add to the results list.
+3. Recursive Wildcard (**):
+   * This is the most complex operator. It consumes the current directory strictly, but also matches any number of intermediate directories.
+   * Strategy:
+      * Match Here: Try to match the rest of the pattern against the current directory (effectively treating ** as matching nothing).
+      * Descend: Iterate all subdirectories in current_path. For each subdirectory, recurse with the ** segment still active.
+   * Optimization: When ** is followed by a literal (e.g., **/include), we can optimize by using recursive_directory_iterator to find all directories named include directly, rather than walking every tree. However, strictly adhering to the segment logic is often more robust for complex mixed patterns.
+4.3 Pruning with directory_entry Attributes
+C++17's std::filesystem::directory_entry caches file attributes on many platforms (Windows, Linux with glibc). When iterating, calling entry.is_directory() or entry.is_symlink() often uses cached data from the readdir/FindNextFile syscall, avoiding an additional, expensive stat call.14 The implementation must prioritize using entry member functions over std::filesystem::status(path).
+Critical Performance Note: On Windows, std::filesystem iteration can be slower than native Win32 APIs if not managed carefully, but directory_entry caching significantly mitigates this. Avoiding redundant status checks is the single most effective optimization for the walker.16
+5. Robustness and Edge Case Management
+Real-world filesystems are fraught with irregularities: permission locks, infinite symlink loops, and non-standard file types. A build system cannot crash; it must handle these gracefully.
+5.1 Symbolic Link Cycle Detection
+The presence of symbolic links (especially in Unix environments) can create infinite loops in the directory graph (e.g., A -> B -> A). A naive recursive walker will crash with a stack overflow.
+* Detection Strategy: The engine must maintain a std::set<std::filesystem::path> (or a hash set for speed) containing the canonical paths of all directories currently in the recursion stack (or all visited directories, depending on the strictness required).
+* Implementation: Before recursing into a directory that is_symlink(), resolve its path using std::filesystem::canonical(). If the result is already in the visited set, skip it.17
+* Performance Trade-off: canonical() involves syscalls. To optimize, only apply this check when entry.is_symlink() is true. Normal directories form a strict tree and do not require cycle checks.
+5.2 Permission Error Handling
+Attempting to iterate a directory without read permissions throws a std::filesystem::filesystem_error. aria_make must differentiate between "fatal errors" (e.g., source root missing) and "transient/expected errors" (e.g., system locked folder).
+* Mechanism: Use the std::error_code overloads of directory_iterator and recursive_directory_iterator.
+* Logic:
+C++
+std::error_code ec;
+fs::directory_iterator it(path, ec);
+if (ec) {
+   // Log warning but continue traversal of siblings
+   if (ec == std::errc::permission_denied) { 
+       return; // Skip this directory
+   }
+   throw fs::filesystem_error("Fatal traversal error", path, ec);
+}
+
+* macOS Specifics: On macOS with System Integrity Protection (SIP), certain directories like ~/Library may return generic errors. The engine should strictly catch and ignore permission failures to prevent build aborts.19
+5.3 Cross-Platform Hidden File Consistency
+Unix convention treats files starting with . as hidden. Windows uses a specific file attribute (FILE_ATTRIBUTE_HIDDEN).
+   * Standardization: To ensure aria_make behaves identically across platforms (determinism), the engine should default to the Unix convention: explicit ignore of files starting with . unless the pattern explicitly requests them (e.g., .gitignore).
+   * Windows Implementation: While std::filesystem does not portably expose the hidden attribute, ignoring dot-files aligns with the behavior of most cross-platform tools (git, node). If native Windows hidden file support is strictly required, platform-specific code using GetFileAttributes would be necessary, but this risks platform divergence.21 For aria_make, enforcing the "dot-file" rule is the safer path for reproducible builds.
+6. Determinism and Reproducibility
+A build system must yield the same output for the same input, regardless of the environment. The order in which directory_iterator yields entries is determined by the filesystem (inode order, hash order, or insertion order) and is non-deterministic.23
+6.1 Deterministic Sorting
+The GlobEngine must buffer matches at each level of recursion and sort them alphabetically before proceeding.
+   1. Buffer: std::vector<fs::directory_entry> entries;
+   2. Iterate: Collect all valid entries from the iterator into the vector.
+   3. Sort: std::sort the vector based on entry.path().filename().
+   4. Process: Iterate the sorted vector to recurse or collect matches.
+This ensures that the expansion of src/* is always [src/a.aria, src/b.aria], never the reverse. This is critical for the stability of the dependency graph and the linking order of binary artifacts.1
+7. Performance Optimization Strategies
+7.1 Caching Strategy
+Build systems often evaluate the same glob patterns multiple times (e.g., different targets including the same source sets) or run repeatedly in incremental mode.
+   * Level 1: Result Cache: Store Map<std::string, std::vector<path>> mapping pattern strings to result lists.
+   * Invalidation: The cache needs a validity key. A robust key is a hash of the directory modification times (last_write_time) of all directories involved in the match.
+   * Issue: On Windows, directory last_write_time does not always propagate changes from children reliably.24
+   * Solution: For aria_make, a pragmatic approach is to cache results within a single build execution (memoization) but invalidate across distinct runs unless a file-watching daemon is active. This avoids the complexity of stale caches while speeding up the DAG construction phase.
+7.2 Parallel Directory Scanning
+Traversing a large tree is I/O latency-bound. C++17 execution policies (parallel algorithms) can be applied, but directory_iterator is an input iterator (single pass) and cannot be parallelized directly.
+   * Thread Pool Integration: When a directory must be recursed into, the GlobEngine can submit a task to the aria_make thread pool.1
+   * Implementation:
+   * Main thread handles the Anchor.
+   * When subdirectories are identified for recursion, they are pushed to a ConcurrentQueue.
+   * Worker threads pop directories, perform directory_iterator, sort, and push found matches to a thread-local list.
+   * Synchronization: A final merge step consolidates lists.
+   * Benefit: This masks the latency of stat() calls and disk seeks, potentially scaling linearly with core count on high-performance NVMe drives.
+8. Detailed C++ Implementation Guide
+The following sections provide the concrete C++ implementation structure.
+8.1 The GlobPattern Parser Class
+This class handles the parsing and normalization of the glob string.
+
+
+C++
+
+
+
+
+#include <vector>
+#include <string>
+#include <filesystem>
+#include <algorithm>
+
+namespace fs = std::filesystem;
+
+enum class SegmentType { Literal, Wildcard, Recursive };
+
+struct Segment {
+   std::string text;
+   SegmentType type;
+};
+
+class GlobPattern {
+public:
+   explicit GlobPattern(const std::string& pattern_str) {
+       parse(pattern_str);
+   }
+
+   const std::vector<Segment>& segments() const { return m_segments; }
+   bool is_absolute() const { return m_is_absolute; }
+
+private:
+   std::vector<Segment> m_segments;
+   bool m_is_absolute = false;
+
+   void parse(const std::string& pattern) {
+       // Normalize separators: Windows '\' -> '/'
+       std::string normalized = pattern;
+       std::replace(normalized.begin(), normalized.end(), '\\', '/');
+
+       if (normalized.empty()) return;
+
+       // Check absolute
+       fs::path p(normalized);
+       if (p.is_absolute()) m_is_absolute = true;
+
+       size_t start = 0;
+       size_t end = 0;
+       while ((end = normalized.find('/', start))!= std::string::npos) {
+           add_segment(normalized.substr(start, end - start));
+           start = end + 1;
+       }
+       add_segment(normalized.substr(start));
+   }
+
+   void add_segment(const std::string& token) {
+       if (token.empty()) return; // Skip empty segments (//)
+       
+       if (token == "**") {
+           m_segments.push_back({token, SegmentType::Recursive});
+       } else if (token.find_first_of("*? == '?' |
+
+| pattern[p_idx] == str[s_idx])) {
+               s_idx++;
+               p_idx++;
+           }
+           else if (p_idx < pattern.size() && pattern[p_idx] == '[') {
+               // Character Class Handling
+               int class_len = match_class(str[s_idx], pattern.substr(p_idx));
+               if (class_len > 0) {
+                   s_idx++;
+                   p_idx += class_len;
+               } else {
+                   // Fallback to backtracking if class match failed
+                   goto backtrack;
+               }
+           }
+           else if (p_idx < pattern.size() && pattern[p_idx] == '*') {
+               star_idx = p_idx;
+               match_idx = s_idx;
+               p_idx++;
+           }
+           else {
+           backtrack:
+               if (star_idx!= std::string::npos) {
+                   p_idx = star_idx + 1;
+                   match_idx++;
+                   s_idx = match_idx;
+               } else {
+                   return false;
+               }
+           }
+       }
+
+       while (p_idx < pattern.size() && pattern[p_idx] == '*') {
+           p_idx++;
+       }
+
+       return p_idx == pattern.size();
+   }
+
+private:
+   // Returns length of class pattern consumed, or 0 if no match
+   static int match_class(char c, std::string_view p) {
+       // Simple implementation of [a-z] logic
+       // Checks for ']', ranges, and negations
+       // Returns consumed length
+       // Implementation omitted for brevity, follows POSIX standard logic
+       // See research snippet [25] for specific state machine details
+       return 0; // Placeholder
+   }
+};
+
+8.3 The GlobEngine Traversal Class
+This component orchestrates the expansion using the strategy defined in Section 5.
+
+
+C++
+
+
+
+
+#include <set>
+
+class GlobEngine {
+public:
+   static std::vector<fs::path> expand(const std::string& pattern_str) {
+       GlobPattern pattern(pattern_str);
+       std::vector<fs::path> results;
+       std::set<fs::path> visited_symlinks;
+
+       // Determine Anchor
+       fs::path base = fs::current_path();
+       size_t seg_idx = 0;
+       
+       // Advance through literals to find the deepest root
+       const auto& segs = pattern.segments();
+       if (pattern.is_absolute()) {
+           base = fs::path(segs.text).root_path(); // OS specific root handling
+           // Logic to handle absolute paths requires careful segment alignment
+       }
+
+       // Simple relative anchor logic
+       while (seg_idx < segs.size() && segs[seg_idx].type == SegmentType::Literal) {
+           base /= segs[seg_idx].text;
+           seg_idx++;
+       }
+
+       if (!fs::exists(base) ||!fs::is_directory(base)) {
+           return {};
+       }
+
+       walk(base, segs, seg_idx, results, visited_symlinks);
+       
+       // Deterministic Sort
+       std::sort(results.begin(), results.end());
+       return results;
+   }
+
+private:
+   static void walk(const fs::path& current, 
+                    const std::vector<Segment>& segments, 
+                    size_t idx, 
+                    std::vector<fs::path>& results,
+                    std::set<fs::path>& visited) {
+       
+       if (idx >= segments.size()) {
+           results.push_back(current);
+           return;
+       }
+
+       const auto& segment = segments[idx];
+       bool is_last = (idx == segments.size() - 1);
+
+       if (segment.type == SegmentType::Recursive) { // **
+           // Option 1: Consume ** (match current directory)
+           // Recurse to next segment with current path
+           if (idx + 1 < segments.size()) {
+                walk(current, segments, idx + 1, results, visited);
+           } else {
+                // ** at end matches all files/dirs recursively
+                // Use recursive_directory_iterator for efficiency here
+                std::error_code ec;
+                for(auto it = fs::recursive_directory_iterator(current, 
+                    fs::directory_options::follow_directory_symlink | 
+                    fs::directory_options::skip_permission_denied, ec); 
+                    it!= fs::recursive_directory_iterator(); ++it) {
+                    
+                    // Manual symlink cycle check if following symlinks
+                    if (it->is_symlink()) {
+                        fs::path target = fs::canonical(it->path(), ec);
+                        if (!ec && visited.count(target)) {
+                            it.disable_recursion_pending();
+                            continue;
+                        }
+                        visited.insert(target);
+                    }
+                    results.push_back(it->path());
+                }
+                return;
+           }
+
+           // Option 2: Recurse into subdirectories
+           std::error_code ec;
+           fs::directory_iterator it(current, fs::directory_options::skip_permission_denied, ec);
+           if (ec) return;
+
+           // Buffer for sorting
+           std::vector<fs::directory_entry> entries;
+           for (const auto& entry : it) entries.push_back(entry);
+           std::sort(entries.begin(), entries.end(), 
+              (const auto& a, const auto& b) { return a.path() < b.path(); });
+
+           for (const auto& entry : entries) {
+               if (entry.is_directory()) {
+                   // Symlink check
+                   if (entry.is_symlink()) {
+                       fs::path target = fs::canonical(entry.path(), ec);
+                       if (!ec && visited.find(target) == visited.end()) {
+                           visited.insert(target);
+                           walk(entry.path(), segments, idx, results, visited); // Keep ** active
+                       }
+                   } else {
+                       walk(entry.path(), segments, idx, results, visited);
+                   }
+               }
+           }
+       } 
+       else { // Literal or Wildcard
+           std::error_code ec;
+           fs::directory_iterator it(current, fs::directory_options::skip_permission_denied, ec);
+           if (ec) return;
+
+           // Buffer and Sort
+           std::vector<fs::directory_entry> entries;
+           for (const auto& entry : it) entries.push_back(entry);
+           std::sort(entries.begin(), entries.end(), 
+              (const auto& a, const auto& b) { return a.path() < b.path(); });
+
+           for (const auto& entry : entries) {
+               std::string filename = entry.path().filename().string();
+               
+               // Skip dotfiles
+               if (filename.size() > 0 && filename == '.') continue;
+
+               if (FastMatcher::match(filename, segment.text)) {
+                   if (is_last) {
+                       results.push_back(entry.path());
+                   } else if (entry.is_directory()) {
+                       walk(entry.path(), segments, idx + 1, results, visited);
+                   }
+               }
+           }
+       }
+   }
+};
+
+9. Conclusion
+The implementation of a custom globbing engine for aria_make is a necessary investment to ensure the robustness and reproducibility of the build system. By moving away from std::regex and leveraging the low-level optimizations of std::filesystem—specifically directory_entry caching and anchored traversal—the proposed engine achieves the performance characteristics required for large-scale C++ and Aria projects.
+This architecture explicitly handles the subtleties of cross-platform development: path normalization ensures build scripts work on Windows and Linux without modification, while explicit sorting guarantees that the build graph remains deterministic regardless of the underlying filesystem's iteration order. The inclusion of cycle detection algorithms safeguards against infinite loops in complex symlink structures, a common failure mode in naive implementations.
+Finally, the modular design allows for future enhancements, such as integration with .gitignore parsing or the adoption of parallel traversal strategies, ensuring aria_make can evolve to meet the demands of future development workflows.
+Summary of Key Recommendations
+   1. Avoid std::regex: Use the provided FastMatcher shifting wildcard algorithm for linear-time performance.
+   2. Anchor the Search: Resolve the longest literal prefix of the pattern to minimize directory traversal.
+   3. Sort for Determinism: Buffer and sort directory entries at every level of recursion.
+   4. Cache Attributes: Use directory_entry methods to avoid redundant stat() syscalls.
+   5. Handle Symlinks: Track canonical paths of visited directory symlinks to prevent cycles.
+   6. Normalize Paths: Enforce forward slashes internally to simplify pattern parsing logic.
+Works cited
+   1. 01_project_overview.txt
+   2. Does anyone here use
+   3. What are the differences between glob-style patterns and regular expressions?, accessed December 19, 2025, https://stackoverflow.com/questions/23702202/what-are-the-differences-between-glob-style-patterns-and-regular-expressions
+   4. Glob Matching Can Be Simple And Fast Too - research!rsc, accessed December 19, 2025, https://research.swtch.com/glob
+   5. glob (programming) - Wikipedia, accessed December 19, 2025, https://en.wikipedia.org/wiki/Glob_(programming)
+   6. What is the difference between forward slashes and backslashes in paths? - Super User, accessed December 19, 2025, https://superuser.com/questions/327820/what-is-the-difference-between-forward-slashes-and-backslashes-in-paths
+   7. windows and linux discrepancy: backslash and forward slash in c++ - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/53334046/windows-and-linux-discrepancy-backslash-and-forward-slash-in-c
+   8. Wildcard Pattern Matching - GeeksforGeeks, accessed December 19, 2025, https://www.geeksforgeeks.org/dsa/wildcard-pattern-matching/
+   9. Wildcard Pattern Matching - EDUCBA, accessed December 19, 2025, https://www.educba.com/wildcard-pattern-matching/
+   10. String matching with wildcard - c++ - DaniWeb, accessed December 19, 2025, https://www.daniweb.com/programming/software-development/threads/288358/string-matching-with-wildcard
+   11. Match a pattern and String without using regular expressions - GeeksforGeeks, accessed December 19, 2025, https://www.geeksforgeeks.org/dsa/match-a-pattern-and-string-without-using-regular-expressions/
+   12. How to efficiently get a `string_view` for a substring of `std::string` - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/46032307/how-to-efficiently-get-a-string-view-for-a-substring-of-stdstring
+   13. C++ std::string_view for better performance: An example use case : r/cpp - Reddit, accessed December 19, 2025, https://www.reddit.com/r/cpp/comments/dosgnp/c_stdstring_view_for_better_performance_an/
+   14. std:filesystem::file_size Advantages and Differences - C++ Stories, accessed December 19, 2025, https://www.cppstories.com/2019/01/filesizeadvantages/
+   15. std::filesystem::directory_entry - cppreference.com - C++ Reference, accessed December 19, 2025, https://en.cppreference.com/w/cpp/filesystem/directory_entry.html
+   16. Slow performance of C++ std::filesystem::directory_iterator for symlinks - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/60896524/slow-performance-of-c-stdfilesystemdirectory-iterator-for-symlinks
+   17. Is there an algorithm to decide if a symlink loops? - Unix & Linux Stack Exchange, accessed December 19, 2025, https://unix.stackexchange.com/questions/99159/is-there-an-algorithm-to-decide-if-a-symlink-loops
+   18. Find circular symlinks with boost filesystem - c++ - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/66275694/find-circular-symlinks-with-boost-filesystem
+   19. "operation not permitted" error on recursive_directory_iterator despite skip_permission_denied · Issue #48870 · llvm/llvm-project - GitHub, accessed December 19, 2025, https://github.com/llvm/llvm-project/issues/48870
+   20. recursive_directory_iterator's skip_permission_denied option appears to be ignored on macOS? - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/70382262/recursive-directory-iterators-skip-permission-denied-option-appears-to-be-ignor
+   21. Cross platform hidden file detection - python - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/284115/cross-platform-hidden-file-detection
+   22. File Attribute Constants (WinNT.h) - Win32 apps | Microsoft Learn, accessed December 19, 2025, https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
+   23. How do you iterate through every file/directory recursively in standard C++? - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/67273/how-do-you-iterate-through-every-file-directory-recursively-in-standard-c
+   24. std::filesystem::last_write_time as indicator of valid cached file contents - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/79527260/stdfilesystemlast-write-time-as-indicator-of-valid-cached-file-contents

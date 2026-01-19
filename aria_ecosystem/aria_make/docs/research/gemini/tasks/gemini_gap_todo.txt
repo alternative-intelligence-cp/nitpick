@@ -1,0 +1,226 @@
+﻿Architectural Audit and Gap Analysis of the AriaBuild Ecosystem
+1. Executive Summary
+The contemporary landscape of software engineering infrastructure is characterized by a relentless pursuit of determinism, hermeticity, and performance. The proposed AriaBuild (referred to internally as aria_make) system represents a significant and necessary modernization effort within the Aria programming language ecosystem. By attempting to displace legacy automation utilities such as GNU Make, AriaBuild aims to introduce a "Configuration as Data" paradigm that eliminates the fragility of whitespace-sensitive syntax while leveraging the concurrency-native capabilities of modern hardware.1
+This report constitutes a comprehensive architectural audit and gap analysis of the provided research materials, design specifications, and partial source code implementations. The audit was conducted by simulating the perspective of a Senior Systems Architect specializing in compiler toolchains and build infrastructure. The primary objective is to identify divergences between the high-level architectural intent—outlined in the specification documents—and the actual state of the codebase, pinpointing missing components, incomplete algorithmic logic, and potential integration risks that threaten the viability of the tool.
+The analysis indicates that while the theoretical foundation of AriaBuild is scientifically robust—leveraging Kahn’s Algorithm for topological sorting 1, a JSON-derivative syntax (ABC) for declarative configuration 1, and a Shifting Wildcard algorithm for high-performance globbing 1—the current implementation state is fundamentally fragmented. A critical disconnect exists between the language frontend components (Lexer/Parser) provided in the source files, which are tailored for the Aria language, and the specialized requirements of the build configuration engine. Furthermore, essential runtime components required for the execution phase, such as the ThreadPool, BuildScheduler, and the CycleDetector logic, are either missing entirely or terminate abruptly in the provided documentation, rendering the system non-functional in its current state.1
+The following sections provide an exhaustive, deeply technical breakdown of these deficiencies. The report is structured to first analyze the configuration subsystem, followed by the filesystem and globbing engine, the dependency resolution core, and finally the process execution infrastructure. For every identified gap, a precise, technically actionable prompt is generated to facilitate the immediate remediation of the codebase.
+2. Configuration Engine and Parser Architecture
+The input interface of any build system is its primary contract with the developer. For AriaBuild, this contract is the Aria Build Configuration (ABC) format. The design philosophy here is "Configuration as Data," which explicitly rejects the "Configuration as Code" models that often introduce non-determinism through Turing-complete scripting capabilities within build files.1 The architectural intent is to define a parser that is strictly deterministic, whitespace-insensitive, and capable of handling a JSON-superset syntax that aligns with Aria’s own object literal definitions.
+However, a deep, line-by-line inspection of the provided source code reveals a fundamental architectural divergence: the existing parser implementation is tailored exclusively for the Aria language backend, not the build configuration schema. This distinction is not merely semantic; it represents a functional incompatibility that prevents the build tool from reading its own configuration files.
+2.1. The Divergence of ConfigParser and aria::Parser
+The design specification explicitly calls for a specialized ConfigParser capable of handling the ABC grammar. This grammar is hierarchical and specific, requiring the parsing of top-level sections such as project, variables, and targets.1 The specification suggests implementing this by extending the existing aria::frontend::Parser, implying a desire for code reuse and consistency across the ecosystem.1
+However, the provided source code in aria_source_part3_frontend_parser.txt defines a general-purpose language parser (aria::Parser). This class is meticulously designed to parse control flow statements (IF, WHILE, FOR), variable declarations (VAR_DECL), and function definitions (FUNC_DECL).1 It operates on a precedence climbing algorithm tailored for mathematical and logical expressions found in general programming, not the declarative data structures of a build file.
+Analysis of Specific Implementation Gaps:
+The first and most glaring gap is the absence of grammar rules relevant to the build system. The current Parser::parseStatement dispatcher, located in src/frontend/parser/parser.cpp, contains logic to handle keywords like USE, MOD, IF, and RETURN.1 It explicitly lacks any logic to recognize, consume, or structure the project:, variables:, or targets: keys that are the root nodes of the ABC specification.1 If the current parser were fed a build.aria file, it would likely throw a syntax error immediately upon encountering the initial project: token, as it expects a statement or expression, not a root-level object key.
+Furthermore, the handling of keys presents a subtle but critical challenge. The ABC format specification allows for unquoted keys (e.g., source_dir: "src" rather than "source_dir": "src") to reduce syntax noise and align with Aria struct definitions.1 Standard JSON parsers do not support this. While the Aria language parser supports identifiers in variable declarations (e.g., int64:x = 5), it does not support them in the context of general object literals used for configuration. The design document alludes to a "predictive recursive descent approach" to resolve ambiguities between identifiers and string literals acting as keys.1 However, this dual-path logic is entirely absent from src/frontend/parser/parser.cpp.1 The current parser expects identifiers to be part of specific constructs (like function names or type declarations) and does not possess the context sensitivity to treat them as string keys within a configuration object.
+Perhaps the most blocking deficit is the stubbed implementation of object literals. The header file parser.h declares a method ASTNodePtr parseObjectLiteral(), suggesting the intent to support this feature. However, the implementation in parser.cpp is a placeholder that explicitly throws an error: error("Object literals not yet implemented");.1 Since the ABC configuration format is fundamentally a tree of nested object literals (Project objects containing Variable objects containing Target lists), this missing implementation renders the parsing of any configuration file impossible. The build system cannot function if it cannot parse its own input data structure.
+2.2. The Interpolator Engine and Variable Resolution Strategy
+A core feature distinguishing modern build systems from simple scripts is the ability to manage configuration complexity through variables. AriaBuild specifies a robust Variable Substitution engine using the syntax &{...} (e.g., &{src}/*.aria) to inject paths and settings dynamically.1 The specification details a distinct semantic pass—the Interpolator Engine—that is designed to run post-parse to resolve these variables against local, global, and environment scopes.1
+Analysis of Missing Logic:
+The current codebase treats string literals as atomic, static tokens. The Lexer::scanString and Lexer::scanTemplateLiteral methods found in aria_source_part1_frontend_lexer.txt handle the raw tokenization of strings, correctly identifying the boundaries of quotes and template ticks.1 However, the semantic resolution logic is missing. The design dictates that interpolation should be treated as a semantic pass, where the string is parsed first and resolved later.
+There is no code provided that implements the recursive expansion algorithm described in the design documents. This algorithm is necessary to handle nested variables (e.g., variable A depends on B, which depends on C). Without this recursive step, variables defined in terms of other variables—a common pattern in build files to define output directories based on root paths—will fail to resolve, leaving raw &{...} tokens in the final file paths.
+Furthermore, the integration with the system environment is absent. The design specifies a mechanism to access environment variables via the ENV. prefix (e.g., &{ENV.HOME}).1 This requires calls to the host operating system's environment API (e.g., std::getenv on POSIX systems). This logic is missing from the provided sources. In a build system, interaction with the environment is crucial for locating compilers, system libraries, and user preferences. The absence of this integration strictly limits the portability and flexibility of the build scripts.
+Finally, the interpolation engine requires a specific type of Symbol Table. The provided SymbolTable implementation in aria_source_part4_semantic_analysis.txt is designed for the Aria language semantic analysis.1 It maps identifiers to complex Symbol structures containing Type*, Scope*, and SymbolKind. The build system, however, requires a simpler, string-to-string mapping table (e.g., std::map<std::string, std::string>) to resolve build variables. Attempting to reuse the semantic analysis symbol table would be over-engineering and likely incompatible due to the strict typing rules enforced by the language compiler. A dedicated, lightweight symbol table mechanism for the build configuration is missing.
+Cycle Detection:
+A critical requirement for any variable substitution system is Cycle Detection. If variable A is defined as &{B}, and variable B is defined as &{A}, a naive recursive resolver will enter an infinite loop, causing a stack overflow and crashing the build tool. The design specification calls for a visited set to track the current recursion path and detect these cycles.1 This safety mechanism is completely absent from the provided code, representing a significant stability risk.
+2.3. The Visitor Pattern Interface and AST Traversal
+The implementation guide mentions utilizing a Visitor pattern to traverse the Abstract Syntax Tree (AST) for validation and graph construction.1 The Visitor pattern is standard in compiler design for separating the data structures (the AST nodes) from the algorithms that operate on them (validation, code generation, dependency analysis).
+Findings:
+The file aria_source_part2_frontend_ast.txt defines the ASTNode base class and various subclasses such as BinaryExpr, IfStmt, and FuncDeclStmt.1 While the structure of these classes is sound for a language compiler, they lack the necessary infrastructure to support the Visitor pattern. Specifically, there is no virtual void accept(Visitor& v) = 0; method defined in the base ASTNode class, nor are there overrides in the subclasses to dispatch calls to the visitor.
+Moreover, there is no abstract Visitor class definition provided in any of the header files. Without a defined Visitor interface (declaring methods like visit(ProjectNode*), visit(TargetNode*)), the decoupling of the parsing logic from the build graph construction logic cannot be achieved as designed. This forces any traversal logic to rely on fragile dynamic_cast or switch statements on the NodeType enum, which violates the Open/Closed principle and makes the system harder to extend.
+2.4. Remediation Strategy and Prompts
+To rectify these gaps, we require the implementation of the specialized configuration parser, the visitor interface, and the string interpolation logic.
+Prompt 1: ConfigParser and AST Visitor Implementation
+"You have identified a critical gap between the general-purpose Aria language parser and the specific requirements for the Aria Build Configuration (ABC) format. Based on the design in 'task_01_parser_implementation.txt', generate the C++ header and implementation for the ConfigParser class. This class must:
+1. Reuse the aria::frontend::Lexer but implement a LexerAdapter to filter language-specific tokens.
+2. Implement recursive descent methods for parseProjectSection, parseVariablesBlock, and parseTargetsBlock.
+3. Implement the missing parseObjectLiteral and parseArrayLiteral logic specifically for build configurations, supporting unquoted keys.
+4. Define a BuildFileAST structure and a Visitor interface (and accept methods) to traverse it.
+5. Ensure strict error recovery using the 'panic mode' synchronization points described in the design."
+Prompt 2: Interpolator Engine Implementation
+"The variable substitution logic for the build system is missing. Using the specification in 'Designing a JSON-like Build Tool.txt' (Section 2.3) and 'task_01_parser_implementation.txt' (Section 6), provide the C++ implementation for the Interpolator class. The implementation must:
+1. Accept a raw string and a SymbolTable (map of strings).
+2. Recursively resolve &{var} tokens, checking for ENV. prefixes to access environment variables via std::getenv.
+3. Implement strict cycle detection using a visited set to prevent infinite recursion.
+4. Return the fully resolved string or throw a descriptive error if a variable is undefined or cyclic."
+3. Filesystem Abstraction and Globbing Subsystem
+A build system is, at its core, a file processing pipeline. The ability to discover, filter, and organize source files is paramount. AriaBuild faces a specific challenge: it cannot rely on the Aria standard library for filesystem operations because the runtime currently lacks directory iteration and complex globbing capabilities.1 Consequently, the build tool must implement a custom, high-performance globbing engine in the host language (C++17). The design wisely rejects std::regex for this task, opting instead for a specialized "Shifting Wildcard" algorithm to ensure performance and correct glob semantics, particularly regarding directory separators.1
+3.1. Absence of GlobEngine and GlobPattern Classes
+The document task_02_globbing_engine.txt provides a sophisticated architectural blueprint for two core classes: GlobPattern (responsible for parsing and normalization) and GlobEngine (responsible for traversal). However, a review of the source files reveals that this code is entirely missing. The only runtime code provided (aria_source_part6_runtime.txt) focuses on memory allocation and garbage collection 1, leaving the filesystem logic unimplemented.
+Specific Missing Logic:
+The GlobPattern Class is missing. This component is responsible for parsing the raw glob string (e.g., src/**/*.aria). It must handle path normalization, converting platform-specific separators (backslashes on Windows) to a unified forward-slash representation to ensure cross-platform determinism.1 It must also identify and tokenize special glob constructs, particularly the recursive globstar **. Without this normalization, build scripts written on Linux would likely fail on Windows, violating the portability requirement.
+The GlobEngine Class is also missing. This class implements the actual filesystem traversal. The design specifies a "Segment-Driven Traversal" strategy utilizing an "Anchor Point" optimization.1 This optimization analyzes the pattern to find the longest static prefix (e.g., in src/core/**/*.aria, the anchor is src/core/) and begins iteration there, rather than at the project root. This reduces I/O operations by orders of magnitude. The absence of this logic implies that the current system has no way to gather source files, rendering the targets section of the configuration useless.
+The FastMatcher Class, described as the computational kernel of the engine, is also unimplemented. This class implements the "Shifting Wildcard" greedy algorithm. This algorithm is preferred over regex because it handles the specific semantics of globs (where * does not match path separators) more naturally and with lower memory overhead than compiling a Nondeterministic Finite Automaton (NFA) for every pattern.1
+3.2. Missing Character Class Logic (match_class)
+A specific and explicitly acknowledged gap in the provided text involves the character class matching logic. The text in task_02_globbing_engine.txt contains a placeholder comment: // Implementation omitted for brevity, follows POSIX standard logic.1
+While the text omits the code, the requirement remains. The logic must match sets of characters defined in brackets, such as [a-z0-9]. This includes:
+* Ranges: Expanding a-z to match any character from 'a' to 'z'.
+* Negation: Handling ! or ^ as the first character to invert the match (e.g., [^a-c] matches anything except a, b, or c).
+* Escaping: Correctly handling literals that usually have special meaning, such as ] (which closes the set) or - (which defines a range), often by enforcing placement rules (e.g., ] must be the first character to be matched literally).2
+This logic is complex to implement correctly from scratch without regex, and its absence means the build system cannot support precise file matching patterns, potentially forcing users to list files manually.
+3.3. Platform-Specific Hidden File Consistency
+Build systems must often ignore hidden files (e.g., .git/ directories) to prevent processing version control metadata. On Unix-like systems, this is handled by the "dot-file" convention. On Windows, however, hidden files are designated by a file attribute bit.
+The design document notes that std::filesystem does not portably expose these hidden attributes for Windows.1 To ensure deterministic behavior—where a build running on Windows behaves exactly like one on Linux—the design mentions the need for platform-specific code using the Windows API function GetFileAttributesW. This implementation is currently missing. Without it, a wildcard like src/**/* might accidentally include internal version control files on Windows, leading to build errors or bloated artifacts.
+3.4. Cache Invalidation Logic and Determinism
+Performance is a critical metric for build systems. Repeatedly scanning the filesystem for thousands of files is slow. Section 3.4 of the design document 1 and Section 7.1 of the globbing task 1 discuss a caching strategy to mitigate this. The system should snapshot the results of glob expansions.
+However, the explanation in task_02 cuts off abruptly at "Invalidation: The cache needs a validity key...".1 The logic for creating a robust validity key—likely by hashing the modification times of the directories themselves—is missing. Without caching, the "configure" phase of the build will be unnecessarily slow on large projects. Without correct invalidation logic, the build system might fail to detect new source files, leading to "stale" builds where code changes are ignored.
+3.5. Remediation Strategy and Prompts
+Prompt 3: Globbing Engine and FastMatcher Implementation
+"The build system requires a high-performance, non-regex globbing engine as detailed in 'task_02_globbing_engine.txt'. Provide the complete C++17 implementation for the GlobPattern and GlobEngine classes. This must include:
+1. The FastMatcher class implementing the 'Shifting Wildcard' greedy algorithm.
+2. The match_class function handling POSIX character classes ([...]) with ranges and negation, which was omitted in the text.
+3. The GlobEngine::expand method implementing the segment-based traversal strategy with 'Anchor Point' optimization.
+4. Deterministic sorting of results to ensure reproducible builds."
+Prompt 4: Platform-Specific Filesystem Extensions
+"To ensure cross-platform determinism, the globbing engine requires specific handling for hidden files on Windows, as std::filesystem is insufficient. Provide a C++ helper class FileSystemTraits that:
+1. Implements a portable isHidden(const std::filesystem::path&) function.
+2. Uses GetFileAttributesW on Windows to detect the hidden attribute.
+3. Uses the dot-prefix convention on Unix-like systems.
+4. Implements the cache invalidation logic (hashing directory timestamps) which was cut off in the provided text."
+4. Dependency Graph and Scheduling Architecture
+The heart of aria_make is the Dependency Graph. This data structure models the relationships between build targets and ensures they are executed in the mathematically correct order. The design specifies using Kahn’s Algorithm for topological sorting and a parallel scheduler to maximize throughput.1 This section audits the implementation of these core graph algorithms.
+4.1. Incomplete Cycle Detection Logic
+A robust build system must not only detect cycles (circular dependencies) but also report them in a way that helps the developer fix the issue. A message like "Cycle detected" is useless; "Cycle detected: A -> B -> C -> A" is actionable.
+The file task_03_dependency_graph.txt contains a CycleDetector class designed to perform this diagnostic using Depth First Search (DFS). However, the file terminates abruptly in the middle of this implementation.1
+* Broken Code: The is_cyclic_dfs method ends mid-comment: // Cycle found: v is currently in....
+* Missing Logic: The essential backtracking logic (recursion_stack_[u] = false) is missing. In DFS, it is crucial to remove a node from the current recursion stack when backtracking; otherwise, valid diamond-dependency patterns (A->B->D, A->C->D) will be falsely identified as cycles.
+* Missing Path Reconstruction: The method reconstruct_path(), referenced in the code, is completely undefined. This method is responsible for unwinding the stack to generate the human-readable error report.
+4.2. Missing Thread Pool and Dynamic Scheduler
+The Introduction of task_03 promises a "custom thread pool" and "dynamic build scheduler".1 These are critical for performance. A single-threaded build system is unacceptable in modern development environments. However, these sections are entirely missing due to the file truncation.
+BuildScheduler:
+This class is the conductor of the build orchestra. It is responsible for:
+1. Managing the ReadyQueue: A queue of tasks that have all their dependencies satisfied (in-degree 0).
+2. Dirty State Checking: Checking if a target actually needs to be rebuilt before scheduling it.
+3. Dispatching: Sending tasks to the thread pool.
+4. Completion Handling: When a task finishes, the scheduler must identify all dependent nodes, decrement their in-degrees, and move them to the ReadyQueue if they become free. This dynamic graph reduction is what allows for maximum parallelism.
+ThreadPool:
+A std::thread-based pool is required to execute compiler invocations in parallel. Creating a new thread for every source file (which could be thousands) is inefficient due to OS overhead.3 A fixed-size pool (usually set to std::thread::hardware_concurrency()) is the standard solution. The implementation needs to handle task submission, worker thread management, and synchronization using std::mutex and std::condition_variable to prevent race conditions.
+4.3. Incremental Build Logic
+The Node class definition includes an is_dirty_ flag, but the logic to calculate this is missing. The design specifies comparing std::filesystem::last_write_time of source files against output artifacts.1 This is the "Incremental Build" feature—rebuilding only what has changed. Without this implementation, aria_make would perform a clean build every single time, drastically reducing developer productivity. The logic must also handle transitive dirtiness: if a library is rebuilt, everything linking to it must also be rebuilt.
+4.4. Remediation Strategy and Prompts
+Prompt 5: Dependency Graph Cycle Detection Repair
+"The implementation of the CycleDetector class in 'task_03_dependency_graph.txt' is incomplete and terminates abruptly. Provide the full C++ implementation for the CycleDetector class, specifically:
+1. Complete the is_cyclic_dfs method with proper recursion stack management and backtracking to correctly identify cycles vs diamond dependencies.
+2. Implement the reconstruct_path method to generate a human-readable list of nodes involved in the cycle.
+3. Ensure the cycle detection integrates with the DependencyGraph structure defined in the document."
+Prompt 6: Build Scheduler and Thread Pool Implementation
+"The execution engine for AriaBuild is missing from the provided documentation. Based on the requirements in 'task_03_dependency_graph.txt', provide the C++17 implementation for:
+1. A ThreadPool class using std::thread, std::mutex, and std::condition_variable to manage a fixed number of worker threads.
+2. A BuildScheduler class that implements the 'Dynamic Kahn’s Algorithm'. It must manage a ReadyQueue, dispatch tasks to the thread pool as dependencies complete, and handle thread-safe updates to the dependency graph (decrementing in-degrees).
+3. The check_is_dirty function implementing timestamp comparison logic for incremental builds, ensuring transitive dependencies are handled."
+5. Process Execution and Toolchain Integration
+AriaBuild acts as a meta-driver; it does not compile code itself but rather orchestrates the invocation of external tools like ariac (the Aria compiler) and lli (the LLVM interpreter).1 This requires a robust, cross-platform process execution layer.
+5.1. Missing Process Wrapper (execute_command_wrapper)
+The design mentions mapping target settings to compiler flags and using a "platform abstraction layer" to handle file descriptors.1 However, no code for executing system commands is present. The design likely intended to use popen as a pragmatic C++17 solution 1, but this approach has limitations that need to be addressed in implementation.
+Gap Analysis:
+* The Problem with std::system: Simple calls to std::system block the calling thread and dump output directly to the console. This breaks the parallel scheduler (which needs non-blocking or managed blocking) and messes up the UI (interleaved output from multiple threads).
+* The Problem with popen: While popen allows reading output, standard implementations only capture stdout. Capturing stderr (where compiler errors usually go) requires shell redirection hacks (2>&1), which merges the streams.4 This makes it impossible to distinguish between build warnings (yellow) and errors (red) in the UI.
+* Requirement: A robust wrapper function (e.g., execute_command_wrapper) is needed. Ideally, this would use platform-specific APIs (fork/exec/pipe on POSIX, CreateProcess on Windows) to capture streams separately. If strict C++17 portability is required without external libraries like boost::process or tiny-process-library, a careful implementation using pipes is necessary.
+5.2. LLVM Runtime Integration
+For targets defined as "binary," AriaBuild does not produce a machine-code executable directly. Instead, it compiles to LLVM IR (.ll) and then invokes the lli interpreter.1 This specific orchestration logic is absent. The system needs a ToolchainOrchestrator class that knows how to construct the specific CLI arguments for lli based on the target configuration, ensuring that the runtime environment matches the build environment.
+5.3. Remediation Strategy and Prompts
+Prompt 7: Process Execution and Toolchain Orchestration
+"AriaBuild requires a robust mechanism to spawn child processes and capture their output. Provide a C++ implementation for:
+1. An execute_command_wrapper function that uses popen (or platform-specific APIs if necessary for separate stream capture) to execute a command string, capture stdout and stderr separately if possible (or merged with valid exit code checking), and return the exit code.
+2. A ToolchainOrchestrator class that constructs the specific command strings for the Aria compiler (ariac) and LLVM interpreter (lli). This class should map Target properties (sources, flags, output) to the correct command-line arguments as specified in 'Designing a JSON-like Build Tool.txt'."
+6. Application Entry Point and Build Infrastructure
+A software tool cannot run without an entry point. The final, yet critical, gap is the absence of the main.cpp file and the build infrastructure for the tool itself.
+6.1. Missing main.cpp
+There is no main.cpp provided in the source files.1 The entry point is the glue that binds all the subsystems together. It must:
+1. Parse CLI Arguments: It needs to handle commands (build, clean, rebuild, test) and flags (--jobs 4, --verbose, --help).
+2. Orchestration: It must initialize the BuildContext, trigger the ConfigParser to read build.aria, run the GlobEngine to resolve files, build the DependencyGraph, and finally instantiate the BuildScheduler to start execution.
+3. Error Handling: It needs a top-level try-catch block to handle exceptions from the parser or globber and report them nicely to the user (e.g., "Error parsing build.aria at line 10").
+6.2. Build System for the Build System
+There is no CMakeLists.txt or Makefile provided to build aria_make itself. The tool depends on aria_frontend (for the Lexer) and potentially llvm headers. Without a build configuration, the source code cannot be compiled. This creates a "chicken and egg" problem: you need a build system to build the build system. A standard CMake configuration is required to bootstrap aria_make.
+6.3. Remediation Strategy and Prompts
+Prompt 8: Application Entry Point and CLI
+"The entry point for the AriaBuild application is missing. Provide a main.cpp implementation that serves as the driver for the entire system. It must:
+1. Parse CLI arguments to support commands like build, clean, and flags like --jobs N.
+2. Orchestrate the initialization of BuildContext, invocation of ConfigParser, resolution of globs via GlobEngine, and construction of the DependencyGraph.
+3. Trigger the BuildScheduler to execute the build.
+4. Handle top-level exceptions and report errors to the user."
+7. Consolidated List of Missing Components and Bugs
+The following table summarizes the identified gaps, their severity, and the associated prompts required to remediate them.
+ID
+	Component
+	Status
+	Criticality
+	Description
+	Prompt Reference
+	G01
+	ConfigParser
+	Missing
+	High
+	No implementation for parsing ABC format; existing parser is for Aria language.
+	Prompt 1
+	G02
+	Visitor Interface
+	Missing
+	Medium
+	ASTNode structure supports Visitor, but interface definition is missing.
+	Prompt 1
+	G03
+	Interpolator
+	Missing
+	High
+	Logic for &{var} expansion and cycle detection is absent.
+	Prompt 2
+	G04
+	GlobEngine
+	Missing
+	High
+	Filesystem traversal and "Shifting Wildcard" logic implementation is missing.
+	Prompt 3
+	G05
+	match_class
+	Omitted
+	Medium
+	Character class [...] matching logic explicitly omitted in text.
+	Prompt 3
+	G06
+	Hidden Files
+	Missing
+	Low
+	Windows specific GetFileAttributes logic is missing.
+	Prompt 4
+	G07
+	CycleDetector
+	Broken
+	High
+	Code terminates mid-function; logic is incomplete.
+	Prompt 5
+	G08
+	ThreadPool
+	Missing
+	High
+	Thread pool implementation for parallel execution is missing.
+	Prompt 6
+	G09
+	BuildScheduler
+	Missing
+	High
+	Dynamic Kahn's algorithm scheduler is missing.
+	Prompt 6
+	G10
+	execute_wrapper
+	Missing
+	High
+	Process spawning and output capture logic is missing.
+	Prompt 7
+	G11
+	main.cpp
+	Missing
+	High
+	Application entry point and CLI argument parsing are missing.
+	Prompt 8
+	8. Conclusion
+The architectural vision for AriaBuild is clear and modern, effectively addressing the specific pain points of legacy build systems through deterministic design and high-performance algorithms. The use of a JSON-like configuration format and a parallel execution engine places it well within the current state-of-the-art for build tooling.
+However, the current codebase serves more as a collection of disconnected components—a Language Parser from the frontend and a Runtime Garbage Collector—than a cohesive build tool. The specific logic required to parse the build configuration, model the dependency graph, and execute tasks in parallel is largely absent or incomplete in the provided artifacts. The "Language Parser" cannot be reused as-is for the "Config Parser," and the core execution engine (Scheduler/ThreadPool) exists only as a specification.
+By executing the series of prompts generated in this report, the development team can bridge the gap between the architectural specification and a functional prototype, effectively instantiating the aria_make tool. Priority must be placed on G01 (ConfigParser) and G09 (BuildScheduler), as these represent the input and output processing cores of the system, respectively. Without these, the tool cannot read its instructions or execute its tasks.
+Works cited
+1. Designing a JSON-like Build Tool.txt
+2. Glob matching - Gmarik Info, accessed December 19, 2025, https://www.gmarik.info/blog/2020/understanding-glob-matching/
+3. Fraunhofer-AISEC/cpg: A library to extract Code Property Graphs from C/C++, Java, Go, Python, Ruby and every other language through LLVM-IR. - GitHub, accessed December 19, 2025, https://github.com/Fraunhofer-AISEC/cpg
+4. launch app, capture stdout and stderr in c++ - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/300669/launch-app-capture-stdout-and-stderr-in-c
+5. Capturing stdout and stderr of a child process in C++ : r/cpp_questions - Reddit, accessed December 19, 2025, https://www.reddit.com/r/cpp_questions/comments/lsnj98/capturing_stdout_and_stderr_of_a_child_process_in/
+6. How to execute a command and get return code stdout and stderr of command in C++, accessed December 19, 2025, https://stackoverflow.com/questions/52164723/how-to-execute-a-command-and-get-return-code-stdout-and-stderr-of-command-in-c

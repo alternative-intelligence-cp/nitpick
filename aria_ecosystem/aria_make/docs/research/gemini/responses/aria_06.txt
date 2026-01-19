@@ -1,0 +1,359 @@
+﻿Architectural Specification: Import Alias Configuration Support and Module Resolution Strategy for the Aria Toolchain
+1. Executive Summary and Strategic Context
+The evolution of the Aria programming language ecosystem, specifically as it accelerates toward the pivotal v0.1.0 milestone, necessitates a fundamental paradigm shift in its approach to dependency management and build infrastructure. As the language specification hardens—incorporating advanced primitives such as Twisted Balanced Binary (TBB) arithmetic, a hybrid memory model capable of managing both garbage-collected and manual allocation, and a rigorous module system 1—the supporting tooling must evolve from experimental prototypes to enterprise-grade robustness. A critical, yet often underestimated, component of this infrastructure is the mechanism by which logical code units, or modules, are resolved from abstract identifiers into concrete filesystem artifacts.
+In the nascent stages of systems programming languages, dependency resolution was frequently delegated to the preprocessor (as evidenced by the C/C++ #include directive) or managed via ad-hoc compiler flags and environment variables. While functional for small-scale projects, these legacy approaches introduce significant fragility into the software development lifecycle. They spawn the notorious "include hell," lead to slow compilation times due to redundant parsing, and enforce a rigid coupling between the source code's import statements and the physical layout of the directory structure on disk. Modern software engineering practices, characterized by massive monorepos and micro-service architectures, demand a higher level of abstraction. Developers require the capability to define "logical paths"—aliases—that decouple the import syntax from the underlying disk layout, thereby enabling large-scale refactoring, modular code sharing, and hermetic build reproducibility without necessitating invasive modifications to source files.
+This report articulates the comprehensive architectural specification for Import Alias Configuration Support within the Aria toolchain. It rigorously defines the grammar and semantics of the configuration schema, manifested in the aria.json or build.aria manifests.1 It details the algorithmic logic of the Aria Module Resolution Strategy (AMRS), ensuring deterministic behavior across the entire toolchain. Furthermore, it specifies the implementation details for integrating this logic into the AriaBuild system, the ariac compiler driver, and the AriaLS language server, leveraging the concurrency models 1 and I/O topologies 1 unique to the Aria runtime.
+The architecture proposed herein adheres strictly to the "Configuration as Data" philosophy espoused in the AriaBuild design documents.1 By treating module resolution configuration as a structured, type-safe data model rather than imperative script logic, we ensure that the resolution process is deterministic, hermetic, and highly performant. The introduction of a centralized import_aliases map, combined with a prioritized search path strategy, aims to eliminate the ambiguity of relative imports in deep directory structures and provide a robust foundation for the future Aria package management ecosystem.
+2. The Imperative for Logical Aliasing in Systems Programming
+To fully appreciate the architectural necessity of import aliasing, one must first analyze the limitations of purely physical (relative) imports in the context of large-scale software engineering, and how these limitations undermine the goals of safety and maintainability that Aria strives to uphold.
+2.1 The Fragility of Physical Path Resolution
+In a standard file-system-based module system, imports are resolved relative to the location of the importing file. This model, inherited from early UNIX utilities, functions adequately for flat directory structures. However, as complexity increases, the directory tree inevitably deepens. Consider a typical enterprise application structure where a feature handler is deeply nested:
+src/
+features/
+authentication/
+oauth2/
+handlers/
+login_handler.aria
+shared/
+infrastructure/
+logging/
+logger.aria
+Without an aliasing mechanism, login_handler.aria is forced to import the logger using a relative path that traverses up and down the directory tree:
+
+
+Code snippet
+
+
+
+
+use "../../../../shared/infrastructure/logging/logger.aria";
+
+This syntax represents a "leaky abstraction." The login_handler.aria file now possesses intimate knowledge of the project's directory structure far beyond its own scope. This coupling introduces extreme fragility. If the shared directory is refactored—perhaps moving logging to a core directory—or if the login_handler itself is moved, the import statement breaks. This fragility discourages necessary architectural refactoring, leading to "code rot" where developers fear moving files lest they trigger a cascade of build failures. Furthermore, visually parsing ../../../../ imposes a high cognitive load on the developer, obscuring the semantic intent of the dependency.
+2.2 The "Logical Path" Abstraction
+Import aliasing introduces a necessary layer of indirection between the intent (the module required) and the mechanism (the file path). Instead of traversing the directory tree manually, the developer defines a mapping in the project configuration:
+
+
+JSON
+
+
+
+
+"import_aliases": {
+   "infra": "src/shared/infrastructure"
+}
+
+The import statement is thus transformed into a logical declaration:
+
+
+Code snippet
+
+
+
+
+use infra.logging.logger;
+
+This logical path is invariant to the location of the consumer. The resolution logic is centralized in the configuration file, meaning a structural change to the project layout requires a single update in aria.json or build.aria, rather than a search-and-replace operation across hundreds of source files. This separation of concerns—logical dependency versus physical location—is a hallmark of modern tooling (seen in TypeScript's paths, Rust's Cargo.toml, and Go's go.mod) and is essential for Aria's goal of supporting enterprise-scale monorepos.1 It allows the codebase to describe what it needs, leaving the where to the build system.
+2.3 Determinism and Hermeticity in Builds
+AriaBuild aims for hermetic builds, a property where the output of the build process is solely a function of the declared inputs, independent of the host environment.1 Relying on ambient environment variables (like PYTHONPATH or C_INCLUDE_PATH) to solve the path resolution problem introduces non-determinism. A build might succeed on a developer's machine where ARIA_PATH is set correctly but fail in a CI/CD environment where it is missing or different.
+By explicitly defining import aliases and source roots within the project's version-controlled configuration file (aria.json), we ensure that the resolution context is sealed within the project boundary. The ModuleResolver does not need to guess where libraries are; it is explicitly told via the manifest. This guarantees consistent behavior across diverse environments—Linux, Windows, and macOS—regardless of the underlying filesystem specifics. Furthermore, this explicitness aligns with Aria's philosophy of safety; just as the language enforces memory safety via the Borrow Checker 1, the build system enforces "Dependency Safety" via explicit configuration.
+3. Configuration Schema: The aria.json Manifest
+The entry point for the Alias Configuration Support is the project manifest. While the AriaBuild system utilizes build.aria for defining compilation targets and dependency graphs 1, the module resolution configuration is best situated within a declarative project metadata file, typically named aria.json or aria.toml. This architectural separation allows tools that do not require the full build logic (such as simple linters, documentation generators, or the Model Context Protocol server) to resolve modules without parsing the complexity of build targets.
+3.1 The Schema Definition
+The configuration injects a build object containing specific resolution directives. The schema is designed to be a strict subset of JSON to ensure fast, zero-copy parsing, but remains compatible with the JSON-derivative syntax (ABC) used elsewhere in the ecosystem.1
+
+
+JSON
+
+
+
+
+{
+ "project": {
+   "name": "HyperionServer",
+   "version": "0.1.0",
+   "authors": ["Architect <arch@aria-lang.org>"]
+ },
+ "build": {
+   "source_path": ["src", "lib"],
+   "entry_point": "src/main.aria",
+   "import_aliases": {
+     "utils": "src/shared/utilities",
+     "crypto": "vendor/optimized-crypto",
+     "math": "lib/math_v2"
+   },
+   "exclusions": ["tests", "docs"]
+ }
+}
+
+3.2 Field Specifications and Semantics
+3.2.1 source_path
+This field is an ordered list of strings representing the "Root Directories" for source discovery.
+* Type: Array<String>
+* Semantics: When resolving a non-aliased, logical import (e.g., use network.http;), the resolver iterates through these directories in the order defined. It checks src/network/http first, and if not found, checks lib/network/http.
+* Priority: The order defines precedence. This allows for "shadowing," where a local implementation in src can override a default library implementation in lib. This capability is crucial for hot-patching libraries or mocking dependencies during testing without changing the import statements in the source code.
+3.2.2 import_aliases
+This map is the core of the configuration support, defining the logical-to-physical mappings.
+* Type: Map<String, String>
+* Key: The logical prefix used in the use statement (e.g., "utils"). This key must be a valid Aria identifier to ensure syntactical compatibility with the use keyword.
+* Value: The physical path relative to the project root (e.g., "src/shared/utilities").
+* Resolution Rule: The matching is prefix-based. An import use utils.string; triggers the resolver to look up utils, replace it with src/shared/utilities, and append the remainder, resulting in src/shared/utilities/string.aria (or the mod.aria equivalent). The resolver handles the directory separators intelligently, ensuring that a trailing slash in the config or the lack thereof does not break resolution.
+3.2.3 entry_point
+While primarily used by the compiler driver to identify the root of the dependency graph, this field establishes the "Project Root" context for the resolver. All relative paths in source_path and import_aliases are resolved relative to the directory containing the manifest that defines this entry point. This anchor point is critical for monorepos where multiple sub-projects might exist; each aria.json defines a local root for its own resolution context.
+3.3 Syntactic Consistency and the ABC Format
+The syntax used in aria.json deliberately aligns with the Aria Build Configuration (ABC) format described in the AriaBuild architectural specification.1 The ABC format is a JSON-derivative that supports unquoted keys if they are valid identifiers, trailing commas, and comments (//).
+* Standard JSON: "source_dir": "src"
+* ABC Syntax: source_dir: "src"
+This consistency significantly reduces the cognitive load on developers. They do not need to switch mental models between writing Aria source code, writing build targets in build.aria, and defining configuration in aria.json. The parser implementation for aria.json can reuse the ConfigParser and LexerAdapter developed for AriaBuild 1, ensuring that features like variable interpolation (&{VAR}) are available in the configuration file as well. For instance, an alias could technically be defined as "libs": "&{ENV.HOME}/aria_libs", allowing for environment-dependent pathing, though this is generally discouraged in favor of hermetic, relative paths.
+4. The Aria Module Resolution Strategy (AMRS)
+With the configuration schema defined, we must rigorously specify the algorithmic logic that transforms a logical import string into a canonical filesystem path. This algorithm, the Aria Module Resolution Strategy (AMRS), serves as the "law" of the ecosystem. It must be implemented identically across all tools in the chain—ariac (the compiler), aria_make (the build system), and aria-ls (the language server)—to prevent the frustrating "works in editor, fails in build" class of discrepancies.
+4.1 Input and Normalization
+The resolution function accepts three primary inputs:
+* import_string: The identifier found in the source code (e.g., std.io or utils.logger).
+* requesting_file: The absolute path of the file containing the import statement.
+* config: The parsed aria.json configuration object.
+Step 1: Path Normalization
+Before any filesystem operations are attempted, the import_string must be normalized.
+* Separator Unification: The logical separator . used in Aria imports is replaced with the operating system's native directory separator (/ on POSIX systems like Linux and macOS, \ on Windows). This ensures cross-platform compatibility without requiring conditional logic in the resolver itself.
+* Sanitization: The path is rigorously scanned for directory traversal attempts. Any logical path containing contiguous dots that resolve to parent directories (e.g., ..) must be validated to ensure it does not escape the project root sandbox. While relative imports (use "../utils") are permitted, logical aliased imports (use utils.logger) should generally effectively jail the resolution to within the source tree.
+4.2 The Resolution Pipeline
+The AMRS proceeds in a prioritized sequence of "Probes." This multi-tiered approach allows for flexibility while imposing a strict, predictable order of precedence.
+Phase 1: Alias Resolution
+The resolver first checks the import_aliases map defined in the configuration.
+1. Tokenize the import_string by the first separator. For an import use utils.logger;, the prefix token is utils.
+2. Look up this prefix in the alias map.
+3. Hit: If the prefix is found (e.g., utils maps to src/shared/utilities), the prefix is replaced. The new search path becomes src/shared/utilities/logger. Crucially, the search context switches to the Project Root, ignoring the location of the requesting_file.
+4. Miss: If the prefix is not found in the map, the import is treated as a standard path, subject to relative or source-root resolution.
+Phase 2: Root Anchoring
+If the import was not aliased, the resolver determines the physical base directories to search.
+* Relative Imports: If the import string starts with ./ or ../ (which is only possible in the string literal form use "./local.aria"), the anchor is strictly the directory containing the requesting_file.
+* Logical Imports: If the import is a logical identifier (e.g., std.io) that was not aliased, the anchors are derived from the source_path list in aria.json. The resolver will construct candidate paths by appending the import path to each entry in source_path. Additionally, system-wide paths defined in environment variables (e.g., ARIA_PATH) or standard system locations (/usr/lib/aria) are appended to the end of the list as a fallback.
+Phase 3: The Probe Loop (File vs. Directory)
+For each candidate path $P$ constructed from an anchor and the resolved import path, the AMRS performs a check for distinct module patterns. The Aria ecosystem prioritizes the "File Module" over the "Directory Module" to match conventions seen in modern systems languages like Rust.1
+Probe A: The File Module
+Construct path $P_{file} = P + ".aria"$.
+* Check if $P_{file}$ exists and is a regular file.
+* If yes, return $P_{file}$ as the resolved path.
+Probe B: The Directory Module
+Construct path $P_{dir} = P + "/mod.aria"$.
+* Check if $P_{dir}$ exists and is a regular file.
+* If yes, return $P_{dir}$ as the resolved path.
+Probe C: The Native Module (FFI)
+For interoperability and performance-critical extensions, the resolver may also check for compiled shared objects.
+* Construct path $P_{native} = P + ".so"(on Linux),.dll(on Windows), or.dylib` (on macOS).
+* This probe is typically reserved for extern blocks or specialized standard library components that wrap C/C++ libraries.
+4.3 Pseudocode Logic
+To illustrate the algorithm, we provide the following pseudocode representation:
+
+
+C++
+
+
+
+
+path resolve(string import_str, path current_file, Config config) {
+   // 1. Alias Expansion
+   string logical_path = import_str;
+   for (auto& [alias, real_path] : config.aliases) {
+       if (import_str.starts_with(alias)) {
+           // Replace the alias prefix with the physical path
+           logical_path = import_str.replace(alias, real_path);
+           break; // Stop at first match (longest prefix match logic could be applied here)
+       }
+   }
+
+   // 2. Determine Search Roots
+   vector<path> roots;
+   if (is_relative(logical_path)) {
+       roots.push_back(current_file.parent_path());
+   } else {
+       for (auto& src : config.source_paths) roots.push_back(project_root / src);
+       roots.push_back(system_lib_path);
+   }
+
+   // 3. Probing
+   for (auto& root : roots) {
+       path candidate = root / logical_path;
+       
+       // Probe A: file.aria (Direct file module)
+       path file_mod = candidate;
+       file_mod.replace_extension(".aria");
+       if (exists(file_mod)) return canonical(file_mod);
+
+       // Probe B: file/mod.aria (Directory module)
+       path dir_mod = candidate / "mod.aria";
+       if (exists(dir_mod)) return canonical(dir_mod);
+   }
+
+   throw ModuleNotFoundException(import_str);
+}
+
+4.4 Caching and Performance Considerations
+Filesystem operations such as stat and open are notoriously expensive due to context switching and disk I/O. In a large project with thousands of imports, naive resolution can dominate the build time. The AMRS mandates the implementation of a StatCache.
+* Mechanism: The AriaBuild system scans the directory tree once at startup, typically during the Globbing phase 1, and populates an in-memory tree representing the existing files.
+* Optimization: The exists() checks in the probe loop query this in-memory structure (a std::unordered_set of paths or a trie) rather than hitting the disk for every import.
+* Invalidation: For the Language Server, which runs continuously, the cache must be kept consistent. This is achieved via file-watchers (e.g., inotify on Linux, ReadDirectoryChangesW on Windows) that trigger cache updates when files are created, deleted, or moved.
+5. Integration with AriaBuild (The Build System)
+AriaBuild (internally designated as aria_make) is the orchestrator of the compilation process. Its correct adoption of the Alias Configuration is critical for the accurate construction of the Dependency Graph.
+5.1 The DependencyScanner and Alias Awareness
+AriaBuild operates under a constraint where invoking the full compiler frontend for every file to discover dependencies is prohibitively slow.1 Instead, it employs a lightweight DependencyScanner—a specialized lexer that parses only enough syntax to identify use statements.
+* Integration: The DependencyScanner must be made "Alias-Aware." It consumes the aria.json configuration at startup. When it encounters a statement like use utils.logger;, it invokes the AMRS logic to resolve this string to src/shared/utils/logger.aria.
+* Graph Construction: This resolved absolute path becomes a node in the Directed Acyclic Graph (DAG). If the alias configuration is incorrect, or the file does not exist, the scanner fails to locate the dependency. The build system then reports a configuration error immediately, halting the build before the expensive compilation phase begins. This "fail-fast" behavior is essential for developer feedback.
+5.2 Implicit Include Flag Generation
+Once the dependency graph is constructed, AriaBuild must construct the command line arguments for the ariac compiler. While the build system resolves aliases internally to build the graph, the compiler itself also needs to understand these mappings to perform Type Checking and Semantic Analysis.
+AriaBuild converts the import_aliases into compiler flags.
+* Strategy A (Include Paths): If utils maps to src/shared/utilities, AriaBuild could append -I src/shared/utilities to the compiler command. The compiler would then find logger.aria inside it. However, this approach loses the namespace prefix; the compiler sees logger instead of utils.logger.
+* Strategy B (Module Map - Recommended): A more robust approach involves generating a temporary module_map.json file during the build. This file contains the resolved alias mappings and is passed to the compiler via a flag like --module-map=build/module_map.json. This allows the compiler to maintain the strict logical namespacing (the user code sees utils.logger, not shared.utilities.logger) while knowing exactly where the file resides on disk. This strategy aligns with the "explicit is better than implicit" philosophy.
+5.3 Cycle Detection with Aliases
+Aliases can inadvertently create circular dependencies if they cross-reference each other's roots or if the underlying physical structure contains cycles. The Cycle Detector, which utilizes a Tri-color Depth First Search (DFS) algorithm 1, operates on the resolved absolute paths.
+* Scenario: Alias A points to dir1 and alias B points to dir2. dir1/mod.aria imports alias B. dir2/mod.aria imports alias A.
+* Detection: The graph engine resolves these imports to absolute paths. It detects the cycle $P_{dir1} \to P_{dir2} \to P_{dir1}$.
+* Reporting: Crucially, the error report should reference the logical aliases to help the user debug: "Circular dependency detected: Module 'utils' imports 'core', which imports 'utils'."
+6. Integration with the Compiler Driver (ariac)
+The ariac compiler is the ultimate consumer of the source code. It must natively understand aliases to perform semantic analysis, symbol resolution, and code generation.
+6.1 The ModuleLoader Subsystem
+Inside the compiler, the ModuleLoader class is responsible for loading, parsing, and verifying module files.
+* Configuration: The compiler accepts the alias configuration. This can be passed via command-line flags (e.g., --alias utils=src/shared/utils) generated by AriaBuild, or by the compiler automatically locating and parsing aria.json in the working directory if no flags are provided.
+* Symbol Table: When use utils.logger is parsed, the compiler creates a symbol utils in the current scope. This symbol is bound to the logger module. The ModuleLoader uses the AMRS to load the file, parse it, and attach the resulting Abstract Syntax Tree (AST) to the utils symbol.
+6.2 Error Reporting and Suggestions
+When an alias cannot be resolved, ariac provides rich, actionable diagnostics.
+* Error: "Module 'utils.logger' not found."
+* Context: "The alias 'utils' is defined as 'src/shared/utilities'. Searched for 'src/shared/utilities/logger.aria' and 'src/shared/utilities/logger/mod.aria'. Both are missing."
+* Suggestion: The compiler employs Levenshtein distance algorithms on the file listing of the aliased directory. If the user typed utils.loger, the compiler suggests: "Did you mean 'utils.logger'?" This developer-centric feature drastically reduces debugging time for typos.
+7. Integration with AriaLS (Language Server)
+The Developer Experience (DX) hinges on the Language Server Protocol (LSP). If the editor cannot resolve aliases, features like "Go to Definition," "Hover," and "Autocomplete" fail, breaking the "Intelligence" of the IDE.1
+7.1 Shared Resolution Logic
+AriaLS must link against the exact same ModuleResolver C++ code as ariac and AriaBuild. Code duplication here is fatal; if the Language Server resolves differently than the compiler (e.g., one follows symlinks and the other doesn't), the editor will show false positive errors ("red squiggles") on valid imports, or fail to show errors on invalid ones.
+7.2 The compile_commands.json Bridge
+AriaBuild generates a compile_commands.json file as a byproduct of the build.1 This standard file contains the exact commands used to compile each unit.
+* LSP Initialization: When AriaLS starts, it reads compile_commands.json.
+* Context Extraction: It extracts the -I flags and --module-map arguments for each file from this database.
+* Per-File Configuration: This allows the LSP to understand the specific build context for every file. For src/main.aria, it knows that the alias utils resolves to src/shared/utils.
+* Dynamic Updates: When aria.json is modified, the LSP receives a workspace/didChangeConfiguration or file watch event. It triggers a re-scan of the configuration and flushes its resolution cache. This ensures that changes to aliases are reflected immediately in the editor without requiring a restart.
+7.3 Autocompletion for Aliases
+When the user types use u, AriaLS triggers its completion logic:
+1. It scans the import_aliases keys in aria.json (e.g., finds utils).
+2. It suggests utils as a completion item.
+3. Upon selection (use utils.), the LSP uses the alias mapping to scan the directory mapped to utils (src/shared/utilities).
+4. It suggests files within that directory (logger, string, math).
+This "IntelliSense" relies entirely on the AMRS to bridge the gap between the logical string utils and the physical directory listing, providing a seamless editing experience.
+8. C++ Implementation Specifications
+To realize this architecture, specific C++ structures and algorithms are required. The implementation leverages C++17 std::filesystem for portability and performance.
+8.1 Data Structures
+The configuration data is modeled as C++ structs to ensure type safety and ease of manipulation.
+
+
+C++
+
+
+
+
+// include/build/config.h
+namespace aria::build {
+
+   // Represents a single alias mapping
+   struct AliasConfig {
+       std::string logical_prefix;          // e.g., "utils"
+       std::filesystem::path physical_path; // e.g., "src/shared/utils"
+   };
+
+   // Represents the resolved configuration from aria.json
+   struct BuildConfig {
+       std::vector<std::filesystem::path> source_roots;
+       std::vector<AliasConfig> aliases;
+       std::filesystem::path entry_point;
+   };
+
+}
+
+8.2 The Resolver Class
+The ModuleResolver class encapsulates the logic. Note the use of std::optional to handle the failure case gracefully without exceptions in non-exceptional control flows.
+
+
+C++
+
+
+
+
+// src/resolve/module_resolver.cpp
+#include "resolve/module_resolver.h"
+#include <filesystem>
+#include <iostream>
+
+namespace fs = std::filesystem;
+
+namespace aria::resolve {
+
+   std::optional<fs::path> ModuleResolver::resolve(
+       const std::string& logical_path, 
+       const fs::path& context_dir
+   ) {
+       // 1. Alias Expansion Phase
+       std::string resolved_prefix = logical_path;
+       for (const auto& alias : config_.aliases) {
+           // Check if the logical path starts with the alias key
+           if (logical_path.rfind(alias.logical_prefix, 0) == 0) { 
+               // Extract the remainder of the path
+               std::string remainder = logical_path.substr(alias.logical_prefix.length());
+               // Handle optional dot separator after alias
+               if (remainder.rfind(".", 0) == 0) remainder = remainder.substr(1);
+               
+               // Construct physical path by joining the alias destination with the remainder
+               fs::path result = alias.physical_path / convert_dots_to_separators(remainder);
+               // Attempt to probe this path
+               return probe(result);
+           }
+       }
+
+       // 2. Standard Search Phase (for non-aliased imports)
+       //... (Iterate source_roots and probe relative to them)
+   }
+
+   std::optional<fs::path> ModuleResolver::probe(const fs::path& base_path) {
+       // Probe A: file.aria
+       fs::path file_candidate = base_path;
+       file_candidate.replace_extension(".aria");
+       // Check cache before hitting disk
+       if (cache_.exists(file_candidate)) return fs::canonical(file_candidate);
+
+       // Probe B: file/mod.aria
+       fs::path dir_candidate = base_path / "mod.aria";
+       if (cache_.exists(dir_candidate)) return fs::canonical(dir_candidate);
+
+       return std::nullopt;
+   }
+}
+
+8.3 Globs and Aliases
+The interaction between globbing (supported by AriaBuild 1) and aliases allows for powerful build definitions.
+   * Target Definition: sources: ["&{utils}/**/*.aria"]
+   * Expansion: The parser first interpolates the variable &{utils} (which refers to the alias path) and then the Glob Engine expands the **/*.aria pattern relative to that physical path. This integration ensures that build targets can utilize the same logical abstractions as the source code, maintaining consistency across the project.
+9. Advanced Topics and Edge Cases
+9.1 Symlinks and Security
+In a build system, traversing symbolic links presents risks, including infinite loops (cycles) and escaping the build sandbox (referencing /etc/passwd).
+   * Policy: The ModuleResolver utilizes fs::canonical to resolve paths, which automatically resolves symlinks. However, a post-resolution check is mandatory. The resolver must verify that the final resolved path lies within the project_root or an explicitly whitelisted vendor directory.
+   * Attack Vector: A malicious alias definition like "pwn": "../../../../etc" could allow use pwn.passwd to read sensitive system files.
+   * Mitigation: The "Sandbox Check". After resolution, if (!is_subpath(resolved_path, project_root)) throw SecurityException;. This ensures hermeticity and security.
+9.2 Case Sensitivity
+File systems vary significantly in case sensitivity behavior. Linux (ext4) is case-sensitive, while Windows (NTFS) and macOS (APFS) are typically case-preserving but case-insensitive.
+   * Issue: An import use utils.Logger might work on Windows (finding logger.aria) but fail on Linux (where Logger.aria!= logger.aria).
+   * Solution: Aria enforces strict case sensitivity matching the logical identifier to the filename. The resolver explicitly checks that the actual filename on disk matches the casing of the import segment.
+   * Implementation: On Windows, std::filesystem::exists is insufficient as it returns true for case mismatches. The resolver implementation on Windows must iterate the parent directory and compare the string entry.path().filename() with the requested name using strcmp, failing the resolution if they only differ by case. This guarantees portability of Aria codebases from Windows to Linux CI environments.
+9.3 "Shadowing" and Precedence
+A common scenario involves a conflict between an alias and a physical directory. If an alias net is defined in aria.json, and a top-level directory net also exists in src, which takes precedence?
+   * Rule: Explicit Aliases win. If import_aliases defines net, that definition overrides any implicit directory discovery in src.
+   * Rationale: This allows developers to "monkey-patch" or replace standard modules with custom implementations during builds. For example, a developer can swap the net alias to point to a mock implementation (test/mocks/net) during the testing phase without changing the source code that imports net.
+10. Conclusion
+The architecture defined in this report elevates the Aria build ecosystem from a simple file compiler to a sophisticated project orchestrator. By introducing a formal Import Alias Configuration schema within aria.json and implementing the rigorously defined Aria Module Resolution Strategy (AMRS), we solve the critical problems of path fragility and project organization that plague growing codebases.
+This system provides three key benefits:
+   1. Refactoring Safety: Code can be moved and reorganized without breaking imports, reducing technical debt.
+   2. Deterministic Builds: Resolution is explicit, hermetic, and independent of the user's environment variables, ensuring reliability.
+   3. Tooling Synergy: The shared resolution logic ensures that the compiler, build tool, and language server share a single source of truth, providing a consistent and polished Developer Experience (DX).
+The implementation of this specification in C++17, integrated into the existing AriaBuild and AriaLS components, will prepare the Aria language for its v0.1.0 release and subsequent adoption in enterprise-grade system software development.
+References (Integrated Context)
+   * AriaBuild Architecture: The underlying JSON-derivative parsing, globbing, and toolchain orchestration are detailed in the foundational AriaBuild specification.1
+   * Language Syntax: The reserved keywords use, mod, and pub form the basis of the module syntax.1
+   * Module Resolution: The specific logic for alias maps and probing (file vs directory) is derived from the "Architectural Specification: Aria Module Resolution and Dependency Management Strategy".1
+   * Kernel/Shell Context: While unrelated to aliases, the 6-stream I/O model provides the runtime environment in which these modules execute.1
+   * LSP Integration: The thread-pool architecture of AriaLS provides the concurrency model required to perform these path resolutions without blocking the editor UI.1
+Works cited
+   1. rcfull.txt

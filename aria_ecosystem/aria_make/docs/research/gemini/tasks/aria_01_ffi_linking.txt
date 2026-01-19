@@ -1,0 +1,49 @@
+FFI Linking Architecture Enhancement for aria_make
+
+PRIORITY: HIGH
+STATUS: Partially Covered
+SOURCE: gem4_04.txt, Verification Chunks 4-5
+
+PROBLEM:
+The ToolchainOrchestrator lacks comprehensive Foreign Function Interface (FFI) support for linking external C/C++ libraries. Required for libcurl integration (package manager dependency).
+
+REQUIREMENTS:
+1. Extend Target schema with:
+   - libraries: vector<string> (e.g., ["curl", "ssl", "pthread"])
+   - library_paths: vector<string> (e.g., ["/usr/local/lib"])
+
+2. Platform-specific flag generation:
+   - Linux: -L/path -lcurl
+   - Windows: /LIBPATH:path curl.lib
+
+3. Transitive library propagation:
+   - If App depends on LibA, and LibA depends on libcurl, App must automatically receive -lcurl
+
+IMPLEMENTATION TASKS:
+- [ ] Update src/build/target.h struct with libraries and library_paths fields
+- [ ] Update ABC parser to read new fields from aria.json
+- [ ] Implement platform detection (Linux/Windows/macOS)
+- [ ] Create construct_link_cmd() separate from construct_compile_cmd()
+- [ ] Add ELF vs PE/COFF linking logic
+- [ ] Implement recursive library collection from dependency graph
+- [ ] Add library ordering logic (reverse topological for static linking)
+
+FILES TO MODIFY:
+- include/build/target.h
+- src/build/toolchain.cpp (ToolchainOrchestrator)
+- src/parse/abc_parser.cpp
+- docs/info/plan/40_EXECUTION_ENGINE.md (add FFI section)
+
+RESEARCH REFERENCE:
+gem4_04.txt provides complete architectural specification including:
+- Symbol resolution mechanics
+- CRT initialization requirements
+- Import library handling (Windows)
+- -rpath for runtime library discovery
+
+ACCEPTANCE CRITERIA:
+- Can link against libcurl for HTTP requests
+- Can link against libm for math functions
+- Can link against libpthread for threading
+- Works on Linux and Windows without manual flag injection
+- Transitive libraries propagate automatically

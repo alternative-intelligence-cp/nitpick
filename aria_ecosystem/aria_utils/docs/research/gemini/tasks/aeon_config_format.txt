@@ -1,0 +1,528 @@
+# ÆΘИ: Aria Explicit Object Notation
+*Configuration Format Design - December 23, 2025*
+
+## Name
+
+**ÆΘИ** = **Aria Explicit Object Notation** (pronounced "aeon")
+
+The name works on multiple levels:
+- **Explicit** captures the design philosophy (literal by default)
+- **ÆΘИ** sounds futuristic/timeless
+- Acronym is memorable and distinct from JSON/YAML/TOML
+- **Unicode characters filter lazy developers** - if you can't be bothered to type `ÆΘИ`, you won't appreciate the precision required by the format anyway (PRIN-010: Filters, Not Walls)
+- People who complain in comments literally can't type the name without effort - built-in troll filter
+
+## The Problem
+
+Current config formats have inconsistent escaping and interpolation rules:
+
+**JSON:**
+- Requires escaping quotes: `"path": "C:\\Users\\Name"`
+- No comments
+- No variables
+- Strict about trailing commas
+
+**YAML:**
+- Implicit types (numbers, booleans autodetected - can break)
+- Indentation-sensitive (invisible syntax)
+- Complex anchors/references
+- Security issues (arbitrary code execution)
+
+**TOML:**
+- Multiple string types (`"`, `'`, `"""`, `'''`)
+- Different escaping rules per type
+- Table syntax confusion
+
+**Environment/Shell Variable Syntax:**
+- `$var`, `${var}`, `${{var}}`, `@var` - every tool different
+- Escaping rules vary wildly
+
+## AEON Design Principles
+
+### 1. Literal by Default
+
+**Everything is literal text unless prefixed with `@`**
+
+```aeon
+# This is a literal path - no escaping needed
+install_path = /usr/local/bin
+windows_path = C:\Users\Randy\Documents
+
+# Spaces in values - still literal
+description = This is a description with spaces.
+
+# Special characters - still literal  
+regex_pattern = .*\.txt$
+email = user@domain.com
+```
+
+### 2. Single Prefix for All Special Behavior
+
+**`@` triggers interpolation/evaluation:**
+
+```aeon
+# Variable interpolation
+username = randy
+home = /home/@{username}
+
+# Expression evaluation  
+port = @eval{8000 + 80}
+version = @{major}.@{minor}.@{patch}
+
+# Environment variables
+log_path = @env{HOME}/logs
+
+# Literal @ sign (double it)
+email_pattern = @alpha+@@domain.com
+```
+
+### 3. Explicit Types
+
+**No implicit type conversion:**
+
+```aeon
+# Explicit type annotations
+port = @i32{8080}
+enabled = @bool{true}
+ratio = @f64{3.14159}
+
+# Without annotation, everything is string
+count = 42           # This is string "42"
+count = @i32{42}     # This is integer 42
+```
+
+### 4. Structured Comments
+
+**Comments can carry metadata:**
+
+```aeon
+#! Configuration for Aria Compiler
+#@ version: 2.0
+#@ author: randy
+
+# Regular comment
+install_path = /opt/aria
+
+#? This value controls optimization level (0-3)
+#? Higher values = longer compile, faster runtime
+opt_level = @i32{2}
+```
+
+## Full Syntax Specification
+
+### Basic Values
+
+```aeon
+# Strings (literal by default)
+name = Randy
+path = /home/randy/projects
+quote = He said "hello" and left.
+
+# Numbers (explicit type required)
+age = @i32{42}
+pi = @f64{3.14159}
+huge = @i64{9223372036854775807}
+
+# Booleans
+enabled = @bool{true}
+debug = @bool{false}
+
+# Null/None
+optional = @null
+```
+
+### Collections
+
+```aeon
+# Arrays (comma-separated, optional trailing comma)
+colors = [@str{red}, @str{green}, @str{blue}]
+ports = [@i32{80}, @i32{443}, @i32{8080}]
+
+# Multi-line arrays
+dependencies = [
+    @str{std},
+    @str{io},
+    @str{mem},
+]
+
+# Objects (nested configuration)
+database = {
+    host = localhost,
+    port = @i32{5432},
+    name = aria_db,
+    credentials = {
+        user = postgres,
+        pass = @env{DB_PASSWORD}
+    }
+}
+```
+
+### Interpolation
+
+```aeon
+# Variable reference
+base_path = /opt/aria
+bin_path = @{base_path}/bin
+lib_path = @{base_path}/lib
+
+# Expression evaluation
+base_port = @i32{8000}
+api_port = @eval{@{base_port} + 1}
+web_port = @eval{@{base_port} + 2}
+
+# Environment variables
+user_home = @env{HOME}
+config_dir = @env{XDG_CONFIG_HOME, /home/@env{USER}/.config}
+
+# Conditional values
+log_level = @if{@env{DEBUG}, verbose, info}
+```
+
+### Advanced Features
+
+```aeon
+# Includes (for splitting large configs)
+@include{./database.aeon}
+@include{./servers.aeon}
+
+# Templates/Macros
+@define{server_config, host, port} = {
+    address = @{host}:@{port},
+    timeout = @i32{30},
+    retry = @i32{3}
+}
+
+api_server = @{server_config, localhost, 8080}
+web_server = @{server_config, 0.0.0.0, 80}
+
+# Multi-line strings (heredoc style)
+sql_query = @text{
+    SELECT * FROM users
+    WHERE active = true
+    ORDER BY created_at DESC
+}
+
+# Raw strings (no interpolation even with @)
+regex = @raw{
+    @digit+\.@digit+\.@digit+
+}
+```
+
+## Comparison with Other Formats
+
+### Path Configuration
+
+**JSON (escape hell):**
+```json
+{
+  "path": "C:\\Users\\Randy\\Projects\\aria"
+}
+```
+
+**YAML (implicit):**
+```yaml
+path: C:\Users\Randy\Projects\aria  # Might parse as escape sequences
+```
+
+**AEON (clean):**
+```aeon
+path = C:\Users\Randy\Projects\aria
+```
+
+### Variable Interpolation
+
+**Shell/ENV:**
+```bash
+PATH=${HOME}/bin:${PATH}  # Works in bash
+PATH=%HOME%\bin;%PATH%    # Works in Windows
+```
+
+**AEON (universal):**
+```aeon
+path = @env{HOME}/bin:@env{PATH}
+```
+
+### Complex Configuration
+
+**YAML (implicit types, security risk):**
+```yaml
+server:
+  port: 8080  # Implicit integer
+  host: localhost
+  enabled: yes  # Implicit boolean
+  exec: !!python/object/apply:os.system ["rm -rf /"]  # DANGER
+```
+
+**AEON (explicit, safe):**
+```aeon
+server = {
+    port = @i32{8080},
+    host = localhost,
+    enabled = @bool{true}
+    # No code execution - only data
+}
+```
+
+## Implementation Strategy
+
+### Parser Stages
+
+1. **Lexer:**
+   - Tokenize into: identifiers, literals, `@` markers, `{`, `}`, `=`, `,`
+   - Comments are tokens (can extract for documentation)
+
+2. **Parser:**
+   - Default mode: everything is string literal
+   - `@` triggers special parsing:
+     - `@{name}` → variable lookup
+     - `@type{value}` → typed value
+     - `@func{args}` → function call
+     - `@@` → literal `@`
+
+3. **Evaluator:**
+   - Resolve variables
+   - Evaluate expressions
+   - Apply type conversions
+   - Handle includes/templates
+
+### Error Handling
+
+```aeon
+# Undefined variable
+path = @{UNDEFINED}
+# Error: Variable 'UNDEFINED' not found
+
+# Type mismatch  
+port = @i32{not_a_number}
+# Error: Cannot parse 'not_a_number' as i32
+
+# Circular reference
+a = @{b}
+b = @{a}
+# Error: Circular dependency detected: a → b → a
+```
+
+## Use Cases
+
+### Application Configuration
+
+```aeon
+#! Aria Compiler Configuration
+#@ version: 1.0
+
+compiler = {
+    target = x86_64-linux,
+    opt_level = @i32{2},
+    output = @{project_root}/build,
+    
+    flags = [
+        --emit-llvm,
+        --debug-info,
+    ]
+}
+
+runtime = {
+    gc_mode = incremental,
+    stack_size = @i32{8388608},  # 8MB
+    thread_pool = @eval{@env{CPU_COUNT, 4}}
+}
+```
+
+### Build System
+
+```aeon
+#! Build Configuration
+
+project = {
+    name = aria,
+    version = 0.1.0,
+    authors = [Randy]
+}
+
+targets = {
+    compiler = {
+        type = binary,
+        sources = [@{src_dir}/**/*.aria],
+        output = bin/ariac,
+        depends = [std, llvm]
+    },
+    
+    runtime = {
+        type = library,
+        sources = [@{runtime_dir}/**/*.c],
+        output = lib/libaria_runtime.a
+    }
+}
+```
+
+### Deployment Configuration
+
+```aeon
+#! Production Deployment
+
+environment = production
+
+database = {
+    host = @env{DB_HOST},
+    port = @i32{@env{DB_PORT, 5432}},
+    name = aria_prod,
+    ssl = @bool{true},
+    credentials = @file{/etc/secrets/db.creds}
+}
+
+servers = {
+    api = {
+        port = @i32{8080},
+        workers = @eval{@env{CPU_COUNT} * 2},
+        timeout = @i32{30}
+    },
+    
+    web = {
+        port = @i32{80},
+        static = /var/www/aria/public
+    }
+}
+
+logging = {
+    level = @if{@env{DEBUG}, debug, info},
+    output = @{log_dir}/aria.log,
+    rotation = daily
+}
+```
+
+## Philosophy Connection
+
+ÆΘИ embodies Aria's core principles:
+
+**Literal by Default:** Characters are characters until you say otherwise
+**Explicit Types:** No guessing about 42 vs "42"  
+**Single Escape Rule:** Only `@` triggers special behavior
+**Honest Syntax:** What you see is what you get
+
+**Same philosophy as:**
+- Prefix regex (`@digit` not `\d`)
+- Result types (errors explicit)
+- Semicolons (boundaries explicit)
+
+## File Extension
+
+`.aeon` for configuration files (lowercase ASCII for filesystem compatibility)
+
+```
+aria.aeon
+build.aeon
+deploy.aeon
+```
+
+**Why `.aeon` not `.æθи`?**
+Filesystems and tools already struggle with Unicode. We're being precise, not sadistic. The format name is ÆΘИ, the file extension is `.aeon`. This is honesty: filesystems have limitations, we acknowledge them.
+
+**More importantly:** People typing `.aeon` filenames are **users** - they're already aligned. They don't need to be filtered. The Unicode name ÆΘИ is for **drive-by critics** who:
+- Spend 5 minutes looking at the format
+- Decide it doesn't look enough like JSON/YAML
+- Start bitching in comments/forums
+- Want you to change it to match their favorite format
+- Won't actually use it, just complain
+
+**These people can't even type ÆΘИ without opening a character map.** Built-in troll filter.
+
+## Future Enhancements
+
+1. **Schema validation:**
+   ```aeon
+   @schema{
+       port: @i32{@range{1, 65535}},
+       host: @str{@pattern{@domain}}
+   }
+   ```
+
+2. **Encryption markers:**
+   ```aeon
+   api_key = @encrypted{base64_encrypted_value}
+   ```
+
+3. **Remote values:**
+   ```aeon
+   secret = @vault{production/api_key}
+   config = @url{https://config.example.com/app.aeon}
+   ```
+
+## The Ultimate Filter
+
+Naming it **ÆΘИ** instead of AEON is intentional trolling that serves a purpose:
+
+### The Target: Drive-By Critics
+
+**Not filtering users.** Users type `.aeon` and get to work. They're already aligned.
+
+**Filtering critics** who:
+1. Spend 5 minutes looking at ÆΘИ
+2. "This doesn't look like JSON/YAML/my-favorite-thing"
+3. Start posting complaints: "Why not just use TOML?"
+4. Demand you change it to match their preferences
+5. **Won't actually use it** - just want you to make it familiar
+
+**These people literally can't type ÆΘИ in their complaints without effort.**
+
+### The Beautiful Irony
+
+**Drive-by critic:** "ÆΘИ is too complicated, just use YAML!"
+
+**Reality check:**
+- Too lazy to type `ÆΘИ` (open character map once)
+- Too lazy to learn new syntax (explicit over implicit)
+- Too lazy to improve their own favorite format (want you to do it)
+- **Not lazy enough to stop complaining**
+
+**The name itself demonstrates the problem:** You want the benefits of precision but won't put in minimal effort.
+
+### Why This Works
+
+**Response to "Why the Unicode?"**
+
+Simple: **If you won't open a character map to type the name, you won't:**
+- Read the documentation carefully
+- Understand explicit type annotations (`@i32{8080}`)
+- Appreciate literal-by-default philosophy
+- Value correctness over familiarity
+
+**You're not our audience.** And now you've self-selected out before wasting anyone's time.
+
+### The Real Users
+
+**People actually using ÆΘИ:**
+- Type `ÆΘИ` once to read about it
+- Create editor snippet if they reference it often
+- Type `.aeon` for filenames (practical)
+- Focus on building, not complaining
+- **Don't care about the Unicode** because they're focused on the value
+
+**These are the people we're building for.**
+
+### PRIN-010 in Action
+
+**Filters, Not Walls:** The Unicode name is a filter for:
+- Drive-by critics who won't use it anyway
+- Lazy demanders who want you to make it like their favorite
+- Comment trolls who complain without understanding
+- People who value convenience over correctness
+
+**It's not elitism. It's efficiency.** Why waste time arguing with people who were never going to use it?
+
+### The Kicker
+
+**They can't even properly complain:**
+
+❌ "ÆΘИ is stupid, just use YAML"  
+✅ "AEON is stupid, just use YAML"  
+(typed ASCII because too lazy for Unicode)
+
+**You've been filtered. Working as intended.**
+
+---
+
+*Configuration format that doesn't make you escape reality.*
+
+*Also: Configuration format whose name you can't type if you're lazy.*
+
+*If that offends you, ÆΘИ isn't for you. And that's working as intended.*

@@ -1,0 +1,420 @@
+﻿Architectural Specification: Implementation of the Clean Lifecycle Target in AriaBuild Infrastructure
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language ecosystem towards its version 0.1.0 milestone demands a fundamental re-engineering of its supporting infrastructure. As the language specification crystallizes—incorporating advanced features such as twisted balanced binary (TBB) arithmetic, optional types with strict NIL semantics, and a sophisticated module system—the tooling responsible for orchestrating these components must evolve in tandem. The current reliance on legacy build automation paradigms, typified by imperative Makefiles or shell scripts, has been identified as a critical bottleneck in the scalability and reliability of the ecosystem.
+The introduction of aria_make (AriaBuild), a declarative, whitespace-insensitive build system, represents the strategic response to this challenge. Central to the architecture of AriaBuild is the requirement for a rigorous, high-performance execution engine capable of orchestrating the Aria compiler (ariac) and the LLVM interpreter (lli). In the "Configuration as Data" model adopted by AriaBuild, the build tool functions as a meta-driver. It does not perform compilation logic itself; rather, it manages a massive, dynamic Directed Acyclic Graph (DAG) of dependencies, scheduling the invocation of external toolchain binaries to transform source artifacts into intermediate representations and final executables.
+However, recent architectural audits of the AriaBuild system have uncovered a significant operational deficiency: the absence of a standardized, automated lifecycle mechanism for artifact removal. The current implementation excels at the constructive phase of the software lifecycle—generating .ll bitcode and binaries—but entirely neglects the destructive phase. This asymmetry has led to a condition defined as "build directory pollution," where stale artifacts, orphaned object files, and desynchronized dependency hashes accumulate in output directories.
+This pollution is not merely a matter of hygiene; it constitutes a severe technical debt that manifests in two primary failure modes:
+1. Globbing Errors: The build system’s recursive file discovery logic inadvertently indexes stale binaries or intermediate files as valid source inputs, leading to linker symbol collisions or undefined runtime behavior.
+2. Stale Link Inputs: Modifications to target names or configurations in the aria.json file do not propagate to the physical filesystem, causing the linker to consume obsolete object files that mask compilation errors or introduce regression bugs.
+This report presents an exhaustive architectural specification and implementation strategy for integrating a clean Lifecycle Target into the AriaBuild system. It details the extension of the BuildScheduler class to support destructive operations, the implementation of a rigorous clean_target(Target* t) primitive using C++17 std::filesystem capabilities, and the critical synchronization logic required to purge associated metadata from the persistent .aria_build_state.
+By elevating the "Clean" operation from a user-defined script to a first-class citizen of the build tool's internal logic, this specification ensures that the Aria developer experience aligns with modern industry standards exemplified by Cargo, Go, and Ninja. This enhancement guarantees that the build environment remains frictionless, deterministic, and safe, fulfilling the mandate for a robust systems programming infrastructure.
+2. Architectural Analysis of the Current Artifact Lifecycle
+To engineer a robust removal system, one must first rigorously analyze how artifacts are currently generated, tracked, and stored within the AriaBuild ecosystem. The current architecture relies on a Directed Acyclic Graph (DAG) to model dependencies, but this model is currently uni-directional, optimized solely for creation.
+2.1 The Constructive Dependency Graph (DAG)
+AriaBuild operates on a Dependency Graph Engine where nodes ($V$) represent entities such as source files (.aria), intermediate artifacts (.ll), and final targets (executables/libraries). The edges ($E$) represent constructive dependencies ($A \to B$ implies $A$ needs $B$ to exist).
+When the BuildScheduler executes, it performs a topological sort using Kahn’s Algorithm to determine the build order. This algorithm calculates the in-degree of all nodes, populating a queue with independent tasks (nodes with zero dependencies) and processing them sequentially. For a target $T$, the system calculates its "dirtiness" by comparing the modification timestamp $M(T)$ of the output artifact against the modification times of its inputs.
+The Deficit: The graph logic currently treats the non-existence of $T$ as a trigger to build. It has no concept of forcing the non-existence of $T$. Furthermore, the graph traversal logic is designed to visit nodes in dependency order (leaves to root). A clean operation typically requires a conceptual inversion of this logic—or at least an agnostic traversal—as the removal of a final executable does not inherently require the removal of its dependencies, but a "clean all" operation must iterate the entire graph.
+The system's reliance on "Configuration as Data" means that the build intent is derived statically from the build.aria or aria.json file. The lack of a destructive primitive means that if a user removes a target definition from the configuration file, the build system loses track of the physical artifact on the disk. This orphaned artifact becomes "dark matter" within the build directory—invisible to the graph but visible to the globbing engine.
+2.2 The Phenomenon of Artifact Pollution
+The consequences of artifact pollution are subtle yet devastating in complex build environments. The research highlights "globbing errors" and "stale link inputs" as the primary symptoms. We can deconstruct these failure modes to understand the imperative for a clean target.
+2.2.1 Globbing Errors and Recursive Discovery
+AriaBuild implements a custom globbing subsystem using C++ std::filesystem::recursive_directory_iterator because the Aria runtime currently lacks native directory iteration capabilities. This engine resolves patterns like src/**/*.aria or lib/**/*.ll into concrete file lists.
+Consider a scenario where a build script is configured to link all object files in a directory: sources: ["build/obj/**/*.ll"].
+1. Build 1: Source file math_v1.aria is compiled to build/obj/math_v1.ll.
+2. Refactor: The developer renames math_v1.aria to math_v2.aria and updates the build config.
+3. Build 2: math_v2.aria is compiled to build/obj/math_v2.ll.
+4. Pollution: build/obj/math_v1.ll still exists.
+5. Linker Failure: The glob pattern build/obj/**/*.ll expands to include both math_v1.ll and math_v2.ll. The linker attempts to merge them, likely resulting in "duplicate symbol" errors because both files define the same functions.
+Without a clean command, the developer is forced to manually delete the directory, breaking their flow state.
+2.2.2 Stale Link Inputs and ABI Mismatch
+A more insidious issue arises with stale link inputs. If a target Target A depends on Target B, and Target B's configuration is changed (e.g., compile flags changed from -O0 to -O3, or a feature flag is toggled), the build system relies on the hash stored in .aria_build_state to detect the change and trigger a rebuild.
+However, if the state file is corrupted or if the user performs a manual partial deletion, the system might link the new Target A against an old, incompatible version of Target B. A clean target provides the necessary "Big Red Button" to reset the environment to a guaranteed consistent state (Tabula Rasa), eliminating Heisenbugs caused by ABI (Application Binary Interface) mismatches between stale and fresh artifacts.
+2.3 The .aria_build_state Persistence Layer
+The user query explicitly references the requirement to "remove the associated entry from the.aria_build_state file." This file is the system's persistent ledger, critical for the Incremental Build Logic.
+Based on the research indicating Aria's use of nlohmann::json for LSP communications 1 and the description of "hashed and stored" manifests , we can infer the architectural role of .aria_build_state. It acts as a localized database mapping:
+* Target Name $\rightarrow$ Command Hash (Signature of flags + compiler version).
+* Glob Pattern $\rightarrow$ File List Hash (Signature of filesystem state).
+* Artifact Path $\rightarrow$ Timestamp (Last known modification time).
+A true clean operation must be transactional. Removing the physical artifact without updating the ledger leaves the build system in a "phantom state" where it believes an artifact exists and is up-to-date (based on the hash), while the disk reality is empty. Conversely, removing the ledger entry without deleting the file forces a rebuild, but leaves the previous artifact in place until it is overwritten, which is safer but still operationally unclean. The requirement is strict: Physical Removal + Logical Purge.
+3. Design Specification: The Clean Lifecycle
+The proposed architecture introduces a "Deconstructive Phase" to the AriaBuild lifecycle. This phase is distinct from the "Constructive Phase" (Build) and the "Query Phase" (LSP/IDE integration). It requires extending the CLI, the internal scheduler, and the target object model.
+3.1 CLI Interface Design: aria_make clean
+The entry point for this functionality is the aria_make command line interface. Currently, the tool acts as a meta-driver, parsing arguments to orchestrate ariac. The addition of clean requires expanding the argument parser to recognize "verbs" or "subcommands" rather than just flags.
+Proposed Syntax:
+
+
+Bash
+
+
+
+
+aria_make clean
+
+This command implies a Global Clean, traversing the entire dependency graph defined in aria.json and removing output artifacts for every reachable target.
+Targeted Clean Syntax:
+
+
+Bash
+
+
+
+
+aria_make clean <target_name>
+
+This allows developers to scrub specific sub-graphs. For example, aria_make clean math_lib would remove only the artifacts associated with the math library, leaving the main application and other dependencies (like core_lib) intact. This is crucial for large monorepos where a full rebuild is prohibitively expensive.
+3.2 The clean_target Primitive
+The core logic will be encapsulated in a new function within the BuildScheduler class. This function adheres to the Single Responsibility Principle: it is responsible solely for the annihilation of a single target's artifacts and state.
+Function Signature:
+
+
+C++
+
+
+
+
+void BuildScheduler::clean_target(Target* t);
+
+Operational Semantics:
+1. Resolution: Determine the absolute filesystem path of the target's output field.
+2. Verification: Ensure the path lies within valid project boundaries (safety check to prevent rm -rf /).
+3. Deletion: Invoke the filesystem driver to remove the file.
+4. State Purge: Access the BuildState manager and remove the corresponding hash entry.
+5. Logging: Emit a status message to stdout (e.g., [CLEAN] build/main.ll).
+3.3 Safety Constraints (The rm -rf / Prevention)
+Implementing a programmable delete function carries inherent risk. If a user defines a target output as output: "/", a naive implementation could destroy the host operating system.
+Safety Rules:
+* Root Protection: The resolved path must not be the filesystem root.
+* Project Confinement: The implementation should verify that the resolved output path is a descendant of the project root directory or the explicit build directory.
+* Target Type Validation: The system should inspect t->type. If the target is a script or test that does not produce a file artifact, the physical deletion step should be skipped to avoid removing source files or unrelated scripts.
+4. Implementation Strategy: C++17 Filesystem Integration
+AriaBuild is implemented in C++17, leveraging std::filesystem for directory traversal. This choice is fortuitous, as C++17 provides robust, cross-platform primitives for file deletion that abstract away the differences between POSIX unlink and Windows DeleteFile. The implementation will reside in the host C++ environment because the Aria runtime itself currently lacks these capabilities.
+4.1 The Target Structure Analysis
+Based on the ABC schema described in the research , the C++ Target struct must contain an output field. This field is the "primary key" for the physical clean operation.
+Inferred C++ Structure:
+
+
+C++
+
+
+
+
+struct Target {
+   std::string name;
+   TargetType type; // BINARY, LIBRARY, etc.
+   std::vector<std::string> sources;
+   std::vector<std::string> depends_on;
+   std::string output; // <--- The critical field for cleaning
+   std::vector<std::string> flags;
+};
+
+The output field maps directly to the -o flag of the compiler. Therefore, it represents the exact path of the artifact to be removed.
+4.2 Extending the BuildScheduler
+The BuildScheduler currently manages the topological sort and execution queue. To support clean, it requires a new mode of operation that bypasses the complex dependency ordering (or uses a simplified traversal) and focuses on iteration.
+Class Extension Specification:
+
+
+C++
+
+
+
+
+class BuildScheduler {
+public:
+   // Existing build logic
+   void run(); 
+   
+   // NEW: Clean logic
+   void execute_clean(const std::string& specific_target = "");
+
+private:
+   DependencyGraph graph_;
+   BuildState state_; // The persistence manager
+
+   // The primitive requested by the prompt
+   void clean_target(Target* t);
+};
+
+4.3 The clean_target Implementation Logic
+The implementation must be robust against edge cases, such as the file already being missing (idempotency). We utilize std::filesystem::remove, which deletes a single file or an empty directory. For targets that might produce directory bundles (like macOS .app bundles), remove_all might be necessary, but the specification implies single-file artifacts (.ll files).
+Logic Flow:
+1. Check Output Field: If t->output is empty (e.g., a "phony" target like a test suite wrapper), do nothing physically, but proceed to clear state.
+2. Resolve Path: Use std::filesystem::path to construct the full path. Handle relative paths relative to the project root.
+3. Execute Removal:
+   * Call std::filesystem::remove(path, ec).
+   * Check std::error_code. If the file doesn't exist, this is a "success" (idempotency). If permission is denied, report an error but do not crash the scheduler.
+4. Update State: Call state_.remove_command_hash(t->name).
+5. Persist State: The BuildState class must save the updated JSON to disk immediately or after the batch operation.
+5. State Management: The .aria_build_state
+The requirement to "remove the associated entry from the.aria_build_state file" implies that AriaBuild maintains a persistent ledger. While the research snippets do not provide the source code for this file's parser, they confirm the use of hashing for manifest generation. We must define the interaction with this ledger.
+5.1 The State File Schema
+The .aria_build_state file stores metadata to optimize incremental builds. A JSON structure is the standard for modern C++ tooling (verified by AriaLS's use of nlohmann::json).
+Projected Schema:
+
+
+JSON
+
+
+
+
+{
+ "targets": {
+   "main_app": {
+     "command_hash": "a1b2c3d4...",
+     "timestamp": 1678886400,
+     "status": "success"
+   },
+   "lib_math": {
+     "command_hash": "e5f6g7h8...",
+     "timestamp": 1678886405
+   }
+ },
+ "glob_manifests": {
+   "src/**/*.aria": "hash_of_file_list"
+ }
+}
+
+5.2 Implementation of State Removal
+The BuildState class requires a method to excise a target's metadata.
+
+
+C++
+
+
+
+
+void BuildState::remove_command_hash(const std::string& target_name) {
+   // Access the internal JSON object
+   if (json_data_.contains("targets") && json_data_["targets"].contains(target_name)) {
+       json_data_["targets"].erase(target_name);
+       dirty_flag_ = true; // Mark for saving
+   }
+}
+
+This operation ensures that the next time aria_make build is run, the system perceives the target as "new" (no history). This forces a complete re-evaluation of flags and dependencies, regenerating the command hash and ensuring that any changes in the configuration are correctly applied.
+6. Detailed Architectural Specification and Code Logic
+The following sections provide the rigorous specification for the implementation, suitable for the engineering team to integrate into src/build/build_scheduler.cpp and src/main.cpp.
+6.1 Component: src/build/build_scheduler.cpp
+The BuildScheduler is the orchestration engine. We extend it to handle the clean lifecycle.
+Algorithmic Strategy:
+Unlike the build process, which requires topological sorting to respect dependencies (build A before B), the clean process is generally commutative. Removing artifact A does not require artifact B to be removed first, provided they are files. However, if output directories are nested, order matters. A linear iteration over the graph nodes is generally sufficient for file-based artifacts ($O(N)$).
+Code Specification:
+
+
+C++
+
+
+
+
+#include <filesystem>
+#include <iostream>
+#include "build/build_scheduler.h"
+#include "build/target.h"
+
+namespace fs = std::filesystem;
+
+void aria::build::BuildScheduler::clean_target(Target* t) {
+   if (!t) return;
+
+   // 1. Resolve Output Path
+   // Targets without output (phony targets) require no disk I/O.
+   if (t->output.empty()) {
+       // Still remove from state to reset any metadata/hashes
+       state_.remove_command_hash(t->name);
+       return;
+   }
+
+   fs::path output_path(t->output);
+
+   // 2. Safety Checks
+   // Ensure we don't try to delete the root or empty paths
+   // In a real implementation, we might check if path starts with project_root
+   if (output_path.empty() |
+
+| output_path == "/") {
+       std::cerr << " Skipping unsafe clean path for target: " << t->name << std::endl;
+       return;
+   }
+
+   // 3. Perform Deletion
+   std::error_code ec;
+   // Use remove (deletes file or empty directory). 
+   // This maps to unlink() on POSIX and DeleteFile() on Windows.
+   if (fs::exists(output_path, ec)) {
+       if (fs::remove(output_path, ec)) {
+           std::cout << "[CLEAN] Removed artifact: " << output_path << std::endl;
+       } else {
+           // Permission denied or other OS error
+           std::cerr << " Failed to remove " << output_path << ": " << ec.message() << std::endl;
+       }
+   } else {
+       // Idempotency: If file doesn't exist, we treat it as success.
+   }
+
+   // 4. Update Build State
+   // Remove the entry from.aria_build_state so the next build treats this as fresh.
+   state_.remove_command_hash(t->name);
+}
+
+void aria::build::BuildScheduler::execute_clean(const std::string& specific_target) {
+   std::cout << "Cleaning build artifacts..." << std::endl;
+
+   if (!specific_target.empty()) {
+       // Clean specific target
+       Target* t = graph_.get_target(specific_target);
+       if (t) {
+           clean_target(t);
+       } else {
+           std::cerr << "Target not found: " << specific_target << std::endl;
+       }
+   } else {
+       // Clean ALL targets
+       // Iterate over all nodes in the graph
+       for (const auto& node : graph_.get_nodes()) {
+           clean_target(node.get_target());
+       }
+   }
+
+   // 5. Commit State Changes
+   // Flush json updates to.aria_build_state persistence layer
+   state_.save(); 
+   std::cout << "Clean complete." << std::endl;
+}
+
+6.2 Component: src/build/build_state.cpp
+The persistence layer must expose the removal API. This fulfills the requirement: "It should also remove the associated entry from the.aria_build_state file."
+
+
+C++
+
+
+
+
+#include "build/build_state.h"
+
+//... existing code...
+
+void aria::build::BuildState::remove_command_hash(const std::string& target_name) {
+   // Assuming m_data is the nlohmann::json object holding state
+   // Schema: { "targets": { "target_name": { "hash": "..." } } }
+   
+   if (m_data.contains("targets")) {
+       auto& targets = m_data["targets"];
+       if (targets.contains(target_name)) {
+           targets.erase(target_name);
+           m_dirty = true; // Flag to indicate save() is needed
+       }
+   }
+}
+
+6.3 Component: CLI Entry Point (src/main.cpp)
+The argument parser must be updated to route the clean command. AriaBuild acts as a meta-driver , so we intercept the arguments before the toolchain orchestration logic takes over.
+
+
+C++
+
+
+
+
+int main(int argc, char** argv) {
+   //... setup and config parsing...
+   
+   aria::build::BuildScheduler scheduler(config);
+
+   // Basic argument dispatching
+   if (argc > 1) {
+       std::string command = argv;
+       
+       if (command == "clean") {
+           // Optional specific target: aria_make clean <target>
+           std::string target = (argc > 2)? argv : "";
+           scheduler.execute_clean(target);
+           return 0; // Exit after cleaning
+       }
+       
+       //... handle "build", "run", etc....
+   }
+
+   // Default behavior (Build all)
+   scheduler.run();
+   return 0;
+}
+
+7. Operational Nuances and Edge Cases
+Implementing clean exposes several subtleties in build system design that must be addressed to maintain system integrity.
+7.1 Phony Targets and Side Effects
+Some targets in AriaBuild are "Phony"—they represent actions rather than files (e.g., a "test" target that runs a script).
+* Issue: A phony target typically has an empty output field. Attempting to remove("") might throw an error or result in undefined behavior depending on the filesystem driver.
+* Resolution: The clean_target function explicitly checks if (t->output.empty()). In this case, it skips the filesystem remove call but proceeds to state_.remove_command_hash(t->name). This ensures that even phony targets have their execution history reset, forcing them to run again if invoked.
+7.2 Directory Cleanup vs. File Cleanup
+If a target's output is defined as a directory (e.g., bin/), std::filesystem::remove will fail if the directory is not empty (it throws directory_not_empty or returns error code).
+* Policy Decision: Should aria_make clean effectively rm -rf output directories?
+* Recommendation: Given the constraints of the prompt ("delete the file using std::filesystem::remove"), we assume targets define specific artifacts. However, a robust implementation should check fs::is_directory(path). If it is a directory, the system should ideally use fs::remove_all(path) only if the target definition implies ownership of the directory. For this phase, sticking to remove (file-centric) is the safest approach to avoid accidental data loss.
+7.3 State Synchronization Atomicity
+There is a theoretical race condition where the file is deleted, but the process crashes before state_.save() is called (e.g., power loss).
+* Scenario: Artifact is gone, but .aria_build_state says it exists and is up-to-date.
+* Recovery: On the next aria_make build, the incremental logic checks fs::last_write_time. It will see the file is missing. The "dirty" check logic prioritizes existence: if (!fs::exists(output)) return true;. Therefore, even if the state entry persists due to a crash, the missing file forces a rebuild. This confirms that the system is resilient to consistency errors during cleaning.
+8. Impact Analysis
+8.1 Performance Considerations
+The clean operation is heavily I/O bound.
+* Complexity: $O(N)$ where $N$ is the number of targets.
+* Cost: Filesystem metadata operations (unlink) are expensive relative to CPU cycles but negligible compared to compilation times.
+* Optimization: Parallel cleaning is possible but usually unnecessary and risky (directory locking on Windows). The sequential implementation provided is sufficient and minimizes complexity.
+8.2 Developer Experience Improvements
+The introduction of aria_make clean provides immediate benefits:
+* Determinism: It allows developers to resolve "Heisenbugs" caused by stale objects by forcing a tabula rasa state.
+* Automation: Continuous Integration (CI) pipelines can ensure a clean environment without relying on fragile rm -rf build/ shell commands that might break if the output directory changes in the aria.json config.
+* Correctness: Removing the state entry ensures that flag changes are correctly propagated. If a user builds with -O3, cleans, and builds with -O0, the removal of the command hash forces the compiler to respect the new optimization flags.
+9. Conclusion
+The implementation of the clean lifecycle target represents a critical maturation step for AriaBuild. By transitioning from a purely constructive tool to one that manages the full artifact lifecycle, we close a significant loop in the developer workflow.
+The architecture defined herein—extending BuildScheduler with a specialized clean_target primitive, leveraging C++17's filesystem library for safe deletion, and enforcing state synchronization with .aria_build_state—provides a robust, safe, and performant solution. This design strictly adheres to the "Configuration as Data" philosophy by deriving the clean logic directly from the declarative target definitions, ensuring that the clean command is always perfectly synchronized with the build configuration.
+This specification is ready for immediate implementation by the systems engineering team, fulfilling the requirements for Task 1.2 and resolving the artifact pollution issues plaguing the current build environment.
+________________
+Appendix: Implementation Reference Guide
+Table 1: Mapping Architectural Concepts to C++ Implementation
+Concept
+	Existing Component
+	New Implementation Requirement
+	Source Reference
+	Output Path
+	Target struct (schema)
+	Access t->output field
+	
+
+	State Persistence
+	BuildState (implied)
+	state_.remove_command_hash(name)
+	
+
+	File Deletion
+	None (std lib gap)
+	std::filesystem::remove
+	
+
+	Entry Point
+	Meta-driver logic
+	Parse aria_make clean arg
+	
+
+	Scheduling
+	BuildScheduler / DAG
+	Add clean_target iteration method
+	
+
+	Table 2: Error Handling Matrix for clean_target
+Condition
+	Action
+	Rationale
+	File Missing
+	Log success, Continue
+	Idempotency; goal is "file gone", state is already achieved.
+	Permission Denied
+	Log Error, Continue
+	Report to user; do not abort entire clean of other targets.
+	Path is Directory
+	Log Warning, Skip
+	Avoid accidental recursive deletion of non-artifact folders unless explicitly handled.
+	Output Field Empty
+	Skip Filesystem, Clean State
+	Handle phony targets correctly; reset their metadata.
+	Works cited
+1. compiled.txt

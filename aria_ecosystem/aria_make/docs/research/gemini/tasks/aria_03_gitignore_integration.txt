@@ -1,0 +1,53 @@
+Git-Aware File Exclusion in GlobEngine
+
+PRIORITY: MEDIUM
+STATUS: Partially Covered (manual exclusions work)
+SOURCE: gem4_07.txt, Verification Chunk 5
+
+PROBLEM:
+GlobEngine traverses entire project tree including node_modules/, .cache/, build artifacts. Performance degrades from O(N_source) to O(N_total) in large repos. Duplicate exclusion configuration (.gitignore + aria.json).
+
+REQUIREMENTS:
+1. Automatic .gitignore parsing:
+   - Read .gitignore from project root
+   - Convert shell globs to std::regex
+   - Augment existing exclusion set
+
+2. Subtree pruning optimization:
+   - Use disable_recursion_pending() on excluded directories
+   - Reduce I/O from 100,000+ files to ~500 source files
+
+3. Pattern support:
+   - Standard globs: *.o, build/
+   - Recursive wildcards: logs/**/debug.log
+   - Rooted patterns: /TODO (only in root)
+   - Directory-only: dist/ (directories, not files named "dist")
+
+IMPLEMENTATION TASKS:
+- [ ] Create GitIgnoreParser helper class
+- [ ] Implement glob-to-regex converter
+- [ ] Add m_gitignore_regexes vector to GlobEngine
+- [ ] Integrate with recursive_directory_iterator traversal
+- [ ] Implement directory-only matching logic
+- [ ] Add caching for parsed .gitignore (static storage)
+- [ ] Thread-safe initialization with mutex
+
+FILES TO CREATE/MODIFY:
+- src/glob/glob_engine.cpp (add git integration)
+- include/glob/glob_engine.h (add regex storage)
+- src/glob/gitignore_parser.cpp (new file)
+- docs/info/plan/20_FILE_DISCOVERY.md (add Git Integration section)
+
+RESEARCH REFERENCE:
+gem4_07.txt provides:
+- Complete glob-to-regex translation table
+- Subtree pruning complexity analysis (O(N_total) → O(N_source))
+- Anchoring semantics (^ for rooted patterns)
+- Negation pattern handling (future work)
+
+ACCEPTANCE CRITERIA:
+- Automatically excludes node_modules/ if in .gitignore
+- Skips .cache/, target/, build/ directories
+- Performance: <10ms overhead for .gitignore parsing
+- Does not override explicit aria.json exclusions
+- Works with complex glob patterns (**/*, ?, [abc])

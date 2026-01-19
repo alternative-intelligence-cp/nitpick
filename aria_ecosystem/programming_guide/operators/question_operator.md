@@ -1,0 +1,106 @@
+# Question Operator (?)
+
+**Category**: Operators → Error Handling  
+**Operator**: `?`  
+**Purpose**: Propagate errors or mark optional types
+
+---
+
+## Syntax
+
+```aria
+<result>?          // Error propagation
+<type>?            // Optional type
+```
+
+---
+
+## Description
+
+The question operator `?` is used for error propagation and optional types.
+
+---
+
+## Error Propagation
+
+```aria
+fn read_file(path: string) -> Result<string, Error> {
+    file: File = open(path)?;  // Returns error if fails
+    content: string = file.read()?;  // Returns error if fails
+    return Ok(content);
+}
+```
+
+---
+
+## Optional Types
+
+```aria
+// Optional value
+maybe: i32? = nil;
+maybe = 42;
+
+// Check before use
+when maybe != nil then
+    stdout << maybe;
+end
+```
+
+---
+
+## Unwrapping
+
+```aria
+value: i32? = get_optional();
+
+// Unwrap with ?
+Result: i32 = value?;  // Panics if nil
+
+// Safe unwrap
+when value != nil then
+    Result: i32 = value;
+end
+```
+
+---
+
+## Best Practices
+
+### ✅ DO: Use for Error Handling
+
+```aria
+fn process() -> Result<(), Error> {
+    data := load()?;
+    validate(data)?;
+    save(data)?;
+    return Ok(());
+}
+```
+
+### ✅ DO: Use for Optional Types
+
+```aria
+user: User? = find_user(id);
+```
+
+### ❌ DON'T: Overuse Unwrapping
+
+```aria
+// Dangerous
+value: i32 = optional?;  // Panics if nil!
+
+// Better
+value: i32 = optional or 0;  // Default
+```
+
+---
+
+## Related
+
+- [Result Type](../types/result.md)
+- [Optional Types](../types/optional.md)
+- [Error Handling](../concepts/error_handling.md)
+
+---
+
+**Remember**: `?` **propagates errors** and marks **optional types**!

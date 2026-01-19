@@ -1,0 +1,56 @@
+## TASK 5: Dependency Graph and Cycle Detection
+
+**Priority**: CRITICAL (Core build algorithm)
+**Estimated Complexity**: Medium
+**Dependencies**: TASK 1 (needs BuildFileAST)
+
+### Problem Statement
+The dependency graph implementation in the research is incomplete:
+- CycleDetector's DFS logic terminates mid-implementation
+- Missing path reconstruction for error reporting
+- Missing backtracking logic (recursion stack cleanup)
+
+### Required Context Files
+
+**From aria_make repository**:
+1. `docs/research/gemini/responses/task_03_dependency_graph.txt` - Graph design (incomplete)
+2. `docs/research/gemini/tasks/gemini_gap_todo.txt` - Gap analysis (Section 4.1)
+
+### Gemini Prompt
+
+```
+The implementation of the CycleDetector class in 'task_03_dependency_graph.txt' is incomplete and terminates abruptly during the is_cyclic_dfs method. Provide the complete, corrected C++ implementation for the CycleDetector class.
+
+Requirements:
+1. Complete the is_cyclic_dfs method:
+   - Mark node as visiting (in recursion stack)
+   - For each neighbor, check if:
+     * Already in recursion stack → cycle found, call reconstruct_path
+     * Not yet visited → recurse
+   - Mark node as visited and REMOVE from recursion stack (backtracking)
+   - Critical: Must distinguish between:
+     * Cycle: A→B→C→A (error)
+     * Diamond: A→B→D, A→C→D (valid)
+2. Implement reconstruct_path(int start, int end):
+   - Walk back through the parent map (stored during DFS)
+   - Build a vector of node IDs representing the cycle
+   - Return as std::vector<int> for error reporting
+3. Implement get_cycle_names(const std::vector<int>& cycle_ids):
+   - Convert node IDs to human-readable target names
+   - Format as "A → B → C → A"
+4. Ensure the DependencyGraph class has:
+   - std::map<int, std::string> node_id_to_name for error messages
+   - add_edge method that properly maintains adjacency lists
+
+Provide the complete implementation with comments explaining the DFS coloring (white/gray/black) or equivalent recursion stack approach.
+```
+
+### Expected Deliverables
+- `include/graph/cycle_detector.h` - CycleDetector class (corrected)
+- `include/graph/dependency_graph.h` - DependencyGraph with name mapping
+- `src/graph/cycle_detector.cpp` - Complete DFS implementation
+- `src/graph/dependency_graph.cpp` - Graph management
+- `tests/graph/test_cycle_detection.cpp` - Diamond vs cycle tests
+
+---
+

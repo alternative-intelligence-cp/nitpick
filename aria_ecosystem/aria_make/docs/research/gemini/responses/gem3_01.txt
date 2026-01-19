@@ -1,0 +1,593 @@
+﻿Architectural Specification and Implementation Strategy for Native Process Orchestration in the AriaBuild Ecosystem
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language ecosystem, specifically targeting the v0.1.0 milestone, necessitates a fundamental re-architecting of its build infrastructure. The current reliance on imperative, whitespace-sensitive tools like GNU Make has been identified as a critical friction point, introducing fragility and "invisible" syntax errors that hinder developer velocity. To resolve this, the Aria infrastructure team has proposed AriaBuild (aria_make), a declarative, whitespace-insensitive build automation tool designed to treat "Configuration as Data".
+Central to the AriaBuild architecture is the requirement for a rigorous, deterministic execution engine. Unlike traditional compilers that emit machine code directly, the current Aria toolchain (ariac) emits LLVM Intermediate Representation (IR), which is subsequently executed by the LLVM Interpreter (lli) or compiled to object code. Consequently, AriaBuild functions as a meta-driver; it does not perform compilation logic itself but orchestrates a massive, dynamic Directed Acyclic Graph (DAG) of subprocesses. This architecture demands a robust Process Abstraction Layer (PAL) capable of spawning child processes, managing their lifecycles, and capturing their output streams with absolute fidelity.
+This report presents the definitive architectural specification and C++ implementation for this PAL. It addresses the specific gap identified in previous analyses: the lack of a reliable, cross-platform mechanism to capture standard output (stdout) and standard error (stderr) independently without introducing deadlocks or shell injection vulnerabilities. Standard C++ facilities like std::system and popen are rejected due to their blocking nature, stream merging behaviors, and security risks.
+Instead, this specification defines a bespoke Process class implementation that bridges the semantic gap between the POSIX fork-exec model and the Windows CreateProcess object model. It employs a Threaded Stream Draining architecture to guarantee deadlock-free I/O, ensuring that the finite kernel buffers managing anonymous pipes never saturate, regardless of the volume of compiler diagnostics emitted.2 Furthermore, it integrates deeply with the AriaBuild scheduler, providing the synchronous backpressure mechanism necessary to throttle concurrency in a thread-pool environment.
+2. Theoretical Framework: Inter-Process Communication (IPC) Mechanics
+To engineer a robust process wrapper, one must first deconstruct the underlying physics of Inter-Process Communication (IPC) provided by the operating system kernel. The requirement to capture stdout and stderr into separate std::string buffers serves as the primary constraint, eliminating simpler abstractions and forcing interaction with kernel-level pipe primitives.
+2.1 The Physics of Anonymous Pipes and Kernel Buffering
+An anonymous pipe is a unidirectional data channel managed by the kernel. It presents a standard file descriptor (POSIX) or handle (Windows) interface to user space but operates entirely within kernel memory. Crucially, pipes are not infinite streams; they are implemented as finite circular buffers (ring buffers).
+* Linux/POSIX Capacity: On modern Linux kernels (since 2.6.11), the default capacity of a pipe is 65,536 bytes (64KB), though this can be adjusted via fcntl(F_SETPIPE_SZ).4
+* Windows Capacity: Windows anonymous pipes typically use a 4KB buffer by default, though this is dynamically adjustable by the system based on available non-paged pool memory.5
+Blocking Semantics: The write operation on a pipe is blocking by default. When a producer (the child process) attempts to write data to the pipe:
+1. If the buffer has sufficient space, the data is copied from user space to kernel space, the "write head" is advanced, and the system call returns immediately.
+2. If the buffer is full (i.e., the "write head" meets the "read tail"), the kernel puts the writing process to sleep (transitions it from TASK_RUNNING to TASK_INTERRUPTIBLE). The process remains suspended until the consumer (the parent process) reads enough data to free up space.
+2.2 The Anatomy of a Pipe Deadlock
+The "Pipe Deadlock" is the most prevalent failure mode in naive build tool implementations. It occurs when the parent process fails to drain the output streams concurrently.2 Consider the following scenario in AriaBuild where the parent attempts to read stdout sequentially before stderr:
+1. State: The parent calls waitpid() or performs a blocking read on the stdout pipe, expecting the compilation artifact.
+2. Event: The child process (ariac) encounters a complex template error or macro expansion failure and prints 1MB of diagnostic text to stderr.
+3. Saturation: The first 64KB of data fills the stderr kernel buffer.
+4. Block (Child): The child attempts to write byte 65,537. The kernel blocks the child process because the stderr buffer is full. The child is now asleep, waiting for the parent to read from stderr.
+5. Block (Parent): The parent is still blocked on stdout (or waitpid). It is waiting for the child to write to stdout or terminate.
+6. Deadlock: The parent cannot read stderr because it is waiting on stdout. The child cannot write to stdout (or exit) because it is blocked writing to stderr. Both processes wait indefinitely.3
+2.3 Architectural Solution: Asynchronous Stream Draining
+To guarantee deadlock freedom, the Process class must decouple the "waiting for completion" logic from the "reading output" logic. Two primary architectural patterns exist to solve this:
+Option A: Non-Blocking I/O with Multiplexing (select/poll/epoll/IOCP)
+In this model, the parent sets the pipe descriptors to O_NONBLOCK. It enters an event loop using select (POSIX) or WaitForMultipleObjects (Windows) to monitor all pipes simultaneously. When data is available on any pipe, it reads a chunk and appends it to a buffer.
+* Pros: Highly scalable (can handle thousands of pipes on a single thread).
+* Cons: Extremely complex to implement portably. Windows does not support select on pipe handles (only sockets). Using IOCP for anonymous pipes requires sophisticated thread-pool binding.
+Option B: Threaded Draining (Selected Strategy)
+In this model, the parent spawns a dedicated thread for each output stream immediately after creating the child process.
+* Thread 1 (Main): Blocks on waitpid / WaitForSingleObject.
+* Thread 2 (Stdout Pump): Executes a blocking read loop on the stdout pipe until EOF.
+* Thread 3 (Stderr Pump): Executes a blocking read loop on the stderr pipe until EOF.
+Rationale: For a build system, the number of concurrent child processes is typically bounded by the CPU core count (e.g., 16-64). Spawning 2 auxiliary threads per process results in 32-128 total threads, which is trivial for modern OS schedulers context-switching capabilities. This approach drastically reduces code complexity, eliminates "callback hell," and leverages the robustness of the standard C++ threading library.1 The drainer threads act as active pumps, ensuring the kernel buffers never saturate.
+3. Platform Abstraction Layer (PAL) Analysis
+AriaBuild aims for a "write once, build anywhere" capability. This requires normalizing the divergent process creation APIs of Windows and POSIX.
+3.1 Comparative Analysis of Process Primitives
+
+
+Feature
+	POSIX (Linux/macOS)
+	Windows (Win32)
+	Architectural Implication
+	Creation Model
+	fork() + exec()
+	CreateProcessW()
+	POSIX allows granular setup (closing FDs, signal masks) in the child context before execution. Windows requires a monolithic STARTUPINFO struct.9
+	Handle Types
+	Integer File Descriptors (0, 1, 2)
+	HANDLE (Opaque Pointers)
+	POSIX relies on fixed FD indices for standard streams. Windows requires explicit handle passing via STARTUPINFO.hStd*.9
+	Inheritance
+	Default: Inherited unless FD_CLOEXEC
+	Default: Not inherited. Requires bInheritHandle=TRUE
+	Windows requires explicit SECURITY_ATTRIBUTES and SetHandleInformation to manage handle lifetimes.10
+	String Encoding
+	UTF-8 (Native char*)
+	UTF-16 (wchar_t*)
+	The PAL must perform transparent transcoding (MultiByteToWideChar) to support international filenames on Windows.
+	Argument Parsing
+	Array of C-strings (argv)
+	Single Command Line String
+	POSIX passes arguments safely as discrete tokens. Windows requires a rigorous escaping algorithm to construct a lpCommandLine string that the child parses.11
+	3.2 Security Considerations: Injection and Hijacking
+Argument Injection: On Windows, CreateProcess takes a single string. If the application naively concatenates arguments (e.g., cmd + " " + arg), a malicious input like filename" & del * could be interpreted as a command separator by the child's C runtime parser. The Process class must implement the specific escaping rules used by CommandLineToArgvW (handling backslashes and double quotes) to ensure arguments are treated as literals.
+DLL Hijacking: On Windows, CreateProcess searches for executables in a specific order. If command is a relative path, it might inadvertently execute a malicious binary in the current working directory. The implementation relies on the system's safe search order but encourages absolute paths resolved by the ToolchainOrchestrator.
+4. Implementation Specification
+The implementation is divided into a shared header (process.h) defining the interface and a split-implementation source file (process.cpp) containing the platform-specific logic guarded by #ifdef _WIN32.
+4.1 Interface Design (include/runtime/process.h)
+The interface utilizes modern C++ (C++17) features including std::optional, std::vector, and std::string to ensure memory safety and ease of use.
+
+
+C++
+
+
+
+
+/**
+* @file process.h
+* @brief Cross-platform process execution primitives for AriaBuild.
+*
+* This module implements the Process Abstraction Layer (PAL), strictly adhering
+* to the requirement for separate stdout/stderr capture via anonymous pipes.
+* It employs a threaded-reader model to guarantee freedom from I/O deadlocks.
+*/
+
+#pragma once
+
+#include <string>
+#include <vector>
+#include <map>
+#include <optional>
+
+namespace aria {
+namespace runtime {
+
+/**
+* @brief Encapsulates the result of a completed process execution.
+*
+* Decoupling the exit code from the output streams allows the caller (AriaBuild)
+* to perform semantic analysis on stderr (e.g., parsing "error:" tokens)
+* while preserving the raw binary/text data of stdout.
+*/
+struct ExecResult {
+   int exit_code;              // The return code (0-255) or signal number.
+   std::string out_output;     // Full content captured from standard output.
+   std::string err_output;     // Full content captured from standard error.
+   bool success;               // Semantic helper (exit_code == 0).
+};
+
+/**
+* @brief Configuration options for process spawning.
+*/
+struct ExecOptions {
+   // The directory to switch to before execution. Empty implies inheritance.
+   std::string working_directory;
+
+   // A map of environment variables to inject.
+   // If empty, the child inherits the parent's environment block.
+   std::map<std::string, std::string> env_vars;
+
+   // If true, stderr is redirected into the stdout buffer (2>&1 behavior).
+   bool merge_outputs = false;
+};
+
+/**
+* @brief The Process class acts as a factory and controller for child processes.
+*
+* It abstracts the divergence between POSIX fork/exec and Windows CreateProcess,
+* providing a uniform synchronous execution interface suitable for thread pools.
+*/
+class Process {
+public:
+   /**
+    * @brief Spawns a command, waits for completion, and captures output.
+    *
+    * This function blocks the calling thread. In the context of AriaBuild,
+    * this blocking behavior is desirable as it acts as a semaphore for the
+    * worker thread pool, preventing system oversubscription.
+    *
+    * @param command The binary to execute (e.g., "/usr/bin/ariac").
+    * @param args A list of arguments. DO NOT include the command itself.
+    * @param options Execution configuration.
+    * @return ExecResult containing the captured output and status.
+    * @throws std::runtime_error if pipe creation or process spawning fails.
+    */
+   static ExecResult execute(const std::string& command, 
+                             const std::vector<std::string>& args, 
+                             const ExecOptions& options = {});
+
+private:
+   // Internal helper to drain a raw file descriptor/handle into a string buffer.
+   // This is the entry point for the background reader threads.
+   template<typename HandleType>
+   static void read_stream(HandleType handle, std::string& buffer);
+};
+
+} // namespace runtime
+} // namespace aria
+
+4.2 Windows Implementation Logic (src/runtime/process.cpp)
+The Windows implementation is the most complex due to the requirements for handle inheritance security, environment block sorting, and string escaping.
+4.2.1 Handle Hygiene and SetHandleInformation
+When CreatePipe is called with a SECURITY_ATTRIBUTES struct having bInheritHandle = TRUE, both the read and write ends of the pipe become inheritable.
+* Risk: If the parent passes its read-end to the child (accidentally), or if the parent keeps its write-end open while reading, the pipe will never close (EOF). The ReadFile call will block forever because there is technically still an open write handle (held by the parent itself).
+* Solution: Immediately after CreatePipe, we utilize SetHandleInformation to turn OFF the inheritance flag for the parent-side handles. Additionally, we explicitly CloseHandle the parent's copy of the write-end immediately after CreateProcess returns.2
+4.2.2 The Environment Block
+Windows requires the environment block to be a double-null terminated string (Key=Value\0Key2=Value2\0\0) and sorted alphabetically case-insensitively.1
+* Solution: We use std::map for env_vars, which automatically sorts keys alphabetically. We iterate this map to construct the block, performing UTF-8 to UTF-16 conversion.
+4.2.3 Command Line Escaping
+We implement a custom escape_arg function that mirrors the MSVC runtime parsing rules:
+* Preceding backslashes before a quote must be doubled.
+* Preceding backslashes before the end of the string must be doubled.
+* Quotes must be escaped with a backslash.
+* The whole string is wrapped in quotes if it contains delimiters.
+
+
+C++
+
+
+
+
+/**
+* @file process.cpp
+* @brief Implementation of cross-platform process execution.
+*/
+
+#include "runtime/process.h"
+#include <thread>
+#include <iostream>
+#include <array>
+#include <cstring>
+#include <algorithm>
+
+// ============================================================================
+// WINDOWS IMPLEMENTATION
+// ============================================================================
+#ifdef _WIN32
+#include <windows.h>
+#include <strsafe.h>
+
+namespace aria {
+namespace runtime {
+
+// Helper: Convert UTF-8 std::string to UTF-16 std::wstring for Win32 APIs
+std::wstring to_wstring(const std::string& str) {
+   if (str.empty()) return std::wstring();
+   int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str, (int)str.size(), NULL, 0);
+   std::wstring wstrTo(size_needed, 0);
+   MultiByteToWideChar(CP_UTF8, 0, &str, (int)str.size(), &wstrTo, size_needed);
+   return wstrTo;
+}
+
+// Helper: Escape command line arguments for Windows
+// Ensures paths with spaces (e.g., "C:\Program Files\...") are treated as single tokens.
+std::string escape_arg(const std::string& arg) {
+   if (arg.find_first_of(" \t\"") == std::string::npos) {
+       return arg; // No escaping needed
+   }
+   
+   std::string out = "\"";
+   for (size_t i = 0; i < arg.length(); ++i) {
+       char c = arg[i];
+       if (c == '"') {
+           // Escape double quotes and preceding backslashes
+           size_t backslash_count = 0;
+           size_t j = i;
+           while (j > 0 && arg[j-1] == '\\') {
+               backslash_count++;
+               j--;
+           }
+           // Double the backslashes that precede the quote
+           out.append(backslash_count, '\\'); 
+           out += "\\\""; 
+       } else if (c == '\\') {
+           // Backslashes need special handling ONLY if they precede a " or end of string
+           size_t next_idx = i + 1;
+           size_t backslash_count = 1;
+           while(next_idx < arg.length() && arg[next_idx] == '\\') {
+               backslash_count++;
+               next_idx++;
+           }
+           if (next_idx == arg.length() |
+
+| arg[next_idx] == '"') {
+               // Precedes end or quote: must escape these backslashes (double them)
+               out.append(backslash_count * 2, '\\');
+           } else {
+               // Literal backslashes (not meta-characters)
+               out.append(backslash_count, '\\');
+           }
+           i = next_idx - 1;
+       } else {
+           out += c;
+       }
+   }
+   out += "\"";
+   return out;
+}
+
+// Helper: Async pipe reader function
+// Continuously drains the pipe into a string buffer until the pipe is broken (EOF).
+void read_pipe_async(HANDLE hPipe, std::string& output_buffer) {
+   const size_t BUFSIZE = 4096;
+   char buffer;
+   DWORD bytesRead;
+   
+   while (true) {
+       BOOL success = ReadFile(hPipe, buffer, BUFSIZE, &bytesRead, NULL);
+       if (!success |
+
+| bytesRead == 0) break; // EOF or Error
+       output_buffer.append(buffer, bytesRead);
+   }
+}
+
+ExecResult Process::execute(const std::string& command, 
+                           const std::vector<std::string>& args, 
+                           const ExecOptions& options) {
+   ExecResult result = {-1, "", "", false};
+
+   // 1. Create Pipes with Security Attributes
+   SECURITY_ATTRIBUTES saAttr;
+   saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+   saAttr.bInheritHandle = TRUE; // Handles are inheritable
+   saAttr.lpSecurityDescriptor = NULL;
+
+   HANDLE hChildStd_OUT_Rd = NULL;
+   HANDLE hChildStd_OUT_Wr = NULL;
+   HANDLE hChildStd_ERR_Rd = NULL;
+   HANDLE hChildStd_ERR_Wr = NULL;
+
+   // Create StdOut Pipe
+   if (!CreatePipe(&hChildStd_OUT_Rd, &hChildStd_OUT_Wr, &saAttr, 0)) {
+       return {-1, "", "Failed to create stdout pipe", false};
+   }
+   // CRITICAL: Ensure the read handle is NOT inherited by child to prevent deadlock
+   SetHandleInformation(hChildStd_OUT_Rd, HANDLE_FLAG_INHERIT, 0);
+
+   // Create StdErr Pipe
+   if (!CreatePipe(&hChildStd_ERR_Rd, &hChildStd_ERR_Wr, &saAttr, 0)) {
+       CloseHandle(hChildStd_OUT_Rd);
+       CloseHandle(hChildStd_OUT_Wr);
+       return {-1, "", "Failed to create stderr pipe", false};
+   }
+   // CRITICAL: Ensure the read handle is NOT inherited by child
+   SetHandleInformation(hChildStd_ERR_Rd, HANDLE_FLAG_INHERIT, 0);
+
+   // 2. Setup Startup Info
+   STARTUPINFOW si;
+   ZeroMemory(&si, sizeof(si));
+   si.cb = sizeof(si);
+   si.hStdOutput = hChildStd_OUT_Wr;
+   si.hStdError = options.merge_outputs? hChildStd_OUT_Wr : hChildStd_ERR_Wr;
+   si.hStdInput = GetStdHandle(STD_INPUT_HANDLE); // Inherit stdin
+   si.dwFlags |= STARTF_USESTDHANDLES;
+
+   // 3. Construct Command Line
+   std::string cmd_line_str = escape_arg(command);
+   for (const auto& arg : args) {
+       cmd_line_str += " " + escape_arg(arg);
+   }
+   std::wstring cmd_line_w = to_wstring(cmd_line_str);
+   // CreateProcessW can modify the string, so we need a mutable buffer
+   std::vector<wchar_t> cmd_vec(cmd_line_w.begin(), cmd_line_w.end());
+   cmd_vec.push_back(0); 
+
+   // 4. Construct Environment Block
+   std::vector<wchar_t> envBlock;
+   if (!options.env_vars.empty()) {
+       for (const auto& [key, val] : options.env_vars) {
+           std::wstring wEntry = to_wstring(key + "=" + val);
+           envBlock.insert(envBlock.end(), wEntry.begin(), wEntry.end());
+           envBlock.push_back(L'\0'); // Null terminate string
+       }
+       envBlock.push_back(L'\0'); // Double-null terminate block
+   }
+   LPVOID lpEnv = envBlock.empty()? NULL : envBlock.data();
+
+   // 5. Working Directory
+   std::wstring work_dir = options.working_directory.empty() 
+                        ? std::wstring() 
+                         : to_wstring(options.working_directory);
+
+   PROCESS_INFORMATION pi;
+   ZeroMemory(&pi, sizeof(pi));
+
+   // 6. Spawn Process
+   BOOL success = CreateProcessW(
+       NULL,                   // Application name (use command line)
+       cmd_vec.data(),         // Command line
+       NULL,                   // Process security attributes
+       NULL,                   // Thread security attributes
+       TRUE,                   // Inherit handles
+       CREATE_UNICODE_ENVIRONMENT, // Creation flags
+       lpEnv,                  // Environment
+       work_dir.empty()? NULL : work_dir.c_str(), // Current directory
+       &si,
+       &pi
+   );
+
+   // CRITICAL: Close write ends in parent immediately.
+   // The child now owns them. If we keep them open, ReadFile will never see EOF.
+   CloseHandle(hChildStd_OUT_Wr);
+   if (!options.merge_outputs) CloseHandle(hChildStd_ERR_Wr);
+
+   if (!success) {
+       CloseHandle(hChildStd_OUT_Rd);
+       CloseHandle(hChildStd_ERR_Rd);
+       return {-1, "", "CreateProcessW failed: " + std::to_string(GetLastError()), false};
+   }
+
+   // 7. Drain Pipes via Threads
+   // We launch threads to read while we wait.
+   std::thread out_thread([&] { read_pipe_async(hChildStd_OUT_Rd, result.out_output); });
+   std::thread err_thread([&] { 
+       if (!options.merge_outputs) read_pipe_async(hChildStd_ERR_Rd, result.err_output); 
+   });
+
+   // 8. Wait for Exit
+   WaitForSingleObject(pi.hProcess, INFINITE);
+   
+   DWORD exit_code = 0;
+   GetExitCodeProcess(pi.hProcess, &exit_code);
+   result.exit_code = static_cast<int>(exit_code);
+   result.success = (result.exit_code == 0);
+
+   // 9. Join Threads (Guarantees all output is captured)
+   if (out_thread.joinable()) out_thread.join();
+   if (err_thread.joinable()) err_thread.join();
+
+   // 10. Cleanup
+   CloseHandle(pi.hProcess);
+   CloseHandle(pi.hThread);
+   CloseHandle(hChildStd_OUT_Rd);
+   CloseHandle(hChildStd_ERR_Rd);
+
+   return result;
+}
+
+} // namespace runtime
+} // namespace aria
+#endif // _WIN32
+
+4.3 POSIX Implementation Logic (src/runtime/process.cpp)
+The POSIX implementation leverages fork, execvp, and pipe. The dup2 system call is the mechanism for I/O redirection.
+4.3.1 Pipe Lifecycle and O_CLOEXEC
+1. Pipe Creation: We create pipes.
+2. Fork:
+   * Child: Calls dup2 to copy the pipe write-end to FD 1 (stdout) and FD 2 (stderr). It then MUST close the original pipe FDs. If it fails to do so, it leaks descriptors.
+   * Parent: Must close the write-ends of the pipes immediately. This is the POSIX equivalent of the Windows handle logic. If the parent keeps the write-end open, read will block indefinitely.12
+4.3.2 Execution via execvp
+We use execvp because it searches the system PATH for the binary (e.g., finding ariac in /usr/bin), which is a requirement for user-friendly build tools. If execvp returns, it means the execution failed (e.g., binary not found), and we must _exit(127) immediately to prevent the child from continuing execution of the parent's code.13
+
+
+C++
+
+
+
+
+// ============================================================================
+// POSIX IMPLEMENTATION
+// ============================================================================
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <cstring>
+
+namespace aria {
+namespace runtime {
+
+// Helper: Async FD reader
+void read_fd_async(int fd, std::string& output_buffer) {
+   std::array<char, 4096> buffer;
+   ssize_t bytesRead;
+   // read() returns 0 on EOF (when write end is closed)
+   while ((bytesRead = read(fd, buffer.data(), buffer.size())) > 0) {
+       output_buffer.append(buffer.data(), bytesRead);
+   }
+}
+
+ExecResult Process::execute(const std::string& command, 
+                           const std::vector<std::string>& args, 
+                           const ExecOptions& options) {
+   int out_pipe;
+   int err_pipe;
+
+   if (pipe(out_pipe) == -1) return {-1, "", "pipe() stdout failed", false};
+   
+   if (!options.merge_outputs) {
+       if (pipe(err_pipe) == -1) {
+           close(out_pipe); close(out_pipe);
+           return {-1, "", "pipe() stderr failed", false};
+       }
+   }
+
+   pid_t pid = fork();
+
+   if (pid == 0) {
+       // --- CHILD PROCESS ---
+       
+       // 1. Redirect StdOut
+       close(out_pipe); // Close read end
+       if (dup2(out_pipe, STDOUT_FILENO) == -1) _exit(errno);
+       close(out_pipe); // Close original write end
+
+       // 2. Redirect StdErr
+       if (options.merge_outputs) {
+           if (dup2(STDOUT_FILENO, STDERR_FILENO) == -1) _exit(errno);
+       } else {
+           close(err_pipe);
+           if (dup2(err_pipe, STDERR_FILENO) == -1) _exit(errno);
+           close(err_pipe);
+       }
+
+       // 3. Change Directory
+       if (!options.working_directory.empty()) {
+           if (chdir(options.working_directory.c_str())!= 0) {
+               // Write error to stderr (which is now our pipe)
+               const char* msg = "chdir failed\n";
+               write(STDERR_FILENO, msg, strlen(msg));
+               _exit(126);
+           }
+       }
+
+       // 4. Construct Environment
+       // execvp inherits by default. To override, we'd need execvpe (GNU)
+       // or manual environ manipulation. Here we assume simple setenv loop.
+       for (const auto& [key, val] : options.env_vars) {
+           setenv(key.c_str(), val.c_str(), 1);
+       }
+
+       // 5. Execute
+       // execvp expects {cmd, arg1, arg2,..., NULL}
+       std::vector<char*> c_args;
+       c_args.push_back(const_cast<char*>(command.c_str()));
+       for (const auto& arg : args) {
+           c_args.push_back(const_cast<char*>(arg.c_str()));
+       }
+       c_args.push_back(nullptr);
+
+       execvp(command.c_str(), c_args.data());
+
+       // If we get here, exec failed
+       const char* msg = "execvp failed\n";
+       write(STDERR_FILENO, msg, strlen(msg));
+       _exit(127); // Standard 'command not found' exit
+   } 
+   else if (pid > 0) {
+       // --- PARENT PROCESS ---
+       
+       // 1. Close Write Ends immediately
+       // The kernel ref count for write-end must drop to 0 for EOF to trigger.
+       close(out_pipe);
+       if (!options.merge_outputs) close(err_pipe);
+
+       ExecResult result = {-1, "", "", false};
+
+       // 2. Spawn Reader Threads
+       std::thread out_thread([&] { read_fd_async(out_pipe, result.out_output); });
+       std::thread err_thread([&] { 
+           if (!options.merge_outputs) read_fd_async(err_pipe, result.err_output); 
+       });
+
+       // 3. Wait for Child
+       int status;
+       waitpid(pid, &status, 0);
+
+       // 4. Join Threads
+       if (out_thread.joinable()) out_thread.join();
+       if (err_thread.joinable()) err_thread.join();
+
+       // 5. Cleanup Read Ends
+       close(out_pipe);
+       if (!options.merge_outputs) close(err_pipe);
+
+       // 6. Parse Exit Code
+       if (WIFEXITED(status)) {
+           result.exit_code = WEXITSTATUS(status);
+       } else if (WIFSIGNALED(status)) {
+           result.exit_code = -128 - WTERMSIG(status); // Convention for signals
+       } else {
+           result.exit_code = -1;
+       }
+       result.success = (result.exit_code == 0);
+
+       return result;
+   } else {
+       // Fork Failed
+       close(out_pipe); close(out_pipe);
+       if (!options.merge_outputs) { close(err_pipe); close(err_pipe); }
+       return {-1, "", "fork() failed", false};
+   }
+}
+
+} // namespace runtime
+} // namespace aria
+#endif // POSIX
+
+5. Integration with the Aria Toolchain
+The implementation of Process::execute is designed to be the engine room for the ToolchainOrchestrator component of AriaBuild.
+5.1 Orchestration Logic
+When AriaBuild identifies a dirty target (e.g., src/main.aria), it constructs a command list.
+1. Resolution: ToolchainOrchestrator resolves the path to ariac.
+2. Argument Synthesis: It maps build variables to flags: -o for output, -I for includes.
+3. Invocation: It calls Process::execute("ariac", {"-o", "out.ll",...}).
+4. Backpressure: The calling worker thread blocks. This is intentional. The OS scheduler allocates CPU time to the ariac process. The worker thread consumes zero cycles while waiting.
+5. Output Processing: Upon return, ExecResult.err_output is scanned. If exit_code!= 0, the build fails, and the captured stderr is printed to the console (potentially colored red for visibility).
+5.2 Thread Pool Interaction
+A common misconception is that blocking process execution inhibits parallelism. In the context of a build system, parallelism is managed by the thread pool size. If the pool has 16 threads, AriaBuild will invoke Process::execute 16 times concurrently. The operating system is then responsible for scheduling 16 compiler processes. The Process class's blocking nature acts as a natural semaphore, preventing the "thundering herd" problem where creating 1000 processes simultaneously would exhaust system RAM and swap space.
+6. Conclusion
+This report has detailed the architectural specification and implementation of a robust, cross-platform Process Abstraction Layer for the AriaBuild system. By rejecting the inadequate standard library wrappers and engaging directly with OS kernel primitives—CreateProcess and fork/exec—we have engineered a solution that ensures:
+1. Deadlock Freedom: Via threaded stream draining.
+2. Security: Via rigorous Windows argument escaping.
+3. Determinism: Via strictly managed environment blocks.
+4. Portability: Via a unified C++ interface hiding platform complexity.
+This component serves as the reliable bedrock upon which the rest of the Aria build infrastructure can be confidently constructed.
+Works cited
+1. compiled.txt
+2. CreateProcess cmd.exe read/write pipes deadlock - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/46611207/createprocess-cmd-exe-read-write-pipes-deadlock
+3. Deadlock while using ReadFile and WriteFile - c++ - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/53695551/deadlock-while-using-readfile-and-writefile
+4. Pipes, Forks, & Dups: Understanding Command Execution and Input/Output Data Flow, accessed December 20, 2025, https://www.rozmichelle.com/pipes-forks-dups/
+5. Capture Output of Spawned Process to string - c++ - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/14147138/capture-output-of-spawned-process-to-string
+6. A new platform independent process library for C++(11) : r/cpp - Reddit, accessed December 19, 2025, https://www.reddit.com/r/cpp/comments/3vpjqg/a_new_platform_independent_process_library_for_c11/
+7. C/C++ fork(), pipes(), and execvp() question - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/58245713/c-c-fork-pipes-and-execvp-question
+8. CreateProcess and capture stdout - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/42402673/createprocess-and-capture-stdout
+9. Creating a Child Process with Redirected Input and Output - Win32 apps | Microsoft Learn, accessed December 20, 2025, https://learn.microsoft.com/en-us/windows/win32/procthread/creating-a-child-process-with-redirected-input-and-output
+10. Pipe Handle Inheritance - Win32 apps | Microsoft Learn, accessed December 20, 2025, https://learn.microsoft.com/en-us/windows/win32/ipc/pipe-handle-inheritance
+11. demonstration of a Windows deadlock in subprocess.py, with extra sleeps to trigger it, accessed December 19, 2025, https://gist.github.com/oconnor663/b1d39d58b232fc627d84
+12. Classic C. Using pipes in execvp function, stdin and stdout redirection - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/13801175/classic-c-using-pipes-in-execvp-function-stdin-and-stdout-redirection
+13. how to use a file descriptor in a child process after execvp? - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/55502099/how-to-use-a-file-descriptor-in-a-child-process-after-execvp

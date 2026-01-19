@@ -1,0 +1,24 @@
+# Test build.abc with FFI support
+
+[project]
+name = "test_ffi"
+version = "0.1.0"
+
+[compiler]
+path = "/home/randy/._____RANDY_____/REPOS/aria/build/ariac"
+
+[target.math_wrapper]
+type = "c_library"
+sources = ["ffi/math_wrapper.c"]
+compiler = "gcc"
+flags = ["-fPIC", "-O2"]
+output = "libmath_wrapper.a"
+deps = []
+
+[target.main]
+type = "binary"
+sources = ["src/main.aria"]
+deps = ["math_wrapper"]
+flags = ["-O2"]
+link_libraries = ["math_wrapper", "m"]
+link_paths = [".aria_make/build"]

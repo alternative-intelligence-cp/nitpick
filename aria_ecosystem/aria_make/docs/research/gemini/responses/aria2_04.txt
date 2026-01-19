@@ -1,0 +1,296 @@
+﻿Comprehensive Architectural Specification and Implementation Strategy for the AriaBuild Ecosystem: A Deterministic, Native-Code Distribution Infrastructure
+1. Executive Summary and Strategic Architectural Context
+The progression of the Aria programming language from an experimental prototype to a rigorous systems programming language requires a foundational shift in its supporting infrastructure. As the language specification approaches the version 0.1.0 milestone, introducing advanced paradigms such as Twisted Balanced Binary (TBB) arithmetic, a hybrid memory model that bifurcates garbage-collected and "wild" manual allocation, and a strict module system, the existing build tooling has reached its functional ceiling. The reliance on legacy tools or simple shell scripts creates a friction point that hinders adoption, reproducibility, and integration with modern CI/CD pipelines.
+The objective of this research report is to define the architectural specification for AriaBuild (internally designated as aria_make), a bespoke build automation system designed explicitly for the Aria ecosystem. This system is not merely a task runner; it is a graph-theoretic execution engine that bridges the gap between high-level project configuration and low-level machine code generation. The architecture eschews the "Configuration as Code" models prevalent in dynamic languages in favor of a strict "Configuration as Data" philosophy, implemented via the whitespace-insensitive Aria Build Configuration (ABC) format.1
+Furthermore, this report addresses the critical imperative of software distribution. To transition Aria from an interpreted curiosity (relying on lli) to a viable production language, aria_make must implement a "Distribution Mode" (dist). This mode orchestrates a multi-stage compilation pipeline involving the LLVM Static Compiler (llc), system linkers (ld, link.exe), and complex Foreign Function Interface (FFI) integrations.1 This strategy ensures the generation of hermetic, native binaries capable of zero-dependency deployment.
+The following analysis is structured to provide a comprehensive engineering blueprint. It dissects the syntactic grammar of the configuration language, the algorithmic underpinnings of the dependency graph engine, the implementation of recursive globbing and incremental hashing, and the platform-specific nuances of cross-compilation and packaging using CMake and CPack.2 By synthesizing these elements, we establish a robust foundation for the Aria toolchain that meets the rigorous demands of modern systems programming.
+2. Philosophy and Syntactic Definition: The Aria Build Configuration (ABC)
+The interface between the developer and the build system is the single most significant determinant of the tool's ergonomics and adoption. Historically, build systems have suffered from arcane syntax and fragile parsing rules. GNU Make, while ubiquitous, enforces a rigid distinction between tabs and spaces that violates the Principle of Least Astonishment, leading to invisible syntax errors.1 CMake, conversely, employs a custom scripting language that often results in verbose and non-deterministic logic.4
+2.1 The Imperative for Whitespace-Insensitive Design
+AriaBuild addresses these historical deficiencies by adopting a design philosophy centered on strict whitespace insensitivity. The architectural decision to reject indentation-based scoping (as seen in Python or YAML) and significant whitespace (as seen in Make) is driven by the need for robustness.1 In the ABC format, the semantic structure of the build definition is determined exclusively by structural delimiters.
+* Scopes and Objects: Defined by braces {}. This delimits targets, project metadata, and variable blocks.
+* Lists and Collections: Defined by brackets ``. This encapsulates source files, flags, and dependency lists.
+* Separators: Colons : separate keys from values, and commas , separate elements.
+This design allows the configuration file to be formatted according to the developer's preference—whether minified onto a single line for machine generation or expanded with elaborate indentation for readability—without altering the build's behavior.1 This decoupling of formatting from semantics eliminates the "tab vs. space" class of errors entirely.
+2.2 Lexical Structure and Schema Definition
+The ABC format is engineered as a superset of JSON, retaining its rigorous data structure while incorporating syntactic enhancements derived from the Aria language itself.
+2.2.1 Identifier Syntax and Comments
+Standard JSON requires all keys to be quoted, which introduces visual noise in configuration files where keys are strictly identifiers. ABC relaxes this rule: keys that constitute valid identifiers (alphanumeric strings starting with a letter or underscore) may remain unquoted.1 This aligns the visual structure of the build file with Aria struct declarations, reducing the cognitive load when context-switching between source code and configuration.
+Crucially, ABC supports comments using the standard Aria syntax (// for single-line). Standard JSON's lack of comments is a significant hindrance for build configurations, where explaining why a specific flag or exclusion is present is as important as the data itself.1
+2.2.2 Variable Substitution Engine
+To support dynamic configurations without introducing a Turing-complete scripting engine, ABC implements a robust variable substitution mechanism. The syntax &{VAR} is borrowed directly from Aria's template literals.
+* Resolution Scope: Variables are resolved hierarchically. The engine first checks the local target scope, then the global file scope, and finally the system environment (prefixed with ENV.).1
+* Immutability: Once defined in a scope, variables are immutable during the parsing phase. This prevents "action-at-a-distance" side effects where a downstream target accidentally modifies a global flag used by an upstream dependency.
+2.2.3 The Configuration Schema
+The schema is divided into three primary sections: project, variables, and targets.1
+Section
+	Type
+	Description
+	project
+	Object
+	Metadata regarding name, version, and semantic compatibility.
+	variables
+	Object
+	A symbol table for reusable string constants and flags.
+	targets
+	List
+	An array of build objects defining the dependency graph nodes.
+	
+
+Code snippet
+
+
+
+
+// Example build.aria configuration
+{
+  project: {
+      name: "NetEngine",
+      version: "1.0.0"
+  },
+  variables: {
+      src: "src",
+      out: "dist",
+      flags:
+  },
+  targets: [
+      {
+          name: "server_core",
+          type: "static_lib",
+          sources: ["&{src}/core/**/*.aria"],
+          output: "&{out}/libcore.a"
+      },
+      {
+          name: "server_bin",
+          type: "binary",
+          sources: ["&{src}/main.aria"],
+          depends_on: ["server_core"],
+          output: "&{out}/server",
+          flags: ["&{flags}"]
+      }
+  ]
+}
+
+3. Core Architecture: The Dependency Graph Engine
+The functional heart of aria_make is the Dependency Graph Engine. Unlike imperative build scripts that execute commands sequentially, aria_make constructs an in-memory Directed Acyclic Graph (DAG) of the entire build universe before a single compiler process is spawned.1
+3.1 Graph-Theoretic Foundations
+In this model, the build process is represented as $G = (V, E)$.
+* Vertices ($V$): Represent build entities. These include source files (.aria), intermediate objects (.ll, .o), and final artifacts (executables, libraries).
+* Edges ($E$): Represent dependency relationships. An edge $A \to B$ implies "A depends on B," meaning the modification time or state of $B$ constrains the validity of $A$, and $B$ must be processed before $A$.1
+Dependencies in Aria arise from two distinct sources:
+1. Explicit Target Dependencies: Defined in the depends_on field of the ABC configuration. These represent high-level architectural relationships (e.g., the application binary depends on the math library).
+2. Implicit Source Dependencies: Derived by parsing source code for use statements (module imports) and embed_file directives. These represent fine-grained file-level relationships.
+3.2 Topological Sorting and Execution Scheduling
+To convert the non-linear DAG into a linear execution schedule, the engine employs Topological Sorting. Specifically, AriaBuild utilizes Kahn’s Algorithm.1 This algorithm is chosen for two specific properties: its iterative nature, which maps well to task queue systems, and its ability to detect cycles.
+Algorithm Execution:
+1. Initialization: The engine iterates over the graph to calculate the in-degree (number of incoming dependency edges) for every node.
+2. Queue Population: All nodes with an in-degree of 0 are identified. These represent leaf dependencies—files or targets that depend on nothing else (often source files or independent libraries). These are pushed into the ReadyQueue.
+3. Processing Loop:
+   * The scheduler pops a node $N$ from the ReadyQueue.
+   * Node $N$ is dispatched to the execution pool.
+   * Upon completion of $N$, the graph acts on its neighbors. For every node $M$ that depends on $N$, the in-degree of $M$ is decremented.
+   * If $M$'s in-degree reaches 0, it is now "unlocked" and pushed to the ReadyQueue.
+3.3 Cycle Detection and Error Reporting
+A critical failure mode in dependency graphs is the Circular Dependency (e.g., A imports B, B imports A). Standard recursive descent parsers often overflow the stack when encountering cycles. Kahn’s Algorithm handles this gracefully: if the ReadyQueue empties but nodes remain in the graph with non-zero in-degrees, a cycle exists.1
+AriaBuild includes a dedicated CycleDetector subsystem. When a cycle is detected, it does not merely crash; it performs a Depth First Search (DFS) on the remaining nodes to isolate the specific strongly connected component. It then reports the exact path of the cycle to the user:
+Error: Circular dependency detected: module 'net' -> module 'tls' -> module 'net'.1
+This diagnostic capability is indispensable for large-scale architectural refactoring, where cycles can be introduced inadvertently across distant modules.
+4. The Globbing Subsystem and File Discovery
+Modern developer ergonomics demand the ability to specify source files using wildcard patterns (globs) rather than exhaustive lists. However, a limitation of the current Aria standard library (std.io) is the lack of directory iteration and traversal primitives.1
+4.1 Native C++ Implementation
+To circumvent this runtime limitation, the globbing subsystem is implemented within the host C++ application (aria_make itself), utilizing the std::filesystem library introduced in C++17.1 This ensures high-performance filesystem traversal without relying on external shell commands like find or ls, which would compromise cross-platform portability.
+The implementation centers on std::filesystem::recursive_directory_iterator. The globbing engine parses patterns such as src/**/*.aria and executes a traversal rooted at src.
+4.2 Exclusion Logic and Optimization
+Recursive traversal can be performance-intensive if applied blindly to directories containing build artifacts or package dependencies (e.g., node_modules, .git, or the build output directory itself). The globbing engine implements a "Pruning Strategy." Before descending into a subdirectory, the iterator checks an exclusion list. If a directory matches an exclusion pattern, the recursion into that branch is disabled (iterator.disable_recursion_pending()), significantly reducing I/O operations.1
+4.3 Determinism via Sorting
+A subtle source of "Flaky Builds" is the non-deterministic order of file processing. Operating systems do not guarantee the order in which readdir returns entries; it often depends on the hash of the filename or the creation order in the inode table.
+If aria_make were to pass files to the compiler in directory order, the resulting binary could differ between clean builds or across different machines, violating the principle of Reproducible Builds. To enforce determinism, the globbing subsystem strictly buffers all discovered paths and sorts them alphabetically (std::sort) before populating the Target structure.1 This ensures that regardless of the underlying OS behavior, the compiler always receives input files in a canonical sequence.
+5. Advanced State Management: Incremental Compilation
+The efficiency of a build system is measured by its ability to do nothing. Rebuilding the entire project when a single comment changes is unacceptable. AriaBuild implements a multi-layered incremental strategy that evolves beyond simple timestamp comparisons.
+5.1 The Limitations of Timestamps
+Legacy tools like Make rely on file modification times (mtime). If output.mtime < input.mtime, the target is rebuilt.1 While efficient, this heuristic is brittle. It fails to detect changes in the build configuration itself. If a developer changes a compiler flag from -O0 to -O3 in the build.aria file, the source files' timestamps haven't changed, so Make would incorrectly consider the build up-to-date.
+5.2 Cryptographic Command Hashing
+AriaBuild introduces Command Signature Hashing. For every target, the system constructs a canonical string representing the full build instruction. This includes:
+1. The sorted list of input source files.
+2. The complete list of compiler flags.
+3. The include paths and definition macros.
+4. The output path.
+This string is hashed using the FNV-1a 64-bit algorithm.1
+
+
+C++
+
+
+
+
+// FNV-1a Hash Implementation for Command Signatures
+inline uint64_t fnv1a_64(std::string_view data) noexcept {
+   uint64_t hash = 14695981039346656037ULL;
+   for (const char c : data) {
+       hash ^= static_cast<uint8_t>(c);
+       hash *= 1099511628211ULL;
+   }
+   return hash;
+}
+
+This hash, along with the source timestamps, is persisted in a state database .aria_build_state.json in the build root.
+5.3 The Composite Dirty Check
+The IncrementalLogic engine performs a composite check to determine if a target is "dirty":
+1. Existence: Does the output file exist?
+2. Timeline: Is the newest source file newer than the output file?
+3. Signature: Does the computed command hash differ from the stored hash in .aria_build_state.json?
+If any condition is true, the target is rebuilt. This guarantees that flag changes, dependency updates, or source modifications all correctly trigger recompilation.1
+5.4 Compiler-Driven Dependency Tracking
+While use statements define module dependencies, accurate incrementalism requires exact knowledge of the file graph. AriaBuild leverages the ariac compiler itself for this. The compiler is instrumented with GCC-compatible dependency flags (-M, -MF, -MT).1
+During compilation, ariac emits a dependency file (e.g., main.d) listing every file accessed during the translation unit's processing, including implicitly imported modules. aria_make parses these files to update the DAG dynamically. This "Compiler-Driven Discovery" ensures that the build system's view of the dependency graph is perfectly aligned with the compiler's reality, handling edge cases like conditional imports that external scanners might miss.
+6. Toolchain Orchestration: The Native Distribution Strategy
+The current Aria architecture relies on an "Interpretation-First" model, compiling code to LLVM IR (.ll) and executing it via the lli interpreter.1 While excellent for development iteration, this model is unsuitable for production distribution. It imposes a runtime dependency on the LLVM toolchain and prevents the use of OS-specific features.
+To resolve this, aria_make implements a Distribution Mode (dist) which refactors the toolchain orchestration to support Ahead-of-Time (AOT) compilation and native linking.
+6.1 The dist Pipeline Architecture
+The dist mode transforms the single-pass compilation into a multi-stage pipeline managed by the ToolchainOrchestrator class.
+1. Frontend Compilation (ariac): Source code is compiled to LLVM IR.
+2. Static Lowering (llc): The orchestrator invokes llc to compile the IR into a machine-native Object File.
+   * Platform Specifics: It generates .o files on Linux/macOS and .obj files on Windows.1
+   * Relocation Models: The flag -relocation-model=pic is strictly enforced. This generates Position Independent Code (PIC), which is a mandatory security requirement for modern OS loaders to enable Address Space Layout Randomization (ASLR).1
+   * Optimization: Optimization flags (-O3) are mirrored from the frontend to llc to ensure the machine code generation utilizes aggressive register allocation and instruction scheduling.
+3. Native Linking: The orchestrator invokes the system linker to combine object files into an executable.
+6.2 Cross-Platform Linking Divergence (ELF vs. PE/COFF)
+A major complexity in native linking is the semantic divergence between Unix (ELF) and Windows (PE/COFF) linkers.
+* Linux (ELF): The linker (ld or lld) is sensitive to the order of arguments. Libraries (-lfoo) must appear after the object files that reference them. The search path is defined by -L.1
+* Windows (PE/COFF): The linker (link.exe) uses distinct flags (/LIBPATH instead of -L, /OUT instead of -o). Crucially, linking against a DLL requires linking against an import library (.lib), not the DLL itself.
+The ToolchainOrchestrator implements a Platform Abstraction Layer. It detects the host OS at runtime and translates abstract dependency definitions into concrete flags.
+Table 1: Linker Flag Abstraction
+Concept
+	Abstract Config
+	Linux Flag (ld)
+	Windows Flag (link.exe)
+	Library Path
+	library_paths: ["lib"]
+	-Llib
+	/LIBPATH:lib
+	Link Library
+	libraries: ["curl"]
+	-lcurl
+	curl.lib
+	Output
+	output: "bin/app"
+	-o bin/app
+	/OUT:bin\app.exe
+	6.3 Foreign Function Interface (FFI) Integration
+The "Gemini Work Package" mandates integration with libcurl for networking support.1 This requires FFI support in the build system. The Target schema in ABC is augmented with libraries and library_paths fields.
+Dependencies are often transitive. If std.net.http links against libcurl, a user application importing std.net should not need to manually specify libcurl. The Dependency Graph Engine implements Recursive Dependency Resolution. When building the final binary, it traverses the graph to the leaves, aggregating all linker flags from dependent modules and bubbling them up to the final link command. This ensures that encapsulation is maintained while satisfying the linker's requirements.1
+7. The Six-Stream I/O Topology
+A defining feature of the Aria runtime is the expansion of the standard I/O model. Traditional Unix processes operate on a tripartite model: stdin (0), stdout (1), and stderr (2). Aria introduces a Six-Stream Topology to segregate data from telemetry.1
+7.1 The Semantic Crisis of Tripartite I/O
+In standard Unix, stdout is overloaded. It carries both the program's output data and, often, operational logs. This "Noisy Channel" problem makes it difficult to compose tools reliably; a warning message printed to stdout corrupts the binary data being piped to the next tool.1
+7.2 The Aria Stream Definition
+Aria reserves three additional file descriptors:
+* stddbg (FD 3): Dedicated debug channel. Logs and telemetry flow here, keeping stdout pure for data.
+* stddati (FD 4): Standard Data In. Dedicated channel for binary input, distinct from text input on stdin.
+* stddato (FD 5): Standard Data Out. Dedicated channel for binary output.
+7.3 Kernel and Shell Integration
+Implementing this requires deep system integration.
+* Kernel Patching: The aria_make distribution strategy includes a patch for the Linux kernel (fs/exec.c). This patch modifies the do_execve path to reserve FDs 3, 4, and 5 during process creation, ensuring they are populated (e.g., with /dev/null) if not explicitly inherited.1
+* Bash Extension: To interact with these streams, a Bash loadable extension aria_io.c is provided. This binary plugin allows shell scripts to map these high-order descriptors natively (e.g., aria_io map stddbg /var/log/debug.log), bridging the gap between the Aria runtime and the shell environment.1
+8. Developer Experience: LSP and Testing
+The build system is the foundation of the developer experience (DevX), powering IDE intelligence and automated verification.
+8.1 Compilation Database Generation
+To support the Aria Language Server (AriaLS), aria_make acts as the source of truth for project structure. During the build graph traversal, it generates a compile_commands.json file.1 This JSON database adheres to the Clang tooling standard, mapping every source file to the exact command used to compile it (including -I paths and -D defines).
+A CompileDBWriter class is implemented to stream this data efficiently. By exposing this file, aria_make enables AriaLS to provide accurate "Go to Definition" and semantic analysis across module boundaries, solving the problem of isolated file analysis.1
+8.2 The Test Automation Subsystem
+Testing is integrated directly into the build tool. The targets list supports a type: "test". aria_make includes a TestRunner subsystem that automates the compile-run-verify cycle.1
+* Process Isolation: The runner uses llvm::sys::ExecuteAndWait to spawn test binaries in isolated processes. This ensures that a segmentation fault in a test case does not crash the build tool itself.1
+* Error Taxonomy: The runner distinguishes between different failure classes. Exit code 1 indicates a logic assertion failure; exit code 139 indicates a segmentation fault (critical for debugging wild pointers); exit code 1 indicates a TBB arithmetic overflow (sticky error).1 This granular reporting is essential for debugging the hybrid memory model.
+9. Distribution and Packaging Infrastructure
+While aria_make builds user projects, the distribution of the Aria toolchain itself requires a robust packaging strategy leveraging CMake, CPack, and CI/CD pipelines.
+9.1 Cross-Platform Packaging with CPack
+To enable ubiquitous distribution, the Aria project utilizes CMake as its meta-build system and CPack for package generation.2 This allows a single build definition to generate native installers for all target platforms.
+* Linux (DEB/RPM): CPack is configured to generate .deb packages for Debian/Ubuntu and .rpm packages for Fedora/RHEL.5 The configuration defines package metadata (CPACK_PACKAGE_CONTACT, dependencies) and installation paths (/usr/bin, /usr/lib).
+* Windows (NSIS): For Windows, the Nullsoft Scriptable Install System (NSIS) generator is used.3 This creates a professional .exe installer. A critical configuration is CPACK_NSIS_MODIFY_PATH, which automatically adds the Aria bin directory to the user's %PATH%, ensuring immediate CLI availability.6
+* Bundling Strategy: The installers bundle the compiler binaries (ariac, aria_make), the Aria Standard Library (.aria sources), and essential runtime DLLs (like the statically built libcurl for FFI support).7
+9.2 GitHub Actions CI/CD Pipeline
+The release process is automated via a GitHub Actions workflow that builds and tests the toolchain on ubuntu-latest, windows-latest, and macos-latest.8
+* Dependency Caching: Building LLVM components is time-consuming. The workflow utilizes actions/cache and specialized actions like setup-cpp or install-llvm-action to provision specific versions of LLVM (e.g., LLVM 18) and cache build artifacts between runs.9
+* Version Embedding: Traceability is enforced by embedding the Git commit hash into the compiler binary. A GenerateVersion.cmake script runs during the build, extracting the hash via git describe and generating a version.h header. This ensures that ariac --version reports the exact build commit.11
+9.3 Homebrew Distribution
+For macOS users, a custom Homebrew tap is established.13 The Formula defines the build process using CMake and specifies dependencies (depends_on "llvm@18").14 To expedite installation, "bottles" (pre-compiled binaries) are built by GitHub Actions and uploaded to the tap, sparing users from compiling the entire toolchain from source.15
+10. Conclusion
+The architecture defined in this report transforms aria_make from a simple compiler driver into a comprehensive build and distribution platform. By solving the "Concurrency Conundrum" with thread-pooled graph execution, bridging the "Interpretation Barrier" via the dist mode, and addressing the "Noisy Channel" problem with the Six-Stream topology, AriaBuild provides the necessary foundation for the Aria language to scale. The integration of modern packaging tools (CPack, CMake) and CI/CD workflows ensures that this sophisticated tooling is accessible to developers across all major operating systems, paving the way for the Aria 0.1.0 release.
+Table 2: Feature Comparison - AriaBuild vs. Legacy Tools
+Feature
+	GNU Make
+	CMake
+	AriaBuild
+	Syntax
+	Imperative, Tab-Sensitive
+	Custom Scripting Lang
+	Declarative ABC (JSON-like)
+	Whitespace
+	Significant (Fatal Errors)
+	Insensitive
+	Strictly Insensitive
+	Concurrency
+	Job Server (-j)
+	Native / Ninja Backend
+	Thread Pool + Graph Scheduler
+	Globbing
+	wildcard function
+	Discouraged (Cache issues)
+	Native Recursive + Caching
+	Incremental
+	Timestamp Only
+	Timestamp / Hash
+	Hash (Content + Command)
+	Dependencies
+	Manual / External
+	find_package
+	Compiler-Driven (-M) + FFI
+	Distribution
+	make install
+	CPack
+	Native dist Mode + CPack
+	Table 3: Error Taxonomy and Reporting Strategy
+Event
+	Signal/Exit Code
+	Aria Context
+	Report Strategy
+	Logic Pass
+	0
+	pass(0)
+	Count as PASS. No output.
+	Assertion Fail
+	1-127
+	fail(1) called
+	Count as FAIL. Show stdout (puts msg).
+	TBB Overflow
+	1 (typ.)
+	Sticky ERR not handled
+	Count as FAIL. Show stdout (calc trace).
+	Segfault
+	-2 / 139
+	Wild ptr access / Stack overflow
+	Count as CRASH. Label "Segmentation Fault".
+	Execution Error
+	-1
+	lli not found / permission denied
+	Count as ERROR. Report system string.
+	Timeout
+	-2
+	Infinite loop in test
+	Count as TIMEOUT.
+	Works cited
+1. compiled.txt
+2. CMake Fundamentals Part 9 | Jeremi Mucha, accessed December 21, 2025, https://jeremimucha.com/2021/05/cmake-fundamentals-part9/
+3. Packaging With CPack — Mastering CMake, accessed December 21, 2025, https://cmake.org/cmake/help/book/mastering-cmake/chapter/Packaging%20With%20CPack.html
+4. CMake Template and Simple Tutorial for VS Code C++ : r/cpp - Reddit, accessed December 21, 2025, https://www.reddit.com/r/cpp/comments/ov35ou/cmake_template_and_simple_tutorial_for_vs_code_c/
+5. Packaging with CPack in NebulaGraph, accessed December 21, 2025, https://www.nebula-graph.io/posts/packaging-with-cpack-in-nebula-graph
+6. Can CMake be used to edit the PATH environment variable as part of project installations?, accessed December 21, 2025, https://stackoverflow.com/questions/75915316/can-cmake-be-used-to-edit-the-path-environment-variable-as-part-of-project-insta
+7. How can I make CPACK include 3rd party DLLs into the installer? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/70728518/how-can-i-make-cpack-include-3rd-party-dlls-into-the-installer
+8. run-cmake · Actions · GitHub Marketplace, accessed December 21, 2025, https://github.com/marketplace/actions/run-cmake
+9. Setup LLVM · Actions · GitHub Marketplace, accessed December 21, 2025, https://github.com/marketplace/actions/setup-llvm
+10. Setup Cpp (C++ / C) · Actions · GitHub Marketplace, accessed December 21, 2025, https://github.com/marketplace/actions/setup-cpp-c-c
+11. Embed git hash of the current commit into version header - GitHub Gist, accessed December 21, 2025, https://gist.github.com/Tordan/c4d4d14aac0e85ebf7122ed2189ea387
+12. Putting git commit and git diff into binary as strings? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/18131753/putting-git-commit-and-git-diff-into-binary-as-strings
+13. Tiny Example: Creating a simple Homebrew Formula - Mark Vogelgesang, accessed December 21, 2025, https://mvogelgesang.com/blog/20240419/creating-a-simple-homebrew-formula/
+14. Formula Cookbook - Homebrew Documentation, accessed December 21, 2025, https://docs.brew.sh/Formula-Cookbook
+15. llvm - Homebrew Formulae, accessed December 21, 2025, https://formulae.brew.sh/formula/llvm

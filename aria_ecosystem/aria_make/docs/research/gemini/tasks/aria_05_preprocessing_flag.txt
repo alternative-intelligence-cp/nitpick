@@ -1,0 +1,50 @@
+Preprocessing-Only Flag (-E) Support
+
+PRIORITY: LOW
+STATUS: Not Found in Research
+SOURCE: Verification analysis (all chunks)
+
+PROBLEM:
+No flag to output preprocessed source (macro-expanded, imports resolved) without compilation. Useful for debugging macro issues and understanding module resolution.
+
+REQUIREMENTS:
+1. CLI flag:
+   - aria_make -E <target> (preprocess only, no compile)
+   - Output to stdout or file
+
+2. Compiler integration:
+   - Pass -E to ariac (if supported)
+   - Halt after preprocessing phase
+   - Preserve comments or strip based on flag variant
+
+3. Use cases:
+   - Debug macro expansion
+   - Inspect module import resolution
+   - Generate documentation from processed source
+
+IMPLEMENTATION TASKS:
+- [ ] Add -E flag parsing to CLI
+- [ ] Check if ariac supports preprocessing-only mode
+- [ ] If not, implement in ariac compiler pipeline
+- [ ] Add output redirection (stdout vs file)
+- [ ] Update ToolchainOrchestrator to handle -E mode
+- [ ] Document flag in user guide
+
+FILES TO MODIFY:
+- src/cli/main.cpp (flag parsing)
+- src/build/toolchain.cpp (pass -E to ariac)
+- docs/info/plan/60_TOOLING_INTEGRATION.md (document flag)
+
+RESEARCH STATUS:
+NOT FOUND in any of the 35 research files. May not have been considered during initial design.
+
+DECISION NEEDED:
+- Is this a build system feature or compiler feature?
+- Should aria_make support it, or is it ariac's responsibility?
+- What does ariac currently output in preprocessing stage?
+
+ACCEPTANCE CRITERIA (if approved):
+- aria_make -E main.aria outputs preprocessed source
+- Comments preserved or stripped based on flag variant
+- Works with glob patterns (preprocess multiple files)
+- Integration with IDE for "expand macro" feature

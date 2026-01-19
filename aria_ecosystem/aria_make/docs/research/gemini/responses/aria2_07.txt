@@ -1,0 +1,422 @@
+﻿Architectural Specification for the AriaBuild Distributed Content-Addressable Build Cache System
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language ecosystem has precipitated a critical inflection point in its tooling infrastructure. As software projects utilizing Aria transition from experimental prototypes to large-scale, multi-module monorepositories, the linear relationship between code volume and compilation time has emerged as the primary bottleneck in developer velocity. In enterprise environments and Continuous Integration/Continuous Deployment (CI/CD) pipelines, the computational redundancy of recompiling identical source code across different machines and temporal contexts represents a significant resource inefficiency.
+This report articulates a comprehensive architectural specification for integrating a Distributed, Content-Addressable Build Cache into aria_make (AriaBuild). The proposed system shifts the build paradigm from a localized, timestamp-dependent model to a global, content-addressable model. By identifying build artifacts not by their filesystem location or modification time, but by a cryptographic digest of their inputs—source code, compiler flags, environmental variables, and toolchain identity—we can decouple compilation from the specific machine on which it occurs. This enables a "write once, use everywhere" model for object files and linked binaries.
+The architecture described herein leverages state-of-the-art cryptographic primitives, specifically BLAKE3, to ensure that cache key calculation does not become a new bottleneck on modern multi-core hardware.1 It establishes a rigorous two-tier cache hierarchy: a low-latency Local Cache (L1) managed by a thread-safe Least Recently Used (LRU) eviction policy 3, and a scalable Remote Cache (L2) utilizing a RESTful protocol compatible with industry standards like the Bazel Remote Execution API.4
+Crucially, this report addresses the systemic challenge of Hermeticity. A remote cache is only as effective as the determinism of the build process. We detail necessary interventions in the compiler invocation process—stripping absolute paths, normalizing timestamps, and sanitizing environments—to ensure that artifacts produced on a developer's laptop are bit-for-bit identical to those produced on a CI agent.6
+This document serves as the definitive engineering blueprint for the AriaBuild team, outlining the algorithms, data structures, and protocols required to transform aria_make into a distributed build orchestrator capable of sub-second incremental builds in massive codebases.
+________________
+2. Theoretical Framework: The Content-Addressable Build Graph
+To understand the architectural decisions presented in this specification, one must first deconstruct the theoretical underpinnings of build caching. Traditional build systems, like Make, model the build as a dependency graph where edges represent "newer than" relationships based on filesystem metadata (mtime). This model is inherently local; my utils.c timestamp has no meaning on your machine.
+The proposed system re-imagines the build process as a mathematical function: $Output = Compile(Inputs)$. If $Compile$ is deterministic, then identical $Inputs$ must yield identical $Output$. Therefore, if we can uniquely identify the $Inputs$, we can cache the $Output$ globally.
+2.1 The Merkle Tree of Dependencies
+The build graph is transformed into a Merkle Tree, a structure where every node is labeled with the cryptographic hash of its content and the labels of its children.
+* Leaf Nodes (Inputs): These are the raw materials of the build. In AriaBuild, these include source files (.aria), header interfaces, and configuration manifests (aria.toml). Their identity is strictly the hash of their byte stream. Metadata like file owner, permissions, or creation time is strictly excluded to maintain purity.
+* Intermediate Nodes (Actions): An action node represents the transformation process. Its identity (the Action Digest) is the hash of the combined identities of its inputs (leaf nodes), the identity of the tool performing the transformation (the compiler binary hash), and the parameters of the transformation (compiler flags, environment variables).
+* Root Nodes (Artifacts): These are the outputs—object files (.o), static libraries (.a), and executables.
+In this model, the "cache key" is the hash of the Action Node. If aria_make computes an Action Digest and finds it in the cache, it proves that the exact same compilation has occurred before, with identical inputs and configuration.
+2.2 Cryptographic Primitive Selection: The Case for BLAKE3
+The efficacy of a Content-Addressable Storage (CAS) system hinges on the hashing algorithm. It must satisfy two conflicting constraints: Collision Resistance (to prevent cache poisoning where different codes map to the same key) and Throughput (to ensure hashing inputs is faster than compiling them).
+Historically, SHA-256 has been the standard, offering 128 bits of security against collision attacks. It is used by Bazel and older systems.4 However, SHA-256 is an inherently serial algorithm; its Merkle-Damgård construction prevents parallel processing of a single data stream.
+BLAKE3 represents a paradigm shift. It utilizes a tree-based hashing mode (Bao) internally, allowing it to parallelize the hashing of a single file across SIMD lanes (AVX-512, NEON) and multiple CPU cores.1
+* Performance: Benchmarks demonstrate BLAKE3 achieving speeds of nearly 7 GB/s on modern hardware, effectively saturating the memory bandwidth. In contrast, SHA-256 typically caps at 0.5 GB/s. For a build system scanning gigabytes of source code and dependencies, this difference is the margin between an "instant" check and a perceptible lag.
+* Security: BLAKE3 retains the 128-bit security level of BLAKE2s and SHA-256, rendering it safe against preimage and collision attacks in a build context.8
+Strategic Decision: The AriaBuild cache system will standardize on BLAKE3 for all cache key calculations. This aligns with Aria's design philosophy of leveraging modern hardware parallelism and ensures the build tool remains performant on future many-core architectures.
+________________
+3. Cache Key Calculation Algorithm
+The integrity of the cache system is binary: it works perfectly, or it fails catastrophically. A "Cache Miss" (false negative) is merely a performance penalty. A "Cache Hit" on differing inputs (false positive) corrupts the build, leading to "Heisenbugs" where the running binary does not match the source code. To guarantee correctness, the Cache Key must capture the Transitive Closure of all inputs.
+3.1 The Action Digest Topology
+We define the CacheKey as the BLAKE3 hash of a canonicalized JSON manifest representing the Action. This manifest must be exhaustive.
+3.1.1 The Toolchain Identity
+The compiler itself is an input. Upgrading ariac from v1.0 to v1.1 might introduce new optimizations or bug fixes.
+* Compiler Binary Hash: We must hash the executable ariac. Using a version string alone is insufficient, as developers might compile their own dirty versions of the compiler.9
+* Runtime Libraries: If ariac links dynamically to a standard library, the identity of those shared objects must technically be included. For simplicity, we assume the compiler binary hash covers this, or we hash the output of ariac --version --verbose which includes build configuration details.
+3.1.2 Command-Line Flag Normalization
+Compiler flags fundamentally alter the output. -O0 code is different from -O3.
+* Canonical Sorting: The order of flags like -I include/ -D DEBUG vs -D DEBUG -I include/ often does not matter to the compiler, but it changes the hash. AriaBuild must parse and sort flags alphabetically where semantic equivalence is guaranteed.
+* Blacklisting: Certain flags that introduce non-determinism (e.g., specific temp path overrides) should be filtered or normalized.
+3.1.3 The Input Manifest (Source & Dependencies)
+This is the most complex component.
+* Primary Source: The content hash of the .aria file being compiled.
+* Transitive Dependencies: AriaBuild uses the compiler's dependency scanning logic to identify all imported modules. For C/C++ interop, this involves parsing header includes (#include). The cache key must include the content hashes of every file in this dependency tree.11
+* Implicit Inputs: Files that are not explicitly listed but affect the build, such as aria.toml or module maps, must be included.
+3.1.4 Environmental Context
+Environment variables can silently alter build behavior.
+* Whitelist Strategy: AriaBuild should only hash variables explicitly known to affect the build (e.g., ARIA_PATH, CFLAGS, LDFLAGS).
+* Sanitization: All other variables (like USER, SHELL, TERM) are ignored to prevent cache fragmentation across different developers' machines.4
+3.2 Algorithm Specification
+The following pseudocode details the rigorous key generation process:
+
+
+C++
+
+
+
+
+// include/cache/key_generator.h
+
+struct ActionDigest {
+   std::string toolchain_hash;
+   std::string target_platform; // e.g., x86_64-linux-gnu
+   std::vector<std::string> sorted_flags;
+   std::map<std::string, std::string> env_vars; // Key=Value
+   std::vector<FileEntry> inputs; // RelativePath -> ContentHash
+};
+
+CacheKey calculate_cache_key(const Target& target, const Toolchain& toolchain) {
+   Blake3Hasher hasher;
+
+   // 1. Toolchain Context
+   hasher.update("toolchain_v1"); // Schema version
+   hasher.update(toolchain.binary_hash);
+   hasher.update(toolchain.version_string);
+
+   // 2. Platform Context
+   hasher.update(target.target_triple); 
+
+   // 3. Flags (Sorted for canonicalization)
+   auto flags = target.flags;
+   std::sort(flags.begin(), flags.end());
+   for (const auto& flag : flags) {
+       hasher.update(flag);
+   }
+
+   // 4. Environment (Whitelisted & Sorted)
+   auto env = filter_env_vars(target.env, WHITELIST);
+   for (const auto& [key, val] : env) {
+       hasher.update(key);
+       hasher.update("=");
+       hasher.update(val);
+   }
+
+   // 5. Input Files (The Manifest)
+   // Resolve full dependency tree first!
+   auto dependencies = DependencyGraph::resolve_transitive_closure(target.sources);
+   
+   // Sort by relative path to ensure deterministic order
+   std::sort(dependencies.begin(), dependencies.end(), 
+            (const auto& a, const auto& b) { return a.rel_path < b.rel_path; });
+
+   for (const auto& file : dependencies) {
+       hasher.update(file.rel_path); // Hash the logical path
+       hasher.update(file.content_hash); // Hash the actual content
+   }
+
+   return hasher.finalize();
+}
+
+________________
+4. Engineering Hermeticity: The War on Non-Determinism
+A cache is useless if the underlying build process is non-deterministic. If compiling the same code twice yields two different binaries, the cache becomes a source of confusion rather than acceleration. "Hermeticity" refers to the isolation of the build from the host environment.
+4.1 The Path Prefix Problem
+Debug information (DWARF) typically embeds the absolute path of the source files.
+* Scenario: Alice builds in /home/alice/dev/project. Bob builds in /home/bob/src/project.
+* Result: The binaries differ by the path string embedded in the debug section. The hash differs. Cache miss.
+* Solution: Path Remapping. We must instruct the compiler to rewrite paths. Clang provides -fdebug-prefix-map=OLD=NEW. AriaBuild must automatically inject a flag like --remap-path-prefix $PROJECT_ROOT=..6 This ensures that internally, the compiler sees all paths as relative to the project root, regardless of where the project is cloned on disk.13
+4.2 Timestamp Scrubbing
+Archivers (ar) and linkers often embed the current timestamp into static libraries or headers.
+* Problem: Every build has a unique timestamp, changing the file hash, causing a ripple effect of cache misses downstream.
+* Solution: Deterministic Mode. AriaBuild must enforce the SOURCE_DATE_EPOCH standard. It sets this environment variable to a fixed value (e.g., the timestamp of the last git commit or a zero epoch). The toolchain (ar, ld) must be configured to respect this variable or run in deterministic mode (ar -D).7
+4.3 Macro Hygiene
+Macros like __DATE__, __TIME__, and __FILE__ are enemies of caching.
+* DATE/TIME: These change every compilation. AriaBuild should enable compiler warnings (-Wdate-time) or force them to be constant via -Wno-builtin-macro-redefined -D__DATE__="redacted".14
+* FILE: If expanded to an absolute path, it breaks hermeticity. The path remapping flags mentioned in 4.1 usually handle this, transforming __FILE__ to a relative path.13
+________________
+5. Local Cache Architecture (L1)
+The Local Cache resides on the developer's machine (~/.aria_cache). Its primary constraint is disk usage vs. hit rate.
+5.1 Storage Layout: Sharded CAS
+Storing thousands of files in a single directory degrades filesystem performance. We employ a 2-level sharding scheme based on the hash hex digest.
+
+
+
+
+
+
+~/.aria_cache/
+├── v1/
+│   ├── ac/                 # Action Cache (Metadata)
+│   │   ├── 8f/
+│   │   │   └── 8f9a0b1c... # JSON: { exit_code: 0, output: "cas/0a/..." }
+│   ├── cas/                # Content Addressable Storage (Blobs)
+│   │   ├── 0a/
+│   │   │   └── 0a1b2c3d... # The actual.o file content
+│   │   ├── e4/
+│   │   │   └── e4f5g6h7... 
+
+Implicit Deduplication: By separating Action Cache (AC) entries from CAS blobs, we achieve deduplication. If src/foo.aria and src/bar.aria both compile to identical code (e.g., empty object files or identical generic instantiations), they will produce different AC entries (different inputs) but point to the same CAS blob.
+5.2 Thread-Safe LRU Eviction Policy
+Disk space is finite. The eviction policy must maximize the probability of a hit while respecting a quota (e.g., 10GB).
+* Policy: Least Recently Used (LRU). Build artifacts exhibit strong temporal locality; artifacts used recently are likely to be used again soon.3
+* Implementation: Implementing LRU on a filesystem is non-trivial because atime (access time) is often disabled for performance (noatime mount option).
+* The "Touch" Strategy: AriaBuild must maintain a lightweight metadata database (e.g., SQLite or a memory-mapped usage.bin) mapping Hash -> LastAccessTimestamp. Whenever an artifact is requested (Hit) or inserted (Miss), this timestamp is updated.
+* Eviction Process: This operation should be lazy or run as a background daemon.
+   1. On put(), if current size > limit:
+   2. Query database for items with oldest LastAccessTimestamp.
+   3. Delete corresponding files from ac/ and cas/.
+   4. Remove database entries.
+5.3 Concurrency and Atomic Writes
+AriaBuild executes in parallel. Two processes might try to write the same cache entry simultaneously (e.g., two developers running builds on a shared machine, or parallel CI jobs).
+* Atomic Pattern: Never write directly to the final path.
+   1. Write data to ~/.aria_cache/tmp/GUID.
+   2. fsync() to ensure durability.
+   3. rename(tmp_path, final_path).
+   * This leverages the OS's atomic rename guarantee. If two processes race, the second rename simply overwrites the first with identical data (since it's content-addressed), which is benign.15
+________________
+6. Remote Cache Architecture (L2)
+The Remote Cache is the force multiplier for teams. It allows Developer A to utilize artifacts compiled by the CI system 5 minutes ago.
+6.1 Protocol Design: RESTful API
+To ensure broad compatibility, AriaBuild will implement a subset of the Bazel Remote Execution API over HTTP/1.1 or HTTP/2. This allows the use of standard backends like Nginx (WebDAV), S3, or specialized servers like bazel-remote.4
+API Specification:
+Method
+	URI
+	Payload
+	Description
+	GET
+	/ac/{hash}
+	None
+	GetActionResult: Returns JSON metadata mapping Action Hash → CAS Hashes.
+	PUT
+	/ac/{hash}
+	JSON
+	UpdateActionResult: Uploads metadata.
+	GET
+	/cas/{hash}
+	None
+	ReadBlob: Downloads raw artifact (binary).
+	PUT
+	/cas/{hash}
+	Binary
+	WriteBlob: Uploads raw artifact.
+	HEAD
+	/cas/{hash}
+	None
+	FindMissingBlobs: Checks existence to avoid redundant uploads.
+	6.2 Authentication and Security
+The remote cache is a high-value target. Poisoning it compromises every developer.
+* Write Access Control: In a typical setup, the CI system has Read/Write access, while developers have Read-Only access. This creates a "Trust Boundary" where only code verified by the CI pipeline enters the shared cache.17
+* Mechanism: Bearer Tokens or Basic Auth over TLS (HTTPS). AriaBuild should support reading credentials from environment variables (ARIA_CACHE_AUTH_TOKEN) to avoid logging secrets in shell history.19
+6.3 Compression Strategy
+Network bandwidth is often the bottleneck for L2 caches.
+* Algorithm: Zstandard (zstd). It offers decompression speeds approaching memcpy speeds and compression ratios superior to gzip. This minimizes the time the build blocks on network I/O.16
+* Implementation: The HTTP client should send Accept-Encoding: zstd and artifacts should be stored compressed in the CAS.
+________________
+7. Operational Workflow and Logic
+This section details the precise integration of caching into the BuildScheduler.
+7.1 Cache Hit/Miss Logic Flow
+The standard "Check Inputs -> Compile -> Output" loop is intercepted:
+
+
+Code snippet
+
+
+
+
+graph TD
+   A --> B{Calc Cache Key K}
+   B --> C{Check L1 Local}
+   C -- Hit --> D
+   D --> E[Update mtime to Now]
+   E --> F
+   C -- Miss --> G{Check L2 Remote}
+   G -- Hit --> H
+   H --> D
+   G -- Miss --> I[Execute Compiler]
+   I --> J{Success?}
+   J -- No --> K
+   J -- Yes --> L[Hash Outputs]
+   L --> M
+   M --> N
+   N --> O
+   O --> F
+
+Key Insight: Speculative Execution & Async Uploads
+* Speculative Downloads: While checking L2, the system can speculatively compile locally if the network is slow. Whichever finishes first wins.
+* Async Uploads: Uploading artifacts to the remote cache should not block the local build. It should be queued to a background thread pool so the developer gets their binary immediately while the cache populates in the background.17
+7.2 Integration with Incremental Builds
+AriaBuild already has timestamp-based incremental logic. The cache is orthogonal.
+1. Fast Path (Timestamps): Check if mtime(source) > mtime(output). If source is older, do nothing. This is instant (<1ms).
+2. Slow Path (Cache): If timestamp check fails (file is dirty), calculate Cache Key. This involves hashing content (~10-50ms).
+3. Fallback (Compile): If cache misses, compile (~1000ms+).
+This hybrid approach ensures that local development loops (edit-save-build) remain nearly instantaneous, avoiding the overhead of hashing unchanged files.20
+________________
+8. C++ Implementation Design
+The implementation requires extending the AriaBuild C++ codebase.
+8.1 Class Architecture
+
+
+C++
+
+
+
+
+// include/cache/cache_key.h
+struct CacheKey {
+   std::string digest;
+   std::string to_string() const; 
+   // Implements BLAKE3 hashing of Action Digest components
+};
+
+// include/cache/cache_interface.h
+class CacheInterface {
+public:
+   virtual ~CacheInterface() = default;
+   // Returns path to artifact if found
+   virtual std::optional<fs::path> get_artifact(const CacheKey& key, const fs::path& destination) = 0;
+   // Stores artifact
+   virtual bool put_artifact(const CacheKey& key, const fs::path& source) = 0;
+   // Checks existence (HEAD)
+   virtual bool contains(const CacheKey& key) = 0;
+};
+
+// include/cache/local_cache.h
+class LocalCache : public CacheInterface {
+   fs::path root_dir_;
+   size_t max_size_bytes_;
+   std::unique_ptr<LruDatabase> lru_db_; // SQLite or custom binary format
+   
+public:
+   LocalCache(fs::path root, size_t max_size);
+   void enforce_eviction_policy(); // Runs garbage collection
+   //... Implementations using atomic file ops...
+};
+
+// include/cache/remote_cache.h
+class RemoteCache : public CacheInterface {
+   std::string base_url_;
+   std::string auth_token_;
+   HttpClient client_; // Pool of persistent connections
+   
+public:
+   //... Implementations using REST API...
+   // Supports zstd compression transparently
+};
+
+// include/build/cache_manager.h
+class CacheManager {
+   std::unique_ptr<LocalCache> l1_;
+   std::unique_ptr<RemoteCache> l2_;
+   ThreadPool upload_pool_; // For non-blocking uploads
+   
+public:
+   // Orchestrates the L1 -> L2 fallback logic
+   bool retrieve(const Target& target, const Toolchain& tc);
+   void store(const Target& target, const Toolchain& tc, const Artifact& out);
+};
+
+________________
+9. Testing and Verification Strategy
+A build cache that returns stale data is worse than no cache. Rigorous testing is mandatory.
+9.1 The "10% Verification" Mode
+To build trust, aria_make should support a --verify-cache flag. In this mode:
+1. The system downloads the artifact from the cache (Hit).
+2. It also compiles the code locally.
+3. It compares the hash of the downloaded artifact vs. the local compilation.
+4. If they differ, it alerts the user (and potentially the remote server) of non-determinism or cache poisoning.18
+9.2 Test Scenarios
+* Determinism Test: Compile same source in /tmp/dirA and /tmp/dirB. Assert Cache Key is identical (verifies path scrubbing).
+* Timestamp Sensitivity: Touch a source file (update mtime) without changing content. Assert Cache Key is identical (verifies content hashing).
+* Flag Sensitivity: Change -O2 to -O3. Assert Cache Key is different.
+* Corruption Test: Manually corrupt a file in ~/.aria_cache/cas/. Assert aria_make detects the checksum mismatch and ignores the entry/re-downloads.
+________________
+10. Advanced Features and Future Roadmap
+10.1 Distributed Compilation (Layer 3)
+Once the build is hermetic and the inputs are hashable, we can move beyond caching results to Distributed Execution. Instead of compiling locally on a cache miss, aria_make can bundle the inputs (the Merkle tree) and send them to a Build Farm (Remote Workers). The workers compile and return the result. This transforms every developer laptop into a supercomputer.21
+10.2 Cache Analytics
+A dashboard can visualize cache efficiency:
+* Hit Rate: Global % of builds saved.
+* Miss Analysis: "Why did this miss?" (e.g., "Compiler version changed", "Flag -DDEBUG added").
+* Savings: "Time saved: 400 hours/month".
+________________
+11. Comparative Analysis
+Feature
+	AriaBuild (Proposed)
+	Bazel
+	sccache
+	ccache
+	Scope
+	Build System Integrated
+	Build System Integrated
+	Compiler Wrapper
+	Compiler Wrapper
+	Granularity
+	Target / Action Graph
+	Target / Action Graph
+	Single Translation Unit
+	Single Translation Unit
+	Remote Protocol
+	REST / REAPI
+	gRPC (REAPI)
+	Custom (S3/GCS/Redis)
+	Specific Backends
+	Header Hashing
+	Semantic (Dependency Graph)
+	Explicit (BUILD files)
+	Preprocessor Mode
+	Preprocessor Mode
+	Determinism
+	Enforced via Flags
+	Enforced via Sandbox
+	Opportunistic
+	Opportunistic
+	Insight: AriaBuild aligns closer to Bazel's architecture. By controlling the graph, it can cache link steps and test results, not just compilation units. sccache and ccache are limited because they only see individual compiler calls, missing the broader context of the build.21
+________________
+12. Conclusion
+The implementation of this specification will promote aria_make from a competent local builder to an enterprise-grade distributed system. By anchoring trust in cryptography rather than timestamps, AriaBuild will deliver correctness and speed simultaneously. The use of BLAKE3 and Zstandard ensures the system is future-proof against data scaling, while the adherence to RESTful protocols ensures interoperability. This is not merely an optimization; it is the foundation for the next decade of Aria development.
+________________
+13. Deliverables Summary (Appendices)
+Appendix A: Eviction Policy Matrix
+Policy
+	Implementation
+	Pros
+	Cons
+	Verdict
+	FIFO
+	Queue
+	Simple, fast.
+	Evicts frequently used core libs.
+	Rejected
+	LRU
+	Hash Map + List
+	Retains "hot" artifacts.
+	Overhead of list maintenance.
+	Adopted
+	TTL
+	Timestamp check
+	Easy cleanup.
+	Doesn't respect usage patterns.
+	Secondary
+	Appendix B: Performance Targets
+* Key Calculation: < 50ms for average module.
+* Local Lookup: < 5ms.
+* Remote Throughput: > 100MB/s (saturate 1Gbps link).
+* Space Overhead: < 2% (metadata vs content).
+Appendix C: CLI Command Reference
+* --cache-local: Enable local L1 cache.
+* --cache-remote=<URL>: Enable remote L2 cache.
+* --cache-auth=<TOKEN>: Authentication for L2.
+* --cache-readonly: Prevent uploads to L2 (for untrusted environments).
+* --cache-verify: Enable 10% re-compilation check.
+* --cache-stats: Print hit/miss telemetry.
+Works cited
+1. SHA-256 vs BLAKE3 - A Comprehensive Comparison - MojoAuth, accessed December 21, 2025, https://mojoauth.com/compare-hashing-algorithms/sha-256-vs-blake3/
+2. Reasons to prefer blake3 over sha256 - Peergos, accessed December 21, 2025, https://peergos.org/posts/blake3
+3. LFU vs. LRU: How to choose the right cache eviction policy - Redis, accessed December 21, 2025, https://redis.io/blog/lfu-vs-lru-how-to-choose-the-right-cache-eviction-policy/
+4. Remote Caching | Bazel, accessed December 21, 2025, https://bazel.build/remote/caching
+5. remote-apis / build.bazel.remote.execution.v2 - Buf, accessed December 21, 2025, https://buf.build/bazel/remote-apis/docs/main:build.bazel.remote.execution.v2
+6. Build path — reproducible-builds.org, accessed December 21, 2025, https://reproducible-builds.org/docs/build-path/
+7. Timestamps — reproducible-builds.org, accessed December 21, 2025, https://reproducible-builds.org/docs/timestamps/
+8. BLAKE-3 vs SHA-256 security, accessed December 21, 2025, https://security.stackexchange.com/questions/265367/blake-3-vs-sha-256-security
+9. Allow remapping source path prefixes in debug output · Issue #38322 - GitHub, accessed December 21, 2025, https://github.com/rust-lang/rust/issues/38322
+10. Does sccache really help? : r/rust - Reddit, accessed December 21, 2025, https://www.reddit.com/r/rust/comments/rvqxkf/does_sccache_really_help/
+11. Cache keys — BuildStream 2.6.0+40.g12b11f89c documentation, accessed December 21, 2025, https://docs.buildstream.build/master/arch_cachekeys.html
+12. Caching already hashed files during one build · Issue #377 - GitHub, accessed December 21, 2025, https://github.com/ccache/ccache/issues/377
+13. Deterministic builds with clang and lld - The LLVM Project Blog, accessed December 21, 2025, https://blog.llvm.org/2019/11/deterministic-builds-with-clang-and-lld.html
+14. Deterministic builds under Windows - c++ - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/1180852/deterministic-builds-under-windows
+15. 146. LRU Cache - In-Depth Explanation - AlgoMonster, accessed December 21, 2025, https://algo.monster/liteproblems/146
+16. buchgr/bazel-remote: A remote cache for Bazel - GitHub, accessed December 21, 2025, https://github.com/buchgr/bazel-remote
+17. If you're interested in a drop in remote cache for sccache, check out Buildless, accessed December 21, 2025, https://news.ycombinator.com/item?id=38754855
+18. Mozilla sccache: ccache with cloud storage - Hacker News, accessed December 21, 2025, https://news.ycombinator.com/item?id=38732717
+19. Command-Line Reference | Bazel, accessed December 21, 2025, https://bazel.build/reference/command-line-reference
+20. compiled.txt
+21. Support the Remote Execution API · Issue #358 · mozilla/sccache - GitHub, accessed December 21, 2025, https://github.com/mozilla/sccache/issues/358
+22. Why ccache works if build systems like Make or Ninja already handle dependencies, accessed December 21, 2025, https://stackoverflow.com/questions/76802121/why-ccache-works-if-build-systems-like-make-or-ninja-already-handle-dependencies

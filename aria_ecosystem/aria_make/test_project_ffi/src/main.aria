@@ -1,0 +1,16 @@
+// Test FFI integration with C library
+
+extern "math_wrapper" {
+    func:aria_sqrt = float64(float64:x);
+    func:aria_distance = float64(float64:x1, float64:y1, float64:x2, float64:y2);
+}
+
+func:main = int32() {
+    float64:x = 16.0;
+    float64:result = aria_sqrt(x);
+    
+    float64:dist = aria_distance(0.0, 0.0, 3.0, 4.0);
+    
+    return 0;
+};
+

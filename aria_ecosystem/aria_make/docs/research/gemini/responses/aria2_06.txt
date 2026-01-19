@@ -1,0 +1,222 @@
+﻿Architectural Specification for the Aria Build System: Watch Mode, Continuous Integration, and Event-Driven Orchestration
+1. Introduction: The Paradigm Shift to Continuous Compilation
+The domain of systems programming tooling is undergoing a fundamental transformation. Historically, the compilation process was a discrete, batch-oriented activity: a developer would author code, save files, switch context to a terminal, invoke a build command, and await the result. This linear workflow, while deterministic, introduces significant cognitive friction and latency into the development loop. As the complexity of software systems grows, the time lost to context switching and manual invocation accumulates, acting as a drag on developer velocity.
+The Aria programming language, with its emphasis on high-performance systems engineering, safety via Twisted Balanced Binary (TBB) arithmetic, and a hybrid memory model, requires a build infrastructure that matches the sophistication of its runtime. The current iteration of the build tool, aria_make (internally referred to as AriaBuild), operates on a robust but traditional dependency graph model. It excels at deterministic execution but lacks the responsiveness required for modern, interactive development environments.1
+This report articulates a comprehensive architectural specification for the Watch Mode and Continuous Build System for aria_make. This system represents a shift from a "Pull" model (user requests build) to a "Push" model (filesystem events trigger build). The objective is to engineer a system capable of detecting source code mutations, filtering transient noise, and orchestrating incremental recompilation with sub-100ms latency, all while respecting the rigid determinism and resource constraints of the host operating system.
+The scope of this document encompasses the complete lifecycle of the continuous build process. It dissects the low-level mechanisms of cross-platform filesystem observation, the signal processing theory required to debounce rapid inputs, and the state machine logic necessary to coordinate the BuildScheduler safely. Furthermore, it addresses the specific constraints of the Aria compiler (ariac), which is currently a non-incremental, single-pass system.1 This constraint necessitates a unique "Discard-Stale" scheduling strategy to prevent the build queue from becoming saturated with obsolete tasks, ensuring that the developer always receives feedback on the most current state of their code.
+2. Theoretical Framework: Event-Driven Build Architectures
+To design a robust Watch Mode, one must first establish a theoretical framework for treating filesystem mutations as an asynchronous event stream. In this model, the build system acts as a reactive agent, a "Reactor," that maintains a synchronized state between the persistent storage (disk) and the volatile artifacts (binaries/libraries).
+2.1 The Observer Pattern in Systems Tooling
+The integration of Watch Mode effectively inverts the control flow of the application. Standard aria_make executes a topological sort of the dependency graph and terminates.1 In contrast, the Watch Mode subsystem implements the Observer Pattern at the architectural level. The FileWatcher acts as the Subject, monitoring the OS kernel for state changes. The WatchModeController acts as the Observer, subscribing to these events and reacting by stimulating the BuildScheduler.
+This inversion necessitates a transition from a procedural execution model to an event-loop concurrency model. The main thread of the application can no longer be a simple linear executor; it must become an I/O pump, multiplexing signals from the filesystem, user input (stdin), and child process termination signals. This aligns with the "Six-Stream Topology" inherent to Aria's runtime design, where distinct channels for data (stddati/stddato) and debugging (stddbg) are maintained alongside standard output.1
+2.2 The "Noisy Channel" Problem
+A naive implementation of file watching assumes a one-to-one mapping between a user's "Save" action and a filesystem event. In reality, the filesystem is a "Noisy Channel." Modern text editors and Integrated Development Environments (IDEs) rarely perform a simple in-place write. To ensure atomicity and prevent data loss during crashes, they employ complex transactional strategies.
+For example, when saving a file named module.aria, an editor might:
+1. Write the new content to a temporary buffer file .module.aria.swp (generating IN_CREATE and IN_MODIFY events).
+2. Unlink the original module.aria (generating IN_DELETE).
+3. Rename the temporary file to module.aria (generating IN_MOVED_TO).
+4. Sync metadata and permissions (generating IN_ATTRIB).
+To the kernel, a single semantic "Save" appears as a burst of 5 to 10 discrete micro-events spread over several milliseconds. If the build system reacts to the first event (e.g., the creation of the swap file), it may attempt to build a broken dependency graph or read a file that does not yet exist. This phenomenon, analogous to "contact bounce" in hardware switches 2, requires a rigorous filtering mechanism known as Debouncing.
+2.3 The Latency-Consistency Trade-off
+The design of a continuous build system involves a fundamental trade-off between latency (how fast the build starts) and consistency (how sure we are that the filesystem is stable).
+* Aggressive Polling: Low latency, but high CPU usage and risk of reading partial writes.
+* Event Coalescing: Higher latency (waiting for the "quiet period"), but high consistency and efficient resource usage.
+For aria_make, correctness is paramount. Given the non-incremental nature of the current ariac compiler 1, a failed build due to reading a partial file requires a costly full re-parse. Therefore, the architecture prioritizes consistency, employing a "Trailing Edge" debouncing strategy to ensure that the build only triggers once the filesystem has reached a quiescent state.
+3. The FileWatcher Subsystem: Cross-Platform Sensory Abstraction
+The FileWatcher is the foundational component of the Watch Mode architecture. Its responsibility is to interface with the operating system's kernel to detect changes within the project's source tree. Due to the lack of a standardized, high-performance file monitoring API in C++17 (the language of aria_make's implementation 1), this component must be implemented as a polymorphic facade over the divergent APIs of Linux, Windows, and macOS.
+3.1 Linux Implementation: The inotify Engine
+On Linux, the kernel provides inotify, an inode-based notification subsystem.4 While performant, inotify presents significant architectural challenges due to its non-recursive nature. A watch descriptor corresponds to a single inode (directory); monitoring a deep directory tree requires registering a watch for every subdirectory individually.5
+3.1.1 Recursive Watch Management
+To implement the recursive monitoring required for Aria projects (e.g., matching src/**/*.aria globs 1), the Linux FileWatcher must maintain a dynamic registry of watch descriptors.
+* Initialization: Upon startup, the watcher utilizes std::filesystem::recursive_directory_iterator to traverse the project root.1 For each directory encountered, it invokes inotify_add_watch with a mask covering IN_MODIFY, IN_CREATE, IN_DELETE, IN_MOVED_TO, and IN_MOVE_SELF.
+* Bi-directional Mapping: The system must maintain two maps: std::map<int, std::string> to map watch descriptors (WDs) back to paths for event reporting, and std::map<std::string, int> to prevent duplicate registrations.
+* Dynamic Topology Updates: A critical requirement is the handling of mkdir operations during runtime. When an IN_CREATE event occurs with the IN_ISDIR flag, the watcher must immediately register a new watch on the created directory. This ensures that files subsequently created within this new directory are detected.1 Failure to do so results in "blind spots" in the file tree.
+3.1.2 Kernel Limits and the ENOSPC Hazard
+The inotify subsystem is governed by sysctl parameters, specifically fs.inotify.max_user_watches.5 The default value on many distributions is 8192, which is insufficient for large monorepos containing node_modules or extensive vendor dependencies.
+* Detection: The FileWatcher must check errno for ENOSPC during inotify_add_watch.
+* Mitigation Strategy:
+   1. Hard Fail: If the limit is reached, log a fatal error to stderr with specific instructions to increase the limit via sysctl -w fs.inotify.max_user_watches=524288.6
+   2. Graceful Degradation: Alternatively, the system can fallback to the Polling Watcher (Section 3.4), though this incurs a performance penalty. The recommended path for aria_make is to fail fast and inform the user, as silent performance degradation is contrary to the tool's philosophy.
+3.1.3 The IN_Q_OVERFLOW Panic State
+The inotify mechanism relies on a kernel-side event buffer. If aria_make is blocked (e.g., garbage collecting or waiting on a child process) and fails to drain the file descriptor, this buffer may overflow. The kernel signals this by emitting an event with the IN_Q_OVERFLOW mask.1
+* Handling Logic: This event signifies that an indeterminate number of file changes have been missed. The FileWatcher cannot recover local state. It must signal a Global Invalidation to the WatchModeController, forcing a complete re-scan of the filesystem timestamps to restore the consistency of the Dependency Graph.
+3.2 Windows Implementation: ReadDirectoryChangesW and IOCP
+The Windows NT kernel provides ReadDirectoryChangesW, a robust API that supports recursive directory monitoring natively via the bWatchSubtree flag.7 This eliminates the complex user-space directory walking required on Linux.
+3.2.1 Asynchronous I/O via Completion Ports
+To integrate effectively with the high-concurrency model of Aria, the Windows implementation should leverage I/O Completion Ports (IOCP) or Overlapped I/O.9
+1. Handle Creation: The watcher opens a handle to the project root directory using CreateFileW with the FILE_FLAG_BACKUP_SEMANTICS flag, which is required to obtain a handle to a directory.
+2. Buffer Management: The API requires the caller to provide a buffer (typically 64KB aligned to DWORD boundaries) to receive FILE_NOTIFY_INFORMATION structures.
+3. Event Loop Integration: The OVERLAPPED structure associated with the read request contains an event handle. The WatchModeController waits on this handle. When signaled, it parses the buffer.
+3.2.2 Path Canonicalization
+A critical implementation detail on Windows is path normalization. The kernel reports paths using backslashes (\). However, the Aria compiler and build configuration use forward slashes (/) as the canonical separator.1 The FileWatcher must normalize all paths extracted from FILE_NOTIFY_INFORMATION before passing them to the Debouncer. Additionally, it must handle the conversion from wide characters (WCHAR) to UTF-8 (std::string) to align with Aria's string encoding standards.1
+3.3 macOS Implementation: FSEvents and Core Foundation
+On macOS, the FSEvents API is the industry standard for file monitoring.10 Unlike the older kqueue (which is similar to inotify but limited in file descriptor usage), FSEvents is designed for deep hierarchy monitoring.
+3.3.1 Granularity and Coalescing
+Historically, FSEvents reported changes at the directory level. Modern versions (macOS 10.7+) support file-level granularity (kFSEventStreamCreateFlagFileEvents).
+* Kernel-Level Debouncing: FSEvents allows the client to specify a latency parameter (e.g., 0.1s) when creating the stream. The kernel buffers events for this duration and delivers them in a batch.7 This provides a first layer of efficient debouncing, reducing the wake-ups of the user-space process.
+* RunLoop Integration: The FSEventStream must be scheduled on a CFRunLoop. The FileWatcher implementation on macOS spawns a dedicated std::thread to run this loop, bridging the Core Foundation callback model with the C++ event queue of aria_make.
+3.4 The Polling Fallback Strategy
+Despite the superiority of native APIs, there are environments where they fail:
+* Network File Systems (NFS/SMB): Events often do not propagate across the network.
+* Docker Volumes: On non-Linux hosts (Windows/macOS), bind mounts may not propagate notification events from the host OS to the container's inotify subsystem correctly.11
+To ensure robust operation, aria_make includes a Polling Watcher.
+* Mechanism: This watcher runs a periodic task (default 1000ms, configurable) that iterates the DependencyGraph. For each source file, it calls std::filesystem::last_write_time and compares it to a cached value.
+* Performance Impact: This is $O(N)$ with the number of files and incurs significant I/O overhead. It is explicitly a fallback mode, enabled via a --poll flag or auto-detected upon native watcher failure.13
+4. Signal Processing: The Debouncing and Aggregation Engine
+The raw event stream generated by the FileWatcher is too volatile to drive the compilation pipeline directly. Triggering a build for every micro-event leads to "thrashing" and race conditions where the compiler attempts to read a file that is locked or partially written. The Debouncing Engine acts as a temporal low-pass filter, smoothing this volatility into actionable build triggers.
+4.1 The Trailing Edge Debouncing Algorithm
+aria_make employs a Trailing Edge debouncing algorithm.15 This algorithm is distinct from "Leading Edge" (throttle) in that it prioritizes the completion of an action over its start.
+Algorithm Definition:
+Let $T_{wait}$ be the debounce interval (default 200ms).17
+1. State: The debouncer maintains a timer and a set of pending changes.
+2. Event ($E_n$): Upon receiving an event at time $t$:
+   * Add the file path to the PendingSet.
+   * Cancel the existing timer.
+   * Start a new timer for $t + T_{wait}$.
+3. Trigger: If the timer expires (meaning no new events occurred for $T_{wait}$), the PendingSet is flushed to the WatchModeController.
+This logic effectively handles the "burst" nature of atomic saves. The sequence of CREATE, WRITE, CLOSE, RENAME will continuously reset the timer. Only when the editor completes the sequence and the filesystem goes silent will the build trigger.
+4.2 Event Aggregation and Scope Deduplication
+While waiting for the timeout, the Debouncer aggregates events to optimize the subsequent build step.
+* Deduplication: It uses a std::set<std::string> (or std::unordered_set) to store modified paths. If a file is modified five times in 100ms, it appears only once in the set. This prevents redundant checks in the Scheduler.1
+* Scope Classification: The Debouncer classifies events to determine the severity of the change. This allows the Controller to make early optimization decisions.
+   * Class 0 (Ignored): Paths matching internal ignore lists (e.g., .git/, .hg/) or user-defined excludes in aria.toml.18 These are dropped immediately to save memory.
+   * Class 1 (Source): Paths ending in .aria or configured asset extensions. These trigger standard incremental builds.
+   * Class 2 (Configuration): Changes to aria.toml or build.aria. These trigger a Context Reload (Section 5.3), as they may alter the graph topology itself.19
+4.3 Implementation Strategy with C++ Primitives
+The Debouncer runs on a dedicated thread to decouple the OS callback latency from the build logic. It utilizes std::condition_variable to implement the wait logic efficiently without busy-waiting.20
+
+
+C++
+
+
+
+
+// Architectural Concept for Debouncer Loop
+void Debouncer::run() {
+   std::unique_lock<std::mutex> lock(mutex_);
+   while (running_) {
+       if (pending_changes_.empty()) {
+           cv_.wait(lock); // Idle state: wait indefinitely for first event
+       }
+       
+       // Active state: wait for quiet period or new event
+       auto status = cv_.wait_for(lock, std::chrono::milliseconds(debounce_ms_));
+       
+       if (status == std::cv_status::timeout) {
+           // Quiet period achieved -> Dispatch build
+           std::vector<std::string> batch(pending_changes_.begin(), pending_changes_.end());
+           pending_changes_.clear();
+           lock.unlock();
+           controller_->trigger_build(batch);
+           lock.lock();
+       }
+       // If status == no_timeout, a new event arrived; loop resets, extending wait.
+   }
+}
+
+This implementation ensures that the system is responsive but disciplined, never triggering a build until the developer has momentarily paused activity.
+5. The WatchModeController: Orchestration and State Management
+The WatchModeController serves as the central nervous system of the continuous build architecture. It integrates the sensory inputs from the FileWatcher (via the Debouncer) with the execution capabilities of the BuildScheduler. It is implemented as a Finite State Machine (FSM) to ensure robust handling of asynchronous interrupts and concurrency.
+5.1 Finite State Machine Design
+The FSM prevents undefined behaviors, such as attempting to start a build while one is already in progress, or processing file events during a configuration reload.
+State
+	Description
+	Transition Events
+	IDLE
+	The system is quiescent, waiting for filesystem activity. The FileWatcher is active.
+	EventsDetected $\to$ DEBOUNCING
+	DEBOUNCING
+	The Debouncer is accumulating events and waiting for the trailing edge.
+	Timeout $\to$ SCHEDULING
+
+
+EventsDetected $\to$ DEBOUNCING (Timer Reset)
+	SCHEDULING
+	The Controller analyzes the ChangeSet against the DependencyGraph to mark nodes as dirty.
+	GraphUpdated $\to$ BUILDING
+
+
+ConfigChanged $\to$ RELOADING
+	BUILDING
+	The BuildScheduler is executing the build DAG. Child processes (ariac, lli) are active.
+	BuildComplete $\to$ IDLE
+
+
+EventsDetected $\to$ DIRTY_BUILD_PENDING
+	DIRTY_BUILD_PENDING
+	A file change occurred during a build. The current build is allowed to finish (or is cancelled), but a restart is guaranteed.
+	BuildComplete $\to$ SCHEDULING (Immediate restart)
+	RELOADING
+	The build configuration (aria.toml) changed. The graph is being destroyed and rebuilt.
+	ReloadComplete $\to$ IDLE (or SCHEDULING)
+	5.2 The "Discard-Stale" Scheduling Strategy
+A critical constraint of the Aria ecosystem is that the compiler, ariac, is non-incremental and blocking.1 Processing a large file is an atomic $O(N)$ operation. This creates a "Concurrency Conundrum": if a user types fast, saving the file multiple times per second, a naive system might queue up multiple expensive build jobs.
+To mitigate this, the WatchModeController implements a Discard-Stale strategy, mirroring the logic used in the Aria Language Server.1
+1. Versioning: The Controller assigns a monotonically increasing VersionID to the filesystem state each time the Debouncer fires.
+2. Preemption: If the FSM is in the BUILDING state and a new change arrives (transitioning to DIRTY_BUILD_PENDING), the Controller evaluates the "Distance" of the new change.
+3. Cancellation: If the new change invalidates the currently compiling module, the Controller sends a SIGTERM (on POSIX) or TerminateProcess (on Windows) to the running ariac process. It does not wait for the stale build to finish naturally.
+4. Queue Jumping: The old build task is discarded, and the new state is immediately promoted to SCHEDULING.
+This aggressive preemption is essential to maintain the perception of responsiveness in a non-incremental compiler environment.
+5.3 Handling Configuration Changes (Hot Reloading)
+When the Debouncer reports a change to aria.toml or build.aria, the WatchModeController identifies this as a Class 2 event.19 A standard incremental build is insufficient because the dependency graph topology itself may have changed (e.g., new libraries added, compiler flags modified).
+The Soft-Reset Protocol:
+1. Stop: The Controller pauses the FileWatcher to prevent race conditions.
+2. Drain: It waits for any active ariac processes to terminate.
+3. Destruct: The existing DependencyGraph and BuildScheduler instances are destroyed.
+4. Re-Parse: The ConfigParser is invoked to read the new configuration.
+5. Re-Initialize: A new Graph is constructed and topologically sorted. The FileWatcher is re-configured (in case source paths or globs changed).
+6. Resume: The system transitions back to IDLE or triggers an immediate build if run_on_start is enabled.
+This "Soft-Reset" capability allows developers to modify project metadata without killing and restarting the aria_make daemon, significantly improving the DevX flow.19
+6. Integration with BuildScheduler and Dependency Graph
+The WatchModeController does not execute builds directly; it delegates to the BuildScheduler. However, the Scheduler must be adapted to support the "Partial Graph Execution" required for efficient watch mode performance.
+6.1 Dependency Graph Invalidation
+The DependencyGraph tracks the relationships between files ($A \to B \implies A \text{ depends on } B$). When the Debouncer reports that file $B$ has changed, the graph must identify all downstream dependents.
+1. Marking Dirty: The Controller invokes Graph::mark_dirty(path).
+2. Reverse Traversal: The graph performs a Reverse Depth-First Search (DFS) starting from the node corresponding to path. It marks the node and all its ancestors as DIRTY.1
+   * Example: If lib/math.aria changes, lib/math is marked dirty. src/main.aria (which imports math) is also marked dirty.
+3. Execution Subset: The BuildScheduler exposes a method execute_dirty(). Unlike the standard execute_all(), this method filters the topological sort order, skipping any node that is not marked DIRTY.
+This logic minimizes the work performed by aria_make, recompiling only the affected subgraph. It leverages the timestamp comparison logic already present in AriaBuild (std::filesystem::last_write_time) but augments it with the explicit event-driven triggers from the watcher.1
+6.2 Process Lifecycle and Zombie Management
+A common failure mode in watch systems is the "Zombie Process." If the user runs aria_make --watch and the program enters an infinite loop, subsequent saves might spawn new processes while the old ones consume CPU.
+* Process Tracking: The BuildScheduler maintains a registry of active child process handles (pid_t or HANDLE).
+* Cleanup: Before starting any new build step, the Scheduler iterates this registry. If any process is still running, it is forcibly terminated. This ensures that resources (ports, file locks) are released before the new version attempts to acquire them.22
+7. Operational Semantics and User Experience
+7.1 Six-Stream Topology Integration
+Aria's unique "Six-Stream Topology" 1 (separating stdout from stddbg and stddati) offers a significant advantage for Watch Mode observability.
+* Control Plane (stdout): aria_make uses standard output strictly for build status messages ("Building...", "Success", "Failed"). This allows downstream tools to parse the build state easily.
+* Telemetry Plane (stddbg): Debug logs from the FileWatcher ("Event: Modified src/main.aria") and the Debouncer ("Triggering build after 200ms") are routed to file descriptor 3 (stddbg). This prevents the pollution of the main output channel, keeping the terminal clean for the user while preserving rich diagnostics for debugging the build tool itself.
+7.2 Performance Optimizations
+* Ignore Logic: Watching directories like node_modules, .git, or build artifacts (dist/) creates massive overhead and infinite loops (Build $\rightarrow$ Write Output $\rightarrow$ Detect Change $\rightarrow$ Build). The FileWatcher implements hardcoded internal ignores for these common patterns and parses .gitignore to respect user exclusions.18
+* Threaded Draining: To prevent deadlocks, the Scheduler uses dedicated threads to drain the pipes of child processes. This ensures that a child process producing massive output does not block because its stdout buffer is full.1
+8. Conclusion and Strategic Outlook
+The architecture presented in this report transforms aria_make from a static build utility into a dynamic, reactive development daemon. By synthesizing a polymorphic FileWatcher, a robust Debouncer using trailing-edge logic, and a state-aware WatchModeController, this system addresses the critical latency challenges posed by the non-incremental Aria compiler.
+The design explicitly tackles the "Noisy Channel" nature of filesystem events and the resource constraints of the OS (inotify limits), providing a solution that is both theoretically sound and practically robust. It leverages Aria's unique features, such as the Six-Stream Topology, to deliver a developer experience that is observable, deterministic, and highly responsive. This continuous build infrastructure is a prerequisite for the maturation of the Aria ecosystem, enabling the rapid iteration cycles demanded by modern software engineering.
+9. Implementation Roadmap
+1. Phase 1: Foundation. Implement the FileWatcher classes for Linux (inotify) and Windows (ReadDirectoryChangesW) and the Debouncer logic.
+2. Phase 2: Orchestration. Develop the WatchModeController State Machine and wire it to the BuildScheduler.
+3. Phase 3: Resilience. Implement error handling for ENOSPC, IN_Q_OVERFLOW, and robust process cancellation (Zombie killing).
+4. Phase 4: Advanced Features. Add "Soft Restart" for config reloading and integrate .gitignore parsing for automated exclusion.
+Works cited
+1. compiled.txt
+2. What is the proper way to debounce a GPIO input? - Raspberry Pi Stack Exchange, accessed December 21, 2025, https://raspberrypi.stackexchange.com/questions/118349/what-is-the-proper-way-to-debounce-a-gpio-input
+3. The simplest button debounce solution - E-Tinkers, accessed December 21, 2025, https://www.e-tinkers.com/2021/05/the-simplest-button-debounce-solution/
+4. parcel-bundler/watcher: A native C++ Node module for querying and subscribing to filesystem events - GitHub, accessed December 21, 2025, https://github.com/parcel-bundler/watcher
+5. Inotify Watches Limit (Linux) - IDEs Support (IntelliJ Platform) | JetBrains, accessed December 21, 2025, https://intellij-support.jetbrains.com/hc/en-us/articles/15268113529362-Inotify-Watches-Limit-Linux
+6. Kernel inotify watch limit reached - Unix & Linux Stack Exchange, accessed December 21, 2025, https://unix.stackexchange.com/questions/13751/kernel-inotify-watch-limit-reached
+7. Sane C++ Libraries: File System Watcher, accessed December 21, 2025, https://pagghiu.github.io/SaneCppLibraries/library_file_system_watcher.html
+8. ReadDirectoryChangesW function (winbase.h) - Win32 apps | Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-readdirectorychangesw
+9. efsw is a C++ cross-platform file system watcher and notifier. - GitHub, accessed December 21, 2025, https://github.com/SpartanJ/efsw
+10. Watch filesystem for changes : r/golang - Reddit, accessed December 21, 2025, https://www.reddit.com/r/golang/comments/6l87m2/watch_filesystem_for_changes/
+11. watchexec/cargo-watch: Watches over your Cargo project's source. - GitHub, accessed December 21, 2025, https://github.com/watchexec/cargo-watch
+12. Live Reloading in Rust with Cargo Watch and Docker | by Jorge Luis Castro Medina, accessed December 21, 2025, https://devjorgecastro.medium.com/hot-reload-in-rust-with-cargo-watch-and-docker-3c51b3119a6d
+13. Build Performance - webpack, accessed December 21, 2025, https://webpack.js.org/guides/build-performance/
+14. Polling with webpack-dev-server [closed] - javascript - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/42567284/polling-with-webpack-dev-server
+15. Debounce - Glossary - MDN Web Docs, accessed December 21, 2025, https://developer.mozilla.org/en-US/docs/Glossary/Debounce
+16. Debouncing and Throttling Explained Through Examples - CSS-Tricks, accessed December 21, 2025, https://css-tricks.com/debouncing-throttling-explained-examples/
+17. Simple Debounce Routine - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/155071/simple-debounce-routine
+18. README.md - watchexec/cargo-watch - GitHub, accessed December 21, 2025, https://github.com/watchexec/cargo-watch/blob/8.x/README.md
+19. Using watch mode - Rush.js, accessed December 21, 2025, https://rushjs.io/pages/advanced/watch_mode/
+20. Debounce in C++ - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/62606212/debounce-in-c
+21. Build System | Backstage Software Catalog and Developer Platform, accessed December 21, 2025, https://backstage.io/docs/tooling/cli/build-system/
+22. Watch and WatchOptions | webpack, accessed December 21, 2025, https://webpack.js.org/configuration/watch/
+23. Debounce a STOP switch in C++: Live with Dave in the Source Code Editor! (Live Replay), accessed December 21, 2025, https://www.youtube.com/watch?v=yztQjgtynOU

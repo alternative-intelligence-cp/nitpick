@@ -1,0 +1,14 @@
+Implement Command Signature Hashing
+Context: Fixes the "Flag Change" vulnerability where changing compiler flags doesn't trigger a rebuild.
+Priority: Critical
+Components: src/build/incremental_logic.cpp, DependencyGraph
+Prompt:
+"You are an expert C++ build system engineer. Modify the IncrementalLogic subsystem in src/build/incremental_logic.cpp.
+Define a BuildState structure mapping TargetName -> CommandHash (using std::hash<std::string> or a stronger hash like FNV-1a).
+Implement a StatePersistence class using nlohmann/json to serialize this map to disk (.aria_build_state.json).
+Refactor check_is_dirty(Node* node) to accept the current_command_string.
+Logic: Return true (dirty) if saved_hash!= hash(current_command_string), IGNORING timestamps.
+Logic: Return true if check_timestamps(node) is true.
+Update the in-memory hash if dirty.
+Provide the complete C++17 implementation."
+

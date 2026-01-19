@@ -1,0 +1,268 @@
+Research Task: Error Handling Architecture for aria_make
+
+PRIORITY: HIGH
+ESTIMATED COMPLEXITY: MEDIUM
+ESTIMATED TIME: 2-3 hours
+
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+aria_make is a complex system with many failure modes:
+- Configuration parsing errors (malformed build.aria)
+- File system errors (missing files, permission denied)
+- Graph errors (cycles, missing dependencies)
+- Compilation errors (compiler failures)
+- System errors (out of memory, disk full)
+
+Currently, there is NO unified error handling strategy. Without a coherent approach, the codebase will have:
+- Inconsistent error reporting (exceptions vs return codes vs exit())
+- Poor error messages ("Error: failed" - what failed?)
+- Difficult debugging (no context preservation)
+- Unclear recovery paths (retry? abort? continue?)
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH OBJECTIVES
+═══════════════════════════════════════════════════════════════════════════════
+
+Design a comprehensive error handling architecture that addresses:
+
+1. **Error Propagation Strategy**
+   - Exceptions vs error codes (std::expected, Result<T, E> pattern)
+   - When to throw vs when to return error
+   - Performance implications (exception unwinding overhead)
+   - Philosophy: "Parse, don't validate" vs defensive programming
+
+2. **Exception Hierarchy Design**
+   ```cpp
+   class AriaMakeError : public std::runtime_error {
+       // Base class for all aria_make errors
+   };
+   
+   class ConfigError : public AriaMakeError {
+       // Parsing errors, schema violations
+   };
+   
+   class GraphError : public AriaMakeError {
+       // Cycles, missing dependencies
+   };
+   
+   class BuildError : public AriaMakeError {
+       // Compilation failures
+   };
+   
+   class SystemError : public AriaMakeError {
+       // I/O errors, permissions
+   };
+   ```
+
+3. **Error Context Preservation**
+   - File path where error occurred
+   - Line/column for parse errors
+   - Stack trace or error chain
+   - Relevant variable values (target name, command, etc.)
+
+4. **User-Actionable Error Messages**
+   - What went wrong (specific, not generic)
+   - Why it went wrong (context)
+   - How to fix it (suggestions)
+   - Example:
+     ```
+     ERROR: Circular dependency detected
+       Path: app → libA → libB → app
+       
+       In build.aria:
+         Line 15: target "app" depends on "libA"
+         Line 8:  target "libA" depends on "libB"
+         Line 22: target "libB" depends on "app" ← cycle here
+       
+       Suggestion: Remove one of these dependencies to break the cycle.
+     ```
+
+5. **Recovery Strategies**
+   - Fatal errors: Abort immediately (cycles, missing compiler)
+   - Recoverable errors: Continue with degraded functionality (optional features)
+   - Partial failures: Build succeeded targets, report failed ones
+   - User choice: --keep-going flag (continue despite errors)
+
+6. **Error Categorization**
+   | Category | Severity | Action | Exit Code |
+   |----------|----------|--------|-----------|
+   | Parse error | Fatal | Abort | 2 |
+   | Cycle detected | Fatal | Abort | 3 |
+   | File not found | Fatal | Abort | 2 |
+   | Compilation failed | Partial | Continue or abort | 1 |
+   | Warning (unused var) | Non-fatal | Continue | 0 |
+
+7. **Compilation Error Aggregation**
+   - Collect multiple compilation failures
+   - Report summary at end (3 files failed)
+   - Don't flood user with 1000 errors
+
+8. **Integration with Logging**
+   - Errors should use Logger::error()
+   - Structured error messages
+   - Optional stack traces for --debug
+
+═══════════════════════════════════════════════════════════════════════════════
+ERROR SCENARIOS TO HANDLE
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **Config Parsing**
+   - Malformed JSON/ABC syntax
+   - Missing required fields (project.name)
+   - Invalid types (sources: 42 instead of array)
+   - Unknown fields (typo detection)
+
+2. **File System**
+   - build.aria not found
+   - Source files missing
+   - Output directory not writable
+   - Disk full during build
+
+3. **Dependency Graph**
+   - Circular dependencies (A → B → A)
+   - Missing dependencies (target "foo" not defined)
+   - Diamond dependencies (valid, but document)
+
+4. **Compilation**
+   - Compiler not found (ariac missing)
+   - Compiler segfault (internal error)
+   - Syntax errors in source files
+   - Linker errors (undefined symbols)
+
+5. **System**
+   - Out of memory
+   - Too many open files
+   - Permission denied (SELinux, etc.)
+   - Signal handling (Ctrl+C, SIGTERM)
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH DELIVERABLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide:
+
+1. **Error Handling Philosophy**
+   - Exceptions vs Result<T> pattern
+   - When to use each
+   - Performance considerations
+   - Rationale for chosen approach
+
+2. **Exception Hierarchy**
+   Full class definitions with:
+   - Constructors (message, context)
+   - what() override
+   - Context accessors (file, line, col)
+   - Error code mapping
+
+3. **Error Context Class**
+   ```cpp
+   struct ErrorContext {
+       std::filesystem::path file;
+       std::optional<size_t> line;
+       std::optional<size_t> column;
+       std::string component;  // "Parser", "Scheduler", etc.
+       std::map<std::string, std::string> metadata;
+   };
+   ```
+
+4. **Error Message Templates**
+   Examples of user-friendly error messages for each error type
+
+5. **Recovery Strategy Matrix**
+   | Error Type | Recovery | User Flag | Exit Code |
+   |------------|----------|-----------|-----------|
+   | ... | ... | ... | ... |
+
+6. **Error Aggregation Pattern**
+   How to collect multiple errors before reporting
+
+7. **Signal Handling**
+   How to handle Ctrl+C gracefully (cleanup, save state)
+
+8. **Integration Points**
+   How each component should propagate errors:
+   - ConfigParser → throw ConfigError
+   - CycleDetector → throw GraphError
+   - BuildScheduler → collect BuildError, continue or abort
+   - ThreadPool → exception in worker thread handling
+
+9. **Testing Strategy**
+   - How to test error paths
+   - Mocking file system errors
+   - Triggering parse errors
+   - Verifying error messages
+
+═══════════════════════════════════════════════════════════════════════════════
+CONSTRAINTS
+═══════════════════════════════════════════════════════════════════════════════
+
+- C++17 (no C++23 std::expected yet - may need custom implementation)
+- Exceptions must be caught at component boundaries (don't leak to C code)
+- Error messages must be user-friendly (no raw exception dumps)
+- Performance: exception handling on success path should be zero-cost
+- Platform-portable error codes (Windows vs POSIX errno)
+
+═══════════════════════════════════════════════════════════════════════════════
+COMPARISON TO EXISTING TOOLS
+═══════════════════════════════════════════════════════════════════════════════
+
+Research how these tools handle errors:
+
+1. **Rust Cargo** - Result<T, E> pattern, ? operator, excellent error messages
+2. **CMake** - Mix of fatal_error() and warnings, verbose error context
+3. **Bazel** - Detailed error messages with suggestions
+4. **Clang** - World-class diagnostics (fixit hints, color, context)
+
+What can we learn from their approaches?
+
+═══════════════════════════════════════════════════════════════════════════════
+ADVANCED CONSIDERATIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **Error Recovery in Multithreaded Context**
+   - Worker thread hits error, how to signal main thread?
+   - Stop all workers immediately? Let them finish current task?
+   - Avoid partial writes to output files
+
+2. **Incremental Error Handling**
+   - Error in one target shouldn't invalidate entire build state
+   - Save successful compilations even if overall build fails
+
+3. **LSP Integration**
+   - Errors should be formatted for IDE consumption
+   - compile_commands.json must be valid even after errors
+
+4. **Debugging Support**
+   - --debug flag shows stack traces, internal state
+   - Crash dumps (optional) for bug reports
+
+═══════════════════════════════════════════════════════════════════════════════
+SUCCESS CRITERIA
+═══════════════════════════════════════════════════════════════════════════════
+
+A successful design will:
+✓ Provide clear exception hierarchy
+✓ Enable user-actionable error messages
+✓ Support error context preservation (file, line, col)
+✓ Define recovery strategies for each error type
+✓ Map errors to appropriate exit codes
+✓ Handle multithreaded error propagation
+✓ Integrate cleanly with logging system
+✓ Be testable (error injection, assertion)
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide a detailed specification document covering:
+- Error handling philosophy (exceptions vs Result<T>)
+- Complete exception hierarchy with code
+- Error context structures
+- User-friendly error message examples
+- Recovery strategy matrix
+- Signal handling approach
+- Multithreaded error propagation
+- Integration with logging
+- Testing strategies

@@ -1,0 +1,464 @@
+﻿Architectural Specification: Git-Aware Exclusion Subsystem for the AriaBuild GlobEngine
+1. Executive Summary and Strategic Architectural Context
+The contemporary landscape of software engineering infrastructure is characterized by a relentless pursuit of velocity. As build systems evolve from the imperative, script-based paradigms of the early UNIX era—typified by GNU Make—to the declarative, graph-based architectures of the modern era, the performance bottleneck has fundamentally shifted. In legacy systems, compilation time (CPU bound) was the primary constraint. In modern, high-concurrency build environments, particularly those serving large monorepos, the bottleneck has migrated to the configuration and file discovery phases (I/O bound).
+For the Aria programming language ecosystem, this shift presents a unique architectural challenge. AriaBuild (internally designated aria_make) is designed around a strict "Configuration as Data" philosophy, utilizing the whitespace-insensitive Aria Build Configuration (ABC) format.1 This design rejects the non-determinism of Turing-complete configuration scripts in favor of a static, parseable schema. However, this relies heavily on implicit dependency resolution and recursive file discovery (globbing) to construct the build graph. As the ecosystem matures toward its v0.1.0 milestone, introducing advanced features like Twisted Balanced Binary (TBB) arithmetic and a hybrid memory model 1, the supporting infrastructure must transition from experimental prototypes to enterprise-grade robustness.
+A critical friction point identified in recent architectural audits—and corroborated by extensive user feedback regarding "Duplicate Exclusion Configuration"—is the semantic disconnect between the build system's file discovery logic and the version control system's tracking logic. Currently, the GlobEngine subsystem operates in a "git-agnostic" manner. It treats the project directory as a raw, unbounded filesystem tree rather than a curated repository. This architectural naivety forces developers to manually replicate exclusion patterns—such as node_modules/, target/, .cache/, and .DS_Store—in both their .gitignore files and their AriaBuild target definitions within aria.json.
+This violation of the "Don't Repeat Yourself" (DRY) principle introduces significant maintenance hazards. A file excluded in git but accidentally included in the build scan can lead to the "inclusion of temp files," polluting build artifacts, destabilizing the dependency graph, and triggering unnecessary, expensive rebuilds. In a language like Aria, which emphasizes hermetic builds and strict dependency tracking 1, such pollution compromises the integrity of the release artifact.
+More critically, the absence of automatic exclusion logic exposes the build system to severe performance degradation. Without the ability to implicitly prune large, irrelevant directory trees based on git configuration, the GlobEngine naively traverses deep hierarchies of dependency artifacts. In large monorepos, where node_modules or Rust target directories may contain hundreds of thousands of files, this incurs substantial Input/Output (I/O) overhead. The operating system must perform stat and readdir calls for every entry, increasing the configuration phase latency by orders of magnitude. The algorithmic complexity of file discovery effectively degrades to $O(N_{total})$, where $N_{total}$ is the count of all files on disk, rather than $O(N_{relevant})$, the count of source files intended for compilation.
+This report presents a comprehensive, expert-level technical blueprint for the integration of a Git-Aware Exclusion Subsystem into the AriaBuild GlobEngine. The proposed solution involves the development of a dedicated parsing subsystem that ingests the project's root .gitignore file, converts its shell-glob patterns into standard C++ regular expressions (std::regex), and integrates these patterns into the engine's internal exclusion set. Crucially, this integration is designed to augment, not override, explicit target exclusions, ensuring a layered security model for file rejection. By leveraging C++17's std::filesystem::recursive_directory_iterator and its disable_recursion_pending() method, the system achieves $O(1)$ pruning of excluded subtrees, fundamentally transforming the performance profile of the build initialization phase.
+2. Theoretical Framework: Filesystem Traversal and Exclusion Semantics
+To engineer a robust solution, one must first establish the theoretical underpinnings of high-performance filesystem traversal and the specific semantic constraints of the gitignore grammar. The challenge is not merely to skip files, but to do so without incurring the cost of visiting them. This requires a deep understanding of how operating systems handle directory iteration and how these low-level mechanics are abstracted in the C++ standard library.
+2.1 The Graph Theoretic Model of Filesystems
+The file system can be formally modeled as a Directed Graph $G = (V, E)$, where $V$ represents the set of inodes (files and directories) and $E$ represents the directory entries linking them. In a standard filesystem without symbolic links, this forms a Tree structure rooted at the project directory. However, the presence of symbolic links introduces the possibility of cycles, transforming the structure into a potentially cyclic graph.
+The efficiency of any globbing engine is mathematically determined by the number of nodes it must visit (vertex traversal) and the number of edges it must traverse (edge relaxation). In the context of POSIX systems, visiting a node typically corresponds to a stat or lstat system call to retrieve metadata (file type, permissions), while traversing an edge corresponds to opening a directory handle (opendir) and iterating its contents (readdir).
+In a naive implementation of a glob patterns such as src/**/*.aria, the engine is forced to perform a Depth-First Search (DFS) or Breadth-First Search (BFS) on the subgraph rooted at src. The traversal logic, as currently implemented in AriaBuild 1, creates a recursive_directory_iterator. If the project contains a src/vendor directory populated by a third-party library with 50,000 files, the engine performs 50,000 stat calls and corresponding readdir operations, even if that directory is irrelevant to the build. This behavior characterizes an $O(N)$ traversal cost, where $N$ is the total number of nodes in the subgraph.
+The objective of the Git-Aware Exclusion Subsystem is to transform this linear cost model into a Pruned Traversal model. If a directory node matches an exclusion pattern (e.g., vendor/), the engine should identify this match at the node level and refrain from traversing the edges emanating from that node. This effectively prunes the subtree rooted at the excluded directory from the traversal graph.
+If the vendor directory is located at depth $d$ and has an average branching factor $b$ and a maximum depth $m$, the number of operations saved by pruning is approximately $\sum_{i=0}^{m-d} b^i$. For high-branching directories like node_modules or build, this results in exponential savings relative to the depth of the excluded tree. This optimization reduces the complexity from $O(N_{total})$ to $O(N_{visited})$, where $N_{visited}$ is strictly the set of non-excluded nodes.
+2.2 C++17 Filesystem Abstractions and Iterator Mechanics
+The implementation environment for AriaBuild is C++17, utilizing the std::filesystem library (derived from boost::filesystem). This library provides recursive_directory_iterator, a powerful abstraction that flattens the recursive traversal of the directory tree into a linear iteration loop complying with the InputIterator concept.2
+The iterator maintains an internal state, typically a stack of open directory handles (std::vector<directory_iterator>), to manage the recursion depth.3 The critical mechanism for our optimization strategy is the disable_recursion_pending() member function. According to the C++ standard specifications and Microsoft's implementation documentation 2, this method modifies a flag in the iterator's internal state (often referred to as no_push).
+When the iterator is subsequently incremented (via operator++), it checks this flag. If the flag is set, the iterator skips the push operation that would normally descend into the current directory entry. Instead, it proceeds to the next sibling in the current directory level. This mechanism is the programmatic equivalent of the "graph pruning" operation described in the cost model. It allows the GlobEngine to make a decision based on the directory name alone, avoiding the I/O penalty of entering the directory and iterating its children.
+However, correct usage requires precise timing: disable_recursion_pending() must be called after the iterator points to the directory to be excluded but before the iterator is incremented.4 Calling it on a file entry is a no-op, but calling it on a directory entry is the only way to prevent the recursive_directory_iterator from consuming the entire subtree.
+2.3 The Semantic Gap: Globs vs. Regular Expressions
+A fundamental challenge in this integration is the translation of .gitignore patterns into a format executable by the C++ runtime. .gitignore utilizes a specialized variant of shell glob syntax, extended with specific behaviors for directory anchoring, recursion (**), and negation (!).6 C++ does not possess a native "glob matcher" in its standard library that supports this full semantic complexity. While fnmatch exists in POSIX, it is not cross-platform (lacking on Windows without Shim libraries) and does not natively handle the ** recursive wildcard semantics found in git.
+The AriaBuild GlobEngine currently employs a custom "FastMatcher" for simple inclusions.1 This matcher uses a shifting wildcard algorithm (likely a variation of the Krauss algorithm) to handle simple * and ? patterns efficiently without memory allocation. However, exclusion rules in .gitignore are significantly more complex than inclusion rules. They often involve negative lookaheads, complex path boundaries, and root-anchoring logic that is difficult to express in a simple wildcard state machine.
+Consequently, std::regex presents itself as the appropriate tool for this specific subdomain. Regular expressions offer the expressive power required to handle:
+* Anchors: ^ for root-relative paths and $ for end-of-name matching.
+* Character Classes: `` and [^] for ranges and negations.
+* Recursion Simulation: Translating ** into .* or (?:.*/)? sequences.
+The trade-off is computational cost. std::regex compilation and matching are CPU-intensive operations compared to simple string comparison or hand-rolled wildcard matchers.7 The construction of the NFA (Nondeterministic Finite Automaton) or DFA (Deterministic Finite Automaton) can be expensive. However, in the context of directory pruning, this cost is heavily amortized. A single regex match against a directory name (taking microseconds) can save thousands of system calls (taking milliseconds or seconds). Therefore, the architectural decision to compile .gitignore patterns into std::regex objects is sound, provided the compilation happens once during initialization—a "Compile-Once, Match-Many" strategy.1
+3. The Semantics of GitIgnore: A Lexical Analysis
+Before designing the conversion algorithm, we must rigorously define the grammar of .gitignore. It is widely misunderstood as simple shell globbing, but it possesses distinct lexical properties that the GlobEngine must respect to ensure "Git-Awareness" rather than just "Glob-Awareness". Failing to respect these subtleties will lead to inconsistent builds where files ignored by git are included by AriaBuild, or vice-versa.
+3.1 Pattern Classes and Precedence Rules
+The gitignore specification 6 defines a hierarchy of pattern classes and precedence rules that the parser must implement:
+1. Comments and Whitespace:
+   * Lines starting with # serve as comments and must be ignored.
+   * Empty lines are ignored.
+   * Trailing spaces are ignored unless they are escaped with a backslash (\ ). This is a subtle but critical rule for file names containing spaces.
+2. Separator-Less Patterns (Floating Globs):
+   * If a pattern contains no slash (/) at the beginning or middle, it is treated as a recursive glob.
+   * Example: *.o matches main.o, src/main.o, and lib/math/vector.o.
+   * Regex Implication: These must be translated to match at any depth, typically requiring a prefix like (?:^|.*/).
+3. Root-Anchored Patterns:
+   * A leading slash (/) anchors the pattern to the directory containing the .gitignore file (usually the project root).
+   * Example: /TODO matches TODO in the root but not src/TODO.
+   * Regex Implication: These must explicitly start with the caret ^ anchor.
+4. Directory-Specific Patterns:
+   * A trailing slash (/) indicates the pattern matches only directories.
+   * Example: build/ matches a directory named build, but not a file named build.
+   * Optimization Implication: This distinction is vital for the GlobEngine. If the engine encounters a file named build, it must not prune it if the pattern is build/.
+5. The Double Asterisk (**):
+   * This is the recursive wildcard.6
+   * logs/**/debug.log matches logs/debug.log, logs/monday/debug.log, etc.
+   * A leading **/ matches in all directories.
+   * A trailing /** matches everything inside a directory.
+6. Negation (Re-inclusion):
+   * An optional prefix ! negates the pattern, re-including a previously excluded file.
+   * Example: *.a followed by !lib.a excludes all archive files except lib.a.
+3.2 The Scope of Implementation: Exclusion Pruning vs. Deep Negation
+For Phase 3.2 of the AriaBuild roadmap, the implementation focuses explicitly on exclusion pruning to solve the performance bottleneck. This introduces a necessary limitation regarding negation patterns.
+Consider the following .gitignore:
+
+
+Code snippet
+
+
+
+
+node_modules/
+!node_modules/package.json
+
+Git interprets this as: "Ignore the node_modules directory, but traverse it anyway to find package.json."
+If the GlobEngine implements strict pruning based on the first rule (node_modules/), it will call disable_recursion_pending() when it encounters the directory. Consequently, it will never enter the directory to discover package.json.
+Supporting deep re-inclusion requires a partial traversal of excluded trees, which defeats the $O(1)$ pruning optimization. It would force the engine to check every directory against a "potential re-inclusion list," which effectively degrades back to $O(N)$ behavior. Therefore, the architectural specification explicitly scopes this implementation to "fast-reject" positive exclusion patterns.1 Complex negation logic requiring traversal of excluded directories is deferred to future phases. This aligns with the standard behavior of high-performance grep tools like ripgrep or fd, which prioritize speed over edge-case compliance in their default modes. Users who need to include files inside ignored directories should use explicit inclusion rules in aria.json targets rather than relying on git exception logic.
+4. Architectural Design: The GlobEngine Class
+The GlobEngine is the central component responsible for file discovery within the AriaBuild toolchain. The integration of git-awareness requires augmenting its state and logic to handle a new source of truth: the .gitignore file.
+4.1 Class Architecture and Responsibility
+The GlobEngine does not operate in isolation. It interacts with helper classes defined in the broader AriaBuild architecture 1:
+* GlobPattern: A class responsible for parsing the target's inclusion patterns (e.g., src/**/*.aria) into manageable segments.
+* FastMatcher: A zero-allocation, custom string matcher for simple glob patterns, optimized for the "inclusion" check.
+* New Component: GitIgnoreParser. A dedicated subsystem to ingest and compile .gitignore rules into regexes.
+The updated class definition in include/glob/glob_engine.h must reflect the storage of regex-based exclusion rules.1 We must also consider thread safety, as the Aria language server 1 may instantiate multiple GlobEngine instances or access shared cache state concurrently.
+
+
+C++
+
+
+
+
+// include/glob/glob_engine.h
+#ifndef ARIA_GLOB_ENGINE_H
+#define ARIA_GLOB_ENGINE_H
+
+#include <vector>
+#include <string>
+#include <filesystem>
+#include <regex>
+#include <mutex>
+
+namespace aria::glob {
+
+   /**
+    * @class GlobEngine
+    * @brief High-performance filesystem traversal engine with hybrid exclusion logic.
+    * 
+    * Integrates explicit target exclusions (Glob patterns) and implicit 
+    * repository exclusions (.gitignore regexes) to enable O(1) pruning 
+    * of irrelevant directory trees. Designed for thread-safety within 
+    * the Aria Language Server environment.
+    */
+   class GlobEngine {
+   public:
+       // Constructor accepts explicit string exclusions (from aria.json)
+       explicit GlobEngine(std::vector<std::string> explicit_excludes = {});
+
+       // Main expansion method: returns a sorted list of paths
+       std::vector<std::filesystem::path> expand(const std::string& pattern_str);
+
+   private:
+       // Explicit exclusions from build configuration (legacy globs)
+       std::vector<std::string> m_explicit_excludes;
+
+       // Implicit exclusions from.gitignore (compiled regexes)
+       // These are instance-specific but populated from a shared cache
+       std::vector<std::regex> m_gitignore_regexes;
+
+       // Static cache to prevent re-parsing.gitignore for every target
+       // This is critical for monorepos with hundreds of targets
+       static std::vector<std::regex> s_cached_gitignore_regexes;
+       static bool s_gitignore_loaded;
+       static std::mutex s_gitignore_mutex; // Protects the static cache
+
+       // Core logic methods
+       void load_gitignore(); 
+       std::string glob_to_regex(const std::string& glob);
+       
+       /**
+        * @brief Checks if a path is excluded.
+        * @param path Relative path to check.
+        * @param is_dir True if the entry is a directory (allows optimization for directory-only rules).
+        */
+       bool is_excluded(const std::filesystem::path& path, bool is_dir) const;
+   };
+
+} // namespace aria::glob
+
+#endif // ARIA_GLOB_ENGINE_H
+
+4.2 The Pruning Logic Flow
+The core of the expand method implements the traversal loop. It must seamlessly integrate the exclusion check before recursing. The interaction with std::filesystem requires careful handling of platform-specific quirks.
+1. Initialization: The engine parses the inclusion pattern to find the "Anchor" (the longest static prefix, e.g., src/ extracted from src/**/*.aria). It performs a sanity check: if the anchor does not exist, it returns empty immediately.
+2. Iterator Construction: A recursive_directory_iterator is created at the anchor. Crucially, directory_options::skip_permission_denied is used.9 Without this option, the iterator throws an exception when encountering locked system directories (like /root or System Volume Information), causing the build to crash.
+3. Iteration Cycle:
+   * The loop calls it->path() to get the current entry.
+   * Normalization: It normalizes the path to use forward slashes (Aria standard). This is vital on Windows where paths use backslashes, but .gitignore uses forward slashes.
+   * Exclusion Check: It calls is_excluded(). This checks both the explicit exclusions (using FastMatcher) and the gitignore exclusions (using std::regex).
+   * Decision Point: If is_excluded() returns true:
+      * If the entry is a directory, the critical optimization is triggered: it.disable_recursion_pending().
+      * The loop strictly continues, skipping any further processing of the file.
+4. Matching: If not excluded, and the entry is a regular file, it is checked against the inclusion pattern (using FastMatcher or similar).
+5. Result Collection: Matches are added to a vector.
+6. Deterministic Sort: The result vector is strictly sorted alphabetically to ensure deterministic build inputs.1 Filesystem iteration order is non-deterministic (OS-dependent), so this step is mandatory for reproducible builds.
+5. Implementation Strategy: The Glob-to-Regex Translation Engine
+The most technically demanding aspect of this specification is the correct translation of .gitignore glob patterns into C++ std::regex strings. This transformation is not a simple string replacement; it requires a context-sensitive state machine to handle symbols like * and . correctly without creating invalid regexes.
+5.1 The Translation Algorithm
+The glob_to_regex function transforms a glob string $G$ into a regex string $R$. The following rules apply, derived from an analysis of git documentation and regex mechanics 1:
+Glob Construct
+	Context
+	Regex Equivalent
+	Logic
+	.
+	Anywhere
+	\.
+	Literal dot. Must be escaped in regex as . matches any char.
+	?
+	Anywhere
+	[^/]
+	Matches exactly one non-separator character.
+	*
+	Within path segment
+	[^/]*
+	Matches zero or more non-separator characters.
+	**
+	Between slashes
+	.*
+	Matches any sequence of characters (including separators).
+	/
+	Start of pattern
+	^
+	Anchors to the project root.
+	text
+	Start (no leading slash)
+	(^|.*/)text
+	Matches text at root OR anything/text. This is the "floating" match.
+	/
+	End of pattern
+	(Handled via logic)
+	Indicates directory-only match. Regex targets the name; engine checks is_directory().
+	5.2 Handling Double Asterisks (**)
+The double asterisk is the source of most complexity in glob translation.6
+* **/foo matches foo anywhere. Regex: (?:^|.*/)foo.
+* foo/**/bar matches foo/bar, foo/x/bar, foo/x/y/bar. Regex: foo/.*bar (simplified, but strictly foo/(?:.*/)?bar).
+* Trailing /**: abc/** matches everything inside abc. Regex: abc/.*.
+To implement this robustly, the translator iterates through the glob string character by character:
+1. Escape Special Regex Characters: Characters ^, $, ., +, (, ), {, }, | must be escaped with \ if they appear literally in the glob.
+2. Wildcard Substitution:
+   * Detect **. Replace with .*.
+   * Detect * (not adjacent to another *). Replace with [^/]*.
+   * Detect ?. Replace with [^/].
+3. Anchoring Logic:
+   * If the pattern starts with /, replace with ^ (relative to root).
+   * If the pattern does not start with /, prepend (?:^|.*/) to allow "floating" matches (e.g., *.o matches lib/math.o).
+5.3 C++ Implementation Detail
+The following code snippet illustrates the precise logic for the converter, incorporating the requirements from 1 and addressing the edge cases found in search snippets.14
+
+
+C++
+
+
+
+
+// src/glob/glob_engine.cpp implementation detail
+
+std::string GlobEngine::glob_to_regex(const std::string& glob) {
+   std::string regex = "";
+   
+   // Handle root anchoring
+   bool anchored = (glob.front() == '/');
+   size_t i = anchored? 1 : 0; // Skip leading slash for processing
+   
+   if (anchored) {
+       regex += "^";
+   } else {
+       // Floating match: matches at start or after a separator
+       // Uses non-capturing group (?:...) for efficiency
+       regex += "(?:^|.*/)";
+   }
+
+   for (; i < glob.size(); ++i) {
+       char c = glob[i];
+       switch (c) {
+           case '.': regex += "\\."; break; // Escape dot
+           case '(': regex += "\\("; break;
+           case ')': regex += "\\)"; break;
+           case '+': regex += "\\+"; break;
+           case '|': regex += "\\|"; break;
+           case '^': regex += "\\^"; break;
+           case '$': regex += "\\$"; break;
+           case '{': regex += "\\{"; break; // Bash expansion not supported, treat literal
+           case '}': regex += "\\}"; break;
+           
+           case '*': 
+               // Lookahead for double asterisk
+               if (i + 1 < glob.size() && glob[i+1] == '*') {
+                   regex += ".*"; // Match anything, including slashes
+                   i++; // Skip second star
+               } else {
+                   regex += "[^/]*"; // Match within segment (non-separators)
+               }
+               break;
+               
+           case '?':
+               regex += "[^/]"; // Single non-separator char
+               break;
+               
+           default:
+               regex += c;
+       }
+   }
+   
+   // Ensure the pattern matches the full path segment or directory
+   // Note: This simplistic appending of $ needs refinement for partial matches
+   // but works for the pruning case where we match full directory names.
+   return regex;
+}
+
+This converter produces regex strings that can be compiled by std::regex. While std::regex has performance characteristics that are often criticized (specifically in the libstdc++ implementation) 8, the impact here is mitigated because the regex is run only on file paths (short strings), and more importantly, a successful match prevents the expensive stat/readdir recursion.
+6. Implementation Strategy: The Directory Traversal Loop
+The integration of the exclusion logic into the traversal loop is the point where the theoretical gains are realized. This section details the modifications to the GlobEngine::expand method defined in the source snippets.1
+6.1 Loading and Caching
+The load_gitignore method is responsible for reading .gitignore from the project root. To ensure thread safety in a parallel build environment (where multiple targets might trigger glob expansion simultaneously), access to the shared regex cache must be synchronized using std::mutex (or std::shared_mutex if read-heavy).
+
+
+C++
+
+
+
+
+void GlobEngine::load_gitignore() {
+   // Thread-safe initialization using double-check locking pattern or std::call_once
+   std::lock_guard<std::mutex> lock(s_gitignore_mutex);
+   if (s_gitignore_loaded) return;
+
+   std::ifstream file(".gitignore");
+   if (!file.is_open()) return; // No gitignore, nothing to do
+
+   std::string line;
+   while (std::getline(file, line)) {
+       // Trim whitespace
+       line.erase(0, line.find_first_not_of(" \t\r"));
+       line.erase(line.find_last_not_of(" \t\r") + 1);
+
+       // Skip comments and empty lines
+       if (line.empty() |
+
+| line == '#') continue;
+
+       // Negation is out of scope for pruning optimization (Phase 3.2)
+       if (line == '!') continue; 
+
+       // Handle directory-only marker
+       bool dir_only = (line.back() == '/');
+       if (dir_only) line.pop_back(); // Remove trailing slash for regex match
+
+       try {
+           // Convert and compile
+           std::string re_str = glob_to_regex(line);
+           // Use optimize flag for faster matching at cost of slower compilation
+           s_cached_gitignore_regexes.push_back(std::regex(re_str, std::regex::optimize));
+       } catch (const std::regex_error& e) {
+           // Log warning: invalid regex derived from glob
+           // Ideally use Aria's diagnostic infrastructure
+       }
+   }
+   s_gitignore_loaded = true;
+}
+
+6.2 The Expanded Loop with Pruning
+The modified expand method integrates the exclusion checks. Note specifically the use of generic_string() for path normalization on Windows.
+
+
+C++
+
+
+
+
+std::vector<std::filesystem::path> GlobEngine::expand(const std::string& pattern_str) {
+   // 1. Ensure context is loaded
+   load_gitignore();
+
+   //... (GlobPattern parsing as per original spec)...
+   GlobPattern pattern(pattern_str);
+   fs::path anchor = pattern.get_anchor();
+   std::vector<fs::path> results;
+   std::error_code ec;
+
+   if (!fs::exists(anchor, ec) ||!fs::is_directory(anchor, ec)) {
+       return {};
+   }
+
+   // Skip permission denied to avoid exceptions on system folders
+   auto opts = fs::directory_options::skip_permission_denied;
+
+   // 2. Recursive Iteration with Pruning
+   // Note: We manage the iterator increment manually if needed, 
+   // but standard loop works with disable_recursion_pending state.
+   for (auto it = fs::recursive_directory_iterator(anchor, opts, ec); 
+        it!= fs::recursive_directory_iterator(); 
+        it.increment(ec)) { 
+       
+       if (ec) { ec.clear(); continue; }
+
+       const auto& entry = *it;
+       const fs::path& path = entry.path();
+
+       // Normalize path for matching
+       // We need a path relative to the project root for gitignore matching
+       fs::path relative_path = fs::relative(path, fs::current_path(), ec);
+       if (ec) relative_path = path; 
+       
+       // generic_string() ensures forward slashes even on Windows
+       std::string path_str = relative_path.generic_string(); 
+
+       // 3. Exclusion Logic
+       bool excluded = false;
+       
+       // Check implicit gitignore regexes
+       for (const auto& re : s_cached_gitignore_regexes) {
+           if (std::regex_search(path_str, re)) { 
+               excluded = true; 
+               break; 
+           }
+       }
+
+       // Check explicit target exclusions (legacy)
+       if (!excluded) {
+           for (const auto& explicit_ex : m_explicit_excludes) {
+               if (FastMatcher::match(path_str, explicit_ex)) {
+                   excluded = true;
+                   break;
+               }
+           }
+       }
+
+       if (excluded) {
+           if (entry.is_directory(ec)) {
+               // CRITICAL OPTIMIZATION: Prune the tree
+               // This prevents the iterator from descending into this directory
+               it.disable_recursion_pending();
+           }
+           continue; // Skip this file/dir entirely
+       }
+
+       // 4. Inclusion Logic
+       if (entry.is_regular_file(ec)) {
+           if (pattern.matches(path)) {
+               results.push_back(path);
+           }
+       }
+   }
+
+   // 5. Deterministic Sort
+   std::sort(results.begin(), results.end());
+   return results;
+}
+
+7. Performance Analysis and Optimization Impact
+The introduction of regex matching inside a tight loop warrants a performance justification. The concern is that std::regex is slow. However, the architectural trade-off here is strictly favorable.
+7.1 The Pruning Multiplier
+Let $C_{regex}$ be the cost of matching a path string against the set of exclusion regexes. Let $C_{syscall}$ be the cost of a filesystem operation (stat or readdir).
+The cost of processing a directory node without pruning is:
+$$Cost_{naive} = 1 \cdot C_{syscall} + \sum_{children} (C_{syscall} + Cost_{child})$$The cost with pruning (if excluded) is:
+
+
+$$Cost_{pruned} = 1 \cdot C_{syscall} + C_{regex}$$
+Since node_modules often contains $10^4$ to $10^5$ descendants, and $C_{regex}$ (microseconds) is roughly comparable to a single $C_{syscall}$ (microseconds, largely latency-bound), the equation simplifies to:
+
+
+
+
+$$Cost_{pruned} \approx Cost_{naive} / N_{descendants}$$
+
+
+Even if the regex engine is 100x slower than a simple string check, avoiding 10,000 syscalls results in a 100x net speedup.
+7.2 Platform Path Normalization (Windows vs. POSIX)
+AriaBuild mandates cross-platform portability. .gitignore always uses forward slashes (/), even on Windows. The underlying OS may return backslashes (\).
+The generic_string() method of std::filesystem::path is essential here.1 It converts the system-native path separator to the generic forward slash. This normalization occurs once per entry in the loop before regex matching is attempted. This ensures that a regex like ^build/ correctly matches build\ on Windows, preventing platform-specific exclusion failures.
+8. Integration within the Aria Ecosystem
+This enhancement aligns with the broader goals of the Aria project. By standardizing on std::filesystem (C++17), the GlobEngine remains consistent with the host language of the build tool.1
+* AriaBuild Integration: The GlobEngine is instantiated by the ConfigParser when reading aria.json. The exclusion logic is transparent to the user; simply by existing, .gitignore now influences the build graph.
+* Language Server Protocol (LSP) Impact: While the LSP server (AriaLS) typically manages its own Virtual File System (VFS) 1, sharing this exclusion logic is beneficial. It prevents the LSP from indexing node_modules, keeping the memory footprint low and response times fast. The GlobEngine can be refactored into a shared library (libaria_tooling) usable by both the CLI build tool and the LSP server.
+9. Conclusion
+The integration of Git-Aware Exclusion Logic into the AriaBuild GlobEngine represents a decisive optimization for the Aria infrastructure. By leveraging the semantic richness of .gitignore and translating it into the robust matching capabilities of std::regex, the build system transitions from a naive crawler to an intelligent, context-aware artifact discoverer.
+The use of std::filesystem::recursive_directory_iterator::disable_recursion_pending() provides the mechanical lever to realize this intelligence, converting algorithmic potential into tangible I/O savings. This implementation respects the "Configuration as Data" philosophy by reducing the need for redundant configuration, ensuring that the build definition remains clean, minimal, and DRY. As Aria moves towards v0.1.0, this subsystem will serve as a foundational component, guaranteeing that the tooling scales gracefully with the size and complexity of modern monorepos.
+10. Future Roadmap
+1. Phase 3.3 (Deep Negation): Implement a hybrid traversal that can "re-enter" excluded directories if a negation rule (!) logic dictates it. This requires a more complex tree-walking algorithm than the current iterator allows.
+2. Native Glob Parser: Replace std::regex with a custom DFA-based glob matcher to eliminate the compilation overhead and library dependencies, further optimizing the "micro-latency" of the check.
+3. Parallel Traversal: Utilize std::filesystem in conjunction with a thread pool to perform parallel directory scanning, although the I/O-bound nature of the task makes the gains non-linear.
+This specification provides the immediate, actionable path to solving the "Duplicate Exclusion" problem and delivering a high-performance build experience for Aria developers.
+Works cited
+1. compiled.txt
+2. recursive_directory_iterator Class | Microsoft Learn, accessed December 21, 2025, https://learn.microsoft.com/en-us/cpp/standard-library/recursive-directory-iterator-class?view=msvc-170
+3. std::filesystem::recursive_directory_iterator - cppreference.com - C++ Reference, accessed December 21, 2025, https://en.cppreference.com/w/cpp/filesystem/recursive_directory_iterator.html
+4. std::filesystem::recursive_directory_iterator::disable_recursion_pending - cppreference.com, accessed December 21, 2025, https://en.cppreference.com/w/cpp/filesystem/recursive_directory_iterator/disable_recursion_pending.html
+5. std::filesystem::recursive_directory_iterator disable_recursion_pending incorrect behavior, accessed December 21, 2025, https://developercommunity.visualstudio.com/content/problem/257426/stdfilesystemrecursive-directory-iterator-disable.html
+6. gitignore Documentation - Git, accessed December 21, 2025, https://git-scm.com/docs/gitignore
+7. Regex Optimization Techniques: 14 Methods for DevOps Performance - Last9, accessed December 21, 2025, https://last9.io/blog/regex-optimization-techniques/
+8. Why is std::regex notoriously much slower than other regular expression libraries?, accessed December 21, 2025, https://stackoverflow.com/questions/70583395/why-is-stdregex-notoriously-much-slower-than-other-regular-expression-librarie
+9. The std::filesystem::recursive_directory_iterator exception - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/52318249/the-stdfilesystemrecursive-directory-iterator-exception
+10. recursive_directory_iterator's skip_permission_denied option appears to be ignored on macOS? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/70382262/recursive-directory-iterators-skip-permission-denied-option-appears-to-be-ignor
+11. Create regex from glob expression - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/445910/create-regex-from-glob-expression
+12. Are leading asterisks "**/" redundant in .gitignore path matching syntax? - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/41761128/are-leading-asterisks-redundant-in-gitignore-path-matching-syntax
+13. git - .gitignore double star not working recursively from intermediate directories?, accessed December 21, 2025, https://stackoverflow.com/questions/70343709/gitignore-double-star-not-working-recursively-from-intermediate-directories
+14. How to use regexp to perform a glob in C/C++ (Linux) - Stack Overflow, accessed December 21, 2025, https://stackoverflow.com/questions/4150586/how-to-use-regexp-to-perform-a-glob-in-c-c-linux
+15. Add a function to convert a globbing pattern to a regex pattern in the Regex class · Issue #359 · dotnet/runtime - GitHub, accessed December 21, 2025, https://github.com/dotnet/runtime/issues/359

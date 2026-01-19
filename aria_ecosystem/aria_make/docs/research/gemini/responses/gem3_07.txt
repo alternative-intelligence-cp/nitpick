@@ -1,0 +1,280 @@
+﻿Architectural Specification: Distributed Monomorphization Cache for the Aria Compiler Infrastructure
+1. Executive Summary and Strategic Context
+The maturation of the Aria programming language into a production-grade systems language necessitates a rigorous evaluation of its compilation pipeline's efficiency. As delineated in the foundational language specifications 1, Aria adopts a compilation model capable of zero-cost abstractions, realized primarily through the mechanism of generic template instantiation, known as monomorphization.1 This architectural decision aligns Aria with high-performance counterparts such as C++ and Rust, guaranteeing that generic abstractions incur no runtime penalty by generating specialized machine code for every concrete type permutation used at a call site.1 However, this strategy introduces a significant trade-off: the potential for non-linear increases in compilation time, often referred to as "template bloat" in the C++ ecosystem.2
+In a naive implementation of the current Aria v0.0.7 compiler (ariac), a generic function func<T>:identity invoked with int32 across fifty different translation units would trigger the compiler to parse, type-check, specialize, and emit LLVM Intermediate Representation (IR) for identity_int32 fifty separate times.4 For the Aria compiler to scale to the demands of large industrial monorepos or the complex dependency graphs managed by AriaBuild 1, this redundancy must be eliminated. The solution lies in the implementation of a persistent, content-addressable storage (CAS) layer for intermediate compilation artifacts—specifically, a MonomorphizationCache.
+This report presents a comprehensive architectural design for the MonomorphizationCache subsystem. The system functions by intercepting the compilation pipeline at the point of generic instantiation. It computes a deterministic, semantic hash of the generic function's definition combined with its concrete type arguments and environmental context. This hash serves as a key to query a global cache directory (.aria/cache). If a match is found, the system bypasses the expensive specialization and code generation phases, reusing the pre-compiled LLVM bitcode. If missing, the compiler proceeds with generation and populates the cache.6
+The architecture described herein leverages the existing infrastructure of AriaBuild, specifically the FNV-1a hashing primitives and the FileSystemTraits abstraction layer.1 Crucially, it addresses the unique constraints of the Aria language, including the necessity to encode Twisted Balanced Binary (TBB) type semantics into the cache key to preserve "sticky error" propagation logic 1, and the integration of the "Appendage Theory" memory model 1 into the hashing strategy. Furthermore, the design incorporates robust concurrency controls to ensure data integrity within the parallel execution environment of the Aria Language Server (AriaLS) and multi-threaded build schedules.1
+2. Theoretical Framework: The Monomorphization Lifecycle
+To design an effective caching strategy, one must first deconstruct the lifecycle of a generic function within the Aria compiler. The efficiency of the cache is directly proportional to its ability to intercept this lifecycle at the earliest possible point of determinism, effectively pruning the compilation graph before expensive backend operations commence.
+2.1 The Specialization Pipeline
+The Aria compiler handles generics through a defined three-stage process: Declaration, Call Site Detection, and Specialization.1 Understanding this flow is prerequisites to injecting the caching logic.
+1. Declaration Phase: The compiler parses the generic template (e.g., func<T>:max) and stores the Abstract Syntax Tree (AST) in an unverified, template form. At this stage, the compiler performs syntactic validation but defers semantic analysis because the types are unknown. No machine code is generated.1
+2. Call Site Detection: During the semantic analysis of a regular function body, the compiler encounters a call, such as max<int32>(...). It resolves the symbol to the stored template definition.
+3. Specialization (Monomorphization): The compiler instantiates a new, independent AST where the generic marker *T is systematically replaced by the concrete type int32.1 This specialized AST is then subject to full type-checking, optimization, and finally lowered to LLVM IR.
+The MonomorphizationCache must operate strictly between step 2 and step 3. Once the concrete types are definitively known (via explicit argument or type inference), the inputs to the specialization function are fully determined. This satisfies the requirement for a pure function: $Output = f(Template, Types, Context)$. If the result of this specialization exists in the cache, the compiler can skip the AST cloning, substitution, type-checking, and IR generation, instead loading the pre-compiled LLVM bitcode directly into the current module.
+2.2 Semantic Equivalence vs. Syntactic Equality
+A critical challenge in compiler caching is ensuring that the cache key represents semantic equivalence rather than mere textual identity. A naive hash of the source code string is insufficient and fragile. Variations in whitespace, comment styles, or the renaming of local variables—none of which affect the generated machine code—would result in cache misses if a textual hash were used.8
+However, Aria's current compilation model is non-incremental regarding file parsing; it processes full files.1 To avoid the computational overhead of normalizing the AST into a canonical form before hashing (a process that can be as expensive as compilation itself), this architecture proposes a "Token-Stream Normalization" approach. Since the generic template is stored as a parsed structure (a stream of tokens or a light AST), we can traverse the token stream of the function body. By ignoring whitespace tokens and comments, and hashing only the semantic tokens (keywords, operators, identifiers, literals), we generate a canonical structural hash.9
+Furthermore, the cache must be robust against type aliasing. In Aria, a developer might define type MyInt = int32. The instantiation identity<MyInt> must map to the exact same cache key as identity<int32>, as they result in identical machine code. The caching logic must therefore rely on the canonicalized type names provided by the GenericResolver or TypeSystem 1, ensuring that the hash reflects the underlying primitive or structural layout rather than the surface-level identifier used in the source code.
+2.3 Integration with the Hybrid Memory Model
+Aria’s hybrid memory model, which strictly distinguishes between Garbage Collected (gc) and manual (wild) memory 1, introduces a dimension of complexity absent in languages like C++ or Java. A generic container Vector<T> instantiated with Vector<int8> is structurally distinct from Vector<wild int8*>, even if the underlying bit-width of the pointer and the integer might appear similar in some contexts.
+The cache key generation strategy must explicitly encode the memory storage class of the type arguments. An instantiation with a pinned object (#obj) or a safe reference ($) carries distinct semantic implications for the backend code generator. For gc types, the compiler must emit write barriers and register stack roots for the garbage collector.1 For wild types, these safeguards are omitted for performance. Failing to capture these nuances in the hash would lead to the retrieval of incorrect artifacts—loading a "wild" vector implementation for a "gc" type would violate memory safety guarantees, leading to heap corruption. Thus, the hash must incorporate the "Appendage Theory" state 1, signaling whether a type is an independent entity or an appendage to a managed object.
+3. Hashing Algorithm Strategy
+The integrity of the MonomorphizationCache relies entirely on the collision resistance and determinism of its hashing strategy. While cryptographic hashes like SHA-256 offer high collision resistance, their computational overhead is unnecessary for this domain. We utilize the FNV-1a 64-bit algorithm, consistent with the cryptographic primitives already integrated into AriaBuild and optimized for speed.1
+3.1 The Composite Cache Key Structure
+The cache key is constructed by aggregating three distinct entropy sources into a single stream, which is then hashed. This ensures that a change in any component—the logic of the function, the types it operates on, or the compilation environment—invalidates the cache entry.
+The formula for the total hash $H_{total}$ is defined as:
+
+
+$$H_{total} = H(S_{canonical}) \oplus H(T_{args}) \oplus H(E_{env})$$
+We will analyze the requirements for each component in detail.
+3.1.1 Canonical Function Body ($S_{canonical}$)
+This component captures the logic of the generic template. To ensure stability across reformatting and refactoring that does not alter behavior:
+* Input: The stored token stream or linearized AST of the generic function body.
+* Normalization:
+   * Strip Comments: All single line // and block comments are removed.
+   * Whitespace Collapse: All whitespace sequences are treated as a single delimiter or removed entirely where syntax allows.
+   * Signature Inclusion: The function signature, including return type constraints and parameter lists, must be included. Modifiers such as async 1 fundamentally change the state machine generation and must be part of the hash.
+   * Generic Parameter Normalization: Ideally, generic parameters *T should be renamed to canonical placeholders (e.g., _GEN_PARAM_0) during hashing. This ensures that func<T>:id = *T... hashes identically to func<U>:id = *U....
+3.1.2 Concrete Type Fingerprint ($T_{args}$)
+This component captures the specialization arguments and is the most complex aspect due to Aria's type system features.
+* Resolution: All type aliases are resolved to their primitives (e.g., UserId -> uint64).
+* TBB Semantics: Twisted Balanced Binary types must be explicitly distinguished. tbb8 and int8 may both occupy 8 bits, but tbb8 arithmetic involves saturation and "sticky error" sentinels (-128).1 Lowering a + b for tbb8 involves checking for the sentinel, whereas int8 is a simple CPU add. The hash must prefix TBB types with a unique discriminator (e.g., TYPE_TBB_08 vs TYPE_INT_08).
+* Memory Modifiers: Pointers must encode their safety qualifiers to respect the hybrid memory model:
+   * int32@ (Standard Pointer)
+   * wild int32@ (Unmanaged Pointer - implies manual aria.free)
+   * gc int32@ (Managed Pointer - implies GC barriers)
+* Composite Types: For generic structs or arrays (e.g., int32), the hash is computed recursively: $H([) \oplus H(int32) \oplus H(])$.
+3.1.3 Environmental Context ($E_{env}$)
+To ensure hermetic builds and correct linkage, the hash must include the compiler version and critical flags.
+* Compiler Version: ARIA_VERSION (e.g., "0.0.7"). This invalidates the cache when the compiler logic changes, preventing the loading of bitcode generated by an older, potentially buggy backend.
+* Optimization Level: -O2 vs -O3 produces different bitcode structures. Loading an -O0 artifact into an -O3 build would degrade performance.
+* Target Architecture: Cross-compiling for ARM64 must not load x86_64 bitcode. The target triple must be hashed.
+3.2 The Hashing Algorithm Implementation
+We adopt the FNV-1a 64-bit algorithm as referenced in the AriaBuild implementation details.1 It offers an optimal balance of speed and dispersion for the short-to-medium string lengths typical of function signatures. Unlike cryptographic hashes, FNV-1a requires minimal setup and can be implemented as a streaming operator.
+The FNV-1a algorithm is defined as:
+1. Initialize hash to FNV_OFFSET_BASIS_64 (14695981039346656037).
+2. For each byte of data:
+   * hash = hash XOR byte
+   * hash = hash * FNV_PRIME_64 (1099511628211)
+This implementation allows for incremental hashing. The MonomorphizationCache can feed parts of the key (body, types, env) sequentially into the hash state without buffering the entire concatenation in memory, minimizing heap allocation and improving cache locality.
+4. Cache Storage and Artifact Management
+The system implements a persistent, on-disk cache located at .aria/cache. This location aligns with the existing AriaBuild caching strategies for glob manifests.1 The storage strategy must balance retrieval speed with filesystem limitations.
+4.1 Directory Hierarchy (Sharding)
+Filesystems often degrade in performance when a single directory contains thousands of files due to linear scan times or B-tree rebalancing overheads.10 A compiler cache for a large project could easily generate tens of thousands of specializations. To mitigate this, we employ a Hexadecimal Sharding Strategy.
+The 64-bit hash is formatted as a 16-character hexadecimal string. We use the first two characters to create 256 top-level directories (00 through FF).
+* Global Root: .aria/cache/monomorph/
+* Shard Directory: First 2 chars (e.g., c4/)
+* Artifact File: Remaining 14 chars + extension (e.g., 9a2b7f8e123456.bc)
+Example:
+For a computed hash C49A2B7F8E123456:
+Path: .aria/cache/monomorph/c4/9a2b7f8e123456.bc
+This distribution ensures that even with 100,000 cached artifacts, each directory contains roughly 390 files, maintaining optimal filesystem performance.
+4.2 Artifact Format: LLVM Bitcode
+The cache stores LLVM Bitcode (.bc), not native object files (.o).
+* Rationale: LLVM Bitcode is the compact, binary representation of the Intermediate Representation (IR). It is significantly smaller than textual IR (.ll) and faster to parse.
+* Optimization Potential: Storing bitcode preserves high-level information that allows the Link Time Optimization (LTO) pass to inline the specialized function into the caller code later in the pipeline. If we stored final machine code (.o), the optimizer would effectively see an opaque function call, destroying performance for small generic functions like max<T> or identity<T>.11
+* Metadata: A sidecar file (.meta) is stored alongside the bitcode. This JSON file contains the original function signature, the concrete types, and the full source hash. This serves debugging purposes and allows for hash collision resolution (comparing the full metadata if a collision is suspected).
+4.3 Cache Pruning and Size Management
+While not part of the initial implementation, the design supports Least Recently Used (LRU) eviction policies. By updating the mtime (modification time) of the cache file whenever it is successfully probed (reused), a separate cleanup tool can walk the directory tree and delete files accessed older than a threshold (e.g., 7 days). This prevents the .aria/cache from growing indefinitely.12
+5. Concurrency and Process Safety
+The Aria compiler and AriaBuild system operate in highly parallel environments.1 AriaBuild utilizes a thread pool to schedule tasks, and independent ariac processes may be invoked simultaneously by a user or CI system. This concurrency introduces specific race conditions that the architecture must address.
+5.1 Race Conditions in a Shared Cache
+1. Read-After-Write Hazard: Process A starts writing a cache entry. Process B tries to read it before the write is complete, potentially loading a truncated or corrupt bitcode file.
+2. Write-Write Hazard: Process A and Process B both encounter max<int32> simultaneously. Both decide the artifact is missing and trigger compilation. Both try to write to the same file location.13
+5.2 Atomic Write Pattern via Rename
+To mitigate Read-After-Write hazards without complex file locking (which can be fragile across OSs), the cache implements an Atomic Write strategy using the filesystem's rename primitive.15
+1. Compile: The compiler generates the specialization in memory.
+2. Write Temporary: Write the bitcode to a temporary file with a unique name: .aria/cache/tmp/GUID.tmp.
+3. Rename: Use std::filesystem::rename to move GUID.tmp to the final path .aria/cache/monomorph/xx/yyyy.bc.
+On POSIX systems and modern Windows, rename is atomic. A reader looking for the final file will either see the old state (non-existent) or the fully committed new file. It will never observe a partially written file.16
+5.3 Cooperative Optimistic Concurrency
+To mitigate Write-Write hazards (wasted work), we could employ advisory file locking (flock on Linux, LockFile on Windows). However, for a compilation cache, the cost of lock contention often outweighs the cost of occasional redundant computation.
+Strategy: We adopt Optimistic Concurrency.
+We allow multiple processes to race to compile the same specialization.
+* If Process A and Process B both trigger max<int32>, both will compile it.
+* Both will perform an atomic rename.
+* The second rename will overwrite the first. Since the inputs are identical and the process is deterministic, the output bitcode is bit-for-bit identical.
+* Result: No corruption occurs. The "wasted" CPU cycles are acceptable compared to the complexity and latency of managing a global file lock across a distributed build system.
+6. Integration with AriaBuild
+The MonomorphizationCache does not exist in isolation; it is a component of the broader AriaBuild system.
+6.1 Dependency Graph Interaction
+AriaBuild constructs a Directed Acyclic Graph (DAG) of dependencies.1 The cache acts as an accelerator within this graph. When AriaBuild schedules a compilation task, ariac is invoked. Inside ariac, the Monomorphizer queries the cache.
+* Incremental Trigger: AriaBuild uses timestamps to determine if a source file has changed. If the source file changes, ariac is re-run.
+* Cache Resilience: Even if main.aria changes, if it still calls max<int32>, the MonomorphizationCache will return a hit for max<int32>. This provides a finer granularity of incrementalism than file-based timestamps. main.aria is recompiled, but the heavy lifting of regenerating max<int32> is skipped.
+6.2 Toolchain Orchestration
+AriaBuild acts as a meta-driver.1 It ensures that the .aria/cache directory exists and is writable before invoking the compiler. It may also pass configuration flags like --cache-dir to ariac, allowing the user to override the default location (e.g., to a shared network drive for distributed caching).
+7. C++ Architecture and Class Definition
+The following section details the C++ architecture for the MonomorphizationCache class. This design relies on C++17 features, specifically std::filesystem, std::optional, and std::string_view for high-performance string handling.
+7.1 Dependency Injection and Interfaces
+The class interacts with the TypeSystem to retrieve type details and FileSystemTraits for path normalization.1
+
+
+C++
+
+
+
+
+// Forward declarations
+namespace aria::sema { class Type; class FuncDeclStmt; }
+namespace aria::fs { class FileSystemTraits; }
+
+namespace aria::backend {
+
+/**
+* @brief Represents the computed hash and filesystem locations for a cache entry.
+*/
+struct CacheKey {
+   uint64_t hash;
+   std::string hex_string;
+   
+   // Returns the path to the shard directory (e.g.,.aria/cache/monomorph/ab)
+   std::filesystem::path getShardPath(const std::filesystem::path& cacheRoot) const;
+   
+   // Returns the path to the specific artifact (e.g.,.../ab/cdef1234.bc)
+   std::filesystem::path getArtifactPath(const std::filesystem::path& cacheRoot) const;
+};
+
+/**
+* @brief Manages the content-addressable storage for generic specializations.
+*/
+class MonomorphizationCache {
+public:
+   /**
+    * @brief Initialize the cache system.
+    * @param cacheRoot The root directory for Aria cache artifacts (.aria/cache).
+    * @param toolchainVersion The version string of the current compiler environment.
+    */
+   explicit MonomorphizationCache(std::filesystem::path cacheRoot, std::string toolchainVersion);
+
+   /**
+    * @brief Computes the deterministic hash for a generic instantiation.
+    * 
+    * @param genericTemplate The AST node of the generic function definition.
+    * @param concreteTypes The list of concrete types being applied.
+    * @return CacheKey A struct containing the raw hash and filesystem paths.
+    */
+   CacheKey computeKey(const aria::sema::FuncDeclStmt* genericTemplate, 
+                       const std::vector<aria::sema::Type*>& concreteTypes) const;
+
+   /**
+    * @brief Probes the cache for an existing artifact.
+    * 
+    * @param key The computed cache key.
+    * @return std::optional<std::filesystem::path> Path to the artifact if found, nullopt otherwise.
+    */
+   std::optional<std::filesystem::path> probe(const CacheKey& key) const;
+
+   /**
+    * @brief Stores a newly compiled artifact into the cache.
+    * 
+    * Implements atomic write semantics using temporary files and rename.
+    * 
+    * @param key The cache key.
+    * @param bitcodeBuffer A pointer to the LLVM bitcode data.
+    * @param size The size of the bitcode buffer.
+    * @return bool True if storage succeeded.
+    */
+   bool store(const CacheKey& key, const char* bitcodeBuffer, size_t size);
+
+private:
+   std::filesystem::path rootPath;
+   std::filesystem::path monomorphPath;
+   std::filesystem::path tempPath;
+   std::string toolchainVersion;
+
+   // Helper to canonicalize a type into a hashable string stream
+   // Handles TBB types, pointers, and wild/gc modifiers using Appendage Theory rules.
+   void serializeType(aria::sema::Type* type, std::ostream& stream) const;
+
+   // Helper to normalize function body tokens (stripping comments/whitespace)
+   void serializeBody(const aria::sema::FuncDeclStmt* func, std::ostream& stream) const;
+   
+   // Ensures the cache directory structure exists (mkdir -p)
+   void ensureDirectories() const;
+};
+
+} // namespace aria::backend
+
+7.2 Implementation Logic Details
+7.2.1 Initialization
+The constructor uses std::filesystem::create_directories to ensure .aria/cache/monomorph and .aria/cache/tmp exist. If creation fails (permissions), the system should log a warning and degrade to a "pass-through" mode (caching disabled) rather than crashing the compiler.
+7.2.2 Key Computation (computeKey)
+This method implements the algorithm described in Section 3.
+1. Stream Setup: Initialize a std::stringstream or a custom hashing stream buffer.
+2. Signature Serialization: Write the function name and generic parameter count.
+3. Type Serialization: Iterate over concreteTypes. For each type, call serializeType.
+   * Implementation Detail: serializeType must switch on the TypeKind.
+   * If TypeKind::TBB, append "TBB" + width + sentinel value.
+   * If TypeKind::POINTER, check isWild() and append "WILD" or "GC" to capture memory model semantics.
+4. Body Serialization: Traverse the AST of genericTemplate. Iterate the token stream. Emit semantic tokens (identifiers, operators) to the stream.
+5. Environment: Write toolchainVersion.
+6. Hash: Feed the stream buffer into aria::crypto::fnv1a_64.
+7. Return: Construct the CacheKey.
+7.2.3 Cache Probing (probe)
+1. Call key.getArtifactPath(rootPath).
+2. Use std::filesystem::exists() to check availability.
+3. Optimization: Use std::filesystem::last_write_time to check for future-dated files (corruption check).
+4. Return the path if valid.
+7.2.4 Atomic Storage (store)
+1. Generate a unique temporary filename using a random nonce: tempPath / (hex_hash + "_" + nonce + ".tmp").
+2. Open std::ofstream in binary mode.
+3. Write bitcodeBuffer.
+4. Close stream.
+5. Check if the destination shard directory exists; create if missing.
+6. Call std::filesystem::rename(tempFile, finalFile).
+7. Handle std::filesystem::filesystem_error. If rename fails (e.g., on Windows due to file locking if a reader is currently reading the destination), catch the exception. Delete the temp file and return.
+8. Performance Analysis and Implications
+8.1 Throughput and Latency
+The overhead of computing the FNV-1a hash is minimal (nanoseconds per byte). The primary latency introduced is disk I/O (probing and reading the file).
+* Cache Hit: Saving the cost of AST cloning, type checking, and IR generation (which can take milliseconds) drastically outweighs the cost of reading a small bitcode file from an SSD.
+* Cache Miss: The overhead is the hashing cost plus the write cost. Since compilation is CPU-bound, the write cost is generally negligible.
+8.2 Comparison: Distributed Caching
+This architecture lays the groundwork for distributed caching similar to sccache.17 By abstracting the store and probe methods, a future backend could implement an S3 or Redis adapter. The CacheKey remains the same; only the transport layer changes. This would allow a CI server to populate the cache for all developers, a significant productivity multiplier.
+8.3 Security Considerations
+Cache poisoning 17 is a risk. If an attacker modifies a .bc file in the shared cache, the compiler will blindly link it.
+* Mitigation: The probe method could verify the hash of the file content matches the filename hash before returning it. This adds read-time latency (hashing the whole file) but guarantees integrity. For the initial implementation, we assume the .aria/cache directory is trusted (local user permissions).
+9. Conclusion
+The design of the MonomorphizationCache for AriaBuild represents a critical infrastructure evolution required to support the language's v0.1.0 goals. By strictly adhering to a content-addressable storage model using robust FNV-1a hashing, the system guarantees the retrieval of semantically correct artifacts while significantly reducing compilation latency.
+The architecture explicitly handles Aria's unique features—TBB arithmetic safety, hybrid memory models (Appendage Theory), and single-pass compilation—ensuring that the cache does not compromise the language's strict safety guarantees. The use of atomic filesystem operations guarantees robustness in parallel build environments, a mandatory requirement for modern CI/CD pipelines.
+By integrating this class into the src/backend and connecting it to the Monomorphizer, Aria effectively gains an incremental compilation capability for its most expensive components (generics) without requiring a complete rewrite of the frontend into an incremental parser. This pragmatic approach balances engineering effort with immediate performance deliverance.
+Key Data Structures Summary
+
+
+Component
+	Type
+	Responsibility
+	CacheKey
+	Struct
+	Holds the 64-bit hash and handles hex-sharding path generation.
+	MonomorphizationCache
+	Class
+	Manages storage, retrieval, and atomic writes.
+	fnv1a_64
+	Function
+	Cryptographic primitive for hash generation.1
+	.aria/cache
+	Directory
+	Global storage root for all AriaBuild artifacts.
+	*.bc
+	File Format
+	LLVM Bitcode (preserves optimization info).
+	This specification provides the immediate blueprint for C++ implementation within the Aria compiler codebase.
+Works cited
+1. rcfull.txt
+2. Explicit monomorphization for compilation time reduction - Rust Internals, accessed December 20, 2025, https://internals.rust-lang.org/t/explicit-monomorphization-for-compilation-time-reduction/15907
+3. Generics and Compile-Time in Rust | by TiDB | The Startup - Medium, accessed December 20, 2025, https://medium.com/swlh/generics-and-compile-time-in-rust-11a7becdbaba
+4. On a potential "Partial Monomorphization" : r/ProgrammingLanguages - Reddit, accessed December 20, 2025, https://www.reddit.com/r/ProgrammingLanguages/comments/vc3q1m/on_a_potential_partial_monomorphization/
+5. Fast Rust Builds - matklad, accessed December 20, 2025, https://matklad.github.io/2021/09/04/fast-rust-builds.html
+6. Content Addressable Storage — LLVM 22.0.0git documentation, accessed December 20, 2025, https://llvm.org/docs/ContentAddressableStorage.html
+7. Content Addressable Storage (CAS) - Abilian Innovation Lab, accessed December 20, 2025, https://lab.abilian.com/Tech/Databases%20%26%20Persistence/Content%20Addressable%20Storage%20%28CAS%29/
+8. cHash: Detection of Redundant Compilations via AST Hashing - USENIX, accessed December 20, 2025, https://www.usenix.org/system/files/conference/atc17/atc17-dietrich.pdf
+9. IRHash: Efficient Multi-Language Compiler Caching by IR-Level Hashing - USENIX, accessed December 20, 2025, https://www.usenix.org/system/files/atc25-landsberg.pdf
+10. Does sccache really help? : r/rust - Reddit, accessed December 20, 2025, https://www.reddit.com/r/rust/comments/rvqxkf/does_sccache_really_help/
+11. IRHash: Efficient Multi-Language Compiler Caching by IR-Level Hashing | Hacker News, accessed December 20, 2025, https://news.ycombinator.com/item?id=45136367
+12. Blog Post: Fast Rust Builds - Reddit, accessed December 20, 2025, https://www.reddit.com/r/rust/comments/pid70f/blog_post_fast_rust_builds/
+13. Handling Race Condition in Distributed System - GeeksforGeeks, accessed December 20, 2025, https://www.geeksforgeeks.org/computer-networks/handling-race-condition-in-distributed-system/
+14. Is the cache safe against race conditions? #11872 - GitHub, accessed December 20, 2025, https://github.com/composer/composer/discussions/11872
+15. Lock / Prevent edit of source files on Linux using C++ - Stack Overflow, accessed December 20, 2025, https://stackoverflow.com/questions/177640/lock-prevent-edit-of-source-files-on-linux-using-c
+16. Implementing cross-process locks - Hacker News, accessed December 20, 2025, https://news.ycombinator.com/item?id=25790132
+17. sccache is pretty okay - rtyler, accessed December 20, 2025, https://brokenco.de/2025/08/25/sccache-is-pretty-okay.html

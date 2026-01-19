@@ -1,0 +1,707 @@
+﻿Architectural Design and Implementation Report: Dependency Graph, Topological Sorting, and Parallel Build Scheduling for aria_make
+1. Introduction and Architectural Scope
+The efficacy of modern software development toolchains rests heavily upon the robustness, performance, and reliability of their build systems. aria_make, envisioned as a native build automation tool for the Aria programming language, represents a paradigm shift from legacy utilities such as GNU Make towards a more declarative, developer-centric, and performance-oriented architecture. This report provides a comprehensive architectural blueprint and implementation guide for the core engine of aria_make: the dependency graph construction, topological sorting mechanism, and the parallel build scheduler.
+The mandate for aria_make is to address specific pain points identified in the Aria ecosystem, particularly the fragility of whitespace-sensitive syntax found in Makefiles and the opacity of machine-generated build files like those of Ninja.1 By adopting a JSON-like, whitespace-insensitive syntax (Aria Build Configuration or ABC), aria_make prioritizes human readability without compromising on the execution speed required for large-scale projects. The core engineering challenge, therefore, lies in the efficient modeling of build targets as a Directed Acyclic Graph (DAG), the precise detection of circular dependencies to prevent infinite recursion, and the optimal scheduling of independent tasks across available hardware threads to minimize build latency.
+This document details the complete C++17 implementation strategy, adhering to strict performance goals and rigorous error handling standards. It synthesizes advanced concepts from graph theory, concurrent programming, and systems engineering to deliver a solution that is not only functional but also resilient and scalable. The scope includes the design of memory-safe graph data structures using modern C++ smart pointers, the application of Kahn's algorithm for dynamic scheduling, the utilization of std::filesystem for reliable incremental builds, and the implementation of a custom thread pool to manage the parallel execution of the Aria compiler (ariac) and LLVM interpreter (lli).1 The analysis explores the nuances of C++17 features, ensuring that the resulting system is portable, maintainable, and aligned with the "Build system as code" philosophy.1
+2. Dependency Graph Data Structures and Memory Model
+The underlying data structure of any build system is the dependency graph, which models the relationships between build targets (nodes) and their prerequisites (edges). The efficiency of graph traversal and manipulation directly impacts the initialization time of the build process. For aria_make, the graph must support rapid insertion, lookups, and dynamic state updates during parallel execution.
+2.1. Ownership Semantics and Memory Safety
+In C++17, managing the lifetime of graph nodes is critical to avoiding memory leaks and dangling pointers. A strict ownership model is enforced where the DependencyGraph container serves as the sole owner of all Node instances. This is achieved using std::unique_ptr, which guarantees exclusive ownership and automatic resource deallocation upon the destruction of the graph.2
+Using std::shared_ptr for node ownership was considered but ultimately rejected for the internal node storage. While std::shared_ptr allows shared ownership, it incurs reference-counting overhead that is unnecessary for a static dependency graph where the graph object itself outlives the traversal operations.4 However, references between nodes—representing the edges of the graph—are implemented as raw pointers (Node*). This design choice is idiomatic in C++ for non-owning references within a guaranteed scope.5 Since the DependencyGraph instance persists throughout the entire build scheduling process, the raw pointers held by nodes to point to their dependencies and dependents remain valid, eliminating the need for weak pointers or complex locking mechanisms for edge access.
+2.2. Class Architecture
+The architectural definitions for the graph components are designed to encapsulate state, enforce invariants, and facilitate the specific requirements of Kahn's algorithm and incremental build logic.
+2.2.1. The Node Class
+The Node class represents a single build target. It acts as a container for static configuration data (source files, output paths, compiler flags) and dynamic runtime state (build status, in-degree count).
+
+
+C++
+
+
+
+
+/**
+* @class Node
+* @brief Represents a single target in the dependency graph.
+* 
+* Manages build configuration, dependency links, and dynamic build state.
+* Designed to be owned by DependencyGraph via std::unique_ptr.
+*/
+class Node {
+public:
+   enum class Status {
+       NotStarted,
+       Pending,    // In the build queue
+       Building,   // Currently executing in a worker thread
+       Completed,  // Successfully built or up-to-date
+       Failed      // Build failed
+   };
+
+   explicit Node(std::string name)
+       : name_(std::move(name)),
+         in_degree_(0),
+         status_(Status::NotStarted),
+         is_dirty_(true) {}
+
+   // Delete copy and move operations to maintain pointer stability
+   Node(const Node&) = delete;
+   Node& operator=(const Node&) = delete;
+   Node(Node&&) = delete;
+   Node& operator=(Node&&) = delete;
+
+   // Accessors
+   const std::string& name() const { return name_; }
+   
+   // Graph Topology
+   // We maintain adjacency lists for both directions:
+   // - dependencies: Nodes this node depends on (needed for dirty checking)
+   // - dependents: Nodes that depend on this node (needed for scheduling notification)
+   const std::vector<Node*>& dependents() const { return dependents_; }
+   const std::vector<Node*>& dependencies() const { return dependencies_; }
+
+   void add_dependent(Node* node) { dependents_.push_back(node); }
+   void add_dependency(Node* node) { dependencies_.push_back(node); }
+
+   // Dynamic State for Kahn's Algorithm
+   // Atomic is strictly necessary here because multiple worker threads 
+   // may complete dependencies simultaneously and try to decrement this value.
+   int get_in_degree() const { return in_degree_.load(); }
+   void increment_in_degree() { in_degree_++; }
+   int decrement_in_degree() { return --in_degree_; }
+   void reset_in_degree(int value) { in_degree_ = value; }
+
+   // Dynamic State for Build Status
+   void set_status(Status s) { status_ = s; }
+   Status get_status() const { return status_; }
+
+   // Incremental Build State
+   void set_dirty(bool dirty) { is_dirty_ = dirty; }
+   bool is_dirty() const { return is_dirty_; }
+   
+   // Timepoint for the output file, used for dependency propagation
+   std::filesystem::file_time_type output_timestamp;
+
+   // Target Configuration
+   std::string output_file;
+   std::vector<std::string> source_files;
+   std::vector<std::string> flags;
+   std::string command; // Full command line string
+
+private:
+   std::string name_;
+   std::vector<Node*> dependents_;   // Outgoing edges (This -> Dependent)
+   std::vector<Node*> dependencies_; // Incoming edges (Dependency -> This)
+   
+   std::atomic<int> in_degree_;      // Runtime counter for unscheduled dependencies
+   std::atomic<Status> status_;
+   bool is_dirty_;                   // Calculated during incremental analysis
+};
+
+The inclusion of std::atomic<int> for the in_degree_ counter is a pivotal design decision.1 In a parallel build scenario, multiple threads completing independent tasks (e.g., compiling separate source files) may simultaneously attempt to update the state of a common downstream linker node. Using an atomic integer ensures that these concurrent decrements are handled safely without the overhead of a mutex lock for every single dependency update, significantly reducing contention in high-throughput build scenarios.6
+2.2.2. The DependencyGraph Class
+The DependencyGraph serves as the factory and manager for nodes. It utilizes an adjacency list approach implicitly through the Node pointers.
+
+
+C++
+
+
+
+
+/**
+* @class DependencyGraph
+* @brief Container and manager for the build graph.
+*/
+class DependencyGraph {
+public:
+   Node* get_or_create_node(const std::string& name) {
+       if (node_map_.find(name) == node_map_.end()) {
+           auto node = std::make_unique<Node>(name);
+           node_map_[name] = node.get();
+           nodes_.push_back(std::move(node));
+       }
+       return node_map_[name];
+   }
+
+   Node* get_node(const std::string& name) const {
+       auto it = node_map_.find(name);
+       return (it!= node_map_.end())? it->second : nullptr;
+   }
+
+   // Access to all nodes for iteration (e.g., initial scan)
+   const std::vector<std::unique_ptr<Node>>& nodes() const { return nodes_; }
+   
+   size_t size() const { return nodes_.size(); }
+
+   // Reset runtime state to allow re-running the graph without rebuilding objects
+   void reset_state() {
+       for (const auto& node : nodes_) {
+           node->set_status(Node::Status::NotStarted);
+           // In-degree must be recalculated or reset from a cached static value
+           // Ideally, we calculate in-degree during the topological sort initialization phase.
+       }
+   }
+
+private:
+   std::vector<std::unique_ptr<Node>> nodes_;
+   std::unordered_map<std::string, Node*> node_map_;
+};
+
+This structure supports $O(1)$ lookup complexity for node retrieval via the hash map and linear iteration over all nodes, ensuring that graph construction and validation remain performant even as the number of targets scales into the thousands.1
+3. Graph Construction and Validation
+The construction of the dependency graph translates the parsed configuration into the in-memory structure defined above. This phase is critical for establishing the correctness of the build logic.
+3.1. Edge Directionality and In-Degree Calculation
+A subtle but crucial detail in build system implementation is the directionality of edges. The user defines dependencies in the form "Target A depends on Target B". While conceptually this implies a relationship $A \leftarrow B$, for the purpose of the build scheduler (which needs to know "what can I build next?"), it is more efficient to model the edges as execution flow: $B \rightarrow A$. This means B is a prerequisite for A. When B completes, we traverse its outgoing edges to find A and decrement A's in-degree.
+The construction algorithm proceeds as follows:
+1. Node Initialization: Iterate through all defined targets in the configuration. Create a Node for each, identifying it by its unique name.
+2. Edge Creation: For each target $T$, iterate through its list of dependencies $D_1, D_2, \dots D_n$.
+   * Resolve each dependency name to a Node*.
+   * Add an edge from the dependency to the target: D->add_dependent(T).
+   * Add a reference from the target to the dependency: T->add_dependency(D).
+   * Increment the static in-degree of $T$: T->increment_in_degree().
+3. Glob Resolution: Expand any file glob patterns (e.g., src/**/*.aria) in the sources list using std::filesystem::recursive_directory_iterator. The results must be sorted alphabetically to ensure deterministic inputs to the compiler, preventing "flaky" builds caused by file system ordering differences.1
+3.2. Validation Logic
+Before execution begins, the graph must be validated.
+* Missing Dependencies: Ensure every named dependency exists in the graph.
+* Duplicate Targets: Ensure no two targets claim the same output file, which would lead to race conditions.
+* Self-Dependencies: Trivial cycles like $A \rightarrow A$ should be caught immediately.
+4. Topological Sorting and Cycle Detection
+Building targets in the correct order requires a topological sort of the dependency graph. aria_make employs Kahn's Algorithm, which is particularly well-suited for build systems because it iteratively identifies "ready" tasks (in-degree 0), mirroring the actual build execution flow.7
+4.1. Kahn's Algorithm Implementation
+Kahn's algorithm works by maintaining the count of incoming edges (dependencies) for each node.
+
+
+C++
+
+
+
+
+/**
+* @brief Performs topological sort and detects cycles.
+* @return Sorted vector of nodes, or empty if cycle detected.
+*/
+std::vector<Node*> perform_topological_sort(DependencyGraph& graph) {
+   std::vector<Node*> result;
+   std::queue<Node*> zero_in_degree_q;
+   
+   // We use a temporary map to track in-degrees during the sort 
+   // to avoid modifying the actual graph state which is needed for the build.
+   std::unordered_map<Node*, int> temp_in_degrees;
+
+   // Initialization Phase
+   for (const auto& node_ptr : graph.nodes()) {
+       Node* node = node_ptr.get();
+       int deg = node->dependencies().size(); // Recalculate or use cached static in-degree
+       temp_in_degrees[node] = deg;
+       if (deg == 0) {
+           zero_in_degree_q.push(node);
+       }
+   }
+
+   // Processing Phase
+   while (!zero_in_degree_q.empty()) {
+       Node* u = zero_in_degree_q.front();
+       zero_in_degree_q.pop();
+       result.push_back(u);
+
+       for (Node* v : u->dependents()) {
+           temp_in_degrees[v]--;
+           if (temp_in_degrees[v] == 0) {
+               zero_in_degree_q.push(v);
+           }
+       }
+   }
+
+   // Cycle Check
+   if (result.size()!= graph.size()) {
+       // Cycle detected
+       return {}; 
+   }
+
+   return result;
+}
+
+The time complexity of this operation is $O(V + E)$, where $V$ is the number of targets and $E$ is the number of dependency links. For a build graph of 1000 targets, this is negligible (sub-millisecond), satisfying the performance requirement of $<50ms$ for graph analysis.1
+4.2. Cycle Detection and Path Reconstruction
+If Kahn's algorithm fails to visit all nodes, the graph contains a cycle. Kahn's algorithm alone identifies that a cycle exists but does not easily isolate the specific nodes forming the ring. To provide actionable error messages (e.g., "Error: Circular dependency detected: A -> B -> C -> A"), aria_make triggers a secondary diagnostic pass using Depth-First Search (DFS) upon failure.
+The DFS approach maintains a recursion stack to track the current traversal path. If the traversal encounters a node that is already in the current recursion stack, a back-edge is identified, confirming the cycle.
+
+
+C++
+
+
+
+
+/**
+* @brief Diagnoses graph cycles using DFS.
+*/
+class CycleDetector {
+public:
+   std::vector<std::string> find_cycle(const DependencyGraph& graph) {
+       // Only run on nodes that have non-zero in-degree remaining after a failed sort
+       // implies they are part of the cycle.
+       for (const auto& node_ptr : graph.nodes()) {
+           if (is_cyclic_dfs(node_ptr.get())) {
+               return reconstruct_path();
+           }
+       }
+       return {};
+   }
+
+private:
+   std::unordered_map<Node*, bool> visited_;
+   std::unordered_map<Node*, bool> recursion_stack_;
+   std::vector<Node*> path_stack_;
+
+   bool is_cyclic_dfs(Node* u) {
+       visited_[u] = true;
+       recursion_stack_[u] = true;
+       path_stack_.push_back(u);
+
+       for (Node* v : u->dependents()) {
+           if (!visited_[v]) {
+               if (is_cyclic_dfs(v)) return true;
+           } else if (recursion_stack_[v]) {
+               // Cycle found: v is currently in the recursion stack
+               path_stack_.push_back(v); // Push v again to close the loop visual
+               return true;
+           }
+       }
+
+       recursion_stack_[u] = false;
+       path_stack_.pop_back();
+       return false;
+   }
+
+   std::vector<std::string> reconstruct_path() {
+       std::vector<std::string> cycle_names;
+       if (path_stack_.empty()) return cycle_names;
+
+       // The path_stack contains the full traversal. We need to extract the cycle segment.
+       Node* cycle_start = path_stack_.back();
+       bool recording = false;
+       
+       // Iterate to find the first occurrence of the cycle_start node
+       for (const auto& node : path_stack_) {
+           if (node == cycle_start) recording = true;
+           if (recording) cycle_names.push_back(node->name());
+       }
+       return cycle_names;
+   }
+};
+
+This hybrid approach ensures the happy path (valid DAG) is fast via Kahn's algorithm, while the expensive path tracking (DFS) is reserved only for error scenarios.8
+5. Incremental Build System Logic
+A primary functional requirement is the ability to perform incremental builds—recompiling only what is necessary. This relies on "dirty checking," determining if a target is out of date relative to its inputs.
+5.1. Timestamp Comparison and Dirty Logic
+aria_make uses file modification timestamps provided by std::filesystem::last_write_time (C++17).10 A target node $T$ is considered dirty if:
+1. Output Missing: The output file ($T_{out}$) does not exist.
+2. Input Modified: Any source file $S \in Sources(T)$ has a modification time $M_S$ such that $M_S > M_{T_{out}}$.
+3. Dependency Updated: Any dependency node $D$ is dirty or has been rebuilt in the current run.
+The logic propagates transitively. If libCore is rebuilt, MainApp (which depends on libCore) must also be rebuilt because libCore's output file timestamp will be updated to the current time.
+5.2. Handling Portability of file_time_type
+It is important to note that std::filesystem::file_time_type is implementation-defined. On some platforms, it may not be directly convertible to std::time_t or comparable across different clocks.11 However, C++17 guarantees that file_time_type is comparable with itself. Therefore, aria_make strictly compares file times against file times, avoiding conversion to system clocks where possible.
+
+
+C++
+
+
+
+
+bool check_is_dirty(Node* node) {
+   namespace fs = std::filesystem;
+   std::error_code ec;
+
+   // 1. Check Output Existence
+   if (node->output_file.empty()) return false; // Virtual/Phony target handling
+   fs::path out_path(node->output_file);
+   
+   if (!fs::exists(out_path, ec)) {
+       return true; // Output doesn't exist -> Dirty
+   }
+   auto out_time = fs::last_write_time(out_path, ec);
+   if (ec) return true; // Safety fallback
+
+   // 2. Check Source Files
+   for (const auto& src : node->source_files) {
+       fs::path src_path(src);
+       if (!fs::exists(src_path, ec)) {
+           throw std::runtime_error("Missing source: " + src);
+       }
+       auto src_time = fs::last_write_time(src_path, ec);
+       
+       if (src_time > out_time) {
+           return true; // Source newer than output -> Dirty
+       }
+   }
+
+   // 3. Check Dependencies (Direct output comparison)
+   // We check the filesystem timestamp of the dependency's output.
+   // This handles the transitive case: if a dependency was just rebuilt,
+   // its timestamp is now > our output timestamp.
+   for (const auto* dep : node->dependencies()) {
+       if (dep->output_file.empty()) continue;
+       
+       fs::path dep_out_path(dep->output_file);
+       if (fs::exists(dep_out_path, ec)) {
+           auto dep_time = fs::last_write_time(dep_out_path, ec);
+           if (dep_time > out_time) {
+               return true; // Dependency newer than output -> Dirty
+           }
+       } else {
+           // If dependency output missing, it MUST be built, so we must be dirty
+           return true; 
+       }
+   }
+
+   return false;
+}
+
+This logic ensures that if build.aria changes, or an intermediate library is updated, the changes ripple through the graph correctly.
+6. Concurrent Execution Engine: The Thread Pool
+To meet the performance requirement of executing independent targets in parallel (e.g., compiling 50 .aria files simultaneously), aria_make requires a robust thread pool. Creating a new std::thread for every task is inefficient due to OS context-switching overhead and potential resource exhaustion (oversubscription).13
+6.1. Thread Pool Architecture
+The thread pool implements a fixed-size set of worker threads, defaulting to std::thread::hardware_concurrency(). It uses a producer-consumer pattern with a thread-safe task queue.
+Key Components:
+* Worker Threads: Long-lived threads that poll the queue.
+* Task Queue: A queue of std::function<void()>.
+* Synchronization: A std::mutex to protect queue access and a std::condition_variable to signal workers when new tasks arrive.
+* Graceful Shutdown: A boolean flag to signal threads to exit once the queue is empty.
+6.2. Detailed Implementation
+The implementation prioritizes simplicity and correctness over complex lock-free structures, as the contention on the build queue (even with thousands of targets) is generally dwarfed by the build time of the targets themselves (compilers are slow).6
+
+
+C++
+
+
+
+
+class ThreadPool {
+public:
+   explicit ThreadPool(size_t num_threads = std::thread::hardware_concurrency()) 
+       : stop_(false) {
+       for(size_t i = 0; i < num_threads; ++i) {
+           workers_.emplace_back([this] {
+               while(true) {
+                   std::function<void()> task;
+                   {
+                       std::unique_lock<std::mutex> lock(this->queue_mutex_);
+                       
+                       // Wait until task is available or pool is stopped
+                       this->condition_.wait(lock, [this]{ 
+                           return this->stop_ ||!this->tasks_.empty(); 
+                       });
+                       
+                       if(this->stop_ && this->tasks_.empty())
+                           return; // Exit thread
+                           
+                       task = std::move(this->tasks_.front());
+                       this->tasks_.pop();
+                   }
+                   
+                   try {
+                       task(); // Execute the build step
+                   } catch (...) {
+                       // Exceptions in threads must be caught to prevent abort
+                       // In aria_make, we capture this in the Node status
+                   }
+               }
+           });
+       }
+   }
+
+   // Submit a task to the pool
+   template<class F>
+   void enqueue(F&& f) {
+       {
+           std::unique_lock<std::mutex> lock(queue_mutex_);
+           tasks_.emplace(std::forward<F>(f));
+       }
+       condition_.notify_one();
+   }
+
+   // Wait for all threads to finish (called on destruction)
+   ~ThreadPool() {
+       {
+           std::unique_lock<std::mutex> lock(queue_mutex_);
+           stop_ = true;
+       }
+       condition_.notify_all();
+       for(std::thread &worker: workers_) {
+           if(worker.joinable()) worker.join();
+       }
+   }
+
+private:
+   std::vector<std::thread> workers_;
+   std::queue<std::function<void()>> tasks_;
+   
+   std::mutex queue_mutex_;
+   std::condition_variable condition_;
+   bool stop_;
+};
+
+This design ensures that we never spawn more threads than the hardware supports, preventing the "thundering herd" problem and ensuring the system remains responsive even under heavy load.15
+7. The Dynamic Build Scheduler
+The scheduler is the orchestration layer that combines the Graph, the Incremental Logic, and the Thread Pool. It is responsible for the Dynamic Kahn's Algorithm. Unlike a static script, the scheduler monitors the real-time state of the graph, unlocking new tasks as their dependencies complete.
+7.1. Dynamic Scheduling Algorithm
+The static topological sort (Section 4) gives us a valid linear order, but executing linearly defeats the purpose of parallelism. We need a runtime mechanism that respects the order but executes as broadly as possible.
+Algorithm:
+1. Initialization: Scan the graph. Any node with in_degree == 0 is "Ready". Push these to a ReadyQueue.
+2. Dispatch Loop:
+   * While ReadyQueue is not empty, pop a Node N.
+   * Check is_dirty(N).
+   * If Clean: The node is up-to-date. Treat it as "completed" immediately. Call on_node_completed(N).
+   * If Dirty: Submit a build task for N to the ThreadPool. The task lambda wraps the system command execution.
+3. Completion Callback (The "Unlock" Step):
+   * When a thread finishes building N, it calls back into the Scheduler.
+   * The scheduler decrements the in_degree of all dependents of N.
+   * If a dependent's in_degree drops to 0, it is pushed to the ReadyQueue for immediate dispatch.
+7.2. Handling "Diamond" Dependencies
+Consider the "Diamond" scenario (Scenario 3 in requirements):
+* A depends on B and C.
+* B and C depend on D.
+Execution Flow:
+1. D has in-degree 0. D is dispatched.
+2. D finishes. B and C (dependents) have in-degree decremented to 0.
+3. B and C are pushed to ReadyQueue.
+4. B and C are dispatched to threads concurrently (parallelism achieved).
+5. B finishes. A's in-degree decremented (2 -> 1). A waits.
+6. C finishes. A's in-degree decremented (1 -> 0).
+7. A is pushed to ReadyQueue.
+8. A is dispatched.
+This dynamic approach maximizes parallelism automatically based on the graph structure without complex manual barriers.1
+7.3. Scheduler Implementation
+The scheduler manages the lifecycle of the build. Note the use of a condition variable to wait for build completion, preventing the main thread from busy-waiting.
+
+
+C++
+
+
+
+
+class BuildScheduler {
+public:
+   explicit BuildScheduler(DependencyGraph& graph, size_t threads)
+       : graph_(graph), pool_(threads), tasks_in_flight_(0), build_failed_(false) {}
+
+   bool execute() {
+       // 1. Initial Scan for Ready Nodes
+       {
+           std::lock_guard<std::mutex> lock(scheduler_mutex_);
+           for (const auto& node_ptr : graph_.nodes()) {
+               if (node_ptr->get_in_degree() == 0) {
+                   schedule_node_unlocked(node_ptr.get());
+               }
+           }
+       }
+
+       // 2. Event Loop: Wait until all tasks are done
+       std::unique_lock<std::mutex> lock(scheduler_mutex_);
+       scheduler_cv_.wait(lock, [this]{
+           // We are done if no tasks are running and no tasks are queued
+           // Or if a critical failure occurred (fail-fast)
+           return (tasks_in_flight_ == 0 && ready_queue_.empty()) |
+
+| build_failed_;
+       });
+
+       return!build_failed_;
+   }
+
+private:
+   DependencyGraph& graph_;
+   ThreadPool pool_;
+   
+   std::mutex scheduler_mutex_;
+   std::condition_variable scheduler_cv_;
+   
+   std::queue<Node*> ready_queue_;
+   int tasks_in_flight_;
+   bool build_failed_;
+
+   void schedule_node_unlocked(Node* node) {
+       if (check_is_dirty(node)) {
+           node->set_status(Node::Status::Pending);
+           tasks_in_flight_++;
+           
+           // Submit to thread pool
+           pool_.enqueue([this, node] {
+               process_node(node);
+           });
+       } else {
+           // Skip build, propagate completion immediately
+           node->set_status(Node::Status::Skipped);
+           // We simulate completion on a separate thread or immediately 
+           // to avoid deep recursion in the main thread stack.
+           // For simplicity, we handle it here but careful with stack depth.
+           handle_completion(node, true);
+       }
+   }
+
+   void process_node(Node* node) {
+       node->set_status(Node::Status::Building);
+       
+       // Execute the command (See Section 8)
+       bool success = execute_command_wrapper(node); 
+       
+       node->set_status(success? Node::Status::Completed : Node::Status::Failed);
+       handle_completion(node, success);
+   }
+
+   void handle_completion(Node* node, bool success) {
+       std::lock_guard<std::mutex> lock(scheduler_mutex_);
+       
+       if (node->get_status() == Node::Status::Building) {
+            tasks_in_flight_--;
+       }
+
+       if (!success) {
+           build_failed_ = true;
+           scheduler_cv_.notify_all(); // Wake up main thread to abort
+           return;
+       }
+
+       // Unlock dependents
+       for (Node* dependent : node->dependents()) {
+           int new_degree = dependent->decrement_in_degree();
+           if (new_degree == 0) {
+               schedule_node_unlocked(dependent);
+           }
+       }
+
+       // If no tasks left, wake up main thread
+       if (tasks_in_flight_ == 0 && ready_queue_.empty()) {
+           scheduler_cv_.notify_all();
+       }
+   }
+};
+
+This implementation provides a robust, thread-safe mechanism for dispatching builds. The scheduler_mutex_ protects the graph state (in-degrees and ready queue) from concurrent modification by multiple completing threads.
+8. Process Execution: fork vs popen
+Ideally, aria_make should capture both stdout and stderr from the compiler to report errors clearly.
+8.1. Limitations of popen
+While popen is part of the C standard library and easy to use, it has limitations:
+1. It invokes a shell (sh -c), adding slight overhead.
+2. It creates a unidirectional pipe (read-only or write-only). It typically captures stdout. To capture stderr, one must use shell redirection 2>&1, which merges the streams.17
+3. It does not separate return codes easily on all platforms without macros like WEXITSTATUS.
+8.2. Implementation Strategy
+Given the requirement for portability and simplicity without external dependencies (like Boost.Process), popen with 2>&1 redirection is the most pragmatic C++17 solution for aria_make's initial version. It allows capturing all compiler output in a single buffer, which can be printed atomically to the user's console to avoid interleaved garbage output from parallel threads.
+
+
+C++
+
+
+
+
+struct ExecResult {
+   int exit_code;
+   std::string output;
+};
+
+ExecResult execute_command_wrapper(Node* node) {
+   std::string cmd = node->command + " 2>&1"; // Merge stderr into stdout
+   std::string result_output;
+   std::array<char, 128> buffer;
+
+   // Open pipe
+   FILE* pipe = popen(cmd.c_str(), "r");
+   if (!pipe) {
+       return { -1, "Failed to launch process" };
+   }
+
+   // Read output
+   while (fgets(buffer.data(), buffer.size(), pipe)!= nullptr) {
+       result_output += buffer.data();
+   }
+
+   // Close and get exit code
+   int rc = pclose(pipe);
+   
+   // Normalize exit code
+   #ifndef _WIN32
+   if (WIFEXITED(rc)) rc = WEXITSTATUS(rc);
+   #endif
+
+   return { rc, result_output };
+}
+
+For professional-grade output where stdout (logs) and stderr (errors) must be distinguished (e.g., coloring errors red), a custom fork/exec/pipe implementation on Linux/macOS and CreateProcess on Windows would be required. However, for the current scope, the merged output is sufficient and ensures that error messages are not lost.17
+9. Status Reporting and User Experience
+With parallel builds, printing output directly to std::cout creates a mess of interleaved characters. aria_make buffers output per-task and prints it only upon task completion.
+The UI should provide a progress indicator: [ 5/20] Building src/main.aria....
+This requires the Scheduler to track:
+* total_nodes: The total number of nodes in the graph.
+* completed_nodes: An atomic counter incremented in handle_completion.
+
+
+C++
+
+
+
+
+void log_progress(int current, int total, const std::string& target) {
+   static std::mutex log_mutex;
+   std::lock_guard<std::mutex> lock(log_mutex);
+   
+   // Clear line and print status
+   std::cout << "\r\033 " 
+             << "Building target: " << target << std::flush;
+}
+
+If a build fails, the buffered output from execute_command_wrapper is dumped to std::cerr immediately, and the build stops (fail-fast).
+10. Performance and Complexity Analysis
+The architectural choices made for aria_make are driven by algorithmic efficiency.
+Component
+	Algorithm / Structure
+	Time Complexity
+	Space Complexity
+	Notes
+	Node Lookup
+	Hash Map (unordered_map)
+	$O(1)$ avg
+	$O(V)$
+	Fast string-based access.
+	Topological Sort
+	Kahn's Algorithm
+	$O(V + E)$
+	$O(V)$
+	Optimal for DAGs; detects cycles.
+	Cycle Reporting
+	DFS (on error only)
+	$O(V + E)$
+	$O(V)$
+	Expensive recursion used only when needed.
+	Scheduling
+	Dynamic In-Degree
+	$O(1)$ per node
+	$O(V)$
+	$O(1)$ ready check via atomic decrement.
+	Dirty Check
+	Timestamp Comparison
+	$O(S)$ per node
+	$O(1)$
+	$S$ = source files. Disk I/O bound (stat).
+	Performance Goals Verification:
+* Small Project (10 targets): Graph construction and sort are negligible (<1ms). Overhead is dominated by process spawning.
+* Large Project (1000 targets): $V=1000, E \approx 3000$. Kahn's algorithm iterates ~4000 elements. On modern CPUs, this completes in microseconds. The bottlenecks will be I/O (checking timestamps) and the compilation itself. The thread pool ensures CPU saturation during compilation.
+11. Conclusion
+This report has outlined a production-ready architecture for the aria_make Dependency Graph and Scheduler. By strictly adhering to C++17 standards, utilizing std::unique_ptr for memory safety, std::atomic for lock-free counter updates, and a std::filesystem-based incremental build strategy, the system meets the high-performance and usability requirements of the Aria ecosystem.
+The dynamic scheduling algorithm solves complex dependency scenarios (linear, diamond, tree) automatically, maximizing hardware utilization via the thread pool. The architecture is modular, allowing the DependencyGraph, Scheduler, and Executor to be tested and optimized independently. This foundation provides the Aria toolchain with a build system that is not only faster than Make but also more developer-friendly and robust.
+Works cited
+1. task_03_dependency_graph.txt
+2. What is the best way to implement smart pointers in C++? - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/503833/what-is-the-best-way-to-implement-smart-pointers-in-c
+3. What C++ Smart Pointer Implementations are available? - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/5026197/what-c-smart-pointer-implementations-are-available
+4. Should unique pointer be used at all? : r/cpp - Reddit, accessed December 19, 2025, https://www.reddit.com/r/cpp/comments/1734ubb/should_unique_pointer_be_used_at_all/
+5. Best practice smart pointer use : r/cpp_questions - Reddit, accessed December 19, 2025, https://www.reddit.com/r/cpp_questions/comments/17tl7oh/best_practice_smart_pointer_use/
+6. A C++17 thread pool for high-performance scientific computing | Hacker News, accessed December 19, 2025, https://news.ycombinator.com/item?id=31744160
+7. Kahn's Algorithm for Topological Sorting | by Robert David Hernandez | Medium, accessed December 19, 2025, https://medium.com/@robhernandez5/kahns-algorithm-for-topological-sorting-26f29f2eaf48
+8. Detecting cycles in Topological sort using Kahn's algorithm (in degree / out degree), accessed December 19, 2025, https://stackoverflow.com/questions/67644378/detecting-cycles-in-topological-sort-using-kahns-algorithm-in-degree-out-deg
+9. Graphs 101: Cycle Detection in Directed Graphs using DFS | by Shruti Pokale - Medium, accessed December 19, 2025, https://medium.com/@shrutipokale2016/graphs-101-cycle-detection-in-directed-graphs-using-dfs-095265e61f9f
+10. std::filesystem::last_write_time - cppreference.com - C++ Reference, accessed December 19, 2025, https://en.cppreference.com/w/cpp/filesystem/last_write_time.html
+11. std::filesystem::file_time_type does not allow easy conversion to time_t, accessed December 19, 2025, https://developercommunity.visualstudio.com/t/stdfilesystemfile-time-type-does-not-allow-easy-co/251213
+12. g++ breaking change in std::filesystem::last_write_time - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/56708267/g-breaking-change-in-stdfilesystemlast-write-time
+13. bshoshany/thread-pool: BS::thread_pool: a fast, lightweight, modern, and easy-to-use C++17 / C++20 / C++23 thread pool library - GitHub, accessed December 19, 2025, https://github.com/bshoshany/thread-pool
+14. A simple and fast C++ thread pool implementation capable of running task graphs - arXiv, accessed December 19, 2025, https://arxiv.org/html/2407.15805v2
+15. Thread Pool in C++ - GeeksforGeeks, accessed December 19, 2025, https://www.geeksforgeeks.org/cpp/thread-pool-in-cpp/
+16. How to wait for completion of all tasks in this ThreadPool? - Stack Overflow, accessed December 19, 2025, https://stackoverflow.com/questions/59144237/how-to-wait-for-completion-of-all-tasks-in-this-threadpool
+17. How do I execute a command and get the output of the command within C++ using POSIX?, accessed December 19, 2025, https://stackoverflow.com/questions/478898/how-do-i-execute-a-command-and-get-the-output-of-the-command-within-c-using-po
+18. How to execute a command and get return code stdout and stderr of command in C++, accessed December 19, 2025, https://stackoverflow.com/questions/52164723/how-to-execute-a-command-and-get-return-code-stdout-and-stderr-of-command-in-c

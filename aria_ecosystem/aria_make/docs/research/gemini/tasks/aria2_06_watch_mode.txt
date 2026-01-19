@@ -1,0 +1,290 @@
+Research Task: Watch Mode and Continuous Build System for aria_make
+
+PRIORITY: OPTIONAL (FUTURE ENHANCEMENT)
+ESTIMATED COMPLEXITY: MEDIUM-HIGH
+ESTIMATED TIME: 3-4 hours
+
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+Developers often work in "edit-save-test" loops. Currently, aria_make requires manual invocation after each source file change. A "watch mode" would automatically trigger rebuilds when files change, dramatically improving developer experience.
+
+Note: FileWatcher infrastructure already specified in 40_EXECUTION_ENGINE.md (inotify/FSEvents/ReadDirectoryChangesW), but no specification exists for the watch mode main loop and integration.
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH OBJECTIVES
+═══════════════════════════════════════════════════════════════════════════════
+
+Design a watch mode system that provides:
+
+1. **Invocation**
+   ```bash
+   aria_make watch          # Watch mode (rebuild on changes)
+   aria_make --watch        # Alternative syntax
+   aria_make watch myapp    # Watch specific target
+   ```
+
+2. **File Change Detection**
+   - Use existing FileWatcher (inotify/FSEvents/ReadDirectoryChangesW)
+   - Watch source directories from targets
+   - Watch build.aria itself (rebuild graph on config change)
+   - Ignore build output directory (don't trigger on .o files)
+
+3. **Debouncing Strategy**
+   - Rapid successive saves trigger ONE rebuild, not multiple
+   - Trailing edge debounce: wait 200ms after last change
+   - Handle "save all" in IDE (10 files change simultaneously)
+
+4. **Incremental Rebuild Integration**
+   - Use existing timestamp + command hash logic
+   - Only rebuild dirty targets
+   - Preserve clean targets across watch cycles
+
+5. **Build Lifecycle**
+   ```
+   [Watch Mode Starts]
+     ↓
+   Initial Build (full or incremental)
+     ↓
+   ┌─→ Wait for file changes (FileWatcher)
+   │     ↓
+   │   File change detected
+   │     ↓
+   │   Debounce (wait 200ms)
+   │     ↓
+   │   Trigger rebuild (incremental)
+   │     ↓
+   │   Report results
+   │     ↓
+   └─────┘
+   [Ctrl+C to exit]
+   ```
+
+6. **User Feedback**
+   - Clear indicators: "Watching for changes..."
+   - Build triggered: "Change detected: src/main.aria"
+   - Build completed: "Build succeeded in 1.2s"
+   - Build failed: "Build failed (2 errors)"
+   - Timestamp each event
+
+7. **Configuration Changes**
+   - When build.aria changes, reload graph
+   - Re-parse targets
+   - Update watch directories if new sources added
+   - Challenge: Handle structural changes (target removed)
+
+8. **Error Handling**
+   - Build fails: Don't exit watch mode, keep watching
+   - Config becomes invalid: Show error, wait for fix
+   - Watch directory deleted: Warn, stop watching that path
+
+9. **Resource Management**
+   - FileWatcher inotify descriptors are limited (Linux: 8192 default)
+   - Large projects may exceed limit
+   - Strategy: Watch directories, not individual files
+   - Fallback: Poll mode if watch setup fails
+
+10. **Integration with Test Mode**
+    ```bash
+    aria_make watch --test    # Rebuild AND run tests on change
+    ```
+
+═══════════════════════════════════════════════════════════════════════════════
+USAGE SCENARIOS
+═══════════════════════════════════════════════════════════════════════════════
+
+**Basic Workflow:**
+```bash
+# Terminal 1: Start watch mode
+$ aria_make watch
+[INFO] Initial build...
+[SUCCESS] Build completed in 3.2s
+[INFO] Watching for changes... (Ctrl+C to exit)
+
+# Terminal 2: Edit file
+$ vim src/main.aria
+# Save
+
+# Terminal 1: Auto-rebuild
+[INFO] Change detected: src/main.aria
+[INFO] Rebuilding target 'myapp'...
+[SUCCESS] Build completed in 0.8s (1 file)
+[INFO] Watching for changes...
+```
+
+**Configuration Change:**
+```bash
+[INFO] Watching for changes...
+
+# User edits build.aria to add new target
+
+[INFO] Change detected: build.aria
+[INFO] Reloading configuration...
+[INFO] New target detected: 'libfoo'
+[INFO] Rebuilding graph...
+[SUCCESS] Build completed in 2.1s (3 files)
+[INFO] Watching for changes...
+```
+
+**Build Failure (doesn't exit watch mode):**
+```bash
+[INFO] Change detected: src/parser.aria
+[INFO] Rebuilding...
+[ERROR] Compilation failed: src/parser.aria:42:15
+        Expected ';' after statement
+[INFO] Build failed (fix errors and save again)
+[INFO] Watching for changes...
+
+# User fixes error, saves
+
+[INFO] Change detected: src/parser.aria
+[INFO] Rebuilding...
+[SUCCESS] Build completed in 0.5s
+[INFO] Watching for changes...
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH DELIVERABLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide:
+
+1. **WatchMode Controller Design**
+   ```cpp
+   class WatchModeController {
+   public:
+       WatchModeController(BuildContext& ctx);
+       
+       // Main watch loop (blocking)
+       void run();
+       
+       // Callbacks
+       void onFileChanged(const fs::path& path);
+       void onConfigChanged();
+       
+   private:
+       BuildContext& context_;
+       FileWatcher watcher_;
+       std::chrono::steady_clock::time_point last_change_time_;
+       std::atomic<bool> rebuild_pending_;
+       std::thread debounce_thread_;
+       
+       void performRebuild();
+       void reloadConfig();
+       void updateWatchedPaths();
+   };
+   ```
+
+2. **Debouncing Algorithm**
+   - Trailing edge: wait 200ms after last change
+   - Pseudocode or C++ implementation
+
+3. **Watch Path Calculation**
+   - How to extract directories to watch from targets
+   - Glob pattern → directory list conversion
+
+4. **Configuration Reload Strategy**
+   - How to handle config changes gracefully
+   - Detect added/removed targets
+   - Update dependency graph without full restart
+
+5. **Error Recovery**
+   - Build fails: Stay in watch mode
+   - Config invalid: Show error, keep watching config file
+   - FileWatcher fails: Fallback to polling? Exit gracefully?
+
+6. **Resource Limit Handling**
+   - Detect inotify limit exceeded (Linux)
+   - Graceful degradation or clear error message
+
+7. **Signal Handling**
+   - Ctrl+C: Clean shutdown, don't leave zombie processes
+   - SIGTERM: Graceful exit
+
+8. **Integration with Existing Components**
+   - FileWatcher (already designed in 40_EXECUTION_ENGINE.md)
+   - BuildScheduler (incremental rebuild logic)
+   - ConfigParser (reload on config change)
+
+9. **Testing Strategy**
+   - Mock file system events
+   - Test debouncing logic
+   - Test config reload
+   - Test error scenarios
+
+═══════════════════════════════════════════════════════════════════════════════
+ADVANCED FEATURES (OPTIONAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **Live Reload Integration**
+   - Rebuild + restart test server
+   - Hot reload for interpreted code
+
+2. **Build-on-Save Hooks**
+   - User-defined commands after successful build
+   - Example: Run formatter, linter
+
+3. **Notifications**
+   - Desktop notifications on build success/failure
+   - Sound alerts (optional)
+
+4. **Web UI**
+   - Browser-based build status dashboard
+   - Real-time build output
+
+5. **Remote Watch**
+   - Watch local files, trigger build on remote machine
+
+═══════════════════════════════════════════════════════════════════════════════
+COMPARISON TO EXISTING TOOLS
+═══════════════════════════════════════════════════════════════════════════════
+
+Research watch mode in:
+1. **Cargo** - `cargo watch` (via cargo-watch crate)
+2. **Webpack** - `webpack --watch`
+3. **Nodemon** - Node.js process watcher
+4. **Watchman** - Facebook's file watching service
+5. **tsc --watch** - TypeScript compiler watch mode
+
+What can we learn from their UX and architecture?
+
+═══════════════════════════════════════════════════════════════════════════════
+CONSTRAINTS
+═══════════════════════════════════════════════════════════════════════════════
+
+- Must work cross-platform (use existing FileWatcher abstraction)
+- Resource-efficient (don't poll unnecessarily)
+- Responsive (rebuild within seconds of change)
+- Resilient (don't crash on build errors)
+- Clear user feedback (always show status)
+
+═══════════════════════════════════════════════════════════════════════════════
+SUCCESS CRITERIA
+═══════════════════════════════════════════════════════════════════════════════
+
+A successful design will:
+✓ Automatically rebuild on source file changes
+✓ Debounce rapid successive changes
+✓ Reload configuration when build.aria changes
+✓ Stay running despite build failures
+✓ Provide clear status updates to user
+✓ Handle resource limits gracefully
+✓ Integrate with incremental build logic
+✓ Support Ctrl+C for clean shutdown
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide a detailed specification document covering:
+- WatchModeController class design
+- Debouncing algorithm implementation
+- Watch path calculation strategy
+- Configuration reload handling
+- Error recovery strategies
+- Resource limit handling
+- Signal handling
+- Integration with FileWatcher, BuildScheduler, ConfigParser
+- User feedback format
+- Testing approach

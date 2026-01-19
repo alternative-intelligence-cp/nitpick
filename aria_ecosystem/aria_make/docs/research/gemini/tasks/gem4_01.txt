@@ -1,0 +1,4 @@
+Task 1.1: Implement Command Signature Hashing
+* Context: Currently, changing build flags does not trigger a rebuild.1
+* Issue: IncrementalLogic only checks file timestamps.
+* Fix Prompt:"Modify src/build/incremental.cpp. Introduce a CommandHasher class. Serialize the full compilation command (compiler executable + all flags + input paths + output path). Compute a SHA-256 hash of this string. Persist this hash in a .aria_build_state JSON file keyed by the target name. Update IncrementalLogic::is_dirty() to compare the current computed hash against the stored hash. If they differ, force a rebuild regardless of file timestamps."

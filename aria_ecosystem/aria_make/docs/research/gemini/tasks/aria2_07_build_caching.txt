@@ -1,0 +1,297 @@
+Research Task: Build Caching and Remote Cache System for aria_make
+
+PRIORITY: OPTIONAL (FUTURE ENHANCEMENT)
+ESTIMATED COMPLEXITY: HIGH
+ESTIMATED TIME: 4-5 hours
+
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+In large projects or CI/CD environments, compilation can be expensive. A build cache system allows sharing compiled artifacts across:
+- Multiple developers on a team
+- CI pipeline runs
+- Different branches of the same project
+- Clean builds after checkout
+
+Example: Developer A compiles libutils.a. Developer B can fetch it from cache instead of recompiling, if their source matches.
+
+This is beyond MVP scope but worth researching for future implementation.
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH OBJECTIVES
+═══════════════════════════════════════════════════════════════════════════════
+
+Design a build caching system covering:
+
+1. **Content-Addressable Storage (CAS)**
+   - Hash inputs (source files + compiler flags) → cache key
+   - Store outputs (object files, binaries) by key
+   - Retrieve outputs if inputs match
+   - Hash function: SHA-256? Blake3? (speed vs collision resistance)
+
+2. **Cache Key Calculation**
+   What goes into the hash:
+   - Source file content (not timestamp!)
+   - Compiler version (clang 18 vs 19 may differ)
+   - Compiler flags (-O2 vs -O3)
+   - Header file content (transitive dependencies)
+   - Target triple (x86_64 vs ARM64)
+   
+   Example:
+   ```
+   cache_key = SHA256(
+       source_content +
+       compiler_version +
+       flags +
+       header_contents +
+       target_triple
+   )
+   ```
+
+3. **Local Cache**
+   - Store artifacts in ~/.aria_cache/ or .aria/cache/
+   - Eviction policy (LRU, size-based, age-based)
+   - Cache size limit (e.g., 10GB)
+   - Verification (detect corrupted cache entries)
+
+4. **Remote Cache**
+   - Shared cache server (HTTP, S3, Google Cloud Storage)
+   - Upload artifacts after successful compilation
+   - Download artifacts if cache hit
+   - Authentication (API keys, OAuth)
+   - Compression (gzip, zstd) to reduce bandwidth
+
+5. **Cache Operations**
+   ```bash
+   aria_make --cache-local       # Use local cache only
+   aria_make --cache-remote=URL  # Use remote cache
+   aria_make --cache-stats        # Show cache hit rate
+   aria_make --cache-clean        # Evict old entries
+   ```
+
+6. **Cache Hit/Miss Logic**
+   ```
+   For each target:
+     1. Calculate cache key from inputs
+     2. Check local cache
+        ├─ HIT → Copy artifact, skip compilation
+        └─ MISS → Check remote cache
+              ├─ HIT → Download, save to local cache
+              └─ MISS → Compile, upload to remote cache
+   ```
+
+7. **Correctness Guarantees**
+   - Cache must be deterministic (same inputs = same outputs)
+   - Detect non-deterministic compilation (timestamp embedding)
+   - Hermetic builds (no hidden dependencies on /usr/lib)
+   - Verification: Re-compile 10% of cache hits, check they match
+
+8. **Security Considerations**
+   - Malicious cache poisoning (attacker uploads backdoored .o file)
+   - Solution: Trust boundary (only trust signed artifacts)
+   - Authentication for write access
+   - Read-only mode for untrusted caches
+
+9. **Integration with Incremental Builds**
+   - Cache is orthogonal to incremental logic
+   - Incremental: "Do I need to rebuild?" (timestamp + command hash)
+   - Cache: "Can I fetch prebuilt artifact?" (content hash)
+   - Both can be used together
+
+10. **Performance Optimization**
+    - Parallel cache queries (don't block on network)
+    - Speculative downloads (prefetch likely artifacts)
+    - Compression (trade CPU for bandwidth)
+    - Deduplication (hard links for identical artifacts)
+
+═══════════════════════════════════════════════════════════════════════════════
+USAGE SCENARIOS
+═══════════════════════════════════════════════════════════════════════════════
+
+**Team Development:**
+```bash
+# Developer A compiles
+$ aria_make --cache-remote=https://cache.company.com
+[INFO] Cache miss: Compiling src/utils.aria
+[INFO] Uploading to remote cache...
+[SUCCESS] Build completed
+
+# Developer B (same code, different machine)
+$ aria_make --cache-remote=https://cache.company.com
+[INFO] Cache hit: Fetching src/utils.o from remote cache
+[INFO] Cache hit: Fetching libutils.a from remote cache
+[SUCCESS] Build completed in 0.5s (100% cache hits)
+```
+
+**CI Pipeline:**
+```bash
+# Build cache shared across CI runs
+$ aria_make --cache-remote=s3://ci-cache-bucket/aria/
+[INFO] Cache hit: 80% (8/10 files)
+[INFO] Cache miss: 20% (2/10 files)
+[INFO] Compiling 2 new files...
+[SUCCESS] Build completed in 5s (vs 30s without cache)
+```
+
+**Clean Build Optimization:**
+```bash
+# After git clean -fdx
+$ aria_make --cache-local
+[INFO] Restoring from local cache...
+[INFO] Cache hit: 100% (no compilation needed)
+[SUCCESS] Build completed in 1s
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEARCH DELIVERABLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide:
+
+1. **Cache Key Algorithm**
+   - Detailed hash calculation logic
+   - What inputs to include
+   - How to handle transitive dependencies (headers)
+
+2. **Local Cache Design**
+   ```cpp
+   class LocalCache {
+   public:
+       std::optional<fs::path> get(const CacheKey& key);
+       void put(const CacheKey& key, const fs::path& artifact);
+       void evict(size_t target_size_bytes);
+       CacheStats getStats();
+   private:
+       fs::path cache_dir_;  // ~/.aria_cache/
+       size_t max_size_bytes_;
+       std::map<CacheKey, CacheEntry> entries_;
+   };
+   ```
+
+3. **Remote Cache Protocol**
+   - REST API design or S3-compatible interface
+   - GET /cache/{key} → 200 + artifact or 404
+   - PUT /cache/{key} ← artifact → 201
+   - HEAD /cache/{key} → 200 or 404 (exists check)
+   - Authentication headers
+
+4. **Cache Entry Format**
+   ```
+   {cache_key}/
+   ├── metadata.json  (compiler version, flags, timestamp)
+   ├── artifact.o     (the actual output file)
+   └── checksum.sha256 (verification)
+   ```
+
+5. **Eviction Policy**
+   - LRU (Least Recently Used)
+   - Size-based (evict when cache > 10GB)
+   - Age-based (evict entries > 30 days old)
+   - Recommendation
+
+6. **Deterministic Build Requirements**
+   - What makes a build non-deterministic?
+     - Timestamps (__DATE__, __TIME__ macros)
+     - Randomization (ASLR, PIE)
+     - Absolute paths in debug info
+   - How to enforce determinism in aria_make?
+
+7. **Security Model**
+   - Read-only public cache (untrusted)
+   - Read-write private cache (trusted team)
+   - Signed artifacts (cryptographic verification)
+
+8. **Integration with BuildScheduler**
+   - Cache lookup before compilation
+   - Cache upload after successful compilation
+   - Parallel cache operations (don't block build)
+
+9. **Performance Benchmarks**
+   - Expected speedup: Clean build with 100% cache hits
+   - Network overhead: Download time vs compile time
+   - Storage requirements: Cache size vs project size
+
+10. **Testing Strategy**
+    - Mock remote cache (local HTTP server)
+    - Test cache hit/miss logic
+    - Test eviction policies
+    - Test corrupted cache entries
+
+═══════════════════════════════════════════════════════════════════════════════
+ADVANCED FEATURES (OPTIONAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **Distributed Compilation + Cache**
+   - Like distcc/icecc but with caching
+   - Farm out compilation to remote machines
+   - Cache results for future use
+
+2. **Prebuilt Standard Library**
+   - Cache compiled stdlib (std.math, std.io)
+   - Huge speedup for clean builds
+
+3. **Cache Analytics**
+   - Track hit rates, network usage
+   - Dashboard for team productivity
+
+4. **Multi-Level Cache**
+   - L1: Local memory (fastest)
+   - L2: Local disk (~/.aria_cache/)
+   - L3: Team server (fast network)
+   - L4: Global CDN (slower, but always available)
+
+═══════════════════════════════════════════════════════════════════════════════
+COMPARISON TO EXISTING SYSTEMS
+═══════════════════════════════════════════════════════════════════════════════
+
+Research existing build cache systems:
+
+1. **Bazel Remote Cache** - Content-addressable, gRPC protocol
+2. **sccache** - Rust build cache (supports S3, Redis, Memcached)
+3. **ccache** - C/C++ compiler cache (local only)
+4. **Nix Store** - Functional package manager with content addressing
+5. **Docker Layer Cache** - Similar content-addressable system
+
+What design patterns are common? What pitfalls to avoid?
+
+═══════════════════════════════════════════════════════════════════════════════
+CONSTRAINTS
+═══════════════════════════════════════════════════════════════════════════════
+
+- Must ensure correctness (no stale artifacts)
+- Must be opt-in (default: no caching)
+- Should be fast (cache lookup < 10ms)
+- Should be space-efficient (compression, deduplication)
+- Should handle network failures gracefully (fall back to compilation)
+- Should support air-gapped environments (local cache only)
+
+═══════════════════════════════════════════════════════════════════════════════
+SUCCESS CRITERIA
+═══════════════════════════════════════════════════════════════════════════════
+
+A successful design will:
+✓ Define content-addressable cache key algorithm
+✓ Support local and remote cache backends
+✓ Provide eviction policies for local cache
+✓ Ensure correctness (deterministic builds)
+✓ Handle security (authentication, verification)
+✓ Integrate with existing incremental build logic
+✓ Achieve significant speedup (10x+ for clean builds)
+✓ Be optional and non-intrusive
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+Provide a detailed specification document covering:
+- Cache key calculation algorithm
+- LocalCache and RemoteCache class designs
+- Cache protocol (REST API or similar)
+- Eviction policy recommendations
+- Deterministic build requirements
+- Security model and authentication
+- Integration with BuildScheduler
+- Performance analysis
+- Testing strategy
+- Comparison to existing systems (Bazel, sccache)

@@ -1,0 +1,303 @@
+Gemini Deep Research Task: Dependency Graph and Build Scheduler
+================================================================
+
+RESEARCH OBJECTIVE:
+Provide complete implementation guide for the dependency graph construction, topological sorting, and parallel build scheduling system for aria_make.
+
+SCOPE:
+1. Dependency graph data structures
+2. Kahn's topological sort algorithm
+3. Cycle detection and reporting
+4. Incremental build logic
+5. Parallel execution with thread pool
+6. Build status tracking and error handling
+
+REQUIRED DELIVERABLES:
+
+1. Graph Data Structures:
+   Complete C++ class definitions for:
+   - DependencyGraph class
+   - Node class (represents a target)
+   - Edge class (represents dependency)
+   - BuildQueue (topologically sorted)
+
+   Node Structure:
+   - Target name
+   - Source files (post-glob expansion)
+   - Output file
+   - In-degree counter
+   - Dependency list (outgoing edges)
+   - Status flags (not_started, building, completed, failed)
+   - Timestamps (for incremental builds)
+   - Error information (if failed)
+
+2. Graph Construction:
+   Algorithm to build graph from parsed build file:
+   1. Create node for each target
+   2. For each target's depends_on:
+      - Find dependency target
+      - Create edge
+      - Increment in-degree
+   3. Validate:
+      - All dependencies exist
+      - No duplicate target names
+   4. Return graph
+
+3. Kahn's Topological Sort:
+   Complete C++ implementation:
+   
+   ```cpp
+   std::vector<Target*> topological_sort(DependencyGraph& graph) {
+       // Implementation here
+   }
+   ```
+   
+   Algorithm:
+   1. Find all nodes with in-degree 0
+   2. Add to queue
+   3. While queue not empty:
+      - Dequeue node N
+      - Add N to result
+      - For each dependent M of N:
+        * Decrement M's in-degree
+        * If in-degree becomes 0, enqueue M
+   4. If result size != node count: cycle exists
+   5. Return sorted list
+
+4. Cycle Detection:
+   When topological sort fails:
+   1. Identify nodes not in result (in cycle)
+   2. Perform DFS from these nodes
+   3. Track path during DFS
+   4. When revisit node, extract cycle path
+   5. Format error message: "A → B → C → A"
+
+   Complete implementation with:
+   - DFS traversal
+   - Path tracking
+   - Cycle extraction
+   - User-friendly error message
+
+5. Incremental Build Logic:
+   Timestamp-based rebuild decisions:
+   
+   For each target T:
+   1. Check if output file exists
+   2. If not, mark dirty (must build)
+   3. Get output timestamp: T_out
+   4. For each source S:
+      - Get source timestamp: T_src
+      - If T_src > T_out: mark dirty
+   5. For each dependency D:
+      - If D is dirty: mark T dirty
+   6. Return dirty status
+   
+   C++ implementation using:
+   - std::filesystem::last_write_time()
+   - Error handling for missing files
+   - Dependency propagation
+
+6. Thread Pool Implementation:
+   Parallel build execution:
+   
+   Class ThreadPool:
+   - Constructor: create N worker threads
+   - submit(task): add task to queue
+   - wait_all(): block until all tasks complete
+   - Destructor: join threads
+   
+   Worker Thread Logic:
+   1. Wait for task from queue
+   2. Execute task (compile target)
+   3. Update graph (decrement dependents' in-degree)
+   4. Signal completion
+   5. Repeat
+   
+   Thread Safety:
+   - Mutex for task queue
+   - Condition variables for synchronization
+   - Atomic counters for completed tasks
+
+7. Build Scheduler:
+   Orchestrates parallel builds:
+   
+   Algorithm:
+   1. Topologically sort graph
+   2. Create thread pool (hardware_concurrency threads)
+   3. While targets remain:
+      - Find all ready targets (in-degree 0, not started)
+      - Submit to thread pool
+      - Wait for any to complete
+      - Update graph (remove edges from completed)
+      - Check for failures (halt if critical)
+   4. Wait for all to complete
+   5. Report summary
+   
+   Features:
+   - Fail-fast mode (stop on first error)
+   - Continue mode (build as much as possible)
+   - Progress reporting
+   - Build time tracking per target
+
+8. Build Task Execution:
+   For each target, execute:
+   1. Check if up-to-date (incremental build)
+   2. If up-to-date, skip
+   3. Construct compiler command
+   4. Invoke ariac via system() or fork/exec
+   5. Capture stdout/stderr
+   6. Check return code
+   7. Update target status
+   8. Record build time
+   
+   Error Handling:
+   - Compiler errors (propagate to user)
+   - Missing files
+   - Permission errors
+   - Disk space issues
+
+9. Status Reporting:
+   Real-time build progress:
+   - [1/10] Building target: core_lib
+   - [2/10] Building target: utils
+   - [3/10] Building target: main_app
+   - Build completed in 5.2s
+   
+   Summary Report:
+   - Total targets: 10
+   - Built: 8
+   - Up-to-date: 2
+   - Failed: 0
+   - Total time: 5.2s
+
+10. Complete C++ Implementation:
+    All classes and functions:
+    - DependencyGraph
+    - TopologicalSorter
+    - CycleDetector
+    - IncrementalBuilder
+    - ThreadPool
+    - BuildScheduler
+    - BuildExecutor
+    - StatusReporter
+
+RESEARCH QUESTIONS TO ANSWER:
+
+1. What's the most efficient graph representation for this use case?
+2. How to handle very large graphs (1000+ targets)?
+3. What's the overhead of topological sort?
+4. How many threads optimal for building?
+5. How to balance load across threads?
+6. What data structures for thread-safe queue?
+7. How to handle build failures gracefully?
+8. How to track and report progress in real-time?
+
+ALGORITHM COMPLEXITY ANALYSIS:
+
+Topological Sort (Kahn's):
+- Time: O(V + E) where V=nodes, E=edges
+- Space: O(V)
+- Optimal for build systems
+
+Cycle Detection (DFS):
+- Time: O(V + E)
+- Space: O(V) for path tracking
+- Only runs on failure
+
+Incremental Build Check:
+- Time: O(V * S) where S=avg sources per target
+- Space: O(V)
+- Dominated by stat() calls
+
+THREADING SCENARIOS:
+
+Scenario 1: Independent Targets
+targets: [A, B, C] (no dependencies)
+Expected: Build A, B, C in parallel (3 threads)
+
+Scenario 2: Linear Chain
+A → B → C (A depends on B depends on C)
+Expected: Build C, then B, then A (sequential)
+
+Scenario 3: Diamond
+    A
+   / \
+  B   C
+   \ /
+    D
+Expected: Build D, then B and C in parallel, then A
+
+Scenario 4: Wide Tree
+      A
+    / | \
+   B  C  D
+  /|  |  |\
+ E F  G  H I
+Expected: Bottom level parallel, then next level, etc.
+
+INCREMENTAL BUILD EXAMPLES:
+
+Example 1: Nothing Changed
+All source timestamps < output timestamps
+Expected: Skip all builds (instant)
+
+Example 2: One Source Changed
+src/main.aria modified
+Expected: Rebuild main_app only (not dependencies)
+
+Example 3: Dependency Changed
+lib/core.aria modified
+Expected: Rebuild core_lib, then main_app (propagate)
+
+Example 4: Build File Changed
+build.aria modified
+Expected: Reanalyze, possibly rebuild all
+
+ERROR HANDLING:
+
+Build Errors:
+- Compiler returns non-zero exit code
+- Capture error output
+- Mark target as failed
+- Propagate failure to dependents
+- Continue building independent targets
+
+System Errors:
+- Out of memory
+- Disk full
+- Permission denied
+- Missing compiler
+
+User Errors:
+- Circular dependencies
+- Missing files
+- Invalid targets
+
+PERFORMANCE GOALS:
+
+Small Project (10 targets):
+- Full build: <1s
+- Incremental (1 change): <100ms
+- No-op build: <10ms
+
+Medium Project (100 targets):
+- Full build: <10s
+- Incremental: <500ms
+- No-op: <50ms
+
+Large Project (1000 targets):
+- Full build: <2min
+- Incremental: <5s
+- No-op: <500ms
+
+DELIVERABLE FORMAT:
+- Complete C++ implementation
+- All classes with full documentation
+- Unit tests for each component
+- Integration tests for build scenarios
+- Performance benchmarks
+- Thread safety analysis
+- Error handling documentation
+
+DEPTH:
+Production-quality implementation with robust error handling, thread safety guarantees, and optimized performance for real-world build systems.

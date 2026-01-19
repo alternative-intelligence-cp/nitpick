@@ -1,0 +1,614 @@
+// ============================================================================
+// AWATCH - HEX-STREAM FILE SYSTEM MONITOR (Syntax-Corrected)
+// ============================================================================
+// Based on: sysUtils_18_watch.txt
+// Corrected: December 23, 2025
+// Status: Ready for implementation
+// ============================================================================
+
+// File: tools/watch/event_types.aria
+// ============================================================================
+// File System Event Type Definitions
+// ============================================================================
+
+// use std.io;
+// use std.string;
+
+// Event types
+enum:EventType = {
+    CREATE = 1,
+    MODIFY = 2,
+    DELETE = 3,
+    MOVE = 4,
+    ATTRIB = 5,
+    OVERFLOW = 6,
+    UNKNOWN = 255
+};
+
+// Canonical file event structure
+struct:FileEvent = {
+    tbb64:timestamp;
+    EventType:event_type;
+    u32:cookie;
+    string:path;
+    string:name;
+    bool           // True if directory:is_dir;
+};
+
+// ============================================================================
+// Module: tools/watch/protocol.aria
+// ============================================================================
+// Binary Protocol for stddato Stream
+// ============================================================================
+
+// Protocol magic: "AWCH"
+const AWCH_MAGIC:u32 = 0x41574348;
+
+// Serialize FileEvent to stddato (TLV format)
+func:serialize_event = result<void>(FileEvent:evt) {
+    // Calculate path length (TBB-safe)
+    tbb16:path_len = tbb16.from_int((evt.path.length() ? 0)) ? ERR;
+    
+    if (tbb16.is_err(path_len)) {
+        result<void>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Path length exceeds TBB16 limits";
+        pass(err_result);
+    };
+    
+    // Write header
+    std.io.stddato.write_u32(AWCH_MAGIC);
+    std.io.stddato.write_tbb64(evt.timestamp);
+    std.io.stddato.write_u8(evt.event_type);
+    
+    // Write flags (bit 0 = is_dir)
+    u8:flags = 0;
+    if (evt.is_dir) {
+        flags = 1;
+    };
+    std.io.stddato.write_u8(flags);
+    
+    // Write cookie and path
+    std.io.stddato.write_u32(evt.cookie);
+    std.io.stddato.write_u16(tbb16.to_int(path_len));
+    std.io.stddato.write_string(evt.path);
+    
+    std.io.stddato.flush();
+    
+    result<void>:success;
+    success.is_error = false;
+    pass(success);
+};
+
+// Deserialize FileEvent from stddati
+func:deserialize_event = result<FileEvent>(void) {
+    // Read magic
+    result<u32>:magic_result = std.io.stddati.read_u32();
+    
+    if (magic_result.is_error) {
+        result<FileEvent>:err_result;
+        err_result.is_error = true;
+        err_result.error = "EOF or read error";
+        pass(err_result);
+    };
+    
+    u32:magic = magic_result.value;
+    
+    if (magic != AWCH_MAGIC) {
+        result<FileEvent>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Invalid AWCH magic";
+        pass(err_result);
+    };
+    
+    FileEvent:evt;
+    
+    // Read timestamp
+    result<tbb64>:ts_result = std.io.stddati.read_tbb64();
+    if (!ts_result.is_error) {
+        evt.timestamp = ts_result.value;
+    } else {
+        evt.timestamp = tbb64.from_int(0);
+    };
+    
+    // Read event type
+    result<u8>:type_result = std.io.stddati.read_u8();
+    if (!type_result.is_error) {
+        evt.event_type = EventType.CREATE;  // Would cast from u8
+    } else {
+        evt.event_type = EventType.UNKNOWN;
+    };
+    
+    // Read flags
+    result<u8>:flags_result = std.io.stddati.read_u8();
+    if (!flags_result.is_error) {
+        u8:flags = flags_result.value;
+        evt.is_dir = (flags & 1) != 0;
+    } else {
+        evt.is_dir = false;
+    };
+    
+    // Read cookie
+    result<u32>:cookie_result = std.io.stddati.read_u32();
+    if (!cookie_result.is_error) {
+        evt.cookie = cookie_result.value;
+    } else {
+        evt.cookie = 0;
+    };
+    
+    // Read path
+    result<u16>:path_len_result = std.io.stddati.read_u16();
+    
+    if (!path_len_result.is_error) {
+        u16:path_len = path_len_result.value;
+        result<string>:path_result = std.io.stddati.read_string(path_len);
+        
+        if (!path_result.is_error) {
+            evt.path = path_result.value;
+        } else {
+            evt.path = "";
+        };
+    } else {
+        evt.path = "";
+    };
+    
+    evt.name = "";  // Would extract filename from path
+    
+    result<FileEvent>:success;
+    success.is_error = false;
+    success.value = evt;
+    pass(success);
+};
+
+// ============================================================================
+// Module: tools/watch/ffi_linux.aria (Platform-Specific FFI)
+// ============================================================================
+// Linux inotify FFI Declarations
+// ============================================================================
+
+// inotify constants
+const IN_NONBLOCK:int32 = 0x800;
+const IN_CLOEXEC:int32 = 0x80000;
+
+// Event masks
+const IN_ACCESS:u32 = 0x00000001;
+const IN_MODIFY:u32 = 0x00000002;
+const IN_ATTRIB:u32 = 0x00000004;
+const IN_CLOSE_WRITE:u32 = 0x00000008;
+const IN_CLOSE_NOWRITE:u32 = 0x00000010;
+const IN_OPEN:u32 = 0x00000020;
+const IN_MOVED_FROM:u32 = 0x00000040;
+const IN_MOVED_TO:u32 = 0x00000080;
+const IN_CREATE:u32 = 0x00000100;
+const IN_DELETE:u32 = 0x00000200;
+const IN_DELETE_SELF:u32 = 0x00000400;
+const IN_MOVE_SELF:u32 = 0x00000800;
+const IN_ISDIR:u32 = 0x40000000;
+const IN_Q_OVERFLOW:u32 = 0x00004000;
+
+const IN_ALL_EVENTS:u32 = IN_ACCESS | IN_MODIFY | IN_ATTRIB | 
+                          IN_CLOSE_WRITE | IN_OPEN | IN_MOVED_FROM | 
+                          IN_MOVED_TO | IN_CREATE | IN_DELETE;
+
+// inotify event structure
+extern "libc" struct:inotify_event = {
+    int32:wd;
+    u32:mask;
+    u32:cookie;
+    u32:len;
+    array<byte> // Filename (variable length):name;
+};
+
+// FFI functions
+extern "libc" func:inotify_init1 = int32(int32:flags);
+extern "libc" func:inotify_add_watch = int32(int32:fd, wild byte:pathname, u32:mask);
+extern "libc" func:inotify_rm_watch = int32(int32:fd, int32:wd);
+
+// ============================================================================
+// Module: tools/watch/watcher.aria
+// ============================================================================
+// Core Watcher Logic
+// ============================================================================
+
+// Configuration
+struct:Config = {
+    array<string>:paths;
+    bool:recursive;
+    bool:verbose;
+};
+
+// Watcher state
+struct:Watcher = {
+    int32:fd;
+    map<int32:watches;
+    wild byte:buffer;
+    int64:buffer_size;
+};
+
+// Initialize watcher
+func:init_watcher = result<Watcher>(void) {
+    // Create inotify instance
+    int32:fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    
+    if (fd < 0) {
+        result<Watcher>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Failed to initialize inotify";
+        pass(err_result);
+    };
+    
+    // Allocate wild buffer (64KB)
+    int64:buf_size = 65536;
+    wild byte:buf = std.mem.alloc_wild(buf_size);
+    
+    Watcher:w;
+    w.fd = fd;
+    w.watches = map<int32, string>.new();
+    w.buffer = buf;
+    w.buffer_size = buf_size;
+    
+    result<Watcher>:success;
+    success.is_error = false;
+    success.value = w;
+    pass(success);
+};
+
+// Add watch to path
+func:add_watch = result<int32>(Watcher:w, string:path) {
+    // Convert path to C string
+    wild byte:path_cstr = std.string.to_c_str(path);
+    
+    // Add watch
+    int32:wd = inotify_add_watch(w.fd, path_cstr, IN_ALL_EVENTS);
+    
+    if (wd < 0) {
+        // Log to stddbg
+        std.io.stddbg.write("{\"level\":\"ERROR\",\"event\":\"add_watch_failed\",");
+        std.io.stddbg.write("\"path\":\"");
+        std.io.stddbg.write(path);
+        std.io.stddbg.write("\"}\n");
+        
+        result<int32>:err_result;
+        err_result.is_error = true;
+        err_result.error = "Failed to add watch";
+        pass(err_result);
+    };
+    
+    // Store mapping
+    w.watches.insert(wd, path);
+    
+    // Log telemetry
+    std.io.stddbg.write("{\"event\":\"watch_added\",\"path\":\"");
+    std.io.stddbg.write(path);
+    std.io.stddbg.write("\",\"wd\":");
+    std.io.stddbg.write(std.string.from_int(wd));
+    std.io.stddbg.write(",\"total_watches\":");
+    std.io.stddbg.write(std.string.from_int(w.watches.size()));
+    std.io.stddbg.write("}\n");
+    
+    result<int32>:success;
+    success.is_error = false;
+    success.value = wd;
+    pass(success);
+};
+
+// Add recursive watches
+func:add_watch_recursive = result<void>(Watcher:w, string:path) {
+    // Add watch to root
+    result<int32>:wd_result = add_watch(w, path);
+    
+    if (wd_result.is_error) {
+        pass(wd_result);
+    };
+    
+    // Check if directory
+    result<bool>:is_dir_result = std.fs.is_directory(path);
+    
+    if (is_dir_result.is_error || !is_dir_result.value) {
+        result<void>:success;
+        success.is_error = false;
+        pass(success);
+    };
+    
+    // Recursively add subdirectories
+    result<array<string>>:entries_result = std.fs.list_dir(path);
+    
+    if (!entries_result.is_error) {
+        array<string>:entries = entries_result.value;
+        
+        int32:i = 0;
+        while (i < entries.length()) {
+            string:entry = entries.at(i) ? "";
+            
+            // Build full path
+            string:full_path = path + "/" + entry;
+            
+            // Check if directory
+            result<bool>:subdir_result = std.fs.is_directory(full_path);
+            
+            if (!subdir_result.is_error && subdir_result.value) {
+                // Recursively watch subdirectory
+                add_watch_recursive(w, full_path);
+            };
+            
+            i = i + 1;
+        };
+    };
+    
+    result<void>:success;
+    success.is_error = false;
+    pass(success);
+};
+
+// Map inotify mask to EventType
+func:map_mask_to_type = EventType(u32:mask) {
+    if ((mask & IN_CREATE) != 0) {
+        pass(EventType.CREATE);
+    } else if ((mask & IN_MODIFY) != 0) {
+        pass(EventType.MODIFY);
+    } else if ((mask & IN_DELETE) != 0) {
+        pass(EventType.DELETE);
+    } else if ((mask & IN_MOVED_FROM) != 0 || (mask & IN_MOVED_TO) != 0) {
+        pass(EventType.MOVE);
+    } else if ((mask & IN_ATTRIB) != 0) {
+        pass(EventType.ATTRIB);
+    } else if ((mask & IN_Q_OVERFLOW) != 0) {
+        pass(EventType.OVERFLOW);
+    } else {
+        pass(EventType.UNKNOWN);
+    };
+};
+
+// Process single inotify event
+func:handle_event = void(Watcher:w, wild inotify_event:raw_evt) {
+    // Resolve path from watch descriptor
+    result<string>:root_result = w.watches.get(raw_evt.wd);
+    
+    string:root_path = "";
+    if (!root_result.is_error) {
+        root_path = root_result.value;
+    } else {
+        root_path = "UNKNOWN";
+    };
+    
+    // Extract filename
+    string:filename = std.string.from_c_str(raw_evt.name) ? "";
+    
+    // Build full path
+    string:full_path = root_path;
+    if (filename.length() > 0) {
+        full_path = full_path + "/" + filename;
+    };
+    
+    // Create FileEvent
+    FileEvent:evt;
+    evt.timestamp = tbb64.from_int(std.time.nanos_since_epoch());
+    evt.event_type = map_mask_to_type(raw_evt.mask);
+    evt.cookie = raw_evt.cookie;
+    evt.path = full_path;
+    evt.name = filename;
+    evt.is_dir = (raw_evt.mask & IN_ISDIR) != 0;
+    
+    // Emit to UI (stdout)
+    emit_ui(evt);
+    
+    // Emit to data plane (stddato)
+    result<void>:serialize_result = serialize_event(evt);
+    
+    if (serialize_result.is_error) {
+        std.io.stderr.write("Warning: Failed to serialize event\n");
+    };
+    
+    // Handle new directory creation (recursive watching)
+    if (evt.event_type == EventType.CREATE && evt.is_dir) {
+        add_watch(w, full_path);
+    };
+};
+
+// ============================================================================
+// Module: tools/watch/ui.aria
+// ============================================================================
+// UI Rendering (stdout with ANSI colors)
+// ============================================================================
+
+// ANSI color codes
+const ANSI_RESET:string = "\033[0m";
+const ANSI_GREEN:string = "\033[32m";
+const ANSI_YELLOW:string = "\033[33m";
+const ANSI_RED:string = "\033[31m";
+const ANSI_BLUE:string = "\033[34m";
+const ANSI_CYAN:string = "\033[36m";
+
+// Emit event to stdout (UI)
+func:emit_ui = void(FileEvent:evt) {
+    string:color = ANSI_RESET;
+    string:action = "UNKNOWN";
+    
+    if (evt.event_type == EventType.CREATE) {
+        color = ANSI_GREEN;
+        action = "CREATE";
+    } else if (evt.event_type == EventType.MODIFY) {
+        color = ANSI_YELLOW;
+        action = "MODIFY";
+    } else if (evt.event_type == EventType.DELETE) {
+        color = ANSI_RED;
+        action = "DELETE";
+    } else if (evt.event_type == EventType.MOVE) {
+        color = ANSI_BLUE;
+        action = "MOVE";
+    } else if (evt.event_type == EventType.ATTRIB) {
+        color = ANSI_CYAN;
+        action = "ATTRIB";
+    };
+    
+    // Format timestamp
+    int64:ts = tbb64.to_int(evt.timestamp) ? 0;
+    string:ts_str = std.time.format_timestamp(ts) ? "Unknown time";
+    
+    // Write colored output
+    std.io.stdout.write("[");
+    std.io.stdout.write(ts_str);
+    std.io.stdout.write("] ");
+    std.io.stdout.write(color);
+    std.io.stdout.write(action);
+    std.io.stdout.write(ANSI_RESET);
+    std.io.stdout.write(" ");
+    std.io.stdout.write(evt.path);
+    std.io.stdout.write("\n");
+};
+
+// ============================================================================
+// Module: tools/watch/event_loop.aria
+// ============================================================================
+// Main Event Processing Loop
+// ============================================================================
+
+// Process events from inotify
+func:process_events = int32(Watcher:w) {
+    int64:event_count = 0;
+    
+    while (true) {
+        // Read from inotify fd into wild buffer
+        result<int64>:read_result = std.io.read_wild(w.fd, w.buffer, w.buffer_size);
+        
+        if (read_result.is_error) {
+            // Check for EAGAIN (would block)
+            int32:err = std.sys.get_errno() ? 0;
+            
+            if (err == 11) {  // EAGAIN
+                // No data available, sleep briefly
+                std.time.sleep_ms(10);
+                continue;
+            };
+            
+            std.io.stderr.write("Error: Failed to read from inotify\n");
+            pass(1);
+        };
+        
+        int64:bytes_read = read_result.value;
+        
+        if (bytes_read == 0) {
+            break;  // EOF
+        };
+        
+        // Parse events from buffer
+        int64:offset = 0;
+        
+        while (offset < bytes_read) {
+            // Cast wild pointer to inotify_event
+            wild inotify_event:raw_evt = w.buffer + offset;
+            
+            // Handle event
+            handle_event(w, raw_evt);
+            
+            event_count = event_count + 1;
+            
+            // Advance offset (sizeof event + name length)
+            int64:event_size = 16 + raw_evt.len;  // 16 = sizeof(inotify_event fields)
+            offset = offset + event_size;
+        };
+    };
+    
+    // Log final metrics
+    std.io.stddbg.write("{\"event\":\"shutdown\",\"total_events\":");
+    std.io.stddbg.write(std.string.from_int(event_count));
+    std.io.stddbg.write("}\n");
+    
+    pass(0);
+};
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
+
+func:main = int32(array<string>:args) {
+    if (args.length() < 2) {
+        std.io.stderr.write("Usage: awatch <path> [path...]\n");
+        std.io.stderr.write("Options:\n");
+        std.io.stderr.write("  -r, --recursive  Watch subdirectories\n");
+        pass(1);
+    };
+    
+    // Parse arguments
+    bool:recursive = false;
+    array<string>:paths = array<string>.new();
+    
+    int32:i = 1;
+    while (i < args.length()) {
+        string:arg = args.at(i) ? "";
+        
+        if (arg == "-r" || arg == "--recursive") {
+            recursive = true;
+        } else {
+            paths.push(arg);
+        };
+        
+        i = i + 1;
+    };
+    
+    if (paths.length() == 0) {
+        std.io.stderr.write("Error: No paths specified\n");
+        pass(1);
+    };
+    
+    // Initialize watcher
+    result<Watcher>:watcher_result = init_watcher();
+    
+    if (watcher_result.is_error) {
+        std.io.stderr.write("Error: ");
+        std.io.stderr.write(watcher_result.error);
+        std.io.stderr.write("\n");
+        pass(1);
+    };
+    
+    Watcher:w = watcher_result.value;
+    
+    // Add watches
+    i = 0;
+    while (i < paths.length()) {
+        string:path = paths.at(i) ? "";
+        
+        if (recursive) {
+            result<void>:add_result = add_watch_recursive(w, path);
+            
+            if (add_result.is_error) {
+                std.io.stderr.write("Warning: Failed to watch ");
+                std.io.stderr.write(path);
+                std.io.stderr.write("\n");
+            };
+        } else {
+            result<int32>:add_result = add_watch(w, path);
+            
+            if (add_result.is_error) {
+                std.io.stderr.write("Warning: Failed to watch ");
+                std.io.stderr.write(path);
+                std.io.stderr.write("\n");
+            };
+        };
+        
+        i = i + 1;
+    };
+    
+    // UI output
+    std.io.stdout.write("awatch: Monitoring ");
+    std.io.stdout.write(std.string.from_int(w.watches.size()));
+    std.io.stdout.write(" paths\n");
+    
+    // Log initialization
+    std.io.stddbg.write("{\"event\":\"init\",\"paths\":");
+    std.io.stddbg.write(std.string.from_int(paths.length()));
+    std.io.stddbg.write(",\"watches\":");
+    std.io.stddbg.write(std.string.from_int(w.watches.size()));
+    std.io.stddbg.write("}\n");
+    
+    // Run event loop
+    int32:result = process_events(w);
+    
+    // Cleanup (would free wild memory)
+    
+    pass(result);
+};
+
+// ============================================================================
+// END OF CORRECTED AWATCH IMPLEMENTATION
+// ============================================================================

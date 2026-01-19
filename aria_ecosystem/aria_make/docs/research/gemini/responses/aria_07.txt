@@ -1,0 +1,356 @@
+﻿Architectural Specification and Implementation Strategy for JIT-Enforced Test Execution in the AriaBuild Ecosystem
+1. Executive Summary and Strategic Context
+1.1 The Maturation of the Aria Ecosystem
+The Aria programming language is currently navigating a critical inflection point in its lifecycle, transitioning from the experimental v0.0.7 prototype phase toward the production-hardened v0.1.0 release milestone. This evolution is characterized not merely by the stabilization of syntax or the expansion of the standard library, but fundamentally by the hardening of the developer tooling infrastructure. As defined in the comprehensive programming guide 1, Aria aims to occupy a demanding niche in systems programming: offering the raw, bare-metal performance of C and the bit-level precision of assembly, while introducing novel safety paradigms such as Twisted Balanced Binary (TBB) arithmetic and a hybrid memory model that rigorously distinguishes between garbage-collected ("gc") and manual ("wild") allocation.
+To support such a sophisticated language featureset, the build automation system—AriaBuild (internally referenced as aria_make)—must evolve from a simple artifact generator into a robust orchestration engine capable of guaranteeing semantic correctness. The current state of the ecosystem, while functional for compilation, exhibits a significant maturity gap in its verification methodology. Specifically, the Test Automation Subsystem currently lacks the rigor required to validate the low-level behaviors of the Aria runtime.
+1.2 The Critical Deficiency: Execution Model Ambiguity
+The core problem identified in recent architectural audits (specifically Verification Chunks 2 and 5) is the ambiguity of the execution model employed during test runs. Currently, the TestRunner component of AriaBuild orchestrates the execution of compiled test artifacts via the LLVM Interpreter (lli) without explicitly enforcing a specific execution engine.
+By default, the lli tool possesses a fallback mechanism: if it encounters difficulties initializing the Just-In-Time (JIT) compiler—perhaps due to platform-specific constraints or configuration oversight—it may silently revert to the classic Bytecode Interpreter. While this fallback ensures that "something runs," it introduces two catastrophic risks to the Aria ecosystem:
+1. The Performance Chasm: The classic interpreter operates as a fetch-decode-execute virtual machine, emulating instructions one by one. This is orders of magnitude slower than native machine code execution. As the Aria standard library grows to encompass thousands of unit tests covering complex domains like cryptography (std.crypto) or async networking (std.net), the lack of JIT compilation renders the "edit-compile-test" feedback loop prohibitively slow. A test suite that should execute in seconds takes minutes, effectively killing developer velocity and discouraging the practice of Test-Driven Development (TDD).
+2. The Semantic Fidelity Gap: More dangerously, the interpreter does not faithfully replicate the behavior of the host hardware. It uses a "Generic Value" abstraction that masks alignment errors, simplifies floating-point behavior, and completely emulates SIMD operations. This creates a "fools' gold" scenario where tests pass in the forgiving environment of the interpreter but fail in production when compiled to native code by llc or the JIT. For a language like Aria, which prides itself on features like "sticky error" propagation in TBB arithmetic and explicit SIMD vector types (vec9), this divergence is unacceptable. We are essentially testing the emulator, not the compiler.
+1.3 The Strategic Resolution: Deterministic JIT Enforcement
+To resolve these structural risks, this report mandates a comprehensive architectural intervention within the AriaBuild system. The objective is to enforce deterministic execution models for all test targets.
+The solution involves three pillars of implementation:
+1. Configuration Schema Extension: Extending the Aria Build Configuration (ABC) format 1 to support a user-definable test_mode, empowering developers to choose between performance (JIT) and introspection (Interpreter).
+2. Runtime Orchestration Logic: Refactoring the TestRunner C++ implementation to strictly interface with the lli process. This involves mandating the use of the -force-interpreter=false flag to disable silent fallbacks, ensuring that if the JIT cannot run, the test suite fails loudly rather than running slowly and inaccurately.
+3. Documentation and Ecosystem Update: Updating the canonical documentation (60_TOOLING_INTEGRATION.md) and project templates (examples/aria.json) to standardize this new workflow across the user base.
+The successful execution of this specification will align the test environment with the production runtime, exposing backend code generation bugs early and restoring the high-performance developer experience expected of a systems language.
+________________
+2. Theoretical Framework: The Divergence of Execution Models
+To fully appreciate the necessity of this architectural change, one must deconstruct the theoretical underpinnings of the LLVM execution infrastructure that supports Aria. The distinction between "Interpretation" and "JIT Compilation" is not merely one of speed; it is one of fundamental semantic reality.
+2.1 The LLVM Execution Engine (lli)
+The lli tool serves as the direct execution interface for LLVM IR (Intermediate Representation). In the Aria toolchain, the compiler (ariac) produces .ll (textual) or .bc (bitcode) files. These files describe the program logic in a target-independent abstract assembly language. They utilize infinite virtual registers, abstract type definitions, and generalized memory operations.
+To execute this IR, lli must bridge the gap between the abstract model and the concrete host CPU (e.g., x86-64, ARM64). It offers two primary strategies for this bridging: The Bytecode Interpreter and the MCJIT/ORC JIT Compiler.
+2.2 The Bytecode Interpreter: A High-Level Emulation
+The standard LLVM interpreter is a historical artifact, originally designed for bootstrapping the compiler on new platforms where no code generator existed. It functions as a classic software virtual machine.
+2.2.1 Operational Semantics
+The interpreter iterates over the LLVM IR instructions (add, load, icmp, getelementptr) in a loop. For each instruction, it executes a corresponding C++ function that simulates the operation's effect. It maintains a program state where all data is represented by a GenericValue union type.
+2.2.2 The Memory Model Divergence
+The interpreter's memory model is "soft." It allocates memory on the host heap but accesses it through layers of abstraction. This softness is the source of the Fidelity Gap.
+* Wild Pointers: Aria allows wild pointers 1, which are raw memory addresses unmanaged by the garbage collector. On real hardware, dereferencing a wild pointer that is misaligned or pointing to unmapped memory triggers a CPU fault (SIGSEGV/SIGBUS). The interpreter, however, might allow slight misalignments or out-of-bounds reads if they fall within the allocated block of the GenericValue backing store. A test verifying "crash safety" might paradoxically pass in the interpreter because the interpreter essentially "fixes" the hardware violation.
+* Endianness and Layout: While the interpreter tries to match the host, its handling of struct padding and alignment can differ from the strict System V ABI rules enforced by the backend code generator.
+2.2.3 Vectorization and SIMD
+Aria supports specialized vector types like vec9 (nine-element float vectors) designed for AVX-512 integration.1 In the JIT, these map to specific ZMM registers and instructions. In the interpreter, a vec9 operation is simply a loop over nine float additions. If the Aria backend has a bug in its shuffle mask generation for vec9 cross-products, the interpreter will never see it, because the interpreter does not generate shuffle masks—it just executes the logic component-wise.
+2.3 The Just-In-Time (JIT) Compiler: Native Reality
+The JIT engine (specifically MCJIT or the newer ORC architecture) operates fundamentally differently. It does not simulate the code; it compiles it.
+2.3.1 Compilation Pipeline
+When lli runs in JIT mode, it invokes the LLVM CodeGen libraries—the exact same libraries used by llc (the static compiler) to create executable binaries.
+1. Instruction Selection: It maps abstract IR instructions to concrete target machine instructions (e.g., x86_64::ADD64rr).
+2. Register Allocation: It maps infinite virtual registers to the finite set of physical CPU registers (RAX, RBX, XMM0-15), handling spilling to the stack if necessary.
+3. Scheduling: It reorders instructions to optimize pipeline throughput.
+4. Emission: It writes raw machine code bytes into a memory buffer.
+5. Execution: It marks that memory page as executable (PROT_EXEC) and jumps into it.
+2.3.2 The Semantic Match
+Because the JIT uses the production code generator, the execution environment is identical to the final binary.
+* TBB Safety: Aria's Twisted Balanced Binary types (e.g., tbb8) rely on "sticky error" propagation using sentinel values like -128 (0x80). In the JIT, a TBB addition is compiled to a sequence of assembly instructions involving saturation checks (e.g., paddsb) or conditional moves. If the compiler backend generates incorrect assembly for these edge cases, the JIT-executed code will fail, correctly revealing the compiler bug. The interpreter, simply running if (val == -128) return ERR, might mask backend generation issues.
+* Optimization Bugs: Aggressive optimizations (like loop unrolling or vectorization) often introduce subtle bugs. The JIT applies these optimizations; the interpreter generally does not.
+2.4 The Mechanism of Enforcement
+By default, lli acts opportunistically. It tries to use the JIT, but if the architecture is unsupported or configuration is tricky, it falls back to the interpreter without warning.
+* The Flag: -force-interpreter=false.
+* Effect: This flag creates a hard constraint. It tells lli: "You must use the JIT compiler. If you cannot (e.g., due to W^X permissions, missing target triple, or internal error), you must terminate with a fatal error."
+* Why this is Mandatory: For a build system running automated tests, silence is deadly. We cannot allow tests to quietly run in a degraded, inaccurate mode. We need explicit confirmation that the code being tested is the code that will be shipped.
+________________
+3. Architectural Audit of the Existing AriaBuild System
+Before detailing the solution, we must audit the existing infrastructure of aria_make to identify the correct integration points. The analysis relies on the uploaded architectural specification 1 and the inferred structure of the implementation.
+3.1 The aria_make Meta-Driver Architecture
+AriaBuild operates as a meta-driver.1 It does not contain the compiler logic itself; rather, it orchestrates external tools.
+* Input: It parses aria.json or build.aria files using the Aria Build Configuration (ABC) format.
+* Graph: It constructs a Dependency Graph (DAG) of targets.
+* Execution: It invokes ariac for compilation and lli for execution.
+This "Orchestrator" pattern means that aria_make is responsible for constructing the exact command-line arguments passed to subprocesses. The logic for this construction resides in the ToolchainOrchestrator and TestRunner classes.1
+3.2 The Test Target Definition
+Within the ABC schema, a target is defined with type: "test".
+
+
+JavaScript
+
+
+
+
+// Current Schema Concept
+{
+   name: "math_tests",
+   type: "test",
+   sources: ["tests/math.aria"],
+   depends_on: ["std.math"]
+}
+
+Currently, the schema does not expose any fields to control how the test is run. It assumes a default behavior. This violation of the "Configuration as Data" philosophy 1 forces all users into a single path, which we have identified as potentially flawed (interpreter fallback).
+3.3 The TestRunner Implementation Gap
+The gap analysis of the src/test/runner.cpp file (inferred from requirements) reveals the current implementation likely looks like this:
+
+
+C++
+
+
+
+
+// Legacy Implementation (Hypothetical)
+std::string construct_run_cmd(const Target& target) {
+   return "lli " + target.output_path;
+}
+
+This command string leaves the choice of execution engine up to lli's internal heuristics. On many developer machines (x86-64 Linux), this might default to JIT. However, on obscure architectures or in restricted environments (some Docker containers with strict seccomp filters), it might degrade to the interpreter. The lack of explicit intent is the root cause of the "Test Execution JIT Flag Configuration" issue identified in the user prompt.
+________________
+4. Detailed Design Specification: Configuration Schema Extension
+The first phase of the solution is to expose the execution mode to the developer via the configuration file. This empowers the user to override defaults when necessary (e.g., for debugging toolchain crashes).
+4.1 Schema Modification: The test_mode Directive
+We will extend the project section of the ABC schema.1 The project section is the appropriate locus for this setting because test execution policy is typically a global concern for the entire repository, not a per-target variation.
+Revised Schema Definition:
+
+
+JSON
+
+
+
+
+{
+   "project": {
+       "name": "MyAriaLibrary",
+       "version": "0.1.0",
+       "test_mode": "jit" // New Field
+   },
+   //...
+}
+
+4.1.1 Field Specification
+* Key: test_mode
+* Scope: project object.
+* Type: String Enumeration.
+* Allowed Values:
+   * "jit" (Default): Forces JIT compilation. Maps to -force-interpreter=false. This mode prioritizes speed and fidelity.
+   * "interpreter": Forces the bytecode interpreter. Maps to -force-interpreter=true. This mode prioritizes introspection and stability on unsupported platforms.
+* Validation: The ConfigParser must validate this field strictly. Any value other than "jit" or "interpreter" must trigger a parsing error: "Error: Invalid project.test_mode value. Expected 'jit' or 'interpreter'."
+4.2 Parsing Logic Update
+The ConfigParser class, responsible for ingesting the ABC format 1, must be updated to handle this new field.
+* Lexical Analysis: The lexer already supports unquoted keys.1 test_mode will be parsed as a TOKEN_IDENTIFIER.
+* Interpolation Support: Crucially, the parser must support variable interpolation for this value. This allows CI/CD pipelines to toggle the mode without editing the source file.
+   * Example: test_mode: "&{ENV.ARIA_TEST_MODE}"
+   * This enables a workflow where developers run JIT locally, but a debugging pipeline runs Interpreter mode to generate trace logs.
+4.3 Data Model Integration
+The parsed value will be stored in the internal BuildContext structure 1, specifically within the ProjectMetadata struct.
+
+
+C++
+
+
+
+
+struct ProjectMetadata {
+   std::string name;
+   std::string version;
+   enum class TestExecutionMode { JIT, Interpreter };
+   TestExecutionMode test_mode = TestExecutionMode::JIT; // Default
+};
+
+________________
+5. Implementation Strategy: The TestRunner Refactor
+This section details the concrete C++ modifications required in src/test/runner.cpp. This is the operational core of the request.
+5.1 The TestRunner Class Architecture
+Based on the provided snippets 1, the TestRunner orchestrates the test lifecycle. We must modify its command construction logic.
+Proposed Class Interface Update:
+
+
+C++
+
+
+
+
+namespace aria::test {
+   class TestRunner {
+   public:
+       // Constructor now takes the global BuildContext to access project settings
+       explicit TestRunner(const BuildContext& context);
+       
+       // Execute a specific test target
+       bool run_target(const Target& target);
+
+   private:
+       const BuildContext& context_;
+       
+       // Helper to build the argument vector
+       std::vector<std::string> construct_lli_args(const std::filesystem::path& bitcode_path);
+   };
+}
+
+5.2 Implementation Logic: construct_lli_args
+The function construct_lli_args transforms the abstract configuration into concrete process arguments. This replaces the simplistic string concatenation of the past.
+
+
+C++
+
+
+
+
+// src/test/runner.cpp
+
+std::vector<std::string> TestRunner::construct_lli_args(const std::filesystem::path& bitcode_path) {
+   std::vector<std::string> args;
+   
+   // 1. The executable
+   args.push_back("lli");
+
+   // 2. The Execution Mode Flag
+   // Retrieve the mode from the project configuration
+   auto mode = context_.project.test_mode;
+
+   if (mode == ProjectMetadata::TestExecutionMode::JIT) {
+       // REQUIREMENT: Enforce JIT compilation
+       // This ensures performance matches native compilation and catches backend bugs.
+       args.push_back("-force-interpreter=false");
+       
+       // Optional: Enable AVX-512 explicitly if the host supports it, 
+       // ensuring vec9 types are tested correctly.
+       // args.push_back("-mattr=+avx512f"); 
+   } 
+   else {
+       // Fallback or explicit debugging request
+       args.push_back("-force-interpreter=true");
+   }
+
+   // 3. The Target Artifact
+   // Pass the path to the compiled.ll or.bc file
+   args.push_back(bitcode_path.string());
+
+   // 4. Test Arguments
+   // Pass any arguments forwarded to the test harness itself (e.g. filters)
+   // args.insert(args.end(), user_args.begin(), user_args.end());
+
+   return args;
+}
+
+5.3 Safe Process Invocation
+The document on process execution 1 highlights the dangers of std::system. AriaBuild uses llvm::sys::ExecuteAndWait. The TestRunner must utilize this API.
+
+
+C++
+
+
+
+
+// src/test/runner.cpp - Execution Logic
+
+bool TestRunner::run_target(const Target& target) {
+   auto args = construct_lli_args(target.output_file);
+   
+   // Convert std::vector<std::string> to vector<StringRef> for LLVM API
+   std::vector<llvm::StringRef> argv_ref;
+   for (const auto& arg : args) {
+       argv_ref.push_back(arg);
+   }
+
+   std::string err_msg;
+   int result = llvm::sys::ExecuteAndWait(
+       /*Program=*/ args, 
+       /*Args=*/ argv_ref, 
+       /*Env=*/ std::nullopt, 
+       /*Redirects=*/ {}, 
+       /*SecondsToWait=*/ 0, 
+       /*MemoryLimit=*/ 0, 
+       /*ErrMsg=*/ &err_msg
+   );
+
+   if (result!= 0) {
+       // Differentiate between test failure and toolchain failure
+       if (!err_msg.empty()) {
+           std::cerr << "Toolchain Error (lli): " << err_msg << "\n";
+           if (context_.project.test_mode == ProjectMetadata::TestExecutionMode::JIT) {
+               std::cerr << "Hint: JIT execution failed. "
+                         << "Ensure your platform supports MCJIT or try 'test_mode': 'interpreter'.\n";
+           }
+       }
+       return false;
+   }
+   
+   return true;
+}
+
+5.4 Handling JIT Constraints
+The JIT imposes stricter requirements than the interpreter.
+* W^X (Write XOR Execute): Modern OS security (SELinux, macOS Hardened Runtime) restricts memory pages from being both writable and executable. The JIT must navigate this. If lli fails to allocate executable memory, it will crash or return a specific error code. The TestRunner logic above captures the error message, allowing developers to distinguish between a test assertion failure (exit code 1) and a JIT initialization failure (exit code 127 or similar).
+* Architecture Support: If Aria is ported to a new architecture (e.g., RISC-V) where LLVM JIT support is immature, the default "jit" mode will fail. The error message added in the implementation above explicitly guides the user to switch to "interpreter" mode in aria.json, providing a smooth fallback path without compromising the default safety for established platforms.
+________________
+6. Performance and Correctness Analysis
+The transition to JIT-by-default is not merely a configuration change; it fundamentally alters the performance profile and verification capabilities of the Aria ecosystem.
+6.1 Performance Benchmarking Implications
+We can project the impact of this change based on standard LLVM benchmarks.
+* Computational Intensity: For the std.math library, which heavily utilizes TBB saturation arithmetic, the Interpreter executes a C++ virtual function call for every single add or sub instruction. The JIT emits a sequence of paddsb assembly instructions. The speedup factor is typically 10x to 50x.
+* Build Pipeline Latency: Currently, a comprehensive test run might take 5 minutes. With JIT enforcement, this is expected to drop to under 30 seconds. This reduction enables "Test on Save" workflows in the IDE, significantly improving developer DX.
+6.2 Semantic Verification: Case Studies
+The primary value proposition is semantic correctness.
+Case Study A: The TBB Sentinel Bug
+* Scenario: A bug in ariac backend generates incorrect assembly for tbb8 overflow, failing to check the 0x80 sentinel.
+* Interpreter Mode: The interpreter does not use the generated assembly. It uses its internal C++ logic for add. The test passes.
+* JIT Mode: The JIT generates the flawed assembly. The CPU executes it. The sticky error fails to propagate. The test assertion assert(res == ERR) fails.
+* Outcome: The JIT mode correctly identifies a compiler bug that the interpreter masked.
+Case Study B: The Wild Pointer Misalignment
+* Scenario: Code performs an unaligned read on a wild int64*.
+* Interpreter Mode: The interpreter's memory manager handles unaligned reads gracefully (soft emulation). Test passes.
+* JIT Mode: The JIT emits movaps (Move Aligned Packed Single-Precision), which traps on unaligned addresses on x86-64. The process receives SIGSEGV.
+* Outcome: The JIT mode correctly identifies a violation of the Aria memory model spec regarding strict alignment for wild pointers.
+________________
+7. Integration and Documentation Strategy
+The implementation is incomplete without proper integration into the developer's workflow. We must update the documentation artifacts identified in the requirements.
+7.1 Documentation Update: docs/info/plan/60_TOOLING_INTEGRATION.md
+We will append a new section detailing the execution modes.
+Test Execution Configuration
+To ensure the fidelity of test results, AriaBuild now enforces JIT (Just-In-Time) compilation for all test targets by default. This execution mode guarantees that the performance characteristics and memory behavior of tests match the final production binary. It specifically enables the detection of backend code generation bugs related to SIMD vectors and TBB arithmetic.
+* Default Mode (jit): Invokes lli -force-interpreter=false. Provides native speed and hardware-accurate semantics.
+* Interpreter Mode (interpreter): Invokes lli -force-interpreter=true. Provides a fallback for platforms with limited JIT support or for debugging the LLVM IR generation itself.
+This behavior is controlled via the project.test_mode setting in aria.json.
+7.2 Template Update: examples/aria.json
+The canonical example file serves as the primary reference for new users. We will add the test_mode field to showcase the capability.
+
+
+JavaScript
+
+
+
+
+// examples/aria.json
+{
+   project: {
+       name: "AriaExample",
+       version: "0.1.0",
+       // EXECUTION MODE CONFIGURATION
+       // "jit" (default) - Fast, native fidelity
+       // "interpreter"   - Slow, high debuggability
+       test_mode: "jit"
+   },
+   
+   variables: {
+       src: "src",
+       out: "build"
+   },
+
+   targets: [
+       {
+           name: "core_tests",
+           type: "test",
+           sources: ["tests/**/*.aria"]
+       }
+   ]
+}
+
+________________
+8. Future Roadmap and Advanced Topics
+While this specification resolves the immediate "Interpreter Drift" problem, it opens avenues for further sophistication in the testing subsystem.
+8.1 Advanced JIT Options (ORC JIT)
+Currently, we rely on lli, which is a CLI tool. A future optimization would be to link AriaBuild directly against the LLVM C++ libraries (libLLVM). This would allow us to instantiate the ORC JIT (On-Request Compilation) engine directly within the aria_make process memory. This would eliminate the process spawn overhead (llvm::sys::ExecuteAndWait) entirely, allowing for millisecond-latency test execution.
+8.2 Profile-Guided Optimization (PGO) for Tests
+With JIT enabled, we can potentially enable PGO during the test run. The JIT can instrument the code to gather execution profiles (branch probabilities), which can then be fed back into the compiler to optimize the release binary. This closes the loop between testing and optimization.
+8.3 Cross-Architecture Testing
+For ensuring portability, the test_mode could be expanded to support "qemu". This would allow an x86-64 developer to run tests compiled for ARM64 using user-mode emulation, further verifying the backend's correctness across instruction sets.
+________________
+9. Conclusion
+The implementation of the test_mode configuration and the enforcement of -force-interpreter=false is a mandatory step in the maturation of the Aria toolchain. It eliminates a dangerous source of false positives—the forgiving bytecode interpreter—and aligns the testing environment with the harsh reality of native hardware execution.
+By empowering developers to configure this behavior via the ABC schema, we preserve flexibility while defaulting to safety and speed. This architectural change directly addresses the verification gaps identified in the project roadmap and establishes a solid foundation for the continued development of the Aria standard library and runtime systems.
+Final Verification Checklist
+* [x] Requirement 1: Enforce JIT (-force-interpreter=false) logic defined in C++.
+* [x] Requirement 2: Configurable mode (jit | interpreter) defined in JSON schema.
+* [x] File 1: src/test/runner.cpp modification logic detailed.
+* [x] File 2: docs/info/plan/60_TOOLING_INTEGRATION.md documentation text provided.
+* [x] File 3: examples/aria.json schema example provided.
+* [x] Acceptance Criteria: Fast execution (JIT), bug catching (Native Semantics), debug mode (Interpreter) all addressed.
+Works cited
+1. rcfull.txt
