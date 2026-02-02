@@ -1,0 +1,15 @@
+// Test GAP-002 fix: Pointer syntax with Type->:name
+func:main = int32() {
+    int64:value = 42i64;
+    
+    // Test new pointer syntax (was Type@:, now Type->:)
+    int64->ptr = @value;
+    
+    // Dereference
+    int64:result = <-ptr;
+    
+    if (result == 42i64) {
+        return 0;
+    }
+    return 1;
+};

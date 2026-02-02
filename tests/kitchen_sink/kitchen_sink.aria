@@ -21,7 +21,7 @@ extern "aria_runtime" {
 // ==========================================
 struct:ComplexState = {
     int64:id;
-    int64@:raw_ptr;  // Pointer type syntax (@ without wild in struct)
+    int64->raw_ptr;  // Pointer type syntax (@ without wild in struct)
     string:name;
     tbb8:status;          // Twisted Balanced Binary field
 };
@@ -105,32 +105,32 @@ func:main = int32() {
     stack int32[10]:local_buf;
 
     // Wild allocation (Manual Memory) with Defer - TODO: aria_alloc not importing
-    // wild int64@:heap_ptr = aria_alloc(8); // Allocate 8 bytes for int64
+    // wild int64->heap_ptr = aria_alloc(8); // Allocate 8 bytes for int64
     // if (heap_ptr == NULL) { fail(-1); }
     // defer { aria_free(heap_ptr); } // RAII cleanup
 
     // Pointer arithmetic & operations
-    // wild int64@:ptr_copy = heap_ptr;
+    // wild int64->ptr_copy = heap_ptr;
     
     // Address-of Operator (@var)
     int64:stack_val = 42;
-    // wild int64@:stack_ptr = @stack_val;  // TODO: Compiler requires drop() for wild pointers
+    // wild int64->stack_ptr = @stack_val;  // TODO: Compiler requires drop() for wild pointers
 
     // Pinning and Borrowing - TODO: !$ returns @@, need @ variable
     // string:volatile_str = "do not move me";
-    // wild string@:pinned_str = #volatile_str;   // Pin memory (#)
-    // wild string@:safe_ref = !$pinned_str;      // Immutable borrow of pinned (!$)
+    // wild string->pinned_str = #volatile_str;   // Pin memory (#)
+    // wild string->safe_ref = !$pinned_str;      // Immutable borrow of pinned (!$)
     // string$:mut_ref = $pinned_str;     // COMPILER CHECK: This should fail if uncommented
     
     // Mutable borrow test
     int64:mut_test = 100;
-    // wild int64@:mut_ref = $mut_test;  // TODO: Compiler requires drop() for wild pointers
+    // wild int64->mut_ref = $mut_test;  // TODO: Compiler requires drop() for wild pointers
 
     // ------------------------------------------
     // C. POINTER MEMBER ACCESS
     // ------------------------------------------
     // TODO: Generic allocator syntax not working - need to calculate size
-    // wild ComplexState@:state_ptr = aria_alloc(32);  // Approximate size
+    // wild ComplexState->state_ptr = aria_alloc(32);  // Approximate size
     // if (state_ptr != NULL) {
     //     // ARROW OPERATOR (ptr->member)
     //     state_ptr->id = 500;

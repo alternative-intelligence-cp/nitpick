@@ -368,7 +368,7 @@ install(TARGETS aria_runtime DESTINATION lib)
 
 # Main compiler executable
 add_executable(ariac src/main.cpp ${ARIA_SOURCES})
-target_link_libraries(ariac ${llvm_libs} uring)
+target_link_libraries(ariac ${llvm_libs} uring atomic)
 
 # LSP server executable (Phase 7.3)
 add_executable(aria-ls src/tools/lsp/aria-ls.cpp 
