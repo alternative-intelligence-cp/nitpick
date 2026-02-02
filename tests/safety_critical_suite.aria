@@ -19,7 +19,7 @@ struct:TestResult = {
 int32:total_tests = 0;
 int32:passed_tests = 0;
 
-func:report = void(res: TestResult) {
+func:report = void(TestResult:res) {
    total_tests = total_tests + 1;
    if (res.passed) {
        passed_tests = passed_tests + 1;
@@ -27,7 +27,7 @@ func:report = void(res: TestResult) {
    } else {
        io.stderr.write("[FAIL] " + res.id + ": " + res.message + "\n");
    }
-}
+};
 
 // ----------------------------------------------------------------------------
 // SUITE A: LBIM & INTEGRAL INTEGRITY
@@ -39,15 +39,15 @@ func:test_lbim_overflow = TestResult() {
    // We construct a value larger than 2^64 to ensure multi-limb usage.
    
    // 2^1000 is approx 1e301.
-   var base: int1024 = 2;
-   var exp: int1024 = 1000;
+   int1024:base = 2;
+   int1024:exp = 1000;
    
    // int1024.pow is a runtime intrinsic call
-   var huge: int1024 = base.pow(exp); 
+   int1024:huge = base.pow(exp); 
    
    // Squaring 2^1000 gives 2^2000. 
    // int1024 max is approx 2^1023. This MUST overflow.
-   var overflow: int1024 = huge * huge;
+   int1024:overflow = huge * huge;
    
    if (overflow == int1024.ERR) {
        return TestResult { 
@@ -68,11 +68,11 @@ func:test_lbim_overflow = TestResult() {
 func:test_lbim_div_zero = TestResult() {
    // LBIM-02: Division by zero safety
    // This tests the runtime's sentinel check before the division algorithm.
-   var num: int1024 = 42;
-   var den: int1024 = 0;
+   int1024:num = 42;
+   int1024:den = 0;
    
    // Critical: Runtime must not SIGFPE. Must return ERR.
-   var result: int1024 = num / den;
+   int1024:result = num / den;
    
    if (result == int1024.ERR) {
        return TestResult { 
@@ -94,8 +94,8 @@ func:test_lbim_carry_chain = TestResult() {
    // int1024 uses 16x 64-bit limbs. 
    // Shifting by 65 bits must move data from limb to limb + 1 bit offset.
    
-   var val: int1024 = 1;
-   var shifted: int1024 = val << 100;
+   int1024:val = 1;
+   int1024:shifted = val << 100;
    
    // 2^100.
    // Limb 0 covers bits 0-63. Limb 1 covers 64-127.
@@ -103,7 +103,7 @@ func:test_lbim_carry_chain = TestResult() {
    // The value should be perfectly reconstructible.
    
    // We create the expected value via independent path (pow)
-   var expected: int1024 = (2:int1024).pow(100);
+   int1024:expected = (2:int1024).pow(100);
    
    if (shifted == expected) {
        return TestResult { 
@@ -126,10 +126,10 @@ func:test_lbim_carry_chain = TestResult() {
 
 func:test_tbb_sticky = TestResult() {
    // TBB-01: Sticky Error Propagation
-   var err_val: tbb8 = tbb8.ERR; // -128 (0x80)
+   tbb8:err_val = tbb8.ERR; // -128 (0x80)
    
    // Operation on ERR must result in ERR
-   var result: tbb8 = err_val + 10;
+   tbb8:result = err_val + 10;
    
    // If result is -118, the sentinel was treated as a number (FAILURE)
    if (result == tbb8.ERR) {
@@ -149,10 +149,10 @@ func:test_tbb_sticky = TestResult() {
 
 func:test_tbb_widening = TestResult() {
    // TBB-04: Explicit Widening Correctness
-   var small_err: tbb8 = tbb8.ERR; // -128 (0x80)
+   tbb8:small_err = tbb8.ERR; // -128 (0x80)
    
    // Use intrinsic to widen to 16-bit
-   var wide_err: tbb16 = tbb_widen(small_err);
+   tbb16:wide_err = tbb_widen(small_err);
    
    // Expected: wide_err should be tbb16.ERR (-32768)
    // Failure: wide_err is -128 (0xFF80) - This is a valid tbb16 number!
@@ -182,10 +182,10 @@ func:test_tbb_widening = TestResult() {
 
 func:test_tbb_div_zero = TestResult() {
    // TBB-02: Division Safety
-   var val: tbb32 = 100;
-   var zero: tbb32 = 0;
+   tbb32:val = 100;
+   tbb32:zero = 0;
    
-   var res: tbb32 = val / zero;
+   tbb32:res = val / zero;
    
    if (res == tbb32.ERR) {
        return TestResult { 
@@ -210,17 +210,17 @@ func:test_fix256_commutativity = TestResult() {
    // FIX-01: Commutativity A+B == B+A
    // Using values that trigger fractional precision usage.
    // 123.456... requires the fractional limbs (0 and 1).
-   var a: fix256 = 123.456789;
-   var b: fix256 = 987.654321;
+   fix256:a = 123.456789;
+   fix256:b = 987.654321;
    
-   var res1: fix256 = a + b;
-   var res2: fix256 = b + a;
+   fix256:res1 = a + b;
+   fix256:res2 = b + a;
    
    // Bit-exact comparison
    if (res1 == res2) {
        // Further check: Overflow handling
-       var max: fix256 = fix256.MAX;
-       var sat: fix256 = max + 1;
+       fix256:max = fix256.MAX;
+       fix256:sat = max + 1;
        
        // Overflow should saturate or error
        if (sat == fix256.ERR) {
@@ -248,10 +248,10 @@ func:test_fix256_precision = TestResult() {
    // FIX-02: Precision check
    // fix256 has 128 fractional bits. 
    // Smallest increment is 2^-128.
-   var one: fix256 = 1;
-   var epsilon: fix256 = fix256.EPSILON; // Should be 2^-128
+   fix256:one = 1;
+   fix256:epsilon = fix256.EPSILON; // Should be 2^-128
    
-   var sum: fix256 = one + epsilon;
+   fix256:sum = one + epsilon;
    
    if (sum > one) {
        return TestResult { 
@@ -276,7 +276,7 @@ func:test_fix256_precision = TestResult() {
 var freed_flag: bool = false;
 
 // Mock function to simulate free and set flag
-func:mock_free = void(ptr: wild int8*) {
+func:mock_free = void(wild int8->:ptr) {
    // In a real scenario, this would call runtime.aria_free(ptr)
    // Here we just set the flag to verify execution flow
    freed_flag = true;
@@ -331,7 +331,7 @@ func:test_defer_execution = TestResult() {
 func:test_defer_pick = TestResult() {
    // MEM-03: Defer inside complex branching (pick)
    freed_flag = false;
-   var selector: int32 = 2;
+   int32:selector = 2;
    
    unsafe {
        wild int8*: ptr = runtime.aria_alloc(10);
@@ -365,13 +365,13 @@ func:test_tryte_bias = TestResult() {
    // tryte is uint16. Bias is 29524.
    // logical 0 == 29524.
    
-   var t: tryte = 0;
+   tryte:t = 0;
    // We cannot access raw bits easily in safe Aria, but we can verify arithmetic.
    
    // 1 + (-1) should equal 0.
-   var pos: tryte = 1;
-   var neg: tryte = -1;
-   var zero: tryte = pos + neg;
+   tryte:pos = 1;
+   tryte:neg = -1;
+   tryte:zero = pos + neg;
    
    if (zero == 0) {
        return TestResult { id: "EXOTIC-01", passed: true, message: "Balanced ternary arithmetic holds" };

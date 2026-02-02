@@ -1,40 +1,40 @@
 // Test map module functionality
-fn main() {
+func:main = int64() {
     // Create a map for int64 -> string
-    let m = map_new(8, 8);  // sizeof(int64), sizeof(ptr)
+    wild void->:m = map_new(8, 8);  // sizeof(int64), sizeof(ptr)
     
     // Insert some key-value pairs
-    let key1: int64 = 42;
-    let val1 = "Hello";
-    map_insert(m, &key1, &val1);
+    int64:key1 = 42;
+    string:val1 = "Hello";
+    map_insert(m, @key1, @val1);
     
-    let key2: int64 = 100;
-    let val2 = "World";
-    map_insert(m, &key2, &val2);
+    int64:key2 = 100;
+    string:val2 = "World";
+    map_insert(m, @key2, @val2);
     
     // Check has
-    if map_has(m, &key1) {
+    if (map_has(m, @key1)) {
         print("Found key 42");
     }
     
     // Get values
-    let result1 = map_get(m, &key1);
-    if result1 != null {
+    wild void->:result1 = map_get(m, @key1);
+    if (result1 != NULL) {
         // Note: result is void*, need to cast
         print("Retrieved value for 42");
     }
     
     // Check length
-    let len = map_length(m);
+    int64:len = map_length(m);
     print("Map has");
     print(len);
     print("entries");
     
     // Remove a key
-    map_remove(m, &key1);
+    map_remove(m, @key1);
     
-    let new_len = map_length(m);
+    int64:new_len = map_length(m);
     print("After remove, map has");
     print(new_len);
     print("entries");
-}
+};
