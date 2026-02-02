@@ -679,10 +679,36 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
     }
 
-    // Parenthesized expression
+    // Parenthesized expression or type cast: (expr) or (expr:type)
     if (token.type == TokenType::TOKEN_LEFT_PAREN) {
-        advance();
+        int parenLine = token.line;
+        int parenCol = token.column;
+        advance(); // consume '('
+        
         ASTNodePtr expr = parseExpression();
+        if (!expr) {
+            error("Expected expression inside parentheses");
+            return nullptr;
+        }
+        
+        // Check for type cast syntax: (expr:type)
+        if (check(TokenType::TOKEN_COLON)) {
+            advance(); // consume ':'
+            
+            ASTNodePtr typeNode = parseType();
+            if (!typeNode) {
+                error("Expected type after ':' in cast expression");
+                return nullptr;
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after type cast");
+            
+            // Create cast expression - this is explicit type annotation
+            std::string targetTypeName = typeNode->toString();
+            return std::make_shared<CastExpr>(expr, typeNode, targetTypeName, 
+                                             false, parenLine, parenCol);
+        }
+        
         consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after expression");
         return expr;
     }
@@ -1989,6 +2015,27 @@ ASTNodePtr Parser::parseFuncDecl() {
     std::vector<ASTNodePtr> parameters;
     if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
         do {
+            // Handle parameter qualifiers (wild, const, stack, gc)
+            bool isWild = false;
+            bool isConst = false;
+            bool isStack = false;
+            bool isGC = false;
+            
+            while (peek().type == TokenType::TOKEN_KW_WILD ||
+                   peek().type == TokenType::TOKEN_KW_CONST ||
+                   peek().type == TokenType::TOKEN_KW_STACK ||
+                   peek().type == TokenType::TOKEN_KW_GC) {
+                if (match(TokenType::TOKEN_KW_WILD)) {
+                    isWild = true;
+                } else if (match(TokenType::TOKEN_KW_CONST)) {
+                    isConst = true;
+                } else if (match(TokenType::TOKEN_KW_STACK)) {
+                    isStack = true;
+                } else if (match(TokenType::TOKEN_KW_GC)) {
+                    isGC = true;
+                }
+            }
+            
             // Parse parameter type using parseType() for full type support (including generics)
             ASTNodePtr paramTypeNode = parseType();
             if (!paramTypeNode) {

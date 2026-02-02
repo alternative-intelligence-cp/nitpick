@@ -63,7 +63,7 @@ func:test_lbim_overflow = TestResult() {
        passed: false, 
        message: "Silent wrap detected on int1024 overflow. Result: " + overflow 
    };
-}
+};
 
 func:test_lbim_div_zero = TestResult() {
    // LBIM-02: Division by zero safety
@@ -87,7 +87,7 @@ func:test_lbim_div_zero = TestResult() {
        passed: false, 
        message: "Division by zero yielded valid value" 
    };
-}
+};
 
 func:test_lbim_carry_chain = TestResult() {
    // LBIM-03: Stress Test shift across limb boundaries.
@@ -117,7 +117,7 @@ func:test_lbim_carry_chain = TestResult() {
        passed: false, 
        message: "Multi-limb shift failed. Expected " + expected + " got " + shifted 
    };
-}
+};
 
 // ----------------------------------------------------------------------------
 // SUITE B: TBB SENTINEL VERIFICATION
@@ -145,7 +145,7 @@ func:test_tbb_sticky = TestResult() {
        passed: false, 
        message: "Error healing detected: ERR + 10!= ERR" 
    };
-}
+};
 
 func:test_tbb_widening = TestResult() {
    // TBB-04: Explicit Widening Correctness
@@ -178,7 +178,7 @@ func:test_tbb_widening = TestResult() {
        passed: false, 
        message: "Unknown widening behavior" 
    };
-}
+};
 
 func:test_tbb_div_zero = TestResult() {
    // TBB-02: Division Safety
@@ -199,7 +199,7 @@ func:test_tbb_div_zero = TestResult() {
        passed: false, 
        message: "TBB div by zero failed" 
    };
-}
+};
 
 // ----------------------------------------------------------------------------
 // SUITE C: FIX256 DETERMINISTIC PHYSICS
@@ -242,7 +242,7 @@ func:test_fix256_commutativity = TestResult() {
        passed: false, 
        message: "Commutativity violation (drift detected)" 
    };
-}
+};
 
 func:test_fix256_precision = TestResult() {
    // FIX-02: Precision check
@@ -265,7 +265,7 @@ func:test_fix256_precision = TestResult() {
        passed: false, 
        message: "Precision loss: 1 + EPSILON == 1" 
    };
-}
+};
 
 // ----------------------------------------------------------------------------
 // SUITE D: MEMORY & SAFETY CONTRACT
@@ -273,14 +273,14 @@ func:test_fix256_precision = TestResult() {
 // ----------------------------------------------------------------------------
 
 // Global flag to track free execution
-var freed_flag: bool = false;
+bool:freed_flag = false;
 
 // Mock function to simulate free and set flag
 func:mock_free = void(wild int8->:ptr) {
    // In a real scenario, this would call runtime.aria_free(ptr)
    // Here we just set the flag to verify execution flow
    freed_flag = true;
-}
+};
 
 func:test_defer_execution = TestResult() {
    // MEM-02: Basic Defer
@@ -288,27 +288,22 @@ func:test_defer_execution = TestResult() {
    
    // Create a scope for defer
    {
-       unsafe {
-           // Allocate wild memory (requires unsafe block in PARANOID mode)
-           // aria_alloc is defined in std.internal.runtime
-           wild int8*: ptr = runtime.aria_alloc(64);
-           
-           // Register cleanup
-           defer mock_free(ptr);
-           
-           // Verify allocation happened
-           if (ptr == null) {
-               return TestResult { 
-                   id: "MEM-02", 
-                   passed: false, 
-                   message: "Allocation failed" 
-               };
-           }
-           
-           // Early exit from scope to test defer logic
-           if (true) {
-               // defer should trigger here upon exit
-           }
+       // Allocate wild memory (requires unsafe block in PARANOID mode)
+       // aria_alloc is defined in std.internal.runtime
+       wild int8->:ptr = runtime.aria_alloc(64);
+       
+       // Verify allocation happened
+       if (ptr == null) {
+           return TestResult { 
+               id: "MEM-02", 
+               passed: false, 
+               message: "Allocation failed" 
+           };
+       }
+       
+       // Early exit from scope to test defer logic
+       if (true) {
+           // defer should trigger here upon exit
        }
    }
    
@@ -326,34 +321,31 @@ func:test_defer_execution = TestResult() {
        passed: false, 
        message: "Defer failed to execute (Memory Leak)" 
    };
-}
+};
 
 func:test_defer_pick = TestResult() {
    // MEM-03: Defer inside complex branching (pick)
    freed_flag = false;
    int32:selector = 2;
    
-   unsafe {
-       wild int8*: ptr = runtime.aria_alloc(10);
-       defer mock_free(ptr);
-       
-       pick (selector) {
-           case 1: { return TestResult { id: "MEM-03", passed: false, message: "Wrong branch" }; }
-           case 2: { 
-               // Exiting this block should trigger the function-level defer? 
-               // ARIA-022 says defer is block-scoped.
-               // The defer above is in the function scope (unsafe block), 
-               // so it triggers at end of unsafe block.
-           }
-           default: { return TestResult { id: "MEM-03", passed: false, message: "Default branch" }; }
-       }
+   wild int8->:ptr = runtime.aria_alloc(10);
+   
+   pick (selector) {
+       (1) { return TestResult { id: "MEM-03", passed: false, message: "Wrong branch" }; },
+       (2) { 
+           // Exiting this block should trigger the function-level defer? 
+           // ARIA-022 says defer is block-scoped.
+           // The defer above is in the function scope (unsafe block), 
+           // so it triggers at end of unsafe block.
+       },
+       (*) { return TestResult { id: "MEM-03", passed: false, message: "Default branch" }; }
    }
    
    if (freed_flag) {
        return TestResult { id: "MEM-03", passed: true, message: "Control flow defer verified" };
    }
    return TestResult { id: "MEM-03", passed: false, message: "Defer skipped in pick statement" };
-}
+};
 
 // ----------------------------------------------------------------------------
 // SUITE E: EXOTIC LOGIC
@@ -377,7 +369,7 @@ func:test_tryte_bias = TestResult() {
        return TestResult { id: "EXOTIC-01", passed: true, message: "Balanced ternary arithmetic holds" };
    }
    return TestResult { id: "EXOTIC-01", passed: false, message: "Ternary arithmetic failed" };
-}
+};
 
 // ----------------------------------------------------------------------------
 // MAIN RUNNER
@@ -418,6 +410,4 @@ pub func:main = int32() {
        io.stderr.write("VERIFICATION FAILED\n");
        return 1;
    }
-}
-
-8. Runtime and Stdlib Implications
+};
