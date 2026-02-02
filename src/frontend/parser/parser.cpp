@@ -377,6 +377,8 @@ ASTNodePtr Parser::parsePrimary() {
         token.type == TokenType::TOKEN_INTEGER_U256 ||
         token.type == TokenType::TOKEN_INTEGER_U512 ||
         token.type == TokenType::TOKEN_INTEGER_U1024 ||
+        token.type == TokenType::TOKEN_INTEGER_U2048 ||
+        token.type == TokenType::TOKEN_INTEGER_U4096 ||
         // Signed integers
         token.type == TokenType::TOKEN_INTEGER_I8 ||
         token.type == TokenType::TOKEN_INTEGER_I16 ||
@@ -386,6 +388,8 @@ ASTNodePtr Parser::parsePrimary() {
         token.type == TokenType::TOKEN_INTEGER_I256 ||
         token.type == TokenType::TOKEN_INTEGER_I512 ||
         token.type == TokenType::TOKEN_INTEGER_I1024 ||
+        token.type == TokenType::TOKEN_INTEGER_I2048 ||
+        token.type == TokenType::TOKEN_INTEGER_I4096 ||
         // TBB integers
         token.type == TokenType::TOKEN_INTEGER_TBB8 ||
         token.type == TokenType::TOKEN_INTEGER_TBB16 ||
@@ -1318,6 +1322,7 @@ bool Parser::isTypeKeyword(frontend::TokenType type) const {
         type == TokenType::TOKEN_KW_INT64 || type == TokenType::TOKEN_KW_INT128 ||
         type == TokenType::TOKEN_KW_INT256 || type == TokenType::TOKEN_KW_INT512 ||
         type == TokenType::TOKEN_KW_INT1024 ||
+        type == TokenType::TOKEN_KW_INT2048 || type == TokenType::TOKEN_KW_INT4096 ||
         // Unsigned integers
         type == TokenType::TOKEN_KW_UINT1 || type == TokenType::TOKEN_KW_UINT2 ||
         type == TokenType::TOKEN_KW_UINT4 || type == TokenType::TOKEN_KW_UINT8 ||
@@ -1325,6 +1330,7 @@ bool Parser::isTypeKeyword(frontend::TokenType type) const {
         type == TokenType::TOKEN_KW_UINT64 || type == TokenType::TOKEN_KW_UINT128 ||
         type == TokenType::TOKEN_KW_UINT256 || type == TokenType::TOKEN_KW_UINT512 ||
         type == TokenType::TOKEN_KW_UINT1024 ||
+        type == TokenType::TOKEN_KW_UINT2048 || type == TokenType::TOKEN_KW_UINT4096 ||
         // TBB types
         type == TokenType::TOKEN_KW_TBB8 || type == TokenType::TOKEN_KW_TBB16 ||
         type == TokenType::TOKEN_KW_TBB32 || type == TokenType::TOKEN_KW_TBB64 ||
@@ -1375,6 +1381,8 @@ std::string Parser::tokenTypeToTypeString(frontend::TokenType type) const {
     if (type == TokenType::TOKEN_INTEGER_U256) return "u256";
     if (type == TokenType::TOKEN_INTEGER_U512) return "u512";
     if (type == TokenType::TOKEN_INTEGER_U1024) return "u1024";
+    if (type == TokenType::TOKEN_INTEGER_U2048) return "u2048";
+    if (type == TokenType::TOKEN_INTEGER_U4096) return "u4096";
     
     // Signed integers
     if (type == TokenType::TOKEN_INTEGER_I8) return "i8";
@@ -1385,6 +1393,8 @@ std::string Parser::tokenTypeToTypeString(frontend::TokenType type) const {
     if (type == TokenType::TOKEN_INTEGER_I256) return "i256";
     if (type == TokenType::TOKEN_INTEGER_I512) return "i512";
     if (type == TokenType::TOKEN_INTEGER_I1024) return "i1024";
+    if (type == TokenType::TOKEN_INTEGER_I2048) return "i2048";
+    if (type == TokenType::TOKEN_INTEGER_I4096) return "i4096";
     
     // TBB (Twisted Balanced Binary) integers
     if (type == TokenType::TOKEN_INTEGER_TBB8) return "tbb8";
