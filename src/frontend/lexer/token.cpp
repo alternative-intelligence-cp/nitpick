@@ -89,8 +89,8 @@ bool Token::isLiteral() const {
 }
 
 bool Token::isType() const {
-    return (type >= TokenType::TOKEN_KW_INT1 && type <= TokenType::TOKEN_KW_INT512) ||
-           (type >= TokenType::TOKEN_KW_UINT8 && type <= TokenType::TOKEN_KW_UINT512) ||
+    return (type >= TokenType::TOKEN_KW_INT1 && type <= TokenType::TOKEN_KW_INT4096) ||
+           (type >= TokenType::TOKEN_KW_UINT1 && type <= TokenType::TOKEN_KW_UINT4096) ||
            (type >= TokenType::TOKEN_KW_TBB8 && type <= TokenType::TOKEN_KW_TBB64) ||
            (type >= TokenType::TOKEN_KW_FRAC8 && type <= TokenType::TOKEN_KW_FRAC64) ||
            (type >= TokenType::TOKEN_KW_TFP32 && type <= TokenType::TOKEN_KW_TFP64) ||
@@ -193,6 +193,9 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_INT128: return "INT128";
         case TokenType::TOKEN_KW_INT256: return "INT256";
         case TokenType::TOKEN_KW_INT512: return "INT512";
+        case TokenType::TOKEN_KW_INT1024: return "INT1024";
+        case TokenType::TOKEN_KW_INT2048: return "INT2048";
+        case TokenType::TOKEN_KW_INT4096: return "INT4096";
         
         // Unsigned integer types
         case TokenType::TOKEN_KW_UINT1: return "UINT1";
@@ -205,6 +208,9 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_UINT128: return "UINT128";
         case TokenType::TOKEN_KW_UINT256: return "UINT256";
         case TokenType::TOKEN_KW_UINT512: return "UINT512";
+        case TokenType::TOKEN_KW_UINT1024: return "UINT1024";
+        case TokenType::TOKEN_KW_UINT2048: return "UINT2048";
+        case TokenType::TOKEN_KW_UINT4096: return "UINT4096";
         
         // TBB types
         case TokenType::TOKEN_KW_TBB8: return "TBB8";
@@ -359,6 +365,8 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_INTEGER_U256: return "INTEGER_U256";
         case TokenType::TOKEN_INTEGER_U512: return "INTEGER_U512";
         case TokenType::TOKEN_INTEGER_U1024: return "INTEGER_U1024";
+        case TokenType::TOKEN_INTEGER_U2048: return "INTEGER_U2048";
+        case TokenType::TOKEN_INTEGER_U4096: return "INTEGER_U4096";
         
         // Typed integer literals (signed)
         case TokenType::TOKEN_INTEGER_I8: return "INTEGER_I8";
@@ -369,6 +377,8 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_INTEGER_I256: return "INTEGER_I256";
         case TokenType::TOKEN_INTEGER_I512: return "INTEGER_I512";
         case TokenType::TOKEN_INTEGER_I1024: return "INTEGER_I1024";
+        case TokenType::TOKEN_INTEGER_I2048: return "INTEGER_I2048";
+        case TokenType::TOKEN_INTEGER_I4096: return "INTEGER_I4096";
         
         // Typed integer literals (TBB)
         case TokenType::TOKEN_INTEGER_TBB8: return "INTEGER_TBB8";
