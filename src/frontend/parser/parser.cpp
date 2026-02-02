@@ -2931,6 +2931,12 @@ ASTNodePtr Parser::parseExternStatement() {
     // Parse declarations inside the extern block
     // Note: extern blocks contain signatures (declarations without bodies), not statements
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // Check for pub visibility modifier
+        bool isPublic = false;
+        if (match(TokenType::TOKEN_KW_PUB)) {
+            isPublic = true;
+        }
+        
         // Check for opaque struct declaration: opaque struct:Name;
         if (match(TokenType::TOKEN_KW_OPAQUE)) {
             Token opaqueToken = previous();
@@ -3072,6 +3078,14 @@ ASTNodePtr Parser::parseExternStatement() {
             std::vector<ASTNodePtr> parameters;
             if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
                 do {
+                    // Parse parameter qualifiers (wild, const, etc.)
+                    while (peek().type == TokenType::TOKEN_KW_WILD ||
+                           peek().type == TokenType::TOKEN_KW_CONST ||
+                           peek().type == TokenType::TOKEN_KW_STACK ||
+                           peek().type == TokenType::TOKEN_KW_GC) {
+                        advance(); // consume qualifier (we'll handle semantics later)
+                    }
+                    
                     // Parse parameter: type:name (can be Aria type or C type identifier for FFI)
                     Token paramTypeToken = advance();
                     if (!isTypeKeyword(paramTypeToken.type) && paramTypeToken.type != TokenType::TOKEN_IDENTIFIER) {
@@ -3120,6 +3134,10 @@ ASTNodePtr Parser::parseExternStatement() {
                 funcToken.line,
                 funcToken.column
             );
+            
+            // Set visibility and extern flags
+            funcDecl->isPublic = isPublic;
+            funcDecl->isExtern = true;
             
             externStmt->declarations.push_back(funcDecl);
         }
