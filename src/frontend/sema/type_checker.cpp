@@ -374,19 +374,33 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
     }
     
     // ========================================================================
-    // UNTYPED LITERALS: Return "unknown" type for context resolution
+    // UNTYPED LITERALS: Default to int32 for integers, flt64 for floats
     // ========================================================================
-    // NOTE: Type checker will validate range when target type is known
-    // This enables "fits-or-fails" behavior:
-    //   int8:a = 42;     ✅ OK: 42 fits in int8
-    //   int8:b = 200;    ❌ ERROR: doesn't fit
-    //   print(42);       ❌ ERROR: ambiguous context
+    // When a literal has no explicit type suffix, it gets a default type:
+    //   42        → int32 (default integer type)
+    //   3.14      → flt64 (default float type)
+    //   true      → bool
+    //   "hello"   → string
+    //
+    // This allows arithmetic expressions to work naturally:
+    //   tbb8:sum = 10 + 20;  // 10 and 20 default to int32, then checked if fits in tbb8
+    //
+    // The "fits-or-fails" validation happens during variable assignment in checkVarDecl
     
     // Check if this is a high-precision literal (has raw string)
     if (expr->hasRawValue()) {
         // High-precision literal - type will be determined by context
-        // Return unknown type so type checker validates range when assigned
-        return typeSystem->getUnknownType();
+        // For now, assume it's for a 128+ bit type
+        const std::string& raw = expr->getRawValue();
+        bool is_float = (raw.find('.') != std::string::npos || 
+                        raw.find('e') != std::string::npos ||
+                        raw.find('E') != std::string::npos);
+        
+        if (is_float) {
+            return typeSystem->getPrimitiveType("flt128");  // Default high-precision float
+        } else {
+            return typeSystem->getPrimitiveType("int128");  // Default high-precision int
+        }
     }
     
     // Use std::visit to handle variant (standard literals without raw strings)
@@ -394,19 +408,20 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
         using T = std::decay_t<decltype(arg)>;
         
         if constexpr (std::is_same_v<T, int64_t>) {
-            // Untyped integer literal: return unknown for context inference
-            return typeSystem->getUnknownType();
+            // Untyped integer literal: default to int32
+            return typeSystem->getPrimitiveType("int32");
         }
         else if constexpr (std::is_same_v<T, double>) {
-            // Untyped float literal: return unknown for context inference
-            return typeSystem->getUnknownType();
+            // Untyped float literal: default to flt64
+            return typeSystem->getPrimitiveType("flt64");
         }
         else if constexpr (std::is_same_v<T, std::string>) {
             // Check if this is the special ERR literal
             if (arg == "ERR") {
                 // ERR literal: represents TBB error sentinel
                 // Type will be resolved from context (tbb8/tbb16/tbb32/tbb64)
-                return typeSystem->getUnknownType();
+                // For now, assume tbb32 as default
+                return typeSystem->getPrimitiveType("tbb32");
             }
             // Regular string literal - type is always "string"
             return typeSystem->getPrimitiveType("string");
@@ -417,6 +432,7 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
         }
         else if constexpr (std::is_same_v<T, std::monostate>) {
             // Null literal: type will be resolved from context
+            // For now, return unknown
             return typeSystem->getUnknownType();
         }
         else {
@@ -5018,18 +5034,35 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         }
         
         // TBB Type Validation (Phase 3.2.4)
-        // Special handling for integer literals assigned to TBB types
+        // Special handling for integer values (literals or expressions) assigned to TBB types
+        // Allows: tbb8:x = 100; and tbb8:x = 10 + 20;
+        // This is safe because:
+        //   1. int32 has smaller range than most TBB types (except tbb8)
+        //   2. Range check will validate at compile time if possible
+        //   3. Runtime check inserted if value not known at compile time
         bool tbbLiteralAssignment = false;
-        if (isTBBType(declaredType) && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
-            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
-            if (std::holds_alternative<int64_t>(literal->value)) {
-                int64_t value = std::get<int64_t>(literal->value);
-                checkTBBLiteralValue(value, declaredType, stmt);
-                tbbLiteralAssignment = true;
-                
-                // If no errors, allow the assignment (literal is in range)
-                if (hasErrors()) {
-                    return;  // Validation failed
+        if (isTBBType(declaredType)) {
+            // Allow int32 → tbb coercion for literals and simple expressions
+            // This enables natural syntax: tbb8:x = 42;
+            if (initType->toString() == "int32" || initType->toString() == "int64") {
+                // Check if it's a compile-time constant literal
+                if (stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+                    if (std::holds_alternative<int64_t>(literal->value)) {
+                        int64_t value = std::get<int64_t>(literal->value);
+                        checkTBBLiteralValue(value, declaredType, stmt);
+                        tbbLiteralAssignment = true;
+                        
+                        // If no errors, allow the assignment (literal is in range)
+                        if (hasErrors()) {
+                            return;  // Validation failed
+                        }
+                    }
+                } else {
+                    // Expression result (e.g., 10 + 20) - allow with implicit coercion
+                    // The actual range check will happen at runtime
+                    // TODO: Add compile-time constant folding to catch more errors
+                    tbbLiteralAssignment = true;
                 }
             }
         }
