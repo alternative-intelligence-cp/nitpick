@@ -2079,6 +2079,13 @@ ASTNodePtr Parser::parseFuncDecl() {
     // Consume equal sign
     consume(TokenType::TOKEN_EQUAL, "Expected '=' after function name");
 
+    // Parse optional return type qualifiers (wild, const) for extern functions
+    bool returnIsWild = false, returnIsConst = false;
+    while (peek().type == TokenType::TOKEN_KW_WILD || peek().type == TokenType::TOKEN_KW_CONST) {
+        if (match(TokenType::TOKEN_KW_WILD)) returnIsWild = true;
+        else if (match(TokenType::TOKEN_KW_CONST)) returnIsConst = true;
+    }
+
     // Parse return type (supports generics, pointers, etc.)
     ASTNodePtr returnTypeNode = parseType();
     if (!returnTypeNode) {
@@ -2139,12 +2146,23 @@ ASTNodePtr Parser::parseFuncDecl() {
     
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after parameters");
     
-    // Parse function body: { ... }
-    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' before function body");
-    ASTNodePtr body = parseBlock();
+    // For extern functions (declarations without body), consume semicolon
+    // For normal functions, parse body
+    ASTNodePtr body = nullptr;
+    bool isExternDecl = isInsideExternBlock;
     
-    // Consume semicolon after closing brace
-    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after function declaration");
+    if (check(TokenType::TOKEN_SEMICOLON)) {
+        // Extern function declaration (no body)
+        consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after function declaration");
+        isExternDecl = true;
+    } else {
+        // Normal function with body
+        consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' before function body");
+        body = parseBlock();
+        
+        // Consume semicolon after closing brace
+        consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after function declaration");
+    }
     
     auto funcDecl = std::make_shared<FuncDeclStmt>(
         nameToken.lexeme,
@@ -2154,6 +2172,9 @@ ASTNodePtr Parser::parseFuncDecl() {
         funcToken.line,
         funcToken.column
     );
+    
+    // Mark as extern if it's a declaration without body
+    funcDecl->isExtern = isExternDecl;
     
     // Set generic parameters if present
     funcDecl->genericParams = genericParams;
@@ -2865,6 +2886,31 @@ ASTNodePtr Parser::parseExternStatement() {
     
     Token externToken = previous(); // 'extern' keyword already consumed
     
+    // Check if this is a standalone extern func declaration: extern func:name = ...;
+    // vs extern block: extern "lib" { ... }
+    if (check(TokenType::TOKEN_KW_FUNC)) {
+        // Parse standalone extern function declaration
+        match(TokenType::TOKEN_KW_FUNC); // consume 'func'
+        
+        // Set FFI context for C-style pointer syntax
+        bool wasInExternBlock = isInsideExternBlock;
+        isInsideExternBlock = true;
+        
+        // Parse the function declaration
+        ASTNodePtr funcDecl = parseFuncDecl();
+        
+        // Restore FFI context
+        isInsideExternBlock = wasInExternBlock;
+        
+        if (funcDecl && funcDecl->type == ASTNode::NodeType::FUNC_DECL) {
+            auto func = std::static_pointer_cast<FuncDeclStmt>(funcDecl);
+            func->isExtern = true; // Mark as extern function
+        }
+        
+        return funcDecl;
+    }
+    
+    // Otherwise, parse extern block: extern "lib" { ... }
     // Get library name (must be a string literal)
     Token libNameToken = consume(TokenType::TOKEN_STRING, "Expected library name string after 'extern'");
     

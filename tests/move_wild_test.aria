@@ -1,34 +1,34 @@
 // Test move() with wild memory
 // Move should transfer ownership and prevent use-after-free
 
-extern func malloc(size: int64) -> wild int8*;
-extern func free(ptr: wild int8*) -> void;
+extern func:malloc = wild int8*(int64:size);
+extern func:free = void(wild int8*:ptr);
 
-func test_wild_move() -> int32 {
-    wild int8*:buffer = malloc(100);
+func:test_wild_move = int32() {
+    wild int8->:buffer = malloc(100);
     
     // Move ownership to another variable
-    wild int8*:moved_buffer = move(buffer);
+    wild int8->:moved_buffer = move(buffer);
     
     // buffer is now invalid (moved)
     // moved_buffer now owns the memory
     
     free(moved_buffer);  // Correct - free the new owner
     
-    return 0;
-}
+    pass(0);
+};
 
-func test_wild_use_after_move() -> int32 {
-    wild int8*:buffer = malloc(100);
+func:test_wild_use_after_move = int32() {
+    wild int8->:buffer = malloc(100);
     
-    wild int8*:moved_buffer = move(buffer);
+    wild int8->:moved_buffer = move(buffer);
     
     // This should ERROR: buffer was moved
     free(buffer);  // ERROR: Use after move (attempting to free moved pointer)
     
     free(moved_buffer);
     
-    return 0;
-}
+    pass(0);
+};
 
 
