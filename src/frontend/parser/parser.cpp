@@ -669,6 +669,15 @@ ASTNodePtr Parser::parsePrimary() {
         advance();
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
     }
+    
+    // Allow 'buffer' keyword to be used as identifier (common variable name)
+    if (token.type == TokenType::TOKEN_KW_BUFFER) {
+        std::string lexeme = token.lexeme;  // Save before advance()
+        int line = token.line;
+        int col = token.column;
+        advance();
+        return std::make_shared<IdentifierExpr>(lexeme, line, col);
+    }
 
     // Parenthesized expression
     if (token.type == TokenType::TOKEN_LEFT_PAREN) {
@@ -1090,8 +1099,25 @@ ASTNodePtr Parser::parseMemberExpression(ASTNodePtr object) {
     bool isPointerAccess = (op.type == TokenType::TOKEN_ARROW);
     bool isSafeNav = (op.type == TokenType::TOKEN_SAFE_NAV);
     
-    Token memberToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected member name after '.' or '->'");
-    std::string memberName = memberToken.lexeme;
+    // Allow member name to be identifier OR certain keywords (like ERR for static members)
+    Token memberToken = peek();
+    std::string memberName;
+    
+    if (memberToken.type == TokenType::TOKEN_IDENTIFIER) {
+        memberName = memberToken.lexeme;
+        advance();
+    } else if (memberToken.type == TokenType::TOKEN_KW_ERR) {
+        // Allow ERR as static member (e.g., int1024.ERR, tbb8.ERR)
+        memberName = "ERR";
+        advance();
+    } else if (isTypeKeyword(memberToken.type)) {
+        // Allow type keywords as member names (for method chaining, etc.)
+        memberName = memberToken.lexeme;
+        advance();
+    } else {
+        error("Expected member name after '.' or '->'");
+        return object;
+    }
     
     auto memberExpr = std::make_shared<MemberAccessExpr>(
         object, memberName, isPointerAccess, isSafeNav,
@@ -1894,7 +1920,8 @@ ASTNodePtr Parser::parseVarDecl() {
     if (nameToken.type == TokenType::TOKEN_IDENTIFIER ||
         nameToken.type == TokenType::TOKEN_KW_RESULT ||
         nameToken.type == TokenType::TOKEN_KW_FUNC ||
-        nameToken.type == TokenType::TOKEN_KW_OBJ) {
+        nameToken.type == TokenType::TOKEN_KW_OBJ ||
+        nameToken.type == TokenType::TOKEN_KW_BUFFER) {  // Allow 'buffer' as variable name
         advance();
     } else {
         error("Expected variable name");
