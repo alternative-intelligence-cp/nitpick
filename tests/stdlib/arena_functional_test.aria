@@ -25,7 +25,7 @@ func:main = int64() {
         return 2;  // Allocation failed
     }
     
-    wild int64@:ptr1 = alloc1.unwrap();
+    wild int64->ptr1 = alloc1.unwrap();
     ptr1@ = 42;
     
     if (ptr1@ != 42) {
@@ -39,7 +39,7 @@ func:main = int64() {
         return 4;  // Struct allocation failed
     }
     
-    wild TestData@:ptr2 = alloc2.unwrap();
+    wild TestData->ptr2 = alloc2.unwrap();
     ptr2@.a = 100;
     ptr2@.b = 200;
     
@@ -76,14 +76,14 @@ func:test_arena_array = int64() {
         return 2;
     }
     
-    wild int64@:arr = alloc.unwrap();
+    wild int64->arr = alloc.unwrap();
     
     // Fill array
     int64:i = 0;
     loop {
         if (i >= 100) { break; }
         
-        wild int64@:elem = arr + i;
+        wild int64->elem = arr + i;
         elem@ = i * 2;
         
         i = i + 1;
@@ -94,7 +94,7 @@ func:test_arena_array = int64() {
     loop {
         if (i >= 100) { break; }
         
-        wild int64@:elem = arr + i;
+        wild int64->elem = arr + i;
         int64:expected = i * 2;
         
         if (elem@ != expected) {
@@ -134,7 +134,7 @@ func:test_arena_reset = int64() {
     alloc_result<wild int64@>:alloc3 = arena_alloc<int64>(my_arena);
     if (!alloc3.is_ok()) { return 4; }
     
-    wild int64@:ptr3 = alloc3.unwrap();
+    wild int64->ptr3 = alloc3.unwrap();
     ptr3@ = 999;
     
     if (ptr3@ != 999) {

@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/randy/._____RANDY_____/REPOS/aria
+CMAKE_SOURCE_DIR = /home/randy/Workspace/REPOS/aria
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/randy/._____RANDY_____/REPOS/aria/build
+CMAKE_BINARY_DIR = /home/randy/Workspace/REPOS/aria/build
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -142,9 +142,9 @@ install/strip/fast: preinstall/fast
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles /home/randy/._____RANDY_____/REPOS/aria/build//CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/randy/Workspace/REPOS/aria/build/CMakeFiles /home/randy/Workspace/REPOS/aria/build//CMakeFiles/progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/randy/Workspace/REPOS/aria/build/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
@@ -300,19 +300,6 @@ aria-ls: cmake_check_build_system
 aria-ls/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/build
 .PHONY : aria-ls/fast
-
-#=============================================================================
-# Target rules for targets named aria-dap
-
-# Build rule for target.
-aria-dap: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 aria-dap
-.PHONY : aria-dap
-
-# fast build rule for target.
-aria-dap/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/build
-.PHONY : aria-dap/fast
 
 #=============================================================================
 # Target rules for targets named aria-pkg
@@ -703,97 +690,6 @@ ContinuousSubmit: cmake_check_build_system
 ContinuousSubmit/fast:
 	$(MAKE) $(MAKESILENT) -f vendor/toml11/CMakeFiles/ContinuousSubmit.dir/build.make vendor/toml11/CMakeFiles/ContinuousSubmit.dir/build
 .PHONY : ContinuousSubmit/fast
-
-#=============================================================================
-# Target rules for targets named test_int1024_safety
-
-# Build rule for target.
-test_int1024_safety: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_int1024_safety
-.PHONY : test_int1024_safety
-
-# fast build rule for target.
-test_int1024_safety/fast:
-	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_int1024_safety.dir/build.make tests/CMakeFiles/test_int1024_safety.dir/build
-.PHONY : test_int1024_safety/fast
-
-#=============================================================================
-# Target rules for targets named test_fix256_safety
-
-# Build rule for target.
-test_fix256_safety: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_safety
-.PHONY : test_fix256_safety
-
-# fast build rule for target.
-test_fix256_safety/fast:
-	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_safety.dir/build.make tests/CMakeFiles/test_fix256_safety.dir/build
-.PHONY : test_fix256_safety/fast
-
-#=============================================================================
-# Target rules for targets named test_fix256_edge_cases
-
-# Build rule for target.
-test_fix256_edge_cases: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_edge_cases
-.PHONY : test_fix256_edge_cases
-
-# fast build rule for target.
-test_fix256_edge_cases/fast:
-	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_edge_cases.dir/build.make tests/CMakeFiles/test_fix256_edge_cases.dir/build
-.PHONY : test_fix256_edge_cases/fast
-
-#=============================================================================
-# Target rules for targets named test_fix256_determinism
-
-# Build rule for target.
-test_fix256_determinism: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_determinism
-.PHONY : test_fix256_determinism
-
-# fast build rule for target.
-test_fix256_determinism/fast:
-	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_determinism.dir/build.make tests/CMakeFiles/test_fix256_determinism.dir/build
-.PHONY : test_fix256_determinism/fast
-
-#=============================================================================
-# Target rules for targets named test_fix256_fuzz
-
-# Build rule for target.
-test_fix256_fuzz: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_fuzz
-.PHONY : test_fix256_fuzz
-
-# fast build rule for target.
-test_fix256_fuzz/fast:
-	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_fuzz.dir/build.make tests/CMakeFiles/test_fix256_fuzz.dir/build
-.PHONY : test_fix256_fuzz/fast
-
-#=============================================================================
-# Target rules for targets named test_fix256_properties
-
-# Build rule for target.
-test_fix256_properties: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_properties
-.PHONY : test_fix256_properties
-
-# fast build rule for target.
-test_fix256_properties/fast:
-	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_properties.dir/build.make tests/CMakeFiles/test_fix256_properties.dir/build
-.PHONY : test_fix256_properties/fast
-
-#=============================================================================
-# Target rules for targets named test_fix256_exhaustive
-
-# Build rule for target.
-test_fix256_exhaustive: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_fix256_exhaustive
-.PHONY : test_fix256_exhaustive
-
-# fast build rule for target.
-test_fix256_exhaustive/fast:
-	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/test_fix256_exhaustive.dir/build.make tests/CMakeFiles/test_fix256_exhaustive.dir/build
-.PHONY : test_fix256_exhaustive/fast
 
 #=============================================================================
 # Target rules for targets named test_runner
@@ -3001,126 +2897,6 @@ src/semantic/literal_converter.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/semantic/literal_converter.cpp.s
 .PHONY : src/semantic/literal_converter.cpp.s
 
-src/tools/debugger/aria_dap.o: src/tools/debugger/aria_dap.cpp.o
-.PHONY : src/tools/debugger/aria_dap.o
-
-# target to build an object file
-src/tools/debugger/aria_dap.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_dap.cpp.o
-.PHONY : src/tools/debugger/aria_dap.cpp.o
-
-src/tools/debugger/aria_dap.i: src/tools/debugger/aria_dap.cpp.i
-.PHONY : src/tools/debugger/aria_dap.i
-
-# target to preprocess a source file
-src/tools/debugger/aria_dap.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_dap.cpp.i
-.PHONY : src/tools/debugger/aria_dap.cpp.i
-
-src/tools/debugger/aria_dap.s: src/tools/debugger/aria_dap.cpp.s
-.PHONY : src/tools/debugger/aria_dap.s
-
-# target to generate assembly for a file
-src/tools/debugger/aria_dap.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_dap.cpp.s
-.PHONY : src/tools/debugger/aria_dap.cpp.s
-
-src/tools/debugger/aria_formatters.o: src/tools/debugger/aria_formatters.cpp.o
-.PHONY : src/tools/debugger/aria_formatters.o
-
-# target to build an object file
-src/tools/debugger/aria_formatters.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_formatters.cpp.o
-.PHONY : src/tools/debugger/aria_formatters.cpp.o
-
-src/tools/debugger/aria_formatters.i: src/tools/debugger/aria_formatters.cpp.i
-.PHONY : src/tools/debugger/aria_formatters.i
-
-# target to preprocess a source file
-src/tools/debugger/aria_formatters.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_formatters.cpp.i
-.PHONY : src/tools/debugger/aria_formatters.cpp.i
-
-src/tools/debugger/aria_formatters.s: src/tools/debugger/aria_formatters.cpp.s
-.PHONY : src/tools/debugger/aria_formatters.s
-
-# target to generate assembly for a file
-src/tools/debugger/aria_formatters.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_formatters.cpp.s
-.PHONY : src/tools/debugger/aria_formatters.cpp.s
-
-src/tools/debugger/async_debugger.o: src/tools/debugger/async_debugger.cpp.o
-.PHONY : src/tools/debugger/async_debugger.o
-
-# target to build an object file
-src/tools/debugger/async_debugger.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/async_debugger.cpp.o
-.PHONY : src/tools/debugger/async_debugger.cpp.o
-
-src/tools/debugger/async_debugger.i: src/tools/debugger/async_debugger.cpp.i
-.PHONY : src/tools/debugger/async_debugger.i
-
-# target to preprocess a source file
-src/tools/debugger/async_debugger.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/async_debugger.cpp.i
-.PHONY : src/tools/debugger/async_debugger.cpp.i
-
-src/tools/debugger/async_debugger.s: src/tools/debugger/async_debugger.cpp.s
-.PHONY : src/tools/debugger/async_debugger.s
-
-# target to generate assembly for a file
-src/tools/debugger/async_debugger.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/async_debugger.cpp.s
-.PHONY : src/tools/debugger/async_debugger.cpp.s
-
-src/tools/debugger/dap_server.o: src/tools/debugger/dap_server.cpp.o
-.PHONY : src/tools/debugger/dap_server.o
-
-# target to build an object file
-src/tools/debugger/dap_server.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/dap_server.cpp.o
-.PHONY : src/tools/debugger/dap_server.cpp.o
-
-src/tools/debugger/dap_server.i: src/tools/debugger/dap_server.cpp.i
-.PHONY : src/tools/debugger/dap_server.i
-
-# target to preprocess a source file
-src/tools/debugger/dap_server.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/dap_server.cpp.i
-.PHONY : src/tools/debugger/dap_server.cpp.i
-
-src/tools/debugger/dap_server.s: src/tools/debugger/dap_server.cpp.s
-.PHONY : src/tools/debugger/dap_server.s
-
-# target to generate assembly for a file
-src/tools/debugger/dap_server.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/dap_server.cpp.s
-.PHONY : src/tools/debugger/dap_server.cpp.s
-
-src/tools/debugger/memory_visualizer.o: src/tools/debugger/memory_visualizer.cpp.o
-.PHONY : src/tools/debugger/memory_visualizer.o
-
-# target to build an object file
-src/tools/debugger/memory_visualizer.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/memory_visualizer.cpp.o
-.PHONY : src/tools/debugger/memory_visualizer.cpp.o
-
-src/tools/debugger/memory_visualizer.i: src/tools/debugger/memory_visualizer.cpp.i
-.PHONY : src/tools/debugger/memory_visualizer.i
-
-# target to preprocess a source file
-src/tools/debugger/memory_visualizer.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/memory_visualizer.cpp.i
-.PHONY : src/tools/debugger/memory_visualizer.cpp.i
-
-src/tools/debugger/memory_visualizer.s: src/tools/debugger/memory_visualizer.cpp.s
-.PHONY : src/tools/debugger/memory_visualizer.s
-
-# target to generate assembly for a file
-src/tools/debugger/memory_visualizer.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/memory_visualizer.cpp.s
-.PHONY : src/tools/debugger/memory_visualizer.cpp.s
-
 src/tools/debugger/web_server.o: src/tools/debugger/web_server.cpp.o
 .PHONY : src/tools/debugger/web_server.o
 
@@ -3502,19 +3278,11 @@ help:
 	@echo "... intrinsics_gen"
 	@echo "... omp_gen"
 	@echo "... vt_gen"
-	@echo "... aria-dap"
 	@echo "... aria-doc"
 	@echo "... aria-ls"
 	@echo "... aria-pkg"
 	@echo "... aria_runtime"
 	@echo "... ariac"
-	@echo "... test_fix256_determinism"
-	@echo "... test_fix256_edge_cases"
-	@echo "... test_fix256_exhaustive"
-	@echo "... test_fix256_fuzz"
-	@echo "... test_fix256_properties"
-	@echo "... test_fix256_safety"
-	@echo "... test_int1024_safety"
 	@echo "... test_runner"
 	@echo "... src/backend/ir/codegen_expr.o"
 	@echo "... src/backend/ir/codegen_expr.i"
@@ -3768,21 +3536,6 @@ help:
 	@echo "... src/semantic/literal_converter.o"
 	@echo "... src/semantic/literal_converter.i"
 	@echo "... src/semantic/literal_converter.s"
-	@echo "... src/tools/debugger/aria_dap.o"
-	@echo "... src/tools/debugger/aria_dap.i"
-	@echo "... src/tools/debugger/aria_dap.s"
-	@echo "... src/tools/debugger/aria_formatters.o"
-	@echo "... src/tools/debugger/aria_formatters.i"
-	@echo "... src/tools/debugger/aria_formatters.s"
-	@echo "... src/tools/debugger/async_debugger.o"
-	@echo "... src/tools/debugger/async_debugger.i"
-	@echo "... src/tools/debugger/async_debugger.s"
-	@echo "... src/tools/debugger/dap_server.o"
-	@echo "... src/tools/debugger/dap_server.i"
-	@echo "... src/tools/debugger/dap_server.s"
-	@echo "... src/tools/debugger/memory_visualizer.o"
-	@echo "... src/tools/debugger/memory_visualizer.i"
-	@echo "... src/tools/debugger/memory_visualizer.s"
 	@echo "... src/tools/debugger/web_server.o"
 	@echo "... src/tools/debugger/web_server.i"
 	@echo "... src/tools/debugger/web_server.s"

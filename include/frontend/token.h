@@ -84,6 +84,8 @@ enum class TokenType {
     TOKEN_KW_INT256,    // int256 - 256-bit signed
     TOKEN_KW_INT512,    // int512 - 512-bit signed
     TOKEN_KW_INT1024,   // int1024 - 1024-bit signed (post-quantum crypto)
+    TOKEN_KW_INT2048,   // int2048 - 2048-bit signed (LBIM, quantum-resistant)
+    TOKEN_KW_INT4096,   // int4096 - 4096-bit signed (LBIM, maximum security)
     
     // ========================================================================
     // Type Keywords - Integers (Unsigned)
@@ -99,6 +101,8 @@ enum class TokenType {
     TOKEN_KW_UINT256,   // uint256 - 256-bit unsigned
     TOKEN_KW_UINT512,   // uint512 - 512-bit unsigned
     TOKEN_KW_UINT1024,  // uint1024 - 1024-bit unsigned (post-quantum crypto)
+    TOKEN_KW_UINT2048,  // uint2048 - 2048-bit unsigned (LBIM, quantum-resistant)
+    TOKEN_KW_UINT4096,  // uint4096 - 4096-bit unsigned (LBIM, maximum security)
     
     // ========================================================================
     // Type Keywords - TBB (Twisted Balanced Binary)
@@ -303,6 +307,8 @@ enum class TokenType {
     TOKEN_INTEGER_U256,     // ...u256
     TOKEN_INTEGER_U512,     // ...u512
     TOKEN_INTEGER_U1024,    // ...u1024
+    TOKEN_INTEGER_U2048,    // ...u2048 (LBIM)
+    TOKEN_INTEGER_U4096,    // ...u4096 (LBIM)
     
     // Signed integer literals
     TOKEN_INTEGER_I8,       // -128i8, 127i8
@@ -313,6 +319,8 @@ enum class TokenType {
     TOKEN_INTEGER_I256,     // ...i256
     TOKEN_INTEGER_I512,     // ...i512
     TOKEN_INTEGER_I1024,    // ...i1024
+    TOKEN_INTEGER_I2048,    // ...i2048 (LBIM)
+    TOKEN_INTEGER_I4096,    // ...i4096 (LBIM)
     
     // TBB (Twisted Balanced Binary) integer literals
     TOKEN_INTEGER_TBB8,     // 127tbb8, -127tbb8 (ERR = -128)

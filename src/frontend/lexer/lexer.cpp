@@ -75,6 +75,8 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"int256", TokenType::TOKEN_KW_INT256},
     {"int512", TokenType::TOKEN_KW_INT512},
     {"int1024", TokenType::TOKEN_KW_INT1024},
+    {"int2048", TokenType::TOKEN_KW_INT2048},
+    {"int4096", TokenType::TOKEN_KW_INT4096},
     
     // Type keywords - unsigned integers
     {"uint1", TokenType::TOKEN_KW_UINT1},
@@ -88,6 +90,8 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"uint256", TokenType::TOKEN_KW_UINT256},
     {"uint512", TokenType::TOKEN_KW_UINT512},
     {"uint1024", TokenType::TOKEN_KW_UINT1024},
+    {"uint2048", TokenType::TOKEN_KW_UINT2048},
+    {"uint4096", TokenType::TOKEN_KW_UINT4096},
     
     // Type keywords - TBB
     {"tbb8", TokenType::TOKEN_KW_TBB8},
@@ -956,7 +960,7 @@ void Lexer::scanNumber() {
                   "  Example: 3.14f32");
         } else {
             error("Invalid type suffix '" + suffix + "' for integer literal. "
-                  "Integer literals require: u8-u1024, i8-i1024, or tbb8-tbb64.\n"
+                  "Integer literals require: u8-u4096, i8-i4096, or tbb8-tbb64.\n"
                   "  Example: 42u32 or -10i32");
         }
         addToken(TokenType::TOKEN_ERROR);
@@ -1366,6 +1370,8 @@ TokenType Lexer::suffixToTokenType(const std::string& suffix, bool isFloat) {
         if (suffix == "u256") return TokenType::TOKEN_INTEGER_U256;
         if (suffix == "u512") return TokenType::TOKEN_INTEGER_U512;
         if (suffix == "u1024") return TokenType::TOKEN_INTEGER_U1024;
+        if (suffix == "u2048") return TokenType::TOKEN_INTEGER_U2048;
+        if (suffix == "u4096") return TokenType::TOKEN_INTEGER_U4096;
         
         // Signed integers
         if (suffix == "i8") return TokenType::TOKEN_INTEGER_I8;
@@ -1376,6 +1382,8 @@ TokenType Lexer::suffixToTokenType(const std::string& suffix, bool isFloat) {
         if (suffix == "i256") return TokenType::TOKEN_INTEGER_I256;
         if (suffix == "i512") return TokenType::TOKEN_INTEGER_I512;
         if (suffix == "i1024") return TokenType::TOKEN_INTEGER_I1024;
+        if (suffix == "i2048") return TokenType::TOKEN_INTEGER_I2048;
+        if (suffix == "i4096") return TokenType::TOKEN_INTEGER_I4096;
         
         // TBB (Twisted Balanced Binary)
         if (suffix == "tbb8") return TokenType::TOKEN_INTEGER_TBB8;

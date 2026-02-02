@@ -8,11 +8,11 @@
  */
 
 func:test = void() {
-    wild void@:p = @extern("aria_alloc", 10);
+    wild void->p = @extern("aria_alloc", 10);
     int32:i = 0;
 
     while (i < 2) {
-        wild int8@:ptr = @cast<wild int8@>(p);
+        wild int8->ptr = @cast<wild int8@>(p);
         ptr@ = 42;  // Should error on iteration 2 (use after free)
         @extern("aria_free", p);
         i = i + 1;

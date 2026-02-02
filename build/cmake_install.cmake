@@ -1,4 +1,4 @@
-# Install script for directory: /home/randy/._____RANDY_____/REPOS/aria
+# Install script for directory: /home/randy/Workspace/REPOS/aria
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -44,20 +44,20 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/randy/._____RANDY_____/REPOS/aria/build/vendor/toml11/cmake_install.cmake")
+  include("/home/randy/Workspace/REPOS/aria/build/vendor/toml11/cmake_install.cmake")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/randy/._____RANDY_____/REPOS/aria/build/libaria_runtime.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/randy/Workspace/REPOS/aria/build/libaria_runtime.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  include("/home/randy/._____RANDY_____/REPOS/aria/build/CMakeFiles/aria_runtime.dir/install-cxx-module-bmi-Debug.cmake" OPTIONAL)
+  include("/home/randy/Workspace/REPOS/aria/build/CMakeFiles/aria_runtime.dir/install-cxx-module-bmi-Debug.cmake" OPTIONAL)
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/randy/._____RANDY_____/REPOS/aria/build/tests/cmake_install.cmake")
+  include("/home/randy/Workspace/REPOS/aria/build/tests/cmake_install.cmake")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)
@@ -68,5 +68,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/randy/._____RANDY_____/REPOS/aria/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/randy/Workspace/REPOS/aria/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

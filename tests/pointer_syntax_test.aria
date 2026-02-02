@@ -9,7 +9,7 @@ struct:Point = {
 /// Test 1: Address-of operator (@variable)
 func:test_address_of = int32() {
     int64:myInt = 345;
-    int64@:myPtr = @myInt;  // Get address of myInt
+    int64->myPtr = @myInt;  // Get address of myInt
     
     pass(0);
 };
@@ -18,7 +18,7 @@ func:test_address_of = int32() {
 func:test_arrow_operator = int32() {
     Point:p = { x: 10, y: 20 };
     
-    wild Point@:ptr = @p;
+    wild Point->ptr = @p;
     int32:x_val = ptr->x;  // Member access through pointer with ->
     int32:y_val = ptr->y;
     
@@ -28,7 +28,7 @@ func:test_arrow_operator = int32() {
 /// Test 3: Standalone pointer dereference
 func:test_pointer_deref = int32() {
     int64:value = 42;
-    int64@:ptr = @value;
+    int64->ptr = @value;
     
     // Try to dereference - which syntax works?
     // int64:retrieved = ptr@;    // Option 1: ptr@
@@ -43,7 +43,7 @@ func:test_pointer_deref = int32() {
 
 /// Test 4: Array indexing (known to work)
 func:test_array_indexing = int32() {
-    int8@:str = "Hello";
+    int8->str = "Hello";
     int8:first = str[0];   // 'H'
     int8:second = str[1];  // 'e'
     

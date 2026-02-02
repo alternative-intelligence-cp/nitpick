@@ -3,7 +3,7 @@
 /// Test 1: Basic address-of and int64 pointer
 func:test_basic_pointer = int32() {
     int64:myInt = 345;
-    int64@:myPtr = @myInt;  // Randy's design: @ for address-of
+    int64->myPtr = @myInt;  // Randy's design: @ for address-of
     
     // Try to dereference using array indexing (workaround)
     int64:retrieved = myPtr[0];
@@ -14,7 +14,7 @@ func:test_basic_pointer = int32() {
 /// Test 2: int32 pointer
 func:test_int32_pointer = int32() {
     int32:value = 42;
-    int32@:ptr = @value;
+    int32->ptr = @value;
     int32:got = ptr[0];
     
     pass(0);
@@ -23,7 +23,7 @@ func:test_int32_pointer = int32() {
 /// Test 3: int8 pointer (string-like)
 func:test_int8_pointer = int32() {
     int8:char = 65;  // 'A'
-    int8@:ptr = @char;
+    int8->ptr = @char;
     int8:retrieved = ptr[0];
     
     pass(0);
