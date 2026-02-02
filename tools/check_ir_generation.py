@@ -10,10 +10,16 @@ from pathlib import Path
 
 def test_compile(filepath):
     """Test if a file compiles to an executable."""
+    output_path = Path("/tmp/aria_test_out")
+    
+    # Remove old output if exists
+    if output_path.exists():
+        output_path.unlink()
+    
     try:
         # Run compiler with timeout
         result = subprocess.run(
-            ["./build/ariac", str(filepath), "-o", "/tmp/aria_test_out"],
+            ["./build/ariac", str(filepath), "-o", str(output_path)],
             capture_output=True,
             text=True,
             timeout=10
@@ -33,10 +39,14 @@ def test_compile(filepath):
         if 'linker command failed' in stderr or 'undefined reference' in stderr:
             return False, "LINKER_ERROR"
         
-        # Check if output exists
-        if Path("/tmp/aria_test_out").exists():
-            Path("/tmp/aria_test_out").unlink()  # Clean up
+        # Check if output exists (check AFTER compilation completes)
+        if output_path.exists():
+            output_path.unlink()  # Clean up
             return True, "SUCCESS"
+        
+        # If no errors but no output, something weird happened
+        if result.returncode != 0:
+            return False, f"EXIT_CODE_{result.returncode}"
         
         return False, "NO_OUTPUT"
         
