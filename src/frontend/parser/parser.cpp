@@ -1175,6 +1175,83 @@ ASTNodePtr Parser::parseArrayLiteral() {
 ASTNodePtr Parser::parseObjectLiteral() {
     Token braceToken = advance(); // consume '{'
     
+    // Check if this is a fraction literal {val, val, val} vs struct literal {name: val}
+    // Fraction literals have positional values, struct literals have named fields
+    // Peek ahead to distinguish: if we see a non-identifier or no colon after identifier, it's positional
+    bool isFractionLiteral = false;
+    if (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // Look ahead to see if this is positional (fraction) or named (struct)
+        size_t saved = current;
+        
+        // If first token is not an identifier, it's definitely positional
+        if (!check(TokenType::TOKEN_IDENTIFIER)) {
+            isFractionLiteral = true;
+        } else {
+            // It's an identifier - check if followed by colon
+            advance(); // skip identifier
+            if (!check(TokenType::TOKEN_COLON)) {
+                // No colon means positional, not named field
+                isFractionLiteral = true;
+            }
+        }
+        
+        current = saved; // restore position
+    }
+    
+    // Handle fraction literal {whole, num, denom}
+    if (isFractionLiteral) {
+        std::vector<ASTNodePtr> values;
+        
+        // Parse comma-separated values (flexible count for different types)
+        // frac types: 3 values (whole, num, denom)
+        // tfp types: 2 values (exponent, mantissa)
+        // Could be used for other positional initializations
+        do {
+            ASTNodePtr value = parseExpression();
+            if (!value) {
+                error("Expected expression in positional literal");
+                return nullptr;
+            }
+            values.push_back(value);
+            
+            if (!check(TokenType::TOKEN_RIGHT_BRACE)) {
+                if (!match(TokenType::TOKEN_COMMA)) {
+                    error("Expected ',' or '}' in positional literal");
+                    return nullptr;
+                }
+            }
+        } while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd());
+        
+        consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after positional literal");
+        
+        // Convert to struct literal with appropriate field names based on count
+        std::vector<ObjectLiteralExpr::Field> fields;
+        
+        if (values.size() == 2) {
+            // TFP types: {exponent, mantissa}
+            fields.push_back(ObjectLiteralExpr::Field("exponent", values[0]));
+            fields.push_back(ObjectLiteralExpr::Field("mantissa", values[1]));
+        } else if (values.size() == 3) {
+            // Frac types: {whole, num, denom}
+            fields.push_back(ObjectLiteralExpr::Field("whole", values[0]));
+            fields.push_back(ObjectLiteralExpr::Field("num", values[1]));
+            fields.push_back(ObjectLiteralExpr::Field("denom", values[2]));
+        } else {
+            // Generic positional literal - use indices as field names
+            for (size_t i = 0; i < values.size(); i++) {
+                fields.push_back(ObjectLiteralExpr::Field("_" + std::to_string(i), values[i]));
+            }
+        }
+        
+        return std::make_shared<ObjectLiteralExpr>(
+            fields,
+            "",  // Type will be inferred from context
+            braceToken.line,
+            braceToken.column
+        );
+    }
+    
+    // Handle regular struct/object literal {name: value, ...}
     std::vector<ObjectLiteralExpr::Field> fields;
     
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
