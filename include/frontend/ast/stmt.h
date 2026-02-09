@@ -19,6 +19,7 @@ public:
     ASTNodePtr initializer;    // Can be nullptr
     bool isWild;               // wild keyword (opt-out of GC)
     bool isConst;              // const keyword
+    bool isFixed;              // fixed keyword (runtime immutability)
     bool isStack;              // stack keyword
     bool isGC;                 // gc keyword (explicit)
     
@@ -32,7 +33,7 @@ public:
                 ASTNodePtr init = nullptr, int line = 0, int column = 0)
         : ASTNode(NodeType::VAR_DECL, line, column),
           typeName(type), typeNode(nullptr), varName(name), initializer(init),
-          isWild(false), isConst(false), isStack(false), isGC(false),
+          isWild(false), isConst(false), isFixed(false), isStack(false), isGC(false),
           scope_depth(0), requires_drop(false), is_pinned_shadow(false), pinned_target("") {}
     
     // Constructor with typeNode support
@@ -40,7 +41,7 @@ public:
                 ASTNodePtr init = nullptr, int line = 0, int column = 0)
         : ASTNode(NodeType::VAR_DECL, line, column),
           typeName(""), typeNode(typeN), varName(name), initializer(init),
-          isWild(false), isConst(false), isStack(false), isGC(false),
+          isWild(false), isConst(false), isFixed(false), isStack(false), isGC(false),
           scope_depth(0), requires_drop(false), is_pinned_shadow(false), pinned_target("") {}
     
     std::string toString() const override;
@@ -75,6 +76,7 @@ public:
     bool isAsync;
     bool isPublic;
     bool isExtern;
+    bool returnIsWild = false;  // true if 'wild' qualifier on return type (for FFI)
     std::vector<GenericParamInfo> genericParams;  // For generics: func<T: Trait, U>
     
     FuncDeclStmt(const std::string& name, ASTNodePtr retType,
@@ -124,6 +126,40 @@ public:
 };
 
 /**
+ * Type declaration node
+ * Represents: Type:Name = { func:create=...; func:destroy=...; struct:internal=...; struct:interface=...; };
+ * Organizes functions and data into composable units (like classes without inheritance)
+ * Desugars to combined struct + UFCS methods during semantic analysis
+ */
+class TypeDeclStmt : public ASTNode {
+public:
+    std::string typeName;
+    
+    // Required/Optional functions
+    ASTNodePtr createFunc;   // func:create (constructor) - optional but recommended
+    ASTNodePtr destroyFunc;  // func:destroy (destructor) - optional
+    
+    // Struct definitions (all optional)
+    ASTNodePtr internalStruct;   // struct:internal (private members)
+    ASTNodePtr interfaceStruct;  // struct:interface (public members)
+    ASTNodePtr typeStruct;       // struct:type (static members)
+    
+    // Additional methods
+    std::vector<ASTNodePtr> methods;  // All other func: declarations
+    
+    TypeDeclStmt(const std::string& name, int line = 0, int column = 0)
+        : ASTNode(NodeType::TYPE_DECL, line, column),
+          typeName(name),
+          createFunc(nullptr),
+          destroyFunc(nullptr),
+          internalStruct(nullptr),
+          interfaceStruct(nullptr),
+          typeStruct(nullptr) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * Function parameter node
  * Represents: type:name in function parameters
  */
@@ -132,6 +168,7 @@ public:
     ASTNodePtr typeNode;  // Changed from std::string to ASTNodePtr
     std::string paramName;
     ASTNodePtr defaultValue;  // Can be nullptr
+    bool isWild = false;      // true if 'wild' qualifier present (for FFI)
     
     ParameterNode(ASTNodePtr type, const std::string& name,
                   ASTNodePtr defVal = nullptr, int line = 0, int column = 0)

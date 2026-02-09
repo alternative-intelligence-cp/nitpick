@@ -1503,7 +1503,8 @@ static const std::unordered_set<std::string> KNOWN_DEALLOCATORS = {
     "dispose", "cleanup",
     "arena_reset", "arena_destroy",
     "buffer_free", "string_free",
-    "wildx_free"
+    "wildx_free",
+    "drop"  // Wild pointer drop function
 };
 
 // Known cleanup method names (for x.method() style)

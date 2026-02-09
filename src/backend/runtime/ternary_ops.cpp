@@ -14,6 +14,7 @@
 
 #include "backend/runtime/ternary_ops.h"
 #include <cstdint>
+#include <cstdio>   // for fprintf (debug)
 #include <cstdlib>
 #include <limits>
 
@@ -149,20 +150,42 @@ int16_t aria_trit_add_carry(int8_t a, int8_t b, int8_t carry_in) {
 }
 
 int8_t aria_trit_add(int8_t a, int8_t b) {
+    // ERR propagation (sticky error)
+    if (a == -128 || b == -128) return -128;  // TRIT_ERR
+    
     int16_t result = aria_trit_add_carry(a, b, 0);
-    return static_cast<int8_t>(result & 0xFF); // Just return sum, ignore carry
+    int8_t sum = static_cast<int8_t>(result & 0xFF);
+    
+    // Check if result is out of valid trit range (-1, 0, 1)
+    if (sum < -1 || sum > 1) return -128;  // Overflow → ERR
+    
+    return sum;
 }
 
 int8_t aria_trit_sub(int8_t a, int8_t b) {
+    // ERR propagation (sticky error)
+    if (a == -128 || b == -128) return -128;  // TRIT_ERR
+    
     return aria_trit_add(a, static_cast<int8_t>(-b));
 }
 
 int8_t aria_trit_mul(int8_t a, int8_t b) {
+    // ERR propagation (sticky error)
+    if (a == -128 || b == -128) return -128;  // TRIT_ERR
+    
     // Simple multiplication: {-1, 0, 1} × {-1, 0, 1}
-    return static_cast<int8_t>(a * b);
+    int8_t result = static_cast<int8_t>(a * b);
+    
+    // Validate result is in trit range
+    if (result < -1 || result > 1) return -128;  // Overflow → ERR
+    
+    return result;
 }
 
 int8_t aria_trit_neg(int8_t a) {
+    // ERR propagation (sticky error)
+    if (a == -128) return -128;  // TRIT_ERR
+    
     return static_cast<int8_t>(-a);
 }
 
@@ -663,4 +686,36 @@ int8_t aria_nyte_get_nit(uint16_t nyte, uint8_t index) {
     else if (rem < -4) rem += 9;
     
     return static_cast<int8_t>(rem);
+}
+// ==============================================================================
+// TBB (Ternary/Binary/Boolean) Type Conversion Functions
+// ==============================================================================
+
+/**
+ * @brief Convert int32 to TBB8 (Ternary-like type with range -127 to 127)
+ * @param value Integer value to convert
+ * @return TBB8 value in range [-127, 127], or -128 (ERR) if out of range
+ * 
+ * CRITICAL SAFETY: This prevents wraparound bugs (e.g., 300 → 44)
+ * Used for safety-critical systems where overflow must be detected
+ */
+int8_t aria_tbb8_from_int(int32_t value) {
+    // Valid range for TBB8: [-127, 127]
+    // Sentinel -128 represents ERR
+    if (value < -127 || value > 127) {
+        return -128; // ERR sentinel
+    }
+    return static_cast<int8_t>(value);
+}
+
+/**
+ * @brief Convert TBB8 to int32
+ * @param value TBB8 value
+ * @return int32 representation, or INT32_MIN if input is ERR
+ */
+int32_t aria_tbb8_to_int(int8_t value) {
+    if (value == -128) {
+        return INT32_MIN; // Propagate error
+    }
+    return static_cast<int32_t>(value);
 }

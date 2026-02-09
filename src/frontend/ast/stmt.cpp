@@ -100,6 +100,60 @@ std::string EnumDeclStmt::toString() const {
     return oss.str();
 }
 
+std::string TypeDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "TypeDecl(Type:" << typeName << " = {";
+    
+    // Count components for better output
+    int componentCount = 0;
+    if (createFunc) componentCount++;
+    if (destroyFunc) componentCount++;
+    if (!methods.empty()) componentCount++;
+    if (internalStruct) componentCount++;
+    if (interfaceStruct) componentCount++;
+    if (typeStruct) componentCount++;
+    
+    if (componentCount > 0) {
+        oss << " ";
+        bool first = true;
+        
+        if (createFunc) {
+            if (!first) oss << ", ";
+            oss << "func:create";
+            first = false;
+        }
+        if (destroyFunc) {
+            if (!first) oss << ", ";
+            oss << "func:destroy";
+            first = false;
+        }
+        if (!methods.empty()) {
+            if (!first) oss << ", ";
+            oss << methods.size() << " method(s)";
+            first = false;
+        }
+        if (internalStruct) {
+            if (!first) oss << ", ";
+            oss << "struct:internal";
+            first = false;
+        }
+        if (interfaceStruct) {
+            if (!first) oss << ", ";
+            oss << "struct:interface";
+            first = false;
+        }
+        if (typeStruct) {
+            if (!first) oss << ", ";
+            oss << "struct:type";
+            first = false;
+        }
+        oss << " ";
+    }
+    
+    oss << "})";
+    return oss.str();
+}
+
 std::string ParameterNode::toString() const {
     std::string result = (typeNode ? typeNode->toString() : "unknown") + ":" + paramName;
     if (defaultValue) {

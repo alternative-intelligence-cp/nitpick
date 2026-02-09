@@ -45,6 +45,7 @@ public:
         FUNC_DECL,            // Function declaration: func:name = returnType(params) { body };
         STRUCT_DECL,          // Struct declaration: struct Name { fields };
         ENUM_DECL,            // Enum declaration: enum Name { VARIANT = value };
+        TYPE_DECL,            // Type declaration: Type:Name = { create, destroy, methods, structs };
         OPAQUE_STRUCT,        // Opaque struct declaration: opaque struct:Name; (FFI)
         TRAIT_DECL,           // Trait declaration: trait:Name = { methods };
         IMPL_DECL,            // Trait implementation: impl:Trait:for:Type = { methods };

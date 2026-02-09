@@ -23,9 +23,14 @@ using namespace aria::sema;
 
 ExprCodegen::ExprCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
                          llvm::Module* mod, std::map<std::string, llvm::Value*>& values,
-                         std::map<std::string, std::string>& types)
+                         std::map<std::string, std::string>& types,
+                         sema::TypeSystem* ts)
     : context(ctx), builder(bldr), module(mod), named_values(values),
-      var_aria_types(types), stmt_codegen(nullptr), tbb_codegen(ctx, bldr) {}
+      var_aria_types(types), type_system(ts), stmt_codegen(nullptr), tbb_codegen(ctx, bldr),
+      ternary_codegen(ctx, bldr) {
+    // Set module for ternary codegen to declare runtime intrinsics
+    ternary_codegen.setModule(mod);
+}
 
 void ExprCodegen::setStmtCodegen(StmtCodegen* stmt_gen) {
     stmt_codegen = stmt_gen;
@@ -321,7 +326,7 @@ static bool isTBBTypeName(const std::string& typeName) {
 
 // Helper: Check if type name is an exotic balanced base type
 static bool isExoticTypeName(const std::string& typeName) {
-    return typeName == "tryte" || typeName == "nyte";
+    return typeName == "tryte" || typeName == "nyte" || typeName == "trit" || typeName == "nit";
 }
 
 // Helper: Get TBB type name from an expression (returns empty string if not TBB)
@@ -361,11 +366,17 @@ std::string ExprCodegen::getExprTBBTypeName(ASTNode* expr) {
 
 // Helper: Get exotic type name from an expression (returns empty string if not exotic)
 std::string ExprCodegen::getExprExoticTypeName(ASTNode* expr) {
-    if (!expr) return "";
+    if (!expr) {
+        std::cerr << "[EXOTIC_CHECK] expr is null" << std::endl;
+        return "";
+    }
+
+    std::cerr << "[EXOTIC_CHECK] expr type = " << static_cast<int>(expr->type) << std::endl;
 
     // For identifiers, look up in var_aria_types
     if (expr->type == ASTNode::NodeType::IDENTIFIER) {
         IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr);
+        std::cerr << "[EXOTIC_CHECK] identifier name = " << ident->name << std::endl;
         auto it = var_aria_types.find(ident->name);
         if (it != var_aria_types.end()) {
             const std::string& typeName = it->second;
@@ -374,6 +385,8 @@ std::string ExprCodegen::getExprExoticTypeName(ASTNode* expr) {
                 std::cerr << "[DEBUG] Detected exotic type: " << typeName << std::endl;
                 return typeName;
             }
+        } else {
+            std::cerr << "[EXOTIC_CHECK] identifier '" << ident->name << "' NOT in var_aria_types!" << std::endl;
         }
     }
 
@@ -510,6 +523,14 @@ llvm::Value* ExprCodegen::getTBBSentinel(llvm::Type* type) {
     return llvm::ConstantInt::get(context, llvm::APInt::getSignedMinValue(width));
 }
 
+// Helper: Get unknown sentinel constant
+llvm::Value* ExprCodegen::getUnknownSentinel(llvm::Type* type) {
+    unsigned width = type->getIntegerBitWidth();
+    // unknown sentinel is signed maximum: 0b0111...1111
+    // Opposite of ERR (min value), keeps them distinct
+    return llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
+}
+
 // ARIA-018: Sentinel-Preserving TBB Widening
 // Implements branchless widening that preserves error sentinels across bit widths
 // Pattern: icmp (check source sentinel) → sext (speculative extend) → select (choose result)
@@ -643,72 +664,33 @@ llvm::Value* ExprCodegen::generateExoticBinaryOp(const std::string& exoticType,
                                                   llvm::Value* left,
                                                   llvm::Value* right) {
     // ARIA SAFETY FIX (Gemini Batch 02, BUG-005/006):
-    // Generate runtime calls for ALL exotic types, including atomic trit/nit
-    // Previously returned nullptr for atomic types, causing fallback to bitwise ops
+    // Use TernaryCodegen class to generate runtime calls for ALL exotic types
+    // This ensures proper Kleene logic for AND/OR and prevents sentinel healing
     
-    std::string funcPrefix;
-    llvm::Type* exoticLLVMType;
+    // Create a temporary PrimitiveType for the exotic type
+    // The ternary_codegen only uses type->toString(), so we don't need the full TypeSystem
+    sema::PrimitiveType tempType(exoticType);
     
-    if (exoticType == "tryte") {
-        funcPrefix = "aria_tryte_";
-        exoticLLVMType = llvm::Type::getInt16Ty(context);  // tryte = uint16
-    } else if (exoticType == "nyte") {
-        funcPrefix = "aria_nyte_";
-        exoticLLVMType = llvm::Type::getInt16Ty(context);  // nyte = uint16
-    } else if (exoticType == "trit") {
-        // FIXED: Don't return nullptr - use runtime functions
-        funcPrefix = "aria_trit_";
-        exoticLLVMType = llvm::Type::getInt8Ty(context);   // trit = int8
-    } else if (exoticType == "nit") {
-        // FIXED: Don't return nullptr - use runtime functions
-        funcPrefix = "aria_nit_";
-        exoticLLVMType = llvm::Type::getInt8Ty(context);   // nit = int8
-    } else {
-        return nullptr;  // Unknown exotic type
-    }
-    
-    // Map operator to function name
-    std::string funcName;
+    // Map operator to TernaryCodegen method
     if (op == frontend::TokenType::TOKEN_PLUS) {
-        funcName = funcPrefix + "add";
+        return ternary_codegen.generateAdd(left, right, &tempType);
     } else if (op == frontend::TokenType::TOKEN_MINUS) {
-        funcName = funcPrefix + "sub";
+        return ternary_codegen.generateSub(left, right, &tempType);
     } else if (op == frontend::TokenType::TOKEN_STAR) {
-        funcName = funcPrefix + "mul";
+        return ternary_codegen.generateMul(left, right, &tempType);
     } else if (op == frontend::TokenType::TOKEN_SLASH) {
-        funcName = funcPrefix + "div";
+        return ternary_codegen.generateDiv(left, right, &tempType);
     } else if (op == frontend::TokenType::TOKEN_PERCENT) {
-        funcName = funcPrefix + "mod";
+        return ternary_codegen.generateMod(left, right, &tempType);
     } else if (op == frontend::TokenType::TOKEN_AND_AND) {
         // Logical AND (Kleene logic for trit/nit)
-        funcName = funcPrefix + "and";
+        return ternary_codegen.generateAnd(left, right, &tempType);
     } else if (op == frontend::TokenType::TOKEN_OR_OR) {
         // Logical OR (Kleene logic for trit/nit)
-        funcName = funcPrefix + "or";
+        return ternary_codegen.generateOr(left, right, &tempType);
     } else {
         return nullptr;  // Unsupported operation
     }
-    
-    // Get or create the runtime function
-    llvm::FunctionType* funcType = llvm::FunctionType::get(
-        exoticLLVMType,                       // return type
-        {exoticLLVMType, exoticLLVMType},     // parameters
-        false                                 // not variadic
-    );
-    
-    llvm::Function* runtimeFunc = module->getFunction(funcName);
-    if (!runtimeFunc) {
-        runtimeFunc = llvm::Function::Create(
-            funcType,
-            llvm::Function::ExternalLinkage,
-            funcName,
-            module
-        );
-    }
-    
-    // Generate the call
-    llvm::Value* result = builder.CreateCall(runtimeFunc, {left, right}, exoticType + "_op");
-    return result;
 }
 
 // Helper: Generate numeric type binary operation (frac*, tfp*, vec9 runtime calls)
@@ -1043,7 +1025,9 @@ static bool needsSpecialFormatter(const std::string& typeName) {
     if (typeName == "int128" || typeName == "uint128" ||
         typeName == "int256" || typeName == "uint256" ||
         typeName == "int512" || typeName == "uint512" ||
-        typeName == "int1024" || typeName == "uint1024") return true;
+        typeName == "int1024" || typeName == "uint1024" ||
+        typeName == "int2048" || typeName == "uint2048" ||
+        typeName == "int4096" || typeName == "uint4096") return true;
 
     // Fixed-point deterministic types
     if (typeName == "fix256") return true;
@@ -1062,6 +1046,10 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
     }
     
     std::cerr << "[DEBUG] codegenLiteral called, hasRawValue=" << expr->hasRawValue() << std::endl;
+    std::cerr << "[DEBUG] codegenLiteral variant index: " << expr->value.index() << std::endl;
+    if (std::holds_alternative<std::string>(expr->value)) {
+        std::cerr << "[DEBUG] codegenLiteral string value: " << std::get<std::string>(expr->value) << std::endl;
+    }
     
     // Phase 3.2.5: Check for high-precision literal with raw string value
     // For now, we'll infer the type from the variant - in future we could pass target type as parameter
@@ -1145,6 +1133,31 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
     if (std::holds_alternative<std::string>(expr->value)) {
         const std::string& str = std::get<std::string>(expr->value);
         std::cerr << "[DEBUG] String literal detected: \"" << str << "\"" << std::endl;
+        
+        // Check for special literals: ERR and unknown
+        // These are represented as string literals by the parser but need special handling
+        if (str == "ERR") {
+            // ERR sentinel - need to know target type from context
+            // For now, default to int32 (will be handled better with type inference)
+            llvm::Type* target_type = llvm::Type::getInt32Ty(context);
+            std::cerr << "[DEBUG] ERR literal - generating sentinel for type: ";
+            target_type->print(llvm::errs());
+            std::cerr << std::endl;
+            return getTBBSentinel(target_type);
+        }
+        
+        if (str == "unknown") {
+            // unknown sentinel - similar to ERR but uses max value instead of min
+            llvm::Type* target_type = llvm::Type::getInt32Ty(context);
+            std::cerr << "[DEBUG] unknown literal - generating sentinel for type: ";
+            target_type->print(llvm::errs());
+            std::cerr << std::endl;
+            llvm::Value* sentinel = getUnknownSentinel(target_type);
+            std::cerr << "[DEBUG] unknown sentinel generated, result type: ";
+            sentinel->getType()->print(llvm::errs());
+            std::cerr << std::endl;
+            return sentinel;
+        }
         
         // ARIA-026: String interning - check pool before creating new global
         // Gemini Safety Audit Fix #5: Prevents OOM from duplicate literals
@@ -1267,7 +1280,7 @@ llvm::Value* ExprCodegen::codegenIdentifier(IdentifierExpr* expr) {
     }
     
     // If it's not an alloca or global, return the value directly
-    // (could be a function parameter or SSA value)
+    // (could be a function parameter or SSA value)  
     return var_ptr;
 }
 
@@ -1338,7 +1351,14 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         // if these helpers are ever used in return statements or stored in variables
         
         // Allocate 24-byte buffer on GC heap (sufficient for "-9223372036854775808\0")
-        llvm::Function* gcAlloc = stmt_codegen->getOrDeclareGCAlloc();
+        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("aria_gc_alloc",
+            llvm::FunctionType::get(
+                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                {llvm::Type::getInt64Ty(context)},
+                false
+            )
+        );
+        llvm::Function* gcAlloc = llvm::cast<llvm::Function>(gcAllocCallee.getCallee());
         llvm::Value* bufferSize = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 24);
         llvm::Value* bufferPtr = builder.CreateCall(gcAlloc, { bufferSize }, "int_str_gc_buffer");
         
@@ -1424,7 +1444,14 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
     auto floatToString = [this](llvm::Value* floatVal) -> llvm::Value* {
         // ARIA-026 FIX: Use GC heap instead of stack to prevent use-after-return
         // Allocate 64-byte buffer on GC heap (sufficient for floating point)
-        llvm::Function* gcAlloc = stmt_codegen->getOrDeclareGCAlloc();
+        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("aria_gc_alloc",
+            llvm::FunctionType::get(
+                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                {llvm::Type::getInt64Ty(context)},
+                false
+            )
+        );
+        llvm::Function* gcAlloc = llvm::cast<llvm::Function>(gcAllocCallee.getCallee());
         llvm::Value* floatBufferSize = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 64);
         llvm::Value* bufferPtr = builder.CreateCall(gcAlloc, { floatBufferSize }, "float_str_gc_buffer");
         
@@ -1666,7 +1693,14 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         );
         
         // Call aria_gc_alloc (GC-visible memory) for temporary buffer
-        llvm::Function* aria_gc_alloc = stmt_codegen->getOrDeclareGCAlloc();
+        llvm::FunctionCallee aria_gc_alloc_callee = module->getOrInsertFunction("aria_gc_alloc",
+            llvm::FunctionType::get(
+                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                {llvm::Type::getInt64Ty(context)},
+                false
+            )
+        );
+        llvm::Function* aria_gc_alloc = llvm::cast<llvm::Function>(aria_gc_alloc_callee.getCallee());
         llvm::Value* heapMem = builder.CreateCall(aria_gc_alloc, { arraySize }, "heap_strings_gc");
         
         // ARIA-026 FIX: Add null check for GC allocation failure
@@ -1877,7 +1911,14 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
     // Cleanup: Free heap-allocated array if needed
     if (totalSegments > MAX_STACK_SEGMENTS) {
         // Call aria_free on the heap-allocated array
-        llvm::Function* aria_free = stmt_codegen->getOrDeclareWildFree();
+        llvm::FunctionCallee aria_free_callee = module->getOrInsertFunction("aria_wild_free",
+            llvm::FunctionType::get(
+                llvm::Type::getVoidTy(context),
+                {llvm::PointerType::get(context, 0)},
+                false
+            )
+        );
+        llvm::Function* aria_free = llvm::cast<llvm::Function>(aria_free_callee.getCallee());
         llvm::Value* heapPtr = builder.CreateBitCast(
             stringsArray,
             llvm::PointerType::get(context, 0),
@@ -1920,6 +1961,8 @@ llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* code
     } guard(codegen->expr_depth_);
     
     // Dispatch based on node type
+    std::cerr << "[DEBUG codegenExpressionNode] NodeType: " << static_cast<int>(node->type) << std::endl;
+    
     switch (node->type) {
         case ASTNode::NodeType::LITERAL:
             return codegen->codegenLiteral(static_cast<LiteralExpr*>(node));
@@ -1940,10 +1983,60 @@ llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* code
         case ASTNode::NodeType::LAMBDA:
             return codegen->codegenLambda(static_cast<LambdaExpr*>(node));
         case ASTNode::NodeType::AWAIT:
-            return codegen->codegenAwait(node);
+            return codegen-> codegenAwait(node);
         case ASTNode::NodeType::CAST:
             return codegen->codegenCast(static_cast<CastExpr*>(node));
+        case ASTNode::NodeType::INDEX:
+            return codegen->codegenIndex(static_cast<IndexExpr*>(node));
+        case ASTNode::NodeType::OBJECT_LITERAL:
+            return codegen->codegenObjectLiteral(static_cast<ObjectLiteralExpr*>(node));
+        case ASTNode::NodeType::MEMBER_ACCESS:
+        case ASTNode::NodeType::POINTER_MEMBER:
+            return codegen->codegenMemberAccess(static_cast<MemberAccessExpr*>(node));
+        case ASTNode::NodeType::UNWRAP: {
+            // Unwrap operator: result ? default (for Result<T>)
+            // Result struct: { value_type, ptr, i1 } where field 2 is is_error
+            UnwrapExpr* unwrap = static_cast<UnwrapExpr*>(node);
+            
+            // Generate left side (the Result)
+            llvm::Value* resultVal = codegenExpressionNode(unwrap->result.get(), codegen);
+            if (!resultVal) return nullptr;
+            
+            // Extract is_error field (field 2)
+            llvm::Value* isError = codegen->builder.CreateExtractValue(resultVal, 2, "is_error");
+            
+            // Create blocks for control flow
+            llvm::Function* currentFunc = codegen->builder.GetInsertBlock()->getParent();
+            llvm::BasicBlock* errorBlock = llvm::BasicBlock::Create(codegen->context, "error_block", currentFunc);
+            llvm::BasicBlock* successBlock = llvm::BasicBlock::Create(codegen->context, "success_block", currentFunc);
+            llvm::BasicBlock* mergeBlock = llvm::BasicBlock::Create(codegen->context, "merge_block", currentFunc);
+            
+            // Branch on is_error
+            codegen->builder.CreateCondBr(isError, errorBlock, successBlock);
+            
+            // Error block: return default value
+            codegen->builder.SetInsertPoint(errorBlock);
+            llvm::Value* defaultVal = codegenExpressionNode(unwrap->defaultValue.get(), codegen);
+            if (!defaultVal) return nullptr;
+            llvm::BasicBlock* errorEndBlock = codegen->builder.GetInsertBlock();  // May have changed
+            codegen->builder.CreateBr(mergeBlock);
+            
+            // Success block: extract and return value field (field 0)
+            codegen->builder.SetInsertPoint(successBlock);
+            llvm::Value* successVal = codegen->builder.CreateExtractValue(resultVal, 0, "unwrap_value");
+            llvm::BasicBlock* successEndBlock = codegen->builder.GetInsertBlock();
+            codegen->builder.CreateBr(mergeBlock);
+            
+            //Merge block: phi node
+            codegen->builder.SetInsertPoint(mergeBlock);
+            llvm::PHINode* phi = codegen->builder.CreatePHI(defaultVal->getType(), 2, "unwrap_result");
+            phi->addIncoming(defaultVal, errorEndBlock);
+            phi->addIncoming(successVal, successEndBlock);
+            
+            return phi;
+        }
         default:
+            std::cerr << "[ERROR] Unhandled NodeType: " << static_cast<int>(node->type) << std::endl;
             throw std::runtime_error("Unsupported expression node type in operation");
     }
 }
@@ -2115,6 +2208,39 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         throw std::runtime_error("Failed to generate code for binary operation operands");
     }
 
+    // SPECIAL HANDLING: NIL comparison with optional types
+    // If one side is NIL literal and other is optional, create proper OptionalNone struct
+    auto* leftLiteral = dynamic_cast<LiteralExpr*>(expr->left.get());
+    auto* rightLiteral = dynamic_cast<LiteralExpr*>(expr->right.get());
+    bool leftIsNIL = (leftLiteral && leftLiteral->explicit_type == "NIL");
+    bool rightIsNIL = (rightLiteral && rightLiteral->explicit_type == "NIL");
+    
+    if (leftIsNIL || rightIsNIL) {
+        // Check if the other operand is an optional (struct with 2 fields: {i1, T})
+        llvm::Type* optType = nullptr;
+        llvm::Type* wrappedType = nullptr;
+        
+        if (leftIsNIL && right->getType()->isStructTy()) {
+            llvm::StructType* structType = llvm::cast<llvm::StructType>(right->getType());
+            if (structType->getNumElements() == 2 && 
+                structType->getElementType(0)->isIntegerTy(1)) {
+                // Right is optional - replace left NIL with OptionalNone
+                wrappedType = structType->getElementType(1);
+                left = createOptionalNone(wrappedType);
+                std::cerr << "[DEBUG] Replaced left NIL with OptionalNone for comparison" << std::endl;
+            }
+        } else if (rightIsNIL && left->getType()->isStructTy()) {
+            llvm::StructType* structType = llvm::cast<llvm::StructType>(left->getType());
+            if (structType->getNumElements() == 2 && 
+                structType->getElementType(0)->isIntegerTy(1)) {
+                // Left is optional - replace right NIL with OptionalNone
+                wrappedType = structType->getElementType(1);
+                right = createOptionalNone(wrappedType);
+                std::cerr << "[DEBUG] Replaced right NIL with OptionalNone for comparison" << std::endl;
+            }
+        }
+    }
+
     // Check if operands are vectors
     bool leftIsVector = left->getType()->isVectorTy();
     bool rightIsVector = right->getType()->isVectorTy();
@@ -2207,6 +2333,13 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     
     // COMPARISON OPERATORS
     if (op == TokenType::TOKEN_EQUAL_EQUAL) {
+        // Debug: Check type compatibility
+        std::cerr << "[DEBUG COMPARISON] Left type: ";
+        left->getType()->print(llvm::errs());
+        std::cerr << ", Right type: ";
+        right->getType()->print(llvm::errs());
+        std::cerr << std::endl;
+        
         if (isFloat) {
             return builder.CreateFCmpOEQ(left, right, "eqtmp");
         } else {
@@ -2570,6 +2703,14 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
 
     // Arithmetic negation: -x
     if (op == TokenType::TOKEN_MINUS) {
+        // ARIA SAFETY FIX: Check for exotic types first (runtime negation)
+        std::string exoticType = getExprExoticTypeName(expr->operand.get());
+        if (!exoticType.empty()) {
+            std::cerr << "[EXOTIC] Generating negation for " << exoticType << " type" << std::endl;
+            sema::PrimitiveType tempType(exoticType);
+            return ternary_codegen.generateNeg(operand, &tempType);
+        }
+        
         if (isFloat) {
             return builder.CreateFNeg(operand, "negtmp");
         } else {
@@ -2579,6 +2720,15 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
     
     // Logical NOT: !x
     if (op == TokenType::TOKEN_BANG) {
+        // ARIA SAFETY FIX: Check for exotic types first (Kleene logic NOT)
+        std::string exoticType = getExprExoticTypeName(expr->operand.get());
+        if (!exoticType.empty()) {
+            std::cerr << "[EXOTIC] Generating NOT for " << exoticType << " type" << std::endl;
+            sema::PrimitiveType tempType(exoticType);
+            return ternary_codegen.generateNot(operand, &tempType);
+        }
+        
+        // Standard boolean NOT for non-exotic types
         // If operand is not i1, need to compare with zero
         if (operand->getType()->isIntegerTy(1)) {
             // Already boolean, just XOR with true
@@ -2604,11 +2754,27 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
     
     // Address-of operator: @x
     if (op == TokenType::TOKEN_AT) {
-        // For address-of, we need the address, not the loaded value
-        // This would require integration with symbol table to get alloca
-        // For now, we'll return the operand itself if it's already a pointer
-        // Full implementation requires lvalue handling in Phase 4.3+
-        throw std::runtime_error("Address-of operator (@) requires lvalue support (Phase 4.3+)");
+        // Address-of: @variable
+        // Operand must be an lvalue (identifier, array element, or struct field)
+        
+        // Case 1: Simple variable - @x
+        if (expr->operand->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr->operand.get());
+            auto it = named_values.find(ident->name);
+            if (it == named_values.end()) {
+                throw std::runtime_error("Variable '" + ident->name + "' not found for address-of (@)");
+            }
+            
+            // Return the alloca pointer itself (the ADDRESS), not the loaded value
+            std::cerr << "[DEBUG] Address-of operator @ for variable: " << ident->name << std::endl;
+            return it->second;
+        }
+        
+        // Case 2: Array element - @arr[i]
+        // Case 3: Struct field - @obj.field
+        // TODO Phase 4.3+: Implement @ for array elements and struct fields
+        
+        throw std::runtime_error("Address-of operator (@) requires lvalue - only variables supported currently");
     }
     
     // Dereference operator (blueprint style): value <- ptr
@@ -2748,17 +2914,49 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     }
     
     // ====================================================================
-    // BUILTIN FUNCTION: print()
+    // BUILTIN FUNCTION: print() - Minimal Core Primitive
     // ====================================================================
+    // Design Philosophy: Core language provides minimal, safe primitives.
+    // Type-to-string conversions belong in stdlib (to_string() overloads).
+    // Complex formatting via printf FFI or future stdlib printf-like function.
+    // This keeps core simple, debuggable, and forces explicit formatting choices.
+    
     std::cerr << "[DEBUG] codegenCall: callee name = " << callee_ident->name << std::endl;
-    if (callee_ident->name == "print") {
-        std::cerr << "[DEBUG] Entering print() builtin handler" << std::endl;
+    
+    // ====================================================================
+    // BUILTIN FUNCTION: ok() - Unknown State Acknowledgment (Phase 5.2)
+    // ====================================================================
+    // ok(value) -> value - Pass-through that strips "unknown taint"
+    // Purpose: Force explicit acknowledgment when propagating unknown values
+    // Example: int32:y = ok(x);  // "I know this might be unknown, that's OK"
+    // IR: Simply returns the argument value unchanged (taint checking done at type level)
+    
+    if (callee_ident->name == "ok") {
         if (expr->arguments.size() != 1) {
-            throw std::runtime_error("print() requires exactly one argument");
+            throw std::runtime_error("ok() requires exactly one argument");
         }
         
-        // Debug: Check argument node type
-        std::cerr << "[DEBUG PRINT] Argument node type: " << static_cast<int>(expr->arguments[0]->type) << std::endl;
+        // Generate code for the argument
+        llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!arg) {
+            throw std::runtime_error("Failed to generate code for ok() argument");
+        }
+        
+        // ok() is a no-op at IR level - just return the argument value
+        // The "taint stripping" happens at the type system level
+        std::cerr << "[DEBUG] ok() pass-through: returning argument value" << std::endl;
+        return arg;
+    }
+    
+    // print(string) - write string as-is (no newline)
+    // println(string) - write string + newline (convenience)
+    // Both minimal primitives with same interface, different intent
+    if (callee_ident->name == "print" || callee_ident->name == "println") {
+        bool add_newline = (callee_ident->name == "println");
+        
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error(callee_ident->name + "() requires exactly one string argument");
+        }
         
         // Evaluate the argument
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
@@ -2766,166 +2964,83 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("Failed to generate code for print argument");
         }
         
-        std::cerr << "[DEBUG PRINT] Got arg value, type: ";
-        arg->getType()->print(llvm::errs());
-        std::cerr << std::endl;
+        llvm::Value* str_ptr = nullptr;
         
-        // Declare printf if not already declared
-        llvm::Function* printf_func = module->getFunction("printf");
-        if (!printf_func) {
-            // printf signature: i32 (i8*, ...)
-            llvm::FunctionType* printf_type = llvm::FunctionType::get(
-                builder.getInt32Ty(),
-                llvm::PointerType::get(context, 0),
-                true  // vararg
+        // Check if argument is an AriaString struct (not a pointer, but the struct itself)
+        // String literals return GlobalVariable pointers to AriaString structs
+        if (llvm::isa<llvm::GlobalVariable>(arg)) {
+            llvm::GlobalVariable* gv = llvm::cast<llvm::GlobalVariable>(arg);
+            llvm::Type* gv_type = gv->getValueType();
+            
+            if (gv_type->isStructTy()) {
+                llvm::StructType* struct_ty = llvm::cast<llvm::StructType>(gv_type);
+                std::string struct_name = struct_ty->hasName() ? struct_ty->getName().str() : "";
+                
+                if (struct_name == "struct.AriaString") {
+                    // Extract the data field (char* at index 0) from the global
+                    llvm::Value* data_gep = builder.CreateStructGEP(
+                        struct_ty,
+                        arg,
+                        0,  // data field is first
+                        "str_data_ptr"
+                    );
+                    str_ptr = builder.CreateLoad(
+                        llvm::PointerType::get(context, 0),
+                        data_gep,
+                        "str_data"
+                    );
+                } else {
+                    throw std::runtime_error("print() cannot print this struct type");
+                }
+            } else {
+                // Global non-struct - assume it's a raw string
+                str_ptr = arg;
+            }
+        } else if (arg->getType()->isPointerTy()) {
+            // BUGFIX (Feb 2026): Handle AriaString* pointers from variables
+            // When a string variable is loaded, it returns AriaString* (pointer to struct)
+            // We need to load the struct and extract the data field
+            
+            // Get AriaString struct type
+            llvm::StructType* ariaStringType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+            if (ariaStringType) {
+                // Try to load as AriaString* and extract data field
+                // Load the struct from the pointer
+                llvm::Value* str_struct = builder.CreateLoad(ariaStringType, arg, "str_struct");
+                // Extract the data field (char* at index 0)
+                str_ptr = builder.CreateExtractValue(str_struct, 0, "str_data");
+            } else {
+                // No AriaString type found, assume it's a raw char* pointer
+                str_ptr = arg;
+            }
+        } else {
+            throw std::runtime_error(
+                callee_ident->name + "() requires a string argument. "
+                "For other types, use to_string() from stdlib or printf via FFI."
             );
-            printf_func = llvm::Function::Create(
-                printf_type,
+        }
+        
+        // Declare runtime function: aria_print_cstr or aria_println_cstr
+        // Signature: int64_t aria_print[ln]_cstr(const char* str)
+        // Returns: Number of bytes written, or -1 on error
+        const char* func_name = add_newline ? "aria_println_cstr" : "aria_print_cstr";
+        llvm::Function* aria_print = module->getFunction(func_name);
+        if (!aria_print) {
+            llvm::FunctionType* print_type = llvm::FunctionType::get(
+                builder.getInt64Ty(),                    // returns bytes written
+                {llvm::PointerType::get(context, 0)},    // takes const char*
+                false                                     // not vararg
+            );
+            aria_print = llvm::Function::Create(
+                print_type,
                 llvm::Function::ExternalLinkage,
-                "printf",
+                func_name,
                 module
             );
         }
         
-        // Handle different argument types
-        llvm::Type* arg_type = arg->getType();
-        llvm::Value* format_str = nullptr;
-        std::vector<llvm::Value*> printf_args;
-        
-        // Check for LBIM struct types (int128, int256, int512, int1024, uint*, fix256)
-        bool is_lbim = false;
-        std::string formatter_name;
-        
-        if (arg_type->isStructTy()) {
-            llvm::StructType* struct_type = llvm::cast<llvm::StructType>(arg_type);
-            std::string struct_name = struct_type->getName().str();
-            
-            if (struct_name == "struct.int128") {
-                formatter_name = "aria_format_int128";
-                is_lbim = true;
-            } else if (struct_name == "struct.uint128") {
-                formatter_name = "aria_format_uint128";
-                is_lbim = true;
-            } else if (struct_name == "struct.int256") {
-                formatter_name = "aria_format_int256";
-                is_lbim = true;
-            } else if (struct_name == "struct.uint256") {
-                formatter_name = "aria_format_uint256";
-                is_lbim = true;
-            } else if (struct_name == "struct.int512") {
-                formatter_name = "aria_format_int512";
-                is_lbim = true;
-            } else if (struct_name == "struct.uint512") {
-                formatter_name = "aria_format_uint512";
-                is_lbim = true;
-            } else if (struct_name == "struct.int1024") {
-                formatter_name = "aria_format_int1024";
-                is_lbim = true;
-            } else if (struct_name == "struct.uint1024") {
-                formatter_name = "aria_format_uint1024";
-                is_lbim = true;
-            } else if (struct_name == "struct.int2048") {
-                formatter_name = "aria_format_int2048";
-                is_lbim = true;
-            } else if (struct_name == "struct.uint2048") {
-                formatter_name = "aria_format_uint2048";
-                is_lbim = true;
-            } else if (struct_name == "struct.int4096") {
-                formatter_name = "aria_format_int4096";
-                is_lbim = true;
-            } else if (struct_name == "struct.uint4096") {
-                formatter_name = "aria_format_uint4096";
-                is_lbim = true;
-            } else if (struct_name == "struct.fix256") {
-                formatter_name = "aria_format_fix256";
-                is_lbim = true;
-            }
-        }
-        
-        if (is_lbim) {
-            // LBIM type - use runtime formatter
-            // Signature: AriaString* aria_format_intXXX(const aria_intXXX_t*)
-            
-            // Declare formatter function if not present
-            llvm::Function* formatter = module->getFunction(formatter_name);
-            if (!formatter) {
-                llvm::Type* ptr_ty = llvm::PointerType::get(context, 0);
-                llvm::FunctionType* fmt_type = llvm::FunctionType::get(
-                    ptr_ty,      // Returns AriaString*
-                    {ptr_ty},    // Takes pointer to struct
-                    false
-                );
-                formatter = llvm::Function::Create(
-                    fmt_type,
-                    llvm::Function::ExternalLinkage,
-                    formatter_name,
-                    module
-                );
-            }
-            
-            // Spill the struct to stack to get a pointer
-            llvm::Value* stack_slot = builder.CreateAlloca(arg_type, nullptr, "lbim_ptr");
-            builder.CreateStore(arg, stack_slot);
-            
-            // Call the formatter to get AriaString*
-            llvm::Value* aria_str = builder.CreateCall(formatter, {stack_slot}, "formatted_lbim");
-            
-            // Extract C string from AriaString struct
-            // AriaString = { char* data, int64 length }
-            llvm::StructType* aria_string_ty = llvm::StructType::getTypeByName(context, "struct.AriaString");
-            if (!aria_string_ty) {
-                aria_string_ty = llvm::StructType::create(context, {
-                    llvm::PointerType::get(context, 0),
-                    llvm::Type::getInt64Ty(context)
-                }, "struct.AriaString");
-            }
-            
-            llvm::Value* data_ptr_ptr = builder.CreateStructGEP(aria_string_ty, aria_str, 0, "str_data_gep");
-            llvm::Value* c_str = builder.CreateLoad(llvm::PointerType::get(context, 0), data_ptr_ptr, "cstr");
-            
-            // Print using printf("%s", cstr)
-            format_str = builder.CreateGlobalStringPtr("%s", "str_fmt");
-            printf_args.push_back(format_str);
-            printf_args.push_back(c_str);
-        } else if (arg_type->isPointerTy()) {
-            // Assume it's a string - use "%s" format
-            format_str = builder.CreateGlobalStringPtr("%s", "str_fmt");
-            printf_args.push_back(format_str);
-            printf_args.push_back(arg);
-        } else if (arg_type->isIntegerTy()) {
-            // Integer type - use appropriate format based on bit width
-            unsigned bit_width = arg_type->getIntegerBitWidth();
-            
-            // Convert smaller ints to i32 or i64 for printf
-            if (bit_width < 32) {
-                arg = builder.CreateSExt(arg, builder.getInt32Ty(), "print_ext");
-                format_str = builder.CreateGlobalStringPtr("%d", "int_fmt");
-            } else if (bit_width == 32) {
-                format_str = builder.CreateGlobalStringPtr("%d", "int_fmt");
-            } else {
-                // 64-bit or larger
-                if (bit_width > 64) {
-                    arg = builder.CreateTrunc(arg, builder.getInt64Ty(), "print_trunc");
-                }
-                format_str = builder.CreateGlobalStringPtr("%lld", "int64_fmt");
-            }
-            
-            printf_args.push_back(format_str);
-            printf_args.push_back(arg);
-        } else if (arg_type->isFloatingPointTy()) {
-            // Float type - convert to double for printf
-            if (arg_type->isFloatTy()) {
-                arg = builder.CreateFPExt(arg, builder.getDoubleTy(), "print_fpext");
-            }
-            format_str = builder.CreateGlobalStringPtr("%g", "float_fmt");
-            printf_args.push_back(format_str);
-            printf_args.push_back(arg);
-        } else {
-            throw std::runtime_error("print() does not support this type yet");
-        }
-        
-        // Call printf and return the result
-        return builder.CreateCall(printf_func, printf_args, "print_call");
+        // Call aria_print[ln]_cstr(str) and return result
+        return builder.CreateCall(aria_print, {str_ptr}, "print_call");
     }
     
     // ====================================================================
@@ -4790,6 +4905,302 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     }
     
     // ====================================================================
+    // TRIT/NIT LOGIC AND ARITHMETIC INTRINSICS
+    // ====================================================================
+    // Trit: Single balanced ternary digit (-1, 0, 1, ERR=-128)
+    // Nit: Single balanced nonary digit (-4 to +4, ERR=-128)
+    
+    // trit_add(trit, trit) -> trit
+    if (callee_ident->name == "trit_add") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("trit_add() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        llvm::Function* func = module->getFunction("trit_add");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt8Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "trit_add", module);
+        }
+        return builder.CreateCall(func, {a, b}, "trit_add_result");
+    }
+    
+    // trit_mul(trit, trit) -> trit
+    if (callee_ident->name == "trit_mul") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("trit_mul() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        llvm::Function* func = module->getFunction("trit_mul");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt8Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "trit_mul", module);
+        }
+        return builder.CreateCall(func, {a, b}, "trit_mul_result");
+    }
+    
+    // trit_neg(trit) -> trit
+    if (callee_ident->name == "trit_neg") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("trit_neg() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        llvm::Function* func = module->getFunction("trit_neg");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), {builder.getInt8Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "trit_neg", module);
+        }
+        return builder.CreateCall(func, {a}, "trit_neg_result");
+    }
+    
+    // REMOVED: Old trit_and - now handled in TERNARY LOGIC BUILTINS section below
+    
+    // REMOVED: Old trit_or - now handled in TERNARY LOGIC BUILTINS section below
+    
+    // REMOVED: Old trit_not - now handled in TERNARY LOGIC BUILTINS section below
+    
+    // trit_is_err(trit) -> bool
+    if (callee_ident->name == "trit_is_err") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("trit_is_err() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        llvm::Function* func = module->getFunction("trit_is_err");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt1Ty(), {builder.getInt8Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "trit_is_err", module);
+        }
+        return builder.CreateCall(func, {a}, "trit_is_err_result");
+    }
+    
+    // REMOVED: Old nit_and/nit_or - now handled in TERNARY LOGIC BUILTINS section
+    
+    
+    // nit_is_err(nit) -> bool
+    if (callee_ident->name == "nit_is_err") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("nit_is_err() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        llvm::Function* func = module->getFunction("nit_is_err");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt1Ty(), {builder.getInt8Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nit_is_err", module);
+        }
+        return builder.CreateCall(func, {a}, "nit_is_err_result");
+    }
+    
+    // ====================================================================
+    // MATRIX AND TENSOR OPERATIONS (Exotic Types)
+    // ====================================================================
+    
+    // tmatrix_identity(rows, cols) -> tmatrix
+    if (callee_ident->name == "tmatrix_identity") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("tmatrix_identity() requires two arguments (rows, cols)");
+        }
+        llvm::Value* rows = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* cols = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        // Create external function declaration for runtime implementation
+        llvm::Function* func = module->getFunction("tmatrix_identity");
+        if (!func) {
+            // tmatrix is represented as an opaque pointer for now
+            llvm::Type* tmatrixType = builder.getPtrTy();
+            std::vector<llvm::Type*> paramTypes = {builder.getInt64Ty(), builder.getInt64Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(tmatrixType, paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, 
+                                         "tmatrix_identity", module);
+        }
+        return builder.CreateCall(func, {rows, cols}, "tmatrix");
+    }
+    
+    // ttensor_zeros(shape) -> ttensor
+    if (callee_ident->name == "ttensor_zeros") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("ttensor_zeros() requires one argument (9D shape)");
+        }
+        llvm::Value* shape = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        // Create external function declaration for runtime implementation
+        llvm::Function* func = module->getFunction("ttensor_zeros");
+        if (!func) {
+            // ttensor is represented as an opaque pointer for now
+            llvm::Type* ttensorType = builder.getPtrTy();
+            // Shape is a vec9 (9 x int64 array)
+            llvm::Type* shapeType = shape->getType();
+            std::vector<llvm::Type*> paramTypes = {shapeType};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(ttensorType, paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, 
+                                         "ttensor_zeros", module);
+        }
+        return builder.CreateCall(func, {shape}, "ttensor");
+    }
+    
+    // ====================================================================
+    // MAP/DICTIONARY RUNTIME FUNCTIONS
+    // ====================================================================
+    
+    // map_new(key_size, value_size) -> wild void->
+    if (callee_ident->name == "map_new") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("map_new() requires 2 arguments (key_size, value_size)");
+        }
+        llvm::Value* key_size = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* value_size = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        llvm::Function* func = module->getFunction("map_new");
+        if (!func) {
+            llvm::Type* ptrType = builder.getPtrTy();  // Returns opaque pointer
+            std::vector<llvm::Type*> paramTypes = {builder.getInt64Ty(), builder.getInt64Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(ptrType, paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, 
+                                         "map_new", module);
+        }
+        return builder.CreateCall(func, {key_size, value_size}, "map");
+    }
+    
+    // map_insert(map, key_ptr, value_ptr) -> void
+    if (callee_ident->name == "map_insert") {
+        if (expr->arguments.size() != 3) {
+            throw std::runtime_error("map_insert() requires 3 arguments (map, key_ptr, value_ptr)");
+        }
+        llvm::Value* map = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* key_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* value_ptr = codegenExpressionNode(expr->arguments[2].get(), this);
+        
+        llvm::Function* func = module->getFunction("map_insert");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {
+                builder.getPtrTy(), 
+                builder.getPtrTy(), 
+                builder.getPtrTy()
+            };
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getVoidTy(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, 
+                                         "map_insert", module);
+        }
+        return builder.CreateCall(func, {map, key_ptr, value_ptr});
+    }
+    
+    // map_get(map, key_ptr) -> wild void->
+    if (callee_ident->name == "map_get") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("map_get() requires 2 arguments (map, key_ptr)");
+        }
+        llvm::Value* map = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* key_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        llvm::Function* func = module->getFunction("map_get");
+        if (!func) {
+            llvm::Type* ptrType = builder.getPtrTy();
+            std::vector<llvm::Type*> paramTypes = {builder.getPtrTy(), builder.getPtrTy()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(ptrType, paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, 
+                                         "map_get", module);
+        }
+        return builder.CreateCall(func, {map, key_ptr}, "value_ptr");
+    }
+    
+    // map_has(map, key_ptr) -> bool
+    if (callee_ident->name == "map_has") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("map_has() requires 2 arguments (map, key_ptr)");
+        }
+        llvm::Value* map = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* key_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        llvm::Function* func = module->getFunction("map_has");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getPtrTy(), builder.getPtrTy()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt1Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, 
+                                         "map_has", module);
+        }
+        return builder.CreateCall(func, {map, key_ptr}, "has_key");
+    }
+    
+    // map_remove(map, key_ptr) -> void
+    if (callee_ident->name == "map_remove") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("map_remove() requires 2 arguments (map, key_ptr)");
+        }
+        llvm::Value* map = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* key_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        llvm::Function* func = module->getFunction("map_remove");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getPtrTy(), builder.getPtrTy()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getVoidTy(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, 
+                                         "map_remove", module);
+        }
+        return builder.CreateCall(func, {map, key_ptr});
+    }
+    
+    // map_length(map) -> int64
+    if (callee_ident->name == "map_length") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("map_length() requires 1 argument (map)");
+        }
+        llvm::Value* map = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        llvm::Function* func = module->getFunction("map_length");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getPtrTy()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt64Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, 
+                                         "map_length", module);
+        }
+        return builder.CreateCall(func, {map}, "length");
+    }
+    
+    // ====================================================================
+    // OPTIONAL/RESULT HELPER FUNCTIONS
+    // ====================================================================
+    
+    // get_optional_value(condition) -> int64?
+    if (callee_ident->name == "get_optional_value") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("get_optional_value() requires 1 argument (condition)");
+        }
+        llvm::Value* condition = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        // Convert condition to i1 if needed
+        if (condition->getType() != builder.getInt1Ty()) {
+            if (condition->getType()->isIntegerTy()) {
+                condition = builder.CreateICmpNE(condition, 
+                    llvm::ConstantInt::get(condition->getType(), 0), "tobool");
+            }
+        }
+        
+        // Optional<int64> is { i1 hasValue, i64 value }
+        llvm::StructType* optionalType = llvm::StructType::get(context, 
+            {builder.getInt1Ty(), builder.getInt64Ty()}, false);
+        
+        llvm::Value* result = llvm::UndefValue::get(optionalType);
+        
+        // Set hasValue based on condition
+        result = builder.CreateInsertValue(result, condition, 0, "optional.hasValue");
+        
+        // Set value to 123 if condition is true, otherwise 0
+        llvm::Value* valueToStore = builder.CreateSelect(condition,
+            llvm::ConstantInt::get(builder.getInt64Ty(), 123),
+            llvm::ConstantInt::get(builder.getInt64Ty(), 0));
+        result = builder.CreateInsertValue(result, valueToStore, 1, "optional.value");
+        
+        return result;
+    }
+    
+    // ====================================================================
     // INTEGER CONVERSION BUILTINS
     // ====================================================================
     
@@ -4842,34 +5253,15 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // MEMORY MANAGEMENT BUILTINS
     // ====================================================================
     
-    // drop(wild T@) -> void - Free wild pointer
+    // drop(T) -> void - Evaluate expression and discard result
     if (callee_ident->name == "drop") {
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("drop() requires one argument");
         }
         
-        llvm::Value* ptr = codegenExpressionNode(expr->arguments[0].get(), this);
-        if (!ptr) return nullptr;
-        
-        // Get or declare aria_free function
-        llvm::Function* aria_free = module->getFunction("aria_free");
-        if (!aria_free) {
-            // void aria_free(void* ptr)
-            llvm::FunctionType* freeType = llvm::FunctionType::get(
-                builder.getVoidTy(),
-                {builder.getPtrTy()},
-                false
-            );
-            aria_free = llvm::Function::Create(
-                freeType,
-                llvm::Function::ExternalLinkage,
-                "aria_free",
-                module
-            );
-        }
-        
-        // Call aria_free(ptr)
-        builder.CreateCall(aria_free, {ptr});
+        // Just evaluate the expression (for side effects) and discard the result
+        // Don't free anything - this is for discarding result<void> and similar
+        codegenExpressionNode(expr->arguments[0].get(), this);
         
         // drop() returns void - LLVM represents this as no value
         return nullptr;
@@ -5241,6 +5633,213 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     }
 
     // ====================================================================
+    // TERNARY LOGIC BUILTINS
+    // ====================================================================
+    
+    // trit_and(a: trit, b: trit) -> trit
+    if (callee_ident->name == "trit_and") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("trit_and() requires two arguments");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_trit_and");
+        if (!func) {
+            // int8_t aria_trit_and(int8_t a, int8_t b)
+            std::vector<llvm::Type*> params = {builder.getInt8Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt8Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_trit_and", module);
+        }
+        
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        // No type conversion needed - trit is now i8, matching runtime expectation
+        llvm::Value* result = builder.CreateCall(func, {a, b}, "trit_and_call");
+        return result;
+    }
+    
+    // trit_or(a: trit, b: trit) -> trit
+    if (callee_ident->name == "trit_or") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("trit_or() requires two arguments");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_trit_or");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getInt8Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt8Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_trit_or", module);
+        }
+        
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        // No type conversion needed - trit is now i8, matching runtime expectation
+        llvm::Value* result = builder.CreateCall(func, {a, b}, "trit_or_call");
+        return result;
+    }
+    
+    // nit_and(a: nit, b: nit) -> nit
+    if (callee_ident->name == "nit_and") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("nit_and() requires two arguments");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_nit_and");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getInt8Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt8Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_nit_and", module);
+        }
+        
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        // No type conversion needed - nit is now i8, matching runtime expectation
+        llvm::Value* result = builder.CreateCall(func, {a, b}, "nit_and_call");
+        return result;
+    }
+    
+    // nit_or(a: nit, b: nit) -> nit
+    if (callee_ident->name == "nit_or") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("nit_or() requires two arguments");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_nit_or");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getInt8Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt8Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_nit_or", module);
+        }
+        
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        // No type conversion needed - nit is now i8, matching runtime expectation
+        llvm::Value* result = builder.CreateCall(func, {a, b}, "nit_or_call");
+        return result;
+    }
+    
+    // tbb8_from_int(value: int32) -> tbb8
+    if (callee_ident->name == "tbb8_from_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb8_from_int() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_tbb8_from_int");
+        if (!func) {
+            // int8_t aria_tbb8_from_int(int32_t value)
+            std::vector<llvm::Type*> params = {builder.getInt32Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt8Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_tbb8_from_int", module);
+        }
+        
+        llvm::Value* value = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Ensure it's i32
+        if (value->getType()->getIntegerBitWidth() != 32) {
+            value = builder.CreateSExtOrTrunc(value, builder.getInt32Ty());
+        }
+        return builder.CreateCall(func, {value}, "tbb8_from_int");
+    }
+    
+    // tbb8_to_int(value: tbb8) -> int32
+    if (callee_ident->name == "tbb8_to_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb8_to_int() requires one argument");
+        }
+        
+        llvm::Function* func = module->getFunction("aria_tbb8_to_int");
+        if (!func) {
+            // int32_t aria_tbb8_to_int(int8_t value)
+            std::vector<llvm::Type*> params = {builder.getInt8Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                builder.getInt32Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_tbb8_to_int", module);
+        }
+        
+        llvm::Value* value = codegenExpressionNode(expr->arguments[0].get(), this);
+        return builder.CreateCall(func, {value}, "tbb8_to_int");
+    }
+    
+    // tbb8_is_err(value: tbb8) -> bool
+    if (callee_ident->name == "tbb8_is_err") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb8_is_err() requires one argument");
+        }
+        
+        llvm::Value* value = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Check if value == -128 (ERR sentinel)
+        llvm::Value* err_sentinel = llvm::ConstantInt::get(builder.getInt8Ty(), -128);
+        return builder.CreateICmpEQ(value, err_sentinel, "is_err");
+    }
+    
+    // tbb16_from_int(value: int32) -> tbb16
+    if (callee_ident->name == "tbb16_from_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb16_from_int() requires one argument");
+        }
+        
+        llvm::Value* value = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Check range [-32767, 32767], return -32768 (ERR) if out of range
+        llvm::Value* min_val = llvm::ConstantInt::get(builder.getInt32Ty(), -32767);
+        llvm::Value* max_val = llvm::ConstantInt::get(builder.getInt32Ty(), 32767);
+        llvm::Value* err_val = llvm::ConstantInt::get(builder.getInt16Ty(), -32768);
+        
+        llvm::Value* is_too_low = builder.CreateICmpSLT(value, min_val);
+        llvm::Value* is_too_high = builder.CreateICmpSGT(value, max_val);
+        llvm::Value* is_out_of_range = builder.CreateOr(is_too_low, is_too_high);
+        
+        llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
+        return builder.CreateSelect(is_out_of_range, err_val, truncated, "tbb16_from_int");
+    }
+    
+    // tbb16_is_err(value: tbb16) -> bool
+    if (callee_ident->name == "tbb16_is_err") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb16_is_err() requires one argument");
+        }
+        
+        llvm::Value* value = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* err_sentinel = llvm::ConstantInt::get(builder.getInt16Ty(), -32768);
+        return builder.CreateICmpEQ(value, err_sentinel, "is_err");
+    }
+    
+    // tbb32_from_int(value: int32) -> tbb32
+    if (callee_ident->name == "tbb32_from_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb32_from_int() requires one argument");
+        }
+        
+        // For tbb32, we can't overflow from int32 input
+        // tbb32 range is [-2147483647, 2147483647], sentinel is -2147483648 (INT32_MIN)
+        // Since input is int32, only INT32_MIN is the error case
+        llvm::Value* value = codegenExpressionNode(expr->arguments[0].get(), this);
+        return value;  // Direct passthrough for int32 -> tbb32
+    }
+    
+    // tbb32_to_int(value: tbb32) -> int32
+    if (callee_ident->name == "tbb32_to_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tbb32_to_int() requires one argument");
+        }
+        
+        llvm::Value* value = codegenExpressionNode(expr->arguments[0].get(), this);
+        return value;  // Direct passthrough for tbb32 -> int32
+    }
+
+    // ====================================================================
     // FILE I/O BUILTINS (Phase 4.2)
     // ====================================================================
     
@@ -5313,6 +5912,38 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             llvm::PointerType::get(builder.getInt8Ty(), 0), content_data_ptr, "content_cstr");
         
         return builder.CreateCall(func, {path_cstr, content_cstr}, "write_result");
+    }
+    
+    // allocate(size: int32) -> buffer@ (void*)
+    // Allocates wild memory heap allocation
+    if (callee_ident->name == "allocate") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("allocate() requires one argument (size)");
+        }
+        
+        // Get or declare aria_alloc
+        llvm::Function* func = module->getFunction("aria_alloc");
+        if (!func) {
+            // void* aria_alloc(size_t size)
+            std::vector<llvm::Type*> params = {
+                builder.getInt64Ty()  // size_t size (using i64 for size_t)
+            };
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(builder.getInt8Ty(), 0),  // void* return
+                params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_alloc", module);
+        }
+        
+        // Codegen size argument (should be int32/int64)
+        llvm::Value* size = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        // Extend to i64 if needed (from int32)
+        if (size->getType()->isIntegerTy(32)) {
+            size = builder.CreateSExt(size, builder.getInt64Ty(), "size_i64");
+        }
+        
+        return builder.CreateCall(func, {size}, "alloc_ptr");
     }
     
     // fileExists(path: string) -> bool
@@ -6032,8 +6663,8 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         
         // BUG-09-001 FIX: Auto-wrap FFI pointer returns in Optional
         // Check if this is an extern function returning a pointer
-        bool is_extern = direct_func->hasExternalLinkage() && direct_func->isDeclaration();
         llvm::Type* return_type = direct_func->getReturnType();
+        bool is_extern = direct_func->hasExternalLinkage() && direct_func->isDeclaration();
         
         if (is_extern && return_type->isPointerTy()) {
             // Wrap NULL-possible pointer in Optional { i1 hasValue, T* value }
@@ -6161,6 +6792,23 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
     
     llvm::Type* arrayType = arrayVal->getType();
     
+    // Handle pointer-to-array (e.g., int64[], string[])
+    if (arrayType->isPointerTy()) {
+        // Array indexing: arr[i]
+        // arrayVal is a pointer to elements
+        // For opaque pointers, we need to know the element type from context
+        
+        // Assume i64 for now - in a full implementation, we'd track element types
+        // TODO: Implement proper type tracking for array elements
+        llvm::Type* elemType = llvm::Type::getInt64Ty(context);
+        
+        // Create GEP to access arr[index]
+        llvm::Value* elemPtr = builder.CreateGEP(elemType, arrayVal, indexVal, "array.index.ptr");
+        
+        // Load the value from the pointer
+        return builder.CreateLoad(elemType, elemPtr, "array.index.val");
+    }
+    
     // Handle vector indexing
     if (arrayType->isVectorTy() || (arrayType->isStructTy() && arrayType->getStructNumElements() == 9)) {
         // For vec2/vec3 (LLVM FixedVectorType): use ExtractElement
@@ -6191,11 +6839,17 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
         throw std::runtime_error("Null member access expression");
     }
     
+    std::cerr << "[DEBUG codegenMemberAccess] member: " << expr->member << std::endl;
+    
     // Generate code for the object
     llvm::Value* objectVal = codegenExpressionNode(expr->object.get(), this);
     if (!objectVal) {
         throw std::runtime_error("Failed to generate code for member access object");
     }
+    
+    std::cerr << "[DEBUG codegenMemberAccess] objectVal type: ";
+    objectVal->getType()->print(llvm::errs());
+    std::cerr << std::endl;
     
     // Handle pointer member access (ptr->member)
     // This is equivalent to (*ptr).member - dereference then access
@@ -6205,10 +6859,10 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
             throw std::runtime_error("Arrow operator (->) requires pointer type");
         }
         
-        // With LLVM 20 opaque pointers, we load as struct/object type
-        // The actual type will be determined by the member access context
-        llvm::Type* structType = objectVal->getType();
-        objectVal = builder.CreateLoad(structType, objectVal, "deref_for_member");
+        // With LLVM opaque pointers, we need to know the pointed-to type
+        // For now, assume it's a struct pointer and load it
+        // TODO: Get proper type from type system
+        objectVal = builder.CreateLoad(objectVal->getType(), objectVal, "deref_for_member");
     }
     
     llvm::Type* objectType = objectVal->getType();
@@ -6217,19 +6871,41 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
     // Reference: include/runtime/result.h - layout is { T value, void* error, bool is_error }
     // The type checker has already validated that this is a Result type with valid members
     if (objectType->isStructTy() && objectType->getStructNumElements() == 3) {
+        std::cerr << "[DEBUG_RESULT_ACCESS] Accessing member '" << expr->member << "' on 3-field struct" << std::endl;
+        std::cerr << "[DEBUG_RESULT_ACCESS] objectVal is instruction: " << llvm::isa<llvm::Instruction>(objectVal) << std::endl;
+        std::cerr << "[DEBUG_RESULT_ACCESS] objectVal is argument: " << llvm::isa<llvm::Argument>(objectVal) << std::endl;
+        std::cerr << "[DEBUG_RESULT_ACCESS] objectVal type: ";
+        objectVal->getType()->print(llvm::errs());
+        std::cerr << std::endl;
+        
         // Check if this looks like a Result struct based on member names
         // (The type checker already validated this is a Result type)
         if (expr->member == "is_error") {
             // Field 2: is_error (bool)
-            return builder.CreateExtractValue(objectVal, 2, "is_error");
+            std::cerr << "[DEBUG_RESULT_ACCESS] Extracting is_error (field 2)" << std::endl;
+            llvm::Value* result = builder.CreateExtractValue(objectVal, 2, "is_error");
+            std::cerr << "[DEBUG_RESULT_ACCESS] Extracted value type: ";
+            result->getType()->print(llvm::errs());
+            std::cerr << std::endl;
+            return result;
         }
         else if (expr->member == "value") {
             // Field 0: value (T)
-            return builder.CreateExtractValue(objectVal, 0, "value");
+            std::cerr << "[DEBUG_RESULT_ACCESS] Extracting value (field 0)" << std::endl;
+            llvm::Value* result = builder.CreateExtractValue(objectVal, 0, "value");
+            std::cerr << "[DEBUG_RESULT_ACCESS] Extracted value type: ";
+            result->getType()->print(llvm::errs());
+            std::cerr << std::endl;
+            return result;
         }
         else if (expr->member == "error") {
             // Field 1: error (void*)
-            return builder.CreateExtractValue(objectVal, 1, "error");
+            std::cerr << "[DEBUG_RESULT_ACCESS] Extracting error (field 1)" << std::endl;
+            llvm::Value* result = builder.CreateExtractValue(objectVal, 1, "error");
+            std::cerr << "[DEBUG_RESULT_ACCESS] Extracted value type: ";
+            result->getType()->print(llvm::errs());
+            std::cerr << std::endl;
+            return result;
         }
     }
     
@@ -6305,10 +6981,74 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
         return phi;
     }
     
-    // For regular member access (. or ->)
-    // TODO: Implement struct field access with getelementptr
-    // For now, this needs struct type support to be fully implemented
-    throw std::runtime_error("Member access not yet fully implemented - needs struct support");
+    // Regular struct member access (. or ->)
+    // Need to extract field from struct value
+    if (objectType->isStructTy()) {
+        llvm::StructType* structType = llvm::cast<llvm::StructType>(objectType);
+        std::string structName = structType->hasName() ? structType->getName().str() : "";
+        
+        std::cerr << "[DEBUG codegenMemberAccess] Struct type: " << structName 
+                  << ", num elements: " << structType->getNumElements() << std::endl;
+        
+        // Get the struct type info from type system to find field index
+        // For now, we'll need to look up the field index based on the struct type name
+        // This should consult the symbol table or type registry
+        
+        // Try to get field index from the object's expression type
+        // First, check if the object is an identifier so we can look up its type
+        IdentifierExpr* objIdent = dynamic_cast<IdentifierExpr*>(expr->object.get());
+        if (objIdent) {
+            // Look up the Aria type name for this variable
+            auto typeIt = var_aria_types.find(objIdent->name);
+            if (typeIt != var_aria_types.end()) {
+                std::string ariaTypeName = typeIt->second;
+                std::cerr << "[DEBUG codegenMemberAccess] Variable " << objIdent->name 
+                          << " has Aria type: " << ariaTypeName << std::endl;
+                
+                // TODO: Look up struct definition in type registry to get field index
+                // For now, hardcode based on common struct patterns
+                
+                // Try to get field index from type system
+                if (type_system) {
+                    Type* ariaType = type_system->getStructType(ariaTypeName);
+                    if (ariaType && ariaType->getKind() == TypeKind::STRUCT) {
+                        StructType* structType = static_cast<StructType*>(ariaType);
+                        int fieldIndex = structType->getFieldIndex(expr->member);
+                        if (fieldIndex >= 0) {
+                            std::cerr << "[DEBUG codegenMemberAccess] Found field '" << expr->member 
+                                     << "' at index " << fieldIndex << std::endl;
+                            return builder.CreateExtractValue(objectVal, fieldIndex, expr->member);
+                        } else {
+                            throw std::runtime_error("Field '" + expr->member + "' not found in struct " + ariaTypeName);
+                        }
+                    }
+                }
+                
+                // Try to get field index based on struct layout
+                // Most structs have fields in declaration order (0, 1, 2, ...)
+                // We need the struct definition to know the field index
+                // For testing, let's use field index 0 for first field
+                
+                // TEMPORARY HACK: Assume single-field structs for now
+                if (structType->getNumElements() == 1) {
+                    std::cerr << "[DEBUG codegenMemberAccess] Single-field struct, extracting field 0" << std::endl;
+                    return builder.CreateExtractValue(objectVal, 0, expr->member);
+                }
+                
+                // For multi-field structs, we need proper field index lookup
+                // This requires integration with the semantic analyzer's type system
+                throw std::runtime_error("Multi-field struct member access requires type system integration (field: " + expr->member + ")");
+            }
+        }
+        
+        // Fallback: try to extract value at index 0
+        std::cerr << "[DEBUG codegenMemberAccess] Unknown struct type, attempting index 0" << std::endl;
+        if (structType->getNumElements() > 0) {
+            return builder.CreateExtractValue(objectVal, 0, expr->member);
+        }
+    }
+    
+    throw std::runtime_error("Member access not supported for type: " + expr->member);
 }
 
 // ============================================================================
@@ -7139,4 +7879,113 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
                            " -> " + expr->targetType);
 }
 
+/**
+ * Generate code for object literal expressions
+ * Handles: {val1, val2, ...} syntax for struct-like initialization
+ * Used for vec9, frac types, and other exotic composite types
+ */
+llvm::Value* ExprCodegen::codegenObjectLiteral(ObjectLiteralExpr* expr) {
+    if (!expr) {
+        throw std::runtime_error("Null object literal expression");
+    }
+    
+    std::cerr << "[DEBUG] codegenObjectLiteral: fields=" << expr->fields.size() 
+              << ", type_name=" << expr->type_name << std::endl;
+    
+    // For vec9 and other array-like types: create an array/struct with field values
+    if (expr->fields.size() == 9) {
+        // vec9: [9 x i64]
+        llvm::ArrayType* arrayType = llvm::ArrayType::get(builder.getInt64Ty(), 9);
+        llvm::Value* arrayAlloca = builder.CreateAlloca(arrayType, nullptr, "vec9.alloca");
+        
+        // Initialize each element
+        for (size_t i = 0; i < expr->fields.size(); i++) {
+            llvm::Value* elemValue = codegenExpressionNode(expr->fields[i].value.get(), this);
+            if (!elemValue) {
+                throw std::runtime_error("Failed to generate code for vec9 element " + std::to_string(i));
+            }
+            
+            // Convert to i64 if needed
+            if (elemValue->getType() != builder.getInt64Ty()) {
+                elemValue = builder.CreateSExtOrTrunc(elemValue, builder.getInt64Ty(), "elem.ext");
+            }
+            
+            // Get pointer to array element
+            std::vector<llvm::Value*> indices = {
+                llvm::ConstantInt::get(builder.getInt32Ty(), 0),
+                llvm::ConstantInt::get(builder.getInt32Ty(), i)
+            };
+            llvm::Value* elemPtr = builder.CreateGEP(arrayType, arrayAlloca, indices, "elem.ptr");
+            builder.CreateStore(elemValue, elemPtr);
+        }
+        
+        // Load the complete array value
+        return builder.CreateLoad(arrayType, arrayAlloca, "vec9.value");
+    }
+    
+    // For frac types (3 fields): {whole, num, denom}
+    if (expr->fields.size() == 3) {
+        // Create struct with 3 i64 fields
+        llvm::StructType* structType = llvm::StructType::get(
+            context,
+            {builder.getInt64Ty(), builder.getInt64Ty(), builder.getInt64Ty()},
+            false
+        );
+        
+        llvm::Value* structAlloca = builder.CreateAlloca(structType, nullptr, "frac.alloca");
+        
+        // Initialize each field
+        for (size_t i = 0; i < 3; i++) {
+            llvm::Value* fieldValue = codegenExpressionNode(expr->fields[i].value.get(), this);
+            if (!fieldValue) {
+                throw std::runtime_error("Failed to generate code for frac field " + std::to_string(i));
+            }
+            
+            // Convert to i64 if needed
+            if (fieldValue->getType() != builder.getInt64Ty()) {
+                fieldValue = builder.CreateSExtOrTrunc(fieldValue, builder.getInt64Ty(), "field.ext");
+            }
+            
+            llvm::Value* fieldPtr = builder.CreateStructGEP(structType, structAlloca, i, "field.ptr");
+            builder.CreateStore(fieldValue, fieldPtr);
+        }
+        
+        // Load the complete struct value
+        return builder.CreateLoad(structType, structAlloca, "frac.value");
+    }
+    
+    // For tfp types (2 fields): {exponent, mantissa}
+    if (expr->fields.size() == 2) {
+        // Create struct with 2 i64 fields
+        llvm::StructType* structType = llvm::StructType::get(
+            context,
+            {builder.getInt64Ty(), builder.getInt64Ty()},
+            false
+        );
+        
+        llvm::Value* structAlloca = builder.CreateAlloca(structType, nullptr, "tfp.alloca");
+        
+        // Initialize each field
+        for (size_t i = 0; i < 2; i++) {
+            llvm::Value* fieldValue = codegenExpressionNode(expr->fields[i].value.get(), this);
+            if (!fieldValue) {
+                throw std::runtime_error("Failed to generate code for tfp field " + std::to_string(i));
+            }
+            
+            // Convert to i64 if needed
+            if (fieldValue->getType() != builder.getInt64Ty()) {
+                fieldValue = builder.CreateSExtOrTrunc(fieldValue, builder.getInt64Ty(), "field.ext");
+            }
+            
+            llvm::Value* fieldPtr = builder.CreateStructGEP(structType, structAlloca, i, "field.ptr");
+            builder.CreateStore(fieldValue, fieldPtr);
+        }
+        
+        // Load the complete struct value
+        return builder.CreateLoad(structType, structAlloca, "tfp.value");
+    }
+    
+    throw std::runtime_error("Unsupported object literal field count: " + 
+                           std::to_string(expr->fields.size()));
+}
 

@@ -1,0 +1,61 @@
+// stdlib/atomic/int32.aria
+// Lock-free atomic operations for int32 using Type Oriented Programming
+// Demonstrates Type system with UFCS: atomic.load(order) → AtomicInt32_load(atomic, order)
+
+// Runtime extern functions (implemented in runtime/atomic.cpp)
+extern func:aria_atomic_int32_create = wild int8*(int32:initial_value);
+extern func:aria_atomic_int32_destroy = void(wild int8*:atomic_ptr);
+extern func:aria_atomic_int32_load = int32(wild int8*:atomic_ptr, int32:order);
+extern func:aria_atomic_int32_store = void(wild int8*:atomic_ptr, int32:value, int32:order);
+extern func:aria_atomic_int32_fetch_add = int32(wild int8*:atomic_ptr, int32:value, int32:order);
+extern func:aria_atomic_int32_fetch_sub = int32(wild int8*:atomic_ptr, int32:value, int32:order);
+extern func:aria_atomic_int32_compare_exchange_strong = bool(wild int8*:atomic_ptr, int32->:expected, int32:desired, int32:order);
+
+// Type:AtomicInt32 - Zero-cost abstraction over C11 atomics
+pub Type:AtomicInt32 = {
+    // Constructor: Create atomic with initial value
+    func:create = AtomicInt32(int32:initial) {
+        AtomicInt32:atomic = AtomicInt32{ptr: aria_atomic_int32_create(initial)};
+        pass(atomic);
+    };
+    
+    // Destructor: Free atomic resources
+    func:destroy = void(AtomicInt32:self) {
+        _ = aria_atomic_int32_destroy(self.ptr);
+        pass(NIL);
+    };
+    
+    // Instance methods (UFCS: atomic.load(order) → AtomicInt32_load(atomic, order))
+    func:load = int32(AtomicInt32:self, int32:order) {
+        pass(aria_atomic_int32_load(self.ptr, order));
+    };
+    
+    func:store = void(AtomicInt32:self, int32:value, int32:order) {
+        _ = aria_atomic_int32_store(self.ptr, value, order);
+        pass(NIL);
+    };
+    
+    func:add = int32(AtomicInt32:self, int32:value, int32:order) {
+        pass(aria_atomic_int32_fetch_add(self.ptr, value, order));
+    };
+    
+    func:sub = int32(AtomicInt32:self, int32:value, int32:order) {
+        pass(aria_atomic_int32_fetch_sub(self.ptr, value, order));
+    };
+    
+    func:compareExchange = bool(AtomicInt32:self, int32->:expected, int32:desired, int32:order) {
+        pass(aria_atomic_int32_compare_exchange_strong(self.ptr, expected, desired, order));
+    };
+    
+    // Static methods for memory ordering constants (C11 memory_order)
+    func:RELAXED = int32() { pass(0i32); };
+    func:ACQUIRE = int32() { pass(2i32); };
+    func:RELEASE = int32() { pass(3i32); };
+    func:ACQ_REL = int32() { pass(4i32); };
+    func:SEQ_CST = int32() { pass(5i32); };
+    
+    // Public interface - the atomic pointer
+    struct:interface = {
+        wild int8->:ptr;
+    };
+};

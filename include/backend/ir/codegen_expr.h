@@ -6,6 +6,7 @@
 #include <llvm/IR/Value.h>
 #include <llvm/IR/Module.h>
 #include "backend/ir/tbb_codegen.h"
+#include "backend/ir/ternary_codegen.h"
 #include <map>
 #include <string>
 #include <unordered_map>
@@ -21,6 +22,7 @@ namespace aria {
     class TernaryExpr;
     class IndexExpr;
     class MemberAccessExpr;
+    class ObjectLiteralExpr;
     class LambdaExpr;
     class AwaitExpr;
     class TemplateLiteralExpr;
@@ -61,12 +63,18 @@ private:
 
     // Track Aria type names by variable name (for UFCS method resolution)
     std::map<std::string, std::string>& var_aria_types;
+    
+    // Type system for struct field lookup
+    sema::TypeSystem* type_system;
 
     // Statement codegen (for lambda body generation)
     StmtCodegen* stmt_codegen;
     
     // TBB codegen for safe arithmetic with overflow detection
     TBBCodegen tbb_codegen;
+    
+    // Ternary codegen for balanced ternary/nonary arithmetic (trit/nit/tryte/nyte)
+    TernaryCodegen ternary_codegen;
     
     // ARIA-026: Expression recursion depth guard (Gemini Safety Audit Fix #4)
     size_t expr_depth_ = 0;
@@ -93,6 +101,7 @@ private:
 
     // Helper: Get ERR sentinel constant for TBB type
     llvm::Value* getTBBSentinel(llvm::Type* type);
+    llvm::Value* getUnknownSentinel(llvm::Type* type);
 
     // ARIA-018: Sentinel-Preserving TBB Widening
     // Generates branchless widening that preserves error sentinels across bit widths
@@ -139,10 +148,12 @@ public:
      * @param mod LLVM module
      * @param values Symbol table for named values
      * @param types Aria type names by variable name (for UFCS resolution)
+     * @param ts Type system for struct field lookup
      */
     ExprCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
                 llvm::Module* mod, std::map<std::string, llvm::Value*>& values,
-                std::map<std::string, std::string>& types);
+                std::map<std::string, std::string>& types,
+                sema::TypeSystem* ts = nullptr);
     
     /**
      * Set statement codegen helper (for lambda body generation)
@@ -252,6 +263,15 @@ public:
      * Reference: Zero Implicit Conversion (explicit casting)
      */
     llvm::Value* codegenCast(CastExpr* expr);
+    
+    /**
+     * Generate code for object literal expressions
+     * Handles: {val1, val2, ...} syntax for struct-like initialization
+     * Used for vec9, frac types, and other exotic composite types
+     * @param expr Object literal expression node
+     * @return LLVM value (struct or array)
+     */
+    llvm::Value* codegenObjectLiteral(ObjectLiteralExpr* expr);
     
     // ========================================================================
     // Phase 2: Optional Types & Special Operators

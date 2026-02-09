@@ -2,19 +2,15 @@
 // Part of Phase 3.1: Extended Precision Integers
 
 func:main = int32() {
-    // Test uint128 variables (workaround: use int64, then assign)
-    int64:val_a = 1000000000000000;
-    int64:val_b = 2000000000000000;
-    int64:val_zero = 0;
-    
-    uint128:a = val_a;
-    uint128:b = val_b;
-    uint128:zero = val_zero;
+    // Test uint128 variables with proper literal suffixes
+    uint128:a = 1000000000000000u128;
+    uint128:b = 2000000000000000u128;
+    uint128:zero = 0u128;
 
     // Test basic arithmetic
     uint128:sum = a + b;
     uint128:diff = b - a;  // b > a to avoid underflow
-    uint128:prod = a * 2;
+    uint128:prod = a * 2u128;
     uint128:quot = b / a;
 
     // Test comparisons
@@ -24,10 +20,8 @@ func:main = int32() {
     bool:gt = (a > b);
 
     // Verify results
-    int64:exp_sum_val = 3000000000000000;
-    int64:exp_diff_val = 1000000000000000;
-    uint128:expected_sum = exp_sum_val;
-    uint128:expected_diff = exp_diff_val;
+    uint128:expected_sum = 3000000000000000u128;
+    uint128:expected_diff = 1000000000000000u128;
     
     if (sum != expected_sum) {
         int32:one = 1;

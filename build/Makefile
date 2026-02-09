@@ -2468,6 +2468,33 @@ src/runtime/highprec_simd.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/highprec_simd.cpp.s
 .PHONY : src/runtime/highprec_simd.cpp.s
 
+src/runtime/int_array.o: src/runtime/int_array.cpp.o
+.PHONY : src/runtime/int_array.o
+
+# target to build an object file
+src/runtime/int_array.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/int_array.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/int_array.cpp.o
+.PHONY : src/runtime/int_array.cpp.o
+
+src/runtime/int_array.i: src/runtime/int_array.cpp.i
+.PHONY : src/runtime/int_array.i
+
+# target to preprocess a source file
+src/runtime/int_array.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/int_array.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/int_array.cpp.i
+.PHONY : src/runtime/int_array.cpp.i
+
+src/runtime/int_array.s: src/runtime/int_array.cpp.s
+.PHONY : src/runtime/int_array.s
+
+# target to generate assembly for a file
+src/runtime/int_array.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/int_array.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/int_array.cpp.s
+.PHONY : src/runtime/int_array.cpp.s
+
 src/runtime/io/io.o: src/runtime/io/io.cpp.o
 .PHONY : src/runtime/io/io.o
 
@@ -2629,6 +2656,33 @@ src/runtime/math/math.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/math/math.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/math/math.cpp.s
 .PHONY : src/runtime/math/math.cpp.s
+
+src/runtime/panic/panic_handler.o: src/runtime/panic/panic_handler.cpp.o
+.PHONY : src/runtime/panic/panic_handler.o
+
+# target to build an object file
+src/runtime/panic/panic_handler.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/panic/panic_handler.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/panic/panic_handler.cpp.o
+.PHONY : src/runtime/panic/panic_handler.cpp.o
+
+src/runtime/panic/panic_handler.i: src/runtime/panic/panic_handler.cpp.i
+.PHONY : src/runtime/panic/panic_handler.i
+
+# target to preprocess a source file
+src/runtime/panic/panic_handler.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/panic/panic_handler.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/panic/panic_handler.cpp.i
+.PHONY : src/runtime/panic/panic_handler.cpp.i
+
+src/runtime/panic/panic_handler.s: src/runtime/panic/panic_handler.cpp.s
+.PHONY : src/runtime/panic/panic_handler.s
+
+# target to generate assembly for a file
+src/runtime/panic/panic_handler.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/panic/panic_handler.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/panic/panic_handler.cpp.s
+.PHONY : src/runtime/panic/panic_handler.cpp.s
 
 src/runtime/process/process.o: src/runtime/process/process.cpp.o
 .PHONY : src/runtime/process/process.o
@@ -3488,6 +3542,9 @@ help:
 	@echo "... src/runtime/highprec_simd.o"
 	@echo "... src/runtime/highprec_simd.i"
 	@echo "... src/runtime/highprec_simd.s"
+	@echo "... src/runtime/int_array.o"
+	@echo "... src/runtime/int_array.i"
+	@echo "... src/runtime/int_array.s"
 	@echo "... src/runtime/io/io.o"
 	@echo "... src/runtime/io/io.i"
 	@echo "... src/runtime/io/io.s"
@@ -3506,6 +3563,9 @@ help:
 	@echo "... src/runtime/math/math.o"
 	@echo "... src/runtime/math/math.i"
 	@echo "... src/runtime/math/math.s"
+	@echo "... src/runtime/panic/panic_handler.o"
+	@echo "... src/runtime/panic/panic_handler.i"
+	@echo "... src/runtime/panic/panic_handler.s"
 	@echo "... src/runtime/process/process.o"
 	@echo "... src/runtime/process/process.i"
 	@echo "... src/runtime/process/process.s"

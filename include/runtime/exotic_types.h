@@ -122,11 +122,20 @@ bool nyte_is_err(nyte_t a);
 // ============================================================================
 // TRIT Operations
 // ============================================================================
-// Note: Trit uses tbb8 representation, so it inherits TBB arithmetic
-// These are convenience wrappers
+// Trit operations for balanced ternary logic (-1, 0, 1, ERR=-128)
 
-// Trit is just tbb8 with restricted range (-1, 0, 1, ERR)
-// No special arithmetic needed - use TBB operations
+// Trit arithmetic (uses same rules as nit but with restricted range)
+trit_t trit_add(trit_t a, trit_t b);
+trit_t trit_mul(trit_t a, trit_t b);
+trit_t trit_neg(trit_t a);
+
+// Trit logic operations (balanced ternary logic)
+trit_t trit_and(trit_t a, trit_t b);  // Kleene logic AND
+trit_t trit_or(trit_t a, trit_t b);   // Kleene logic OR
+trit_t trit_not(trit_t a);             // Logical NOT
+
+// Check if trit is ERR
+bool trit_is_err(trit_t a);
 
 // ============================================================================
 // NIT Arithmetic Operations
@@ -147,6 +156,16 @@ nit_t nit_div(nit_t a, nit_t b);
 
 // Negate a nit
 nit_t nit_neg(nit_t a);
+
+// Absolute value of a nit
+nit_t nit_abs(nit_t a);
+
+// Nit logic operations
+nit_t nit_and(nit_t a, nit_t b);  // Logical AND (nonary extension)
+nit_t nit_or(nit_t a, nit_t b);   // Logical OR (nonary extension)
+
+// Check if nit is ERR
+bool nit_is_err(nit_t a);
 
 // Absolute value of a nit
 nit_t nit_abs(nit_t a);

@@ -1,6 +1,34 @@
 // Comprehensive range expression tests
 // Testing actual range creation and usage
 
+// Inline int64_toString for explicit conversion
+func:int64_toString = string(int64:value) {
+    if (value == 0) { pass("0"); }
+    bool:is_negative = false;
+    int64:work_value = value;
+    if (value < 0) { is_negative = true; work_value = -value; }
+    string:result = "";
+    int64:remaining = work_value;
+    while (remaining > 0) {
+        int64:digit = remaining % 10;
+        remaining = remaining / 10;
+        string:digit_char = "";
+        if (digit == 0) { digit_char = "0"; }
+        if (digit == 1) { digit_char = "1"; }
+        if (digit == 2) { digit_char = "2"; }
+        if (digit == 3) { digit_char = "3"; }
+        if (digit == 4) { digit_char = "4"; }
+        if (digit == 5) { digit_char = "5"; }
+        if (digit == 6) { digit_char = "6"; }
+        if (digit == 7) { digit_char = "7"; }
+        if (digit == 8) { digit_char = "8"; }
+        if (digit == 9) { digit_char = "9"; }
+        result = string_concat(digit_char, result);
+    }
+    if (is_negative) { result = string_concat("-", result); }
+    pass(result);
+};
+
 func:main = int32() {
     // Create some range expressions
     // Note: These create range structs but we need for loops to iterate
@@ -11,18 +39,20 @@ func:main = int32() {
     // For now, just verify that range syntax parses
     // Range expressions will be fully useful when for loops support them
     
-    print("Testing range syntax:");
-    print("Creating inclusive range 1..10");
-    print("Creating exclusive range 1...10");
+    drop(println("Testing range syntax:"));
+    drop(println("Creating inclusive range 1..10"));
+    drop(println("Creating exclusive range 1...10"));
     
     // Basic arithmetic with range bounds
     int64:inclusive_count = b - a + 1;  // 10 - 1 + 1 = 10 elements
     int64:exclusive_count = b - a;      // 10 - 1 = 9 elements
     
-    print("Inclusive range would have:");
-    print(inclusive_count);
-    print("Exclusive range would have:");
-    print(exclusive_count);
+    drop(println("Inclusive range would have:"));
+    string:inclusive_str = int64_toString(inclusive_count);
+    drop(println(inclusive_str));
+    drop(println("Exclusive range would have:"));
+    string:exclusive_str = int64_toString(exclusive_count);
+    drop(println(exclusive_str));
     
     pass(0);
 };

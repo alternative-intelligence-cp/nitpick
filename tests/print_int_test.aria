@@ -1,8 +1,51 @@
-// Test: Print integer values
+// Test: Print integer values using explicit conversion
 // Expected: Print 42 and return 42
+// Design: Uses int64_toString() for explicit type conversion
+
+// Inline int64_toString until module system is implemented
+func:int64_toString = string(int64:value) {
+    if (value == 0) { pass("0"); }
+    
+    bool:is_negative = false;
+    int64:work_value = value;
+    if (value < 0) {
+        is_negative = true;
+        work_value = -value;
+    }
+    
+    string:result = "";
+    int64:remaining = work_value;
+    
+    while (remaining > 0) {
+        int64:digit = remaining % 10;
+        remaining = remaining / 10;
+        
+        string:digit_char = "";
+        if (digit == 0) { digit_char = "0"; }
+        if (digit == 1) { digit_char = "1"; }
+        if (digit == 2) { digit_char = "2"; }
+        if (digit == 3) { digit_char = "3"; }
+        if (digit == 4) { digit_char = "4"; }
+        if (digit == 5) { digit_char = "5"; }
+        if (digit == 6) { digit_char = "6"; }
+        if (digit == 7) { digit_char = "7"; }
+        if (digit == 8) { digit_char = "8"; }
+        if (digit == 9) { digit_char = "9"; }
+        
+        result = string_concat(digit_char, result);
+    }
+    
+    if (is_negative) {
+        result = string_concat("-", result);
+    }
+    
+    pass(result);
+};
 
 func:main = int32() {
     int64:x = 42;
-    print(x);
-    pass(x);
+    // Explicit conversion - no implicit type coercion
+    string:x_str = int64_toString(x);
+    drop(print(x_str));
+    pass(42);
 };

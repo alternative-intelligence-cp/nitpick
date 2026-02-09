@@ -31,6 +31,7 @@ namespace aria {
     class ExpressionStmt;
     class TraitDeclStmt;    // WP 005: Trait declaration
     class ImplDeclStmt;     // WP 005: Trait implementation
+    class TypeDeclStmt;     // Type Oriented Programming (TOP)
     class ASTNode;
 
     namespace sema {
@@ -199,6 +200,13 @@ public:
      * @return LLVM Function pointer
      */
     llvm::Function* codegenFuncDecl(FuncDeclStmt* stmt);
+
+    /**
+     * Generate code for Type declarations (Type Oriented Programming)
+     * Generates code for desugared components: struct + prefixed methods
+     * @param stmt Type declaration statement
+     */
+    void codegenTypeDecl(TypeDeclStmt* stmt);
 
     /**
      * Generate code for a trait declaration (WP 005)

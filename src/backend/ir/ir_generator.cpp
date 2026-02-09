@@ -687,64 +687,25 @@ llvm::Value* IRGenerator::generateLBIMSub(llvm::Value* L, llvm::Value* R, unsign
 }
 
 llvm::Value* IRGenerator::generateLBIMEQ(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
-    // Equality: call runtime function for reliability
-    // Runtime functions: aria_lbim_eq128, aria_lbim_eq256, etc.
-    // For large structs (>16 limbs), pass by pointer for ABI compatibility
+    // Inline equality comparison for LBIM types
+    // Compare all limbs and AND the results together
+    // This is deterministic and avoids external function calls
     
-    llvm::Type* structType = L->getType();
-    bool usePointers = (numLimbs > 16);  // int2048, int4096 use pointers
+    llvm::Value* result = builder.getInt1(true);  // Start with true
     
-    // Determine the runtime function name based on number of limbs
-    std::string funcName;
-    switch (numLimbs) {
-        case 2: funcName = "aria_lbim_eq128"; break;
-        case 4: funcName = "aria_lbim_eq256"; break;
-        case 8: funcName = "aria_lbim_eq512"; break;
-        case 16: funcName = "aria_lbim_eq1024"; break;
-        case 32: funcName = "aria_lbim_eq2048"; break;
-        case 64: funcName = "aria_lbim_eq4096"; break;
-        default:
-            llvm::errs() << "LBIM eq: unsupported limb count " << numLimbs << "\n";
-            return builder.getInt1(false);
+    for (unsigned i = 0; i < numLimbs; ++i) {
+        // Extract limb i from both operands
+        llvm::Value* limbL = builder.CreateExtractValue(L, {0, i}, "eq.limbL");
+        llvm::Value* limbR = builder.CreateExtractValue(R, {0, i}, "eq.limbR");
+        
+        // Compare limbs for equality
+        llvm::Value* limbEq = builder.CreateICmpEQ(limbL, limbR, "eq.limb");
+        
+        // AND with accumulated result
+        result = builder.CreateAnd(result, limbEq, "eq.acc");
     }
     
-    llvm::FunctionType* funcType;
-    llvm::Value* arg1, *arg2;
-    
-    if (usePointers) {
-        // For large structs, pass by pointer
-        // Signature: bool aria_lbim_eqN(const structType* a, const structType* b)
-        llvm::Type* ptrType = llvm::PointerType::get(structType, 0);
-        funcType = llvm::FunctionType::get(
-            builder.getInt1Ty(), {ptrType, ptrType}, false);
-        
-        // Create allocas and store the struct values
-        llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "eq_arg_l");
-        llvm::Value* allocaR = builder.CreateAlloca(structType, nullptr, "eq_arg_r");
-        builder.CreateStore(L, allocaL);
-        builder.CreateStore(R, allocaR);
-        
-        arg1 = allocaL;
-        arg2 = allocaR;
-    } else {
-        // For small structs, pass by value
-        // Signature: bool aria_lbim_eqN(structType a, structType b)
-        funcType = llvm::FunctionType::get(
-            builder.getInt1Ty(), {structType, structType}, false);
-        
-        arg1 = L;
-        arg2 = R;
-    }
-    
-    // Get or declare the runtime function
-    llvm::Function* eqFunc = module->getFunction(funcName);
-    if (!eqFunc) {
-        eqFunc = llvm::Function::Create(
-            funcType, llvm::Function::ExternalLinkage, funcName, module.get());
-    }
-    
-    // Call the runtime function
-    return builder.CreateCall(eqFunc, {arg1, arg2}, "lbim.eq");
+    return result;
 }
 
 llvm::Value* IRGenerator::generateLBIMULT(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
@@ -919,7 +880,6 @@ llvm::Value* IRGenerator::generateLBIMMul(llvm::Value* L, llvm::Value* R, unsign
     //         Result[i+j+1] += hi (with carry, if i+j+1 < N)
 
     llvm::Type* i64Ty = builder.getInt64Ty();
-    llvm::Type* i128Ty = builder.getInt128Ty();
     llvm::Type* structType = L->getType();
 
     // If R is not the same LBIM struct type, convert it
@@ -963,16 +923,61 @@ llvm::Value* IRGenerator::generateLBIMMul(llvm::Value* L, llvm::Value* R, unsign
 
             llvm::Value* limbR = builder.CreateExtractValue(R, {0, j}, "mulR");
 
-            // Perform 64x64 -> 128 bit multiplication using safe i128
-            // This avoids exposing i256 to the optimizer (IPSCCP workaround)
-            llvm::Value* aExt = builder.CreateZExt(limbL, i128Ty, "a.ext");
-            llvm::Value* bExt = builder.CreateZExt(limbR, i128Ty, "b.ext");
-            llvm::Value* prod128 = builder.CreateMul(aExt, bExt, "prod128");
-
-            // Extract low and high 64-bit halves
-            llvm::Value* prodLo = builder.CreateTrunc(prod128, i64Ty, "prod.lo");
-            llvm::Value* prodHiShift = builder.CreateLShr(prod128, 64, "prod.hi.shift");
-            llvm::Value* prodHi = builder.CreateTrunc(prodHiShift, i64Ty, "prod.hi");
+            // Perform 64x64 -> 128 bit multiplication using ONLY i64 operations
+            // Decompose: a = a_hi*2^32 + a_lo, b = b_hi*2^32 + b_lo
+            // Result: a*b = (a_hi*b_hi)*2^64 + (a_hi*b_lo + a_lo*b_hi)*2^32 + (a_lo*b_lo)
+            
+            llvm::Type* i32Ty = builder.getInt32Ty();
+            
+            // Split limbL into high and low 32 bits
+            llvm::Value* aLo = builder.CreateTrunc(limbL, i32Ty, "a.lo");
+            llvm::Value* aHiShift = builder.CreateLShr(limbL, 32, "a.hi.shift");
+            llvm::Value* aHi = builder.CreateTrunc(aHiShift, i32Ty, "a.hi");
+            
+            // Split limbR into high and low 32 bits
+            llvm::Value* bLo = builder.CreateTrunc(limbR, i32Ty, "b.lo");
+            llvm::Value* bHiShift = builder.CreateLShr(limbR, 32, "b.hi.shift");
+            llvm::Value* bHi = builder.CreateTrunc(bHiShift, i32Ty, "b.hi");
+            
+            // Extend to i64 for multiplication
+            llvm::Value* aLo64 = builder.CreateZExt(aLo, i64Ty, "a.lo64");
+            llvm::Value* aHi64 = builder.CreateZExt(aHi, i64Ty, "a.hi64");
+            llvm::Value* bLo64 = builder.CreateZExt(bLo, i64Ty, "b.lo64");
+            llvm::Value* bHi64 = builder.CreateZExt(bHi, i64Ty, "b.hi64");
+            
+            // Four 32x32 multiplications (results fit in 64 bits)
+            llvm::Value* ll = builder.CreateMul(aLo64, bLo64, "prod.ll");  // Low * Low
+            llvm::Value* lh = builder.CreateMul(aLo64, bHi64, "prod.lh");  // Low * High
+            llvm::Value* hl = builder.CreateMul(aHi64, bLo64, "prod.hl");  // High * Low
+            llvm::Value* hh = builder.CreateMul(aHi64, bHi64, "prod.hh");  // High * High
+            
+            // Combine results:
+            // prodLo = ll_lo + (lh_lo + hl_lo) << 32
+            // prodHi = hh + lh_hi + hl_hi + carry from middle additions
+            
+            // Middle term: (lh + hl) << 32
+            llvm::Value* mid1 = builder.CreateCall(uaddOverflow, {lh, hl}, "mid.add");
+            llvm::Value* midSum = builder.CreateExtractValue(mid1, {0}, "mid.sum");
+            llvm::Value* midOvf = builder.CreateExtractValue(mid1, {1}, "mid.ovf");
+            
+            // Split middle sum into high and low 32 bits
+            llvm::Value* midLo = builder.CreateShl(midSum, 32, "mid.lo.shift");
+            llvm::Value* midHi = builder.CreateLShr(midSum, 32, "mid.hi");
+            
+            // Add overflow from middle to high part (overflow * 2^64 = overflow * 2^32 in high word)
+            llvm::Value* midOvf64 = builder.CreateZExt(midOvf, i64Ty, "mid.ovf64");
+            llvm::Value* midOvfShift = builder.CreateShl(midOvf64, 32, "mid.ovf.shift");
+            
+            // Compute low 64 bits: ll + (midSum << 32)
+            llvm::Value* loAdd = builder.CreateCall(uaddOverflow, {ll, midLo}, "lo.add");
+            llvm::Value* prodLo = builder.CreateExtractValue(loAdd, {0}, "prod.lo");
+            llvm::Value* loCarry = builder.CreateExtractValue(loAdd, {1}, "lo.carry");
+            llvm::Value* loCarry64 = builder.CreateZExt(loCarry, i64Ty, "lo.carry64");
+            
+            // Compute high 64 bits: hh + (midSum >> 32) + loCarry + midOvf
+            llvm::Value* hi1 = builder.CreateAdd(hh, midHi, "hi.1");
+            llvm::Value* hi2 = builder.CreateAdd(hi1, loCarry64, "hi.2");
+            llvm::Value* prodHi = builder.CreateAdd(hi2, midOvfShift, "prod.hi");
 
             // Accumulate low part to Result[k] with carry propagation
             llvm::Value* carry = builder.getInt64(0);
@@ -1140,6 +1145,19 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     // Check for void
     if (type_name == "void") {
         return builder.getVoidTy();
+    }
+    
+    // Check for Result types (e.g., "Result<int32>", "Result<string>")
+    // Result types are represented as structs: { T value, ptr error, i1 is_error }
+    // Reference: include/runtime/result.h - layout is { T value, void* error, bool is_error }
+    if (type_name.size() > 7 && type_name.substr(0, 7) == "Result<" && type_name.back() == '>') {
+        std::string value_type_str = type_name.substr(7, type_name.size() - 8);
+        llvm::Type* valueType = mapTypeFromName(value_type_str);
+        return llvm::StructType::get(context, {
+            valueType,                          // Field 0: value (T)
+            llvm::PointerType::get(context, 0), // Field 1: error (void*)
+            builder.getInt1Ty()                 // Field 2: is_error (bool)
+        });
     }
     
     // Check for optional types (e.g., "int64?", "string?")
@@ -1333,16 +1351,26 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     }
     
     // Balanced Ternary types
-    if (type_name == "trit") return builder.getIntNTy(3);   // Single trit (-1, 0, 1) in 3 bits for overflow
+    // Research-based: i8 storage allows ERR sentinel (-128) and overflow detection
+    if (type_name == "trit") return builder.getInt8Ty();    // Single trit (-1, 0, 1, ERR=-128) in i8
     if (type_name == "tryte") return builder.getInt16Ty();  // 10 trits in 16 bits
     
     // Nonary types  
-    if (type_name == "nit") return builder.getIntNTy(4);    // Single nit (-4 to 4) in 4 bits
+    if (type_name == "nit") return builder.getInt8Ty();     // Single nit (-4 to 4, ERR=-128) in i8
     if (type_name == "nyte") return builder.getInt16Ty();   // 5 nits in 16 bits
     
-    // String type - represented as i8* (pointer to null-terminated char array)
+    // String type - represented as pointer to AriaString struct {char* data, int64 length}
+    // BUGFIX (Feb 2026): Was returning i8*, but AriaString is a struct - caused corruption
     if (type_name == "string") {
-        return llvm::PointerType::get(context, 0);
+        llvm::StructType* ariaStringType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        if (!ariaStringType) {
+            std::vector<llvm::Type*> fields = {
+                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                llvm::Type::getInt64Ty(context)
+            };
+            ariaStringType = llvm::StructType::create(context, fields, "struct.AriaString");
+        }
+        return llvm::PointerType::get(ariaStringType, 0);
     }
     
     // Vector types (vec2, vec3, vec9)
@@ -1540,7 +1568,18 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
 
                 // Track Aria type name for UFCS method resolution
                 if (param->typeNode) {
-                    var_aria_types[param->paramName] = param->typeNode->toString();
+                    std::string typeStr = param->typeNode->toString();
+                    var_aria_types[param->paramName] = typeStr;
+                    
+                    // CRITICAL FIX: Register parameter type in value_types map
+                    // This enables member access on struct parameters (e.g., self.field)
+                    Type* paramType = type_system->getStructType(typeStr);
+                    if (!paramType) {
+                        paramType = type_system->getPrimitiveType(typeStr);
+                    }
+                    if (paramType) {
+                        value_types[&arg] = paramType;
+                    }
                 }
             }
             idx++;
@@ -1623,6 +1662,29 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             continue;
         }
 
+        // Handle TYPE_DECL statements - Type Oriented Programming (TOP)
+        // Process desugared components through normal code generation
+        if (decl->type == ASTNode::NodeType::TYPE_DECL) {
+            TypeDeclStmt* typeDecl = static_cast<TypeDeclStmt*>(decl.get());
+            
+            // The struct was already registered during type checking
+            // Generate code for the methods by calling codegen on each
+            std::vector<std::shared_ptr<ASTNode>> methods;
+            if (typeDecl->createFunc) {
+                methods.push_back(typeDecl->createFunc);
+            }
+            if (typeDecl->destroyFunc) {
+                methods.push_back(typeDecl->destroyFunc);
+            }
+            for (const auto& method : typeDecl->methods) {
+                methods.push_back(method);
+            }
+            
+            // Process all methods through the same module declaration processing
+            processModuleDeclarations(methods, modulePrefix);
+            continue;
+        }
+
         // Handle EXTERN statements - generate external function declarations
         if (decl->type == ASTNode::NodeType::EXTERN) {
             ExternStmt* externStmt = static_cast<ExternStmt*>(decl.get());
@@ -1672,15 +1734,27 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     // Generate extern function declaration
                     FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(externDecl.get());
 
-                    // Get return type
-                    llvm::Type* returnType = mapFFIType(funcDecl->returnType.get());
+                    // Get return type - check for wild qualifier
+                    llvm::Type* returnType;
+                    if (funcDecl->returnIsWild) {
+                        // Wild pointers always map to ptr regardless of base type
+                        returnType = builder.getPtrTy();
+                    } else {
+                        returnType = mapFFIType(funcDecl->returnType.get());
+                    }
 
-                    // Get parameter types
+                    // Get parameter types - check each for wild qualifier
                     std::vector<llvm::Type*> paramTypes;
                     for (const auto& param : funcDecl->parameters) {
                         if (param->type == ASTNode::NodeType::PARAMETER) {
                             ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
-                            llvm::Type* paramType = mapFFIType(paramNode->typeNode.get());
+                            llvm::Type* paramType;
+                            if (paramNode->isWild) {
+                                // Wild pointers always map to ptr
+                                paramType = builder.getPtrTy();
+                            } else {
+                                paramType = mapFFIType(paramNode->typeNode.get());
+                            }
                             paramTypes.push_back(paramType);
                         }
                     }
@@ -1717,13 +1791,26 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             std::vector<llvm::Type*> param_types;
             for (const auto& param : funcDecl->parameters) {
                 ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
-                std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
-                param_types.push_back(mapTypeFromName(paramTypeStr));
+                
+                // Check for wild qualifier (FFI pointers)
+                if (pnode->isWild) {
+                    // Wild pointers always map to LLVM ptr regardless of base type
+                    param_types.push_back(builder.getPtrTy());
+                } else {
+                    std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
+                    param_types.push_back(mapTypeFromName(paramTypeStr));
+                }
             }
             
             // Get the declared return type
-            std::string returnTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
-            llvm::Type* value_type = mapTypeFromName(returnTypeStr);
+            llvm::Type* value_type;
+            if (funcDecl->returnIsWild) {
+                // Wild pointers always map to LLVM ptr regardless of base type
+                value_type = builder.getPtrTy();
+            } else {
+                std::string returnTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
+                value_type = mapTypeFromName(returnTypeStr);
+            }
             
             // All Aria functions return Result<T> except:
             // 1. extern functions (no body)
@@ -1918,11 +2005,100 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 if (idx < funcDecl->parameters.size()) {
                     ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[idx].get());
                     arg.setName(param->paramName);
-                    named_values[param->paramName] = &arg;
+                    
+                    // CRITICAL FIX: Struct parameters must be copied to allocas!
+                    // LLVM's ABI may pass structs in registers or via hidden pointer.
+                    // To ensure consistent access semantics, we copy all struct params to stack allocas.
+                    // This matches Clang's behavior and ensures member access works correctly.
+                    llvm::Value* param_storage = nullptr;
+                    if (arg.getType()->isStructTy()) {
+                        std::cerr << "[DEBUG_STRUCT_PARAM] Creating alloca for struct parameter: " << param->paramName << std::endl;
+                        
+                        // Create alloca at function entry for the struct parameter
+                        llvm::AllocaInst* param_alloca = builder.CreateAlloca(arg.getType(), nullptr, param->paramName + "_alloca");
+                        
+                        // Copy the argument value into the alloca
+                        builder.CreateStore(&arg, param_alloca);
+                        
+                        // Store the ALLOCA (not the argument) in named_values
+                        // This ensures that when we access the parameter, we load from the alloca
+                        param_storage = param_alloca;
+                        named_values[param->paramName] = param_alloca;
+                    } else {
+                        // For non-struct types (primitives, pointers), store argument directly
+                        param_storage = &arg;
+                        named_values[param->paramName] = &arg;
+                    }
 
                     // Track Aria type name for UFCS method resolution
                     if (param->typeNode) {
-                        var_aria_types[param->paramName] = param->typeNode->toString();
+                        std::string typeStr = param->typeNode->toString();
+                        var_aria_types[param->paramName] = typeStr;
+                        
+                        std::cerr << "[DEBUG] Registering parameter '" << param->paramName << "' with type '" << typeStr << "'" << std::endl;
+                        
+                        // CRITICAL FIX: Register parameter type in value_types map
+                        // This enables member access on struct parameters (e.g., self.field, result.value)
+                        
+                        // PHASE 4 FIX: Try to resolve as aria::sema::Type first
+                        aria::sema::Type* paramType = nullptr;
+                        
+                        // PHASE 4 CRITICAL FIX: Check for Result<T> BEFORE primitive type!
+                        // getPrimitiveType() accepts any string and creates a PrimitiveType,
+                        // so "Result<int32>" would wrongly become PRIMITIVE instead of RESULT
+                        if (typeStr.find("Result<") == 0) {
+                            std::cerr << "[DEBUG] Detected Result type parameter: " << typeStr << std::endl;
+                            // Extract inner type: "Result<int32>" -> "int32"
+                            size_t start = typeStr.find('<') + 1;
+                            size_t end = typeStr.find('>');
+                            if (end != std::string::npos && end > start) {
+                                std::string innerTypeStr = typeStr.substr(start, end - start);
+                                std::cerr << "[DEBUG] Result inner type: " << innerTypeStr << std::endl;
+                                aria::sema::Type* innerType = type_system->getPrimitiveType(innerTypeStr);
+                                if (!innerType) {
+                                    innerType = type_system->getStructType(innerTypeStr);
+                                }
+                                if (innerType) {
+                                    std::cerr << "[DEBUG] Found inner type, calling getResultType()" << std::endl;
+                                    paramType = type_system->getResultType(innerType);
+                                    if (paramType) {
+                                        std::cerr << "[DEBUG] getResultType() returned type with kind: " << static_cast<int>(paramType->getKind()) << std::endl;
+                                    } else {
+                                        std::cerr << "[DEBUG] ERROR: getResultType() returned nullptr!" << std::endl;
+                                    }
+                                } else {
+                                    std::cerr << "[DEBUG] ERROR: Could not find inner type: " << innerTypeStr << std::endl;
+                                }
+                            }
+                        }
+                        
+                        // Try struct type (if not already resolved as Result)
+                        if (!paramType) {
+                            paramType = type_system->getStructType(typeStr);
+                            if (paramType) {
+                                std::cerr << "[DEBUG] Found as struct type" << std::endl;
+                            }
+                        }
+                        
+                        // Try primitive type (last resort - only for actual primitives like int32)
+                        if (!paramType) {
+                            paramType = type_system->getPrimitiveType(typeStr);
+                            if (paramType) {
+                                std::cerr << "[DEBUG] Found as primitive type" << std::endl;
+                            }
+                        }
+                        
+                        if (paramType) {
+                            // CRITICAL: Register BOTH the argument AND the alloca (if created) in value_types
+                            value_types[&arg] = paramType;
+                            if (param_storage != &arg) {
+                                // For struct params, also register the alloca
+                                value_types[param_storage] = paramType;
+                            }
+                            std::cerr << "[DEBUG] Registered '" << param->paramName << "' in value_types" << std::endl;
+                        } else {
+                            std::cerr << "[DEBUG] WARNING: Could not register type for '" << param->paramName << "'" << std::endl;
+                        }
                     }
                 }
                 idx++;
@@ -1930,7 +2106,21 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
 
             // Generate function body
             std::cerr << "[DEBUG] Generating body for function: " << func_name << std::endl;
+            if (!funcDecl->body) {
+                std::cerr << "[DEBUG] WARNING: Function " << func_name << " has NULL body!" << std::endl;
+            } else {
+                std::cerr << "[DEBUG] Function " << func_name << " body node type: " << static_cast<int>(funcDecl->body->type) << std::endl;
+            }
+            
+            auto* entry_block = builder.GetInsertBlock();
+            std::cerr << "[DEBUG] Before body codegen, insert block name: " << entry_block->getName().str() 
+                      << ", has terminator: " << (entry_block->getTerminator() != nullptr) << std::endl;
+            
             llvm::Value* bodyVal = codegenStatement(funcDecl->body.get());
+            
+            auto* after_block = builder.GetInsertBlock();
+            std::cerr << "[DEBUG] After body codegen, insert block name: " << after_block->getName().str() 
+                      << ", has terminator: " << (after_block->getTerminator() != nullptr) << std::endl;
             std::cerr << "[DEBUG] Body generation complete for: " << func_name << std::endl;
             (void)bodyVal;  // Suppress unused warning
             
@@ -1942,7 +2132,22 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 } else if (actual_return_type->isVoidTy()) {
                     builder.CreateRetVoid();
                 } else {
-                    builder.CreateRet(llvm::ConstantInt::get(actual_return_type, 0));
+                    // CRITICAL FIX: Check if return type is struct (Result<T>)
+                    if (actual_return_type->isStructTy()) {
+                        // Create a zero-initialized Result struct for default return
+                        llvm::Constant* zero_result = llvm::ConstantStruct::get(
+                            llvm::cast<llvm::StructType>(actual_return_type),
+                            {
+                                llvm::Constant::getNullValue(actual_return_type->getStructElementType(0)), // value
+                                llvm::Constant::getNullValue(actual_return_type->getStructElementType(1)), // error*
+                                llvm::ConstantInt::get(actual_return_type->getStructElementType(2), 0)     // is_error = false
+                            }
+                        );
+                        builder.CreateRet(zero_result);
+                    } else {
+                        // Integer/pointer return type
+                        builder.CreateRet(llvm::ConstantInt::get(actual_return_type, 0));
+                    }
                 }
             }
             
@@ -2151,6 +2356,8 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
         case ASTNode::NodeType::BLOCK: {
             // Block statement - generate code for each statement
             BlockStmt* block = static_cast<BlockStmt*>(stmt);
+            
+            std::cerr << "[DEBUG IR_GEN] BLOCK: " << block->statements.size() << " statements" << std::endl;
 
             // ARIA-023: Skip defer scope management when executing defers
             // to prevent iterator invalidation from vector reallocation
@@ -2163,6 +2370,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
 
             llvm::Value* lastVal = nullptr;
             for (const auto& s : block->statements) {
+                std::cerr << "[DEBUG IR_GEN] BLOCK: processing statement type " << static_cast<int>(s->type) << std::endl;
                 lastVal = codegenStatement(s.get());
             }
 
@@ -2282,8 +2490,35 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     else if (actualTypeName[0] == 'v') componentType = type_system->getPrimitiveType("flt64");
                     
                     aria_type = type_system->getVectorType(componentType, dimension);
+                }
+                // CRITICAL FIX: Check for Result<T> BEFORE struct/primitive
+                // getPrimitiveType() accepts any string, so "Result<int32>" would wrongly become PRIMITIVE
+                else if (actualTypeName.find("Result<") == 0) {
+                    std::cerr << "[DEBUG VARDECL] Detected Result type variable: " << actualTypeName << std::endl;
+                    // Extract inner type: "Result<int32>" -> "int32"
+                    size_t start = actualTypeName.find('<') + 1;
+                    size_t end = actualTypeName.find('>');
+                    if (end != std::string::npos && end > start) {
+                        std::string innerTypeStr = actualTypeName.substr(start, end - start);
+                        std::cerr << "[DEBUG VARDECL] Result inner type: " << innerTypeStr << std::endl;
+                        aria::sema::Type* innerType = type_system->getPrimitiveType(innerTypeStr);
+                        if (!innerType) {
+                            innerType = type_system->getStructType(innerTypeStr);
+                        }
+                        if (innerType) {
+                            std::cerr << "[DEBUG VARDECL] Found inner type, calling getResultType()" << std::endl;
+                            aria_type = type_system->getResultType(innerType);
+                            if (aria_type) {
+                                std::cerr << "[DEBUG VARDECL] getResultType() returned type with kind: " << static_cast<int>(aria_type->getKind()) << std::endl;
+                            } else {
+                                std::cerr << "[DEBUG VARDECL] ERROR: getResultType() returned nullptr!" << std::endl;
+                            }
+                        } else {
+                            std::cerr << "[DEBUG VARDECL] ERROR: Could not find inner type: " << innerTypeStr << std::endl;
+                        }
+                    }
                 } else {
-                    // Not a vector, try struct then primitive
+                    // Not a vector or Result, try struct then primitive
                     aria_type = type_system->getStructType(actualTypeName);
                     if (!aria_type) {
                         aria_type = type_system->getPrimitiveType(actualTypeName);
@@ -2292,6 +2527,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 
                 if (aria_type) {
                     value_types[alloca] = aria_type;
+                    std::cerr << "[DEBUG VARDECL] Registered value_types for '" << varDecl->varName << "' with type kind: " << static_cast<int>(aria_type->getKind()) << std::endl;
                 }
             }
             
@@ -2311,9 +2547,13 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     if (isOptional) {
                         // Check if initializer is NIL keyword
                         bool isNil = false;
+                        // Check for NIL - can be IDENTIFIER or LITERAL with explicit_type = "NIL"
                         if (varDecl->initializer->type == ASTNode::NodeType::IDENTIFIER) {
                             IdentifierExpr* idExpr = static_cast<IdentifierExpr*>(varDecl->initializer.get());
                             isNil = (idExpr->name == "NIL");
+                        } else if (varDecl->initializer->type == ASTNode::NodeType::LITERAL) {
+                            LiteralExpr* litExpr = static_cast<LiteralExpr*>(varDecl->initializer.get());
+                            isNil = (litExpr->explicit_type == "NIL");
                         }
                         
                         llvm::Value* optionalValue;
@@ -2389,6 +2629,36 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                 initVal = builder.CreateSIToFP(initVal, varType, "init_itof");
                             }
                         }
+                        
+                        // SPECIAL HANDLING: unknown literal (polymorphic)
+                        // If initializer is unknown, generate sentinel of declared type
+                        bool isUnknown = false;
+                        if (varDecl->initializer->type == ASTNode::NodeType::LITERAL) {
+                            LiteralExpr* litExpr = static_cast<LiteralExpr*>(varDecl->initializer.get());
+                            if (std::holds_alternative<std::string>(litExpr->value)) {
+                                const std::string& str = std::get<std::string>(litExpr->value);
+                                isUnknown = (str == "unknown");
+                            }
+                        }
+                        
+                        if (isUnknown) {
+                            // Generate unknown sentinel for declared type
+                            // unknown is polymorphic - adapts to variable type
+                            if (varType->isIntegerTy()) {
+                                llvm::IntegerType* intType = llvm::cast<llvm::IntegerType>(varType);
+                                unsigned width = intType->getBitWidth();
+                                // unknown sentinel is signed maximum (opposite of ERR min)
+                                initVal = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
+                                std::cerr << "[DEBUG] Generated unknown sentinel for type: ";
+                                varType->print(llvm::errs());
+                                std::cerr << std::endl;
+                            } else {
+                                // For non-integer types, generate zero for now
+                                // TODO: Handle float/string unknown
+                                initVal = llvm::Constant::getNullValue(varType);
+                            }
+                        }
+                        
                         builder.CreateStore(initVal, alloca);
                     }
                 }
@@ -2411,8 +2681,13 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // If statement with optional else
             IfStmt* ifStmt = static_cast<IfStmt*>(stmt);
             
+            std::cerr << "[DEBUG IF] Generating IF statement" << std::endl;
             llvm::Value* condVal = codegenExpression(ifStmt->condition.get());
-            if (!condVal) return nullptr;
+            if (!condVal) {
+                std::cerr << "[DEBUG IF] ERROR: Condition codegen returned nullptr!" << std::endl;
+                return nullptr;
+            }
+            std::cerr << "[DEBUG IF] Condition generated successfully"  << std::endl;
             
             // Convert condition to bool by comparing to zero
             condVal = builder.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0), "ifcond");
@@ -2451,6 +2726,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Continue with merge block
             function->insert(function->end(), mergeBB);
             builder.SetInsertPoint(mergeBB);
+            std::cerr << "[DEBUG IF] IF statement complete" << std::endl;
             return nullptr;
         }
         
@@ -2906,7 +3182,148 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             return nullptr;
         }
 
+        case ASTNode::NodeType::PICK: {
+            // Pick statement - pattern matching
+            PickStmt* pickStmt = static_cast<PickStmt*>(stmt);
+            
+            // Evaluate selector once
+            llvm::Value* selector = codegenExpression(pickStmt->selector.get());
+            if (!selector) {
+                throw std::runtime_error("Failed to generate selector for pick statement");
+            }
+            
+            llvm::Function* func = builder.GetInsertBlock()->getParent();
+            llvm::BasicBlock* end_block = llvm::BasicBlock::Create(context, "pick.end");
+            
+            // Generate check and body blocks for each case
+            std::vector<llvm::BasicBlock*> check_blocks;
+            std::vector<llvm::BasicBlock*> body_blocks;
+            
+            for (size_t i = 0; i < pickStmt->cases.size(); i++) {
+                llvm::BasicBlock* check_block = llvm::BasicBlock::Create(context, "case.check");
+                llvm::BasicBlock* body_block = llvm::BasicBlock::Create(context, "case.body");
+                check_blocks.push_back(check_block);
+                body_blocks.push_back(body_block);
+            }
+            
+            // Branch to first check
+            if (!check_blocks.empty()) {
+                builder.CreateBr(check_blocks[0]);
+            } else {
+                builder.CreateBr(end_block);
+            }
+            
+            // Generate code for each case
+            for (size_t i = 0; i < pickStmt->cases.size(); i++) {
+                PickCase* pick_case = static_cast<PickCase*>(pickStmt->cases[i].get());
+                llvm::BasicBlock* check_block = check_blocks[i];
+                llvm::BasicBlock* body_block = body_blocks[i];
+                llvm::BasicBlock* next_check = (i + 1 < check_blocks.size()) ? check_blocks[i + 1] : end_block;
+                
+                // Check block: evaluate pattern match
+                check_block->insertInto(func);
+                builder.SetInsertPoint(check_block);
+                
+                // Check for wildcard pattern (*)
+                bool is_wildcard = false;
+                if (pick_case->pattern->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* ident = static_cast<IdentifierExpr*>(pick_case->pattern.get());
+                    if (ident->name == "*") {
+                        is_wildcard = true;
+                    }
+                }
+                
+                if (is_wildcard) {
+                    // Wildcard always matches
+                    builder.CreateBr(body_block);
+                } else {
+                    // Generate pattern value
+                    std::cerr << "[DEBUG PICK] Pattern node type: " << static_cast<int>(pick_case->pattern->type) << std::endl;
+                    llvm::Value* pattern_val = codegenExpression(pick_case->pattern.get());
+                    if (!pattern_val) {
+                        // Failed to generate pattern - might be wildcard represented differently
+                        // Just skip to next (treat as wildcard)
+                        builder.CreateBr(body_block);
+                        goto skip_comparison;
+                    }
+                    
+                    // Match types if needed
+                    if (selector->getType() != pattern_val->getType()) {
+                        std::cerr << "[DEBUG PICK] Type mismatch - selector: ";
+                        selector->getType()->print(llvm::errs());
+                        std::cerr << " pattern: ";
+                        pattern_val->getType()->print(llvm::errs());
+                        std::cerr << std::endl;
+                        
+                        // If types are fundamentally incompatible, treat as wildcard fallthrough
+                        if (!selector->getType()->isIntegerTy() || !pattern_val->getType()->isIntegerTy()) {
+                            std::cerr << "[DEBUG PICK] Non-integer types - treating as wildcard" << std::endl;
+                            builder.CreateBr(body_block);
+                            goto skip_comparison;
+                        }
+                        
+                        llvm::IntegerType* selIntTy = llvm::cast<llvm::IntegerType>(selector->getType());
+                        llvm::IntegerType* patIntTy = llvm::cast<llvm::IntegerType>(pattern_val->getType());
+                        if (patIntTy->getBitWidth() < selIntTy->getBitWidth()) {
+                            std::cerr << "[DEBUG PICK] Extending pattern from " << patIntTy->getBitWidth() << " to " << selIntTy->getBitWidth() << std::endl;
+                            pattern_val = builder.CreateSExt(pattern_val, selector->getType(), "pat_sext");
+                        } else if (patIntTy->getBitWidth() > selIntTy->getBitWidth()) {
+                            std::cerr << "[DEBUG PICK] Truncating pattern from " << patIntTy->getBitWidth() << " to " << selIntTy->getBitWidth() << std::endl;
+                            pattern_val = builder.CreateTrunc(pattern_val, selector->getType(), "pat_trunc");
+                        }
+                    }
+                    
+                    // Compare selector with pattern
+                    llvm::Value* match_result;
+                    if (selector->getType()->isIntegerTy()) {
+                        std::cerr << "[DEBUG PICK MATCH] Comparing selector type: ";
+                        selector->getType()->print(llvm::errs());
+                        std::cerr << " with pattern type: ";
+                        pattern_val->getType()->print(llvm::errs());
+                        std::cerr << std::endl;
+                        
+                        // Debug: print constant values if available
+                        if (llvm::ConstantInt* selConst = llvm::dyn_cast<llvm::ConstantInt>(selector)) {
+                            std::cerr << "[DEBUG PICK] Selector constant value: " << selConst->getSExtValue() << std::endl;
+                        }
+                        if (llvm::ConstantInt* patConst = llvm::dyn_cast<llvm::ConstantInt>(pattern_val)) {
+                            std::cerr << "[DEBUG PICK] Pattern constant value: " << patConst->getSExtValue() << std::endl;
+                        }
+                        
+                        match_result = builder.CreateICmpEQ(selector, pattern_val, "match");
+                    } else {
+                        throw std::runtime_error("Unsupported selector type in pick");
+                    }
+                    
+                    // Branch based on match
+                    builder.CreateCondBr(match_result, body_block, next_check);
+                }
+                
+skip_comparison:
+                
+                // Body block: execute case body
+                body_block->insertInto(func);
+                builder.SetInsertPoint(body_block);
+                codegenStatement(pick_case->body.get());
+                
+                // Branch to end if no terminator
+                if (!builder.GetInsertBlock()->getTerminator()) {
+                    builder.CreateBr(end_block);
+                }
+            }
+            
+            // End block
+            end_block->insertInto(func);
+            builder.SetInsertPoint(end_block);
+            
+            // No valid code path should reach here - all cases should return via pass/fail
+            // Add unreachable to satisfy LLVM requirements
+            builder.CreateUnreachable();
+            return nullptr;
+        }
+
         case ASTNode::NodeType::PASS: {
+            std::cerr << "[DEBUG PASS] Generating pass statement" << std::endl;
             // Pass statement - return success with value
             // Builds Result{val: value, err: NULL, is_error: false}
             PassStmt* passStmt = static_cast<PassStmt*>(stmt);
@@ -2916,9 +3333,11 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             
             // Generate code for the value expression
             llvm::Value* value = codegenExpression(passStmt->value.get());
+            std::cerr << "[DEBUG PASS] Pass value generated, is null: " << (value == nullptr) << std::endl;
             if (value) {
                 llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
                 llvm::Type* returnType = currentFunc->getReturnType();
+                std::cerr << "[DEBUG PASS] Return type is struct: " << returnType->isStructTy() << std::endl;
                 
                 // Check if return type is a Result struct {value, error*, is_error}
                 if (returnType->isStructTy()) {
@@ -3479,8 +3898,28 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 bool val = std::get<bool>(lit->value);
                 return builder.getInt1(val);
             } else if (std::holds_alternative<std::string>(lit->value)) {
-                // String literal - create global AriaString struct (Phase 4.3)
+                // String literal - check for special literals first
                 const std::string& str = std::get<std::string>(lit->value);
+                
+                // Phase 5.1: Handle special unknown literal
+                if (str == "unknown") {
+                    // unknown sentinel (opposite of ERR, uses max value)
+                    llvm::Type* target_type = llvm::Type::getInt32Ty(context);
+                    unsigned width = target_type->getIntegerBitWidth();
+                    std::cerr << "[DEBUG IR_GEN] unknown literal - generating sentinel i" << width << std::endl;
+                    return llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
+                }
+                
+                // Phase 5.1: Handle special ERR literal
+                if (str == "ERR") {
+                    // ERR sentinel (minimum signed value)
+                    llvm::Type* target_type = llvm::Type::getInt32Ty(context);
+                    unsigned width = target_type->getIntegerBitWidth();
+                    std::cerr << "[DEBUG IR_GEN] ERR literal - generating sentinel i" << width << std::endl;
+                    return llvm::ConstantInt::get(context, llvm::APInt::getSignedMinValue(width));
+                }
+                
+                // Normal string literal - create global AriaString struct (Phase 4.3)
                 
                 // Create a global constant for the string data  
                 llvm::Constant* str_data = llvm::ConstantDataArray::getString(context, str, true);
@@ -3588,7 +4027,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // - AriaString (struct { i8*, i64 })
             // - TBB types with ERR sentinels
             // ExprCodegen has the correct, specification-compliant implementations.
-            backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values, var_aria_types);
+            backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values, var_aria_types, type_system);
             return expr_codegen.codegenCall(call);
         }
         
@@ -4160,6 +4599,122 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             if (!L || !R) {
                 return nullptr;
             }
+
+            // SPECIAL HANDLING: NIL/NULL literal comparisons with optional/pointer types
+            // If one side is NIL literal and other is optional, create proper OptionalNone struct
+            auto* leftLiteral = dynamic_cast<LiteralExpr*>(binop->left.get());
+            auto* rightLiteral = dynamic_cast<LiteralExpr*>(binop->right.get());
+            bool leftIsNIL = (leftLiteral && leftLiteral->explicit_type == "NIL");
+            bool rightIsNIL = (rightLiteral && rightLiteral->explicit_type == "NIL");
+            
+            // Check for unknown literals (polymorphic like NIL)
+            bool leftIsUnknown = false;
+            bool rightIsUnknown = false;
+            if (leftLiteral && std::holds_alternative<std::string>(leftLiteral->value)) {
+                leftIsUnknown = (std::get<std::string>(leftLiteral->value) == "unknown");
+            }
+            if (rightLiteral && std::holds_alternative<std::string>(rightLiteral->value)) {
+                rightIsUnknown = (std::get<std::string>(rightLiteral->value) == "unknown");
+            }
+            
+            // SPECIAL HANDLING: Three-valued logic for comparisons (Phase 5.5)
+            // When ONE operand is unknown (not both), comparison result is unknown
+            // Note: unknown == unknown will naturally compare sentinels and return true
+            if ((leftIsUnknown || rightIsUnknown) && !(leftIsUnknown && rightIsUnknown)) {
+                // ONE operand is unknown (XOR) - result is unknown for comparisons
+                if (binop->op.type == frontend::TokenType::TOKEN_EQUAL_EQUAL ||
+                    binop->op.type == frontend::TokenType::TOKEN_BANG_EQUAL ||
+                    binop->op.type == frontend::TokenType::TOKEN_LESS ||
+                    binop->op.type == frontend::TokenType::TOKEN_LESS_EQUAL ||
+                    binop->op.type == frontend::TokenType::TOKEN_GREATER ||
+                    binop->op.type == frontend::TokenType::TOKEN_GREATER_EQUAL) {
+                    
+                    std::cerr << "[DEBUG] Comparison with one unknown operand - returning unknown sentinel" << std::endl;
+                    // Result is unknown - return i32 max (unknown sentinel for bool)
+                    return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 
+                                                  llvm::APInt::getSignedMaxValue(32).getSExtValue());
+                }
+            }
+            
+            if ((leftIsNIL || rightIsNIL) && (binop->op.type == frontend::TokenType::TOKEN_EQUAL_EQUAL ||
+                                              binop->op.type == frontend::TokenType::TOKEN_BANG_EQUAL)) {
+                // Check if the other operand is an optional (struct with 2 fields: {i1, T})
+                if (leftIsNIL && R->getType()->isStructTy()) {
+                    llvm::StructType* structType = llvm::cast<llvm::StructType>(R->getType());
+                    if (structType->getNumElements() == 2 && 
+                        structType->getElementType(0)->isIntegerTy(1)) {
+                        // Right is optional - replace left NIL with OptionalNone
+                        L = createOptionalNone(R->getType());
+                        std::cerr << "[DEBUG] Replaced left NIL with OptionalNone for comparison" << std::endl;
+                    }
+                } else if (rightIsNIL && L->getType()->isStructTy()) {
+                    llvm::StructType* structType = llvm::cast<llvm::StructType>(L->getType());
+                    if (structType->getNumElements() == 2 && 
+                        structType->getElementType(0)->isIntegerTy(1)) {
+                        // Left is optional - replace right NIL with OptionalNone
+                        R = createOptionalNone(L->getType());
+                        std::cerr << "[DEBUG] Replaced right NIL with OptionalNone for comparison" << std::endl;
+                    }
+                }
+            }
+            
+            // SPECIAL HANDLING: unknown literal comparisons (polymorphic)
+            // unknown adapts to other operand's type
+            if ((leftIsUnknown || rightIsUnknown) && 
+                (binop->op.type == frontend::TokenType::TOKEN_EQUAL_EQUAL ||
+                 binop->op.type == frontend::TokenType::TOKEN_BANG_EQUAL)) {
+                
+                if (leftIsUnknown && R->getType()->isIntegerTy()) {
+                    // Replace left unknown with sentinel matching right type
+                    llvm::IntegerType* intType = llvm::cast<llvm::IntegerType>(R->getType());
+                    unsigned width = intType->getBitWidth();
+                    L = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
+                    std::cerr << "[DEBUG] Replaced left unknown with sentinel matching type: ";
+                    R->getType()->print(llvm::errs());
+                    std::cerr << std::endl;
+                } else if (rightIsUnknown && L->getType()->isIntegerTy()) {
+                    // Replace right unknown with sentinel matching left type
+                    llvm::IntegerType* intType = llvm::cast<llvm::IntegerType>(L->getType());
+                    unsigned width = intType->getBitWidth();
+                    R = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
+                    std::cerr << "[DEBUG] Replaced right unknown with sentinel matching type: ";
+                    L->getType()->print(llvm::errs());
+                    std::cerr << std::endl;
+                }
+            }
+            
+            // SPECIAL HANDLING: unknown literal arithmetic propagation (Phase 5.3)
+            // If either operand is unknown in an arithmetic operation, result is unknown
+            // Check all arithmetic operators: +, -, *, /, %
+            if (binop->op.type == frontend::TokenType::TOKEN_PLUS ||
+                binop->op.type == frontend::TokenType::TOKEN_MINUS ||
+                binop->op.type == frontend::TokenType::TOKEN_STAR ||
+                binop->op.type == frontend::TokenType::TOKEN_SLASH ||
+                binop->op.type == frontend::TokenType::TOKEN_PERCENT) {
+                
+                if (leftIsUnknown || rightIsUnknown) {
+                    // Result is unknown - return sentinel of appropriate type
+                    // Determine result type from the non-unknown operand, or default to int32
+                    llvm::Type* resultType = nullptr;
+                    
+                    if (!leftIsUnknown && L->getType()->isIntegerTy()) {
+                        resultType = L->getType();
+                    } else if (!rightIsUnknown && R->getType()->isIntegerTy()) {
+                        resultType = R->getType();
+                    } else {
+                        // Both unknown or non-integer types - default to int32
+                        resultType = llvm::Type::getInt32Ty(context);
+                    }
+                    
+                    // Generate unknown sentinel for result type
+                    llvm::IntegerType* intType = llvm::cast<llvm::IntegerType>(resultType);
+                    unsigned width = intType->getBitWidth();
+                    llvm::Value* unknownResult = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
+                    
+                    std::cerr << "[DEBUG] Arithmetic with unknown operand - returning unknown sentinel" << std::endl;
+                    return unknownResult;
+                }
+            }
             
             // Check if operands are TBB types (requires overflow detection)
             Type* leftType = nullptr;
@@ -4598,6 +5153,24 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         std::cerr << "[DEBUG] LBIM equality comparison detected, numLimbs=" << numLimbs << std::endl;
                         return generateLBIMEQ(L, R, numLimbs);
                     }
+                    // Optional type comparison: check hasValue fields
+                    if (L->getType()->isStructTy() && R->getType()->isStructTy()) {
+                        llvm::StructType* leftStruct = llvm::cast<llvm::StructType>(L->getType());
+                        llvm::StructType* rightStruct = llvm::cast<llvm::StructType>(R->getType());
+                        // Check if both are optional structs {i1, T}
+                        if (leftStruct->getNumElements() == 2 && leftStruct->getElementType(0)->isIntegerTy(1) &&
+                            rightStruct->getNumElements() == 2 && rightStruct->getElementType(0)->isIntegerTy(1)) {
+                            std::cerr << "[DEBUG] Comparing two optional types" << std::endl;
+                            // For optional comparison, we compare hasValue fields
+                            // Two optionals are equal if both are NIL or both have same value
+                            llvm::Value* leftHasValue = builder.CreateExtractValue(L, 0, "left.hasValue");
+                            llvm::Value* rightHasValue = builder.CreateExtractValue(R, 0, "right.hasValue");
+                            
+                            // Simple comparison: just check if hasValue fields match
+                            // For now, only support NIL comparisons (one has value, one doesn't)
+                            return builder.CreateICmpEQ(leftHasValue, rightHasValue, "optional.eq");
+                        }
+                    }
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
@@ -4642,6 +5215,22 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         llvm::Value* eq = generateLBIMEQ(L, R, numLimbs);
                         return builder.CreateNot(eq, "netmp");
+                    }
+                    // Optional type comparison: check hasValue fields (same as ==, then negate)
+                    if (L->getType()->isStructTy() && R->getType()->isStructTy()) {
+                        llvm::StructType* leftStruct = llvm::cast<llvm::StructType>(L->getType());
+                        llvm::StructType* rightStruct = llvm::cast<llvm::StructType>(R->getType());
+                        // Check if both are optional structs {i1, T}
+                        if (leftStruct->getNumElements() == 2 && leftStruct->getElementType(0)->isIntegerTy(1) &&
+                            rightStruct->getNumElements() == 2 && rightStruct->getElementType(0)->isIntegerTy(1)) {
+                            std::cerr << "[DEBUG] Comparing two optional types (!=)" << std::endl;
+                            // For optional comparison, we compare hasValue fields
+                            llvm::Value* leftHasValue = builder.CreateExtractValue(L, 0, "left.hasValue");
+                            llvm::Value* rightHasValue = builder.CreateExtractValue(R, 0, "right.hasValue");
+                            
+                            // Check if hasValue fields differ (for !=)
+                            return builder.CreateICmpNE(leftHasValue, rightHasValue, "optional.ne");
+                        }
                     }
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
@@ -5001,19 +5590,32 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 return phi;
             } 
             else {
-                // ?? operator: Null coalescing for pointers
-                // Check if pointer is null, use default if null, dereference if not
+                // ?? operator: Null coalescing for Optional types and pointers
                 
-                // Create null pointer constant
-                llvm::Value* nullPtr = llvm::Constant::getNullValue(leftVal->getType());
-                
-                // Compare pointer to null
-                llvm::Value* isNull = builder.CreateICmpEQ(leftVal, nullPtr, "is_null");
-                
-                // Generate default value to get pointee type
+                llvm::Value* isNull;
+                llvm::Value* unwrappedValue;
                 llvm::Value* defaultVal = codegenExpression(unwrap->defaultValue.get());
                 if (!defaultVal) return nullptr;
-                llvm::Type* pointeeType = defaultVal->getType();
+                
+                if (leftVal->getType()->isStructTy()) {
+                    // Optional type: { i1 hasValue, T value }
+                    // Extract hasValue field (index 0)
+                    llvm::Value* hasValue = builder.CreateExtractValue(leftVal, 0, "optional.hasValue");
+                    isNull = builder.CreateNot(hasValue, "optional.isNone");
+                    
+                    // Extract value field (index 1) for use if has value
+                    unwrappedValue = builder.CreateExtractValue(leftVal, 1, "optional.value");
+                } else if (leftVal->getType()->isPointerTy()) {
+                    // Pointer type: Check if pointer is null
+                    llvm::Value* nullPtr = llvm::Constant::getNullValue(leftVal->getType());
+                    isNull = builder.CreateICmpEQ(leftVal, nullPtr, "is_null");
+                    
+                    // Dereference pointer to get value (will happen in non-null block)
+                    unwrappedValue = nullptr;  // Will be set in non-null block
+                } else {
+                    // Unsupported type for nil coalescing
+                    throw std::runtime_error("Nil coalescing operator (??) requires Optional or pointer type");
+                }
                 
                 // Create basic blocks for control flow
                 llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
@@ -5024,26 +5626,28 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // Branch based on is_null
                 builder.CreateCondBr(isNull, nullBlock, nonNullBlock);
                 
-                // Null block: use default value (already generated)
+                // Null block: use default value
                 builder.SetInsertPoint(nullBlock);
                 llvm::BasicBlock* nullExitBlock = builder.GetInsertBlock();
                 builder.CreateBr(mergeBlock);
                 
-                // Non-null block: dereference pointer to get value
+                // Non-null block: use unwrapped value (or dereference pointer)
                 builder.SetInsertPoint(nonNullBlock);
-                llvm::Value* derefValue = builder.CreateLoad(
-                    pointeeType, 
-                    leftVal, 
-                    "deref_value"
-                );
+                if (leftVal->getType()->isPointerTy()) {
+                    // For pointers, need to dereference
+                    llvm::Type* pointeeType = defaultVal->getType();
+                    unwrappedValue = builder.CreateLoad(pointeeType, leftVal, "deref_value");
+                }
+                // For Optional types, unwrappedValue was already extracted above
                 llvm::BasicBlock* nonNullExitBlock = builder.GetInsertBlock();
                 builder.CreateBr(mergeBlock);
                 
-                // Merge block: use PHI to select between default and dereferenced value
+                // Merge block: use PHI to select between default and unwrapped value
                 builder.SetInsertPoint(mergeBlock);
-                llvm::PHINode* phi = builder.CreatePHI(pointeeType, 2, "coalesce_result");
+                llvm::Type* resultType = defaultVal->getType();
+                llvm::PHINode* phi = builder.CreatePHI(resultType, 2, "coalesce_result");
                 phi->addIncoming(defaultVal, nullExitBlock);
-                phi->addIncoming(derefValue, nonNullExitBlock);
+                phi->addIncoming(unwrappedValue, nonNullExitBlock);
                 
                 return phi;
             }
@@ -5185,19 +5789,97 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             return array_alloca;
         }
         
+        case ASTNode::NodeType::POINTER_MEMBER: {
+            // Pointer member access with arrow operator: ptr->member
+            // This dereferences the pointer then accesses the member
+            MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr);
+            
+            // Generate code for the pointer expression
+            llvm::Value* ptr_val = codegenExpression(member->object.get());
+            if (!ptr_val) {
+                return nullptr;
+            }
+            
+            // The pointer value should be an LLVM pointer - use it directly as object_ptr
+            // (no need to load again since codegenExpression already gives us the pointer value)
+            llvm::Value* object_ptr = ptr_val;
+            
+            // Look up the Aria type of the pointer
+            auto type_it = value_types.find(ptr_val);
+            if (type_it == value_types.end()) {
+                return nullptr;
+            }
+            
+            Type* pointer_aria_type = type_it->second;
+            
+            // Extract the pointee type
+            if (pointer_aria_type->getKind() != TypeKind::POINTER) {
+                return nullptr;  // Not a pointer type
+            }
+            
+            sema::PointerType* ptr_type = static_cast<sema::PointerType*>(pointer_aria_type);
+            Type* aria_type = ptr_type->getPointeeType();
+            
+            // Now handle the member access on the dereferenced pointer
+            // (same logic as MEMBER_ACCESS case)
+            
+            // Handle struct member access
+            if (aria_type->getKind() != TypeKind::STRUCT) {
+                return nullptr;  // Not pointing to a struct
+            }
+            
+            StructType* struct_type = static_cast<StructType*>(aria_type);
+            
+            // Find the field index
+            int field_index = -1;
+            Type* field_type = nullptr;
+            const auto& fields = struct_type->getFields();
+            for (size_t i = 0; i < fields.size(); ++i) {
+                if (fields[i].name == member->member) {
+                    field_index = static_cast<int>(i);
+                    field_type = fields[i].type;
+                    break;
+                }
+            }
+            
+            if (field_index < 0) {
+                return nullptr;  // Field not found
+            }
+            
+            // Get the LLVM struct type
+            llvm::Type* llvm_struct_type = mapType(struct_type);
+            
+            // Create GEP to access the field
+            llvm::Value* field_ptr = builder.CreateStructGEP(
+                llvm_struct_type, 
+                object_ptr, 
+                field_index, 
+                member->member + ".ptr"
+            );
+            
+            // Load the field value
+            llvm::Type* llvm_field_type = mapType(field_type);
+            return builder.CreateLoad(llvm_field_type, field_ptr, member->member);
+        }
+        
         case ASTNode::NodeType::MEMBER_ACCESS: {
             // Member access - enum variants, struct fields, vector components
             MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr);
+            
+            std::cerr << "[DEBUG MEMBER_ACCESS] Accessing member: " << member->member << std::endl;
             
             // Check if this is an enum variant access (EnumName.VARIANT)
             if (member->object->type == ASTNode::NodeType::IDENTIFIER) {
                 IdentifierExpr* ident = static_cast<IdentifierExpr*>(member->object.get());
                 std::string fullName = ident->name + "." + member->member;
                 
+                std::cerr << "[DEBUG MEMBER_ACCESS] Checking enum: " << fullName << std::endl;
+                
                 // Check if this is an enum variant (registered in enum_constants map)
                 auto enum_it = enum_constants.find(fullName);
                 if (enum_it != enum_constants.end()) {
                     // Return the constant integer value for this enum variant
+                    std::cerr << "[DEBUG MEMBER_ACCESS] Found enum variant!" << std::endl;
                     return llvm::ConstantInt::get(builder.getInt64Ty(), enum_it->second);
                 }
             }
@@ -5211,6 +5893,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 auto it = named_values.find(ident->name);
                 if (it != named_values.end()) {
                     object_ptr = it->second;  // Get the alloca directly, don't load
+                    std::cerr << "[DEBUG MEMBER_ACCESS] Found identifier: " << ident->name << ", ptr type:  ";
+                    object_ptr->getType()->print(llvm::errs());
+                    std::cerr << std::endl;
                 }
             } else {
                 // For complex expressions, generate code normally
@@ -5218,6 +5903,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             if (!object_ptr) {
+                std::cerr << "[DEBUG MEMBER_ACCESS] object_ptr is nullptr!" << std::endl;
                 return nullptr;
             }
             
@@ -5225,10 +5911,14 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             auto type_it = value_types.find(object_ptr);
             if (type_it == value_types.end()) {
                 // No type information available
+                std::cerr << "[DEBUG MEMBER_ACCESS] No type info for object_ptr!" << std::endl;
                 return nullptr;
             }
             
+            std::cerr << "[DEBUG MEMBER_ACCESS] Found type info!" << std::endl;
+            
             Type* aria_type = type_it->second;
+            std::cerr << "[DEBUG MEMBER_ACCESS] Type kind: " << static_cast<int>(aria_type->getKind()) << std::endl;
             
             // Handle vector member access (.x, .y, .z)
             if (aria_type->getKind() == TypeKind::VECTOR) {
@@ -5260,9 +5950,45 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
             }
             
+            // PHASE 4: Handle Result<T> member access (.value, .error, .is_error)
+            if (aria_type->getKind() == TypeKind::RESULT) {
+                std::cerr << "[DEBUG MEMBER_ACCESS] Handling Result type member access" << std::endl;
+                
+                // Result<T> is represented as LLVM struct { T value, ptr error, i1 is_error }
+                int field_index = -1;
+                if (member->member == "value") {
+                    field_index = 0;
+                } else if (member->member == "error") {
+                    field_index = 1;
+                } else if (member->member == "is_error") {
+                    field_index = 2;
+                } else {
+                    std::cerr << "[DEBUG MEMBER_ACCESS] Unknown Result member: " << member->member << std::endl;
+                    return nullptr;
+                }
+                
+                std::cerr << "[DEBUG MEMBER_ACCESS] Extracting Result field " << field_index << std::endl;
+                
+                // Result parameters come in as SSA values (not pointers)
+                // Use ExtractValue to get the field
+                if (object_ptr->getType()->isPointerTy()) {
+                    // Result is stored in memory (e.g., local variable)
+                    // Load it first, then extract
+                    // Get the Result struct type from the type system
+                    llvm::Type* result_llvm_type = mapType(aria_type);
+                    llvm::Value* result_val = builder.CreateLoad(result_llvm_type, object_ptr, "result");
+                    return builder.CreateExtractValue(result_val, field_index, member->member);
+                } else {
+                    // Result is an SSA value (e.g., function parameter)
+                    // Extract directly
+                    return builder.CreateExtractValue(object_ptr, field_index, member->member);
+                }
+            }
+            
             // Handle struct member access
             if (aria_type->getKind() != TypeKind::STRUCT) {
                 // Not a struct type
+                std::cerr << "[DEBUG MEMBER_ACCESS] Not a struct or Result type, kind=" << static_cast<int>(aria_type->getKind()) << std::endl;
                 return nullptr;
             }
             
@@ -5288,17 +6014,29 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Get the LLVM struct type
             llvm::Type* llvm_struct_type = mapType(struct_type);
             
-            // Create GEP to access the field
-            llvm::Value* field_ptr = builder.CreateStructGEP(
-                llvm_struct_type, 
-                object_ptr, 
-                field_index, 
-                member->member + ".ptr"
-            );
+            // Check if object_ptr is actually a pointer or an SSA value
+            llvm::Value* field_value = nullptr;
             
-            // Load the field value
-            llvm::Type* llvm_field_type = mapType(field_type);
-            return builder.CreateLoad(llvm_field_type, field_ptr, member->member);
+            if (object_ptr->getType()->isPointerTy()) {
+                // object_ptr is a pointer to the struct (e.g., local variable alloca)
+                // Use GEP to get field address, then load it
+                llvm::Value* field_ptr = builder.CreateStructGEP(
+                    llvm_struct_type, 
+                    object_ptr, 
+                    field_index, 
+                    member->member + ".ptr"
+                );
+                
+                // Load the field value
+                llvm::Type* llvm_field_type = mapType(field_type);
+                field_value = builder.CreateLoad(llvm_field_type, field_ptr, member->member);
+            } else {
+                // object_ptr is an SSA value (the struct itself, e.g., function parameter)
+                // Use ExtractValue to get the field directly
+                field_value = builder.CreateExtractValue(object_ptr, field_index, member->member);
+            }
+            
+            return field_value;
         }
         
         case ASTNode::NodeType::INDEX: {
@@ -5544,7 +6282,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             TemplateLiteralExpr* templateLit = static_cast<TemplateLiteralExpr*>(expr);
 
             // Create ExprCodegen instance
-            backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values, var_aria_types);
+            backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values, var_aria_types, type_system);
 
             // Generate template literal IR
             return expr_codegen.codegenTemplateLiteral(templateLit);

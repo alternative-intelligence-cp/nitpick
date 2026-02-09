@@ -19,12 +19,14 @@
 - ✅ **aria-pkg** - Package manager with registry
 - ✅ **aria-dap** - Debug Adapter Protocol server
 - ✅ **aria-lsp** - Language Server Protocol implementation
-- ✅ **Comprehensive test suite** - 48/64 tests passing
+- ✅ **Test suite** - 188/389 tests passing (48%) - in active development
+- ✅ **Balanced Literal Syntax** - 0t1T0=6, 0n2A=17 both compile and execute correctly
 - ✅ **Live documentation** - https://aria.docs.ai-liberation-platform.org/
 
 ### Language Features (Status) 🔧
 - ✅ **TBB Types (tbb8/16/32/64)** - Symmetric signed integers with overflow detection
-- ✅ **Balanced Ternary/Nonary** - trit/tryte/nit/nyte with automatic range clamping ⭐ NEW!
+- ✅ **Balanced Ternary/Nonary Literals** - 0t[01T]+ and 0n[01234ABCD]+ syntax validated
+- 🔧 **Balanced Ternary/Nonary Types** - trit/tryte/nit/nyte runtime (HIGH PRIORITY - Core Nikola requirement)
 - ✅ **Generic Functions** - Monomorphization with type inference
 - ✅ **Generic Structs** - struct<T> declarations with specialization
 - ✅ **Module System** - use, mod, pub, extern keywords
@@ -59,6 +61,8 @@ Aria's design philosophy draws from published research in consciousness modeling
 
 These foundations inform Aria's approach to neurodivergent-friendly syntax design and pattern-based cognition optimization.
 
+**📖 Want to understand Aria's design decisions?** See [**ATPM Design Rationale**](docs/ATPM_DESIGN_RATIONALE.md) - explains why Aria has balanced types, explicit conversions, deterministic arithmetic, and "weird" features without requiring deep physics knowledge.
+
 ### Key Innovations
 
 **� TBB Types - Symmetric Signed Integers with Error Sentinels**
@@ -90,15 +94,37 @@ tbb8:val = 10;
 tbb8:sum = err + val;   // sum = ERR (error propagates)
 tbb8:prod = val * err;  // prod = ERR (error propagates)
 ```
-**🔢 Balanced Ternary/Nonary Types - Symmetric Arithmetic**
+
+**🔢 Balanced Ternary/Nonary Types - Symmetric Arithmetic** *(Literals Complete, Runtime In Progress)*
+
+**Status**: Literal syntax ✅ implemented and validated. Runtime operations 🔧 in progress. High priority for Nikola substrate integration.
+
 Balanced ternary uses digits {-1, 0, 1} instead of {0, 1, 2}, providing symmetric signed arithmetic:
-- **trit** - Single balanced ternary digit (-1, 0, 1) in 3 bits
+- **trit** - Single balanced ternary digit (-1, 0, 1) in i8 storage
 - **tryte** - 10 trits packed in 16 bits (range: -29524 to 29524)
-- **nit** - Single nonary digit (-4 to 4) in 4 bits
+- **nit** - Single nonary digit (-4 to 4) in i8 storage  
 - **nyte** - 5 nits packed in 16 bits (range: -29524 to 29524)
 
-**Automatic Range Clamping:**
+**Literal Syntax** (✅ Working Now):
 ```aria
+func:main = int32() {
+    // Balanced ternary: 0t[01T]+ where T=-1
+    int64:six = 0t1T0;      // 1×9 + (-1)×3 + 0×1 = 6
+    int64:zero = 0t0;       // 0
+    int64:neg_one = 0tT;    // -1
+    
+    // Balanced nonary: 0n[01234ABCD]+ where A=-1, B=-2, C=-3, D=-4
+    int64:seventeen = 0n2A; // 2×9 + (-1)×1 = 17
+    int64:four = 0n4;       // 4
+    int64:neg_four = 0nD;   // -4
+    
+    pass(0);
+};
+```
+
+**Planned Runtime Behavior** (automatic range clamping):
+```aria
+// NOT YET IMPLEMENTED - Specification only
 func:main = int64() {
     trit:x = 1;
     trit:y = 1;
@@ -112,9 +138,11 @@ func:main = int64() {
 };
 ```
 
-**Why 3 bits for trit?**
-The extra bit beyond the minimum 2 enables overflow detection before clamping. Without it, signed arithmetic wraps (1+1=2 becomes -2 in i2), breaking the clamping logic.
-**�🌊 Six-Stream I/O Model**
+**Why i8 storage for trit/nit?** The extra bits beyond the minimum enable ERR sentinel (-128) for overflow detection and sticky error propagation, matching TBB type safety guarantees.
+
+**Implementation Timeline**: Runtime operations 1-2 weeks (core requirement for Nikola wave arithmetic)
+
+**🌊 Six-Stream I/O Model**
 Traditional programs use 3 streams (stdin, stdout, stderr). Aria programs use 6:
 - **stdin/stdout/stderr** - Standard I/O (compatible with existing systems)
 - **stddbg** - Debug output separate from stderr

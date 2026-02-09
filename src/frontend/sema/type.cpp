@@ -462,7 +462,7 @@ bool ResultType::isAssignableTo(const Type* target) const {
 
 std::string ResultType::toString() const {
     std::stringstream ss;
-    ss << "result<" << valueType->toString() << ">";
+    ss << "Result<" << valueType->toString() << ">";
     return ss.str();
 }
 

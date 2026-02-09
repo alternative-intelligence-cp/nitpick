@@ -16,46 +16,6 @@ struct:TestResult = {
    int32:value;
 };
 
-func:main = int32() {
-    int32:passed = 0;
-    int32:total = 0;
-    
-    // SUITE A: LBIM Tests
-    total = total + 1;
-    TestResult:r1 = test_lbim_overflow();
-    if (r1.passed) { passed = passed + 1; }
-    
-    total = total + 1;
-    TestResult:r2 = test_lbim_div_zero();
-    if (r2.passed) { passed = passed + 1; }
-    
-    total = total + 1;
-    TestResult:r3 = test_lbim_carry();
-    if (r3.passed) { passed = passed + 1; }
-    
-    // SUITE B: TBB Tests
-    total = total + 1;
-    TestResult:r4 = test_tbb_sticky();
-    if (r4.passed) { passed = passed + 1; }
-    
-    total = total + 1;
-    TestResult:r5 = test_tbb_div_zero();
-    if (r5.passed) { passed = passed + 1; }
-    
-    // SUITE C: FIX256 Tests (if implemented)
-    // TODO: Uncomment when fix256 is available
-    // total = total + 1;
-    // TestResult:r6 = test_fix256_commute();
-    // if (r6.passed) { passed = passed + 1; };
-    
-    // Return 0 if all passed, 1 otherwise
-    bool:all_passed = (passed == total);
-    if (all_passed) {
-        return 0;
-    }
-    return 1;
-};
-
 // ----------------------------------------------------------------------------
 // SUITE A: LBIM & INTEGRAL INTEGRITY
 // ----------------------------------------------------------------------------
@@ -101,13 +61,13 @@ func:test_lbim_div_zero = TestResult() {
 
 func:test_lbim_carry = TestResult() {
     // LBIM-03: Test bit shifts across limb boundaries
-    int1024:val = 1;
-    int1024:shifted = val << 100;  // Shift by 100 bits
+    uint1024:val = 1u1024;
+    uint1024:shifted = val << 100u1024;  // Shift by 100 bits
     
     // Should produce 2^100
     // Can't easily verify the exact value without string conversion
     // But we can verify it's not zero
-    bool:not_zero = (shifted != 0);
+    bool:not_zero = (shifted != 0u1024);
     
     TestResult:res;
     res.id = "LBIM-03";
@@ -129,8 +89,9 @@ func:test_tbb_sticky = TestResult() {
     tbb8:a = 10;
     tbb8:b = 20;
     tbb8:sum = a + b;
+    tbb8:expected = 30;
     
-    bool:correct = (sum == 30);
+    bool:correct = (sum == expected);
     
     TestResult:res;
     res.id = "TBB-01";
@@ -143,6 +104,7 @@ func:test_tbb_div_zero = TestResult() {
     // TBB-02: Division by zero should return ERR
     tbb32:val = 100;
     tbb32:zero = 0;
+    tbb32:err_sentinel = -128;  // TBB ERR value
     
     // This should not crash
     tbb32:result = val / zero;
@@ -155,22 +117,45 @@ func:test_tbb_div_zero = TestResult() {
 };
 
 // ----------------------------------------------------------------------------
-// SUITE C: FIX256 (Commented out - needs implementation check)
+// Main test runner
 // ----------------------------------------------------------------------------
 
-// func:test_fix256_commute = TestResult() {
-//     // FIX-01: Commutativity A+B == B+A
-//     fix256:a = 123456789;
-//     fix256:b = 987654321;
-//     
-//     fix256:res1 = a + b;
-//     fix256:res2 = b + a;
-//     
-//     bool:equal = (res1 == res2);
-//     
-//     TestResult:res;
-//     res.id = "FIX-01";
-//     res.passed = equal;
-//     res.value = 1;
-//     return res;
-// };
+func:main = int32() {
+    int32:passed = 0;
+    int32:total = 0;
+    
+    // SUITE A: LBIM Tests
+    total = total + 1;
+    TestResult:r1 = test_lbim_overflow();
+    if (r1.passed) { passed = passed + 1; }
+    
+    total = total + 1;
+    TestResult:r2 = test_lbim_div_zero();
+    if (r2.passed) { passed = passed + 1; }
+    
+    total = total + 1;
+    TestResult:r3 = test_lbim_carry();
+    if (r3.passed) { passed = passed + 1; }
+    
+    // SUITE B: TBB Tests
+    total = total + 1;
+    TestResult:r4 = test_tbb_sticky();
+    if (r4.passed) { passed = passed + 1; }
+    
+    total = total + 1;
+    TestResult:r5 = test_tbb_div_zero();
+    if (r5.passed) { passed = passed + 1; }
+    
+    // SUITE C: FIX256 Tests (if implemented)
+    // TODO: Uncomment when fix256 is available
+    // total = total + 1;
+    // TestResult:r6 = test_fix256_commute();
+    // if (r6.passed) { passed = passed + 1; };
+    
+    // Return 0 if all passed, 1 otherwise
+    bool:all_passed = (passed == total);
+    if (all_passed) {
+        return 0;
+    }
+    return 1;
+};

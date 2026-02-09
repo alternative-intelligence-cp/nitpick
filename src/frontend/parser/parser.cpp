@@ -3,6 +3,7 @@
 #include "frontend/ast/expr.h"
 #include <sstream>
 #include <iostream>
+#include <cctype>
 
 using namespace aria;
 using namespace aria::frontend;
@@ -548,7 +549,9 @@ ASTNodePtr Parser::parsePrimary() {
         int line = token.line;
         int col = token.column;
         advance();
-        return std::make_shared<LiteralExpr>(std::monostate{}, line, col);
+        auto lit = std::make_shared<LiteralExpr>(std::monostate{}, line, col);
+        lit->explicit_type = "NULL";  // Mark as NULL literal for type checking
+        return lit;
     }
     
     // NIL literal (Aria native - absence of value)
@@ -556,7 +559,9 @@ ASTNodePtr Parser::parsePrimary() {
         int line = token.line;
         int col = token.column;
         advance();
-        return std::make_shared<LiteralExpr>(std::monostate{}, line, col);
+        auto lit = std::make_shared<LiteralExpr>(std::monostate{}, line, col);
+        lit->explicit_type = "NIL";  // Mark as NIL literal for type checking
+        return lit;
     }
     
     // ERR literal (TBB error sentinel value)
@@ -571,12 +576,41 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<LiteralExpr>(std::string("ERR"), line, col);
     }
     
+    // unknown literal (indeterminate value)
+    if (token.type == TokenType::TOKEN_KW_UNKNOWN) {
+        int line = token.line;
+        int col = token.column;
+        advance();
+        // unknown is represented as a special literal
+        // Similar to ERR but semantically different: unknown = indeterminate/not-yet-known
+        // The semantic analyzer will handle type-specific unknown values
+        return std::make_shared<LiteralExpr>(std::string("unknown"), line, col);
+    }
+    
     // Identifier
     if (token.type == TokenType::TOKEN_IDENTIFIER) {
         std::string lexeme = token.lexeme;  // Save before advance()
         int line = token.line;
         int col = token.column;
         advance();
+        
+        // Check for instance<T>(...) constructor syntax
+        if (lexeme == "instance" && check(TokenType::TOKEN_LESS)) {
+            advance(); // consume '<'
+            
+            // Parse type name
+            Token typeToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected type name after 'instance<'");
+            std::string typeName = typeToken.lexeme;
+            
+            consume(TokenType::TOKEN_GREATER, "Expected '>' after type name in instance<T>");
+            
+            // Now we should have '(' for the argument list
+            // This will be parsed as a call expression in parsePostfix/parseCallExpression
+            // Transform instance<TypeName> to TypeName_create as identifier
+            std::string createFuncName = typeName + "_create";
+            return std::make_shared<IdentifierExpr>(createFuncName, line, col);
+        }
+        
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
     }
     
@@ -898,6 +932,11 @@ ASTNodePtr Parser::parseUnary() {
             return nullptr;
         }
         
+        // PRECEDENCE FIX: Apply postfix operators (member access, calls, indexing)
+        // to the operand BEFORE creating the unary expression.
+        // This makes !r.is_error parse as !(r.is_error) instead of (!r).is_error
+        operand = parsePostfix(operand);
+        
         // FIX: Explicitly pass false for isPostfix, otherwise token.line (int) is converted to true
         auto unaryExpr = std::make_shared<UnaryExpr>(token, operand, false, token.line, token.column);
         
@@ -1143,6 +1182,33 @@ ASTNodePtr Parser::parseMemberExpression(ASTNodePtr object) {
     } else {
         error("Expected member name after '.' or '->'");
         return object;
+    }
+    
+    // Check for Type.MEMBER static access (Type:Name pattern)
+    // If object is an identifier starting with uppercase and not pointer/safe-nav access,
+    // transform Type.MEMBER into Type_MEMBER identifier (will become call if needed)
+    if (!isPointerAccess && !isSafeNav && 
+        object && object->type == ASTNode::NodeType::IDENTIFIER) {
+        auto identExpr = std::static_pointer_cast<IdentifierExpr>(object);
+        std::string typeName = identExpr->name;
+        
+        // Check if identifier starts with uppercase (Type name convention)
+        if (!typeName.empty() && std::isupper(typeName[0])) {
+            // This is Type.MEMBER static access
+            // Transform to Type_MEMBER identifier
+            // If followed by (), it becomes Type_MEMBER(...)
+            // If not followed by (), we wrap it in a call: Type_MEMBER()
+            std::string staticMemberFunc = typeName + "_" + memberName;
+            
+            if (!check(TokenType::TOKEN_LEFT_PAREN)) {
+                // Type.MEMBER without () → call Type_MEMBER()
+                auto funcIdent = std::make_shared<IdentifierExpr>(staticMemberFunc, op.line, op.column);
+                return std::make_shared<CallExpr>(funcIdent, std::vector<ASTNodePtr>{}, op.line, op.column);
+            } else {
+                // Type.MEMBER(...) → return identifier Type_MEMBER, let parseCallExpression handle the call
+                return std::make_shared<IdentifierExpr>(staticMemberFunc, op.line, op.column);
+            }
+        }
     }
     
     auto memberExpr = std::make_shared<MemberAccessExpr>(
@@ -1603,6 +1669,11 @@ ASTNodePtr Parser::parseStatement() {
         return parseEnumDecl();
     }
 
+    // Check for Type declarations (composable units)
+    if (match(TokenType::TOKEN_KW_TYPE)) {
+        return parseTypeDecl();
+    }
+
     // Check for trait declarations
     if (match(TokenType::TOKEN_KW_TRAIT)) {
         return parseTraitDecl();
@@ -1613,9 +1684,10 @@ ASTNodePtr Parser::parseStatement() {
         return parseImplDecl();
     }
 
-    // Check for qualifiers (wild, const, stack, gc) followed by type
+    // Check for qualifiers (wild, const, fixed, stack, gc) followed by type
     if (peek().type == TokenType::TOKEN_KW_WILD ||
         peek().type == TokenType::TOKEN_KW_CONST ||
+        peek().type == TokenType::TOKEN_KW_FIXED ||
         peek().type == TokenType::TOKEN_KW_STACK ||
         peek().type == TokenType::TOKEN_KW_GC) {
         return parseVarDecl();
@@ -1974,18 +2046,22 @@ ASTNodePtr Parser::parseVarDecl() {
     
     bool isWild = false;
     bool isConst = false;
+    bool isFixed = false;
     bool isStack = false;
     bool isGC = false;
     
     // Handle qualifiers
     while (peek().type == TokenType::TOKEN_KW_WILD ||
            peek().type == TokenType::TOKEN_KW_CONST ||
+           peek().type == TokenType::TOKEN_KW_FIXED ||
            peek().type == TokenType::TOKEN_KW_STACK ||
            peek().type == TokenType::TOKEN_KW_GC) {
         if (match(TokenType::TOKEN_KW_WILD)) {
             isWild = true;
         } else if (match(TokenType::TOKEN_KW_CONST)) {
             isConst = true;
+        } else if (match(TokenType::TOKEN_KW_FIXED)) {
+            isFixed = true;
         } else if (match(TokenType::TOKEN_KW_STACK)) {
             isStack = true;
         } else if (match(TokenType::TOKEN_KW_GC)) {
@@ -2050,6 +2126,7 @@ ASTNodePtr Parser::parseVarDecl() {
     
     varDecl->isWild = isWild;
     varDecl->isConst = isConst;
+    varDecl->isFixed = isFixed;
     varDecl->isStack = isStack;
     varDecl->isGC = isGC;
     
@@ -2139,6 +2216,9 @@ ASTNodePtr Parser::parseFuncDecl() {
                 funcToken.column
             );
             
+            // Set wild qualifier flag for FFI
+            param->isWild = isWild;
+            
             parameters.push_back(param);
             
         } while (match(TokenType::TOKEN_COMMA));
@@ -2175,6 +2255,9 @@ ASTNodePtr Parser::parseFuncDecl() {
     
     // Mark as extern if it's a declaration without body
     funcDecl->isExtern = isExternDecl;
+    
+    // Set wild qualifier flag for FFI return type
+    funcDecl->returnIsWild = returnIsWild;
     
     // Set generic parameters if present
     funcDecl->genericParams = genericParams;
@@ -2319,6 +2402,115 @@ ASTNodePtr Parser::parseEnumDecl() {
     );
     
     return enumDecl;
+}
+
+// Parse Type declaration: Type:Name = { func:create=...; func:destroy=...; struct:internal=...; struct:interface=...; struct:type=...; };
+// Provides organized composable units with struct data + UFCS methods
+ASTNodePtr Parser::parseTypeDecl() {
+    using namespace frontend;
+    
+    Token typeToken = previous(); // 'Type' keyword
+    
+    // Consume colon before type name (consistent with struct:name syntax)
+    consume(TokenType::TOKEN_COLON, "Expected ':' after 'Type' keyword");
+    
+    // Get Type name
+    Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected Type name");
+    
+    // Consume equals sign before Type body
+    consume(TokenType::TOKEN_EQUAL, "Expected '=' after Type name");
+    
+    // Parse Type body: { func:create=...; func:destroy=...; struct:internal=...; struct:interface=...; struct:type=...; other_funcs };
+    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after '='");
+    
+    // Create TypeDeclStmt to hold components
+    auto typeDecl = std::make_shared<TypeDeclStmt>(
+        nameToken.lexeme,
+        typeToken.line,
+        typeToken.column
+    );
+    
+    // Parse declarations inside Type body
+    while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // Each declaration is either func:name or struct:name
+        if (match(TokenType::TOKEN_KW_FUNC)) {
+            // Parse function declaration
+            ASTNodePtr funcDecl = parseFuncDecl();
+            if (!funcDecl) {
+                error("Failed to parse function in Type body");
+                synchronize();
+                continue;
+            }
+            
+            // Categorize function by name
+            auto funcDeclStmt = std::static_pointer_cast<FuncDeclStmt>(funcDecl);
+            std::string funcName = funcDeclStmt->funcName;
+            
+            if (funcName == "create") {
+                if (typeDecl->createFunc) {
+                    error("Duplicate func:create in Type declaration");
+                } else {
+                    typeDecl->createFunc = funcDecl;
+                }
+            } else if (funcName == "destroy") {
+                if (typeDecl->destroyFunc) {
+                    error("Duplicate func:destroy in Type declaration");
+                } else {
+                    typeDecl->destroyFunc = funcDecl;
+                }
+            } else {
+                // Regular method
+                typeDecl->methods.push_back(funcDecl);
+            }
+            
+        } else if (match(TokenType::TOKEN_KW_STRUCT)) {
+            // Parse struct declaration
+            ASTNodePtr structDecl = parseStructDecl();
+            if (!structDecl) {
+                error("Failed to parse struct in Type body");
+                synchronize();
+                continue;
+            }
+            
+            // Categorize struct by name
+            auto structDeclStmt = std::static_pointer_cast<StructDeclStmt>(structDecl);
+            std::string structName = structDeclStmt->structName;
+            
+            if (structName == "internal") {
+                if (typeDecl->internalStruct) {
+                    error("Duplicate struct:internal in Type declaration");
+                } else {
+                    typeDecl->internalStruct = structDecl;
+                }
+            } else if (structName == "interface") {
+                if (typeDecl->interfaceStruct) {
+                    error("Duplicate struct:interface in Type declaration");
+                } else {
+                    typeDecl->interfaceStruct = structDecl;
+                }
+            } else if (structName == "type") {
+                if (typeDecl->typeStruct) {
+                    error("Duplicate struct:type in Type declaration");
+                } else {
+                    typeDecl->typeStruct = structDecl;
+                }
+            } else {
+                error("Unknown struct name '" + structName + "' in Type declaration. Expected 'internal', 'interface', or 'type'");
+            }
+            
+        } else {
+            error("Expected 'func' or 'struct' in Type body");
+            synchronize();
+            break;
+        }
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after Type body");
+    
+    // Consume semicolon after Type declaration
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after Type declaration");
+    
+    return typeDecl;
 }
 
 // Parse trait declaration: trait:Name = { method_sig1, method_sig2, ... };
@@ -3780,7 +3972,8 @@ ASTNodePtr Parser::parsePickStatement() {
         if (!is_unreachable) {
             if (match(TokenType::TOKEN_STAR)) {
                 // Wildcard '*' - represented as string literal
-                pattern = std::make_shared<LiteralExpr>("*", 
+                // Use std::string to force string constructor (not bool from const char*)
+                pattern = std::make_shared<LiteralExpr>(std::string("*"), 
                                                         previous().line, previous().column);
             } else {
                 // Regular pattern expression (comparison, range, value, etc.)

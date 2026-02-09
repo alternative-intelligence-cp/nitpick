@@ -1,0 +1,61 @@
+/**
+ * Aria Standard Library - Print Utilities
+ * 
+ * Convenience functions for printing common types.
+ * All functions are explicit wrappers around print() that handle string conversion.
+ * 
+ * Design Philosophy:
+ * - No implicit conversions
+ * - Explicit function names make intent clear
+ * - Separation of concerns: conversion vs output
+ * - Predictable behavior, no hidden magic
+ * 
+ * Functions:
+ * - printInt64(value)    - Print int64 without newline
+ * - printlnInt64(value)  - Print int64 with newline
+ * 
+ * TODO: Add more as needed:
+ * - printInt32, printInt128, printUint64, etc.
+ * - printFloat64, printBool, etc.
+ * - printf-style formatter
+ */
+
+/**
+ * Print an int64 value to stdout (no newline).
+ * 
+ * Example:
+ *   printInt64(42);        // Outputs: 42
+ *   printInt64(-123);      // Outputs: -123
+ */
+pub func:printInt64 = void(int64:value) {
+    string:str = int64_toString(value);
+    drop(print(str));
+    pass();
+};
+
+/**
+ * Print an int64 value to stdout with newline.
+ * 
+ * Example:
+ *   printlnInt64(42);      // Outputs: 42\n
+ *   printlnInt64(-123);    // Outputs: -123\n
+ */
+pub func:printlnInt64 = void(int64:value) {
+    string:str = int64_toString(value);
+    drop(println(str));
+    pass();
+};
+
+/**
+ * Print a labeled int64 value: "label: value\n"
+ * 
+ * Example:
+ *   printInt64Labeled("Count", 42);  // Outputs: Count: 42\n
+ */
+pub func:printInt64Labeled = void(string:label, int64:value) {
+    drop(print(label));
+    drop(print(": "));
+    string:str = int64_toString(value);
+    drop(println(str));
+    pass();
+};

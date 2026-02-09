@@ -1,32 +1,70 @@
 // Simple array slicing test
 // NOTE: Arrays have a pre-existing bug - this test will work once arrays are fixed
 
+// Inline int64_toString for explicit conversion
+func:int64_toString = string(int64:value) {
+    if (value == 0) { pass("0"); }
+    bool:is_negative = false;
+    int64:work_value = value;
+    if (value < 0) { is_negative = true; work_value = -value; }
+    string:result = "";
+    int64:remaining = work_value;
+    while (remaining > 0) {
+        int64:digit = remaining % 10;
+        remaining = remaining / 10;
+        string:digit_char = "";
+        if (digit == 0) { digit_char = "0"; }
+        if (digit == 1) { digit_char = "1"; }
+        if (digit == 2) { digit_char = "2"; }
+        if (digit == 3) { digit_char = "3"; }
+        if (digit == 4) { digit_char = "4"; }
+        if (digit == 5) { digit_char = "5"; }
+        if (digit == 6) { digit_char = "6"; }
+        if (digit == 7) { digit_char = "7"; }
+        if (digit == 8) { digit_char = "8"; }
+        if (digit == 9) { digit_char = "9"; }
+        result = string_concat(digit_char, result);
+    }
+    if (is_negative) { result = string_concat("-", result); }
+    pass(result);
+};
+
 func:main = int32() {
-    print("Simple slice test:");
+    drop(println("Simple slice test:"));
     
     // Create array with known values
     int64[]:nums = [10, 20, 30, 40, 50];
     
     // Print original array
-    print("Original:");
-    print(nums[0]);  // Should be 10
-    print(nums[1]);  // Should be 20
-    print(nums[2]);  // Should be 30
-    print(nums[3]);  // Should be 40
-    print(nums[4]);  // Should be 50
+    drop(println("Original:"));
+    string:n0 = int64_toString(nums[0]);
+    drop(println(n0));  // Should be 10
+    string:n1 = int64_toString(nums[1]);
+    drop(println(n1));  // Should be 20
+    string:n2 = int64_toString(nums[2]);
+    drop(println(n2));  // Should be 30
+    string:n3 = int64_toString(nums[3]);
+    drop(println(n3));  // Should be 40
+    string:n4 = int64_toString(nums[4]);
+    drop(println(n4));  // Should be 50
     
     // Try a simple inclusive slice
-    print("Slice [1..3] (should be 20, 30, 40):");
+    drop(println("Slice [1..3] (should be 20, 30, 40):"));
     int64[]:slice = nums[1..3];
-    print(slice[0]);  // Should be 20
-    print(slice[1]);  // Should be 30
-    print(slice[2]);  // Should be 40
+    string:s0 = int64_toString(slice[0]);
+    drop(println(s0));  // Should be 20
+    string:s1 = int64_toString(slice[1]);
+    drop(println(s1));  // Should be 30
+    string:s2 = int64_toString(slice[2]);
+    drop(println(s2));  // Should be 40
     
     // Try an exclusive slice
-    print("Slice [0...2] (should be 10, 20):");
+    drop(println("Slice [0...2] (should be 10, 20):"));
     int64[]:slice2 = nums[0...2];
-    print(slice2[0]);  // Should be 10
-    print(slice2[1]);  // Should be 20
+    string:s2_0 = int64_toString(slice2[0]);
+    drop(println(s2_0));  // Should be 10
+    string:s2_1 = int64_toString(slice2[1]);
+    drop(println(s2_1));  // Should be 20
     
     pass(0);
 };

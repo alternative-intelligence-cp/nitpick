@@ -1,0 +1,71 @@
+// StringBuilder - Efficient string building with method chaining
+// Demonstrates: UFCS, struct types, practical stdlib patterns
+// Status: MVP complete - UFCS chaining works! Buffer management deferred until pointer-in-struct parsing ready
+// MVP: Simplified to demonstrate UFCS chaining without complex memory management
+
+struct:StringBuilder = {
+    int64:capacity;        // Allocated buffer capacity
+    int64:length;          // Current accumulated string length  
+    bool:finalized;        // Whether build() has been called
+};
+
+// Create a new StringBuilder with initial capacity
+func:StringBuilder_new = StringBuilder(int64:initial_capacity) {
+    StringBuilder:sb = {
+        initial_capacity,
+        0i64,
+        false
+    };
+    
+    pass(sb);
+};
+
+// Append a string to the builder (simplified - just tracks length)
+// TODO: Implement actual buffer management and string copying
+func:StringBuilder_append = StringBuilder(StringBuilder:sb, string:str) {
+    int64:str_len = string_length(str);
+    int64:new_len = sb.length + str_len;
+    
+    StringBuilder:result = {
+        sb.capacity,
+        new_len,
+        sb.finalized
+    };
+    
+    pass(result);
+};
+
+// Build the final string (simplified - returns placeholder)
+// TODO: Implement actual string construction from accumulated pieces
+func:StringBuilder_build = string(StringBuilder:sb) {
+    string:result = "StringBuilder MVP result";
+    pass(result);
+};
+
+// Free the StringBuilder's resources (currently a no-op)
+// TODO: Implement actual buffer deallocation when memory mgmt added
+func:StringBuilder_free = void(StringBuilder:sb) {
+    // No-op in MVP since we're not allocating memory yet
+};
+
+// Test StringBuilder with UFCS method chaining
+func:main = int32() {
+    // Create initial StringBuilder (use default on error)
+    StringBuilder:empty = { 0i64, 0i64, false };
+    StringBuilder:sb = StringBuilder_new(1024i64) ? empty;
+    
+    // Demonstrate UFCS method chaining with unwrap operator
+    // If append fails, keep the current sb unchanged
+    sb = sb.append("Hello") ? sb;
+    sb = sb.append(" ") ? sb;
+    sb = sb.append("World") ? sb;
+    
+    // Build final result
+    string:result = sb.build() ? "default";
+    drop(print(result));
+    
+    // Clean up
+    drop(sb.free());
+    
+    pass(0i32);
+};

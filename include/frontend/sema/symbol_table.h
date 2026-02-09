@@ -48,6 +48,7 @@ struct Symbol {
     int column;                 // Source column number
     bool isPublic;              // Visibility (pub keyword)
     bool isMutable;             // Mutability (const vs mutable)
+    bool isFixed;               // Runtime immutability (fixed keyword)
     bool isInitialized;         // Has been initialized
     
     // CTFE Integration (Task 8: Symbol Table Integration)

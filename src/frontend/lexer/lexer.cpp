@@ -20,6 +20,13 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"defer", TokenType::TOKEN_KW_DEFER},
     {"move", TokenType::TOKEN_KW_MOVE},
     
+    // Memory ordering
+    {"relaxed", TokenType::TOKEN_KW_RELAXED},
+    {"acquire", TokenType::TOKEN_KW_ACQUIRE},
+    {"release", TokenType::TOKEN_KW_RELEASE},
+    {"acq_rel", TokenType::TOKEN_KW_ACQ_REL},
+    {"seq_cst", TokenType::TOKEN_KW_SEQ_CST},
+    
     // Control flow
     {"if", TokenType::TOKEN_KW_IF},
     {"else", TokenType::TOKEN_KW_ELSE},
@@ -55,12 +62,14 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     // Type declaration
     {"struct", TokenType::TOKEN_KW_STRUCT},
     {"enum", TokenType::TOKEN_KW_ENUM},
+    {"Type", TokenType::TOKEN_KW_TYPE},
     {"opaque", TokenType::TOKEN_KW_OPAQUE},
     {"trait", TokenType::TOKEN_KW_TRAIT},
     {"impl", TokenType::TOKEN_KW_IMPL},
 
     // Other
     {"const", TokenType::TOKEN_KW_CONST},
+    {"fixed", TokenType::TOKEN_KW_FIXED},
     {"is", TokenType::TOKEN_KW_IS},
     
     // Type keywords - integers
@@ -157,6 +166,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"NULL", TokenType::TOKEN_KW_NULL},
     {"NIL", TokenType::TOKEN_KW_NIL},
     {"ERR", TokenType::TOKEN_KW_ERR},
+    {"unknown", TokenType::TOKEN_KW_UNKNOWN},
 };
 
 // ============================================================================

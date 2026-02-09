@@ -200,6 +200,87 @@ AriaString* aria_format_tbb64(int64_t val) {
 }
 
 // ============================================================================
+// Plain Integer/Float to String (for template literals)
+// ============================================================================
+
+/**
+ * Convert int64 to string in a deterministic, locale-independent way
+ * Signature: int64_t aria_int64_to_str(int64_t value, char* buffer)
+ * @param value The int64 value to convert
+ * @param buffer Pre-allocated buffer (must be at least 24 bytes for "-9223372036854775808\0")
+ * @return Length of the string (excluding null terminator)
+ */
+int64_t aria_int64_to_str(int64_t value, char* buffer) {
+    if (!buffer) return 0;
+    
+    char* p = buffer;
+    
+    // Handle zero explicitly
+    if (value == 0) {
+        *p++ = '0';
+        *p = '\0';
+        return 1;
+    }
+    
+    // Handle sign
+    uint64_t uval;
+    if (value < 0) {
+        *p++ = '-';
+        // Special case for INT64_MIN which can't be negated directly
+        if (value == static_cast<int64_t>(0x8000000000000000ULL)) {
+            uval = 0x8000000000000000ULL;
+        } else {
+            uval = static_cast<uint64_t>(-value);
+        }
+    } else {
+        uval = static_cast<uint64_t>(value);
+    }
+    
+    // Build digits in reverse
+    char* digit_start = p;
+    while (uval > 0) {
+        *p++ = '0' + (uval % 10);
+        uval /= 10;
+    }
+    
+    // Reverse the digits
+    char* digit_end = p - 1;
+    while (digit_start < digit_end) {
+        char tmp = *digit_start;
+        *digit_start = *digit_end;
+        *digit_end = tmp;
+        digit_start++;
+        digit_end--;
+    }
+    
+    *p = '\0';
+    return static_cast<int64_t>(p - buffer);
+}
+
+/**
+ * Convert flt64 to string in a deterministic, locale-independent way
+ * Signature: int64_t aria_flt64_to_str(double value, char* buffer)
+ * @param value The double value to convert
+ * @param buffer Pre-allocated buffer (must be at least 64 bytes)
+ * @return Length of the string (excluding null terminator)
+ */
+int64_t aria_flt64_to_str(double value, char* buffer) {
+    if (!buffer) return 0;
+    
+    // Use snprintf with fixed precision for deterministic output
+    // %g uses shortest representation, removing trailing zeros
+    int len = snprintf(buffer, 64, "%.16g", value);
+    
+    if (len < 0 || len >= 64) {
+        buffer[0] = '0';
+        buffer[1] = '\0';
+        return 1;
+    }
+    
+    return static_cast<int64_t>(len);
+}
+
+// ============================================================================
 // LBIM Large Integer Formatters
 // ============================================================================
 

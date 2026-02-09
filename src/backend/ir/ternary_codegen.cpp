@@ -129,7 +129,32 @@ llvm::Value* TernaryCodegen::generateAdd(llvm::Value* lhs, llvm::Value* rhs, Typ
         }
     }
 
-    // Atomic type (trit/nit): inline LLVM operation with clamping
+    // Atomic type (trit/nit): call runtime intrinsic
+    llvm::Function* addFn = nullptr;
+    if (typeName == "trit") {
+        if (!fn_trit_add) {
+            fn_trit_add = getOrDeclareIntrinsic("aria_trit_add", true);
+        }
+        addFn = fn_trit_add;
+    } else if (typeName == "nit") {
+        if (!fn_nit_add) {
+            fn_nit_add = getOrDeclareIntrinsic("aria_nit_add", true);
+        }
+        addFn = fn_nit_add;
+    }
+
+    if (addFn) {
+        llvm::Type* i8 = builder.getInt8Ty();
+        if (lhs->getType() != i8) {
+            lhs = builder.CreateIntCast(lhs, i8, true, "trit_cast_lhs");
+        }
+        if (rhs->getType() != i8) {
+            rhs = builder.CreateIntCast(rhs, i8, true, "trit_cast_rhs");
+        }
+        return builder.CreateCall(addFn, {lhs, rhs}, typeName + "_add");
+    }
+
+    // Fallback (should never reach here for exotic types)
     llvm::Value* result = builder.CreateAdd(lhs, rhs, "add_tmp");
     return clampToRange(result, type);
 }
@@ -164,7 +189,32 @@ llvm::Value* TernaryCodegen::generateSub(llvm::Value* lhs, llvm::Value* rhs, Typ
         }
     }
 
-    // Atomic type (trit/nit): inline LLVM operation with clamping
+    // Atomic type (trit/nit): call runtime intrinsic
+    llvm::Function* subFn = nullptr;
+    if (typeName == "trit") {
+        if (!fn_trit_sub) {
+            fn_trit_sub = getOrDeclareIntrinsic("aria_trit_sub", true);
+        }
+        subFn = fn_trit_sub;
+    } else if (typeName == "nit") {
+        if (!fn_nit_sub) {
+            fn_nit_sub = getOrDeclareIntrinsic("aria_nit_sub", true);
+        }
+        subFn = fn_nit_sub;
+    }
+
+    if (subFn) {
+        llvm::Type* i8 = builder.getInt8Ty();
+        if (lhs->getType() != i8) {
+            lhs = builder.CreateIntCast(lhs, i8, true, "trit_cast_lhs");
+        }
+        if (rhs->getType() != i8) {
+            rhs = builder.CreateIntCast(rhs, i8, true, "trit_cast_rhs");
+        }
+        return builder.CreateCall(subFn, {lhs, rhs}, typeName + "_sub");
+    }
+
+    // Fallback (should never reach here for exotic types)
     llvm::Value* result = builder.CreateSub(lhs, rhs, "sub_tmp");
     return clampToRange(result, type);
 }
@@ -199,7 +249,32 @@ llvm::Value* TernaryCodegen::generateMul(llvm::Value* lhs, llvm::Value* rhs, Typ
         }
     }
 
-    // Atomic type (trit/nit): inline LLVM operation with clamping
+    // Atomic type (trit/nit): call runtime intrinsic
+    llvm::Function* mulFn = nullptr;
+    if (typeName == "trit") {
+        if (!fn_trit_mul) {
+            fn_trit_mul = getOrDeclareIntrinsic("aria_trit_mul", true);
+        }
+        mulFn = fn_trit_mul;
+    } else if (typeName == "nit") {
+        if (!fn_nit_mul) {
+            fn_nit_mul = getOrDeclareIntrinsic("aria_nit_mul", true);
+        }
+        mulFn = fn_nit_mul;
+    }
+
+    if (mulFn) {
+        llvm::Type* i8 = builder.getInt8Ty();
+        if (lhs->getType() != i8) {
+            lhs = builder.CreateIntCast(lhs, i8, true, "trit_cast_lhs");
+        }
+        if (rhs->getType() != i8) {
+            rhs = builder.CreateIntCast(rhs, i8, true, "trit_cast_rhs");
+        }
+        return builder.CreateCall(mulFn, {lhs, rhs}, typeName + "_mul");
+    }
+
+    // Fallback (should never reach here for exotic types)
     llvm::Value* result = builder.CreateMul(lhs, rhs, "mul_tmp");
     return clampToRange(result, type);
 }
@@ -335,10 +410,130 @@ llvm::Value* TernaryCodegen::generateNeg(llvm::Value* operand, Type* type) {
         }
     }
 
-    // Atomic type (trit/nit): inline LLVM operation
-    // Negation should never overflow for balanced ternary (symmetric range)
+    // Atomic type (trit/nit): call runtime intrinsic
+    llvm::Function* negFn = nullptr;
+    if (typeName == "trit") {
+        if (!fn_trit_not) {  // Note: aria_trit_not is same as aria_trit_neg
+            fn_trit_not = getOrDeclareIntrinsic("aria_trit_neg", false);
+        }
+        negFn = fn_trit_not;
+    } else if (typeName == "nit") {
+        // For nit, negation uses standard negation (symmetric range -4 to 4)
+        // There's no separate aria_nit_neg, so we use inline operation
+        llvm::Value* result = builder.CreateNeg(operand, "neg_tmp");
+        return clampToRange(result, type);
+    }
+
+    if (negFn) {
+        llvm::Type* i8 = builder.getInt8Ty();
+        if (operand->getType() != i8) {
+            operand = builder.CreateIntCast(operand, i8, true, "trit_cast");
+        }
+        return builder.CreateCall(negFn, {operand}, typeName + "_neg");
+    }
+
+    // Fallback (should never reach here for trit)
     llvm::Value* result = builder.CreateNeg(operand, "neg_tmp");
     return clampToRange(result, type);
+}
+
+llvm::Value* TernaryCodegen::generateAnd(llvm::Value* lhs, llvm::Value* rhs, Type* type) {
+    std::string typeName = type->toString();
+
+    // Kleene logic AND: min(a, b)
+    // For atomic types (trit/nit), call runtime intrinsics
+    llvm::Function* andFn = nullptr;
+    if (typeName == "trit") {
+        if (!fn_trit_and) {
+            fn_trit_and = getOrDeclareIntrinsic("aria_trit_and", true);
+        }
+        andFn = fn_trit_and;
+    } else if (typeName == "nit") {
+        if (!fn_nit_and) {
+            fn_nit_and = getOrDeclareIntrinsic("aria_nit_and", true);
+        }
+        andFn = fn_nit_and;
+    }
+
+    if (andFn) {
+        llvm::Type* i8 = builder.getInt8Ty();
+        if (lhs->getType() != i8) {
+            lhs = builder.CreateIntCast(lhs, i8, true, typeName + "_cast_lhs");
+        }
+        if (rhs->getType() != i8) {
+            rhs = builder.CreateIntCast(rhs, i8, true, typeName + "_cast_rhs");
+        }
+        return builder.CreateCall(andFn, {lhs, rhs}, typeName + "_and");
+    }
+
+    // Composite types (tryte/nyte) not supported for logic operations
+    std::cerr << "[TERNARY AND] Unsupported type: " << typeName << std::endl;
+    return llvm::ConstantInt::get(builder.getInt8Ty(), 0);
+}
+
+llvm::Value* TernaryCodegen::generateOr(llvm::Value* lhs, llvm::Value* rhs, Type* type) {
+    std::string typeName = type->toString();
+
+    // Kleene logic OR: max(a, b)
+    // For atomic types (trit/nit), call runtime intrinsics
+    llvm::Function* orFn = nullptr;
+    if (typeName == "trit") {
+        if (!fn_trit_or) {
+            fn_trit_or = getOrDeclareIntrinsic("aria_trit_or", true);
+        }
+        orFn = fn_trit_or;
+    } else if (typeName == "nit") {
+        if (!fn_nit_or) {
+            fn_nit_or = getOrDeclareIntrinsic("aria_nit_or", true);
+        }
+        orFn = fn_nit_or;
+    }
+
+    if (orFn) {
+        llvm::Type* i8 = builder.getInt8Ty();
+        if (lhs->getType() != i8) {
+            lhs = builder.CreateIntCast(lhs, i8, true, typeName + "_cast_lhs");
+        }
+        if (rhs->getType() != i8) {
+            rhs = builder.CreateIntCast(rhs, i8, true, typeName + "_cast_rhs");
+        }
+        return builder.CreateCall(orFn, {lhs, rhs}, typeName + "_or");
+    }
+
+    // Composite types (tryte/nyte) not supported for logic operations
+    std::cerr << "[TERNARY OR] Unsupported type: " << typeName << std::endl;
+    return llvm::ConstantInt::get(builder.getInt8Ty(), 0);
+}
+
+llvm::Value* TernaryCodegen::generateNot(llvm::Value* operand, Type* type) {
+    std::string typeName = type->toString();
+
+    // Kleene logic NOT: -a (negation)
+    // For atomic types (trit/nit), call runtime intrinsics
+    llvm::Function* notFn = nullptr;
+    if (typeName == "trit") {
+        if (!fn_trit_not) {
+            fn_trit_not = getOrDeclareIntrinsic("aria_trit_not", false);
+        }
+        notFn = fn_trit_not;
+    } else if (typeName == "nit") {
+        // For nit, NOT is just negation (symmetric range)
+        // There's no separate aria_nit_not, so use inline negation
+        llvm::Value* result = builder.CreateNeg(operand, "not_tmp");
+        return clampToRange(result, type);
+    }
+
+    if (notFn) {
+        llvm::Type* i8 = builder.getInt8Ty();
+        if (operand->getType() != i8) {
+            operand = builder.CreateIntCast(operand, i8, true, typeName + "_cast");
+        }
+        return builder.CreateCall(notFn, {operand}, typeName + "_not");
+    }
+
+    // Composite types (tryte/nyte) not supported for logic operations
+    std::cerr << "[TERNARY NOT] Unsupported type: " << typeName << std::endl;
+    return llvm::ConstantInt::get(builder.getInt8Ty(), 0);
 }
 
 // ============================================================================
@@ -387,11 +582,12 @@ llvm::IntegerType* TernaryCodegen::getTernaryLLVMType(Type* type) {
     std::string typeName = type->toString();
 
     if (typeName == "trit") {
-        // 3-bit signed for trit (-1, 0, 1) with overflow detection
-        return builder.getIntNTy(3);
+        // 8-bit signed for trit (-1, 0, 1, ERR=-128) with overflow detection
+        // Research-based: i8 allows overflow to become ERR instead of wrapping
+        return builder.getInt8Ty();
     } else if (typeName == "nit") {
-        // 4-bit signed for nit (-4 to 4)
-        return builder.getIntNTy(4);
+        // 8-bit signed for nit (-4 to 4, ERR=-128)
+        return builder.getInt8Ty();
     } else if (typeName == "tryte" || typeName == "nyte") {
         // 16-bit for packed composite types
         return builder.getInt16Ty();

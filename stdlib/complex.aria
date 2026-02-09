@@ -1,0 +1,468 @@
+/**
+ * Aria Standard Library - Complex Numbers
+ * 
+ * Generic complex number type for wave mechanics, DSP, and scientific computing.
+ * 
+ * Key properties:
+ * - Generic over all numeric types (fix256, tfp64, int64, tbb64, etc.)
+ * - ERR propagation: ERR in either component means entire complex is ERR
+ * - Explicit operations: No automatic real-to-complex promotion
+ * - SIMD-friendly: Interleaved memory layout [real,imag,real,imag,...]
+ * 
+ * Design Philosophy:
+ * - "Building from scratch is simpler than remodels"
+ * - "Explicit over implicit - no magic"
+ * - Support all numeric types from the start
+ * 
+ * Primary use case: Nikola AGI wavefunction Ψ(x,t) for UFIE propagation
+ */
+
+// =============================================================================
+// Complex<T> - Generic Complex Number Type
+// =============================================================================
+
+/**
+ * Complex number with real and imaginary components.
+ * 
+ * Memory layout: Interleaved [real, imag] for SIMD efficiency
+ * Alignment: Matches base type T (64-byte aligned for fix256)
+ * 
+ * Error handling: ERR in either component → entire complex is ERR
+ * 
+ * Usage:
+ *   complex<fix256>:z = complex_new(3.0, 4.0);
+ *   complex<fix256>:sum = complex_add(z, complex_new(1.0, 2.0));
+ */
+struct<T>:complex = {
+    *T:real;    // Real component
+    *T:imag;    // Imaginary component
+};
+
+// =============================================================================
+// Constructors and Utilities
+// =============================================================================
+
+/**
+ * Create a new complex number from real and imaginary parts.
+ * 
+ * If either input is ERR, returns a complex ERR.
+ * 
+ * Example:
+ *   complex<fix256>:z = complex_new(3.0, 4.0);
+ */
+pub func<T>:complex_new = complex<*T>(*T:real, *T:imag) {
+    // ERR propagation: if either component is ERR, entire complex is ERR
+    if (real == ERR || imag == ERR) {
+        complex<*T>:err_result;
+        err_result.real = ERR;
+        err_result.imag = ERR;
+        pass(err_result);
+    };
+    
+    complex<*T>:result;
+    result.real = real;
+    result.imag = imag;
+    pass(result);
+};
+
+/**
+ * Create a complex number from a real value (imaginary part = 0).
+ * 
+ * Explicit conversion - NO automatic promotion per design philosophy.
+ * 
+ * Example:
+ *   fix256:x = 5.0;
+ *   complex<fix256>:z = complex_from_real(x);  // (5.0 + 0.0i)
+ */
+pub func<T>:complex_from_real = complex<*T>(*T:real) {
+    if (real == ERR) {
+        complex<*T>:err_result;
+        err_result.real = ERR;
+        err_result.imag = ERR;
+        pass(err_result);
+    };
+    
+    complex<*T>:result;
+    result.real = real;
+    result.imag = 0.0;  // Zero imaginary part
+    pass(result);
+};
+
+/**
+ * Create a complex number from an imaginary value (real part = 0).
+ * 
+ * Example:
+ *   fix256:y = 3.0;
+ *   complex<fix256>:z = complex_from_imag(y);  // (0.0 + 3.0i)
+ */
+pub func<T>:complex_from_imag = complex<*T>(*T:imag) {
+    if (imag == ERR) {
+        complex<*T>:err_result;
+        err_result.real = ERR;
+        err_result.imag = ERR;
+        pass(err_result);
+    };
+    
+    complex<*T>:result;
+    result.real = 0.0;  // Zero real part
+    result.imag = imag;
+    pass(result);
+};
+
+/**
+ * Check if complex number contains ERR in either component.
+ * 
+ * Returns true if either real or imaginary component is ERR.
+ */
+pub func<T>:complex_is_err = bool(complex<*T>:z) {
+    pass(z.real == ERR || z.imag == ERR);
+};
+
+/**
+ * Create a complex ERR sentinel.
+ * 
+ * Both components are ERR.
+ */
+pub func<T>:complex_err = complex<*T>() {
+    complex<*T>:result;
+    result.real = ERR;
+    result.imag = ERR;
+    pass(result);
+};
+
+// =============================================================================
+// Basic Arithmetic Operations
+// =============================================================================
+
+/**
+ * Complex addition: z1 + z2
+ * 
+ * Formula: (a + bi) + (c + di) = (a+c) + (b+d)i
+ * 
+ * ERR propagation: ERR in any input component → output ERR
+ * Complexity: O(1) - 2 additions
+ * 
+ * Example:
+ *   complex<fix256>:z1 = complex_new(3.0, 4.0);
+ *   complex<fix256>:z2 = complex_new(1.0, 2.0);
+ *   complex<fix256>:sum = complex_add(z1, z2);  // (4.0 + 6.0i)
+ */
+pub func<T>:complex_add = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
+    // ERR propagation
+    if (complex_is_err(z1) || complex_is_err(z2)) {
+        pass(complex_err<*T>());
+    };
+    
+    complex<*T>:result;
+    result.real = z1.real + z2.real;
+    result.imag = z1.imag + z2.imag;
+    
+    // Check for ERR from arithmetic overflow
+    if (result.real == ERR || result.imag == ERR) {
+        pass(complex_err<*T>());
+    };
+    
+    pass(result);
+};
+
+/**
+ * Complex subtraction: z1 - z2
+ * 
+ * Formula: (a + bi) - (c + di) = (a-c) + (b-d)i
+ * 
+ * ERR propagation: ERR in any input component → output ERR
+ * Complexity: O(1) - 2 subtractions
+ * 
+ * Example:
+ *   complex<fix256>:z1 = complex_new(5.0, 7.0);
+ *   complex<fix256>:z2 = complex_new(2.0, 3.0);
+ *   complex<fix256>:diff = complex_sub(z1, z2);  // (3.0 + 4.0i)
+ */
+pub func<T>:complex_sub = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
+    // ERR propagation
+    if (complex_is_err(z1) || complex_is_err(z2)) {
+        pass(complex_err<*T>());
+    };
+    
+    complex<*T>:result;
+    result.real = z1.real - z2.real;
+    result.imag = z1.imag - z2.imag;
+    
+    // Check for ERR from arithmetic underflow
+    if (result.real == ERR || result.imag == ERR) {
+        pass(complex_err<*T>());
+    };
+    
+    pass(result);
+};
+
+/**
+ * Complex multiplication: z1 * z2
+ * 
+ * Uses 3-multiplication algorithm (Gauss method) for performance.
+ * 
+ * Standard formula: (a + bi)(c + di) = (ac - bd) + (ad + bc)i
+ * Requires 4 multiplications
+ * 
+ * Gauss 3-multiplication algorithm:
+ *   k1 = a(c + d)
+ *   k2 = d(a + b)
+ *   k3 = c(b - a)
+ *   real = k1 - k2
+ *   imag = k1 + k3
+ * Requires only 3 multiplications (trades 1 mul for 3 adds)
+ * 
+ * ERR propagation: ERR in any input component → output ERR
+ * Complexity: O(1) - 3 multiplications + 5 adds
+ * 
+ * Example:
+ *   complex<fix256>:z1 = complex_new(3.0, 4.0);
+ *   complex<fix256>:z2 = complex_new(1.0, 2.0);
+ *   complex<fix256>:prod = complex_mul(z1, z2);  // (-5.0 + 10.0i)
+ */
+pub func<T>:complex_mul = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
+    // ERR propagation
+    if (complex_is_err(z1) || complex_is_err(z2)) {
+        pass(complex_err<*T>());
+    };
+    
+    // 3-multiplication algorithm (Gauss)
+    *T:k1 = z1.real * (z2.real + z2.imag);
+    *T:k2 = z2.imag * (z1.real + z1.imag);
+    *T:k3 = z2.real * (z1.imag - z1.real);
+    
+    // Check for ERR in intermediate calculations
+    if (k1 == ERR || k2 == ERR || k3 == ERR) {
+        pass(complex_err<*T>());
+    };
+    
+    complex<*T>:result;
+    result.real = k1 - k2;
+    result.imag = k1 + k3;
+    
+    // Check for ERR in final result
+    if (result.real == ERR || result.imag == ERR) {
+        pass(complex_err<*T>());
+    };
+    
+    pass(result);
+};
+
+/**
+ * Complex division: z1 / z2
+ * 
+ * Formula: (a + bi) / (c + di) = [(ac + bd) + (bc - ad)i] / (c² + d²)
+ * 
+ * Numerically stable implementation:
+ * - Prevents overflow in denominator calculation
+ * - Handles division by zero (returns ERR)
+ * 
+ * ERR propagation: ERR in any input component → output ERR
+ * Special cases:
+ * - Division by zero → ERR
+ * - Division by ERR → ERR
+ * 
+ * Complexity: O(1) - 6 multiplications + 5 adds/subs + 2 divisions
+ * 
+ * Example:
+ *   complex<fix256>:z1 = complex_new(5.0, 10.0);
+ *   complex<fix256>:z2 = complex_new(1.0, 2.0);
+ *   complex<fix256>:quot = complex_div(z1, z2);  // (5.0 + 0.0i)
+ */
+pub func<T>:complex_div = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
+    // ERR propagation
+    if (complex_is_err(z1) || complex_is_err(z2)) {
+        pass(complex_err<*T>());
+    };
+    
+    // Calculate denominator (c² + d²)
+    *T:c_sq = z2.real * z2.real;
+    *T:d_sq = z2.imag * z2.imag;
+    *T:denom = c_sq + d_sq;
+    
+    // Check for division by zero
+    if (denom == 0.0 || denom == ERR) {
+        pass(complex_err<*T>());
+    };
+    
+    // Calculate numerator components
+    *T:ac = z1.real * z2.real;
+    *T:bd = z1.imag * z2.imag;
+    *T:bc = z1.imag * z2.real;
+    *T:ad = z1.real * z2.imag;
+    
+    // Check for ERR in intermediate calculations
+    if (ac == ERR || bd == ERR || bc == ERR || ad == ERR) {
+        pass(complex_err<*T>());
+    };
+    
+    complex<*T>:result;
+    result.real = (ac + bd) / denom;
+    result.imag = (bc - ad) / denom;
+    
+    // Check for ERR in final result
+    if (result.real == ERR || result.imag == ERR) {
+        pass(complex_err<*T>());
+    };
+    
+    pass(result);
+};
+
+// =============================================================================
+// Special Operations
+// =============================================================================
+
+/**
+ * Complex conjugate: z*
+ * 
+ * Formula: (a + bi)* = (a - bi)
+ * 
+ * Negates the imaginary component.
+ * Used in: magnitude calculation, inner products, division
+ * 
+ * ERR propagation: ERR in input → output ERR
+ * Complexity: O(1) - 1 negation
+ * 
+ * Example:
+ *   complex<fix256>:z = complex_new(3.0, 4.0);
+ *   complex<fix256>:z_conj = complex_conjugate(z);  // (3.0 - 4.0i)
+ */
+pub func<T>:complex_conjugate = complex<*T>(complex<*T>:z) {
+    if (complex_is_err(z)) {
+        pass(complex_err<*T>());
+    };
+    
+    complex<*T>:result;
+    result.real = z.real;
+    result.imag = -z.imag;
+    
+    // Check for ERR from negation
+    if (result.imag == ERR) {
+        pass(complex_err<*T>());
+    };
+    
+    pass(result);
+};
+
+/**
+ * Complex magnitude (absolute value): |z|
+ * 
+ * Formula: |a + bi| = √(a² + b²)
+ * 
+ * CRITICAL: Uses scaled sqrt to prevent "Amnesia" failure mode
+ * 
+ * The "Amnesia" problem:
+ * - Low-amplitude wave memories can vanish during magnitude calculation
+ * - Cause: Overflow in intermediate a² + b² before sqrt
+ * - Solution: Scale by max(|a|, |b|) to keep intermediate values in range
+ * 
+ * Scaled algorithm:
+ *   s = max(|a|, |b|)
+ *   if s == 0: return 0
+ *   a' = a/s, b' = b/s
+ *   return s * √(a'² + b'²)
+ * 
+ * Properties:
+ * - Non-negative: |z| ≥ 0
+ * - Zero only when z = 0 + 0i
+ * - Triangle inequality: |z1 + z2| ≤ |z1| + |z2|
+ * 
+ * ERR propagation: ERR in input → output ERR
+ * Complexity: O(1) - 4 multiplications + 1 sqrt + comparisons
+ * 
+ * Example:
+ *   complex<fix256>:z = complex_new(3.0, 4.0);
+ *   fix256:mag = complex_magnitude(z);  // 5.0
+ */
+pub func<T>:complex_magnitude = *T(complex<*T>:z) {
+    if (complex_is_err(z)) {
+        pass(ERR);
+    };
+    
+    // Get absolute values
+    *T:abs_real = z.real;
+    if (abs_real < 0.0) { abs_real = -abs_real; };
+    
+    *T:abs_imag = z.imag;
+    if (abs_imag < 0.0) { abs_imag = -abs_imag; };
+    
+    // Check for ERR in abs calculations
+    if (abs_real == ERR || abs_imag == ERR) {
+        pass(ERR);
+    };
+    
+    // Handle zero case
+    if (abs_real == 0.0 && abs_imag == 0.0) {
+        pass(0.0);
+    };
+    
+    // Find scaling factor (max component)
+    *T:scale = abs_real;
+    if (abs_imag > scale) {
+        scale = abs_imag;
+    };
+    
+    // Avoid division by zero (covered by zero check above, defensive)
+    if (scale == 0.0 || scale == ERR) {
+        pass(ERR);
+    };
+    
+    // Scale components to prevent overflow
+    *T:a_scaled = z.real / scale;
+    *T:b_scaled = z.imag / scale;
+    
+    if (a_scaled == ERR || b_scaled == ERR) {
+        pass(ERR);
+    };
+    
+    // Calculate magnitude of scaled vector
+    *T:a_sq = a_scaled * a_scaled;
+    *T:b_sq = b_scaled * b_scaled;
+    *T:sum_sq = a_sq + b_sq;
+    
+    if (a_sq == ERR || b_sq == ERR || sum_sq == ERR) {
+        pass(ERR);
+    };
+    
+    *T:scaled_mag = sqrt(sum_sq);
+    
+    if (scaled_mag == ERR) {
+        pass(ERR);
+    };
+    
+    // Unscale result
+    *T:result = scale * scaled_mag;
+    
+    if (result == ERR) {
+        pass(ERR);
+    };
+    
+    pass(result);
+};
+
+/**
+ * TODO: Additional functions to implement in future phases
+ * 
+ * Phase 1 (Current): Basic type, constructors, arithmetic (add/sub/mul/div), conjugate, magnitude
+ * 
+ * Phase 2: Additional special operations
+ * - complex_phase: arg(z) - angle in complex plane [-π, π]
+ * - complex_from_polar: Create from (magnitude, phase)
+ * - complex_to_polar: Convert to polar form
+ * - complex_squared_magnitude: |z|² without sqrt (faster)
+ * 
+ * Phase 3: Operator overloading (requires compiler support)
+ * - operator+, operator-, operator*, operator/
+ * - operator==, operator!=
+ * 
+ * Phase 4: SIMD integration
+ * - simd<complex<fix256>, 4> for AVX-512
+ * - Vectorized add/sub/mul/div
+ * - Masked ERR propagation
+ * 
+ * Phase 5: Nikola integration examples
+ * - Wavefunction Ψ(x,t) representation
+ * - UFIE propagation step
+ * - FFT helper functions
+ * - Energy conservation checks
+ */

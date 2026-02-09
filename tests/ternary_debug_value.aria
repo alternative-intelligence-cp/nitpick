@@ -1,9 +1,13 @@
-// Debug test - print the actual value
+// Debug test - verify trit overflow produces ERR
 func:main = int32() {
     trit:t_add = 1;
     trit:t_one = 1;
-    trit:t_sum = t_add + t_one;
+    trit:t_sum = t_add + t_one;  // 1 + 1 = ERR (overflow)
     
-    // Return the actual value to see what we got
-    pass(t_sum);  // Will exit with the trit value
+    // Check if result is ERR sentinel (-128)
+    if (t_sum == -128) {
+        pass(0);  // Success - overflow detected
+    } else {
+        pass(1);  // Failure - overflow not detected
+    }
 };

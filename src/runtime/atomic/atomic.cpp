@@ -628,3 +628,15 @@ bool aria_atomic_is_lock_free_int64(void) {
 bool aria_atomic_is_lock_free_ptr(void) {
     return std::atomic<void*>{}.is_lock_free();
 }
+
+/* ============================================================================
+ * Pointer-Integer Conversion (for Type system workarounds)
+ * ============================================================================ */
+
+extern "C" int64_t ptr_to_int64(void* ptr) {
+    return reinterpret_cast<int64_t>(ptr);
+}
+
+extern "C" void* int64_to_ptr(int64_t val) {
+    return reinterpret_cast<void*>(val);
+}

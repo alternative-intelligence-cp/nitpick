@@ -20,6 +20,38 @@
 // I/O Functions (std.io)
 // ============================================================================
 
+// Single-argument print for null-terminated C strings
+// Used by core print() builtin for simple string literals
+extern "C" int64_t aria_print_cstr(const char* str) {
+    if (!str) return -1;
+    size_t len = strlen(str);
+    if (len == 0) return 0;
+    ssize_t written = write(STDOUT_FILENO, str, len);
+    return (int64_t)written;
+}
+
+// println: print string + newline (convenience wrapper)
+extern "C" int64_t aria_println_cstr(const char* str) {
+    if (!str) return -1;
+    size_t len = strlen(str);
+    ssize_t bytes = 0;
+    
+    // Write string
+    if (len > 0) {
+        ssize_t str_written = write(STDOUT_FILENO, str, len);
+        if (str_written < 0) return -1;
+        bytes += str_written;
+    }
+    
+    // Write newline
+    ssize_t nl_written = write(STDOUT_FILENO, "\n", 1);
+    if (nl_written < 0) return -1;
+    bytes += nl_written;
+    
+    return (int64_t)bytes;
+}
+
+// Two-argument version for stdlib use (length-aware)
 void aria_print(const char* str, int64_t len) {
     if (!str || len <= 0) return;
     
