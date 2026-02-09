@@ -81,6 +81,24 @@ public:
      */
     llvm::Value* generateNeg(llvm::Value* operand, Type* type);
 
+    /**
+     * @brief Generate balanced ternary/nonary logical AND (Kleene logic)
+     * Uses minimum semantics: AND(a, b) = min(a, b)
+     */
+    llvm::Value* generateAnd(llvm::Value* lhs, llvm::Value* rhs, Type* type);
+
+    /**
+     * @brief Generate balanced ternary/nonary logical OR (Kleene logic)
+     * Uses maximum semantics: OR(a, b) = max(a, b)
+     */
+    llvm::Value* generateOr(llvm::Value* lhs, llvm::Value* rhs, Type* type);
+
+    /**
+     * @brief Generate balanced ternary/nonary logical NOT (Kleene logic)
+     * Uses negation semantics: NOT(a) = -a
+     */
+    llvm::Value* generateNot(llvm::Value* operand, Type* type);
+
     // ========================================================================
     // Public helpers
     // ========================================================================
@@ -122,6 +140,21 @@ private:
     llvm::Function* fn_nyte_div = nullptr;
     llvm::Function* fn_nyte_mod = nullptr;  // CRITICAL: Balanced modulo
     llvm::Function* fn_nyte_neg = nullptr;
+
+    // Atomic type arithmetic runtime function pointers
+    llvm::Function* fn_trit_add = nullptr;
+    llvm::Function* fn_trit_sub = nullptr;
+    llvm::Function* fn_trit_mul = nullptr;
+    llvm::Function* fn_nit_add = nullptr;
+    llvm::Function* fn_nit_sub = nullptr;
+    llvm::Function* fn_nit_mul = nullptr;
+
+    // Kleene logic runtime function pointers
+    llvm::Function* fn_trit_and = nullptr;
+    llvm::Function* fn_trit_or = nullptr;
+    llvm::Function* fn_trit_not = nullptr;
+    llvm::Function* fn_nit_and = nullptr;
+    llvm::Function* fn_nit_or = nullptr;
 
     /**
      * @brief Check if type is a composite ternary type (tryte/nyte)

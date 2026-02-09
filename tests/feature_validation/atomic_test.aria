@@ -1,0 +1,366 @@
+/**
+ * Atomic Operations Test Suite
+ * 
+ * Tests atomic<T> generic type with various memory orderings.
+ * Demonstrates lock-free concurrent counter patterns.
+ */
+
+import stdlib::atomic;
+
+/**
+ * Test 1: Basic atomic operations
+ * Tests creation, load, store with different orderings
+ */
+func test_basic_atomic() = int32 {
+    println("=== Test 1: Basic Atomic Operations ===");
+    
+    # Create atomic counter
+    atomic<int32>:counter = atomic<int32>::new(0);
+    
+    # Store with release ordering
+    counter.store(42, release);
+    
+    # Load with acquire ordering
+    int32:value = counter.load(acquire);
+    println("Stored 42, loaded: " + itoa(value));
+    
+    # Test sequential consistency (default)
+    counter.store(100, seq_cst);
+    int32:value2 = counter.load(seq_cst);
+    println("Stored 100, loaded: " + itoa(value2));
+    
+    # Cleanup
+    counter.destroy();
+    
+    if value == 42 and value2 == 100 {
+        println("✓ Basic operations passed");
+        return 0;
+    } else {
+        println("✗ Basic operations failed");
+        return 1;
+    }
+}
+
+/**
+ * Test 2: Atomic exchange
+ * Tests atomic swap operation
+ */
+func test_atomic_exchange() = int32 {
+    println("\n=== Test 2: Atomic Exchange ===");
+    
+    atomic<int32>:value = atomic<int32>::new(10);
+    
+    # Exchange with new value
+    int32:old = value.exchange(20, acq_rel);
+    int32:current = value.load(acquire);
+    
+    println("Exchanged: old=" + itoa(old) + ", current=" + itoa(current));
+    
+    value.destroy();
+    
+    if old == 10 and current == 20 {
+        println("✓ Exchange passed");
+        return 0;
+    } else {
+        println("✗ Exchange failed");
+        return 1;
+    }
+}
+
+/**
+ * Test 3: Compare-and-swap (CAS)
+ * Tests atomic compare_exchange_strong operation
+ */
+func test_compare_exchange() = int32 {
+    println("\n=== Test 3: Compare and Swap ===");
+    
+    atomic<int32>:counter = atomic<int32>::new(10);
+    
+    # Test successful CAS
+    int32:expected = 10;
+    bool:success1 = counter.compare_exchange_strong(
+        @expected, 
+        20, 
+        acq_rel,
+        acquire
+    );
+    
+    println("CAS attempt 1 (10 -> 20): " + (success1 ? "SUCCESS" : "FAILED"));
+    println("  Expected after: " + itoa(expected));
+    
+    # Test failed CAS
+    expected = 10;  # Wrong expected value
+    bool:success2 = counter.compare_exchange_strong(
+        @expected,
+        30,
+        acq_rel,
+        acquire
+    );
+    
+    println("CAS attempt 2 (10 -> 30): " + (success2 ? "SUCCESS" : "FAILED"));
+    println("  Expected updated to: " + itoa(expected));
+    
+    int32:final = counter.load(acquire);
+    println("Final value: " + itoa(final));
+    
+    counter.destroy();
+    
+    if success1 and !success2 and final == 20 and expected == 20 {
+        println("✓ Compare-and-swap passed");
+        return 0;
+    } else {
+        println("✗ Compare-and-swap failed");
+        return 1;
+    }
+}
+
+/**
+ * Test 4: Fetch-and-add (lock-free increment)
+ * Tests atomic arithmetic operations
+ */
+func test_fetch_add() = int32 {
+    println("\n=== Test 4: Fetch-and-Add ===");
+    
+    atomic<int32>:counter = atomic<int32>::new(0);
+    
+    # Simulate multiple increments
+    int32:old1 = counter.fetch_add(1, release);
+    int32:old2 = counter.fetch_add(5, release);
+    int32:old3 = counter.fetch_add(10, release);
+    
+    int32:final = counter.load(acquire);
+    
+    println("Sequential fetch_add:");
+    println("  After +1: old=" + itoa(old1));
+    println("  After +5: old=" + itoa(old2));
+    println("  After +10: old=" + itoa(old3));
+    println("  Final: " + itoa(final));
+    
+    counter.destroy();
+    
+    if old1 == 0 and old2 == 1 and old3 == 6 and final == 16 {
+        println("✓ Fetch-and-add passed");
+        return 0;
+    } else {
+        println("✗ Fetch-and-add failed");
+        return 1;
+    }
+}
+
+/**
+ * Test 5: Fetch-and-subtract
+ * Tests atomic decrement operations
+ */
+func test_fetch_sub() = int32 {
+    println("\n=== Test 5: Fetch-and-Subtract ===");
+    
+    atomic<int32>:counter = atomic<int32>::new(100);
+    
+    int32:old1 = counter.fetch_sub(10, release);
+    int32:old2 = counter.fetch_sub(20, release);
+    
+    int32:final = counter.load(acquire);
+    
+    println("Sequential fetch_sub:");
+    println("  After -10: old=" + itoa(old1));
+    println("  After -20: old=" + itoa(old2));
+    println("  Final: " + itoa(final));
+    
+    counter.destroy();
+    
+    if old1 == 100 and old2 == 90 and final == 70 {
+        println("✓ Fetch-and-subtract passed");
+        return 0;
+    } else {
+        println("✗ Fetch-and-subtract failed");
+        return 1;
+    }
+}
+
+/**
+ * Test 6: Atomic boolean operations
+ * Tests atomic<bool> specialization
+ */
+func test_atomic_bool() = int32 {
+    println("\n=== Test 6: Atomic Boolean ===");
+    
+    atomic<bool>:flag = atomic<bool>::new(false);
+    
+    # Test store and load
+    flag.store(true, release);
+    bool:value1 = flag.load(acquire);
+    
+    # Test exchange
+    bool:old = flag.exchange(false, acq_rel);
+    bool:value2 = flag.load(acquire);
+    
+    println("Boolean operations:");
+    println("  After store(true): " + (value1 ? "true" : "false"));
+    println("  Exchange returned: " + (old ? "true" : "false"));
+    println("  After exchange(false): " + (value2 ? "true" : "false"));
+    
+    flag.destroy();
+    
+    if value1 and old and !value2 {
+        println("✓ Atomic boolean passed");
+        return 0;
+    } else {
+        println("✗ Atomic boolean failed");
+        return 1;
+    }
+}
+
+/**
+ * Test 7: Different atomic types
+ * Tests multiple instantiations: int8, int16, int32, int64
+ */
+func test_multiple_types() = int32 {
+    println("\n=== Test 7: Multiple Atomic Types ===");
+    
+    atomic<int8>:tiny = atomic<int8>::new(10);
+    atomic<int16>:small = atomic<int16>::new(1000);
+    atomic<int32>:medium = atomic<int32>::new(100000);
+    atomic<int64>:large = atomic<int64>::new(10000000000);
+    
+    # Load all values
+    int8:v1 = tiny.load(acquire);
+    int16:v2 = small.load(acquire);
+    int32:v3 = medium.load(acquire);
+    int64:v4 = large.load(acquire);
+    
+    println("Multiple type instantiations:");
+    println("  atomic<int8>: " + itoa(v1));
+    println("  atomic<int16>: " + itoa(v2));
+    println("  atomic<int32>: " + itoa(v3));
+    println("  atomic<int64>: " + itoa(v4));
+    
+    # Cleanup
+    tiny.destroy();
+    small.destroy();
+    medium.destroy();
+    large.destroy();
+    
+    if v1 == 10 and v2 == 1000 and v3 == 100000 and v4 == 10000000000 {
+        println("✓ Multiple types passed");
+        return 0;
+    } else {
+        println("✗ Multiple types failed");
+        return 1;
+    }
+}
+
+/**
+ * Test 8: Lock-free counter pattern
+ * Real-world example: thread-safe counter
+ */
+func test_lock_free_counter() = int32 {
+    println("\n=== Test 8: Lock-Free Counter Pattern ===");
+    
+    atomic<int32>:counter = atomic<int32>::new(0);
+    
+    # Simulate concurrent increments using CAS loop
+    # In real multi-threaded scenario, this would be in different threads
+    int32:iterations = 10;
+    int32:i = 0;
+    
+    loop {
+        if i >= iterations {
+            break;
+        }
+        
+        # CAS loop pattern (what each thread would do)
+        loop {
+            int32:current = counter.load(relaxed);
+            int32:new_value = current + 1;
+            
+            if counter.compare_exchange_weak(
+                @current,
+                new_value,
+                release,
+                relaxed
+            ) {
+                break;  # Success, exit CAS loop
+            }
+            # Else: spurious failure or race, retry
+        }
+        
+        i = i + 1;
+    }
+    
+    int32:final = counter.load(acquire);
+    println("Lock-free counter after " + itoa(iterations) + " increments: " + itoa(final));
+    
+    counter.destroy();
+    
+    if final == iterations {
+        println("✓ Lock-free counter passed");
+        return 0;
+    } else {
+        println("✗ Lock-free counter failed");
+        return 1;
+    }
+}
+
+/**
+ * Test 9: Memory ordering relaxed
+ * Tests relaxed ordering (no synchronization)
+ */
+func test_relaxed_ordering() = int32 {
+    println("\n=== Test 9: Relaxed Memory Ordering ===");
+    
+    atomic<int32>:value = atomic<int32>::new(0);
+    
+    # Relaxed operations - no synchronization, just atomicity
+    value.store(42, relaxed);
+    int32:v1 = value.load(relaxed);
+    
+    int32:old = value.fetch_add(10, relaxed);
+    int32:v2 = value.load(relaxed);
+    
+    println("Relaxed ordering:");
+    println("  After relaxed store(42): " + itoa(v1));
+    println("  After relaxed fetch_add(10): old=" + itoa(old) + ", new=" + itoa(v2));
+    
+    value.destroy();
+    
+    if v1 == 42 and old == 42 and v2 == 52 {
+        println("✓ Relaxed ordering passed");
+        return 0;
+    } else {
+        println("✗ Relaxed ordering failed");
+        return 1;
+    }
+}
+
+/**
+ * Main test runner
+ */
+func main() = int32 {
+    println("╔════════════════════════════════════════╗");
+    println("║   Aria Atomic Operations Test Suite   ║");
+    println("╚════════════════════════════════════════╝");
+    println("");
+    
+    int32:failures = 0;
+    
+    failures = failures + test_basic_atomic();
+    failures = failures + test_atomic_exchange();
+    failures = failures + test_compare_exchange();
+    failures = failures + test_fetch_add();
+    failures = failures + test_fetch_sub();
+    failures = failures + test_atomic_bool();
+    failures = failures + test_multiple_types();
+    failures = failures + test_lock_free_counter();
+    failures = failures + test_relaxed_ordering();
+    
+    println("\n╔════════════════════════════════════════╗");
+    if failures == 0 {
+        println("║  ✓ ALL TESTS PASSED (9/9)             ║");
+        println("╚════════════════════════════════════════╝");
+        return 0;
+    } else {
+        println("║  ✗ SOME TESTS FAILED (" + itoa(9 - failures) + "/9)            ║");
+        println("╚════════════════════════════════════════╝");
+        return 1;
+    }
+}

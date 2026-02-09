@@ -14,10 +14,16 @@ ModuleResolver::ModuleResolver(const std::string& rootPath)
     // Add root path as first search location
     searchPaths.push_back(this->rootPath);
     
-    // Add stdlib path relative to root (lib/std/)
-    fs::path stdlibPath = fs::path(this->rootPath) / "lib" / "std";
+    // Add stdlib path relative to root (stdlib/)
+    fs::path stdlibPath = fs::path(this->rootPath) / "stdlib";
     if (fs::exists(stdlibPath) && fs::is_directory(stdlibPath)) {
         searchPaths.push_back(stdlibPath.string());
+    }
+    
+    // Also add lib/std/ for legacy compatibility
+    fs::path libStdPath = fs::path(this->rootPath) / "lib" / "std";
+    if (fs::exists(libStdPath) && fs::is_directory(libStdPath)) {
+        searchPaths.push_back(libStdPath.string());
     }
     
     // Add standard library paths

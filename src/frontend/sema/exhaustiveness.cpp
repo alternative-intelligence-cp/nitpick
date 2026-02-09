@@ -129,6 +129,7 @@ ExhaustivenessAnalyzer::Analysis ExhaustivenessAnalyzer::analyze(
     Analysis result;
     result.isExhaustive = false;
     result.missingERR = false;
+    result.missingUnknown = false;
     
     // Determine the domain of the selector type
     TypeDomain domain = getDomain(selectorType);
@@ -182,6 +183,11 @@ ExhaustivenessAnalyzer::Analysis ExhaustivenessAnalyzer::analyze(
             result.missingERR = true;
         }
         
+        // Check for missing unknown (types that can be indeterminate)
+        if (domain.needsUnknown() && !coverage.coversUnknown()) {
+            result.missingUnknown = true;
+        }
+        
         result.errorMessage = generateErrorMessage(result, domain);
     }
     
@@ -202,6 +208,12 @@ TypeDomain ExhaustivenessAnalyzer::getDomain(Type* type) {
         if (name == "bool") {
             return TypeDomain::forBoolean();
         }
+        
+        // Standard integers with finite domains (small types)
+        if (name == "int8") return TypeDomain::forInt8();
+        if (name == "uint8") return TypeDomain::forUInt8();
+        if (name == "int16") return TypeDomain::forInt16();
+        if (name == "uint16") return TypeDomain::forUInt16();
         
         // TBB types
         if (name == "tbb8") return TypeDomain::forTBB8();
@@ -279,12 +291,14 @@ void ExhaustivenessAnalyzer::analyzePattern(
     
     switch (pattern->type) {
         case ASTNode::NodeType::IDENTIFIER: {
-            // Could be: true, false, enum variant, or ERR
+            // Could be: true, false, enum variant, ERR, or unknown
             IdentifierExpr* ident = static_cast<IdentifierExpr*>(pattern);
             
             
             if (ident->name == "ERR") {
                 coverage.addERR();
+            } else if (ident->name == "unknown") {
+                coverage.addUnknown();
             } else {
                 coverage.addSymbol(ident->name);
             }
@@ -295,12 +309,14 @@ void ExhaustivenessAnalyzer::analyzePattern(
             // Single value literal or wildcard
             LiteralExpr* lit = static_cast<LiteralExpr*>(pattern);
             
-            // Check if it's ERR sentinel (parsed as string literal)
+            // Check if it's ERR or unknown sentinel (parsed as string literal)
             if (std::holds_alternative<std::string>(lit->value)) {
                 std::string strVal = std::get<std::string>(lit->value);
                 
                 if (strVal == "ERR") {
                     coverage.addERR();
+                } else if (strVal == "unknown") {
+                    coverage.addUnknown();
                 } else if (strVal == "*") {
                     // Wildcard (*) covers everything
                     coverage.addDefault();
@@ -372,9 +388,16 @@ std::string ExhaustivenessAnalyzer::generateErrorMessage(
     
     bool needsSeparator = false;
     
-    // Report missing ERR first (critical for TBB)
+    // Report missing ERR first (HIGHEST priority - safety critical)
     if (analysis.missingERR) {
         msg << "ERR";
+        needsSeparator = true;
+    }
+    
+    // Report missing unknown second (requires explicit handling)
+    if (analysis.missingUnknown) {
+        if (needsSeparator) msg << ", ";
+        msg << "unknown";
         needsSeparator = true;
     }
     

@@ -17,6 +17,44 @@ namespace aria {
 namespace sema {
 
 /**
+ * ResultCheckState - Tracks Result<T> check state through control flow
+ * 
+ * Phase 2: Control Flow Analysis for Result Enforcement
+ * Tracks whether Result variables have been checked and what we know about their state
+ */
+struct ResultCheckState {
+    enum class State {
+        UNCHECKED,       // Haven't checked .is_error yet
+        CHECKED,         // Checked .is_error, but don't know if true/false
+        KNOWN_ERROR,     // Know .is_error == true
+        KNOWN_SUCCESS    // Know .is_error == false
+    };
+    
+    // Map variable name -> state
+    std::unordered_map<std::string, State> states;
+    
+    // Mark a Result as checked (.is_error was accessed)
+    void markChecked(const std::string& varName);
+    
+    // Mark a Result as known error (.is_error == true)
+    void markKnownError(const std::string& varName);
+    
+    // Mark a Result as known success (.is_error == false)
+    void markKnownSuccess(const std::string& varName);
+    
+    // Check if a Result has been checked
+    bool isChecked(const std::string& varName) const;
+    
+    // Get the state of a Result
+    State getState(const std::string& varName) const;
+    
+    // Merge states from two branches (conservative join)
+    // If branches disagree, result is CHECKED (known checked, value unknown)
+    static ResultCheckState merge(const ResultCheckState& thenState, 
+                                   const ResultCheckState& elseState);
+};
+
+/**
  * TypeChecker - Performs type checking and type inference for expressions and statements
  * 
  * Phase 3.2.2: Type Checking for Expressions
@@ -65,6 +103,16 @@ private:
     // Generic struct registry (Session 13)
     // Maps struct name -> generic struct declaration AST
     std::unordered_map<std::string, StructDeclStmt*> genericStructRegistry;
+    
+    // Phase 2: Control flow analysis for Result<T> enforcement
+    // Tracks check state through branches and early returns
+    ResultCheckState currentResultState;
+    
+    // Phase 1.5: Immutable .is_error enforcement  
+    // Tracks which Result variables have 'wild' modifier
+    // Only wild Results can modify .is_error field (prevents error state corruption)
+    // Non-wild Results have immutable .is_error (errors must propagate)
+    std::unordered_set<std::string> wildResults;
     
     // ========================================================================
     // Expression Type Inference
@@ -415,6 +463,14 @@ private:
     std::vector<int> getBalancedValidDigits(Type* type);
     
     /**
+     * Check if a type is a numeric exotic type (frac*, tfp*, vec9, etc.)
+     * 
+     * Numeric exotic types: frac8, frac16, frac32, frac64, tfp32, tfp64,
+     *                       vec9, dvec9, tmatrix, ttensor
+     */
+    bool isNumericExoticType(Type* type);
+    
+    /**
      * Get valid range for balanced composite types
      * 
      * Returns pair of (min, max):
@@ -520,6 +576,33 @@ public:
      */
     Type* inferType(ASTNode* expr);
     
+    // ========================================================================
+    // Result<T> "No Checky No Val" Enforcement
+    // ========================================================================
+    
+    /**
+     * Mark a Result variable as checked (when .is_error is accessed)
+     * 
+     * Once marked, the variable can safely access .value or .error
+     * until it goes out of scope.
+     */
+    void markResultChecked(const std::string& varName);
+    
+    /**
+     * Check if a Result variable has been checked
+     * 
+     * Returns true if .is_error was accessed on this variable
+     */
+    bool isResultChecked(const std::string& varName) const;
+    
+    /**
+     * Get variable name from an expression (for Result tracking)
+     * 
+     * Handles: IDENTIFIER, MEMBER_ACCESS (for struct.result_field)
+     * Returns empty string if not a simple variable reference
+     */
+    std::string getVariableName(ASTNode* expr) const;
+    
     /**
      * Check type compatibility for statements (Phase 3.2.3)
      * 
@@ -589,6 +672,22 @@ public:
      * - Register enum variants in symbol table
      */
     void checkEnumDecl(EnumDeclStmt* stmt);
+
+    /**
+     * Check Type declaration and desugar to struct + methods
+     * 
+     * Type Oriented Programming (TOP) - better than OOP!
+     * Desugars Type:Name into:
+     * - Combined struct (struct:internal + struct:interface fields)
+     * - Prefixed methods: TypeName_create, TypeName_destroy, TypeName_method
+     * - Static members accessible via Type.MEMBER syntax
+     * 
+     * Rules:
+     * - Type name must be unique
+     * - Creates composable units without inheritance
+     * - Zero-cost abstraction via compile-time desugaring
+     */
+    void checkTypeDecl(TypeDeclStmt* stmt);
 
     /**
      * Check trait declaration (WP 005)
@@ -737,6 +836,28 @@ public:
      * Validates module name and recursively checks inline module bodies
      */
     void checkModStmt(ModStmt* stmt);
+    
+    // ========================================================================
+    // Phase 2: Control Flow Analysis Helpers
+    // ========================================================================
+    
+    /**
+     * Analyze an if condition to extract Result check knowledge
+     * Updates thenState and elseState based on what the condition tells us
+     * 
+     * Example: if (r.is_error == false)
+     *   thenState knows: r is SUCCESS
+     *   elseState knows: r is ERROR
+     */
+    void analyzeConditionForResultChecks(ASTNode* condition,
+                                          ResultCheckState& thenState,
+                                          ResultCheckState& elseState);
+    
+    /**
+     * Check if a branch (block/statement) always returns/exits
+     * Used to handle early returns: if (err) { return; } → after if, we know !err
+     */
+    bool branchAlwaysReturns(ASTNode* branch);
     
     /**
      * Check extern statement (FFI declarations)

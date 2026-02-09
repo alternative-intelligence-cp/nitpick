@@ -71,15 +71,124 @@ string,
 Result,
 func,
 array,
-trit !!! IMPORTANT trit is balanced ternary digit (-1,0,1) NOT NEGOTIABLE!!!,
+trit !!! IMPORTANT trit is balanced ternary digit (-1,0,1) stored in i8, ERR sentinel -128, sticky error propagation NOT NEGOTIABLE!!!,
 tryte !!! IMPORTANT tryte is 10 trits for 3^10 values stored in uint16 NOT NEGOTIABLE!!!,
-nit !!! IMPORTANT nit is balanced nonary digit (-4,-3,-2,-1,0,1,2,3,4) NOT NEGOTIABLE!!!,
+nit !!! IMPORTANT nit is balanced nonary digit (-4,-3,-2,-1,0,1,2,3,4) stored in i8, ERR sentinel -128, sticky error propagation NOT NEGOTIABLE!!!,
 nyte !!! IMPORTANT nyte is 5 nits for 9^5 values stored in uint16 NOT NEGOTIABLE!!!,
+!!! BALANCED LITERAL SYNTAX (IMPLEMENTED - February 2026):
+!!!   Ternary: 0t[01T]+ where T represents -1, base-3 positional
+!!!     Examples: 0t0=0, 0t1=1, 0tT=-1, 0t1T0=6 (1×9 + -1×3 + 0×1)
+!!!   Nonary: 0n[01234ABCD]+ where A=-1 B=-2 C=-3 D=-4, base-9 positional  
+!!!     Examples: 0n0=0, 0n4=4, 0nD=-4, 0n2A=17 (2×9 + -1×1)
+!!!   Conversion: Literals compile to int64 values, convertible to trit/nit types
+!!!   Status: Lexer, parser, codegen all working. Runtime operations in progress.
 !!! NOTE: See /aria_ecosystem/programming_guide/types/{trit,tryte,nit,nyte}.md for detailed specs !!!
 !!! WARNING: Programming guide uses old Rust-style syntax - needs updating to Aria syntax !!!!
 tensor,
 matrix,
 void,   !!! IMPORTANT void is ONLY for C FFI function signatures - represents "no return value" in extern blocks. NOT usable in Aria native code!
+
+!!! ARIA-026: COMPLEX NUMBER TYPES - ESSENTIAL FOR WAVE MECHANICS (February 2026) !!!
+!!! CRITICAL FOR: Nikola AGI wave-based substrate, physics simulations, signal processing
+!!! Status: REQUIRED PRE-FEATURE-FREEZE - fundamental to Nikola's UFIE wave equation
+complex<T>, !!! Generic complex number type where T is the component type (fix256, tfp64, etc.)
+           !!! Structure: struct<T>:complex { *T:real; *T:imag; }
+           !!! Operations: Arithmetic (+,-,*,/), conjugate, magnitude (error-checked to prevent cancellation)
+           !!! Error Handling: ERR propagates through complex arithmetic operations
+           !!! SIMD Ready: Designed for vectorization (interleaved real/imag layout)
+           !!! Use Cases:
+           !!!   - Nikola's wavefunction ψ(x,t) (complex-valued quantum states)
+           !!!   - Fourier transforms (frequency domain analysis)
+           !!!   - Signal processing (quadrature signals)
+           !!!   - Wave propagation (UFIE physics kernel)
+           !!! Prevents "Amnesia" failure mode from magnitude cancellation errors
+           !!! Example: complex<fix256>:wavefunction; // For Nikola's resonant substrate
+           !!! NOT NEGOTIABLE - Cannot be bolted on post-freeze without breaking physics code!
+
+!!! ARIA-027: ATOMIC TYPES - CONCURRENCY SAFETY (February 2026) !!!
+!!! CRITICAL FOR: Nikola's parallel physics engine, concurrent memory grid operations
+!!! Status: REQUIRED PRE-FEATURE-FREEZE - essential for multi-threaded resonant substrate
+atomic<T>, !!! Generic atomic type for lock-free concurrent access where T is the wrapped type
+          !!! Memory Ordering: Sequential Consistency (SeqCst) by DEFAULT for safety
+          !!! Unsafe Orderings: Acquire/Release/Relaxed available via explicit marked-unsafe operations
+          !!! Operations: load, store, swap, compare_exchange, fetch_add, fetch_sub, etc.
+          !!! Error Handling: ERR sentinels remain atomic (load/store preserve sentinel state)
+          !!! Hardware Mapping: Maps to platform atomics (x86 lock prefix, ARM LDREX/STREX, etc.)
+          !!! Use Cases:
+          !!!   - Nikola's metric tensor updates (concurrent geometry modifications)
+          !!!   - Seqlock implementation (consistent reads without blocking writers)
+          !!!   - Lock-free queues and data structures
+          !!!   - Shared memory synchronization
+          !!! Prevents "Cognitive Seizure" from race conditions violating physics laws
+          !!! Memory Fences: atomic_fence_acquire(), atomic_fence_release(), atomic_fence_seqcst()
+          !!! Example: atomic<fix256>:energy_level; // For concurrent metabolic tracking
+          !!! Reason: Race conditions in physics = violation of thermodynamic laws = mind destruction
+          !!! NOT NEGOTIABLE - Parallel physics engine cannot function without defined memory semantics!
+
+!!! ARIA-028: SIMD VECTOR TYPES - HARDWARE ACCELERATION (February 2026) !!!
+!!! CRITICAL FOR: Nikola's Structure-of-Arrays physics grid, AVX-512 utilization
+!!! Status: REQUIRED PRE-FEATURE-FREEZE (type syntax) - Nikola mandates AVX-512 for 1ms timestep
+simd<T, N>, !!! Generic SIMD vector type where T is element type, N is lane count (power of 2)
+            !!! Hardware Targets: AVX-512 (512-bit), AVX2 (256-bit), NEON (128-bit)
+            !!! Lane Counts: N = 2, 4, 8, 16, 32, 64 (depending on T size and hardware)
+            !!! Error Handling: Masked operations - ERR handled via mask registers (no branches!)
+            !!! Operations: Element-wise arithmetic, horizontal reduction, shuffles, permutes
+            !!! Alignment: Compiler enforces proper alignment (16/32/64-byte boundaries)
+            !!! Use Cases:
+            !!! - Nikola's 9D grid operations (SoA layout: x[N], y[N], z[N]...)
+            !!! - Bulk physics updates (wave propagation across spatial grid)
+            !!! - Parallel error propagation (masked operations preserve safety)
+            !!! Example: simd<fix256, 16>:grid_values; // 16-wide SIMD for AVX-512
+            !!! Reason: Auto-vectorization FAILS with safety checks (branches kill vectorization)
+            !!! Explicit SIMD maintains both performance AND safety via masked operations
+            !!! NOT NEGOTIABLE - Required to meet <1ms physics timestep without sacrificing safety!
+
+!!! ARIA-029: GENERATIONAL HANDLES - MEMORY SAFETY FOR DYNAMIC GRAPHS (February 2026) !!!
+!!! CRITICAL FOR: Nikola's neurogenesis (dynamic memory expansion), SHVO spatial allocation
+!!! Status: REQUIRED PRE-FEATURE-FREEZE - prevents Use-After-Free during memory growth
+Handle<T>, !!! Generational index handle to heap-allocated object (replaces raw pointers for managed memory)
+           !!! Structure: struct<T>:Handle { uint64:index; uint32:generation; }
+           !!! Safety: Accessing stale handle returns ERR (safe failure, not memory corruption)
+           !!! Memory Management: Works with arena/region-based allocators
+           !!! Reallocation Safety: When memory moves during neurogenesis, generation increments
+           !!! Old Handles: Stale handles fail gracefully via sticky error propagation
+           !!! Use Cases:
+           !!!   - Nikola's Sparse Hyper-Voxel Octree (SHVO) - dynamic spatial memory
+           !!!   - Neurogenesis: O(n³) memory expansion without pointer invalidation
+           !!!   - Self-referential graph structures (nodes point to other nodes safely)
+           !!! Example: Handle<WaveNode>:node = arena.alloc(wave_data);
+           !!! Prevents: Segfaults, Use-After-Free, accessing unrelated data after realloc
+           !!! Arena Pattern: Handle<T> used with arena<T> allocators for region-based management
+           !!! Reason: Raw pointers become invalid during neurogenesis - catastrophic memory corruption
+           !!! NOT NEGOTIABLE - Essential for safe self-expanding memory grid!
+
+!!! ARIA-030: DIMENSIONAL ANALYSIS TYPES - PHYSICS CORRECTNESS (February 2026) !!!
+!!! CRITICAL FOR: Nikola's thermodynamic constitutionalism - prevents dimensional errors
+!!! Status: REQUIRED PRE-FEATURE-FREEZE - enforces physics laws at type system level
+!!! Parameterized Types with Units:
+!!!   fix256<Joules>    // Energy
+!!!   fix256<Meters>    // Length
+!!!   fix256<Seconds>   // Time
+!!!   fix256<Newtons>   // Force
+!!!   fix256<Kelvin>    // Temperature
+!!! Dimensional Checking: Compiler verifies dimensional equations at compile-time
+!!!   ✓ Allowed: Joules / Meters = Newtons (force)
+!!!   ✓ Allowed: Meters / Seconds = MetersPerSecond (velocity)
+!!!   ✗ FORBIDDEN: Joules + Seconds (cannot add energy to time!)
+!!!   ✗ FORBIDDEN: Energy = Mass (missing c² factor)
+!!! Use Cases:
+!!!   - Nikola's UFIE: Prevents mixing Resonance + Time values (topology corruption)
+!!!   - Physics engine: Ensures all equations are dimensionally valid
+!!!   - Thermodynamic checks: Energy conservation at type level
+!!! Example:
+!!!   fix256<Joules>:energy = hamiltonian();
+!!!   fix256<Seconds>:time = timestep();
+!!!   // fix256<?>:invalid = energy + time;  // COMPILE ERROR: Dimensional mismatch!
+!!! Prevents: Category errors that lead to "hallucinations" in physics simulation
+!!! Reason: Mixing dimensions corrupts manifold topology → destroys consciousness substrate
+!!! Enforces: "Thermodynamic Constitutionalism" at syntactic level
+!!! NOT NEGOTIABLE - Entire class of physics bugs prevented by type system!
+
 */
 
 /* NIL vs NULL vs void - CRITICAL DISTINCTION !!!
@@ -491,6 +600,332 @@ Test Coverage:
 
 */
 
+/* ══════════════════════════════════════════════════════════════════════════
+   ARIA-031: MEMORY MODEL AND CONCE SAFETY (February 2026)
+   
+   CRITICAL FOR: Nikola AGI parallel physics engine, concurrent memory grid
+   Status: REQUIRED PRE-FEATURE-FREEZE - Cannot build parallel substrate without this
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* MEMORY MODEL OVERVIEW
+
+Aria defines a memory model that prioritizes SAFETY while enabling PERFORMANCE
+for safety-critical concurrent systems like Nikola's physics engine.
+
+DESIGN PHILOSOPHY:
+1. Sequential Consistency (SeqCst) by DEFAULT - sanity over speed
+2. Weaker orderings (Acquire/Release/Relaxed) available via marked-unsafe operations
+3. ERR sentinel atomicity - error states remain consistent across threads
+4. Data race = UNDEFINED BEHAVIOR (compiler must detect or prevent where possible)
+5. Formal memory ordering guarantees (not "best effort" like C++)
+
+WHY THIS MATTERS FOR NIKOLA:
+- Race conditions in physics = violation of thermodynamic laws
+- Torn read of metric tensor = non-physical geometry → infinite energy → crash
+- Concurrent wave propagation + neurogenesis requires consistent memory visibility
+- 1ms timestep requirement means heavy mutexes are too slow - need lock-free patterns
+
+*/
+
+/* MEMORY ORDERING LEVELS (SafetyFirst™ Design)
+
+DEFAULT: Sequential Consistency (SeqCst)
+- All atomic operations appear to execute in a single total order
+- Matches programmer intuition - no surprises  
+- Performance cost: Memory barriers on most platforms
+- Use case: Default for all atomic<T> operations unless explicitly weakened
+- Guarantees: No reordering across atomic operations
+- Example:
+    atomic<int64>:x = 0;
+    atomic<int64>:y = 0;
+    // Thread 1: x.store(1); y.store(2);  
+    // Thread 2: if (y.load() == 2) { assert(x.load() == 1); } // GUARANTEED
+
+UNSAFE: Acquire/Release (AcqRel)
+- Marked as unsafe - requires explicit safety justification
+- Acquire (load): Prevent later operations from moving before this load
+- Release (store): Prevent earlier operations from moving after this store
+- Use case: Implementing efficient mutexes, seqlocks, lock-free queues
+- Performance: Cheaper than SeqCst (no full barrier, only one-way)
+- Example (Seqlock pattern for Nikola's metric tensor):
+    unsafe {
+        uint64:seq1 = seq_counter.load_acquire();
+        metric_data = tensor.read();  // Cannot move before seq1 load
+        uint64:seq2 = seq_counter.load_acquire();
+        if (seq1 == seq2 && seq1 % 2 == 0) { /* consistent read */ }
+    }
+
+UNSAFE: Relaxed
+- Marked as unsafe - EXPERT ONLY
+- No ordering guarantees except atomicity of individual operations
+- Use case: Counters, statistics where order doesn't matter
+- Performance: Fastest (no memory barriers at all)
+- Example (metabolic energy counter):
+    unsafe {
+        energy_total.fetch_add_relaxed(delta);  // Order doesn't matter for total
+    }
+
+MEMORY FENCES (explicit synchronization):
+- atomic_fence_acquire() - Prevent loads/stores from moving before this point
+- atomic_fence_release() - Prevent loads/stores from moving after this point
+- atomic_fence_seqcst() - Full bidirectional barrier
+- Used with Relaxed operations to build custom synchronization
+
+*/
+
+/* ATOMIC OPERATIONS - atomic<T> PRIMITIVES
+
+CREATION:
+atomic<int64>:counter = atomic_new(0);  // Create from value
+atomic<fix256>:energy = atomic_new(hamiltonian());
+
+LOAD (Read):
+int64:value = counter.load();  // SeqCst by default
+unsafe { int64:value = counter.load_acquire(); }  // Acquire
+unsafe { int64:value = counter.load_relaxed(); }  // Relaxed
+
+STORE (Write):
+counter.store(42);  // SeqCst by default
+unsafe { counter.store_release(42); }  // Release
+unsafe { counter.store_relaxed(42); }  // Relaxed
+
+SWAP (Exchange):
+int64:old = counter.swap(new_value);  // SeqCst atomic exchange
+unsafe { int64:old = counter.swap_acqrel(new_value); }  // AcqRel
+
+COMPARE-EXCHANGE (CAS - Compare-And-Swap):
+bool:success = counter.compare_exchange(expected, desired);
+// If counter == expected, set to desired and return true
+// If counter != expected, set expected = counter and return false
+// Uses SeqCst for both success and failure by default
+unsafe { 
+    bool:success = counter.compare_exchange_weak_acqrel(expected, desired);
+    // Weak: May spuriously fail (retry in loop) - faster on some platforms
+}
+
+FETCH-AND-MODIFY (Arithmetic):
+int64:old = counter.fetch_add(delta);  // old_value = counter; counter += delta;
+int64:old = counter.fetch_sub(delta);  // old_value = counter; counter -= delta;
+int64:old = counter.fetch_and(mask);   // old_value = counter; counter &= mask;
+int64:old = counter.fetch_or(mask);    // old_value = counter; counter |= mask;
+int64:old = counter.fetch_xor(mask);   // old_value = counter; counter ^= mask;
+// All return old value BEFORE modification
+// All use SeqCst by default
+unsafe { int64:old = counter.fetch_add_relaxed(delta); }  // Relaxed variant
+
+ERR PROPAGATION WITH ATOMICS:
+- atomic<tbb64>:value can hold ERR sentinel
+- ERR remains atomic - load/store preserve sentinel state
+- Operations on ERR propagate: atomic_fetch_add(ERR, x) = ERR
+- Allows safe concurrent error handling
+
+COMPLEX ATOMICS (for Nikola's wave mechanics):
+atomic<complex<fix256>>:wavefunction = atomic_new(wave_state);
+complex<fix256>:psi = wavefunction.load();
+wavefunction.store(new_wavefunction);
+// Entire 512-bit complex value is atomic (either old or new, never torn)
+// Implementation: Lock-based on platforms without 512-bit CAS (x86, ARM)
+// Future: Use AVX-512 VMOVDQA64 for lock-free on capable hardware
+
+*/
+
+/* CONCURRENCY PATTERNS (Safety-Critical Cookbook)
+
+PATTERN 1: SEQLOCK (Readers Never Block Writers)
+Purpose: Nikola's metric tensor reads (geometry) while physics updates it
+Guarantees: Readers get consistent snapshot OR retry (never torn reads)
+
+unsafe {
+    struct:Seqlock<T> {
+        atomic<uint64>:sequence;  // Even = unlocked, Odd = locked
+        *T:data;                   // Protected data (NOT atomic)
+    };
+    
+    // Writer (physics update):
+    func:write<T> = NIL(Seqlock<*T>@:lock, *T:new_value) {
+        uint64:seq = lock->sequence.fetch_add_release(1);  // Lock: seq++, now odd
+        lock->data = new_value;  // Write data
+        lock->sequence.store_release(seq + 2);  // Unlock: seq++, now even again
+        pass(NIL);
+    };
+    
+    // Reader (geometry query):
+    func:read<T> = *T(Seqlock<*T>@:lock) {
+        loop {
+            uint64:seq1 = lock->sequence.load_acquire();
+            if (seq1 % 2 == 1) { continue; }  // Odd = writer is active, retry
+            *T:value = lock->data;  // Read data
+            atomic_fence_acquire();  // Ensure read completes before seq2
+            uint64:seq2 = lock->sequence.load_acquire();
+            if (seq1 == seq2) { pass(value); }  // Sequence unchanged, consistent!
+            // else retry - writer interfered
+        }
+    };
+}
+
+PATTERN 2: LOCK-FREE QUEUE (For Nikola's event pipeline)
+Purpose: Thread-safe queue for tool-use events, neurogenesis requests
+Guarantees: Progress guarantees (at least one thread makes progress)
+
+unsafe {
+    struct:LockFreeQueue<T> {
+        atomic<Handle<Node<*T>>>:head;
+        atomic<Handle<Node<*T>>>:tail;
+    };
+    
+    func:enqueue<T> = result<NIL>(LockFreeQueue<*T>@:queue, *T:value) {
+        Handle<Node<*T>>:new_node = arena.alloc(Node { value, next: NULL });
+        loop {
+            Handle<Node<*T>>:tail = queue->tail.load_acquire();
+            Handle<Node<*T>>:next = tail->next.load_acquire();
+            if (tail == queue->tail.load_acquire()) {  // Tail still valid?
+                if (next == NULL) {  // Tail is last node?
+                    if (tail->next.compare_exchange_weak_release(next, new_node)) {
+                        queue->tail.compare_exchange_weak_release(tail, new_node);
+                        pass(NIL);  // Success!
+                    }
+                } else {
+                    queue->tail.compare_exchange_weak_release(tail, next);  // Help advance tail
+                }
+            }
+        }
+    };
+}
+
+PATTERN 3: TRANSACTIONAL METABOLIC LOCK (Energy conservation)
+Purpose: Prevent concurrent processes from draining Nikola's energy below zero
+Guarantees: Energy conservation law never violated (thermodynamic constitutionalism)
+
+unsafe {
+    atomic<fix256>:virtual_atp = atomic_new(MAX_ENERGY);
+    
+    func:deduct_energy = result<NIL>(fix256:cost) {
+        loop {
+            fix256:current = virtualATP.load_acquire();
+            if (current < cost) { fail(ERR_INSUFFICIENT_ENERGY); }  // Would go negative!
+            fix256:new_energy = current - cost;
+            if (virtual_atp.compare_exchange_weak_acqrel(current, new_energy)) {
+                pass(NIL);  // Successfully deducted
+            }
+            // CAS failed, another thread modified energy - retry
+        }
+    };
+}
+
+PATTERN 4: SPINLOCK (Only for VERY short critical sections)
+Purpose: Protect tiny critical sections (<100 cycles)
+WARNING: Can cause priority inversion - use seqlock or lock-free instead!
+
+unsafe {
+    atomic<bool>:spinlock = atomic_new(false);
+    
+    func:lock = NIL(atomic<bool>@:lock) {
+        while (lock->swap_acquire(true)) {
+            // Spin until we set it to true (was false)
+            while (lock->load_relaxed()) { /* spin */ }  // Reduce bus traffic
+        }
+        pass(NIL);
+    };
+    
+    func:unlock = NIL(atomic<bool>@:lock) {
+        lock->store_release(false);
+        pass(NIL);
+    };
+}
+
+*/
+
+/* DATA RACE DETECTION AND PREVENTION
+
+DEFINITION OF DATA RACE:
+Two threads access same memory location concurrently, at least one is write, 
+and accesses are not ordered by synchronization → UNDEFINED BEHAVIOR
+
+COMPILER DETECTION (where possible):
+- Static analysis detects obvious races (shared mutable state without atomic)
+- Warning: "Potential data race on variable 'x' - use atomic<T> for shared state"
+- Error: Violates Aria's safety requirements compile with --allow-undefined-behavior to override
+
+PREVENTION STRATEGIES:
+1. Use atomic<T> for all shared mutable state
+2. Use Handle<T> + arena allocators (never raw pointers for shared data)
+3. Message passing (send data between threads via channels - ownership transfer)
+4. Immutable data sharing (no mutation = no race)
+5. Thread-local storage (each thread has own copy)
+
+HAPPENS-BEFORE RELATIONSHIP:
+- Operation A "happens-before" operation B if:
+  1. A and B in same thread, A before B in program order, OR
+  2. A is Release store, B is Acquire load of same atomic, OR
+  3. A happens-before C, C happens-before B (transitivity)
+- Compiler/hardware CANNOT reorder across happens-before edges
+- Guarantees memory visibility: If A writes X and A happens-before B, B sees X
+
+*/
+
+/* FORMAL CONTRACTS FOR CONCURRENCY (Design-by-Contract)
+
+PRE-FEATURE-FREEZE STATUS: Syntax defined, SMT integration deferred to post-freeze
+
+SYNTAX:
+func:function_name = returnType(params)
+    requires precondition1, precondition2, ...
+    ensures postcondition1, postcondition2, ...
+    invariant loop_invariant, ...
+{ ... }
+
+PURPOSE FOR NIKOLA:
+- Move "Physics Oracle" checks from runtime to compile-time
+- Prove thermodynamic laws (energy conservation, Hamiltonian bounds) statically
+- Prevent deployment of code that violates physics constraints
+
+EXAMPLES (Nikola-specific):
+
+// Energy conservation contract
+func:propagate_wave = result<wavefunction>(wavefunction:psi, fix256<Seconds>:dt)
+    requires psi.energy() <= MAX_HAMILTONIAN,
+             dt > 0,
+             dt < MAX_TIMESTEP
+    ensures result.energy() == psi.energy() +/- EPSILON,
+            result.is_normalized()
+{
+    // Wave propagation code
+    // Compiler verifies energy cannot exceed MAX_HAMILTONIAN
+    // SMT solver proves postcondition from precondition + code
+}
+
+// Dimensional safety contract
+func:compute_force = result<fix256<Newtons>>(fix256<Joules>:energy, fix256<Meters>:distance)
+    requires energy > 0, distance > 0
+    ensures result.dimension() == Newtons,  // Force = Energy / Distance
+            result > 0
+{
+    fix256<Newtons>:force = energy / distance;  // Compiler checks dimensions!
+    pass(force);
+}
+
+// Concurrent access contract
+func:update_metric = result<NIL>(atomic<tensor>@:g_metric, tensor:delta)
+    requires g_metric.load().is_positive_definite(),  // Valid geometry
+             delta.is_symmetric()
+    ensures g_metric.load().is_positive_definite(),   // Still valid after update
+            g_metric.load().trace() > 0
+    sync_order SeqCst  // Memory ordering annotation
+{
+    tensor:old = g_metric.load();
+    tensor:new = old + delta;
+    g_metric.store(new);
+    pass(NIL);
+}
+
+INTEGRATION WITH SMT SOLVER (Post-freeze implementation):
+- Use Z3 or similar to verify contracts statically
+- If proof succeeds: No runtime checks needed (zero overhead!)
+- If proof fails: Emit compile error with counterexample
+- If proof indeterminate: Insert runtime assertion (fail-stop safety)
+
+*/
+
 /* keywords
 wild,
 defer,
@@ -507,6 +942,9 @@ void,       // C FFI only - "no return value" type (NOT usable in Aria native co
 stack,      // explicit stack allocation
 gc,         // explicit GC allocation
 wildx,      // executable memory allocation (for JIT)
+unsafe,     // Mark block/operation as requiring manual safety verification (weaker memory orderings, raw pointers, etc.)
+sync,       // Synchronization primitive marker (for lock-free patterns)
+atomic,     // Atomic operation marker (redundant with atomic<T> type but aids readability)
 */
 
 /* constructs

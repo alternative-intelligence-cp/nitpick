@@ -1,6 +1,34 @@
 // Comprehensive balanced ternary literal tests
 // Testing edge cases, negative values, and complex expressions
 
+// Inline int64_toString until module system is implemented
+func:int64_toString = string(int64:value) {
+    if (value == 0) { pass("0"); }
+    bool:is_negative = false;
+    int64:work_value = value;
+    if (value < 0) { is_negative = true; work_value = -value; }
+    string:result = "";
+    int64:remaining = work_value;
+    while (remaining > 0) {
+        int64:digit = remaining % 10;
+        remaining = remaining / 10;
+        string:digit_char = "";
+        if (digit == 0) { digit_char = "0"; }
+        if (digit == 1) { digit_char = "1"; }
+        if (digit == 2) { digit_char = "2"; }
+        if (digit == 3) { digit_char = "3"; }
+        if (digit == 4) { digit_char = "4"; }
+        if (digit == 5) { digit_char = "5"; }
+        if (digit == 6) { digit_char = "6"; }
+        if (digit == 7) { digit_char = "7"; }
+        if (digit == 8) { digit_char = "8"; }
+        if (digit == 9) { digit_char = "9"; }
+        result = string_concat(digit_char, result);
+    }
+    if (is_negative) { result = string_concat("-", result); }
+    pass(result);
+};
+
 func:main = int32() {
     // Edge cases
     int64:zero = 0t0;
@@ -22,25 +50,38 @@ func:main = int32() {
     int64:result1 = 0t11 + 0t1T;  // 4 + 2 = 6
     int64:result2 = 0t10 - 0t1;   // 3 - 1 = 2
     
-    print("Edge cases:");
-    print(zero);
-    print(pos_small);
-    print(neg_small);
+    // All prints use explicit int64_toString conversion with temp variables
+    drop(println("Edge cases:"));
+    string:zero_str = int64_toString(zero);
+    drop(println(zero_str));
+    string:pos_small_str = int64_toString(pos_small);
+    drop(println(pos_small_str));
+    string:neg_small_str = int64_toString(neg_small);
+    drop(println(neg_small_str));
     
-    print("Larger values:");
-    print(six);
-    print(seven);
-    print(eight);
-    print(nine);
+    drop(println("Larger values:"));
+    string:six_str = int64_toString(six);
+    drop(println(six_str));
+    string:seven_str = int64_toString(seven);
+    drop(println(seven_str));
+    string:eight_str = int64_toString(eight);
+    drop(println(eight_str));
+    string:nine_str = int64_toString(nine);
+    drop(println(nine_str));
     
-    print("Negative values:");
-    print(neg_two);
-    print(neg_three);
-    print(neg_four);
+    drop(println("Negative values:"));
+    string:neg_two_str = int64_toString(neg_two);
+    drop(println(neg_two_str));
+    string:neg_three_str = int64_toString(neg_three);
+    drop(println(neg_three_str));
+    string:neg_four_str = int64_toString(neg_four);
+    drop(println(neg_four_str));
     
-    print("Mixed operations:");
-    print(result1);
-    print(result2);
+    drop(println("Mixed operations:"));
+    string:result1_str = int64_toString(result1);
+    drop(println(result1_str));
+    string:result2_str = int64_toString(result2);
+    drop(println(result2_str));
     
     pass(0);
 };

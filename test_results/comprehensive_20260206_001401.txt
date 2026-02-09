@@ -1,0 +1,2475 @@
+=========================================
+Aria Comprehensive Test Results
+Date: Fri Feb  6 12:14:01 AM EST 2026
+=========================================
+
+PASS: tests/address_of_test.aria
+PASS: tests/adversarial/async_safety/async_basic.aria
+FAIL: tests/adversarial/async_safety/async_called.aria
+  Error:
+    [1mtests/adversarial/async_safety/async_called.aria:0:0: [0m[1;31merror[0m: [1mLine 14, Column 14: Unused result value. This function returns a result that must be checked.[0m
+    
+
+FAIL: tests/adversarial/borrow_checker/aliasing_immut_after_mut.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/aliasing_immut_after_mut.aria:10:5: [0m[1;31merror[0m: [1mCannot borrow 'x' as immutable because it is already borrowed as mutable[0m
+       10 |     int32$:r = !$x;      // ERROR: Immutable borrow while mutable exists
+                [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/aliasing_immut_after_mut.aria:9:5: [0m[1;34mnote[0m: [1mMutable borrow by 'm' created here[0m
+        9 |     int32$:m = $x;       // Mutable borrow
+                [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m1 error[0m
+
+FAIL: tests/adversarial/borrow_checker/aliasing_loop_overlap.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/aliasing_loop_overlap.aria:12:11: [0m[1;31merror[0m: [1mCannot assign to 'x' because it is borrowed[0m
+       12 |         x = x + 1;       // ERROR: Modify while borrowed
+                      [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/aliasing_loop_overlap.aria:11:9: [0m[1;34mnote[0m: [1mBorrowed by 'r' here[0m
+       11 |         int32$:r = !$x;  // Borrow in each iteration
+                    [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m1 error[0m
+
+FAIL: tests/adversarial/borrow_checker/aliasing_modify_while_borrowed.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/aliasing_modify_while_borrowed.aria:10:7: [0m[1;31merror[0m: [1mCannot assign to 'x' because it is borrowed[0m
+       10 |     x = 20;  // ERROR: Cannot modify x while borrowed
+                  [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/aliasing_modify_while_borrowed.aria:8:5: [0m[1;34mnote[0m: [1mBorrowed by 'r' here[0m
+        8 |     int32$:r = !$x;  // Borrow x
+                [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m1 error[0m
+
+FAIL: tests/adversarial/borrow_checker/aliasing_mut_and_immut.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/aliasing_mut_and_immut.aria:10:5: [0m[1;31merror[0m: [1mCannot borrow 'x' as mutable because it is already borrowed[0m
+       10 |     int32$:m = $x;       // ERROR: Mutable borrow while immutable exists
+                [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/aliasing_mut_and_immut.aria:9:5: [0m[1;34mnote[0m: [1mExisting immutable borrow by 'r1' created here[0m
+        9 |     int32$:r1 = !$x;     // Immutable borrow
+                [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m1 error[0m
+
+FAIL: tests/adversarial/borrow_checker/aliasing_two_mut.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/aliasing_two_mut.aria:11:5: [0m[1;31merror[0m: [1mCannot borrow 'x' as mutable because it is already borrowed[0m
+       11 |     int32$:m2 = $x;  // ERROR: Second mutable borrow while first exists
+                [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/aliasing_two_mut.aria:10:5: [0m[1;34mnote[0m: [1mExisting mutable borrow by 'm1' created here[0m
+       10 |     int32$:m1 = $x;  // First mutable borrow
+                [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m1 error[0m
+
+FAIL: tests/adversarial/borrow_checker/borrow_and_modify_loop.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/borrow_and_modify_loop.aria:13:11: [0m[1;31merror[0m: [1mCannot assign to 'x' because it is borrowed[0m
+       13 |         x = x + 1;      // ERROR: Cannot modify while borrowed
+                      [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/borrow_and_modify_loop.aria:12:9: [0m[1;34mnote[0m: [1mBorrowed by 'r' here[0m
+       12 |         int32$:r = $x;  // Borrow at start of each iteration
+                    [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m1 error[0m
+
+FAIL: tests/adversarial/borrow_checker/borrow_scope_escape.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/borrow_scope_escape.aria:8:5: [0m[1;31merror[0m: [1mCannot return reference to local variable 'x'. The reference would become invalid when the function returns.[0m
+        8 |     pass($x);  // ERROR: Returning reference to local variable
+                [1;32m^[0m
+    
+
+FAIL: tests/adversarial/borrow_checker/borrow_through_mut.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/borrow_through_mut.aria:11:5: [0m[1;31merror[0m: [1mCannot borrow 'x' as immutable because it is already borrowed as mutable[0m
+       11 |     int32$:r = !$x;  // ERROR: Cannot immutably borrow while mutably borrowed
+                [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/borrow_through_mut.aria:9:5: [0m[1;34mnote[0m: [1mMutable borrow by 'm' created here[0m
+        9 |     int32$:m = $x;  // Mutable borrow
+                [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m1 error[0m
+
+FAIL: tests/adversarial/borrow_checker/conditional_borrow_merge.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/conditional_borrow_merge.aria:20:7: [0m[1;31merror[0m: [1mCannot assign to 'x' because it is borrowed[0m
+       20 |     x = 30;  // ERROR: x might be borrowed by r
+                  [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/conditional_borrow_merge.aria:14:11: [0m[1;34mnote[0m: [1mBorrowed by 'r' here[0m
+       14 |         r = $x;  // Borrow x in true branch
+                      [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m1 error[0m
+
+FAIL: tests/adversarial/borrow_checker/double_pin.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/double_pin.aria:9:17: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'pin1'[0m
+        9 |     wild int32->pin1 = #x;  // First pin
+                            [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/double_pin.aria:10:17: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'pin2'[0m
+       10 |     wild int32->pin2 = #x;  // ERROR: Cannot pin already pinned variable
+                            [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/adversarial/borrow_checker/move_while_borrowed.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/move_while_borrowed.aria:0:0: [0m[1;31merror[0m: [1mLine 15, Column 19: Unused result value. This function returns a result that must be checked.[0m
+    
+
+FAIL: tests/adversarial/borrow_checker/nested_borrow_conflict.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/nested_borrow_conflict.aria:12:9: [0m[1;31merror[0m: [1mCannot borrow 'x' as mutable because it is already borrowed[0m
+       12 |         int32$:inner = $x;  // ERROR: Cannot borrow again while outer exists
+                    [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/nested_borrow_conflict.aria:9:5: [0m[1;34mnote[0m: [1mExisting mutable borrow by 'outer' created here[0m
+        9 |     int32$:outer = $x;  // Mutable borrow in outer scope
+                [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m1 error[0m
+
+FAIL: tests/adversarial/borrow_checker/param_alias_same_var.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/param_alias_same_var.aria:0:0: [0m[1;31merror[0m: [1mLine 14, Column 16: Unused result value. This function returns a result that must be checked.[0m
+    
+
+FAIL: tests/adversarial/borrow_checker/pin_then_move.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/pin_then_move.aria:12:17: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'pin_x'[0m
+       12 |     wild int32->pin_x = #x;  // Pin x
+                            [1;32m^[0m
+    
+
+FAIL: tests/adversarial/borrow_checker/reassign_pinned.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/reassign_pinned.aria:9:17: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'pin_x'[0m
+        9 |     wild int32->pin_x = #x;  // Pin x
+                            [1;32m^[0m
+    
+
+FAIL: tests/adversarial/borrow_checker/reborrow_mutable.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/reborrow_mutable.aria:0:0: [0m[1;31merror[0m: [1mLine 15, Column 12: Unused result value. This function returns a result that must be checked.[0m
+    
+
+FAIL: tests/adversarial/borrow_checker/return_inner_ref.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/return_inner_ref.aria:10:9: [0m[1;31merror[0m: [1mCannot return reference to local variable 'inner'. The reference would become invalid when the function returns.[0m
+       10 |         pass($inner);  // ERROR: Reference to inner scope variable escapes
+                    [1;32m^[0m
+    
+
+FAIL: tests/adversarial/borrow_checker/use_after_free_simple_loop.aria
+  Error:
+    [1mtests/adversarial/borrow_checker/use_after_free_simple_loop.aria:11:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p'[0m
+       11 |     wild void->p = @extern("aria_alloc", 10);
+                           [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/use_after_free_simple_loop.aria:11:21: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token 'extern'[0m
+       11 |     wild void->p = @extern("aria_alloc", 10);
+                                [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/use_after_free_simple_loop.aria:11:21: [0m[1;31merror[0m: [1m  Expected expression after unary operator
+      Found: token 'extern'[0m
+       11 |     wild void->p = @extern("aria_alloc", 10);
+                                [1;32m^[0m
+    
+    [1mtests/adversarial/borrow_checker/use_after_free_simple_loop.aria:11:21: [0m[1;31merror[0m: [1m  Expected ';' after variable declaration
+      Found: token 'extern'[0m
+       11 |     wild void->p = @extern("aria_alloc", 10);
+                                [1;32m^[0m
+    
+
+FAIL: tests/adversarial/defer_cleanup/defer_conditional_alloc.aria
+  Error:
+    [1mtests/adversarial/defer_cleanup/defer_conditional_alloc.aria:13:20: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p'[0m
+       13 |         wild int8->p = alloc(1024);
+                               [1;32m^[0m
+    
+
+FAIL: tests/adversarial/defer_cleanup/defer_early_return.aria
+  Error:
+    [1mtests/adversarial/defer_cleanup/defer_early_return.aria:10:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p'[0m
+       10 |     wild int8->p = alloc(1024);
+                           [1;32m^[0m
+    
+
+FAIL: tests/adversarial/defer_cleanup/defer_multiple_resources.aria
+  Error:
+    [1mtests/adversarial/defer_cleanup/defer_multiple_resources.aria:10:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p1'[0m
+       10 |     wild int8->p1 = alloc(100);
+                           [1;32m^[0m
+    
+    [1mtests/adversarial/defer_cleanup/defer_multiple_resources.aria:13:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p2'[0m
+       13 |     wild int8->p2 = alloc(200);
+                           [1;32m^[0m
+    
+    [1mtests/adversarial/defer_cleanup/defer_multiple_resources.aria:16:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p3'[0m
+       16 |     wild int8->p3 = alloc(300);
+                           [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+FAIL: tests/adversarial/defer_cleanup/defer_normal_return.aria
+  Error:
+    [1mtests/adversarial/defer_cleanup/defer_normal_return.aria:10:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p'[0m
+       10 |     wild int8->p = alloc(1024);
+                           [1;32m^[0m
+    
+
+FAIL: tests/adversarial/defer_cleanup/nested_defer.aria
+  Error:
+    [1mtests/adversarial/defer_cleanup/nested_defer.aria:10:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'outer'[0m
+       10 |     wild int8->outer = alloc(100);
+                           [1;32m^[0m
+    
+    [1mtests/adversarial/defer_cleanup/nested_defer.aria:14:20: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'inner'[0m
+       14 |         wild int8->inner = alloc(50);
+                               [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/adversarial/defer_cleanup/no_defer_leak.aria
+  Error:
+    [1mtests/adversarial/defer_cleanup/no_defer_leak.aria:10:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p'[0m
+       10 |     wild int8->p = alloc(1024);
+                           [1;32m^[0m
+    
+
+PASS: tests/adversarial/error_propagation/tbb_all_sizes.aria
+PASS: tests/adversarial/error_propagation/tbb_comparison_with_err.aria
+PASS: tests/adversarial/error_propagation/tbb_deep_call_chain.aria
+PASS: tests/adversarial/error_propagation/tbb_err_arithmetic.aria
+PASS: tests/adversarial/error_propagation/tbb_overflow_becomes_err.aria
+PASS: tests/adversarial/tbb_sentinel/err_not_zero.aria
+PASS: tests/adversarial/tbb_sentinel/error_propagation.aria
+FAIL: tests/adversarial/tbb_sentinel/no_cross_family.aria
+  Error:
+    [1mtests/adversarial/tbb_sentinel/no_cross_family.aria:0:0: [0m[1;31merror[0m: [1mLine 12, Column 5: Cannot initialize variable 'y' of type 'int8' with value of type 'tbb8'[0m
+    
+
+FAIL: tests/adversarial/tbb_sentinel/no_int_to_tbb.aria
+  Error:
+    [1mtests/adversarial/tbb_sentinel/no_int_to_tbb.aria:0:0: [0m[1;31merror[0m: [1mLine 12, Column 5: Cannot initialize variable 'y' of type 'tbb8' with value of type 'int8'[0m
+    
+
+FAIL: tests/adversarial/tbb_sentinel/out_of_range.aria
+  Error:
+    [1mtests/adversarial/tbb_sentinel/out_of_range.aria:0:0: [0m[1;31merror[0m: [1mLine 11, Column 27: tbb8_from_int() value 128 out of valid range [-127, 127][0m
+    
+
+FAIL: tests/adversarial/tbb_sentinel/sentinel_construction.aria
+  Error:
+    [1mtests/adversarial/tbb_sentinel/sentinel_construction.aria:0:0: [0m[1;31merror[0m: [1mLine 12, Column 27: tbb8_from_int() cannot construct sentinel value -128 (TBB8_ERR). Use tbb8_div(x, 0) to generate error state.[0m
+    
+
+PASS: tests/adversarial/tbb_sentinel/valid_construction.aria
+FAIL: tests/adversarial/type_system/generic_tbb_identity.aria
+  Error:
+    [1mtests/adversarial/type_system/generic_tbb_identity.aria:7:14: [0m[1;31merror[0m: [1m  Expected '=' after function name
+      Found: token '<'[0m
+        7 | func:identity<T> = T(T:x) {
+                         [1;32m^[0m
+    
+    [1mtests/adversarial/type_system/generic_tbb_identity.aria:7:14: [0m[1;31merror[0m: [1m  Expected type annotation
+      Found: token '<'[0m
+        7 | func:identity<T> = T(T:x) {
+                         [1;32m^[0m
+    
+    [1mtests/adversarial/type_system/generic_tbb_identity.aria:7:14: [0m[1;31merror[0m: [1m  Expected return type
+      Found: token '<'[0m
+        7 | func:identity<T> = T(T:x) {
+                         [1;32m^[0m
+    
+    [1mtests/adversarial/type_system/generic_tbb_identity.aria:9:1: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+        9 | };
+            [1;32m^[0m
+    
+
+FAIL: tests/adversarial/type_system/generic_type_mismatch.aria
+  Error:
+    [1mtests/adversarial/type_system/generic_type_mismatch.aria:7:14: [0m[1;31merror[0m: [1m  Expected '=' after function name
+      Found: token '<'[0m
+        7 | func:identity<T> = T(T:x) {
+                         [1;32m^[0m
+    
+    [1mtests/adversarial/type_system/generic_type_mismatch.aria:7:14: [0m[1;31merror[0m: [1m  Expected type annotation
+      Found: token '<'[0m
+        7 | func:identity<T> = T(T:x) {
+                         [1;32m^[0m
+    
+    [1mtests/adversarial/type_system/generic_type_mismatch.aria:7:14: [0m[1;31merror[0m: [1m  Expected return type
+      Found: token '<'[0m
+        7 | func:identity<T> = T(T:x) {
+                         [1;32m^[0m
+    
+    [1mtests/adversarial/type_system/generic_type_mismatch.aria:9:1: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+        9 | };
+            [1;32m^[0m
+    
+
+FAIL: tests/adversarial/type_system/int_to_tbb_implicit.aria
+  Error:
+    [1mtests/adversarial/type_system/int_to_tbb_implicit.aria:0:0: [0m[1;31merror[0m: [1mLine 9, Column 5: Cannot initialize variable 'y' of type 'tbb8' with value of type 'int8'[0m
+    
+
+FAIL: tests/adversarial/type_system/tbb_mixed_sizes.aria
+  Error:
+    [1mtests/adversarial/type_system/tbb_mixed_sizes.aria:0:0: [0m[1;31merror[0m: [1mLine 9, Column 5: Cannot initialize variable 'large' of type 'tbb16' with value of type 'tbb8'[0m
+    
+
+PASS: tests/adversarial/type_system/tbb_sentinel_direct_construct.aria
+FAIL: tests/adversarial/type_system/tbb_to_int_implicit.aria
+  Error:
+    [1mtests/adversarial/type_system/tbb_to_int_implicit.aria:0:0: [0m[1;31merror[0m: [1mLine 9, Column 5: Cannot initialize variable 'y' of type 'int8' with value of type 'tbb8'[0m
+    
+
+FAIL: tests/adversarial/wild_memory/basic_alloc_free.aria
+  Error:
+    [1mtests/adversarial/wild_memory/basic_alloc_free.aria:10:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'ptr'[0m
+       10 |     wild int8->ptr = alloc(size);
+                           [1;32m^[0m
+    
+
+FAIL: tests/adversarial/wild_memory/conditional_free_loop.aria
+  Error:
+    [1mtests/adversarial/wild_memory/conditional_free_loop.aria:13:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p'[0m
+       13 |     wild int8->p = alloc(100);
+                           [1;32m^[0m
+    
+
+FAIL: tests/adversarial/wild_memory/defer_free_valid.aria
+  Error:
+    [1mtests/adversarial/wild_memory/defer_free_valid.aria:10:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p'[0m
+       10 |     wild int8->p = alloc(1024);
+                           [1;32m^[0m
+    
+
+FAIL: tests/adversarial/wild_memory/double_free.aria
+  Error:
+    [1mtests/adversarial/wild_memory/double_free.aria:8:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'ptr'[0m
+        8 |     wild int8->ptr = alloc(1024);
+                           [1;32m^[0m
+    
+
+FAIL: tests/adversarial/wild_memory/loop_free_then_use.aria
+  Error:
+    [1mtests/adversarial/wild_memory/loop_free_then_use.aria:10:27: [0m[1;31merror[0m: [1m  Expected ':' after parameter type
+      Found: identifier 'ptr'[0m
+       10 | func:use_ptr = void(int8->ptr) {
+                                      [1;32m^[0m
+    
+    [1mtests/adversarial/wild_memory/loop_free_then_use.aria:15:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p'[0m
+       15 |     wild int8->p = alloc(10);
+                           [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/adversarial/wild_memory/loop_use_after_free.aria
+  Error:
+    [1mtests/adversarial/wild_memory/loop_use_after_free.aria:10:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'p'[0m
+       10 |     wild int8->p = alloc(10);
+                           [1;32m^[0m
+    
+
+FAIL: tests/adversarial/wild_memory/missing_free.aria
+  Error:
+    [1mtests/adversarial/wild_memory/missing_free.aria:8:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'ptr'[0m
+        8 |     wild int8->ptr = alloc(1024);
+                           [1;32m^[0m
+    
+
+FAIL: tests/adversarial/wild_memory/use_after_free.aria
+  Error:
+    [1mtests/adversarial/wild_memory/use_after_free.aria:8:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'ptr'[0m
+        8 |     wild int8->ptr = alloc(1024);
+                           [1;32m^[0m
+    
+
+FAIL: tests/allocator/check_arena_builtins.aria
+  Error:
+    [1mtests/allocator/check_arena_builtins.aria:0:0: [0m[1;31merror[0m: [1mLine 17, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/allocator/check_arena_builtins.aria:0:0: [0m[1;31merror[0m: [1mLine 18, Column 25: Unused result value. This function returns a result that must be checked.[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/allocator/check_pool_builtins.aria
+  Error:
+    [1mtests/allocator/check_pool_builtins.aria:0:0: [0m[1;31merror[0m: [1mLine 15, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/allocator/check_pool_builtins.aria:0:0: [0m[1;31merror[0m: [1mLine 16, Column 24: Unused result value. This function returns a result that must be checked.[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/allocator/check_slab_builtins.aria
+  Error:
+    [1mtests/allocator/check_slab_builtins.aria:0:0: [0m[1;31merror[0m: [1mLine 15, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/allocator/check_slab_builtins.aria:0:0: [0m[1;31merror[0m: [1mLine 16, Column 24: Unused result value. This function returns a result that must be checked.[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/allocator/quick_builtin_test.aria
+  Error:
+    [1mtests/allocator/quick_builtin_test.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/array_slice.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Testing array slicing:"
+    [STRING POOL] Created new pooled string: "Testing array slicing:"
+    [DEBUG] Registered var_aria_types[nums] = int64@
+    [DEBUG IR_GEN] Variable 'nums' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5ca28ae1c8f0
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Original array (first 5 elements):"
+    [STRING POOL] Created new pooled string: "Original array (first 5 elements):"
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: nums -> type: ptr
+    [DEBUG] codegenIdentifier: i -> type: i64
+    [1mtests/array_slice.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+FAIL: tests/array_slice_simple.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Simple slice test:"
+    [STRING POOL] Created new pooled string: "Simple slice test:"
+    [DEBUG] Registered var_aria_types[nums] = int64@
+    [DEBUG IR_GEN] Variable 'nums' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x62843f0a8bf0
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Original:"
+    [STRING POOL] Created new pooled string: "Original:"
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: nums -> type: ptr
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [1mtests/array_slice_simple.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+PASS: tests/arrow_operator_full_test.aria
+PASS: tests/arrow_operator_test.aria
+PASS: tests/arrow_operator_verified.aria
+PASS: tests/balanced_ternary_basic.aria
+PASS: tests/batch02_gemini_audit_fixes.aria
+PASS: tests/blueprint_pointer_demo.aria
+PASS: tests/borrow_basic.aria
+PASS: tests/borrow_integration_test.aria
+PASS: tests/borrow_lifetime.aria
+PASS: tests/borrow_pinning.aria
+PASS: tests/borrow_wild.aria
+PASS: tests/cast/01_safe_widening.aria
+PASS: tests/cast/02_checked_narrowing.aria
+PASS: tests/cast/03_unchecked_narrowing.aria
+PASS: tests/cast/04_int_to_float.aria
+PASS: tests/cast/05_float_to_int.aria
+PASS: tests/cast/06_mixed_scenarios.aria
+PASS: tests/cast/07_same_type_cast.aria
+PASS: tests/const_advanced_test.aria
+PASS: tests/const_arith_test.aria
+PASS: tests/const_array_test.aria
+PASS: tests/const_expr_test.aria
+PASS: tests/const_simple2.aria
+PASS: tests/const_test.aria
+PASS: tests/const_value_test.aria
+FAIL: tests/debug_array.aria
+  Error:
+    [DEBUG] Generating body for function: test
+    [DEBUG] Registered var_aria_types[buffer] = int64@
+    [DEBUG] Body generation complete for: test
+    /usr/bin/ld: /lib/x86_64-linux-gnu/Scrt1.o: in function `_start':
+    (.text+0x1b): undefined reference to `main'
+    clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+
+PASS: tests/debug_combined.aria
+FAIL: tests/debug_fractions.aria
+  Error:
+    [DEBUG] Generating body for function: test_fractions
+    [DEBUG] Registered var_aria_types[half] = frac8
+    [DEBUG IR_GEN] Variable 'half' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5fb3c0d2e900
+    [DEBUG] Registered var_aria_types[third] = frac16
+    [DEBUG IR_GEN] Variable 'third' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5fb3c0d11390
+    [DEBUG] Registered var_aria_types[quarter] = frac32
+    [DEBUG IR_GEN] Variable 'quarter' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5fb3c0d5c590
+    [DEBUG] Registered var_aria_types[pi] = tfp32
+    [DEBUG IR_GEN] Variable 'pi' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5fb3c0d5c9f0
+    [DEBUG] Registered var_aria_types[e] = tfp64
+    [DEBUG IR_GEN] Variable 'e' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5fb3c0d5ce90
+    [DEBUG] Body generation complete for: test_fractions
+    /usr/bin/ld: /lib/x86_64-linux-gnu/Scrt1.o: in function `_start':
+    (.text+0x1b): undefined reference to `main'
+    clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+
+FAIL: tests/debug_generic_lex.aria
+  Error:
+    [1mtests/debug_generic_lex.aria:1:14: [0m[1;31merror[0m: [1m  Expected struct name
+      Found: token 'Result'[0m
+        1 | struct<T, E>:Result = {
+                         [1;32m^[0m
+    
+    [1mtests/debug_generic_lex.aria:1:14: [0m[1;31merror[0m: [1m  Expected '=' after struct name
+      Found: token 'Result'[0m
+        1 | struct<T, E>:Result = {
+                         [1;32m^[0m
+    
+    [1mtests/debug_generic_lex.aria:1:14: [0m[1;31merror[0m: [1m  Expected '{' after '='
+      Found: token 'Result'[0m
+        1 | struct<T, E>:Result = {
+                         [1;32m^[0m
+    
+    [1mtests/debug_generic_lex.aria:1:21: [0m[1;31merror[0m: [1m  Expected ':' after field type
+      Found: token '='[0m
+        1 | struct<T, E>:Result = {
+                                [1;32m^[0m
+    
+
+FAIL: tests/debug_init_bug.aria
+  Error:
+    /usr/bin/ld: /lib/x86_64-linux-gnu/Scrt1.o: in function `_start':
+    (.text+0x1b): undefined reference to `main'
+    clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+
+FAIL: tests/debug_init_func.aria
+  Error:
+    [DEBUG] Generating body for function: test
+    [DEBUG] Registered var_aria_types[x] = string
+    [DEBUG IR_GEN] Variable 'x' HAS initializer, generating...
+    [DEBUG] codegenCall: callee name = string_from_char
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG IR_GEN] Initializer generated, value = 0x624bfde72e90
+    [DEBUG] Body generation complete for: test
+    /usr/bin/ld: /lib/x86_64-linux-gnu/Scrt1.o: in function `_start':
+    (.text+0x1b): undefined reference to `main'
+    clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+
+PASS: tests/debug_int1024.aria
+FAIL: tests/debug_static_member.aria
+  Error:
+    [1mtests/debug_static_member.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 21: Undefined identifier: 'int1024'[0m
+    
+
+FAIL: tests/debug_struct_return.aria
+  Error:
+    [DEBUG] Generating body for function: test1
+    [DEBUG] Body generation complete for: test1
+    [DEBUG] Generating body for function: test2
+    [DEBUG] Body generation complete for: test2
+    /usr/bin/ld: /lib/x86_64-linux-gnu/Scrt1.o: in function `_start':
+    (.text+0x1b): undefined reference to `main'
+    clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+
+PASS: tests/debug_tbb.aria
+PASS: tests/debug_tbb_func.aria
+PASS: tests/debug_tbb_minimal.aria
+PASS: tests/debug_tbb_only.aria
+PASS: tests/debug_trit_and.aria
+PASS: tests/debug_trit_err_add.aria
+PASS: tests/debug_trit_values.aria
+FAIL: tests/debug_typecast.aria
+  Error:
+    [1mtests/debug_typecast.aria:0:0: [0m[1;31merror[0m: [1mLine 3, Column 17: Cannot cast between non-numeric types 'int32' and 'int1024'[0m
+    
+    [1mtests/debug_typecast.aria:0:0: [0m[1;31merror[0m: [1mLine 5, Column 21: Undefined identifier: 'x'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/determinism/alloc_loop_simple.aria
+  Error:
+    [1mtests/determinism/alloc_loop_simple.aria:12:20: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'ptr'[0m
+       12 |         wild int8->ptr = alloc(size);
+                               [1;32m^[0m
+    
+
+FAIL: tests/determinism/alloc_simple.aria
+  Error:
+    [1mtests/determinism/alloc_simple.aria:9:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'ptr1'[0m
+        9 |     wild int8->ptr1 = alloc(size1);
+                           [1;32m^[0m
+    
+    [1mtests/determinism/alloc_simple.aria:12:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'ptr2'[0m
+       12 |     wild int8->ptr2 = alloc(size2);
+                           [1;32m^[0m
+    
+    [1mtests/determinism/alloc_simple.aria:15:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'ptr3'[0m
+       15 |     wild int8->ptr3 = alloc(size3);
+                           [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+FAIL: tests/determinism/compute_basic.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[a] = int64
+    [DEBUG IR_GEN] Variable 'a' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x64fbf3fce640
+    [DEBUG] Registered var_aria_types[b] = int64
+    [DEBUG IR_GEN] Variable 'b' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x64fbf3fce860
+    [DEBUG] Registered var_aria_types[c] = int64
+    [DEBUG IR_GEN] Variable 'c' HAS initializer, generating...
+    [DEBUG] Alloca 'a' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'a' type=NOT_STRUCT
+    [DEBUG] Alloca 'b' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'b' type=NOT_STRUCT
+    [DEBUG] Left operand type: int64
+    [DEBUG] Right operand type: int64
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG IR_GEN] Initializer generated, value = 0x64fbf3fcbd10
+    [DEBUG] Registered var_aria_types[d] = int64
+    [DEBUG IR_GEN] Variable 'd' HAS initializer, generating...
+    [DEBUG] Alloca 'c' getAllocatedType()=NOT_STRUCT
+
+FAIL: tests/determinism/compute_fibonacci.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[a] = int64
+    [DEBUG IR_GEN] Variable 'a' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5a430b9a4820
+    [DEBUG] Registered var_aria_types[b] = int64
+    [DEBUG IR_GEN] Variable 'b' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5a430b9a6fb0
+    [DEBUG] Registered var_aria_types[i] = int64
+    [DEBUG IR_GEN] Variable 'i' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5a430b9a4820
+    [DEBUG] Registered var_aria_types[count] = int64
+    [DEBUG IR_GEN] Variable 'count' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5a430b9a78a0
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: a -> type: i64
+    [1mtests/determinism/compute_fibonacci.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+FAIL: tests/determinism/compute_loop.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[sum] = int64
+    [DEBUG IR_GEN] Variable 'sum' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5604fb4b7c70
+    [DEBUG] Registered var_aria_types[i] = int64
+    [DEBUG IR_GEN] Variable 'i' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5604fb4b7c70
+    [DEBUG] Registered var_aria_types[count] = int64
+    [DEBUG IR_GEN] Variable 'count' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5604fb4ba960
+    [DEBUG] Alloca 'i' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'i' type=NOT_STRUCT
+    [DEBUG] Alloca 'count' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'count' type=NOT_STRUCT
+    [DEBUG] Left operand type: int64
+    [DEBUG] Right operand type: int64
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Alloca 'sum' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'sum' type=NOT_STRUCT
+    [DEBUG] Alloca 'i' getAllocatedType()=NOT_STRUCT
+
+FAIL: tests/determinism/compute_nested.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[outer] = int64
+    [DEBUG IR_GEN] Variable 'outer' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5a8150bdfbd0
+    [DEBUG] Registered var_aria_types[outer_count] = int64
+    [DEBUG IR_GEN] Variable 'outer_count' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5a8150bdfa30
+    [DEBUG] Alloca 'outer' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'outer' type=NOT_STRUCT
+    [DEBUG] Alloca 'outer_count' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'outer_count' type=NOT_STRUCT
+    [DEBUG] Left operand type: int64
+    [DEBUG] Right operand type: int64
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Registered var_aria_types[inner] = int64
+    [DEBUG IR_GEN] Variable 'inner' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5a8150bdfbd0
+    [DEBUG] Registered var_aria_types[inner_count] = int64
+    [DEBUG IR_GEN] Variable 'inner_count' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5a8150bdfa30
+
+FAIL: tests/diagnostics_demo.aria
+  Error:
+    [1mtests/diagnostics_demo.aria:3:15: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token ';'[0m
+        3 |     int64:y = ;  // Syntax error - missing value
+                          [1;32m^[0m
+    
+
+PASS: tests/err_literal.aria
+PASS: tests/fall_statement_test.aria
+FAIL: tests/feature_validation/array_indexing.aria
+  Error:
+    [1mtests/feature_validation/array_indexing.aria:0:0: [0m[1;31merror[0m: [1mLine 2, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/array_int64.aria
+  Error:
+    [1mtests/feature_validation/array_int64.aria:0:0: [0m[1;31merror[0m: [1mLine 2, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/array_minimal.aria
+  Error:
+    [1mtests/feature_validation/array_minimal.aria:0:0: [0m[1;31merror[0m: [1mLine 2, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/arrays_complete.aria
+  Error:
+    [1mtests/feature_validation/arrays_complete.aria:0:0: [0m[1;31merror[0m: [1mLine 5, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/arrays_simple.aria
+  Error:
+    [1mtests/feature_validation/arrays_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 5, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/assignment_arithmetic.aria
+  Error:
+    [1mtests/feature_validation/assignment_arithmetic.aria:0:0: [0m[1;31merror[0m: [1mLine 11, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/assignment_arithmetic.aria:0:0: [0m[1;31merror[0m: [1mLine 12, Column 5: Pass value type 'result<int32>' does not match function value type 'int64'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/feature_validation/assignment_test.aria
+  Error:
+    [1mtests/feature_validation/assignment_test.aria:0:0: [0m[1;31merror[0m: [1mLine 10, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/assignment_test.aria:0:0: [0m[1;31merror[0m: [1mLine 11, Column 5: Pass value type 'result<int32>' does not match function value type 'int64'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/feature_validation/check_defer.aria
+  Error:
+    [1mtests/feature_validation/check_defer.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/check_defer_support.aria
+  Error:
+    [1mtests/feature_validation/check_defer_support.aria:0:0: [0m[1;31merror[0m: [1mLine 15, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/check_parser_support.aria
+  Error:
+    [1mtests/feature_validation/check_parser_support.aria:0:0: [0m[1;31merror[0m: [1mLine 30, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/check_short_circuit.aria
+  Error:
+    [1mtests/feature_validation/check_short_circuit.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/check_string_support.aria
+  Error:
+    [1mtests/feature_validation/check_string_support.aria:0:0: [0m[1;31merror[0m: [1mLine 3, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/check_struct_instantiation.aria
+  Error:
+    [1mtests/feature_validation/check_struct_instantiation.aria:0:0: [0m[1;31merror[0m: [1mLine 61, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/check_struct_instantiation.aria:0:0: [0m[1;31merror[0m: [1mLine 64, Column 12: Cannot assign value of type 'result<int64>' to variable of type 'int32'[0m
+    
+    [1mtests/feature_validation/check_struct_instantiation.aria:0:0: [0m[1;31merror[0m: [1mLine 69, Column 12: Cannot assign value of type 'result<int64>' to variable of type 'int32'[0m
+    
+    [1mtests/feature_validation/check_struct_instantiation.aria:0:0: [0m[1;31merror[0m: [1mLine 74, Column 12: Cannot assign value of type 'result<int64>' to variable of type 'int32'[0m
+    
+    [1mSummary: [0m[1;31m4 errors[0m
+
+FAIL: tests/feature_validation/check_struct_simple.aria
+  Error:
+    [1mtests/feature_validation/check_struct_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 9, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+PASS: tests/feature_validation/check_ternary_support.aria
+FAIL: tests/feature_validation/compound_assignment.aria
+  Error:
+    [1mtests/feature_validation/compound_assignment.aria:0:0: [0m[1;31merror[0m: [1mLine 21, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/comprehensive_break_continue.aria
+  Error:
+    [1mtests/feature_validation/comprehensive_break_continue.aria:0:0: [0m[1;31merror[0m: [1mLine 101, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/comprehensive_short_circuit.aria
+  Error:
+    [1mtests/feature_validation/comprehensive_short_circuit.aria:0:0: [0m[1;31merror[0m: [1mLine 5, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/comprehensive_strings.aria
+  Error:
+    [1mtests/feature_validation/comprehensive_strings.aria:0:0: [0m[1;31merror[0m: [1mLine 61, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/comprehensive_strings.aria:0:0: [0m[1;31merror[0m: [1mLine 62, Column 5: Cannot initialize variable 'r1' of type 'int32' with value of type 'result<int64>'[0m
+    
+    [1mtests/feature_validation/comprehensive_strings.aria:0:0: [0m[1;31merror[0m: [1mLine 63, Column 5: Cannot initialize variable 'r2' of type 'int32' with value of type 'result<int64>'[0m
+    
+    [1mtests/feature_validation/comprehensive_strings.aria:0:0: [0m[1;31merror[0m: [1mLine 64, Column 5: Cannot initialize variable 'r3' of type 'int32' with value of type 'result<int64>'[0m
+    
+    [1mtests/feature_validation/comprehensive_strings.aria:0:0: [0m[1;31merror[0m: [1mLine 65, Column 5: Cannot initialize variable 'r4' of type 'int32' with value of type 'result<int64>'[0m
+    
+    [1mtests/feature_validation/comprehensive_strings.aria:0:0: [0m[1;31merror[0m: [1mLine 66, Column 5: Cannot initialize variable 'r5' of type 'int32' with value of type 'result<int64>'[0m
+    
+    [1mtests/feature_validation/comprehensive_strings.aria:0:0: [0m[1;31merror[0m: [1mLine 67, Column 5: Cannot initialize variable 'r6' of type 'int32' with value of type 'result<int64>'[0m
+    
+    [1mtests/feature_validation/comprehensive_strings.aria:0:0: [0m[1;31merror[0m: [1mLine 68, Column 5: Cannot initialize variable 'r7' of type 'int32' with value of type 'result<int64>'[0m
+    
+    [1mtests/feature_validation/comprehensive_strings.aria:0:0: [0m[1;31merror[0m: [1mLine 71, Column 19: Undefined identifier: 'r1'[0m
+    
+    [1mtests/feature_validation/comprehensive_strings.aria:0:0: [0m[1;31merror[0m: [1mLine 71, Column 24: Undefined identifier: 'r2'[0m
+    
+
+PASS: tests/feature_validation/comprehensive_ternary.aria
+FAIL: tests/feature_validation/control_flow_test.aria
+  Error:
+    [1mtests/feature_validation/control_flow_test.aria:0:0: [0m[1;31merror[0m: [1mLine 133, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/debug_return.aria
+  Error:
+    [1mtests/feature_validation/debug_return.aria:0:0: [0m[1;31merror[0m: [1mLine 7, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/defer_scope_test.aria
+  Error:
+    [1mtests/feature_validation/defer_scope_test.aria:0:0: [0m[1;31merror[0m: [1mLine 13, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/generics_basic.aria
+  Error:
+    [1mtests/feature_validation/generics_basic.aria:0:0: [0m[1;31merror[0m: [1mLine 46, Column 25: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mtests/feature_validation/generics_basic.aria:0:0: [0m[1;31merror[0m: [1mLine 51, Column 9: Undefined identifier: 'val1'[0m
+    
+    [1mtests/feature_validation/generics_basic.aria:0:0: [0m[1;31merror[0m: [1mLine 62, Column 5: Cannot initialize variable 'result1' of type 'int8' with value of type 'int32'[0m
+    
+    [1mtests/feature_validation/generics_basic.aria:0:0: [0m[1;31merror[0m: [1mLine 65, Column 29: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mtests/feature_validation/generics_basic.aria:0:0: [0m[1;31merror[0m: [1mLine 67, Column 9: Undefined identifier: 'result1'[0m
+    
+    [1mtests/feature_validation/generics_basic.aria:0:0: [0m[1;31merror[0m: [1mLine 91, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mSummary: [0m[1;31m6 errors[0m
+
+FAIL: tests/feature_validation/generics_concrete_test.aria
+  Error:
+    [1mtests/feature_validation/generics_concrete_test.aria:0:0: [0m[1;31merror[0m: [1mLine 10, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/generics_instantiate.aria
+  Error:
+    [1mtests/feature_validation/generics_instantiate.aria:0:0: [0m[1;31merror[0m: [1mLine 9, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/generics_instantiate.aria:0:0: [0m[1;31merror[0m: [1mLine 11, Column 23: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mtests/feature_validation/generics_instantiate.aria:0:0: [0m[1;31merror[0m: [1mLine 12, Column 9: Undefined identifier: 'y'[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+FAIL: tests/feature_validation/generics_main.aria
+  Error:
+    [1mtests/feature_validation/generics_main.aria:0:0: [0m[1;31merror[0m: [1mLine 22, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/generics_main.aria:0:0: [0m[1;31merror[0m: [1mLine 24, Column 24: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mtests/feature_validation/generics_main.aria:0:0: [0m[1;31merror[0m: [1mLine 25, Column 29: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+FAIL: tests/feature_validation/generics_minimal.aria
+  Error:
+    [1mtests/feature_validation/generics_minimal.aria:0:0: [0m[1;31merror[0m: [1mLine 11, Column 13: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mtests/feature_validation/generics_minimal.aria:0:0: [0m[1;31merror[0m: [1mLine 12, Column 13: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mtests/feature_validation/generics_minimal.aria:0:0: [0m[1;31merror[0m: [1mLine 17, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/generics_minimal.aria:0:0: [0m[1;31merror[0m: [1mLine 18, Column 5: Pass value type 'result<int64>' does not match function value type 'int64'[0m
+    
+    [1mSummary: [0m[1;31m4 errors[0m
+
+FAIL: tests/feature_validation/generics_multiple_types.aria
+  Error:
+    [1mtests/feature_validation/generics_multiple_types.aria:0:0: [0m[1;31merror[0m: [1mLine 7, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/generics_multiple_types.aria:0:0: [0m[1;31merror[0m: [1mLine 10, Column 23: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mtests/feature_validation/generics_multiple_types.aria:0:0: [0m[1;31merror[0m: [1mLine 14, Column 22: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mtests/feature_validation/generics_multiple_types.aria:0:0: [0m[1;31merror[0m: [1mLine 18, Column 23: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mSummary: [0m[1;31m4 errors[0m
+
+FAIL: tests/feature_validation/generics_parse_only.aria
+  Error:
+    [1mtests/feature_validation/generics_parse_only.aria:0:0: [0m[1;31merror[0m: [1mLine 17, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/generics_simple_test.aria
+  Error:
+    [1mtests/feature_validation/generics_simple_test.aria:0:0: [0m[1;31merror[0m: [1mLine 10, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/generics_simple_test.aria:0:0: [0m[1;31merror[0m: [1mLine 12, Column 23: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mtests/feature_validation/generics_simple_test.aria:0:0: [0m[1;31merror[0m: [1mLine 15, Column 23: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+FAIL: tests/feature_validation/generics_test_call.aria
+  Error:
+    [1mtests/feature_validation/generics_test_call.aria:0:0: [0m[1;31merror[0m: [1mLine 9, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/generics_test_call.aria:0:0: [0m[1;31merror[0m: [1mLine 11, Column 23: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mtests/feature_validation/generics_test_call.aria:0:0: [0m[1;31merror[0m: [1mLine 14, Column 9: Undefined identifier: 'y'[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+FAIL: tests/feature_validation/generic_struct_basic.aria
+  Error:
+    [1mtests/feature_validation/generic_struct_basic.aria:11:14: [0m[1;31merror[0m: [1m  Expected struct name
+      Found: token 'Result'[0m
+       11 | struct<T, E>:Result = {
+                         [1;32m^[0m
+    
+    [1mtests/feature_validation/generic_struct_basic.aria:11:14: [0m[1;31merror[0m: [1m  Expected '=' after struct name
+      Found: token 'Result'[0m
+       11 | struct<T, E>:Result = {
+                         [1;32m^[0m
+    
+    [1mtests/feature_validation/generic_struct_basic.aria:11:14: [0m[1;31merror[0m: [1m  Expected '{' after '='
+      Found: token 'Result'[0m
+       11 | struct<T, E>:Result = {
+                         [1;32m^[0m
+    
+    [1mtests/feature_validation/generic_struct_basic.aria:11:21: [0m[1;31merror[0m: [1m  Expected ':' after field type
+      Found: token '='[0m
+       11 | struct<T, E>:Result = {
+                                [1;32m^[0m
+    
+
+FAIL: tests/feature_validation/generics_void_test.aria
+  Error:
+    [1mtests/feature_validation/generics_void_test.aria:0:0: [0m[1;31merror[0m: [1mLine 10, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/generics_void_test.aria:0:0: [0m[1;31merror[0m: [1mLine 14, Column 16: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mtests/feature_validation/generics_void_test.aria:0:0: [0m[1;31merror[0m: [1mLine 15, Column 16: Cannot infer type parameter 'T' from arguments[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+FAIL: tests/feature_validation/increment_decrement.aria
+  Error:
+    [1mtests/feature_validation/increment_decrement.aria:0:0: [0m[1;31merror[0m: [1mLine 31, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/int64_test.aria
+  Error:
+    [1mtests/feature_validation/int64_test.aria:0:0: [0m[1;31merror[0m: [1mLine 7, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/loop_simple.aria
+  Error:
+    [1mtests/feature_validation/loop_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 2, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/loop_stmt.aria
+  Error:
+    [1mtests/feature_validation/loop_stmt.aria:0:0: [0m[1;31merror[0m: [1mLine 27, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+PASS: tests/feature_validation/manual_ternary_pattern.aria
+FAIL: tests/feature_validation/minimal_defer.aria
+  Error:
+    [1mtests/feature_validation/minimal_defer.aria:0:0: [0m[1;31merror[0m: [1mLine 1, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/module_errors.aria
+  Error:
+    [1mtests/feature_validation/module_errors.aria:0:0: [0m[1;31merror[0m: [1mLine 5, Column 1: Failed to load module 'math'[0m
+    
+    [1mtests/feature_validation/module_errors.aria:0:0: [0m[1;31merror[0m: [1mLine 5, Column 1:   [/home/randy/Workspace/REPOS/aria/tests/feature_validation/module_errors.aria] Could not resolve module 'math'[0m
+    
+    [1mtests/feature_validation/module_errors.aria:0:0: [0m[1;31merror[0m: [1mLine 14, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+FAIL: tests/feature_validation/modules_complete.aria
+  Error:
+    [1mtests/feature_validation/modules_complete.aria:0:0: [0m[1;31merror[0m: [1mLine 11, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/modules_ir_test.aria
+  Error:
+    [1mtests/feature_validation/modules_ir_test.aria:0:0: [0m[1;31merror[0m: [1mLine 44, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/operators_test.aria
+  Error:
+    [1mtests/feature_validation/operators_test.aria:0:0: [0m[1;31merror[0m: [1mLine 146, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/pass_literal.aria
+  Error:
+    [1mtests/feature_validation/pass_literal.aria:0:0: [0m[1;31merror[0m: [1mLine 7, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/result_basic.aria
+  Error:
+    [1mtests/feature_validation/result_basic.aria:0:0: [0m[1;31merror[0m: [1mLine 25, Column 20: Unwrap/coalesce operators (? and ??) require either Result<T>, Optional<T>, or ptr T type, got 'int64'[0m
+    
+    [1mtests/feature_validation/result_basic.aria:0:0: [0m[1;31merror[0m: [1mLine 27, Column 9: Undefined identifier: 'val'[0m
+    
+    [1mtests/feature_validation/result_basic.aria:0:0: [0m[1;31merror[0m: [1mLine 33, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+FAIL: tests/feature_validation/result_simple.aria
+  Error:
+    [1mtests/feature_validation/result_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 28, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/simple_add.aria
+  Error:
+    [1mtests/feature_validation/simple_add.aria:0:0: [0m[1;31merror[0m: [1mLine 7, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/simple_add.aria:0:0: [0m[1;31merror[0m: [1mLine 8, Column 5: Pass value type 'result<int32>' does not match function value type 'int64'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/feature_validation/simple_array_test.aria
+  Error:
+    [1mtests/feature_validation/simple_array_test.aria:0:0: [0m[1;31merror[0m: [1mLine 6, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/simple_mod.aria
+  Error:
+    [1mtests/feature_validation/simple_mod.aria:0:0: [0m[1;31merror[0m: [1mLine 10, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/simple_ops.aria
+  Error:
+    [1mtests/feature_validation/simple_ops.aria:0:0: [0m[1;31merror[0m: [1mLine 22, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/feature_validation/simple_ops.aria:0:0: [0m[1;31merror[0m: [1mLine 23, Column 5: Pass value type 'result<int64>' does not match function value type 'int64'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/feature_validation/simple_use.aria
+  Error:
+    [1mtests/feature_validation/simple_use.aria:0:0: [0m[1;31merror[0m: [1mLine 3, Column 1: Failed to load module 'std.collections'[0m
+    
+    [1mtests/feature_validation/simple_use.aria:0:0: [0m[1;31merror[0m: [1mLine 3, Column 1:   Parse error in /home/randy/Workspace/REPOS/aria/lib/std/collections.aria: Parse error at line 36, column 1:
+      Expected expression
+      Found: token 'pub'[0m
+    
+    [1mtests/feature_validation/simple_use.aria:0:0: [0m[1;31merror[0m: [1mLine 3, Column 1:   Parse error in /home/randy/Workspace/REPOS/aria/lib/std/collections.aria: Parse error at line 36, column 12:
+      Expected ':' after 'struct' keyword
+      Found: identifier 'Vec'[0m
+    
+    [1mtests/feature_validation/simple_use.aria:0:0: [0m[1;31merror[0m: [1mLine 3, Column 1:   Parse error in /home/randy/Workspace/REPOS/aria/lib/std/collections.aria: Parse error at line 36, column 15:
+      Expected '=' after struct name
+      Found: token '<'[0m
+    
+    [1mtests/feature_validation/simple_use.aria:0:0: [0m[1;31merror[0m: [1mLine 3, Column 1:   Parse error in /home/randy/Workspace/REPOS/aria/lib/std/collections.aria: Parse error at line 36, column 15:
+      Expected '{' after '='
+      Found: token '<'[0m
+    
+    [1mtests/feature_validation/simple_use.aria:0:0: [0m[1;31merror[0m: [1mLine 3, Column 1:   Parse error in /home/randy/Workspace/REPOS/aria/lib/std/collections.aria: Parse error at line 36, column 15:
+      Expected type annotation
+
+FAIL: tests/feature_validation/till_loop.aria
+  Error:
+    [1mtests/feature_validation/till_loop.aria:0:0: [0m[1;31merror[0m: [1mLine 27, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/till_minimal.aria
+  Error:
+    [1mtests/feature_validation/till_minimal.aria:0:0: [0m[1;31merror[0m: [1mLine 2, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/till_simple.aria
+  Error:
+    [1mtests/feature_validation/till_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 5, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/ultra_minimal.aria
+  Error:
+    [1mtests/feature_validation/ultra_minimal.aria:0:0: [0m[1;31merror[0m: [1mLine 2, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/unwrap_simple.aria
+  Error:
+    [1mtests/feature_validation/unwrap_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 8, Column 26: Unwrap/coalesce operators (? and ??) require either Result<T>, Optional<T>, or ptr T type, got 'int32'[0m
+    
+    [1mtests/feature_validation/unwrap_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 9, Column 10: Undefined identifier: 'result'[0m
+    
+    [1mtests/feature_validation/unwrap_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 18, Column 20: Unwrap/coalesce operators (? and ??) require either Result<T>, Optional<T>, or ptr T type, got 'int32'[0m
+    
+    [1mtests/feature_validation/unwrap_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 20, Column 9: Undefined identifier: 'sum'[0m
+    
+    [1mtests/feature_validation/unwrap_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 29, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mSummary: [0m[1;31m5 errors[0m
+
+FAIL: tests/feature_validation/use_complete.aria
+  Error:
+    [1mtests/feature_validation/use_complete.aria:0:0: [0m[1;31merror[0m: [1mLine 8, Column 1: Failed to load module 'std.collections'[0m
+    
+    [1mtests/feature_validation/use_complete.aria:0:0: [0m[1;31merror[0m: [1mLine 8, Column 1:   Parse error in /home/randy/Workspace/REPOS/aria/lib/std/collections.aria: Parse error at line 36, column 1:
+      Expected expression
+      Found: token 'pub'[0m
+    
+    [1mtests/feature_validation/use_complete.aria:0:0: [0m[1;31merror[0m: [1mLine 8, Column 1:   Parse error in /home/randy/Workspace/REPOS/aria/lib/std/collections.aria: Parse error at line 36, column 12:
+      Expected ':' after 'struct' keyword
+      Found: identifier 'Vec'[0m
+    
+    [1mtests/feature_validation/use_complete.aria:0:0: [0m[1;31merror[0m: [1mLine 8, Column 1:   Parse error in /home/randy/Workspace/REPOS/aria/lib/std/collections.aria: Parse error at line 36, column 15:
+      Expected '=' after struct name
+      Found: token '<'[0m
+    
+    [1mtests/feature_validation/use_complete.aria:0:0: [0m[1;31merror[0m: [1mLine 8, Column 1:   Parse error in /home/randy/Workspace/REPOS/aria/lib/std/collections.aria: Parse error at line 36, column 15:
+      Expected '{' after '='
+      Found: token '<'[0m
+    
+    [1mtests/feature_validation/use_complete.aria:0:0: [0m[1;31merror[0m: [1mLine 8, Column 1:   Parse error in /home/randy/Workspace/REPOS/aria/lib/std/collections.aria: Parse error at line 36, column 15:
+      Expected type annotation
+
+FAIL: tests/feature_validation/when_loop.aria
+  Error:
+    [1mtests/feature_validation/when_loop.aria:0:0: [0m[1;31merror[0m: [1mLine 34, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/feature_validation/when_simple.aria
+  Error:
+    [1mtests/feature_validation/when_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 2, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/ffi_safety_test.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[result] = string
+    [DEBUG IR_GEN] Variable 'result' HAS initializer, generating...
+    [DEBUG] codegenCall: callee name = string_from_cstr
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG IR_GEN] Initializer generated, value = 0x57ad80c32220
+    [DEBUG] Registered var_aria_types[x] = int32
+    [DEBUG IR_GEN] Variable 'x' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x57ad80c32ab0
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Template test: "
+    [STRING POOL] Created new pooled string: "Template test: "
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: x -> type: i32
+    [1mtests/ffi_safety_test.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+PASS: tests/file_io_basic.aria
+PASS: tests/file_io_ultra_simple.aria
+PASS: tests/flt128_arith.aria
+PASS: tests/flt128_basic.aria
+PASS: tests/flt128_simple.aria
+PASS: tests/flt256_basic.aria
+PASS: tests/flt512_basic.aria
+PASS: tests/flt64_add.aria
+PASS: tests/flt64_compare_all.aria
+PASS: tests/flt64_compare.aria
+PASS: tests/flt64_eq.aria
+PASS: tests/flt64_lt.aria
+FAIL: tests/for_range.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Testing range-based for loops:"
+    [STRING POOL] Created new pooled string: "Testing range-based for loops:"
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Inclusive range 1..5:"
+    [STRING POOL] Created new pooled string: "Inclusive range 1..5:"
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: i -> type: i64
+    [1mtests/for_range.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+FAIL: tests/for_range_typed.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Testing type-annotated range-based for loops:"
+    [STRING POOL] Created new pooled string: "Testing type-annotated range-based for loops:"
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "int64:i in 1..3:"
+    [STRING POOL] Created new pooled string: "int64:i in 1..3:"
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: i -> type: i64
+    [1mtests/for_range_typed.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+FAIL: tests/fuzz/corpus/seed_allocation.aria
+  Error:
+    [1mtests/fuzz/corpus/seed_allocation.aria:3:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'ptr'[0m
+        3 |     wild int8->ptr = alloc(size);
+                           [1;32m^[0m
+    
+
+FAIL: tests/fuzz/corpus/seed_conditionals.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[x] = int32
+    [DEBUG IR_GEN] Variable 'x' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x647bf66a0c80
+    [DEBUG] Alloca 'x' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'x' type=NOT_STRUCT
+    [DEBUG] Left operand type: int32
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: x -> type: i32
+    [1mtests/fuzz/corpus/seed_conditionals.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+FAIL: tests/fuzz/corpus/seed_functions.aria
+  Error:
+    [DEBUG] Generating body for function: add
+    [DEBUG] Registered var_aria_types[result] = int64
+    [DEBUG IR_GEN] Variable 'result' HAS initializer, generating...
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG IR_GEN] Initializer generated, value = 0x634f6ec86da0
+    [DEBUG] Alloca 'result' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'result' type=NOT_STRUCT
+    [DEBUG] Body generation complete for: add
+    [DEBUG] Generating body for function: multiply
+    [DEBUG] Registered var_aria_types[result] = int64
+    [DEBUG IR_GEN] Variable 'result' HAS initializer, generating...
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG IR_GEN] Initializer generated, value = 0x634f6ec89480
+    [DEBUG] Alloca 'result' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'result' type=NOT_STRUCT
+    [DEBUG] Body generation complete for: multiply
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[x] = int64
+    [DEBUG IR_GEN] Variable 'x' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x634f6ec8a670
+
+FAIL: tests/fuzz/corpus/seed_loops.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[i] = int64
+    [DEBUG IR_GEN] Variable 'i' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5b03eff34cd0
+    [DEBUG] Registered var_aria_types[sum] = int64
+    [DEBUG IR_GEN] Variable 'sum' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5b03eff34cd0
+    [DEBUG] Alloca 'i' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'i' type=NOT_STRUCT
+    [DEBUG] Left operand type: int64
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Alloca 'sum' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'sum' type=NOT_STRUCT
+    [DEBUG] Alloca 'i' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'i' type=NOT_STRUCT
+    [DEBUG] Left operand type: int64
+    [DEBUG] Right operand type: int64
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Alloca 'i' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'i' type=NOT_STRUCT
+
+PASS: tests/fuzz/corpus/seed_minimal.aria
+FAIL: tests/fuzz/corpus/seed_nested.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[outer] = int64
+    [DEBUG IR_GEN] Variable 'outer' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x570fe7649570
+    [DEBUG] Alloca 'outer' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'outer' type=NOT_STRUCT
+    [DEBUG] Left operand type: int64
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Registered var_aria_types[inner] = int64
+    [DEBUG IR_GEN] Variable 'inner' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x570fe7649570
+    [DEBUG] Alloca 'inner' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'inner' type=NOT_STRUCT
+    [DEBUG] Left operand type: int64
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Registered var_aria_types[val] = int64
+    [DEBUG IR_GEN] Variable 'val' HAS initializer, generating...
+    [DEBUG] Alloca 'outer' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'outer' type=NOT_STRUCT
+    [DEBUG] Left operand type: int64
+
+FAIL: tests/fuzz/corpus/seed_ternary.aria
+  Error:
+    [1mtests/fuzz/corpus/seed_ternary.aria:2:18: [0m[1;31merror[0m: [1mInvalid type suffix 't' for integer literal. Integer literals require: u8-u4096, i8-i4096, or tbb8-tbb64.
+      Example: 42u32 or -10i32[0m
+        2 |     tbb32:a = 10t;
+                             [1;32m^[0m
+    
+    [1mtests/fuzz/corpus/seed_ternary.aria:3:17: [0m[1;31merror[0m: [1mInvalid type suffix 't' for integer literal. Integer literals require: u8-u4096, i8-i4096, or tbb8-tbb64.
+      Example: 42u32 or -10i32[0m
+        3 |     tbb32:b = 5t;
+                            [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/fuzz/corpus/seed_variables.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[a] = int32
+    [DEBUG IR_GEN] Variable 'a' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x56731cb5ebf0
+    [DEBUG] Registered var_aria_types[b] = int64
+    [DEBUG IR_GEN] Variable 'b' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x56731cb5ee40
+    [DEBUG] Registered var_aria_types[c] = bool
+    [DEBUG IR_GEN] Variable 'c' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x56731cb5f0b0
+    [DEBUG] Registered var_aria_types[d] = flt64
+    [DEBUG IR_GEN] Variable 'd' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x56731cb5fb30
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: a -> type: i32
+    [1mtests/fuzz/corpus/seed_variables.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+FAIL: tests/fuzz/crashes/abort/4e20ba417569b7fd.aria
+  Error:
+    [1mtests/fuzz/crashes/abort/4e20ba417569b7fd.aria:3:10: [0m[1;31merror[0m: [1m  Syntax error: 'impl' is a keyword for implementation blocks, not a type. Use 'impl:TraitName:for:TypeName = { methods };' to implement a trait for a type.
+      Found: token 'int8'[0m
+        3 |     impl int8->ptr = alloc(size);
+                     [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/abort/4e20ba417569b7fd.aria:5:5: [0m[1;31merror[0m: [1m  Expected ';' after function declaration
+      Found: identifier 'print'[0m
+        5 |     print(size);
+                [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/abort/4e20ba417569b7fd.aria:7:1: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+        7 | };
+            [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+FAIL: tests/fuzz/crashes/abort/77d35adc3a9db1da.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[a] = int32
+    [DEBUG IR_GEN] Variable 'a' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x652d67bdf020
+    [DEBUG] Registered var_aria_types[b] = int64
+    [DEBUG IR_GEN] Variable 'b' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x652d67bdf270
+    [DEBUG] Registered var_aria_types[c] = bool
+    [DEBUG IR_GEN] Variable 'c' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x652d67bdf4e0
+    [DEBUG] Registered var_aria_types[d] = flt64
+    [DEBUG IR_GEN] Variable 'd' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x652d67bdff60
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: a -> type: i32
+    [1mtests/fuzz/crashes/abort/77d35adc3a9db1da.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+PASS: tests/fuzz/crashes/abort/e7ae7b80edc6b18a.aria
+FAIL: tests/fuzz/crashes/assertion/1576188e318e50d1.aria
+  Error:
+    [1mtests/fuzz/crashes/assertion/1576188e318e50d1.aria:3:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'ptr'[0m
+        3 |     wild int8->ptr = alloc(size);
+                           [1;32m^[0m
+    
+
+FAIL: tests/fuzz/crashes/assertion/b76946f542af4cd2.aria
+  Error:
+    [1mtests/fuzz/crashes/assertion/b76946f542af4cd2.aria:3:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'ptr'[0m
+        3 |     wild int8->ptr = alloc(size);
+                           [1;32m^[0m
+    
+
+FAIL: tests/fuzz/crashes/segfault/2fe8a5381ec3592c.aria
+  Error:
+    [1mtests/fuzz/crashes/segfault/2fe8a5381ec3592c.aria:3:9: [0m[1;31merror[0m: [1m  Cannot declare variables of type 'void'. The 'void' type is only valid for function return types (or in extern blocks).
+      Found: token ':'[0m
+        3 |     void:b = 20;
+                    [1;32m^[0m
+    
+
+FAIL: tests/fuzz/crashes/segfault/b862d3d1bf7c2003.aria
+  Error:
+    [1mtests/fuzz/crashes/segfault/b862d3d1bf7c2003.aria:5:9: [0m[1;31merror[0m: [1m  Cannot declare variables of type 'void'. The 'void' type is only valid for function return types (or in extern blocks).
+      Found: token ':'[0m
+        5 |     void:d = 3.14;
+                    [1;32m^[0m
+    
+
+FAIL: tests/fuzz/crashes/timeout/30b74c821376557a.aria
+  Error:
+    [1mtests/fuzz/crashes/timeout/30b74c821376557a.aria:1:14: [0m[1;31merror[0m: [1m  Syntax error: 'trait' keyword cannot be used like 'func'. Did you mean 'func:main'? Traits define interfaces with method signatures only, not implementations. Use 'func:name = returnType(params) { body };' for function definitions.
+      Found: token 'int32'[0m
+        1 | trait:main = int32() {
+                         [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/timeout/30b74c821376557a.aria:5:5: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+        5 |     } else {
+                [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/timeout/30b74c821376557a.aria:5:7: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token 'else'[0m
+        5 |     } else {
+                  [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/timeout/30b74c821376557a.aria:8:5: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+        8 |     }
+                [1;32m^[0m
+    
+
+FAIL: tests/fuzz/crashes/timeout/3e178078c8c91850.aria
+  Error:
+    [1mtests/fuzz/crashes/timeout/3e178078c8c91850.aria:1:13: [0m[1;31merror[0m: [1m  Syntax error: 'trait' keyword cannot be used like 'func'. Did you mean 'func:add'? Traits define interfaces with method signatures only, not implementations. Use 'func:name = returnType(params) { body };' for function definitions.
+      Found: token 'int64'[0m
+        1 | trait:add = int64(int64:a, int64:b) {
+                        [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/timeout/3e178078c8c91850.aria:4:1: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+        4 | };
+            [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/fuzz/crashes/timeout/42d1218364988cfe.aria
+  Error:
+    [1mtests/fuzz/crashes/timeout/42d1218364988cfe.aria:1:14: [0m[1;31merror[0m: [1m  Syntax error: 'trait' keyword cannot be used like 'func'. Did you mean 'func:main'? Traits define interfaces with method signatures only, not implementations. Use 'func:name = returnType(params) { body };' for function definitions.
+      Found: token 'int32'[0m
+        1 | trait:main = int32() {
+                         [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/timeout/42d1218364988cfe.aria:12:5: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+       12 |     }
+                [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/timeout/42d1218364988cfe.aria:14:1: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+       14 | };
+            [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+FAIL: tests/fuzz/crashes/timeout/542a652765c8cce0.aria
+  Error:
+    [1mtests/fuzz/crashes/timeout/542a652765c8cce0.aria:1:14: [0m[1;31merror[0m: [1m  Syntax error: 'trait' keyword cannot be used like 'func'. Did you mean 'func:main'? Traits define interfaces with method signatures only, not implementations. Use 'func:name = returnType(params) { body };' for function definitions.
+      Found: token 'int32'[0m
+        1 | trait:main = int32() {
+                         [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/timeout/542a652765c8cce0.aria:10:1: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+       10 | };
+            [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/fuzz/crashes/timeout/5441da224db5a974.aria
+  Error:
+    [1mtests/fuzz/crashes/timeout/5441da224db5a974.aria:1:14: [0m[1;31merror[0m: [1m  Syntax error: 'trait' keyword cannot be used like 'func'. Did you mean 'func:main'? Traits define interfaces with method signatures only, not implementations. Use 'func:name = returnType(params) { body };' for function definitions.
+      Found: token 'int32'[0m
+        1 | trait:main = int32() {
+                         [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/timeout/5441da224db5a974.aria:9:1: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+        9 | };
+            [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/fuzz/crashes/timeout/5d9c88f6b65371a5.aria
+  Error:
+    [1mtests/fuzz/crashes/timeout/5d9c88f6b65371a5.aria:1:14: [0m[1;31merror[0m: [1m  Syntax error: 'trait' keyword cannot be used like 'func'. Did you mean 'func:main'? Traits define interfaces with method signatures only, not implementations. Use 'func:name = returnType(params) { body };' for function definitions.
+      Found: token 'int32'[0m
+        1 | trait:main = int32() {
+                         [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/timeout/5d9c88f6b65371a5.aria:3:1: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+        3 | };
+            [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/fuzz/crashes/timeout/f7f7aea374fc6953.aria
+  Error:
+    [1mtests/fuzz/crashes/timeout/f7f7aea374fc6953.aria:1:14: [0m[1;31merror[0m: [1m  Syntax error: 'trait' keyword cannot be used like 'func'. Did you mean 'func:main'? Traits define interfaces with method signatures only, not implementations. Use 'func:name = returnType(params) { body };' for function definitions.
+      Found: token 'int32'[0m
+        1 | trait:main = int32() {
+                         [1;32m^[0m
+    
+    [1mtests/fuzz/crashes/timeout/f7f7aea374fc6953.aria:7:1: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token '}'[0m
+        7 | };
+            [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+PASS: tests/gap001_test.aria
+PASS: tests/gap002_test.aria
+PASS: tests/generic_struct_basic.aria
+PASS: tests/import_mem.aria
+PASS: tests/int1024_basic.aria
+PASS: tests/int1024_init_test.aria
+PASS: tests/int1024_ultra_simple.aria
+PASS: tests/int128_basic.aria
+PASS: tests/int2048_basic.aria
+PASS: tests/int2048_comprehensive.aria
+PASS: tests/int2048_print.aria
+PASS: tests/int2048_println_test.aria
+PASS: tests/int256_basic.aria
+PASS: tests/int4096_basic.aria
+PASS: tests/int4096_comprehensive.aria
+PASS: tests/int4096_div_debug.aria
+PASS: tests/int4096_div_simple.aria
+PASS: tests/int4096_div_test.aria
+PASS: tests/int4096_eq_bool.aria
+PASS: tests/int4096_eq_debug2.aria
+PASS: tests/int4096_eq_only.aria
+PASS: tests/int4096_eq_test.aria
+PASS: tests/int4096_minimal.aria
+PASS: tests/int4096_test.aria
+PASS: tests/int4_simple.aria
+PASS: tests/int512_basic.aria
+PASS: tests/int8_basic.aria
+PASS: tests/int8_simple.aria
+FAIL: tests/integration/hello.aria
+  Error:
+    [1mtests/integration/hello.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int8'[0m
+    
+    [1mtests/integration/hello.aria:0:0: [0m[1;31merror[0m: [1mLine 6, Column 5: Pass value type 'int32' does not match function value type 'int8'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/integration/hello_copy.aria
+  Error:
+    [1mtests/integration/hello_copy.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int8'[0m
+    
+    [1mtests/integration/hello_copy.aria:0:0: [0m[1;31merror[0m: [1mLine 6, Column 5: Pass value type 'int32' does not match function value type 'int8'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/integration/math.aria
+  Error:
+    [DEBUG] Generating body for function: square
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Body generation complete for: square
+    [DEBUG] Generating body for function: cube
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Body generation complete for: cube
+    /usr/bin/ld: /lib/x86_64-linux-gnu/Scrt1.o: in function `_start':
+    (.text+0x1b): undefined reference to `main'
+    clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+
+FAIL: tests/integration/multi_main.aria
+  Error:
+    [1mtests/integration/multi_main.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int8'[0m
+    
+    [1mtests/integration/multi_main.aria:0:0: [0m[1;31merror[0m: [1mLine 12, Column 5: Pass value type 'int32' does not match function value type 'int8'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/integration/phase_7_7_test.aria
+  Error:
+    [1mtests/integration/phase_7_7_test.aria:0:0: [0m[1;31merror[0m: [1mLine 1, Column 1: Function 'main' must return 'int32', but returns 'int8'[0m
+    
+    [1mtests/integration/phase_7_7_test.aria:0:0: [0m[1;31merror[0m: [1mLine 3, Column 5: Pass value type 'int32' does not match function value type 'int8'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/integration/utils.aria
+  Error:
+    [DEBUG] Generating body for function: add
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Body generation complete for: add
+    [DEBUG] Generating body for function: multiply
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Body generation complete for: multiply
+    /usr/bin/ld: /lib/x86_64-linux-gnu/Scrt1.o: in function `_start':
+    (.text+0x1b): undefined reference to `main'
+    clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+
+FAIL: tests/io/debug_test.aria
+  Error:
+    [1mtests/io/debug_test.aria:0:0: [0m[1;31merror[0m: [1mLine 2, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/io/file_basic.aria
+  Error:
+    [1mtests/io/file_basic.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/io/path_operations.aria
+  Error:
+    [1mtests/io/path_operations.aria:0:0: [0m[1;31merror[0m: [1mLine 1, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+    [1mtests/io/path_operations.aria:0:0: [0m[1;31merror[0m: [1mLine 30, Column 23: if condition must be 'bool' type, got 'result<bool>'. Use explicit comparison (e.g., x != 0) instead of truthiness.[0m
+    
+    [1mtests/io/path_operations.aria:0:0: [0m[1;31merror[0m: [1mLine 36, Column 23: if condition must be 'bool' type, got 'result<bool>'. Use explicit comparison (e.g., x != 0) instead of truthiness.[0m
+    
+    [1mSummary: [0m[1;31m3 errors[0m
+
+PASS: tests/io_types_basic.aria
+FAIL: tests/kitchen_sink/kitchen_sink.aria
+  Error:
+    [1mtests/kitchen_sink/kitchen_sink.aria:24:12: [0m[1;31merror[0m: [1m  Expected ':' after field type
+      Found: identifier 'raw_ptr'[0m
+       24 |     int64->raw_ptr;  // Pointer type syntax (@ without wild in struct)
+                       [1;32m^[0m
+    
+
+PASS: tests/large_int_comprehensive.aria
+PASS: tests/literal_compare.aria
+PASS: tests/literal_parsing_test.aria
+FAIL: tests/manual/comprehensive_literal_test.aria
+  Error:
+    [1mtests/manual/comprehensive_literal_test.aria:32:40: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       32 |     int128:beyond = 9223372036854775808;  // 2^63
+                                                   [1;32m^[0m
+    
+    [1mtests/manual/comprehensive_literal_test.aria:35:58: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       35 |     int128:huge = 170141183460469231731687303715884105727;  // Near int128 max
+                                                                     [1;32m^[0m
+    
+    [1mtests/manual/comprehensive_literal_test.aria:38:42: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       38 |     int64:truncated = 9223372036854775808;  // Truncates to int64
+                                                     [1;32m^[0m
+    
+    [1mtests/manual/comprehensive_literal_test.aria:44:46: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       44 |     flt128:big_from_int = 9223372036854775808;
+                                                         [1;32m^[0m
+    
+    [1mtests/manual/comprehensive_literal_test.aria:63:45: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       63 |     int128:exactly_20 = 12345678901234567890;
+                                                        [1;32m^[0m
+    
+
+FAIL: tests/manual/high_precision_error_test.aria
+  Error:
+    [1mtests/manual/high_precision_error_test.aria:0:0: [0m[1;31merror[0m: [1mLine 5, Column 5: Cannot initialize variable 'bad' of type 'int64' with value of type 'flt64'[0m
+    
+
+PASS: tests/manual/high_precision_floats.aria
+FAIL: tests/manual/high_precision_ints.aria
+  Error:
+    [1mtests/manual/high_precision_ints.aria:13:44: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       13 |     int128:beyond_i64 = 9223372036854775808;  // 2^63
+                                                       [1;32m^[0m
+    
+    [1mtests/manual/high_precision_ints.aria:16:44: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       16 |     int128:neg_large = -9223372036854775808;  // -2^63
+                                                       [1;32m^[0m
+    
+    [1mtests/manual/high_precision_ints.aria:19:59: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       19 |     int128:huge1 = 170141183460469231731687303715884105727;  // Near int128::max
+                                                                      [1;32m^[0m
+    
+    [1mtests/manual/high_precision_ints.aria:20:59: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       20 |     int128:huge2 = 123456789012345678901234567890123456789;
+                                                                      [1;32m^[0m
+    
+    [1mtests/manual/high_precision_ints.aria:24:42: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       24 |     int128:pow2_64 = 18446744073709551616;  // 2^64
+                                                     [1;32m^[0m
+    
+
+FAIL: tests/manual/high_precision_test.aria
+  Error:
+    [1mtests/manual/high_precision_test.aria:16:43: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       16 |     int128:large_num = 9223372036854775808;  // 2^63 (just over int64::max)
+                                                      [1;32m^[0m
+    
+    [1mtests/manual/high_precision_test.aria:17:62: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       17 |     int128:huge_num = 170141183460469231731687303715884105727;  // Near int128::max
+                                                                         [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/manual/literal_edge_cases.aria
+  Error:
+    [1mtests/manual/literal_edge_cases.aria:11:48: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       11 |     int128:int_boundary2 = 12345678901234567890; // 20 digits, should use int128
+                                                           [1;32m^[0m
+    
+    [1mtests/manual/literal_edge_cases.aria:22:50: [0m[1;31merror[0m: [1mInteger literal value too large for int64[0m
+       22 |     flt128:big_int_to_float = 9223372036854775808;
+                                                             [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/manual/literal_type_errors.aria
+  Error:
+    [1mtests/manual/literal_type_errors.aria:0:0: [0m[1;31merror[0m: [1mLine 7, Column 5: Cannot initialize variable 'should_fail' of type 'int64' with value of type 'flt64'[0m
+    
+
+PASS: tests/manual/simple_high_precision.aria
+FAIL: tests/map_test.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[m] = void@
+    [DEBUG IR_GEN] Variable 'm' HAS initializer, generating...
+    [DEBUG] codegenCall: callee name = map_new
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG IR_GEN] Initializer generated, value = 0x5a5f6d80d7f0
+    [DEBUG] Registered var_aria_types[key1] = int64
+    [DEBUG IR_GEN] Variable 'key1' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5a5f6d80c450
+    [DEBUG] Registered var_aria_types[val1] = string
+    [DEBUG IR_GEN] Variable 'val1' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5a5f6d810670
+    [DEBUG] codegenCall: callee name = map_insert
+    [DEBUG] codegenIdentifier: m -> type: ptr
+    [DEBUG] codegenIdentifier: key1 -> type: i64
+    [DEBUG] Address-of operator @ for variable: key1
+    [DEBUG] codegenIdentifier: val1 -> type: ptr
+    [DEBUG] Address-of operator @ for variable: val1
+    [DEBUG] Registered var_aria_types[key2] = int64
+
+PASS: tests/math_types_basic.aria
+PASS: tests/minimal_literal_test.aria
+FAIL: tests/module_loading/math_utils.aria
+  Error:
+    [DEBUG] Generating body for function: add
+    [DEBUG] Registered var_aria_types[result] = int32
+    [DEBUG IR_GEN] Variable 'result' HAS initializer, generating...
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG IR_GEN] Initializer generated, value = 0x5dbe92996e20
+    [DEBUG] Alloca 'result' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'result' type=NOT_STRUCT
+    [DEBUG] Body generation complete for: add
+    [DEBUG] Generating body for function: multiply
+    [DEBUG] Registered var_aria_types[result] = int32
+    [DEBUG IR_GEN] Variable 'result' HAS initializer, generating...
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG IR_GEN] Initializer generated, value = 0x5dbe92998370
+    [DEBUG] Alloca 'result' getAllocatedType()=NOT_STRUCT
+    [DEBUG] Loaded variable 'result' type=NOT_STRUCT
+    [DEBUG] Body generation complete for: multiply
+    [DEBUG] Generating body for function: internal_helper
+    [DEBUG] Registered var_aria_types[value] = int32
+    [DEBUG IR_GEN] Variable 'value' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5dbe92999210
+
+FAIL: tests/module_test/helper.aria
+  Error:
+    [DEBUG] Generating body for function: add
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Body generation complete for: add
+    /usr/bin/ld: /lib/x86_64-linux-gnu/Scrt1.o: in function `_start':
+    (.text+0x1b): undefined reference to `main'
+    clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+
+FAIL: tests/module_test/helper_multi.aria
+  Error:
+    [DEBUG] Generating body for function: add
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Body generation complete for: add
+    [DEBUG] Generating body for function: multiply
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Body generation complete for: multiply
+    [DEBUG] Generating body for function: subtract
+    [DEBUG] isLBIMType: type is NOT a struct
+    [DEBUG] Body generation complete for: subtract
+    /usr/bin/ld: /lib/x86_64-linux-gnu/Scrt1.o: in function `_start':
+    (.text+0x1b): undefined reference to `main'
+    clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+
+PASS: tests/module_test/main.aria
+PASS: tests/move_basic_test.aria
+FAIL: tests/move_comprehensive_test.aria
+  Error:
+    [1mtests/move_comprehensive_test.aria:17:15: [0m[1;31merror[0m: [1mUse after move: variable 'x' was moved[0m
+       17 |     int32:z = x;         // ERROR: Use of moved variable
+                          [1;32m^[0m
+    
+    [1mtests/move_comprehensive_test.aria:27:15: [0m[1;31merror[0m: [1mCannot move variable 'x' (already moved)[0m
+       27 |     int32:z = move(x);  // ERROR: Cannot move already-moved variable
+                          [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+PASS: tests/move_semantics_test1.aria
+FAIL: tests/move_use_after_move_test.aria
+  Error:
+    [1mtests/move_use_after_move_test.aria:5:15: [0m[1;31merror[0m: [1mUse after move: variable 'x' was moved[0m
+        5 |     int32:z = x;  // ERROR: Should detect use-after-move
+                          [1;32m^[0m
+    
+
+FAIL: tests/move_wild_test.aria
+  Error:
+    [1mtests/move_wild_test.aria:27:10: [0m[1;31merror[0m: [1mUse after move: variable 'buffer' was moved[0m
+       27 |     free(buffer);  // ERROR: Use after move (attempting to free moved pointer)
+                     [1;32m^[0m
+    
+    [1mtests/move_wild_test.aria:27:9: [0m[1;31merror[0m: [1mCannot free moved variable 'buffer'[0m
+       27 |     free(buffer);  // ERROR: Use after move (attempting to free moved pointer)
+                    [1;32m^[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+PASS: tests/nil_basic.aria
+FAIL: tests/nil_coalesce_debug.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Testing null coalescing assignment"
+    [STRING POOL] Created new pooled string: "Testing null coalescing assignment"
+    [DEBUG] Registered var_aria_types[opt] = int64?
+    [DEBUG IR_GEN] Variable 'opt' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x637aff9f0480
+    [DEBUG] Registered var_aria_types[result1] = int64
+    [DEBUG IR_GEN] Variable 'result1' HAS initializer, generating...
+    [DEBUG] Alloca 'opt' getAllocatedType()=STRUCT
+    [DEBUG] Loaded variable 'opt' type=STRUCT
+    [DEBUG IR_GEN] Initializer generated, value = 0x637aff9f1208
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: result1 -> type: i64
+    [1mtests/nil_coalesce_debug.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+PASS: tests/nil_minimal.aria
+PASS: tests/nil_null_simple.aria
+PASS: tests/nil_optional_comprehensive.aria
+PASS: tests/nil_test.aria
+PASS: tests/nil_vs_null.aria
+PASS: tests/nonary_basic.aria
+PASS: tests/null_coalesce_test.aria
+PASS: tests/numeric_types_parser_test.aria
+PASS: tests/numeric_types_simple_test.aria
+PASS: tests/numeric_types_tokens_test.aria
+PASS: tests/phase4_typed_literals.aria
+PASS: tests/pointer_new_syntax.aria
+PASS: tests/pointer_status.aria
+PASS: tests/pointer_syntax_test.aria
+PASS: tests/pow2_coverage.aria
+FAIL: tests/preprocessor/basic_features_test.aria
+  Error:
+    [1mtests/preprocessor/basic_features_test.aria:12:6: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: identifier 'get_version'[0m
+       12 | }
+                 [1;32m^[0m
+    
+    [1mtests/preprocessor/basic_features_test.aria:12:29: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: token '{'[0m
+       12 | }
+                                        [1;32m^[0m
+    
+    [1mtests/preprocessor/basic_features_test.aria:13:12: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: integer literal[0m
+       13 | %endmacro
+                       [1;32m^[0m
+    
+    [1mtests/preprocessor/basic_features_test.aria:14:1: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: token '}'[0m
+    
+    [1mtests/preprocessor/basic_features_test.aria:16:6: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: identifier 'is_defined'[0m
+
+FAIL: tests/preprocessor/macro_hygiene_test.aria
+  Error:
+    [1mtests/preprocessor/macro_hygiene_test.aria:9:6: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: identifier 'abs_int8'[0m
+        9 |         temp = -temp
+                 [1;32m^[0m
+    
+    [1mtests/preprocessor/macro_hygiene_test.aria:9:15: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token 'int32'[0m
+        9 |         temp = -temp
+                          [1;32m^[0m
+    
+    [1mtests/preprocessor/macro_hygiene_test.aria:9:15: [0m[1;31merror[0m: [1m  Expected ')' after function arguments
+      Found: token 'int32'[0m
+        9 |         temp = -temp
+                          [1;32m^[0m
+    
+    [1mtests/preprocessor/macro_hygiene_test.aria:9:15: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: token 'int32'[0m
+        9 |         temp = -temp
+                          [1;32m^[0m
+    
+
+FAIL: tests/print_comprehensive.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Testing print functionality"
+    [STRING POOL] Created new pooled string: "Testing print functionality"
+    [DEBUG] Registered var_aria_types[a] = int64
+    [DEBUG IR_GEN] Variable 'a' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x6552fac9cda0
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: a -> type: i64
+    [1mtests/print_comprehensive.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+FAIL: tests/print_int_test.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[x] = int64
+    [DEBUG IR_GEN] Variable 'x' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5b12ecc8c780
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: x -> type: i64
+    [1mtests/print_int_test.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+PASS: tests/print_test.aria
+FAIL: tests/range_basic.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[start] = int64
+    [DEBUG IR_GEN] Variable 'start' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5e5819cf51f0
+    [DEBUG] Registered var_aria_types[finish] = int64
+    [DEBUG IR_GEN] Variable 'finish' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5e5819cf5a20
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Range operators test:"
+    [STRING POOL] Created new pooled string: "Range operators test:"
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Start: "
+    [STRING POOL] Created new pooled string: "Start: "
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenIdentifier: start -> type: i64
+    [1mtests/range_basic.aria:0:0: [0m[1;31merror[0m: [1mIR generation error: print() requires a string argument. For other types, use to_string() from stdlib or printf via FFI.[0m
+    
+
+FAIL: tests/range_expressions.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[a] = int64
+    [DEBUG IR_GEN] Variable 'a' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x567a7ded7aa0
+    [DEBUG] Registered var_aria_types[b] = int64
+    [DEBUG IR_GEN] Variable 'b' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x567a7ded82d0
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Testing range syntax:"
+    [STRING POOL] Created new pooled string: "Testing range syntax:"
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Creating inclusive range 1..10"
+    [STRING POOL] Created new pooled string: "Creating inclusive range 1..10"
+    [DEBUG] codegenCall: callee name = print
+    [DEBUG] codegenLiteral called, hasRawValue=0
+    [DEBUG] String literal detected: "Creating exclusive range 1...10"
+    [STRING POOL] Created new pooled string: "Creating exclusive range 1...10"
+    [DEBUG] Registered var_aria_types[inclusive_count] = int64
+
+FAIL: tests/result/result_member_access_basic.aria
+  Error:
+    [1mtests/result/result_member_access_basic.aria:4:6: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: identifier 'file_read'[0m
+        4 | func file_read(filename @ string) result<int64> {
+                 [1;32m^[0m
+    
+    [1mtests/result/result_member_access_basic.aria:4:25: [0m[1;31merror[0m: [1m  Expected ')' after function arguments
+      Found: token '@'[0m
+        4 | func file_read(filename @ string) result<int64> {
+                                    [1;32m^[0m
+    
+    [1mtests/result/result_member_access_basic.aria:4:25: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: token '@'[0m
+        4 | func file_read(filename @ string) result<int64> {
+                                    [1;32m^[0m
+    
+    [1mtests/result/result_member_access_basic.aria:4:27: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token 'string'[0m
+        4 | func file_read(filename @ string) result<int64> {
+                                      [1;32m^[0m
+    
+
+FAIL: tests/result/result_member_access_nested.aria
+  Error:
+    [1mtests/result/result_member_access_nested.aria:3:6: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: identifier 'divide'[0m
+        3 | func divide(a:int64, b:int64) -> result<int64> {
+                 [1;32m^[0m
+    
+    [1mtests/result/result_member_access_nested.aria:3:14: [0m[1;31merror[0m: [1m  Expected ')' after function arguments
+      Found: token ':'[0m
+        3 | func divide(a:int64, b:int64) -> result<int64> {
+                         [1;32m^[0m
+    
+    [1mtests/result/result_member_access_nested.aria:3:14: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: token ':'[0m
+        3 | func divide(a:int64, b:int64) -> result<int64> {
+                         [1;32m^[0m
+    
+    [1mtests/result/result_member_access_nested.aria:3:14: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token ':'[0m
+        3 | func divide(a:int64, b:int64) -> result<int64> {
+                         [1;32m^[0m
+    
+
+FAIL: tests/result/result_member_access_types.aria
+  Error:
+    [1mtests/result/result_member_access_types.aria:3:6: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: identifier 'get_bool_result'[0m
+        3 | func get_bool_result(success:bool) -> result<bool> {
+                 [1;32m^[0m
+    
+    [1mtests/result/result_member_access_types.aria:3:29: [0m[1;31merror[0m: [1m  Expected ')' after function arguments
+      Found: token ':'[0m
+        3 | func get_bool_result(success:bool) -> result<bool> {
+                                        [1;32m^[0m
+    
+    [1mtests/result/result_member_access_types.aria:3:29: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: token ':'[0m
+        3 | func get_bool_result(success:bool) -> result<bool> {
+                                        [1;32m^[0m
+    
+    [1mtests/result/result_member_access_types.aria:3:29: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token ':'[0m
+        3 | func get_bool_result(success:bool) -> result<bool> {
+                                        [1;32m^[0m
+    
+
+FAIL: tests/result/result_simple.aria
+  Error:
+    [1mtests/result/result_simple.aria:8:1: [0m[1;31merror[0m: [1m  Expected ';' after function declaration
+      Found: token 'func'[0m
+        8 | func:main = int32() {
+            [1;32m^[0m
+    
+    [1mtests/result/result_simple.aria:23:1: [0m[1;31merror[0m: [1m  Expected ';' after function declaration
+      Found: end of file[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/runtime/tbb_loop_safety.aria
+  Error:
+    [1mtests/runtime/tbb_loop_safety.aria:5:8: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: string literal[0m
+        5 | import "assert";
+                   [1;32m^[0m
+    
+    [1mtests/runtime/tbb_loop_safety.aria:9:6: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: identifier 'test_for_loop_boundary_breach'[0m
+        9 | func test_for_loop_boundary_breach() {
+                 [1;32m^[0m
+    
+    [1mtests/runtime/tbb_loop_safety.aria:9:38: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: token '{'[0m
+        9 | func test_for_loop_boundary_breach() {
+                                                 [1;32m^[0m
+    
+    [1mtests/runtime/tbb_loop_safety.aria:31:6: [0m[1;31merror[0m: [1m  Expected ';' after expression
+      Found: identifier 'test_for_loop_underflow'[0m
+       31 | func test_for_loop_underflow() {
+                 [1;32m^[0m
+    
+
+PASS: tests/safety_critical_fixed.aria
+PASS: tests/safety_minimal.aria
+PASS: tests/safety_minimal_copy.aria
+FAIL: tests/safety/test_definite_assignment_complete_branch.aria
+  Error:
+    [1mtests/safety/test_definite_assignment_complete_branch.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int8'[0m
+    
+
+FAIL: tests/safety/test_definite_assignment_initializer.aria
+  Error:
+    [1mtests/safety/test_definite_assignment_initializer.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int8'[0m
+    
+
+FAIL: tests/safety/test_definite_assignment_loop.aria
+  Error:
+    [1mtests/safety/test_definite_assignment_loop.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int8'[0m
+    
+    [1mtests/safety/test_definite_assignment_loop.aria:0:0: [0m[1;31merror[0m: [1mLine 13, Column 11: Use of possibly uninitialized variable 'x'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/safety/test_definite_assignment_ok.aria
+  Error:
+    [1mtests/safety/test_definite_assignment_ok.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int8'[0m
+    
+
+FAIL: tests/safety/test_definite_assignment_partial_branch.aria
+  Error:
+    [1mtests/safety/test_definite_assignment_partial_branch.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int8'[0m
+    
+    [1mtests/safety/test_definite_assignment_partial_branch.aria:0:0: [0m[1;31merror[0m: [1mLine 13, Column 11: Use of possibly uninitialized variable 'x'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+FAIL: tests/safety/test_definite_assignment_uninitialized.aria
+  Error:
+    [1mtests/safety/test_definite_assignment_uninitialized.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int8'[0m
+    
+    [1mtests/safety/test_definite_assignment_uninitialized.aria:0:0: [0m[1;31merror[0m: [1mLine 6, Column 11: Use of uninitialized variable 'x'[0m
+    
+    [1mSummary: [0m[1;31m2 errors[0m
+
+PASS: tests/simple_literal_test.aria
+PASS: tests/simple_pointer_test.aria
+PASS: tests/simple_test.aria
+PASS: tests/small_int_types.aria
+PASS: tests/spaceship_basic.aria
+PASS: tests/spaceship_minimal.aria
+FAIL: tests/stdlib/arena_builtin_direct_test.aria
+  Error:
+    [1mtests/stdlib/arena_builtin_direct_test.aria:19:18: [0m[1;31merror[0m: [1mCannot free undefined variable 'handle'[0m
+       19 |     arena_destroy(handle);
+                             [1;32m^[0m
+    
+
+FAIL: tests/stdlib/arena_direct_test.aria
+  Error:
+    [1mtests/stdlib/arena_direct_test.aria:11:16: [0m[1;31merror[0m: [1m  Expected ':' after type in variable declaration
+      Found: identifier 'arena'[0m
+       11 |     wild void->arena = @extern("aria_arena_new", 4096);
+                           [1;32m^[0m
+    
+    [1mtests/stdlib/arena_direct_test.aria:11:25: [0m[1;31merror[0m: [1m  Expected expression
+      Found: token 'extern'[0m
+       11 |     wild void->arena = @extern("aria_arena_new", 4096);
+                                    [1;32m^[0m
+    
+    [1mtests/stdlib/arena_direct_test.aria:11:25: [0m[1;31merror[0m: [1m  Expected expression after unary operator
+      Found: token 'extern'[0m
+       11 |     wild void->arena = @extern("aria_arena_new", 4096);
+                                    [1;32m^[0m
+    
+    [1mtests/stdlib/arena_direct_test.aria:11:25: [0m[1;31merror[0m: [1m  Expected ';' after variable declaration
+      Found: token 'extern'[0m
+       11 |     wild void->arena = @extern("aria_arena_new", 4096);
+                                    [1;32m^[0m
+    
+
+FAIL: tests/stdlib/arena_functional_comprehensive.aria
+  Error:
+    [1mtests/stdlib/arena_functional_comprehensive.aria:19:16: [0m[1;31merror[0m: [1mCannot free undefined variable 'arena'[0m
+       19 |     arena_reset(arena);
+                           [1;32m^[0m
+    
+    [1mtests/stdlib/arena_functional_comprehensive.aria:22:18: [0m[1;31merror[0m: [1mCannot free undefined variable 'arena'[0m
+       22 |     arena_destroy(arena);
+                             [1;32m^[0m
+    
+    [1mtests/stdlib/arena_functional_comprehensive.aria:45:18: [0m[1;31merror[0m: [1mCannot free undefined variable 'arena'[0m
+       45 |     arena_destroy(arena);
+                             [1;32m^[0m
+    
+    [1mtests/stdlib/arena_functional_comprehensive.aria:62:41: [0m[1;31merror[0m: [1mCannot free undefined variable 'arena1'[0m
+       62 |         if (arena1 != 0) { arena_destroy(arena1); }
+                                                    [1;32m^[0m
+    
+    [1mtests/stdlib/arena_functional_comprehensive.aria:63:41: [0m[1;31merror[0m: [1mCannot free undefined variable 'arena2'[0m
+       63 |         if (arena2 != 0) { arena_destroy(arena2); }
+                                                    [1;32m^[0m
+    
+
+FAIL: tests/stdlib/arena_functional_test.aria
+  Error:
+    [1mtests/stdlib/arena_functional_test.aria:15:5: [0m[1;31merror[0m: [1m  Expected ';' after function declaration
+      Found: token 'if'[0m
+       15 |     if (!result.is_ok()) {
+                [1;32m^[0m
+    
+    [1mtests/stdlib/arena_functional_test.aria:22:18: [0m[1;31merror[0m: [1m  Expected type annotation
+      Found: token 'wild'[0m
+       22 |     alloc_result<wild int64@>:alloc1 = arena_alloc<int64>(my_arena);
+                             [1;32m^[0m
+    
+    [1mtests/stdlib/arena_functional_test.aria:22:18: [0m[1;31merror[0m: [1m  Expected type argument in generic type
+      Found: token 'wild'[0m
+       22 |     alloc_result<wild int64@>:alloc1 = arena_alloc<int64>(my_arena);
+                             [1;32m^[0m
+    
+    [1mtests/stdlib/arena_functional_test.aria:22:18: [0m[1;31merror[0m: [1m  Expected '>' after generic type arguments
+      Found: token 'wild'[0m
+       22 |     alloc_result<wild int64@>:alloc1 = arena_alloc<int64>(my_arena);
+                             [1;32m^[0m
+    
+
+FAIL: tests/stdlib/arena_simple_test.aria
+  Error:
+    [1mtests/stdlib/arena_simple_test.aria:0:0: [0m[1;31merror[0m: [1mLine 6, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/stdlib/pool_functional_tests.aria
+  Error:
+    [1mtests/stdlib/pool_functional_tests.aria:16:17: [0m[1;31merror[0m: [1mCannot free undefined variable 'pool'[0m
+       16 |     pool_destroy(pool);
+                            [1;32m^[0m
+    
+    [1mtests/stdlib/pool_functional_tests.aria:39:17: [0m[1;31merror[0m: [1mCannot free undefined variable 'pool'[0m
+       39 |     pool_destroy(pool);
+                            [1;32m^[0m
+    
+    [1mtests/stdlib/pool_functional_tests.aria:56:39: [0m[1;31merror[0m: [1mCannot free undefined variable 'pool1'[0m
+       56 |         if (pool1 != 0) { pool_destroy(pool1); }
+                                                  [1;32m^[0m
+    
+    [1mtests/stdlib/pool_functional_tests.aria:57:39: [0m[1;31merror[0m: [1mCannot free undefined variable 'pool2'[0m
+       57 |         if (pool2 != 0) { pool_destroy(pool2); }
+                                                  [1;32m^[0m
+    
+    [1mtests/stdlib/pool_functional_tests.aria:58:39: [0m[1;31merror[0m: [1mCannot free undefined variable 'pool3'[0m
+       58 |         if (pool3 != 0) { pool_destroy(pool3); }
+                                                  [1;32m^[0m
+    
+
+FAIL: tests/stdlib/slab_functional_tests.aria
+  Error:
+    [1mtests/stdlib/slab_functional_tests.aria:13:17: [0m[1;31merror[0m: [1mCannot free undefined variable 'slab'[0m
+       13 |     slab_destroy(slab);
+                            [1;32m^[0m
+    
+    [1mtests/stdlib/slab_functional_tests.aria:36:17: [0m[1;31merror[0m: [1mCannot free undefined variable 'slab'[0m
+       36 |     slab_destroy(slab);
+                            [1;32m^[0m
+    
+    [1mtests/stdlib/slab_functional_tests.aria:53:39: [0m[1;31merror[0m: [1mCannot free undefined variable 'slab1'[0m
+       53 |         if (slab1 != 0) { slab_destroy(slab1); }
+                                                  [1;32m^[0m
+    
+    [1mtests/stdlib/slab_functional_tests.aria:54:39: [0m[1;31merror[0m: [1mCannot free undefined variable 'slab2'[0m
+       54 |         if (slab2 != 0) { slab_destroy(slab2); }
+                                                  [1;32m^[0m
+    
+    [1mtests/stdlib/slab_functional_tests.aria:55:39: [0m[1;31merror[0m: [1mCannot free undefined variable 'slab3'[0m
+       55 |         if (slab3 != 0) { slab_destroy(slab3); }
+                                                  [1;32m^[0m
+    
+
+PASS: tests/string_comprehensive.aria
+PASS: tests/string_executable.aria
+FAIL: tests/string/string_advanced.aria
+  Error:
+    [1mtests/string/string_advanced.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/string/string_basic.aria
+  Error:
+    [1mtests/string/string_basic.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/string/string_manipulation.aria
+  Error:
+    [1mtests/string/string_manipulation.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/string/string_simple.aria
+  Error:
+    [1mtests/string/string_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 4, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+FAIL: tests/string/string_ultra_simple.aria
+  Error:
+    [1mtests/string/string_ultra_simple.aria:0:0: [0m[1;31merror[0m: [1mLine 2, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+PASS: tests/string_ultra_simple.aria
+PASS: tests/struct_member_minimal.aria
+FAIL: tests/syntax/struct_new_syntax_test.aria
+  Error:
+    [1mtests/syntax/struct_new_syntax_test.aria:0:0: [0m[1;31merror[0m: [1mLine 23, Column 1: Function 'main' must return 'int32', but returns 'int64'[0m
+    
+
+PASS: tests/tbb_auto_lowering.aria
+PASS: tests/tbb_basic.aria
+PASS: tests/tbb_division.aria
+PASS: tests/tbb_err_literal.aria
+PASS: tests/tbb_mult_overflow.aria
+PASS: tests/tbb_no_overflow.aria
+PASS: tests/tbb_overflow.aria
+PASS: tests/tbb_sticky_error.aria
+PASS: tests/template_basic.aria
+PASS: tests/template_bools.aria
+PASS: tests/template_complex.aria
+PASS: tests/template_floats.aria
+PASS: tests/template_integers.aria
+PASS: tests/template_mixed.aria
+PASS: tests/ternary_basic.aria
+FAIL: tests/ternary_comprehensive.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[zero] = int64
+    [DEBUG IR_GEN] Variable 'zero' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5ff2b8d628a0
+    [DEBUG] Registered var_aria_types[pos_small] = int64
+    [DEBUG IR_GEN] Variable 'pos_small' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5ff2b8d63080
+    [DEBUG] Registered var_aria_types[neg_small] = int64
+    [DEBUG IR_GEN] Variable 'neg_small' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5ff2b8d63910
+    [DEBUG] Registered var_aria_types[six] = int64
+    [DEBUG IR_GEN] Variable 'six' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5ff2b8d63b80
+    [DEBUG] Registered var_aria_types[seven] = int64
+    [DEBUG IR_GEN] Variable 'seven' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5ff2b8d63df0
+    [DEBUG] Registered var_aria_types[eight] = int64
+    [DEBUG IR_GEN] Variable 'eight' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x5ff2b8d64060
+    [DEBUG] Registered var_aria_types[nine] = int64
+
+PASS: tests/ternary_debug_add.aria
+PASS: tests/ternary_debug_value.aria
+FAIL: tests/ternary_literals.aria
+  Error:
+    [DEBUG] Generating body for function: main
+    [DEBUG] Registered var_aria_types[zero] = int64
+    [DEBUG IR_GEN] Variable 'zero' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x574765ae5590
+    [DEBUG] Registered var_aria_types[one] = int64
+    [DEBUG IR_GEN] Variable 'one' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x574765ae78c0
+    [DEBUG] Registered var_aria_types[neg_one] = int64
+    [DEBUG IR_GEN] Variable 'neg_one' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x574765ae8140
+    [DEBUG] Registered var_aria_types[two] = int64
+    [DEBUG IR_GEN] Variable 'two' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x574765ae83b0
+    [DEBUG] Registered var_aria_types[three] = int64
+    [DEBUG IR_GEN] Variable 'three' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x574765ae8620
+    [DEBUG] Registered var_aria_types[four] = int64
+    [DEBUG IR_GEN] Variable 'four' HAS initializer, generating...
+    [DEBUG IR_GEN] Initializer generated, value = 0x574765ae8890
+    [DEBUG] Registered var_aria_types[five] = int64
+
+PASS: tests/ternary_minimal.aria
+PASS: tests/ternary_test_simple.aria
+PASS: tests/ternary_test_var.aria
+PASS: tests/test_balanced_literals.aria
+PASS: tests/test_conditional_string.aria
+PASS: tests/test_drop_only.aria
+PASS: tests/test_empty_string.aria
+PASS: tests/test_err_patterns.aria
+PASS: tests/test_exact_pattern.aria
+PASS: tests/test_gotcha_fixes.aria
+PASS: tests/test_int64_toString.aria
+PASS: tests/test_integration_minimal.aria
+PASS: tests/test_literals_simple.aria
+PASS: tests/test_manual_digits.aria
+PASS: tests/test_minimal_runtime.aria
+PASS: tests/test_println.aria
+PASS: tests/test_print_simple.aria
+PASS: tests/test_return_string.aria
+PASS: tests/test_shadowing.aria
+FAIL: tests/test_simple_negative.aria
+  Error:
+    [1mtests/test_simple_negative.aria:0:0: [0m[1;31merror[0m: [1mLine 9, Column 27: Argument 1 has type 'int32', but function expects 'int64'[0m
+    
+
+PASS: tests/test_simple_toString.aria
+PASS: tests/test_string_concat_minimal.aria
+PASS: tests/test_string_function.aria
+PASS: tests/test_string_functions.aria
+PASS: tests/test_string_loop.aria
+PASS: tests/test_ternary_builtins.aria
+PASS: tests/test_trit_init.aria
+PASS: tests/test_trit_logic.aria
+PASS: tests/test_two_calls.aria
+PASS: tests/test_with_println.aria
+PASS: tests/uint1024_basic.aria
+PASS: tests/uint128_basic.aria
+PASS: tests/uint_token_test.aria
+FAIL: tests/unwrap_operator_test.aria
+  Error:
+    [DEBUG] Generating body for function: getSuccess
+    [DEBUG] Body generation complete for: getSuccess
+    [DEBUG] Generating body for function: getError
+    [DEBUG] Body generation complete for: getError
+    [DEBUG] Generating body for function: main
+    [DEBUG] codegenCall: callee name = getSuccess
+    ariac: /usr/lib/llvm-20/include/llvm/IR/Instructions.h:926: Type *llvm::checkGEPType(Type *): Assertion `Ty && "Invalid GetElementPtrInst indices for type!"' failed.
+    timeout: the monitored command dumped core
+
+PASS: tests/vec2_arithmetic.aria
+PASS: tests/vec2_basic.aria
+PASS: tests/vec2_compare.aria
+PASS: tests/vec2_index.aria
+PASS: tests/vec2_simple.aria
+PASS: tests/wildx_basic.aria
+
+=========================================
+Summary
+=========================================
+Total:   389
+Passed:  188
+Failed:  201
+Skipped: 0
+Pass rate: 48%
+

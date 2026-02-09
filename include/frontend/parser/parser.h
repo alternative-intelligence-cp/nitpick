@@ -73,6 +73,7 @@ private:
     ASTNodePtr parseFuncDecl();
     ASTNodePtr parseStructDecl();
     ASTNodePtr parseEnumDecl();
+    ASTNodePtr parseTypeDecl();      // Parse Type:Name = { func/struct declarations };
     ASTNodePtr parseTraitDecl();     // WP 005: Parse trait:Name = { methods };
     ASTNodePtr parseImplDecl();      // WP 005: Parse impl:Trait:for:Type = { methods };
     ASTNodePtr parseBlock();

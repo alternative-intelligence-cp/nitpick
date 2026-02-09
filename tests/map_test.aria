@@ -1,4 +1,33 @@
 // Test map module functionality
+
+// Inline int64_toString for explicit conversion
+func:int64_toString = string(int64:value) {
+    if (value == 0) { pass("0"); }
+    bool:is_negative = false;
+    int64:work_value = value;
+    if (value < 0) { is_negative = true; work_value = -value; }
+    string:result = "";
+    int64:remaining = work_value;
+    while (remaining > 0) {
+        int64:digit = remaining % 10;
+        remaining = remaining / 10;
+        string:digit_char = "";
+        if (digit == 0) { digit_char = "0"; }
+        if (digit == 1) { digit_char = "1"; }
+        if (digit == 2) { digit_char = "2"; }
+        if (digit == 3) { digit_char = "3"; }
+        if (digit == 4) { digit_char = "4"; }
+        if (digit == 5) { digit_char = "5"; }
+        if (digit == 6) { digit_char = "6"; }
+        if (digit == 7) { digit_char = "7"; }
+        if (digit == 8) { digit_char = "8"; }
+        if (digit == 9) { digit_char = "9"; }
+        result = string_concat(digit_char, result);
+    }
+    if (is_negative) { result = string_concat("-", result); }
+    pass(result);
+};
+
 func:main = int32() {
     // Create a map for int64 -> string
     wild void->:m = map_new(8, 8);  // sizeof(int64), sizeof(ptr)
@@ -14,27 +43,33 @@ func:main = int32() {
     
     // Check has
     if (map_has(m, @key1)) {
-        print("Found key 42");
+        drop(println("Found key 42"));
     }
     
     // Get values
     wild void->:result1 = map_get(m, @key1);
     if (result1 != NULL) {
         // Note: result is void*, need to cast
-        print("Retrieved value for 42");
+        drop(println("Retrieved value for 42"));
     }
     
     // Check length
     int64:len = map_length(m);
-    print("Map has");
-    print(len);
-    print("entries");
+    drop(print("Map has "));
+    string:len_str = int64_toString(len);
+    drop(print(len_str));
+    drop(println(" entries"));
     
     // Remove a key
     map_remove(m, @key1);
     
     int64:new_len = map_length(m);
-    print("After remove, map has");
-    print(new_len);
-    print("entries");
+    drop(print("After remove, map has "));
+    string:new_len_str = int64_toString(new_len);
+    drop(print(new_len_str));
+    drop(println(" entries"));
+    
+    // Free wild pointers before function exit
+    drop(result1);  // drop() handles NULL pointers
+    drop(m);
 };

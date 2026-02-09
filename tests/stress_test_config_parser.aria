@@ -1,0 +1,218 @@
+// Stress Test: Realistic Configuration Parser
+// Tests Result enforcement in production-like code with:
+// - Multi-level function calls
+// - Complex control flow (loops, early returns, nested ifs)
+// - All operators (?, ??, pick, is ternary)
+// - Different Result types
+// - Realistic error handling patterns
+
+// Simulated config value type
+struct:ConfigValue = {
+    int32:int_val;
+    bool:is_valid;
+};
+
+// ============================================================================
+// LEVEL 1: Basic parsers that return Results
+// ============================================================================
+
+// Parse an integer from a "config line" (simulated)
+// Returns success for even numbers, errors for odd
+// Note: Return type is int32, not Result<int32> - compiler wraps it
+func:parse_int = int32(int32:line_number) {
+    // Simulate: even lines have valid ints, odd lines fail
+    bool:is_even = (line_number % 2i32) == 0i32;
+    
+    if (is_even) {
+        int32:value = line_number * 10i32;  // Simulated parsed value
+        pass(value);
+    }
+    
+    // Error case - error code 2 (invalid format)
+    fail(2i32);
+};
+
+// Validate that a parsed int is in range [0, 100]
+func:validate_range = int32(int32:value) {
+    if (value < 0i32) {
+        fail(3i32);  // Error code 3 (out of range)
+    }
+    
+    if (value > 100i32) {
+        fail(3i32);  // Error code 3 (out of range)
+    }
+    
+    pass(value);  // Success
+};
+
+// ============================================================================
+// LEVEL 2: Functions that consume Results and return Results
+// ============================================================================
+
+// Parse and validate in one shot - tests Result parameter passing
+func:parse_and_validate = int32(int32:line) {
+    Result<int32>:parsed = parse_int(line);
+    
+    // Test: check if parse succeeded
+    if (parsed.is_error) {
+        fail(2i32);  // Propagate parse error
+    }
+    
+    // Test: pass unwrapped value to validation, return that Result
+    Result<int32>:validated = validate_range(parsed.value);
+    
+    if (validated.is_error) {
+        fail(validated.error);
+    }
+    
+    pass(validated.value);
+};
+
+// Try multiple lines until we find a valid config value
+// Tests: loops with Results, early returns, break detection
+func:find_valid_config = int32(int32:start_line, int32:max_attempts) {
+    int32:attempts = 0i32;
+    
+    // Test: while loop with Result
+    while (attempts < max_attempts) {
+        Result<int32>:result = parse_and_validate(start_line + attempts);
+        
+        // Test: early return with success
+        if (!(result.is_error)) {
+            pass(result.value);  // Found valid config!
+        }
+        
+        attempts = attempts + 1i32;
+    }
+    
+    // Test: error return after exhausting attempts
+    fail(1i32);  // Error code 1 (not found)
+};
+
+// ============================================================================
+// LEVEL 3: Complex control flow with multiple Result types
+// ============================================================================
+
+// Process config with fallback strategies
+// Tests: pick statement, null-coalesce, complex branching
+func:load_config_with_fallback = int32(int32:preferred_line, int32:fallback_line) {
+    Result<int32>:primary = parse_and_validate(preferred_line);
+    
+    // Test: pick statement with Result check
+    pick(primary.is_error) {
+        (false) {
+            // Success path - use primary value
+            int32:val = primary.value;
+            pass(val);
+        },
+        (true) {
+            // Error path - try fallback
+            Result<int32>:fallback = parse_and_validate(fallback_line);
+            
+            // Test: nested Result check in pick branch
+            if (!(fallback.is_error)) {
+                pass(fallback.value);
+            }
+            
+            // Both failed - use hardcoded default
+            pass(999i32);
+        }
+    }
+};
+
+// ============================================================================
+// LEVEL 4: Chained operations with multiple Results
+// ============================================================================
+
+// Get config value or compute default based on error type
+// Tests: .error access, complex conditions, is ternary
+func:get_or_default = int32(int32:line) {
+    Result<int32>:result = parse_and_validate(line);
+    
+    if (result.is_error) {
+        // Note: .error returns int64
+        int64:err_code = result.error;
+        
+        // Test: is ternary operator - if error is "not found" (1), return 42
+        int32:default_val = is (err_code == 1i64) : 42i32 : 0i32;
+        pass(default_val);
+    }
+    
+    // Success - return the value
+    pass(result.value);
+};
+
+// Batch process multiple config lines
+// Tests: for loop with Results, accumulation patterns
+func:sum_valid_configs = int32(int32:start, int32:count) {
+    int32:sum = 0i32;
+    int32:i = 0i32;
+    
+    // Test: C-style for loop with Results
+    while (i < count) {
+        Result<int32>:config = parse_and_validate(start + i);
+        
+        // Test: unwrap with default in accumulation
+        int32:value = config ? 0i32;
+        sum = sum + value;
+        
+        i = i + 1i32;
+    }
+    
+    pass(sum);
+};
+
+// ============================================================================
+// LEVEL 5: Ultimate stress test - nested Results, all features
+// ============================================================================
+
+func:ultimate_stress_test = int32() {
+    int32:score = 0i32;
+    
+    // Test 1: Simple unwrap
+    Result<int32>:r1 = parse_int(2i32);  // Success (even)
+    score = score + (r1 ? 0i32);  // Should add 20
+    
+    // Test 2: Unwrap with validation failure
+    Result<int32>:r2 = parse_int(20i32);  // Returns 200, fails validation (>100)
+    Result<int32>:r2_validated = validate_range(r2 ? 0i32);
+    score = score + (r2_validated ? 1i32);  // Should add 1 (default)
+    
+    // Test 3: Find valid config with attempts
+    Result<int32>:r3 = find_valid_config(0i32, 5i32);  // Should find line 2 or 4
+    score = score + (r3 ? 0i32);  // Should add 20 or 40
+    
+    // Test 4: Fallback logic
+    int32:fallback_val = load_config_with_fallback(1i32, 2i32);  // 1 fails, 2 succeeds
+    score = score + fallback_val;  // Should add 20
+    
+    // Test 5: Error-based defaults
+    int32:default_val = get_or_default(1i32);  // Fails, returns default
+    score = score + default_val;  // Should add 42
+    
+    // Test 6: Batch processing
+    int32:batch_sum = sum_valid_configs(0i32, 6i32);  // Lines 0,2,4 succeed (0,20,40)
+    score = score + batch_sum;  // Should add 60
+    
+    // Test 7: Pick with nested Results
+    Result<int32>:r7 = parse_int(4i32);
+    pick(r7.is_error) {
+        (false) {
+            score = score + r7.value;  // Should add 40
+        },
+        (*) {
+            score = score + 1000i32;  // Shouldn't happen
+        }
+    }
+    
+    pass(score);  // Expected: 20 + 1 + 20 + 20 + 42 + 60 + 40 = 203
+};
+
+// ============================================================================
+// Main: Run the stress test
+// ============================================================================
+
+func:main = int32() {
+    int32:result = ultimate_stress_test();
+    pass(result);
+};

@@ -1,0 +1,33 @@
+// Test int1024 basic operations
+func:test_int1024_basic = int32() {
+    int1024:a = 1000;
+    int1024:b = 2000;
+    int1024:sum = a + b;
+    int1024:expected = 3000;
+    
+    bool:passed = (sum == expected);
+    if (passed) {
+        return 1;
+    }
+    return 0;
+};
+
+// Test TBB8 basic arithmetic
+func:test_tbb8_basic = int32() {
+    tbb8:a = 10;
+    tbb8:b = 20;
+    tbb8:sum = a + b;
+    tbb8:expected = 30;
+    
+    bool:passed = (sum == expected);
+    if (passed) {
+        return 1;
+    }
+    return 0;
+};
+
+func:main = int32() {
+    int32:r1 = test_int1024_basic();
+    int32:r2 = test_tbb8_basic();
+    return r1 + r2;
+};

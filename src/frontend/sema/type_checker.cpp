@@ -16,6 +16,74 @@ namespace aria {
 namespace sema {
 
 // ============================================================================
+// Phase 2: Control Flow Analysis - ResultCheckState Implementation
+// ============================================================================
+
+void ResultCheckState::markChecked(const std::string& varName) {
+    states[varName] = State::CHECKED;
+}
+
+void ResultCheckState::markKnownError(const std::string& varName) {
+    states[varName] = State::KNOWN_ERROR;
+}
+
+void ResultCheckState::markKnownSuccess(const std::string& varName) {
+    states[varName] = State::KNOWN_SUCCESS;
+}
+
+bool ResultCheckState::isChecked(const std::string& varName) const {
+    auto it = states.find(varName);
+    if (it == states.end()) {
+        return false;  // Never seen = unchecked
+    }
+    // Checked if not UNCHECKED
+    return it->second != State::UNCHECKED;
+}
+
+ResultCheckState::State ResultCheckState::getState(const std::string& varName) const {
+    auto it = states.find(varName);
+    if (it == states.end()) {
+        return State::UNCHECKED;
+    }
+    return it->second;
+}
+
+ResultCheckState ResultCheckState::merge(const ResultCheckState& state1, 
+                                          const ResultCheckState& state2) {
+    ResultCheckState result;
+    
+    // Collect all variables from both states
+    std::set<std::string> allVars;
+    for (const auto& [name, _] : state1.states) {
+        allVars.insert(name);
+    }
+    for (const auto& [name, _] : state2.states) {
+        allVars.insert(name);
+    }
+    
+    // Merge each variable conservatively
+    for (const std::string& varName : allVars) {
+        State s1 = state1.getState(varName);
+        State s2 = state2.getState(varName);
+        
+        // Conservative join logic:
+        // - If both agree, use that state
+        // - If one is UNCHECKED, result is UNCHECKED
+        // - If both checked but different values, result is CHECKED (unknown value)
+        if (s1 == s2) {
+            result.states[varName] = s1;  // Both agree
+        } else if (s1 == State::UNCHECKED || s2 == State::UNCHECKED) {
+            result.states[varName] = State::UNCHECKED;  // One path didn't check
+        } else {
+            // Both checked, but different knowledge (one knows ERROR, other SUCCESS, or one CHECKED)
+            result.states[varName] = State::CHECKED;  // Conservative: checked but value unknown
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
 // Enhanced Error Messages - Helper Functions
 // ============================================================================
 
@@ -146,6 +214,27 @@ static bool isTypeKeyword(const std::string& name) {
         "array", "map", "Result", "option"
     };
     return typeKeywords.count(name) > 0;
+}
+
+// Helper to check if a type is compatible with atomic<T>
+// Atomic operations require lock-free types (integer primitives and bool)
+static bool isAtomicCompatible(Type* t) {
+    if (!t || t->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    std::string name = t->toString();
+    
+    // Allowed types: int8-64, uint8-64, bool, tbb8-64
+    // Disallowed: string, floating point, composite types, pointers
+    static const std::unordered_set<std::string> compatibleTypes = {
+        "int8", "int16", "int32", "int64",
+        "uint8", "uint16", "uint32", "uint64",
+        "bool",
+        "tbb8", "tbb16", "tbb32", "tbb64"
+    };
+    
+    return compatibleTypes.count(name) > 0;
 }
 
 // ============================================================================
@@ -358,6 +447,21 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
     // NO inference, NO guessing - type is EXPLICIT from source code
     
     if (!expr->explicit_type.empty()) {
+        // Special handling for NIL and NULL literals
+        if (expr->explicit_type == "NIL") {
+            // NIL literal: represents absence of value for optional types
+            // Return a special marker type that can be compared with any optional
+            // The type will be refined during binary operation type checking
+            return typeSystem->getUnknownType();  // Will be resolved in context
+        }
+        
+        if (expr->explicit_type == "NULL") {
+            // NULL literal: represents null pointer for FFI
+            // Return a special marker type that can be compared with any pointer
+            // The type will be refined during binary operation type checking
+            return typeSystem->getUnknownType();  // Will be resolved in context
+        }
+        
         // Convert type suffix to type system name
         std::string type_name = typeSuffixToSystemName(expr->explicit_type);
         
@@ -422,6 +526,13 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
                 // Type will be resolved from context (tbb8/tbb16/tbb32/tbb64)
                 // For now, assume tbb32 as default
                 return typeSystem->getPrimitiveType("tbb32");
+            }
+            // Check if this is the special unknown literal
+            if (arg == "unknown") {
+                // unknown literal: represents indeterminate value
+                // Polymorphic like NIL - type will be resolved from context
+                // Unknown gorillas = unknown frisbees = unknown (semantically)
+                return typeSystem->getUnknownType();
             }
             // Regular string literal - type is always "string"
             return typeSystem->getPrimitiveType("string");
@@ -533,40 +644,112 @@ Type* TypeChecker::inferBinaryOp(BinaryExpr* expr) {
         return typeSystem->getErrorType();
     }
     
-    // Context-aware literal typing for standard integers
-    // If one operand is a literal int64 and the other is a smaller standard integer type,
-    // check if the literal value fits in the smaller type. If so, use the smaller type
-    // for the literal to avoid unnecessary widening.
+    // ========================================================================
+    // Phase 1.5: Immutable .is_error Enforcement (for compound assignments)
+    // ========================================================================
+    // Block compound assignment to Result<T>.is_error (+=, -=, etc.)
+    // Regular assignments go through checkAssignment()
+    using frontend::TokenType;
+    if (expr->op.type == TokenType::TOKEN_PLUS_EQUAL ||
+        expr->op.type == TokenType::TOKEN_MINUS_EQUAL ||
+        expr->op.type == TokenType::TOKEN_STAR_EQUAL ||
+        expr->op.type == TokenType::TOKEN_SLASH_EQUAL ||
+        expr->op.type == TokenType::TOKEN_PERCENT_EQUAL) {
+        
+        // Check if left side is member access to .is_error of a Result type
+        if (expr->left->type == ASTNode::NodeType::MEMBER_ACCESS) {
+            MemberAccessExpr* memberExpr = static_cast<MemberAccessExpr*>(expr->left.get());
+            
+            // Check if accessing .is_error field
+            if (memberExpr->member == "is_error") {
+                // Check if object is a Result type
+                Type* objectType = inferType(memberExpr->object.get());
+                if (objectType && objectType->getKind() == TypeKind::RESULT) {
+                    // Extract variable name
+                    std::string varName = getVariableName(memberExpr->object.get());
+                    
+                    // Check if Result variable has 'wild' modifier
+                    if (!varName.empty() && wildResults.find(varName) == wildResults.end()) {
+                        addError(
+                            "Cannot modify .is_error on non-wild Result type (errors must propagate).\n"
+                            "  Variable: " + varName + "\n"
+                            "  Help: Declare as 'wild Result<T>' if you need to modify error state.\n"
+                            "  Note: Modifying error state is rarely needed and should be audited.",
+                            expr->line, expr->column
+                        );
+                        return typeSystem->getErrorType();
+                    }
+                }
+            }
+        }
+    }
     
-    // Check if right operand is an int64 literal and left is a standard integer
+    // Context-aware literal typing for standard integers
+    // If one operand is a literal and the other is a standard integer type,
+    // check if the literal value fits in the target type. If so, use the target type
+    // for the literal to allow comparisons and operations.
+    
+    // Check if right operand is an integer literal and left is a standard integer
     if (expr->right->type == ASTNode::NodeType::LITERAL &&
-        isStandardIntType(leftType) &&
-        rightType->toString() == "int64") {
+        isStandardIntType(leftType) && isStandardIntType(rightType)) {
         
         LiteralExpr* rightLiteral = static_cast<LiteralExpr*>(expr->right.get());
         if (std::holds_alternative<int64_t>(rightLiteral->value)) {
             int64_t value = std::get<int64_t>(rightLiteral->value);
             
             // Check if literal fits in left type - if so, use left type for the literal
-            if (literalFitsInType(value, leftType)) {
+            if (integerFitsInType(value, leftType->toString())) {
                 rightType = leftType;  // Treat literal as having the same type as left operand
             }
         }
     }
     
-    // Check if left operand is an int64 literal and right is a standard integer
+    // Check if left operand is an integer literal and right is a standard integer
     if (expr->left->type == ASTNode::NodeType::LITERAL &&
-        isStandardIntType(rightType) &&
-        leftType->toString() == "int64") {
+        isStandardIntType(rightType) && isStandardIntType(leftType)) {
         
         LiteralExpr* leftLiteral = static_cast<LiteralExpr*>(expr->left.get());
         if (std::holds_alternative<int64_t>(leftLiteral->value)) {
             int64_t value = std::get<int64_t>(leftLiteral->value);
             
             // Check if literal fits in right type - if so, use right type for the literal
-            if (literalFitsInType(value, rightType)) {
+            if (integerFitsInType(value, rightType->toString())) {
                 leftType = rightType;  // Treat literal as having the same type as right operand
             }
+        }
+    }
+    
+    // ========================================================================
+    // Special handling for NIL/NULL comparisons
+    // ========================================================================
+    using frontend::TokenType;
+    if (expr->op.type == TokenType::TOKEN_EQUAL_EQUAL || 
+        expr->op.type == TokenType::TOKEN_BANG_EQUAL) {
+        
+        // Check if left is NIL literal
+        bool leftIsNIL = (expr->left->type == ASTNode::NodeType::LITERAL &&
+                         static_cast<LiteralExpr*>(expr->left.get())->explicit_type == "NIL");
+        // Check if right is NIL literal
+        bool rightIsNIL = (expr->right->type == ASTNode::NodeType::LITERAL &&
+                          static_cast<LiteralExpr*>(expr->right.get())->explicit_type == "NIL");
+        
+        // Allow NIL == optional or optional == NIL
+        if ((leftIsNIL && rightType->getKind() == TypeKind::OPTIONAL) ||
+            (rightIsNIL && leftType->getKind() == TypeKind::OPTIONAL)) {
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // Check if left is NULL literal
+        bool leftIsNULL = (expr->left->type == ASTNode::NodeType::LITERAL &&
+                          static_cast<LiteralExpr*>(expr->left.get())->explicit_type == "NULL");
+        // Check if right is NULL literal
+        bool rightIsNULL = (expr->right->type == ASTNode::NodeType::LITERAL &&
+                           static_cast<LiteralExpr*>(expr->right.get())->explicit_type == "NULL");
+        
+        // Allow NULL == pointer or pointer == NULL
+        if ((leftIsNULL && rightType->getKind() == TypeKind::POINTER) ||
+            (rightIsNULL && leftType->getKind() == TypeKind::POINTER)) {
+            return typeSystem->getPrimitiveType("bool");
         }
     }
     
@@ -587,6 +770,17 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
     if (op == TokenType::TOKEN_PLUS || op == TokenType::TOKEN_MINUS ||
         op == TokenType::TOKEN_STAR || op == TokenType::TOKEN_SLASH ||
         op == TokenType::TOKEN_PERCENT) {
+        
+        // Phase 5.3: unknown propagation - arithmetic with unknown produces unknown
+        // Like NaN propagation: unknown + 5 = unknown, unknown * 2 = unknown
+        // This catches unknown at compile-time type checking level
+        if (leftType->getKind() == TypeKind::UNKNOWN || 
+            rightType->getKind() == TypeKind::UNKNOWN) {
+            // Result is unknown, but we need to type it appropriately
+            // For now, return int32 as the concrete type (sentinel will be unknown at runtime)
+            // TODO: In full implementation, might want to track "tainted" types
+            return typeSystem->getPrimitiveType("int32");
+        }
         
         // Vector arithmetic: component-wise operations
         // vec2 + vec2 → vec2, vec3 * vec3 → vec3, etc.
@@ -625,18 +819,39 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
             return vecType;
         }
         
-        // Both operands must be numeric (int*, uint*, flt*, tbb*)
+        //Both operands must be numeric (int*, uint*, flt*, tbb*) OR LBIM struct types
+        // LBIM (Limb-Based Integral Model) structs: int1024, uint1024, int256, uint256, int512, uint512, int2048, uint2048
         PrimitiveType* leftPrim = dynamic_cast<PrimitiveType*>(leftType);
         PrimitiveType* rightPrim = dynamic_cast<PrimitiveType*>(rightType);
+        StructType* leftStruct = dynamic_cast<StructType*>(leftType);
+        StructType* rightStruct = dynamic_cast<StructType*>(rightType);
         
-        if (!leftPrim || !rightPrim) {
-            addError("Arithmetic operators require numeric types", 0, 0);
+        // Helper lambda to check if a type name is an LBIM struct
+        auto isLBIMType = [](const std::string& name) -> bool {
+            return name == "int1024" || name == "uint1024" ||
+                   name == "int256" || name == "uint256" ||
+                   name == "int512" || name == "uint512" ||
+                   name == "int2048" || name == "uint2048" ||
+                   name == "int4096" || name == "uint4096";
+        };
+        
+        // Check if types are valid for arithmetic
+        bool leftIsLBIM = (leftStruct && isLBIMType(leftStruct->getName()));
+        bool rightIsLBIM = (rightStruct && isLBIMType(rightStruct->getName()));
+        
+        if (!leftPrim && !leftIsLBIM) {
+            addError("Arithmetic operators require numeric types, got '" + leftType->toString() + "'", 0, 0);
             return typeSystem->getErrorType();
         }
         
-        // Check if types are numeric
-        const std::string& leftName = leftPrim->getName();
-        const std::string& rightName = rightPrim->getName();
+        if (!rightPrim && !rightIsLBIM) {
+            addError("Arithmetic operators require numeric types, got '" + rightType->toString() + "'", 0, 0);
+            return typeSystem->getErrorType();
+        }
+        
+        // Get type names for checking
+        std::string leftName = leftPrim ? leftPrim->getName() : leftStruct->getName();
+        std::string rightName = rightPrim ? rightPrim->getName() : rightStruct->getName();
         
         bool leftIsNumeric = (leftName.find("int") == 0 || leftName.find("uint") == 0 ||
                              leftName.find("flt") == 0 || leftName.find("tbb") == 0 ||
@@ -708,8 +923,33 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         op == TokenType::TOKEN_LESS || op == TokenType::TOKEN_LESS_EQUAL ||
         op == TokenType::TOKEN_GREATER || op == TokenType::TOKEN_GREATER_EQUAL) {
         
+        // Special case: Allow comparisons with unknown type (universal literal)
+        // unknown can be compared with any type (three-valued logic)
+        // Examples: x == unknown, unknown != 5, etc.
+        if (leftType->getKind() == TypeKind::UNKNOWN || 
+            rightType->getKind() == TypeKind::UNKNOWN) {
+            // Comparison with unknown is always allowed
+            // Result is bool (will be 'unknown' at runtime in three-valued logic, but type is bool)
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // Special case: Allow exotic types (balanced, numeric) to be compared with integer literals
+        // Example: trit:a = 1; if (a == 0) { ... }
+        bool exoticIntLiteralComparison = false;
+        
+        // Check if left is exotic type and right is int32 (literal type)
+        if ((isBalancedType(leftType) || isNumericExoticType(leftType)) && 
+            (rightType->toString() == "int32" || rightType->toString() == "int64")) {
+            exoticIntLiteralComparison = true;
+        }
+        // Check if right is exotic type and left is int32 (literal type)
+        else if ((isBalancedType(rightType) || isNumericExoticType(rightType)) && 
+                 (leftType->toString() == "int32" || leftType->toString() == "int64")) {
+            exoticIntLiteralComparison = true;
+        }
+        
         // Require compatible types
-        if (!leftType->equals(rightType) && !canCoerce(leftType, rightType) && !canCoerce(rightType, leftType)) {
+        if (!exoticIntLiteralComparison && !leftType->equals(rightType) && !canCoerce(leftType, rightType) && !canCoerce(rightType, leftType)) {
             addError("Cannot compare incompatible types: '" + 
                     leftType->toString() + "' and '" + rightType->toString() + "'", 0, 0);
             return typeSystem->getErrorType();
@@ -1418,13 +1658,36 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
         
         // ====================================================================
+        // UNKNOWN STATE MANAGEMENT (Phase 5.2)
+        // ====================================================================
+        
+        // ok(value) -> value - Strips "unknown taint", acknowledges unknown state
+        // Purpose: Force explicit acknowledgment when propagating unknown values
+        // Example: int32:y = ok(x);  // "I know this might be unknown, that's OK"
+        if (idExpr->name == "ok") {
+            if (expr->arguments.size() != 1) {
+                addError("ok() requires exactly one argument (value to acknowledge)", expr);
+                return typeSystem->getErrorType();
+            }
+            // Infer type of argument
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // ok() is a pass-through - returns same type as argument
+            // The "taint stripping" is handled in assignment checking
+            return argType;
+        }
+        
+        // ====================================================================
         // STANDARD I/O BUILTINS
         // ====================================================================
         
-        // Builtin: print() - accepts any single argument, returns void
-        if (idExpr->name == "print") {
+        // Builtin: print() - write string as-is (no newline)
+        // Builtin: println() - write string + newline
+        if (idExpr->name == "print" || idExpr->name == "println") {
             if (expr->arguments.size() != 1) {
-                addError("print() requires exactly one argument", expr);
+                addError(idExpr->name + "() requires exactly one argument", expr);
                 return typeSystem->getErrorType();
             }
             // Infer argument type to validate it
@@ -1432,8 +1695,8 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
             }
-            // print() returns i32 (printf's return value)
-            return typeSystem->getPrimitiveType("int32");
+            // print/println return i64 (bytes written from write() syscall)
+            return typeSystem->getPrimitiveType("int64");
         }
         
         // Builtin: stdout_write(string) -> int64
@@ -2654,6 +2917,120 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             
             return typeSystem->getPrimitiveType("ttensor");
         }
+        
+        // tmatrix_identity(rows, cols) -> tmatrix
+        // Creates an identity matrix with specified dimensions
+        if (idExpr->name == "tmatrix_identity") {
+            if (expr->arguments.size() != 2) {
+                addError("tmatrix_identity() requires exactly 2 arguments (rows, cols)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Type check arguments - should be integers
+            for (const auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            
+            return typeSystem->getPrimitiveType("tmatrix");
+        }
+        
+        // ttensor_zeros(shape) -> ttensor
+        // Creates a zeroed 9D tensor with specified shape
+        if (idExpr->name == "ttensor_zeros") {
+            if (expr->arguments.size() != 1) {
+                addError("ttensor_zeros() requires exactly 1 argument (9D shape vector or array)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Type check argument
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            return typeSystem->getPrimitiveType("ttensor");
+        }
+
+        // ====================================================================
+        // MAP/DICTIONARY RUNTIME FUNCTIONS
+        // ====================================================================
+        
+        // map_new(key_size, value_size) -> wild void->
+        if (idExpr->name == "map_new") {
+            if (expr->arguments.size() != 2) {
+                addError("map_new() requires exactly 2 arguments (key_size, value_size)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Return wild void-> (opaque map handle)
+            Type* voidType = typeSystem->getPrimitiveType("void");
+            return typeSystem->getPointerType(voidType);
+        }
+        
+        // map_insert(map, key_ptr, value_ptr) -> void
+        if (idExpr->name == "map_insert") {
+            if (expr->arguments.size() != 3) {
+                addError("map_insert() requires exactly 3 arguments (map, key_ptr, value_ptr)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("void");
+        }
+        
+        // map_get(map, key_ptr) -> wild void->
+        if (idExpr->name == "map_get") {
+            if (expr->arguments.size() != 2) {
+                addError("map_get() requires exactly 2 arguments (map, key_ptr)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            Type* voidType = typeSystem->getPrimitiveType("void");
+            return typeSystem->getPointerType(voidType);
+        }
+        
+        // map_has(map, key_ptr) -> bool
+        if (idExpr->name == "map_has") {
+            if (expr->arguments.size() != 2) {
+                addError("map_has() requires exactly 2 arguments (map, key_ptr)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // map_remove(map, key_ptr) -> void
+        if (idExpr->name == "map_remove") {
+            if (expr->arguments.size() != 2) {
+                addError("map_remove() requires exactly 2 arguments (map, key_ptr)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("void");
+        }
+        
+        // map_length(map) -> int64
+        if (idExpr->name == "map_length") {
+            if (expr->arguments.size() != 1) {
+                addError("map_length() requires exactly 1 argument (map)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // ====================================================================
+        // OPTIONAL/RESULT HELPER FUNCTIONS
+        // ====================================================================
+        
+        // get_optional_value(condition) -> int64?
+        if (idExpr->name == "get_optional_value") {
+            if (expr->arguments.size() != 1) {
+                addError("get_optional_value() requires exactly 1 argument (condition)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            Type* int64Type = typeSystem->getPrimitiveType("int64");
+            return typeSystem->getOptionalType(int64Type);
+        }
 
         // ====================================================================
         // ARIA-018: TBB SENTINEL-PRESERVING WIDENING
@@ -3090,6 +3467,102 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
         
         // ====================================================================
+        // TRIT/NIT LOGIC AND ARITHMETIC INTRINSICS
+        // ====================================================================
+        // Trit: Single balanced ternary digit (-1, 0, 1, ERR=-128)
+        // Nit: Single balanced nonary digit (-4 to +4, ERR=-128)
+        
+        // trit_add(trit, trit) -> trit
+        if (idExpr->name == "trit_add") {
+            if (expr->arguments.size() != 2) {
+                addError("trit_add() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("trit");
+        }
+        
+        // trit_mul(trit, trit) -> trit
+        if (idExpr->name == "trit_mul") {
+            if (expr->arguments.size() != 2) {
+                addError("trit_mul() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("trit");
+        }
+        
+        // trit_neg(trit) -> trit
+        if (idExpr->name == "trit_neg") {
+            if (expr->arguments.size() != 1) {
+                addError("trit_neg() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("trit");
+        }
+        
+        // trit_and(trit, trit) -> trit (Kleene three-valued logic)
+        if (idExpr->name == "trit_and") {
+            if (expr->arguments.size() != 2) {
+                addError("trit_and() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("trit");
+        }
+        
+        // trit_or(trit, trit) -> trit (Kleene three-valued logic)
+        if (idExpr->name == "trit_or") {
+            if (expr->arguments.size() != 2) {
+                addError("trit_or() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("trit");
+        }
+        
+        // trit_not(trit) -> trit (Kleene three-valued logic)
+        if (idExpr->name == "trit_not") {
+            if (expr->arguments.size() != 1) {
+                addError("trit_not() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("trit");
+        }
+        
+        // trit_is_err(trit) -> bool
+        if (idExpr->name == "trit_is_err") {
+            if (expr->arguments.size() != 1) {
+                addError("trit_is_err() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // nit_and(nit, nit) -> nit (Nonary AND - extended Kleene logic)
+        if (idExpr->name == "nit_and") {
+            if (expr->arguments.size() != 2) {
+                addError("nit_and() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nit");
+        }
+        
+        // nit_or(nit, nit) -> nit (Nonary OR - extended Kleene logic)
+        if (idExpr->name == "nit_or") {
+            if (expr->arguments.size() != 2) {
+                addError("nit_or() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nit");
+        }
+        
+        // nit_is_err(nit) -> bool
+        if (idExpr->name == "nit_is_err") {
+            if (expr->arguments.size() != 1) {
+                addError("nit_is_err() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // ====================================================================
         // INTEGER CONVERSION BUILTINS
         // ====================================================================
         
@@ -3399,6 +3872,21 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             // For void results, we use result<void> (represented as ResultType with nullptr valueType or a VoidType)
             // For now, we'll return result<int64> for compatibility (0 = success in val, err = NIL)
             return typeSystem->getResultType(typeSystem->getPrimitiveType("int64"));
+        }
+        
+        // allocate(size: int32) -> buffer@
+        // Allocates wild memory and returns pointer to buffer
+        if (idExpr->name == "allocate") {
+            if (expr->arguments.size() != 1) {
+                addError("allocate() requires exactly one argument (size)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* sizeType = inferType(expr->arguments[0].get());
+            if (sizeType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            // Return buffer type (represents void* wild memory pointer)
+            return typeSystem->getPrimitiveType("buffer");
         }
         
         // fileExists(path: string) -> result<bool>
@@ -3844,9 +4332,20 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         // Store the mangled name in the CallExpr for IR generation
         expr->specializedMangledName = spec->mangledName;
         
-        // Use the specialized function's return type
-        // TODO: Parse return type string to Type*
-        // For now, return UnknownType until we implement type parsing
+        // Resolve the specialized function's return type
+        // The specialized function has concrete types substituted
+        if (spec->funcDecl && spec->funcDecl->returnType) {
+            Type* returnType = resolveTypeNode(spec->funcDecl->returnType.get());
+            if (returnType && returnType->getKind() != TypeKind::ERROR) {
+                // Aria functions return Result<T>, so wrap in Result if not already
+                if (returnType->getKind() != TypeKind::RESULT) {
+                    return typeSystem->getResultType(returnType);
+                }
+                return returnType;
+            }
+        }
+        
+        // Fallback: return unknown type if resolution fails
         return typeSystem->getUnknownType();
     }
     
@@ -4052,22 +4551,52 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
     
     // Handle Result type member access (.is_error, .value, .error)
     // Reference: runtime/result/result.cpp, include/runtime/result.h
+    // ENFORCEMENT: "No checky no val" - must check .is_error before accessing .value/.error
     if (objectType->getKind() == TypeKind::RESULT) {
         ResultType* resultType = static_cast<ResultType*>(objectType);
+        std::string varName = getVariableName(expr->object.get());
         
         // .is_error -> bool
+        // IMPORTANT: Accessing .is_error marks this Result as checked
         if (expr->member == "is_error") {
+            if (!varName.empty()) {
+                markResultChecked(varName);
+            }
             return typeSystem->getPrimitiveType("bool");
         }
         
         // .value -> T (the wrapped value type)
+        // ENFORCEMENT: Cannot access .value without first checking .is_error
+        // Phase 2: Must KNOW is_error == false, not just that we checked it
         if (expr->member == "value") {
+            if (!varName.empty()) {
+                ResultCheckState::State state = currentResultState.getState(varName);
+                if (state != ResultCheckState::State::KNOWN_SUCCESS) {
+                    addError("Cannot access .value without checking .is_error first (no checky no val).\n"
+                            "  Help: Add a check: if (!" + varName + ".is_error) { ... }\n"
+                            "  Or use unwrap operator: value = " + varName + " ? default_value;",
+                            expr);
+                    return typeSystem->getErrorType();
+                }
+            }
             return resultType->getValueType();
         }
         
         // .error -> error pointer (represented as int64 for now)
+        // ENFORCEMENT: Cannot access .error without first checking .is_error
+        // Phase 2: Can access if we checked OR know is_error == true
         // TODO: Create proper Error type when error handling is expanded
         if (expr->member == "error") {
+            if (!varName.empty()) {
+                ResultCheckState::State state = currentResultState.getState(varName);
+                // Can access error if we checked (for logging) or know it's an error
+                if (state == ResultCheckState::State::UNCHECKED) {
+                    addError("Cannot access .error without checking .is_error first (no checky no val).\n"
+                            "  Help: Add a check: if (" + varName + ".is_error) { ... }",
+                            expr);
+                    return typeSystem->getErrorType();
+                }
+            }
             // Return pointer to error (void* in C, int64 in Aria IR)
             return typeSystem->getPrimitiveType("int64");
         }
@@ -4241,7 +4770,7 @@ Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
     
     // Two operators use UnwrapExpr:
     // ? operator: result_expr ? default (unwraps Result<T>)
-    // ?? operator: nullable_expr ?? default (null coalescing for pointers)
+    // ?? operator: nullable_expr ?? default (null coalescing for pointers and optionals)
     
     Type* valueType = resultType;
     
@@ -4269,13 +4798,25 @@ Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
             return typeSystem->getErrorType();
         }
     }
+    else if (resultType->getKind() == TypeKind::OPTIONAL) {
+        // ?? operator: Extract T from Optional<T> (T?)
+        OptionalType* optType = static_cast<OptionalType*>(resultType);
+        valueType = optType->getWrappedType();
+        
+        // Check that default value type matches the wrapped type
+        if (!defaultType->isAssignableTo(valueType) && !canCoerce(defaultType, valueType)) {
+            addError("Null coalesce operator (??) default value type '" + defaultType->toString() + 
+                    "' does not match optional type '" + valueType->toString() + "'", expr);
+            return typeSystem->getErrorType();
+        }
+    }
     else {
-        addError("Unwrap/coalesce operators (? and ??) require either Result<T> or ptr T type, got '" + 
+        addError("Unwrap/coalesce operators (? and ??) require either Result<T>, Optional<T>, or ptr T type, got '" + 
                 resultType->toString() + "'", expr);
         return typeSystem->getErrorType();
     }
     
-    // Both operators return the value type (T from Result<T> or ptr T)
+    // All operators return the value type (T from Result<T>, Optional<T>, or ptr T)
     return valueType;
 }
 
@@ -4305,8 +4846,9 @@ Type* TypeChecker::inferObjectLiteral(ObjectLiteralExpr* expr) {
             return typeSystem->getErrorType();
         }
         
-        // TODO: When struct types are fully implemented, validate field types here
-        // For now, just return the struct type
+        // Return the struct type
+        // Field validation is done in checkVarDecl for positional literals
+        // or in parsePostfix for named struct literals
         return structType;
     }
     
@@ -4639,6 +5181,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkEnumDecl(static_cast<EnumDeclStmt*>(stmt));
             break;
 
+        case ASTNode::NodeType::TYPE_DECL:
+            checkTypeDecl(static_cast<TypeDeclStmt*>(stmt));
+            break;
+
         case ASTNode::NodeType::TRAIT_DECL:
             checkTraitDecl(static_cast<TraitDeclStmt*>(stmt));
             break;
@@ -4870,10 +5416,58 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             }
             
             // Check for built-in generic types first
-            if (genericType->baseName == "Result" || genericType->baseName == "array") {
+            if (genericType->baseName == "Result") {
+                // Result<T> is a built-in type, not a struct
+                if (resolvedTypeArgs.size() != 1) {
+                    addError("Result<T> requires exactly 1 type argument, got " + 
+                            std::to_string(resolvedTypeArgs.size()), typeNode);
+                    return typeSystem->getErrorType();
+                }
+                
+                // Use the built-in ResultType
+                return typeSystem->getResultType(resolvedTypeArgs[0]);
+            }
+            
+            if (genericType->baseName == "array" || genericType->baseName == "atomic") {
                 // Built-in generic types - handle specially
                 // For now, just return a placeholder struct type
                 // The actual implementation will be in stdlib once fully integrated
+                
+                // atomic<T> requires special validation
+                if (genericType->baseName == "atomic") {
+                    // Validate argument count
+                    if (resolvedTypeArgs.size() != 1) {
+                        addError("atomic<T> requires exactly 1 type argument, got " + 
+                                std::to_string(resolvedTypeArgs.size()), typeNode);
+                        return typeSystem->getErrorType();
+                    }
+                    
+                    // Validate type compatibility
+                    Type* argType = resolvedTypeArgs[0];
+                    if (!isAtomicCompatible(argType)) {
+                        std::ostringstream msg;
+                        msg << "atomic<T> requires lock-free compatible type (int8-64, uint8-64, bool, tbb8-64), got: "
+                            << argType->toString();
+                        addError(msg.str(), typeNode);
+                        return typeSystem->getErrorType();
+                    }
+                    
+                    // Create mangled name for atomic specialization
+                    std::string mangledName = "atomic_" + argType->toString();
+                    
+                    // Check if we already have this specialization
+                    Type* existingType = typeSystem->getStructType(mangledName);
+                    if (existingType) {
+                        return existingType;
+                    }
+                    
+                    // Create atomic<T> struct type
+                    // atomic<T> has: T value (aligned appropriately for atomic operations)
+                    std::vector<StructType::Field> fields;
+                    fields.push_back({"value", argType, 0});
+                    
+                    return typeSystem->createStructType(mangledName, fields);
+                }
                 
                 // Create a mangled name for this instantiation
                 std::string mangledName = genericType->baseName;
@@ -4890,12 +5484,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 // Create a new struct type for this specialization
                 // This is a placeholder - actual fields will be defined in stdlib
                 std::vector<StructType::Field> fields;
-                if (genericType->baseName == "Result") {
-                    // result<T> has: bool is_error, T val, string err
-                    fields.push_back({"is_error", typeSystem->getPrimitiveType("bool"), 0});
-                    fields.push_back({"val", resolvedTypeArgs[0], 8});
-                    fields.push_back({"err", typeSystem->getPrimitiveType("string"), 16});
-                } else if (genericType->baseName == "array") {
+                if (genericType->baseName == "array") {
                     // array<T> has: T* data, int64 length, int64 capacity
                     Type* elemType = resolvedTypeArgs[0];
                     Type* ptrType = typeSystem->getPointerType(elemType);
@@ -5085,16 +5674,66 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         // Balanced Type Validation (Phase 3.2.5)
         // Special handling for integer literals assigned to balanced types
         bool balancedLiteralAssignment = false;
-        if (isBalancedType(declaredType) && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
-            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
-            if (std::holds_alternative<int64_t>(literal->value)) {
-                int64_t value = std::get<int64_t>(literal->value);
-                checkBalancedLiteralValue(value, declaredType, stmt);
-                balancedLiteralAssignment = true;
-                
-                // If no errors, allow the assignment (literal is in range)
-                if (hasErrors()) {
-                    return;  // Validation failed
+        if (isBalancedType(declaredType)) {
+            // Check for direct literal
+            if (stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+                if (std::holds_alternative<int64_t>(literal->value)) {
+                    int64_t value = std::get<int64_t>(literal->value);
+                    checkBalancedLiteralValue(value, declaredType, stmt);
+                    balancedLiteralAssignment = true;
+                    
+                    // If no errors, allow the assignment (literal is in range)
+                    if (hasErrors()) {
+                        return;  // Validation failed
+                    }
+                }
+            }
+            // Check for negative literal (unary minus applied to literal)
+            else if (stmt->initializer->type == ASTNode::NodeType::UNARY_OP) {
+                UnaryExpr* unary = static_cast<UnaryExpr*>(stmt->initializer.get());
+                if (unary->op.type == frontend::TokenType::TOKEN_MINUS &&
+                    unary->operand->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* literal = static_cast<LiteralExpr*>(unary->operand.get());
+                    if (std::holds_alternative<int64_t>(literal->value)) {
+                        int64_t value = -std::get<int64_t>(literal->value);  // Negate
+                        checkBalancedLiteralValue(value, declaredType, stmt);
+                        balancedLiteralAssignment = true;
+                        
+                        // If no errors, allow the assignment (literal is in range)
+                        if (hasErrors()) {
+                            return;  // Validation failed
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Numeric Exotic Type Validation (Phase 3.3)  
+        // Special handling for integer literals assigned to frac*, tfp*, vec9, etc.
+        bool numericExoticLiteralAssignment = false;
+        if (isNumericExoticType(declaredType)) {
+            // Check for direct literal
+            if (stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+                if (std::holds_alternative<int64_t>(literal->value) || 
+                    std::holds_alternative<double>(literal->value)) {
+                    // Allow integer or float literals to initialize exotic numeric types
+                    // The IR generator will create the appropriate struct representation
+                    numericExoticLiteralAssignment = true;
+                }
+            }
+            // Check for negative literal (unary minus applied to literal)
+            else if (stmt->initializer->type == ASTNode::NodeType::UNARY_OP) {
+                UnaryExpr* unary = static_cast<UnaryExpr*>(stmt->initializer.get());
+                if (unary->op.type == frontend::TokenType::TOKEN_MINUS &&
+                    unary->operand->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* literal = static_cast<LiteralExpr*>(unary->operand.get());
+                    if (std::holds_alternative<int64_t>(literal->value) ||
+                        std::holds_alternative<double>(literal->value)) {
+                        // Allow negative literals for exotic numeric types
+                        numericExoticLiteralAssignment = true;
+                    }
                 }
             }
         }
@@ -5141,22 +5780,235 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         // Special handling for integer literals assigned to smaller integer types
         // This allows safe narrowing conversions when the literal value fits at compile time
         bool standardIntLiteralAssignment = false;
-        if (isStandardIntType(declaredType) && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
-            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
-            if (std::holds_alternative<int64_t>(literal->value)) {
-                int64_t value = std::get<int64_t>(literal->value);
-                if (canLiteralFitInIntType(value, declaredType, stmt)) {
-                    standardIntLiteralAssignment = true;
-                    // Literal fits in target type, allow the assignment
-                } else {
-                    return;  // Validation failed, error already reported
+        if (isStandardIntType(declaredType)) {
+            // Check if initializer is a direct literal
+            if (stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+                if (std::holds_alternative<int64_t>(literal->value)) {
+                    int64_t value = std::get<int64_t>(literal->value);
+                    if (canLiteralFitInIntType(value, declaredType, stmt)) {
+                        standardIntLiteralAssignment = true;
+                        // Literal fits in target type, allow the assignment
+                    } else {
+                        return;  // Validation failed, error already reported
+                    }
+                }
+            }
+            // Check if initializer is a unary minus on a literal (negative number)
+            else if (stmt->initializer->type == ASTNode::NodeType::UNARY_OP) {
+                UnaryExpr* unaryExpr = static_cast<UnaryExpr*>(stmt->initializer.get());
+                if (unaryExpr->op.type == TokenType::TOKEN_MINUS && 
+                    unaryExpr->operand->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* literal = static_cast<LiteralExpr*>(unaryExpr->operand.get());
+                    if (std::holds_alternative<int64_t>(literal->value)) {
+                        int64_t value = -std::get<int64_t>(literal->value);  // Apply negation
+                        if (canLiteralFitInIntType(value, declaredType, stmt)) {
+                            standardIntLiteralAssignment = true;
+                            // Literal fits in target type, allow the assignment
+                        } else {
+                            return;  // Validation failed, error already reported
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Array Literal Integer Coercion
+        // Special handling for array literals with integer elements assigned to different integer array types
+        // Example: int64[]:nums = [10, 20, 30];  // Literals are int32, but should fit in int64
+        bool arrayLiteralIntCoercion = false;
+        if (declaredType->getKind() == TypeKind::POINTER && 
+            initType->getKind() == TypeKind::POINTER &&
+            stmt->initializer->type == ASTNode::NodeType::ARRAY_LITERAL) {
+            
+            const PointerType* declaredPtr = static_cast<const PointerType*>(declaredType);
+            const PointerType* initPtr = static_cast<const PointerType*>(initType);
+            
+            Type* declaredElem = declaredPtr->getPointeeType();
+            Type* initElem = initPtr->getPointeeType();
+            
+            // Check if both element types are standard integers
+            if (isStandardIntType(declaredElem) && isStandardIntType(initElem)) {
+                ArrayLiteralExpr* arrayLit = static_cast<ArrayLiteralExpr*>(stmt->initializer.get());
+                
+                // Check if all elements are integer literals that fit in the declared element type
+                bool allFit = true;
+                for (const auto& elem : arrayLit->elements) {
+                    if (elem->type != ASTNode::NodeType::LITERAL) {
+                        allFit = false;
+                        break;
+                    }
+                    
+                    LiteralExpr* literal = static_cast<LiteralExpr*>(elem.get());
+                    if (!std::holds_alternative<int64_t>(literal->value)) {
+                        allFit = false;
+                        break;
+                    }
+                    
+                    int64_t value = std::get<int64_t>(literal->value);
+                    if (!integerFitsInType(value, declaredElem->toString())) {
+                        allFit = false;
+                        break;
+                    }
+                }
+                
+                if (allFit) {
+                    arrayLiteralIntCoercion = true;
+                    // All literals fit, allow the assignment
+                }
+            }
+        }
+        
+        // Optional Type Integer Literal Coercion
+        // Special handling for integer literals assigned to optional integer types
+        // Example: int64?:opt = 42;  // 42 is int32, but should fit in int64
+        bool optionalIntLiteralCoercion = false;
+        if (declaredType->getKind() == TypeKind::OPTIONAL && 
+            stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+            
+            const OptionalType* declaredOptional = static_cast<const OptionalType*>(declaredType);
+            Type* wrappedType = declaredOptional->getWrappedType();
+            
+            if (isStandardIntType(wrappedType)) {
+                LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+                if (std::holds_alternative<int64_t>(literal->value)) {
+                    int64_t value = std::get<int64_t>(literal->value);
+                    if (integerFitsInType(value, wrappedType->toString())) {
+                        optionalIntLiteralCoercion = true;
+                        // Literal fits in wrapped type, allow the assignment
+                    }
+                }
+            }
+        }
+        
+        // Object Literal Struct Initialization (Phase 3.4)
+        // Special handling for positional object literals assigned to struct-like types
+        // This includes: frac8/16/32/64 (3 fields), tfp32/64 (2 fields), vec9 (9 fields), etc.
+        // Example: frac8:half = {0, 1, 2};  // {whole, num, denom}
+        bool objectLiteralStructAssignment = false;
+        if (stmt->initializer->type == ASTNode::NodeType::OBJECT_LITERAL) {
+            ObjectLiteralExpr* objLit = static_cast<ObjectLiteralExpr*>(stmt->initializer.get());
+            
+            // Check if declared type is a struct type
+            if (declaredType->getKind() == TypeKind::STRUCT) {
+                const StructType* structType = static_cast<const StructType*>(declaredType);
+                
+                // Get struct fields
+                const std::vector<StructType::Field>& structFields = structType->getFields();
+                
+                // Check field count matches
+                if (objLit->fields.size() != structFields.size()) {
+                    addError("Object literal has " + std::to_string(objLit->fields.size()) + 
+                            " fields, but struct '" + structType->getName() + 
+                            "' requires " + std::to_string(structFields.size()) + " fields", stmt);
+                    return;
+                }
+                
+                // Validate each field's type
+                for (size_t i = 0; i < objLit->fields.size(); ++i) {
+                    const auto& litField = objLit->fields[i];
+                    const auto& structField = structFields[i];
+                    
+                    // Infer the field value's type
+                    Type* fieldValueType = inferType(litField.value.get());
+                    if (fieldValueType->getKind() == TypeKind::ERROR) {
+                        return;  // Error already reported
+                    }
+                    
+                    // Check type compatibility (allow int32/int64 literals)
+                    bool compatible = false;
+                    if (fieldValueType->isAssignableTo(structField.type)) {
+                        compatible = true;
+                    } else if (canCoerce(fieldValueType, structField.type)) {
+                        compatible = true;
+                    } else if ((fieldValueType->toString() == "int32" || fieldValueType->toString() == "int64") &&
+                               isStandardIntType(structField.type)) {
+                        // Allow integer literal coercion for struct fields
+                        if (litField.value->type == ASTNode::NodeType::LITERAL) {
+                            LiteralExpr* lit = static_cast<LiteralExpr*>(litField.value.get());
+                            if (std::holds_alternative<int64_t>(lit->value)) {
+                                int64_t value = std::get<int64_t>(lit->value);
+                                compatible = integerFitsInType(value, structField.type->toString());
+                            }
+                        }
+                    }
+                    
+                    if (!compatible) {
+                        addError("Field '" + structField.name + "' of struct '" + 
+                                structType->getName() + "' expects type '" + 
+                                structField.type->toString() + "', but got '" + 
+                                fieldValueType->toString() + "'", litField.value.get());
+                        return;
+                    }
+                }
+                
+                // Mark the object literal with the struct type name for IR generation
+                objLit->type_name = structType->getName();
+                
+                // Validation passed
+                objectLiteralStructAssignment = true;
+            }
+            // Check if declared type is an exotic numeric type with struct-like initialization
+            else if (isNumericExoticType(declaredType) || isBalancedType(declaredType) || isTBBType(declaredType)) {
+                PrimitiveType* primType = dynamic_cast<PrimitiveType*>(declaredType);
+                if (primType) {
+                    const std::string& typeName = primType->getName();
+                    
+                    // Determine expected field count based on type
+                    size_t expectedFieldCount = 0;
+                    if (typeName.find("frac") == 0) {
+                        expectedFieldCount = 3;  // {whole, num, denom}
+                    } else if (typeName.find("tfp") == 0) {
+                        expectedFieldCount = 2;  // {exponent, mantissa}
+                    } else if (typeName == "vec9" || typeName == "dvec9") {
+                        expectedFieldCount = 9;  // 9 components
+                    } else if (typeName == "tmatrix") {
+                        // tmatrix can have variable size - just accept any field count for now
+                        expectedFieldCount = objLit->fields.size();
+                    } else if (typeName == "ttensor") {
+                        // ttensor can have variable size - just accept any field count for now
+                        expectedFieldCount = objLit->fields.size();
+                    }
+                    
+                    // Check field count
+                    if (expectedFieldCount > 0 && objLit->fields.size() != expectedFieldCount) {
+                        addError("Object literal has " + std::to_string(objLit->fields.size()) + 
+                                " fields, but type '" + typeName + 
+                                "' requires " + std::to_string(expectedFieldCount) + " fields", stmt);
+                        return;
+                    }
+                    
+                    // For now, just accept int32/int64 literals for all fields
+                    // More detailed type checking can be added later
+                    for (const auto& litField : objLit->fields) {
+                        Type* fieldValueType = inferType(litField.value.get());
+                        if (fieldValueType->getKind() == TypeKind::ERROR) {
+                            return;  // Error already reported
+                        }
+                        
+                        // Allow integer literals
+                        std::string fieldTypeStr = fieldValueType->toString();
+                        if (fieldTypeStr != "int32" && fieldTypeStr != "int64" && 
+                            fieldTypeStr != "tbb8" && fieldTypeStr != "tbb16" && 
+                            fieldTypeStr != "tbb32" && fieldTypeStr != "tbb64") {
+                            addError("Field value in '" + typeName + "' object literal must be an integer, got '" + 
+                                    fieldTypeStr + "'", litField.value.get());
+                            return;
+                        }
+                    }
+                    
+                    // Mark the object literal with the type name for IR generation
+                    objLit->type_name = typeName;
+                    
+                    // Validation passed
+                    objectLiteralStructAssignment = true;
                 }
             }
         }
         
         // Check if initializer type is assignable to declared type
-        // Skip this check if we handled TBB, ERR, balanced, standard int, or high-precision literal assignment above
-        if (!tbbLiteralAssignment && !errLiteralAssignment && !balancedLiteralAssignment && !standardIntLiteralAssignment && !highPrecisionLiteralAssignment) {
+        // Skip this check if we handled TBB, ERR, balanced, numeric exotic, standard int, high-precision literal, array literal int, optional int literal, or object literal struct coercion above
+        if (!tbbLiteralAssignment && !errLiteralAssignment && !balancedLiteralAssignment && !numericExoticLiteralAssignment && !standardIntLiteralAssignment && !highPrecisionLiteralAssignment && !arrayLiteralIntCoercion && !optionalIntLiteralCoercion && !objectLiteralStructAssignment) {
             // Special case: Allow T to be initialized to T? (wrapping)
             bool optionalWrapping = false;
             if (declaredType->getKind() == TypeKind::OPTIONAL) {
@@ -5166,7 +6018,19 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                 }
             }
             
-            if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType) && !optionalWrapping) {
+            // Special case: Automatic Result<T> → T unwrapping for function call assignments
+            // Function calls return Result<T>, but can be assigned directly to T variables
+            // The IR generator will insert automatic unwrapping (panic on error)
+            bool resultUnwrapping = false;
+            if (initType->getKind() == TypeKind::RESULT) {
+                const ResultType* resultType = static_cast<const ResultType*>(initType);
+                Type* valueType = resultType->getValueType();
+                if (valueType->isAssignableTo(declaredType)) {
+                    resultUnwrapping = true;
+                }
+            }
+            
+            if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType) && !optionalWrapping && !resultUnwrapping) {
                 addError("Cannot initialize variable '" + stmt->varName + 
                         "' of type '" + declaredType->toString() + 
                         "' with value of type '" + initType->toString() + "'", stmt);
@@ -5190,12 +6054,27 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                              stmt->line, 
                              stmt->column);
     
+    // Set fixed flag if this is a fixed variable
+    if (stmt->isFixed) {
+        Symbol* sym = symbolTable->resolveSymbol(stmt->varName);
+        if (sym) {
+            sym->isFixed = true;
+        }
+    }
+    
     // If we evaluated a const value, store it in the symbol
     if (evaluatedConstValue) {
         Symbol* sym = symbolTable->resolveSymbol(stmt->varName);
         if (sym) {
             sym->setComptimeValue(evaluatedConstValue);
         }
+    }
+    
+    // Phase 1.5: Track wild Result variables
+    // Wild Results can modify .is_error field (allows error state corruption)
+    // Non-wild Results have immutable .is_error (errors must propagate)
+    if (declaredType->getKind() == TypeKind::RESULT && stmt->isWild) {
+        wildResults.insert(stmt->varName);
     }
 }
 
@@ -5240,15 +6119,22 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
                  stmt);
     }
 
-    // All Aria functions return Result<T> where T is the declared type
-    // func:foo = int32(...) returns Result{err: *tbb*, val: int32}
-    // func:bar = NIL(...) returns Result{err: *tbb*, val: NIL}
-    Type* resultType = new ResultType(valueType);
+    // Return type handling:
+    // - Regular Aria functions return Result<T> for error handling
+    // - Extern functions (no body) return raw T for C ABI compatibility  
+    Type* actualReturnType;
+    if (!stmt->body) {
+        // Extern function: return raw type (no Result wrapping)
+        actualReturnType = valueType;
+    } else {
+        // Regular function: return Result<T>
+        actualReturnType = new ResultType(valueType);
+    }
 
     // Set current function return types for pass/fail/return statement checking
     Type* previousReturnType = currentFunctionReturnType;
     Type* previousValueType = currentFunctionValueType;
-    currentFunctionReturnType = resultType;
+    currentFunctionReturnType = actualReturnType;
     currentFunctionValueType = valueType;
     
     // Check parameters
@@ -5309,9 +6195,10 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
         }
     }
     
-    // Create proper function type with Result<T> return type
-    // Functions declared as int32() return Result{err: *tbb*, val: int32}
-    Type* funcType = new FunctionType(paramTypes, resultType, stmt->isAsync, false);
+    // Create proper function type
+    // Regular functions: int32() returns Result{err: *tbb*, val: int32}
+    // Extern functions: int32() returns int32 (raw type, no wrapping)
+    Type* funcType = new FunctionType(paramTypes, actualReturnType, stmt->isAsync, false);
     
     // Define function symbol in symbol table with complete function type
     Symbol* funcSymbol = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
@@ -5355,14 +6242,36 @@ void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
         if (field->type == ASTNode::NodeType::VAR_DECL) {
             VarDeclStmt* fieldDecl = static_cast<VarDeclStmt*>(field.get());
             
+            // Extract type name from typeNode (parser stores it there, not in typeName)
+            std::string fieldTypeName;
+            if (fieldDecl->typeNode) {
+                // For simple types, it's a SimpleType with typeName field
+                if (fieldDecl->typeNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
+                    SimpleType* simpleType = static_cast<SimpleType*>(fieldDecl->typeNode.get());
+                    fieldTypeName = simpleType->typeName;
+                } else {
+                    // TODO: Handle complex types (arrays, pointers, etc.)
+                    addError("Complex field types not yet fully supported in struct '" + 
+                            stmt->structName + "'", field.get());
+                    continue;
+                }
+            } else if (!fieldDecl->typeName.empty()) {
+                // Fallback to legacy typeName field for backwards compatibility
+                fieldTypeName = fieldDecl->typeName;
+            } else {
+                addError("Missing type information for field '" + fieldDecl->varName + 
+                        "' in struct '" + stmt->structName + "'", field.get());
+                continue;
+            }
+            
             // Look up field type (check struct types first to avoid auto-creating primitives)
-            Type* fieldType = typeSystem->getStructType(fieldDecl->typeName);
+            Type* fieldType = typeSystem->getStructType(fieldTypeName);
             if (!fieldType) {
-                fieldType = typeSystem->getPrimitiveType(fieldDecl->typeName);
+                fieldType = typeSystem->getPrimitiveType(fieldTypeName);
             }
             
             if (!fieldType || fieldType->getKind() == TypeKind::ERROR) {
-                addError("Unknown field type '" + fieldDecl->typeName + 
+                addError("Unknown field type '" + fieldTypeName + 
                         "' in struct '" + stmt->structName + "'", field.get());
                 // Continue checking other fields
                 continue;
@@ -5398,6 +6307,81 @@ void TypeChecker::checkEnumDecl(EnumDeclStmt* stmt) {
         // TODO: Create a proper EnumType when type system is extended
         symbolTable->defineSymbol(fullName, SymbolKind::VARIABLE, typeSystem->getPrimitiveType("int64"));
     }
+}
+
+// ============================================================================
+// Type Oriented Programming (TOP) - Type Declaration Desugaring
+// ============================================================================
+
+void TypeChecker::checkTypeDecl(TypeDeclStmt* stmt) {
+    // Type Oriented Programming: Desugar Type:Name into struct + prefixed methods
+    // This provides class-like organization without OOP baggage
+    
+    // Step 1: Check if Type name already exists
+    Type* existingType = typeSystem->getStructType(stmt->typeName);
+    if (existingType) {
+        addError("Type '" + stmt->typeName + "' is already defined", stmt);
+        return;
+    }
+    
+    // Step 2: Merge struct:internal + struct:interface into single struct
+    std::vector<ASTNodePtr> mergedFields;
+    
+    if (stmt->internalStruct) {
+        auto internalStruct = std::static_pointer_cast<StructDeclStmt>(stmt->internalStruct);
+        for (const auto& field : internalStruct->fields) {
+            mergedFields.push_back(field);
+        }
+    }
+    
+    if (stmt->interfaceStruct) {
+        auto interfaceStruct = std::static_pointer_cast<StructDeclStmt>(stmt->interfaceStruct);
+        for (const auto& field : interfaceStruct->fields) {
+            mergedFields.push_back(field);
+        }
+    }
+    
+    // Create merged struct declaration
+    auto mergedStruct = std::make_shared<StructDeclStmt>(
+        stmt->typeName,
+        mergedFields,
+        stmt->line,
+        stmt->column
+    );
+    
+    // Process the merged struct through normal struct checking
+    checkStructDecl(mergedStruct.get());
+    
+    // Step 3: Register Type in symbol table
+    symbolTable->defineSymbol(stmt->typeName, SymbolKind::TYPE, existingType);
+    
+    // Step 4: Process func:create as TypeName_create
+    if (stmt->createFunc) {
+        auto createFunc = std::static_pointer_cast<FuncDeclStmt>(stmt->createFunc);
+        std::string prefixedName = stmt->typeName + "_" + createFunc->funcName;
+        createFunc->funcName = prefixedName;
+        checkFuncDecl(createFunc.get());
+    }
+    
+    // Step 5: Process func:destroy as TypeName_destroy
+    if (stmt->destroyFunc) {
+        auto destroyFunc = std::static_pointer_cast<FuncDeclStmt>(stmt->destroyFunc);
+        std::string prefixedName = stmt->typeName + "_" + destroyFunc->funcName;
+        destroyFunc->funcName = prefixedName;
+        checkFuncDecl(destroyFunc.get());
+    }
+    
+    // Step 6: Process all methods as TypeName_methodName
+    for (const auto& method : stmt->methods) {
+        auto methodFunc = std::static_pointer_cast<FuncDeclStmt>(method);
+        std::string prefixedName = stmt->typeName + "_" + methodFunc->funcName;
+        methodFunc->funcName = prefixedName;
+        checkFuncDecl(methodFunc.get());
+    }
+    
+    // Note: struct:type (static members) would be handled similarly to regular structs
+    // For now, we skip static member struct processing
+    // Type.MEMBER access is already transformed by parser to Type_MEMBER() calls
 }
 
 // ============================================================================
@@ -5522,6 +6506,37 @@ void TypeChecker::checkAssignment(BinaryExpr* expr) {
         }
     }
     
+    // ========================================================================
+    // Phase 1.5: Immutable .is_error Enforcement
+    // ========================================================================
+    // Block assignment to Result<T>.is_error unless variable has 'wild' modifier
+    // Prevents error state corruption - errors are facts that must propagate
+    if (expr->left->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        MemberAccessExpr* memberExpr = static_cast<MemberAccessExpr*>(expr->left.get());
+        
+        // Check if accessing .is_error field
+        if (memberExpr->member == "is_error") {
+            // Check if object is a Result type
+            Type* objectType = inferType(memberExpr->object.get());
+            if (objectType && objectType->getKind() == TypeKind::RESULT) {
+                // Extract variable name
+                std::string varName = getVariableName(memberExpr->object.get());
+                
+                // Check if Result variable has 'wild' modifier
+                if (!varName.empty() && wildResults.find(varName) == wildResults.end()) {
+                    addError(
+                        "Cannot modify .is_error on non-wild Result type (errors must propagate).\n"
+                        "  Variable: " + varName + "\n"
+                        "  Help: Declare as 'wild Result<T>' if you need to modify error state.\n"
+                        "  Note: Modifying error state is rarely needed and should be audited.",
+                        expr->line, expr->column
+                    );
+                    return;
+                }
+            }
+        }
+    }
+    
     // Left side must be an lvalue (identifier, index, member access)
     if (expr->left->type != ASTNode::NodeType::IDENTIFIER &&
         expr->left->type != ASTNode::NodeType::INDEX &&
@@ -5545,6 +6560,34 @@ void TypeChecker::checkAssignment(BinaryExpr* expr) {
         if (symbol && symbol->kind == SymbolKind::CONSTANT) {
             addError("Cannot assign to const variable '" + ident->name + "'", expr);
             return;
+        }
+        
+        // Check if assigning to fixed variable
+        if (symbol && symbol->isFixed) {
+            addError("Cannot reassign fixed variable '" + ident->name + "' - fixed variables are immutable", expr);
+            return;
+        }
+    }
+    
+    // Check if modifying field of fixed variable
+    if (expr->left->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr->left.get());
+        
+        // Find the base identifier
+        ASTNode* base = member->object.get();
+        while (base->type == ASTNode::NodeType::MEMBER_ACCESS) {
+            MemberAccessExpr* baseMember = static_cast<MemberAccessExpr*>(base);
+            base = baseMember->object.get();
+        }
+        
+        if (base->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* ident = static_cast<IdentifierExpr*>(base);
+            Symbol* symbol = symbolTable->lookupSymbol(ident->name);
+            
+            if (symbol && symbol->isFixed) {
+                addError("Cannot modify field of fixed variable '" + ident->name + "' - fixed variables are immutable", expr);
+                return;
+            }
         }
     }
     
@@ -5661,24 +6704,26 @@ void TypeChecker::checkReturnStmt(ReturnStmt* stmt) {
         // Context-aware literal typing for return statements
         // If returning an int64 literal to a smaller int type, check if it fits
         if (stmt->value->type == ASTNode::NodeType::LITERAL &&
-            isStandardIntType(currentFunctionReturnType) &&
+            isStandardIntType(currentFunctionValueType) &&
             returnType->toString() == "int64") {
             
             LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->value.get());
             if (std::holds_alternative<int64_t>(literal->value)) {
                 int64_t value = std::get<int64_t>(literal->value);
-                if (literalFitsInType(value, currentFunctionReturnType)) {
-                    // Treat literal as having the function's return type
+                if (literalFitsInType(value, currentFunctionValueType)) {
+                    // Treat literal as having the function's value type
                     return;  // Success, literal fits
                 }
             }
         }
         
-        if (!returnType->isAssignableTo(currentFunctionReturnType) && 
-            !canCoerce(returnType, currentFunctionReturnType)) {
+        // Return statements should check against the VALUE type, not the Result<T> wrapper
+        // Functions internally return Result<T>, but the return statement provides the value
+        if (!returnType->isAssignableTo(currentFunctionValueType) && 
+            !canCoerce(returnType, currentFunctionValueType)) {
             addError("Return type '" + returnType->toString() + 
                     "' does not match function return type '" + 
-                    currentFunctionReturnType->toString() + "'", stmt);
+                    currentFunctionValueType->toString() + "'", stmt);
         }
     }
 }
@@ -5709,7 +6754,37 @@ void TypeChecker::checkPassStmt(PassStmt* stmt) {
     // Validate that value type matches the function's declared value type
     // func:foo = int32(...) { pass(42i32); } - int32 must match int32
     // func:bar = NIL(...) { pass(NIL); } - NIL must match NIL
-    if (!valueType->isAssignableTo(currentFunctionValueType) && 
+    
+    // Special case: Allow integer literals for exotic types (same as variable init)
+    bool exoticLiteralPass = false;
+    if ((isBalancedType(currentFunctionValueType) || isNumericExoticType(currentFunctionValueType) || isTBBType(currentFunctionValueType)) &&
+        (valueType->toString() == "int32" || valueType->toString() == "int64")) {
+        // Allow int32/int64 to be passed to exotic types (will be converted in IR gen)
+        exoticLiteralPass = true;
+    }
+    
+    // Special case: Allow integer literals for optional integer types
+    bool optionalIntLiteralPass = false;
+    if (currentFunctionValueType->getKind() == TypeKind::OPTIONAL) {
+        const OptionalType* optType = static_cast<const OptionalType*>(currentFunctionValueType);
+        Type* wrappedType = optType->getWrappedType();
+        if (isStandardIntType(wrappedType) && 
+            (valueType->toString() == "int32" || valueType->toString() == "int64")) {
+            // Check if the literal value fits in the target type
+            if (stmt->value->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->value.get());
+                if (std::holds_alternative<int64_t>(literal->value)) {
+                    int64_t value = std::get<int64_t>(literal->value);
+                    if (literalFitsInType(value, wrappedType)) {
+                        optionalIntLiteralPass = true;
+                    }
+                }
+            }
+        }
+    }
+    
+    if (!exoticLiteralPass && !optionalIntLiteralPass && 
+        !valueType->isAssignableTo(currentFunctionValueType) && 
         !canCoerce(valueType, currentFunctionValueType)) {
         addError("Pass value type '" + valueType->toString() + 
                 "' does not match function value type '" + 
@@ -5765,12 +6840,48 @@ void TypeChecker::checkIfStmt(IfStmt* stmt) {
                 "'. Use explicit comparison (e.g., x != 0) instead of truthiness.", stmt->condition.get());
     }
     
-    // Check then branch
-    checkStatement(stmt->thenBranch.get());
+    // Phase 2: Control flow analysis for Result checking
+    // Save current state before branching
+    ResultCheckState beforeState = currentResultState;
     
-    // Check else branch if present
+    // Analyze condition to extract Result check knowledge
+    ResultCheckState thenState = beforeState;
+    ResultCheckState elseState = beforeState;
+    analyzeConditionForResultChecks(stmt->condition.get(), thenState, elseState);
+    
+    // Check then branch with then knowledge
+    currentResultState = thenState;
+    checkStatement(stmt->thenBranch.get());
+    ResultCheckState afterThen = currentResultState;
+    
+    // Check else branch with else knowledge (if present)
+    ResultCheckState afterElse;
     if (stmt->elseBranch) {
+        currentResultState = elseState;
         checkStatement(stmt->elseBranch.get());
+        afterElse = currentResultState;
+    } else {
+        // No else branch means execution can skip the if entirely
+        afterElse = elseState;
+    }
+    
+    // Early return analysis: if one branch always returns, use other branch's state
+    bool thenReturns = branchAlwaysReturns(stmt->thenBranch.get());
+    bool elseReturns = stmt->elseBranch && branchAlwaysReturns(stmt->elseBranch.get());
+    
+    if (thenReturns && !elseReturns) {
+        // if (err) { return; } → after knows !err
+        currentResultState = afterElse;
+    } else if (elseReturns && !thenReturns) {
+        // if (!err) { return; } → after knows err
+        currentResultState = afterThen;
+    } else if (thenReturns && elseReturns) {
+        // Both branches diverge, execution doesn't continue
+        // Keep merged state anyway for safety
+        currentResultState = ResultCheckState::merge(afterThen, afterElse);
+    } else {
+        // Normal case: merge both branches conservatively
+        currentResultState = ResultCheckState::merge(afterThen, afterElse);
     }
 }
 
@@ -5793,8 +6904,25 @@ void TypeChecker::checkWhileStmt(WhileStmt* stmt) {
                 "'. Use explicit comparison (e.g., x != 0) instead of truthiness.", stmt->condition.get());
     }
     
-    // Check body
+    // Phase 3: Control flow analysis for loops
+    // Save current state before loop
+    ResultCheckState beforeLoop = currentResultState;
+    
+    // Analyze condition to extract Result check knowledge
+    ResultCheckState inLoop = beforeLoop;
+    ResultCheckState afterLoop = beforeLoop;
+    analyzeConditionForResultChecks(stmt->condition.get(), inLoop, afterLoop);
+    
+    // Check body with loop condition knowledge
+    // (e.g., if while(!r.is_error), body knows KNOWN_SUCCESS)
+    currentResultState = inLoop;
     checkStatement(stmt->body.get());
+    
+    // After loop: condition is FALSE (that's why we exited)
+    // So use the 'else' state from condition analysis
+    // But also be conservative: loop might not have executed at all (0 iterations)
+    // Merge: what we knew before loop OR what condition being false proves
+    currentResultState = ResultCheckState::merge(beforeLoop, afterLoop);
 }
 
 // ============================================================================
@@ -5829,8 +6957,15 @@ void TypeChecker::checkForStmt(ForStmt* stmt) {
         symbolTable->defineSymbol(stmt->iteratorName, SymbolKind::VARIABLE, varType, 
                                   stmt->line, stmt->column);
         
+        // Phase 3: Range-based loops are conservative
+        // Save state before loop and reset after (can't track through iterations)
+        ResultCheckState beforeLoop = currentResultState;
+        
         // Check body with iterator in scope
         checkStatement(stmt->body.get());
+        
+        // Conservative: reset to state before loop (don't know how many iterations)
+        currentResultState = beforeLoop;
         
         // Exit scope
         symbolTable->exitScope();
@@ -5838,12 +6973,18 @@ void TypeChecker::checkForStmt(ForStmt* stmt) {
     }
     
     // C-style for loop
+    // Phase 3: Save state before loop
+    ResultCheckState beforeLoop = currentResultState;
+    
     // Check initializer if present
     if (stmt->initializer) {
         checkStatement(stmt->initializer.get());
     }
     
-    // Check condition if present
+    // Analyze condition if present
+    ResultCheckState inLoop = currentResultState;
+    ResultCheckState afterLoop = currentResultState;
+    
     if (stmt->condition) {
         Type* condType = inferType(stmt->condition.get());
         
@@ -5854,7 +6995,13 @@ void TypeChecker::checkForStmt(ForStmt* stmt) {
                         "'. Use explicit comparison (e.g., i < 10) instead of truthiness.", stmt->condition.get());
             }
         }
+        
+        // Analyze condition for Result checks (like while loops)
+        analyzeConditionForResultChecks(stmt->condition.get(), inLoop, afterLoop);
     }
+    
+    // Check body with loop condition knowledge
+    currentResultState = inLoop;
     
     // Check update if present (just infer type, any expression is valid)
     if (stmt->update) {
@@ -5863,6 +7010,9 @@ void TypeChecker::checkForStmt(ForStmt* stmt) {
     
     // Check body
     checkStatement(stmt->body.get());
+    
+    // After loop: merge conservative (might not have executed) with exit condition
+    currentResultState = ResultCheckState::merge(beforeLoop, afterLoop);
 }
 
 // ============================================================================
@@ -6088,6 +7238,32 @@ std::vector<int> TypeChecker::getBalancedValidDigits(Type* type) {
     return {};
 }
 
+bool TypeChecker::isNumericExoticType(Type* type) {
+    if (!type || type->getKind() != TypeKind::PRIMITIVE) {
+        return false;
+    }
+    
+    PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+    const std::string& name = primType->getName();
+    
+    // Fractional types (exact rational arithmetic)
+    if (name == "frac8" || name == "frac16" || name == "frac32" || name == "frac64") {
+        return true;
+    }
+    
+    // Twisted floating point types
+    if (name == "tfp32" || name == "tfp64") {
+        return true;
+    }
+    
+    // 9D toroidal types
+    if (name == "vec9" || name == "dvec9" || name == "tmatrix" || name == "ttensor") {
+        return true;
+    }
+    
+    return false;
+}
+
 std::pair<int64_t, int64_t> TypeChecker::getBalancedCompositeRange(Type* type) {
     if (isTryteType(type) || isNyteType(type)) {
         // Both tryte and nyte have the same range
@@ -6111,14 +7287,14 @@ void TypeChecker::checkBalancedLiteralValue(int64_t value, Type* type, ASTNode* 
     
     // Check atomic types (trit, nit)
     if (isTritType(type)) {
-        // trit must be exactly -1, 0, or 1
-        if (value != -1 && value != 0 && value != 1) {
-            addError("trit value must be -1, 0, or 1, got " + std::to_string(value), node);
+        // trit must be exactly -1, 0, 1, or -128 (TRIT_ERR sentinel)
+        if (value != -1 && value != 0 && value != 1 && value != -128) {
+            addError("trit value must be -1, 0, 1, or -128 (ERR), got " + std::to_string(value), node);
         }
     } else if (isNitType(type)) {
-        // nit must be -4, -3, -2, -1, 0, 1, 2, 3, or 4
-        if (value < -4 || value > 4) {
-            addError("nit value must be in range [-4, 4], got " + std::to_string(value), node);
+        // nit must be -4 to +4, or -128 (NIT_ERR sentinel)
+        if ((value < -4 || value > 4) && value != -128) {
+            addError("nit value must be in range [-4, 4] or -128 (ERR), got " + std::to_string(value), node);
         }
     } else if (isTryteType(type)) {
         // tryte: composite type, check range
@@ -6149,7 +7325,9 @@ bool TypeChecker::isStandardIntType(Type* type) const {
     PrimitiveType* primType = static_cast<PrimitiveType*>(type);
     const std::string& name = primType->getName();
     
-    return name == "int8" || name == "int16" || name == "int32" || name == "int64" ||
+    return name == "int1" || name == "int2" || name == "int4" ||
+           name == "int8" || name == "int16" || name == "int32" || name == "int64" ||
+           name == "uint1" || name == "uint2" || name == "uint4" ||
            name == "uint8" || name == "uint16" || name == "uint32" || name == "uint64";
 }
 
@@ -6162,7 +7340,13 @@ bool TypeChecker::literalFitsInType(int64_t value, Type* type) const {
     const std::string& typeName = primType->getName();
     
     // Determine range based on type name
-    if (typeName == "int8") {
+    if (typeName == "int1") {
+        return value >= -1 && value <= 0;
+    } else if (typeName == "int2") {
+        return value >= -2 && value <= 1;
+    } else if (typeName == "int4") {
+        return value >= -8 && value <= 7;
+    } else if (typeName == "int8") {
         return value >= -128 && value <= 127;
     } else if (typeName == "int16") {
         return value >= -32768 && value <= 32767;
@@ -6170,6 +7354,12 @@ bool TypeChecker::literalFitsInType(int64_t value, Type* type) const {
         return value >= -2147483648LL && value <= 2147483647LL;
     } else if (typeName == "int64") {
         return true;  // int64 can hold any int64_t value
+    } else if (typeName == "uint1") {
+        return value >= 0 && value <= 1;
+    } else if (typeName == "uint2") {
+        return value >= 0 && value <= 3;
+    } else if (typeName == "uint4") {
+        return value >= 0 && value <= 15;
     } else if (typeName == "uint8") {
         return value >= 0 && value <= 255;
     } else if (typeName == "uint16") {
@@ -6194,7 +7384,16 @@ bool TypeChecker::canLiteralFitInIntType(int64_t value, Type* type, ASTNode* nod
     int64_t minVal, maxVal;
     
     // Determine range based on type name
-    if (typeName == "int8") {
+    if (typeName == "int1") {
+        minVal = -1;
+        maxVal = 0;
+    } else if (typeName == "int2") {
+        minVal = -2;
+        maxVal = 1;
+    } else if (typeName == "int4") {
+        minVal = -8;
+        maxVal = 7;
+    } else if (typeName == "int8") {
         minVal = -128;
         maxVal = 127;
     } else if (typeName == "int16") {
@@ -6211,6 +7410,27 @@ bool TypeChecker::canLiteralFitInIntType(int64_t value, Type* type, ASTNode* nod
                typeName == "int2048" || typeName == "int4096") {
         // Big integer types: if it fits in int64, it fits in these
         return true;
+    } else if (typeName == "uint1") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        minVal = 0;
+        maxVal = 1;
+    } else if (typeName == "uint2") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        minVal = 0;
+        maxVal = 3;
+    } else if (typeName == "uint4") {
+        if (value < 0) {
+            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
+            return false;
+        }
+        minVal = 0;
+        maxVal = 15;
     } else if (typeName == "uint8") {
         if (value < 0) {
             addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
@@ -6319,11 +7539,15 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
         // Check if we've already type-checked this module
         // (Simple check: if exports is empty, we haven't type-checked yet)
         if (module->moduleInfo->getExports().empty() && module->ast) {
-            // Temporarily export all top-level function declarations
-            // (Until we implement `pub` keyword parsing)
+            // Export PUBLIC top-level declarations
             for (const auto& decl : module->ast->declarations) {
                 if (decl->type == ASTNode::NodeType::FUNC_DECL) {
                     FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(decl.get());
+                    
+                    // Only export public functions
+                    if (!funcDecl->isPublic) {
+                        continue;
+                    }
                     
                     // Build the function type from the declaration
                     // First, resolve parameter types
@@ -6354,8 +7578,19 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                     Symbol* funcSym = new Symbol(funcDecl->funcName, SymbolKind::FUNCTION, funcType, nullptr, funcDecl->line, funcDecl->column);
                     funcSym->funcDecl = funcDecl;
                     
-                    // Export the function (PUBLIC visibility by default for now)
+                    // Export the function as PUBLIC
                     module->moduleInfo->exportSymbol(funcDecl->funcName, funcSym, Visibility::PUBLIC);
+                }
+                else if (decl->type == ASTNode::NodeType::STRUCT_DECL) {
+                    StructDeclStmt* structDecl = static_cast<StructDeclStmt*>(decl.get());
+                    
+                    // For now, export all structs as PUBLIC
+                    // TODO: Add pub modifier to struct declarations
+                    Type* structType = typeSystem->getPrimitiveType("void");  // Placeholder
+                    Symbol* structSym = new Symbol(structDecl->structName, SymbolKind::TYPE, structType, nullptr, structDecl->line, structDecl->column);
+                    
+                    // Export the struct as PUBLIC
+                    module->moduleInfo->exportSymbol(structDecl->structName, structSym, Visibility::PUBLIC);
                 }
             }
         }
@@ -6698,13 +7933,306 @@ void TypeChecker::checkPickStmt(PickStmt* stmt) {
         }
     }
     
-    // Type-check all case bodies
+    // Phase 3.5: Result enforcement for pick statements
+    // Save current state before pick
+    ResultCheckState beforePick = currentResultState;
+    std::vector<ResultCheckState> caseStates;
+    
+    // Type-check all case bodies with Result knowledge
     for (const auto& caseNode : stmt->cases) {
         PickCase* pickCase = static_cast<PickCase*>(caseNode.get());
+        
+        // Start with state from before pick
+        ResultCheckState caseState = beforePick;
+        
+        // Check if selector is .is_error field access on a Result variable
+        // If so, and pattern is a boolean literal, propagate knowledge
+        if (stmt->selector->type == ASTNode::NodeType::MEMBER_ACCESS) {
+            MemberAccessExpr* memberAccess = static_cast<MemberAccessExpr*>(stmt->selector.get());
+            if (memberAccess->member == "is_error") {
+                // Get the Result variable name
+                std::string resultVar;
+                if (memberAccess->object->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* objIdent = static_cast<IdentifierExpr*>(memberAccess->object.get());
+                    resultVar = objIdent->name;
+                }
+                
+                // Check if pattern is a boolean literal
+                if (!resultVar.empty() && pickCase->pattern->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* patternLit = static_cast<LiteralExpr*>(pickCase->pattern.get());
+                    if (std::holds_alternative<bool>(patternLit->value)) {
+                        bool isError = std::get<bool>(patternLit->value);
+                        
+                        if (isError) {
+                            // Case matches when is_error == true
+                            caseState.markKnownError(resultVar);
+                        } else {
+                            // Case matches when is_error == false
+                            caseState.markKnownSuccess(resultVar);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Check case body with derived knowledge
+        currentResultState = caseState;
         if (pickCase->body) {
             checkStatement(pickCase->body.get());
         }
+        
+        // Save state after this case
+        caseStates.push_back(currentResultState);
     }
+    
+    // After pick: merge all case states conservatively
+    if (!caseStates.empty()) {
+        currentResultState = caseStates[0];
+        for (size_t i = 1; i < caseStates.size(); i++) {
+            currentResultState = ResultCheckState::merge(currentResultState, caseStates[i]);
+        }
+    } else {
+        // No cases - keep before state
+        currentResultState = beforePick;
+    }
+}
+
+// ============================================================================
+// Result<T> "No Checky No Val" Enforcement
+// ============================================================================
+
+/**
+ * Mark a Result variable as checked
+ * 
+ * Called when code accesses .is_error on a Result variable.
+ * This allows subsequent .value or .error access on the same variable.
+ * 
+ * Phase 2: Uses ResultCheckState for control flow tracking
+ */
+void TypeChecker::markResultChecked(const std::string& varName) {
+    if (!varName.empty()) {
+        currentResultState.markChecked(varName);
+    }
+}
+
+/**
+ * Check if a Result variable has been checked
+ * 
+ * Returns true if .is_error was accessed on this variable.
+ */
+bool TypeChecker::isResultChecked(const std::string& varName) const {
+    return currentResultState.isChecked(varName);
+}
+
+/**
+ * Get variable name from an expression node
+ * 
+ * Used for tracking Result variables in "no checky no val" enforcement.
+ * 
+ * Handles:
+ * - IDENTIFIER: Simple variable (r.is_error)
+ * - MEMBER_ACCESS: Struct field (obj.result_field.is_error)
+ * 
+ * Returns empty string for complex expressions (function calls, etc.)
+ * These bypass tracking for now - Phase 2 will handle more cases.
+ */
+std::string TypeChecker::getVariableName(ASTNode* expr) const {
+    if (!expr) return "";
+    
+    if (expr->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr);
+        return ident->name;
+    }
+    
+    if (expr->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr);
+        std::string baseName = getVariableName(member->object.get());
+        if (!baseName.empty()) {
+            return baseName + "." + member->member;
+        }
+    }
+    
+    // Complex expression - can't track for now
+    return "";
+}
+
+// ============================================================================
+// Phase 2: Control Flow Analysis for Result Checking
+// ============================================================================
+
+/**
+ * Analyze an if condition to extract Result check knowledge
+ * 
+ * Detects patterns like:
+ * - r.is_error == true  → then knows ERROR, else knows SUCCESS
+ * - r.is_error == false → then knows SUCCESS, else knows ERROR
+ * - r.is_error != true  → then knows SUCCESS, else knows ERROR
+ * - !r.is_error         → then knows SUCCESS, else knows ERROR
+ * - !(r.is_error)       → then knows SUCCESS, else knows ERROR
+ * 
+ * Updates thenState and elseState with what each branch knows
+ */
+void TypeChecker::analyzeConditionForResultChecks(
+    ASTNode* condition,
+    ResultCheckState& thenState,
+    ResultCheckState& elseState
+) {
+    using namespace frontend;
+    
+    // Handle negation: !condition
+    if (condition->type == ASTNode::NodeType::UNARY_OP) {
+        UnaryExpr* unaryExpr = static_cast<UnaryExpr*>(condition);
+        
+        // Only handle logical NOT
+        if (unaryExpr->op.type == TokenType::TOKEN_BANG) {
+            // Recursively analyze the negated condition
+            // But flip then/else since negation inverts the condition
+            analyzeConditionForResultChecks(unaryExpr->operand.get(), elseState, thenState);
+            return;
+        }
+    }
+    
+    // Handle direct boolean member access: if (r.is_error) { ... }
+    if (condition->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        MemberAccessExpr* memberAccess = static_cast<MemberAccessExpr*>(condition);
+        
+        // Check if member is .is_error
+        if (memberAccess->member == "is_error") {
+            std::string varName = getVariableName(memberAccess->object.get());
+            if (!varName.empty()) {
+                // if (r.is_error) → then knows ERROR, else knows SUCCESS
+                thenState.markKnownError(varName);
+                elseState.markKnownSuccess(varName);
+                return;
+            }
+        }
+    }
+    
+    // Only analyze binary comparison expressions
+    if (condition->type != ASTNode::NodeType::BINARY_OP) {
+        return;
+    }
+    
+    BinaryExpr* binExpr = static_cast<BinaryExpr*>(condition);
+    
+    // Only analyze == and != comparisons
+    if (binExpr->op.type != TokenType::TOKEN_EQUAL_EQUAL &&
+        binExpr->op.type != TokenType::TOKEN_BANG_EQUAL) {
+        return;
+    }
+    
+    // Check if one side is .is_error member access, other is boolean literal
+    MemberAccessExpr* memberAccess = nullptr;
+    LiteralExpr* literal = nullptr;
+    
+    // Check left.is_error == right
+    if (binExpr->left->type == ASTNode::NodeType::MEMBER_ACCESS &&
+        binExpr->right->type == ASTNode::NodeType::LITERAL) {
+        memberAccess = static_cast<MemberAccessExpr*>(binExpr->left.get());
+        literal = static_cast<LiteralExpr*>(binExpr->right.get());
+    }
+    // Check left == right.is_error
+    else if (binExpr->right->type == ASTNode::NodeType::MEMBER_ACCESS &&
+             binExpr->left->type == ASTNode::NodeType::LITERAL) {
+        memberAccess = static_cast<MemberAccessExpr*>(binExpr->right.get());
+        literal = static_cast<LiteralExpr*>(binExpr->left.get());
+    }
+    
+    // Not a pattern we recognize
+    if (!memberAccess || !literal) {
+        return;
+    }
+    
+    // Check if member is .is_error
+    if (memberAccess->member != "is_error") {
+        return;
+    }
+    
+    // Check if literal is boolean
+    if (!std::holds_alternative<bool>(literal->value)) {
+        return;
+    }
+    
+    // Get the Result variable name
+    std::string varName = getVariableName(memberAccess->object.get());
+    if (varName.empty()) {
+        return;
+    }
+    
+    // Get the boolean value being compared
+    bool errorValue = std::get<bool>(literal->value);
+    
+    // Determine what each branch knows based on comparison
+    bool comparing_equal = (binExpr->op.type == TokenType::TOKEN_EQUAL_EQUAL);
+    
+    if (comparing_equal) {
+        // r.is_error == true or r.is_error == false
+        if (errorValue) {
+            // r.is_error == true
+            thenState.markKnownError(varName);
+            elseState.markKnownSuccess(varName);
+        } else {
+            // r.is_error == false
+            thenState.markKnownSuccess(varName);
+            elseState.markKnownError(varName);
+        }
+    } else {
+        // r.is_error != true or r.is_error != false
+        if (errorValue) {
+            // r.is_error != true (means is_error == false)
+            thenState.markKnownSuccess(varName);
+            elseState.markKnownError(varName);
+        } else {
+            // r.is_error != false (means is_error == true)
+            thenState.markKnownError(varName);
+            elseState.markKnownSuccess(varName);
+        }
+    }
+}
+
+/**
+ * Check if a branch always returns/exits
+ * 
+ * Used for early return analysis:
+ *   if (r.is_error) { return; }
+ *   // After this, we know r.is_error == false
+ * 
+ * Also detects break/continue for loop analysis:
+ *   while (true) {
+ *     if (r.is_error) break;
+ *     // After: knows !r.is_error
+ *   }
+ * 
+ * Phase 2: Simple check for return at end of block
+ * Phase 3: Also checks for break/continue
+ */
+bool TypeChecker::branchAlwaysReturns(ASTNode* branch) {
+    if (!branch) {
+        return false;
+    }
+    
+    // Check block statements
+    if (branch->type == ASTNode::NodeType::BLOCK) {
+        BlockStmt* block = static_cast<BlockStmt*>(branch);
+        if (block->statements.empty()) {
+            return false;
+        }
+        
+        // Check if last statement is return/pass/fail/break/continue
+        ASTNode* last = block->statements.back().get();
+        return last->type == ASTNode::NodeType::RETURN ||
+               last->type == ASTNode::NodeType::PASS ||
+               last->type == ASTNode::NodeType::FAIL ||
+               last->type == ASTNode::NodeType::BREAK ||
+               last->type == ASTNode::NodeType::CONTINUE;
+    }
+    
+    // Single statement (no block)
+    return branch->type == ASTNode::NodeType::RETURN ||
+           branch->type == ASTNode::NodeType::PASS ||
+           branch->type == ASTNode::NodeType::FAIL ||
+           branch->type == ASTNode::NodeType::BREAK ||
+           branch->type == ASTNode::NodeType::CONTINUE;
 }
 
 } // namespace sema

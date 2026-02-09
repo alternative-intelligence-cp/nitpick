@@ -85,7 +85,8 @@ bool Token::isLiteral() const {
            type == TokenType::TOKEN_KW_TRUE ||
            type == TokenType::TOKEN_KW_FALSE ||
            type == TokenType::TOKEN_KW_NULL ||
-           type == TokenType::TOKEN_KW_ERR;
+           type == TokenType::TOKEN_KW_ERR ||
+           type == TokenType::TOKEN_KW_UNKNOWN;
 }
 
 bool Token::isType() const {
@@ -144,6 +145,13 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_GC: return "GC";
         case TokenType::TOKEN_KW_DEFER: return "DEFER";
         
+        // Memory ordering
+        case TokenType::TOKEN_KW_RELAXED: return "RELAXED";
+        case TokenType::TOKEN_KW_ACQUIRE: return "ACQUIRE";
+        case TokenType::TOKEN_KW_RELEASE: return "RELEASE";
+        case TokenType::TOKEN_KW_ACQ_REL: return "ACQ_REL";
+        case TokenType::TOKEN_KW_SEQ_CST: return "SEQ_CST";
+        
         // Control flow
         case TokenType::TOKEN_KW_IF: return "IF";
         case TokenType::TOKEN_KW_ELSE: return "ELSE";
@@ -172,6 +180,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_FUNC: return "FUNC";
         case TokenType::TOKEN_KW_STRUCT: return "STRUCT";
         case TokenType::TOKEN_KW_ENUM: return "ENUM";
+        case TokenType::TOKEN_KW_TYPE: return "TYPE";
         case TokenType::TOKEN_KW_OPAQUE: return "OPAQUE";
         case TokenType::TOKEN_KW_TRAIT: return "TRAIT";
         case TokenType::TOKEN_KW_IMPL: return "IMPL";
@@ -180,6 +189,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_PUB: return "PUB";
         case TokenType::TOKEN_KW_EXTERN: return "EXTERN";
         case TokenType::TOKEN_KW_CONST: return "CONST";
+        case TokenType::TOKEN_KW_FIXED: return "FIXED";
         case TokenType::TOKEN_KW_CFG: return "CFG";
         
         // Integer types
@@ -274,6 +284,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_TRUE: return "TRUE";
         case TokenType::TOKEN_KW_FALSE: return "FALSE";
         case TokenType::TOKEN_KW_ERR: return "ERR";
+        case TokenType::TOKEN_KW_UNKNOWN: return "unknown";
         
         // Type casting
         case TokenType::TOKEN_KW_CAST: return "CAST";

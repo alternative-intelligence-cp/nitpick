@@ -13,15 +13,13 @@ struct:Person = {
 
 /// Test 1: Arrow operator with stack-allocated struct
 func:test_arrow_basic = int32() {
-    // Create Point, assign members
-    stack Point:p;
+    // Create Point with proper initialization
     stack int32:ten = 10;
     stack int32:twenty = 20;
-    p.x = ten;      // . for direct member access
-    p.y = twenty;
+    stack Point:p = Point{x: ten, y: twenty};
     
     // Get pointer to it
-    wild Point->:ptr = @p;
+    stack Point->:ptr = @p;
     
     // Access through pointer with ->
     int32:x_val = ptr->x;  // -> to follow pointer to member
@@ -32,13 +30,11 @@ func:test_arrow_basic = int32() {
 
 /// Test 2: Modify through arrow operator
 func:test_arrow_modify = int32() {
-    stack Person:person;
     stack int32:init_age = 25;
     stack int32:init_id = 1001;
-    person.age = init_age;
-    person.id = init_id;
+    stack Person:person = Person{age: init_age, id: init_id};
     
-    wild Person->:ptr = @person;
+    stack Person->:ptr = @person;
     
     // Modify through pointer
     stack int32:new_age = 26;
@@ -55,13 +51,11 @@ func:test_arrow_modify = int32() {
 
 /// Test 3: Read, modify, read again through pointer
 func:test_arrow_cycle = int32() {
-    stack Point:p;
     stack int32:five = 5;
     stack int32:fifteen = 15;
-    p.x = five;
-    p.y = fifteen;
+    stack Point:p = Point{x: five, y: fifteen};
     
-    wild Point->:ptr = @p;
+    stack Point->:ptr = @p;
     
     // Read
     int32:orig_x = ptr->x;  // 5
@@ -77,9 +71,9 @@ func:test_arrow_cycle = int32() {
 };
 
 func:main = int32() {
-    test_arrow_basic();
-    test_arrow_modify();
-    test_arrow_cycle();
+    int32:r1 = test_arrow_basic();
+    int32:r2 = test_arrow_modify();
+    int32:r3 = test_arrow_cycle();
     
     pass(0);
 };

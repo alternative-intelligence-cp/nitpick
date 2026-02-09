@@ -1,38 +1,70 @@
 // Array slicing with range operators
 
+// Inline int64_toString for explicit conversion
+func:int64_toString = string(int64:value) {
+    if (value == 0) { pass("0"); }
+    bool:is_negative = false;
+    int64:work_value = value;
+    if (value < 0) { is_negative = true; work_value = -value; }
+    string:result = "";
+    int64:remaining = work_value;
+    while (remaining > 0) {
+        int64:digit = remaining % 10;
+        remaining = remaining / 10;
+        string:digit_char = "";
+        if (digit == 0) { digit_char = "0"; }
+        if (digit == 1) { digit_char = "1"; }
+        if (digit == 2) { digit_char = "2"; }
+        if (digit == 3) { digit_char = "3"; }
+        if (digit == 4) { digit_char = "4"; }
+        if (digit == 5) { digit_char = "5"; }
+        if (digit == 6) { digit_char = "6"; }
+        if (digit == 7) { digit_char = "7"; }
+        if (digit == 8) { digit_char = "8"; }
+        if (digit == 9) { digit_char = "9"; }
+        result = string_concat(digit_char, result);
+    }
+    if (is_negative) { result = string_concat("-", result); }
+    pass(result);
+};
+
 func:main = int32() {
-    print("Testing array slicing:");
+    drop(println("Testing array slicing:"));
     
     // Create an array
     int64[]:nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     
     // Test inclusive slice
-    print("Original array (first 5 elements):");
+    drop(println("Original array (first 5 elements):"));
     for (i in 0..4) {
-        print(nums[i]);
+        string:n_str = int64_toString(nums[i]);
+        drop(println(n_str));
     }
     
     // Slice with inclusive range
-    print("Slice [0..4] (inclusive):");
+    drop(println("Slice [0..4] (inclusive):"));
     int64[]:slice1 = nums[0..4];
     for (i in 0..4) {
-        print(slice1[i]);
+        string:s1_str = int64_toString(slice1[i]);
+        drop(println(s1_str));
     }
     
     // Slice with exclusive range
-    print("Slice [2...7] (exclusive):");
+    drop(println("Slice [2...7] (exclusive):"));
     int64[]:slice2 = nums[2...7];
     for (i in 0..4) {
-        print(slice2[i]);
+        string:s2_str = int64_toString(slice2[i]);
+        drop(println(s2_str));
     }
     
     // Slice with variables
-    print("Slice with variables [3..6]:");
+    drop(println("Slice with variables [3..6]:"));
     int64:start = 3;
     int64:finish = 6;
     int64[]:slice3 = nums[start..finish];
     for (i in 0..3) {
-        print(slice3[i]);
+        string:s3_str = int64_toString(slice3[i]);
+        drop(println(s3_str));
     }
     
     pass(0);

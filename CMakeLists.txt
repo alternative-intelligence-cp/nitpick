@@ -222,6 +222,7 @@ set(RUNTIME_SOURCES
     src/runtime/allocators/arena_builtins.cpp
     src/runtime/allocators/pool_builtins.cpp
     src/runtime/allocators/slab_builtins.cpp
+    src/runtime/panic/panic_handler.cpp
     src/runtime/format/locale_safe_format.cpp
     src/runtime/assembler/assembler.cpp
     src/runtime/assembler/llvm_jit.cpp
@@ -238,6 +239,7 @@ set(RUNTIME_SOURCES
     src/backend/runtime/tmatrix_ops.cpp
     src/backend/runtime/ttensor_ops.cpp
     src/runtime/atomic/atomic.cpp
+    src/runtime/int_array.cpp
     src/runtime/timer/timer.cpp
     src/runtime/async/executor.cpp
     src/runtime/async/coroutine.cpp

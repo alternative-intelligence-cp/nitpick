@@ -26,6 +26,15 @@ enum class TokenType {
     TOKEN_KW_MOVE,      // move - transfer ownership
     
     // ========================================================================
+    // Keywords - Memory Ordering (for atomic<T> operations)
+    // ========================================================================
+    TOKEN_KW_RELAXED,   // relaxed - no synchronization, only atomicity
+    TOKEN_KW_ACQUIRE,   // acquire - load barrier
+    TOKEN_KW_RELEASE,   // release - store barrier
+    TOKEN_KW_ACQ_REL,   // acq_rel - both acquire and release (for RMW)
+    TOKEN_KW_SEQ_CST,   // seq_cst - sequential consistency
+    
+    // ========================================================================
     // Keywords - Control Flow
     // ========================================================================
     TOKEN_KW_IF,        // if
@@ -59,6 +68,7 @@ enum class TokenType {
     TOKEN_KW_FUNC,      // func - function declaration
     TOKEN_KW_STRUCT,    // struct - structure declaration
     TOKEN_KW_ENUM,      // enum - enumeration declaration
+    TOKEN_KW_TYPE,      // Type - type declaration (organized composable unit)
     TOKEN_KW_OPAQUE,    // opaque - opaque type declaration (FFI)
     TOKEN_KW_TRAIT,     // trait - trait declaration
     TOKEN_KW_IMPL,      // impl - trait implementation
@@ -67,6 +77,7 @@ enum class TokenType {
     TOKEN_KW_PUB,       // pub - public visibility
     TOKEN_KW_EXTERN,    // extern - external C functions
     TOKEN_KW_CONST,     // const - compile-time constant
+    TOKEN_KW_FIXED,     // fixed - runtime immutability (opt-in)
     TOKEN_KW_CFG,       // cfg - conditional compilation
     TOKEN_KW_AS,        // as - alias in use statement
     
@@ -190,6 +201,7 @@ enum class TokenType {
     TOKEN_KW_TRUE,      // true - boolean literal
     TOKEN_KW_FALSE,     // false - boolean literal
     TOKEN_KW_ERR,       // ERR - TBB error sentinel
+    TOKEN_KW_UNKNOWN,   // unknown - indeterminate value literal
     
     // ========================================================================
     // Type Casting (Zero Implicit Conversion)

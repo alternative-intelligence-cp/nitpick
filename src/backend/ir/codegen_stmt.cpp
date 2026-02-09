@@ -156,9 +156,11 @@ llvm::Type* StmtCodegen::getLLVMTypeFromString(const std::string& type_name) {
     }
     
     // Balanced Ternary types (Session 15)
-    if (type_name == "trit") return llvm::Type::getIntNTy(context, 3);   // Single trit (-1, 0, 1) in 3 bits
+    // Research-based decision: Store trit/nit in i8 to allow ERR sentinel (-128)
+    // and proper overflow detection (1+1=2→ERR instead of wrapping)
+    if (type_name == "trit") return llvm::Type::getInt8Ty(context);      // Single trit (-1, 0, 1, ERR=-128) in i8
     if (type_name == "tryte") return llvm::Type::getInt16Ty(context);    // 10 trits
-    if (type_name == "nit") return llvm::Type::getIntNTy(context, 4);    // Single nit (-4 to 4)
+    if (type_name == "nit") return llvm::Type::getInt8Ty(context);       // Single nit (-4 to 4, ERR=-128) in i8
     if (type_name == "nyte") return llvm::Type::getInt16Ty(context);     // 5 nits
     
     // String - AriaString struct { i8* data, i64 length }
@@ -551,6 +553,9 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
         
         std::cerr << "[DEBUG] codegenVarDecl: Generating initializer for " << stmt->varName << std::endl;
         
+        // Debug: print initializer node type
+        std::cerr << "[DEBUG] codegenVarDecl: Initializer node type = " << static_cast<int>(stmt->initializer->type) << std::endl;
+        
         // Generate code for initializer expression
         llvm::Value* init_value = expr_codegen->codegenExpressionNode(stmt->initializer.get(), expr_codegen);
         
@@ -761,6 +766,7 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     // Generate code for function body
     if (stmt->body) {
         BlockStmt* body_block = static_cast<BlockStmt*>(stmt->body.get());
+        std::cerr << "[DEBUG FUNC] About to codegen block with " << body_block->statements.size() << " statements" << std::endl;
         codegenBlock(body_block);
     }
     
@@ -838,6 +844,50 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     }
     
     return func;
+}
+
+// ============================================================================
+// Type Oriented Programming (TOP) - Type Declaration Codegen
+// ============================================================================
+
+/**
+ * Generate code for Type declarations
+ * 
+ * Type:Name desugars to:
+ * - Struct definition (merged struct:internal + struct:interface)
+ * - Methods with prefixed names (TypeName_create, TypeName_method...)
+ * 
+ * This just generates code for the desugared components that were
+ * already created and type-checked in checkTypeDecl().
+ */
+void StmtCodegen::codegenTypeDecl(TypeDeclStmt* stmt) {
+    std::cerr << "[DEBUG] codegenTypeDecl: " << stmt->typeName << std::endl;
+    
+    // The struct was already registered during type checking
+    // Just generate code for the methods
+    
+    // Generate func:create
+    if (stmt->createFunc) {
+        std::cerr << "[DEBUG] Generating create function" << std::endl;
+        auto createFunc = std::static_pointer_cast<FuncDeclStmt>(stmt->createFunc);
+        codegenFuncDecl(createFunc.get());
+    }
+    
+    // Generate func:destroy
+    if (stmt->destroyFunc) {
+        std::cerr << "[DEBUG] Generating destroy function" << std::endl;
+        auto destroyFunc = std::static_pointer_cast<FuncDeclStmt>(stmt->destroyFunc);
+        codegenFuncDecl(destroyFunc.get());
+    }
+    
+    // Generate all methods
+    for (const auto& method : stmt->methods) {
+        std::cerr << "[DEBUG] Generating method" << std::endl;
+        auto methodFunc = std::static_pointer_cast<FuncDeclStmt>(method);
+        codegenFuncDecl(methodFunc.get());
+    }
+    
+    // Note: struct:type (static members) would be handled here if needed
 }
 
 // ============================================================================
@@ -1865,6 +1915,9 @@ void StmtCodegen::codegenWhen(WhenStmt* stmt) {
  * - Fallthrough is NOT implicit (unlike C switch)
  */
 void StmtCodegen::codegenPick(PickStmt* stmt) {
+    std::cerr << "[DEBUG PICK] codegenPick called with " << stmt->cases.size() << " cases" <<  std::endl << std::flush;
+    std::cout << "[DEBUG PICK] codegenPick called with " << stmt->cases.size() << " cases" << std::endl << std::flush;
+    
     // Get current function
     llvm::Function* func = builder.GetInsertBlock()->getParent();
     
@@ -1939,6 +1992,31 @@ void StmtCodegen::codegenPick(PickStmt* stmt) {
             }
         }
         
+        // Phase 5.4: Check if this is an unknown pattern
+        // Pattern: (unknown) matches selector == unknown_sentinel
+        bool is_unknown_pattern = false;
+        std::cerr << "[DEBUG PICK] Checking pattern type: " << static_cast<int>(pick_case->pattern->type) << std::endl;
+        if (pick_case->pattern->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* ident = static_cast<IdentifierExpr*>(pick_case->pattern.get());
+            std::cerr << "[DEBUG PICK] Pattern is IDENTIFIER: " << ident->name << std::endl;
+            if (ident->name == "unknown") {
+                is_unknown_pattern = true;
+                std::cerr << "[DEBUG PICK] Pattern is UNKNOWN!" << std::endl;
+            }
+        } else if (pick_case->pattern->type == ASTNode::NodeType::LITERAL) {
+            // Also check for unknown as a literal (string value)
+            LiteralExpr* lit = static_cast<LiteralExpr*>(pick_case->pattern.get());
+            std::cerr << "[DEBUG PICK] Pattern is LITERAL" << std::endl;
+            if (std::holds_alternative<std::string>(lit->value)) {
+                const std::string& str = std::get<std::string>(lit->value);
+                std::cerr << "[DEBUG PICK] Literal string value: " << str << std::endl;
+                if (str == "unknown") {
+                    is_unknown_pattern = true;
+                    std::cerr << "[DEBUG PICK] Pattern is UNKNOWN!" << std::endl;
+                }
+            }
+        }
+        
         // Check if this is an unreachable pattern (!)
         if (pick_case->is_unreachable) {
             // Generate unreachable instruction
@@ -1956,6 +2034,23 @@ void StmtCodegen::codegenPick(PickStmt* stmt) {
         if (is_wildcard) {
             // Wildcard matches everything - always true
             match_result = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 1);
+        } else if (is_unknown_pattern) {
+            // Phase 5.4: unknown pattern - match selector against unknown sentinel
+            // Generate unknown sentinel of selector's type
+            if (selector->getType()->isIntegerTy()) {
+                llvm::IntegerType* intType = llvm::cast<llvm::IntegerType>(selector->getType());
+                unsigned width = intType->getBitWidth();
+                llvm::Value* unknown_sentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
+                
+                // Compare selector with unknown sentinel
+                match_result = builder.CreateICmpEQ(selector, unknown_sentinel, "unknown.match");
+                std::cerr << "[DEBUG PICK] Generated unknown pattern match for type width " << width << std::endl;
+            } else {
+                // Non-integer types don't support unknown yet
+                // For now, treat as never matching
+                match_result = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
+                std::cerr << "[DEBUG PICK] Warning: unknown pattern on non-integer type" << std::endl;
+            }
         } else if (pick_case->pattern->type == ASTNode::NodeType::BINARY_OP) {
             // Handle comparison patterns: (< 10), (> 20), ranges (10..20)
             BinaryExpr* bin_expr = static_cast<BinaryExpr*>(pick_case->pattern.get());
@@ -2162,6 +2257,7 @@ void StmtCodegen::codegenBlock(BlockStmt* stmt) {
     
     // Generate code for each statement in the block
     for (const auto& statement : stmt->statements) {
+        std ::cerr << "[DEBUG BLOCK] Processing statement type: " << (int)statement->type << std::endl;
         codegenStatement(statement.get());
     }
     
@@ -2498,6 +2594,10 @@ void StmtCodegen::codegenStatement(ASTNode* stmt) {
         
         case ASTNode::NodeType::FUNC_DECL:
             codegenFuncDecl(static_cast<FuncDeclStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::TYPE_DECL:
+            codegenTypeDecl(static_cast<TypeDeclStmt*>(stmt));
             break;
         
         case ASTNode::NodeType::IF:

@@ -338,3 +338,47 @@ void* aria_map_get_simple(AriaMap* map, const void* key) {
     }
     return result.value;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// C-style Wrappers for Direct Use in Aria Code
+// ═══════════════════════════════════════════════════════════════════════
+
+extern "C" {
+
+// Create a new map with specified key and value sizes
+void* map_new(int64_t key_size, int64_t value_size) {
+    return aria_map_new_simple((size_t)key_size, (size_t)value_size);
+}
+
+// Insert or update a key-value pair
+void map_insert(void* map_ptr, void* key_ptr, void* value_ptr) {
+    if (!map_ptr) return;
+    aria_map_insert_simple((AriaMap*)map_ptr, key_ptr, value_ptr);
+}
+
+// Check if map contains a key
+int32_t map_has(void* map_ptr, void* key_ptr) {
+    if (!map_ptr) return 0;
+    return aria_map_has((AriaMap*)map_ptr, key_ptr) ? 1 : 0;
+}
+
+// Get value pointer for a key (returns NULL if not found)
+void* map_get(void* map_ptr, void* key_ptr) {
+    if (!map_ptr) return nullptr;
+    return aria_map_get_simple((AriaMap*)map_ptr, key_ptr);
+}
+
+// Get number of entries
+int64_t map_length(void* map_ptr) {
+    if (!map_ptr) return 0;
+    return (int64_t)aria_map_length((AriaMap*)map_ptr);
+}
+
+// Remove a key
+void map_remove(void* map_ptr, void* key_ptr) {
+    if (!map_ptr) return;
+    aria_map_remove((AriaMap*)map_ptr, key_ptr);
+}
+
+}  // extern "C"
+

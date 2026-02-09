@@ -310,9 +310,24 @@ int32_t aria_nyte_to_bin(uint16_t nyte);
 int8_t aria_nyte_get_nit(uint16_t nyte, uint8_t index);
 
 // ==============================================================================
-// Initialization
+// TBB (Ternary/Binary/Boolean) Type Conversions
 // ==============================================================================
 
+/**
+ * @brief Convert int32 to TBB8 with overflow detection
+ * @param value Integer value to convert
+ * @return TBB8 value [-127, 127], or -128 (ERR) if out of range
+ */
+int8_t aria_tbb8_from_int(int32_t value);
+
+/**
+ * @brief Convert TBB8 to int32
+ * @param value TBB8 value
+ * @return int32 representation, or INT32_MIN if ERR
+ */
+int32_t aria_tbb8_to_int(int8_t value);
+
+// ==============================================================================
 /**
  * @brief Initialize lookup tables for ternary arithmetic
  * 

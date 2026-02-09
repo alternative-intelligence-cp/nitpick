@@ -181,5 +181,27 @@ extern "C" void aria_runtime_assert_failed(const char* expr, const char* file, i
     _exit(1);
 }
 
+// Out-of-memory panic handler
+// Called when heap allocation fails during string operations, etc.
+extern "C" void aria_panic_oom(const char* message) {
+    bool expected = false;
+    if (!g_panic_in_progress.compare_exchange_strong(expected, true)) {
+        const char* msg = "RECURSIVE PANIC DETECTED - ABORTING\n";
+        write(STDERR_FILENO, msg, strlen(msg));
+        _exit(99);
+    }
+    
+    log_panic(message ? message : "Out of memory", "heap allocation");
+    execute_defer_blocks();
+    
+    HardwareSafetyCallback safety_cb = g_hardware_safety_callback.load(std::memory_order_acquire);
+    if (safety_cb) {
+        safety_cb(message ? message : "OOM");
+    }
+    
+    fsync(STDERR_FILENO);
+    _exit(1);
+}
+
 } // namespace panic
 } // namespace aria

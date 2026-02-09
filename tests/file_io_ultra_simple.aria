@@ -10,12 +10,13 @@ func:main = int32() {
     string:path = "/tmp/aria_test_simple.txt";
     string:content = "Test\n";
     
-    // Just call them - we can't store or check Results yet
-    writeFile(path, content);
-    readFile(path);
-    fileExists(path);
-    fileSize(path);
-    deleteFile(path);
+    // Call functions and discard results by not using them
+    // Functions will still execute but we ignore return values
+    int64:_1 = writeFile(path, content);
+    string:_2 = readFile(path);
+    bool:_3 = fileExists(path);
+    int64:_4 = fileSize(path);
+    int64:_5 = deleteFile(path);
     
     print("All file I/O functions called successfully!\n");
     

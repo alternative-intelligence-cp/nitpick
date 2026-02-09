@@ -1,0 +1,19 @@
+// Debug atomic operations
+
+extern func:aria_atomic_int32_create = wild int8*(int32:initial_value);
+extern func:aria_atomic_int32_destroy = void(wild int8*:atomic_ptr);
+extern func:printf = int32(wild int8*:format, ...);
+
+func:main = int32() {
+    // Create atomic with 0
+    wild int8->:ptr = aria_atomic_int32_create(0);
+    
+    // Print the pointer value
+    wild int8->:fmt = "Pointer value: %p\n";
+    _ = printf(fmt, ptr);
+    
+    // Cleanup
+    _ = aria_atomic_int32_destroy(ptr);
+    
+    pass(0);
+};

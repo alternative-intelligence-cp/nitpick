@@ -5,7 +5,7 @@ extern func:malloc = wild int8*(int64:size);
 extern func:free = void(wild int8*:ptr);
 
 func:test_wild_move = int32() {
-    wild int8->:buffer = malloc(100);
+    wild int8->:buffer = malloc(100i64);
     
     // Move ownership to another variable
     wild int8->:moved_buffer = move(buffer);
@@ -19,7 +19,7 @@ func:test_wild_move = int32() {
 };
 
 func:test_wild_use_after_move = int32() {
-    wild int8->:buffer = malloc(100);
+    wild int8->:buffer = malloc(100i64);
     
     wild int8->:moved_buffer = move(buffer);
     

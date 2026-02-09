@@ -355,3 +355,137 @@ tryte_t nyte_to_tryte(nyte_t n) {
     // Tryte and nyte are isomorphic (both 59,049 values)
     return (tryte_t)n;
 }
+
+// ============================================================================
+// TRIT Arithmetic and Logic Operations
+// ============================================================================
+// Trit: balanced ternary digit (-1, 0, 1, ERR=-128)
+// Implements Kleene/Łukasiewicz three-valued logic
+
+// Trit addition with ERR propagation
+trit_t trit_add(trit_t a, trit_t b) {
+    // ERR propagation
+    if (a == TRIT_ERR || b == TRIT_ERR) {
+        return TRIT_ERR;
+    }
+    
+    // Simple addition with overflow check
+    int8_t result = a + b;
+    
+    // Check for overflow beyond trit range
+    if (result < TRIT_MIN_VALUE || result > TRIT_MAX_VALUE) {
+        return TRIT_ERR;
+    }
+    
+    return (trit_t)result;
+}
+
+// Trit multiplication with ERR propagation
+trit_t trit_mul(trit_t a, trit_t b) {
+    // ERR propagation
+    if (a == TRIT_ERR || b == TRIT_ERR) {
+        return TRIT_ERR;
+    }
+    
+    // Simple multiplication (result always in range for valid trits)
+    int8_t result = a * b;
+    
+    return (trit_t)result;
+}
+
+// Trit negation
+trit_t trit_neg(trit_t a) {
+    if (a == TRIT_ERR) {
+        return TRIT_ERR;
+    }
+    
+    return (trit_t)(-a);
+}
+
+// Kleene three-valued AND
+// Truth table:
+//   -1 AND x = x    (false is neutral)
+//   0 AND -1 = -1   (unknown AND false = false)
+//   0 AND 0 = 0     (unknown AND unknown = unknown)
+//   0 AND 1 = 0     (unknown AND true = unknown)
+//   1 AND x = x     (true is transparent)
+trit_t trit_and(trit_t a, trit_t b) {
+    // ERR propagation
+    if (a == TRIT_ERR || b == TRIT_ERR) {
+        return TRIT_ERR;
+    }
+    
+    // Kleene AND: min(a, b)
+    return (a < b) ? a : b;
+}
+
+// Kleene three-valued OR
+// Truth table:
+//   -1 OR x = x     (false is neutral)
+//   0 OR -1 = 0     (unknown OR false = unknown)
+//   0 OR 0 = 0      (unknown OR unknown = unknown)
+//   0 OR 1 = 0      (unknown OR true = unknown)
+//   1 OR x = 1      (true dominates)
+trit_t trit_or(trit_t a, trit_t b) {
+    // ERR propagation
+    if (a == TRIT_ERR || b == TRIT_ERR) {
+        return TRIT_ERR;
+    }
+    
+    // Kleene OR: max(a, b)
+    return (a > b) ? a : b;
+}
+
+// Logical NOT
+// -1 → 1 (false → true)
+//  0 → 0 (unknown → unknown)
+//  1 → -1 (true → false)
+trit_t trit_not(trit_t a) {
+    if (a == TRIT_ERR) {
+        return TRIT_ERR;
+    }
+    
+    return (trit_t)(-a);
+}
+
+// Check if trit is ERR
+bool trit_is_err(trit_t a) {
+    return a == TRIT_ERR;
+}
+
+// ============================================================================
+// NIT Logic Operations
+// ============================================================================
+// Nit: balanced nonary digit (-4 to +4, ERR=-128)
+// Logical operations extended from ternary
+
+#define NIT_ERR (-128)
+
+// Nonary AND (extended Kleene logic)
+// Works like trit AND but with extended range
+nit_t nit_and(nit_t a, nit_t b) {
+    // ERR propagation
+    if (a == NIT_ERR || b == NIT_ERR) {
+        return NIT_ERR;
+    }
+    
+    // Extended Kleene AND: min(a, b)
+    return (a < b) ? a : b;
+}
+
+// Nonary OR (extended Kleene logic)
+// Works like trit OR but with extended range
+nit_t nit_or(nit_t a, nit_t b) {
+    // ERR propagation
+    if (a == NIT_ERR || b == NIT_ERR) {
+        return NIT_ERR;
+    }
+    
+    // Extended Kleene OR: max(a, b)
+    return (a > b) ? a : b;
+}
+
+// Check if nit is ERR
+bool nit_is_err(nit_t a) {
+    return a == NIT_ERR;
+}

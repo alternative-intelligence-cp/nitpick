@@ -1,0 +1,21 @@
+// Minimal pick test with Result
+
+func:get_value = int32(bool:should_succeed) {
+    if (should_succeed) {
+        pass(42i32);
+    }
+    fail(1i32);
+};
+
+func:main = int32() {
+    Result<int32>:r = get_value(true);
+    
+    pick(r.is_error) {
+        (false) {
+            pass(r.value);
+        },
+        (true) {
+            pass(0i32);
+        }
+    }
+};

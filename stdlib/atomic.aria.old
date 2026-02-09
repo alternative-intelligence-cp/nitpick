@@ -1,0 +1,361 @@
+/**
+ * Aria Atomic Types Library
+ * 
+ * Provides generic atomic<T> types with explicit memory ordering for concurrent programming.
+ * Maps to runtime/atomic.h for lock-free hardware operations.
+ * 
+ * Supported Types:
+ *   - Arithmetic: int8, int16, int32, int64, uint8, uint16, uint32, uint64
+ *   - Boolean: bool
+ *   - TBB: tbb8, tbb16, tbb32, tbb64 (with sticky error propagation)
+ *   - Pointers: @T (future)
+ * 
+ * Memory Ordering:
+ *   - relaxed: No synchronization, only atomicity
+ *   - acquire: Load barrier (no subsequent ops hoist above)
+ *   - release: Store barrier (no prior ops sink below)
+ *   - acq_rel: Both acquire and release (for RMW operations)
+ *   - seq_cst: Sequential consistency (default, strongest)
+ * 
+ * Example Usage:
+ *   atomic<int32>:counter = atomic<int32>::new(0);
+ *   counter.store(42, release);
+ *   int32:value = counter.load(acquire);
+ *   int32:old = counter.fetch_add(1, acq_rel);
+ */
+
+// ============================================================================
+// Memory Ordering Enumeration
+// ============================================================================
+
+/**
+ * Memory ordering constraints for atomic operations.
+ * These map directly to C11/C++11 memory_order semantics.
+ */
+enum:MemoryOrder = {
+    RELAXED = 0,  // No synchronization, only atomicity guarantee
+    ACQUIRE = 1,  // Load barrier - synchronize with release stores
+    RELEASE = 2,  // Store barrier - synchronize with acquire loads
+    ACQ_REL = 3,  // Both acquire and release (for read-modify-write)
+    SEQ_CST = 4   // Sequential consistency - global total order (default)
+};
+
+// ============================================================================
+// Generic Atomic Type
+// ============================================================================
+
+/**
+ * Generic atomic type providing lock-free concurrent access.
+ * 
+ * Type Parameter T:
+ *   Must be one of: int8, int16, int32, int64, uint8, uint16, uint32, uint64,
+ *                   bool, tbb8, tbb16, tbb32, tbb64
+ * 
+ * Constraints enforced at compile time by type checker.
+ */
+class atomic<*T>:
+    # Opaque runtime handle
+    # Type: AriaAtomicInt32*, AriaAtomicBool*, etc.
+    # Managed by runtime memory allocation
+    ptr: @void;
+    
+    /**
+     * Create new atomic with initial value.
+     * 
+     * @param initial_value Starting value
+     * @return New atomic instance
+     * 
+     * Example:
+     *   atomic<int32>:counter = atomic<int32>::new(0);
+     */
+    static func new(initial_value: T) = atomic<T> {
+        # Runtime call will be monomorphized to specific type:
+        # aria_atomic_int32_create(initial_value)
+        # aria_atomic_bool_create(initial_value)
+        # etc.
+        
+        # PLACEHOLDER: Will be replaced by compiler with runtime call
+        # atomic<T>:result;
+        # result.ptr = __aria_atomic_create_T(initial_value);
+        # return result;
+        
+        atomic<T>:result;
+        return result;
+    }
+    
+    /**
+     * Load atomic value with specified memory ordering.
+     * 
+     * @param order Memory ordering (defaults to seq_cst)
+     * @return Current value
+     * 
+     * Valid orderings: relaxed, acquire, seq_cst
+     * 
+     * Example:
+     *   int32:value = counter.load(acquire);
+     */
+    func load(order: MemoryOrder = seq_cst) = T {
+        # Runtime call:
+        # aria_atomic_int32_load(self.ptr, order)
+        
+        # PLACEHOLDER
+        T:result;
+        return result;
+    }
+    
+    /**
+     * Store value with specified memory ordering.
+     * 
+     * @param value Value to store
+     * @param order Memory ordering (defaults to seq_cst)
+     * 
+     * Valid orderings: relaxed, release, seq_cst
+     * 
+     * Example:
+     *   counter.store(42, release);
+     */
+    func store(value: T, order: MemoryOrder = seq_cst) = void {
+        # Runtime call:
+        # aria_atomic_int32_store(self.ptr, value, order)
+        
+        # PLACEHOLDER
+        return;
+    }
+    
+    /**
+     * Atomically exchange value.
+     * 
+     * @param value New value
+     * @param order Memory ordering (defaults to seq_cst)
+     * @return Previous value
+     * 
+     * Example:
+     *   int32:old = counter.exchange(42, acq_rel);
+     */
+    func exchange(value: T, order: MemoryOrder = seq_cst) = T {
+        # Runtime call:
+        # aria_atomic_int32_exchange(self.ptr, value, order)
+        
+        # PLACEHOLDER
+        T:result;
+        return result;
+    }
+    
+    /**
+     * Compare-and-swap (strong version).
+     * 
+     * Atomically compares current value with expected:
+     *   - If equal: stores desired, returns true
+     *   - If not equal: updates expected with current, returns false
+     * 
+     * @param expected Reference to expected value (may be updated)
+     * @param desired New value if comparison succeeds
+     * @param success_order Memory ordering on success
+     * @param failure_order Memory ordering on failure
+     * @return True if exchange happened
+     * 
+     * Example:
+     *   int32:expected = 10;
+     *   bool:success = counter.compare_exchange_strong(
+     *       @expected, 20, acq_rel, acquire
+     *   );
+     */
+    func compare_exchange_strong(
+        expected: @T,
+        desired: T,
+        success_order: MemoryOrder = seq_cst,
+        failure_order: MemoryOrder = seq_cst
+    ) = bool {
+        # Runtime call:
+        # aria_atomic_int32_compare_exchange_strong(
+        #     self.ptr, expected, desired, success_order, failure_order
+        # )
+        
+        # PLACEHOLDER
+        return false;
+    }
+    
+    /**
+     * Compare-and-swap (weak version - may spuriously fail).
+     * 
+     * Like compare_exchange_strong but may fail even when comparison succeeds.
+     * Use in loops for better performance on some architectures.
+     * 
+     * @param expected Reference to expected value (may be updated)
+     * @param desired New value if comparison succeeds
+     * @param success_order Memory ordering on success
+     * @param failure_order Memory ordering on failure
+     * @return True if exchange happened (or maybe not on spurious failure)
+     * 
+     * Example:
+     *   loop {
+     *       int32:expected = counter.load(relaxed);
+     *       int32:new_val = compute(expected);
+     *       if counter.compare_exchange_weak(@expected, new_val, release, relaxed) {
+     *           break;
+     *       }
+     *   }
+     */
+    func compare_exchange_weak(
+        expected: @T,
+        desired: T,
+        success_order: MemoryOrder = seq_cst,
+        failure_order: MemoryOrder = seq_cst
+    ) = bool {
+        # Runtime call:
+        # aria_atomic_int32_compare_exchange_weak(
+        #     self.ptr, expected, desired, success_order, failure_order
+        # )
+        
+        # PLACEHOLDER
+        return false;
+    }
+    
+    /**
+     * Atomically add value and return previous value.
+     * Only valid for arithmetic types.
+     * 
+     * @param value Amount to add
+     * @param order Memory ordering (defaults to seq_cst)
+     * @return Previous value before addition
+     * 
+     * Example:
+     *   int32:old = counter.fetch_add(1, release);
+     */
+    func fetch_add(value: T, order: MemoryOrder = seq_cst) = T {
+        # Runtime call:
+        # aria_atomic_int32_fetch_add(self.ptr, value, order)
+        
+        # PLACEHOLDER
+        T:result;
+        return result;
+    }
+    
+    /**
+     * Atomically subtract value and return previous value.
+     * Only valid for arithmetic types.
+     * 
+     * @param value Amount to subtract
+     * @param order Memory ordering (defaults to seq_cst)
+     * @return Previous value before subtraction
+     * 
+     * Example:
+     *   int32:old = counter.fetch_sub(1, release);
+     */
+    func fetch_sub(value: T, order: MemoryOrder = seq_cst) = T {
+        # Runtime call:
+        # aria_atomic_int32_fetch_sub(self.ptr, value, order)
+        
+        # PLACEHOLDER
+        T:result;
+        return result;
+    }
+    
+    /**
+     * Destroy atomic and free resources.
+     * Called automatically when atomic goes out of scope.
+     */
+    func destroy() = void {
+        # Runtime call:
+        # aria_atomic_int32_destroy(self.ptr)
+        
+        # PLACEHOLDER
+        return;
+    }
+end
+
+// ============================================================================
+// Future: Shared atomic pointers with reference counting
+// ============================================================================
+
+/**
+ * FUTURE: SharedAtomic<T> for atomic reference-counted pointers.
+ * 
+ * class SharedAtomic<*T>:
+ *     ptr: @void;
+ *     refcount: atomic<uint64>;
+ *     
+ *     static func new(value: T) = SharedAtomic<T> { ... }
+ *     func clone() = SharedAtomic<T> { ... }
+ *     func load(order: MemoryOrder = seq_cst) = @T { ... }
+ *     func store(value: @T, order: MemoryOrder = seq_cst) = void { ... }
+ * end
+ */
+
+// ============================================================================
+// Helper Functions for Common Patterns
+// ============================================================================
+
+/**
+ * Atomically increment counter by 1.
+ * Convenience wrapper for fetch_add.
+ * 
+ * @param counter Atomic counter
+ * @return Previous value before increment
+ * 
+ * Example:
+ *   atomic<int32>:counter = atomic<int32>::new(0);
+ *   int32:ticket = atomic_increment(@counter);
+ */
+func atomic_increment<*T>(counter: @atomic<T>) = T {
+    # For now, inline the operation
+    # Future: could optimize with dedicated runtime call
+    # return counter.fetch_add(1, seq_cst);
+    
+    # PLACEHOLDER
+    T:result;
+    return result;
+}
+
+/**
+ * Atomically decrement counter by 1.
+ * Convenience wrapper for fetch_sub.
+ * 
+ * @param counter Atomic counter
+ * @return Previous value before decrement
+ * 
+ * Example:
+ *   int32:remaining = atomic_decrement(@counter);
+ */
+func atomic_decrement<*T>(counter: @atomic<T>) = T {
+    # return counter.fetch_sub(1, seq_cst);
+    
+    # PLACEHOLDER
+    T:result;
+    return result;
+}
+
+/**
+ * Spin-wait until atomic has specific value.
+ * Used for simple synchronization barriers.
+ * 
+ * WARNING: This is a busy-wait loop. Use sparingly.
+ * 
+ * @param atomic Atomic to watch
+ * @param expected Value to wait for
+ * 
+ * Example:
+ *   atomic<bool>:ready = atomic<bool>::new(false);
+ *   # ... in another thread ...
+ *   ready.store(true, release);
+ *   # ... in this thread ...
+ *   atomic_wait(@ready, true);  # Spin until ready
+ */
+func atomic_wait<*T>(atomic: @atomic<T>, expected: T) = void {
+    # Spin loop with relaxed loads (no barrier needed in loop)
+    # loop {
+    #     T:current = atomic.load(relaxed);
+    #     if current == expected {
+    #         # Final load with acquire to synchronize
+    #         atomic.load(acquire);
+    #         break;
+    #     }
+    # }
+    
+    # PLACEHOLDER
+    return;
+}
+
+# ============================================================================
+# End of stdlib/atomic.aria
+# ============================================================================

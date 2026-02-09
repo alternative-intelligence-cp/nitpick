@@ -56,10 +56,11 @@ private:
     std::vector<ValueRange> ranges;     // For INTEGER_RANGE
     std::set<std::string> symbols;      // For ENUM (variant names)
     bool hasERR;                         // For TBB types
+    bool requiresUnknown;                // For types that can be indeterminate
     
 public:
     TypeDomain(Kind k = Kind::UNKNOWN) 
-        : kind(k), hasERR(false) {}
+        : kind(k), hasERR(false), requiresUnknown(false) {}
     
     Kind getKind() const { return kind; }
     
@@ -68,6 +69,34 @@ public:
         TypeDomain domain(Kind::BOOLEAN);
         domain.symbols.insert("true");
         domain.symbols.insert("false");
+        return domain;
+    }
+    
+    static TypeDomain forInt8() {
+        TypeDomain domain(Kind::INTEGER_RANGE);
+        domain.ranges.push_back(ValueRange(-128, 127));
+        domain.hasERR = false;
+        return domain;
+    }
+    
+    static TypeDomain forUInt8() {
+        TypeDomain domain(Kind::INTEGER_RANGE);
+        domain.ranges.push_back(ValueRange(0, 255));
+        domain.hasERR = false;
+        return domain;
+    }
+    
+    static TypeDomain forInt16() {
+        TypeDomain domain(Kind::INTEGER_RANGE);
+        domain.ranges.push_back(ValueRange(-32768, 32767));
+        domain.hasERR = false;
+        return domain;
+    }
+    
+    static TypeDomain forUInt16() {
+        TypeDomain domain(Kind::INTEGER_RANGE);
+        domain.ranges.push_back(ValueRange(0, 65535));
+        domain.hasERR = false;
         return domain;
     }
     
@@ -112,6 +141,7 @@ public:
     const std::vector<ValueRange>& getRanges() const { return ranges; }
     const std::set<std::string>& getSymbols() const { return symbols; }
     bool requiresERR() const { return hasERR; }
+    bool needsUnknown() const { return requiresUnknown; }
     
     // Coverage tracking
     bool isEmpty() const {
@@ -144,10 +174,11 @@ private:
     std::vector<ValueRange> covered_ranges;
     std::set<std::string> covered_symbols;
     bool hasERRCase;
+    bool hasUnknownCase;
     bool hasDefaultCase;
     
 public:
-    CoverageSet() : hasERRCase(false), hasDefaultCase(false) {}
+    CoverageSet() : hasERRCase(false), hasUnknownCase(false), hasDefaultCase(false) {}
     
     void addRange(int64_t min, int64_t max) {
         covered_ranges.push_back(ValueRange(min, max));
@@ -161,11 +192,16 @@ public:
         hasERRCase = true;
     }
     
+    void addUnknown() {
+        hasUnknownCase = true;
+    }
+    
     void addDefault() {
         hasDefaultCase = true;
     }
     
     bool coversERR() const { return hasERRCase || hasDefaultCase; }
+    bool coversUnknown() const { return hasUnknownCase || hasDefaultCase; }
     bool hasDefault() const { return hasDefaultCase; }
     
     // Check if domain is fully covered
@@ -184,6 +220,7 @@ public:
     struct Analysis {
         bool isExhaustive;
         bool missingERR;
+        bool missingUnknown;
         std::vector<ValueRange> missingRanges;
         std::set<std::string> missingSymbols;
         std::string errorMessage;
