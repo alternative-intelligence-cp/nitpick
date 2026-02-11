@@ -619,6 +619,23 @@ llvm::Value* ExprCodegen::generateTBBBinaryOp(const std::string& tbbType,
     llvm::Type* type = left->getType();
     llvm::Value* sentinel = getTBBSentinel(type);
     
+    // CRITICAL FIX: Coerce right operand to match left operand type
+    // Integer literals default to i64, but we need matching types for intrinsics
+    if (left->getType() != right->getType()) {
+        if (left->getType()->isIntegerTy() && right->getType()->isIntegerTy()) {
+            llvm::IntegerType* leftIntTy = llvm::cast<llvm::IntegerType>(left->getType());
+            llvm::IntegerType* rightIntTy = llvm::cast<llvm::IntegerType>(right->getType());
+            
+            if (rightIntTy->getBitWidth() > leftIntTy->getBitWidth()) {
+                // Right is wider - truncate to match left
+                right = builder.CreateTrunc(right, left->getType(), "trunc_right");
+            } else if (rightIntTy->getBitWidth() < leftIntTy->getBitWidth()) {
+                // Right is narrower - extend to match left
+                right = builder.CreateSExt(right, left->getType(), "sext_right");
+            }
+        }
+    }
+    
     // Step 1: Input validation - check if either operand is ERR
     llvm::Value* lhsIsErr = builder.CreateICmpEQ(left, sentinel, "lhs_is_err");
     llvm::Value* rhsIsErr = builder.CreateICmpEQ(right, sentinel, "rhs_is_err");
@@ -7460,6 +7477,23 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 throw std::runtime_error("Failed to generate code for argument " + std::to_string(i));
             }
             
+            // PIPELINE OPERATOR FIX: Auto-unwrap Result<T> → T for pipeline calls
+            // When using |> or <|, if a function returns Result<T>, automatically 
+            // extract the .val field when passing to the next function expecting T
+            if (expr->isPipelineCall && arg_value->getType()->isStructTy()) {
+                llvm::StructType* arg_struct = llvm::cast<llvm::StructType>(arg_value->getType());
+                
+                // Result types are structs with 3 fields: {T val, error* err, i1 is_error}
+                // Check if this looks like a Result type by field count and types
+                if (arg_struct->getNumElements() == 3 &&
+                    arg_struct->getElementType(1)->isPointerTy() &&
+                    arg_struct->getElementType(2)->isIntegerTy(1)) {
+                    
+                    // Extract the value field (field 0) from Result
+                    arg_value = builder.CreateExtractValue(arg_value, 0, "pipeline_unwrap");
+                }
+            }
+            
             // ARIA-026 FIX: LBIM ABI Scalarization for extern functions
             // CRITICAL FIX 1: AriaString data pointer extraction for FFI
             // Check if this is an extern function and the argument is an LBIM struct or AriaString
@@ -7531,6 +7565,23 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             optional_val = builder.CreateInsertValue(optional_val, call_result, 1, "optional_ptr");
             
             return optional_val;
+        }
+        
+        // PIPELINE OPERATOR FIX: Auto-unwrap Result<T> → T for pipeline call return values
+        // When the final result of a pipeline (value |> f1 |> f2) is assigned to a T variable,
+        // extract the .val field from the Result<T> return value
+        if (expr->isPipelineCall && return_type->isStructTy()) {
+            llvm::StructType* return_struct = llvm::cast<llvm::StructType>(return_type);
+            
+            // Result types are structs with 3 fields: {T val, error* err, i1 is_error}
+            // Check if this looks like a Result type by field count and types
+            if (return_struct->getNumElements() == 3 &&
+                return_struct->getElementType(1)->isPointerTy() &&
+                return_struct->getElementType(2)->isIntegerTy(1)) {
+                
+                // Extract the value field (field 0) from Result
+                call_result = builder.CreateExtractValue(call_result, 0, "pipeline_result_unwrap");
+            }
         }
         
         return call_result;

@@ -1244,6 +1244,21 @@ llvm::Value* IRGenerator::generateSafeAdd(llvm::Value* L, llvm::Value* R, const 
     
     unsigned bitWidth = intType->getBitWidth();
     
+    // CRITICAL FIX: Ensure R has the same type as L
+    // Integer literals default to i64, but intrinsics require matching types
+    if (L->getType() != R->getType()) {
+        if (R->getType()->isIntegerTy()) {
+            llvm::IntegerType* RIntTy = llvm::cast<llvm::IntegerType>(R->getType());
+            if (RIntTy->getBitWidth() > bitWidth) {
+                // R is wider - truncate
+                R = builder.CreateTrunc(R, intType, "trunc_rhs");
+            } else if (RIntTy->getBitWidth() < bitWidth) {
+                // R is narrower - extend
+                R = builder.CreateSExt(R, intType, "sext_rhs");
+            }
+        }
+    }
+    
     // Get the overflow intrinsic: llvm.sadd.with.overflow
     llvm::Function* saddIntrinsic = llvm::Intrinsic::getDeclaration(
         module.get(), llvm::Intrinsic::sadd_with_overflow, {intType});
@@ -1307,6 +1322,21 @@ llvm::Value* IRGenerator::generateSafeMul(llvm::Value* L, llvm::Value* R, const 
     }
     
     unsigned bitWidth = intType->getBitWidth();
+    
+    // CRITICAL FIX: Ensure R has the same type as L
+    // Integer literals default to i64, but intrinsics require matching types
+    if (L->getType() != R->getType()) {
+        if (R->getType()->isIntegerTy()) {
+            llvm::IntegerType* RIntTy = llvm::cast<llvm::IntegerType>(R->getType());
+            if (RIntTy->getBitWidth() > bitWidth) {
+                // R is wider - truncate
+                R = builder.CreateTrunc(R, intType, "trunc_rhs");
+            } else if (RIntTy->getBitWidth() < bitWidth) {
+                // R is narrower - extend
+                R = builder.CreateSExt(R, intType, "sext_rhs");
+            }
+        }
+    }
     
     // Get the overflow intrinsic: llvm.smul.with.overflow
     llvm::Function* smulIntrinsic = llvm::Intrinsic::getDeclaration(
@@ -2617,10 +2647,52 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 if (ret->value) {
                     llvm::Value* retVal = codegenExpression(ret->value.get());
                     if (retVal) {
-                        // Convert return value to match function return type if necessary
                         llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
                         llvm::Type* returnType = currentFunc->getReturnType();
 
+                        // Check if return type is a Result struct {value, error*, is_error}
+                        if (returnType->isStructTy()) {
+                            llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(returnType);
+                            
+                            // Result types have exactly 3 fields: {T, ptr, i1}
+                            if (resultStruct->getNumElements() == 3 &&
+                                resultStruct->getElementType(1)->isPointerTy() &&
+                                resultStruct->getElementType(2)->isIntegerTy(1)) {
+                                
+                                // This is a Result type - wrap the value
+                                // Build Result object: {value, NULL, false}
+                                llvm::Value* result = llvm::UndefValue::get(resultStruct);
+                                
+                                // Field 0: value (may need type conversion)
+                                llvm::Type* valueFieldType = resultStruct->getElementType(0);
+                                if (retVal->getType() != valueFieldType) {
+                                    if (retVal->getType()->isIntegerTy() && valueFieldType->isIntegerTy()) {
+                                        llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(retVal->getType());
+                                        llvm::IntegerType* fldIntTy = llvm::cast<llvm::IntegerType>(valueFieldType);
+                                        if (valIntTy->getBitWidth() < fldIntTy->getBitWidth()) {
+                                            retVal = builder.CreateSExt(retVal, valueFieldType, "val_sext");
+                                        } else if (valIntTy->getBitWidth() > fldIntTy->getBitWidth()) {
+                                            retVal = builder.CreateTrunc(retVal, valueFieldType, "val_trunc");
+                                        }
+                                    }
+                                }
+                                result = builder.CreateInsertValue(result, retVal, 0, "result.val");
+                                
+                                // Field 1: error = NULL
+                                llvm::Value* nullError = llvm::ConstantPointerNull::get(
+                                    llvm::cast<llvm::PointerType>(resultStruct->getElementType(1)));
+                                result = builder.CreateInsertValue(result, nullError, 1, "result.err");
+                                
+                                // Field 2: is_error = false
+                                llvm::Value* falseVal = builder.getInt1(false);
+                                result = builder.CreateInsertValue(result, falseVal, 2, "result.is_error");
+                                
+                                builder.CreateRet(result);
+                                return nullptr;
+                            }
+                        }
+                        
+                        // Not a Result type - handle regular type conversions
                         if (retVal->getType() != returnType) {
                             // Handle integer conversions
                             if (retVal->getType()->isIntegerTy() && returnType->isIntegerTy()) {

@@ -13,24 +13,23 @@ Systematic verification of remaining operators to determine what's implemented v
 - **Token**: TOKEN_LEFT_ARROW (line 236 in parser)
 - **Usage**: Extract value from pointer type
 
-## ⚠️ PARTIALLY IMPLEMENTED
-
 ### Pipeline Forward (`|>`)
-- **Status**: ⚠️ TYPE-CHECKING FIXED, CODEGEN IN PROGRESS
+- **Status**: ✅ FULLY FUNCTIONAL  
 - **Syntax**: `value |> add_ten |> double_it`
-- **Test**: test_pipeline.aria
-- **Progress**:
-  - ✅ Parser creates CallExpr correctly
+- **Test**: test_pipeline.aria, test_pipeline_debug.aria
+- **Result**: **Works perfectly!** Returns correct value (30)
+- **Implementation**:
+  - ✅ Parser creates CallExpr with isPipelineCall flag
   - ✅ Type checker allows Result<T> → T in pipeline context  
-  - ❌ IR codegen doesn't unwrap Result types between calls
-- **Issue**: Functions return `Result<T>`, but pipeline passes result to next function expecting `T`
-- **Root Cause**: Aria functions use `pass()/return` which wrap in Result<T>, but pipeline needs auto-unwrapping
-- **Next Step**: Implement Result unwrapping in IR codegen for pipeline calls
-- **Workaround**: Use extern functions (no Result wrapping) or explicit unwrap operators
+  - ✅ IR codegen auto-unwraps Result<T> between calls
+  - ✅ `return` statement wraps values in Result (like `pass()`)
+  - ✅ Integer literal type coercion (i64 → i32) in intrinsics
+- **Note**: Requires `return` or `pass()` in functions (both now wrap in Result)
 
 ### Pipeline Backward (`<|`)
-- **Status**: ⚠️ SAME AS FORWARD PIPELINE  
-- **Note**: Same implementation, same issues
+- **Status**: ✅ FULLY FUNCTIONAL
+- **Syntax**: `double_it <| value`
+- **Note**: Same implementation as forward pipeline, fully working
 
 ## ❌ NOT IMPLEMENTED
 
@@ -45,18 +44,21 @@ Systematic verification of remaining operators to determine what's implemented v
 ## SUMMARY
 
 **Operators Verified**: 4 total
-- **Working**: 1 (`<-`)
-- **Partial**: 2 (`|>`, `<|`)
+- **Working**: 3 (`<-`, `|>`, `<|`) ✅
 - **Not Implemented**: 1 (`?.`)
 
-**Key Finding**: Parser/lexer support exists for all operators, but codegen/type-checking incomplete for some.
+**Key Finding**: Pipeline operators fully functional after fixing:
+1. Result auto-unwrapping in IR codegen (for both arguments and return values)
+2. `return` statement Result wrapping (matching `pass()` behavior)  
+3. Integer literal type coercion in overflow intrinsics
 
-## NEXT STEPS
+## COMPLETED
 
-1. **Fix Pipeline Operators**:
-   - Investigate why pipeline expressions wrap in Result type
-   - Fix type propagation in pipeline binary expressions
-   - Test both `|>` and `<|` operators
+1. **Pipeline Operators** ✅:
+   - Result auto-unwrapping implemented in codegen_expr.cpp
+   - Type coercion fixes in generateSafeAdd/generateSafeMul
+   - Both `|>` and `<|` operators fully working
+   - Test: `5 |> add_ten |> double_it` correctly returns 30
 
 2. **Implement Safe Navigation**:
    - Add codegen support for `?.` operator
