@@ -4,6 +4,7 @@
 #include "frontend/ast/type.h"
 #include <sstream>
 #include <algorithm>
+#include <iostream>
 
 namespace aria {
 namespace sema {
@@ -703,7 +704,8 @@ ASTNodePtr Monomorphizer::cloneAST(ASTNode* node) {
             auto result = cloneAST(unwrapExpr->result.get());
             auto defaultVal = unwrapExpr->defaultValue ? cloneAST(unwrapExpr->defaultValue.get()) : nullptr;
             return std::make_unique<UnwrapExpr>(std::move(result), std::move(defaultVal),
-                                                unwrapExpr->line, unwrapExpr->column);
+                                                unwrapExpr->line, unwrapExpr->column,
+                                                unwrapExpr->isNullCoalesce, unwrapExpr->isFailsafe);
         }
 
         default:
@@ -932,10 +934,17 @@ std::string Monomorphizer::requestStructSpecialization(
     for (const auto& field : specialized->fields) {
         VarDeclStmt* fieldDecl = static_cast<VarDeclStmt*>(field.get());
         
+        std::cerr << "[DEBUG MONOMORPH] Field: " << fieldDecl->varName 
+                  << ", typeName: '" << fieldDecl->typeName << "'" << std::endl;
+        
         // Look up field type
         Type* fieldType = typeSystem->getStructType(fieldDecl->typeName);
+        std::cerr << "[DEBUG MONOMORPH]   getStructType returned: " 
+                  << (fieldType ? "found" : "null") << std::endl;
         if (!fieldType) {
             fieldType = typeSystem->getPrimitiveType(fieldDecl->typeName);
+            std::cerr << "[DEBUG MONOMORPH]   getPrimitiveType returned: " 
+                      << (fieldType ? fieldType->toString() : "null") << std::endl;
         }
         
         if (!fieldType || fieldType->getKind() == TypeKind::ERROR) {
@@ -943,6 +952,9 @@ std::string Monomorphizer::requestStructSpecialization(
                     "' in specialized struct '" + mangledName + "'");
             return "";
         }
+        
+        std::cerr << "[DEBUG MONOMORPH]   Final field type: " 
+                  << (fieldType ? fieldType->toString() : "NULL") << std::endl;
         
         fields.push_back(StructType::Field(fieldDecl->varName, fieldType, 0, false));
     }
@@ -967,11 +979,31 @@ StructDeclStmt* Monomorphizer::cloneStructAndSubstitute(
     for (const auto& field : structDecl->fields) {
         VarDeclStmt* fieldDecl = static_cast<VarDeclStmt*>(field.get());
         
-        // Substitute the field type if it's a generic type reference (*T)
+        // Substitute the field type if it's a generic type reference
+        // Can be prefix (*T) or postfix (T*, T@) pointer syntax
         std::string fieldType = fieldDecl->typeName;
+        
+        // Handle prefix pointer syntax: *T (generic type reference)
         if (!fieldType.empty() && fieldType[0] == '*') {
             std::string typeParamName = fieldType.substr(1);
             auto it = substitution.find(typeParamName);
+            if (it != substitution.end()) {
+                fieldType = resolver->canonicalizeTypeName(it->second);
+            }
+        }
+        // Handle postfix pointer syntax: T* or T@
+        else if (!fieldType.empty() && (fieldType.back() == '*' || fieldType.back() == '@')) {
+            char ptrSuffix = fieldType.back();
+            std::string typeParamName = fieldType.substr(0, fieldType.length() - 1);
+            auto it = substitution.find(typeParamName);
+            if (it != substitution.end()) {
+                std::string concreteType = resolver->canonicalizeTypeName(it->second);
+                fieldType = concreteType + ptrSuffix;
+            }
+        }
+        // Handle direct generic type parameter (no pointer): T
+        else if (!fieldType.empty()) {
+            auto it = substitution.find(fieldType);
             if (it != substitution.end()) {
                 fieldType = resolver->canonicalizeTypeName(it->second);
             }

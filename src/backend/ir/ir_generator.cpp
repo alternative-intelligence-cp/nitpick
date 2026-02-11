@@ -332,6 +332,21 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             break;
         }
         
+        case TypeKind::SIMD: {
+            // SIMD types: simd<T, N> for explicit vectorization
+            // P1-2 Phase 3: Map to LLVM vector types <N x element_type>
+            // Example: simd<int32, 4> → <4 x i32> (SSE)
+            //          simd<int64, 8> → <8 x i64> (AVX-512)
+            auto* simd_type = static_cast<SimdType*>(aria_type);
+            llvm::Type* element_type = mapType(simd_type->getElementType());
+            size_t lane_count = simd_type->getLaneCount();
+            
+            // Create LLVM fixed vector type
+            // LLVM's FixedVectorType maps directly to hardware SIMD registers
+            llvm_type = llvm::FixedVectorType::get(element_type, lane_count);
+            break;
+        }
+        
         case TypeKind::FUNCTION: {
             // Function types: func(params) -> return
             // Reference: research_016
@@ -424,6 +439,22 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             };
             
             llvm_type = llvm::StructType::get(context, result_fields);
+            break;
+        }
+        
+        case TypeKind::HANDLE: {
+            // Handle type for generational arena: Handle<T>
+            // Runtime layout: { size_t index, uint32_t generation }
+            // Reference: include/runtime/gen_arena.h (aria_handle)
+            // P1-3 Phase 3: Handle operations & generation checks
+            auto* handle_type = static_cast<HandleType*>(aria_type);
+            
+            std::vector<llvm::Type*> handle_fields = {
+                builder.getInt64Ty(),  // index (field 0) - size_t (usize)
+                builder.getInt32Ty()   // generation (field 1) - uint32_t (u32)
+            };
+            
+            llvm_type = llvm::StructType::get(context, handle_fields);
             break;
         }
         
@@ -1140,6 +1171,161 @@ llvm::Value* IRGenerator::generateLBIMMod(llvm::Value* L, llvm::Value* R, unsign
     }
 }
 
+// ============================================================================
+// Unknown-Safe Arithmetic (Layer 1 Safety)
+// Prevents undefined behavior by returning Unknown sentinel values
+// ============================================================================
+
+llvm::Value* IRGenerator::generateSafeSDiv(llvm::Value* L, llvm::Value* R, const std::string& name) {
+    // Safe signed division: checks for divide-by-zero and returns Unknown sentinel
+    // Unknown sentinel = signed maximum value (INT_MAX for the given bit width)
+    
+    llvm::Type* resultType = L->getType();
+    llvm::IntegerType* intType = llvm::dyn_cast<llvm::IntegerType>(resultType);
+    
+    if (!intType) {
+        // Fallback for non-integer types - just do regular division
+        return builder.CreateSDiv(L, R, name);
+    }
+    
+    unsigned bitWidth = intType->getBitWidth();
+    
+    // Check if divisor is zero
+    llvm::Value* isZero = builder.CreateICmpEQ(R, llvm::ConstantInt::get(intType, 0), "div.iszero");
+    
+    // Generate Unknown sentinel (signed maximum)
+    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
+    
+    // Perform actual division
+    llvm::Value* divResult = builder.CreateSDiv(L, R, name);
+    
+    // Select: if divisor is zero, return Unknown; otherwise return division result
+    return builder.CreateSelect(isZero, unknownSentinel, divResult, "safe." + name);
+}
+
+llvm::Value* IRGenerator::generateSafeSRem(llvm::Value* L, llvm::Value* R, const std::string& name) {
+    // Safe signed modulo: checks for divide-by-zero and returns Unknown sentinel
+    // Unknown sentinel = signed maximum value (INT_MAX for the given bit width)
+    
+    llvm::Type* resultType = L->getType();
+    llvm::IntegerType* intType = llvm::dyn_cast<llvm::IntegerType>(resultType);
+    
+    if (!intType) {
+        // Fallback for non-integer types - just do regular modulo
+        return builder.CreateSRem(L, R, name);
+    }
+    
+    unsigned bitWidth = intType->getBitWidth();
+    
+    // Check if divisor is zero
+    llvm::Value* isZero = builder.CreateICmpEQ(R, llvm::ConstantInt::get(intType, 0), "mod.iszero");
+    
+    // Generate Unknown sentinel (signed maximum)
+    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
+    
+    // Perform actual modulo
+    llvm::Value* modResult = builder.CreateSRem(L, R, name);
+    
+    // Select: if divisor is zero, return Unknown; otherwise return modulo result
+    return builder.CreateSelect(isZero, unknownSentinel, modResult, "safe." + name);
+}
+
+llvm::Value* IRGenerator::generateSafeAdd(llvm::Value* L, llvm::Value* R, const std::string& name) {
+    // Safe signed addition: checks for overflow and returns Unknown sentinel
+    // Uses LLVM's llvm.sadd.with.overflow intrinsic
+    
+    llvm::Type* resultType = L->getType();
+    llvm::IntegerType* intType = llvm::dyn_cast<llvm::IntegerType>(resultType);
+    
+    if (!intType) {
+        // Fallback for non-integer types - just do regular addition
+        return builder.CreateAdd(L, R, name);
+    }
+    
+    unsigned bitWidth = intType->getBitWidth();
+    
+    // Get the overflow intrinsic: llvm.sadd.with.overflow
+    llvm::Function* saddIntrinsic = llvm::Intrinsic::getDeclaration(
+        module.get(), llvm::Intrinsic::sadd_with_overflow, {intType});
+    
+    // Call the intrinsic - returns {result, overflow_bit}
+    llvm::Value* saddResult = builder.CreateCall(saddIntrinsic, {L, R}, "sadd");
+    
+    // Extract the actual result and overflow flag
+    llvm::Value* result = builder.CreateExtractValue(saddResult, 0, name);
+    llvm::Value* overflow = builder.CreateExtractValue(saddResult, 1, "add.overflow");
+    
+    // Generate Unknown sentinel (signed maximum)
+    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
+    
+    // Select: if overflow, return Unknown; otherwise return actual result
+    return builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+}
+
+llvm::Value* IRGenerator::generateSafeSub(llvm::Value* L, llvm::Value* R, const std::string& name) {
+    // Safe signed subtraction: checks for overflow and returns Unknown sentinel
+    // Uses LLVM's llvm.ssub.with.overflow intrinsic
+    
+    llvm::Type* resultType = L->getType();
+    llvm::IntegerType* intType = llvm::dyn_cast<llvm::IntegerType>(resultType);
+    
+    if (!intType) {
+        // Fallback for non-integer types - just do regular subtraction
+        return builder.CreateSub(L, R, name);
+    }
+    
+    unsigned bitWidth = intType->getBitWidth();
+    
+    // Get the overflow intrinsic: llvm.ssub.with.overflow
+    llvm::Function* ssubIntrinsic = llvm::Intrinsic::getDeclaration(
+        module.get(), llvm::Intrinsic::ssub_with_overflow, {intType});
+    
+    // Call the intrinsic - returns {result, overflow_bit}
+    llvm::Value* ssubResult = builder.CreateCall(ssubIntrinsic, {L, R}, "ssub");
+    
+    // Extract the actual result and overflow flag
+    llvm::Value* result = builder.CreateExtractValue(ssubResult, 0, name);
+    llvm::Value* overflow = builder.CreateExtractValue(ssubResult, 1, "sub.overflow");
+    
+    // Generate Unknown sentinel (signed maximum)
+    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
+    
+    // Select: if overflow, return Unknown; otherwise return actual result
+    return builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+}
+
+llvm::Value* IRGenerator::generateSafeMul(llvm::Value* L, llvm::Value* R, const std::string& name) {
+    // Safe signed multiplication: checks for overflow and returns Unknown sentinel
+    // Uses LLVM's llvm.smul.with.overflow intrinsic
+    
+    llvm::Type* resultType = L->getType();
+    llvm::IntegerType* intType = llvm::dyn_cast<llvm::IntegerType>(resultType);
+    
+    if (!intType) {
+        // Fallback for non-integer types - just do regular multiplication
+        return builder.CreateMul(L, R, name);
+    }
+    
+    unsigned bitWidth = intType->getBitWidth();
+    
+    // Get the overflow intrinsic: llvm.smul.with.overflow
+    llvm::Function* smulIntrinsic = llvm::Intrinsic::getDeclaration(
+        module.get(), llvm::Intrinsic::smul_with_overflow, {intType});
+    
+    // Call the intrinsic - returns {result, overflow_bit}
+    llvm::Value* smulResult = builder.CreateCall(smulIntrinsic, {L, R}, "smul");
+    
+    // Extract the actual result and overflow flag
+    llvm::Value* result = builder.CreateExtractValue(smulResult, 0, name);
+    llvm::Value* overflow = builder.CreateExtractValue(smulResult, 1, "mul.overflow");
+    
+    // Generate Unknown sentinel (signed maximum)
+    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
+    
+    // Select: if overflow, return Unknown; otherwise return actual result
+    return builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+}
+
 // Helper function to map type name strings to LLVM types
 llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     // Check for void
@@ -1413,6 +1599,38 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
         // ivec9 with int32 components (struct of 9 ints)
         std::vector<llvm::Type*> components(9, builder.getInt32Ty());
         return llvm::StructType::get(context, components);
+    }
+    
+    // SIMD types: simd<T, N> for explicit vectorization (P1-2 Phase 3)
+    // Example: simd<int32, 4> -> <4 x i32> (SSE)
+    //          simd<int64, 8> -> <8 x i64> (AVX-512)
+    //          simd<fix256, 16> -> <16 x struct.fix256>
+    if (type_name.rfind("simd<", 0) == 0 && type_name.back() == '>') {
+        // Parse "simd<elementType, laneCount>"
+        size_t comma_pos = type_name.find(',');
+        if (comma_pos != std::string::npos) {
+            // Extract element type: "simd<int32, 4>" -> "int32"
+            std::string elem_type_str = type_name.substr(5, comma_pos - 5);
+            // Trim whitespace
+            elem_type_str.erase(0, elem_type_str.find_first_not_of(" \t"));
+            elem_type_str.erase(elem_type_str.find_last_not_of(" \t") + 1);
+            
+            // Extract lane count: "simd<int32, 4>" -> "4"
+            std::string lane_count_str = type_name.substr(comma_pos + 1, type_name.length() - comma_pos - 2);
+            // Trim whitespace
+            lane_count_str.erase(0, lane_count_str.find_first_not_of(" \t"));
+            lane_count_str.erase(lane_count_str.find_last_not_of(" \t") + 1);
+            
+            // Convert lane count to integer
+            size_t lane_count = std::stoull(lane_count_str);
+            
+            // Recursively get element type
+            llvm::Type* elem_type = mapTypeFromName(elem_type_str);
+            
+            // Create LLVM fixed vector type
+            // Maps directly to hardware SIMD registers (SSE, AVX, AVX-512)
+            return llvm::FixedVectorType::get(elem_type, lane_count);
+        }
     }
     
     // Check for custom types (structs, unions, etc.) if TypeSystem is available
@@ -1815,9 +2033,10 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             // All Aria functions return Result<T> except:
             // 1. extern functions (no body)
             // 2. main function (C ABI compatibility)
+            // 3. void functions (Result<void> is meaningless and causes LLVM to crash)
             llvm::Type* actual_return_type;
-            if (!funcDecl->body || funcDecl->funcName == "main") {
-                // Extern functions and main return raw type
+            if (!funcDecl->body || funcDecl->funcName == "main" || value_type->isVoidTy()) {
+                // Extern functions, main, and void functions return raw type
                 actual_return_type = value_type;
             } else {
                 // Regular functions return Result{value, error*, is_error}
@@ -2112,16 +2331,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 std::cerr << "[DEBUG] Function " << func_name << " body node type: " << static_cast<int>(funcDecl->body->type) << std::endl;
             }
             
-            auto* entry_block = builder.GetInsertBlock();
-            std::cerr << "[DEBUG] Before body codegen, insert block name: " << entry_block->getName().str() 
-                      << ", has terminator: " << (entry_block->getTerminator() != nullptr) << std::endl;
-            
             llvm::Value* bodyVal = codegenStatement(funcDecl->body.get());
-            
-            auto* after_block = builder.GetInsertBlock();
-            std::cerr << "[DEBUG] After body codegen, insert block name: " << after_block->getName().str() 
-                      << ", has terminator: " << (after_block->getTerminator() != nullptr) << std::endl;
-            std::cerr << "[DEBUG] Body generation complete for: " << func_name << std::endl;
             (void)bodyVal;  // Suppress unused warning
             
             // Add terminator if missing
@@ -4147,9 +4357,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 llvm::Value* one = llvm::ConstantInt::get(varElemType, 1);
                 llvm::Value* newVal = nullptr;
                 if (unary->op.type == frontend::TokenType::TOKEN_PLUS_PLUS) {
-                    newVal = builder.CreateAdd(currentVal, one, "inctmp");
+                    // Layer 1 Safety: Safe increment returns Unknown on overflow
+                    newVal = generateSafeAdd(currentVal, one, "inctmp");
                 } else {
-                    newVal = builder.CreateSub(currentVal, one, "dectmp");
+                    // Layer 1 Safety: Safe decrement returns Unknown on underflow
+                    newVal = generateSafeSub(currentVal, one, "dectmp");
                 }
                 
                 // Store new value
@@ -4330,9 +4542,111 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 binop->op.type == frontend::TokenType::TOKEN_SLASH_EQUAL ||
                 binop->op.type == frontend::TokenType::TOKEN_PERCENT_EQUAL) {
                 
-                // Assignment: left must be an lvalue (identifier)
+                // Assignment: left must be an lvalue (identifier or index expression)
+                if (binop->left->type == ASTNode::NodeType::INDEX) {
+                    // Array/Vector/SIMD element assignment: arr[i] = value, vec[i] = value, simd[i] = value
+                    IndexExpr* indexExpr = static_cast<IndexExpr*>(binop->left.get());
+                    
+                    // Only handle identifier base for now (not nested indexing)
+                    if (indexExpr->array->type != ASTNode::NodeType::IDENTIFIER) {
+                        return nullptr;
+                    }
+                    
+                    IdentifierExpr* baseIdent = static_cast<IdentifierExpr*>(indexExpr->array.get());
+                    auto it = named_values.find(baseIdent->name);
+                    if (it == named_values.end()) {
+                        return nullptr;  // Variable not found
+                    }
+                    
+                    llvm::Value* var = it->second;
+                    Type* object_type = nullptr;
+                    
+                    // Get the type information
+                    auto type_it = value_types.find(var);
+                    if (type_it != value_types.end()) {
+                        object_type = type_it->second;
+                    }
+                    
+                    // Generate index value
+                    llvm::Value* index_value = codegenExpression(indexExpr->index.get());
+                    if (!index_value) return nullptr;
+                    
+                    // Generate right-hand side value
+                    llvm::Value* rhs = codegenExpression(binop->right.get());
+                    if (!rhs) return nullptr;
+                    
+                    // Check if it's a SIMD type
+                    if (object_type && object_type->getKind() == TypeKind::SIMD) {
+                        // SIMD element assignment: simd[i] = value
+                        SimdType* simd_type = static_cast<SimdType*>(object_type);
+                        
+                        // Load current SIMD vector
+                        llvm::Type* simd_llvm_type = mapType(simd_type);
+                        llvm::Value* simd_val = builder.CreateLoad(simd_llvm_type, var, "simd");
+                        
+                        // Insert element at index: insertelement <N x T> vec, T val, i32 idx
+                        llvm::Value* new_simd = builder.CreateInsertElement(simd_val, rhs, index_value, "simd.insert");
+                        
+                        // Store updated SIMD vector back
+                        builder.CreateStore(new_simd, var);
+                        
+                        // Assignment returns the inserted value
+                        return rhs;
+                    }
+                    
+                    // Check if it's a vector type
+                    if (object_type && object_type->getKind() == TypeKind::VECTOR) {
+                        // Vector element assignment: vec[i] = value
+                        VectorType* vec_type = static_cast<VectorType*>(object_type);
+                        int dimension = vec_type->getDimension();
+                        
+                        // Load current vector
+                        llvm::Type* vec_llvm_type = mapType(vec_type);
+                        llvm::Value* vec_val = builder.CreateLoad(vec_llvm_type, var, "vec");
+                        
+                        if (dimension == 9) {
+                            // vec9 is a struct - use insertvalue with dynamic selection
+                            llvm::Value* result = vec_val;
+                            for (int i = 0; i < 9; ++i) {
+                                llvm::Value* cmp = builder.CreateICmpEQ(index_value, builder.getInt32(i), "idx.cmp");
+                                llvm::Value* updated = builder.CreateInsertValue(result, rhs, {static_cast<unsigned>(i)}, "vec9.insert");
+                                result = builder.CreateSelect(cmp, updated, result, "vec9.select");
+                            }
+                            builder.CreateStore(result, var);
+                            return rhs;
+                        } else {
+                            // vec2, vec3 are LLVM vectors - use InsertElement
+                            llvm::Value* new_vec = builder.CreateInsertElement(vec_val, rhs, index_value, "vec.insert");
+                            builder.CreateStore(new_vec, var);
+                            return rhs;
+                        }
+                    }
+                    
+                    // Array element assignment (pointer-based)
+                    llvm::Value* array_ptr = nullptr;
+                    if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
+                        llvm::Type* allocated_type = allocaInst->getAllocatedType();
+                        if (allocated_type->isPointerTy()) {
+                            array_ptr = builder.CreateLoad(allocated_type, var, baseIdent->name + ".ptr");
+                        } else {
+                            array_ptr = var;
+                        }
+                    } else {
+                        array_ptr = var;
+                    }
+                    
+                    // Determine element type
+                    llvm::Type* elem_type = builder.getInt64Ty();  // Default assumption
+                    
+                    // Create GEP and store
+                    llvm::Value* elem_ptr = builder.CreateGEP(elem_type, array_ptr, index_value, "arrayidx");
+                    builder.CreateStore(rhs, elem_ptr);
+                    
+                    return rhs;
+                }
+                
                 if (binop->left->type != ASTNode::NodeType::IDENTIFIER) {
-                    return nullptr;  // Only simple identifiers supported for now
+                    return nullptr;  // Only simple identifiers supported
                 }
                 
                 IdentifierExpr* lhs = static_cast<IdentifierExpr*>(binop->left.get());
@@ -4371,35 +4685,40 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             if (numLimbs) {
                                 result = generateLBIMAdd(currentVal, rhs, numLimbs);
                             } else {
-                                result = builder.CreateAdd(currentVal, rhs, "addtmp");
+                                // Layer 1 Safety: Safe addition returns Unknown on overflow
+                                result = generateSafeAdd(currentVal, rhs, "addtmp");
                             }
                             break;
                         case frontend::TokenType::TOKEN_MINUS_EQUAL:
                             if (numLimbs) {
                                 result = generateLBIMSub(currentVal, rhs, numLimbs);
                             } else {
-                                result = builder.CreateSub(currentVal, rhs, "subtmp");
+                                // Layer 1 Safety: Safe subtraction returns Unknown on overflow
+                                result = generateSafeSub(currentVal, rhs, "subtmp");
                             }
                             break;
                         case frontend::TokenType::TOKEN_STAR_EQUAL:
                             if (numLimbs) {
                                 result = generateLBIMMul(currentVal, rhs, numLimbs);
                             } else {
-                                result = builder.CreateMul(currentVal, rhs, "multmp");
+                                // Layer 1 Safety: Safe multiplication returns Unknown on overflow
+                                result = generateSafeMul(currentVal, rhs, "multmp");
                             }
                             break;
                         case frontend::TokenType::TOKEN_SLASH_EQUAL:
                             if (numLimbs) {
                                 result = generateLBIMDiv(currentVal, rhs, numLimbs);
                             } else {
-                                result = builder.CreateSDiv(currentVal, rhs, "divtmp");
+                                // Layer 1 Safety: Safe division returns Unknown on divide-by-zero
+                                result = generateSafeSDiv(currentVal, rhs, "divtmp");
                             }
                             break;
                         case frontend::TokenType::TOKEN_PERCENT_EQUAL:
                             if (numLimbs) {
                                 result = generateLBIMMod(currentVal, rhs, numLimbs);
                             } else {
-                                result = builder.CreateSRem(currentVal, rhs, "modtmp");
+                                // Layer 1 Safety: Safe modulo returns Unknown on divide-by-zero
+                                result = generateSafeSRem(currentVal, rhs, "modtmp");
                             }
                             break;
                         default:
@@ -4878,7 +5197,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             "aria_fix256_add", funcType);
                         return builder.CreateCall(addFunc, {L, R}, "fix256.add");
                     }
-                    return builder.CreateAdd(L, R, "addtmp");
+                    // Layer 1 Safety: Safe addition returns Unknown on overflow
+                    return generateSafeAdd(L, R, "addtmp");
                 case frontend::TokenType::TOKEN_MINUS:
                     // Check if either operand is a vector
                     if (leftType && leftType->getKind() == TypeKind::VECTOR) {
@@ -4952,7 +5272,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             "aria_fix256_sub", funcType);
                         return builder.CreateCall(subFunc, {L, R}, "fix256.sub");
                     }
-                    return builder.CreateSub(L, R, "subtmp");
+                    // Layer 1 Safety: Safe subtraction returns Unknown on overflow
+                    return generateSafeSub(L, R, "subtmp");
                 case frontend::TokenType::TOKEN_STAR:
                     // Check if either operand is a vector
                     if (leftType && leftType->getKind() == TypeKind::VECTOR) {
@@ -5026,7 +5347,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             "aria_fix256_mul", funcType);
                         return builder.CreateCall(mulFunc, {L, R}, "fix256.mul");
                     }
-                    return builder.CreateMul(L, R, "multmp");
+                    // Layer 1 Safety: Safe multiplication returns Unknown on overflow
+                    return generateSafeMul(L, R, "multmp");
                 case frontend::TokenType::TOKEN_SLASH:
                     // Check if either operand is a vector
                     if (leftType && leftType->getKind() == TypeKind::VECTOR) {
@@ -5100,7 +5422,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             "aria_fix256_div", funcType);
                         return builder.CreateCall(divFunc, {L, R}, "fix256.div");
                     }
-                    return builder.CreateSDiv(L, R, "divtmp");
+                    // Layer 1 Safety: Safe division returns Unknown on divide-by-zero
+                    return generateSafeSDiv(L, R, "divtmp");
                 case frontend::TokenType::TOKEN_PERCENT:
                     std::cerr << "[DEBUG MODULO] isTBB=" << isTBB << ", isTernary=" << isTernary << std::endl;
                     // TBB modulo operator lowering
@@ -5142,10 +5465,35 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         return generateLBIMMod(L, R, numLimbs);
                     }
-                    return builder.CreateSRem(L, R, "modtmp");
+                    // Layer 1 Safety: Safe modulo returns Unknown on divide-by-zero
+                    return generateSafeSRem(L, R, "modtmp");
 
                 // Comparison operators (return i1)
                 case frontend::TokenType::TOKEN_EQUAL_EQUAL:
+                    // SIMD/Vector broadcast: Handle vector-scalar or scalar-vector comparisons
+                    {
+                        bool leftIsVector = L->getType()->isVectorTy();
+                        bool rightIsVector = R->getType()->isVectorTy();
+                        
+                        if (leftIsVector && !rightIsVector) {
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(L->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, R, i);
+                            }
+                            R = vec;
+                        } else if (!leftIsVector && rightIsVector) {
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(R->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, L, i);
+                            }
+                            L = vec;
+                        }
+                    }
+                    
                     std::cerr << "[DEBUG] TOKEN_EQUAL_EQUAL: L type=" << (L->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
                     std::cerr << "[DEBUG] TOKEN_EQUAL_EQUAL: R type=" << (R->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
                     // ARIA-024: LBIM equality comparison for large integers
@@ -5211,6 +5559,30 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateICmpEQ(L, R, "eqtmp");
                     }
                 case frontend::TokenType::TOKEN_BANG_EQUAL:
+                    // SIMD/Vector broadcast: Handle vector-scalar or scalar-vector comparisons
+                    {
+                        bool leftIsVector = L->getType()->isVectorTy();
+                        bool rightIsVector = R->getType()->isVectorTy();
+                        
+                        if (leftIsVector && !rightIsVector) {
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(L->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, R, i);
+                            }
+                            R = vec;
+                        } else if (!leftIsVector && rightIsVector) {
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(R->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, L, i);
+                            }
+                            L = vec;
+                        }
+                    }
+                    
                     // ARIA-024: LBIM inequality comparison for large integers
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         llvm::Value* eq = generateLBIMEQ(L, R, numLimbs);
@@ -5269,6 +5641,30 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateICmpNE(L, R, "netmp");
                     }
                 case frontend::TokenType::TOKEN_LESS:
+                    // SIMD/Vector broadcast: Handle vector-scalar or scalar-vector comparisons
+                    {
+                        bool leftIsVector = L->getType()->isVectorTy();
+                        bool rightIsVector = R->getType()->isVectorTy();
+                        
+                        if (leftIsVector && !rightIsVector) {
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(L->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, R, i);
+                            }
+                            R = vec;
+                        } else if (!leftIsVector && rightIsVector) {
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(R->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, L, i);
+                            }
+                            L = vec;
+                        }
+                    }
+                    
                     // ARIA-024: LBIM comparison for large integers
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         return generateLBIMSLT(L, R, numLimbs);
@@ -5310,6 +5706,30 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateICmpSLT(L, R, "lttmp");
                     }
                 case frontend::TokenType::TOKEN_LESS_EQUAL:
+                    // SIMD/Vector broadcast: Handle vector-scalar or scalar-vector comparisons
+                    {
+                        bool leftIsVector = L->getType()->isVectorTy();
+                        bool rightIsVector = R->getType()->isVectorTy();
+                        
+                        if (leftIsVector && !rightIsVector) {
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(L->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, R, i);
+                            }
+                            R = vec;
+                        } else if (!leftIsVector && rightIsVector) {
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(R->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, L, i);
+                            }
+                            L = vec;
+                        }
+                    }
+                    
                     // ARIA-024: LBIM comparison for large integers
                     // L <= R is equivalent to !(R < L)
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
@@ -5353,6 +5773,32 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateICmpSLE(L, R, "letmp");
                     }
                 case frontend::TokenType::TOKEN_GREATER:
+                    // SIMD/Vector broadcast: Handle vector-scalar or scalar-vector comparisons
+                    {
+                        bool leftIsVector = L->getType()->isVectorTy();
+                        bool rightIsVector = R->getType()->isVectorTy();
+                        
+                        if (leftIsVector && !rightIsVector) {
+                            // Broadcast right scalar to match left vector
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(L->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, R, i);
+                            }
+                            R = vec;
+                        } else if (!leftIsVector && rightIsVector) {
+                            // Broadcast left scalar to match right vector
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(R->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, L, i);
+                            }
+                            L = vec;
+                        }
+                    }
+                    
                     // ARIA-024: LBIM comparison for large integers
                     // L > R is equivalent to R < L
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
@@ -5395,6 +5841,30 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateICmpSGT(L, R, "gttmp");
                     }
                 case frontend::TokenType::TOKEN_GREATER_EQUAL:
+                    // SIMD/Vector broadcast: Handle vector-scalar or scalar-vector comparisons
+                    {
+                        bool leftIsVector = L->getType()->isVectorTy();
+                        bool rightIsVector = R->getType()->isVectorTy();
+                        
+                        if (leftIsVector && !rightIsVector) {
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(L->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, R, i);
+                            }
+                            R = vec;
+                        } else if (!leftIsVector && rightIsVector) {
+                            llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(R->getType());
+                            llvm::Value* vec = llvm::UndefValue::get(vecType);
+                            unsigned numElements = vecType->getElementCount().getKnownMinValue();
+                            for (unsigned i = 0; i < numElements; ++i) {
+                                vec = builder.CreateInsertElement(vec, L, i);
+                            }
+                            L = vec;
+                        }
+                    }
+                    
                     // ARIA-024: LBIM comparison for large integers
                     // L >= R is equivalent to !(L < R)
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
@@ -6225,6 +6695,26 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             // vec2, vec3 are LLVM vectors - use ExtractElement
                             return builder.CreateExtractElement(vec_val, index_value, "vec.elem");
                         }
+                    }
+                    
+                    // Check if it's a SIMD type
+                    if (object_type && object_type->getKind() == TypeKind::SIMD) {
+                        // SIMD element access: simd<T, N>[i] -> T
+                        SimdType* simd_type = static_cast<SimdType*>(object_type);
+                        
+                        // Generate code for the index
+                        llvm::Value* index_value = codegenExpression(indexExpr->index.get());
+                        if (!index_value) {
+                            return nullptr;
+                        }
+                        
+                        // Load the SIMD vector
+                        llvm::Type* simd_llvm_type = mapType(simd_type);
+                        llvm::Value* simd_val = builder.CreateLoad(simd_llvm_type, var, "simd");
+                        
+                        // Use LLVM's ExtractElement instruction
+                        // simd<T, N> maps to <N x T>, so extractelement works directly
+                        return builder.CreateExtractElement(simd_val, index_value, "simd.elem");
                     }
                     
                     // Check if it's a pointer type (arrays are stored as pointers)

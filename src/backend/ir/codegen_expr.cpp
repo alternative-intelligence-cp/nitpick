@@ -134,6 +134,25 @@ llvm::Type* ExprCodegen::getLLVMType(Type* type) {
         return llvm::PointerType::get(context, 0);  // LLVM 20.x opaque pointers
     }
     
+    // TFP (Twisted Floating Point) types - deterministic floats
+    if (type_name == "tfp32") {
+        // tfp32: {i16 exp, i16 mant}
+        std::vector<llvm::Type*> fields = {
+            llvm::Type::getInt16Ty(context),  // exponent (tbb16)
+            llvm::Type::getInt16Ty(context)   // mantissa (tbb16)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    if (type_name == "tfp64") {
+        // tfp64: {i16 exp, i64 mant}
+        // Note: mantissa is i64 but only 48 bits used (tbb48)
+        std::vector<llvm::Type*> fields = {
+            llvm::Type::getInt16Ty(context),  // exponent (tbb16)
+            llvm::Type::getInt64Ty(context)   // mantissa (tbb48 in i64)
+        };
+        return llvm::StructType::get(context, fields);
+    }
+    
     // ARIA-026: SAFETY FIX - No silent i32 default for unknown types
     // Gemini Safety Audit Fix #1: Type System Breach (continued)
     throw std::runtime_error("ICE: Code generation encountered unknown primitive type: '" + type_name + 
@@ -279,6 +298,36 @@ llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
     if (typeName == "vec9") return llvm::PointerType::get(context, 0);
     if (typeName == "tensor") return llvm::PointerType::get(context, 0);
     if (typeName == "matrix") return llvm::PointerType::get(context, 0);
+    
+    // SIMD types: simd<T, N> for explicit vectorization (P1-2 Phase 3)
+    // Example: simd<int32, 4> -> <4 x i32>
+    //          simd<int64, 8> -> <8 x i64>
+    if (typeName.rfind("simd<", 0) == 0 && typeName.back() == '>') {
+        // Parse "simd<elementType, laneCount>"
+        size_t comma_pos = typeName.find(',');
+        if (comma_pos != std::string::npos) {
+            // Extract element type: "simd<int32, 4>" -> "int32"
+            std::string elem_type_str = typeName.substr(5, comma_pos - 5);
+            // Trim whitespace
+            elem_type_str.erase(0, elem_type_str.find_first_not_of(" \t"));
+            elem_type_str.erase(elem_type_str.find_last_not_of(" \t") + 1);
+            
+            // Extract lane count: "simd<int32, 4>" -> "4"
+            std::string lane_count_str = typeName.substr(comma_pos + 1, typeName.length() - comma_pos - 2);
+            // Trim whitespace
+            lane_count_str.erase(0, lane_count_str.find_first_not_of(" \t"));
+            lane_count_str.erase(lane_count_str.find_last_not_of(" \t") + 1);
+            
+            // Convert lane count to integer
+            size_t lane_count = std::stoull(lane_count_str);
+            
+            // Recursively get element type
+            llvm::Type* elem_type = getLLVMTypeFromString(elem_type_str);
+            
+            // Create LLVM fixed vector type
+            return llvm::FixedVectorType::get(elem_type, lane_count);
+        }
+    }
     
     // Unknown type - throw error instead of defaulting
     throw std::runtime_error("Unknown Aria type: " + typeName);
@@ -2054,6 +2103,8 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     // Get the operator type early for TBB check
     TokenType op = expr->op.type;
     
+    std::cerr << "[CODEGEN_BINARY] ENTRY - operator type: " << static_cast<int>(op) << std::endl;
+    
     std::cerr << "[DEBUG] codegenBinary called, op type: " << static_cast<int>(op) << std::endl;
 
     // ========================================================================
@@ -2246,27 +2297,36 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     bool rightIsVector = right->getType()->isVectorTy();
     bool isVector = leftIsVector || rightIsVector;
     
+    std::cerr << "[BROADCAST DEBUG] leftIsVector=" << leftIsVector 
+              << ", rightIsVector=" << rightIsVector << std::endl;
+    
     // For vector-scalar operations, broadcast scalar to vector
     if (leftIsVector && !rightIsVector) {
+        std::cerr << "[BROADCAST] Broadcasting right scalar to vector" << std::endl;
         // Right is scalar, left is vector - broadcast right
         llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(left->getType());
         llvm::Value* vec = llvm::UndefValue::get(vecType);
         unsigned numElements = vecType->getElementCount().getKnownMinValue();
+        std::cerr << "[BROADCAST] numElements=" << numElements << std::endl;
         for (unsigned i = 0; i < numElements; ++i) {
             vec = builder.CreateInsertElement(vec, right, i);
         }
         right = vec;
         rightIsVector = true;
+        std::cerr << "[BROADCAST] Broadcast complete" << std::endl;
     } else if (!leftIsVector && rightIsVector) {
+        std::cerr << "[BROADCAST] Broadcasting left scalar to vector" << std::endl;
         // Left is scalar, right is vector - broadcast left
         llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(right->getType());
         llvm::Value* vec = llvm::UndefValue::get(vecType);
         unsigned numElements = vecType->getElementCount().getKnownMinValue();
+        std::cerr << "[BROADCAST] numElements=" << numElements << std::endl;
         for (unsigned i = 0; i < numElements; ++i) {
             vec = builder.CreateInsertElement(vec, left, i);
         }
         left = vec;
         leftIsVector = true;
+        std::cerr << "[BROADCAST] Broadcast complete" << std::endl;
     }
     
     // Check if operands are floating point (check AFTER broadcast)
@@ -2372,6 +2432,15 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     if (op == TokenType::TOKEN_GREATER) {
+        std::cerr << "[COMPARISON >] About to create ICmp/FCmp" << std::endl;
+        std::cerr << "[COMPARISON >] isFloat=" << isFloat << std::endl;
+        std::cerr << "[COMPARISON >] Left LLVM type: ";
+        left->getType()->print(llvm::errs());
+        std::cerr << std::endl;
+        std::cerr << "[COMPARISON >] Right LLVM type: ";
+        right->getType()->print(llvm::errs());
+        std::cerr << std::endl;
+        
         if (isFloat) {
             return builder.CreateFCmpOGT(left, right, "gttmp");
         } else {
@@ -2924,12 +2993,12 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     std::cerr << "[DEBUG] codegenCall: callee name = " << callee_ident->name << std::endl;
     
     // ====================================================================
-    // BUILTIN FUNCTION: ok() - Unknown State Acknowledgment (Phase 5.2)
+    // BUILTIN FUNCTION: ok() - Unknown State Detection (Phase 5.2 + Layer 1 Safety)
     // ====================================================================
-    // ok(value) -> value - Pass-through that strips "unknown taint"
-    // Purpose: Force explicit acknowledgment when propagating unknown values
-    // Example: int32:y = ok(x);  // "I know this might be unknown, that's OK"
-    // IR: Simply returns the argument value unchanged (taint checking done at type level)
+    // ok(value) -> int32 - Check if value is Unknown
+    // Purpose: Detect Unknown sentinel values from divide-by-zero, overflow, etc.
+    // Returns: 1 if value is valid, 0 if value is Unknown
+    // Unknown sentinel = signed maximum value (INT_MAX for given bit width)
     
     if (callee_ident->name == "ok") {
         if (expr->arguments.size() != 1) {
@@ -2942,10 +3011,365 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("Failed to generate code for ok() argument");
         }
         
-        // ok() is a no-op at IR level - just return the argument value
-        // The "taint stripping" happens at the type system level
-        std::cerr << "[DEBUG] ok() pass-through: returning argument value" << std::endl;
-        return arg;
+        // Check if it's an integer type (Unknown only applies to integers currently)
+        llvm::Type* argType = arg->getType();
+        if (llvm::IntegerType* intType = llvm::dyn_cast<llvm::IntegerType>(argType)) {
+            unsigned bitWidth = intType->getBitWidth();
+            
+            // Unknown sentinel is signed maximum value
+            llvm::Value* unknownSentinel = llvm::ConstantInt::get(
+                context, llvm::APInt::getSignedMaxValue(bitWidth));
+            
+            // Compare: arg != Unknown
+            llvm::Value* isValid = builder.CreateICmpNE(arg, unknownSentinel, "ok.check");
+            
+            // Convert i1 to i32: true (valid) -> 1, false (Unknown) -> 0
+            llvm::Value* result = builder.CreateZExt(isValid, builder.getInt32Ty(), "ok.result");
+            
+            std::cerr << "[DEBUG] ok() checking for Unknown sentinel (INT_MAX)" << std::endl;
+            return result;
+        }
+        
+        // Check if it's a floating-point type (Unknown = NaN for floats)
+        if (argType->isFloatingPointTy()) {
+            // NaN detection: x != x iff x is NaN (IEEE 754 property)
+            // Use unordered comparison to catch NaN
+            llvm::Value* isNaN = builder.CreateFCmpUNO(arg, arg, "nan.check");
+            
+            // isNaN is true if arg is NaN, but ok() returns 1 for valid
+            // So we need to invert: ok() returns 0 if NaN, 1 if valid
+            llvm::Value* isValid = builder.CreateNot(isNaN, "ok.check");
+            
+            // Convert i1 to i32: true (valid) -> 1, false (NaN/Unknown) -> 0
+            llvm::Value* result = builder.CreateZExt(isValid, builder.getInt32Ty(), "ok.result");
+            
+            std::cerr << "[DEBUG] ok() checking for NaN (float Unknown)" << std::endl;
+            return result;
+        }
+        
+        // For non-integer/non-float types, assume valid for now (return 1)
+        // TODO: Handle string Unknown, etc.
+        std::cerr << "[DEBUG] ok() on non-numeric type, assuming valid" << std::endl;
+        return llvm::ConstantInt::get(builder.getInt32Ty(), 1);
+    }
+    
+    // ====================================================================
+    // SIMD HORIZONTAL REDUCTIONS (P1-2 Phase 5)
+    // ====================================================================
+    // Reduce SIMD vector to scalar using LLVM reduction intrinsics
+    // Maps directly to hardware instructions (SSE, AVX, AVX-512)
+    
+    if (callee_ident->name == "@simd_sum" || callee_ident->name == "simd_sum") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("@simd_sum() requires exactly one SIMD vector argument");
+        }
+        
+        llvm::Value* vec = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!vec || !vec->getType()->isVectorTy()) {
+            throw std::runtime_error("@simd_sum() argument must be a SIMD vector");
+        }
+        
+        llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(vec->getType());
+        llvm::Type* elemType = vecType->getElementType();
+        
+        // Use appropriate reduction based on element type
+        if (elemType->isFloatingPointTy()) {
+            // Float reduction: llvm.vector.reduce.fadd
+            llvm::Function* reduceFunc = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::vector_reduce_fadd, {vecType});
+            llvm::Value* zero = llvm::ConstantFP::get(elemType, 0.0);
+            return builder.CreateCall(reduceFunc, {zero, vec}, "simd.sum");
+        } else {
+            // Integer reduction: llvm.vector.reduce.add
+            llvm::Function* reduceFunc = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::vector_reduce_add, {vecType});
+            return builder.CreateCall(reduceFunc, {vec}, "simd.sum");
+        }
+    }
+    
+    if (callee_ident->name == "@simd_product" || callee_ident->name == "simd_product") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("@simd_product() requires exactly one SIMD vector argument");
+        }
+        
+        llvm::Value* vec = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!vec || !vec->getType()->isVectorTy()) {
+            throw std::runtime_error("@simd_product() argument must be a SIMD vector");
+        }
+        
+        llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(vec->getType());
+        llvm::Type* elemType = vecType->getElementType();
+        
+        // Use appropriate reduction based on element type
+        if (elemType->isFloatingPointTy()) {
+            // Float reduction: llvm.vector.reduce.fmul
+            llvm::Function* reduceFunc = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::vector_reduce_fmul, {vecType});
+            llvm::Value* one = llvm::ConstantFP::get(elemType, 1.0);
+            return builder.CreateCall(reduceFunc, {one, vec}, "simd.product");
+        } else {
+            // Integer reduction: llvm.vector.reduce.mul
+            llvm::Function* reduceFunc = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::vector_reduce_mul, {vecType});
+            return builder.CreateCall(reduceFunc, {vec}, "simd.product");
+        }
+    }
+    
+    if (callee_ident->name == "@simd_min" || callee_ident->name == "simd_min") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("@simd_min() requires exactly one SIMD vector argument");
+        }
+        
+        llvm::Value* vec = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!vec || !vec->getType()->isVectorTy()) {
+            throw std::runtime_error("@simd_min() argument must be a SIMD vector");
+        }
+        
+        llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(vec->getType());
+        llvm::Type* elemType = vecType->getElementType();
+        
+        // Use appropriate reduction based on element type
+        if (elemType->isFloatingPointTy()) {
+            // Float min: llvm.vector.reduce.fmin
+            llvm::Function* reduceFunc = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::vector_reduce_fmin, {vecType});
+            return builder.CreateCall(reduceFunc, {vec}, "simd.min");
+        } else {
+            // Signed integer min: llvm.vector.reduce.smin
+            llvm::Function* reduceFunc = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::vector_reduce_smin, {vecType});
+            return builder.CreateCall(reduceFunc, {vec}, "simd.min");
+        }
+    }
+    
+    if (callee_ident->name == "@simd_max" || callee_ident->name == "simd_max") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("@simd_max() requires exactly one SIMD vector argument");
+        }
+        
+        llvm::Value* vec = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!vec || !vec->getType()->isVectorTy()) {
+            throw std::runtime_error("@simd_max() argument must be a SIMD vector");
+        }
+        
+        llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(vec->getType());
+        llvm::Type* elemType = vecType->getElementType();
+        
+        // Use appropriate reduction based on element type
+        if (elemType->isFloatingPointTy()) {
+            // Float max: llvm.vector.reduce.fmax
+            llvm::Function* reduceFunc = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::vector_reduce_fmax, {vecType});
+            return builder.CreateCall(reduceFunc, {vec}, "simd.max");
+        } else {
+            // Signed integer max: llvm.vector.reduce.smax
+            llvm::Function* reduceFunc = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::vector_reduce_smax, {vecType});
+            return builder.CreateCall(reduceFunc, {vec}, "simd.max");
+        }
+    }
+    
+    // ====================================================================
+    // SIMD Boolean Operations (P1-2 Phase 6)
+    // ====================================================================
+    // Boolean reductions for SIMD mask operations
+    
+    if (callee_ident->name == "@simd_any" || callee_ident->name == "simd_any") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("simd_any() requires exactly one SIMD boolean vector argument");
+        }
+        
+        llvm::Value* vec = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!vec || !vec->getType()->isVectorTy()) {
+            throw std::runtime_error("simd_any() argument must be a SIMD vector");
+        }
+        
+        llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(vec->getType());
+        
+        // Use llvm.vector.reduce.or to check if ANY bit is set
+        // For bool vectors (i1), this gives us true if any lane is true
+        llvm::Function* reduceFunc = llvm::Intrinsic::getOrInsertDeclaration(
+            module, llvm::Intrinsic::vector_reduce_or, {vecType});
+        return builder.CreateCall(reduceFunc, {vec}, "simd.any");
+    }
+    
+    if (callee_ident->name == "@simd_all" || callee_ident->name == "simd_all") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("simd_all() requires exactly one SIMD boolean vector argument");
+        }
+        
+        llvm::Value* vec = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!vec || !vec->getType()->isVectorTy()) {
+            throw std::runtime_error("simd_all() argument must be a SIMD vector");
+        }
+        
+        llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(vec->getType());
+        
+        // Use llvm.vector.reduce.and to check if ALL bits are set
+        // For bool vectors (i1), this gives us true if all lanes are true
+        llvm::Function* reduceFunc = llvm::Intrinsic::getOrInsertDeclaration(
+            module, llvm::Intrinsic::vector_reduce_and, {vecType});
+        return builder.CreateCall(reduceFunc, {vec}, "simd.all");
+    }
+    
+    // simd_select(mask, true_vals, false_vals) - Masked SIMD selection
+    // Per-lane ternary: returns true_vals[i] if mask[i] else false_vals[i]
+    // Maps directly to LLVM's select instruction for branchless conditional operations
+    if (callee_ident->name == "@simd_select" || callee_ident->name == "simd_select") {
+        if (expr->arguments.size() != 3) {
+            throw std::runtime_error("simd_select() requires exactly three arguments (mask, true_vals, false_vals)");
+        }
+        
+        llvm::Value* mask = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* trueVals = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* falseVals = codegenExpressionNode(expr->arguments[2].get(), this);
+        
+        if (!mask || !trueVals || !falseVals) {
+            throw std::runtime_error("Failed to generate code for simd_select arguments");
+        }
+        
+        // LLVM select: per-lane conditional selection (branchless)
+        // For each lane i: result[i] = mask[i] ? trueVals[i] : falseVals[i]
+        return builder.CreateSelect(mask, trueVals, falseVals, "simd.select");
+    }
+    
+    // simd_broadcast(scalar, lanes) - Broadcast scalar to all SIMD lanes
+    // Creates a uniform SIMD vector where all lanes contain the same value
+    if (callee_ident->name == "@simd_broadcast" || callee_ident->name == "simd_broadcast") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("simd_broadcast() requires exactly two arguments (value, lane_count)");
+        }
+        
+        llvm::Value* scalarValue = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!scalarValue) {
+            throw std::runtime_error("Failed to generate code for simd_broadcast scalar value");
+        }
+        
+        // Extract lane count from integer literal
+        if (expr->arguments[1]->type != aria::ASTNode::NodeType::LITERAL) {
+            throw std::runtime_error("simd_broadcast() lane count must be a compile-time integer literal");
+        }
+        aria::LiteralExpr* laneCountLit = static_cast<aria::LiteralExpr*>(expr->arguments[1].get());
+        if (!std::holds_alternative<int64_t>(laneCountLit->value)) {
+            throw std::runtime_error("simd_broadcast() lane count must be an integer");
+        }
+        unsigned laneCount = std::get<int64_t>(laneCountLit->value);
+        
+        // Get the scalar type
+        llvm::Type* scalarType = scalarValue->getType();
+        
+        // Create vector type
+        llvm::VectorType* vecType = llvm::VectorType::get(scalarType, laneCount, false);
+        
+        // Method 1: Use a splat constant (works for constants)
+        // Method 2: Insert into undef, then shuffle (works for all values)
+        
+        // Create undef vector
+        llvm::Value* undefVec = llvm::UndefValue::get(vecType);
+        
+        // Insert scalar at position 0
+        llvm::Value* vec0 = builder.CreateInsertElement(undefVec, scalarValue, 
+                                                        uint64_t(0), "broadcast.insert");
+        
+        // Create shuffle mask: all zeros (broadcast lane 0 to all lanes)
+        std::vector<int> shuffleMask(laneCount, 0);
+        
+        // Shuffle to broadcast
+        llvm::Value* result = builder.CreateShuffleVector(vec0, undefVec, shuffleMask, "simd.broadcast");
+        
+        return result;
+    }
+    
+    // simd_load(ptr, lanes) - Load SIMD vector from aligned memory
+    // Loads N elements from memory into a SIMD vector
+    if (callee_ident->name == "@simd_load" || callee_ident->name == "simd_load") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("simd_load() requires exactly two arguments (pointer, lane_count)");
+        }
+        
+        llvm::Value* ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!ptr || !ptr->getType()->isPointerTy()) {
+            throw std::runtime_error("simd_load() first argument must be a pointer");
+        }
+        
+        // Extract lane count from literal
+        if (expr->arguments[1]->type != aria::ASTNode::NodeType::LITERAL) {
+            throw std::runtime_error("simd_load() lane count must be a compile-time integer literal");
+        }
+        aria::LiteralExpr* laneCountLit = static_cast<aria::LiteralExpr*>(expr->arguments[1].get());
+        if (!std::holds_alternative<int64_t>(laneCountLit->value)) {
+            throw std::runtime_error("simd_load() lane count must be an integer");
+        }
+        unsigned laneCount = std::get<int64_t>(laneCountLit->value);
+        
+        // For LLVM 20 opaque pointers, we need to determine element type from Aria type or context
+        // Get the Aria type of the pointer argument
+        std::string ptrTypeName = "unknown";
+        if (var_aria_types.count(expr->arguments[0]->toString())) {
+            ptrTypeName = var_aria_types[expr->arguments[0]->toString()];
+        }
+        
+        // For now, default to int32 if we can't determine the type
+        // In practice, the type will be known from the function signature
+        llvm::Type* elementType = builder.getInt32Ty();  // Default
+        
+        // Try to extract element type from pointer type annotation if available
+        // This is a simplified approach - full implementation would query the type system
+        if (ptrTypeName.find("int32*") != std::string::npos) {
+            elementType = builder.getInt32Ty();
+        } else if (ptrTypeName.find("float32*") != std::string::npos || ptrTypeName.find("flt32*") != std::string::npos) {
+            elementType = builder.getFloatTy();
+        } else if (ptrTypeName.find("int64*") != std::string::npos) {
+            elementType = builder.getInt64Ty();
+        } else if (ptrTypeName.find("float64*") != std::string::npos || ptrTypeName.find("flt64*") != std::string::npos) {
+            elementType = builder.getDoubleTy();
+        }
+        // Add more type mappings as needed
+        
+        // Create vector type
+        llvm::VectorType* vecType = llvm::VectorType::get(elementType, laneCount, false);
+        
+        // Load the vector using modern LLVM load instruction
+        llvm::LoadInst* loadInst = builder.CreateLoad(vecType, ptr, "simd.load");
+        
+        // Set alignment (element size for natural alignment)
+        unsigned elementSizeBytes = elementType->getPrimitiveSizeInBits() / 8;
+        loadInst->setAlignment(llvm::Align(elementSizeBytes));
+        
+        return loadInst;
+    }
+    
+    // simd_store(ptr, vec) - Store SIMD vector to aligned memory
+    // Stores all elements of a SIMD vector to memory
+    if (callee_ident->name == "@simd_store" || callee_ident->name == "simd_store") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("simd_store() requires exactly two arguments (pointer, vector)");
+        }
+        
+        llvm::Value* ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* vec = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        if (!ptr || !ptr->getType()->isPointerTy()) {
+            throw std::runtime_error("simd_store() first argument must be a pointer");
+        }
+        
+        if (!vec || !vec->getType()->isVectorTy()) {
+            throw std::runtime_error("simd_store() second argument must be a SIMD vector");
+        }
+        
+        // Get vector type info
+        llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(vec->getType());
+        llvm::Type* elementType = vecType->getElementType();
+        
+        // Store the vector using modern LLVM store instruction
+        llvm::StoreInst* storeInst = builder.CreateStore(vec, ptr);
+        
+        // Set alignment (element size for natural alignment)
+        unsigned elementSizeBytes = elementType->getPrimitiveSizeInBits() / 8;
+        storeInst->setAlignment(llvm::Align(elementSizeBytes));
+        
+        // Return void (store instruction itself, but it's unused)
+        return storeInst;
     }
     
     // print(string) - write string as-is (no newline)
@@ -3121,6 +3545,424 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         
         return builder.CreateCall(read_func, {}, "stdin_read_call");
+    }
+    
+    // ====================================================================
+    // FRAC (EXACT RATIONAL) ARITHMETIC INTRINSICS
+    // ====================================================================
+    // Mixed-number fractions: frac32 = {tbb32 whole, tbb32 num, tbb32 denom}
+    // All operations call C runtime for exact rational arithmetic with GCD reduction
+    
+    // Helper lambda to get frac LLVM type  
+    auto get_frac_type = [&](const std::string& frac_name) -> llvm::StructType* {
+        int bits = 0;
+        if (frac_name == "frac8") bits = 8;
+        else if (frac_name == "frac16") bits = 16;
+        else if (frac_name == "frac32") bits = 32;
+        else if (frac_name == "frac64") bits = 64;
+        else throw std::runtime_error("Invalid frac type: " + frac_name);
+        
+        llvm::Type* tbb_type = llvm::Type::getIntNTy(context, bits);
+        return llvm::StructType::get(context, {tbb_type, tbb_type, tbb_type});
+    };
+    
+    // frac*_from_parts(whole, num, denom) -> frac*
+    for (const char* width : {"8", "16", "32", "64"}) {
+        std::string frac_name = "frac" + std::string(width);
+        std::string func_name = frac_name + "_from_parts";
+        
+        if (callee_ident->name == func_name || callee_ident->name == "@" + func_name) {
+            if (expr->arguments.size() != 3) {
+                throw std::runtime_error(func_name + "() requires exactly 3 arguments");
+            }
+            
+            // Get arguments
+            llvm::Value* whole = codegenExpressionNode(expr->arguments[0].get(), this);
+            llvm::Value* num = codegenExpressionNode(expr->arguments[1].get(), this);
+            llvm::Value* denom = codegenExpressionNode(expr->arguments[2].get(), this);
+            
+            int bits = std::stoi(width);
+            llvm::Type* tbb_type = llvm::Type::getIntNTy(context, bits);
+            
+            // Convert arguments to tbb type
+            whole = builder.CreateIntCast(whole, tbb_type, true, "whole.cast");
+            num = builder.CreateIntCast(num, tbb_type, true, "num.cast");
+            denom = builder.CreateIntCast(denom, tbb_type, true, "denom.cast");
+            
+            // Create frac struct inline (no runtime call needed for constructor)
+            llvm::StructType* frac_type = get_frac_type(frac_name);
+            llvm::Value* result = llvm::UndefValue::get(frac_type);
+            result = builder.CreateInsertValue(result, whole, 0, "frac.whole");
+            result = builder.CreateInsertValue(result, num, 1, "frac.num");
+            result = builder.CreateInsertValue(result, denom, 2, "frac.denom");
+            
+            return result;
+        }
+    }
+    
+    // frac*_add/sub/mul/div(a, b) -> frac*
+    for (const char* width : {"8", "16", "32", "64"}) {
+        std::string frac_name = "frac" + std::string(width);
+        std::string struct_name = "Frac" + std::string(width);
+        
+        for (const char* op : {"add", "sub", "mul", "div"}) {
+            std::string func_name = frac_name + "_" + op;
+            std::string runtime_func = "aria_" + func_name;
+            
+            if (callee_ident->name == func_name || callee_ident->name == "@" + func_name) {
+                if (expr->arguments.size() != 2) {
+                    throw std::runtime_error(func_name + "() requires exactly 2 arguments");
+                }
+                
+                // Get or create C runtime function
+                llvm::StructType* frac_type = get_frac_type(frac_name);
+                llvm::Function* c_func = module->getFunction(runtime_func);
+                if (!c_func) {
+                    llvm::FunctionType* func_type = llvm::FunctionType::get(
+                        builder.getVoidTy(),  // void return (sret style)
+                        {llvm::PointerType::get(frac_type, 0),  // result*
+                         llvm::PointerType::get(frac_type, 0),  // a*
+                         llvm::PointerType::get(frac_type, 0)}, // b*
+                        false
+                    );
+                    c_func = llvm::Function::Create(func_type,
+                        llvm::Function::ExternalLinkage, runtime_func, module);
+                }
+                
+                // Get arguments
+                llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+                llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+                
+                // Create alloc as for passing to C runtime
+                llvm::Value* result_alloca = builder.CreateAlloca(frac_type, nullptr, "result");
+                llvm::Value* a_alloca = builder.CreateAlloca(frac_type, nullptr, "a.tmp");
+                llvm::Value* b_alloca = builder.CreateAlloca(frac_type, nullptr, "b.tmp");
+                
+                // Store arguments
+                builder.CreateStore(a, a_alloca);
+                builder.CreateStore(b, b_alloca);
+                
+                // Call C runtime
+                builder.CreateCall(c_func, {result_alloca, a_alloca, b_alloca});
+                
+                // Load and return result
+                return builder.CreateLoad(frac_type, result_alloca, "frac.result");
+            }
+        }
+    }
+    
+    // frac*_neg(a) -> frac*
+    for (const char* width : {"8", "16", "32", "64"}) {
+        std::string frac_name = "frac" + std::string(width);
+        std::string func_name = frac_name + "_neg";
+        std::string runtime_func = "aria_" + func_name;
+        
+        if (callee_ident->name == func_name || callee_ident->name == "@" + func_name) {
+            if (expr->arguments.size() != 1) {
+                throw std::runtime_error(func_name + "() requires exactly 1 argument");
+            }
+            
+            llvm::StructType* frac_type = get_frac_type(frac_name);
+            llvm::Function* c_func = module->getFunction(runtime_func);
+            if (!c_func) {
+                llvm::FunctionType* func_type = llvm::FunctionType::get(
+                    builder.getVoidTy(),
+                    {llvm::PointerType::get(frac_type, 0),  // result*
+                     llvm::PointerType::get(frac_type, 0)}, // a*
+                    false
+                );
+                c_func = llvm::Function::Create(func_type,
+                    llvm::Function::ExternalLinkage, runtime_func, module);
+            }
+            
+            llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+            llvm::Value* result_alloca = builder.CreateAlloca(frac_type, nullptr, "result");
+            llvm::Value* a_alloca = builder.CreateAlloca(frac_type, nullptr, "a.tmp");
+            builder.CreateStore(a, a_alloca);
+            builder.CreateCall(c_func, {result_alloca, a_alloca});
+            return builder.CreateLoad(frac_type, result_alloca, "frac.neg");
+        }
+    }
+    
+    // frac*_cmp(a, b) -> int32
+    for (const char* width : {"8", "16", "32", "64"}) {
+        std::string frac_name = "frac" + std::string(width);
+        std::string func_name = frac_name + "_cmp";
+        std::string runtime_func = "aria_" + func_name;
+        
+        if (callee_ident->name == func_name || callee_ident->name == "@" + func_name) {
+            if (expr->arguments.size() != 2) {
+                throw std::runtime_error(func_name + "() requires exactly 2 arguments");
+            }
+            
+            llvm::StructType* frac_type = get_frac_type(frac_name);
+            llvm::Function* c_func = module->getFunction(runtime_func);
+            if (!c_func) {
+                llvm::FunctionType* func_type = llvm::FunctionType::get(
+                    builder.getInt32Ty(),
+                    {llvm::PointerType::get(frac_type, 0),  // a*
+                     llvm::PointerType::get(frac_type, 0)}, // b*
+                    false
+                );
+                c_func = llvm::Function::Create(func_type,
+                    llvm::Function::ExternalLinkage, runtime_func, module);
+            }
+            
+            llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+            llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+            llvm::Value* a_alloca = builder.CreateAlloca(frac_type, nullptr, "a.tmp");
+            llvm::Value* b_alloca = builder.CreateAlloca(frac_type, nullptr, "b.tmp");
+            builder.CreateStore(a, a_alloca);
+            builder.CreateStore(b, b_alloca);
+            return builder.CreateCall(c_func, {a_alloca, b_alloca}, "frac.cmp");
+        }
+    }
+    
+    // frac*_to_int(a) -> int32/int64
+    for (const char* width : {"8", "16", "32", "64"}) {
+        std::string frac_name = "frac" + std::string(width);
+        std::string func_name = frac_name + "_to_int";
+        std::string runtime_func = "aria_" + func_name;
+        
+        if (callee_ident->name == func_name || callee_ident->name == "@" + func_name) {
+            if (expr->arguments.size() != 1) {
+                throw std::runtime_error(func_name + "() requires exactly 1 argument");
+            }
+            
+            llvm::Type* ret_type = (std::string(width) == "64") ? 
+                builder.getInt64Ty() : builder.getInt32Ty();
+            
+            llvm::StructType* frac_type = get_frac_type(frac_name);
+            llvm::Function* c_func = module->getFunction(runtime_func);
+            if (!c_func) {
+                llvm::FunctionType* func_type = llvm::FunctionType::get(
+                    ret_type,
+                    {llvm::PointerType::get(frac_type, 0)},  // a*
+                    false
+                );
+                c_func = llvm::Function::Create(func_type,
+                    llvm::Function::ExternalLinkage, runtime_func, module);
+            }
+            
+            llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+            llvm::Value* a_alloca = builder.CreateAlloca(frac_type, nullptr, "a.tmp");
+            builder.CreateStore(a, a_alloca);
+            return builder.CreateCall(c_func, {a_alloca}, "frac.to_int");
+        }
+    }
+    
+    // frac*_to_float(a) -> flt32/flt64
+    for (const char* width : {"8", "16", "32", "64"}) {
+        std::string frac_name = "frac" + std::string(width);
+        std::string func_name = frac_name + "_to_float";
+        std::string runtime_func = "aria_" + func_name;
+        
+        if (callee_ident->name == func_name || callee_ident->name == "@" + func_name) {
+            if (expr->arguments.size() != 1) {
+                throw std::runtime_error(func_name + "() requires exactly 1 argument");
+            }
+            
+            llvm::Type* ret_type = (std::string(width) == "64") ? 
+                builder.getDoubleTy() : builder.getFloatTy();
+            
+            llvm::StructType* frac_type = get_frac_type(frac_name);
+            llvm::Function* c_func = module->getFunction(runtime_func);
+            if (!c_func) {
+                llvm::FunctionType* func_type = llvm::FunctionType::get(
+                    ret_type,
+                    {llvm::PointerType::get(frac_type, 0)},  // a*
+                    false
+                );
+                c_func = llvm::Function::Create(func_type,
+                    llvm::Function::ExternalLinkage, runtime_func, module);
+            }
+            
+            llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+            llvm::Value* a_alloca = builder.CreateAlloca(frac_type, nullptr, "a.tmp");
+            builder.CreateStore(a, a_alloca);
+            return builder.CreateCall(c_func, {a_alloca}, "frac.to_float");
+        }
+    }
+    
+    // ====================================================================
+    // TFP (TWISTED FLOATING POINT) INTRINSICS
+    // ====================================================================
+    // Deterministic cross-platform floating-point
+    // tfp32: {i16 exp, i16 mant}
+    // tfp64: {i16 exp, i48 mant, i16 _pad}
+    
+    //tfp*_from_parts(exp, mant) -> tfp*
+    for (const char* width : {"32", "64"}) {
+        std::string funcName = "tfp" + std::string(width) + "_from_parts";
+        if (callee_ident->name == funcName || callee_ident->name == "@" + funcName) {
+            if (expr->arguments.size() != 2) {
+                throw std::runtime_error(funcName + "() requires exactly 2 arguments");
+            }
+            
+            llvm::Value* exp_val = codegenExpressionNode(expr->arguments[0].get(), this);
+            llvm::Value* mant_val = codegenExpressionNode(expr->arguments[1].get(), this);
+            
+            // Build tfp struct inline
+            llvm::Type* tfp_type = getLLVMType(type_system->getPrimitiveType("tfp" + std::string(width)));
+            llvm::Value* tfp_val = llvm::UndefValue::get(tfp_type);
+            tfp_val = builder.CreateInsertValue(tfp_val, exp_val, 0, "tfp.exp");
+            tfp_val = builder.CreateInsertValue(tfp_val, mant_val, 1, "tfp.mant");
+            return tfp_val;
+        }
+    }
+    
+    // tfp*_from_double(double) -> tfp*
+    for (const char* width : {"32", "64"}) {
+        std::string funcName = "aria_tfp" + std::string(width) + "_from_double";
+        std::string ariaName = "tfp" + std::string(width) + "_from_double";
+        if (callee_ident->name == ariaName || callee_ident->name == "@" + ariaName) {
+            if (expr->arguments.size() != 1) {
+                throw std::runtime_error(ariaName + "() requires exactly 1 argument");
+            }
+            
+            llvm::Type* tfp_type = getLLVMType(type_system->getPrimitiveType("tfp" + std::string(width)));
+            llvm::FunctionType* c_func_type = llvm::FunctionType::get(tfp_type, {builder.getDoubleTy()}, false);
+            llvm::Function* c_func = module->getFunction(funcName);
+            if (!c_func) {
+                c_func = llvm::Function::Create(c_func_type, llvm::Function::ExternalLinkage, funcName, module);
+            }
+            
+            llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+            return builder.CreateCall(c_func, {arg}, "tfp.from_double");
+        }
+    }
+    
+    // tfp*_to_double(tfp*) -> flt64
+    for (const char* width : {"32", "64"}) {
+        std::string funcName = "aria_tfp" + std::string(width) + "_to_double";
+        std::string ariaName = "tfp" + std::string(width) + "_to_double";
+        if (callee_ident->name == ariaName || callee_ident->name == "@" + ariaName) {
+            if (expr->arguments.size() != 1) {
+                throw std::runtime_error(ariaName + "() requires exactly 1 argument");
+            }
+            
+            llvm::Type* tfp_type = getLLVMType(type_system->getPrimitiveType("tfp" + std::string(width)));
+            llvm::FunctionType* c_func_type = llvm::FunctionType::get(builder.getDoubleTy(), {tfp_type}, false);
+            llvm::Function* c_func = module->getFunction(funcName);
+            if (!c_func) {
+                c_func = llvm::Function::Create(c_func_type, llvm::Function::ExternalLinkage, funcName, module);
+            }
+            
+            llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+            return builder.CreateCall(c_func, {arg}, "tfp.to_double");
+        }
+    }
+    
+    // tfp* arithmetic: add, sub, mul, div
+    for (const char* width : {"32", "64"}) {
+        for (const char* op : {"add", "sub", "mul", "div"}) {
+            std::string funcName = "aria_tfp" + std::string(width) + "_" + op;
+            std::string ariaName = "tfp" + std::string(width) + "_" + op;
+            if (callee_ident->name == ariaName || callee_ident->name == "@" + ariaName) {
+                if (expr->arguments.size() != 2) {
+                    throw std::runtime_error(ariaName + "() requires exactly 2 arguments");
+                }
+                
+                llvm::Type* tfp_type = getLLVMType(type_system->getPrimitiveType("tfp" + std::string(width)));
+                llvm::FunctionType* c_func_type = llvm::FunctionType::get(tfp_type, {tfp_type, tfp_type}, false);
+                llvm::Function* c_func = module->getFunction(funcName);
+                if (!c_func) {
+                    c_func = llvm::Function::Create(c_func_type, llvm::Function::ExternalLinkage, funcName, module);
+                }
+                
+                llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+                llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+                return builder.CreateCall(c_func, {a, b}, "tfp." + std::string(op));
+            }
+        }
+    }
+    
+    // tfp*_neg(tfp*) -> tfp*
+    for (const char* width : {"32", "64"}) {
+        std::string funcName = "aria_tfp" + std::string(width) + "_neg";
+        std::string ariaName = "tfp" + std::string(width) + "_neg";
+        if (callee_ident->name == ariaName || callee_ident->name == "@" + ariaName) {
+            if (expr->arguments.size() != 1) {
+                throw std::runtime_error(ariaName + "() requires exactly 1 argument");
+            }
+            
+            llvm::Type* tfp_type = getLLVMType(type_system->getPrimitiveType("tfp" + std::string(width)));
+            llvm::FunctionType* c_func_type = llvm::FunctionType::get(tfp_type, {tfp_type}, false);
+            llvm::Function* c_func = module->getFunction(funcName);
+            if (!c_func) {
+                c_func = llvm::Function::Create(c_func_type, llvm::Function::ExternalLinkage, funcName, module);
+            }
+            
+            llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+            return builder.CreateCall(c_func, {a}, "tfp.neg");
+        }
+    }
+    
+    // tfp*_cmp(tfp*, tfp*) -> int32
+    for (const char* width : {"32", "64"}) {
+        std::string funcName = "aria_tfp" + std::string(width) + "_cmp";
+        std::string ariaName = "tfp" + std::string(width) + "_cmp";
+        if (callee_ident->name == ariaName || callee_ident->name == "@" + ariaName) {
+            if (expr->arguments.size() != 2) {
+                throw std::runtime_error(ariaName + "() requires exactly 2 arguments");
+            }
+            
+            llvm::Type* tfp_type = getLLVMType(type_system->getPrimitiveType("tfp" + std::string(width)));
+            llvm::FunctionType* c_func_type = llvm::FunctionType::get(builder.getInt32Ty(), {tfp_type, tfp_type}, false);
+            llvm::Function* c_func = module->getFunction(funcName);
+            if (!c_func) {
+                c_func = llvm::Function::Create(c_func_type, llvm::Function::ExternalLinkage, funcName, module);
+            }
+            
+            llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+            llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+            return builder.CreateCall(c_func, {a, b}, "tfp.cmp");
+        }
+    }
+    
+    // tfp* math functions: sqrt, sin, cos, exp, log (single arg)
+    for (const char* width : {"32", "64"}) {
+        for (const char* mathfunc : {"sqrt", "sin", "cos", "exp", "log"}) {
+            std::string funcName = "aria_tfp" + std::string(width) + "_" + mathfunc;
+            std::string ariaName = "tfp" + std::string(width) + "_" + mathfunc;
+            if (callee_ident->name == ariaName || callee_ident->name == "@" + ariaName) {
+                if (expr->arguments.size() != 1) {
+                    throw std::runtime_error(ariaName + "() requires exactly 1 argument");
+                }
+                
+                llvm::Type* tfp_type = getLLVMType(type_system->getPrimitiveType("tfp" + std::string(width)));
+                llvm::FunctionType* c_func_type = llvm::FunctionType::get(tfp_type, {tfp_type}, false);
+                llvm::Function* c_func = module->getFunction(funcName);
+                if (!c_func) {
+                    c_func = llvm::Function::Create(c_func_type, llvm::Function::ExternalLinkage, funcName, module);
+                }
+                
+                llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+                return builder.CreateCall(c_func, {a}, std::string("tfp.") + mathfunc);
+            }
+        }
+    }
+    
+    // tfp*_pow(base, exp) -> tfp*
+    for (const char* width : {"32", "64"}) {
+        std::string funcName = "aria_tfp" + std::string(width) + "_pow";
+        std::string ariaName = "tfp" + std::string(width) + "_pow";
+        if (callee_ident->name == ariaName || callee_ident->name == "@" + ariaName) {
+            if (expr->arguments.size() != 2) {
+                throw std::runtime_error(ariaName + "() requires exactly 2 arguments");
+            }
+            
+            llvm::Type* tfp_type = getLLVMType(type_system->getPrimitiveType("tfp" + std::string(width)));
+            llvm::FunctionType* c_func_type = llvm::FunctionType::get(tfp_type, {tfp_type, tfp_type}, false);
+            llvm::Function* c_func = module->getFunction(funcName);
+            if (!c_func) {
+                c_func = llvm::Function::Create(c_func_type, llvm::Function::ExternalLinkage, funcName, module);
+            }
+            
+            llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+            llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+            return builder.CreateCall(c_func, {a, b}, "tfp.pow");
+        }
     }
     
     // ====================================================================
@@ -6811,8 +7653,18 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
     
     // Handle vector indexing
     if (arrayType->isVectorTy() || (arrayType->isStructTy() && arrayType->getStructNumElements() == 9)) {
-        // For vec2/vec3 (LLVM FixedVectorType): use ExtractElement
+        // For vec2/vec3/SIMD (LLVM FixedVectorType): use ExtractElement
         if (arrayType->isVectorTy()) {
+            // LLVM requires index to be i32 for ExtractElement
+            if (!indexVal->getType()->isIntegerTy(32)) {
+                if (indexVal->getType()->isIntegerTy()) {
+                    // Cast to i32
+                    indexVal = builder.CreateIntCast(indexVal, builder.getInt32Ty(), 
+                                                    true, "idx.i32");
+                } else {
+                    throw std::runtime_error("Vector index must be an integer type");
+                }
+            }
             return builder.CreateExtractElement(arrayVal, indexVal, "vec.index");
         }
         

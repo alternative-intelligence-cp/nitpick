@@ -275,6 +275,57 @@ private:
      */
     llvm::Value* generateLBIMMod(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
 
+    // ========================================================================
+    // Unknown-Safe Arithmetic (Layer 1 Safety)
+    // Division and modulo operations that return Unknown on divide-by-zero
+    // instead of causing undefined behavior
+    // ========================================================================
+
+    /**
+     * Generate safe integer division that returns Unknown sentinel on divide-by-zero
+     * @param L Dividend (numerator)
+     * @param R Divisor (denominator)
+     * @param name Optional name for the result value
+     * @return Division result, or Unknown sentinel (signed max) if R == 0
+     */
+    llvm::Value* generateSafeSDiv(llvm::Value* L, llvm::Value* R, const std::string& name = "divtmp");
+
+    /**
+     * Generate safe integer modulo that returns Unknown sentinel on divide-by-zero
+     * @param L Dividend
+     * @param R Divisor (modulus)
+     * @param name Optional name for the result value
+     * @return Modulo result, or Unknown sentinel (signed max) if R == 0
+     */
+    llvm::Value* generateSafeSRem(llvm::Value* L, llvm::Value* R, const std::string& name = "modtmp");
+
+    /**
+     * Generate safe integer addition that returns Unknown sentinel on overflow
+     * @param L Left operand
+     * @param R Right operand
+     * @param name Optional name for the result value
+     * @return Addition result, or Unknown sentinel (signed max) on overflow
+     */
+    llvm::Value* generateSafeAdd(llvm::Value* L, llvm::Value* R, const std::string& name = "addtmp");
+
+    /**
+     * Generate safe integer subtraction that returns Unknown sentinel on overflow
+     * @param L Left operand (minuend)
+     * @param R Right operand (subtrahend)
+     * @param name Optional name for the result value
+     * @return Subtraction result, or Unknown sentinel (signed max) on overflow
+     */
+    llvm::Value* generateSafeSub(llvm::Value* L, llvm::Value* R, const std::string& name = "subtmp");
+
+    /**
+     * Generate safe integer multiplication that returns Unknown sentinel on overflow
+     * @param L Left operand
+     * @param R Right operand
+     * @param name Optional name for the result value
+     * @return Multiplication result, or Unknown sentinel (signed max) on overflow
+     */
+    llvm::Value* generateSafeMul(llvm::Value* L, llvm::Value* R, const std::string& name = "multmp");
+
 public:
     /**
      * Constructor

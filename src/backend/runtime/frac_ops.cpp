@@ -465,6 +465,48 @@ extern "C" {
     int32_t aria_frac64_cmp(const Frac64* a, const Frac64* b) {
         return compare_impl<int64_t, Frac64>(*a, *b);
     }
+
+    // ========================================================================
+    // Conversion Operations
+    // ========================================================================
+
+    // To integer (rounds toward zero)
+    int8_t aria_frac8_to_int(const Frac8* f) {
+        return f->whole + (f->num / f->denom);
+    }
+
+    int16_t aria_frac16_to_int(const Frac16* f) {
+        return f->whole + (f->num / f->denom);
+    }
+
+    int32_t aria_frac32_to_int(const Frac32* f) {
+        return f->whole + (f->num / f->denom);
+    }
+
+    int64_t aria_frac64_to_int(const Frac64* f) {
+        return f->whole + (f->num / f->denom);
+    }
+
+    // To float
+    float aria_frac8_to_float(const Frac8* f) {
+        return static_cast<float>(f->whole) + 
+               (static_cast<float>(f->num) / static_cast<float>(f->denom));
+    }
+
+    float aria_frac16_to_float(const Frac16* f) {
+        return static_cast<float>(f->whole) + 
+               (static_cast<float>(f->num) / static_cast<float>(f->denom));
+    }
+
+    float aria_frac32_to_float(const Frac32* f) {
+        return static_cast<float>(f->whole) + 
+               (static_cast<float>(f->num) / static_cast<float>(f->denom));
+    }
+
+    double aria_frac64_to_float(const Frac64* f) {
+        return static_cast<double>(f->whole) + 
+               (static_cast<double>(f->num) / static_cast<double>(f->denom));
+    }
 }
 
 // ============================================================================

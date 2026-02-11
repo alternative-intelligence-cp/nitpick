@@ -471,6 +471,14 @@ private:
     bool isNumericExoticType(Type* type);
     
     /**
+     * P1-5: Check if a type is numeric (for dimensional analysis)
+     * 
+     * Includes: int*, uint*, flt*, tbb*, frac*, tfp*, vec9, dvec9,
+     *          trit, tryte, nit, nyte, fix* (fixed-point)
+     */
+    bool isNumericType(Type* type);
+    
+    /**
      * Get valid range for balanced composite types
      * 
      * Returns pair of (min, max):
@@ -915,6 +923,17 @@ public:
      * Check if type checking has errors
      */
     bool hasErrors() const { return !errors.empty(); }
+    
+    /**
+     * Validate that the required failsafe() function exists
+     * 
+     * Every Aria program must define a failsafe(int32) function
+     * for handling unrecoverable errors. This enforces accountability
+     * for error handling - an empty failsafe is valid but documented.
+     * 
+     * Returns: true if failsafe() is defined with correct signature
+     */
+    bool validateFailsafeExists();
     
     /**
      * Clear accumulated errors

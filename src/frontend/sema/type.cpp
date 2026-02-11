@@ -409,6 +409,92 @@ bool GenericType::isAssignableTo(const Type* /*target*/) const {
 }
 
 // ============================================================================
+// Dimension Implementation (P1-5)
+// ============================================================================
+
+std::string Dimension::toString() const {
+    if (isDimensionless()) {
+        return "Dimensionless";
+    }
+    
+    std::stringstream ss;
+    bool first = true;
+    
+    // Build dimension string from exponents
+    auto addDimension = [&](const std::string& name, int8_t exponent) {
+        if (exponent == 0) return;
+        
+        if (!first) ss << "⋅";
+        first = false;
+        
+        ss << name;
+        if (exponent != 1) {
+            // Use superscript notation for exponents
+            ss << "^" << static_cast<int>(exponent);
+        }
+    };
+    
+    // Add each non-zero dimension
+    addDimension("m", length);
+    addDimension("kg", mass);
+    addDimension("s", time);
+    addDimension("A", current);
+    addDimension("K", temperature);
+    addDimension("mol", amount);
+    addDimension("cd", luminosity);
+    
+    return ss.str();
+}
+
+// ============================================================================
+// DimensionalType Implementation (P1-5)
+// ============================================================================
+
+bool DimensionalType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::DIMENSIONAL) {
+        return false;
+    }
+    const DimensionalType* otherDim = static_cast<const DimensionalType*>(other);
+    
+    // Must have same base type and same dimension
+    return baseType->equals(otherDim->baseType) && 
+           dimension == otherDim->dimension;
+}
+
+bool DimensionalType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Can assign to identical dimensional type
+    if (target->getKind() == TypeKind::DIMENSIONAL) {
+        return equals(target);
+    }
+    
+    // Can assign dimensionless to base type
+    if (isDimensionless() && baseType->equals(target)) {
+        return true;
+    }
+    
+    // Cannot assign dimensional types to non-dimensional types
+    return false;
+}
+
+std::string DimensionalType::toString() const {
+    std::stringstream ss;
+    ss << baseType->toString() << "<";
+    
+    if (!dimensionName.empty()) {
+        ss << dimensionName;
+    } else {
+        ss << dimension.toString();
+    }
+    
+    ss << ">";
+    return ss.str();
+}
+
+// ============================================================================
 // OptionalType Implementation
 // ============================================================================
 
@@ -490,6 +576,73 @@ bool FutureType::isAssignableTo(const Type* target) const {
 std::string FutureType::toString() const {
     std::stringstream ss;
     ss << "future<" << outputType->toString() << ">";
+    return ss.str();
+}
+
+// ============================================================================
+// HandleType Implementation (P1-3: Generational Handles)
+// ============================================================================
+
+bool HandleType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::HANDLE) {
+        return false;
+    }
+    const HandleType* otherHandle = static_cast<const HandleType*>(other);
+    return pointeeType->equals(otherHandle->pointeeType);
+}
+
+bool HandleType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // Handle<T> can assign to Handle<T> if T matches
+    if (target->getKind() == TypeKind::HANDLE) {
+        const HandleType* targetHandle = static_cast<const HandleType*>(target);
+        return pointeeType->isAssignableTo(targetHandle->pointeeType);
+    }
+    
+    // Cannot assign Handle<T> to T (requires explicit .get())
+    return false;
+}
+
+std::string HandleType::toString() const {
+    std::stringstream ss;
+    ss << "Handle<" << pointeeType->toString() << ">";
+    return ss.str();
+}
+
+// ============================================================================
+// SimdType implementation
+// ============================================================================
+
+bool SimdType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::SIMD) {
+        return false;
+    }
+    const SimdType* otherSimd = static_cast<const SimdType*>(other);
+    // Both element type AND lane count must match
+    return elementType->equals(otherSimd->elementType) && 
+           laneCount == otherSimd->laneCount;
+}
+
+bool SimdType::isAssignableTo(const Type* target) const {
+    if (!target) {
+        return false;
+    }
+    
+    // simd<T, N> can only assign to simd<T, N> with exact match
+    if (target->getKind() == TypeKind::SIMD) {
+        return equals(target);  // Must be exact match
+    }
+    
+    // Cannot assign simd<T, N> to T or T[] (requires explicit conversion)
+    return false;
+}
+
+std::string SimdType::toString() const {
+    std::stringstream ss;
+    ss << "simd<" << elementType->toString() << ", " << laneCount << ">";
     return ss.str();
 }
 
@@ -589,6 +742,12 @@ TypeSystem::TypeSystem() {
     primitiveCache["tfp64"] = tfp64Type.get();
     types.push_back(std::move(tfp64Type));
     
+    // Fixed-point types (Q128.128 deterministic arithmetic for physics)
+    // fix256: 256-bit fixed-point (128 integer bits + 128 fractional bits)
+    auto fix256Type = std::make_unique<PrimitiveType>("fix256", 256, true, false, false);
+    primitiveCache["fix256"] = fix256Type.get();
+    types.push_back(std::move(fix256Type));
+    
     // Vec9: 16x tbb32 elements (512 bits, 64 bytes)
     auto vec9Type = std::make_unique<PrimitiveType>("vec9", 512, false, false, false);
     primitiveCache["vec9"] = vec9Type.get();
@@ -598,6 +757,9 @@ TypeSystem::TypeSystem() {
     auto tmatrixType = std::make_unique<PrimitiveType>("tmatrix", 0, false, false, false);
     primitiveCache["tmatrix"] = tmatrixType.get();
     types.push_back(std::move(tmatrixType));
+    
+    // Initialize dimension registry (P1-5)
+    initializeDimensionRegistry();
     
     // TTensor: 9D toroidal tensor (composite structure)
     auto ttensorType = std::make_unique<PrimitiveType>("ttensor", 0, false, false, false);
@@ -679,15 +841,26 @@ TypeSystem::TypeSystem() {
 }
 
 PrimitiveType* TypeSystem::getPrimitiveType(const std::string& name) {
-    auto it = primitiveCache.find(name);
+    // Normalize type aliases to canonical names
+    // This ensures that "float32" and "flt32" create the same type object
+    std::string canonicalName = name;
+    
+    // Float aliases: float32 → flt32, float64 → flt64, etc.
+    if (name == "float32") canonicalName = "flt32";
+    else if (name == "float64") canonicalName = "flt64";
+    else if (name == "float128") canonicalName = "flt128";
+    else if (name == "float256") canonicalName = "flt256";
+    else if (name == "float512") canonicalName = "flt512";
+    
+    auto it = primitiveCache.find(canonicalName);
     if (it != primitiveCache.end()) {
         return it->second;
     }
     
-    // Create new primitive type if not cached
-    auto type = std::make_unique<PrimitiveType>(name);
+    // Create new primitive type if not cached (using canonical name)
+    auto type = std::make_unique<PrimitiveType>(canonicalName);
     PrimitiveType* ptr = type.get();
-    primitiveCache[name] = ptr;
+    primitiveCache[canonicalName] = ptr;
     types.push_back(std::move(type));
     return ptr;
 }
@@ -758,6 +931,23 @@ FutureType* TypeSystem::getFutureType(Type* outputType) {
     return ptr;
 }
 
+HandleType* TypeSystem::getHandleType(Type* pointeeType) {
+    // TODO: Implement caching for handle types (P1-3)
+    auto type = std::make_unique<HandleType>(pointeeType);
+    HandleType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+SimdType* TypeSystem::getSimdType(Type* elementType, size_t laneCount) {
+    // TODO: Implement caching for SIMD types (P1-2)
+    // Validate lane count is power of 2 (future work)
+    auto type = std::make_unique<SimdType>(elementType, laneCount);
+    SimdType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
 // Phase 4.5.3 Task #4: Extract T from future<T> for await expressions
 // When we await a future<T>, the result type is T (not future<T>)
 Type* TypeSystem::unwrapFutureType(Type* futureType) {
@@ -822,6 +1012,100 @@ GenericType* TypeSystem::getGenericType(const std::string& name) {
     genericCache[name] = ptr;
     types.push_back(std::move(type));
     return ptr;
+}
+
+// ============================================================================
+// Dimensional Type System (P1-5)
+// ============================================================================
+
+void TypeSystem::initializeDimensionRegistry() {
+    // Base SI dimensions
+    dimensionRegistry["Dimensionless"] = Dimension::Dimensionless();
+    dimensionRegistry["Length"] = Dimension::Length();
+    dimensionRegistry["Mass"] = Dimension::Mass();
+    dimensionRegistry["Time"] = Dimension::Time();
+    dimensionRegistry["Current"] = Dimension::Current();
+    dimensionRegistry["Temperature"] = Dimension::Temperature();
+    dimensionRegistry["Amount"] = Dimension::Amount();
+    dimensionRegistry["Luminosity"] = Dimension::Luminosity();
+    
+    // Base SI unit names
+    dimensionRegistry["Meters"] = Dimension::Length();
+    dimensionRegistry["Kilograms"] = Dimension::Mass();
+    dimensionRegistry["Seconds"] = Dimension::Time();
+    dimensionRegistry["Amperes"] = Dimension::Current();
+    dimensionRegistry["Kelvin"] = Dimension::Temperature();
+    dimensionRegistry["Moles"] = Dimension::Amount();
+    dimensionRegistry["Candela"] = Dimension::Luminosity();
+    
+    // Common derived dimensions
+    dimensionRegistry["Velocity"] = Dimension::Velocity();
+    dimensionRegistry["Acceleration"] = Dimension::Acceleration();
+    dimensionRegistry["Force"] = Dimension::Force();
+    dimensionRegistry["Newtons"] = Dimension::Force();
+    dimensionRegistry["Energy"] = Dimension::Energy();
+    dimensionRegistry["Joules"] = Dimension::Energy();
+    dimensionRegistry["Power"] = Dimension::Power();
+    dimensionRegistry["Watts"] = Dimension::Power();
+    dimensionRegistry["Charge"] = Dimension::Charge();
+    dimensionRegistry["Coulombs"] = Dimension::Charge();
+    dimensionRegistry["Voltage"] = Dimension::Voltage();
+    dimensionRegistry["Volts"] = Dimension::Voltage();
+    dimensionRegistry["Resistance"] = Dimension::Resistance();
+    dimensionRegistry["Ohms"] = Dimension::Resistance();
+    dimensionRegistry["Frequency"] = Dimension::Frequency();
+    dimensionRegistry["Hertz"] = Dimension::Frequency();
+    dimensionRegistry["Resonance"] = Dimension::Frequency();  // Alias for Nikola
+    dimensionRegistry["Action"] = Dimension::Action();
+    dimensionRegistry["Coherence"] = Dimension::Action();     // Alias for Nikola
+}
+
+const Dimension* TypeSystem::lookupDimension(const std::string& name) const {
+    auto it = dimensionRegistry.find(name);
+    if (it != dimensionRegistry.end()) {
+        return &it->second;
+    }
+    return nullptr;
+}
+
+void TypeSystem::registerDimension(const std::string& name, const Dimension& dimension) {
+    dimensionRegistry[name] = dimension;
+}
+
+DimensionalType* TypeSystem::getDimensionalType(Type* baseType, const Dimension& dimension, 
+                                               const std::string& dimensionName) {
+    // Create cache key: baseType + dimension vector
+    std::string cacheKey = baseType->toString() + "<";
+    if (!dimensionName.empty()) {
+        cacheKey += dimensionName;
+    } else {
+        // Use dimension vector as key if no name
+        cacheKey += dimension.toString();
+    }
+    cacheKey += ">";
+    
+    auto it = dimensionalCache.find(cacheKey);
+    if (it != dimensionalCache.end()) {
+        return it->second;
+    }
+    
+    // Create new dimensional type
+    auto type = std::make_unique<DimensionalType>(baseType, dimension, dimensionName);
+    DimensionalType* ptr = type.get();
+    dimensionalCache[cacheKey] = ptr;
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+DimensionalType* TypeSystem::getDimensionalType(Type* baseType, const std::string& dimensionName) {
+    // Lookup dimension by name
+    const Dimension* dim = lookupDimension(dimensionName);
+    if (!dim) {
+        // Unknown dimension name - could be an error, but for now create dimensionless
+        return getDimensionalType(baseType, Dimension::Dimensionless(), dimensionName);
+    }
+    
+    return getDimensionalType(baseType, *dim, dimensionName);
 }
 
 } // namespace sema

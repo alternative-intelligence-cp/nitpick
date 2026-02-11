@@ -596,6 +596,15 @@ llvm::Module* compile_to_module(
         return nullptr;
     }
     
+    // Validate that the mandatory failsafe() function exists
+    // Every Aria program must define failsafe(int32) for error handling accountability
+    if (!type_checker.validateFailsafeExists()) {
+        for (const auto& err : type_checker.getErrors()) {
+            diags.error(aria::SourceLocation(filename, 0, 0), err);
+        }
+        return nullptr;
+    }
+    
     // Type check all loaded modules (for cross-module calls)
     const auto& loaded_modules = module_loader.getLoadedModules();
     for (const auto& [path, loaded_module] : loaded_modules) {

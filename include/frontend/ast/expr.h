@@ -448,11 +448,12 @@ class UnwrapExpr : public ASTNode {
 public:
     ASTNodePtr result;        // Expression that returns a result type or pointer
     ASTNodePtr defaultValue;  // Default value if result contains error or is null
-    bool isNullCoalesce;      // true for ??, false for ?
+    bool isNullCoalesce;      // true for ??, false for ? or !!
+    bool isFailsafe;          // true for !!, false for ? or ??
     
-    UnwrapExpr(ASTNodePtr res, ASTNodePtr defVal, int line = 0, int column = 0, bool nullCoalesce = false)
+    UnwrapExpr(ASTNodePtr res, ASTNodePtr defVal, int line = 0, int column = 0, bool nullCoalesce = false, bool failsafe = false)
         : ASTNode(NodeType::UNWRAP, line, column),
-          result(res), defaultValue(defVal), isNullCoalesce(nullCoalesce) {}
+          result(res), defaultValue(defVal), isNullCoalesce(nullCoalesce), isFailsafe(failsafe) {}
     
     std::string toString() const override;
 };

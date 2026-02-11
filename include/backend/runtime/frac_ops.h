@@ -97,6 +97,22 @@ int32_t aria_frac32_cmp(const Frac32* a, const Frac32* b);
 int32_t aria_frac64_cmp(const Frac64* a, const Frac64* b);
 
 // ============================================================================
+// Conversion Operations
+// ============================================================================
+
+// To integer (rounds toward zero)
+int8_t aria_frac8_to_int(const Frac8* f);
+int16_t aria_frac16_to_int(const Frac16* f);
+int32_t aria_frac32_to_int(const Frac32* f);
+int64_t aria_frac64_to_int(const Frac64* f);
+
+// To float
+float aria_frac8_to_float(const Frac8* f);
+float aria_frac16_to_float(const Frac16* f);
+float aria_frac32_to_float(const Frac32* f);
+double aria_frac64_to_float(const Frac64* f);
+
+// ============================================================================
 // String Conversion
 // ============================================================================
 // Returns number of characters written (excluding null terminator)
