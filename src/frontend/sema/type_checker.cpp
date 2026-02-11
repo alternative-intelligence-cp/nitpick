@@ -5121,8 +5121,9 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         if (spec->funcDecl && spec->funcDecl->returnType) {
             Type* returnType = resolveTypeNode(spec->funcDecl->returnType.get());
             if (returnType && returnType->getKind() != TypeKind::ERROR) {
-                // Aria functions return Result<T>, so wrap in Result if not already
-                if (returnType->getKind() != TypeKind::RESULT) {
+                // Aria functions return Result<T>, but pipeline calls automatically unwrap
+                // Skip Result wrapping for pipeline-generated calls
+                if (!expr->isPipelineCall && returnType->getKind() != TypeKind::RESULT) {
                     return typeSystem->getResultType(returnType);
                 }
                 return returnType;
@@ -5164,8 +5165,16 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             
+            // Pipeline operators automatically unwrap Result types
+            // When Result<T> is passed where T is expected, we auto-unwrap
+            Type* effectiveArgType = argType;
+            if (argType->getKind() == TypeKind::RESULT) {
+                ResultType* resultType = static_cast<ResultType*>(argType);
+                effectiveArgType = resultType->getValueType();
+            }
+            
             // Check if argument type is assignable to parameter type
-            if (!argType->isAssignableTo(paramTypes[i])) {
+            if (!effectiveArgType->isAssignableTo(paramTypes[i])) {
                 addError("Argument " + std::to_string(i + 1) + " has type '" + 
                         argType->toString() + "', but function expects '" + 
                         paramTypes[i]->toString() + "'", expr->arguments[i].get());
@@ -5174,7 +5183,15 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
         
         // Return the function's return type
-        return funcType->getReturnType();
+        // For pipeline calls, return type is already unwrapped (no Result wrapping)
+        Type* returnType = funcType->getReturnType();
+        
+        // Pipeline operators work with unwrapped values - don't re-wrap in Result
+        if (expr->isPipelineCall) {
+            return returnType;
+        }
+        
+        return returnType;
     }
     
     // If callee type is not a function, it's an error

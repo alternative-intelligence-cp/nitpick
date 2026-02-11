@@ -180,6 +180,7 @@ public:
     std::vector<ASTNodePtr> arguments;
     std::vector<std::string> explicitTypeArgs;  // For turbofish syntax: ::<T, U>
     std::string specializedMangledName;  // For generic calls: resolved mangled name
+    bool isPipelineCall = false;  // True for pipeline-generated calls (|>, <|)
     
     CallExpr(ASTNodePtr callee, const std::vector<ASTNodePtr>& args, int line = 0, int column = 0)
         : ASTNode(NodeType::CALL, line, column), callee(callee), arguments(args) {}
