@@ -1,0 +1,87 @@
+/**
+ * Numeric trait implementations for all numeric types
+ * 
+ * These implementations tell the type system that built-in numeric types
+ * satisfy the Numeric trait contract. The actual operations are implemented
+ * as compiler intrinsics (LLVM IR generation).
+ * 
+ * This file serves as the "registration" layer between the trait definition
+ * and the compiler's built-in type support.
+ */
+
+// =============================================================================
+// Signed Integers
+// =============================================================================
+
+impl:Numeric:for:int8 = {}
+impl:Numeric:for:int16 = {}
+impl:Numeric:for:int32 = {}
+impl:Numeric:for:int64 = {}
+
+// =============================================================================
+// Unsigned Integers  
+// =============================================================================
+
+impl:Numeric:for:uint8 = {}
+impl:Numeric:for:uint16 = {}
+impl:Numeric:for:uint32 = {}
+impl:Numeric:for:uint64 = {}
+
+// =============================================================================
+// Balanced Ternary (TBB)
+// =============================================================================
+
+impl:Numeric:for:tbb8 = {}
+impl:Numeric:for:tbb16 = {}
+impl:Numeric:for:tbb32 = {}
+impl:Numeric:for:tbb64 = {}
+
+// =============================================================================
+// Exact Rationals (Frac)
+// =============================================================================
+
+impl:Numeric:for:frac8 = {}
+impl:Numeric:for:frac16 = {}
+impl:Numeric:for:frac32 = {}
+impl:Numeric:for:frac64 = {}
+
+// =============================================================================
+// Twisted Floating Point (TFP)
+// =============================================================================
+
+impl:Numeric:for:tfp32 = {}
+impl:Numeric:for:tfp64 = {}
+
+// =============================================================================
+// High-Precision Fixed Point
+// =============================================================================
+
+impl:Numeric:for:fix256 = {}
+
+// =============================================================================
+// Standard Floating Point (for compatibility)
+// =============================================================================
+
+impl:Numeric:for:flt32 = {}
+impl:Numeric:for:flt64 = {}
+
+/**
+ * Why empty impl blocks?
+ * 
+ * The operations are already implemented as compiler intrinsics. These impl
+ * declarations simply register with the type system that:
+ * "int32 implements Numeric"
+ * 
+ * This allows the compiler to accept generic functions like:
+ *   func<T: Numeric>:complex_add = ...
+ * with arguments of type T.
+ * 
+ * The trait system validates the constraint at compile time, and the
+ * monomorphizer generates specialized code using the intrinsic operations.
+ * 
+ * Benefits:
+ * - Type-safe generics
+ * - Zero runtime cost
+ * - Clear documentation of capabilities
+ * - Extensible (users can add custom numeric types)
+ */

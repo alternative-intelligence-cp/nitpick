@@ -17,6 +17,10 @@
  * Primary use case: Nikola AGI wavefunction Ψ(x,t) for UFIE propagation
  */
 
+// Import Numeric trait and implementations
+use "traits/numeric.aria".*;
+use "traits/numeric_impls.aria".*;
+
 // =============================================================================
 // Complex<T> - Generic Complex Number Type
 // =============================================================================
@@ -33,7 +37,7 @@
  *   complex<fix256>:z = complex_new(3.0, 4.0);
  *   complex<fix256>:sum = complex_add(z, complex_new(1.0, 2.0));
  */
-struct<T>:complex = {
+struct<T: Numeric>:complex = {
     *T:real;    // Real component
     *T:imag;    // Imaginary component
 };
@@ -50,14 +54,14 @@ struct<T>:complex = {
  * Example:
  *   complex<fix256>:z = complex_new(3.0, 4.0);
  */
-pub func<T>:complex_new = complex<*T>(*T:real, *T:imag) {
+pub func<T: Numeric>:complex_new = complex<*T>(*T:real, *T:imag) {
     // ERR propagation: if either component is ERR, entire complex is ERR
     if (real == ERR || imag == ERR) {
         complex<*T>:err_result;
         err_result.real = ERR;
         err_result.imag = ERR;
         pass(err_result);
-    };
+    }
     
     complex<*T>:result;
     result.real = real;
@@ -74,13 +78,13 @@ pub func<T>:complex_new = complex<*T>(*T:real, *T:imag) {
  *   fix256:x = 5.0;
  *   complex<fix256>:z = complex_from_real(x);  // (5.0 + 0.0i)
  */
-pub func<T>:complex_from_real = complex<*T>(*T:real) {
+pub func<T: Numeric>:complex_from_real = complex<*T>(*T:real) {
     if (real == ERR) {
         complex<*T>:err_result;
         err_result.real = ERR;
         err_result.imag = ERR;
         pass(err_result);
-    };
+    }
     
     complex<*T>:result;
     result.real = real;
@@ -95,13 +99,13 @@ pub func<T>:complex_from_real = complex<*T>(*T:real) {
  *   fix256:y = 3.0;
  *   complex<fix256>:z = complex_from_imag(y);  // (0.0 + 3.0i)
  */
-pub func<T>:complex_from_imag = complex<*T>(*T:imag) {
+pub func<T: Numeric>:complex_from_imag = complex<*T>(*T:imag) {
     if (imag == ERR) {
         complex<*T>:err_result;
         err_result.real = ERR;
         err_result.imag = ERR;
         pass(err_result);
-    };
+    }
     
     complex<*T>:result;
     result.real = 0.0;  // Zero real part
@@ -114,7 +118,7 @@ pub func<T>:complex_from_imag = complex<*T>(*T:imag) {
  * 
  * Returns true if either real or imaginary component is ERR.
  */
-pub func<T>:complex_is_err = bool(complex<*T>:z) {
+pub func<T: Numeric>:complex_is_err = bool(complex<*T>:z) {
     pass(z.real == ERR || z.imag == ERR);
 };
 
@@ -123,7 +127,7 @@ pub func<T>:complex_is_err = bool(complex<*T>:z) {
  * 
  * Both components are ERR.
  */
-pub func<T>:complex_err = complex<*T>() {
+pub func<T: Numeric>:complex_err = complex<*T>() {
     complex<*T>:result;
     result.real = ERR;
     result.imag = ERR;
@@ -147,11 +151,14 @@ pub func<T>:complex_err = complex<*T>() {
  *   complex<fix256>:z2 = complex_new(1.0, 2.0);
  *   complex<fix256>:sum = complex_add(z1, z2);  // (4.0 + 6.0i)
  */
-pub func<T>:complex_add = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
+pub func<T: Numeric>:complex_add = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     // ERR propagation
     if (complex_is_err(z1) || complex_is_err(z2)) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     complex<*T>:result;
     result.real = z1.real + z2.real;
@@ -159,8 +166,11 @@ pub func<T>:complex_add = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     
     // Check for ERR from arithmetic overflow
     if (result.real == ERR || result.imag == ERR) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     pass(result);
 };
@@ -178,20 +188,26 @@ pub func<T>:complex_add = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
  *   complex<fix256>:z2 = complex_new(2.0, 3.0);
  *   complex<fix256>:diff = complex_sub(z1, z2);  // (3.0 + 4.0i)
  */
-pub func<T>:complex_sub = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
+pub func<T: Numeric>:complex_sub = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     // ERR propagation
     if (complex_is_err(z1) || complex_is_err(z2)) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     complex<*T>:result;
     result.real = z1.real - z2.real;
     result.imag = z1.imag - z2.imag;
     
-    // Check for ERR from arithmetic underflow
+    // Check for ERRfrom arithmetic underflow
     if (result.real == ERR || result.imag == ERR) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     pass(result);
 };
@@ -220,11 +236,14 @@ pub func<T>:complex_sub = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
  *   complex<fix256>:z2 = complex_new(1.0, 2.0);
  *   complex<fix256>:prod = complex_mul(z1, z2);  // (-5.0 + 10.0i)
  */
-pub func<T>:complex_mul = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
+pub func<T: Numeric>:complex_mul = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     // ERR propagation
     if (complex_is_err(z1) || complex_is_err(z2)) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     // 3-multiplication algorithm (Gauss)
     *T:k1 = z1.real * (z2.real + z2.imag);
@@ -233,8 +252,11 @@ pub func<T>:complex_mul = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     
     // Check for ERR in intermediate calculations
     if (k1 == ERR || k2 == ERR || k3 == ERR) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     complex<*T>:result;
     result.real = k1 - k2;
@@ -242,8 +264,11 @@ pub func<T>:complex_mul = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     
     // Check for ERR in final result
     if (result.real == ERR || result.imag == ERR) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     pass(result);
 };
@@ -269,11 +294,14 @@ pub func<T>:complex_mul = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
  *   complex<fix256>:z2 = complex_new(1.0, 2.0);
  *   complex<fix256>:quot = complex_div(z1, z2);  // (5.0 + 0.0i)
  */
-pub func<T>:complex_div = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
+pub func<T: Numeric>:complex_div = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     // ERR propagation
     if (complex_is_err(z1) || complex_is_err(z2)) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     // Calculate denominator (c² + d²)
     *T:c_sq = z2.real * z2.real;
@@ -282,8 +310,11 @@ pub func<T>:complex_div = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     
     // Check for division by zero
     if (denom == 0.0 || denom == ERR) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     // Calculate numerator components
     *T:ac = z1.real * z2.real;
@@ -293,8 +324,11 @@ pub func<T>:complex_div = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     
     // Check for ERR in intermediate calculations
     if (ac == ERR || bd == ERR || bc == ERR || ad == ERR) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     complex<*T>:result;
     result.real = (ac + bd) / denom;
@@ -302,8 +336,11 @@ pub func<T>:complex_div = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     
     // Check for ERR in final result
     if (result.real == ERR || result.imag == ERR) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     pass(result);
 };
@@ -327,10 +364,13 @@ pub func<T>:complex_div = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
  *   complex<fix256>:z = complex_new(3.0, 4.0);
  *   complex<fix256>:z_conj = complex_conjugate(z);  // (3.0 - 4.0i)
  */
-pub func<T>:complex_conjugate = complex<*T>(complex<*T>:z) {
+pub func<T: Numeric>:complex_conjugate = complex<*T>(complex<*T>:z) {
     if (complex_is_err(z)) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     complex<*T>:result;
     result.real = z.real;
@@ -338,8 +378,11 @@ pub func<T>:complex_conjugate = complex<*T>(complex<*T>:z) {
     
     // Check for ERR from negation
     if (result.imag == ERR) {
-        pass(complex_err<*T>());
-    };
+        complex<*T>:err;
+        err.real = ERR;
+        err.imag = ERR;
+        pass(err);
+    }
     
     pass(result);
 };
@@ -374,38 +417,38 @@ pub func<T>:complex_conjugate = complex<*T>(complex<*T>:z) {
  *   complex<fix256>:z = complex_new(3.0, 4.0);
  *   fix256:mag = complex_magnitude(z);  // 5.0
  */
-pub func<T>:complex_magnitude = *T(complex<*T>:z) {
+pub func<T: Numeric>:complex_magnitude = *T(complex<*T>:z) {
     if (complex_is_err(z)) {
         pass(ERR);
-    };
+    }
     
     // Get absolute values
     *T:abs_real = z.real;
-    if (abs_real < 0.0) { abs_real = -abs_real; };
+    if (abs_real < 0.0) { abs_real = -abs_real; }
     
     *T:abs_imag = z.imag;
-    if (abs_imag < 0.0) { abs_imag = -abs_imag; };
+    if (abs_imag < 0.0) { abs_imag = -abs_imag; }
     
     // Check for ERR in abs calculations
     if (abs_real == ERR || abs_imag == ERR) {
         pass(ERR);
-    };
+    }
     
     // Handle zero case
     if (abs_real == 0.0 && abs_imag == 0.0) {
         pass(0.0);
-    };
+    }
     
     // Find scaling factor (max component)
     *T:scale = abs_real;
     if (abs_imag > scale) {
         scale = abs_imag;
-    };
+    }
     
     // Avoid division by zero (covered by zero check above, defensive)
     if (scale == 0.0 || scale == ERR) {
         pass(ERR);
-    };
+    }
     
     // Scale components to prevent overflow
     *T:a_scaled = z.real / scale;
@@ -413,7 +456,7 @@ pub func<T>:complex_magnitude = *T(complex<*T>:z) {
     
     if (a_scaled == ERR || b_scaled == ERR) {
         pass(ERR);
-    };
+    }
     
     // Calculate magnitude of scaled vector
     *T:a_sq = a_scaled * a_scaled;
@@ -422,20 +465,20 @@ pub func<T>:complex_magnitude = *T(complex<*T>:z) {
     
     if (a_sq == ERR || b_sq == ERR || sum_sq == ERR) {
         pass(ERR);
-    };
+    }
     
     *T:scaled_mag = sqrt(sum_sq);
     
     if (scaled_mag == ERR) {
         pass(ERR);
-    };
+    }
     
     // Unscale result
     *T:result = scale * scaled_mag;
     
     if (result == ERR) {
         pass(ERR);
-    };
+    }
     
     pass(result);
 };
