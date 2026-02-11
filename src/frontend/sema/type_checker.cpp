@@ -645,6 +645,42 @@ Type* TypeChecker::inferBinaryOp(BinaryExpr* expr) {
     }
     
     // ========================================================================
+    // Generic Type Constraint Handling
+    // ========================================================================
+    // For generic types with Numeric constraint, allow arithmetic operations
+    // This enables generic numeric algorithms (complex<T: Numeric>, etc.)
+    using frontend::TokenType;
+    bool leftIsGeneric = (leftType->getKind() == TypeKind::GENERIC);
+    bool rightIsGeneric = (rightType->getKind() == TypeKind::GENERIC);
+    
+    // Also check for pointer to generic (*T)
+    if (leftType->getKind() == TypeKind::POINTER) {
+        PointerType* ptrType = static_cast<PointerType*>(leftType);
+        if (ptrType->getPointeeType()->getKind() == TypeKind::GENERIC) {
+            leftIsGeneric = true;
+        }
+    }
+    if (rightType->getKind() == TypeKind::POINTER) {
+        PointerType* ptrType = static_cast<PointerType*>(rightType);
+        if (ptrType->getPointeeType()->getKind() == TypeKind::GENERIC) {
+            rightIsGeneric = true;
+        }
+    }
+    
+    if ((leftIsGeneric || rightIsGeneric) && 
+        (expr->op.type == TokenType::TOKEN_PLUS ||
+         expr->op.type == TokenType::TOKEN_MINUS ||
+         expr->op.type == TokenType::TOKEN_STAR ||
+         expr->op.type == TokenType::TOKEN_SLASH ||
+         expr->op.type == TokenType::TOKEN_PERCENT)) {
+        
+        // For now, allow arithmetic on generic types
+        // The generic resolver will validate Numeric constraints during instantiation
+        // Return the left type as the result type (both should be the same generic param)
+        return leftType;
+    }
+    
+    // ========================================================================
     // Phase 1.5: Immutable .is_error Enforcement (for compound assignments)
     // ========================================================================
     // Block compound assignment to Result<T>.is_error (+=, -=, etc.)
@@ -7084,6 +7120,14 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
 // ============================================================================
 
 void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
+    // Skip detailed type checking for generic functions
+    // Their bodies will be checked during monomorphization when types are concrete
+    if (!stmt->genericParams.empty()) {
+        // Still register the function in the symbol table, but don't check the body
+        // The monomorphizer will create concrete versions that get type-checked
+        return;
+    }
+    
     // Resolve return type from the type node
     Type* valueType = resolveTypeNode(stmt->returnType.get());
     

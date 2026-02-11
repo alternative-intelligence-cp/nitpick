@@ -1,0 +1,82 @@
+/**
+ * Aria Standard Library - Numeric Trait
+ * 
+ * Defines the interface for types that support numeric operations.
+ * Required for generic numeric algorithms (complex numbers, vectors, matrices).
+ * 
+ * A type implements Numeric if it supports:
+ * - Arithmetic: addition, subtraction, multiplication, division
+ * - Comparison: equality, ordering
+ * - Constants: zero, one (identity elements)
+ * - Negation: unary minus
+ * - Error handling: ERR sentinel value
+ * 
+ * Philosophy: Explicit over implicit
+ * - No automatic conversions between numeric types
+ * - Each operation must be explicitly defined
+ * - ERR propagation is type-specific
+ */
+
+/**
+ * Numeric trait - required operations for numeric types
+ * 
+ * Implementing types:
+ * - Signed integers: int8, int16, int32, int64
+ * - Unsigned integers: uint8, uint16, uint32, uint64
+ * - Balanced ternary: tbb8, tbb16, tbb32, tbb64
+ * - Fractions: frac8, frac16, frac32, frac64
+ * - Twisted floating point: tfp32, tfp64
+ * - High-precision fixed: fix256
+ * - Standard floating: flt32, flt64 (for compatibility)
+ */
+trait:Numeric = {
+    // Arithmetic operations (all return Self type)
+    add:Self(Self:a, Self:b);
+    sub:Self(Self:a, Self:b);
+    mul:Self(Self:a, Self:b);
+    div:Self(Self:a, Self:b);
+    
+    // Unary operations
+    neg:Self(Self:value);
+    
+    // Comparison operations
+    eq:bool(Self:a, Self:b);
+    lt:bool(Self:a, Self:b);
+    le:bool(Self:a, Self:b);
+    gt:bool(Self:a, Self:b);
+    ge:bool(Self:a, Self:b);
+    
+    // Identity elements
+    zero:Self();
+    one:Self();
+    
+    // Error sentinel
+    err:Self();
+    is_err:bool(Self:value);
+};
+
+/**
+ * Note on implementation:
+ * 
+ * Numeric operations are implemented as compiler intrinsics for performance.
+ * The trait defines the interface contract; the compiler provides the implementation
+ * via LLVM IR generation.
+ * 
+ * This allows:
+ * 1. Generic algorithms to work over any Numeric type
+ * 2. Zero-cost abstractions (no runtime overhead)
+ * 3. Type safety (can't mix incompatible numeric types)
+ * 4. Uniform error handling (every numeric type has ERR)
+ * 
+ * Implementation registration happens in:
+ * - src/frontend/sema/type_checker.cpp (trait impl registration)
+ * - stdlib/traits/numeric_impls.aria (explicit impl declarations)
+ */
+
+// Required entry points (not used, trait files are include-only)
+pub func:main = int32() {
+    pass(0);
+};
+
+pub func:failsafe = void(int32:code) {
+};
