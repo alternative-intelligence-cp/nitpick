@@ -312,12 +312,15 @@ ASTNodePtr Parser::parseExpression(int minPrecedence) {
                 if (CallExpr* call = dynamic_cast<CallExpr*>(funcExpr.get())) {
                     // Insert left as first argument: data |> func(a, b) → func(data, a, b)
                     call->arguments.insert(call->arguments.begin(), left);
+                    call->isPipelineCall = true;
                     left = funcExpr;
                 } else {
                     // Create new CallExpr: data |> func → func(data)
                     std::vector<ASTNodePtr> args;
                     args.push_back(left);
-                    left = std::make_shared<CallExpr>(funcExpr, args, op.line, op.column);
+                    auto pipeCall = std::make_shared<CallExpr>(funcExpr, args, op.line, op.column);
+                    pipeCall->isPipelineCall = true;
+                    left = pipeCall;
                 }
                 continue;
             }
@@ -336,7 +339,9 @@ ASTNodePtr Parser::parseExpression(int minPrecedence) {
                 // Left should be the function, right is the argument
                 std::vector<ASTNodePtr> args;
                 args.push_back(argExpr);
-                left = std::make_shared<CallExpr>(left, args, op.line, op.column);
+                auto pipeCall = std::make_shared<CallExpr>(left, args, op.line, op.column);
+                pipeCall->isPipelineCall = true;
+                left = pipeCall;
                 continue;
             }
             

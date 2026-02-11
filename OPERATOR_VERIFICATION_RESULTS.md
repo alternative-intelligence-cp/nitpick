@@ -16,19 +16,21 @@ Systematic verification of remaining operators to determine what's implemented v
 ## ⚠️ PARTIALLY IMPLEMENTED
 
 ### Pipeline Forward (`|>`)
-- **Status**: ⚠️ PARTIALLY IMPLEMENTED
+- **Status**: ⚠️ TYPE-CHECKING FIXED, CODEGEN IN PROGRESS
 - **Syntax**: `value |> add_ten |> double_it`
 - **Test**: test_pipeline.aria
-- **Issue**: Type handling broken - treats result as `Result<int32>` instead of `int32`
-- **Error**: "Argument 1 has type 'Result<int32>', but function expects 'int32'"
-- **Token**: TOKEN_PIPE_RIGHT (lines 186, 303 in parser)
-- **Precedence**: Level 14
-- **Next Step**: Fix type propagation in pipeline expression handling
+- **Progress**:
+  - ✅ Parser creates CallExpr correctly
+  - ✅ Type checker allows Result<T> → T in pipeline context  
+  - ❌ IR codegen doesn't unwrap Result types between calls
+- **Issue**: Functions return `Result<T>`, but pipeline passes result to next function expecting `T`
+- **Root Cause**: Aria functions use `pass()/return` which wrap in Result<T>, but pipeline needs auto-unwrapping
+- **Next Step**: Implement Result unwrapping in IR codegen for pipeline calls
+- **Workaround**: Use extern functions (no Result wrapping) or explicit unwrap operators
 
 ### Pipeline Backward (`<|`)
-- **Status**: ⚠️ PARTIALLY IMPLEMENTED  
-- **Token**: TOKEN_PIPE_LEFT
-- **Note**: Likely has same issue as pipeline forward
+- **Status**: ⚠️ SAME AS FORWARD PIPELINE  
+- **Note**: Same implementation, same issues
 
 ## ❌ NOT IMPLEMENTED
 
