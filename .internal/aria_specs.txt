@@ -1153,18 +1153,19 @@ Compiler REJECTS any code where literal exceeds target type range without suffix
 &&,
 !,
 ->,        // pointer type declaration & member access (BLUEPRINT STYLE: int64->:ptr, ptr->member)
-<-,        // pointer dereference (BLUEPRINT STYLE: value <- ptr, shows data flow)
+<-,        // pointer dereference (BLUEPRINT STYLE: value <- ptr, shows data flow)  !! IMPLEMENTED Feb 2026 !!
 @,         // address-of operator (get memory address: @var)
 $,         // iteration variable in till loops, safe reference
 #,         // memory pinning operator
 &,         // bitwise and, string interpolation prefix
 ``,        // template literal delimiters
-<=>,       // spaceship operator (three-way comparison)
-?.,        // safe navigation operator
+<=>,       // spaceship operator (three-way comparison: -1/0/1)  !! IMPLEMENTED Feb 2026 !!
+?.,        // safe navigation operator (not yet implemented - Feb 2026)
 ??,        // null coalescing operator
-?,         // unwrap operator
-|>,        // pipeline operator (forward)
-<|,        // pipeline operator (backward)
+?,         // unwrap operator (safe unwrap with default)
+?!,        // emphatic unwrap operator (failsafe-triggering unwrap)  !! NEW Feb 2026 !!
+|>,        // pipeline operator forward (partial - type-check done, codegen WIP - Feb 2026)
+<|,        // pipeline operator backward (partial - type-check done, codegen WIP - Feb 2026)
 ..,        // inclusive range operator
 ...,       // exclusive range operator
 :,         // type annotation
@@ -1203,38 +1204,59 @@ NOTE: => is NOT a lambda operator. Lambda syntax is just: returnType(params) { b
 */
 
 
-/* std library
+/* std library and builtins
+// SAFETY & ERROR HANDLING (MANDATORY - Feb 2026)
+failsafe(),    // MANDATORY error handler: func:failsafe = void(int32:err_code) { ... }
+ok(),          // Check if value is unknown/error state: int32:valid = ok(value);
+
+// MEMORY MANAGEMENT
 aria.alloc(),      // wild memory allocation
 aria.free(),       // wild memory deallocation
 aria.gc_alloc(),   // explicit GC allocation
 aria.alloc_buffer(), // buffer allocation
 aria.alloc_string(), // string allocation
 aria.alloc_array(),  // array allocation
-print(),           // stdout text output
+
+// I/O & OUTPUT
+print(),           // stdout text output (no newline)
+println(),         // stdout text output (with newline)
 readFile(),        // file reading with Result
 writeFile(),       // file writing with Result
 readJSON(),        // JSON file parsing
 readCSV(),         // CSV file parsing
 openFile(),        // stream file opening
+
+// PROCESS MANAGEMENT
 spawn(),           // process creation
 fork(),            // process forking
 exec(),            // process execution
 createPipe(),      // inter-process communication
 wait(),            // process waiting
+
+// NETWORKING
 httpGet(),         // HTTP client
-getUser(),         // example user function
+
+// FUNCTIONAL PROGRAMMING
 filter(),          // functional programming
 transform(),       // functional programming
 reduce(),          // functional programming
+map(),             // functional programming
+
+// ARRAY OPERATIONS
 sort(),            // array sorting
 reverse(),         // array reversal
 unique(),          // array deduplication
+
+// MATH
 Math.round(),      // mathematical functions
+
+// SYSTEM
 getMemoryUsage(),  // system diagnostics
 getActiveConnections(), // system diagnostics
-createPipe(),      // IPC
 createLogger(),    // structured logging
 computeOptimalSize(), // compile-time computation
+
+// STREAMS
 stdout,            // text output stream
 stderr,            // error output stream
 stddbg,            // debug output stream
@@ -2098,6 +2120,240 @@ int32:c1 = counter1() ? 0;
 int32:c2 = counter1() ? 0;
 int32:c3 = counter2() ? 0;
 print(`&{c1} &{c2} &{c3}`); // Should print "1 2 1" 
+
+/* ============================================================================
+   SAFETY SYSTEM: LAYERED ERROR HANDLING ARCHITECTURE (Feb 2026)
+   ============================================================================
+   
+DESIGN PHILOSOPHY: "Safety baked in from the very bottom"
+   - Multiple degradation points for error handling
+   - Never reaching undefined state and crashing uncontrollably
+   - Mandatory error accountability via failsafe() function
+   - Explicit handling required at each safety layer
+
+SAFETY LAYERS (from safest to most permissive):
+   
+   Layer 1: ? operator - Safe unwrap with default value
+      - Purpose: Handle potential errors gracefully  
+      - Syntax: result ? default_value
+      - Behavior: Returns value if success, default if error
+      - Example: int32:value = divide(10, 0) ? 0;  // Returns 0 on error
+      
+   Layer 2: ?! operator - Emphatic unwrap (failsafe-triggering)
+      - Purpose: "This better work, but call failsafe if it doesn't"
+      - Syntax: result ?! default_value
+      - Behavior: Same as ? but triggers failsafe() with error code on failure
+      - Example: int32:value = critical_read() ?! 0;  // Calls failsafe(-1) on error
+      - Note: Created from agent miscommunication, but kept both solutions!
+      
+   Layer 3: unknown type - Propagates through operations
+      - Purpose: Track uncertain/error states through computation chains
+      - Behavior: Operations on unknown return unknown (sticky propagation)
+      - Detection: Use ok(value) to check if value is unknown
+      - Example:
+          int32:a = divide(10, 0);  // a is unknown (divide-by-zero)
+          int32:b = a + 5;  // b is also unknown (propagates)
+          if (ok(b) == 0) { /* handle unknown state */ }
+      
+   Layer 4: ok() function - Explicit unknown value handling
+      - Purpose: Check if value has entered unknown/error state
+      - Syntax: ok(value)
+      - Returns: 1 if value is valid, 0 if value is unknown
+      - Example:
+          int32:result = calculate();
+          if (ok(result) == 0) {
+              stderr.write("Calculation entered unknown state");
+              result = ok(result);  // Strip unknown taint, acknowledge it
+          }
+      - Note: ok() can also strip "unknown taint" when used as wrapper
+      
+   Layer 5: failsafe(int32:err_code) - Mandatory error accountability
+      - Purpose: REQUIRED function for all programs, catches unhandled errors
+      - Signature: func:failsafe = void(int32:err_code) { /* handle error */ }
+      - Behavior: Called automatically when:
+         * ?! operator encounters error
+         * Unwrap operation fails in certain contexts
+         * Unhandled errors propagate to top level
+      - Example:
+          func:failsafe = void(int32:err_code) {
+              stderr.write("CRITICAL ERROR: ");
+              stderr.write(err_code);
+              // Log to file, cleanup, emergency shutdown, etc.
+          };
+      - CRITICAL: Every program MUST define failsafe() or compilation fails
+      - Philosophy: "Failsafe tax" - forces explicit error handling strategy
+
+OPERATOR DETAILS:
+
+? (Unwrap Operator):
+   - Syntax: optional_value ? default
+            result_value ? default
+   - Returns: value if present/success, default otherwise
+   - Use case: Safe fallback when error is acceptable
+   - Example: string:name = getUserName() ? "Guest";
+
+?! (Emphatic Unwrap Operator):
+   - Syntax: optional_value ?! default
+            result_value ?! default
+   - Returns: value if present/success, default otherwise
+   - Side effect: Calls failsafe(err_code) on failure
+   - Use case: Expected success, but need fallback + notification
+   - Example: config:cfg = loadConfig() ?! defaultConfig();
+   - Note: Origin story - agent misunderstood "unwrap with failsafe" as needing
+           either failsafe() function OR ?! operator. User said "it turned out
+           great. We did both." - happy accident of redundant safety!
+
+<=> (Spaceship Operator):
+   - Syntax: a <=> b
+   - Returns: -1 if a < b, 0 if a == b, 1 if a > b
+   - Use case: Three-way comparison for sorting
+   - Example: array.sort((a,b) => a.priority <=> b.priority);
+   - Status: FULLY IMPLEMENTED (Feb 2026)
+
+<- (Left-Arrow Dereference):
+   - Syntax: value <- pointer
+   - Returns: Value pointed to by pointer
+   - Use case: "Pull value FROM pointer" (directional clarity)
+   - Example: 
+       int64:value = 42;
+       int64->:ptr = @value;
+       int64:retrieved = <-ptr;  // retrieved = 42
+   - Status: FULLY IMPLEMENTED (Feb 2026)
+   - Philosophy: Blueprint-style - arrow shows data flow direction
+
+|> (Pipeline Forward):
+   - Syntax: value |> func1 |> func2
+   - Behavior: value |> f(args) becomes f(value, args)
+   - Use case: Functional composition, data transformation chains
+   - Example: result = data |> filter(isValid) |> transform(normalize);
+   - Status: PARTIALLY IMPLEMENTED - type-checking works, needs Result auto-unwrap in codegen
+   - Known Issue: Functions return Result<T>, pipeline needs auto-unwrapping between calls
+
+<| (Pipeline Backward):
+   - Syntax: func <| value
+   - Behavior: f <| value becomes f(value)
+   - Use case: Right-to-left data flow (reverse of |>)
+   - Example: result <| transform <| filter <| data;
+   - Status: PARTIALLY IMPLEMENTED - same as pipeline forward
+
+?. (Safe Navigation):
+   - Syntax: object?.member
+   - Returns: member if object is not NIL, NIL otherwise
+   - Use case: Navigate through potentially NIL optional chains
+   - Example: string:name = user?.profile?.name ?? "Unknown";
+   - Status: NOT YET IMPLEMENTED - lexer recognizes token, codegen pending
+   - Note: Critical for pipeline operators - prevents NIL dereferencing
+
+RESULT vs OPTIONAL vs NIL vs NULL:
+
+Result<T>:   {err: int32*, val: T} - Function return type with error code
+   - Purpose: Represent success or failure from operations
+   - Fields: err (NULL on success, error code on failure)
+             val (value on success, undefined on failure)
+   - Example: result:r = divide(10, 2);
+              if (r.err == NULL) { use r.val; }
+
+Optional<T>:  T? - May or may not have a value
+   - Purpose: Represent presence/absence of value (not an error)
+   - Syntax: int64?, string?, obj?
+   - Check: value == NIL or value != NIL
+   - Example: int64?:age = user.age;
+              if (age != NIL) { use age; }
+
+NIL:  Unit type - "Absence of value" for optionals
+   - Purpose: Explicit "no value" state (not an error)
+   - Type: Compatible with any optional type (T?)
+   - Example: int64?:none = NIL;
+              string?:empty = NIL;
+   - CRITICAL: Can ONLY be used with optional types (T?)
+   - COMPILE ERROR: int64:x = NIL;  // ERROR! NIL requires optional type
+   - CORRECT: int64?:x = NIL;  // ✓ NIL assigned to optional
+
+NULL:  Null pointer - Address 0x0 for pointers
+   - Purpose: Invalid/no pointer sentinel
+   - Type: Compatible with any pointer type (T-> or wild T*)
+   - Example: int64->:ptr = NULL;
+              if (ptr == NULL) { /* handle null */ }
+   - CRITICAL: Can ONLY be used with pointer types (T-> or wild T*)
+   - COMPILE ERROR: int64?:x = NULL;  // ERROR! NULL requires pointer type
+   - CORRECT: int64->:ptr = NULL;  // ✓ NULL assigned to pointer
+
+NIL vs NULL Type Safety (ENFORCED Feb 2026):
+   - NIL → Optional types only (int64?, string?, obj?)
+   - NULL → Pointer types only (int64->, wild int8*, void*)
+   - Compile-time validation prevents misuse
+   - Examples:
+       int64?:good1 = NIL;   // ✓ OK - NIL to optional
+       int64->:good2 = NULL; // ✓ OK - NULL to pointer
+       int64?:bad1 = NULL;   // ✗ ERROR - NULL to optional
+       int64->:bad2 = NIL;   // ✗ ERROR - NIL to pointer
+
+ERROR HANDLING PHILOSOPHIES:
+
+1. Fail Fast (use ?! or explicit checks):
+   - For critical operations where failure is exceptional
+   - Example: readConfig() ?! defaultConfig();  // This MUST work
+
+2. Graceful Degradation (use ? with defaults):
+   - For operations where failure is expected/acceptable
+   - Example: getCache() ? computeFresh();  // Cache miss is normal
+
+3. Explicit Handling (use Result pattern):
+   - For operations where error details matter
+   - Example:
+       result:r = parseJSON(data);
+       if (r.err != NULL) {
+           stderr.write(`Parse error: &{r.err}`);
+           return r.err;
+       }
+
+4. Error Propagation (use unknown + ok()):
+   - For computational chains where errors should propagate
+   - Example:
+       int32:result = step1() + step2() + step3();
+       if (ok(result) == 0) { /* handle propagated error */ }
+
+MANDATORY FAILSAFE PATTERN:
+
+Every Aria program MUST define a failsafe function:
+
+func:failsafe = void(int32:err_code) {
+    // Handle unrecoverable errors
+    // Examples: log to file, cleanup resources, emergency shutdown
+    stderr.write("CRITICAL ERROR: ");
+    stderr.write(err_code);
+    
+    // Application-specific error handling
+    if (err_code == -1) {
+        stderr.write("Configuration load failed");
+    } else if (err_code == -2) {
+        stderr.write("Resource initialization failed");
+    }
+    
+    // Cleanup, logging, etc.
+};
+
+WHY MANDATORY?
+- Forces developers to think about error handling strategy upfront
+- Prevents "TODO: handle this error" that never gets done
+- Provides single point for error logging/recovery
+- "Failsafe tax" - small upfront cost for safety-critical reliability
+
+STATUS (Feb 2026):
+✅ Result type - COMPLETE
+✅ Optional type (T?) - COMPLETE
+✅ ? operator - COMPLETE
+✅ ?! operator - COMPLETE
+✅ unknown type - COMPLETE  
+✅ ok() function - COMPLETE
+✅ failsafe() requirement - ENFORCED
+✅ NIL vs NULL type safety - ENFORCED
+✅ <=> operator - COMPLETE
+✅ <- operator - COMPLETE
+⚠️ |> and <| operators - TYPE-CHECKING COMPLETE, CODEGEN IN PROGRESS
+❌ ?. operator - NOT YET IMPLEMENTED (token recognized, codegen pending)
+
+*/
 
 /* COMPLETE TOKEN LIST for AST
 
