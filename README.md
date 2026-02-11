@@ -47,7 +47,7 @@ Aria is a modern systems programming language that reimagines how we think about
 
 Aria's design philosophy draws from published research in consciousness modeling and cognitive architecture:
 
-- **ATPM (Autonomic Temporal Pattern Model)**: The theoretical framework underlying Nikola's consciousness architecture  
+- **ATPM (Asymmetric Toroidal Phase Model)**: The theoretical framework underlying Nikola's consciousness architecture  
   DOI: [10.5281/zenodo.18158226](https://doi.org/10.5281/zenodo.18158226)
 
 - **ATPM Extended - Big Bang, Bruising, and Asymmetry**: Addresses topological genesis, CMB anomalies, and cosmic dipole predictions  
