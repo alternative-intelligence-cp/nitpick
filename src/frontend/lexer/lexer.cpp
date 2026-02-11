@@ -403,7 +403,18 @@ void Lexer::scanToken() {
             break;
             
         case '!':
-            if (match('=')) {
+            if (match('!')) {
+                // We have !! - check for third !
+                if (match('!')) {
+                    addToken(TokenType::TOKEN_BANG_BANG_BANG);  // !!!
+                } else {
+                    // Just !!, but that's not a valid token anymore
+                    // This would be an error, but let parser handle it
+                    error("Unexpected '!!' - did you mean '!!!' for failsafe call?");
+                    addToken(TokenType::TOKEN_BANG);
+                    addToken(TokenType::TOKEN_BANG);
+                }
+            } else if (match('=')) {
                 addToken(TokenType::TOKEN_BANG_EQUAL);
             } else {
                 addToken(TokenType::TOKEN_BANG);
@@ -465,6 +476,8 @@ void Lexer::scanToken() {
                 addToken(TokenType::TOKEN_SAFE_NAV);
             } else if (match('?')) {
                 addToken(TokenType::TOKEN_NULL_COALESCE);
+            } else if (match('!')) {
+                addToken(TokenType::TOKEN_QUESTION_BANG);  // ?! emphatic unwrap
             } else {
                 addToken(TokenType::TOKEN_QUESTION);
             }

@@ -30,6 +30,7 @@ enum class TypeKind {
     VECTOR,         // vec2, vec3, vec4, etc.
     GENERIC,        // T, U, V (type parameters)
     RESULT,         // result<T> for error handling
+    DIMENSIONAL,    // T<Dimension> for dimensional analysis (P1-5)
     UNKNOWN,        // Type not yet inferred
     ERROR,          // Type error occurred
 };
@@ -57,6 +58,7 @@ public:
     virtual bool isStruct() const { return kind == TypeKind::STRUCT; }
     virtual bool isVector() const { return kind == TypeKind::VECTOR; }
     virtual bool isGeneric() const { return kind == TypeKind::GENERIC; }
+    virtual bool isDimensional() const { return kind == TypeKind::DIMENSIONAL; }
 };
 
 // ============================================================================
@@ -267,6 +269,129 @@ public:
 };
 
 // ============================================================================
+// Dimension - Represents physical dimensions for dimensional analysis (P1-5)
+// ============================================================================
+// Physical dimensions represented as exponents over SI base dimensions.
+// Example: Joules = kg⋅m²⋅s⁻² = {mass:1, length:2, time:-2, ...}
+
+struct Dimension {
+    int8_t length;       // meters (m)
+    int8_t mass;         // kilograms (kg)
+    int8_t time;         // seconds (s)
+    int8_t current;      // amperes (A)
+    int8_t temperature;  // kelvin (K)
+    int8_t amount;       // moles (mol)
+    int8_t luminosity;   // candela (cd)
+    
+    // Constructor for dimensionless
+    Dimension()
+        : length(0), mass(0), time(0), current(0), 
+          temperature(0), amount(0), luminosity(0) {}
+    
+    // Constructor for explicit dimensions
+    Dimension(int8_t len, int8_t m, int8_t t, int8_t i, int8_t temp, int8_t amt, int8_t lum)
+        : length(len), mass(m), time(t), current(i), 
+          temperature(temp), amount(amt), luminosity(lum) {}
+    
+    // Named dimension constructors
+    static Dimension Dimensionless() { return Dimension(); }
+    static Dimension Length() { return Dimension(1, 0, 0, 0, 0, 0, 0); }
+    static Dimension Mass() { return Dimension(0, 1, 0, 0, 0, 0, 0); }
+    static Dimension Time() { return Dimension(0, 0, 1, 0, 0, 0, 0); }
+    static Dimension Current() { return Dimension(0, 0, 0, 1, 0, 0, 0); }
+    static Dimension Temperature() { return Dimension(0, 0, 0, 0, 1, 0, 0); }
+    static Dimension Amount() { return Dimension(0, 0, 0, 0, 0, 1, 0); }
+    static Dimension Luminosity() { return Dimension(0, 0, 0, 0, 0, 0, 1); }
+    
+    // Common derived dimensions
+    static Dimension Velocity() { return Dimension(1, 0, -1, 0, 0, 0, 0); }  // m/s
+    static Dimension Acceleration() { return Dimension(1, 0, -2, 0, 0, 0, 0); }  // m/s²
+    static Dimension Force() { return Dimension(1, 1, -2, 0, 0, 0, 0); }  // N = kg⋅m/s²
+    static Dimension Energy() { return Dimension(2, 1, -2, 0, 0, 0, 0); }  // J = kg⋅m²/s²
+    static Dimension Power() { return Dimension(2, 1, -3, 0, 0, 0, 0); }  // W = kg⋅m²/s³
+    static Dimension Charge() { return Dimension(0, 0, 1, 1, 0, 0, 0); }  // C = A⋅s
+    static Dimension Voltage() { return Dimension(2, 1, -3, -1, 0, 0, 0); }  // V = kg⋅m²/(A⋅s³)
+    static Dimension Resistance() { return Dimension(2, 1, -3, -2, 0, 0, 0); }  // Ω = kg⋅m²/(A²⋅s³)
+    static Dimension Frequency() { return Dimension(0, 0, -1, 0, 0, 0, 0); }  // Hz = 1/s
+    static Dimension Action() { return Dimension(2, 1, -1, 0, 0, 0, 0); }  // J⋅s = kg⋅m²/s
+    
+    // Dimensional algebra
+    Dimension operator*(const Dimension& other) const {
+        return Dimension(
+            length + other.length,
+            mass + other.mass,
+            time + other.time,
+            current + other.current,
+            temperature + other.temperature,
+            amount + other.amount,
+            luminosity + other.luminosity
+        );
+    }
+    
+    Dimension operator/(const Dimension& other) const {
+        return Dimension(
+            length - other.length,
+            mass - other.mass,
+            time - other.time,
+            current - other.current,
+            temperature - other.temperature,
+            amount - other.amount,
+            luminosity - other.luminosity
+        );
+    }
+    
+    bool operator==(const Dimension& other) const {
+        return length == other.length &&
+               mass == other.mass &&
+               time == other.time &&
+               current == other.current &&
+               temperature == other.temperature &&
+               amount == other.amount &&
+               luminosity == other.luminosity;
+    }
+    
+    bool operator!=(const Dimension& other) const {
+        return !(*this == other);
+    }
+    
+    bool isDimensionless() const {
+        return length == 0 && mass == 0 && time == 0 && current == 0 &&
+               temperature == 0 && amount == 0 && luminosity == 0;
+    }
+    
+    std::string toString() const;
+};
+
+// ============================================================================
+// DimensionalType - Numeric types with physical dimensions (P1-5)
+// ============================================================================
+// Wraps a base numeric type with dimension information for compile-time
+// dimensional analysis. Example: fix256<Joules>, fix256<Meters>
+
+class DimensionalType : public Type {
+private:
+    Type* baseType;        // Underlying numeric type (fix256, flt64, etc.)
+    Dimension dimension;   // Physical dimension
+    std::string dimensionName;  // Optional name (Joules, Meters, etc.)
+    
+public:
+    DimensionalType(Type* baseType, const Dimension& dimension, 
+                   const std::string& dimensionName = "")
+        : Type(TypeKind::DIMENSIONAL), baseType(baseType), 
+          dimension(dimension), dimensionName(dimensionName) {}
+    
+    Type* getBaseType() const { return baseType; }
+    const Dimension& getDimension() const { return dimension; }
+    const std::string& getDimensionName() const { return dimensionName; }
+    
+    bool isDimensionless() const { return dimension.isDimensionless(); }
+    
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
 // GenericType - Type parameters (T, U, V)
 // ============================================================================
 // Reference: research_027 (generics and templates)
@@ -344,9 +469,16 @@ private:
     std::unordered_map<std::string, GenericType*> genericCache;
     std::unordered_map<std::string, StructType*> structCache;
     std::unordered_map<std::string, UnionType*> unionCache;
+    std::unordered_map<std::string, DimensionalType*> dimensionalCache;  // P1-5
+    
+    // Standard dimension name registry (P1-5)
+    std::unordered_map<std::string, Dimension> dimensionRegistry;
     
     UnknownType* unknownType;
     ErrorType* errorType;
+    
+    // Initialize dimension name registry (P1-5)
+    void initializeDimensionRegistry();
     
 public:
     TypeSystem();
@@ -373,6 +505,15 @@ public:
     
     // Generic types
     GenericType* getGenericType(const std::string& name);
+    
+    // Dimensional types (P1-5)
+    DimensionalType* getDimensionalType(Type* baseType, const Dimension& dimension, 
+                                       const std::string& dimensionName = "");
+    DimensionalType* getDimensionalType(Type* baseType, const std::string& dimensionName);
+    
+    // Dimension registry (P1-5)
+    const Dimension* lookupDimension(const std::string& name) const;
+    void registerDimension(const std::string& name, const Dimension& dimension);
     
     // Special types
     UnknownType* getUnknownType() { return unknownType; }

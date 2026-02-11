@@ -247,6 +247,8 @@ enum class TokenType {
     TOKEN_AND_AND,      // &&
     TOKEN_OR_OR,        // ||
     TOKEN_BANG,         // !
+    TOKEN_QUESTION_BANG,// ?! - emphatic unwrap operator
+    TOKEN_BANG_BANG_BANG,// !!! - failsafe call operator
     
     // ========================================================================
     // Operators - Bitwise

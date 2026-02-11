@@ -905,6 +905,25 @@ ASTNodePtr Parser::parseUnary() {
         return std::make_shared<MoveExpr>(varName, varExpr, line, col);
     }
     
+    // Check for failsafe call: !!! <expression>
+    if (token.type == TokenType::TOKEN_BANG_BANG_BANG) {
+        advance(); // consume '!!!'
+        
+        // Parse the error code expression
+        ASTNodePtr errorCode = parseUnary();
+        if (!errorCode) {
+            error("Expected error code after '!!!'");
+            return nullptr;
+        }
+        
+        // Desugar to failsafe(errorCode) call
+        std::vector<ASTNodePtr> args;
+        args.push_back(errorCode);
+        
+        auto identExpr = std::make_shared<IdentifierExpr>("failsafe", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
     // Special case: bare $ (iteration variable)
     // If we see $ followed by a token that can't be an operand (like ; , ) etc.),
     // then $ is the iteration variable, not a unary operator.
@@ -1092,7 +1111,8 @@ ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
                 defaultValue,
                 unwrapToken.line,
                 unwrapToken.column,
-                false  // Not null coalesce, it's Result unwrap
+                false,  // Not null coalesce, it's Result unwrap
+                false   // Not failsafe, it's regular unwrap
             );
             continue;
         }
@@ -1114,7 +1134,31 @@ ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
                 defaultValue,
                 coalesceToken.line,
                 coalesceToken.column,
-                true  // This is null coalesce (??), not Result unwrap (?)
+                true,  // This is null coalesce (??), not Result unwrap (?) or failsafe (!!)
+                false  // Not failsafe
+            );
+            continue;
+        }
+        
+        // Emphatic unwrap operator: result ?! default_value
+        if (token.type == TokenType::TOKEN_QUESTION_BANG) {
+            Token failsafeToken = advance(); // consume '?!'
+            
+            // Parse the default value expression
+            ASTNodePtr defaultValue = parseExpression();
+            if (!defaultValue) {
+                error("Expected default value after '?!' operator");
+                return nullptr;
+            }
+            
+            // Create UnwrapExpr with isFailsafe=true
+            expr = std::make_shared<UnwrapExpr>(
+                expr, 
+                defaultValue,
+                failsafeToken.line,
+                failsafeToken.column,
+                false,  // Not null coalesce
+                true    // This is emphatic unwrap (?!)
             );
             continue;
         }
@@ -2823,10 +2867,19 @@ ASTNodePtr Parser::parseType() {
     if (isTypeKeyword(typeToken.type) || typeToken.type == TokenType::TOKEN_IDENTIFIER) {
         advance(); // Consume the type token
         
-        // Create simple type
-        baseType = std::make_shared<SimpleType>(typeToken.lexeme, typeToken.line, typeToken.column);
+        // For generic type parameters with prefix *, store "*T" in the typename
+        // This distinguishes generic references from actual pointers
+        std::string typeName = typeToken.lexeme;
+        if (prefixPointer && typeToken.type == TokenType::TOKEN_IDENTIFIER) {
+            // *T is a generic type reference, not a pointer
+            typeName = "*" + typeName;
+            prefixPointer = false;  // Don't wrap in PointerType later
+        }
         
-        // Check for generic parameters: Array<int8>, Map<K, V>
+        // Create simple type
+        baseType = std::make_shared<SimpleType>(typeName, typeToken.line, typeToken.column);
+        
+        // Check for generic parameters: Array<int8>, Map<K, V>, simd<int32, 4>
         if (check(TokenType::TOKEN_LESS)) {
             advance(); // consume '<'
             
@@ -2836,7 +2889,30 @@ ASTNodePtr Parser::parseType() {
             do {
                 if (check(TokenType::TOKEN_GREATER)) break;
                 
-                ASTNodePtr typeArg = parseType(); // Recursive call for nested generics
+                // P1-2 Phase 2: Support integer literals in generic type args (for simd<T, N>)
+                // Check if this is an integer literal (for lane count, etc.)
+                Token argToken = peek();
+                bool isIntegerLiteral = (argToken.type == TokenType::TOKEN_INTEGER ||
+                                        argToken.type == TokenType::TOKEN_INTEGER_U8 ||
+                                        argToken.type == TokenType::TOKEN_INTEGER_U16 ||
+                                        argToken.type == TokenType::TOKEN_INTEGER_U32 ||
+                                        argToken.type == TokenType::TOKEN_INTEGER_U64 ||
+                                        argToken.type == TokenType::TOKEN_INTEGER_I8 ||
+                                        argToken.type == TokenType::TOKEN_INTEGER_I16 ||
+                                        argToken.type == TokenType::TOKEN_INTEGER_I32 ||
+                                        argToken.type == TokenType::TOKEN_INTEGER_I64);
+                
+                ASTNodePtr typeArg;
+                if (isIntegerLiteral) {
+                    // Parse integer literal as a type argument (wrap in SimpleType)
+                    // The type checker will handle extracting the integer value
+                    advance(); // consume the integer token
+                    typeArg = std::make_shared<SimpleType>(argToken.lexeme, argToken.line, argToken.column);
+                } else {
+                    // Parse regular type argument
+                    typeArg = parseType(); // Recursive call for nested generics
+                }
+                
                 if (typeArg) {
                     typeArgs.push_back(typeArg);
                 } else {

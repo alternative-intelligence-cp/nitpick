@@ -782,6 +782,91 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
             return typeSystem->getPrimitiveType("int32");
         }
         
+        // ====================================================================
+        // P1-5 Phase 4: Dimensional Analysis - Arithmetic
+        // ====================================================================
+        bool leftIsDimensional = (leftType->getKind() == TypeKind::DIMENSIONAL);
+        bool rightIsDimensional = (rightType->getKind() == TypeKind::DIMENSIONAL);
+        
+        // Case 1: Both operands are dimensional types
+        if (leftIsDimensional && rightIsDimensional) {
+            DimensionalType* leftDim = static_cast<DimensionalType*>(leftType);
+            DimensionalType* rightDim = static_cast<DimensionalType*>(rightType);
+            
+            // Multiplication and Division: Apply dimensional algebra
+            if (op == TokenType::TOKEN_STAR) {
+                // J * m = J⋅m (multiply dimensions)
+                Dimension resultDim = leftDim->getDimension() * rightDim->getDimension();
+                Type* baseType = leftDim->getBaseType();  // Use left's base type
+                return typeSystem->getDimensionalType(baseType, resultDim);
+            }
+            
+            if (op == TokenType::TOKEN_SLASH) {
+                // J / m = N (divide dimensions: kg⋅m²⋅s⁻² / m = kg⋅m⋅s⁻²)
+                Dimension resultDim = leftDim->getDimension() / rightDim->getDimension();
+                Type* baseType = leftDim->getBaseType();
+                return typeSystem->getDimensionalType(baseType, resultDim);
+            }
+            
+            // Addition and Subtraction: Dimensions must match!
+            if (op == TokenType::TOKEN_PLUS || op == TokenType::TOKEN_MINUS) {
+                if (leftDim->getDimension() != rightDim->getDimension()) {
+                    std::ostringstream msg;
+                    msg << "Cannot " << (op == TokenType::TOKEN_PLUS ? "add" : "subtract")
+                        << " values with different dimensions: "
+                        << leftDim->toString() << " and " << rightDim->toString();
+                    addError(msg.str(), 0, 0);
+                    return typeSystem->getErrorType();
+                }
+                // Same dimension, result has that dimension
+                return leftType;
+            }
+            
+            // Modulo not meaningful for dimensional types
+            if (op == TokenType::TOKEN_PERCENT) {
+                addError("Modulo operator not supported for dimensional types", 0, 0);
+                return typeSystem->getErrorType();
+            }
+        }
+        
+        // Case 2: One dimensional, one dimensionless (scalar)
+        // Allowed for * and / only
+        if (leftIsDimensional || rightIsDimensional) {
+            DimensionalType* dimType = leftIsDimensional ? 
+                static_cast<DimensionalType*>(leftType) : 
+                static_cast<DimensionalType*>(rightType);
+            Type* scalarType = leftIsDimensional ? rightType : leftType;
+            
+            // Scalar must be numeric
+            if (!isNumericType(scalarType)) {
+                addError("Dimensional arithmetic requires numeric scalar, got: " + 
+                        scalarType->toString(), 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Multiplication and division preserve the dimensional type
+            if (op == TokenType::TOKEN_STAR || op == TokenType::TOKEN_SLASH) {
+                // J * 2 = J, J / 2 = J
+                return dimType;
+            }
+            
+            // Addition/subtraction not allowed with dimensionless scalars
+            if (op == TokenType::TOKEN_PLUS || op == TokenType::TOKEN_MINUS) {
+                std::ostringstream msg;
+                msg << "Cannot " << (op == TokenType::TOKEN_PLUS ? "add" : "subtract")
+                    << " dimensional type and scalar: "
+                    << leftType->toString() << " and " << rightType->toString();
+                addError(msg.str(), 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Modulo not allowed
+            if (op == TokenType::TOKEN_PERCENT) {
+                addError("Modulo operator not supported for dimensional types", 0, 0);
+                return typeSystem->getErrorType();
+            }
+        }
+        
         // Vector arithmetic: component-wise operations
         // vec2 + vec2 → vec2, vec3 * vec3 → vec3, etc.
         if (leftType->getKind() == TypeKind::VECTOR && rightType->getKind() == TypeKind::VECTOR) {
@@ -819,6 +904,53 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
             return vecType;
         }
         
+        // ====================================================================
+        // P1-2 Phase 4: SIMD Arithmetic - Element-wise operations
+        // ====================================================================
+        // SIMD + SIMD → SIMD (element-wise)
+        if (leftType->getKind() == TypeKind::SIMD && rightType->getKind() == TypeKind::SIMD) {
+            SimdType* leftSimd = static_cast<SimdType*>(leftType);
+            SimdType* rightSimd = static_cast<SimdType*>(rightType);
+            
+            // SIMD types must match exactly (same element type and lane count)
+            if (!leftType->equals(rightType)) {
+                addError("SIMD arithmetic requires matching SIMD types, got '" + 
+                        leftType->toString() + "' and '" + rightType->toString() + "'", 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Element type must be numeric
+            Type* elemType = leftSimd->getElementType();
+            if (!isNumericType(elemType)) {
+                addError("SIMD arithmetic requires numeric element type, got '" + 
+                        elemType->toString() + "'", 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Result is the same SIMD type (element-wise operation)
+            return leftType;
+        }
+        
+        // Scalar op SIMD or SIMD op scalar (broadcast scalar to all lanes)
+        if ((leftType->getKind() == TypeKind::SIMD && rightType->getKind() == TypeKind::PRIMITIVE) ||
+            (leftType->getKind() == TypeKind::PRIMITIVE && rightType->getKind() == TypeKind::SIMD)) {
+            
+            SimdType* simdType = (leftType->getKind() == TypeKind::SIMD) ? 
+                                  static_cast<SimdType*>(leftType) : 
+                                  static_cast<SimdType*>(rightType);
+            Type* scalarType = (leftType->getKind() == TypeKind::PRIMITIVE) ? leftType : rightType;
+            
+            // Scalar must match SIMD element type
+            if (!scalarType->equals(simdType->getElementType())) {
+                addError("Scalar-SIMD arithmetic requires scalar type to match SIMD element type, got scalar '" + 
+                        scalarType->toString() + "' and SIMD element '" + simdType->getElementType()->toString() + "'", 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Result is the SIMD type (scalar is broadcast to all lanes)
+            return simdType;
+        }
+        
         //Both operands must be numeric (int*, uint*, flt*, tbb*) OR LBIM struct types
         // LBIM (Limb-Based Integral Model) structs: int1024, uint1024, int256, uint256, int512, uint512, int2048, uint2048
         PrimitiveType* leftPrim = dynamic_cast<PrimitiveType*>(leftType);
@@ -838,13 +970,17 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         // Check if types are valid for arithmetic
         bool leftIsLBIM = (leftStruct && isLBIMType(leftStruct->getName()));
         bool rightIsLBIM = (rightStruct && isLBIMType(rightStruct->getName()));
+        bool leftIsSIMD = (leftType->getKind() == TypeKind::SIMD);
+        bool rightIsSIMD = (rightType->getKind() == TypeKind::SIMD);
         
-        if (!leftPrim && !leftIsLBIM) {
+        // SIMD types should have been handled above - if we get here with SIMD, it's already returned
+        // So this check is only for primitives and LBIM
+        if (!leftPrim && !leftIsLBIM && !leftIsSIMD) {
             addError("Arithmetic operators require numeric types, got '" + leftType->toString() + "'", 0, 0);
             return typeSystem->getErrorType();
         }
         
-        if (!rightPrim && !rightIsLBIM) {
+        if (!rightPrim && !rightIsLBIM && !rightIsSIMD) {
             addError("Arithmetic operators require numeric types, got '" + rightType->toString() + "'", 0, 0);
             return typeSystem->getErrorType();
         }
@@ -931,6 +1067,58 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
             // Comparison with unknown is always allowed
             // Result is bool (will be 'unknown' at runtime in three-valued logic, but type is bool)
             return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // ====================================================================
+        // P1-2 Phase 4: SIMD Comparisons - Element-wise mask generation
+        // ====================================================================
+        // SIMD < SIMD → simd<bool, N> (element-wise comparison mask)
+        if (leftType->getKind() == TypeKind::SIMD && rightType->getKind() == TypeKind::SIMD) {
+            SimdType* leftSimd = static_cast<SimdType*>(leftType);
+            SimdType* rightSimd = static_cast<SimdType*>(rightType);
+            
+            // SIMD types must match exactly (same element type and lane count)
+            if (!leftType->equals(rightType)) {
+                addError("SIMD comparison requires matching SIMD types, got '" + 
+                        leftType->toString() + "' and '" + rightType->toString() + "'", 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Element type must be numeric or bool
+            Type* elemType = leftSimd->getElementType();
+            bool validElemType = isNumericType(elemType) || 
+                                (elemType->getKind() == TypeKind::PRIMITIVE && 
+                                 static_cast<PrimitiveType*>(elemType)->getName() == "bool");
+            if (!validElemType) {
+                addError("SIMD comparison requires numeric or bool element type, got '" + 
+                        elemType->toString() + "'", 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Result is simd<bool, N> - a mask with same lane count
+            Type* boolType = typeSystem->getPrimitiveType("bool");
+            return typeSystem->getSimdType(boolType, leftSimd->getLaneCount());
+        }
+        
+        // Scalar op SIMD or SIMD op scalar (broadcast scalar for comparison)
+        if ((leftType->getKind() == TypeKind::SIMD && rightType->getKind() == TypeKind::PRIMITIVE) ||
+            (leftType->getKind() == TypeKind::PRIMITIVE && rightType->getKind() == TypeKind::SIMD)) {
+            
+            SimdType* simdType = (leftType->getKind() == TypeKind::SIMD) ? 
+                                  static_cast<SimdType*>(leftType) : 
+                                  static_cast<SimdType*>(rightType);
+            Type* scalarType = (leftType->getKind() == TypeKind::PRIMITIVE) ? leftType : rightType;
+            
+            // Scalar must match SIMD element type
+            if (!scalarType->equals(simdType->getElementType())) {
+                addError("Scalar-SIMD comparison requires scalar type to match SIMD element type, got scalar '" + 
+                        scalarType->toString() + "' and SIMD element '" + simdType->getElementType()->toString() + "'", 0, 0);
+                return typeSystem->getErrorType();
+            }
+            
+            // Result is simd<bool, N> - a mask
+            Type* boolType = typeSystem->getPrimitiveType("bool");
+            return typeSystem->getSimdType(boolType, simdType->getLaneCount());
         }
         
         // Special case: Allow exotic types (balanced, numeric) to be compared with integer literals
@@ -1560,7 +1748,357 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 addError("@unreachable() takes no arguments", expr);
                 return typeSystem->getErrorType();
             }
-            // Returns void for now (in full impl would be 'never' type)
+            // Return 'never' type (for now using error type as placeholder)
+            return typeSystem->getErrorType();
+        }
+        
+        // ====================================================================
+        // SIMD HORIZONTAL REDUCTIONS (P1-2 Phase 5)
+        // ====================================================================
+        // Reduce SIMD vector to scalar value
+        
+        // @simd_sum(simd<T, N>) -> T - Sum all vector elements
+        if (idExpr->name == "@simd_sum" || idExpr->name == "simd_sum") {
+            if (expr->arguments.size() != 1) {
+                addError("@simd_sum() requires exactly one SIMD vector argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->getKind() != TypeKind::SIMD) {
+                addError("@simd_sum() requires SIMD vector argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            // Return element type: simd<T, N> -> T
+            SimdType* simdType = static_cast<SimdType*>(argType);
+            return simdType->getElementType();
+        }
+        
+        // @simd_product(simd<T, N>) -> T - Multiply all vector elements
+        if (idExpr->name == "@simd_product" || idExpr->name == "simd_product") {
+            if (expr->arguments.size() != 1) {
+                addError("@simd_product() requires exactly one SIMD vector argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->getKind() != TypeKind::SIMD) {
+                addError("@simd_product() requires SIMD vector argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            SimdType* simdType = static_cast<SimdType*>(argType);
+            return simdType->getElementType();
+        }
+        
+        // @simd_min(simd<T, N>) -> T - Find minimum element
+        if (idExpr->name == "@simd_min" || idExpr->name == "simd_min") {
+            if (expr->arguments.size() != 1) {
+                addError("@simd_min() requires exactly one SIMD vector argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->getKind() != TypeKind::SIMD) {
+                addError("@simd_min() requires SIMD vector argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            SimdType* simdType = static_cast<SimdType*>(argType);
+            return simdType->getElementType();
+        }
+        
+        // @simd_max(simd<T, N>) -> T - Find maximum element
+        if (idExpr->name == "@simd_max" || idExpr->name == "simd_max") {
+            if (expr->arguments.size() != 1) {
+                addError("@simd_max() requires exactly one SIMD vector argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->getKind() != TypeKind::SIMD) {
+                addError("@simd_max() requires SIMD vector argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            SimdType* simdType = static_cast<SimdType*>(argType);
+            return simdType->getElementType();
+        }
+        
+        // ====================================================================
+        // SIMD BOOLEAN OPERATIONS (P1-2 Phase 6)
+        // ====================================================================
+        // Boolean reductions for SIMD mask operations
+        
+        // @simd_any(simd<bool, N>) -> bool - True if ANY lane is true
+        if (idExpr->name == "@simd_any" || idExpr->name == "simd_any") {
+            if (expr->arguments.size() != 1) {
+                addError("simd_any() requires exactly one SIMD boolean vector argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->getKind() != TypeKind::SIMD) {
+                addError("simd_any() requires SIMD vector argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            // Validate element type is bool
+            SimdType* simdType = static_cast<SimdType*>(argType);
+            Type* elemType = simdType->getElementType();
+            if (elemType->toString() != "bool") {
+                addError("simd_any() requires simd<bool, N> argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // @simd_all(simd<bool, N>) -> bool - True if ALL lanes are true
+        if (idExpr->name == "@simd_all" || idExpr->name == "simd_all") {
+            if (expr->arguments.size() != 1) {
+                addError("simd_all() requires exactly one SIMD boolean vector argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->getKind() != TypeKind::SIMD) {
+                addError("simd_all() requires SIMD vector argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            // Validate element type is bool
+            SimdType* simdType = static_cast<SimdType*>(argType);
+            Type* elemType = simdType->getElementType();
+            if (elemType->toString() != "bool") {
+                addError("simd_all() requires simd<bool, N> argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // @simd_select(simd<bool, N>, simd<T, N>, simd<T, N>) -> simd<T, N>
+        // SIMD conditional select: for each lane, pick from true_vals or false_vals based on mask
+        // Equivalent to: mask ? true_vals : false_vals (per-lane)
+        if (idExpr->name == "@simd_select" || idExpr->name == "simd_select") {
+            if (expr->arguments.size() != 3) {
+                addError("simd_select() requires exactly three arguments (mask, true_vals, false_vals)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            Type* maskType = inferType(expr->arguments[0].get());
+            Type* trueType = inferType(expr->arguments[1].get());
+            Type* falseType = inferType(expr->arguments[2].get());
+            
+            if (maskType->getKind() == TypeKind::ERROR || 
+                trueType->getKind() == TypeKind::ERROR ||
+                falseType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            // Validate mask is simd<bool, N>
+            if (maskType->getKind() != TypeKind::SIMD) {
+                addError("simd_select() first argument must be SIMD boolean mask, got '" + maskType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            SimdType* maskSimd = static_cast<SimdType*>(maskType);
+            if (maskSimd->getElementType()->toString() != "bool") {
+                addError("simd_select() mask must be simd<bool, N>, got '" + maskType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Validate true_vals and false_vals are SIMD with same type and lane count
+            if (trueType->getKind() != TypeKind::SIMD || falseType->getKind() != TypeKind::SIMD) {
+                addError("simd_select() second and third arguments must be SIMD vectors", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            SimdType* trueSimd = static_cast<SimdType*>(trueType);
+            SimdType* falseSimd = static_cast<SimdType*>(falseType);
+            
+            // Check lane counts match
+            if (maskSimd->getLaneCount() != trueSimd->getLaneCount() ||
+                trueSimd->getLaneCount() != falseSimd->getLaneCount()) {
+                addError("simd_select() all vectors must have same lane count", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Check true and false element types match
+            if (!trueSimd->getElementType()->equals(falseSimd->getElementType())) {
+                addError("simd_select() true and false vectors must have same element type", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Return the SIMD type of true/false values
+            return trueType;
+        }
+        
+        // @simd_broadcast(T:value, int32:lanes) -> simd<T, lanes>
+        // Create a SIMD vector with all lanes set to the same scalar value
+        if (idExpr->name == "@simd_broadcast" || idExpr->name == "simd_broadcast") {
+            if (expr->arguments.size() != 2) {
+                addError("simd_broadcast() requires exactly two arguments (value, lane_count)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            Type* scalarType = inferType(expr->arguments[0].get());
+            Type* laneCountType = inferType(expr->arguments[1].get());
+            
+            if (scalarType->getKind() == TypeKind::ERROR || laneCountType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            // Validate scalar value is a primitive numeric type
+            if (!scalarType->isPrimitive() || !isNumericType(scalarType)) {
+                addError("simd_broadcast() first argument must be a numeric scalar, got '" + scalarType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Validate lane count is an integer
+            if (!laneCountType->isPrimitive()) {
+                addError("simd_broadcast() second argument must be an integer lane count", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            PrimitiveType* laneCountPrim = static_cast<PrimitiveType*>(laneCountType);
+            const std::string& lcName = laneCountPrim->getName();
+            if (lcName.find("int") != 0 && lcName.find("uint") != 0) {
+                addError("simd_broadcast() lane count must be an integer type, got '" + lcName + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Extract lane count value (must be a compile-time constant)
+            // For now, we'll accept any integer expression and validate at runtime
+            // In the future, we could require a literal and extract its value
+            
+            // For type checking, we need to determine the lane count
+            // Check if it's an integer literal
+            size_t laneCount = 0;
+            if (expr->arguments[1]->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* litNode = static_cast<LiteralExpr*>(expr->arguments[1].get());
+                if (std::holds_alternative<int64_t>(litNode->value)) {
+                    laneCount = std::get<int64_t>(litNode->value);
+                } else {
+                    addError("simd_broadcast() lane count must be an integer literal", expr);
+                    return typeSystem->getErrorType();
+                }
+            } else {
+                addError("simd_broadcast() lane count must be a compile-time integer literal", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Validate lane count is reasonable
+            if (laneCount == 0 || laneCount > 64) {
+                addError("simd_broadcast() lane count must be between 1 and 64, got: " + std::to_string(laneCount), expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Create and return SIMD type
+            return typeSystem->getSimdType(scalarType, laneCount);
+        }
+        
+        // @simd_load(T*:ptr, int32:lanes) -> simd<T, lanes>
+        // Load a SIMD vector from memory (aligned load)
+        if (idExpr->name == "@simd_load" || idExpr->name == "simd_load") {
+            if (expr->arguments.size() != 2) {
+                addError("simd_load() requires exactly two arguments (pointer, lane_count)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            Type* ptrType = inferType(expr->arguments[0].get());
+            Type* laneCountType = inferType(expr->arguments[1].get());
+            
+            if (ptrType->getKind() == TypeKind::ERROR || laneCountType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            // Validate first argument is a pointer
+            if (ptrType->getKind() != TypeKind::POINTER) {
+                addError("simd_load() first argument must be a pointer, got '" + ptrType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            PointerType* ptr = static_cast<PointerType*>(ptrType);
+            Type* elementType = ptr->getPointeeType();
+            
+            // Validate element type is numeric
+            if (!elementType->isPrimitive() || !isNumericType(elementType)) {
+                addError("simd_load() pointer must point to numeric type, got '" + elementType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Extract lane count (same validation as simd_broadcast)
+            size_t laneCount = 0;
+            if (expr->arguments[1]->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* litNode = static_cast<LiteralExpr*>(expr->arguments[1].get());
+                if (std::holds_alternative<int64_t>(litNode->value)) {
+                    laneCount = std::get<int64_t>(litNode->value);
+                } else {
+                    addError("simd_load() lane count must be an integer literal", expr);
+                    return typeSystem->getErrorType();
+                }
+            } else {
+                addError("simd_load() lane count must be a compile-time integer literal", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Validate lane count
+            if (laneCount == 0 || laneCount > 64) {
+                addError("simd_load() lane count must be between 1 and 64, got: " + std::to_string(laneCount), expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Return simd<T, lanes> where T is the pointed-to type
+            return typeSystem->getSimdType(elementType, laneCount);
+        }
+        
+        // @simd_store(T*:ptr, simd<T, N>:vec) -> void
+        // Store a SIMD vector to memory (aligned store)
+        if (idExpr->name == "@simd_store" || idExpr->name == "simd_store") {
+            if (expr->arguments.size() != 2) {
+                addError("simd_store() requires exactly two arguments (pointer, vector)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            Type* ptrType = inferType(expr->arguments[0].get());
+            Type* vecType = inferType(expr->arguments[1].get());
+            
+            if (ptrType->getKind() == TypeKind::ERROR || vecType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            // Validate first argument is a pointer
+            if (ptrType->getKind() != TypeKind::POINTER) {
+                addError("simd_store() first argument must be a pointer, got '" + ptrType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Validate second argument is a SIMD vector
+            if (vecType->getKind() != TypeKind::SIMD) {
+                addError("simd_store() second argument must be a SIMD vector, got '" + vecType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            PointerType* ptr = static_cast<PointerType*>(ptrType);
+            SimdType* vec = static_cast<SimdType*>(vecType);
+            
+            Type* ptrElementType = ptr->getPointeeType();
+            Type* vecElementType = vec->getElementType();
+            
+            // Validate pointer element type matches SIMD element type
+            if (!ptrElementType->equals(vecElementType)) {
+                addError("simd_store() pointer element type must match SIMD element type, got pointer to '" + 
+                        ptrElementType->toString() + "' and SIMD of '" + vecElementType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Return void
             return typeSystem->getPrimitiveType("void");
         }
         
@@ -1649,12 +2187,258 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             }
             return typeSystem->getPrimitiveType("int32");
         }
-        if (idExpr->name == "@popcount64" || idExpr->name == "popcount64") {
+        if (idExpr->name == "@pop count64" || idExpr->name == "popcount64") {
             if (expr->arguments.size() != 1) {
                 addError("@popcount64() requires exactly one argument (int64)", expr);
                 return typeSystem->getErrorType();
             }
             return typeSystem->getPrimitiveType("int32");
+        }
+        
+        // ====================================================================
+        // FRAC (EXACT RATIONAL) ARITHMETIC INTRINSICS
+        // ====================================================================
+        // Mixed-number fractions: frac32 = {tbb32 whole, tbb32 num, tbb32 denom}
+        // Exact rational arithmetic with automatic GCD reduction
+        
+        // frac*_from_parts(whole, num, denom) -> frac*
+        // Construct fraction from components (validates denom != 0)
+        for (const char* width : {"8", "16", "32", "64"}) {
+            std::string funcName = "frac" + std::string(width) + "_from_parts";
+            if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                if (expr->arguments.size() != 3) {
+                    addError(funcName + "() requires exactly 3 arguments (whole, numerator, denominator)", expr);
+                    return typeSystem->getErrorType();
+                }
+                // Validate all arguments are integers (will be converted to tbb internally)
+                for (size_t i = 0; i < 3; i++) {
+                    Type* argType = inferType(expr->arguments[i].get());
+                    if (!argType->isPrimitive() || !isNumericType(argType)) {
+                        addError(funcName + "() arguments must be integer values", expr);
+                        return typeSystem->getErrorType();
+                    }
+                }
+                return typeSystem->getPrimitiveType("frac" + std::string(width));
+            }
+        }
+        
+        // frac*_add/sub/mul/div(a, b) -> frac*
+        // Arithmetic operations with automatic GCD reduction
+        for (const char* width : {"8", "16", "32", "64"}) {
+            std::string frac_type = "frac" + std::string(width);
+            for (const char* op : {"add", "sub", "mul", "div"}) {
+                std::string funcName = frac_type + "_" + op;
+                if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                    if (expr->arguments.size() != 2) {
+                        addError(funcName + "() requires exactly 2 arguments", expr);
+                        return typeSystem->getErrorType();
+                    }
+                    // Validate both arguments are the same frac type
+                    Type* arg0Type = inferType(expr->arguments[0].get());
+                    Type* arg1Type = inferType(expr->arguments[1].get());
+                    
+                    if (arg0Type->toString() != frac_type || arg1Type->toString() != frac_type) {
+                        addError(funcName + "() requires two " + frac_type + " arguments", expr);
+                        return typeSystem->getErrorType();
+                    }
+                    return typeSystem->getPrimitiveType(frac_type);
+                }
+            }
+        }
+        
+        // frac*_neg(a) -> frac*
+        // Negation
+        for (const char* width : {"8", "16", "32", "64"}) {
+            std::string frac_type = "frac" + std::string(width);
+            std::string funcName = frac_type + "_neg";
+            if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                if (expr->arguments.size() != 1) {
+                    addError(funcName + "() requires exactly 1 argument", expr);
+                    return typeSystem->getErrorType();
+                }
+                Type* argType = inferType(expr->arguments[0].get());
+                if (argType->toString() != frac_type) {
+                    addError(funcName + "() requires a " + frac_type + " argument", expr);
+                    return typeSystem->getErrorType();
+                }
+                return typeSystem->getPrimitiveType(frac_type);
+            }
+        }
+        
+        // frac*_cmp(a, b) -> int32
+        // Comparison: returns -1 (a < b), 0 (a == b), +1 (a > b)
+        for (const char* width : {"8", "16", "32", "64"}) {
+            std::string frac_type = "frac" + std::string(width);
+            std::string funcName = frac_type + "_cmp";
+            if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                if (expr->arguments.size() != 2) {
+                    addError(funcName + "() requires exactly 2 arguments", expr);
+                    return typeSystem->getErrorType();
+                }
+                Type* arg0Type = inferType(expr->arguments[0].get());
+                Type* arg1Type = inferType(expr->arguments[1].get());
+                
+                if (arg0Type->toString() != frac_type || arg1Type->toString() != frac_type) {
+                    addError(funcName + "() requires two " + frac_type + " arguments", expr);
+                    return typeSystem->getErrorType();
+                }
+                return typeSystem->getPrimitiveType("int32");
+            }
+        }
+        
+        // frac*_to_int(a) -> int32/int64
+        // Convert fraction to integer (truncates towards zero)
+        for (const char* width : {"8", "16", "32", "64"}) {
+            std::string frac_type = "frac" + std::string(width);
+            std::string funcName = frac_type + "_to_int";
+            if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                if (expr->arguments.size() != 1) {
+                    addError(funcName + "() requires exactly 1 argument", expr);
+                    return typeSystem->getErrorType();
+                }
+                Type* argType = inferType(expr->arguments[0].get());
+                if (argType->toString() != frac_type) {
+                    addError(funcName + "() requires a " + frac_type + " argument", expr);
+                    return typeSystem->getErrorType();
+                }
+                // Return int32 for frac8/16/32, int64 for frac64
+                if (std::string(width) == "64") {
+                    return typeSystem->getPrimitiveType("int64");
+                } else {
+                    return typeSystem->getPrimitiveType("int32");
+                }
+            }
+        }
+        
+        // frac*_to_float(a) -> float32/float64
+        // Convert fraction to floating point
+        for (const char* width : {"8", "16", "32", "64"}) {
+            std::string frac_type = "frac" + std::string(width);
+            std::string funcName = frac_type + "_to_float";
+            if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                if (expr->arguments.size() != 1) {
+                    addError(funcName + "() requires exactly 1 argument", expr);
+                    return typeSystem->getErrorType();
+                }
+                Type* argType = inferType(expr->arguments[0].get());
+                if (argType->toString() != frac_type) {
+                    addError(funcName + "() requires a " + frac_type + " argument", expr);
+                    return typeSystem->getErrorType();
+                }
+                // Return flt32 for frac8/16/32, flt64 for frac64
+                if (std::string(width) == "64") {
+                    return typeSystem->getPrimitiveType("flt64");
+                } else {
+                    return typeSystem->getPrimitiveType("flt32");
+                }
+            }
+        }
+        
+        // ====================================================================
+        // TFP (TWISTED FLOATING POINT) INTRINSICS
+        // ====================================================================
+        // Deterministic cross-platform floating-point with TBB safety model
+        // tfp32: {tbb16 exp, tbb16 mant}
+        // tfp64: {tbb16 exp, tbb48 mant}
+        
+        // tfp*_from_parts(exp, mant) -> tfp*
+        for (const char* width : {"32", "64"}) {
+            std::string funcName = "tfp" + std::string(width) + "_from_parts";
+            if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                if (expr->arguments.size() != 2) {
+                    addError(funcName + "() requires exactly 2 arguments (exponent, mantissa)", expr);
+                    return typeSystem->getErrorType();
+                }
+                return typeSystem->getPrimitiveType("tfp" + std::string(width));
+            }
+        }
+        
+        // tfp*_from_double(double) -> tfp*
+        for (const char* width : {"32", "64"}) {
+            std::string funcName = "tfp" + std::string(width) + "_from_double";
+            if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                if (expr->arguments.size() != 1) {
+                    addError(funcName + "() requires exactly 1 argument (double value)", expr);
+                    return typeSystem->getErrorType();
+                }
+                return typeSystem->getPrimitiveType("tfp" + std::string(width));
+            }
+        }
+        
+        // tfp*_to_double(tfp*) -> flt64
+        for (const char* width : {"32", "64"}) {
+            std::string funcName = "tfp" + std::string(width) + "_to_double";
+            if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                if (expr->arguments.size() != 1) {
+                    addError(funcName + "() requires exactly 1 argument (tfp value)", expr);
+                    return typeSystem->getErrorType();
+                }
+                return typeSystem->getPrimitiveType("flt64");
+            }
+        }
+        
+        // tfp* arithmetic: add, sub, mul, div
+        for (const char* width : {"32", "64"}) {
+            for (const char* op : {"add", "sub", "mul", "div"}) {
+                std::string funcName = "tfp" + std::string(width) + "_" + op;
+                if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                    if (expr->arguments.size() != 2) {
+                        addError(funcName + "() requires exactly 2 arguments", expr);
+                        return typeSystem->getErrorType();
+                    }
+                    return typeSystem->getPrimitiveType("tfp" + std::string(width));
+                }
+            }
+        }
+        
+        // tfp*_neg(tfp*) -> tfp*
+        for (const char* width : {"32", "64"}) {
+            std::string funcName = "tfp" + std::string(width) + "_neg";
+            if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                if (expr->arguments.size() != 1) {
+                    addError(funcName + "() requires exactly 1 argument", expr);
+                    return typeSystem->getErrorType();
+                }
+                return typeSystem->getPrimitiveType("tfp" + std::string(width));
+            }
+        }
+        
+        // tfp*_cmp(tfp*, tfp*) -> int32
+        for (const char* width : {"32", "64"}) {
+            std::string funcName = "tfp" + std::string(width) + "_cmp";
+            if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                if (expr->arguments.size() != 2) {
+                    addError(funcName + "() requires exactly 2 arguments", expr);
+                    return typeSystem->getErrorType();
+                }
+                return typeSystem->getPrimitiveType("int32");
+            }           
+        }
+        
+        // tfp* math: sqrt, sin, cos, exp, log (single argument)
+        for (const char* width : {"32", "64"}) {
+            for (const char* mathfunc : {"sqrt", "sin", "cos", "exp", "log"}) {
+                std::string funcName = "tfp" + std::string(width) + "_" + mathfunc;
+                if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                    if (expr->arguments.size() != 1) {
+                        addError(funcName + "() requires exactly 1 argument", expr);
+                        return typeSystem->getErrorType();
+                    }
+                    return typeSystem->getPrimitiveType("tfp" + std::string(width));
+                }
+            }
+        }
+        
+        // tfp*_pow(base, exp) -> tfp*
+        for (const char* width : {"32", "64"}) {
+            std::string funcName = "tfp" + std::string(width) + "_pow";
+            if (idExpr->name == funcName || idExpr->name == "@" + funcName) {
+                if (expr->arguments.size() != 2) {
+                    addError(funcName + "() requires exactly 2 arguments (base, exponent)", expr);
+                    return typeSystem->getErrorType();
+                }
+                return typeSystem->getPrimitiveType("tfp" + std::string(width));
+            }
         }
         
         // ====================================================================
@@ -4458,6 +5242,12 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
         return vecType->getComponentType();
     }
     
+    // SIMD types support element access: simd<T, N>[i] -> T
+    if (arrayType->getKind() == TypeKind::SIMD) {
+        SimdType* simdType = static_cast<SimdType*>(arrayType);
+        return simdType->getElementType();
+    }
+    
     // Arrays are represented as pointer types
     // Extract element type from pointer
     if (arrayType->getKind() == TypeKind::POINTER) {
@@ -4616,10 +5406,19 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
     if (objectType->getKind() == TypeKind::STRUCT) {
         StructType* structType = static_cast<StructType*>(objectType);
         const auto& fields = structType->getFields();
+        
+        // DEBUG: Print struct information
+        std::cerr << "[DEBUG MEMBER ACCESS] Struct: " << structType->getName() 
+                  << ", Field: " << expr->member << std::endl;
+        std::cerr << "[DEBUG MEMBER ACCESS] Struct has " << fields.size() << " fields" << std::endl;
 
         // Look up member in struct fields
         for (const auto& field : fields) {
+            std::cerr << "[DEBUG MEMBER ACCESS]   Field '" << field.name 
+                      << "' has type: " << (field.type ? field.type->toString() : "NULL") << std::endl;
             if (field.name == expr->member) {
+                std::cerr << "[DEBUG MEMBER ACCESS] Found matching field! Returning type: " 
+                          << (field.type ? field.type->toString() : "NULL") <<std::endl;
                 // For safe navigation, result type is the same for now
                 // TODO: Return optional<field.type> when optional types are implemented
                 return field.type;
@@ -4657,6 +5456,20 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
 
         addError(errorMsg, expr);
         return typeSystem->getErrorType();
+    }
+    
+    // P1-3 Phase 3: Handle<T> member access
+    // Handle<T> has two fields: index (i64) and generation (i32)
+    if (objectType->getKind() == TypeKind::HANDLE) {
+        if (expr->member == "index") {
+            return typeSystem->getPrimitiveType("int64");  // size_t = i64
+        } else if (expr->member == "generation") {
+            return typeSystem->getPrimitiveType("int32");  // u32 = i32
+        } else {
+            addError("Handle<T> has no member named '" + expr->member + 
+                    "'. Available fields: index, generation", expr);
+            return typeSystem->getErrorType();
+        }
     }
     
     // For pointer types with safe navigation, check if it's a pointer to struct
@@ -4768,25 +5581,36 @@ Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
         return typeSystem->getErrorType();
     }
     
-    // Two operators use UnwrapExpr:
+    // Three operators use UnwrapExpr:
     // ? operator: result_expr ? default (unwraps Result<T>)
     // ?? operator: nullable_expr ?? default (null coalescing for pointers and optionals)
+    // ?! operator: result_expr ?! default (emphatic unwrap for Result<T>)
+    
+    // Determine operator name for error messages
+    std::string opName = expr->isFailsafe ? "?!" : (expr->isNullCoalesce ? "??" : "?");
     
     Type* valueType = resultType;
     
     if (resultType->getKind() == TypeKind::RESULT) {
-        // ? operator: Extract T from Result<T>
+        // ? or ?! operator: Extract T from Result<T>
         ResultType* resType = static_cast<ResultType*>(resultType);
         valueType = resType->getValueType();
         
         // Check that default value type matches the unwrapped value type
         if (!defaultType->isAssignableTo(valueType) && !canCoerce(defaultType, valueType)) {
-            addError("Unwrap operator (?) default value type '" + defaultType->toString() + 
+            addError("Unwrap operator (" + opName + ") default value type '" + defaultType->toString() + 
                     "' does not match result value type '" + valueType->toString() + "'", expr);
             return typeSystem->getErrorType();
         }
     } 
     else if (resultType->getKind() == TypeKind::POINTER) {
+        // Emphatic unwrap (?!) only works on Result<T>, not pointers
+        if (expr->isFailsafe) {
+            addError("Emphatic unwrap operator (?!) requires Result<T> type, got '" + 
+                    resultType->toString() + "'. Use ?? for null coalescing on pointers.", expr);
+            return typeSystem->getErrorType();
+        }
+        
         // ?? operator: Extract T from ptr T
         PointerType* ptrType = static_cast<PointerType*>(resultType);
         valueType = ptrType->getPointeeType();
@@ -4799,6 +5623,13 @@ Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
         }
     }
     else if (resultType->getKind() == TypeKind::OPTIONAL) {
+        // Emphatic unwrap (?!) only works on Result<T>, not optionals
+        if (expr->isFailsafe) {
+            addError("Emphatic unwrap operator (?!) requires Result<T> type, got '" + 
+                    resultType->toString() + "'. Use ?? for null coalescing on optionals.", expr);
+            return typeSystem->getErrorType();
+        }
+        
         // ?? operator: Extract T from Optional<T> (T?)
         OptionalType* optType = static_cast<OptionalType*>(resultType);
         valueType = optType->getWrappedType();
@@ -4811,7 +5642,10 @@ Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
         }
     }
     else {
-        addError("Unwrap/coalesce operators (? and ??) require either Result<T>, Optional<T>, or ptr T type, got '" + 
+        std::string validTypes = expr->isFailsafe ? 
+            "Result<T>" : 
+            "Result<T>, Optional<T>, or ptr T";
+        addError("Unwrap operator (" + opName + ") requires " + validTypes + " type, got '" + 
                 resultType->toString() + "'", expr);
         return typeSystem->getErrorType();
     }
@@ -5428,6 +6262,82 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 return typeSystem->getResultType(resolvedTypeArgs[0]);
             }
             
+            // P1-3: Handle<T> - Generational memory handles for safe neurogenesis
+            if (genericType->baseName == "Handle") {
+                // Handle<T> is a built-in type for arena-based memory management
+                if (resolvedTypeArgs.size() != 1) {
+                    addError("Handle<T> requires exactly 1 type argument, got " + 
+                            std::to_string(resolvedTypeArgs.size()), typeNode);
+                    return typeSystem->getErrorType();
+                }
+                
+                // Create HandleType wrapping the pointee type
+                return typeSystem->getHandleType(resolvedTypeArgs[0]);
+            }
+            
+            // P1-2: simd<T, N> - SIMD vectorization for performance
+            if (genericType->baseName == "simd") {
+                // simd<T, N> requires exactly 2 type arguments:
+                // - T: element type (must be primitive for now)
+                // - N: lane count (must be compile-time constant integer)
+                if (genericType->typeArgs.size() != 2) {
+                    addError("simd<T, N> requires exactly 2 type arguments, got " + 
+                            std::to_string(genericType->typeArgs.size()), typeNode);
+                    return typeSystem->getErrorType();
+                }
+                
+                // First argument: element type
+                Type* elementType = resolvedTypeArgs[0];
+                
+                // Validate element type is primitive (for now)
+                if (!elementType->isPrimitive()) {
+                    addError("simd<T, N> element type must be primitive, got: " + 
+                            elementType->toString(), typeNode);
+                    return typeSystem->getErrorType();
+                }
+                
+                // Second argument: lane count (must be a simple type name representing an integer)
+                // Support two formats:
+                // 1. Plain integer: "4", "8", "16" (Phase 2: parser handles this)
+                // 2. Identifier format: "N4", "N8", "N16" (Phase 1 workaround, still supported)
+                aria::ASTNode* laneCountNode = genericType->typeArgs[1].get();
+                size_t laneCount = 0;
+                
+                if (laneCountNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
+                    aria::SimpleType* laneCountType = static_cast<aria::SimpleType*>(laneCountNode);
+                    std::string laneCountStr = laneCountType->typeName;
+                    
+                    // Check for "N<number>" format (e.g., "N4", "N8", "N16") - Phase 1 workaround
+                    if (laneCountStr.length() > 1 && laneCountStr[0] == 'N') {
+                        laneCountStr = laneCountStr.substr(1);  // Strip 'N' prefix
+                    }
+                    // Otherwise, it should be a plain integer from the parser (Phase 2)
+                    
+                    try {
+                        laneCount = std::stoull(laneCountStr);
+                    } catch (...) {
+                        addError("simd<T, N> lane count must be a positive integer (e.g., 4, 8, 16 or N4, N8, N16), got: " + 
+                                laneCountType->typeName, typeNode);
+                        return typeSystem->getErrorType();
+                    }
+                } else {
+                    addError("simd<T, N> lane count must be a compile-time constant", typeNode);
+                    return typeSystem->getErrorType();
+                }
+                
+                // Validate lane count is valid (power of 2, reasonable range)
+                if (laneCount == 0 || laneCount > 64) {
+                    addError("simd<T, N> lane count must be between 1 and 64, got: " + 
+                            std::to_string(laneCount), typeNode);
+                    return typeSystem->getErrorType();
+                }
+                
+                // TODO: Validate lane count is power of 2 (for now, allow any value)
+                
+                // Create SimdType
+                return typeSystem->getSimdType(elementType, laneCount);
+            }
+            
             if (genericType->baseName == "array" || genericType->baseName == "atomic") {
                 // Built-in generic types - handle specially
                 // For now, just return a placeholder struct type
@@ -5494,6 +6404,51 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 }
                 
                 return typeSystem->createStructType(mangledName, fields);
+            }
+            
+            // P1-5 Phase 3: Dimensional Type Support
+            // Check for dimensional types: fix256<Joules>, fix128<Meters>, etc.
+            // Pattern: BaseType<DimensionName> where:
+            // - BaseType is a numeric type (fix256, fix128, int64, etc.)
+            // - DimensionName is a registered dimension (Joules, Meters, etc.)
+            if (genericType->typeArgs.size() == 1) {
+                // Check if the type argument is a simple identifier (potential dimension name)
+                aria::ASTNode* typeArgNode = genericType->typeArgs[0].get();
+                if (typeArgNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
+                    aria::SimpleType* simpleTypeArg = static_cast<aria::SimpleType*>(typeArgNode);
+                    std::string potentialDimensionName = simpleTypeArg->typeName;
+                    
+                    // Check if this is a registered dimension
+                    const Dimension* dim = typeSystem->lookupDimension(potentialDimensionName);
+                    if (dim != nullptr) {
+                        // This is a dimensional type! Get the base numeric type
+                        // Try primitive types first (int64, flt64, etc.)
+                        Type* baseType = typeSystem->getPrimitiveType(genericType->baseName);
+                        
+                        // If not primitive, try struct types (fix256, etc.)
+                        if (!baseType) {
+                            baseType = typeSystem->getStructType(genericType->baseName);
+                        }
+                        
+                        if (!baseType) {
+                            addError("Unknown base type for dimensional: '" + 
+                                   genericType->baseName + "' in " + 
+                                   genericType->baseName + "<" + potentialDimensionName + ">", 
+                                   typeNode);
+                            return typeSystem->getErrorType();
+                        }
+                        
+                        // Validate that base type is numeric
+                        if (!isNumericType(baseType)) {
+                            addError("Dimensional types require numeric base type, got: " + 
+                                   baseType->toString(), typeNode);
+                            return typeSystem->getErrorType();
+                        }
+                        
+                        // Create and return dimensional type
+                        return typeSystem->getDimensionalType(baseType, *dim, potentialDimensionName);
+                    }
+                }
             }
             
             // Look up the generic struct declaration
@@ -6137,6 +7092,11 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     currentFunctionReturnType = actualReturnType;
     currentFunctionValueType = valueType;
     
+    // CRITICAL FIX: Enter function scope BEFORE defining parameters
+    // This prevents parameter name collisions between different functions
+    // Without this, all parameters are registered in global scope and collide!
+    symbolTable->enterScope(ScopeKind::FUNCTION, stmt->funcName);
+    
     // Check parameters
     for (const auto& param : stmt->parameters) {
         if (param->type == ASTNode::NodeType::PARAMETER) {
@@ -6175,6 +7135,9 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     if (stmt->body) {
         checkStatement(stmt->body.get());
     }
+    
+    // Exit function scope AFTER body is checked
+    symbolTable->exitScope();
     
     // Restore previous function return types
     currentFunctionReturnType = previousReturnType;
@@ -7264,6 +8227,71 @@ bool TypeChecker::isNumericExoticType(Type* type) {
     return false;
 }
 
+// P1-5: Helper to check if a type is numeric (for dimensional analysis)
+bool TypeChecker::isNumericType(Type* type) {
+    if (!type) {
+        return false;
+    }
+    
+    // Check for primitive numeric types
+    if (type->getKind() == TypeKind::PRIMITIVE) {
+        PrimitiveType* primType = static_cast<PrimitiveType*>(type);
+        const std::string& name = primType->getName();
+        
+        // Standard integers (both canonical and alias forms)
+        // Canonical: int8, int16, int32, int64, uint8, uint16, uint32, uint64
+        // Alias: Same names supported
+        if (name.find("int") == 0 || name.find("uint") == 0) {
+            return true;
+        }
+        
+        // Standard floats (both canonical and alias forms)
+        // Canonical: flt32, flt64, flt128, flt256, flt512
+        // Alias: float32, float64, float128, float256, float512
+        if (name.find("flt") == 0 || name.find("float") == 0) {
+            return true;
+        }
+        
+        // Fixed-point types
+        if (name.find("fix") == 0) {
+            return true;
+        }
+        
+        // TBB types
+        if (name.find("tbb") == 0) {
+            return true;
+        }
+        
+        // Exotic numeric types
+        if (isNumericExoticType(type)) {
+            return true;
+        }
+        
+        // Balanced ternary/nonary types
+        if (name == "trit" || name == "tryte" || name == "nit" || name == "nyte") {
+            return true;
+        }
+        
+        // Vector types
+        if (name == "vec9" || name == "dvec9") {
+            return true;
+        }
+    }
+    
+    // Check for struct types that represent numeric types (like custom fixed-point)
+    if (type->getKind() == TypeKind::STRUCT) {
+        StructType* structType = static_cast<StructType*>(type);
+        const std::string& name = structType->getName();
+        
+        // Fixed-point types (if defined as structs)
+        if (name.find("fix") == 0) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
 std::pair<int64_t, int64_t> TypeChecker::getBalancedCompositeRange(Type* type) {
     if (isTryteType(type) || isNyteType(type)) {
         // Both tryte and nyte have the same range
@@ -8233,6 +9261,34 @@ bool TypeChecker::branchAlwaysReturns(ASTNode* branch) {
            branch->type == ASTNode::NodeType::FAIL ||
            branch->type == ASTNode::NodeType::BREAK ||
            branch->type == ASTNode::NodeType::CONTINUE;
+}
+
+// ============================================================================
+// Program Validation
+// ============================================================================
+
+bool TypeChecker::validateFailsafeExists() {
+    // Check if failsafe() function is defined in the symbol table
+    Symbol* failsafeSymbol = symbolTable->resolveSymbol("failsafe");
+    
+    if (!failsafeSymbol) {
+        addError("Every Aria program must define a 'failsafe(int32:err_code)' function. "
+                 "This ensures accountability for error handling. "
+                 "Even an empty failsafe is valid - it documents your decision.", nullptr);
+        return false;
+    }
+    
+    // Validate that it's actually a function
+    if (failsafeSymbol->type->getKind() != TypeKind::FUNCTION) {
+        addError("'failsafe' must be a function, but is defined as: " + 
+                 failsafeSymbol->type->toString(), nullptr);
+        return false;
+    }
+    
+    // Optional: Validate signature (should be int32(int32))
+    // For now, we just ensure it exists - type checking will catch signature issues
+    
+    return true;
 }
 
 } // namespace sema

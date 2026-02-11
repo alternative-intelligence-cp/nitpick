@@ -155,6 +155,36 @@ llvm::Type* StmtCodegen::getLLVMTypeFromString(const std::string& type_name) {
         return llvm::StructType::get(context, fields);
     }
     
+    // SIMD types: simd<T, N> for explicit vectorization (P1-2 Phase 3)
+    // Example: simd<int32, 4> -> <4 x i32>
+    //          simd<int64, 8> -> <8 x i64>
+    if (type_name.rfind("simd<", 0) == 0 && type_name.back() == '>') {
+        // Parse "simd<elementType, laneCount>"
+        size_t comma_pos = type_name.find(',');
+        if (comma_pos != std::string::npos) {
+            // Extract element type: "simd<int32, 4>" -> "int32"
+            std::string elem_type_str = type_name.substr(5, comma_pos - 5);
+            // Trim whitespace
+            elem_type_str.erase(0, elem_type_str.find_first_not_of(" \t"));
+            elem_type_str.erase(elem_type_str.find_last_not_of(" \t") + 1);
+            
+            // Extract lane count: "simd<int32, 4>" -> "4"
+            std::string lane_count_str = type_name.substr(comma_pos + 1, type_name.length() - comma_pos - 2);
+            // Trim whitespace
+            lane_count_str.erase(0, lane_count_str.find_first_not_of(" \t"));
+            lane_count_str.erase(lane_count_str.find_last_not_of(" \t") + 1);
+            
+            // Convert lane count to integer
+            size_t lane_count = std::stoull(lane_count_str);
+            
+            // Recursively get element type
+            llvm::Type* elem_type = getLLVMTypeFromString(elem_type_str);
+            
+            // Create LLVM fixed vector type
+            return llvm::FixedVectorType::get(elem_type, lane_count);
+        }
+    }
+    
     // Balanced Ternary types (Session 15)
     // Research-based decision: Store trit/nit in i8 to allow ERR sentinel (-128)
     // and proper overflow detection (1+1=2→ERR instead of wrapping)

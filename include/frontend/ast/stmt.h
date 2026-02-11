@@ -40,7 +40,7 @@ public:
     VarDeclStmt(ASTNodePtr typeN, const std::string& name,
                 ASTNodePtr init = nullptr, int line = 0, int column = 0)
         : ASTNode(NodeType::VAR_DECL, line, column),
-          typeName(""), typeNode(typeN), varName(name), initializer(init),
+          typeName(typeN ? typeN->toString() : ""), typeNode(typeN), varName(name), initializer(init),
           isWild(false), isConst(false), isFixed(false), isStack(false), isGC(false),
           scope_depth(0), requires_drop(false), is_pinned_shadow(false), pinned_target("") {}
     
