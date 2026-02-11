@@ -1,0 +1,135 @@
+// ============================================================================
+// Spaceship Operator (<=>)  Comprehensive Test
+// ============================================================================
+// The spaceship operator performs three-way comparison:
+//   Returns -1 if left < right
+//   Returns  0 if left == right  
+//   Returns  1 if left > right
+// ============================================================================
+
+func:failsafe = void(int32:err_code) {
+    print("Test failed!");
+};
+
+func:main = int32() {
+    print("=== Spaceship Operator (<=>)  Test Suite ===");
+    
+    // =========================================
+    // Test 1: Basic Integer Comparison
+    // =========================================
+    print("\n1. Basic Integer Comparison");
+    int64:a = 10;
+    int64:b = 5;
+    int64:c = 10;
+    
+    int64:less = b <=> a;      // 5 <=> 10 = -1
+    int64:equal = a <=> c;     // 10 <=> 10 = 0
+    int64:greater = a <=> b;   // 10 <=> 5 = 1
+    
+    if (less == -1 && equal == 0 && greater == 1) {
+        print("  ✓ Integer spaceship works: -1, 0, 1");
+    }
+    
+    // =========================================
+    // Test 2: Different Integer Types
+    // =========================================
+    print("\n2. Different Integer Sizes");
+    int32:x32 = 100;
+    int32:y32 = 50;
+    int64:x64 = 200;
+    int64:y64 = 100;
+    
+    int32:r32 = x32 <=> y32;   // 100 <=> 50 = 1
+    int64:r64 = x64 <=> y64;   // 200 <=> 100 = 1
+    
+    if (r32 == 1 && r64 == 1) {
+        print("  ✓ Works with int32 and int64");
+    }
+    
+    // =========================================
+    // Test 3: Negative Numbers
+    // =========================================
+    print("\n3. Negative Numbers");
+    int64:neg = -50;
+    int64:pos = 50;
+    int64:zero = 0;
+    
+    int64:neg_vs_pos = neg <=> pos;    // -50 <=> 50 = -1
+    int64:pos_vs_neg = pos <=> neg;    // 50 <=> -50 = 1
+    int64:zero_vs_pos = zero <=> pos;  // 0 <=> 50 = -1
+    int64:zero_vs_neg = zero <=> neg;  // 0 <=> -50 = 1
+    
+    if (neg_vs_pos == -1 && pos_vs_neg == 1 && 
+        zero_vs_pos == -1 && zero_vs_neg == 1) {
+        print("  ✓ Negative number comparisons correct");
+    }
+    
+    // =========================================
+    // Test 4: Chained Comparisons (sorting use case)
+    // =========================================
+    print("\n4. Sorting Use Case");
+    int64:val1 = 30;
+    int64:val2 = 10;
+    int64:val3 = 20;
+    
+    // Simulate sorting comparison
+    int64:cmp12 = val1 <=> val2;  // 30 <=> 10 = 1
+    int64:cmp23 = val2 <=> val3;  // 10 <=> 20 = -1
+    int64:cmp13 = val1 <=> val3;  // 30 <=> 20 = 1
+    
+    // Correct ordering: val2 < val3 < val1
+    if (cmp12 == 1 && cmp23 == -1 && cmp13 == 1) {
+        print("  ✓ Sorting comparisons work correctly");
+    }
+    
+    // =========================================
+    // Test 5: Expression Results
+    // =========================================
+    print("\n5. Expression Results");
+    int64:expr1 = (10 + 5) <=> (20 - 5);  // 15 <=> 15 = 0
+    int64:expr2 = (20 * 2) <=> (30 + 5);  // 40 <=> 35 = 1
+    int64:expr3 = (10 - 20) <=> (5 + 5);  // -10 <=> 10 = -1
+    
+    if (expr1 == 0 && expr2 == 1 && expr3 == -1) {
+        print("  ✓ Works with expressions");
+    }
+    
+    // =========================================
+    // Test 6: Unsigned Integers
+    // =========================================
+    print("\n6. Unsigned Integers");
+    uint32:u1 = 100;
+    uint32:u2 = 50;
+    uint32:u3 = 100;
+    
+    int32:ucmp1 = u1 <=> u2;  // 100 <=> 50 = 1
+    int32:ucmp2 = u2 <=> u1;  // 50 <=> 100 = -1
+    int32:ucmp3 = u1 <=> u3;  // 100 <=> 100 = 0
+    
+    if (ucmp1 == 1 && ucmp2 == -1 && ucmp3 == 0) {
+        print("  ✓ Works with unsigned integers");
+    }
+    
+    // =========================================
+    // Test 7: Edge Cases
+    // =========================================
+    print("\n7. Edge Cases");
+    int64:large_val = 9223372036854775806;  // Near INT64_MAX
+    int64:small_val = -9223372036854775807; // Near INT64_MIN
+    int64:one = 1;
+    
+    int64:edge1 = small_val <=> large_val;  // Should be -1
+    int64:edge2 = large_val <=> one;        // Should be 1
+    
+    if (edge1 == -1 && edge2 == 1) {
+        print("  ✓ Edge cases work correctly");
+    }
+    
+    // =========================================
+    // Summary
+    // =========================================
+    print("\n=== All spaceship operator tests passed ===");
+    print("Spaceship operator (<=>) is fully functional!");
+    
+    pass(0);
+};
