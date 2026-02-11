@@ -6577,6 +6577,35 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             return;
         }
         
+        // ========================================================================
+        // NIL vs NULL Type Safety Enforcement
+        // NIL can ONLY be used with optional types (T?)
+        // NULL can ONLY be used with pointer types (T@)
+        // ========================================================================
+        if (stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+            
+            // Check NIL literal - must be used with optional types only
+            if (literal->explicit_type == "NIL") {
+                if (declaredType->getKind() != TypeKind::OPTIONAL) {
+                    addError("NIL can only be assigned to optional types (T?). " 
+                            "Variable '" + stmt->varName + "' has type '" + 
+                            declaredType->toString() + "'. Use NULL for pointers.", stmt);
+                    return;
+                }
+            }
+            
+            // Check NULL literal - must be used with pointer types only
+            if (literal->explicit_type == "NULL") {
+                if (declaredType->getKind() != TypeKind::POINTER) {
+                    addError("NULL can only be assigned to pointer types (T@). " 
+                            "Variable '" + stmt->varName + "' has type '" + 
+                            declaredType->toString() + "'. Use NIL for optionals.", stmt);
+                    return;
+                }
+            }
+        }
+        
         // TBB Type Validation (Phase 3.2.4)
         // Special handling for integer values (literals or expressions) assigned to TBB types
         // Allows: tbb8:x = 100; and tbb8:x = 10 + 20;
