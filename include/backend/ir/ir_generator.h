@@ -99,6 +99,9 @@ private:
     bool current_func_is_async;                    // Is current function async?
     llvm::BasicBlock* current_coro_suspend_block;  // Where return statements branch to in async functions
 
+    // P1-4: Contract tracking (Design by Contract)
+    class FuncDeclStmt* current_func_decl;  // Currently generating function (for contract checking)
+
     /**
      * Map Aria type to LLVM type
      * Reference: research_012-017 for type specifications

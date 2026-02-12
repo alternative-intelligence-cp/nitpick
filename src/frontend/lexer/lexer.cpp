@@ -72,6 +72,11 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"fixed", TokenType::TOKEN_KW_FIXED},
     {"is", TokenType::TOKEN_KW_IS},
     
+    // Design by Contract (P1-4 Formal Verification)
+    {"requires", TokenType::TOKEN_KW_REQUIRES},
+    {"ensures", TokenType::TOKEN_KW_ENSURES},
+    {"invariant", TokenType::TOKEN_KW_INVARIANT},
+    
     // Type keywords - integers
     {"int1", TokenType::TOKEN_KW_INT1},
     {"int2", TokenType::TOKEN_KW_INT2},

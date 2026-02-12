@@ -581,6 +581,14 @@ Type* TypeChecker::inferTemplateLiteral(TemplateLiteralExpr* expr) {
 // ============================================================================
 
 Type* TypeChecker::inferIdentifier(IdentifierExpr* expr) {
+    // Special GPU intrinsic namespace (Phase 4 - GPU/PTX Backend)
+    // The `gpu` identifier is only valid in member access expressions (gpu.thread_id(), etc.)
+    // Return a placeholder type that will be resolved when used in member access
+    if (expr->name == "gpu") {
+        // Return obj type as placeholder - actual type determined in member access
+        return typeSystem->getUnknownType();
+    }
+    
     // Special case: $ is the implicit iteration variable in till/loop constructs
     // Its type is determined by the loop parameters (usually int64)
     if (expr->name == "$") {
@@ -1030,13 +1038,15 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
                              leftName.find("frac") == 0 || leftName.find("tfp") == 0 ||
                              leftName == "vec9" || leftName == "dvec9" ||
                              leftName == "trit" || leftName == "tryte" ||
-                             leftName == "nit" || leftName == "nyte");
+                             leftName == "nit" || leftName == "nyte" ||
+                             leftName == "fix256");  // ARIA-025: Deterministic fixed-point
         bool rightIsNumeric = (rightName.find("int") == 0 || rightName.find("uint") == 0 ||
                               rightName.find("flt") == 0 || rightName.find("tbb") == 0 ||
                               rightName.find("frac") == 0 || rightName.find("tfp") == 0 ||
                               rightName == "vec9" || rightName == "dvec9" ||
                               rightName == "trit" || rightName == "tryte" ||
-                              rightName == "nit" || rightName == "nyte");
+                              rightName == "nit" || rightName == "nyte" ||
+                              rightName == "fix256");  // ARIA-025: Deterministic fixed-point
         
         if (!leftIsNumeric || !rightIsNumeric) {
             addError("Arithmetic operators require numeric types, got '" + 
@@ -1546,6 +1556,19 @@ Type* TypeChecker::inferCastExpr(CastExpr* expr) {
 // ============================================================================
 
 Type* TypeChecker::inferCallExpr(CallExpr* expr) {
+    // GPU/PTX Backend Phase 4: Handle GPU intrinsic calls (gpu.thread_id(), gpu.sync_threads(), etc.)
+    if (expr->callee->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        MemberAccessExpr* memberExpr = static_cast<MemberAccessExpr*>(expr->callee.get());
+        if (memberExpr->object->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* identExpr = static_cast<IdentifierExpr*>(memberExpr->object.get());
+            if (identExpr->name == "gpu") {
+                // GPU intrinsics: all return int32 except sync_threads (which returns void but used as statement)
+                // For simplicity, return int32 for all - sync_threads value will be ignored
+                return typeSystem->getPrimitiveType("int32");
+            }
+        }
+    }
+    
     // Check for namespace-qualified static method calls: Type.method()
     // Example: string.from_char(65) -> resolves to builtin string_from_char
     // Also handles UFCS instance method calls: obj.method() -> Type_method(obj)
@@ -4186,6 +4209,32 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("fix256");
         }
         
+        // fix256_to_int(fix256) -> int64
+        if (idExpr->name == "fix256_to_int") {
+            if (expr->arguments.size() != 1) {
+                addError("fix256_to_int() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // fix256_to_float(fix256) -> flt64
+        if (idExpr->name == "fix256_to_float") {
+            if (expr->arguments.size() != 1) {
+                addError("fix256_to_float() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("flt64");
+        }
+        
         // trit_from_int(int64) -> trit (balanced ternary: -1, 0, 1)
         if (idExpr->name == "trit_from_int") {
             if (expr->arguments.size() != 1) {
@@ -5318,6 +5367,17 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
 // ============================================================================
 
 Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
+    // Check for GPU intrinsic calls (gpu.thread_id(), gpu.sync_threads(), etc.)
+    // GPU/PTX Backend Phase 4: GPU Intrinsics
+    if (expr->object->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* identExpr = static_cast<IdentifierExpr*>(expr->object.get());
+        if (identExpr->name == "gpu") {
+            // All GPU intrinsics return int32 (except sync_threads which is void/statement-level)
+            // thread_id(), block_id(), block_dim(), grid_dim() all return int32
+            return typeSystem->getPrimitiveType("int32");
+        }
+    }
+    
     // Check if this is module member access (module.function or module.symbol)
     // This must come before type inference to handle MODULE symbols correctly
     if (expr->object->type == ASTNode::NodeType::IDENTIFIER) {
@@ -7116,6 +7176,73 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
 }
 
 // ============================================================================
+// P1-4: Design by Contract - Contract Validation
+// ============================================================================
+
+void TypeChecker::validateContracts(const std::vector<ASTNodePtr>& contracts,
+                                   bool isPostcondition,
+                                   Type* valueType,
+                                   ASTNode* stmt) {
+    // If no contracts, nothing to validate
+    if (contracts.empty()) {
+        return;
+    }
+    
+    // For postconditions, temporarily define 'result' symbol
+    // This allows postconditions to reference the return value
+    Symbol* resultSymbol = nullptr;
+    if (isPostcondition && valueType) {
+        // Check if 'result' is already defined (would be a parameter name conflict)
+        Symbol* existing = symbolTable->lookupSymbol("result");
+        if (existing) {
+            addError("Cannot use 'result' as parameter name - reserved for postconditions", stmt);
+        } else {
+            resultSymbol = symbolTable->defineSymbol("result", SymbolKind::VARIABLE,
+                                                    valueType, stmt->line, stmt->column);
+        }
+    }
+    
+    // Validate each contract clause
+    for (size_t i = 0; i < contracts.size(); ++i) {
+        ASTNodePtr contract = contracts[i];
+        if (!contract) {
+            addError("Contract clause is null", stmt);
+            continue;
+        }
+        
+        // Infer the type of the contract expression
+        Type* contractType = inferType(contract.get());
+        
+        if (!contractType) {
+            std::string clauseType = isPostcondition ? "ensures" : "requires";
+            addError("Failed to infer type for " + clauseType + " clause #" + 
+                    std::to_string(i + 1), stmt);
+            continue;
+        }
+        
+        // Contract expressions must evaluate to boolean
+        // bool is a primitive type with name "bool"
+        bool isBool = false;
+        if (contractType->getKind() == TypeKind::PRIMITIVE) {
+            PrimitiveType* primType = static_cast<PrimitiveType*>(contractType);
+            isBool = (primType->getName() == "bool");
+        }
+        
+        if (!isBool) {
+            std::string clauseType = isPostcondition ? "ensures" : "requires";
+            addError("Contract " + clauseType + " clause #" + std::to_string(i + 1) + 
+                    " must be boolean expression, got " + contractType->toString(), stmt);
+        }
+        
+        // TODO Phase 2.5: Check for side effects (no function calls with side effects)
+        // For now, just validate types
+    }
+    
+    // Note: resultSymbol will be automatically cleaned up when function scope exits
+    // No need to manually remove it
+}
+
+// ============================================================================
 // Function Declaration Type Checking
 // ============================================================================
 
@@ -7123,8 +7250,22 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     // Skip detailed type checking for generic functions
     // Their bodies will be checked during monomorphization when types are concrete
     if (!stmt->genericParams.empty()) {
-        // Still register the function in the symbol table, but don't check the body
-        // The monomorphizer will create concrete versions that get type-checked
+        // Register the generic function in the symbol table so it can be found during calls
+        // Create a placeholder function type (will be specialized during monomorphization)
+        std::vector<Type*> placeholderParams;
+        for (const auto& param : stmt->parameters) {
+            placeholderParams.push_back(typeSystem->getUnknownType());
+        }
+        Type* placeholderReturn = typeSystem->getUnknownType();
+        Type* funcType = new FunctionType(placeholderParams, placeholderReturn, stmt->isAsync, false);
+        
+        Symbol* funcSymbol = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
+                                                        funcType, stmt->line, stmt->column);
+        if (funcSymbol) {
+            funcSymbol->setFuncDecl(stmt);  // Store AST for generic resolution
+        }
+        
+        // Don't check the body - it will be checked during monomorphization
         return;
     }
     
@@ -7220,6 +7361,13 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
                                      paramType, param->line, param->column);
         }
     }
+    
+    // P1-4: Validate contract clauses (Design by Contract)
+    // Check preconditions (requires) - can reference parameters only
+    validateContracts(stmt->preconditions, false, valueType, stmt);
+    
+    // Check postconditions (ensures) - can reference parameters and 'result'
+    validateContracts(stmt->postconditions, true, valueType, stmt);
     
     // Check function body (this is where generic calls get analyzed!)
     if (stmt->body) {
@@ -7491,6 +7639,14 @@ void TypeChecker::checkImplDecl(ImplDeclStmt* stmt) {
 
     // Register this impl with the trait
     traitSymbol->addImplDecl(stmt);
+
+    // Empty impl blocks indicate intrinsic implementation
+    // Example: impl:Numeric:for:int32 = {}
+    // The compiler provides the operations as intrinsics, so no methods need to be defined
+    if (stmt->methods.empty()) {
+        // Intrinsic implementation - all trait methods assumed to be provided by compiler
+        return;
+    }
 
     // Check that all trait methods are implemented
     std::set<std::string> implementedMethods;

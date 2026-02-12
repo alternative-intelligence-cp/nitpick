@@ -211,8 +211,13 @@ void DefiniteAssignmentAnalyzer::checkStatement(ASTNode* stmt) {
 void DefiniteAssignmentAnalyzer::checkVarDecl(VarDeclStmt* decl) {
     if (!decl) return;
     
-    // Register variable as UNASSIGNED initially
-    ctx.var_states[decl->varName] = AssignmentState::UNASSIGNED;
+    // Register variable as UNASSIGNED initially (unless it's wild)
+    // Wild variables allow manual field initialization without complete initialization
+    if (decl->isWild) {
+        ctx.var_states[decl->varName] = AssignmentState::ASSIGNED;
+    } else {
+        ctx.var_states[decl->varName] = AssignmentState::UNASSIGNED;
+    }
     
     // Add to current scope
     if (!ctx.scope_stack.empty()) {

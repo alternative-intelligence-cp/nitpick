@@ -661,6 +661,25 @@ public:
     void checkFuncDecl(FuncDeclStmt* stmt);
     
     /**
+     * P1-4: Validate contract clauses (Design by Contract)
+     * 
+     * Rules:
+     * - All contract expressions must evaluate to bool
+     * - Variables in preconditions (requires) must be function parameters
+     * - Variables in postconditions (ensures) can reference 'result' keyword
+     * - Contract expressions must be pure (no side effects)
+     * 
+     * @param contracts Vector of contract clause expressions
+     * @param isPostcondition true for ensures clauses (allows 'result'), false for requires
+     * @param valueType Return value type (for 'result' validation in postconditions)
+     * @param stmt Statement for error reporting
+     */
+    void validateContracts(const std::vector<ASTNodePtr>& contracts, 
+                          bool isPostcondition, 
+                          Type* valueType,
+                          ASTNode* stmt);
+    
+    /**
      * Check struct declaration statement
      * 
      * Rules:

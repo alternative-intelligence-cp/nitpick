@@ -60,6 +60,9 @@ llvm_map_components_to_libnames(llvm_libs
     native
     orcjit
     passes
+    nvptxcodegen   # NVPTX code generator for GPU/CUDA
+    nvptxdesc      # NVPTX target description
+    nvptxinfo      # NVPTX target info
 )
 
 # ============================================================================

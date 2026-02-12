@@ -991,12 +991,18 @@ ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
     while (!isAtEnd()) {
         Token token = peek();
         
-        // Check for struct literal: Identifier{ field: value, ... }
-        // Only if expr is an IdentifierExpr
+        // Check for struct literal: TypeName{ field: value, ... }
+        // Only if expr is an IdentifierExpr that starts with uppercase (type name convention)
         if (token.type == TokenType::TOKEN_LEFT_BRACE && 
             expr && expr->type == ASTNode::NodeType::IDENTIFIER) {
             auto identExpr = std::static_pointer_cast<IdentifierExpr>(expr);
             std::string typeName = identExpr->name;
+            
+            // Only treat as struct literal if identifier starts with uppercase (type name)
+            // This prevents ambiguity with blocks: max{...} vs { block }
+            if (typeName.empty() || !std::isupper(typeName[0])) {
+                break; // Not a struct literal, stop postfix parsing
+            }
             
             advance(); // consume '{'
             
@@ -2275,6 +2281,34 @@ ASTNodePtr Parser::parseFuncDecl() {
     
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after parameters");
     
+    // P1-4: Parse contract clauses (requires/ensures) if present
+    std::vector<ASTNodePtr> preconditions;
+    std::vector<ASTNodePtr> postconditions;
+    
+    // Parse requires clauses (preconditions)
+    if (match(TokenType::TOKEN_KW_REQUIRES)) {
+        do {
+            ASTNodePtr condition = parseExpression();
+            if (!condition) {
+                error("Expected expression after 'requires'");
+                return nullptr;
+            }
+            preconditions.push_back(condition);
+        } while (match(TokenType::TOKEN_COMMA));
+    }
+    
+    // Parse ensures clauses (postconditions)
+    if (match(TokenType::TOKEN_KW_ENSURES)) {
+        do {
+            ASTNodePtr condition = parseExpression();
+            if (!condition) {
+                error("Expected expression after 'ensures'");
+                return nullptr;
+            }
+            postconditions.push_back(condition);
+        } while (match(TokenType::TOKEN_COMMA));
+    }
+    
     // For extern functions (declarations without body), consume semicolon
     // For normal functions, parse body
     ASTNodePtr body = nullptr;
@@ -2310,6 +2344,17 @@ ASTNodePtr Parser::parseFuncDecl() {
     
     // Set generic parameters if present
     funcDecl->genericParams = genericParams;
+    
+    // P1-4: Set contract clauses (Design by Contract)
+    funcDecl->preconditions = preconditions;
+    funcDecl->postconditions = postconditions;
+    
+    // GPU/PTX Backend - Phase 3: TEMPORARY HACK for testing
+    // TODO: Replace with proper #[gpu_kernel] attribute parsing
+    if (nameToken.lexeme.find("gpu_") == 0) {
+        funcDecl->isGPUKernel = true;
+        std::cerr << "[DEBUG] Detected GPU kernel: " << nameToken.lexeme << std::endl;
+    }
     
     return funcDecl;
 }

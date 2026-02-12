@@ -19,6 +19,8 @@
 #include "runtime/fix256.h"
 #include <string.h>
 #include <stdint.h>
+#include <cmath>
+#include <limits.h>
 
 // ═══════════════════════════════════════════════════════════════════════
 // fix256 TBB Safety Helpers
@@ -442,4 +444,201 @@ extern "C" aria_fix256_t aria_fix256_div(aria_fix256_t a, aria_fix256_t b) {
     }
     
     return quotient;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// fix256 Comparison Operations
+// ═══════════════════════════════════════════════════════════════════════
+
+extern "C" int aria_fix256_cmp(aria_fix256_t a, aria_fix256_t b) {
+    // TBB safety: ERR comparison (ERR == ERR, ERR < all non-ERR)
+    bool a_err = is_fix256_err(&a);
+    bool b_err = is_fix256_err(&b);
+    
+    if (a_err && b_err) return 0;   // ERR == ERR
+    if (a_err) return -1;            // ERR < non-ERR
+    if (b_err) return 1;             // non-ERR > ERR
+    
+    // Compare signed: check sign bits first
+    int64_t a_sign = (int64_t)a.limbs[3];
+    int64_t b_sign = (int64_t)b.limbs[3];
+    
+    if (a_sign < 0 && b_sign >= 0) return -1;  // negative < positive
+    if (a_sign >= 0 && b_sign < 0) return 1;   // positive > negative
+    
+    // Same sign: compare magnitude from high to low
+    // For negative numbers, smaller magnitude means larger value
+    bool negative = a_sign < 0;
+    
+    for (int i = 3; i >= 0; i--) {
+        if (a.limbs[i] < b.limbs[i]) return negative ? 1 : -1;
+        if (a.limbs[i] > b.limbs[i]) return negative ? -1 : 1;
+    }
+    
+    return 0;  // Equal
+}
+
+extern "C" int aria_fix256_eq(aria_fix256_t a, aria_fix256_t b) {
+    return aria_fix256_cmp(a, b) == 0;
+}
+
+extern "C" int aria_fix256_lt(aria_fix256_t a, aria_fix256_t b) {
+    return aria_fix256_cmp(a, b) < 0;
+}
+
+extern "C" int aria_fix256_le(aria_fix256_t a, aria_fix256_t b) {
+    return aria_fix256_cmp(a, b) <= 0;
+}
+
+extern "C" int aria_fix256_gt(aria_fix256_t a, aria_fix256_t b) {
+    return aria_fix256_cmp(a, b) > 0;
+}
+
+extern "C" int aria_fix256_ge(aria_fix256_t a, aria_fix256_t b) {
+    return aria_fix256_cmp(a, b) >= 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// fix256 Conversion Functions
+// ═══════════════════════════════════════════════════════════════════════
+
+extern "C" aria_fix256_t aria_fix256_from_i32(int32_t val) {
+    aria_fix256_t result;
+    result.limbs[0] = 0;  // Fractional part = 0
+    result.limbs[1] = 0;
+    result.limbs[2] = (uint64_t)(int64_t)val;  // Cast to int64_t for sign extension
+    result.limbs[3] = (val < 0) ? ~0ULL : 0;   // Sign extension to high limb
+    return result;
+}
+
+extern "C" aria_fix256_t aria_fix256_from_i64(int64_t val) {
+    aria_fix256_t result;
+    result.limbs[0] = 0;  // Fractional part = 0
+    result.limbs[1] = 0;
+    result.limbs[2] = (uint64_t)val;           // Integer part low
+    result.limbs[3] = (val < 0) ? ~0ULL : 0;   // Sign extension to high limb
+    return result;
+}
+
+extern "C" int32_t aria_fix256_to_i32(aria_fix256_t val) {
+    // TBB safety: ERR converts to 0
+    if (is_fix256_err(&val)) {
+        return 0;
+    }
+    
+    // Extract integer part (truncate fractional)
+    // Check if value fits in 32-bit range
+    int64_t val64 = (int64_t)val.limbs[2];
+    
+    // Check sign extension validity
+    int64_t sign_ext = (val64 < 0) ? ~0LL : 0LL;
+    if ((int64_t)val.limbs[3] != sign_ext) {
+        // Value too large for 32-bit - saturate
+        return (val.limbs[3] & 0x8000000000000000ULL) ? INT32_MIN : INT32_MAX;
+    }
+    
+    // Check 32-bit range
+    if (val64 > INT32_MAX) return INT32_MAX;
+    if (val64 < INT32_MIN) return INT32_MIN;
+    
+    return (int32_t)val64;
+}
+
+extern "C" int64_t aria_fix256_to_i64(aria_fix256_t val) {
+    // TBB safety: ERR converts to 0
+    if (is_fix256_err(&val)) {
+        return 0;
+    }
+    
+    // Extract integer part (truncate fractional)
+    int64_t result = (int64_t)val.limbs[2];
+    
+    // Check sign extension validity
+    int64_t sign_ext = (result < 0) ? ~0LL : 0LL;
+    if ((int64_t)val.limbs[3] != sign_ext) {
+        // Value too large for 64-bit - saturate
+        return (val.limbs[3] & 0x8000000000000000ULL) ? INT64_MIN : INT64_MAX;
+    }
+    
+    return result;
+}
+
+extern "C" aria_fix256_t aria_fix256_from_f32(float val) {
+    // Special cases
+    if (val != val) return make_fix256_err();  // NaN
+    if (val >= 1.7014118e+38f) return make_fix256_err();  // Overflow (2^127)
+    if (val <= -1.7014118e+38f) return make_fix256_err(); // Underflow (-2^127)
+    
+    // Convert to double for better intermediate precision
+    return aria_fix256_from_f64((double)val);
+}
+
+extern "C" aria_fix256_t aria_fix256_from_f64(double val) {
+    // Special cases
+    if (val != val) return make_fix256_err();  // NaN
+    if (val >= 1.7014118346046923e+38) return make_fix256_err();  // Overflow (2^127)
+    if (val <= -1.7014118346046923e+38) return make_fix256_err(); // Underflow (-2^127)
+    
+    aria_fix256_t result;
+    
+    // Handle sign
+    bool negative = val < 0;
+    if (negative) val = -val;
+    
+    // Split into integer and fractional parts
+    double integer_part = 0;
+    double fractional_part = modf(val, &integer_part);
+    
+    // Convert integer part (limbs[2-3])
+    uint64_t int_low = (uint64_t)fmod(integer_part, 18446744073709551616.0);  // 2^64
+    uint64_t int_high = (uint64_t)(integer_part / 18446744073709551616.0);
+    
+    // Convert fractional part (limbs[0-1])
+    // Multiply by 2^128 to shift into integer range
+    double frac_scaled = fractional_part * 340282366920938463463374607431768211456.0;  // 2^128
+    uint64_t frac_low = (uint64_t)fmod(frac_scaled, 18446744073709551616.0);  // 2^64
+    uint64_t frac_high = (uint64_t)(frac_scaled / 18446744073709551616.0);
+    
+    result.limbs[0] = frac_low;
+    result.limbs[1] = frac_high;
+    result.limbs[2] = int_low;
+    result.limbs[3] = int_high;
+    
+    // Apply sign via two's complement negation
+    if (negative) {
+        negate_fix256(&result);
+    }
+    
+    return result;
+}
+
+extern "C" float aria_fix256_to_f32(aria_fix256_t val) {
+    // Convert to double first for better precision
+    return (float)aria_fix256_to_f64(val);
+}
+
+extern "C" double aria_fix256_to_f64(aria_fix256_t val) {
+    // TBB safety: ERR converts to NaN
+    if (is_fix256_err(&val)) {
+        return 0.0 / 0.0;  // NaN
+    }
+    
+    // Handle sign
+    bool negative = (int64_t)val.limbs[3] < 0;
+    aria_fix256_t abs_val = val;
+    if (negative) {
+        negate_fix256(&abs_val);
+    }
+    
+    // Convert integer part (limbs[2-3])
+    double integer = (double)abs_val.limbs[3] * 18446744073709551616.0 +  // 2^64
+                     (double)abs_val.limbs[2];
+    
+    // Convert fractional part (limbs[0-1])
+    // Divide by 2^128 to shift into fractional range
+    double fractional = (double)abs_val.limbs[1] / 18446744073709551616.0 +  // 2^64
+                        (double)abs_val.limbs[0] / 340282366920938463463374607431768211456.0;  // 2^128
+    
+    double result = integer + fractional;
+    return negative ? -result : result;
 }

@@ -1,0 +1,132 @@
+/**
+ * Complex Number Generic Functions Test
+ * 
+ * Tests stdlib/complex.aria with multiple numeric types once generic
+ * function call syntax is implemented.
+ * 
+ * BLOCKS ON: Parser support for generic function calls `func_name<Type>(args)`
+ * STATUS: Test ready, waiting on compiler feature
+ * EXPECTED: All tests pass once `complex_new<int64>()` syntax works
+ * 
+ * Date: 2026-02-11
+ */
+
+use "stdlib/complex.aria".*;
+
+func:failsafe = void(int32:err_code) {
+    // Empty failsafe for test
+};
+
+func:main = int32() {
+    // =========================================================================
+    // Test 1: Complex<int64> - Integer Gaussian Numbers
+    // =========================================================================
+    int64:r1 = 3;
+    int64:i1 = 4;
+    int64:r2 = 1;
+    int64:i2 = 2;
+    
+    // Constructor
+    complex<int64>:z1 = complex_new<int64>(r1, i1);
+    complex<int64>:z2 = complex_new<int64>(r2, i2);
+    
+    // Addition: (3+4i) + (1+2i) = (4+6i)
+    complex<int64>:sum = complex_add<int64>(z1, z2);
+    if (sum.real != 4 || sum.imag != 6) {
+        pass(1);  // Addition failed
+    }
+    
+    // Subtraction: (3+4i) - (1+2i) = (2+2i)
+    complex<int64>:diff = complex_sub<int64>(z1, z2);
+    if (diff.real != 2 || diff.imag != 2) {
+        pass(2);  // Subtraction failed
+    }
+    
+    // Multiplication: (3+4i) * (1+2i) = (3 - 8) + (6 + 4)i = -5+10i
+    complex<int64>:product = complex_mul<int64>(z1, z2);
+    if (product.real != -5 || product.imag != 10) {
+        pass(3);  // Multiplication failed
+    }
+    
+    // Conjugate: conj(3+4i) = (3-4i)
+    complex<int64>:conj = complex_conjugate<int64>(z1);
+    if (conj.real != 3 || conj.imag != -4) {
+        pass(4);  // Conjugate failed
+    }
+    
+    // Magnitude: |3+4i| = sqrt(9+16) = 5
+    int64:mag = complex_magnitude<int64>(z1);
+    if (mag != 5) {
+        pass(5);  // Magnitude failed
+    }
+    
+    // From real: complex_from_real(7) = (7+0i)
+    complex<int64>:z_real = complex_from_real<int64>(7);
+    if (z_real.real != 7 || z_real.imag != 0) {
+        pass(6);  // From real failed
+    }
+    
+    // From imaginary: complex_from_imag(3) = (0+3i)
+    complex<int64>:z_imag = complex_from_imag<int64>(3);
+    if (z_imag.real != 0 || z_imag.imag != 3) {
+        pass(7);  // From imaginary failed
+    }
+    
+    // =========================================================================
+    // Test 2: Complex<fix256> - High-Precision Fixed-Point
+    // =========================================================================
+    // TODO: Once fix256 literals are working:
+    // fix256:r = 3.14159265358979323846;
+    // fix256:i = 2.71828182845904523536;
+    // complex<fix256>:z_fixed = complex_new<fix256>(r, i);
+    
+    // =========================================================================
+    // Test 3: Complex<tfp64> - Ternary Floating Point
+    // =========================================================================
+    // TODO: Once tfp64 operations are implemented:
+    // tfp64:r = 1.5;
+    // tfp64:i = 0.5;
+    // complex<tfp64>:z_ternary = complex_new<tfp64>(r, i);
+    
+    // =========================================================================
+    // Test 4: ERR Propagation
+    // =========================================================================
+    complex<int64>:err = complex_err<int64>();
+    bool:is_err = complex_is_err<int64>(err);
+    if (!is_err) {
+        pass(10);  // ERR detection failed
+    }
+    
+    // ERR in addition
+    complex<int64>:sum_err = complex_add<int64>(z1, err);
+    if (!complex_is_err<int64>(sum_err)) {
+        pass(11);  // ERR propagation in add failed
+    }
+    
+    // ERR in multiplication
+    complex<int64>:mul_err = complex_mul<int64>(err, z2);
+    if (!complex_is_err<int64>(mul_err)) {
+        pass(12);  // ERR propagation in mul failed
+    }
+    
+    // =========================================================================
+    // Test 5: Division (includes divide-by-zero check)
+    // =========================================================================
+    // Division: (3+4i) / (1+2i)
+    complex<int64>:quotient = complex_div<int64>(z1, z2);
+    // Result should be: ((3*1 + 4*2) + (4*1 - 3*2)i) / (1 + 4) = (11-2i)/5
+    // For int64: (11/5, -2/5) = (2, 0) due to integer division
+    if (quotient.real != 2 || quotient.imag != 0) {
+        pass(13);  // Division failed
+    }
+    
+    // Divide by zero detection
+    complex<int64>:zero = complex_new<int64>(0, 0);
+    complex<int64>:div_zero = complex_div<int64>(z1, zero);
+    if (!complex_is_err<int64>(div_zero)) {
+        pass(14);  // Divide by zero detection failed
+    }
+    
+    // All tests passed!
+    pass(0);
+};

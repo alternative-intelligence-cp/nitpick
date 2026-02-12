@@ -136,6 +136,9 @@ public:
     // Set symbol table for trait resolution (Task 4 completion)
     void setSymbolTable(SymbolTable* st) { symbolTable = st; }
     
+    // Set type system for type resolution in generic functions
+    void setTypeSystem(TypeSystem* ts) { typeSystem = ts; }
+    
     // ========================================================================
     // Type Inference (Phase 3.4.1)
     // ========================================================================
@@ -227,6 +230,7 @@ public:
 private:
     std::vector<GenericError> errors;
     SymbolTable* symbolTable = nullptr;  // For trait resolution (Task 4)
+    TypeSystem* typeSystem = nullptr;    // For type resolution in generics
 
     // Helper: Add an error
     void addError(const std::string& message, int line = 0, int column = 0,

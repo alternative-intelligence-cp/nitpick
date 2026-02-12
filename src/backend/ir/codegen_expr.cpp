@@ -162,6 +162,12 @@ llvm::Type* ExprCodegen::getLLVMType(Type* type) {
 // Helper: Get LLVM type from Aria type name string
 // Complete mapping for all Aria primitive types from specs
 llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
+    // TEMP DEBUG for fix256 investigation
+    if (typeName == "fix256" || typeName.find("fix") != std::string::npos) {
+        printf("[GET_LLVM_TYPE DEBUG] Called with typeName='%s'\n", typeName.c_str());
+        fflush(stdout);
+    }
+    
     // Integer types
     if (typeName == "int1") return llvm::Type::getInt1Ty(context);
     if (typeName == "int2") return llvm::Type::getInt8Ty(context);   // Smallest LLVM int
@@ -2910,6 +2916,12 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         if (!ident) {
             throw std::runtime_error("Member access must have identifier as base");
         }
+        
+        // GPU/PTX Backend - Phase 4: GPU Intrinsics
+        // Intercept gpu.* calls and map to LLVM NVVM intrinsics
+        if (ident->name == "gpu") {
+            return codegenGPUIntrinsic(member_access->member, expr);
+        }
 
         std::string mangled_func_name;
         std::vector<ASTNodePtr> call_args = expr->arguments;
@@ -3006,8 +3018,6 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // Type-to-string conversions belong in stdlib (to_string() overloads).
     // Complex formatting via printf FFI or future stdlib printf-like function.
     // This keeps core simple, debuggable, and forces explicit formatting choices.
-    
-    std::cerr << "[DEBUG] codegenCall: callee name = " << callee_ident->name << std::endl;
     
     // ====================================================================
     // BUILTIN FUNCTION: ok() - Unknown State Detection (Phase 5.2 + Layer 1 Safety)
@@ -5674,53 +5684,158 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     }
     
     // fix256_from_int(int64) -> fix256
+    // ARIA-025: Create deterministic fixed-point from integer
     if (callee_ident->name == "fix256_from_int") {
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("fix256_from_int() requires one argument");
         }
         llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
         
-        // Get fix256 struct type: { [4 x i64] }
-        llvm::Type* i64Type = builder.getInt64Ty();
-        llvm::ArrayType* limbsArray = llvm::ArrayType::get(i64Type, 4);
-        llvm::StructType* fix256Type = llvm::StructType::get(context, {limbsArray}, false);
+        // Get THE SAME fix256 struct type used in getLLVMTypeFromString
+        // CRITICAL: Must use named type "struct.fix256", not anonymous struct
+        // Otherwise LLVM treats them as incompatible types!
+        llvm::StructType* fix256Type = llvm::StructType::getTypeByName(context, "struct.fix256");
+        if (!fix256Type) {
+            llvm::Type* i64Type = builder.getInt64Ty();
+            llvm::ArrayType* limbsArray = llvm::ArrayType::get(i64Type, 4);
+            fix256Type = llvm::StructType::create(context, {limbsArray}, "struct.fix256");
+        }
         
-        // Scale integer to fixed-point (shift left by fractional bits)
-        // fix256 uses 128.128 format (2 limbs integer, 2 limbs fraction)
-        // For simplicity, just store integer in high limbs
-        llvm::Value* result = llvm::ConstantAggregateZero::get(fix256Type);
+        // Call runtime conversion function: aria_fix256_from_i64(int64) -> fix256
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            fix256Type,
+            {builder.getInt64Ty()},
+            false
+        );
         
-        // Store integer value in limb[2] (high word of integer part)
-        llvm::Value* intLimb = builder.CreateSExtOrTrunc(val, i64Type);
-        result = builder.CreateInsertValue(result, intLimb, {0, 2});
+        llvm::Function* runtimeFunc = module->getFunction("aria_fix256_from_i64");
+        if (!runtimeFunc) {
+            runtimeFunc = llvm::Function::Create(
+                funcType,
+                llvm::Function::ExternalLinkage,
+                "aria_fix256_from_i64",
+                module
+            );
+        }
         
-        return result;
+        // Convert argument to i64 if needed
+        llvm::Value* i64Val = builder.CreateSExtOrTrunc(val, builder.getInt64Ty());
+        
+        return builder.CreateCall(runtimeFunc, {i64Val}, "fix256_from_int_result");
     }
     
     // fix256_from_float(flt64) -> fix256
+    // ARIA-025: Create deterministic fixed-point from float (APPROXIMATE - for I/O only!)
     if (callee_ident->name == "fix256_from_float") {
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("fix256_from_float() requires one argument");
         }
         llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
         
-        // Get fix256 struct type: { [4 x i64] }
-        llvm::Type* i64Type = builder.getInt64Ty();
-        llvm::ArrayType* limbsArray = llvm::ArrayType::get(i64Type, 4);
-        llvm::StructType* fix256Type = llvm::StructType::get(context, {limbsArray}, false);
+        // Get THE SAME fix256 struct type used in getLLVMTypeFromString
+        llvm::StructType* fix256Type = llvm::StructType::getTypeByName(context, "struct.fix256");
+        if (!fix256Type) {
+            llvm::Type* i64Type = builder.getInt64Ty();
+            llvm::ArrayType* limbsArray = llvm::ArrayType::get(i64Type, 4);
+            fix256Type = llvm::StructType::create(context, {limbsArray}, "struct.fix256");
+        }
         
-        // Convert float to fixed-point:
-        // 1. Multiply by 2^128 (shift fractional part into place)
-        // 2. Convert to int
-        // Note: This is simplified - proper implementation needs runtime function
-        llvm::Value* scale = llvm::ConstantFP::get(builder.getDoubleTy(), ldexp(1.0, 64));
-        llvm::Value* scaled = builder.CreateFMul(val, scale);
-        llvm::Value* intVal = builder.CreateFPToSI(scaled, i64Type);
+        // Call runtime conversion function: aria_fix256_from_f64(double) -> fix256
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            fix256Type,
+            {builder.getDoubleTy()},
+            false
+        );
         
-        llvm::Value* result = llvm::ConstantAggregateZero::get(fix256Type);
-        result = builder.CreateInsertValue(result, intVal, {0, 1});
+        llvm::Function* runtimeFunc = module->getFunction("aria_fix256_from_f64");
+        if (!runtimeFunc) {
+            runtimeFunc = llvm::Function::Create(
+                funcType,
+                llvm::Function::ExternalLinkage,
+                "aria_fix256_from_f64",
+                module
+            );
+        }
         
-        return result;
+        // Convert argument to double if needed
+        llvm::Value* doubleVal = val;
+        if (val->getType()->isFloatTy()) {
+            doubleVal = builder.CreateFPExt(val, builder.getDoubleTy());
+        }
+        
+        return builder.CreateCall(runtimeFunc, {doubleVal}, "fix256_from_float_result");
+    }
+    
+    // fix256_to_int(fix256) -> int64
+    // ARIA-025: Extract integer part from deterministic fixed-point
+    if (callee_ident->name == "fix256_to_int") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("fix256_to_int() requires one argument");
+        }
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        // Get THE SAME fix256 struct type used in getLLVMTypeFromString
+        llvm::StructType* fix256Type = llvm::StructType::getTypeByName(context, "struct.fix256");
+        if (!fix256Type) {
+            llvm::Type* i64Type = builder.getInt64Ty();
+            llvm::ArrayType* limbsArray = llvm::ArrayType::get(i64Type, 4);
+            fix256Type = llvm::StructType::create(context, {limbsArray}, "struct.fix256");
+        }
+        
+        // Call runtime conversion function: aria_fix256_to_i64(fix256) -> int64
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            builder.getInt64Ty(),
+            {fix256Type},
+            false
+        );
+        
+        llvm::Function* runtimeFunc = module->getFunction("aria_fix256_to_i64");
+        if (!runtimeFunc) {
+            runtimeFunc = llvm::Function::Create(
+                funcType,
+                llvm::Function::ExternalLinkage,
+                "aria_fix256_to_i64",
+                module
+            );
+        }
+        
+        return builder.CreateCall(runtimeFunc, {val}, "fix256_to_int_result");
+    }
+    
+    // fix256_to_float(fix256) -> flt64
+    // ARIA-025: Convert fixed-point to float (APPROXIMATE - for display only!)
+    if (callee_ident->name == "fix256_to_float") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("fix256_to_float() requires one argument");
+        }
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        // Get THE SAME fix256 struct type used in getLLVMTypeFromString
+        llvm::StructType* fix256Type = llvm::StructType::getTypeByName(context, "struct.fix256");
+        if (!fix256Type) {
+            llvm::Type* i64Type = builder.getInt64Ty();
+            llvm::ArrayType* limbsArray = llvm::ArrayType::get(i64Type, 4);
+            fix256Type = llvm::StructType::create(context, {limbsArray}, "struct.fix256");
+        }
+        
+        // Call runtime conversion function: aria_fix256_to_f64(fix256) -> double
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            builder.getDoubleTy(),
+            {fix256Type},
+            false
+        );
+        
+        llvm::Function* runtimeFunc = module->getFunction("aria_fix256_to_f64");
+        if (!runtimeFunc) {
+            runtimeFunc = llvm::Function::Create(
+                funcType,
+                llvm::Function::ExternalLinkage,
+                "aria_fix256_to_f64",
+                module
+            );
+        }
+        
+        return builder.CreateCall(runtimeFunc, {val}, "fix256_to_float_result");
     }
     
     // trit_from_int(int64) -> trit
@@ -7367,8 +7482,13 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // ====================================================================
     
     // Check if this is a direct function call or a closure call
+    // For generic functions, use the specialized mangled name if available
+    std::string func_name = !expr->specializedMangledName.empty() 
+                            ? expr->specializedMangledName 
+                            : callee_ident->name;
+    
     // Try to find a direct function first
-    llvm::Function* direct_func = module->getFunction(callee_ident->name);
+    llvm::Function* direct_func = module->getFunction(func_name);
     
     // Check if it's a closure (func variable in named_values)
     auto it = named_values.find(callee_ident->name);
@@ -8891,4 +9011,189 @@ llvm::Value* ExprCodegen::codegenObjectLiteral(ObjectLiteralExpr* expr) {
     throw std::runtime_error("Unsupported object literal field count: " + 
                            std::to_string(expr->fields.size()));
 }
+
+// ============================================================================
+// GPU/PTX Backend - Phase 4: GPU Intrinsics
+// ============================================================================
+
+/**
+ * Generate code for GPU intrinsics
+ * 
+ * Maps Aria gpu.* calls to LLVM NVVM intrinsics for CUDA code generation.
+ * These functions can only be used inside GPU kernels (marked with #[gpu_kernel]).
+ * 
+ * Supported intrinsics:
+ * - gpu.thread_id() -> llvm.nvvm.read.ptx.sreg.tid.x (thread index in block)
+ * - gpu.thread_id_y() -> llvm.nvvm.read.ptx.sreg.tid.y
+ * - gpu.thread_id_z() -> llvm.nvvm.read.ptx.sreg.tid.z
+ * - gpu.block_id() -> llvm.nvvm.read.ptx.sreg.ctaid.x (block index in grid)
+ * - gpu.block_id_y() -> llvm.nvvm.read.ptx.sreg.ctaid.y
+ * - gpu.block_id_z() -> llvm.nvvm.read.ptx.sreg.ctaid.z
+ * - gpu.block_dim() -> llvm.nvvm.read.ptx.sreg.ntid.x (threads per block)
+ * - gpu.block_dim_y() -> llvm.nvvm.read.ptx.sreg.ntid.y
+ * - gpu.block_dim_z() -> llvm.nvvm.read.ptx.sreg.ntid.z
+ * - gpu.grid_dim() -> llvm.nvvm.read.ptx.sreg.nctaid.x (blocks in grid)
+ * - gpu.grid_dim_y() -> llvm.nvvm.read.ptx.sreg.nctaid.y
+ * - gpu.grid_dim_z() -> llvm.nvvm.read.ptx.sreg.nctaid.z
+ * - gpu.sync_threads() -> llvm.nvvm.barrier0 (block-level synchronization)
+ * 
+ * Example Aria code:
+ * ```aria
+ * #[gpu_kernel]
+ * func:vector_add = void(int32:n) {
+ *     int32:tid = gpu.thread_id();
+ *     int32:bid = gpu.block_id();
+ *     int32:idx = bid * gpu.block_dim() + tid;
+ *     
+ *     if (idx < n) {
+ *         // Process element idx
+ *     }
+ *     
+ *     gpu.sync_threads();  // Wait for all threads
+ * }
+ * ```
+ * 
+ * Generated LLVM IR:
+ * ```llvm
+ * %tid = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
+ * %bid = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()
+ * call void @llvm.nvvm.barrier0()
+ * ```
+ */
+llvm::Value* ExprCodegen::codegenGPUIntrinsic(const std::string& intrinsic_name,
+                                               CallExpr* call_expr) {
+    std::cerr << "[GPU] Generating intrinsic: gpu." << intrinsic_name << std::endl;
+    
+    // Helper lambda to get or declare NVVM intrinsic
+    auto getOrDeclareNVVMIntrinsic = [this](const std::string& name, llvm::Type* returnType) -> llvm::Function* {
+        if (llvm::Function* existing = module->getFunction(name)) {
+            return existing;
+        }
+        llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, {}, false);
+        return llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, name, module);
+    };
+    
+    llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+    llvm::Type* voidType = llvm::Type::getVoidTy(context);
+    
+    // Thread indexing intrinsics (X dimension - most common)
+    if (intrinsic_name == "thread_id") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.thread_id() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.tid.x", i32Type);
+        return builder.CreateCall(intrinsic, {}, "tid.x");
+    }
+    
+    if (intrinsic_name == "thread_id_y") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.thread_id_y() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.tid.y", i32Type);
+        return builder.CreateCall(intrinsic, {}, "tid.y");
+    }
+    
+    if (intrinsic_name == "thread_id_z") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.thread_id_z() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.tid.z", i32Type);
+        return builder.CreateCall(intrinsic, {}, "tid.z");
+    }
+    
+    // Block indexing intrinsics
+    if (intrinsic_name == "block_id") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.block_id() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.ctaid.x", i32Type);
+        return builder.CreateCall(intrinsic, {}, "bid.x");
+    }
+    
+    if (intrinsic_name == "block_id_y") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.block_id_y() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.ctaid.y", i32Type);
+        return builder.CreateCall(intrinsic, {}, "bid.y");
+    }
+    
+    if (intrinsic_name == "block_id_z") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.block_id_z() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.ctaid.z", i32Type);
+        return builder.CreateCall(intrinsic, {}, "bid.z");
+    }
+    
+    // Block dimension intrinsics
+    if (intrinsic_name == "block_dim") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.block_dim() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.ntid.x", i32Type);
+        return builder.CreateCall(intrinsic, {}, "bdim.x");
+    }
+    
+    if (intrinsic_name == "block_dim_y") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.block_dim_y() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.ntid.y", i32Type);
+        return builder.CreateCall(intrinsic, {}, "bdim.y");
+    }
+    
+    if (intrinsic_name == "block_dim_z") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.block_dim_z() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.ntid.z", i32Type);
+        return builder.CreateCall(intrinsic, {}, "bdim.z");
+    }
+    
+    // Grid dimension intrinsics
+    if (intrinsic_name == "grid_dim") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.grid_dim() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.nctaid.x", i32Type);
+        return builder.CreateCall(intrinsic, {}, "gdim.x");
+    }
+    
+    if (intrinsic_name == "grid_dim_y") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.grid_dim_y() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.nctaid.y", i32Type);
+        return builder.CreateCall(intrinsic, {}, "gdim.y");
+    }
+    
+    if (intrinsic_name == "grid_dim_z") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.grid_dim_z() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.read.ptx.sreg.nctaid.z", i32Type);
+        return builder.CreateCall(intrinsic, {}, "gdim.z");
+    }
+    
+    // Synchronization intrinsics
+    if (intrinsic_name == "sync_threads") {
+        if (!call_expr->arguments.empty()) {
+            throw std::runtime_error("gpu.sync_threads() takes no arguments");
+        }
+        llvm::Function* intrinsic = getOrDeclareNVVMIntrinsic("llvm.nvvm.barrier0", voidType);
+        builder.CreateCall(intrinsic);
+        // Barrier intrinsic returns void, return nullptr for void expressions
+        return llvm::ConstantInt::get(builder.getInt32Ty(), 0);
+    }
+    
+    // Unknown GPU intrinsic
+    throw std::runtime_error("Unknown GPU intrinsic: gpu." + intrinsic_name +
+                           "\nSupported: thread_id, thread_id_y, thread_id_z, " +
+                           "block_id, block_id_y, block_id_z, " +
+                           "block_dim, block_dim_y, block_dim_z, " +
+                           "grid_dim, grid_dim_y, grid_dim_z, " +
+                           "sync_threads");
+}
+
 
