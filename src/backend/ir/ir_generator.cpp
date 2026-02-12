@@ -31,6 +31,7 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
       current_module_name(""),
       current_func_is_async(false),
       current_coro_suspend_block(nullptr),
+      current_func_decl(nullptr),
       tbb_codegen(context, builder),
       ternary_codegen(context, builder) {
     // Set source filename for better debug info
@@ -1473,6 +1474,18 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
         }
         return int4096Struct;
     }
+    
+    // ARIA-025: fix256 deterministic fixed-point (Q128.128 for physics simulations)
+    // See Report 7 § "Deterministic Physics", Report 8 § "fix256 Runtime"
+    if (type_name == "fix256") {
+        llvm::StructType* fix256Struct = llvm::StructType::getTypeByName(context, "struct.fix256");
+        if (!fix256Struct) {
+            // fix256 uses 4-limb structure: [2 x i64] integer part + [2 x i64] fractional part
+            llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 4);
+            fix256Struct = llvm::StructType::create(context, {limbArray}, "struct.fix256");
+        }
+        return fix256Struct;
+    }
 
     // Integer types - unsigned (standard sizes)
     if (type_name == "uint1") return builder.getInt1Ty();
@@ -1771,9 +1784,21 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
         // Generate function signature
         FuncDeclStmt* funcDecl = spec->funcDecl;
         
-        // Determine return type using proper type mapping
-        std::string returnTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
-        llvm::Type* returnType = mapTypeFromName(returnTypeStr);
+        // P1-4: Track current function declaration for contract checking
+        current_func_decl = funcDecl;
+        
+        // Determine inner value type using proper type mapping
+        std::string innerTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
+        llvm::Type* innerType = mapTypeFromName(innerTypeStr);
+        
+        // Aria functions return Result<T> = {T value, error* err, i1 is_error}
+        // Build the Result struct type
+        std::vector<llvm::Type*> resultFields = {
+            innerType,                                  // Field 0: value (T)
+            llvm::PointerType::get(context, 0),        // Field 1: error* (generic ptr)
+            llvm::Type::getInt1Ty(context)             // Field 2: is_error (bool)
+        };
+        llvm::StructType* resultType = llvm::StructType::get(context, resultFields);
         
         // Build parameter types with proper type mapping
         std::vector<llvm::Type*> paramTypes;
@@ -1783,9 +1808,9 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
             paramTypes.push_back(mapTypeFromName(paramTypeStr));
         }
         
-        // Create function type
+        // Create function type with Result<T> return
         llvm::FunctionType* funcType = llvm::FunctionType::get(
-            returnType,
+            resultType,  // Return Result<T> not raw T
             paramTypes,
             false  // not vararg
         );
@@ -1833,26 +1858,73 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
             idx++;
         }
         
+        // P1-4: Generate precondition checks (requires clauses)
+        // Check contracts at function entry, before body executes
+        if (!funcDecl->preconditions.empty()) {
+            for (size_t i = 0; i < funcDecl->preconditions.size(); i++) {
+                ASTNodePtr precond = funcDecl->preconditions[i];
+                
+                // Generate the condition expression
+                llvm::Value* condValue = codegenExpression(precond.get());
+                
+                if (condValue) {
+                    // Create basic blocks for contract pass/fail
+                    llvm::BasicBlock* contractOkBB = llvm::BasicBlock::Create(context, "contract.ok", func);
+                    llvm::BasicBlock* contractFailBB = llvm::BasicBlock::Create(context, "contract.fail", func);
+                    
+                    // Branch based on contract condition
+                    builder.CreateCondBr(condValue, contractOkBB, contractFailBB);
+                    
+                    // Contract failed: create error Result and return
+                    builder.SetInsertPoint(contractFailBB);
+                    
+                    // Create error message (simplified for now)
+                    llvm::Value* errorMsg = builder.CreateGlobalStringPtr(
+                        "Precondition #" + std::to_string(i + 1) + " failed", 
+                        "contract.err.msg");
+                    
+                    // Create error Result: {val: undef, err: msg, is_error: true}
+                    llvm::Value* errorResult = llvm::UndefValue::get(resultType);
+                    errorResult = builder.CreateInsertValue(errorResult,
+                        llvm::Constant::getNullValue(innerType), 0, "err.val");
+                    errorResult = builder.CreateInsertValue(errorResult,
+                        errorMsg, 1, "err.ptr");
+                    errorResult = builder.CreateInsertValue(errorResult,
+                        builder.getInt1(true), 2, "err.is_error");
+                    builder.CreateRet(errorResult);
+                    
+                    // Contract passed: continue to next check or body
+                    builder.SetInsertPoint(contractOkBB);
+                }
+            }
+        }
+        
         // Generate function body
         if (funcDecl->body) {
             llvm::Value* bodyVal = codegenStatement(funcDecl->body.get());
             
             // If body didn't already create a terminator, add one
+            // For Result<T> returns, create default success Result
             if (!builder.GetInsertBlock()->getTerminator()) {
-                if (returnType->isVoidTy()) {
-                    builder.CreateRetVoid();
-                } else {
-                    // Default return value
-                    builder.CreateRet(llvm::ConstantInt::get(returnType, 0));
-                }
+                llvm::Value* defaultResult = llvm::UndefValue::get(resultType);
+                defaultResult = builder.CreateInsertValue(defaultResult, 
+                    llvm::Constant::getNullValue(innerType), 0, "default.val");
+                defaultResult = builder.CreateInsertValue(defaultResult,
+                    llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)), 1, "default.err");
+                defaultResult = builder.CreateInsertValue(defaultResult,
+                    builder.getInt1(false), 2, "default.is_error");
+                builder.CreateRet(defaultResult);
             }
         } else {
-            // No body - create default return
-            if (returnType->isVoidTy()) {
-                builder.CreateRetVoid();
-            } else {
-                builder.CreateRet(llvm::ConstantInt::get(returnType, 0));
-            }
+            // No body - create default success Result
+            llvm::Value* defaultResult = llvm::UndefValue::get(resultType);
+            defaultResult = builder.CreateInsertValue(defaultResult, 
+                llvm::Constant::getNullValue(innerType), 0, "default.val");
+            defaultResult = builder.CreateInsertValue(defaultResult,
+                llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)), 1, "default.err");
+            defaultResult = builder.CreateInsertValue(defaultResult,
+                builder.getInt1(false), 2, "default.is_error");
+            builder.CreateRet(defaultResult);
         }
         
         // Clear parameter names from symbol table
@@ -1860,6 +1932,9 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
             ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
             named_values.erase(pnode->paramName);
         }
+        
+        // P1-4: Clear current function declaration
+        current_func_decl = nullptr;
         
         generated++;
     }
@@ -2030,8 +2105,12 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
         if (decl->type == ASTNode::NodeType::FUNC_DECL) {
             FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(decl.get());
             
+            // P1-4: Track current function declaration for contract checking
+            current_func_decl = funcDecl;
+            
             // Skip generic functions (handled by monomorphization)
             if (!funcDecl->genericParams.empty()) {
+                current_func_decl = nullptr;
                 continue;
             }
             
@@ -2098,6 +2177,10 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             if (funcDecl->funcName == "main" || funcDecl->funcName.find("__") == 0) {
                 // main and module init functions are always external
                 linkage = llvm::Function::ExternalLinkage;
+            } else if (funcDecl->isGPUKernel) {
+                // GPU/PTX Phase 3: GPU kernels MUST have external linkage
+                // Host code needs to find kernel entry points for cudaLaunchKernel()
+                linkage = llvm::Function::ExternalLinkage;
             } else if (!current_module_name.empty()) {
                 // Functions in modules are external (until pub keyword is implemented)
                 // This allows cross-module function calls
@@ -2121,6 +2204,24 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             // This tells CoroSplit that this function contains coroutine intrinsics
             if (funcDecl->isAsync) {
                 func->addFnAttr(llvm::Attribute::PresplitCoroutine);
+            }
+            
+            // GPU/PTX Backend - Phase 3: Add NVVM kernel metadata for GPU kernels
+            // This tells NVPTX backend to emit ".entry" instead of ".func"
+            if (funcDecl->isGPUKernel) {
+                // Create metadata: {function, "kernel", i32 1}
+                llvm::Metadata* md_args[] = {
+                    llvm::ValueAsMetadata::get(func),
+                    llvm::MDString::get(context, "kernel"),
+                    llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(
+                        llvm::Type::getInt32Ty(context), 1))
+                };
+                llvm::MDNode* kernel_md = llvm::MDNode::get(context, md_args);
+                
+                // Get or create nvvm.annotations named metadata
+                llvm::NamedMDNode* nvvm_annotations = 
+                    module->getOrInsertNamedMetadata("nvvm.annotations");
+                nvvm_annotations->addOperand(kernel_md);
             }
 
             // Skip body generation if no body (extern declaration)
@@ -2353,6 +2454,37 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 idx++;
             }
 
+            // P1-4: Generate precondition checks (requires clauses)
+            if (!funcDecl->preconditions.empty()) {
+                for (size_t i = 0; i < funcDecl->preconditions.size(); i++) {
+                    ASTNodePtr precond = funcDecl->preconditions[i];
+                    
+                    llvm::Value* condValue = codegenExpression(precond.get());
+                    
+                    if (condValue) {
+                        llvm::BasicBlock* contractOkBB = llvm::BasicBlock::Create(context, "contract.ok", func);
+                        llvm::BasicBlock* contractFailBB = llvm::BasicBlock::Create(context, "contract.fail", func);
+                        
+                        builder.CreateCondBr(condValue, contractOkBB, contractFailBB);
+                        
+                        builder.SetInsertPoint(contractFailBB);
+                        
+                        if (actual_return_type->isStructTy()) {
+                            llvm::Value* errorMsg = builder.CreateGlobalStringPtr(
+                                "Precondition #" + std::to_string(i + 1) + " failed in " + func_name);
+                            llvm::Value* errorResult = llvm::UndefValue::get(actual_return_type);
+                            errorResult = builder.CreateInsertValue(errorResult,
+                                llvm::Constant::getNullValue(actual_return_type->getStructElementType(0)), 0);
+                            errorResult = builder.CreateInsertValue(errorResult, errorMsg, 1);
+                            errorResult = builder.CreateInsertValue(errorResult, builder.getInt1(true), 2);
+                            builder.CreateRet(errorResult);
+                        }
+                        
+                        builder.SetInsertPoint(contractOkBB);
+                    }
+                }
+            }
+
             // Generate function body
             std::cerr << "[DEBUG] Generating body for function: " << func_name << std::endl;
             if (!funcDecl->body) {
@@ -2469,6 +2601,9 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             // Reset async context after function generation
             current_func_is_async = false;
             current_coro_suspend_block = nullptr;
+
+            // P1-4: Clear current function declaration
+            current_func_decl = nullptr;
 
             // Clean up symbol table
             for (const auto& param : funcDecl->parameters) {
@@ -3620,6 +3755,53 @@ skip_comparison:
                 llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
                 llvm::Type* returnType = currentFunc->getReturnType();
                 std::cerr << "[DEBUG PASS] Return type is struct: " << returnType->isStructTy() << std::endl;
+                
+                // P1-4: Check postconditions before returning
+                if (current_func_decl && !current_func_decl->postconditions.empty()) {
+                    // Store return value in 'result' variable for postcondition evaluation
+                    named_values["result"] = value;
+                    
+                    for (size_t i = 0; i < current_func_decl->postconditions.size(); i++) {
+                        ASTNodePtr postcond = current_func_decl->postconditions[i];
+                        
+                        // Generate the condition expression
+                        llvm::Value* condValue = codegenExpression(postcond.get());
+                        
+                        if (condValue) {
+                            // Create basic blocks for contract pass/fail
+                            llvm::BasicBlock* postcondOkBB = llvm::BasicBlock::Create(context, "postcond.ok", currentFunc);
+                            llvm::BasicBlock* postcondFailBB = llvm::BasicBlock::Create(context, "postcond.fail", currentFunc);
+                            
+                            // Branch based on postcondition
+                            builder.CreateCondBr(condValue, postcondOkBB, postcondFailBB);
+                            
+                            // Postcondition failed: return error Result
+                            builder.SetInsertPoint(postcondFailBB);
+                            
+                            if (returnType->isStructTy()) {
+                                llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(returnType);
+                                llvm::Value* errorMsg = builder.CreateGlobalStringPtr(
+                                    "Postcondition #" + std::to_string(i + 1) + " failed", 
+                                    "postcond.err.msg");
+                                
+                                llvm::Value* errorResult = llvm::UndefValue::get(resultStruct);
+                                errorResult = builder.CreateInsertValue(errorResult,
+                                    llvm::Constant::getNullValue(resultStruct->getElementType(0)), 0, "err.val");
+                                errorResult = builder.CreateInsertValue(errorResult,
+                                    errorMsg, 1, "err.ptr");
+                                errorResult = builder.CreateInsertValue(errorResult,
+                                    builder.getInt1(true), 2, "err.is_error");
+                                builder.CreateRet(errorResult);
+                            }
+                            
+                            // Postcondition passed: continue
+                            builder.SetInsertPoint(postcondOkBB);
+                        }
+                    }
+                    
+                    // Clean up 'result' from symbol table
+                    named_values.erase("result");
+                }
                 
                 // Check if return type is a Result struct {value, error*, is_error}
                 if (returnType->isStructTy()) {

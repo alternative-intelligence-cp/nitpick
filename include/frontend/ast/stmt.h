@@ -76,8 +76,16 @@ public:
     bool isAsync;
     bool isPublic;
     bool isExtern;
-    bool returnIsWild = false;  // true if 'wild' qualifier on return type (for FFI)
+    bool returnIsWild = false;
+    
+    // GPU/PTX Backend - Phase 3: Kernel Attributes
+    bool isGPUKernel = false;  // #[gpu_kernel] - Entry point callable from host
+    bool isGPUDevice = false;  // #[gpu_device] - Helper function on GPU only  // true if 'wild' qualifier on return type (for FFI)
     std::vector<GenericParamInfo> genericParams;  // For generics: func<T: Trait, U>
+    
+    // P1-4: Design by Contract - Formal verification support
+    std::vector<ASTNodePtr> preconditions;   // requires clauses (checked on entry)
+    std::vector<ASTNodePtr> postconditions;  // ensures clauses (checked on exit)
     
     FuncDeclStmt(const std::string& name, ASTNodePtr retType,
                  const std::vector<ASTNodePtr>& params, ASTNodePtr body,

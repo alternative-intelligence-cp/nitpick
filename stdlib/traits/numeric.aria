@@ -68,12 +68,57 @@ trait:Numeric = {
  * 3. Type safety (can't mix incompatible numeric types)
  * 4. Uniform error handling (every numeric type has ERR)
  * 
- * Implementation registration happens in:
- * - src/frontend/sema/type_checker.cpp (trait impl registration)
- * - stdlib/traits/numeric_impls.aria (explicit impl declarations)
+ * Implementation registration happens in this file with empty impl blocks.
+ * The actual operations exist as compiler intrinsics.
  */
 
-// Required entry points (not used, trait files are include-only)
+// =============================================================================
+// Type Implementations
+// =============================================================================
+
+// Signed Integers
+impl:Numeric:for:int8 = {}
+impl:Numeric:for:int16 = {}
+impl:Numeric:for:int32 = {}
+impl:Numeric:for:int64 = {}
+
+// Unsigned Integers  
+impl:Numeric:for:uint8 = {}
+impl:Numeric:for:uint16 = {}
+impl:Numeric:for:uint32 = {}
+impl:Numeric:for:uint64 = {}
+
+// Balanced Ternary (TBB)
+impl:Numeric:for:tbb8 = {}
+impl:Numeric:for:tbb16 = {}
+impl:Numeric:for:tbb32 = {}
+impl:Numeric:for:tbb64 = {}
+
+// Exact Rationals (Frac)
+impl:Numeric:for:frac8 = {}
+impl:Numeric:for:frac16 = {}
+impl:Numeric:for:frac32 = {}
+impl:Numeric:for:frac64 = {}
+
+// Twisted Floating Point (TFP)
+impl:Numeric:for:tfp32 = {}
+impl:Numeric:for:tfp64 = {}
+
+// High-Precision Fixed Point
+impl:Numeric:for:fix256 = {}
+
+// Standard Floating Point (compatibility)
+impl:Numeric:for:flt32 = {}
+impl:Numeric:for:flt64 = {}
+
+/**
+ * Why empty impl blocks?
+ * The operations are compiler intrinsics. These impl declarations register
+ * with the type system that each type satisfies the Numeric trait contract.
+ * This enables type-safe generics with zero runtime cost.
+ */
+
+// Required entry points (trait files are include-only)
 pub func:main = int32() {
     pass(0);
 };

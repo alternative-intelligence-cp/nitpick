@@ -455,6 +455,50 @@ llvm::Function* StmtCodegen::getCoroResume() {
 }
 
 // ============================================================================
+// GPU/PTX Backend - Phase 3: NVVM Kernel Metadata
+// ============================================================================
+
+/**
+ * Add NVVM kernel metadata to function
+ * 
+ * Marks an LLVM function as a CUDA kernel entry point by adding the
+ * "nvvm.annotations" metadata required by NVPTX backend.
+ * 
+ * Without this metadata, the function is emitted as ".func" (device function)
+ * With this metadata, it's emitted as ".entry" (kernel entry point)
+ * 
+ * Generated metadata:
+ *   !nvvm.annotations = !{!0}
+ *   !0 = !{void @kernel_name, !"kernel", i32 1}
+ * 
+ * This tells NVPTX backend to generate:
+ *   .entry kernel_name(...) instead of .func kernel_name(...)
+ * 
+ * Only kernels (marked with #[gpu_kernel]) can be launched from host code.
+ * Device functions (#[gpu_device]) are helper functions called within kernels.
+ * 
+ * @param func LLVM function to mark as GPU kernel
+ */
+void StmtCodegen::addNVVMKernelMetadata(llvm::Function* func) {
+    // Create metadata: {function, "kernel", i32 1}
+    llvm::Metadata* md_args[] = {
+        llvm::ValueAsMetadata::get(func),
+        llvm::MDString::get(context, "kernel"),
+        llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(
+            llvm::Type::getInt32Ty(context), 1))
+    };
+    
+    llvm::MDNode* kernel_md = llvm::MDNode::get(context, md_args);
+    
+    // Get or create nvvm.annotations named metadata
+    llvm::NamedMDNode* nvvm_annotations = 
+        module->getOrInsertNamedMetadata("nvvm.annotations");
+    
+    // Add this kernel to the annotations
+    nvvm_annotations->addOperand(kernel_md);
+}
+
+// ============================================================================
 // Phase 4.3.1 + 4.4: Variable Declaration Code Generation with Memory Model
 // ============================================================================
 
@@ -490,8 +534,21 @@ llvm::Function* StmtCodegen::getCoroResume() {
  * Reference: research_021 (GC), research_022 (Wild/WildX)
  */
 void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
+    // TEMP DEBUG for fix256 investigation
+    printf("[CODEGEN VARDECL] Variable '%s' typeName='%s'\n", 
+           stmt->varName.c_str(), stmt->typeName.c_str());
+    fflush(stdout);
+    
     // Get LLVM type from type string
     llvm::Type* var_type = getLLVMTypeFromString(stmt->typeName);
+    
+    // DEBUG: Show what type was returned
+    std::string type_desc;
+    llvm::raw_string_ostream rso(type_desc);
+    var_type->print(rso);
+    printf("[CODEGEN VARDECL] After getLLVMTypeFromString('%s'): type=%s\n",
+           stmt->typeName.c_str(), rso.str().c_str());
+    fflush(stdout);
     
     // Get the current function
     llvm::Function* func = builder.GetInsertBlock()->getParent();
@@ -710,6 +767,14 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
         ));
         func->setMetadata("aria.async", async_node);
     }
+    
+    // GPU/PTX Backend - Phase 3: Mark GPU kernels with NVVM metadata
+    // This tells NVPTX backend to emit ".entry" instead of ".func"
+    if (stmt->isGPUKernel) {
+        addNVVMKernelMetadata(func);
+    }
+    // Note: GPU device functions (#[gpu_device]) don't need metadata
+    // They're emitted as regular ".func" for intra-GPU calls
     
     // Set parameter names and create allocas for them
     unsigned idx = 0;

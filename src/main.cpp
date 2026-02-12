@@ -51,6 +51,14 @@
 #include "llvm/Linker/Linker.h"
 #include "llvm/Support/CodeGen.h"  // CodeGenOptLevel for large integer support
 
+// GPU/PTX Backend Support (Phase 1: NVPTX Target)
+extern "C" {
+    void LLVMInitializeNVPTXTarget();
+    void LLVMInitializeNVPTXTargetInfo();
+    void LLVMInitializeNVPTXTargetMC();
+    void LLVMInitializeNVPTXAsmPrinter();
+}
+
 // LLVM New Pass Manager (for coroutine lowering)
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
@@ -85,7 +93,26 @@ struct CompilerOptions {
     std::vector<std::string> link_libraries;  // -l<lib> libraries to link
     std::vector<std::string> library_paths;   // -L<path> library search paths
     std::vector<std::string> linker_flags;    // -Wl,<option> flags passed to linker
+    
+    // GPU/PTX Backend Options (NVIDIA CUDA)
+    bool emit_ptx = false;            // --emit-ptx: Generate PTX assembly
+    std::string target_arch;          // --target=gpu|cpu|gpu+cpu
+    std::string gpu_arch = "sm_50";   // --gpu-arch=sm_XX: CUDA compute capability
+    int gpu_opt_level = 3;            // --gpu-opt=<0-3>: GPU optimization (default O3)
+    bool enable_gpu_debug = false;    // --gpu-debug: Embed debug info in PTX
 };
+
+/**
+ * Initialize GPU targets (NVPTX for NVIDIA CUDA)
+ * Phase 1: NVPTX Target Initialization
+ */
+void initialize_gpu_targets() {
+    // Initialize NVPTX backend for CUDA/PTX generation
+    LLVMInitializeNVPTXTarget();
+    LLVMInitializeNVPTXTargetInfo();
+    LLVMInitializeNVPTXTargetMC();
+    LLVMInitializeNVPTXAsmPrinter();
+}
 
 /**
  * Print version information
@@ -102,7 +129,7 @@ void print_help() {
     std::cout << "Aria Compiler (ariac) - Compile Aria source files\n\n";
     std::cout << "Usage:\n";
     std::cout << "  ariac <input.aria> [<input2.aria> ...] [options]\n\n";
-    std::cout << "Options:\n";
+    std::cout << "CPU Target Options:\n";
     std::cout << "  -o <file>         Write output to <file>\n";
     std::cout << "  -I <dir>          Add directory to module search path\n";
     std::cout << "  -E                Preprocess only (output to stdout)\n";
@@ -113,22 +140,36 @@ void print_help() {
     std::cout << "  --ast-dump        Dump AST and exit\n";
     std::cout << "  --tokens          Dump tokens and exit\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
-    std::cout << "  -v, --verbose     Verbose output\n";
+    std::cout << "  -v, --verbose     Verbose output\n\n";
+    std::cout << "GPU Target Options (NVIDIA CUDA/PTX):\n";
+    std::cout << "  --emit-ptx        Emit PTX assembly for GPU execution\n";
+    std::cout << "  --target=<arch>   Target architecture (cpu, gpu, gpu+cpu)\n";
+    std::cout << "  --gpu-arch=<sm>   CUDA compute capability (default: sm_50)\n";
+    std::cout << "                    Examples: sm_50, sm_75, sm_86, sm_89, sm_90\n";
+    std::cout << "  --gpu-opt=<lvl>   GPU optimization level 0-3 (default: 3)\n";
+    std::cout << "  --gpu-debug       Embed debug info in PTX\n\n";
+    std::cout << "Linking Options:\n";
     std::cout << "  -l<library>       Link against library (e.g., -lm, -lpthread)\n";
     std::cout << "  -L<path>          Add library search path\n";
-    std::cout << "  -Wl,<option>      Pass option to linker\n";
+    std::cout << "  -Wl,<option>      Pass option to linker\n\n";
+    std::cout << "Warning Options:\n";
     std::cout << "  -Wall             Enable all warnings\n";
     std::cout << "  -Werror           Treat warnings as errors\n";
     std::cout << "  -W<warning>       Enable specific warning\n";
-    std::cout << "  -Wno-<warning>    Disable specific warning\n";
+    std::cout << "  -Wno-<warning>    Disable specific warning\n\n";
+    std::cout << "General:\n";
     std::cout << "  --version         Show version\n";
     std::cout << "  --help            Show this help\n\n";
-    std::cout << "Examples:\n";
+    std::cout << "Examples (CPU):\n";
     std::cout << "  ariac hello.aria -o hello\n";
     std::cout << "  ariac main.aria utils.aria -o program\n";
     std::cout << "  ariac program.aria -o program -lm -lpthread\n";
     std::cout << "  ariac program.aria --emit-llvm -o program.ll\n";
-    std::cout << "  ariac test.aria --ast-dump\n";
+    std::cout << "  ariac test.aria --ast-dump\n\n";
+    std::cout << "Examples (GPU):\n";
+    std::cout << "  ariac physics.aria --emit-ptx -o physics.ptx\n";
+    std::cout << "  ariac kernel.aria --emit-ptx --gpu-arch=sm_86 -o kernel.ptx\n";
+    std::cout << "  ariac compute.aria --target=gpu --gpu-opt=3 -o compute.ptx\n";
 }
 
 /**
@@ -170,6 +211,34 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.emit_asm = true;
         } else if (arg == "--emit-deps") {
             opts.emit_deps = true;
+        } else if (arg == "--emit-ptx") {
+            opts.emit_ptx = true;
+        } else if (arg.substr(0, 9) == "--target=") {
+            opts.target_arch = arg.substr(9);
+            if (opts.target_arch == "gpu") {
+                opts.emit_ptx = true;  // GPU target implies PTX emission
+            } else if (opts.target_arch != "cpu" && opts.target_arch != "gpu+cpu") {
+                std::cerr << "Error: Invalid target architecture: " << opts.target_arch << "\n";
+                std::cerr << "Valid targets: cpu, gpu, gpu+cpu\n";
+                return false;
+            }
+        } else if (arg.substr(0, 11) == "--gpu-arch=") {
+            opts.gpu_arch = arg.substr(11);
+            // Validate CUDA compute capability format (sm_XX)
+            if (opts.gpu_arch.substr(0, 3) != "sm_" || opts.gpu_arch.length() < 5) {
+                std::cerr << "Error: Invalid GPU architecture: " << opts.gpu_arch << "\n";
+                std::cerr << "Format: sm_XX (e.g., sm_50, sm_75, sm_86)\n";
+                return false;
+            }
+        } else if (arg.substr(0, 10) == "--gpu-opt=") {
+            opts.gpu_opt_level = arg[10] - '0';
+            if (opts.gpu_opt_level < 0 || opts.gpu_opt_level > 3) {
+                std::cerr << "Error: Invalid GPU optimization level: " << arg << "\n";
+                std::cerr << "Valid range: 0-3\n";
+                return false;
+            }
+        } else if (arg == "--gpu-debug") {
+            opts.enable_gpu_debug = true;
         } else if (arg == "-E") {
             opts.preprocess_only = true;
         } else if (arg == "--ast-dump") {
@@ -231,6 +300,8 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".bc";
         } else if (opts.emit_asm) {
             opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".s";
+        } else if (opts.emit_ptx) {
+            opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".ptx";
         } else {
             opts.output_file = "a.out";
         }
@@ -525,6 +596,7 @@ llvm::Module* compile_to_module(
     // Create generic resolver and monomorphizer (Session 13: pass TypeSystem for struct specialization)
     aria::sema::GenericResolver generic_resolver;
     generic_resolver.setSymbolTable(&symbol_table);  // Task 4: Enable trait constraint checking
+    generic_resolver.setTypeSystem(&type_system);    // Enable type resolution in generics
     aria::sema::Monomorphizer monomorphizer(&generic_resolver, &type_system);
     
     // Module system: Normalize input filename to absolute path for correct resolution
@@ -924,6 +996,130 @@ bool emit_assembly(llvm::Module* module, const std::string& output_file) {
 }
 
 /**
+ * Emit PTX assembly for GPU execution (NVIDIA CUDA)
+ * Phase 2: PTX Code Generation
+ * 
+ * @param module LLVM module to compile
+ * @param output_file Output PTX file path
+ * @param gpu_arch CUDA compute capability (e.g., "sm_75" for Turing, "sm_86" for Ampere)
+ * @param opt_level GPU optimization level (0-3, default 3)
+ * @param enable_debug Embed debug info in PTX
+ * @return true on success
+ */
+bool emit_ptx(
+    llvm::Module* module,
+    const std::string& output_file,
+    const std::string& gpu_arch = "sm_50",
+    int opt_level = 3,
+    bool enable_debug = false
+) {
+    // Set target triple to NVPTX64 (64-bit CUDA)
+    module->setTargetTriple("nvptx64-nvidia-cuda");
+    
+    // Lookup NVPTX target
+    std::string error;
+    auto target = llvm::TargetRegistry::lookupTarget("nvptx64", error);
+    
+    if (!target) {
+        std::cerr << "Error: NVPTX target not found: " << error << "\n";
+        std::cerr << "Make sure LLVM was built with NVPTX backend enabled\n";
+        std::cerr << "Check: llvm-config --targets-built | grep NVPTX\n";
+        return false;
+    }
+    
+    // Configure target machine for GPU
+    std::string cpu = gpu_arch;  // e.g., "sm_75" (Turing), "sm_86" (Ampere), "sm_90" (Hopper)
+    std::string features = "+ptx70";  // PTX ISA version 7.0+ (CUDA 10.0+)
+    llvm::TargetOptions target_opts;
+    
+    // Map Aria opt level to LLVM optimization level
+    llvm::CodeGenOptLevel codegenOpt;
+    llvm::OptimizationLevel llvm_opt;
+    switch (opt_level) {
+        case 0:
+            codegenOpt = llvm::CodeGenOptLevel::None;
+            llvm_opt = llvm::OptimizationLevel::O0;
+            break;
+        case 1:
+            codegenOpt = llvm::CodeGenOptLevel::Less;
+            llvm_opt = llvm::OptimizationLevel::O1;
+            break;
+        case 2:
+            codegenOpt = llvm::CodeGenOptLevel::Default;
+            llvm_opt = llvm::OptimizationLevel::O2;
+            break;
+        case 3:
+        default:
+            codegenOpt = llvm::CodeGenOptLevel::Aggressive;
+            llvm_opt = llvm::OptimizationLevel::O3;
+            break;
+    }
+    
+    // Create NVPTX target machine
+    auto target_machine = target->createTargetMachine(
+        "nvptx64-nvidia-cuda",
+        cpu,
+        features,
+        target_opts,
+        llvm::Reloc::PIC_,    // Position-independent code
+        std::nullopt,          // Code model (default)
+        codegenOpt
+    );
+    
+    if (!target_machine) {
+        std::cerr << "Error: Could not create NVPTX target machine\n";
+        return false;
+    }
+    
+    // Set data layout for NVPTX
+    module->setDataLayout(target_machine->createDataLayout());
+    
+    // Run optimization passes (GPU code benefits from aggressive optimization)
+    if (opt_level > 0) {
+        llvm::LoopAnalysisManager LAM;
+        llvm::FunctionAnalysisManager FAM;
+        llvm::CGSCCAnalysisManager CGAM;
+        llvm::ModuleAnalysisManager MAM;
+        
+        llvm::PassBuilder PB;
+        PB.registerModuleAnalyses(MAM);
+        PB.registerCGSCCAnalyses(CGAM);
+        PB.registerFunctionAnalyses(FAM);
+        PB.registerLoopAnalyses(LAM);
+        PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+        
+        llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(llvm_opt);
+        MPM.run(*module, MAM);
+    }
+    
+    // Open output file
+    std::error_code ec;
+    llvm::raw_fd_ostream out(output_file, ec, llvm::sys::fs::OF_None);
+    
+    if (ec) {
+        std::cerr << "Error: Could not open PTX output file: " << output_file << "\n";
+        std::cerr << "  " << ec.message() << "\n";
+        return false;
+    }
+    
+    // Emit PTX assembly
+    llvm::legacy::PassManager pass;
+    auto file_type = llvm::CodeGenFileType::AssemblyFile;  // PTX is textual assembly
+    
+    if (target_machine->addPassesToEmitFile(pass, out, nullptr, file_type)) {
+        std::cerr << "Error: NVPTX target can't emit PTX file\n";
+        return false;
+    }
+    
+    pass.run(*module);
+    
+    std::cerr << "[PTX] Generated GPU code: " << output_file << "\n";
+    std::cerr << "[PTX] Target: " << gpu_arch << ", Optimization: O" << opt_level << "\n";
+    
+    return true;
+}
+
+/**
  * Link object file to executable
  */
 bool link_executable(const std::string& object_file, const std::string& output_file, const CompilerOptions& opts) {
@@ -994,6 +1190,9 @@ bool link_executable(const std::string& object_file, const std::string& output_f
  * Main entry point
  */
 int main(int argc, char** argv) {
+    // Initialize GPU targets (NVPTX for CUDA) - Phase 1
+    initialize_gpu_targets();
+    
     // Parse command-line arguments
     CompilerOptions opts;
     if (!parse_arguments(argc, argv, opts)) {
@@ -1007,6 +1206,11 @@ int main(int argc, char** argv) {
             std::cout << "  " << file << "\n";
         }
         std::cout << "Output: " << opts.output_file << "\n";
+        if (opts.emit_ptx) {
+            std::cout << "Target: GPU (NVIDIA CUDA/PTX)\n";
+            std::cout << "GPU Architecture: " << opts.gpu_arch << "\n";
+            std::cout << "GPU Optimization: O" << opts.gpu_opt_level << "\n";
+        }
     }
 
     // Create diagnostic engine
@@ -1132,6 +1336,20 @@ int main(int argc, char** argv) {
         }
         if (opts.verbose) {
             std::cout << "LLVM bitcode written to: " << opts.output_file << "\n";
+        }
+    } else if (opts.emit_ptx) {
+        // GPU/PTX backend - emit PTX assembly for CUDA execution
+        if (!emit_ptx(
+            final_module,
+            opts.output_file,
+            opts.gpu_arch,
+            opts.gpu_opt_level,
+            opts.enable_gpu_debug
+        )) {
+            return 1;
+        }
+        if (opts.verbose) {
+            std::cout << "PTX assembly written to: " << opts.output_file << "\n";
         }
     } else if (opts.emit_asm) {
         if (!emit_assembly(final_module, opts.output_file)) {

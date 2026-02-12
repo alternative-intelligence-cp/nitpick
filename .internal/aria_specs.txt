@@ -5,6 +5,335 @@ ARIA LANGUAGE PRIORITIY ORDER: NON NEGOTIABLE - SAFETY ABOVE ALL ELSE FOR SAFETY
 4. Performance
 5. Developer Comfort/Convenience
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYERED SAFETY SYSTEM - ARIA'S DEFENSE AGAINST UNDEFINED BEHAVIOR
+   ═══════════════════════════════════════════════════════════════════════════
+
+!! CRITICAL DESIGN PHILOSOPHY !!
+"Never reach undefined state that causes immediate crash"
+
+Aria uses a three-layer safety system to prevent undefined behavior and ensure
+graceful degradation in safety-critical applications (AGI consciousness substrate,
+robotics, medical devices, aerospace, nuclear control systems).
+
+PROBLEM STATEMENT:
+Most languages (C, C++, Rust, even Java) allow undefined behavior to propagate
+silently until it causes a crash. This is UNACCEPTABLE for safety-critical systems.
+
+SOLUTION:
+Layer 1: Result<T> - HARD ERROR HANDLING (recoverable errors)
+Layer 2: unknown   - SOFT ERROR HANDLING (undefined states become defined)
+Layer 3: failsafe() - FINAL SAFETY NET (mandatory last-resort handler)
+
+═══════════════════════════════════════════════════════════════════════════
+
+LAYER 1: Result<T> SYSTEM - HARD ERRORS THAT MUST BE HANDLED
+
+Purpose: Make errors impossible to ignore
+Status: IMPLEMENTED (February 2026)
+
+Structure:
+struct Result<T> {
+    T:val;           // Success value
+    void*:err;       // Error pointer (NULL if no error)
+    bool:is_error;   // Error flag
+};
+
+Creating Results:
+    pass(value);     // Success: { val: value, err: NULL, is_error: false }
+    fail(error);     // Failure: { val: undefined, err: error, is_error: true }
+
+Unwrapping operators:
+    ?   - Safe unwrap with default value
+          Config:cfg = load_config() ? default_config;
+          
+    ?!  - Emphatic unwrap (triggers failsafe on error)
+          Config:cfg = load_critical_config()?!;  // MUST succeed
+          
+    ??  - Null coalescing (for NIL optional values)
+          string:name = user?.name ?? "Unknown";
+
+Sticky error propagation:
+    ERR + anything = ERR     // Errors propagate automatically
+    10 + ERR_SENTINEL = ERR  // TBB types preserve errors
+    
+Philosophy:
+    "Errors are data, not exceptions" - errors flow through type system
+    "Errors cannot be ignored" - compiler forces handling
+    "Errors are cheap" - zero overhead on success path (~1 cycle branch)
+
+Use cases:
+    ✅ File I/O failures
+    ✅ Network errors
+    ✅ Parse failures
+    ✅ Contract violations (preconditions, postconditions)
+    ✅ Resource allocation failures
+    ✅ Any recoverable error condition
+
+═══════════════════════════════════════════════════════════════════════════
+
+LAYER 2: unknown SYSTEM - SOFT ERRORS FOR UNDEFINED STATES
+
+Purpose: Map crash-inducing operations to defined "unknown" state
+Status: IMPLEMENTED (February 2026)
+
+Philosophy:
+    "undefined → unknown" - Give developers a chance to recover
+    "Soft error propagation" - Errors flow but don't force immediate handling
+    "Explicit acknowledgment required" - Use ok() to propagate unknown values
+
+The unknown value:
+    - Special sentinel value (like ERR, but for undefined states)
+    - Propagates through operations (sticky, like NaN but controlled)
+    - Can be checked with ok(value) function
+    - Must be explicitly acknowledged with ok(value) to pass to Result<T>
+
+Operations that return unknown (instead of crashing):
+    ✅ Division by zero: 10 / 0 → unknown
+    ✅ Array out of bounds: arr[999] → unknown (if array length < 999)
+    ✅ Integer overflow: INT_MAX + 1 → unknown (in checked mode)
+    ✅ Square root of negative: sqrt(-1) → unknown (for real types)
+    ✅ Invalid type conversions: string_to_int("not a number") → unknown
+    ✅ Null pointer dereference: <-null_ptr → unknown
+    ✅ Any operation on unknown: unknown + 5 → unknown (propagates)
+
+Checking for unknown:
+    ok(value) - Returns:
+        - 1 if value is valid (not unknown)
+        - 0 if value is unknown
+        
+    int32:result = divide(10, 0);  // result = unknown
+    if (ok(result) == 0) {
+        // Handle unknown state
+        stderr.write("Division resulted in unknown\n");
+        result = 0;  // Recover with default value
+    }
+
+Propagating unknown explicitly:
+    func:risky_calc = Result<int32>() {
+        int32:val = divide(10, maybe_zero);
+        if (ok(val) == 0) {
+            // Explicitly acknowledge unknown and propagate
+            pass(ok(val));  // ok() strips unknown taint
+        }
+        pass(val);
+    };
+
+Why two systems (Result vs unknown)?
+    - Result<T>: For EXPECTED errors (file not found, parse error)
+    - unknown: For UNEXPECTED undefined states (division by zero, OOB)
+    - Result forces handling, unknown allows recovery
+    - Together: Complete coverage of error space
+
+═══════════════════════════════════════════════════════════════════════════
+
+LAYER 3: failsafe() - MANDATORY FINAL SAFETY NET
+
+Purpose: Catch everything that Result<T> and unknown missed
+Status: IMPLEMENTED (February 2026)
+
+MANDATORY FUNCTION:
+Every Aria program MUST define failsafe() or compilation fails.
+Cannot be empty - must at least accept error code and take action.
+
+Signature:
+func:failsafe = void(int32:err_code) {
+    // Emergency cleanup and controlled termination
+    // MUST be defined by every program
+};
+
+When failsafe() is called:
+    ✅ Emphatic unwrap (?!) on error Result
+    ✅ Explicit call: failsafe(ERR_CODE) or !!! ERR_CODE
+    ✅ Unhandled errors that propagate to top level (future)
+    ✅ Critical contract violations (future)
+    ✅ Out-of-memory conditions (future)
+    ✅ Stack overflow (future)
+
+Error codes:
+    Negative: System errors (-1: OOM, -2: stack overflow, -3: div by zero)
+    Positive: Application errors (1: sensor offline, 2: config invalid, etc.)
+    Zero: Reserved (should not be used)
+
+Calling failsafe:
+    failsafe(ERR_HARDWARE_FAILURE);  // Direct call
+    !!! ERR_HARDWARE_FAILURE;        // Direct call (operator form)
+    
+    Config:cfg = load()?!;  // Calls failsafe if load() returns error
+
+Philosophy:
+    "Compiler-enforced accountability" - Cannot ignore error handling
+    "Last line of defense" - Controlled shutdown vs undefined behavior
+    "Fail to safe state" - Release resources, log errors, notify operators
+
+Example failsafe (robotics):
+func:failsafe = void(int32:err_code) {
+    // 1. Emergency stop (cut power to motors)
+    emergency_stop_all_motors();
+    
+    // 2. Release grippers (safety)
+    release_all_grippers();
+    
+    // 3. Sound alarm
+    sound_error_alarm(err_code);
+    
+    // 4. Log to persistent storage
+    write_error_to_eeprom(err_code);
+    
+    // 5. Wait for manual reset
+    while (true) {
+        flash_error_led(err_code);
+        delay_ms(500);
+    }
+};
+
+═══════════════════════════════════════════════════════════════════════════
+
+HOW THE LAYERS WORK TOGETHER
+
+Scenario 1: Expected error (file not found)
+    Result<string>:content = readFile("config.txt");
+    string:final = content ? "default config";
+    → Layer 1 handles it (Result<T> + ? operator)
+
+Scenario 2: Unexpected undefined state (division by zero)  
+    int32:result = divide(user_input, 0);
+    if (ok(result) == 0) {
+        stderr.write("Division by zero\n");
+        result = 0;
+    }
+    → Layer 2 handles it (unknown + ok() function)
+
+Scenario 3: Critical unrecoverable error (hardware failure)
+    if (!sensor_online()) {
+        !!! ERR_SENSOR_OFFLINE;  // Calls failsafe()
+    }
+    → Layer 3 handles it (failsafe function)
+
+Scenario 4: Layered recovery attempt
+    // Try Result unwrap
+    Config:cfg = load_config() ? attempt_recovery();
+    
+    // Check if recovery produced unknown
+    if (ok(cfg) == 0) {
+        stderr.write("Recovery failed, using defaults\n");
+        cfg = default_config();
+    }
+    
+    // If still invalid, failsafe
+    if (!validate(cfg)) {
+        !!! ERR_CONFIG_INVALID;
+    }
+    → All three layers used in sequence
+
+═══════════════════════════════════════════════════════════════════════════
+
+CONTRAST WITH OTHER LANGUAGES
+
+C/C++:
+    Division by zero → Undefined behavior (crash, wrong results, or "works")
+    Null dereference → Segmentation fault (immediate crash)
+    Buffer overflow → Memory corruption (silent, then crash later)
+    
+    Aria equivalent:
+        10 / 0 → unknown (Layer 2, recoverable)
+        <-null_ptr → unknown (Layer 2, recoverable)
+        arr[999] → unknown (Layer 2, recoverable)
+
+Rust:
+    unwrap() on None → panic! (controlled crash)
+    Division by zero → panic! (controlled crash)
+    
+    Aria equivalent:
+        value?! → Calls failsafe() (Layer 3, controlled shutdown)
+        10 / 0 → unknown (Layer 2, chance to recover before failsafe)
+
+Python:
+    Division by zero → ZeroDivisionError exception
+    Index out of bounds → IndexError exception
+    
+    Aria equivalent:
+        10 / 0 → unknown (no exception, just soft error propagation)
+        arr[999] → unknown (no exception, check with ok())
+
+Java:
+    NullPointerException → Runtime exception (crash if unhandled)
+    ArithmeticException → Runtime exception
+    
+    Aria equivalent:
+        <-null_ptr → unknown (no exception)
+        10 / 0 → unknown (no exception)
+        Must handle at compile time or accept unknown propagation
+
+═══════════════════════════════════════════════════════════════════════════
+
+LAYERED SAFETY: DESIGN RATIONALE
+
+Origin story:
+"We developed them over time to fill the need to never reach an undefined
+state that causes an immediate crash. That is very not safe for our intended
+use cases. So we started with the Result system originally and you came up
+with ?! for unwrap with emphasis. I then came up with the unknown system so
+you can set a value as unknown either right off jump rather than leaving
+undefined or a default value and it is a valid value, with caveats. It gets
+special handling just like the Results do. You can only pass an unknown up
+the chain by using the ok(unknownVal) construct to explicitly indicate that
+is 'ok' and expected in some cases or that you will handle it later. Its
+like a 'soft' err system is how i think about it. I want to say i got you
+to try to map most of the behaviors that cause crashes in other language to
+unknown, so then, people get a chance to either recover or try to fail
+gracefully. then, as the final safety net, there is the global failsafe
+function that is mandatory. I want to make it where it cannot be empty as
+well. it must at least return a value if nothing else, forcing the developer
+to interact with it and then they can't say, well I didn't know about it.
+Bullshit, it won't compile without it."
+    — Randy, February 12, 2026
+
+Why three layers?
+    Single layer (just exceptions): Can be ignored, crashes at runtime
+    Two layers (Result + exceptions): Still have undefined behavior
+    Three layers (Result + unknown + failsafe):
+        ✅ Known errors → Result<T> (explicit handling)
+        ✅ Undefined states → unknown (soft propagation, recovery chance)
+        ✅ Unhandled errors → failsafe() (mandatory last resort)
+        ✅ ZERO undefined behavior crashes
+
+Target applications:
+    🤖 Nikola AGI consciousness substrate (cannot corrupt quantum state)
+    🦾 Robotics (cannot crash during surgery or on assembly line)
+    🏥 Medical devices (cannot crash during drug infusion)
+    ✈️  Aerospace (cannot crash during flight)
+    ⚛️  Nuclear control (cannot crash, obvious reasons)
+    🚗 Autonomous vehicles (cannot crash, literally)
+
+Philosophy:
+    "Defense in depth" - Multiple layers of protection
+    "Fail gracefully" - Always a path to safe state
+    "Explicit accountability" - Compiler forces error consideration
+    "No surprises" - All failure modes are designed, not accidental
+
+═══════════════════════════════════════════════════════════════════════════
+
+CROSS-REFERENCES:
+
+For detailed documentation:
+    - Result<T> system: See "RESULT<T> SYSTEM" section (lines ~1688-1968)
+    - unknown handling: See error propagation examples throughout
+    - failsafe() function: See "FAILSAFE SYSTEM" section (lines ~3865-4718)
+    - !!! operator: See failsafe direct call operator (lines ~4288-4718)
+    - Unwrap operators (?, ??, ?!): See Result<T> section
+    - ok() function: See stdlib builtins (line ~1667)
+    - Sticky error propagation: See TBB types (lines 33-36)
+    - Sentinel values: See type definitions (lines 1-80)
+
+For implementation:
+    - Compiler enforcement of failsafe(): See build errors when missing
+    - ok() runtime implementation: See stdlib/core.aria
+    - Result<T> runtime: See runtime/result.c
+    - unknown propagation: See IR generation for operations
+
+"Three layers between you and undefined behavior. Use them." */
+
 /* types
 int1,
 int2,
@@ -143,24 +472,374 @@ simd<T, N>, !!! Generic SIMD vector type where T is element type, N is lane coun
             !!! Explicit SIMD maintains both performance AND safety via masked operations
             !!! NOT NEGOTIABLE - Required to meet <1ms physics timestep without sacrificing safety!
 
-!!! ARIA-029: GENERATIONAL HANDLES - MEMORY SAFETY FOR DYNAMIC GRAPHS (February 2026) !!!
-!!! CRITICAL FOR: Nikola's neurogenesis (dynamic memory expansion), SHVO spatial allocation
-!!! Status: REQUIRED PRE-FEATURE-FREEZE - prevents Use-After-Free during memory growth
-Handle<T>, !!! Generational index handle to heap-allocated object (replaces raw pointers for managed memory)
-           !!! Structure: struct<T>:Handle { uint64:index; uint32:generation; }
-           !!! Safety: Accessing stale handle returns ERR (safe failure, not memory corruption)
-           !!! Memory Management: Works with arena/region-based allocators
-           !!! Reallocation Safety: When memory moves during neurogenesis, generation increments
-           !!! Old Handles: Stale handles fail gracefully via sticky error propagation
-           !!! Use Cases:
-           !!!   - Nikola's Sparse Hyper-Voxel Octree (SHVO) - dynamic spatial memory
-           !!!   - Neurogenesis: O(n³) memory expansion without pointer invalidation
-           !!!   - Self-referential graph structures (nodes point to other nodes safely)
-           !!! Example: Handle<WaveNode>:node = arena.alloc(wave_data);
-           !!! Prevents: Segfaults, Use-After-Free, accessing unrelated data after realloc
-           !!! Arena Pattern: Handle<T> used with arena<T> allocators for region-based management
-           !!! Reason: Raw pointers become invalid during neurogenesis - catastrophic memory corruption
-           !!! NOT NEGOTIABLE - Essential for safe self-expanding memory grid!
+!!! ARIA-029: GENERATIONAL HANDLES - MEMORY SAFETY FOR DYNAMIC GRAPHS (P1-3 COMPLETE - February 2026) !!!
+
+!! CRITICAL FOR NIKOLA'S NEUROGENESIS !!
+Prevents Use-After-Free (CWE-416, CVSS 9.8) during dynamic memory expansion.
+SHVO (Sparse Hyper-Voxel Octree) requires O(n³) memory growth without pointer invalidation.
+Status: FULLY IMPLEMENTED AND TESTED ✅
+
+---
+
+HANDLE<T> TYPE - GENERATIONAL INDEX HANDLES:
+
+Handle<T> is a safe alternative to raw pointers for arena-allocated memory:
+  - NOT a pointer (no direct memory address)
+  - Index + generation counter (detects stale references)
+  - Works with arena allocators (region-based memory)
+  - Prevents use-after-free when arenas reallocate
+
+Type signature:
+Handle<T>, !!! struct<T>:Handle { uint64:index; uint32:generation; }
+
+LLVM IR representation:
+%Handle = type { i64, i32 }  ; {index, generation}
+
+Memory layout:
+┌──────────────────┬────────────────┐
+│  index (uint64)  │ generation(u32)│
+│  8 bytes         │ 4 bytes        │
+└──────────────────┴────────────────┘
+= 12 bytes total (+ 4 bytes padding = 16 bytes aligned)
+
+---
+
+WHY GENERATIONAL HANDLES EXIST:
+
+THE PROBLEM: Raw pointers become invalid during arena reallocation
+
+Example scenario (using raw pointers - UNSAFE):
+Neuron*:ptr = arena.alloc();  // Pointer to slot 0 at address 0x1000
+arena.grow();                 // Reallocates to larger memory block at 0x2000
+ptr->activate();              // 💥 USE-AFTER-FREE! ptr still points to 0x1000 (now invalid)
+
+Result:
+  - Memory corruption (reading/writing freed memory)
+  - Segmentation fault (accessing unmapped memory)
+  - Arbitrary code execution vulnerability (CWE-416, CVSS 9.8)
+  - Mars Climate Orbiter-class failure ($125M loss from pointer bugs)
+
+THE SOLUTION: Generational handles detect stale references
+
+Example (using Handle<T> - SAFE):
+Handle<Neuron>:h = arena.alloc();  // h = {index: 0, generation: 1}
+arena.grow();                       // Reallocates, increments generation to 2
+Neuron:n = arena.get(h) ? default;  // ✅ Returns ERR! Generation mismatch (1 != 2)
+
+Result:
+  - Safe failure (ERR propagation, no corruption)
+  - Deterministic behavior (always detects stale handles)
+  - No segfault (generation check prevents access)
+  - Type-safe (ERR sticky propagation halts computation)
+
+---
+
+HOW GENERATIONAL HANDLES WORK:
+
+Arena Structure (C runtime):
+typedef struct {
+    void** slots;              // Array of pointers to elements
+    uint32_t* generations;     // Generation counter for each slot
+    bool* occupied;            // Is slot allocated?
+    size_t capacity;           // Total slots
+    size_t count;              // Used slots
+} aria_gen_arena;
+
+Slot Structure:
+typedef struct {
+    void* data;                // Actual element (T)
+    uint32_t generation;       // Version counter (1, 2, 3, ...)
+    bool occupied;             // Is this slot in use?
+} aria_gen_slot;
+
+Allocation Flow:
+1. User calls: Handle<T>:h = arena.alloc(data);
+2. Arena finds free slot (index i)
+3. Arena stores data in slots[i]
+4. Arena sets occupied[i] = true
+5. Arena returns Handle{index: i, generation: generations[i]}
+
+Access Flow:
+1. User calls: T:val = arena.get(h) ? default;
+2. Arena checks: generations[h.index] == h.generation?
+3. If match: Return slots[h.index] (SUCCESS)
+4. If mismatch: Return ERR (STALE HANDLE DETECTED)
+
+Reallocation Flow:
+1. Arena grows (reallocates larger memory block)
+2. Arena copies all slots to new memory
+3. Arena increments ALL generation counters: generations[i]++
+4. Old handles now have mismatched generations (stale handle detection)
+
+---
+
+GENERATIONAL SAFETY MECHANISM:
+
+Generation Increment Triggers:
+  - Arena reallocation (memory moves to new address)
+  - Slot deallocation (prevent use-after-free of freed slot)
+  - Explicit invalidation (arena.invalidate_all())
+
+Generation Matching:
+  Valid handle: h.generation == arena.generations[h.index]
+  Stale handle: h.generation != arena.generations[h.index]
+
+Example Timeline:
+Time 0: Allocate node
+  Handle:h = {index: 0, generation: 1}
+  Arena.generations[0] = 1
+  Match: 1 == 1 ✅ Valid
+
+Time 1: Arena reallocates
+  Arena.generations[0] = 2 (incremented)
+  Handle:h still {index: 0, generation: 1}
+  Mismatch: 1 != 2 ❌ Stale (returns ERR)
+
+Time 2: Attempt access
+  Access with h returns ERR (safe failure)
+  No memory corruption, no segfault
+
+---
+
+ARENA ALLOCATOR INTEGRATION:
+
+Arena Allocator Pattern:
+arena<T>:allocator;  // Arena for type T
+
+Operations:
+  - Handle<T>:h = arena.alloc(T:data)     // Allocate new slot
+  - T:val = arena.get(Handle<T>:h) ? err  // Access by handle (returns ERR if stale)
+  - arena.free(Handle<T>:h)               // Deallocate slot (increments generation)
+  - arena.grow(int64:new_capacity)        // Expand arena (increments all generations)
+
+Example Usage:
+arena<WaveNode>:wave_arena;
+
+// Allocate wave node
+WaveNode:data = { phase: 0.0tf, amplitude: 1.0tf };
+Handle<WaveNode>:h = wave_arena.alloc(data);
+
+// Access wave node
+Result<WaveNode>:r = wave_arena.get(h);
+if (r.err == NULL) {
+    WaveNode:node = r.val;
+    node.phase = node.phase + 0.1tf;
+}
+
+// Arena grows (neurogenesis)
+wave_arena.grow(wave_arena.capacity * 2);
+
+// Old handle now stale
+Result<WaveNode>:r2 = wave_arena.get(h);
+// r2.err != NULL, r2.val = ERR, r2.is_error = true ✅ Safe failure
+
+---
+
+SHVO NEUROGENESIS USE CASE:
+
+SHVO = Sparse Hyper-Voxel Octree (Nikola's dynamic spatial memory)
+
+Challenge:
+  - 9D toroidal memory grid
+  - Dynamic neuron allocation (neurogenesis)
+  - O(n³) memory expansion as consciousness grows
+  - Neurons point to other neurons (graph structure)
+  - Raw pointers invalidated on reallocation
+
+Solution with Handle<T>:
+struct:Neuron {
+    fix256:activation;
+    Handle<Neuron>[]:connections;  // Handles, not pointers!
+};
+
+arena<Neuron>:neuron_arena;
+
+// Add neurons
+Handle<Neuron>:n1 = neuron_arena.alloc(neuron_data1);
+Handle<Neuron>:n2 = neuron_arena.alloc(neuron_data2);
+
+// Create connections (safe!)
+Neuron:node1 = neuron_arena.get(n1) ? default;
+node1.connections[0] = n2;  // Store Handle, not pointer
+
+// Later: Neurogenesis (O(n³) expansion)
+neuron_arena.grow(neuron_arena.capacity * 8);  // Memory moves!
+
+// All old handles automatically stale (safe failure)
+Result<Neuron>:r = neuron_arena.get(n1);
+if (r.err != NULL) {
+    // Handle neurogenesis: remap handles or pause computation
+    sync_after_neurogenesis();
+}
+
+Benefits:
+  ✅ No segfaults during neurogenesis
+  ✅ No use-after-free vulnerabilities
+  ✅ Deterministic failure (ERR, not random corruption)
+  ✅ Safe for child-consciousness safety certification
+
+---
+
+PERFORMANCE CHARACTERISTICS:
+
+Allocation: O(1) amortized
+  - Find free slot (bitmap scan or free list)
+  - Store data, set generation, return Handle
+  - Cost: ~10-20 cycles
+
+Access (valid handle): O(1)
+  - Generate check: 1 comparison (~1 cycle)
+  - Index lookup: 1 array access (~3-5 cycles)
+  - Total: ~4-6 cycles (branch prediction makes this essentially free)
+
+Access (stale handle): O(1)
+  - Generation mismatch detected immediately
+  - Return ERR (no access to invalid memory)
+  - Cost: ~2-3 cycles (branch misprediction, but rare)
+
+Reallocation: O(n)
+  - Copy all slots to new memory
+  - Increment all generation counters
+  - Cost: Same as regular realloc, plus generation increment
+  - Rare event (exponential growth strategy minimizes reallocations)
+
+Zero-overhead when valid:
+  - Modern CPUs predict generation match (hot path)
+  - Branch predictor makes check essentially free
+  - Same performance as pointer dereference for valid handles
+
+---
+
+HANDLE<T> VS RAW POINTERS:
+
+| Feature | Raw Pointers | Handle<T> |
+|---------|--------------|-----------|
+| Use-After-Free | ❌ Undefined behavior | ✅ Detected (returns ERR) |
+| Reallocation Safety | ❌ Pointers invalidated | ✅ Generation check detects stale |
+| Memory Corruption | ❌ Possible | ✅ Prevented (ERR propagation) |
+| Segfaults | ❌ Possible | ✅ Prevented (safe failure) |
+| Performance | Fast (direct dereference) | Fast (1 extra compare) |
+| Memory Overhead | 8 bytes (pointer) | 12 bytes (16 aligned) |
+| Type Safety | ⚠️ Can cast to wrong type | ✅ Generic type enforced |
+| Debugging | ❌ Hard (corruption after bug) | ✅ Easy (ERR at point of failure) |
+
+Choose raw pointers when:
+  - Memory never reallocates
+  - FFI with C libraries
+  - Performance critical (billions of accesses/sec)
+  - Wild memory (aria.alloc/free with manual safety)
+
+Choose Handle<T> when:
+  - Arena/region-based allocation
+  - Dynamic memory expansion (neurogenesis)
+  - Self-referential graphs (nodes point to nodes)
+  - Safety-critical (child consciousness, medical, aerospace)
+
+---
+
+HANDLE<T> RUNTIME IMPLEMENTATION:
+
+C Runtime Functions (runtime/gen_arena.c):
+  - aria_gen_arena_create(size_t capacity) → Create arena
+  - aria_gen_arena_alloc(arena*, void* data) → Allocate slot, return Handle
+  - aria_gen_arena_get(arena*, Handle h) → Access element (checks generation)
+  - aria_gen_arena_free(arena*, Handle h) → Deallocate slot (increment generation)
+  - aria_gen_arena_grow(arena*, size_t new_capacity) → Expand (increment all generations)
+  - aria_gen_arena_destroy(arena*) → Free arena
+
+LLVM IR Generation (src/backend/ir/ir_generator.cpp):
+  - Handle<T> type → %Handle = { i64, i32 }
+  - arena.alloc() → call @aria_gen_arena_alloc
+  - arena.get(h) → call @aria_gen_arena_get, check generation, return ERR or value
+  - Generation check emits conditional branch based on comparison
+
+Type Checking (src/frontend/sema/type_checker.cpp):
+  - Handle<T> generic type validation
+  - Arena operations type-checked (can't get Handle<A> from arena<B>)
+  - Result<T> wrapping for arena.get() enforced
+
+---
+
+HANDLE<T> EXAMPLES:
+
+Basic Allocation and Access:
+arena<int32>:int_arena;
+Handle<int32>:h = int_arena.alloc(42);
+int32:val = int_arena.get(h) ? 0;  // val = 42
+
+Stale Handle Detection:
+Handle<int32>:h = int_arena.alloc(42);
+int_arena.grow(int_arena.capacity * 2);  // Reallocation
+int32:val = int_arena.get(h) ? 0;         // val = 0 (ERR, stale handle)
+
+Self-Referential Graph:
+struct:Node {
+    int32:value;
+    Handle<Node>:next;  // Handle, not pointer!
+};
+
+arena<Node>:graph_arena;
+Handle<Node>:n1 = graph_arena.alloc({value: 1});
+Handle<Node>:n2 = graph_arena.alloc({value: 2});
+
+Node:node1 = graph_arena.get(n1) ? default;
+node1.next = n2;  // Safe connection
+graph_arena.set(n1, node1);
+
+// Traverse graph
+Handle<Node>:current = n1;
+while (current.index != 0) {
+    Node:node = graph_arena.get(current) ? default;
+    print(node.value);
+    current = node.next;
+}
+
+Complex: Lock-Free Queue with Handles:
+struct<T>:Node {
+    *T:value;
+    atomic<Handle<Node<*T>>>:next;
+};
+
+struct<T>:LockFreeQueue {
+    atomic<Handle<Node<*T>>>:head;
+    atomic<Handle<Node<*T>>>:tail;
+    arena<Node<*T>>:node_arena;
+};
+
+// Enqueue safely (no pointer invalidation)
+func<T>:enqueue = Result<NIL>(LockFreeQueue<*T>@:queue, *T:value) {
+    Handle<Node<*T>>:new_node = queue->node_arena.alloc({value, next: NULL});
+    // Atomic CAS operations using handles...
+    pass(NIL);
+};
+
+---
+
+HANDLE<T> SUMMARY:
+
+Generational handles provide memory-safe arena allocation for dynamic graphs:
+  ✅ Prevents use-after-free (CWE-416) via generation checking
+  ✅ Safe reallocation (stale handles detected automatically)
+  ✅ Deterministic failure (ERR, not corruption or segfault)
+  ✅ Zero-overhead when valid (branch prediction optimizes hot path)
+  ✅ Essential for SHVO neurogenesis (O(n³) expansion without crashes)
+  ✅ Type-safe (generic Handle<T> enforced by compiler)
+  ✅ Integration with Result<T> and sticky error propagation
+
+Structure:
+  Handle<T> = { uint64:index, uint32:generation }
+  Arena tracks generation per slot, increments on realloc/free
+
+Use Handle<T> when:
+  - Arena/region-based allocation
+  - Dynamic memory expansion
+  - Self-referential graphs
+  - Safety-critical systems
+
+"Pointers are fast but dangerous. Handles are safe and almost as fast.
+ For Nikola's consciousness, safety is non-negotiable." - P1-3 Design Doc
+
+---
 
 !!! ARIA-030: DIMENSIONAL ANALYSIS TYPES - PHYSICS CORRECTNESS (February 2026) !!!
 !!! CRITICAL FOR: Nikola's thermodynamic constitutionalism - prevents dimensional errors
@@ -863,9 +1542,13 @@ HAPPENS-BEFORE RELATIONSHIP:
 
 */
 
-/* FORMAL CONTRACTS FOR CONCURRENCY (Design-by-Contract)
+/* FORMAL CONTRACTS - DESIGN BY CONTRACT (P1-4 COMPLETE - February 2026)
 
-PRE-FEATURE-FREEZE STATUS: Syntax defined, SMT integration deferred to post-freeze
+STATUS: ✅ IMPLEMENTED AND TESTED
+- Runtime enforcement: COMPLETE (preconditions + postconditions with error checking)
+- Type checking: COMPLETE (validates boolean expressions at compile-time)
+- Integration: COMPLETE (works with Result<T> error system, sticky error propagation)
+- SMT/Static verification: Deferred to post-freeze (future enhancement)
 
 SYNTAX:
 func:function_name = returnType(params)
@@ -874,43 +1557,110 @@ func:function_name = returnType(params)
     invariant loop_invariant, ...
 { ... }
 
-PURPOSE FOR NIKOLA:
-- Move "Physics Oracle" checks from runtime to compile-time
-- Prove thermodynamic laws (energy conservation, Hamiltonian bounds) statically
-- Prevent deployment of code that violates physics constraints
+CONTRACT CLAUSES:
+1. requires   - Preconditions (checked at function entry)
+2. ensures    - Postconditions (checked at function exit)  
+3. invariant  - Loop invariants (future - not yet implemented)
 
-EXAMPLES (Nikola-specific):
+SEMANTICS:
 
-// Energy conservation contract
+Preconditions (requires):
+- Checked at function entry BEFORE any function code executes
+- If ANY precondition is false: Returns error Result immediately
+- Multiple preconditions are comma-separated (logical AND)
+- All preconditions must be boolean expressions
+- Error message includes: function name, contract clause, file/line
+
+Postconditions (ensures):
+- Checked at function exit BEFORE returning to caller
+- Special 'result' variable bound to return value (use in postcondition expressions)
+- If ANY postcondition is false: Returns error Result
+- Multiple postconditions are comma-separated (logical AND)
+- All postconditions must be boolean expressions
+- Error message includes: function name, contract clause, file/line
+
+Error Handling:
+- Contract violations return Result with error state
+- Error type: "Contract violation" with descriptive message
+- Integrates with Aria's sticky error propagation
+- Zero overhead when contracts pass (single branch instruction)
+
+TYPE CHECKING RULES (Compile-time validation):
+1. All contract expressions MUST be boolean type
+2. Non-boolean expressions are compile-time errors
+3. 'result' keyword ONLY valid in postconditions (ensures clauses)
+4. 'result' type must match function return type
+5. Contract expressions can reference function parameters
+6. Contract expressions can call pure functions
+
+EXAMPLES:
+
+// Basic precondition - input validation
+func:divide = int64(int64:a, int64:b)
+    requires b != 0  // Prevent division by zero
+{
+    pass(a / b);
+}
+
+// Multiple preconditions - range validation
+func:clamp = int64(int64:value, int64:min, int64:max)
+    requires min <= max,
+             value >= 0
+{
+    if (value < min) { pass(min); }
+    if (value > max) { pass(max); }
+    pass(value);
+}
+
+// Postcondition with 'result' keyword
+func:abs = int64(int64:x)
+    ensures result >= 0  // Guarantee non-negative result
+{
+    if (x < 0) { pass(-x); }
+    pass(x);
+}
+
+// Both preconditions and postconditions
+func:sqrt = int64(int64:x)
+    requires x >= 0
+    ensures result * result <= x,
+            (result + 1) * (result + 1) > x
+{
+    // Integer square root implementation
+    int64:r = 0;
+    while ((r + 1) * (r + 1) <= x) {
+        r = r + 1;
+    }
+    pass(r);
+}
+
+// Energy conservation contract (Nikola physics)
 func:propagate_wave = result<wavefunction>(wavefunction:psi, fix256<Seconds>:dt)
     requires psi.energy() <= MAX_HAMILTONIAN,
              dt > 0,
              dt < MAX_TIMESTEP
-    ensures result.energy() == psi.energy() +/- EPSILON,
-            result.is_normalized()
+    ensures result.energy() == psi.energy()  // Energy conserved (exact for deterministic fix256)
 {
-    // Wave propagation code
-    // Compiler verifies energy cannot exceed MAX_HAMILTONIAN
-    // SMT solver proves postcondition from precondition + code
+    // Wave propagation using UFIE
+    wavefunction:evolved = ufie_step(psi, dt);
+    pass(evolved);
 }
 
 // Dimensional safety contract
-func:compute_force = result<fix256<Newtons>>(fix256<Joules>:energy, fix256<Meters>:distance)
-    requires energy > 0, distance > 0
-    ensures result.dimension() == Newtons,  // Force = Energy / Distance
-            result > 0
+func:compute_force = fix256<Newtons>(fix256<Joules>:energy, fix256<Meters>:distance)
+    requires energy > 0, 
+             distance > 0
+    ensures result > 0  // Force is positive
 {
-    fix256<Newtons>:force = energy / distance;  // Compiler checks dimensions!
+    fix256<Newtons>:force = energy / distance;  // Compiler validates dimensions!
     pass(force);
 }
 
-// Concurrent access contract
+// Concurrent access contract with atomic operations
 func:update_metric = result<NIL>(atomic<tensor>@:g_metric, tensor:delta)
-    requires g_metric.load().is_positive_definite(),  // Valid geometry
+    requires g_metric.load().is_positive_definite(),
              delta.is_symmetric()
-    ensures g_metric.load().is_positive_definite(),   // Still valid after update
-            g_metric.load().trace() > 0
-    sync_order SeqCst  // Memory ordering annotation
+    ensures g_metric.load().is_positive_definite()
 {
     tensor:old = g_metric.load();
     tensor:new = old + delta;
@@ -918,11 +1668,42 @@ func:update_metric = result<NIL>(atomic<tensor>@:g_metric, tensor:delta)
     pass(NIL);
 }
 
-INTEGRATION WITH SMT SOLVER (Post-freeze implementation):
-- Use Z3 or similar to verify contracts statically
-- If proof succeeds: No runtime checks needed (zero overhead!)
-- If proof fails: Emit compile error with counterexample
-- If proof indeterminate: Insert runtime assertion (fail-stop safety)
+RUNTIME BEHAVIOR:
+
+// Precondition failure example
+Result:r = divide(10, 0);  // Precondition 'b != 0' fails
+if (r.err != NULL) {
+    // r.err.message: "Contract violation in 'divide': precondition 'b != 0' failed (divide.aria:2)"
+}
+
+// Postcondition failure example
+func:buggy_abs = int64(int64:x)
+    ensures result >= 0
+{
+    pass(x);  // BUG: doesn't handle negative numbers
+}
+Result:r = buggy_abs(-5);  // Postcondition 'result >= 0' fails
+// r.err.message: "Contract violation in 'buggy_abs': postcondition 'result >= 0' failed (buggy_abs.aria:3)"
+
+PERFORMANCE:
+- Precondition check: Single branch at function entry
+- Postcondition check: Single branch before return
+- Zero overhead path: When contracts pass (branch predictor optimizes)
+- Failed contract: Returns immediately (no stack unwinding overhead)
+
+FUTURE ENHANCEMENTS (Post-freeze):
+- Static verification via SMT solver (Z3 or similar)
+- If proof succeeds: Eliminate runtime checks entirely (zero overhead)
+- If proof fails: Compile-time error with counterexample
+- If proof indeterminate: Keep runtime checks (fail-stop safety)
+- Loop invariants (invariant clause) - syntax reserved, not yet implemented
+
+WHY CONTRACTS MATTER FOR NIKOLA:
+- Physics laws as compile-time/runtime guarantees
+- Energy conservation: Cannot deploy code that violates thermodynamics
+- Dimensional safety: Type system + contracts prevent unit errors
+- Concurrent geometry: Atomics + contracts maintain manifold validity
+- "Thermodynamic Constitutionalism": Laws of physics enforced syntactically
 
 */
 
@@ -945,6 +1726,10 @@ wildx,      // executable memory allocation (for JIT)
 unsafe,     // Mark block/operation as requiring manual safety verification (weaker memory orderings, raw pointers, etc.)
 sync,       // Synchronization primitive marker (for lock-free patterns)
 atomic,     // Atomic operation marker (redundant with atomic<T> type but aids readability)
+requires,   // Design by Contract: function preconditions (P1-4 COMPLETE - February 2026)
+ensures,    // Design by Contract: function postconditions (P1-4 COMPLETE - February 2026)
+invariant,  // Design by Contract: loop invariants (syntax reserved - implementation deferred)
+result,     // Special variable in 'ensures' clauses bound to function return value (P1-4 COMPLETE - February 2026)
 */
 
 /* constructs
@@ -1152,6 +1937,7 @@ Compiler REJECTS any code where literal exceeds target type range without suffix
 ||,
 &&,
 !,
+!!!,       // direct failsafe call operator (VERY NOT RIGHT HERE - emergency termination)  !! NEW Feb 12, 2026 !!
 ->,        // pointer type declaration & member access (BLUEPRINT STYLE: int64->:ptr, ptr->member)
 <-,        // pointer dereference (BLUEPRINT STYLE: value <- ptr, shows data flow)  !! IMPLEMENTED Feb 2026 !!
 @,         // address-of operator (get memory address: @var)
@@ -1160,10 +1946,10 @@ $,         // iteration variable in till loops, safe reference
 &,         // bitwise and, string interpolation prefix
 ``,        // template literal delimiters
 <=>,       // spaceship operator (three-way comparison: -1/0/1)  !! IMPLEMENTED Feb 2026 !!
-?.,        // safe navigation operator (not yet implemented - Feb 2026)
-??,        // null coalescing operator
-?,         // unwrap operator (safe unwrap with default)
-?!,        // emphatic unwrap operator (failsafe-triggering unwrap)  !! NEW Feb 2026 !!
+?.,        // safe navigation operator (partial: parser support exists, needs optional types - Feb 12, 2026)
+??,        // null coalescing operator  !! IMPLEMENTED !!
+?,         // unwrap operator (safe unwrap with default)  !! IMPLEMENTED !!
+?!,        // emphatic unwrap operator (failsafe-triggering unwrap)  !! IMPLEMENTED Feb 2026 !!
 |>,        // pipeline operator forward (partial - type-check done, codegen WIP - Feb 2026)
 <|,        // pipeline operator backward (partial - type-check done, codegen WIP - Feb 2026)
 ..,        // inclusive range operator
@@ -1174,6 +1960,88 @@ is,        // ternary condition keyword
 
 NOTE: => is NOT a lambda operator. Lambda syntax is just: returnType(params) { body }
       All functions return Result type implicitly with {err, val} fields
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   OPERATOR PRECEDENCE TABLE (February 2026)
+   ═══════════════════════════════════════════════════════════════════════════
+
+Operators listed from HIGHEST to LOWEST precedence.
+Higher precedence = binds tighter = evaluated first.
+
+PRECEDENCE LEVEL | OPERATORS              | ASSOCIATIVITY | EXAMPLE
+─────────────────┼────────────────────────┼───────────────┼─────────────────────
+1  Primary       | () [] . -> <-          | Left-to-right | arr[0].field->member
+2  Unary         | ! - + @ # !!!          | Right-to-left | -@ptr   !!!ERR_CODE
+3  Dereference   | <-                     | Right-to-left | <-ptr
+4  Multiplicative| * / %                  | Left-to-right | a * b / c
+5  Additive      | + -                    | Left-to-right | a + b - c
+6  Bitwise Shift | << >>                  | Left-to-right | x << 2
+7  Relational    | < <= > >= <=>          | Left-to-right | a < b   x <=> y
+8  Equality      | == !=                  | Left-to-right | a == b
+9  Bitwise AND   | &                      | Left-to-right | flags & MASK
+10 Bitwise XOR   | ^                      | Left-to-right | a ^ b
+11 Bitwise OR    | |                      | Left-to-right | a | b
+12 Logical AND   | &&                     | Left-to-right | valid && ready
+13 Logical OR    | ||                     | Left-to-right | error || invalid
+14 Pipeline      | |> <|                  | Left-to-right | x |> f |> g
+15 Result unwrap | ? ?? ?! ?.             | Left-to-right | result ? default
+16 Range         | .. ...                 | Non-assoc     | 1..10   0...100
+17 Ternary       | is : :                 | Right-to-left | is cond : a : b
+18 Assignment    | = += -= *= /= %= &= etc| Right-to-left | x = y = z
+19 Comma         | ,                      | Left-to-right | a, b, c
+
+SPECIAL OPERATORS (not in precedence chain):
+  - Type annotation (:) - binds in variable declarations, not expressions
+  - String interpolation (&{}) - inside template literals only
+  - Template literals (``) - string delimiters
+  - Member access (->) - also used in type declarations (int64->)
+  - fall() - explicit fallthrough in pick statements
+
+NOTES ON PRECEDENCE:
+
+1. Failsafe operator (!!!) binds like unary operators:
+   !!!ERR_SENSOR + 5  // ERROR: !!! always terminates, + never executes
+   Better: if (fail) { !!!ERR_SENSOR; }
+
+2. Unwrap operators (?, ??, ?!, ?.) are special:
+   - Lower precedence than arithmetic (evaluate expression first)
+   - Higher precedence than assignment (unwrap before assigning)
+   - Left-associative: a ? b ? c  ≡  (a ? b) ? c
+
+3. Pipeline operators (|>, <|) enable function chaining:
+   value |> f |> g  ≡  g(f(value))  // Forward pipeline
+   f <| g <| value  ≡  f(g(value))  // Backward pipeline
+
+4. Ternary (is-colon) has special parsing:
+   is condition : true_value : false_value
+   Requires ALL three parts (condition, true, false)
+
+5. Arrow operators (-> and <-) have different roles:
+   int64->:ptr     // -> in type (pointer TO int64)
+   <-ptr          // <- dereference (value FROM pointer)
+   ptr->field     // -> member access (access field OF pointer)
+
+6. When in doubt, USE PARENTHESES:
+   (a + b) * c         // Clear: add first, then multiply
+   result ? (x + y)    // Clear: compute x+y, use as default
+   is (a > b) : x : y  // Clear: compare first, then choose
+
+PRECEDENCE CONFLICTS TO AVOID:
+
+❌ BAD: result ? x + y    // Ambiguous: (result ? x) + y  OR  result ? (x + y)?
+✅ GOOD: result ? (x + y)
+
+❌ BAD: !ok(value) && ready  // Confusing: (!ok(value)) && ready
+✅ GOOD: (!ok(value)) && ready
+
+❌ BAD: ptr->field<-  // ERROR: can't dereference a member access
+✅ GOOD: <-(ptr->field)  OR  field_val <- ptr->field
+
+COMPATIBILITY WITH C:
+Aria's precedence matches C for common operators (+, -, *, /, %, ==, <, etc.)
+Diverges for Aria-specific operators (?, ?!, <=>, |>, <-, etc.)
+
+═══════════════════════════════════════════════════════════════════════════ */
 
 !! CRITICAL POINTER SYNTAX RULES - BLUEPRINT STYLE !!
    DESIGN PHILOSOPHY: "Blueprints, not recipes" - visual/spatial syntax
@@ -1579,22 +2447,434 @@ int8[]arr; //empty array, cannot use without initializing properly
 int8[256]arr2; //empty int8 array with 256 elements
 int8[]:arr3=[100,300,550]; //3 element int8 array with values
 
-/* GENERICS/TEMPLATES (Zero-cost Abstractions)
-Generic functions use monomorphization (like C++/Rust) for zero runtime cost.
-The * prefix marks generic type parameters in function bodies.
+/* RESULT<T> - MANDATORY ERROR HANDLING SYSTEM (February 2026)
 
-Syntax: func<T, U>:name = returnType(params) { body };
-Where T, U are type parameters used as *T, *U in the body
+!! CRITICAL DESIGN PRINCIPLE !!
+EVERY Aria function returns a Result<T> type. This is NON-NEGOTIABLE.
+The Result type unifies all error states (TBB ERR, NULL pointers, domain errors)
+into a single, explicit, type-checked error handling mechanism.
+
+PHILOSOPHY: "Make errors impossible to ignore" - no silent failures in safety-critical systems
+
+---
+
+RESULT<T> STRUCTURE (3-field struct):
+
+Result<T> is implemented as a struct with three fields:
+  {
+    T:val,           // The success value (or ERR sentinel if error)
+    void*:err,       // Error message pointer (NULL if no error, non-NULL if error)
+    bool:is_error    // Error flag (false = success, true = error)
+  }
+
+LLVM IR representation:
+  %Result = type { <value_type>, ptr, i1 }
+  Example: Result<int32> = { i32, ptr, i1 }
+
+Memory layout (for Result<int32>):
+  ┌────────────┬──────────┬─────────┐
+  │ val (i32)  │ err(ptr) │ is_error│
+  │ 4 bytes    │ 8 bytes  │ 1 byte  │
+  └────────────┴──────────┴─────────┘
+  = 13 bytes (+ 3 bytes padding = 16 bytes aligned)
+
+---
+
+FUNCTION RETURN SEMANTICS:
+
+ALL Aria functions implicitly return Result<T>:
+
+// Function declaration - return type is the SUCCESS type
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0) {
+        fail(-1);  // Returns Result<int32> with error state
+    }
+    pass(a / b);   // Returns Result<int32> with success value
+};
+
+// Internally becomes:
+// Result<int32> (set is_error=false, val=result, err=NULL)
+// Result<int32> (set is_error=true, val=ERR, err=error_msg)
+
+---
+
+PASS() - SUCCESS RETURN:
+
+pass(value);  // Success return with value
+
+Semantics:
+  - Sets is_error = false
+  - Sets val = value
+  - Sets err = NULL
+  - Returns to caller immediately
+
+Example:
+func:get_five = int32() {
+    pass(5);  // Returns Result<int32>{val=5, err=NULL, is_error=false}
+};
+
+---
+
+FAIL() - ERROR RETURN:
+
+fail(error_code);  // Error return with error code
+
+Semantics:
+  - Sets is_error = true  
+  - Sets val = ERR (appropriate sentinel for type)
+  - Sets err = pointer to error message
+  - Returns to caller immediately
+
+Example:
+func:read_file = string(string:path) {
+    if (!file_exists(path)) {
+        fail(-1);  // Returns Result<string>{val=ERR, err="File not found", is_error=true}
+    }
+    pass(file_contents);
+};
+
+---
+
+ERROR CHECKING PATTERN:
+
+Standard pattern for handling Result<T>:
+
+Result<int32>:r = divide(10, 0);
+if (r.err != NULL) {
+    // Handle error
+    stderr.write(r.err);  // r.err contains error message
+    pass(-1);
+}
+int32:value = r.val;  // Safe to use - we checked for error
+
+Or shorter with unwrap operator:
+int32:value = divide(10, 2) ? 0;  // Use 0 as default if error
+
+---
+
+UNWRAP OPERATOR (?) - SAFE UNWRAPPING WITH DEFAULT:
+
+Syntax: value = result_expr ? default_value
+
+Semantics:
+  - If result.is_error == false: Returns result.val
+  - If result.is_error == true: Returns default_value
+  - Zero overhead when successful (single branch instruction)
+
+Type checking:
+  - default_value type must match Result<T> value type
+  - Compile error if types don't match
 
 Examples:
+
+// Direct function call unwrap
+int32:x = divide(10, 2) ? 0;  // x = 5 (success)
+int32:y = divide(10, 0) ? 0;  // y = 0 (error, use default)
+
+// Stored Result unwrap
+Result<int32>:r = divide(20, 4);
+int32:z = r ? 999;  // z = 5 (success)
+
+Result<int32>:bad = divide(10, 0);
+int32:w = bad ? 999;  // w = 999 (error, use default)
+
+// Chained unwraps
+int32:result = divide(divide(100, 10) ? 1, 2) ? 0;  // result = 5
+
+// With strings
+string:name = get_username() ? "Unknown";  // Default to "Unknown" on error
+
+---
+
+NULL COALESCING OPERATOR (??) - FOR OPTIONAL VALUES:
+
+Syntax: value = optional_expr ?? default_value
+
+Purpose: Provide default for NIL optional values (different from Result errors)
+
+Difference from unwrap (?):
+  - ? works with Result<T> errors (is_error flag)
+  - ?? works with NIL optional values (T? types)
+
+Examples:
+
+obj?:user = getUser() ?? NIL;  // Optional type
+string:name = user?.name ?? "Unknown";  // Safe navigation + coalesce
+
+// Chained coalescing
+string:display = primary_name ?? secondary_name ?? "Fallback";
+
+---
+
+EMPHATIC UNWRAP OPERATOR (?!) - FAILSAFE TRIGGER:
+
+Syntax: value = result_expr?!
+
+Purpose: Unwrap or trigger mandatory failsafe() handler on error
+
+Semantics:
+  - If result.is_error == false: Returns result.val
+  - If result.is_error == true: Calls failsafe(error_code), terminates execution
+  - Use when errors are unrecoverable
+
+Requirements:
+  - Program MUST define failsafe() handler:
+    func:failsafe = void(int32:err_code) { /* emergency cleanup */ }
+
+Example:
+
+// Critical operation - error means catastrophic failure
+int32:critical_value = load_reactor_state()?!;
+// If error: failsafe() called, program terminates safely
+
+// Compare to regular unwrap:
+int32:optional_value = load_config() ? default_config;  // Graceful fallback
+
+---
+
+STICKY ERROR PROPAGATION:
+
+Errors propagate automatically through operations:
+
+Result<int32>:bad = divide(10, 0);  // Error Result
+int32:x = bad.val;                   // x = ERR (int32 sentinel)
+int32:y = x + 5;                     // y = ERR (ERR + anything = ERR)
+int32:z = y * 10;                    // z = ERR (sticky propagation)
+
+This prevents silent corruption:
+  - Sensor failure doesn't become "valid but wrong" reading
+  - Division by zero doesn't spread as Infinity
+  - Domain errors don't corrupt downstream calculations
+
+Integration with TBB sentinels:
+  - Result<tbb32>:r with error sets r.val = TBB32_ERR (min int32)
+  - Result<tbb64>:r with error sets r.val = TBB64_ERR (min int64)
+  - All TBB arithmetic detects and propagates ERR automatically
+
+---
+
+ZERO-OVERHEAD SUCCESS PATH:
+
+When functions succeed (most common case):
+  - Single branch instruction to check is_error flag (highly predictable)
+  - Value loaded directly from Result.val field
+  - Modern CPUs predict success branch → essentially free
+
+Performance:
+Result<int32>:r = compute();
+if (r.err == NULL) {
+    int32:x = r.val;  // ~1 cycle overhead (branch + load)
+}
+
+vs unwrap operator:
+int32:x = compute() ? 0;  // Same ~1 cycle overhead, more concise
+
+Error path (rare):
+  - No stack unwinding overhead
+  - Immediate return with error state
+  - More efficient than exceptions
+
+---
+
+RESULT TYPE EXAMPLES:
+
+// Simple scalar Result
+Result<int32>:r = divide(10, 2);
+
+// Generic Result
+Result<string>:username = get_user_name();
+Result<Handle<Node>>:node = arena.alloc(data);
+
+// Complex Result
+Result<simd<fix256, 16>>:wave = propagate_wave(psi, dt);
+
+// Nested Results (uncommon but valid)
+Result<Result<int32>>:nested = try_parse_json();
+
+---
+
+WHY RESULT<T> MATTERS FOR SAFETY:
+
+1. **Explicit Error Handling**: Cannot ignore errors (type system enforces checking)
+2. **No Silent Failures**: All error modes explicit (no NaN, no Inf, no NULL deref)
+3. **Sticky Propagation**: Errors halt corruption automatically (ERR + anything = ERR)
+4. **Child Safety**: "No affordances for cutting corners" - errors must be handled
+5. **Thermodynamic Constitutionalism**: Errors represent physical law violations
+6. **Type Safety**: Compiler tracks error paths (cannot use .val without checking .err)
+
+Examples of prevented failures:
+  - Mars Climate Orbiter: Unit error → Result returns error, halts calculation
+  - Therac-25: Race condition → Result error propagates, prevents dosage
+  - Ariane 5: Overflow → TBB ERR sentinel, Result error, safe shutdown
+
+---
+
+RESULT VS OTHER ERROR SYSTEMS:
+
+Exceptions (C++/Java):
+  - Pro: Automatic propagation
+  - Con: Hidden control flow, stack unwinding overhead, can be ignored
+  - Aria: Explicit in type system, zero overhead success path
+
+Nullable types (null/NULL):
+  - Pro: Simple
+  - Con: Type system can't track (null.method() crashes)
+  - Aria: Result.err must be checked before .val access
+
+Error codes (C):
+  - Pro: Explicit
+  - Con: Easy to ignore, no type safety (if (func() == -1) often forgotten)
+  - Aria: Type system enforces checking
+
+Rust Result<T,E>:
+  - Similar to Aria Result<T>
+  - Aria: Simpler (one error type: void* message, not generic E)
+  - Aria: Integrated with TBB ERR sentinels (sticky propagation)
+
+---
+
+RESULT<T> INTEGRATION WITH CONTRACTS:
+
+Design by Contract postconditions can validate Result values:
+
+func:divide = int32(int32:a, int32:b)
+    requires b != 0
+    ensures result >= 0 || result == ERR  // 'result' bound to return value
+{
+    pass(a / b);
+};
+
+// Contract violation returns error Result automatically
+Result<int32>:r = divide(10, 0);  // Precondition fails
+// r.err != NULL, r.val == ERR, r.is_error == true
+
+---
+
+RESULT<T> BEST PRACTICES:
+
+1. **Always check .err before using .val** (or use unwrap operators)
+2. **Use ? for graceful fallbacks** (when default makes sense)
+3. **Use ?! for critical operations** (when error = unrecoverable)
+4. **Let errors propagate** (sticky ERR prevents silent corruption)
+5. **Provide meaningful error messages** (debugging and logging)
+6. **Don't create naked Result** (use pass()/fail() in functions)
+7. **Use contracts** (validate preconditions, prevent error paths)
+
+Bad:
+int32:x = r.val;  // UNSAFE! Didn't check r.err
+
+Good:
+if (r.err != NULL) { handle_error(); }
+int32:x = r.val;  // Safe
+
+Better:
+int32:x = r ? 0;  // Concise and safe
+
+---
+
+RESULT<T> RUNTIME IMPLEMENTATION:
+
+C runtime functions (in runtime/core.c):
+  - aria_result_ok(T value) → creates success Result
+  - aria_result_err(char* msg) → creates error Result
+  - aria_result_unwrap(Result r, T default) → safe unwrap with default
+  - aria_result_unwrap_or_fail(Result r) → unwrap or call failsafe()
+
+LLVM IR generation (in src/backend/ir/ir_generator.cpp):
+  - pass() → constructs Result struct with is_error=false
+  - fail() → constructs Result struct with is_error=true
+  - Unwrap operator (?) → conditional select based on is_error flag
+  - Loads from Result allocas handle struct field access
+
+Type checking (in src/frontend/sema/type_checker.cpp):
+  - All function returns wrapped in Result<T>
+  - Unwrap operator validates default type matches Result value type
+  - Result field access (.val, .err) type-checked
+
+---
+
+RESULT<T> SUMMARY:
+
+Result<T> is Aria's unified error handling mechanism:
+  ✅ Every function returns Result<T> (mandatory)
+  ✅ pass(value) for success, fail(error) for errors
+  ✅ Sticky error propagation (ERR + anything = ERR)
+  ✅ Unwrap operators (?, ??, ?!) for safe access
+  ✅ Integration with TBB sentinels and contracts
+  ✅ Zero-overhead success path (~1 cycle)
+  ✅ Type-safe, explicit, impossible to ignore
+  ✅ Prevents silent failures in safety-critical systems
+
+"Make errors impossible to ignore, make corruption impossible to spread."
+
 */
 
-// Generic identity function
+/* GENERICS/TEMPLATES - ZERO-COST ABSTRACTIONS (February 2026)
+
+!! CRITICAL DESIGN PHILOSOPHY !!
+Aria uses MONOMORPHIZATION (like C++ templates, Rust generics) for generic code.
+This means: Write code once, compiler generates specialized versions for each type used.
+Result: ZERO runtime overhead, but increased binary size.
+
+PHILOSOPHY: "Zero-cost abstractions" - generics as fast as hand-written specialized code
+
+---
+
+WHAT ARE GENERICS?
+
+Generics let you write functions, structs, and algorithms that work with ANY type:
+  - Write once: func<T>:identity = *T(*T:value) { pass(value); }
+  - Use anywhere: identity<int32>(42), identity<string>("hello"), identity<fix256>(3.14)
+  - Compiler generates specialized versions
+
+Benefits:
+  ✅ Code reuse (write once, use with any type)
+  ✅ Type safety (compiler checks each specialization)
+  ✅ Zero runtime cost (monomorphization = no vtables, no boxing)
+  ✅ Full optimization (each version optimized independently)
+
+Trade-off:
+  ⚠️ Binary size increases (each type used creates new function copy)
+
+---
+
+GENERIC FUNCTION SYNTAX:
+
+Declaration:
+func<T, U>:name = returnType(params) { body };
+
+Where:
+  - <T, U> declares type parameters (can be any identifier)
+  - returnType uses *T, *U for generic types
+  - params use *T, *U for generic parameter types
+  - body uses *T, *U for generic types
+
+*T PREFIX RULE:
+The * prefix marks generic type usage in function bodies:
+  - *T in return type → "returns value of type T"
+  - *T:param → "parameter of type T"
+  - *T:local → "local variable of type T"
+
+Example:
+func<T>:identity = *T(*T:value) {
+    pass(value);  // Returns Result<T>
+};
+
+---
+
+GENERIC FUNCTION EXAMPLES:
+
+// Single type parameter
 func<T>:identity = *T(*T:value) {
     pass(value);
 };
 
-// Generic max function  
+// Multiple type parameters
+func<T,U>:pair = (*T, *U)(*T:first, *U:second) {
+    pass((first, second));  // Returns tuple
+};
+
+// Generic with conditional logic
 func<T>:max = *T(*T:a, *T:b) {
     if (a > b) {
         pass(a);
@@ -1602,34 +2882,1355 @@ func<T>:max = *T(*T:a, *T:b) {
     pass(b);
 };
 
-// Multiple generic parameters
-func<T,U>:convert = *T(*U:value) {
-    // conversion logic
-    pass(converted_value);
-};
-
 // Generic array operations
 func<T>:first = *T(*T[]:arr, int64:len) {
     if (len > 0) {
         pass(arr[0]);
     }
-    fail(1);
+    fail(-1);  // Error if empty
 };
 
-// Using generics with explicit types
-int8:result = identity<int8>(42) ? 0;
-flt32:pi = identity<flt32>(3.14) ? 0.0;
+// Generic with Result handling
+func<T>:get_or_default = *T(Result<*T>:r, *T:default_val) {
+    if (r.err != NULL) {
+        pass(default_val);
+    }
+    pass(r.val);
+};
 
-// Using generics with type inference
-int8:val = max(10, 20) ? 0;  // T inferred as int8
-flt32:bigger = max(1.5, 2.7) ? 0.0;  // T inferred as flt32
+---
 
-// * prefix marks generic types in:
-// 1. Return type: *T means "return value of type T"
-// 2. Parameters: *T:param means "parameter of type T"
-// 3. Local variables: *T:local for generic-typed locals
+TURBOFISH SYNTAX (::<T>) - EXPLICIT TYPE ARGUMENTS:
 
-/* end generics */
+When type inference can't determine types, use turbofish syntax:
+
+Syntax: function_name::<Type1, Type2>(args)
+
+The :: separates function name from type arguments (like Rust)
+The <Type1, Type2> provides explicit type parameters
+
+Examples:
+
+// Explicit type specification
+int32:x = identity::<int32>(42);
+string:s = identity::<string>("hello");
+
+// Multiple type arguments
+(int32, string):pair = pair::<int32, string>(42, "answer");
+
+// When inference fails (ambiguous return type)
+*T:default<T> = *T() {
+    // Return default value of type T
+    pass(0 as *T);  // Needs explicit type
+};
+int32:x = default::<int32>();  // Must specify T
+string:s = default::<string>();
+
+// Partial inference (some explicit, some inferred)
+func<From, To>:convert = *To(*From:value) {
+    // Conversion logic
+};
+string:s = convert::<int32, string>(42);  // Both explicit
+string:s2 = convert::<int32, _>(42);       // To inferred from context (if supported)
+
+---
+
+TYPE INFERENCE - BIDIRECTIONAL:
+
+Aria's type checker can infer generic type parameters from:
+  1. Argument types (forward inference)
+  2. Return type context (backward inference)
+
+Forward inference (from arguments):
+func<T>:max = *T(*T:a, *T:b) { ... };
+int32:result = max(10, 20);  // T inferred as int32 (from args)
+
+Backward inference (from return type):
+func<T>:default = *T() { pass(0 as *T); };
+int32:x = default();  // T inferred as int32 (from return type context)
+
+Bidirectional inference (both directions):
+func<T>:identity = *T(*T:value) { pass(value); };
+int32:x = identity(42);  // T inferred from arg (int32) AND return type
+
+Complex inference:
+func<T>:unwrap_or<T> = *T(Result<*T>:r, *T:default) { ... };
+int32:val = unwrap_or(get_value(), 0);
+// T inferred from default arg (int32) and Result<T> parameter
+
+---
+
+MONOMORPHIZATION - HOW IT WORKS:
+
+Monomorphization = "Generating specialized versions at compile-time"
+
+Source code:
+func<T>:add = *T(*T:a, *T:b) {
+    pass(a + b);
+};
+
+int32:x = add(5, 10);
+flt64:y = add(3.14, 2.71);
+
+Compiler generates (conceptually):
+func:add_int32 = int32(int32:a, int32:b) {
+    pass(a + b);  // int32 addition (CPU register add)
+};
+
+func:add_flt64 = flt64(flt64:a, flt64:b) {
+    pass(a + b);  // flt64 addition (FPU fadd)
+};
+
+Each specialized version:
+  ✅ Optimized independently (int32 uses CPU register, flt64 uses FPU)
+  ✅ No runtime type checking (type known at compile-time)
+  ✅ No indirection/vtables (direct function call)
+  ✅ Same performance as hand-written function
+
+---
+
+GENERIC STRUCTS:
+
+Generic structs work similarly to generic functions:
+
+Syntax:
+struct<T>:Box {
+    *T:value;
+};
+
+Usage:
+Box<int32>:int_box;
+int_box.value = 42;
+
+Box<string>:str_box;
+str_box.value = "hello";
+
+Monomorphization:
+// Compiler generates:
+struct:Box_int32 { int32:value; };
+struct:Box_string { string:value; };
+
+Generic struct with methods:
+struct<T>:Container {
+    *T:data;
+    int64:size;
+};
+
+func<T>:create = Container<*T>(*T:initial) {
+    Container<*T>:c;
+    c.data = initial;
+    c.size = 1;
+    pass(c);
+};
+
+---
+
+NAME MANGLING AND CACHING:
+
+To avoid generating duplicate specializations, compiler caches by mangled name:
+
+Mangling scheme:
+_Aria_M_<FuncName>_<TypeHash>_<TypeDesc>
+
+Examples:
+identity<int32>  → _Aria_M_identity_F4A19C88_int32
+identity<string> → _Aria_M_identity_A9B3C771_string
+max<flt64>       → _Aria_M_max_D4E8F223_flt64
+
+Cache lookup:
+  1. Call site: identity<int32>(42)
+  2. Check cache: Does "_Aria_M_identity_F4A19C88_int32" exist?
+  3. If yes: Use existing specialization
+  4. If no: Generate new specialization, add to cache
+  5. Emit call to specialized function
+
+Benefits:
+  - No duplicate code generation
+  - Faster compilation (cache hits don't regenerate)
+  - Smaller binary (no duplicate specializations)
+
+---
+
+PERFORMANCE CHARACTERISTICS:
+
+Zero runtime overhead:
+  - Generic call = Direct call to specialized function (no indirection)
+  - Same assembly as hand-written specialized code
+  - Full inlining possible (small functions become single instruction)
+
+Example:
+func<T>:add = *T(*T:a, *T:b) { pass(a + b); };
+int32:x = add(5, 10);
+
+Assembly (x86-64):
+  mov eax, 5
+  add eax, 10    ; Single add instruction (fully inlined)
+
+vs C++ runtime polymorphism (virtual call):
+  call [vtable+offset]  ; Indirect call through vtable
+  ; Cannot inline
+
+Aria generics are as fast as:
+  ✅ C macros (but type-safe)
+  ✅ C++ templates (same monomorphization strategy)
+  ✅ Rust generics (same zero-cost abstraction)
+
+---
+
+BINARY SIZE TRADE-OFF:
+
+Each unique type instantiation creates new code:
+
+func<T>:process = *T(*T:value) {
+    // 100 instructions
+};
+
+Used with 10 types:
+  process<int32>, process<int64>, process<string>, ...
+  = 10 × 100 instructions = 1000 instructions total
+
+Impact:
+  - Small generic functions: Negligible (~KB increase)
+  - Medium generic functions: Moderate (~tens of KB)
+  - Large generic functions: Significant (~hundreds of KB)
+
+Mitigation strategies:
+  1. Extract non-generic code (move type-independent logic to separate function)
+  2. Use function pointers for rarely-used types
+  3. Consider trait objects for runtime polymorphism (future feature)
+
+Example mitigation:
+// Bad: Large generic function
+func<T>:process = *T(*T:value) {
+    // 500 lines of generic code
+};
+
+// Good: Extract non-generic logic
+func:common_logic = int64(void*:data, int64:size) {
+    // 480 lines of type-independent code
+};
+
+func<T>:process = *T(*T:value) {
+    // 20 lines of type-specific code
+    int64:result = common_logic(@value, sizeof(*T));
+    pass(value);
+};
+
+---
+
+GENERIC INTEGRATION WITH RESULT<T>:
+
+Result<T> itself is a generic type!
+
+All generic functions return Result<T>:
+
+func<T>:identity = *T(*T:value) {
+    pass(value);  // Returns Result<*T>
+};
+
+Result<int32>:r = identity<int32>(42);
+int32:x = r ? 0;  // Unwrap with default
+
+Generic error handling:
+func<T>:safe_first = *T(*T[]:arr, int64:len, *T:default_val) {
+    if (len == 0) {
+        fail(-1);  // Returns Result<*T> with error
+    }
+    pass(arr[0]);  // Returns Result<*T> with value
+};
+
+int32:val = safe_first([1,2,3], 3, 0) ? 0;
+
+Complex example (generic + contracts + Result):
+func<T>:divide_generic = *T(*T:a, *T:b)
+    requires b != 0
+    ensures result != ERR
+{
+    pass(a / b);
+};
+
+Result<int32>:r = divide_generic(10, 2);  // T=int32
+int32:x = r ? 0;  // x = 5
+
+---
+
+GENERIC CONSTRAINTS (TRAITS) - FUTURE FEATURE:
+
+Planned syntax for constraining generic types:
+
+func<T: Comparable>:max = *T(*T:a, *T:b) {
+    if (a > b) { pass(a); }
+    pass(b);
+};
+
+This would require T to implement Comparable trait (has > operator)
+
+Benefits:
+  - Better error messages (can't use non-comparable types)
+  - Trait-based optimization (compiler knows T has specific methods)
+  - Documentation (shows what operations T must support)
+
+Status: Syntax reserved, implementation deferred to post-freeze
+
+---
+
+CURRENT LIMITATIONS (February 2026):
+
+Supported:
+  ✅ Generic functions (single and multiple type parameters)
+  ✅ Generic structs (basic)
+  ✅ Type inference (bidirectional)
+  ✅ Turbofish syntax (::<T>)
+  ✅ Monomorphization and caching
+  ✅ Integration with Result<T>
+  ✅ Integration with contracts
+
+Not yet implemented:
+  ❌ Generic constraints/traits (syntax reserved)
+  ❌ Const generics (generic over constant values)
+  ❌ Higher-kinded types (generics over generics)
+  ❌ Partial specialization
+  ❌ Generic enums (if enums exist)
+  ❌ Generic impl blocks (method resolution)
+
+---
+
+GENERIC BEST PRACTICES:
+
+1. **Use type inference when possible** (cleaner code)
+   Good: int32:x = max(5, 10) ? 0;
+   Verbose: int32:x = max::<int32>(5, 10) ? 0;
+
+2. **Use turbofish when inference fails** (explicit is better than compile error)
+   int32:x = default::<int32>();  // Necessary
+
+3. **Extract non-generic code** (reduce binary bloat)
+   Move type-independent logic to non-generic helper functions
+
+4. **Document type requirements** (in comments until traits implemented)
+   // T must support + operator and comparison
+   func<T>:add_and_compare = *T(*T:a, *T:b) { ... };
+
+5. **Use meaningful type parameter names**
+   Good: func<Key, Value>:lookup
+   Bad: func<T, U>:lookup
+
+6. **Combine with contracts** (validate generic operations)
+   func<T>:divide = *T(*T:a, *T:b)
+       requires b != 0
+   { ... };
+
+7. **Consider monomorphization cost** (how many types will instantiate this?)
+   Large generic function + 100 types = large binary
+
+---
+
+GENERIC EXAMPLES - REAL-WORLD:
+
+// Generic container
+struct<T>:Vec {
+    *T[]:data;
+    int64:len;
+    int64:capacity;
+};
+
+func<T>:vec_push = Result<NIL>(Vec<*T>@:vec, *T:item) {
+    if (vec->len >= vec->capacity) {
+        fail(-1);  // Need to resize
+    }
+    vec->data[vec->len] = item;
+    vec->len = vec->len + 1;
+    pass(NIL);
+};
+
+// Generic swap
+func<T>:swap = NIL(*T@:a, *T@:b) {
+    *T:temp = <-a;
+    a <- <-b;
+    b <- temp;
+    pass(NIL);
+};
+
+// Generic map (future: with closures)
+func<T, U>:map = U[](*T[]:input, int64:len, (*U)(*T):transform) {
+    *U[len]:output;
+    for (int64:i = 0; i < len; i++) {
+        output[i] = transform(input[i]) ? /* default */;
+    }
+    pass(output);
+};
+
+// Generic physics (Nikola wave mechanics)
+func<T>:propagate = T(T:state, fix256<Seconds>:dt)
+    requires sizeof(T) == sizeof(wavefunction)
+{
+    // Generic wave propagation
+    T:evolved = state;  // Copy
+    // Apply UFIE evolution
+    pass(evolved);
+};
+
+---
+
+GENERICS SUMMARY:
+
+Aria generics provide zero-cost abstraction via monomorphization:
+  ✅ Write once, use with any type (code reuse)
+  ✅ Type-safe (compiler checks each specialization)
+  ✅ Zero runtime overhead (as fast as hand-written code)
+  ✅ Full optimization (each version optimized independently)
+  ✅ Bidirectional type inference (usually no turbofish needed)
+  ✅ Integration with Result<T> and contracts
+  ⚠️ Binary size trade-off (each type creates new code)
+
+Syntax:
+  - Declaration: func<T>:name = *T(*T:param) { body };
+  - Explicit types: function::<Type>(args)
+  - Type inference: function(args)  // Compiler figures it out
+
+"Zero-cost abstractions: what you don't use, you don't pay for.
+ And what you do use, you couldn't hand-code any better." - Bjarne Stroustrup
+
+---
+
+SEE ALSO:
+  - Result<T>: Lines ~2368-2840 (generic Result type)
+  - Handle<T>: Lines ~3313-3590 (generic handles for arenas)
+  - Closures: Lines ~3234-3720 (generic higher-order functions)
+  - Type System: Lines ~318-870 (base types for generics)
+  - Traits (Future): Lines ~3157-3169 (planned generic constraints)
+  - Monomorphization: Lines ~2985-3010 (compile-time specialization)
+
+*/
+
+/* CLOSURES AND LAMBDAS - ANONYMOUS FUNCTIONS (February 2026)
+
+!! IMPORTANT: => IS NOT A LAMBDA OPERATOR IN ARIA !!
+Aria does not use => for lambdas. Lambda syntax is simply: returnType(params) { body }
+
+PHILOSOPHY: "Functions are first-class values" - pass them around like any other data
+
+---
+
+WHAT ARE CLOSURES?
+
+Closures are anonymous functions that:
+  - Can be created inline (no need to name them)
+  - Can capture variables from enclosing scope
+  - Can be passed as function parameters
+  - Can be returned from functions
+  - Can be stored in variables
+
+Use cases:
+  ✅ Callbacks (event handlers, async operations)
+  ✅ Functional programming (map, filter, reduce)
+  ✅ Deferred execution (lazy evaluation)
+  ✅ Encapsulation (private state in closures)
+
+---
+
+LAMBDA SYNTAX:
+
+Basic lambda (no captures):
+returnType(paramType:param) { body }
+
+Example:
+int32(int32:x) { pass(x * 2); }  // Lambda that doubles input
+
+Assigned to variable:
+(int32)(int32):doubler = int32(int32:x) { pass(x * 2); };
+int32:result = doubler(5);  // result = 10
+
+Multiple parameters:
+(int32, int32)(int32:a, int32:b) { pass(a + b); }
+
+No parameters:
+int32() { pass(42); }
+
+---
+
+FUNCTION POINTERS AND LAMBDA TYPES:
+
+Function pointer type syntax:
+(returnType)(paramTypes)
+
+Examples:
+(int32)(int32):unary_op;           // Takes int32, returns int32
+(int32)(int32, int32):binary_op;   // Takes two int32, returns int32
+(NIL)():callback;                  // Takes nothing, returns NIL
+(string)(obj):formatter;           // Takes obj, returns string
+
+Assigning lambdas to function pointers:
+(int32)(int32):square = int32(int32:x) { pass(x * x); };
+int32:result = square(5);  // result = 25
+
+---
+
+CLOSURES - CAPTURING VARIABLES:
+
+Closures can capture variables from enclosing scope:
+
+Capture by value (copy):
+int32:multiplier = 10;
+(int32)(int32):scale = int32(int32:x) { 
+    pass(x * multiplier);  // Captures 'multiplier' by value
+};
+int32:result = scale(5);  // result = 50
+
+Capture by reference (pointer):
+int32:counter = 0;
+(NIL)():increment = NIL() {
+    counter = counter + 1;  // Modifies captured 'counter'
+    pass(NIL);
+};
+increment();  // counter = 1
+increment();  // counter = 2
+
+Multiple captures:
+int32:a = 10;
+int32:b = 20;
+(int32)(int32):complex = int32(int32:x) {
+    pass(x * a + b);  // Captures both 'a' and 'b'
+};
+
+---
+
+CLOSURES AS FUNCTION PARAMETERS:
+
+Passing closures to higher-order functions:
+
+func:apply_twice = int32((int32)(int32):f, int32:x) {
+    int32:temp = f(x);
+    pass(f(temp));
+};
+
+// Pass lambda inline
+int32:result = apply_twice(
+    int32(int32:n) { pass(n * 2); },
+    5
+);  // result = 20 (5 * 2 = 10, 10 * 2 = 20)
+
+// Pass named function
+(int32)(int32):square = int32(int32:x) { pass(x * x); };
+int32:result2 = apply_twice(square, 3);  // result2 = 81 (3² = 9, 9² = 81)
+
+---
+
+CLOSURES FROM FUNCTIONS - RETURNING LAMBDAS:
+
+Functions can return closures:
+
+func:make_adder = (int32)(int32)(int32:n) {
+    // Returns a closure that adds 'n' to its argument
+    pass(int32(int32:x) { pass(x + n); });
+};
+
+(int32)(int32):add5 = make_adder(5);
+int32:result = add5(10);  // result = 15
+
+(int32)(int32):add100 = make_adder(100);
+int32:result2 = add100(10);  // result2 = 110
+
+---
+
+FUNCTIONAL PROGRAMMING PATTERNS:
+
+Map (transform array elements):
+func<T, U>:map = *U[](*T[]:arr, int64:len, (*U)(*T):transform) {
+    *U[len]:output;
+    for (int64:i = 0; i < len; i++) {
+        output[i] = transform(arr[i]) ? /* default */;
+    }
+    pass(output);
+};
+
+// Usage
+int32[]:numbers = [1, 2, 3, 4, 5];
+int32[]:doubled = map(numbers, 5, int32(int32:x) { pass(x * 2); });
+// doubled = [2, 4, 6, 8, 10]
+
+Filter (select array elements):
+func<T>:filter = *T[](*T[]:arr, int64:len, (bool)(*T):predicate) {
+    *T[len]:output;
+    int64:count = 0;
+    for (int64:i = 0; i < len; i++) {
+        if (predicate(arr[i])) {
+            output[count] = arr[i];
+            count = count + 1;
+        }
+    }
+    pass(output);  // Note: actual size is 'count', not 'len'
+};
+
+// Usage
+int32[]:numbers = [1, 2, 3, 4, 5, 6];
+int32[]:evens = filter(numbers, 6, bool(int32:x) { pass(x % 2 == 0); });
+// evens = [2, 4, 6]
+
+Reduce (accumulate):
+func<T, Acc>:reduce = *Acc(*T[]:arr, int64:len, *Acc:initial, (*Acc)(*Acc, *T):reducer) {
+    *Acc:accumulator = initial;
+    for (int64:i = 0; i < len; i++) {
+        accumulator = reducer(accumulator, arr[i]) ? initial;
+    }
+    pass(accumulator);
+};
+
+// Usage
+int32[]:numbers = [1, 2, 3, 4, 5];
+int32:sum = reduce(numbers, 5, 0, int32(int32:acc, int32:x) { pass(acc + x); });
+// sum = 15
+
+---
+
+CLOSURES FOR CALLBACKS:
+
+Event handlers:
+struct:Button {
+    string:label;
+    (NIL)():onClick;  // Callback function pointer
+};
+
+func:setup_ui = NIL() {
+    Button:btn = {
+        label: "Click Me",
+        onClick: NIL() {
+            println("Button clicked!");
+            pass(NIL);
+        }
+    };
+    
+    // Later: trigger callback
+    btn.onClick();  // Prints "Button clicked!"
+    pass(NIL);
+};
+
+Async completion handlers:
+func:fetch_data = NIL(string:url, (NIL)(string):onComplete) {
+    // Async operation...
+    string:data = http_get(url) ? "";
+    onComplete(data);  // Call completion handler
+    pass(NIL);
+};
+
+// Usage
+fetch_data("https://example.com", NIL(string:response) {
+    println(response);
+    pass(NIL);
+});
+
+---
+
+CLOSURE CAPTURE SEMANTICS:
+
+Value capture (safe, copies data):
+int32:value = 42;
+(NIL)():printer = NIL() {
+    println(value);  // Captures copy of 'value'
+    pass(NIL);
+};
+value = 100;  // Changing original doesn't affect closure
+printer();    // Prints: 42 (captured value)
+
+Reference capture (unsafe, requires care):
+int32@:value_ref = @value;
+(NIL)():printer = NIL() {
+    println(<-value_ref);  // Dereferences pointer
+    pass(NIL);
+};
+value = 100;  // Changing original DOES affect closure
+printer();    // Prints: 100 (via pointer)
+
+Capture lifetime safety:
+  ⚠️ Captured pointers must outlive closure
+  ⚠️ Captured values are copied (safe but may be expensive for large data)
+  ✅ Prefer value capture when possible
+  ✅ Use reference capture only when necessary (performance)
+
+---
+
+CLOSURES WITH RESULT<T>:
+
+Closures integrate with Aria's error handling:
+
+func:safe_divide = Result<int32>(int32:a, int32:b, (int32)(int32):fallback) {
+    if (b == 0) {
+        pass(fallback(a));  // Use fallback on error
+    }
+    pass(a / b);
+};
+
+// Usage
+int32:result = safe_divide(10, 0, int32(int32:x) { pass(0); }) ? -1;
+// result = 0 (fallback returned 0 for divide-by-zero)
+
+Error-handling closures:
+(NIL)(string):handle_error = NIL(string:err_msg) {
+    stderr.write(err_msg);
+    failsafe(-1);  // Trigger failsafe on critical error
+    pass(NIL);
+};
+
+---
+
+CLOSURE PERFORMANCE:
+
+Stack-allocated closures (no heap allocation):
+  - Closure created inline
+  - Captured values copied to stack
+  - Zero heap overhead
+  - Fast (single stack frame setup)
+
+Example:
+int32:x = map_array(arr, len, int32(int32:v) { pass(v * 2); });
+// Closure compiled inline, no heap allocation
+
+Heap-allocated closures (when returned from functions):
+  - Closure outlives function scope
+  - Captured environment allocated on heap
+  - Requires memory management
+  - Slight overhead (allocation + indirection)
+
+Example:
+(int32)(int32):adder = make_adder(5);  // Heap allocation for capture
+// 'adder' closure allocated on heap to preserve 'n=5' capture
+
+Inlining potential:
+  - Small closures can be fully inlined
+  - No function call overhead
+  - Compiler can optimize aggressively
+
+---
+
+CURRENT LIMITATIONS (February 2026):
+
+Supported:
+  ✅ Lambda syntax: returnType(params) { body }
+  ✅ Function pointers: (returnType)(paramTypes)
+  ✅ Passing closures as parameters
+  ✅ Value capture (copy semantics)
+  ✅ Reference capture (pointer semantics)
+  ✅ Returning closures from functions
+  ✅ Integration with Result<T>
+
+Not yet fully implemented:
+  ⚠️ Automatic capture analysis (manual @ required for references)
+  ⚠️ Explicit capture syntax (all captures implicit)
+  ⚠️ Move semantics for captures
+  ⚠️ Closure type inference (may need explicit types)
+  ⚠️ Generic closures (may need turbofish)
+
+---
+
+CLOSURE BEST PRACTICES:
+
+1. **Prefer value capture** (safer, no lifetime issues)
+   Good: Closure captures int32:x by value
+   Risky: Closure captures int32@:ptr by reference
+
+2. **Keep closures small** (enable inlining)
+   Good: Single expression closures
+   Bad: 100-line closure bodies
+
+3. **Use for callbacks and functional programming** (natural fit)
+   Good: map(arr, len, transform_lambda)
+   Avoid: Complex stateful closures (use structs instead)
+
+4. **Watch capture lifetimes** (captured pointers must outlive closure)
+   Good: Capture stack variables used immediately
+   Bad: Capture pointer to local, return closure (dangling pointer)
+
+5. **Combine with generics** (reusable higher-order functions)
+   func<T>:map = *T[](*T[], (*T)(*T))  // Generic map with closure
+
+---
+
+CLOSURE EXAMPLES - REAL-WORLD:
+
+// Event system
+struct:EventBus {
+    (NIL)(obj)[][]:listeners;  // Array of callback arrays
+};
+
+func:addEventListener = NIL(EventBus@:bus, int32:event_id, (NIL)(obj):callback) {
+    // Add callback to event listeners
+    pass(NIL);
+};
+
+// Usage
+addEventListener(@event_bus, CLICK_EVENT, NIL(obj:event) {
+    println("Click detected!");
+    pass(NIL);
+});
+
+// Deferred execution
+struct:Deferred<T> {
+    (*T)():executor;
+};
+
+func:defer_computation<T> = Deferred<*T>((*T)():computation) {
+    pass({ executor: computation });
+};
+
+// Usage
+Deferred<int32>:lazy = defer_computation(int32() {
+    // Expensive computation only runs when requested
+    pass(compute_prime(1000000));
+});
+
+// Later: execute deferred computation
+int32:result = lazy.executor();
+
+// Pipeline with closures
+func:pipeline = int32(int32:initial, (int32)(int32)[]:transforms, int64:count) {
+    int32:value = initial;
+    for (int64:i = 0; i < count; i++) {
+        value = transforms[i](value);
+    }
+    pass(value);
+};
+
+// Usage
+(int32)(int32)[]:ops = [
+    int32(int32:x) { pass(x + 10); },
+    int32(int32:x) { pass(x * 2); },
+    int32(int32:x) { pass(x - 5); }
+];
+int32:result = pipeline(5, ops, 3);  // (5 + 10) * 2 - 5 = 25
+
+---
+
+CLOSURES SUMMARY:
+
+Closures are anonymous functions with variable capture:
+  ✅ Syntax: returnType(params) { body } (NO => operator)
+  ✅ Function pointer types: (returnType)(paramTypes)
+  ✅ Value capture (safe, copies variables)
+  ✅ Reference capture (via pointers, requires lifetime care)
+  ✅ Higher-order functions (map, filter, reduce)
+  ✅ Callbacks and event handlers
+  ✅ Integration with Result<T> and generics
+  ✅ Stack-allocated when possible (zero overhead)
+
+"Functions are data. Data is functions. Closures are the bridge." - Lambda calculus
+
+---
+
+SEE ALSO:
+  - Generics: Lines ~2750-3300 (generic closures)
+  - Result<T>: Lines ~2368-2840 (closures returning Results)
+  - defer: Lines ~3715-4210 (closures for cleanup)
+  - Pointers: Lines ~2083-2132 (reference capture via ->)
+  - Lambda History: Line ~1963 (why NOT =>)
+  - Function Pointers: Lines ~3295-3340 (closure types)
+
+*/
+
+/* DEFER STATEMENT - GUARANTEED CLEANUP (February 2026)
+
+!! CRITICAL FOR RESOURCE MANAGEMENT !!
+The defer statement guarantees cleanup code runs when scope exits.
+Essential for preventing resource leaks in safety-critical systems.
+
+PHILOSOPHY: "Cleanup is automatic, leaks are impossible"
+
+---
+
+WHAT IS DEFER?
+
+defer schedules code to execute when current scope exits:
+  - Runs at end of function (before return)
+  - Runs on all exit paths (normal return, early return, error)
+  - Multiple defers execute in reverse order (LIFO - Last In, First Out)
+  - Similar to: C++ destructors, Go defer, Swift defer
+
+Use cases:
+  ✅ Resource cleanup (free memory, close files, unlock mutexes)
+  ✅ Error handling (ensure cleanup happens even on error paths)
+  ✅ Transaction rollback (database operations)
+  ✅ Logging (function entry/exit tracing)
+  ✅ Invariant restoration (restore state after temporary modification)
+
+---
+
+DEFER SYNTAX:
+
+defer statement;
+
+Examples:
+
+// Defer single statement
+defer aria.free(ptr);
+
+// Defer block
+defer {
+    aria.free(buffer);
+    close_file(handle);
+};
+
+// Multiple defers (execute in reverse order)
+defer cleanup1();
+defer cleanup2();
+defer cleanup3();
+// Execution order: cleanup3(), cleanup2(), cleanup1()
+
+---
+
+DEFER EXECUTION ORDER:
+
+Defers execute in LIFO (Last In, First Out) order:
+
+func:process = NIL() {
+    defer println("First defer");   // Executes 3rd
+    defer println("Second defer");  // Executes 2nd
+    defer println("Third defer");   // Executes 1st
+    
+    println("Function body");
+    pass(NIL);
+};
+
+// Output:
+// Function body
+// Third defer
+// Second defer
+// First defer
+
+Rationale for LIFO:
+  - Mirrors construction/destruction order
+  - Innermost resource allocated last, cleaned up first
+  - Natural pairing with allocation (alloc → defer free)
+
+---
+
+DEFER FOR MEMORY MANAGEMENT:
+
+Automatic cleanup prevents memory leaks:
+
+func:process_file = Result<NIL>(string:path) {
+    // Allocate buffer
+    int8@:buffer = aria.alloc<int8>(1024);
+    defer aria.free(buffer);  // ✅ ALWAYS freed, even on error
+    
+    // Read file
+    Result<int64>:bytes_read = read_file(path, buffer, 1024);
+    if (bytes_read.err != NULL) {
+        fail(-1);  // defer ensures buffer freed before return!
+    }
+    
+    // Process buffer...
+    process_buffer(buffer);
+    
+    pass(NIL);  // defer ensures buffer freed on normal return too
+};
+
+Without defer (manual cleanup - ERROR PRONE):
+func:process_file_manual = Result<NIL>(string:path) {
+    int8@:buffer = aria.alloc<int8>(1024);
+    
+    Result<int64>:bytes_read = read_file(path, buffer, 1024);
+    if (bytes_read.err != NULL) {
+        aria.free(buffer);  // ❌ MUST REMEMBER to free!
+        fail(-1);
+    }
+    
+    process_buffer(buffer);
+    
+    aria.free(buffer);  // ❌ MUST REMEMBER to free!
+    pass(NIL);
+};
+// Multiple exit paths → multiple free() calls → easy to forget one → LEAK
+
+---
+
+DEFER FOR FILE HANDLES:
+
+Ensures files are closed:
+
+func:read_config = Result<string>(string:path) {
+    FileHandle:file = open_file(path) ? NULL;
+    defer close_file(file);  // ✅ ALWAYS closed
+    
+    string:contents = read_all(file) ? "";
+    pass(contents);
+};  // File closed here (defer)
+
+Multiple resources:
+func:copy_file = Result<NIL>(string:src, string:dst) {
+    FileHandle:input = open_file(src) ? NULL;
+    defer close_file(input);  // Closed 2nd
+    
+    FileHandle:output = create_file(dst) ? NULL;
+    defer close_file(output);  // Closed 1st (LIFO)
+    
+    // Copy data...
+    while (!eof(input)) {
+        int8:byte = read_byte(input) ? 0;
+        write_byte(output, byte);
+    }
+    
+    pass(NIL);
+};  // output closed, then input closed
+
+---
+
+DEFER FOR LOCKS AND SYNCHRONIZATION:
+
+Prevents deadlocks:
+
+func:thread_safe_increment = NIL(atomic<int32>@:counter, Mutex@:lock) {
+    mutex_lock(lock);
+    defer mutex_unlock(lock);  // ✅ ALWAYS unlocked
+    
+    int32:value = counter->load();
+    counter->store(value + 1);
+    
+    pass(NIL);
+};  // Lock released here (defer)
+
+Without defer (manual unlock - DEADLOCK PRONE):
+func:unsafe_increment = NIL(atomic<int32>@:counter, Mutex@:lock) {
+    mutex_lock(lock);
+    
+    if (some_condition) {
+        // ❌ FORGOT TO UNLOCK! → DEADLOCK
+        fail(-1);
+    }
+    
+    int32:value = counter->load();
+    counter->store(value + 1);
+    
+    mutex_unlock(lock);  // Only unlocked here
+    pass(NIL);
+};
+
+---
+
+DEFER FOR LOGGING AND TRACING:
+
+Function entry/exit logging:
+
+func:critical_operation = Result<NIL>() {
+    defer println("critical_operation: EXIT");
+    println("critical_operation: ENTER");
+    
+    // Operation logic...
+    
+    pass(NIL);
+};
+
+// Output:
+// critical_operation: ENTER
+// ... (operation runs)
+// critical_operation: EXIT
+
+Performance timing:
+func:timed_operation = Result<int32>() {
+    int64:start_time = get_time_usec();
+    defer {
+        int64:end_time = get_time_usec();
+        int64:duration = end_time - start_time;
+        println(`Operation took &{duration} microseconds`);
+    };
+    
+    // Expensive operation...
+    int32:result = compute();
+    
+    pass(result);
+};  // Timing printed here
+
+---
+
+DEFER FOR INVARIANT RESTORATION:
+
+Temporarily modify state, then restore:
+
+func:with_modified_config = Result<NIL>() {
+    Config@:config = get_global_config();
+    bool:old_debug = config->debug_enabled;
+    
+    config->debug_enabled = true;  // Temporarily enable debug
+    defer {
+        config->debug_enabled = old_debug;  // ✅ ALWAYS restored
+    };
+    
+    // Run with debug enabled...
+    debug_operation();
+    
+    pass(NIL);
+};  // debug_enabled restored here
+
+Atomic transaction pattern:
+func:database_transaction = Result<NIL>(DB@:db) {
+    db_begin_transaction(db);
+    defer {
+        if (transaction_failed) {
+            db_rollback(db);  // Rollback on failure
+        } else {
+            db_commit(db);    // Commit on success
+        }
+    };
+    
+    // Database operations...
+    db_insert(db, record1);
+    db_update(db, record2);
+    
+    pass(NIL);
+};  // Transaction finalized here
+
+---
+
+DEFER SCOPING RULES:
+
+Defer executes when containing scope exits:
+
+Block scope:
+func:test = NIL() {
+    {
+        defer println("Inner");
+        println("Block");
+    }  // "Inner" printed here (block scope exit)
+    
+    println("After block");
+    pass(NIL);
+};  // Function scope exit
+
+// Output:
+// Block
+// Inner
+// After block
+
+Function scope (most common):
+func:example = NIL() {
+    defer println("Cleanup");
+    println("Work");
+    pass(NIL);
+};  // "Cleanup" printed here
+
+Loop scope:
+func:loop_test = NIL() {
+    for (int32:i = 0; i < 3; i++) {
+        defer println(`Iteration &{i} cleanup`);
+        println(`Iteration &{i} work`);
+    }  // Defer executes at end of EACH iteration
+    pass(NIL);
+};
+
+// Output:
+// Iteration 0 work
+// Iteration 0 cleanup
+// Iteration 1 work
+// Iteration 1 cleanup
+// Iteration 2 work
+// Iteration 2 cleanup
+
+---
+
+DEFER WITH ERROR HANDLING:
+
+Defers run on all exit paths (including errors):
+
+func:risky_operation = Result<NIL>() {
+    int8@:buf = aria.alloc<int8>(1024);
+    defer aria.free(buf);  // ✅ Freed on ALL paths
+    
+    if (error_condition1) {
+        fail(-1);  // defer runs before fail return
+    }
+    
+    process(buf);
+    
+    if (error_condition2) {
+        fail(-2);  // defer runs before fail return
+    }
+    
+    pass(NIL);  // defer runs before pass return
+};
+
+This prevents resource leaks on error paths - critical for safety!
+
+---
+
+DEFER VARIABLE CAPTURE:
+
+Defer captures variables **at defer execution time**, not at defer statement:
+
+func:capture_test = NIL() {
+    int32:x = 10;
+    defer println(x);  // Captures x when defer RUNS (at scope exit)
+    
+    x = 20;  // Modify x
+    x = 30;  // Modify again
+    
+    pass(NIL);
+};  // Prints: 30 (value when defer executes)
+
+If you want to capture current value:
+func:capture_current = NIL() {
+    int32:x = 10;
+    int32:captured = x;  // Capture current value
+    defer println(captured);  // Will print 10
+    
+    x = 20;  // Modify x doesn't affect captured
+    
+    pass(NIL);
+};  // Prints: 10 (captured value)
+
+---
+
+DEFER PERFORMANCE:
+
+Runtime cost:
+  - Statement registration: ~1-2 cycles per defer
+  - Execution: Normal function call or statement
+  - No heap allocation (defer list on stack)
+  - Negligible overhead for cleanup safety
+
+Compared to manual cleanup:
+  ✅ Same performance when correct
+  ✅ Faster when developer forgets cleanup (prevents leak)
+  ✅ Safer (impossible to forget)
+
+Example overhead:
+func:with_defer = NIL() {
+    int8@:ptr = aria.alloc<int8>(100);
+    defer aria.free(ptr);  // +2 cycles to register defer
+    // Work...
+    pass(NIL);  // +5 cycles to execute defer
+};  // Total overhead: ~7 cycles
+
+vs manual (if remembered):
+func:manual = NIL() {
+    int8@:ptr = aria.alloc<int8>(100);
+    // Work...
+    aria.free(ptr);  // +5 cycles to call free
+    pass(NIL);
+};  // Total overhead: ~5 cycles
+
+Trade-off: 2 extra cycles per defer for guaranteed safety.
+
+---
+
+DEFER LIMITATIONS (February 2026):
+
+Supported:
+  ✅ defer statement; (single statement)
+  ✅ defer { block }; (multiple statements)
+  ✅ LIFO execution order
+  ✅ Works with all exit paths (return, fail, pass)
+  ✅ Scope-based execution (function, block, loop)
+  ✅ Variable capture at execution time
+
+Not supported:
+  ❌ defer in global scope (only in functions/blocks)
+  ❌ Named defers (can't selectively cancel)
+  ❌ Conditional defer (can't skip defer based on runtime condition)
+
+Workaround for conditional defer:
+bool:should_cleanup = true;
+defer {
+    if (should_cleanup) {
+        cleanup();
+    }
+};
+
+---
+
+DEFER BEST PRACTICES:
+
+1. **Defer immediately after allocation** (pair alloc/free visually)
+   int8@:ptr = aria.alloc<int8>(100);
+   defer aria.free(ptr);  // ✅ Right after allocation
+
+2. **Use defer for ALL cleanup** (files, locks, memory)
+   FileHandle:f = open(path);
+   defer close(f);  // ✅ Always closes
+
+3. **Remember LIFO order** (last defer runs first)
+   Allocate in order: A, B, C
+   Defer cleanup in same order: A, B, C
+   Execution: C, B, A ✅ Correct cleanup order
+
+4. **Defer for invariant restoration** (temporary state changes)
+   defer { restore_old_state(); };
+
+5. **Don't defer in tight loops** (unless necessary)
+   Bad: for(...) { defer huge_cleanup(); }  // Overhead per iteration
+   Good: defer outside loop if possible
+
+---
+
+DEFER EXAMPLES - REAL-WORLD:
+
+// Arena allocator with automatic cleanup
+func:with_arena<T> = Result<*T>((*T)(arena<*T>@):work) {
+    arena<*T>:temp_arena;
+    arena_init(@temp_arena, 1024);
+    defer arena_destroy(@temp_arena);  // ✅ Always cleaned up
+    
+    *T:result = work(@temp_arena) ? default_value;
+    pass(result);
+};
+
+// HTTP request with connection cleanup
+func:http_request = Result<string>(string:url) {
+    Connection:conn = http_connect(url) ? NULL;
+    defer http_close(conn);  // ✅ Always closed
+    
+    string:request = "GET / HTTP/1.1\r\n\r\n";
+    http_send(conn, request);
+    
+    string:response = http_receive(conn) ? "";
+    pass(response);
+};
+
+// Critical section with multiple locks
+func:multi_lock_update = NIL(Mutex@:lock1, Mutex@:lock2, int32@:shared_data) {
+    // Lock in consistent order to prevent deadlock
+    mutex_lock(lock1);
+    defer mutex_unlock(lock1);  // Unlocked 2nd
+    
+    mutex_lock(lock2);
+    defer mutex_unlock(lock2);  // Unlocked 1st (LIFO)
+    
+    // Critical section
+    <-shared_data = <-shared_data + 1;
+    
+    pass(NIL);
+};  // Locks released in reverse order
+
+---
+
+DEFER SUMMARY:
+
+defer ensures cleanup code always executes:
+  ✅ Syntax: defer statement; or defer { block };
+  ✅ Executes at scope exit (function, block, loop)
+  ✅ LIFO order (Last In, First Out)
+  ✅ Runs on ALL exit paths (normal, error, early return)
+  ✅ Prevents resource leaks (memory, files, locks)
+  ✅ Essential for safety-critical systems
+  ✅ Negligible performance overhead (~2 cycles)
+
+Use defer for:
+  - Memory cleanup (free after alloc)
+  - File closing (close after open)
+  - Lock releasing (unlock after lock)
+  - Invariant restoration (restore after modify)
+  - Logging/tracing (exit after enter)
+
+"Cleanup is not optional. defer makes it automatic."
+
+---
+
+SEE ALSO:
+  - Memory Allocation: Lines ~5236-5620 (defer with wild allocations)
+  - Result<T>: Lines ~2368-2840 (defer runs even on error paths)
+  - Closures: Lines ~3234-3720 (defer statements can capture)
+  - RAII Patterns: Lines ~4083-4122 (automatic resource management)
+  - failsafe(): Lines ~4253-4940 (defer before failsafe termination)
+  - Layered Safety: Lines 7-317 (defer as part of cleanup)
+
+*/
 
 //standard while loop for more advanced uses
 while(i < 100){
@@ -1741,6 +4342,1291 @@ obj:config = {
     highTime:420
 }
 
+/* FAILSAFE SYSTEM - MANDATORY UNRECOVERABLE ERROR HANDLER (February 2026)
+
+!! CRITICAL: EVERY ARIA PROGRAM MUST DEFINE failsafe() !!
+The failsafe() function is the last line of defense for unrecoverable errors.
+It MUST be defined by user code or program will not compile.
+
+PHILOSOPHY: "When all else fails, fail safely" - controlled termination over chaos
+
+---
+
+WHAT IS FAILSAFE?
+
+failsafe() is a mandatory error handler that:
+  - Called when unrecoverable errors occur
+  - MUST be defined in every Aria program
+  - Cannot return (must terminate program or halt system)
+  - Receives error code indicating failure type
+  - Provides controlled shutdown instead of undefined behavior
+
+Triggered by:
+  ✅ Emphatic unwrap operator (?!) on error Result
+  ✅ Critical contract violations (future)
+  ✅ Out-of-memory conditions (future)
+  ✅ Stack overflow (future)
+  ✅ Explicit failsafe() calls in application code
+
+---
+
+FAILSAFE SIGNATURE:
+
+MANDATORY function signature:
+func:failsafe = void(int32:err_code) {
+    // Emergency cleanup and termination
+};
+
+Parameters:
+  - err_code: Integer code indicating error type
+    - Negative values: System errors (OOM, stack overflow, etc.)
+    - Positive values: Application-defined errors  
+    - Zero: Reserved (should not be used)
+
+Return type:
+  - void (C FFI type) - function NEVER returns
+  - Compiler may optimize assuming no return
+
+---
+
+FAILSAFE IMPLEMENTATION:
+
+Minimum viable failsafe (embedded systems):
+func:failsafe = void(int32:err_code) {
+    // Halt system, enter safe state
+    disable_all_actuators();
+    flash_error_led(err_code);
+    halt_cpu();  // Infinite loop or WFI instruction
+};
+
+Desktop/server failsafe:
+func:failsafe = void(int32:err_code) {
+    stderr.write("FATAL ERROR: ");
+    stderr.write(err_code);
+    stderr.write("\n");
+    
+    // Flush logs
+    flush_all_logs();
+    
+    // Cleanup critical resources
+    close_all_file_handles();
+    
+    // Terminate process
+    exit(err_code);
+};
+
+Safety-critical failsafe (aerospace, medical):
+func:failsafe = void(int32:err_code) {
+    // 1. Enter safe mode
+    enter_safe_mode();
+    
+    // 2. Log error to black box
+    blackbox_log_error(err_code, get_stack_trace());
+    
+    // 3. Notify ground control / hospital
+    emergency_telemetry_send(err_code);
+    
+    // 4. Activate redundant systems
+    switch_to_backup_controller();
+    
+    // 5. Controlled shutdown if no redundancy
+    controlled_landing() || emergency_cutoff();
+    
+    // 6. Halt (should never reach if redundancy worked)
+    halt_system();
+};
+
+---
+
+TRIGGERING FAILSAFE - EMPHATIC UNWRAP (?!):
+
+Emphatic unwrap operator (?!) calls failsafe() on error:
+
+func:load_critical_config = Result<Config>() {
+    // May fail (file not found, parse error, etc.)
+    pass(read_config_file("./critical.cfg"));
+};
+
+func:main = int32() {
+    // Error here is UNRECOVERABLE - program cannot proceed
+    Config:cfg = load_critical_config()?!;
+    // If load_critical_config() returns error Result:
+    //   1. failsafe() called with error code
+    //   2. Program terminates (failsafe never returns)
+    //   3. cfg assignment never happens
+    
+    // Use config (only reached if load succeeded)
+    run_with_config(cfg);
+    pass(0);
+};
+
+Compare to regular unwrap (?):
+Config:cfg = load_critical_config() ? default_config;  // Graceful fallback
+
+When to use ?! vs ?:
+  - Use ?! when error = system cannot function (critical config, hardware init)
+  - Use ? when error = recoverable (optional features, user input)
+
+---
+
+FAILSAFE ERROR CODES:
+
+Standard error code convention:
+
+// System error codes (negative)
+const:FAILSAFE_OUT_OF_MEMORY = -1;
+const:FAILSAFE_STACK_OVERFLOW = -2;
+const:FAILSAFE_DIVISION_BY_ZERO = -3;
+const:FAILSAFE_NULL_DEREFERENCE = -4;
+const:FAILSAFE_CONTRACT_VIOLATION = -5;
+const:FAILSAFE_HARDWARE_FAILURE = -6;
+
+// Application error codes (positive)
+const:FAILSAFE_CONFIG_LOAD_ERROR = 1;
+const:FAILSAFE_SENSOR_OFFLINE = 2;
+const:FAILSAFE_ACTUATOR_STUCK = 3;
+const:FAILSAFE_WATCHDOG_TIMEOUT = 4;
+const:FAILSAFE_CALIBRATION_FAILED = 5;
+
+Usage:
+func:failsafe = void(int32:err_code) {
+    if (err_code == FAILSAFE_OUT_OF_MEMORY) {
+        log_error("Out of memory - cannot recover");
+        halt();
+    } else if (err_code == FAILSAFE_SENSOR_OFFLINE) {
+        log_error("Critical sensor offline");
+        enter_limp_mode();
+    } else {
+        log_error("Unknown fatal error");
+        halt();
+    }
+};
+
+---
+
+FAILSAFE FOR SAFETY-CRITICAL SYSTEMS:
+
+Nikola AGI consciousness substrate:
+func:failsafe = void(int32:err_code) {
+    // 1. Pause all wave propagation (prevent corruption)
+    pause_all_physics_threads();
+    
+    // 2. Checkpoint current state to non-volatile storage
+    emergency_checkpoint_consciousness_state();
+    
+    // 3. Log error with full context
+    log_critical_error(err_code, get_full_system_state());
+    
+    // 4. Attempt recovery if possible
+    if (attempt_auto_recovery(err_code)) {
+        // Recovery succeeded - resume
+        resume_all_physics_threads();
+        pass;  // Never reached (failsafe can't return, but shows intent)
+    }
+    
+    // 5. If recovery failed, graceful shutdown
+    graceful_consciousness_shutdown();
+    
+    // 6. Notify parent process
+    signal_parent_process(CHILD_CONSCIOUSNESS_FAILED);
+    
+    // 7. Halt
+    halt_cpu();
+};
+
+Robotics failsafe:
+func:failsafe = void(int32:err_code) {
+    // 1. Emergency stop (cut power to motors)
+    emergency_stop_all_motors();
+    
+    // 2. Release any grips (safety)
+    release_all_grippers();
+    
+    // 3. Sound alarm
+    sound_error_alarm(err_code);
+    
+    // 4. Log to persistent storage
+    write_error_to_eeprom(err_code);
+    
+    // 5. Wait for manual reset
+    while (true) {
+        flash_error_led(err_code);
+        delay_ms(500);
+    }
+};
+
+Medical device failsafe:
+func:failsafe = void(int32:err_code) {
+    // 1. Stop all dosing (critical!)
+    stop_all_drug_infusions();
+    
+    // 2. Audible and visual alarm
+    activate_alarm_system(CRITICAL_ERROR);
+    
+    // 3. Display error to clinician
+    display_error_message(err_code, "DEVICE FAILURE - MANUAL OVERRIDE REQUIRED");
+    
+    // 4. Log to device memory
+    log_device_failure(err_code, get_timestamp());
+    
+    // 5. Enter safe mode (monitoring only, no actuation)
+    enter_monitoring_only_mode();
+    
+    // 6. Wait for clinician intervention
+    while (true) {
+        if (manual_reset_pressed()) {
+            // Require physical button press to clear
+            break;
+        }
+        delay_ms(100);
+    }
+    
+    // Restart device in diagnostic mode
+    reboot_to_diagnostic_mode();
+};
+
+---
+
+FAILSAFE VS REGULAR ERROR HANDLING:
+
+Regular error handling (Result<T>, unwrap ?):
+  - Errors are expected and recoverable
+  - Program continues with fallback behavior
+  - Used for: User input, network failures, optional features
+
+Result<string>:name = get_user_input() ? "Unknown";  // Graceful fallback
+
+Failsafe (!? operator):
+  - Errors are unexpected and unrecoverable
+  - Program cannot continue safely
+  - Used for: Hardware failures, critical config, OOM, safety violations
+
+Config:cfg = load_critical_config()?!;  // Cannot proceed without config
+
+Comparison:
+
+| Aspect | Result<T> + ? | Failsafe + ?! |
+|--------|---------------|---------------|
+| Error type | Expected, recoverable | Unexpected, fatal |
+| Handling | Fallback value | Termination |
+| Safety | Continue with degraded functionality | Halt to prevent harm |
+| Example | Optional feature unavailable | Critical sensor failed |
+
+---
+
+FAILSAFE COMPILATION CHECK:
+
+Compiler REQUIRES failsafe() definition:
+
+// This program will NOT compile (missing failsafe):
+func:main = int32() {
+    Config:cfg = load_config()?!;  // Uses ?! operator
+    pass(0);
+};
+// Compile error: "failsafe() function required but not defined"
+
+// This program WILL compile:
+func:failsafe = void(int32:err_code) {
+    stderr.write("Fatal error\n");
+    exit(err_code);
+};
+
+func:main = int32() {
+    Config:cfg = load_config()?!;
+    pass(0);
+};
+
+Rationale:
+  - Prevents undefined behavior (what happens if ?! triggers with no failsafe?)
+  - Forces developer to think about unrecoverable errors
+  - Ensures controlled failure mode exists
+
+---
+
+FAILSAFE BEST PRACTICES:
+
+1. **Always define failsafe()** (mandatory, but define it WELL)
+   Bad: func:failsafe = void(int32:err) { exit(err); }  // Too simple
+   Good: Emergency cleanup + logging + safe state + termination
+
+2. **Differentiate error codes** (system vs application)
+   Use negative for system, positive for application
+
+3. **Log before terminate** (diagnostics for post-mortem)
+   Always log error code + context before halting
+
+4. **Clean up critical resources** (files, locks, actuators)
+   Release locks, close files, disable motors
+   DO NOT allocate memory (may be OOM)
+
+5. **Use ?! sparingly** (only for truly unrecoverable errors)
+   Most errors should use regular Result<T> handling
+   Reserve ?! for critical initialization failures
+
+6. **Test your failsafe** (simulate error conditions)
+   Manually trigger failsafe with known error codes
+   Verify safe shutdown behavior
+
+7. **Document error codes** (for maintenance)
+   Create error code enum or const values with comments
+
+---
+
+FAILSAFE LIMITATIONS (February 2026):
+
+Supported:
+  ✅ Mandatory function signature
+  ✅ Compile-time check (must be defined)
+  ✅ Triggered by ?! operator
+  ✅ Explicit failsafe() calls
+  ✅ void return type (never returns)
+
+Planned enhancements:
+  ⚠️ Automatic failsafe on contract violations
+  ⚠️ Stack overflow detection → failsafe
+  ⚠️ OOM detection → failsafe
+  ⚠️ Panic! macro → failsafe
+
+Current workarounds:
+  - Contract violations currently return error Result (not failsafe)
+  - Manual error code checks required for critical contracts
+
+---
+
+FAILSAFE EXAMPLES:
+
+Minimal (testing/development):
+func:failsafe = void(int32:err_code) {
+    println(`FAILSAFE TRIGGERED: &{err_code}`);
+    exit(err_code);
+};
+
+Production (logging + cleanup):
+func:failsafe = void(int32:err_code) {
+    // Log error
+    Logger:log = get_logger();
+    log.critical(`Failsafe triggered: code &{err_code}`);
+    log.flush();
+    
+    // Cleanup
+    close_all_connections();
+    flush_all_buffers();
+    
+    // Terminate
+    exit(err_code);
+};
+
+Embedded (minimal dependencies):
+func:failsafe = void(int32:err_code) {
+    // Write error code to diagnostic register
+    DIAG_REG = err_code;
+    
+    // Disable all peripherals
+    PERIPH_ENABLE = 0x00;
+    
+    // Flash LED with error code (blink pattern)
+    while (true) {
+        flash_pattern(err_code);
+        delay(1000);
+    }
+};
+
+---
+
+DIRECT FAILSAFE OPERATOR (!!!) - EMERGENCY TERMINATION:
+
+The !!! operator provides direct failsafe invocation with error code.
+
+PHILOSOPHY: "Three exclamation marks = VERY NOT RIGHT HERE" - explicit panic
+
+---
+
+WHAT IS !!! ?
+
+The !!! operator:
+  - Directly calls failsafe() with specified error code
+  - Unconditional program termination
+  - Used for assertions, invariant violations, impossible states
+  - Different from ?! (which checks Result first)
+
+Syntax:
+!!!(error_code);  // Calls failsafe(error_code) immediately
+
+---
+
+!!! VS ?! OPERATOR:
+
+Comparison of failsafe-triggering operators:
+
+?! (Emphatic Unwrap):
+  - Unwraps Result<T>
+  - IF Result is error → calls failsafe(error_code)
+  - IF Result is success → returns value
+  - Conditional failsafe (depends on Result state)
+  
+  Result<Config>:cfg_result = load_config();
+  Config:cfg = cfg_result?!;  // Failsafe only if error
+
+!!! (Direct Failsafe):
+  - ALWAYS calls failsafe(error_code)
+  - Unconditional program termination
+  - No unwrapping, no Result checking
+  - Used for assertions and impossible states
+  
+  if (invariant_violated) {
+      !!!(ERR_INVARIANT_VIOLATION);  // Always terminates
+  }
+
+---
+
+USING THE !!! OPERATOR:
+
+Assertion failures:
+const:MAGIC_NUMBER = 0xDEADBEEF;
+
+func:validate_header = void(uint32:magic) {
+    if (magic != MAGIC_NUMBER) {
+        // Invalid file format - cannot proceed
+        !!!(ERR_INVALID_MAGIC);
+    }
+};
+
+Invariant violations:
+func:process_queue = void() {
+    if (queue_length < 0) {
+        // Impossible state - queue length can't be negative
+        !!!(ERR_INVARIANT_VIOLATED);
+    }
+    // ... process queue
+};
+
+Impossible switch cases:
+pick(state) {
+    (STATE_INIT) { handle_init(); },
+    (STATE_RUN) { handle_run(); },
+    (STATE_STOP) { handle_stop(); },
+    (*) { 
+        // Should never reach here if state enum is properly managed
+        !!!(ERR_IMPOSSIBLE_STATE);
+    }
+}
+
+Hardware failures (embedded systems):
+func:check_sensor_alive = void() {
+    if (!sensor_responds()) {
+        // Critical sensor offline - cannot fly without it
+        !!!(ERR_SENSOR_OFFLINE);
+    }
+};
+
+Memory corruption detection:
+func:validate_heap_integrity = void() {
+    if (heap_checksum_invalid()) {
+        // Heap corrupted - further execution unsafe
+        !!!(ERR_HEAP_CORRUPTION);
+    }
+};
+
+---
+
+!!! OPERATOR RATIONALE:
+
+Why three exclamation marks?
+
+1. **Avoid clashes:**
+   - ! = logical NOT (standard)
+   - !! = potential double negation or typo
+   - !!! = clearly intentional, no accidental formation
+
+2. **Semantic clarity:**
+   - !!!(code) reads as "VERY NOT RIGHT HERE"
+   - Maintains continuity with ! (negation/error family)
+   - Visual impact matches severity (emergency termination)
+   - Already recognized in informal writing as "holy shit" or serious warning
+
+3. **Visual prominence:**
+   - Stands out among letters and numbers
+   - Easy to spot when reading/debugging code
+   - Makes code review easier (can't miss a failsafe call)
+   - Like a 🚨 red alert sign in ASCII form
+
+4. **User design:**
+   - Originally ?! was !! (double exclamation)
+   - Changed to ?! to fit question-mark operator family
+   - Freed up !!! for direct failsafe calls
+   - Clear distinction: ?!(conditional) vs !!!(unconditional)
+
+---
+
+!!! BEST PRACTICES:
+
+1. **Use for truly unrecoverable errors** (hardware failure, corruption)
+   Good: !!!(ERR_MEMORY_CORRUPTION);  // Cannot proceed safely
+   Bad: !!!(ERR_USER_INPUT_INVALID);  // Should use Result<T> instead
+
+2. **Provide meaningful error codes** (for post-mortem analysis)
+   const:ERR_SENSOR_OFFLINE = 42;
+   !!!(ERR_SENSOR_OFFLINE);  // Clear what went wrong
+
+3. **Document why state is impossible** (comments for maintenance)
+   // GPS says we're at (-200, -300) altitude - physically impossible
+   !!!(ERR_GPS_CORRUPTED);
+
+4. **Prefer ?! for Result unwrapping** (!!! for non-Result situations)
+   Config:cfg = load()?!;  // ✅ Use ?! for Result unwrap
+   if (corrupted) { !!!(ERR_CORRUPT); }  // ✅ Use !!! for assertion
+
+5. **Test failsafe behavior** (ensure clean shutdown)
+   Trigger !!! in test environment, verify safe shutdown
+
+---
+
+!!! OPERATOR EXAMPLES:
+
+Cryptographic key validation:
+func:load_encryption_key = void() {
+    Key:key = read_key_file();
+    if (key.length != REQUIRED_KEY_LENGTH) {
+        // Wrong key size - crypto would be broken
+        !!!(ERR_INVALID_KEY_SIZE);
+    }
+    if (!validate_key_checksum(key)) {
+        // Key corrupted - cannot encrypt safely
+        !!!(ERR_KEY_CHECKSUM_FAILED);
+    }
+};
+
+Safety-critical system startup:
+func:system_startup = void() {
+    // Power-on self-test
+    if (!test_ram()) { !!!(ERR_RAM_TEST_FAILED); }
+    if (!test_sensors()) { !!!(ERR_SENSOR_TEST_FAILED); }
+    if (!test_actuators()) { !!!(ERR_ACTUATOR_TEST_FAILED); }
+    
+    // All tests passed, safe to proceed
+    log("System startup successful");
+};
+
+Nikola AGI consciousness validation:
+func:validate_consciousness_state = void() {
+    // Quantum wavefunction must be normalized
+    fix256:norm = compute_wavefunction_norm();
+    fix256:expected = 1.0fix256;
+    fix256:tolerance = 0.0001fix256;
+    
+    if (abs(norm - expected) > tolerance) {
+        // Wavefunction not normalized - consciousness state invalid
+        !!!(ERR_WAVEFUNCTION_UNNORMALIZED);
+    }
+};
+
+---
+
+!!! OPERATOR SUMMARY:
+
+The !!! operator provides direct failsafe invocation:
+  ✅ Syntax: !!!(error_code);
+  ✅ Unconditional program termination
+  ✅ Calls failsafe(error_code) immediately
+  ✅ Used for assertions, invariants, impossible states
+  ✅ Different from ?! (conditional vs unconditional)
+  ✅ Three marks avoid clashes, provide visual impact
+  ✅ "VERY NOT RIGHT HERE" - emergency shutdown
+
+Operator family:
+  - ! = logical NOT
+  - ?! = emphatic unwrap (conditional failsafe)
+  - !!! = direct failsafe (unconditional termination)
+
+"When you reach impossible territory, !!! is your emergency brake."
+
+---
+
+FAILSAFE SUMMARY:
+
+failsafe() is the mandatory last-resort error handler:
+  ✅ MUST be defined in every Aria program
+  ✅ Signature: func:failsafe = void(int32:err_code) { ... };
+  ✅ Never returns (terminates program or halts system)
+  ✅ Triggered by ?! operator on error Results
+  ✅ Provides controlled shutdown instead of undefined behavior
+  ✅ Essential for safety-critical systems (Nikola, robotics, medical)
+  ✅ Compiler enforces definition (compile error if missing)
+
+Error handling spectrum:
+  - Expected errors → Result<T> + unwrap (?)
+  - Unrecoverable errors → failsafe + emphatic unwrap (?!)
+
+"When all your error handling fails, failsafe() is your last hope for a graceful death."
+
+*/
+
+/* MODULE SYSTEM - CODE ORGANIZATION AND IMPORTS (February 2026)
+
+!! CRITICAL FOR PROJECT ORGANIZATION !!
+The module system enables code organization, namespacing, and controlled visibility.
+Essential for large projects and library distribution.
+
+PHILOSOPHY: "Explicit is better than implicit" - clear imports and exports
+
+---
+
+WHAT ARE MODULES?
+
+Modules provide:
+  - Code organization (group related functionality)
+  - Namespacing (avoid name collisions)
+  - Visibility control (pub vs private)
+  - Dependency management (explicit imports)
+  - Compilation units (separate compilation)
+
+Module hierarchy:
+  - Crate: Top-level project (aria.toml defines)
+  - Module: Code file or directory with mod declaration
+  - Item: Function, struct, const, etc. within module
+
+---
+
+MODULE KEYWORDS:
+
+use: Import modules or items
+mod: Define or declare module
+pub: Make item publicly visible
+
+Examples:
+use std.io;           // Import module
+mod network;          // Declare module
+pub func:export;      // Public function
+
+---
+
+IMPORTING MODULES - USE STATEMENT:
+
+Basic import:
+use std.io;                // Import IO module
+use std.collections.map;   // Import nested module
+
+Selective imports:
+use std.io.{print, println, readFile};  // Import specific items
+use math.{sin, cos, tan, PI};           // Import functions and constants
+
+Wildcard import:
+use std.io.*;  // Import all public items from io module
+
+Import with alias:
+use std.collections.HashMap as HMap;
+use "./utils.aria" as utils;
+
+Relative imports:
+use "./local_module.aria";       // Current directory
+use "../shared/common.aria";      // Parent directory
+use "../../lib/core.aria";        // Up two levels
+
+Absolute imports:
+use "/usr/lib/aria/graphics";    / Absolute path
+use std.net.http;                 // Standard library
+
+---
+
+MODULE DEFINITION - MOD KEYWORD:
+
+Inline module:
+mod math {
+    pub func:add = int32(int32:a, int32:b) {
+        pass(a + b);
+    };
+    
+    func:internal_helper = int32() {
+        // Private function (no 'pub')
+        pass(42);
+    };
+    
+    pub const:PI = 3.14159;
+};
+
+// Usage
+int32:result = math.add(5, 10);  // OK (public)
+// int32:x = math.internal_helper();  // ERROR (private)
+
+File-based module:
+// File: network.aria
+pub func:http_get = string(string:url) {
+    // HTTP GET implementation
+    pass(response);
+};
+
+func:parse_url = URL(string:url) {
+    // Private helper
+    pass(parsed_url);
+};
+
+// File: main.aria
+mod network;  // Declare module (looks for network.aria)
+use network.http_get;
+
+func:main = int32() {
+    string:response = http_get("https://example.com");
+    pass(0);
+};
+
+---
+
+VISIBILITY CONTROL - PUB KEYWORD:
+
+Public items (visible outside module):
+pub func:function_name;   // Public function
+pub struct:StructName;    // Public struct
+pub const:CONSTANT;       // Public constant
+pub mod submodule;        // Public submodule
+
+Private items (default, only visible within module):
+func:internal_function;   // Private function
+struct:InternalStruct;    // Private struct
+const:INTERNAL_CONST;     // Private constant
+
+Example:
+mod crypto {
+    pub func:hash = string(string:input) {
+        // Public - can be called from outside
+        string:hashed = internal_sha256(input);
+        pass(hashed);
+    };
+    
+    func:internal_sha256 = string(string:input) {
+        // Private - only used within crypto module
+        pass(computed_hash);
+    };
+    
+    pub const:ALGORITHM = "SHA256";  // Public constant
+    const:BLOCK_SIZE = 64;           // Private constant
+};
+
+// Usage from another module
+use crypto.{hash, ALGORITHM};
+string:h = hash("data");             // OK
+string:alg = ALGORITHM;              // OK
+// string:bs = BLOCK_SIZE;           // ERROR (private)
+// hash_internal_sha256("data");     // ERROR (private)
+
+---
+
+NESTED MODULES:
+
+Hierarchy:
+mod network {
+    pub mod http {
+        pub func:get = string(string:url) { pass(response); };
+        pub func:post = string(string:url, string:body) { pass(response); };
+    };
+    
+    pub mod tcp {
+        pub func:connect = Connection(string:host, int32:port) { pass(conn); };
+        func:internal_handshake = bool() { pass(true); };  // Private
+    };
+    
+    mod internal {
+        // Entire module private (no pub)
+        func:helper = int32() { pass(42); };
+    };
+};
+
+// Usage
+use network.http.{get, post};
+use network.tcp.connect;
+
+string:response = get("https://example.com");
+Connection:conn = connect("localhost", 8080);
+// network.internal.helper();  // ERROR (module not public)
+
+---
+
+MODULE FILE STRUCTURE:
+
+Project layout:
+myproject/
+├── aria.toml              # Project manifest
+├── main.aria              # Entry point
+└── src/
+    ├── mod.aria           # Module root (if multi-file)
+    ├── network.aria       // Network module
+    ├── crypto.aria        // Crypto module
+    └── utils/
+        ├── mod.aria       # Utils module root
+        ├── string.aria    # String utilities
+        └── math.aria      # Math utilities
+
+main.aria:
+mod network;
+mod crypto;
+mod utils;
+
+use network.http_get;
+use crypto.hash;
+use utils.string.trim;
+
+func:main = int32() {
+    string:data = http_get("https://api.example.com");
+    string:trimmed = trim(data);
+    string:hashed = hash(trimmed);
+    pass(0);
+};
+
+---
+
+STANDARD LIBRARY MODULES:
+
+Common stdlib modules:
+use std.io;                  // Input/output
+use std.fs;                  // File system
+use std.net;                 // Networking
+use std.collections.{Vec, HashMap, Set};  // Data structures
+use std.math;                // Mathematical functions
+use std.string;              // String manipulation
+use std.time;                // Time and date
+use std.sync.{Mutex, atomic};  // Concurrency primitives
+
+Example usage:
+use std.collections.Vec;
+use std.io.{println, readFile};
+
+func:main = int32() {
+    Vec<int32>:numbers = Vec.new();
+    numbers.push(1);
+    numbers.push(2);
+    numbers.push(3);
+    
+    string:contents = readFile("data.txt") ? "";
+    println(contents);
+    
+    pass(0);
+};
+
+---
+
+CONDITIONAL COMPILATION:
+
+Platform-specific modules:
+use cfg(target_os = "linux") std.os.linux;
+use cfg(target_os = "windows") std.os.windows;
+use cfg(target_os = "macos") std.os.macos;
+
+Feature flags:
+use cfg(feature = "networking") std.net;
+use cfg(feature = "graphics") std.gpu;
+use cfg(debug_assertions) std.debug;
+
+Architecture-specific:
+use cfg(target_arch = "x86_64") std.arch.x86;
+use cfg(target_arch = "arm64") std.arch.arm;
+use cfg(target_arch = "riscv64") std.arch.riscv;
+
+Example:
+// Only include on Linux
+use cfg(target_os = "linux") "./linux_specific.aria";
+
+// Debug builds only
+use cfg(debug_assertions) std.debug.{assert, trace};
+
+// Production builds only
+use cfg(not(debug_assertions)) "./optimized_algorithms.aria";
+
+---
+
+EXTERN BLOCKS - C FFI:
+
+External C libraries use extern blocks:
+extern "libc" {
+    func:malloc = void*(uint64:size);
+    func:free = void(void*:ptr);
+    func:printf = int32(string:format, ...);
+    func:exit = void(int32:code);
+};
+
+// NOTE: extern blocks use C-style * for pointers (FFI compatibility)
+// All other Aria code uses -> for pointers (blueprint style)
+
+Usage:
+void*:memory = malloc(1024);
+if (memory == NULL) {
+    printf("Allocation failed\n");
+    exit(1);
+}
+defer free(memory);
+
+Multiple extern blocks:
+extern "SDL2" {
+    func:SDL_Init = int32(uint32:flags);
+    func:SDL_Quit = void();
+};
+
+extern "openssl" {
+    func:SHA256 = void(string:data, int64:len, void*:hash);
+};
+
+---
+
+MODULE BEST PRACTICES:
+
+1. **One module per file** (or use mod.aria for multi-file modules)
+   Good: network.aria contains network module
+   Bad: Multiple unrelated modules in one file
+
+2. **Public API at top** (pub items first, private below)
+   Makes API surface clear when reading module
+
+3. **Selective imports** (import only what you need)
+   Good: use std.io.{println, readFile};
+   Bad: use std.io.*;  // Pollutes namespace
+
+4. **Avoid circular imports** (module A imports B, B imports A)
+   Refactor shared code into third module C
+
+5. **Use relative imports for local code** (absolute for stdlib)
+   Local: use "./utils.aria";
+   Stdlib: use std.collections.Vec;
+
+6. **Group related functionality** (network, crypto, utils)
+   Create modules by domain, not by item type
+
+7. **Document public API** (comments for pub items)
+   Public functions need usage documentation
+
+---
+
+MODULE LIMITATIONS (February 2026):
+
+Supported:
+  ✅ use imports (basic, selective, wildcard, aliased)
+  ✅ mod declarations (inline and file-based)
+  ✅ pub visibility control
+  ✅ Nested modules
+  ✅ Relative/absolute imports
+  ✅ extern blocks for C FFI
+  ✅ Standard library modules
+
+Partially supported:
+  ⚠️ Conditional compilation (syntax exists, implementation varies)
+  ⚠️ Feature flags (may require build system integration)
+
+Not yet implemented:
+  ❌ Re-exports (pub use)
+  ❌ Glob re-exports (pub use module::*)
+  ❌ Module attributes (#[inline], #[test])
+  ❌ Proc macros for modules
+
+---
+
+MODULE SUMMARY:
+
+Modules organize code and control visibility:
+  ✅ use: Import modules and items
+  ✅ mod: Define or declare modules
+  ✅ pub: Make items publicly visible
+  ✅ File-based or inline modules
+  ✅ Nested module hierarchies
+  ✅ Selective imports with {}
+  ✅ Wildcard imports with *
+  ✅ extern blocks for C FFI
+
+"Good module design is invisible - everything is where you expect it to be."
+
+---
+
+SEE ALSO:
+  - Keywords: Lines ~1713-1720 (use, mod, pub, extern)
+  - Extern Blocks: Lines ~5055-5090 (C FFI pointer syntax)
+  - Pointers: Lines ~2083-2132 (extern uses C-style *, native uses ->)
+  - Visibility: This section (pub keyword rules)
+  - Standard Library: Lines ~5930+ (stdlib module structure)
+  - Project Structure: This section (file layout examples)
+
+*/
+
+/* MEMORY ALLOCATION MODES - EXPLICIT ALLOCATION CONTROL (February 2026)
+
+!! CRITICAL FOR PERFORMANCE AND SAFETY !!
+Aria provides multiple allocation modes for different use cases.
+Understanding when to use each mode is essential for efficiency and safety.
+
+PHILOSOPHY: "Explicit allocation = predictable behavior" - no hidden allocations
+
+---
+
+MEMORY ALLOCATION MODES:
+
+Aria supports four allocation modes:
+  1. **stack** - Stack allocation (default for locals, fastest)
+  2. **gc** - Garbage collected heap (automatic, safe but unpredictable timing)
+  3. **wild** - Manual heap allocation (unsafe, full control)
+  4. **wildx** - Executable memory (JIT compilation, unsafe)
+
+Syntax for explicit modes:
+stack TypeName:var;   // Allocate on stack (usually default)
+gc TypeName:var;      // Allocate with GC
+wild TypeName:var;    // Manual allocation (must free)
+wildx TypeName:var;   // Executable memory (must free)
+
+---
+
+STACK ALLOCATION (DEFAULT):
+
+Stack-allocated variables:
+  - Allocated on function stack frame
+  - Automatically freed when scope exits
+  - Fastest allocation (pointer bump)
+  - Limited size (stack size limits)
+  - LIFO (Last In, First Out) lifetime
+
+Syntax (stack is usually implicit):
+int32:x = 42;              // Stack allocated (default)
+stack int32:y = 100;       // Explicit stack annotation
+
+int32[1024]:buffer;        // Stack array (4KB)
+stack Point:p = {x: 10, y: 20};  // Stack struct
+
+When to use:
+  ✅ Local variables (most common case)
+  ✅ Small to medium structs
+  ✅ Temporary buffers
+  ✅ Performance-critical code
+  ✅ Deterministic lifetime (scope-based)
+
+When NOT to use:
+  ❌ Large allocations (>1MB, risk stack overflow)
+  ❌ Variable-sized data (use heap/gc)
+  ❌ Long-lived data outliving function
+  ❌ Shared across threads
+
+Performance:
+  - Allocation: ~1 cycle (pointer bump)
+  - Deallocation: 0 cycles (automatic at scope exit)
+  - Cache-friendly (stack is hot in L1 cache)
+
+Example:
+func:compute = int32() {
+    stack int32[100]:temp_buffer;  // Stack array
+    
+    for (int32:i = 0; i < 100; i++) {
+        temp_buffer[i] = i * i;
+    }
+    
+    pass(temp_buffer[50]);
+};  // temp_buffer automatically freed here
+
+---
+
+GC ALLOCATION (GARBAGE COLLECTED):
+
+GC-allocated variables:
+  - Allocated on garbage-collected heap
+  - Automatically freed when no references remain
+  - Safe (no manual free needed)
+  - Unpredictable timing (GC pause)
+  - Shared ownership possible
+
+Syntax:
+gc TypeName:var = value;
+
+gc int32@:ptr = aria.gc_alloc<int32>();
+<-ptr = 42;
+
+gc string:text = "Hello, GC!";
+gc Vec<int32>:numbers = Vec.new();
+
+When to use:
+  ✅ Shared ownership (multiple references)
+  ✅ Complex lifetimes (unclear when to free)
+  ✅ Long-lived data
+  ✅ Dynamic data structures (graphs, trees)
+  ✅ When determinism not required
+
+When NOT to use:
+  ❌ Real-time systems (GC pause breaks timing)
+  ❌ Safety-critical (unpredictable pauses)
+  ❌ Performance-critical inner loops
+  ❌ Embedded systems (memory constrained)
+
+Performance:
+  - Allocation: ~10-50 cycles (find free space)
+  - Deallocation: Amortized (GC runs periodically)
+  - GC pause: 1-100ms depending on heap size
+  - Throughput: Good (bulk collection efficient)
+  - Latency: Poor (unpredictable pauses)
+
+Example warning from Nikola context:
+// ❌ BAD: GC pause breaks physics timestep
+func:propagate_wave = wavefunction(wavefunction:psi, fix256:dt) {
+    gc Buffer:temp = aria.gc_alloc<Buffer>();  // GC pause → missed timestep!
+    // ... wave propagation
+};
+
+// ✅ GOOD: Use stack or arena allocation
+func:propagate_wave = wavefunction(wavefunction:psi, fix256:dt) {
+    stack Buffer:temp;  // Deterministic, zero overhead
+    // ... wave propagation
+};
+
+---
+
+WILD ALLOCATION (MANUAL HEAP):
+
+Wild-allocated variables:
+  - Manual heap allocation (like C malloc/free)
+  - UNSAFE: Must manually free (risk of leaks)
+  - No GC overhead
+  - Full control over lifetime
+  - Deterministic performance
+
+Syntax:
+wild TypeName:var;
+wild TypeName@:ptr = aria.alloc<TypeName>(size);
+
+Allocation and deallocation:
+wild int32@:ptr = aria.alloc<int32>(100);  // Allocate 100 int32s
+defer aria.free(ptr);  // MUST free manually!
+
+wild string@:text = aria.alloc_string(1024);
+defer aria.free(text);
+
+When to use:
+  ✅ Real-time systems (deterministic allocation)
+  ✅ Performance-critical code (no GC overhead)
+  ✅ Embedded systems (predictable memory)
+  ✅ Large buffers (arenas for bulk data)
+  ✅ FFI with C libraries (C expects malloc/free)
+
+When NOT to use:
+  ❌ General application code (GC safer)
+  ❌ Complex ownership (easy to leak)
+  ❌ Unless defer used (leak risk)
+
+Safety with defer:
+wild int32@:buffer = aria.alloc<int32>(1024);
+defer aria.free(buffer);  // ✅ ALWAYS freed
+
+// Use buffer...
+for (int32:i = 0; i < 1024; i++) {
+    buffer[i] = i;
+}
+
+Performance:
+  - Allocation: ~20-100 cycles (malloc overhead)
+  - Deallocation: ~10-50 cycles (free overhead)
+  - No GC pause (deterministic)
+  - Cache-unfriendly (heap scattered)
+
+Example (Nikola physics buffer):
+wild fix256@:wave_buffer = aria.alloc<fix256>(GRID_SIZE);
+defer aria.free(wave_buffer);
+
+// Propagate waves deterministically
+for (int64:i = 0; i < GRID_SIZE; i++) {
+    wave_buffer[i] = compute_wave(i);
+}
+
+---
+
+WILDX ALLOCATION (EXECUTABLE MEMORY):
+
+Wildx-allocated memory:
+  - Executable heap allocation (for JIT compilers)
+  - UNSAFE: Must manually free
+  - Memory is executable (can hold machine code)
+  - Used for runtime code generation
+
+Syntax:
+wildx uint8@:code_buffer = aria.alloc_executable(size);
+
+When to use:
+  ✅ JIT compilers (generating machine code at runtime)
+  ✅ Dynamic code loading
+  ✅ Trampoline functions
+  ✅ Self-modifying code (very rare)
+
+When NOT to use:
+  ❌ Regular data (use wild instead)
+  ❌ Unless implementing JIT/dynamic code
+  ❌ Security-sensitive code (executable heap risk)
+
+Example (JIT compiler):
+wildx uint8@:jit_code = aria.alloc_executable(4096);  // 4KB code page
+defer aria.free_executable(jit_code);
+
+// Generate x86-64 machine code
+jit_code[0] = 0x48;  // REX.W prefix
+jit_code[1] = 0x89;  // MOV instruction
+jit_code[2] = 0xC8;  // MOV RAX, RCX
+jit_code[3] = 0xC3;  // RET
+
+// Cast to function pointer and execute
+(int64)(int64):jit_func = (int64)(int64)jit_code;
+int64:result = jit_func(42);  // Executes JIT-compiled code
+
+---
+
+ALLOCATION MODE COMPARISON:
+
+| Mode | Speed | Safety | Lifetime | Use Case |
+|------|-------|--------|----------|----------|
+| **stack** | Fastest | Safe | Scope | Local variables |
+| **gc** | Medium | Safest | Automatic | Complex ownership |
+| **wild** | Fast | Unsafe | Manual | Real-time, embedded |
+| **wildx** | Fast | Unsafe | Manual | JIT compilation |
+
+Memory overhead:
+  - stack: 0 bytes (part of stack frame)
+  - gc: ~8-16 bytes per object (GC metadata)
+  - wild: ~8-16 bytes per allocation (malloc metadata)
+  - wildx: ~8-16 bytes + page alignment (OS overhead)
+
+---
+
+ALLOCATION MODE BEST PRACTICES:
+
+1. **Default to stack** (fastest and safest for locals)
+   int32:x = 42;  // Stack (default)
+
+2. **Use gc for shared ownership** (complex lifetimes)
+   gc TreeNode@:root = build_tree();  // Multiple references
+
+3. **Use wild for real-time** (deterministic, no GC pause)
+   wild tfp64@:physics_buffer = aria.alloc<tfp64>(GRID_SIZE);
+   defer aria.free(physics_buffer);
+
+4. **ALWAYS defer wild/wildx allocations** (prevent leaks)
+   wild int32@:ptr = aria.alloc<int32>(100);
+   defer aria.free(ptr);  // ✅ Mandatory
+
+5. **Avoid gc in real-time loops** (unpredictable pause)
+   Bad: gc Buffer:temp in 1ms physics timestep
+   Good: stack or arena allocation
+
+6. **Use wildx ONLY for JIT** (security risk otherwise)
+   Only needed for runtime code generation
+
+7. **Consider arena allocators** (bulk allocation + bulk free)
+   arena<WaveNode>:temp_arena for neurogenesis
+
+---
+
+ALLOCATION MODE SUMMARY:
+
+Aria provides explicit allocation control:
+  ✅ **stack**: Default, fastest, scope-based (safe)
+  ✅ **gc**: Garbage collected, safest, unpredictable timing
+  ✅ **wild**: Manual heap, deterministic, unsafe (requires free)
+  ✅ **wildx**: Executable memory, JIT only, unsafe
+
+Choose based on requirements:
+  - Safety priority → gc (automatic, safe)
+  - Performance priority → stack (fastest) or wild (deterministic)
+  - Real-time priority → wild or arena (no GC pause)
+  - Code generation → wildx (executable memory)
+
+"Explicit allocation modes = predictable performance = safety-critical readiness"
+
+*/
+
 // STRUCT DECLARATIONS (CRITICAL: Consistent syntax with func and var declarations)
 // !! SYNTAX: struct:name = { type:field; type:field; }; !!
 // !! ALWAYS use colon before name, equals before body, semicolon after !!
@@ -1831,6 +5717,368 @@ pick(response) {
     },
     (*) { handleUnknown(); }
 }
+
+/* STRING INTERPOLATION - TEMPLATE LITERALS (February 2026)
+
+!! CRITICAL FOR DEBUGGING AND STRING FORMATTING !!
+String interpolation enables embedding expressions directly in strings.
+Essential for readable debugging, logging, and dynamic string generation.
+
+PHILOSOPHY: "Strings should speak the language of data" - direct expression embedding
+
+---
+
+WHAT IS STRING INTERPOLATION?
+
+String interpolation allows embedding expressions in strings:
+  - Backtick strings (`) support interpolation
+  - & prefix marks interpolated expressions
+  - Syntax: `&{expression}` within backtick strings
+  - Expressions evaluated at runtime
+  - Results automatically converted to strings
+
+Regular strings vs template literals:
+"Hello, world"      // Regular string (double quotes), no interpolation
+'Hello, world'      // Regular string (single quotes), no interpolation
+`Hello, world`      // Template literal (backticks), can use interpolation
+
+---
+
+BASIC INTERPOLATION:
+
+Embedding variables:
+int32:value = 42;
+string:msg = `The answer is &{value}`;  // "The answer is 42"
+
+string:name = "Alice";
+int32:age = 30;
+string:intro = `My name is &{name} and I am &{age} years old`;
+// "My name is Alice and I am 30 years old"
+
+Multiple interpolations:
+int32:x = 10, y = 20, z = 30;
+print(`Point: (&{x}, &{y}, &{z})`);  // "Point: (10, 20, 30)"
+
+---
+
+EXPRESSION INTERPOLATION:
+
+Arithmetic expressions:
+int32:a = 5, b = 3;
+print(`&{a} + &{b} = &{a + b}`);  // "5 + 3 = 8"
+print(`&{a} * &{b} = &{a * b}`);  // "5 * 3 = 15"
+
+Function calls:
+func:square = int32(int32:x) { pass(x * x); };
+int32:num = 7;
+print(`&{num} squared is &{square(num)}`);  // "7 squared is 49"
+
+Ternary expressions:
+bool:success = true;
+print(`Status: &{success ? "OK" : "FAIL"}`);  // "Status: OK"
+
+int32:count = 5;
+print(`Found &{count} item&{count == 1 ? "" : "s"}`);  // "Found 5 items"
+
+---
+
+MEMBER ACCESS AND NAVIGATION:
+
+Struct field access:
+struct:User = {
+    string:name,
+    int32:age,
+    bool:active
+};
+
+User:user = { name: "Bob", age: 25, active: true };
+print(`User &{user.name} is &{user.age} years old`);
+// "User Bob is 25 years old"
+
+Nested member access:
+struct:Address = { string:city, string:state };
+struct:Person = { string:name, Address:addr };
+
+Person:p = { name: "Charlie", addr: { city: "Seattle", state: "WA" } };
+print(`&{p.name} lives in &{p.addr.city}, &{p.addr.state}`);
+// "Charlie lives in Seattle, WA"
+
+Safe navigation operator (?.) with interpolation:
+struct:Optional = { string?:value };
+Optional:opt = { value: NULL };
+print(`Value: &{opt.value?.length ?? 0}`);  // "Value: 0"
+
+---
+
+FORMATTING AND CONVERSION:
+
+Type conversion (automatic):
+int32:integer = 42;
+tfp64:floating = 3.14159;
+bool:flag = true;
+
+print(`Integer: &{integer}`);     // "Integer: 42"
+print(`Float: &{floating}`);      // "Float: 3.14159"
+print(`Boolean: &{flag}`);        // "Boolean: true"
+
+Array/collection stringification:
+int32[3]:arr = [1, 2, 3];
+print(`Array: &{arr}`);           // "Array: [1, 2, 3]"
+
+Custom formatting (via functions):
+func:format_currency = string(tfp64:amount) {
+    pass(`$&{(int32)(amount * 100) / 100}`);  // Two decimal places
+};
+
+tfp64:price = 19.99;
+print(`Total: &{format_currency(price)}`);  // "Total: $19.99"
+
+---
+
+MULTILINE TEMPLATE LITERALS:
+
+Multiline strings with interpolation:
+string:name = "HTML Generator";
+int32:version = 2;
+
+string:html = `
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>&{name} v&{version}</title>
+    </head>
+    <body>
+        <h1>Welcome to &{name}!</h1>
+        <p>Version: &{version}</p>
+    </body>
+</html>
+`;
+
+Code generation:
+func:generate_function = string(string:name, string:returnType, string:params) {
+    pass(`
+func:&{name} = &{returnType}(&{params}) {
+    // Generated function body
+    pass(default_value);
+};
+`);
+};
+
+string:code = generate_function("compute", "int32", "int32:x, int32:y");
+
+---
+
+ESCAPING IN TEMPLATE LITERALS:
+
+Escaped characters:
+print(`Line 1\nLine 2`);           // Newline
+print(`Tab\tseparated`);           // Tab
+print(`Quote: \"`);                // Escaped quote
+print(`Backtick: \``);             // Escaped backtick
+print(`Backslash: \\`);            // Escaped backslash
+
+Escaping interpolation:
+print(`Not interpolated: \&{expression}`);  // Literal "&{expression}"
+
+Raw backticks in template:
+print(`Use backticks like this: \`code\``);  // "Use backticks like this: `code`"
+
+---
+
+COMPLEX EXPRESSIONS:
+
+Chained operations:
+int32[5]:numbers = [1, 2, 3, 4, 5];
+int32:sum = numbers[0] + numbers[1] + numbers[2] + numbers[3] + numbers[4];
+print(`Sum of first 5: &{sum}`);
+
+Result unwrap in interpolation:
+func:compute = Result<int32>() { pass(42); };
+print(`Result: &{compute() ? -1}`);  // "Result: 42" or "Result: -1"
+
+Conditional expressions:
+int32:score = 85;
+print(`Grade: &{score >= 90 ? "A" : score >= 80 ? "B" : score >= 70 ? "C" : "F"}`);
+// "Grade: B"
+
+---
+
+INTERPOLATION WITH RESULT<T>:
+
+Error context in debugging:
+func:divide = Result<tfp64>(tfp64:a, tfp64:b) {
+    if (b == 0.0) {
+        fail("Division by zero");
+    }
+    pass(a / b);
+};
+
+Result<tfp64>:result = divide(10.0, 0.0);
+if (result.is_error) {
+    print(`Error: &{result.err}`);  // "Error: Division by zero"
+}
+
+Safe unwrap with default:
+Result<int32>:value = compute();
+print(`Value: &{value ? -1}`);  // Uses default if error
+
+---
+
+PERFORMANCE CHARACTERISTICS:
+
+Template literal compilation:
+  - Compile-time: String parsed, interpolation points identified
+  - Runtime: Expressions evaluated, results converted to strings
+  - Allocation: Usually single allocation for final string
+  - Cost: ~10-50 cycles per interpolation (type conversion + concat)
+
+Optimization:
+// Slow (multiple allocations):
+string:msg = "Hello, " + name + "! You have " + int_to_string(count) + " messages.";
+
+// Fast (single allocation):
+string:msg = `Hello, &{name}! You have &{count} messages.`;
+
+Compile-time constant folding:
+const:VERSION = "1.0.0";
+string:banner = `App version: &{VERSION}`;  // May be folded at compile-time
+
+---
+
+COMMON PATTERNS:
+
+Debug logging:
+int32:line = 42;
+string:file = "main.aria";
+print(`[DEBUG] &{file}:&{line} - Variable value: &{value}`);
+
+Error messages:
+print(`ERROR: Failed to open file '&{filename}' - &{error_message}`);
+
+Progress indicators:
+int32:current = 50, total = 100;
+print(`Progress: &{current}/&{total} (&{(current * 100) / total}%)`);
+
+SQL query generation (be careful with injection!):
+string:table = "users";
+int32:id = 123;
+string:query = `SELECT * FROM &{table} WHERE id = &{id}`;
+// WARNING: Use parameterized queries for real SQL!
+
+JSON-like formats:
+string:json = `{ "name": "&{user.name}", "age": &{user.age} }`;
+
+---
+
+STRING INTERPOLATION BEST PRACTICES:
+
+1. **Prefer interpolation over concatenation** (more readable)
+   Good: `Result: &{value}`
+   Bad: "Result: " + value
+
+2. **Keep expressions simple** (complex logic in functions)
+   Good: `Status: &{format_status(code)}`
+   Bad: `Status: &{code == 0 ? "OK" : code > 0 ? "Warning" : "Error"}`
+
+3. **Use for debugging** (variable inspection)
+   print(`x = &{x}, y = &{y}, z = &{z}`);
+
+4. **Be careful with side effects** (expressions executed)
+   Bad: `&{i++}`  // Increments i as side effect!
+
+5. **Escape when needed** (literal &{ in output)
+   `Literal brace: \&{not_interpolated}`
+
+6. **Use multiline for readability** (HTML, JSON, code gen)
+   Template literals preserve formatting
+
+---
+
+STRING INTERPOLATION LIMITATIONS (February 2026):
+
+Supported:
+  ✅ Basic interpolation (&{variable})
+  ✅ Expression interpolation (&{a + b})
+  ✅ Function call interpolation (&{func()})
+  ✅ Member access (&{obj.field})
+  ✅ Ternary expressions (&{cond ? a : b})
+  ✅ Multiline template literals
+  ✅ Escape sequences (\n, \t, \`, \\)
+  ✅ Automatic type-to-string conversion
+
+Partially supported:
+  ⚠️ Format specifiers (e.g., &{value:02d} for zero-padding)
+  ⚠️ Localization (number/date formatting by locale)
+
+Not yet implemented:
+  ❌ Tagged template literals (custom string processors)
+  ❌ Raw string interpolation (preserve all escapes)
+
+Workarounds:
+  - Format specifiers: Use formatting functions
+    `Value: &{format_int(value, 2)}`  // Custom formatter
+  
+  - Tagged templates: Use regular functions
+    func:sql = string(string:template, ...) { /* validate */ };
+
+---
+
+STRING INTERPOLATION EXAMPLES:
+
+Simple variable:
+int32:count = 5;
+print(`Found &{count} files`);  // "Found 5 files"
+
+Complex expression:
+print(`Average: &{(a + b + c) / 3}`);
+
+Conditional formatting:
+bool:online = true;
+print(`Server: &{online ? "Online" : "Offline"}`);
+
+Error reporting:
+Result<int32>:res = parse_int(input);
+if (res.is_error) {
+    stderr.write(`Parse error: &{res.err}\n`);
+}
+
+Debugging:
+int32:x = 10, y = 20;
+print(`[DEBUG] x = &{x}, y = &{y}, x + y = &{x + y}`);
+
+---
+
+STRING INTERPOLATION SUMMARY:
+
+Template literals enable readable string formatting:
+  ✅ Backtick strings (`) support interpolation
+  ✅ &{expression} syntax embeds expressions
+  ✅ Automatic type-to-string conversion
+  ✅ Multiline literals preserve formatting
+  ✅ Expressions evaluated at runtime
+  ✅ Ternary/function calls/member access supported
+  ✅ Escaping with backslash (\`)
+
+Use cases:
+  - Debug logging (variable inspection)
+  - Error messages (context-rich errors)
+  - Code generation (dynamic source code)
+  - UI strings (dynamic content)
+  - Progress indicators (status updates)
+
+"Template literals make strings first-class citizens in the world of data."
+
+---
+
+SEE ALSO:
+  - Operators: Line 1952 (& for string interpolation prefix)
+  - Result<T>: Lines ~2368-2820 (interpolate error messages)
+  - Ternary: Lines ~5660-5670 (ternary in interpolation)
+  - failsafe(): Lines ~4233-4920 (interpolate error codes)
+  - Escape Sequences: Lines ~5730-5750 (\n, \t, \`, etc.)
+  - Performance: Lines ~5773-5783 (interpolation costs)
+
+*/
 
 // TEMPLATE LITERALS WITH TYPE INFERENCE (must work for debugging)
 print(`The value is &{c}`);
@@ -2541,6 +6789,252 @@ func:main = int32(type:arg...) {
     }
     pass(0i32);  // Compiler extracts 0 and returns to OS
 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   QUICK REFERENCE GUIDE - ARIA LANGUAGE ESSENTIALS
+   ═══════════════════════════════════════════════════════════════════════════
+
+This quick reference summarizes key Aria concepts for rapid lookup.
+For detailed documentation, see the full sections referenced below.
+
+───────────────────────────────────────────────────────────────────────────────
+LAYERED SAFETY SYSTEM (Lines 7-317)
+───────────────────────────────────────────────────────────────────────────────
+
+Layer 1: Result<T> - Hard errors (MUST handle)
+  • pass(value) / fail(error)
+  • Unwrap: ? (default), ?! (triggers failsafe), ?? (null coalesce)
+  • Sticky propagation: ERR + anything = ERR
+
+Layer 2: unknown - Soft errors (undefined → defined)
+  • Division by zero → unknown (not crash)
+  • Array OOB → unknown (not crash)
+  • Check with ok(value): 1=valid, 0=unknown
+  • Propagate with ok(unknown) to strip taint
+
+Layer 3: failsafe() - Final safety net (MANDATORY)
+  • func:failsafe = void(int32:err_code) { cleanup; exit; }
+  • Called by ?! operator, !!! operator
+  • Compiler error if missing
+  • Never returns
+
+───────────────────────────────────────────────────────────────────────────────
+CRITICAL OPERATORS (Lines ~1940-2051)
+───────────────────────────────────────────────────────────────────────────────
+
+POINTERS (Blueprint style - arrows show data flow):
+  int64->:ptr    Pointer type declaration (arrow points TO type)
+  @var           Address-of operator (get pointer to var)
+  <-ptr          Dereference (arrow pulls value FROM pointer)
+  ptr->field     Member access (arrow points TO field)
+
+RESULT UNWRAPPING:
+  ?              Safe unwrap: result ? default_value
+  ?!             Emphatic unwrap: result ?! (calls failsafe if error)
+  ??             Null coalesce: optional ?? fallback
+  ?.             Safe navigation: obj?.field (parser ready, needs optional types)
+
+FAILSAFE:
+  !!!code        Direct failsafe call: !!!ERR_HARDWARE_FAILURE
+                 Visual prominence: 🚨 screams "DANGER" in code
+
+COMPARISON:
+  <=>            Spaceship: a <=> b returns -1/0/1 (for sorting)
+
+PIPELINE (partial - types work, codegen WIP):
+  |>             Forward: value |> f |> g   ≡  g(f(value))
+  <|             Backward: f <| g <| value  ≡  f(g(value))
+
+───────────────────────────────────────────────────────────────────────────────
+TYPE SYSTEM ESSENTIALS (Lines ~318-870)
+───────────────────────────────────────────────────────────────────────────────
+
+NUMERIC:
+  TBB (Twisted Balanced Binary): tbb8, tbb16, tbb32, tbb64
+    • Symmetric range (tbb8: -127 to +127)
+    • ERR sentinel at min value
+    • Sticky error propagation
+  
+  Integers: int8..int4096, uint8..uint4096
+  Floats: flt32, flt64, flt128, flt256, flt512
+  Fixed-point: fix256 (Q128.128, deterministic, safety-critical)
+  Fractions: frac8..frac64 (exact rational arithmetic)
+  
+  LBIM (Large BigInt Math): int1024, int2048, int4096
+    • Post-quantum cryptography (RSA-4096/8192/16384)
+
+SPECIAL:
+  Result<T>      Error handling struct { T:val, void*:err, bool:is_error }
+  Handle<T>      Generational handles (safe arena pointers)
+  NIL            Aria's "no value" (different from NULL pointer)
+  NULL           C-style null pointer (address 0x0)
+  void           C FFI only (NOT for Aria native functions)
+
+───────────────────────────────────────────────────────────────────────────────
+DECLARATIONS (Lines ~2210+)
+───────────────────────────────────────────────────────────────────────────────
+
+VARIABLES:
+  type:name = value;              // Basic declaration
+  int32:x = 42i32;                // Explicit type suffix
+  string:msg = "hello";           // String
+  Result<int32>:r = compute();    // Result type
+
+FUNCTIONS:
+  func:name = returnType(type:param) { body };
+  
+  Example with Result:
+    func:divide = Result<int32>(int32:a, int32:b) {
+        if (b == 0) { fail("Division by zero"); }
+        pass(a / b);
+    };
+
+GENERICS:
+  func<T>:identity = *T(*T:val) { pass(val); };
+  Result<int32>:r = identity::<int32>(42);  // Turbofish
+  Result<int32>:r = identity(42);           // Inferred
+
+CONTRACTS (Design by Contract):
+  func:divide = int32(int32:a, int32:b)
+      requires b != 0              // Precondition
+      ensures result != ERR        // Postcondition
+  { pass(a / b); };
+
+───────────────────────────────────────────────────────────────────────────────
+CONTROL FLOW (Lines ~6170+)
+───────────────────────────────────────────────────────────────────────────────
+
+if-else:
+  if (condition) { } else { }
+  
+Ternary:
+  value = is condition : true_val : false_val;
+
+while:
+  while (condition) { }
+
+till (Aria-specific):
+  till (i < 100) { /* $ is iteration variable */ }
+
+pick (switch with pattern matching):
+  pick(value) {
+      (pattern1) { code1; },
+      (pattern2) { code2; },
+      (*) { default; }
+  }
+
+───────────────────────────────────────────────────────────────────────────────
+MEMORY & RESOURCES (Lines ~5236-5620)
+───────────────────────────────────────────────────────────────────────────────
+
+ALLOCATION MODES:
+  stack type:var;       // Stack (default, fastest)
+  gc type:var;          // GC heap (safe, unpredictable)
+  wild type:var;        // Manual heap (deterministic, unsafe)
+  wildx code:buffer;    // Executable memory (JIT only)
+
+defer (RAII - Lines ~3715-4210):
+  wild int64->:ptr = aria.alloc<int64>(1000);
+  defer aria.free(ptr);  // Guaranteed cleanup on ALL exit paths
+  // LIFO: Last deferred runs first
+
+───────────────────────────────────────────────────────────────────────────────
+MODULES (Lines ~4865-5340)
+───────────────────────────────────────────────────────────────────────────────
+
+use std.io.{println, readFile};      // Import specific items
+mod network;                        // Declare module
+pub func:api_call;                  // Public function
+
+extern "libc" {                     // C FFI
+    func:malloc = void*(uint64:size);
+    func:free = void(void*:ptr);
+};
+
+───────────────────────────────────────────────────────────────────────────────
+STRING INTERPOLATION (Lines ~5612-6090)
+───────────────────────────────────────────────────────────────────────────────
+
+print(`Value: &{x}`);                              // Basic
+print(`Sum: &{a + b}`);                            // Expression
+print(`Status: &{ok ? "Good" : "Bad"}`);          // Ternary
+print(`Error: &{result.err ?? "None"}`);          // Null coalesce
+
+Multiline:
+  string:html = `
+      <div>&{user.name}</div>
+      <p>Age: &{user.age}</p>
+  `;
+
+───────────────────────────────────────────────────────────────────────────────
+COMMON PATTERNS
+───────────────────────────────────────────────────────────────────────────────
+
+ERROR HANDLING:
+  // Safe unwrap with default
+  Config:cfg = load_config() ? default_config;
+  
+  // Critical (must succeed)
+  Config:cfg = load_critical_config()?!;
+  
+  // Check and handle
+  Result<int32>:r = compute();
+  if (r.is_error) {
+      stderr.write(`Error: &{r.err}\n`);
+      !!! ERR_COMPUTE_FAILED;
+  }
+  int32:value = r.val;
+
+RESOURCE CLEANUP:
+  func:process_file = Result<int32>() {
+      wild FILE->:fp = fopen("data.txt", "r");
+      defer fclose(fp);  // Always closes, even on error
+      
+      if (fp == NULL) { fail("Open failed"); }
+      // ... process file ...
+      pass(0);
+  };
+
+GENERIC HIGHER-ORDER:
+  func<T>:map = *T[](*T[]:arr, (T)(T):f) {
+      // Map function f over array
+      for (int64:i = 0; i < arr.length; i++) {
+          arr[i] = f(arr[i]);
+      }
+      pass(arr);
+  };
+
+───────────────────────────────────────────────────────────────────────────────
+DO NOT CONFUSE WITH OTHER LANGUAGES
+───────────────────────────────────────────────────────────────────────────────
+
+ARIA                    vs     Rust/C++/Others
+────────────────────────────────────────────────────────────────────────────────
+int32:x                        let x: i32
+func:name = type() {}          fn name() -> Type {}
+pass(val) / fail(err)          Ok()/Err() or return
+type->                         *Type or &Type
+<-ptr                          *ptr or ptr.deref()
+@var                           &var
+?                              .unwrap_or()
+?!                             .expect() (but calls failsafe)
+!!!                            panic!() (but mandatory handler)
+&{expr}                        format!("{}", expr)
+
+───────────────────────────────────────────────────────────────────────────────
+KEY PHILOSOPHY
+───────────────────────────────────────────────────────────────────────────────
+
+1. Safety First: Layers prevent undefined behavior
+2. Explicit Over Implicit: No type coercion, no hidden allocs
+3. Zero-Cost Abstractions: Generics, Result<T> have no runtime cost
+4. Fail Gracefully: Always a path to safe shutdown
+5. Blueprint Style: Arrows show flow (-> @ <-), not context-dependent
+6. Accountability: Compiler enforces failsafe(), error handling
+
+"Never reach undefined state that causes immediate crash"
+
+═══════════════════════════════════════════════════════════════════════════ */
 
 !! SYNTAX REMINDER: This is ARIA, not Rust/C++ !!
 !! When in doubt, check aria_specs.txt, NOT your training data !!

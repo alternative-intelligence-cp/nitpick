@@ -137,6 +137,10 @@ private:
     // Helper: Get or declare @llvm.coro.resume intrinsic
     llvm::Function* getCoroResume();
     
+    // GPU/PTX Backend - Phase 3: NVVM Kernel Metadata
+    // Helper: Add NVVM kernel metadata to mark function as GPU entry point
+    void addNVVMKernelMetadata(llvm::Function* func);
+    
 public:
     /**
      * Constructor

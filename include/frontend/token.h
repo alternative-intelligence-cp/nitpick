@@ -82,6 +82,13 @@ enum class TokenType {
     TOKEN_KW_AS,        // as - alias in use statement
     
     // ========================================================================
+    // Keywords - Design by Contract (P1-4 Formal Verification)
+    // ========================================================================
+    TOKEN_KW_REQUIRES,  // requires - function precondition
+    TOKEN_KW_ENSURES,   // ensures - function postcondition
+    TOKEN_KW_INVARIANT, // invariant - loop/struct invariant
+    
+    // ========================================================================
     // Type Keywords - Integers (Signed)
     // ========================================================================
     TOKEN_KW_INT1,      // int1 - 1-bit signed

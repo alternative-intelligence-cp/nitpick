@@ -237,6 +237,16 @@ public:
      */
     llvm::Value* codegenMemberAccess(MemberAccessExpr* expr);
     
+    // GPU/PTX Backend - Phase 4: GPU Intrinsics
+    /**
+     * Generate code for GPU intrinsics (gpu.thread_id(), gpu.sync_threads(), etc.)
+     * @param intrinsic_name Name of the intrinsic (thread_id, block_id, sync_threads, etc.)
+     * @param call_expr Call expression containing arguments
+     * @return LLVM value from NVVM intrinsic call
+     */
+    llvm::Value* codegenGPUIntrinsic(const std::string& intrinsic_name,
+                                      CallExpr* call_expr);
+    
     /**
      * Generate code for lambda expressions (closures)
      * Creates fat pointer: { method_ptr, env_ptr }
