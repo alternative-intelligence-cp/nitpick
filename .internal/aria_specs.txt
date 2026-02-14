@@ -1186,16 +1186,33 @@ Precision:
 Operations:
 - Addition: Limb-wise addition with carry, overflow detection
 - Subtraction: Limb-wise subtraction with borrow, underflow detection  
-- Multiplication: 512-bit intermediate, right-shift 128 bits to realign decimal point
-- Division: Left-shift dividend 128 bits, binary long division (v0.1.0: simplified)
+- Multiplication: Full 512-bit intermediate, right-shift 128 bits, sign-preserving (Phase 5.2)
+- Division: Knuth's Algorithm D with binary long division fallback for sparse divisors (Phase 5.2-5.3)
 - All operations check for ERR inputs and propagate
 - All operations detect overflow/underflow and return ERR
 
-Runtime Functions:
+Runtime Functions (CPU):
 - aria_fix256_add(a, b) - Returns ERR if overflow or inputs are ERR
 - aria_fix256_sub(a, b) - Returns ERR if underflow or inputs are ERR
-- aria_fix256_mul(a, b) - Returns ERR if overflow or inputs are ERR
-- aria_fix256_div(a, b) - Returns ERR if div-by-zero, overflow, or inputs are ERR
+- aria_fix256_mul(a, b) - Returns ERR if overflow or inputs are ERR (signed multiply complete)
+- aria_fix256_div(a, b) - Returns ERR if div-by-zero, overflow, or inputs are ERR (Knuth's Algorithm D)
+
+Runtime Functions (GPU):
+- aria_fix256_add_gpu(a, b) - CUDA device function, ERR propagation
+- aria_fix256_sub_gpu(a, b) - CUDA device function, ERR propagation
+- aria_fix256_mul_gpu(a, b) - CUDA device function, signed multiply
+- aria_fix256_div_gpu(a, b) - CUDA device function, Knuth's Algorithm D (Phase 5.3)
+
+GPU Support (Phase 5.3 - February 2026):
+- LLVM IR backend generates PTX for NVIDIA GPUs
+- __device__ functions callable from CUDA kernels
+- Bit-identical results between CPU and GPU (verified on RTX 3090)
+- 3.32 GFLOPS throughput (65536 threads, 100 iterations/thread)
+- Parallel execution tested with 1024 concurrent divisions
+- All arithmetic operations maintain determinism guarantee on GPU
+- Critical fix (Feb 12, 2026): Replaced PTX inline assembly with pure C arithmetic
+  in add_with_carry_gpu() - PTX carry flag propagation was broken, causing 
+  negation failures. Fix ensures 100% test pass rate (6/6 tests).
 
 Print Format:
 - aria_format_fix256(val) - "integer.fractional" or "ERR"
@@ -1252,10 +1269,16 @@ if (acceleration == ERR) {
     halt_consciousness_substrate();
 }
 
-Known Limitations (v0.1.0):
-- Signed multiplication with negative values needs refinement (deferred to v0.2.0)
-- Division uses simplified algorithm (full precision in v0.2.0)
-- Print format shows ~6 decimal places (full precision display in v0.2.0)
+Implementation Status (Phase 5.3 - February 2026):
+✅ Signed multiplication with negative values (Phase 5.2 complete)
+✅ Division using Knuth's Algorithm D with full precision (Phase 5.2 complete)
+✅ GPU support with LLVM IR → PTX code generation (Phase 5.3 complete)
+✅ CPU/GPU bit-exact determinism verified on RTX 3090 (100% test pass rate)
+✅ Safety-critical bug fixes: PTX carry arithmetic corrected (Feb 12, 2026)
+
+Remaining Limitations:
+- Print format shows ~6 decimal places (full precision display deferred to future release)
+- LLVM backend limited to x86-64 and NVIDIA PTX (ARM64, RISC-V planned)
 
 Testing:
 All ARIA-025 types have comprehensive safety test suites:

@@ -25,7 +25,7 @@ The `filter()` function creates a **new array** containing only the elements fro
 // Filter array with predicate
 int64[]:numbers = [1, 2, 3, 4, 5, 6];
 
-int64[]:evens = filter(numbers, n => n % 2 == 0);
+int64[]:evens = filter(numbers, func(int64:n) { pass(n % 2 == 0); });
 // evens = [2, 4, 6]
 ```
 
@@ -36,10 +36,10 @@ int64[]:evens = filter(numbers, n => n % 2 == 0);
 ```aria
 int64[]:numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-int64[]:evens = filter(numbers, n => n % 2 == 0);
+int64[]:evens = filter(numbers, func(int64:n) { pass(n % 2 == 0); });
 // evens = [2, 4, 6, 8, 10]
 
-int64[]:odds = filter(numbers, n => n % 2 != 0);
+int64[]:odds = filter(numbers, func(int64:n) { pass(n % 2 != 0); });
 // odds = [1, 3, 5, 7, 9]
 ```
 
@@ -51,11 +51,11 @@ int64[]:odds = filter(numbers, n => n % 2 != 0);
 int64[]:scores = [45, 67, 89, 34, 92, 78, 56];
 
 // Get passing scores (>= 60)
-int64[]:passing = filter(scores, score => score >= 60);
+int64[]:passing = filter(scores, func(int64:score) { pass(score >= 60); });
 // passing = [67, 89, 92, 78]
 
 // Get failing scores
-int64[]:failing = filter(scores, score => score < 60);
+int64[]:failing = filter(scores, func(int64:score) { pass(score < 60); });
 // failing = [45, 34, 56]
 ```
 
@@ -67,11 +67,11 @@ int64[]:failing = filter(scores, score => score < 60);
 string[]:words = ["apple", "banana", "cherry", "date", "elderberry"];
 
 // Get short words (length <= 5)
-string[]:short = filter(words, w => w.length <= 5);
+string[]:short = filter(words, func(string:w) { pass(w.length <= 5); });
 // short = ["apple", "date"]
 
 // Get words starting with 'b'
-string[]:startsWithB = filter(words, w => w.startsWith("b"));
+string[]:startsWithB = filter(words, func(string:w) { pass(w.startsWith("b")); });
 // startsWithB = ["banana"]
 ```
 
@@ -93,11 +93,11 @@ Person[]:people = [
 ];
 
 // Get adults (age >= 18)
-Person[]:adults = filter(people, p => p.age >= 18);
+Person[]:adults = filter(people, func(Person:p) { pass(p.age >= 18); });
 // adults = [Alice(30), Charlie(25)]
 
 // Get minors
-Person[]:minors = filter(people, p => p.age < 18);
+Person[]:minors = filter(people, func(Person:p) { pass(p.age < 18); });
 // minors = [Bob(17), Diana(16)]
 ```
 
@@ -109,7 +109,7 @@ Person[]:minors = filter(people, p => p.age < 18);
 
 ```aria
 // Inline lambda
-int64[]:positive = filter(numbers, n => n > 0);
+int64[]:positive = filter(numbers, func(int64:n) { pass(n > 0); });
 ```
 
 ### Named Function
@@ -125,9 +125,9 @@ int64[]:evens = filter(numbers, isEven);
 ### Multi-Line Lambda
 
 ```aria
-int64[]:filtered = filter(numbers, n => {
-    if (n < 0) { pass(false); }
-    if (n % 2 != 0) { pass(false); }
+int64[]:filtered = filter(numbers, func(int64:n) {
+    if n < 0 then pass(false); end
+    if n % 2 != 0 then pass(false); end
     pass(true);
 });
 ```
@@ -139,9 +139,9 @@ int64[]:filtered = filter(numbers, n => {
 ### Pattern 1: Remove Nulls
 
 ```aria
-string?[]:maybeStrings = ["hello", NIL, "world", NIL, "test"];
+string | NULL[]:maybeStrings = ["hello", NULL, "world", NULL, "test"];
 
-string[]:nonNull = filter(maybeStrings, s => s != NIL);
+string[]:nonNull = filter(maybeStrings, func(string | NULL:s) { pass(s != NULL); });
 // nonNull = ["hello", "world", "test"]
 ```
 
@@ -151,7 +151,7 @@ string[]:nonNull = filter(maybeStrings, s => s != NIL);
 int64[]:values = [5, 15, 25, 35, 45, 55];
 
 // Get values in range [20, 40]
-int64[]:inRange = filter(values, v => v >= 20 && v <= 40);
+int64[]:inRange = filter(values, func(int64:v) { pass(v >= 20 && v <= 40); });
 // inRange = [25, 35]
 ```
 
@@ -167,7 +167,7 @@ int64[]:inRange = filter(values, v => v >= 20 && v <= 40);
 Product[]:products = [...];
 
 // Available and affordable
-Product[]:available = filter(products, p => {
+Product[]:available = filter(products, func(Product:p) {
     pass(p.stock > 0 && p.price < 100.0);
 });
 ```
@@ -184,7 +184,7 @@ Product[]:available = filter(products, p => {
 User[]:users = [...];
 
 // Get active admins
-User[]:activeAdmins = filter(users, u => {
+User[]:activeAdmins = filter(users, func(User:u) {
     pass(u.active && u.role == "admin");
 });
 ```
@@ -200,8 +200,8 @@ int64[]:numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 // Filter then transform
 int64[]:result = numbers
-    |> filter(n => n % 2 == 0)       // [2, 4, 6, 8, 10]
-    |> transform(n => n * 2);         // [4, 8, 12, 16, 20]
+    |> filter(func(int64:n) { pass(n % 2 == 0); })       // [2, 4, 6, 8, 10]
+    |> transform(func(int64:n) { pass(n * 2); });         // [4, 8, 12, 16, 20]
 ```
 
 ### Multiple Filters
@@ -210,9 +210,9 @@ int64[]:result = numbers
 int64[]:data = [-5, -3, -1, 0, 1, 3, 5, 7, 9, 11];
 
 int64[]:result = data
-    |> filter(n => n > 0)     // Positive only
-    |> filter(n => n % 2 != 0) // Odd only
-    |> filter(n => n < 10);    // Less than 10
+    |> filter(func(int64:n) { pass(n > 0); })     // Positive only
+    |> filter(func(int64:n) { pass(n % 2 != 0); }) // Odd only
+    |> filter(func(int64:n) { pass(n < 10); });    // Less than 10
 // result = [1, 3, 5, 7, 9]
 ```
 
@@ -223,9 +223,9 @@ int64[]:scores = [45, 67, 89, 34, 92, 78, 56];
 
 // Average of passing scores
 float64:avg = scores
-    |> filter(s => s >= 60)
-    |> reduce(0, (sum, s) => sum + s)
-    / filter(scores, s => s >= 60).length;
+    |> filter(func(int64:s) { pass(s >= 60); })
+    |> reduce(0, func(int64:sum, int64:s) { pass(sum + s); })
+    / filter(scores, func(int64:s) { pass(s >= 60); }).length;
 ```
 
 ---
@@ -237,7 +237,7 @@ float64:avg = scores
 ```aria
 // Original unchanged
 int64[]:original = [1, 2, 3, 4, 5];
-int64[]:filtered = filter(original, n => n > 2);
+int64[]:filtered = filter(original, func(int64:n) { pass(n > 2); });
 
 // original still [1, 2, 3, 4, 5]
 // filtered is [3, 4, 5]
@@ -252,7 +252,7 @@ int64[]:step2 = filter(step1, predicate2); // Allocation 2
 int64[]:step3 = filter(step2, predicate3); // Allocation 3
 
 // Consider combining predicates
-int64[]:result = filter(data, x => {
+int64[]:result = filter(data, func(int64:x) {
     pass(predicate1(x) && predicate2(x) && predicate3(x));
 });  // Single allocation
 ```
@@ -265,7 +265,7 @@ int64[]:result = filter(data, x => {
 
 ```aria
 // GOOD: Clear intent
-int64[]:adults = filter(ages, age => age >= 18);
+int64[]:adults = filter(ages, func(int64:age) { pass(age >= 18); });
 ```
 
 ### ✅ Chain with Pipelines
@@ -293,13 +293,13 @@ int64[]:pos2 = filter(array2, isPositive);
 ```aria
 // BAD: Side effects in predicate
 int64:count = 0;
-filter(numbers, n => {
+filter(numbers, func(int64:n) {
     count++;  // ⚠️ Side effect!
     pass(n > 0);
 });
 
 // GOOD: Pure predicate
-filter(numbers, n => n > 0);
+filter(numbers, func(int64:n) { pass(n > 0); });
 ```
 
 ### ❌ Don't Overuse Chaining
@@ -313,7 +313,7 @@ result = data
     |> filter(p4);
 
 // GOOD: Combine predicates
-result = filter(data, x => p1(x) && p2(x) && p3(x) && p4(x));
+result = filter(data, func(int64:x) { pass(p1(x) && p2(x) && p3(x) && p4(x)); });
 ```
 
 ---
@@ -323,7 +323,7 @@ result = filter(data, x => p1(x) && p2(x) && p3(x) && p4(x));
 ### Aria
 
 ```aria
-int64[]:evens = filter(numbers, n => n % 2 == 0);
+int64[]:evens = filter(numbers, func(int64:n) { pass(n % 2 == 0); });
 ```
 
 ### JavaScript
@@ -366,7 +366,7 @@ let evens: Vec<i64> = numbers.iter()
 Employee[]:employees = [...];
 
 // Senior engineers earning > 100k
-Employee[]:seniorEngineers = filter(employees, e => {
+Employee[]:seniorEngineers = filter(employees, func(Employee:e) {
     pass(
         e.department == "Engineering" &&
         e.experience >= 5 &&
@@ -379,7 +379,7 @@ Employee[]:seniorEngineers = filter(employees, e => {
 
 ```aria
 func:createFilter = func:(bool)(int64)(int64:threshold) {
-    pass(n => n > threshold);
+    pass(func(int64:n) { pass(n > threshold); });
 };
 
 int64[]:numbers = [5, 10, 15, 20, 25];
@@ -404,8 +404,8 @@ int64[]:above20 = filter(numbers, filter20);
 Team[]:teams = [...];
 
 // Teams with at least one adult member
-Team[]:teamsWithAdults = filter(teams, team => {
-    Person[]:adults = filter(team.members, p => p.age >= 18);
+Team[]:teamsWithAdults = filter(teams, func(Team:team) {
+    Person[]:adults = filter(team.members, func(Person:p) { pass(p.age >= 18); });
     pass(adults.length > 0);
 });
 ```
@@ -426,7 +426,7 @@ func:filterWithIndex = T[](T[]:array, func:(bool)(T, int64):predicate) {
 };
 
 // Get every other element
-int64[]:everyOther = filterWithIndex(numbers, (n, i) => i % 2 == 0);
+int64[]:everyOther = filterWithIndex(numbers, func(int64:n, int64:i) { pass(i % 2 == 0); });
 ```
 
 ---
@@ -438,7 +438,7 @@ int64[]:everyOther = filterWithIndex(numbers, (n, i) => i % 2 == 0);
 ```aria
 int64[]:numbers = [1, 3, 5, 7, 9];
 
-int64[]:evens = filter(numbers, n => n % 2 == 0);
+int64[]:evens = filter(numbers, func(int64:n) { pass(n % 2 == 0); });
 // evens = [] (empty array)
 
 if (evens.length == 0) {
@@ -451,7 +451,7 @@ if (evens.length == 0) {
 ```aria
 int64[]:numbers = [2, 4, 6, 8];
 
-int64[]:evens = filter(numbers, n => n % 2 == 0);
+int64[]:evens = filter(numbers, func(int64:n) { pass(n % 2 == 0); });
 // evens = [2, 4, 6, 8] (all match)
 ```
 

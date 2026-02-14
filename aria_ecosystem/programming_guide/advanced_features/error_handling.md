@@ -15,17 +15,19 @@ Effective error handling makes code **robust** and **maintainable**.
 
 ```aria
 // Use Result for fallible operations
-fn read_config(path: string) -> Result<Config> {
-    content: string = readFile(path)?;
-    config: Config = parse_config(content)?;
-    return Ok(config);
-}
+func:read_config = Result<Config, string>(string:path) {
+    string:content = readFile(path)?;
+    Config:config = parse_config(content)?;
+    pass(config);
+};
 
 // Caller handles error
-match read_config("config.toml") {
-    Ok(config) => use_config(config),
-    Err(e) => stderr << "Failed to load config: $e",
-}
+Result<Config, string>:result = read_config("config.toml");
+if result.err != NULL then
+    stderr.write("Failed to load config: {}\n", result.err);
+else
+    use_config(result.val);
+end
 ```
 
 ---
@@ -42,25 +44,26 @@ enum AppError {
 }
 
 impl AppError {
-    fn message() -> string {
-        match self {
-            AppError.IO(msg) => return "IO error: $msg",
-            AppError.Parse(msg) => return "Parse error: $msg",
-            AppError.Network(msg) => return "Network error: $msg",
-            AppError.NotFound => return "Resource not found",
-            AppError.PermissionDenied => return "Permission denied",
+    func:message = string() {
+        pick self {
+            AppError.IO(msg) => pass("IO error: " + msg);
+            AppError.Parse(msg) => pass("Parse error: " + msg);
+            AppError.Network(msg) => pass("Network error: " + msg);
+            AppError.NotFound => pass("Resource not found");
+            AppError.PermissionDenied => pass("Permission denied");
         }
-    }
+    };
 }
 
-fn fetch_user(id: i32) -> Result<User, AppError> {
-    user: ?User = database.find(id);
+func:fetch_user = Result<User, AppError>(int32:id) {
+    User | NULL:user = database.find(id);
     
-    match user {
-        Some(u) => return Ok(u),
-        None => return Err(AppError.NotFound),
-    }
-}
+    if user != NULL then
+        pass(user);
+    else
+        fail(AppError.NotFound);
+    end
+};
 ```
 
 ---
@@ -68,18 +71,27 @@ fn fetch_user(id: i32) -> Result<User, AppError> {
 ## Error Context
 
 ```aria
-fn load_user_data(user_id: i32) -> Result<UserData> {
-    user: User = fetch_user(user_id)
-        .context("Failed to fetch user $user_id")?;
+func:load_user_data = Result<UserData, string>(int32:user_id) {
+    Result<User, AppError>:user_result = fetch_user(user_id);
+    if user_result.err != NULL then
+        fail("Failed to fetch user " + string(user_id));
+    end
+    User:user = user_result.val;
     
-    profile: Profile = fetch_profile(user_id)
-        .context("Failed to fetch profile for user $user_id")?;
+    Result<Profile, AppError>:profile_result = fetch_profile(user_id);
+    if profile_result.err != NULL then
+        fail("Failed to fetch profile for user " + string(user_id));
+    end
+    Profile:profile = profile_result.val;
     
-    posts: []Post = fetch_posts(user_id)
-        .context("Failed to fetch posts for user $user_id")?;
+    Result<Post[], AppError>:posts_result = fetch_posts(user_id);
+    if posts_result.err != NULL then
+        fail("Failed to fetch posts for user " + string(user_id));
+    end
+    Post[]:posts = posts_result.val;
     
-    return Ok(UserData { user, profile, posts });
-}
+    pass(UserData{ user, profile, posts });
+};
 
 // Error output:
 // Failed to fetch posts for user 42
@@ -91,25 +103,25 @@ fn load_user_data(user_id: i32) -> Result<UserData> {
 ## Early Return Pattern
 
 ```aria
-fn validate_user(user: User) -> Result<void> {
-    if user.name == "" {
-        return Err("Name cannot be empty");
-    }
+func:validate_user = Result<nil, string>(User:user) {
+    if user.name == "" then
+        fail("Name cannot be empty");
+    end
     
-    if user.age < 0 {
-        return Err("Age cannot be negative");
-    }
+    if user.age < 0 then
+        fail("Age cannot be negative");
+    end
     
-    if user.age > 150 {
-        return Err("Age too high");
-    }
+    if user.age > 150 then
+        fail("Age too high");
+    end
     
-    if !user.email.contains("@") {
-        return Err("Invalid email format");
-    }
+    if !user.email.contains("@") then
+        fail("Invalid email format");
+    end
     
-    return Ok();
-}
+    pass(nil);
+};
 ```
 
 ---
@@ -117,29 +129,31 @@ fn validate_user(user: User) -> Result<void> {
 ## Recoverable Errors
 
 ```aria
-fn fetch_with_fallback(url: string) -> Result<Data> {
+func:fetch_with_fallback = Result<Data, string>(string:url) {
     // Try primary source
-    match fetch_from_primary(url) {
-        Ok(data) => return Ok(data),
-        Err(e) => {
-            stdout << "Primary failed: $e, trying backup...";
-            
-            // Try backup source
-            match fetch_from_backup(url) {
-                Ok(data) => return Ok(data),
-                Err(e) => {
-                    stderr << "Backup also failed: $e";
-                    
-                    // Return cached data if available
-                    match get_from_cache(url) {
-                        Some(data) => return Ok(data),
-                        None => return Err("All sources failed"),
-                    }
-                }
-            }
-        }
-    }
-}
+    Result<Data, string>:primary = fetch_from_primary(url);
+    if primary.err == NULL then
+        pass(primary.val);
+    end
+    
+    stdout.write("Primary failed: {}, trying backup...\n", primary.err);
+    
+    // Try backup source
+    Result<Data, string>:backup = fetch_from_backup(url);
+    if backup.err == NULL then
+        pass(backup.val);
+    end
+    
+    stderr.write("Backup also failed: {}\n", backup.err);
+    
+    // Return cached data if available
+    Data | NULL:cached = get_from_cache(url);
+    if cached != NULL then
+        pass(cached);
+    else
+        fail("All sources failed");
+    end
+};
 ```
 
 ---
@@ -147,27 +161,27 @@ fn fetch_with_fallback(url: string) -> Result<Data> {
 ## Retry Logic
 
 ```aria
-fn fetch_with_retry(url: string, max_retries: i32) -> Result<Data> {
-    retries: i32 = 0;
+func:fetch_with_retry = Result<Data, string>(string:url, int32:max_retries) {
+    int32:retries = 0;
     
-    loop {
-        match fetch(url) {
-            Ok(data) => return Ok(data),
-            Err(e) => {
-                retries += 1;
-                
-                if retries >= max_retries {
-                    return Err("Max retries exceeded: $e");
-                }
-                
-                // Exponential backoff
-                delay: i32 = 1000 * (2 ** (retries - 1));
-                stdout << "Retry $retries/$max_retries after ${delay}ms";
-                sleep(delay);
-            }
-        }
-    }
-}
+    loop
+        Result<Data, string>:result = fetch(url);
+        if result.err == NULL then
+            pass(result.val);
+        end
+        
+        retries = retries + 1;
+        
+        if retries >= max_retries then
+            fail("Max retries exceeded: " + result.err);
+        end
+        
+        // Exponential backoff
+        int32:delay = 1000 * (2 ** (retries - 1));
+        stdout.write("Retry {}/{} after {}ms\n", retries, max_retries, delay);
+        sleep(delay);
+    end
+};
 ```
 
 ---
@@ -176,23 +190,32 @@ fn fetch_with_retry(url: string, max_retries: i32) -> Result<Data> {
 
 ```aria
 impl From<IoError> for AppError {
-    fn from(e: IoError) -> AppError {
-        return AppError.IO(e.to_string());
-    }
+    func:from = AppError(IoError:e) {
+        pass(AppError.IO(e.to_string()));
+    };
 }
 
 impl From<ParseError> for AppError {
-    fn from(e: ParseError) -> AppError {
-        return AppError.Parse(e.to_string());
-    }
+    func:from = AppError(ParseError:e) {
+        pass(AppError.Parse(e.to_string()));
+    };
 }
 
-fn process() -> Result<Data, AppError> {
-    // Automatic conversion
-    content: string = readFile("data.txt")?;  // IoError → AppError
-    data: Data = parse(content)?;             // ParseError → AppError
-    return Ok(data);
-}
+func:process = Result<Data, AppError>() {
+    // Explicit error handling
+    Result<string, IoError>:file_result = readFile("data.txt");
+    if file_result.err != NULL then
+        fail(AppError.IO(file_result.err.to_string()));
+    end
+    string:content = file_result.val;
+    
+    Result<Data, ParseError>:parse_result = parse(content);
+    if parse_result.err != NULL then
+        fail(AppError.Parse(parse_result.err.to_string()));
+    end
+    
+    pass(parse_result.val);
+};
 ```
 
 ---
@@ -201,26 +224,34 @@ fn process() -> Result<Data, AppError> {
 
 ```aria
 // ✅ Use Result for expected errors
-fn read_user_input() -> Result<i32> {
-    input: string = stdin.read_line()?;
-    number: i32 = input.parse()
-        .map_err(|_| "Invalid number")?;
-    return Ok(number);
-}
+func:read_user_input = Result<int32, string>() {
+    Result<string, string>:line_result = stdin.read_line();
+    if line_result.err != NULL then
+        fail(line_result.err);
+    end
+    string:input = line_result.val;
+    
+    Result<int32, string>:parse_result = input.parse();
+    if parse_result.err != NULL then
+        fail("Invalid number");
+    end
+    
+    pass(parse_result.val);
+};
 
 // ✅ Use panic for programming errors
-fn calculate(divisor: i32) -> f64 {
-    if divisor == 0 {
-        panic("Division by zero - this should never happen!");
-    }
-    return 100.0 / divisor;
-}
+func:calculate = float64(int32:divisor) {
+    if divisor == 0 then
+        !!! "Division by zero - this should never happen!";
+    end
+    pass(100.0 / float64(divisor));
+};
 
 // ✅ Use assertions in debug builds
-fn process_array(arr: []i32, index: i32) {
-    debug_assert(index < arr.len(), "Index out of bounds");
+func:process_array = (int32[]:arr, int32:index) {
+    dbug.check("validation", "Index {} out of bounds (len {})", index, arr.len, index < arr.len());
     // Process arr[index]
-}
+};
 ```
 
 ---
@@ -228,19 +259,17 @@ fn process_array(arr: []i32, index: i32) {
 ## Error Logging
 
 ```aria
-fn process_with_logging() -> Result<void> {
-    match risky_operation() {
-        Ok(result) => {
-            log_info("Operation succeeded: $result");
-            return Ok();
-        }
-        Err(e) => {
-            log_error("Operation failed: $e");
-            log_debug("Stack trace: ${e.backtrace}");
-            return Err(e);
-        }
-    }
-}
+func:process_with_logging = Result<nil, string>() {
+    Result<string, string>:result = risky_operation();
+    if result.err == NULL then
+        log_info("Operation succeeded: " + result.val);
+        pass(nil);
+    else
+        log_error("Operation failed: " + result.err);
+        log_debug("Stack trace: " + result.err.backtrace);
+        fail(result.err);
+    end
+};
 ```
 
 ---
@@ -248,7 +277,7 @@ fn process_with_logging() -> Result<void> {
 ## Validation Chain
 
 ```aria
-fn register_user(data: UserData) -> Result<User> {
+func:register_user = Result<User, string>(UserData:data) {
     validate_name(data.name)?;
     validate_email(data.email)?;
     validate_password(data.password)?;
@@ -257,23 +286,23 @@ fn register_user(data: UserData) -> Result<User> {
     check_email_unique(data.email)?;
     check_username_available(data.username)?;
     
-    user: User = create_user(data)?;
+    User:user = create_user(data)?;
     send_confirmation_email(user.email)?;
     
-    return Ok(user);
-}
+    pass(user);
+};
 
-fn validate_email(email: string) -> Result<void> {
-    if !email.contains("@") {
-        return Err("Invalid email format");
-    }
+func:validate_email = Result<nil, string>(string:email) {
+    if !email.contains("@") then
+        fail("Invalid email format");
+    end
     
-    if email.len() < 3 {
-        return Err("Email too short");
-    }
+    if email.len() < 3 then
+        fail("Email too short");
+    end
     
-    return Ok();
-}
+    pass(nil);
+};
 ```
 
 ---
@@ -283,42 +312,45 @@ fn validate_email(email: string) -> Result<void> {
 ### ✅ DO: Use Result for Fallible Operations
 
 ```aria
-fn parse_number(s: string) -> Result<i32> {
-    match s.parse() {
-        Ok(n) => return Ok(n),
-        Err(_) => return Err("Invalid number format"),
-    }
-}
+func:parse_number = Result<int32, string>(string:s) {
+    Result<int32, string>:result = s.parse();
+    if result.err != NULL then
+        fail("Invalid number format");
+    end
+    pass(result.val);
+};
 ```
 
 ### ✅ DO: Provide Context
 
 ```aria
-fn load_data(id: i32) -> Result<Data> {
-    data: Data = fetch(id)
-        .context("Failed to load data for ID $id")?;
-    return Ok(data);
-}
+func:load_data = Result<Data, string>(int32:id) {
+    Result<Data, string>:result = fetch(id);
+    if result.err != NULL then
+        fail("Failed to load data for ID " + string(id) + ": " + result.err);
+    end
+    pass(result.val);
+};
 ```
 
 ### ✅ DO: Handle Errors at Appropriate Level
 
 ```aria
 // Low-level: propagate
-fn read_file(path: string) -> Result<string> {
-    return readFile(path);  // Propagate error
-}
+func:read_file = Result<string, string>(string:path) {
+    pass(readFile(path));  // Propagate error via Result
+};
 
 // High-level: handle
-fn main() {
-    match read_file("config.toml") {
-        Ok(content) => process(content),
-        Err(e) => {
-            stderr << "Fatal error: $e";
-            exit(1);
-        }
-    }
-}
+func:main = int32() {
+    Result<string, string>:file_result = read_file("config.toml");
+    if file_result.err != NULL then
+        stderr.write("Fatal error: {}\n", file_result.err);
+        exit(1);
+    end
+    process(file_result.val);
+    pass(0);
+};
 ```
 
 ### ⚠️ WARNING: Don't Ignore Errors
@@ -364,18 +396,22 @@ retries: i32 = config.retries.unwrap_or(3);
 ### Retry with Backoff
 
 ```aria
-async fn resilient_fetch(url: string) -> Result<Data> {
-    for attempt in 1..=3 {
-        match await fetch(url) {
-            Ok(data) => return Ok(data),
-            Err(e) if attempt < 3 => {
-                await sleep(1000 * attempt);
-                continue;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-}
+async func:resilient_fetch = Result<Data, string>(string:url) {
+    till 3 loop
+        int32:attempt = $ + 1;
+        Result<Data, string>:result = await fetch(url);
+        
+        if result.err == NULL then
+            pass(result.val);
+        end
+        
+        if attempt < 3 then
+            await sleep(1000 * attempt);
+        else
+            fail(result.err);
+        end
+    end
+};
 ```
 
 ### Circuit Breaker
@@ -388,25 +424,23 @@ struct CircuitBreaker {
 }
 
 impl CircuitBreaker {
-    fn call<T>(f: fn() -> Result<T>) -> Result<T> {
-        if self.open {
-            return Err("Circuit breaker open");
-        }
+    func:call = Result<T, string>(func:(Result<T, string>)():f) {
+        if self.open then
+            fail("Circuit breaker open");
+        end
         
-        match f() {
-            Ok(result) => {
-                self.failures = 0;
-                return Ok(result);
-            }
-            Err(e) => {
-                self.failures += 1;
-                if self.failures >= self.threshold {
-                    self.open = true;
-                }
-                return Err(e);
-            }
-        }
-    }
+        Result<T, string>:result = f();
+        if result.err == NULL then
+            self.failures = 0;
+            pass(result.val);
+        else
+            self.failures = self.failures + 1;
+            if self.failures >= self.threshold then
+                self.open = true;
+            end
+            fail(result.err);
+        end
+    };
 }
 ```
 

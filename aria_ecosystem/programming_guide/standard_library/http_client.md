@@ -113,64 +113,64 @@ struct User {
 }
 
 // GET - List users
-fn get_users() -> Result<[]User> {
-    response: HttpResponse = http.get("https://api.example.com/users")?;
+func:get_users = Result<[]User, string>() {
+    HttpResponse:response = http.get("https://api.example.com/users")?;
     
     when response.status != 200 then
-        return Err("Failed to fetch users");
+        fail("Failed to fetch users");
     end
     
-    data: obj = parse_json(response.body)?;
-    return Ok(map_to_users(data));
+    obj:data = parse_json(response.body)?;
+    pass(map_to_users(data));
 }
 
 // POST - Create user
-fn create_user(name: string, email: string) -> Result<User> {
-    body: string = to_json({ name = name, email = email });
+func:create_user = Result<User, string>(string:name, string:email) {
+    string:body = to_json({ name = name, email = email });
     
-    response: HttpResponse = http.post(
+    HttpResponse:response = http.post(
         "https://api.example.com/users",
         body,
         headers = { "Content-Type" = "application/json" }
     )?;
     
     when response.status != 201 then
-        return Err("Failed to create user");
+        fail("Failed to create user");
     end
     
-    user_data: obj = parse_json(response.body)?;
-    return Ok(map_to_user(user_data));
+    obj:user_data = parse_json(response.body)?;
+    pass(map_to_user(user_data));
 }
 
 // PUT - Update user
-fn update_user(id: i32, name: string, email: string) -> Result<User> {
-    body: string = to_json({ name = name, email = email });
+func:update_user = Result<User, string>(int32:id, string:name, string:email) {
+    string:body = to_json({ name = name, email = email });
     
-    response: HttpResponse = http.put(
+    HttpResponse:response = http.put(
         "https://api.example.com/users/$id",
         body,
         headers = { "Content-Type" = "application/json" }
     )?;
     
     when response.status != 200 then
-        return Err("Failed to update user");
+        fail("Failed to update user");
     end
     
-    user_data: obj = parse_json(response.body)?;
-    return Ok(map_to_user(user_data));
+    obj:user_data = parse_json(response.body)?;
+    pass(map_to_user(user_data));
 }
 
 // DELETE - Remove user
-fn delete_user(id: i32) -> Result<void> {
-    response: HttpResponse = http.delete(
+func:delete_user = Result<nil, string>(int32:id) {
+    HttpResponse:response = http.delete(
         "https://api.example.com/users/$id"
     )?;
     
     when response.status != 204 then
-        return Err("Failed to delete user");
+        fail("Failed to delete user");
     end
     
-    return Ok();
+    pass(NULL);
 }
 ```
 
@@ -213,7 +213,7 @@ response: HttpResponse = http.get(url, options = options)?;
 response: HttpResponse = http.get(url)?;
 
 when response.status < 200 or response.status >= 300 then
-    return Err("HTTP $(response.status): $(response.status_text)");
+    fail("HTTP $(response.status): $(response.status_text)");
 end
 ```
 
