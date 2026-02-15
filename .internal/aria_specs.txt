@@ -3556,7 +3556,7 @@ value = 100;  // Changing original doesn't affect closure
 printer();    // Prints: 42 (captured value)
 
 Reference capture (unsafe, requires care):
-int32@:value_ref = @value;
+int32->:value_ref = @value;
 (NIL)():printer = NIL() {
     println(<-value_ref);  // Dereferences pointer
     pass(NIL);
@@ -3649,7 +3649,7 @@ CLOSURE BEST PRACTICES:
 
 1. **Prefer value capture** (safer, no lifetime issues)
    Good: Closure captures int32:x by value
-   Risky: Closure captures int32@:ptr by reference
+   Risky: Closure captures int32->:ptr by reference
 
 2. **Keep closures small** (enable inlining)
    Good: Single expression closures
@@ -3675,7 +3675,7 @@ struct:EventBus {
     (NIL)(obj)[][]:listeners;  // Array of callback arrays
 };
 
-func:addEventListener = NIL(EventBus@:bus, int32:event_id, (NIL)(obj):callback) {
+func:addEventListener = NIL(EventBus->:bus, int32:event_id, (NIL)(obj):callback) {
     // Add callback to event listeners
     pass(NIL);
 };
@@ -3831,7 +3831,7 @@ Automatic cleanup prevents memory leaks:
 
 func:process_file = Result<NIL>(string:path) {
     // Allocate buffer
-    int8@:buffer = aria.alloc<int8>(1024);
+    int8->:buffer = aria.alloc<int8>(1024);
     defer aria.free(buffer);  // ✅ ALWAYS freed, even on error
     
     // Read file
@@ -3848,7 +3848,7 @@ func:process_file = Result<NIL>(string:path) {
 
 Without defer (manual cleanup - ERROR PRONE):
 func:process_file_manual = Result<NIL>(string:path) {
-    int8@:buffer = aria.alloc<int8>(1024);
+    int8->:buffer = aria.alloc<int8>(1024);
     
     Result<int64>:bytes_read = read_file(path, buffer, 1024);
     if (bytes_read.err != NULL) {
@@ -3900,7 +3900,7 @@ DEFER FOR LOCKS AND SYNCHRONIZATION:
 
 Prevents deadlocks:
 
-func:thread_safe_increment = NIL(atomic<int32>@:counter, Mutex@:lock) {
+func:thread_safe_increment = NIL(atomic<int32>->:counter, Mutex->:lock) {
     mutex_lock(lock);
     defer mutex_unlock(lock);  // ✅ ALWAYS unlocked
     
@@ -3911,7 +3911,7 @@ func:thread_safe_increment = NIL(atomic<int32>@:counter, Mutex@:lock) {
 };  // Lock released here (defer)
 
 Without defer (manual unlock - DEADLOCK PRONE):
-func:unsafe_increment = NIL(atomic<int32>@:counter, Mutex@:lock) {
+func:unsafe_increment = NIL(atomic<int32>->:counter, Mutex->:lock) {
     mutex_lock(lock);
     
     if (some_condition) {
@@ -3968,7 +3968,7 @@ DEFER FOR INVARIANT RESTORATION:
 Temporarily modify state, then restore:
 
 func:with_modified_config = Result<NIL>() {
-    Config@:config = get_global_config();
+    Config->:config = get_global_config();
     bool:old_debug = config->debug_enabled;
     
     config->debug_enabled = true;  // Temporarily enable debug
@@ -4053,7 +4053,7 @@ DEFER WITH ERROR HANDLING:
 Defers run on all exit paths (including errors):
 
 func:risky_operation = Result<NIL>() {
-    int8@:buf = aria.alloc<int8>(1024);
+    int8->:buf = aria.alloc<int8>(1024);
     defer aria.free(buf);  // ✅ Freed on ALL paths
     
     if (error_condition1) {
@@ -4115,7 +4115,7 @@ Compared to manual cleanup:
 
 Example overhead:
 func:with_defer = NIL() {
-    int8@:ptr = aria.alloc<int8>(100);
+    int8->:ptr = aria.alloc<int8>(100);
     defer aria.free(ptr);  // +2 cycles to register defer
     // Work...
     pass(NIL);  // +5 cycles to execute defer
@@ -4123,7 +4123,7 @@ func:with_defer = NIL() {
 
 vs manual (if remembered):
 func:manual = NIL() {
-    int8@:ptr = aria.alloc<int8>(100);
+    int8->:ptr = aria.alloc<int8>(100);
     // Work...
     aria.free(ptr);  // +5 cycles to call free
     pass(NIL);
@@ -4161,7 +4161,7 @@ defer {
 DEFER BEST PRACTICES:
 
 1. **Defer immediately after allocation** (pair alloc/free visually)
-   int8@:ptr = aria.alloc<int8>(100);
+   int8->:ptr = aria.alloc<int8>(100);
    defer aria.free(ptr);  // ✅ Right after allocation
 
 2. **Use defer for ALL cleanup** (files, locks, memory)
@@ -4207,7 +4207,7 @@ func:http_request = Result<string>(string:url) {
 };
 
 // Critical section with multiple locks
-func:multi_lock_update = NIL(Mutex@:lock1, Mutex@:lock2, int32@:shared_data) {
+func:multi_lock_update = NIL(Mutex->:lock1, Mutex->:lock2, int32->:shared_data) {
     // Lock in consistent order to prevent deadlock
     mutex_lock(lock1);
     defer mutex_unlock(lock1);  // Unlocked 2nd
@@ -5450,7 +5450,7 @@ GC-allocated variables:
 Syntax:
 gc TypeName:var = value;
 
-gc int32@:ptr = aria.gc_alloc<int32>();
+gc int32->:ptr = aria.gc_alloc<int32>();
 <-ptr = 42;
 
 gc string:text = "Hello, GC!";
@@ -5502,13 +5502,13 @@ Wild-allocated variables:
 
 Syntax:
 wild TypeName:var;
-wild TypeName@:ptr = aria.alloc<TypeName>(size);
+wild TypeName->:ptr = aria.alloc<TypeName>(size);
 
 Allocation and deallocation:
-wild int32@:ptr = aria.alloc<int32>(100);  // Allocate 100 int32s
+wild int32->:ptr = aria.alloc<int32>(100);  // Allocate 100 int32s
 defer aria.free(ptr);  // MUST free manually!
 
-wild string@:text = aria.alloc_string(1024);
+wild string->:text = aria.alloc_string(1024);
 defer aria.free(text);
 
 When to use:
@@ -5524,7 +5524,7 @@ When NOT to use:
   ❌ Unless defer used (leak risk)
 
 Safety with defer:
-wild int32@:buffer = aria.alloc<int32>(1024);
+wild int32->:buffer = aria.alloc<int32>(1024);
 defer aria.free(buffer);  // ✅ ALWAYS freed
 
 // Use buffer...
@@ -5539,7 +5539,7 @@ Performance:
   - Cache-unfriendly (heap scattered)
 
 Example (Nikola physics buffer):
-wild fix256@:wave_buffer = aria.alloc<fix256>(GRID_SIZE);
+wild fix256->:wave_buffer = aria.alloc<fix256>(GRID_SIZE);
 defer aria.free(wave_buffer);
 
 // Propagate waves deterministically
@@ -5558,7 +5558,7 @@ Wildx-allocated memory:
   - Used for runtime code generation
 
 Syntax:
-wildx uint8@:code_buffer = aria.alloc_executable(size);
+wildx uint8->:code_buffer = aria.alloc_executable(size);
 
 When to use:
   ✅ JIT compilers (generating machine code at runtime)
@@ -5572,7 +5572,7 @@ When NOT to use:
   ❌ Security-sensitive code (executable heap risk)
 
 Example (JIT compiler):
-wildx uint8@:jit_code = aria.alloc_executable(4096);  // 4KB code page
+wildx uint8->:jit_code = aria.alloc_executable(4096);  // 4KB code page
 defer aria.free_executable(jit_code);
 
 // Generate x86-64 machine code
@@ -5610,14 +5610,14 @@ ALLOCATION MODE BEST PRACTICES:
    int32:x = 42;  // Stack (default)
 
 2. **Use gc for shared ownership** (complex lifetimes)
-   gc TreeNode@:root = build_tree();  // Multiple references
+   gc TreeNode->:root = build_tree();  // Multiple references
 
 3. **Use wild for real-time** (deterministic, no GC pause)
-   wild tfp64@:physics_buffer = aria.alloc<tfp64>(GRID_SIZE);
+   wild tfp64->:physics_buffer = aria.alloc<tfp64>(GRID_SIZE);
    defer aria.free(physics_buffer);
 
 4. **ALWAYS defer wild/wildx allocations** (prevent leaks)
-   wild int32@:ptr = aria.alloc<int32>(100);
+   wild int32->:ptr = aria.alloc<int32>(100);
    defer aria.free(ptr);  // ✅ Mandatory
 
 5. **Avoid gc in real-time loops** (unpredictable pause)
@@ -5666,7 +5666,7 @@ struct:Person = {
     string:name;
     int32:age;
     bool:active;
-    wild string@:nickname;  // Pointer field
+    wild string->:nickname;  // Pointer field
 };
 
 // Struct with generic type parameters
@@ -5685,7 +5685,7 @@ struct<T, E>:Result = {
 // Struct with pointer and array fields
 struct:Node = {
     int64:data;
-    wild Node@:next;    // Self-referential pointer
+    wild Node->:next;    // Self-referential pointer
     int32[10]:buffer;   // Fixed-size array field
 };
 
