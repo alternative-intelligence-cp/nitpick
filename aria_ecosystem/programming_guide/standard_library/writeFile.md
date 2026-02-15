@@ -55,10 +55,10 @@ end
 ### With Error Propagation
 
 ```aria
-fn save_config(config: Config) -> Result<void> {
-    json: string = to_json(config);
+func:save_config = Result<nil, string>(Config:config) {
+    string:json = to_json(config);
     writeFile("config.json", json)?;
-    return Ok();
+    pass(NULL);
 }
 ```
 
@@ -103,10 +103,10 @@ writeFile("data.txt", "New content")?;
 ### ✅ DO: Check for Errors
 
 ```aria
-Result: Result<void> = writeFile("output.txt", data);
+Result<nil>:Result = writeFile("output.txt", data);
 when result is Err(msg) then
     log_error("Failed to write: $msg");
-    return Err("Save failed");
+    fail("Save failed");
 end
 ```
 

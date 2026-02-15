@@ -54,11 +54,11 @@ end
 ### With Error Propagation
 
 ```aria
-fn load_config() -> Result<Config> {
+func:load_config = Result<Config, string>() {
     // ? propagates error if readFile fails
-    content: string = readFile("config.json")?;
-    config: Config = parse_json(content)?;
-    return Ok(config);
+    string:content = readFile("config.json")?;
+    Config:config = parse_json(content)?;
+    pass(config);
 }
 ```
 
@@ -92,10 +92,10 @@ end
 ### ✅ DO: Handle Errors
 
 ```aria
-Result: Result<string> = readFile("important.txt");
+Result<string>:Result = readFile("important.txt");
 when result is Err(msg) then
     log_error("Failed to read: $msg");
-    return Err("Cannot proceed");
+    fail("Cannot proceed");
 end
 ```
 

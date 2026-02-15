@@ -53,8 +53,8 @@ value <<= 2;  // 80 (multiply by 4)
 ### Build Bit Pattern
 
 ```aria
-Result: i32 = 1;
-for i in 0..4 {
+result: i32 = 1;
+till(3, 1) {
     result <<= 1;  // Shift left
     result |= 1;   // Set low bit
 }

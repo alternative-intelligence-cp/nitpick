@@ -207,9 +207,9 @@ while i < 10 {
     i = i + 1;
 }
 
-// Right: Use for loop
-for i in 0..10 {
-    process(i);
+// Right: Use till loop
+till(9, 1) {
+    process($);
 }
 ```
 

@@ -114,11 +114,11 @@ stdout << "$name is $age years old";
 ### ✅ DO: Validate Structure
 
 ```aria
-data: obj = readJSON("config.json")?;
+obj:data = readJSON("config.json")?;
 
 // Check required fields exist
 when not data.has_field("host") then
-    return Err("Missing 'host' field");
+    fail("Missing 'host' field");
 end
 ```
 

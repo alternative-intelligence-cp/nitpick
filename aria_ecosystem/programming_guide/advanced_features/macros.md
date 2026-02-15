@@ -47,7 +47,7 @@ macro<T> NAME(params) {
 ```aria
 macro repeat(n, code) {
     comptime {
-        for i in 0..n {
+        till(n - 1, 1) {
             @emit(code);
         }
     }
@@ -98,8 +98,8 @@ fn main() {
 macro log(level, ...args) {
     stdout << "[$level] ";
     comptime {
-        for arg in args {
-            @emit(stdout << arg << " ");
+        till(args.length - 1, 1) {
+            @emit(stdout << args[$] << " ");
         }
     }
     stdout << "\n";
@@ -200,8 +200,8 @@ fn process_file(path: string) -> Result<void> {
 macro make_builder(TypeName, ...fields) {
     struct ${TypeName}Builder {
         comptime {
-            for field in fields {
-                ${field.name}: ?${field.type},
+            till(fields.length - 1, 1) {
+                ${fields[$].name}: ?${fields[$].type},
             }
         }
     }
@@ -210,17 +210,17 @@ macro make_builder(TypeName, ...fields) {
         pub fn new() -> ${TypeName}Builder {
             return ${TypeName}Builder {
                 comptime {
-                    for field in fields {
-                        ${field.name}: None,
+                    till(fields.length - 1, 1) {
+                        ${fields[$].name}: None,
                     }
                 }
             };
         }
         
         comptime {
-            for field in fields {
-                pub fn ${field.name}(value: ${field.type}) -> ${TypeName}Builder {
-                    self.${field.name} = Some(value);
+            till(fields.length - 1, 1) {
+                pub fn ${fields[$].name}(value: ${fields[$].type}) -> ${TypeName}Builder {
+                    self.${fields[$].name} = Some(value);
                     return self;
                 }
             }
@@ -229,8 +229,8 @@ macro make_builder(TypeName, ...fields) {
         pub fn build() -> ${TypeName} {
             return ${TypeName} {
                 comptime {
-                    for field in fields {
-                        ${field.name}: self.${field.name}?,
+                    till(fields.length - 1, 1) {
+                        ${fields[$].name}: self.${fields[$].name}?,
                     }
                 }
             };
@@ -269,8 +269,8 @@ macro enum_variants(EnumType) {
     pub fn variants() -> []string {
         comptime {
             variants: []string = [];
-            for variant in EnumType.__variants {
-                variants.push(variant.name);
+            till(EnumType.__variants.length - 1, 1) {
+                variants.push(EnumType.__variants[$].name);
             }
             return variants;
         }
@@ -286,8 +286,9 @@ enum Color {
 }
 
 fn main() {
-    for variant in Color.variants() {
-        stdout << variant;  // "Red", "Green", "Blue"
+    variant_list = Color.variants();
+    till(variant_list.length - 1, 1) {
+        stdout << variant_list[$];  // "Red", "Green", "Blue"
     }
 }
 ```

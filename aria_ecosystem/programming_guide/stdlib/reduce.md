@@ -25,7 +25,7 @@ The `reduce()` function (also known as **fold**) reduces an array to a **single 
 // Reduce array to single value
 int64[]:numbers = [1, 2, 3, 4, 5];
 
-int64:sum = reduce(numbers, 0, (acc, n) => acc + n);
+int64:sum = reduce(numbers, 0, int64(int64:acc, int64:n) { pass(acc + n); })?;
 // sum = 15
 ```
 
@@ -36,7 +36,7 @@ int64:sum = reduce(numbers, 0, (acc, n) => acc + n);
 ```aria
 int64[]:numbers = [1, 2, 3, 4, 5];
 
-int64:sum = reduce(numbers, 0, (acc, n) => acc + n);
+int64:sum = reduce(numbers, 0, int64(int64:acc, int64:n) { pass(acc + n); })?;
 // sum = 1 + 2 + 3 + 4 + 5 = 15
 
 // Step by step:
@@ -54,7 +54,7 @@ int64:sum = reduce(numbers, 0, (acc, n) => acc + n);
 ```aria
 int64[]:numbers = [2, 3, 4, 5];
 
-int64:product = reduce(numbers, 1, (acc, n) => acc * n);
+int64:product = reduce(numbers, 1, int64(int64:acc, int64:n) { pass(acc * n); })?;
 // product = 2 * 3 * 4 * 5 = 120
 ```
 
@@ -65,9 +65,9 @@ int64:product = reduce(numbers, 1, (acc, n) => acc * n);
 ```aria
 string[]:words = ["Hello", "World", "Aria"];
 
-string:sentence = reduce(words, "", (acc, w) => {
+string:sentence = reduce(words, "", string(string:acc, string:w) {
     pass(is acc == "" : w : `&{acc} &{w}`);
-});
+})?;
 // sentence = "Hello World Aria"
 ```
 
@@ -78,9 +78,9 @@ string:sentence = reduce(words, "", (acc, w) => {
 ```aria
 int64[]:numbers = [45, 67, 23, 89, 34];
 
-int64:max = reduce(numbers, numbers[0], (acc, n) => {
+int64:max = reduce(numbers, numbers[0], int64(int64:acc, int64:n) {
     pass(is n > acc : n : acc);
-});
+})?;
 // max = 89
 ```
 
@@ -92,7 +92,7 @@ int64:max = reduce(numbers, numbers[0], (acc, n) => {
 
 ```aria
 // Inline lambda
-int64:sum = reduce(numbers, 0, (acc, n) => acc + n);
+int64:sum = reduce(numbers, 0, int64(int64:acc, int64:n) { pass(acc + n); })?;
 ```
 
 ### Named Function
@@ -108,10 +108,10 @@ int64:sum = reduce(numbers, 0, add);
 ### Multi-Line Lambda
 
 ```aria
-int64:result = reduce(numbers, 0, (acc, n) => {
+int64:result = reduce(numbers, 0, int64(int64:acc, int64:n) {
     if (n < 0) { pass(acc); }  // Skip negatives
     pass(acc + n);
-});
+})?;
 ```
 
 ---
@@ -123,9 +123,9 @@ int64:result = reduce(numbers, 0, (acc, n) => {
 ```aria
 string[]:words = ["apple", "banana", "apple", "cherry", "apple"];
 
-int64:appleCount = reduce(words, 0, (count, w) => {
+int64:appleCount = reduce(words, 0, int64(int64:count, string:w) {
     pass(is w == "apple" : count + 1 : count);
-});
+})?;
 // appleCount = 3
 ```
 
@@ -140,12 +140,12 @@ int64:appleCount = reduce(words, 0, (count, w) => {
 
 int64[]:numbers = [10, 20, 30, 40, 50];
 
-Stats:stats = reduce(numbers, { 0, 0, 0.0 }, (s, n) => {
+Stats:stats = reduce(numbers, { 0, 0, 0.0 }, Stats(Stats:s, int64:n) {
     int64:newCount = s.count + 1;
     int64:newSum = s.sum + n;
     float64:newAvg = newSum as float64 / newCount as float64;
     pass({ newCount, newSum, newAvg });
-});
+})?;
 // stats = { count: 5, sum: 150, average: 30.0 }
 ```
 
@@ -154,12 +154,12 @@ Stats:stats = reduce(numbers, { 0, 0, 0.0 }, (s, n) => {
 ```aria
 int64[][]:nested = [[1, 2], [3, 4], [5, 6]];
 
-int64[]:flat = reduce(nested, [], (acc, arr) => {
+int64[]:flat = reduce(nested, [], int64[](int64[]:acc, int64[]:arr) {
     till(arr.length - 1, 1) {
         acc.append(arr[$]);
     }
     pass(acc);
-});
+})?;
 // flat = [1, 2, 3, 4, 5, 6]
 ```
 
@@ -178,11 +178,11 @@ Person[]:people = [
 ];
 
 // Count by department
-map[string, int64]:deptCounts = reduce(people, {}, (counts, p) => {
+map[string, int64]:deptCounts = reduce(people, {}, map[string, int64](map[string, int64]:counts, Person:p) {
     int64:current = counts.get(p.department).unwrapOr(0);
     counts.set(p.department, current + 1);
     pass(counts);
-});
+})?;
 // { "Engineering": 2, "Sales": 1 }
 ```
 
@@ -196,9 +196,9 @@ map[string, int64]:deptCounts = reduce(people, {}, (counts, p) => {
 int64[]:numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 int64:sum = numbers
-    |> filter(n => n % 2 == 0)       // [2, 4, 6, 8, 10]
-    |> transform(n => n * n)         // [4, 16, 36, 64, 100]
-    |> reduce(0, (acc, n) => acc + n); // 220
+    |> filter(bool(int64:n) { pass(n % 2 == 0); })?       // [2, 4, 6, 8, 10]
+    |> transform(int64(int64:n) { pass(n * n); })?        // [4, 16, 36, 64, 100]
+    |> reduce(0, int64(int64:acc, int64:n) { pass(acc + n); })?; // 220
 ```
 
 ### Complex Pipeline
@@ -213,9 +213,9 @@ int64:sum = numbers
 Product[]:inventory = [...];
 
 float64:totalValue = inventory
-    |> filter(p => p.quantity > 0)           // In stock only
-    |> transform(p => p.price * p.quantity)  // Calculate values
-    |> reduce(0.0, (acc, val) => acc + val);  // Sum total
+    |> filter(bool(Product:p) { pass(p.quantity > 0); })?           // In stock only
+    |> transform(float64(Product:p) { pass(p.price * p.quantity); })?  // Calculate values
+    |> reduce(0.0, float64(float64:acc, float64:val) { pass(acc + val); })?;  // Sum total
 ```
 
 ---
@@ -226,21 +226,21 @@ float64:totalValue = inventory
 
 ```aria
 // int64[] → int64
-int64:sum = reduce(numbers, 0, (acc, n) => acc + n);
+int64:sum = reduce(numbers, 0, int64(int64:acc, int64:n) { pass(acc + n); })?;
 ```
 
 ### Different Type (T → U)
 
 ```aria
 // int64[] → string
-string:concatenated = reduce(numbers, "", (acc, n) => {
+string:concatenated = reduce(numbers, "", string(string:acc, int64:n) {
     pass(`&{acc}&{n.toString()}`);
-});
+})?;
 
 // Person[] → map[string, int64]
-map[string, int64]:counts = reduce(people, {}, (m, p) => {
+map[string, int64]:counts = reduce(people, {}, map[string, int64](map[string, int64]:m, Person:p) {
     // Build map from array
-});
+})?;
 ```
 
 ---
@@ -251,30 +251,30 @@ map[string, int64]:counts = reduce(people, {}, (m, p) => {
 
 ```aria
 // Sum: use 0
-int64:sum = reduce(numbers, 0, (acc, n) => acc + n);
+int64:sum = reduce(numbers, 0, int64(int64:acc, int64:n) { pass(acc + n); })?;
 
 // Product: use 1
-int64:product = reduce(numbers, 1, (acc, n) => acc * n);
+int64:product = reduce(numbers, 1, int64(int64:acc, int64:n) { pass(acc * n); })?;
 
 // String concat: use ""
-string:text = reduce(words, "", (acc, w) => `&{acc} &{w}`);
+string:text = reduce(words, "", string(string:acc, string:w) { pass(`&{acc} &{w}`); })?;
 
 // Array building: use []
-int64[]:array = reduce(data, [], (acc, item) => {
+int64[]:array = reduce(data, [], int64[](int64[]:acc, int64:item) {
     acc.append(item);
     pass(acc);
-});
+})?;
 ```
 
 ### Wrong Initial Value
 
 ```aria
 // WRONG: Using 1 for sum
-int64:sum = reduce(numbers, 1, (acc, n) => acc + n);
+int64:sum = reduce(numbers, 1, int64(int64:acc, int64:n) { pass(acc + n); })?;
 // Result off by 1!
 
 // WRONG: Using 0 for product
-int64:product = reduce(numbers, 0, (acc, n) => acc * n);
+int64:product = reduce(numbers, 0, int64(int64:acc, int64:n) { pass(acc * n); })?;
 // Result is always 0!
 ```
 
@@ -286,7 +286,7 @@ int64:product = reduce(numbers, 0, (acc, n) => acc * n);
 
 ```aria
 // GOOD: Accumulate values
-int64:total = reduce(prices, 0, (sum, p) => sum + p);
+int64:total = reduce(prices, 0, int64(int64:sum, int64:p) { pass(sum + p); })?;
 ```
 
 ### ✅ Choose Correct Initial Value
@@ -301,24 +301,24 @@ int64:product = reduce(numbers, 1, multiply);
 
 ```aria
 // GOOD: Pure function
-reduce(numbers, 0, (acc, n) => acc + n);
+reduce(numbers, 0, int64(int64:acc, int64:n) { pass(acc + n); })?;
 
 // BAD: Side effects
 int64:external = 0;
-reduce(numbers, 0, (acc, n) => {
+reduce(numbers, 0, int64(int64:acc, int64:n) {
     external += n;  // ⚠️ Side effect!
     pass(acc + n);
-});
+})?;
 ```
 
 ### ❌ Don't Use for Simple Iteration
 
 ```aria
 // BAD: Reduce for iteration only
-reduce(numbers, NIL, (_, n) => {
+reduce(numbers, NIL, NIL(NIL:_, int64:n) {
     print(n);
     pass(NIL);
-});
+})?;
 
 // GOOD: Use loop
 till(numbers.length - 1, 1) {
@@ -330,17 +330,17 @@ till(numbers.length - 1, 1) {
 
 ```aria
 // RISKY: Mutating accumulator
-int64[]:result = reduce(arrays, [], (acc, arr) => {
+int64[]:result = reduce(arrays, [], int64[](int64[]:acc, int64[]:arr) {
     acc.append(arr);  // Mutation
     pass(acc);
-});
+})?;
 
 // SAFER: Create new accumulator each time
-int64[]:result = reduce(arrays, [], (acc, arr) => {
+int64[]:result = reduce(arrays, [], int64[](int64[]:acc, int64[]:arr) {
     int64[]:newAcc = acc.clone();
     newAcc.append(arr);
     pass(newAcc);
-});
+})?;
 ```
 
 ---
@@ -350,7 +350,7 @@ int64[]:result = reduce(arrays, [], (acc, arr) => {
 ### Aria
 
 ```aria
-int64:sum = reduce(numbers, 0, (acc, n) => acc + n);
+int64:sum = reduce(numbers, 0, int64(int64:acc, int64:n) { pass(acc + n); })?;
 ```
 
 ### JavaScript
@@ -390,14 +390,14 @@ let sum: i64 = numbers.iter().fold(0, |acc, &n| acc + n);
 
 int64[]:data = [45, 67, 23, 89, 34, 12, 78];
 
-RunningStats:stats = reduce(data, { 0, 0, INT64_MAX, INT64_MIN }, (s, n) => {
+RunningStats:stats = reduce(data, { 0, 0, INT64_MAX, INT64_MIN }, RunningStats(RunningStats:s, int64:n) {
     pass({
         count: s.count + 1,
         sum: s.sum + n,
         min: is n < s.min : n : s.min,
         max: is n > s.max : n : s.max
     });
-});
+})?;
 
 float64:average = stats.sum as float64 / stats.count as float64;
 ```
@@ -407,11 +407,11 @@ float64:average = stats.sum as float64 / stats.count as float64;
 ```aria
 int64[]:scores = [1, 2, 2, 3, 3, 3, 4, 4, 5];
 
-map[int64, int64]:histogram = reduce(scores, {}, (hist, score) => {
+map[int64, int64]:histogram = reduce(scores, {}, map[int64, int64](map[int64, int64]:hist, int64:score) {
     int64:count = hist.get(score).unwrapOr(0);
     hist.set(score, count + 1);
     pass(hist);
-});
+})?;
 // { 1: 1, 2: 2, 3: 3, 4: 2, 5: 1 }
 ```
 
@@ -420,30 +420,30 @@ map[int64, int64]:histogram = reduce(scores, {}, (hist, score) => {
 ```aria
 int64[]:numbers = [1, 2, 3, 4, 5];
 
-int64[]:reversed = reduce(numbers, [], (acc, n) => {
+int64[]:reversed = reduce(numbers, [], int64[](int64[]:acc, int64:n) {
     int64[]:newAcc = [n];
     till(acc.length - 1, 1) {
         newAcc.append(acc[$]);
     }
     pass(newAcc);
-});
+})?;
 // reversed = [5, 4, 3, 2, 1]
 ```
 
 ### Example 4: Compose Functions
 
 ```aria
-func:(int64)(int64)[]:functions = [
-    n => n + 1,
-    n => n * 2,
-    n => n * n
+(int64)(int64)[]:functions = [
+    int64(int64:n) { pass(n + 1); },
+    int64(int64:n) { pass(n * 2); },
+    int64(int64:n) { pass(n * n); }
 ];
 
-func:(int64)(int64):composed = reduce(functions, n => n, (f, g) => {
-    pass(n => f(g(n)));
-});
+(int64)(int64):composed = reduce(functions, int64(int64:n) { pass(n); }, (int64)(int64)((int64)(int64):f, (int64)(int64):g) {
+    pass(int64(int64:n) { pass(f(g(n)?)?); });
+})?;
 
-int64:result = composed(5);
+int64:result = composed(5)?;
 // 5 → (5+1)=6 → (6*2)=12 → (12*12)=144
 ```
 
@@ -457,13 +457,13 @@ int64:result = composed(5);
 int64[]:empty = [];
 
 // Need safe initial value
-int64:sum = reduce(empty, 0, (acc, n) => acc + n);
+int64:sum = reduce(empty, 0, int64(int64:acc, int64:n) { pass(acc + n); })?;
 // sum = 0 (safe with empty array)
 
 // Dangerous with wrong initial
-int64:max = reduce(empty, INT64_MIN, (acc, n) => {
+int64:max = reduce(empty, INT64_MIN, int64(int64:acc, int64:n) {
     pass(is n > acc : n : acc);
-});
+})?;
 // max = INT64_MIN (no elements to compare)
 ```
 
@@ -472,13 +472,13 @@ int64:max = reduce(empty, INT64_MIN, (acc, n) => {
 ```aria
 Result[int64][]:results = [Result.ok(1), Result.ok(2), Result.err("oops")];
 
-Result[int64]:sumResult = reduce(results, Result.ok(0), (accRes, r) => {
+Result[int64]:sumResult = reduce(results, Result.ok(0), Result[int64](Result[int64]:accRes, Result[int64]:r) {
     if (accRes.isErr()) { pass(accRes); }
     if (r.isErr()) { pass(r); }
     
     int64:sum = accRes.unwrap() + r.unwrap();
     pass(Result.ok(sum));
-});
+})?;
 ```
 
 ---
@@ -489,22 +489,22 @@ Result[int64]:sumResult = reduce(results, Result.ok(0), (accRes, r) => {
 
 ```aria
 // Efficient: Single pass through array
-int64:total = reduce(numbers, 0, (acc, n) => acc + n);
+int64:total = reduce(numbers, 0, int64(int64:acc, int64:n) { pass(acc + n); })?;
 ```
 
 ### Avoid Expensive Operations in Reducer
 
 ```aria
 // BAD: Expensive operation per element
-string:result = reduce(words, "", (acc, w) => {
+string:result = reduce(words, "", string(string:acc, string:w) {
     pass(acc.clone() + w);  // Clone on each iteration!
-});
+})?;
 
 // BETTER: Use mutable accumulator (if safe)
-string:result = reduce(words, "", (acc, w) => {
+string:result = reduce(words, "", string(string:acc, string:w) {
     acc += w;  // In-place append
     pass(acc);
-});
+})?;
 ```
 
 ---

@@ -165,17 +165,17 @@ end
 
 ```aria
 // Perfect for huge files
-fn process_log_file(path: string) -> Result<void> {
-    file: File = openFile(path, "r")?;
+func:process_log_file = Result<nil, string>(string:path) {
+    File:file = openFile(path, "r")?;
     defer file.close();
     
     loop
-        line: ?string = file.read_line();
-        when line == nil then break; end
+        string | NULL:line = file.read_line();
+        when line == NULL then break; end
         analyze_log_line(line);
     end
     
-    return Ok();
+    pass(NULL);
 }
 ```
 

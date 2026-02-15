@@ -29,7 +29,7 @@ Aria's `frac` family provides **exact rational number arithmetic** using mixed-f
 ```aria
 // Problem: Floating-point accumulation drift
 flt32:balance = 0.0f32;
-for i in 0..1000 {
+till(999, 1) {
     balance = balance + 0.01f32;  // Add 1 cent, 1000 times
 }
 // balance = 9.999999 or 10.000001 (NOT exactly 10.0!)
@@ -37,7 +37,7 @@ for i in 0..1000 {
 
 // Solution: Exact rational arithmetic
 frac32:balance = {0, 0, 1};  // Start at 0
-for i in 0..1000 {
+till(999, 1) {
     balance = balance + {0, 1, 100};  // Add 1/100 (exactly 1 cent)
 }
 // balance = {10, 0, 1} = 10 + 0/1 = exactly 10.0
@@ -200,7 +200,7 @@ for (int i = 0; i < 10; i++) {
 frac16:money = {0, 1, 10};  // Exactly 1/10
 
 frac16:total = {0, 0, 1};  // Start at 0
-for i in 0..10 {
+till(9, 1) {
     total = total + {0, 1, 10};  // Add exact 1/10
 }
 // total = {1, 0, 1} = 1 + 0/1 = EXACTLY 1.0
@@ -227,7 +227,7 @@ print(balance)  # 9.999999999999831 (lost 0.000000000000169!)
 ```aria
 // Aria frac (PERFECT accumulation)
 frac32:balance = {0, 0, 1};
-for i in 0..1000000000 {  // 1 billion iterations!
+till(999_999_999, 1) {  // 1 billion iterations!
     balance = balance + {0, 1, 100};  // Add 1 cent
 }
 // balance = {10000000, 0, 1} = exactly 10 million dollars
@@ -485,7 +485,7 @@ func:add_transaction = void(Account@:account, frac32:amount) {
 
 // Add 1000 transactions
 Account:checking = {balance: {0, 0, 1}};  // Start at $0.00
-for i in 0..1000 {
+till(999, 1) {
     add_transaction(&checking, {0, 152, 100});  // +$1.52 each
 }
 // checking.balance = {1520, 0, 1} = exactly $1,520.00
@@ -501,7 +501,7 @@ frac32:rate = {0, 5, 100};  // 5% = 5/100 = 0.05 (exact!)
 uint32:years = 10;
 
 frac32:amount = principal;
-for y in 0..years {
+till(years - 1, 1) {
     frac32:interest = amount * rate;  // Exact interest
     amount = amount + interest;       // Exact accumulation
 }
@@ -729,14 +729,14 @@ frac64:  24 bytes (3× larger than flt64)
 ```aria
 // Speed test: 1 million additions
 flt32:start_flt = get_time();
-for i in 0..1000000 {
+till(999_999, 1) {
     flt32:x = a_flt + b_flt;  // Fast (hardware)
 }
 flt32:end_flt = get_time();
 // Time: ~3ms (native hardware)
 
 frac16:start_frac = get_time();
-for i in 0..1000000 {
+till(999_999, 1) {
     frac16:x = a_frac + b_frac;  // Slower (LCM/GCD)
 }
 frac16:end_frac = get_time();
@@ -871,12 +871,12 @@ frac16:x = {0, 1, 10};  // EXACTLY 1/10 (what you meant)
 
 ```aria
 // ✗ PROBLEM: frac is SLOW for high-throughput
-for i in 0..10000000 {
+till(9_999_999, 1) {
     frac16:result = a + b;  // 10M iterations * 150ns = 1.5 seconds!
 }
 
 // ✓ SOLUTION: Use flt or fix for speed-critical
-for i in 0..10000000 {
+till(9_999_999, 1) {
     flt32:result = a_flt + b_flt;  // 10M iterations * 3ns = 30ms
 }
 ```

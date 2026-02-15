@@ -19,30 +19,32 @@
 
 ## Description
 
-The range operator `..` creates a range of values for iteration.
+The range operator `..` creates ranges for **array/string slicing** and **range expressions**. 
+
+**IMPORTANT**: Aria does NOT use `for i in range` loops - those are from Rust/Python. Aria uses `till` for iteration.
 
 ---
 
-## Exclusive Range
+## Slicing (Exclusive Range)
 
 ```aria
-// 0 to 9 (excludes 10)
-for i in 0..10 {
-    stdout << i;
-}
-// Prints: 0 1 2 3 4 5 6 7 8 9
+int32[]:arr = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+// Extract elements 0-9 (excludes index 10)
+int32[]:subset = arr[0..10];  // Array slicing
+// Result: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 ```
 
 ---
 
-## Inclusive Range
+## Slicing (Inclusive Range)
 
 ```aria
-// 0 to 10 (includes 10)
-for i in 0..=10 {
-    stdout << i;
-}
-// Prints: 0 1 2 3 4 5 6 7 8 9 10
+int32[]:arr = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+// Extract elements 0-10 (includes index 10)
+int32[]:subset = arr[0..=10];  // Array slicing
+// Result: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 ```
 
 ---
@@ -50,44 +52,47 @@ for i in 0..=10 {
 ## Array Slicing
 
 ```aria
-arr: []i32 = [0, 1, 2, 3, 4, 5];
+int32[]:arr = [0, 1, 2, 3, 4, 5];
 
 // Slice [1, 2, 3]
-slice: []i32 = arr[1..4];
+int32[]:slice = arr[1..4];
 
 // From start
-first_three: []i32 = arr[..3];
+int32[]:first_three = arr[..3];
 
 // To end
-last_three: []i32 = arr[3..];
+int32[]:last_three = arr[3..];
 ```
 
 ---
 
 ## Best Practices
 
-### ✅ DO: Use for Iteration
+### ✅ DO: Use till for Iteration
 
 ```aria
-for i in 0..arr.length() {
-    process(arr[i]);
+// Aria loop syntax (NOT for-in)
+till(arr.length - 1, 1) {
+    process(arr[$]);  // $ = 0, 1, 2, ..., arr.length-1
 }
 ```
 
 ### ✅ DO: Use for Slicing
 
 ```aria
-substring: string = text[0..5];
+string:substring = text[0..5];  // First 5 characters
 ```
 
-### ❌ DON'T: Confuse Inclusive/Exclusive
+### ❌ DON'T: Use Rust for-in Syntax
 
 ```aria
-// Exclusive - stops before 10
-for i in 0..10 { ... }  // 0-9
+// ❌ WRONG: This is Rust/Python, not Aria!
+// for i in 0..10 { ... }   // Doesn't exist in Aria
+// for i in 0..=10 { ... }  // Doesn't exist in Aria
 
-// Inclusive - includes 10
-for i in 0..=10 { ... }  // 0-10
+// ✅ CORRECT: Aria uses till for loops
+till(9, 1) { ... }   // Exclusive ($ = 0 to 9)
+till(10, 1) { ... }  // Inclusive ($ = 1 to 10)
 ```
 
 ---

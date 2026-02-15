@@ -165,9 +165,9 @@ small: int8 = big as int8;  // Truncates! (-56)
 ```aria
 fn to_int8(value: i32) -> Result<int8> {
     when value < -128 or value > 127 then
-        return Err("Value out of range");
+        fail("Value out of range");
     end
-    return Ok(value as int8);
+    pass(value as int8);
 }
 ```
 

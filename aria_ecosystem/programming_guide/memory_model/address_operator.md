@@ -236,8 +236,8 @@ ptr: *i32 = allocate_array(10);
 defer aria_free(ptr);
 
 // Use pointer
-for i in 0..10 {
-    *(ptr + i) = i;
+till(9, 1) {
+    *(ptr + $) = $;
 }
 ```
 

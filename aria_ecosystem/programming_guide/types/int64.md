@@ -173,9 +173,9 @@ small: i32 = big as i32;  // Truncates!
 ```aria
 fn to_i32(value: i64) -> Result<i32> {
     when value < -2147483648 or value > 2147483647 then
-        return Err("Value out of range for i32");
+        fail("Value out of range for i32");
     end
-    return Ok(value as i32);
+    pass(value as i32);
 }
 ```
 

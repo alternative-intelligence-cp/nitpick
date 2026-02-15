@@ -227,11 +227,11 @@ enum Result<T, E> {
     Err(E)
 }
 
-fn safe_divide(a: i32, b: i32) -> Result<i32, string> {
+func:safe_divide = Result<int32, string>(int32:a, int32:b) {
     when b == 0 then
-        return Err("Division by zero");
+        fail("Division by zero");
     end
-    return Ok(a / b);
+    pass(a / b);
 }
 ```
 

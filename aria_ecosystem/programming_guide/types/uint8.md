@@ -162,9 +162,9 @@ unsigned: u8 = signed as u8;  // Wraps! (246)
 // Better
 fn to_u8(value: i32) -> Result<u8> {
     when value < 0 or value > 255 then
-        return Err("Out of range");
+        fail("Out of range");
     end
-    return Ok(value as u8);
+    pass(value as u8);
 }
 ```
 

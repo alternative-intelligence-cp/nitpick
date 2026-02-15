@@ -149,7 +149,7 @@ result, _ := updateNeuron(-5)  // _ discards error!
 // Rust version (excellent!)
 fn update_neuron(id: i32) -> Result<i32, String> {
     if id < 0 {
-        return Err("Invalid ID".to_string());
+        fail("Invalid ID".to_string());
     }
     // ... update logic
     Ok(result)
@@ -1050,7 +1050,7 @@ int64:value = result ? 0;
 ```rust
 fn divide(a: i64, b: i64) -> Result<i64, String> {
     if b == 0 {
-        return Err("Division by zero".to_string());
+        fail("Division by zero".to_string());
     }
     Ok(a / b)
 }

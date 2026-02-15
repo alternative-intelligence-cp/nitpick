@@ -142,8 +142,8 @@ fn is_power_of_two(n: i32) -> bool {
 
 // Generate powers
 powers: []i32 = [];
-for i in 0..10 {
-    powers.push(1 << i);  // 1, 2, 4, 8, 16, ...
+till(9, 1) {
+    powers.push(1 << $);  // 1, 2, 4, 8, 16, ...
 }
 ```
 

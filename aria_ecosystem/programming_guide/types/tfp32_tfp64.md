@@ -273,7 +273,7 @@ func:compute_trajectory = tfp32[](tfp32:initial_velocity, uint32:frames) {
     tfp32:pos = 0.0tf32;
     tfp32:vel = initial_velocity;
     
-    for i in 0..frames {
+    till(frames - 1, 1) {
         pos = pos + vel;
         vel = vel + (-9.8tf32 * 0.016tf32);
         positions.push(pos);
@@ -327,14 +327,14 @@ func:compute_trajectory = tfp32[](tfp32:initial_velocity, uint32:frames) {
 
 ```aria
 // ✗ BAD: tfp32 in hot loop (slow!)
-for i in 0..1000000 {
-    tfp32:x = compute_expensive(i);  // Called 1M times!
+till(999_999, 1) {
+    tfp32:x = compute_expensive($);  // Called 1M times!
 }
 
 // ✓ GOOD: Batch with fixed-point, convert once
 fix256[]:results;
-for i in 0..1000000 {
-    fix256:x = compute_expensive_fix(i);  // Fast fixed-point!
+till(999_999, 1) {
+    fix256:x = compute_expensive_fix($);  // Fast fixed-point!
     results.push(x);
 }
 tfp32:final = tfp32(results.sum());  // Convert once at end
@@ -346,7 +346,7 @@ tfp32:player_pos = 100.0tf32;
 
 // Inner loop: High-performance fixed-point
 fix256:pos_fix = fix256(player_pos);
-for step in 0..1000 {
+till(999, 1) {
     pos_fix = pos_fix + velocity_fix * dt_fix;  // Fast!
 }
 
@@ -610,12 +610,12 @@ ReplayEvent[]:replay = [
 func:replay_game = void(ReplayEvent[]:events) {
     PlayerState:player = initial_state();
     
-    for frame in 0..<events.length {
+    till(events.length - 1, 1) {
         // Deterministic physics
         tick_physics(&player, 0.016tf32);
         
         // Apply recorded input
-        if events[frame].input == JUMP {
+        if events[$].input == JUMP {
             player.vy = 10.0tf32;
         }
     }
@@ -660,7 +660,7 @@ contract:BounceGame {
     tfp32:ball_velocity,
     
     func:simulate_bounce = void(uint32:frames) {
-        for i in 0..frames {
+        till(frames - 1, 1) {
             // Deterministic physics (all nodes agree!)
             ball_height = ball_height + ball_velocity * 0.016tf32;
             ball_velocity = ball_velocity + (-9.8tf32 * 0.016tf32);
@@ -735,15 +735,15 @@ tfp32[]:values = [0.1tf32, 0.1tf32, 0.1tf32, ...];  // 1000 values
 
 // ✗ BAD: Naive sum (loses precision)
 tfp32:sum = 0.0tf32;
-for val in values {
-    sum = sum + val;  // Accumulates rounding error!
+till(values.length - 1, 1) {
+    sum = sum + values[$];  // Accumulates rounding error!
 }
 
 // ✓ GOOD: Kahan summation (compensated)
 tfp32:sum = 0.0tf32;
 tfp32:compensation = 0.0tf32;
-for val in values {
-    tfp32:y = val - compensation;
+till(values.length - 1, 1) {
+    tfp32:y = values[$] - compensation;
     tfp32:t = sum + y;
     compensation = (t - sum) - y;
     sum = t;
@@ -796,14 +796,14 @@ Interval:sum = interval_add(x, y);  // {14.8, 15.2} = 15.0 ± 0.2
 ```aria
 // Speed test: 1 million additions
 fix256:start_fix = get_time();
-for i in 0..1000000 {
+till(999_999, 1) {
     fix256:x = a_fix + b_fix;  // Fast!
 }
 fix256:end_fix = get_time();
 // Time: ~10ms
 
 tfp64:start_tfp = get_time();
-for i in 0..1000000 {
+till(999_999, 1) {
     tfp64:x = a_tfp + b_tfp;  // Slower
 }
 tfp64:end_tfp = get_time();
@@ -941,14 +941,14 @@ tfp32:epsilon = 0.001tf32;  // Reasonable for 4-digit precision
 
 ```aria
 // ✗ PROBLEM: Conversion in hot loop
-for i in 0..1000000 {
+till(999_999, 1) {
     flt32:ieee_val = get_ieee_value();
     tfp32:det_val = tfp32(ieee_val);  // SLOW! Destroys determinism!
     process(det_val);
 }
 
 // ✓ SOLUTION: Stay in one domain
-for i in 0..1000000 {
+till(999_999, 1) {
     tfp32:det_val = get_tfp_value();  // Native tfp
     process(det_val);
 }

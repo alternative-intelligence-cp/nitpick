@@ -215,8 +215,8 @@ dbug.enable_all();
 
 // List enabled groups
 string[]:enabled = dbug.list_enabled();
-for group in enabled {
-    print("Debug enabled for: ", group);
+till(enabled.length - 1, 1) {
+    print("Debug enabled for: ", enabled[$]);
 }
 ```
 

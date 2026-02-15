@@ -65,8 +65,10 @@ enum Message {
 ## Loop Labels
 
 ```aria
-outer: for i in 0..10 {
-    inner: for j in 0..10 {
+outer: till(9, 1) {
+    i = $;
+    inner: till(9, 1) {
+        j = $;
         if i * j > 50 {
             break outer;  // Break outer loop
         }
@@ -171,8 +173,10 @@ fn get_user() -> (name: string, age: i32) {
 ## Nested Loop Labels
 
 ```aria
-search: for x in 0..100 {
-    check: for y in 0..100 {
+search: till(99, 1) {
+    x = $;
+    check: till(99, 1) {
+        y = $;
         if found(x, y) {
             stdout << "Found at ($x, $y)";
             break search;
@@ -196,8 +200,11 @@ fn calculate(amount: f64, rate: f64) -> f64 {
 ### ✅ DO: Use Labels for Complex Loops
 
 ```aria
-find_pair: for i in 0..data.len() {
-    for j in (i+1)..data.len() {
+find_pair: till(data.len() - 1, 1) {
+    i = $;
+    till(data.len() - 1, 1) {
+        j = $;
+        if j <= i { continue; }  // Skip if j <= i
         if data[i] + data[j] == target {
             break find_pair;
         }

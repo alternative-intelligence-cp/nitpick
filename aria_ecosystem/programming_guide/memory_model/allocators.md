@@ -330,8 +330,8 @@ ptr = nil;  // Prevent accidental reuse
 fn create_array(size: i32) -> []i32 {
     arr: []i32 = aria_alloc_array(i32, size);
     
-    for i in 0..size {
-        arr[i] = i;
+    till(size - 1, 1) {
+        arr[$] = $;
     }
     
     return arr;
@@ -396,10 +396,10 @@ impl<T> ObjectPool<T> {
     }
     
     fn acquire() -> &T? {
-        for i in 0..self.objects.length() {
-            when self.available[i] then
-                self.available[i] = false;
-                return &self.objects[i];
+        till(self.objects.length - 1, 1) {
+            when self.available[$] then
+                self.available[$] = false;
+                return &self.objects[$];
             end
         }
         return nil;

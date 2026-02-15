@@ -2,75 +2,57 @@
 
 **Category**: Control Flow → Iteration  
 **Symbol**: `$`  
-**Philosophy**: Explicit mutation in loops
+**Philosophy**: Automatic index variable in loops
 
 ---
 
 ## What is the Dollar Variable?
 
-The **dollar sign (`$`)** marks loop variables for **mutable access** to the original collection items.
+The **dollar sign (`$`)** is the **automatic index variable** in `till` loops, representing the current iteration index.
 
 ---
 
 ## Basic Syntax
 
 ```aria
-for $item in collection {
-    item.modify();  // Can modify original
+till(array.length - 1, 1) {
+    // $ is the current index (0, 1, 2, ...)
+    stdout << $ << ": " << array[$] << "\n";
 }
 ```
 
 ---
 
-## Why Dollar Sign?
+## $ as Index
 
-By default, loop variables are **read-only copies**:
-
-```aria
-numbers: []i32 = [1, 2, 3];
-
-for num in numbers {
-    num = num * 2;  // ❌ Error: num is immutable
-}
-```
-
-Use `$` for **mutable access**:
+In `till` loops, `$` automatically holds the current index:
 
 ```aria
-numbers: []i32 = [1, 2, 3];
+numbers: []i32 = [10, 20, 30];
 
-for $num in numbers {
-    num = num * 2;  // ✅ Works: Modifies original array
+till(numbers.length - 1, 1) {
+    // $ is 0, then 1, then 2
+    stdout << "Index " << $ << " = " << numbers[$] << "\n";
 }
 
-stdout << numbers;  // [2, 4, 6]
+// Output:
+// Index 0 = 10
+// Index 1 = 20
+// Index 2 = 30
 ```
 
 ---
 
-## Read-Only by Default
+## Reading Values with $
+
+Use `$` to index into arrays:
 
 ```aria
 users: []User = load_users();
 
-// Read-only iteration
-for user in users {
-    stdout << user.name << "\n";  // ✅ Can read
-    user.name = "New";            // ❌ Can't modify
-}
-```
-
----
-
-## Mutable with $
-
-```aria
-users: []User = load_users();
-
-// Mutable iteration
-for $user in users {
-    stdout << user.name << "\n";  // ✅ Can read
-    user.name = "Updated";        // ✅ Can modify
+till(users.length - 1, 1) {
+    user: auto = users[$];  // $ is the index
+    stdout << user.name << "\n";
 }
 ```
 
@@ -78,12 +60,14 @@ for $user in users {
 
 ## Modifying Array Elements
 
+Use `$` to modify elements directly:
+
 ```aria
 scores: []i32 = [85, 90, 78, 92];
 
 // Double all scores
-for $score in scores {
-    score = score * 2;
+till(scores.length - 1, 1) {
+    scores[$] = scores[$] * 2;
 }
 
 stdout << scores;  // [170, 180, 156, 184]
@@ -102,20 +86,22 @@ struct Product {
 products: []Product = load_products();
 
 // Apply 10% discount
-for $product in products {
-    product.price = product.price * 0.9;
+till(products.length - 1, 1) {
+    products[$].price = products[$].price * 0.9;
 }
 ```
 
 ---
 
-## With Index
+## With Item and Index
 
 ```aria
 items: []string = ["apple", "banana", "cherry"];
 
-for $item, index in items {
-    item = format("{}. {}", index + 1, item);
+till(items.length - 1, 1) {
+    item: auto = items[$];
+    // $ is the index, item is the value
+    items[$] = format("{}. {}", $ + 1, item);
 }
 
 // items is now ["1. apple", "2. banana", "3. cherry"]
@@ -123,12 +109,13 @@ for $item, index in items {
 
 ---
 
-## Only $ Variable is Mutable
+## Using $ in Calculations
 
 ```aria
-for $item, index in items {
-    item = "new";    // ✅ Can modify item (marked with $)
-    index = 999;     // ❌ Can't modify index (not marked with $)
+till(items.length - 1, 1) {
+    // $ can be used in any expression
+    rank: i32 = $ + 1;  // 1-based ranking
+    stdout << rank << ". " << items[$] << "\n";
 }
 ```
 
@@ -142,8 +129,8 @@ for $item, index in items {
 temperatures: []f64 = [32.0, 68.0, 86.0];
 
 // Convert Fahrenheit to Celsius
-for $temp in temperatures {
-    temp = (temp - 32.0) * 5.0 / 9.0;
+till(temperatures.length - 1, 1) {
+    temperatures[$] = (temperatures[$] - 32.0) * 5.0 / 9.0;
 }
 ```
 
@@ -153,8 +140,8 @@ for $temp in temperatures {
 values: []i32 = [10, 20, 30, 40];
 max: i32 = 40;
 
-for $value in values {
-    value = (value * 100) / max;  // Convert to percentage
+till(values.length - 1, 1) {
+    values[$] = (values[$] * 100) / max;  // Convert to percentage
 }
 
 // values is now [25, 50, 75, 100]
@@ -165,8 +152,8 @@ for $value in values {
 ```aria
 strings: []string = ["hello", "world"];
 
-for $str in strings {
-    str = str.to_uppercase();
+till(strings.length - 1, 1) {
+    strings[$] = strings[$].to_uppercase();
 }
 
 // strings is now ["HELLO", "WORLD"]
@@ -178,38 +165,27 @@ for $str in strings {
 
 ### ✅ Use $ When:
 
-- Need to modify original collection
-- Updating elements in-place
-- Applying transformations
-- Changing struct fields
+- Accessing array elements by index
+- Modifying array elements in-place
+- Need the numeric index value
+- Performing index-based calculations
 
-### ❌ Don't Use $ When:
+### ✅ $ is Always Available:
 
-- Only reading values
-- Creating new collection
-- Don't need to modify originals
+- `$` is automatically available in `till` loops
+- Represents current iteration index
+- No declaration needed
 
 ---
 
-## Read-Only vs Mutable
+## Index Value
 
-### Read-Only (No $)
-
-```aria
-for item in items {
-    // item is a copy
-    // Can't modify original
-    process(item);
-}
-```
-
-### Mutable (With $)
+`$` holds the actual numeric index:
 
 ```aria
-for $item in items {
-    // item references original
-    // Can modify original
-    item.update();
+till(5, 1) {
+    // $ is 0, 1, 2, 3, 4, 5
+    stdout << "Iteration: " << $ << "\n";
 }
 ```
 
@@ -217,54 +193,59 @@ for $item in items {
 
 ## Best Practices
 
+### ✅ DO: Use $ for Array Access
+
+```aria
+// Good: Clear index usage
+till(users.length - 1, 1) {
+    users[$].last_active = now();
+}
+```
+
 ### ✅ DO: Use $ for In-Place Updates
 
 ```aria
 // Good: Modify originals
-for $user in users {
-    user.last_active = now();
+till(scores.length - 1, 1) {
+    scores[$] = scores[$] + bonus;
 }
 ```
 
-### ✅ DO: Use $ When Intent is Clear
+### ✅ DO: Store $ if Needed Multiple Times
 
 ```aria
-// Good: Obviously modifying
-for $score in scores {
-    score = score + bonus;
+// Good: Store index for clarity
+till(items.length - 1, 1) {
+    idx: i32 = $;
+    stdout << idx << ": " << items[idx] << "\n";
 }
 ```
 
-### ❌ DON'T: Use $ if Not Modifying
+### ❌ DON'T: Modify $ (It's Read-Only)
 
 ```aria
-// Wrong: Unnecessary $
-for $item in items {
-    stdout << item << "\n";  // Just reading
-}
-
-// Right: No $
-for item in items {
-    stdout << item << "\n";
+// Wrong: Can't modify $
+till(10, 1) {
+    $ = 5;  // ❌ Error: $ is read-only
 }
 ```
 
-### ❌ DON'T: Modify Structure While Iterating
+### ❌ DON'T: Add/Remove During Iteration
 
 ```aria
-// ❌ Wrong: Don't add/remove during iteration
-for $item in items {
+// ❌ Wrong: Don't modify array size during iteration
+till(items.length - 1, 1) {
     items.push(new_item);  // Unsafe!
 }
 
 // ✅ Right: Collect changes, apply after
 to_add: []Item = [];
-for item in items {
-    to_add.push(create_related(item));
+till(items.length - 1, 1) {
+    to_add.push(create_related(items[$]));
 }
 
-for item in to_add {
-    items.push(item);
+till(to_add.length - 1, 1) {
+    items.push(to_add[$]);
 }
 ```
 
@@ -272,29 +253,29 @@ for item in to_add {
 
 ## Comparison with Other Languages
 
+### C/C++
+
+```c
+// C: Explicit index variable
+for (int i = 0; i < n; i++) {
+    array[i] = array[i] * 2;
+}
+```
+
 ### Python
 
 ```python
-# Python: Always mutable
-for item in items:
-    item.field = "new"  # Modifies original
-```
-
-### Rust
-
-```rust
-// Rust: Explicit mut
-for item in &mut items {
-    item.field = "new";  // Modifies original
-}
+# Python: enumerate for index
+for i, item in enumerate(items):
+    items[i] = item * 2
 ```
 
 ### Aria
 
 ```aria
-// Aria: Use $
-for $item in items {
-    item.field = "new";  // Modifies original
+// Aria: $ is automatic index
+till(items.length - 1, 1) {
+    items[$] = items[$] * 2;
 }
 ```
 
@@ -307,9 +288,9 @@ for $item in items {
 ```aria
 records: []Record = load_records();
 
-for $record in records {
-    record.updated_at = now();
-    record.version = record.version + 1;
+till(records.length - 1, 1) {
+    records[$].updated_at = now();
+    records[$].version = records[$].version + 1;
 }
 
 save_records(records);
@@ -320,10 +301,10 @@ save_records(records);
 ```aria
 data: []string = load_data();
 
-for $entry in data {
-    entry = entry.trim();
-    entry = entry.to_lowercase();
-    entry = entry.replace(",", "");
+till(data.length - 1, 1) {
+    data[$] = data[$].trim();
+    data[$] = data[$].to_lowercase();
+    data[$] = data[$].replace(",", "");
 }
 ```
 
@@ -332,9 +313,9 @@ for $entry in data {
 ```aria
 items: []Item = get_inventory();
 
-for $item in items {
-    if item.category == "sale" {
-        item.price = item.price * 0.8;  // 20% off
+till(items.length - 1, 1) {
+    if items[$].category == "sale" {
+        items[$].price = items[$].price * 0.8;  // 20% off
     }
 }
 ```
@@ -343,11 +324,11 @@ for $item in items {
 
 ## Related Topics
 
-- [For Loops](for.md) - For loop basics
+- [Till Loops](till.md) - Till loop syntax
+- [For Loops](for.md) - Loop basics
 - [Iteration Variable](iteration_variable.md) - Loop variables
-- [Closures](../functions/closures.md) - $ in closures
-- [Mutable References](../memory_model/mutable_borrow.md) - Mutable borrowing
+- [Loop](loop.md) - Loop statement
 
 ---
 
-**Remember**: `$` means **mutable access** - use for in-place updates, omit for read-only iteration!
+**Remember**: `$` is the **automatic index variable** - use it to access array elements, get the current index, and modify elements in-place!

@@ -120,9 +120,9 @@ value: int32 = 42;  // ✅ Also fine
 fn safe_multiply(a: i32, b: i32) -> Result<i32> {
     Result: i64 = (a as i64) * (b as i64);
     when result < -2147483648 or result > 2147483647 then
-        return Err("Overflow");
+        fail("Overflow");
     end
-    return Ok(result as i32);
+    pass(result as i32);
 }
 ```
 

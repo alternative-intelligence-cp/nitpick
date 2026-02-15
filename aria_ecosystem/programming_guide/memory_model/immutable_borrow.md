@@ -74,9 +74,9 @@ stdout << x << y;  // Both still usable
 
 ```aria
 fn find(items: &[]string, target: string) -> i32? {
-    for item, index in items {
-        if item == target {
-            return index;
+    till(items.length - 1, 1) {
+        if items[$] == target {
+            return $;
         }
     }
     return nil;
@@ -152,8 +152,8 @@ fn get_host(config: &Config) -> string {
 ```aria
 fn calculate_average(numbers: &[]f64) -> f64 {
     sum: f64 = 0.0;
-    for num in numbers {
-        sum = sum + num;
+    till(numbers.length - 1, 1) {
+        sum = sum + numbers[$];
     }
     return sum / numbers.length() as f64;
 }

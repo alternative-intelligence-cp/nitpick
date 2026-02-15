@@ -325,13 +325,13 @@ func:get_cache = (key: string) -> ?string {
 enum:CacheError = { NotFound, Expired, Corrupted };
 
 func:get_cache_result = (key: string) -> Result<string, CacheError> {
-    if (!cache_contains(key)) return Err(NotFound);
+    if (!cache_contains(key)) fail(NotFound);
     
     ?CacheEntry:entry = cache_fetch_entry(key);
-    if (entry.timestamp < current_time()) return Err(Expired);
-    if (!entry.validate_checksum()) return Err(Corrupted);
+    if (entry.timestamp < current_time()) fail(Expired);
+    if (!entry.validate_checksum()) fail(Corrupted);
     
-    return Ok(entry.value);
+    pass(entry.value);
 }
 ```
 
@@ -654,15 +654,15 @@ func:divide = (a: int32, b: int32) -> ?int32 {
 }
 
 // RIGHT: Use Result or ERR
-func:divide_tbb = (a: tbb32, b: tbb32) -> tbb32 {
-    if (b == 0) return ERR;  // ✅ Clear error signal
-    return a / b;
-}
+func:divide_tbb = tbb32(tbb32:a, tbb32:b) {
+    if b == 0 then pass(ERR); end  // ✅ Clear error signal
+    pass(a / b);
+};
 
-func:divide_result = (a: int32, b: int32) -> Result<int32, string> {
-    if (b == 0) return Err("Division by zero");  // ✅ Error with context
-    return Ok(a / b);
-}
+func:divide_result = Result<int32, string>(int32:a, int32:b) {
+    if b == 0 then fail("Division by zero"); end  // ✅ Error with context
+    pass(a / b);
+};
 ```
 
 ### ❌ Unwrapping Without Checking

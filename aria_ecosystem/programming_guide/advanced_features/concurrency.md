@@ -57,8 +57,9 @@ fn* generator() -> i32 {
     yield 3;
 }
 
-for value in generator() {
-    stdout << value;  // Prints 1, 2, 3
+values = generator().collect();
+till(values.length - 1, 1) {
+    stdout << values[$];  // Prints 1, 2, 3
 }
 ```
 
@@ -105,8 +106,8 @@ channel: Channel<i32> = Channel.new();
 
 // Producer
 fn producer() {
-    for i in 0..10 {
-        channel.send(i);
+    till(9, 1) {
+        channel.send($);
     }
 }
 
@@ -168,7 +169,7 @@ impl WorkerPool {
         channel: Channel<Task> = Channel.new();
         workers: []Thread = [];
         
-        for i in 0..size {
+        till(size - 1, 1) {
             worker: Thread = Thread.spawn(worker_thread, channel.clone());
             workers.push(worker);
         }

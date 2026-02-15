@@ -15,13 +15,13 @@
 ## Basic Syntax
 
 ```aria
-for item in collection {
-    if should_skip(item) {
+till(collection.length - 1, 1) {
+    if should_skip(collection[$]) {
         continue;  // Skip to next item
     }
     
     // This runs only if we didn't continue
-    process(item);
+    process(collection[$]);
 }
 ```
 
@@ -30,12 +30,12 @@ for item in collection {
 ## Skip Even Numbers
 
 ```aria
-for i in 0..10 {
-    if i % 2 == 0 {
+till(9, 1) {
+    if $ % 2 == 0 {
         continue;  // Skip even numbers
     }
     
-    stdout << i << " ";
+    stdout << $ << " ";
 }
 // Output: 1 3 5 7 9
 ```
@@ -47,12 +47,12 @@ for i in 0..10 {
 ```aria
 numbers: []i32 = [1, -2, 3, -4, 5, -6];
 
-for num in numbers {
-    if num < 0 {
+till(numbers.length - 1, 1) {
+    if numbers[$] < 0 {
         continue;  // Skip negative numbers
     }
     
-    stdout << num << " ";
+    stdout << numbers[$] << " ";
 }
 // Output: 1 3 5
 ```
@@ -83,7 +83,8 @@ while count < 10 {
 ```aria
 records: []Record = load_records();
 
-for record in records {
+till(records.length - 1, 1) {
+    record: auto = records[$];
     if !record.is_valid() {
         stderr << "Skipping invalid record: " << record.id << "\n";
         continue;
@@ -101,8 +102,10 @@ for record in records {
 Continue affects only the **innermost** loop:
 
 ```aria
-for i in 0..3 {
-    for j in 0..5 {
+till(2, 1) {
+    i: i32 = $;
+    till(4, 1) {
+        j: i32 = $;
         if j == 2 {
             continue;  // Skip j=2 in inner loop
         }
@@ -121,24 +124,24 @@ for i in 0..3 {
 ### Filter and Process
 
 ```aria
-for user in users {
-    if !user.is_active {
+till(users.length - 1, 1) {
+    if !users[$].is_active {
         continue;  // Skip inactive users
     }
     
-    send_notification(user);
+    send_notification(users[$]);
 }
 ```
 
 ### Skip Based on Condition
 
 ```aria
-for file in files {
-    if file.extension() != ".txt" {
+till(files.length - 1, 1) {
+    if files[$].extension() != ".txt" {
         continue;  // Only process .txt files
     }
     
-    content: string = pass file.read();
+    content: string = pass files[$].read();
     process(content);
 }
 ```
@@ -146,15 +149,15 @@ for file in files {
 ### Error Handling
 
 ```aria
-for item in items {
-    Result: Result = validate(item);
+till(items.length - 1, 1) {
+    result: Result = validate(items[$]);
     
     if result == ERR {
         stderr << "Invalid item, skipping\n";
         continue;
     }
     
-    process(item);
+    process(items[$]);
 }
 ```
 
@@ -165,11 +168,11 @@ for item in items {
 ### Continue - Skip This Iteration
 
 ```aria
-for i in 0..5 {
-    if i == 2 {
+till(4, 1) {
+    if $ == 2 {
         continue;  // Skip 2, keep going
     }
-    stdout << i << " ";
+    stdout << $ << " ";
 }
 // Output: 0 1 3 4
 ```
@@ -177,11 +180,11 @@ for i in 0..5 {
 ### Break - Exit Loop
 
 ```aria
-for i in 0..5 {
-    if i == 2 {
+till(4, 1) {
+    if $ == 2 {
         break;  // Stop completely
     }
-    stdout << i << " ";
+    stdout << $ << " ";
 }
 // Output: 0 1
 ```
@@ -194,12 +197,12 @@ for i in 0..5 {
 
 ```aria
 // Good: Skip unwanted items
-for item in items {
-    if !matches_criteria(item) {
+till(items.length - 1, 1) {
+    if !matches_criteria(items[$]) {
         continue;
     }
     
-    process(item);
+    process(items[$]);
 }
 ```
 
@@ -207,8 +210,8 @@ for item in items {
 
 ```aria
 // Good: Skip invalid early
-for data in dataset {
-    if data.length() == 0 {
+till(dataset.length - 1, 1) {
+    if dataset[$].length() == 0 {
         continue;
     }
     
@@ -220,17 +223,17 @@ for data in dataset {
 
 ```aria
 // Wrong: Too many continues
-for item in items {
+till(items.length - 1, 1) {
     if condition1 { continue; }
     if condition2 { continue; }
     if condition3 { continue; }
     if condition4 { continue; }
     
-    process(item);
+    process(items[$]);
 }
 
 // Right: Combine conditions
-for item in items {
+till(items.length - 1, 1) {
     should_skip: bool = condition1 || condition2 || 
                         condition3 || condition4;
     
@@ -238,7 +241,7 @@ for item in items {
         continue;
     }
     
-    process(item);
+    process(items[$]);
 }
 ```
 
@@ -246,15 +249,15 @@ for item in items {
 
 ```aria
 // Wrong: Awkward
-for item in items {
+till(items.length - 1, 1) {
     continue;  // ???
-    process(item);  // Never runs
+    process(items[$]);  // Never runs
 }
 
 // Right: Use if
-for item in items {
-    if should_process(item) {
-        process(item);
+till(items.length - 1, 1) {
+    if should_process(items[$]) {
+        process(items[$]);
     }
 }
 ```
@@ -266,7 +269,8 @@ for item in items {
 ### Processing Log Files
 
 ```aria
-for line in log_file {
+till(log_file.length - 1, 1) {
+    line: auto = log_file[$];
     // Skip empty lines
     if line.trim().length() == 0 {
         continue;
@@ -289,8 +293,9 @@ for line in log_file {
 success_count: i32 = 0;
 error_count: i32 = 0;
 
-for record in records {
-    Result: Result = process_record(record);
+till(records.length - 1, 1) {
+    record: auto = records[$];
+    result: Result = process_record(record);
     
     if result == ERR {
         error_count = error_count + 1;

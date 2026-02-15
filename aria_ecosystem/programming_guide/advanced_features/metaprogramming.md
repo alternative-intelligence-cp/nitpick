@@ -31,8 +31,8 @@ comptime {
     stdout << "Struct: $type_info.name";
     stdout << "Fields: $type_info.fields.len";
     
-    for field in type_info.fields {
-        stdout << "  $field.name: $field.type";
+    till(type_info.fields.length - 1, 1) {
+        stdout << "  ${type_info.fields[$].name}: ${type_info.fields[$].type}";
     }
 }
 ```
@@ -47,7 +47,8 @@ comptime {
 comptime fn generate_accessors(T: type) {
     type_info: TypeInfo = @type_info(T);
     
-    for field in type_info.fields {
+    till(type_info.fields.length - 1, 1) {
+        field = type_info.fields[$];
         // Generate getter
         @generate_function("get_" ++ field.name, {
             fn() -> field.type {
@@ -110,7 +111,8 @@ comptime fn struct_to_json<T>(value: T) -> string {
     json: string = "{";
     first: bool = true;
     
-    for field in type_info.fields {
+    till(type_info.fields.length - 1, 1) {
+        field = type_info.fields[$];
         if !first {
             json = json ++ ", ";
         }
@@ -166,8 +168,8 @@ comptime fn validate_struct(T: type) {
     
     // Check for required fields
     has_id: bool = false;
-    for field in type_info.fields {
-        if field.name == "id" {
+    till(type_info.fields.length - 1, 1) {
+        if type_info.fields[$].name == "id" {
             has_id = true;
         }
     }
@@ -261,17 +263,18 @@ comptime fn generate_builder(T: type) {
     
     // Generate Builder struct
     builder_fields = [];
-    for field in type_info.fields {
+    till(type_info.fields.length - 1, 1) {
         builder_fields.push({
-            name: field.name,
-            type: ?field.type,
+            name: type_info.fields[$].name,
+            type: ?type_info.fields[$].type,
         });
     }
     
     @generate_struct(T.name ++ "Builder", builder_fields);
     
     // Generate with_* methods
-    for field in type_info.fields {
+    till(type_info.fields.length - 1, 1) {
+        field = type_info.fields[$];
         @generate_method(T.name ++ "Builder", "with_" ++ field.name, {
             fn(value: field.type) -> Self {
                 self.[field.name] = value;
@@ -293,9 +296,9 @@ comptime fn generate_enum_to_string(E: type) {
     @generate_impl(E, {
         fn to_string(self) -> string {
             comptime {
-                for variant in type_info.variants {
-                    if self == E.[variant.name] {
-                        return variant.name;
+                till(type_info.variants.length - 1, 1) {
+                    if self == E.[type_info.variants[$].name] {
+                        return type_info.variants[$].name;
                     }
                 }
             }
@@ -325,8 +328,9 @@ name: string = status.to_string();  // "Active"
 ```aria
 comptime {
     // Generate repetitive code
-    for type in [i8, i16, i32, i64] {
-        generate_parser(type);
+    types = [i8, i16, i32, i64];
+    till(types.length - 1, 1) {
+        generate_parser(types[$]);
     }
 }
 ```
@@ -373,8 +377,8 @@ comptime fn derive_serialize(T: type) {
         fn serialize() -> []u8 {
             buffer: []u8 = [];
             
-            comptime for field in type_info.fields {
-                field_data = serialize(self.[field.name]);
+            comptime till(type_info.fields.length - 1, 1) {
+                field_data = serialize(self.[type_info.fields[$].name]);
                 buffer.append(field_data);
             }
             
@@ -385,7 +389,8 @@ comptime fn derive_serialize(T: type) {
             offset: usize = 0;
             Result: T;
             
-            comptime for field in type_info.fields {
+            comptime till(type_info.fields.length - 1, 1) {
+                field = type_info.fields[$];
                 field_value = deserialize<field.type>(data[offset..])?;
                 result.[field.name] = field_value;
                 offset += @size_of(field.type);

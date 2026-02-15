@@ -46,9 +46,9 @@ fn find_user(id: i32) -> ?User {
 // Returns Result for error handling
 fn divide(a: i32, b: i32) -> Result<i32> {
     when b == 0 then
-        return Err("Division by zero");
+        fail("Division by zero");
     end
-    return Ok(a / b);
+    pass(a / b);
 }
 ```
 

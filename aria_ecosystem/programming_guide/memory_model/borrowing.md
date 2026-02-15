@@ -144,8 +144,8 @@ ref2: &i32 = $value;  // Danger!
 ```aria
 // Without rules (unsafe):
 vec: Vec<i32> = vec![1, 2, 3];
-for item in &vec {          // Borrow vec
-    vec.push(4);            // ❌ Modify while borrowed
+till(vec.length - 1, 1) {     // Iterate over vec
+    vec.push(4);              // ❌ Modify while iterating
     // Iterator now invalid!
 }
 
@@ -376,8 +376,8 @@ conn_str: string = get_connection_string(&config);
 ```aria
 fn sum(numbers: &[]i32) -> i32 {
     total: i32 = 0;
-    for num in numbers {  // Borrows each element
-        total = total + num;
+    till(numbers.length - 1, 1) {
+        total = total + numbers[$];
     }
     return total;
 }
@@ -407,13 +407,13 @@ stdout << item_price;  // 80.0
 items: []Item = load_items();
 
 // Immutable borrow
-for item in &items {
-    stdout << item.name;  // Read only
+till(items.length - 1, 1) {
+    stdout << items[$].name;  // Read only
 }
 
-// Mutable borrow
-for $item in items {
-    item.update();  // Can modify
+// Mutable borrow - using $ for mutable index
+till(items.length - 1, 1) {
+    items[$].update();  // Can modify
 }
 ```
 

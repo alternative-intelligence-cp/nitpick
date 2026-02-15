@@ -189,10 +189,10 @@ head.next.value = 2;
 ```aria
 cache: Map<string, Data> = Map::new();
 
-for key in keys {
+till(keys.length - 1, 1) {
     data: Data = aria_gc_alloc(Data);
-    data.load(key);
-    cache.insert(key, data);
+    data.load(keys[$]);
+    cache.insert(keys[$], data);
 }
 
 // Cache items freed when removed

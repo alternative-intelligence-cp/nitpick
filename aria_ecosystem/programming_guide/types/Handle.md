@@ -334,9 +334,9 @@ func:neurogenesis_expansion = void(arena<Neuron>@:arena) {
         });
     
     // Remap connections
-    for i in 0..old_handles.length {
-        Handle<Neuron>:old_h = old_handles[i];
-        Handle<Neuron>:new_h = new_handles[i];
+    till(old_handles.length - 1, 1) {
+        Handle<Neuron>:old_h = old_handles[$];
+        Handle<Neuron>:new_h = new_handles[$];
         
         Neuron:neuron = arena.get(new_h) ? default;
         
@@ -475,13 +475,13 @@ Handle<T>[]:new_handles = arena.get_all_handles();
 
 // Create mapping
 HandleMapping[]:mapping;
-for i in 0..old_handles.length {
-    mapping.push({old: old_handles[i], new: new_handles[i]});
+till(old_handles.length - 1, 1) {
+    mapping.push({old: old_handles[$], new: new_handles[$]});
 }
 
 // Update references
-for node in graph_nodes {
-    node.connections = remap_handles(node.connections, mapping);
+till(graph_nodes.length - 1, 1) {
+    graph_nodes[$].connections = remap_handles(graph_nodes[$].connections, mapping);
 }
 ```
 
@@ -523,7 +523,7 @@ func:enqueue<T> = Result<NIL>(LockFreeQueue<T>@:queue, T:value) {
             // Try to set tail.next to new_node (atomic CAS)
             if atomic_cas(&tail_node.next, NULL_HANDLE, new_node) {
                 queue.tail = new_node;
-                return ok(NIL);
+                pass(NULL);
             }
         } else {
             // Help advance tail
@@ -666,14 +666,14 @@ if result == ERR {
 ```aria
 // Arena integrity check
 func:verify_arena_integrity<T> = Result<NIL>(arena<T>@:arena) {
-    for i in 0..arena.capacity {
-        if arena.occupied[i] {
+    till(arena.capacity - 1, 1) {
+        if arena.occupied[$] {
             // Verify generation is valid
-            dbug.check('arena', "Invalid generation at slot {{uint64}}", [i],
-                arena.generations[i] > 0);
+            dbug.check('arena', "Invalid generation at slot {{uint64}}", [$],
+                arena.generations[$] > 0);
         }
     }
-    return ok(NIL);
+    pass(NULL);
 }
 ```
 
@@ -790,13 +790,13 @@ if handle.index == 999999 {  // What does this mean?
 ```aria
 // ✓ GOOD: Pre-allocate capacity
 arena.reserve(expected_count);
-for item in items {
-    arena.alloc(item);  // No reallocation needed
+till(items.length - 1, 1) {
+    arena.alloc(items[$]);  // No reallocation needed
 }
 
 // ✗ BAD: Incremental growth (many reallocations)
-for item in items {
-    arena.alloc(item);  // May reallocate each time!
+till(items.length - 1, 1) {
+    arena.alloc(items[$]);  // May reallocate each time!
 }
 ```
 

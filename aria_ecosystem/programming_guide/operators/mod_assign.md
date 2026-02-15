@@ -46,7 +46,7 @@ x = x % 10;
 
 ```aria
 index: i32 = 0;
-for i in 0..100 {
+till(99, 1) {
     process(index);
     index += 1;
     index %= buffer_size;  // Wrap to 0

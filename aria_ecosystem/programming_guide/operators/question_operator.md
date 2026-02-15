@@ -24,10 +24,10 @@ The question operator `?` is used for error propagation and optional types.
 ## Error Propagation
 
 ```aria
-fn read_file(path: string) -> Result<string, Error> {
-    file: File = open(path)?;  // Returns error if fails
-    content: string = file.read()?;  // Returns error if fails
-    return Ok(content);
+func:read_file = Result<string, Error>(string:path) {
+    File:file = open(path)?;  // Returns error if fails
+    string:content = file.read()?;  // Returns error if fails
+    pass(content);
 }
 ```
 
@@ -69,11 +69,11 @@ end
 ### ✅ DO: Use for Error Handling
 
 ```aria
-fn process() -> Result<(), Error> {
+func:process = Result<nil, Error>() {
     data := load()?;
     validate(data)?;
     save(data)?;
-    return Ok(());
+    pass(NULL);
 }
 ```
 

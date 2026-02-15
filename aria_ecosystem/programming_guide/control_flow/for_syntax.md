@@ -1,26 +1,26 @@
-# For Loop Syntax Reference
+# Till Loop Syntax Reference
 
 **Category**: Control Flow → Syntax  
-**Topic**: Complete for loop syntax
+**Topic**: Complete till loop syntax
 
 ---
 
-## Basic For Loop
+## Basic Till Loop
 
 ```aria
-for variable in collection {
-    // code
+till(end_index, step) {
+    // $ is the index variable
 }
 ```
 
 ---
 
-## With Index
+## With Index Access
 
 ```aria
-for variable, index in collection {
-    // variable: current item
-    // index: position (0-based)
+till(collection.length - 1, 1) {
+    // $ is the index (0, 1, 2, ...)
+    // collection[$] is the current item
 }
 ```
 
@@ -29,18 +29,21 @@ for variable, index in collection {
 ## Mutable Iteration
 
 ```aria
-for $variable in collection {
-    // $ allows modification
+till(collection.length - 1, 1) {
+    // Modify elements directly
+    collection[$] = new_value;
 }
 ```
 
 ---
 
-## Mutable with Index
+## With Item and Index
 
 ```aria
-for $variable, index in collection {
-    // Only variable is mutable
+till(collection.length - 1, 1) {
+    item: auto = collection[$];
+    index: i32 = $;
+    // Both available
 }
 ```
 
@@ -49,19 +52,19 @@ for $variable, index in collection {
 ## Range Iteration
 
 ```aria
-// Exclusive end
-for i in 0..10 {
-    // 0 to 9
+// 0 to 9
+till(9, 1) {
+    // $ is 0, 1, ..., 9
 }
 
-// Inclusive end
-for i in 0..=10 {
-    // 0 to 10
+// 0 to 10 (inclusive)
+till(10, 1) {
+    // $ is 0, 1, ..., 10
 }
 
-// Reverse
-for i in numbers.reverse() {
-    // ...
+// Reverse iteration
+till(collection.length - 1, -1) {
+    // $ goes from length-1 down to 0
 }
 ```
 
@@ -70,7 +73,7 @@ for i in numbers.reverse() {
 ## Loop Control
 
 ```aria
-for item in items {
+till(items.length - 1, 1) {
     if condition {
         break;     // Exit loop
     }
@@ -83,14 +86,18 @@ for item in items {
 
 ---
 
-## Underscore for Unused
+## Using $ Directly
 
 ```aria
-// Ignore item
-for _, index in items { }
+// Just need index
+till(items.length - 1, 1) {
+    stdout << "Index: " << $ << "\n";
+}
 
-// Ignore index  
-for item, _ in items { }
+// Need both index and value
+till(items.length - 1, 1) {
+    stdout << $ << ": " << items[$] << "\n";
+}
 ```
 
 ---
@@ -99,20 +106,19 @@ for item, _ in items { }
 
 ```aria
 // Array iteration
-for num in [1, 2, 3] { }
+arr: []i32 = [1, 2, 3];
+till(arr.length - 1, 1) { }
 
 // String iteration
-for char in "hello" { }
+str: string = "hello";
+till(str.length - 1, 1) { }
 
 // Range
-for i in 0..5 { }
+till(4, 1) { }  // 0 to 4
 
-// Map iteration
-for key, value in map { }
-
-// Mutable
-for $item in items {
-    item.update();
+// Mutable update
+till(items.length - 1, 1) {
+    items[$].update();
 }
 ```
 

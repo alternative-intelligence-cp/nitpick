@@ -113,9 +113,9 @@ total: i32 = numbers
 
 // ❌ Imperative
 total: i32 = 0;
-for n in numbers {
-    if n > 0 {
-        total += n * 2;
+till(numbers.length - 1, 1) {
+    if numbers[$] > 0 {
+        total += numbers[$] * 2;
     }
 }
 ```
@@ -336,8 +336,8 @@ fn fetch_user_bad(id: i32) -> Result<User, string> {
 
 ```aria
 // ✅ Idiomatic
-for i in 0..10 {
-    stdout << i;
+till(9, 1) {
+    stdout << $;
 }
 
 // ❌ C-style
@@ -394,8 +394,10 @@ if items.len() == 0 {
 
 ```aria
 // ✅ Idiomatic (for complex loops)
-outer: for i in 0..10 {
-    inner: for j in 0..10 {
+outer: till(9, 1) {
+    i = $;
+    inner: till(9, 1) {
+        j = $;
         if found(i, j) {
             break outer;
         }
@@ -404,8 +406,8 @@ outer: for i in 0..10 {
 
 // Avoid when simple
 // ❌ Over-labeled
-simple: for i in 0..10 {
-    stdout << i;
+simple: till(9, 1) {
+    stdout << $;
 }
 ```
 

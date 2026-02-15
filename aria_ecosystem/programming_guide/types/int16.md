@@ -106,9 +106,9 @@ screen_y: int16 = 1080;
 fn safe_add(a: int16, b: int16) -> Result<int16> {
     Result: i32 = (a as i32) + (b as i32);
     when result < -32768 or result > 32767 then
-        return Err("Overflow");
+        fail("Overflow");
     end
-    return Ok(result as int16);
+    pass(result as int16);
 }
 ```
 

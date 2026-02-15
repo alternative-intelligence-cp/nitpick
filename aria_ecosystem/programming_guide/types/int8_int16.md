@@ -434,15 +434,15 @@ int8:sum = a + b;  // 150... but wraps to -106!
 func:safe_add_i8 = (a: int8, b: int8) -> Result<int8, string> {
     // Overflow if: both positive and sum negative
     if (a > 0i8 && b > 0i8 && (a + b) < 0i8) {
-        return Err("Positive overflow");
+        fail("Positive overflow");
     }
     
     // Underflow if: both negative and sum positive
     if (a < 0i8 && b < 0i8 && (a + b) > 0i8) {
-        return Err("Negative underflow");
+        fail("Negative underflow");
     }
     
-    return Ok(a + b);
+    pass(a + b);
 }
 ```
 

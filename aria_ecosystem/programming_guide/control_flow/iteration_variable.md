@@ -15,21 +15,22 @@ The **iteration variable** is the variable that holds the current item in each l
 ## Basic Syntax
 
 ```aria
-for variable in collection {
-    // variable holds current item
+till(collection.length - 1, 1) {
+    // $ holds current index
+    item: auto = collection[$];
 }
 ```
 
 ---
 
-## In For Loops
+## In Till Loops
 
 ```aria
 numbers: []i32 = [1, 2, 3, 4, 5];
 
-for num in numbers {
-    // 'num' is the iteration variable
-    stdout << num << "\n";
+till(numbers.length - 1, 1) {
+    // $ is the index, numbers[$] is the current value
+    stdout << numbers[$] << "\n";
 }
 ```
 
@@ -37,17 +38,17 @@ for num in numbers {
 
 ## Naming Iteration Variables
 
-Choose **descriptive names**:
+Choose **descriptive names** for loop variables:
 
 ```aria
 // ✅ Good: Descriptive
-for user in users { }
-for item in items { }
-for record in records { }
+till(users.length - 1, 1) { user: auto = users[$]; }
+till(items.length - 1, 1) { item: auto = items[$]; }
+till(records.length - 1, 1) { record: auto = records[$]; }
 
 // ❌ Poor: Generic
-for x in users { }
-for i in items { }  // i suggests index, not item
+till(users.length - 1, 1) { x: auto = users[$]; }
+till(items.length - 1, 1) { i: auto = items[$]; }  // i suggests index, not item
 ```
 
 ---
@@ -57,23 +58,24 @@ for i in items { }  // i suggests index, not item
 ```aria
 numbers: []i32 = [1, 2, 3];
 
-for num in numbers {
-    // num is read-only
-    stdout << num;  // ✅ Can read
-    num = 10;       // ❌ Can't modify
+till(numbers.length - 1, 1) {
+    num: auto = numbers[$];  // num is local read-only copy
+    stdout << num;           // ✅ Can read
+    num = 10;                // ✅ Can modify local copy
+    numbers[$] = 10;         // ❌ Can't modify array directly
 }
 ```
 
 ---
 
-## Mutable with $
+## Mutable with Array Indexing
 
 ```aria
 numbers: []i32 = [1, 2, 3];
 
-for $num in numbers {
-    // $num is mutable
-    num = num * 2;  // ✅ Can modify
+till(numbers.length - 1, 1) {
+    // $ is the index - can modify array directly
+    numbers[$] = numbers[$] * 2;  // ✅ Can modify
 }
 ```
 
@@ -84,25 +86,25 @@ for $num in numbers {
 ```aria
 items: []string = ["apple", "banana", "cherry"];
 
-// Two iteration variables: item and index
-for item, index in items {
-    stdout << index << ": " << item << "\n";
+// $ is the index - access both item and index
+till(items.length - 1, 1) {
+    item: auto = items[$];
+    stdout << $ << ": " << item << "\n";
 }
 ```
 
 ---
 
-## Index First or Second?
+## Index is $
 
-Aria convention: **item first, index second**:
+Aria uses **$** as the index variable in loops:
 
 ```aria
-// ✅ Aria convention
-for item, index in items { }
-
-// Compare: Other languages
-// Python: for index, item in enumerate(items)
-// Go: for index, item := range items
+// $ is the current index (0-based)
+till(items.length - 1, 1) {
+    // $ varies from 0 to items.length-1
+    stdout << "Index: " << $ << "\n";
+}
 ```
 
 ---
@@ -112,13 +114,15 @@ for item, index in items { }
 ```aria
 numbers: []i32 = [1, 2, 3];
 
-for num in numbers {
+till(numbers.length - 1, 1) {
+    num: auto = numbers[$];
     // num is inferred as i32
 }
 
 users: []User = load_users();
 
-for user in users {
+till(users.length - 1, 1) {
+    user: auto = users[$];
     // user is inferred as User
 }
 ```
@@ -130,8 +134,9 @@ for user in users {
 ```aria
 items: []any = get_mixed_items();
 
-for item: string in items {
-    // item treated as string
+till(items.length - 1, 1) {
+    item: string = items[$] as string;
+    // item explicitly typed as string
 }
 ```
 
@@ -142,7 +147,8 @@ for item: string in items {
 Iteration variable exists **only inside the loop**:
 
 ```aria
-for item in items {
+till(items.length - 1, 1) {
+    item: auto = items[$];
     stdout << item;
 }
 
@@ -159,8 +165,8 @@ Can shadow outer variables:
 ```aria
 item: string = "outer";
 
-for item in items {
-    // This 'item' shadows the outer one
+till(items.length - 1, 1) {
+    item: auto = items[$];  // This 'item' shadows the outer one
     stdout << item;
 }
 
@@ -169,40 +175,47 @@ stdout << item;  // Back to "outer"
 
 ---
 
-## Multiple Iteration Variables
+## Accessing Index and Value
 
-### Item and Index
+### Index via $
 
 ```aria
-for item, index in collection {
-    // item: element
-    // index: position (0-based)
+till(collection.length - 1, 1) {
+    item: auto = collection[$];
+    // $: index (position, 0-based)
+    // item: element value
 }
 ```
 
-### Key and Value
+### Iterating Maps
+
+For map iteration, use the map's keys or iteration methods:
 
 ```aria
 map: Map<string, i32> = load_map();
+keys: []string = map.keys();
 
-for key, value in map {
+till(keys.length - 1, 1) {
+    key: auto = keys[$];
+    value: auto = map[key];
     stdout << key << ": " << value << "\n";
 }
 ```
 
 ---
 
-## Underscore for Unused
+## Only Using Index or Value
 
 ```aria
-// Only need index
-for _, index in items {
-    stdout << "Position: " << index << "\n";
+// Only need index - just use $
+till(items.length - 1, 1) {
+    stdout << "Position: " << $ << "\n";
 }
 
-// Only need key
-for key, _ in map {
-    stdout << "Key: " << key << "\n";
+// Only need value - declare variable
+till(items.length - 1, 1) {
+    item: auto = items[$];
+    stdout << "Item: " << item << "\n";
 }
 ```
 
@@ -214,21 +227,23 @@ for key, _ in map {
 
 ```aria
 // Good: Clear intent
-for user in users {
+till(users.length - 1, 1) {
+    user: auto = users[$];
     send_email(user);
 }
 
-for transaction in transactions {
+till(transactions.length - 1, 1) {
+    transaction: auto = transactions[$];
     process_transaction(transaction);
 }
 ```
 
-### ✅ DO: Use $ When Modifying
+### ✅ DO: Use Direct Array Access When Modifying
 
 ```aria
-// Good: Explicit mutation
-for $score in scores {
-    score = score + bonus;
+// Good: Explicit mutation via array indexing
+till(scores.length - 1, 1) {
+    scores[$] = scores[$] + bonus;
 }
 ```
 
@@ -236,16 +251,17 @@ for $score in scores {
 
 ```aria
 // Good: Singular item from plural collection
-for user in users { }
-for item in items { }
-for record in records { }
+till(users.length - 1, 1) { user: auto = users[$]; }
+till(items.length - 1, 1) { item: auto = items[$]; }
+till(records.length - 1, 1) { record: auto = records[$]; }
 ```
 
 ### ❌ DON'T: Reuse Loop Variable
 
 ```aria
 // Wrong: Confusing
-for item in items {
+till(items.length - 1, 1) {
+    item: auto = items[$];
     item = process(item);
     item = transform(item);
     item = validate(item);
@@ -253,7 +269,8 @@ for item in items {
 }
 
 // Right: Different names for transformations
-for original in items {
+till(items.length - 1, 1) {
+    original: auto = items[$];
     processed: Item = process(original);
     transformed: Item = transform(processed);
     validated: Item = validate(transformed);
@@ -264,12 +281,12 @@ for original in items {
 
 ```aria
 // Wrong: Unclear
-for u in users { }
-for t in transactions { }
+till(users.length - 1, 1) { u: auto = users[$]; }
+till(transactions.length - 1, 1) { t: auto = transactions[$]; }
 
 // Right: Full names
-for user in users { }
-for transaction in transactions { }
+till(users.length - 1, 1) { user: auto = users[$]; }
+till(transactions.length - 1, 1) { transaction: auto = transactions[$]; }
 ```
 
 ---
@@ -279,7 +296,8 @@ for transaction in transactions { }
 ### Process Each Item
 
 ```aria
-for user in users {
+till(users.length - 1, 1) {
+    user: auto = users[$];
     user.notify();
 }
 ```
@@ -289,7 +307,8 @@ for user in users {
 ```aria
 active: []User = [];
 
-for user in users {
+till(users.length - 1, 1) {
+    user: auto = users[$];
     if user.is_active {
         active.push(user);
     }
@@ -299,8 +318,8 @@ for user in users {
 ### Transform
 
 ```aria
-for $value in values {
-    value = value * 2;
+till(values.length - 1, 1) {
+    values[$] = values[$] * 2;
 }
 ```
 
@@ -309,7 +328,8 @@ for $value in values {
 ```aria
 found: User? = nil;
 
-for user in users {
+till(users.length - 1, 1) {
+    user: auto = users[$];
     if user.name == "Alice" {
         found = user;
         break;
@@ -326,8 +346,9 @@ for user in users {
 ```aria
 orders: []Order = load_orders();
 
-for order in orders {
-    // Clear: 'order' represents each order
+till(orders.length - 1, 1) {
+    order: auto = orders[$];
+    // Clear: 'order' represents current order
     validate_order(order);
     process_payment(order);
     ship_order(order);
@@ -339,10 +360,10 @@ for order in orders {
 ```aria
 products: []Product = get_products();
 
-for $product in products {
-    // $ indicates we're modifying
-    product.price = product.price * 1.1;  // 10% increase
-    product.updated_at = now();
+till(products.length - 1, 1) {
+    // Direct array access for modification
+    products[$].price = products[$].price * 1.1;  // 10% increase
+    products[$].updated_at = now();
 }
 ```
 
@@ -351,7 +372,9 @@ for $product in products {
 ```aria
 students: []Student = load_students();
 
-for student, rank in students {
+till(students.length - 1, 1) {
+    student: auto = students[$];
+    rank: i32 = $;  // Index is the rank
     // Both student and rank are clear
     stdout << format("{}. {} - GPA: {}", 
         rank + 1, student.name, student.gpa);

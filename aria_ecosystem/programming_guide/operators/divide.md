@@ -175,8 +175,8 @@ Result: i32 = (10 + 20) / 5;  // 30 / 5 = 6
 sum: i32 = 0;
 count: i32 = values.length();
 
-for value in values {
-    sum += value;
+till(values.length - 1, 1) {
+    sum += values[$];
 }
 
 avg: f64 = (sum as f64) / (count as f64);

@@ -442,14 +442,14 @@ if (result == ERR) {
 enum:DivError = { DivByZero, Overflow };
 
 func:safe_divide_result = (a: int32, b: int32) -> Result<int32, DivError> {
-    if (b == 0) return Err(DivByZero);
+    if (b == 0) fail(DivByZero);
     
     int64:wide_result = (a as int64) / (b as int64);
     if (wide_result > INT32_MAX || wide_result < INT32_MIN) {
-        return Err(Overflow);
+        fail(Overflow);
     }
     
-    return Ok(wide_result as int32);
+    pass(wide_result as int32);
 }
 
 Result<int32, DivError>:result = safe_divide_result(10, 0);

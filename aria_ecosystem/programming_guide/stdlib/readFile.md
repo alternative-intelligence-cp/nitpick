@@ -25,11 +25,13 @@ The `readFile()` function reads the entire contents of a file and returns it as 
 Result[string]:result = readFile("path/to/file.txt");
 
 result?
-    .onSuccess(content => {
+    .onSuccess(NIL(string:content) {
         print(`File content: &{content}`);
+        pass(NIL);
     })
-    .onError(err => {
+    .onError(NIL(Error:err) {
         print(`Error: &{err}`);
+        pass(NIL);
     });
 ```
 
@@ -56,10 +58,10 @@ if (result.isOk()) {
 ```aria
 // Chain operations with pipeline
 readFile("data.txt")
-    .map(content => content.toUpperCase())
-    .map(upper => upper.replace("\n", " "))
-    .onSuccess(processed => print(processed))
-    .onError(err => print(`Error: &{err}`));
+    .map(string(string:content) { pass(content.toUpperCase()); })
+    .map(string(string:upper) { pass(upper.replace("\n", " ")); })
+    .onSuccess(NIL(string:processed) { print(processed); pass(NIL); })
+    .onError(NIL(Error:err) { print(`Error: &{err}`); pass(NIL); });
 ```
 
 ---
@@ -231,9 +233,10 @@ func:processLargeFile = Result[void](string:path) {
 ```aria
 Result[string]:result = readFile("nonexistent.txt");
 
-result.onError(err => {
+result.onError(NIL(Error:err) {
     // err = "File not found: nonexistent.txt"
     print(`Error: &{err}`);
+    pass(NIL);
 });
 ```
 
@@ -242,9 +245,10 @@ result.onError(err => {
 ```aria
 Result[string]:result = readFile("/root/secret.txt");
 
-result.onError(err => {
+result.onError(NIL(Error:err) {
     // err = "Permission denied: /root/secret.txt"
     print(`Error: &{err}`);
+    pass(NIL);
 });
 ```
 
@@ -254,9 +258,10 @@ result.onError(err => {
 // May run out of memory for very large files
 Result[string]:result = readFile("huge_file.bin");
 
-result.onError(err => {
+result.onError(NIL(Error:err) {
     // err = "Out of memory"
     print(`Error: &{err}`);
+    pass(NIL);
 });
 ```
 
@@ -358,7 +363,7 @@ string:data = readFile("file.txt").unwrap();
 
 // GOOD: Handle errors explicitly
 Result[string]:result = readFile("file.txt");
-result.onError(err => print(`Error: &{err}`));
+result.onError(NIL(Error:err) { print(`Error: &{err}`); pass(NIL); });
 ```
 
 ### ❌ Don't Read Large Files Entirely
@@ -383,7 +388,7 @@ while (!stream.eof()) {
 
 ```aria
 Result[string]:content = readFile("file.txt");
-content.onError(err => print(err));
+content.onError(NIL(Error:err) { print(err); pass(NIL); });
 ```
 
 ### Python
@@ -449,16 +454,18 @@ Result[string[]]:all = readAll(files);
 ```aria
 func:processIfExists = void(string:path) {
     readFile(path)
-        .onSuccess(content => {
+        .onSuccess(NIL(string:content) {
             // File exists, process it
             string[]:lines = content.split("\n");
             till(lines.length - 1, 1) {
                 processLine(lines[$]);
             }
+            pass(NIL);
         })
-        .onError(err => {
+        .onError(NIL(Error:err) {
             // File doesn't exist, skip silently
             print(`Skipping &{path}`);
+            pass(NIL);
         });
 };
 ```

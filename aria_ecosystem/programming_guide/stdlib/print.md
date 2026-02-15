@@ -456,8 +456,8 @@ print("This always works");
 Result[void]:result = writeFile("output.txt", data);
 
 result?
-    .onError(err => print(`Failed to write: &{err}`))
-    .onSuccess(_ => print("File written successfully"));
+    .onError(NIL(Error:err) { print(`Failed to write: &{err}`); pass(NIL); })
+    .onSuccess(NIL(void:_) { print("File written successfully"); pass(NIL); });
 ```
 
 ---

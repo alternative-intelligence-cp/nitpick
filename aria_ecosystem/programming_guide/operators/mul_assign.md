@@ -60,8 +60,8 @@ price *= 1.08;  // Add 8% tax
 
 ```aria
 population: i32 = 100;
-for year in 0..10 {
-    population *= 2;  // Double each year
+till(9, 1) {
+    population *= 2;  // Double each year (10 iterations)
 }
 ```
 
@@ -80,8 +80,8 @@ distance *= scale_factor;
 
 ```aria
 product: i32 = 1;
-for value in values {
-    product *= value;
+till(values.length - 1, 1) {
+    product *= values[$];
 }
 ```
 

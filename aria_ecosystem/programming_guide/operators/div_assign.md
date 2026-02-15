@@ -87,8 +87,8 @@ end
 
 ```aria
 sum: i32 = 0;
-for value in values {
-    sum += value;
+till(values.length - 1, 1) {
+    sum += values[$];
 }
 sum /= values.length();  // Average
 ```

@@ -187,13 +187,13 @@ circumference: flt64 = 2.0 * 3.14159 * radius;  // ❌
 ### ✅ DO: Check for Domain Errors
 
 ```aria
-x: flt64 = get_value();
+flt64:x = get_value();
 
 when x < 0 then
-    return Err("Cannot take sqrt of negative");
+    fail("Cannot take sqrt of negative");
 end
 
-Result: flt64 = math.sqrt(x);  // ✅ Safe
+flt64:Result = math.sqrt(x);  // ✅ Safe
 ```
 
 ---

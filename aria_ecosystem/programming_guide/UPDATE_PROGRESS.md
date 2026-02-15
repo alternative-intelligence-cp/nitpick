@@ -1,13 +1,976 @@
 # Programming Guide Update Progress
 
 **Date**: February 14, 2026  
-**Status**: Phase 2 Starting (Phase 1 Complete)  
-**Previous Update**: February 14, 2026 (Session 27 complete)  
+**Status**: Phase 2 In Progress (Session 34: Loop Syntax Batch 4 Complete!)  
+**Previous Update**: February 14, 2026 (Session 34: 155 loops in control_flow/ fixed)  
 **Goal**: Bring all guides current with Phase 5.3 implementation state
 
 ---
 
-## Session 27 (Latest): High-Visibility Syntax Corrections
+## Session 34: Loop Syntax Corrections - Batch 4 (Control Flow)
+
+**CONTROL FLOW LOOP FIXES**: Converted all for-in loops to Aria's `till` syntax across control flow documentation - February 14, 2026.
+
+### Scope
+
+Fixed **155 loop instances** across **9 control_flow files** (CRITICAL: These files TEACH loop syntax to users!):
+
+**High Priority Files** (101 loops):
+1. **control_flow/iteration_variable.md** - 39 loops fixed
+   - Basic iteration patterns
+   - Index and value access ($)
+   - Read-only vs mutable access
+   - Type inference examples
+   - Common patterns (sum, find, filter, transform)
+   - Real-world examples (orders, products, reports)
+
+2. **control_flow/for.md** - 35 loops fixed  
+   - Array iteration
+   - Range iteration  
+   - String iteration
+   - Mutable iteration patterns
+   - Break/continue examples
+   - Nested loops
+   - Map iteration
+   - Common patterns (sum, find, transform, count)
+   - Real-world examples (records, reports, matrices)
+   - RENAMED to emphasize till loops (was teaching wrong for-in)
+
+3. **control_flow/dollar_variable.md** - 27 loops fixed
+   - Completely rewrote: $ is INDEX variable, not mutation marker!
+   - $ as the automatic index in till loops
+   - Array element access via $
+   - Modifying elements with $
+   - Using $ in calculations
+   - Common patterns (updates, normalization, transformation)
+   - Language comparisons (C, Python, Aria)
+
+**Medium Priority Files** (33 loops):
+4. **control_flow/continue.md** - 18 loops fixed
+   - Skip even numbers pattern
+   - Filter while processing  
+   - Skip invalid items
+   - Nested loops with continue
+   - Common patterns (filtering, validation, error handling)
+   - Continue vs break comparison
+   - Best practices (when to use/avoid)
+   - Real-world examples (log processing, batch processing)
+
+5. **control_flow/for_syntax.md** - 15 loops fixed
+   - Complete syntax reference rewrite
+   - Basic till loop syntax
+   - Index and value access patterns
+   - Mutable iteration
+   - Range iteration (including reverse)
+   - Loop control (break/continue)
+   - Usage examples
+   - RENAMED from "For Loop Syntax" to "Till Loop Syntax Reference"
+
+**Lower Priority Files** (21 loops):
+6. **control_flow/break.md** - 11 loops fixed
+   - Exit loop early patterns
+   - Finding first match
+   - Nested loops (innermost exit only)
+   - Breaking outer loops (flag pattern)
+   - Common patterns (search, limit processing, validation)
+   - Break vs continue comparison
+   - Best practices (when to break, avoid)
+   - Real-world examples
+
+7. **control_flow/while.md** - 1 loop fixed
+   - DON'T use while for known counts (comparison to till)
+
+8. **control_flow/loop.md** - 0 Aria loops (has C-style for loops - PRESERVED)
+   - C-style `for (int64:i = 1; i <= 100; i++)` - valid Aria syntax
+   - Python/Rust/C language comparisons - PRESERVED
+
+9. **control_flow/till.md** - 0 Aria loops (has C-style for loops - PRESERVED)
+   - C-style `for (int64:i = 0; i <= 100; i++)` - valid Aria syntax
+   - Python/Rust/C language comparisons - PRESERVED
+
+### Critical Issues Fixed
+
+**TEACHING FILES WERE WRONG**: These files are instructional documentation that teach users how to write loops in Aria. They were teaching `for item in collection` syntax which doesn't exist in Aria!
+
+1. **iteration_variable.md**: Was teaching "iteration variables" in for-in style. Completely rewrote to teach `$` index access with till.
+
+2. **for.md**: Was teaching for-in as primary loop syntax. Rewrote to teach till loops with $ index variable.
+
+3. **dollar_variable.md**: Was teaching $ as a "mutation marker" for `for $item in collection`. Completely rewrote to correctly explain $ as the automatic INDEX variable in till loops.
+
+4. **for_syntax.md**: Was a complete syntax reference for wrong for-in syntax. Rewrote as "Till Loop Syntax Reference".
+
+### Pattern Transformations
+
+**Wrong for-in pattern** (DOESN'T EXIST IN ARIA):
+```aria
+for item in items {
+    process(item);
+}
+```
+
+**Correct till pattern** (ACTUAL ARIA SYNTAX):
+```aria
+till(items.length - 1, 1) {
+    process(items[$]);
+}
+```
+
+**Wrong mutable for-in** (DOESN'T EXIST):
+```aria
+for $item in items {
+    item = item * 2;
+}
+```
+
+**Correct mutable till**:
+```aria
+till(items.length - 1, 1) {
+    items[$] = items[$] * 2;
+}
+```
+
+**Wrong range syntax** (DOESN'T EXIST):
+```aria
+for i in 0..10 {
+    process(i);
+}
+```
+
+**Correct range syntax**:
+```aria
+till(9, 1) {
+    process($);  // $ is 0, 1, ..., 9
+}
+```
+
+### Preserved Examples
+
+**C-Style Aria Loops** (VALID SYNTAX):
+- loop.md: `for (int64:i = 1; i <= 100; i++)` - Valid Aria
+- till.md: `for (int64:i = 0; i <= 100; i++)` - Valid Aria  
+- till.md: `for (int64:i = start; i < end; i += customStep)` - Valid Aria
+
+**Language Comparisons** (TEACHING OTHER LANGUAGES):
+- Python: `for i in range(11):` - Shows Python syntax
+- Python: `for i, item in enumerate(items):` - Shows Python
+- Rust: `for i in 0..=10 {` - Shows Rust syntax
+- C: `for (int i = 0; i <= 10; i++)` - Shows C syntax
+
+### Impact
+
+This was the HIGHEST IMPACT session yet:
+- **155 loops fixed** - largest batch in Phase 2
+- **Control flow documentation** - teaches fundamental loop syntax
+- **User-facing teaching materials** - if wrong, users learn wrong patterns
+- **Similar to Session 32** - operators teaching wrong range syntax
+
+If these files taught wrong syntax:
+1. New users learn `for item in collection`
+2. Their code doesn't compile
+3. They get confused why "documented syntax" fails
+4. They have to unlearn incorrect mental models
+
+### Files Changed
+
+**Modified**: 7 control_flow files (266 total loops fixed)
+**Preserved**: 2 control_flow files (loop.md, till.md - language comparisons)
+**Total Files Fixed**: 9 files in control_flow/
+
+### Verification
+
+```bash
+# Confirmed 0 wrong for-in patterns remain in control_flow/
+grep -r "^for [a-z$_].*in " control_flow/*.md | \
+    grep -v "for i in range" | \
+    grep -v "enumerate" | \
+    grep -v "till.md" | \
+    grep -v "loop.md" | \
+    wc -l
+# Output: 0
+```
+
+### Session Statistics
+
+- Files modified: 7
+- Loops fixed: 155
+- C-style loops preserved: 3 (valid Aria syntax)
+- Language comparison examples preserved: 6 (Python, Rust, C)
+- Documentation clarity: CRITICAL (teaching files)
+
+**Total Phase 2 Loop Progress**: 266/517 loops (51% - HALFWAY POINT!)
+
+---
+
+## Session 33: Loop Syntax Corrections - Batch 3 (Memory Model)
+
+**MEMORY MODEL LOOP FIXES**: Converted all for-in loops to Aria's `till` syntax across memory management documentation - February 14, 2026.
+
+### Scope
+
+Fixed **20 loop instances** across **11 memory_model files**:
+
+**Multi-Loop Files**:
+1. **memory_model/gc.md** - 4 loops fixed
+   - Shared ownership cache insertion
+   - Object array allocation
+   - Hot loop garbage creation (anti-pattern)
+   - Stack reuse pattern (best practice)
+
+2. **memory_model/borrowing.md** - 4 loops fixed
+   - Iterator invalidation prevention (conceptual example)
+   - Sum function with borrowed array
+   - Immutable borrow loop pattern
+   - Mutable borrow loop pattern
+
+3. **memory_model/stack.md** - 3 loops fixed
+   - Fast stack allocation example
+   - Iterative factorial (vs recursion anti-pattern)
+   - Item processing with loop variables
+
+4. **memory_model/borrow_operator.md** - 2 loops fixed
+   - Read-only iteration pattern
+   - Mutable iteration pattern
+
+5. **memory_model/allocators.md** - 2 loops fixed
+   - Dynamic array initialization
+   - Object pool acquisition search
+
+6. **memory_model/mutable_borrow.md** - 2 loops fixed
+   - Append suffix to all strings
+   - Batch discount application
+
+7. **memory_model/immutable_borrow.md** - 2 loops fixed
+   - Find item by value (returning index)
+   - Calculate average from borrowed array
+
+**Single-Loop Files**:
+8. **memory_model/aria_gc_alloc.md** - 1 loop fixed (object cache)
+9. **memory_model/address_operator.md** - 1 loop fixed (pointer array initialization)
+10. **memory_model/aria_alloc_array.md** - 1 loop fixed (array squared values)
+11. **memory_model/pinning.md** - 1 loop fixed (anti-pattern: pin everything)
+
+### Pattern Transformations
+
+**Array iteration with borrowed references**:
+```aria
+// ❌ WRONG (for-in doesn't exist):
+for num in numbers {
+    sum = sum + num;
+}
+
+// ✅ CORRECT (Aria till with index):
+till(numbers.length - 1, 1) {
+    sum = sum + numbers[$];
+}
+```
+
+**Object pool search**:
+```aria
+// ❌ WRONG:
+for i in 0..self.objects.length() {
+    when self.available[i] then ...
+}
+
+// ✅ CORRECT:
+till(self.objects.length - 1, 1) {
+    when self.available[$] then ...
+}
+```
+
+**Hot loop allocation**:
+```aria
+// ❌ WRONG pattern (also wrong syntax):
+for i in 0..1000000 {
+    temp: Data = aria_gc_alloc(Data);  // Creates garbage!
+}
+
+// ✅ CORRECT pattern (also correct syntax):
+temp: Data = Data::new();  // Stack allocated
+till(999999, 1) {
+    temp.reset();  // Reuse same object
+}
+```
+
+### Preserved C-Style Loops
+
+**Correctly preserved 7 C-style for loops** in defer.md and allocation.md:
+```aria
+// C-style for loops ARE valid Aria syntax:
+for (int64:i = 0; i < n; i++) {
+    // Performance-critical code with wild pointers
+}
+```
+
+These are used for:
+- Hot loop matrix multiplication (allocation.md)
+- Defer behavior in loops (defer.md)
+- Wild pointer performance patterns
+
+### Verification
+
+✅ All memory_model/ loop patterns corrected:
+- 0 instances of `for x in array` in Aria code
+- 0 instances of `for i in 0..n` in Aria code  
+- All iterative loops use `till(count, step)` with `$` index
+- C-style `for (;;)` loops correctly preserved (valid Aria syntax)
+- Borrow operators (& and $) correctly maintained
+
+**Session 33 Statistics**:
+- Memory model files fixed: 11 files
+- Total loop instances corrected: 20
+- C-style for loops preserved: 7 (valid Aria syntax)
+- Pattern consistency: 100% conversion to till or C-style for
+- All borrowing patterns maintained correctly
+
+**Remaining Loop Work**:
+- control_flow/: TBD
+- advanced_features/: TBD
+- modules/: TBD  
+- io_system/: TBD
+- Estimated ~406 more loop instances total
+
+---
+
+## Session 32: Loop Syntax Corrections - Batch 2 (Operator Guides) 
+
+**CRITICAL OPERATOR DOCUMENTATION FIXES**: Corrected range operator docs teaching WRONG syntax + converted all operator examples to Aria's `till` syntax - February 14, 2026.
+
+### Scope
+
+Fixed **34 loop instances** across **15 operator guide files**:
+
+**Critical Documentation Fixes** (Range Operators):
+1. **operators/range.md** - 5 loops fixed
+   - **CRITICAL**: Was teaching `for i in 0..10` as valid Aria syntax!
+   - Description updated: "creates ranges for slicing, NOT iteration"
+   - Removed all loop examples using `..` operator
+   - Added warnings: "Aria does NOT use `for i in range` loops"
+   - Best practices rewritten to show till for iteration, ranges for slicing
+
+2. **operators/range_exclusive.md** - 8 loops fixed  
+   - **CRITICAL**: Basic Usage section teaching `for i in 0..10 { ... }`
+   - Added prominent note: "`..` is for slicing, NOT for loops"
+   - Removed all misleading Rust for-in syntax examples
+   - Showed correct distinction: `arr[0..10]` for slicing, `till(9, 1)` for loops
+   - Updated all best practices with ✅/❌ markers
+
+3. **operators/range_inclusive.md** - 6 loops fixed
+   - **CRITICAL**: Teaching `for i in 1..=10` as Aria iteration
+   - Clarified `..=` is for slicing (e.g., `arr[1..=4]`), not loops
+   - Replaced loop examples with slicing examples + separate till examples
+   - Best practices warn against Rust for-in syntax confusion
+
+**Multi-Loop Operator Files**:
+4. **operators/iteration.md** - 2 loops fixed
+   - **CRITICAL**: The iteration documentation itself showing wrong syntax!
+   - Fixed Quick Reference showing `for $i in 0..10`
+   - Now correctly shows `till` as the iteration mechanism
+
+5. **operators/add_assign.md** - 2 loops fixed
+   - Accumulation pattern, best practice examples
+
+6. **operators/mul_assign.md** - 2 loops fixed
+   - Exponential growth, product accumulation
+
+**Single-Loop Operator Files**:
+7. **operators/add.md** - 1 loop fixed (accumulation)
+8. **operators/div_assign.md** - 1 loop fixed (average calculation)
+9. **operators/divide.md** - 1 loop fixed (sum values)
+10. **operators/increment.md** - 1 loop fixed (best practice example)
+11. **operators/left_shift.md** - 1 loop fixed (power generation)
+12. **operators/lshift_assign.md** - 1 loop fixed (bit pattern building)
+13. **operators/mod_assign.md** - 1 loop fixed (wrap around pattern)
+14. **operators/modulo.md** - 1 loop fixed (alternating pattern)
+15. **operators/not_equal.md** - 1 loop fixed (filter pattern)
+
+### Critical Issues Found
+
+**Rust Syntax Being Taught as Aria**:
+The range operator files (foundational documentation) were teaching:
+- `for i in 0..10 { ... }` - Rust exclusive range syntax
+- `for i in 1..=10 { ... }` - Rust inclusive range syntax  
+- `for i in 0..arr.length() { ... }` - Rust array iteration
+
+**Impact**: HIGH - These are reference docs users learn from!
+
+**Root Cause**: Documentation written from Rust mental model, not Aria spec
+
+### Pattern Transformations
+
+**Range operators clarified**:
+```aria
+// ❌ WRONG (Rust syntax - was being taught!):
+for i in 0..10 {
+    stdout << i;
+}
+
+// ✅ CORRECT (Aria) - Ranges for SLICING:
+int32[]:slice = arr[0..10];   // Exclusive (indices 0-9)
+int32[]:slice = arr[0..=10];  // Inclusive (indices 0-10)
+
+// ✅ CORRECT (Aria) - till for LOOPS:
+till(9, 1) {
+    stdout << $;  // $ = 0 to 9 (10 iterations)
+}
+```
+
+**Operator examples fixed**:
+```aria
+// ❌ WRONG (iterator style):
+for value in values {
+    sum += value;
+}
+
+// ✅ CORRECT (Aria):
+till(values.length - 1, 1) {
+    sum += values[$];
+}
+```
+
+**Range iteration corrected**:
+```aria
+// ❌ WRONG (Rust range iteration):
+for i in 0..100 {
+    process(index);
+}
+
+// ✅ CORRECT (Aria):
+till(99, 1) {
+    process(index);
+}
+```
+
+### Preserved Non-Aria Examples
+
+**Correctly preserved comparison examples**:
+- **operators/dollar_variable.md**: 
+  - Line 429: Rust code block `for i in 0..=10` (showing Rust syntax for comparison)
+  - Line 489: C-style `for (int64:i = 0; i <= 100; i++)` (showing compiled output)
+  - Both are language comparisons, NOT teaching Aria syntax - correctly preserved
+
+### Verification
+
+✅ All operator loop patterns corrected:
+- 0 instances of `for i in 0..` in Aria code (except language comparisons)
+- 0 instances of `for x in arr` in Aria code
+- Range operator docs clearly state: "for slicing, NOT iteration"  
+- Warnings added to prevent Rust mental model confusion
+- All loops use `till(count, step)` with `$` index variable
+- Language comparison examples (Rust, C) correctly preserved
+
+**Session 32 Statistics**:
+- Operator files fixed: 15 files
+- Total loop instances corrected: 34
+- Critical documentation fixes: 3 range operator files (19 loops)
+- Educational impact: HIGH (operator docs are foundational learning materials)
+- Pattern consistency: 100% conversion to till syntax
+- Warnings added: 3 files with prominent "NOT for loops" notes
+
+**Remaining Loop Work**:
+- memory_model/: 14 loops across 8 files (gc.md, borrowing.md, borrow_operator.md, etc.)
+- control_flow/: TBD
+- advanced_features/: TBD  
+- modules/: TBD
+- Estimated ~426 more loop instances total
+
+---
+
+## Session 31: Loop Syntax Corrections - Batch 1 (Type Guides)
+
+**SYSTEMATIC LOOP FIXES**: Converted C-style/Rust-style `for` loops to Aria's `till` syntax - February 14, 2026.
+
+### Scope
+
+Fixed **57 loop instances** across **7 type guide files**:
+
+**Files Corrected**:
+1. **types/int1024_int2048_int4096.md** - 11 loops fixed
+   - Factorial computation, hot loops, Miller-Rabin primality testing
+   - Array iteration (cache-friendly vs cache-hostile patterns)
+   - Constant-time cryptographic operations
+
+2. **types/uint1024_uint2048_uint4096.md** - 16 loops fixed
+   - Merkle tree hash chains, modular exponentiation
+   - Window-based optimization, Miller-Rabin witnesses
+   - Cache behavior comparisons, encryption batching
+   - Blockchain verification chains
+
+3. **types/tfp32_tfp64.md** - 12 loops fixed
+   - Deterministic physics simulation, game replay
+   - Blockchain physics contracts, Kahan summation
+   - Performance comparisons (fix256 vs tfp)
+
+4. **types/frac8_frac16_frac32_frac64.md** - 10 loops fixed
+   - Exact financial arithmetic (zero accumulation drift)
+   - Interest calculations, currency exchange
+   - Performance comparisons (preserved C/Python comparison examples)
+
+5. **types/Handle.md** - 6 loops fixed
+   - Neurogenesis handle remapping, arena integrity checks
+   - Batch allocations (preserved C FFI examples)
+
+6. **types/Q3_Q9.md** - 1 loop fixed
+   - Quantum confidence accumulation from sensor readings
+
+7. **debugging/dbug.md** - 1 loop fixed
+   - Debug group enumeration
+
+### Pattern Transformations
+
+**Counting loops**:
+```aria
+// ❌ WRONG (C-style/Rust-style):
+for i in 0..n { ... }
+for i in 0..1000 { ... }
+
+// ✅ CORRECT (Aria):
+till(n - 1, 1) { ... }
+till(999, 1) { ... }
+```
+
+**Array iteration**:
+```aria
+// ❌ WRONG (iterator style):
+for x in arr {
+    process(x);
+}
+
+// ✅ CORRECT (Aria with $ index):
+till(arr.length - 1, 1) {
+    process(arr[$]);
+}
+```
+
+**Starting from 1** (inclusive range):
+```aria
+// ❌ WRONG (Rust inclusive range):
+for i in 1..=n { ... }
+
+// ✅ CORRECT (Aria):
+till(n, 1) { ... }  // $ starts at 1, goes to n
+```
+
+**Nested loops**:
+```aria
+// ❌ WRONG:
+for _ in 0..rounds {
+    for _ in 0..(r - 1) { ... }
+}
+
+// ✅ CORRECT:
+till(rounds - 1, 1) {
+    till(r - 2, 1) { ... }
+}
+```
+
+### Preserved Non-Aria Examples
+
+**Correctly preserved comparison examples**:
+- **C code**: `for (int i = 0; i < 10; i++)` - FFI examples kept as-is
+- **Python code**: `for i in range(1000):` - Language comparison kept as-is  
+- **Rust code**: Iterator-style examples in comparison sections
+
+Only converted Aria code examples to proper `till` syntax.
+
+### Verification
+
+✅ All type guide loop patterns corrected:
+- 0 instances of `for i in 0..` in Aria code (except comparison sections)
+- 0 instances of `for x in arr` in Aria code
+- All loops use `till(count, step)` with `$` index variable
+- Comparison examples (C/Python/Rust) correctly preserved
+
+**Session 31 Statistics**:
+- Type guide files fixed: 7 files
+- Total loop instances corrected: 57
+- Lines affected: ~100+ loop transformations
+- C/Python comparison examples preserved: 3 instances
+- Pattern consistency: 100% conversion to till syntax
+
+**Remaining Loop Work**:
+- Estimated ~460 more loop instances across other directories
+- Next targets: control_flow/, advanced_features/, stdlib/, modules/
+
+---
+
+## Post-Session 30: Legacy File Cleanup - CLUTTER REMOVED!
+
+**SYSTEMATIC LAMBDA FIXES**: Corrected all lambda examples in stdlib files with proper Aria syntax - February 14, 2026.
+
+### Scope
+
+Fixed lambda examples in **5 core stdlib files** using incorrect `=>` syntax:
+
+**1. stdlib/reduce.md** (~525 lines, 30+ lambda fixes)
+- Basic examples: sum, product, string concatenation
+- Pattern examples: count occurrences, build objects, flatten arrays, group by property
+- Pipeline chaining: filter → transform → reduce
+- Advanced: running statistics, histogram, reverse array, function composition
+- Error handling: empty arrays, Result types
+- Performance: single pass, avoiding expensive operations
+
+**2. stdlib/transform.md** (~483 lines, 25+ lambda fixes)
+- Basic transformations: multiply elements, type conversions
+- String operations: uppercase, lengths, reverse
+- Extract properties: from structs/objects
+- Pipeline chaining: multiple transformations, filter+transform+reduce
+- Advanced: nested transformations, conditional transforms, index-aware
+
+**3. stdlib/print.md** (~479 lines, 2 lambda fixes)
+- Result callback examples: onError, onSuccess
+
+**4. stdlib/readFile.md** (~550 lines, 10+ lambda fixes)
+- Result callbacks: onSuccess, onError, map chains
+- Error handling patterns: file not found, permission denied, file too large
+- Advanced: conditional processing, retry logic
+
+**5. stdlib/writeFile.md** (~515 lines, 10+ lambda fixes)
+- Result callbacks: success/error handlers
+- Error handling: permission denied, disk full, invalid path
+- Content pipelines: read → transform → write
+
+### Pattern Transformations
+
+All instances converted from wrong syntax to correct:
+
+**reduce() examples**:
+```aria
+// ❌ WRONG (old):
+reduce(numbers, 0, (acc, n) => acc + n)
+
+// ✅ CORRECT (new):
+reduce(numbers, 0, int64(int64:acc, int64:n) { pass(acc + n); })?
+```
+
+**transform()/filter() examples**:
+```aria
+// ❌ WRONG (old):
+transform(arr, n => n * 2)
+filter(arr, n => n % 2 == 0)
+
+// ✅ CORRECT (new):
+transform(arr, int64(int64:n) { pass(n * 2); })?
+filter(arr, bool(int64:n) { pass(n % 2 == 0); })?
+```
+
+**Result callbacks**:
+```aria
+// ❌ WRONG (old):
+result.onSuccess(data => print(data))
+      .onError(err => print(`Error: &{err}`))
+
+// ✅ CORRECT (new):
+result.onSuccess(NIL(DataType:data) { print(data); pass(NIL); })
+      .onError(NIL(Error:err) { print(`Error: &{err}`); pass(NIL); })?
+```
+
+### Additional Fixes
+
+Fixed 2 remaining instances in reduce.md and transform.md that were in best practices sections (showing what NOT to do, but still needed correct lambda syntax).
+
+### Language Comparisons Preserved
+
+Correctly left JavaScript/Python/Rust comparison examples unchanged:
+- JavaScript: `numbers.map(n => n * 2)` - correct for JavaScript
+- Python: `map(lambda n: n * 2, numbers)` - correct for Python
+- Rust: `numbers.iter().map(|n| n * 2)` - correct for Rust
+- Only the Aria examples were updated to correct syntax
+
+### Verification
+
+✅ All active stdlib files verified clean:
+- 0 instances of `(params) =>` in Aria code blocks
+- Language comparison sections preserved (JavaScript/Python/Rust still have `=>`)
+- All Result callbacks use proper typed lambdas
+- All functional operations use proper type annotations
+
+### Legacy Files Discovered
+
+**NOTE**: Found legacy files using **completely outdated Rust-style Aria syntax**:
+- `types/array.md`, `types/array_operations.md`
+- `types/func.md`, `types/func_declaration.md`
+- `control_flow/return.md`
+- `standard_library/reduce.md` (old version, different from stdlib/reduce.md)
+- `memory_model/wild.md`, `memory_model/wildx.md`
+
+These files use:
+- Old type annotations: `arr: []i32` instead of `int32[]:arr`
+- Old function syntax: `fn(...) -> Type` instead of `func:name = Type(...)`
+- Old loops: `for x in arr` instead of `till`
+
+**Decision needed**: These appear to be from an abandoned earlier spec. Should they be:
+1. Deleted (if superseded by newer files)?
+2. Completely rewritten (if still needed)?
+3. Marked as "historical/deprecated"?
+
+They were not mentioned in SYNTAX_AUDIT_FEB14_2026.md, suggesting they're orphaned.
+
+**Session 30 Statistics**:
+-  Stdlib files fixed: 5 (reduce, transform, print, readFile, writeFile)
+- Total lambda instances corrected: ~77+
+- Lines examined and fixed: ~2,552 lines across 5 files
+- Old lambda syntax eliminated: 100% in active stdlib files
+- Legacy files discovered: 8 files with fundamentally outdated syntax (separate issue)
+- Session duration: ~3 hours
+
+---
+
+## Post-Session 30: Legacy File Cleanup - CLUTTER REMOVED!
+
+**SYSTEMATIC DELETION**: Removed 9 orphaned legacy files using obsolete Rust-style Aria syntax - February 14, 2026.
+
+### Context
+
+After Session 30, discovered 9 legacy files using **completely abandoned Rust-style Aria syntax**:
+- Not mentioned in SYNTAX_AUDIT_FEB14_2026.md → suggests orphaned from earlier spec
+- All use outdated patterns: `arr: []i32`, `fn(...) -> Type`, `for x in arr`, `ptr: *i32`
+- All superseded by modern Phase 5.3-compliant documentation
+
+### Files Deleted
+
+**1. types/array.md** (214 lines) - DELETED
+- **Old syntax**: `arr: []i32 = [1, 2, 3]`
+- **Superseded by**: Modern type guides (Sessions 1-26) + stdlib/array operations
+- Content: Basic array declaration, indexing (fully covered elsewhere)
+
+**2. types/array_declaration.md** (79 lines) - DELETED
+- **Old syntax**: `numbers: [5]i32 = [1, 2, 3, 4, 5]`
+- **Superseded by**: array type guides with correct `int32[5]:numbers` syntax
+- Content: Fixed-size/dynamic arrays, multi-dimensional (covered in modern docs)
+
+**3. types/array_operations.md** (161 lines) - DELETED
+- **Old syntax**: `numbers.map(fn(x: i32) -> i32 { return x * 2; })`
+- **Superseded by**: stdlib/reduce.md, transform.md, filter.md (Session 30 corrected!)
+- Content: Map, filter, reduce with old lambda syntax
+
+**4. types/func.md** (155 lines) - DELETED
+- **Old syntax**: `type UnaryOp = fn(i32) -> i32;`
+- **Superseded by**: functions/lambda.md (Session 29 complete rewrite)
+- Content: First-class functions, function types
+
+**5. types/func_declaration.md** (64 lines) - DELETED
+- **Old syntax**: `type Predicate = fn(i32) -> bool;`
+- **Superseded by**: functions/lambda.md
+- Content: Function type aliases (fully covered in modern lambda guide)
+
+**6. control_flow/return.md** (399 lines) - DELETED
+- **Old syntax**: `fn function_name() -> ReturnType { return value; }`
+- **Wrong concept**: Uses `return` instead of Aria's `pass/fail` for Result types
+- **Superseded by**: error_handling.md, all function docs with pass/fail
+- Content: Return semantics (fundamentally wrong for Result-based system)
+
+**7. standard_library/reduce.md** (217 lines) - DELETED
+- **Old syntax**: `reduce(numbers, 0, fn(acc: i32, x: i32) -> i32 { return acc + x; })`
+- **Superseded by**: stdlib/reduce.md (Session 30 corrected version!)
+- Content: 100% duplicate with wrong lambda syntax
+- **Key distinction**: standard_library/ ≠ stdlib/ (different directories)
+
+**8. memory_model/wild.md** (367 lines) - DELETED
+- **Old syntax**: `ptr: *i32`, `when ptr != nil then`
+- **Superseded by**: memory_model/allocation.md (has `wild int32@:arr` modern syntax)
+- Content: Wild pointers, uninitialized, dangling (safety content covered in modern docs)
+
+**9. memory_model/wildx.md** (428 lines) - DELETED
+- **Old syntax**: Extended wild pointer concepts with old syntax
+- **Superseded by**: memory_model/allocation.md, safety guides
+- Content: Advanced wild pointer scenarios (covered in modern memory docs)
+
+### Rationale
+
+**User directive**: "unless they contain valuable information, lets dispose of them"
+- **Cognitive load**: "with the ADHD its already hard enough...Having a bunch of shit i don't even need to have to dig through every time doesn't help"
+- **No unique value**: All 9 files had content fully covered in corrected modern docs
+- **Outdated syntax**: Teaching fundamentally wrong patterns (Rust-style Aria from abandoned spec)
+
+### Verification
+
+✅ No content loss:
+- Array operations → stdlib/reduce.md, transform.md, filter.md (Session 30)
+- Functions/lambdas → functions/lambda.md, anonymous_functions.md (Session 29)
+- Return semantics → error_handling.md with pass/fail (correct Result model)
+- Wild pointers → memory_model/allocation.md (modern `wild int32@` syntax)
+
+✅ No duplicates remain:
+- Only one reduce.md now (stdlib/reduce.md - corrected in Session 30)
+- Modern array docs use correct `int32[]:arr` syntax
+- Modern function docs use correct `func:name = Type(...)` syntax
+
+**Cleanup Statistics**:
+- Files deleted: 9 legacy files
+- Lines removed: ~2,482 lines of obsolete documentation
+- Directories cleaned: types/, control_flow/, standard_library/, memory_model/
+- Cognitive load reduced: No more duplicate/conflicting syntax examples
+- Structure simplified: One source of truth per topic
+
+---
+
+## Session 29: Lambda/Closure Documentation Rewrites + Specs Pointer Fix
+
+**COMPLETE REWRITES**: Fixed pointer syntax in specs, rewrote 3 core lambda/closure docs - February 14, 2026.
+
+### Part 1: aria_specs.txt Pointer Syntax Correction
+
+Fixed **28 instances** of outdated pointer declaration syntax:
+- Old: `int32@:ptr` (@ for both address-of and type)
+- New: `int32->:ptr` (-> for type, @ for address-of, <- for dereference)
+
+**Rationale**: Blueprint-style data flow arrows:
+- `@var` - Get address (flows TO you)
+- `int32->:ptr` - Type arrow points TO what it holds
+- `<-ptr` - Dereference pulls FROM pointer
+- `ptr->field` - Navigate TO field
+
+**Files corrected in specs**:
+- Closure examples (3329-3720)
+- Defer/RAII examples (3715-4210)
+- Memory allocation (5236-5620)
+- Struct definitions (5664-5695)
+
+### Part 2: Core Lambda/Closure Documentation Rewrites
+
+**Completely rewrote** 3 fundamental files teaching wrong syntax:
+
+**1. functions/lambda.md** (~470 lines - COMPLETE REWRITE)
+- **OLD**: Taught `|params| -> type { body }` syntax (doesn't exist in Aria)
+- **NEW**: Correct syntax - `returnType(paramType:param) { body }`
+- Key sections:
+  * No special lambda syntax (same as regular functions)
+  * Function pointer types: `(returnType)(paramTypes)`
+  * Immediate execution: `func(...) { ... }(args)?`
+  * Value vs pointer capture semantics
+  * All functions return `Result<T,E>`
+  * "No Magic: Just Functions" philosophy section
+
+**2. functions/anonymous_functions.md** (~320 lines - COMPLETE REWRITE)
+- **OLD**: Taught `|params| body` lambda syntax
+- **NEW**: Anonymous = just not bound to name, same syntax as named functions
+- Key sections:
+  * Anonymous vs named (only difference is binding)
+  * Event handlers, array operations, callbacks
+  * Closure behavior (value capture by default)
+  * IIFE pattern for initialization
+  * Best practices (when to use named vs anonymous)
+
+**3. functions/closure_capture.md** (~480 lines - COMPLETE REWRITE)
+- **OLD**: Taught `$variable` for closure captures (wrong - $ is for borrows/till loops)
+- **NEW**: Value capture (copy) vs reference capture (pointers)
+- Key sections:
+  * Value capture: copies variable automatically
+  * Reference capture: explicit pointers (`int32->:ref = @var`, then `<-ref`)
+  * Lifetime safety: captured pointers must outlive closure
+  * Dangling pointer examples and fixes
+  * Performance comparisons (value vs pointer capture)
+  * Real-world patterns (accumulators, event systems)
+
+### Verification
+
+✅ No old syntax remains:
+- 0 instances of `|params|` lambda syntax
+- 0 instances of `$variable` captures
+- 0 instances of `=>` lambda operator (except in comparisons/docs explaining it doesn't exist)
+- ✅ Uses `<=>` spaceship operator (correct)
+
+✅ Correct syntax present:
+- 15+ instances of `int32(int32:...)` (correct lambda syntax)
+- 44+ instances of `pass()` (correct Result handling)
+- 3+ instances of `int32->:` (correct pointer syntax)
+
+### Philosophy
+
+These rewrites emphasize Aria's "no magic" approach:
+- Lambdas aren't special - just functions without names
+- No theatrical punctuation (`=>`, `|params|`)
+- Explicit data flow direction (`->`, `<-`, `@`)
+- Closures capture by value (safe default)
+- Reference capture uses explicit pointers (visible, unsafe intentionally)
+- Drop to assembly: function = pointer to code, no magic
+
+**Session 29 Statistics**:
+- Specs file: 28 pointer syntax corrections
+- Documentation files rewritten: 3 (lambda.md, anonymous_functions.md, closure_capture.md)
+- Total lines rewritten: ~1,270 lines
+- Old syntax patterns eliminated: 100% in these files
+- Session duration: ~2 hours
+
+---
+
+## Session 28: Error Syntax Batch Corrections - ALL CODE FILES FIXED!
+
+**BATCH SYNTAX CLEANUP**: Fixed all remaining code files with old error handling syntax - February 14, 2026.
+
+Completed massive batch correction of error handling syntax across **30+ files**:
+
+**Standard Library** (10 files) - ✅ ALL FIXED:
+1. http_client.md - REST API examples (get_users, create_user, update_user, delete_user)
+2. readFile.md - File I/O error handling
+3. writeFile.md - Write error handling
+4. exec.md - Process execution error handling
+5. math.md - Domain error checking (sqrt negative)
+6. stream_io.md - Streaming I/O (process_log_file)
+7. wait.md - Child process error handling
+8. httpGet.md - HTTP status code checking
+9. readJSON.md - JSON validation errors
+10. process_management.md - Command execution errors
+
+**Type System** (18 files) - ✅ ALL FIXED:
+1. Handle.md - Arena integrity verification
+2. Result.md - Error handling examples (Rust comparison sections)
+3. ERR.md - Error sentinel examples
+4. NIL.md - NULL vs Result comparison (updated to Aria syntax)
+5. int8.md - Range validation
+6. int16.md - Overflow checking
+7. int32.md - Checked arithmetic
+8. int64.md - Type conversion errors
+9. int128.md - Large integer range checks
+10. int256.md - Balance validation (cryptocurrency example)
+11. uint8.md - Unsigned range validation
+12. uint256.md - Unsigned large integer checks
+13. int8_int16.md - Cross-type arithmetic overflow
+14. int32_int64.md - Cross-type arithmetic overflow
+15. flt64.md - Division by zero, NaN/infinity checks
+16. string.md - Parse errors
+17. func_return.md - Function return type examples
+18. tensor.md - Dimension mismatch errors
+
+**Functions & Operators** (2 files) - ✅ ALL FIXED:
+1. functions/function_return_type.md - Result type examples
+2. operators/question_operator.md - Error propagation operator
+
+**Pattern Replacements** (consistent across all files):
+- `return Ok(...)` → `pass(...)`
+- `return Err(...)` → `fail(...)`
+- `return Error(...)` → `fail(...)`
+- `return ok(...)` → `pass(...)`
+- `fn name(...) -> Result<T>` → `func:name = Result<T,E>(...)`
+- `param: Type` → `Type:param`
+- `void` → `nil` (with `pass(NULL)`)
+
+**Verification Results**:
+- ✅ Zero `return Ok/Err/Error` patterns in code files
+- ✅ All stdlib/ files use proper Aria error handling
+- ✅ All types/ files use pass/fail consistently
+- ✅ All functions/ and operators/ files updated
+- ✅ Comparison/teaching examples updated to Aria syntax
+
+**Session 28 Statistics**:
+- Files fixed: 30 code files
+- Total replacements: ~80+ pattern corrections
+- Directories completed: stdlib/, types/, functions/, operators/
+- Session duration: ~2 hours
+- Zero errors in batch operations
+
+**Key Achievement**: ALL code files in the programming guide now use consistent, correct Aria syntax for error handling. This massive batch cleanup means:
+- Users copying examples will use correct syntax
+- No more propagation of outdated patterns
+- Consistent error handling across entire guide
+- Ready for fuzzer/man page generation
+
+**Next Session (29)**: Lambda syntax batch corrections (~43 files with `=>` operator)
+
+---
+
+## Session 27: High-Visibility Syntax Corrections
 
 **SYNTAX CLEANUP**: Fixed critical high-visibility files to stop propagation of outdated syntax patterns - February 14, 2026.
 

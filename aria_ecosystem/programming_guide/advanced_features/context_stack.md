@@ -70,10 +70,11 @@ Caused by: Invalid JSON at line 5
 fn debug_stack() {
     // Get current stack trace
     stack: StackTrace = StackTrace.capture();
+    frames = stack.frames();
     
-    for frame in stack.frames() {
-        stdout << "Function: ${frame.function}";
-        stdout << "File: ${frame.file}:${frame.line}";
+    till(frames.length - 1, 1) {
+        stdout << "Function: ${frames[$].function}";
+        stdout << "File: ${frames[$].file}:${frames[$].line}";
     }
 }
 ```
@@ -201,8 +202,9 @@ impl Error {
     fn print() {
         stderr << "Error: $self.message\n";
         stderr << "Backtrace:\n";
-        for frame in self.backtrace.frames() {
-            stderr << "  ${frame.file}:${frame.line} - ${frame.function}\n";
+        frames = self.backtrace.frames();
+        till(frames.length - 1, 1) {
+            stderr << "  ${frames[$].file}:${frames[$].line} - ${frames[$].function}\n";
         }
     }
 }
@@ -338,8 +340,8 @@ fn infinite_recursion(n: i32) {
 
 // ✅ Better - use iteration or tail recursion
 fn safe_iteration(max: i32) {
-    for i in 0..max {
-        stdout << i;
+    till(max - 1, 1) {
+        stdout << $;
     }
 }
 ```

@@ -138,8 +138,8 @@ fn better() {
 
 ```aria
 // Fast: Stack allocation
-for i in 0..1000000 {
-    value: i32 = i;  // Instant
+till(999999, 1) {
+    value: i32 = $;  // Instant
 }
 ```
 
@@ -267,9 +267,9 @@ fn process() {
 
 // ✅ Use iteration instead of recursion
 fn factorial(n: i32) -> i32 {
-    Result: i32 = 1;
-    for i in 1..=n {
-        result = result * i;
+    result: i32 = 1;
+    till(n, 1) {
+        result = result * $;
     }
     return result;
 }
@@ -343,12 +343,12 @@ fn calculate_area(width: f64, height: f64) -> f64 {
 
 ```aria
 fn process_items(items: []Item) {
-    for item in items {
+    till(items.length - 1, 1) {
         // Loop variables on stack
-        valid: bool = item.validate();
+        valid: bool = items[$].validate();
         
         when valid then
-            Result: Result = item.process();
+            result: Result = items[$].process();
             log_result(result);
         end
     }  // Loop variables freed each iteration

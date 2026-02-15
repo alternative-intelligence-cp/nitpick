@@ -63,7 +63,7 @@ stdout << "Exit code: $(result.exit_code)";
 ### Check Exit Code
 
 ```aria
-Result: ProcessResult = exec("grep", ["pattern", "file.txt"])?;
+Result<ProcessResult>:Result = exec("grep", ["pattern", "file.txt"])?;
 
 when result.exit_code == 0 then
     stdout << "Found:\n$(result.stdout)";
@@ -75,11 +75,11 @@ end
 ### Capture Errors
 
 ```aria
-Result: ProcessResult = exec("git", ["status"])?;
+ProcessResult:Result = exec("git", ["status"])?;
 
 when result.exit_code != 0 then
     stderr << "Git error: $(result.stderr)";
-    return Err("Git command failed");
+    fail("Git command failed");
 end
 
 stdout << result.stdout;
@@ -141,12 +141,12 @@ end
 ### ✅ DO: Check Exit Codes
 
 ```aria
-Result: ProcessResult = exec(command, args)?;
+ProcessResult:Result = exec(command, args)?;
 
 when result.exit_code != 0 then
     stderr << "Command failed with code $(result.exit_code)";
     stderr << "Error: $(result.stderr)";
-    return Err("Execution failed");
+    fail("Execution failed");
 end
 ```
 
@@ -165,12 +165,12 @@ end
 ### ❌ DON'T: Ignore Errors
 
 ```aria
-Result: ProcessResult = exec("rm", ["-rf", important_dir])?;
+Result<ProcessResult>:Result = exec("rm", ["-rf", important_dir])?;
 // ❌ Didn't check if it succeeded!
 
 // Better
 when result.exit_code != 0 then
-    return Err("Failed to delete: $(result.stderr)");
+    fail("Failed to delete: $(result.stderr)");
 end
 ```
 

@@ -2,481 +2,430 @@
 
 **Category**: Functions → Closures  
 **Concept**: How closures capture and store variables from outer scopes  
-**Syntax**: `$variable` for mutable capture, plain name for immutable
+**Syntax**: Value capture (default) or reference capture (via pointers)
+
+---
+
+## What is Capture?
+
+When a function (closure) references variables from an outer scope, it **captures** them. The captured variables become part of the closure's environment.
+
+```aria
+func:make_adder = (int32)(int32)(int32:n) {
+    // This closure captures 'n' from outer scope
+    pass(int32(int32:x) { pass(x + n); });
+};
+```
 
 ---
 
 ## Capture Modes
 
-Aria provides **explicit** capture semantics - you control how variables are captured.
+Aria provides two capture modes:
+
+1. **Value capture (copy)** - Default, safe
+2. **Reference capture (pointer)** - Explicit, requires care
 
 ---
 
-## Immutable Capture (Copy)
+## Value Capture (Copy Semantics)
 
-When you reference a variable **without $**, it's **captured by value**:
+When you reference a variable without a pointer, it's **captured by value** (copied):
 
 ```aria
-fn make_printer(prefix: string) -> fn(string) {
-    // 'prefix' is copied into the closure
-    return |msg: string| {
-        stdout << prefix << ": " << msg << "\n";
-    };
-}
+func:make_printer = (NIL)()(string:prefix) {
+    // 'prefix' is COPIED into the closure
+    pass(NIL() {
+        println(`&{prefix}: message`);
+        pass(NIL);
+    });
+};
 
-greeting: string = "Hello";
-print: fn(string) = make_printer(greeting);
+string:greeting = "Hello";
+(NIL)():print = make_printer(greeting)?;
 
 // Change original
 greeting = "Goodbye";
 
-print("World");  // "Hello: World" (uses captured copy)
+print()?;  // Prints "Hello: message" (uses captured copy)
 ```
 
 **What happens**:
 - Closure gets its **own copy** of `prefix`
 - Original variable changes don't affect the closure
-- Captured value is **immutable** inside the closure
+- Captured value is **immutable** inside the closure (it's a copy)
+- **Safe** - no lifetime issues
 
 ---
 
-## Mutable Capture (Reference)
+## Reference Capture (Pointer Semantics)
 
-Use **$** to capture by **reference** and allow **modification**:
+To modify captured variables or avoid copying large data, use **pointers**:
 
 ```aria
-fn make_counter() -> fn() -> i32 {
-    count: i32 = 0;
+func:make_counter = (NIL)() {
+    int32:count = 0;
+    int32->:count_ref = @count;  // Get pointer to count
     
-    // $count captures by reference
-    return || {
-        $count = $count + 1;
-        return $count;
-    };
-}
+    // Capture pointer by value (pointer itself is copied, not what it points to)
+    pass(NIL() {
+        <-count_ref = <-count_ref + 1;  // Dereference and modify
+        println(<-count_ref);
+        pass(NIL);
+    });
+};
 
-counter: fn() -> i32 = make_counter();
-stdout << counter();  // 1
-stdout << counter();  // 2
-stdout << counter();  // 3
+(NIL)():counter = make_counter()?;
+counter()?;  // Prints: 1
+counter()?;  // Prints: 2
+counter()?;  // Prints: 3
 ```
 
 **What happens**:
-- Closure captures a **reference** to `count`
+- Closure captures a **pointer** (by value)
 - Modifications affect the **original** variable
-- Must use **$** prefix for both read and write
+- Must use `<-` to dereference for both read and write
+- **Unsafe** - pointer must outlive closure
 
 ---
 
-## $ Prefix Rules
+## Capture Examples
 
-### Reading Mutable Captures
+### Immutable Capture
 
 ```aria
-fn make_accumulator() -> fn(i32) {
-    total: i32 = 0;
-    
-    return |value: i32| {
-        // Must use $ to read mutable capture
-        $total = $total + value;
-        stdout << "Total: " << $total << "\n";
-    };
-}
+int32:multiplier = 10;
+
+// Captures 'multiplier' by value
+(int32)(int32):scale = int32(int32:x) { pass(x * multiplier); };
+
+int32:result = scale(5)?;  // 50
+
+multiplier = 100;  // Changing original doesn't affect closure
+int32:result2 = scale(5)?;  // Still 50 (captured copy)
 ```
 
-### Writing Mutable Captures
+### Mutable Capture (via Pointer)
 
 ```aria
-fn make_toggle() -> fn() -> bool {
-    state: bool = false;
-    
-    return || {
-        // Must use $ to write
-        $state = !$state;
-        return $state;
-    };
-}
+int32:total = 0;
+int32->:total_ref = @total;
+
+// Capture pointer to accumulate
+(NIL)(int32):accumulate = NIL(int32:value) {
+    <-total_ref = <-total_ref + value;
+    pass(NIL);
+};
+
+accumulate(10)?;  // total = 10
+accumulate(20)?;  // total = 30
+accumulate(15)?;  // total = 45
+
+println(total);  // 45
 ```
 
-### Consistency Rule
+### Multiple Captures
 
 ```aria
-// ✅ Correct: $ for both read and write
-$count = $count + 1;
+int32:a = 10;
+int32:b = 20;
+int32->:a_ref = @a;
 
-// ❌ Wrong: Inconsistent $ usage
-$count = count + 1;  // Error: count not in scope
-count = $count + 1;  // Error: can't assign to immutable capture
-```
+// Capture multiple variables (mix of value and reference)
+(int32)(int32):complex = int32(int32:x) {
+    pass(x * (<-a_ref) + b);  // a by reference, b by value
+};
 
----
+int32:result = complex(5)?;  // 5 * 10 + 20 = 70
 
-## Multiple Captures
+a = 100;  // Affects closure (captured by reference)
+b = 200;  // Doesn't affect closure (captured by value)
 
-### Mixed Immutable and Mutable
-
-```aria
-fn make_logger(prefix: string) -> fn(string) {
-    count: i32 = 0;
-    
-    // prefix: immutable (copy)
-    // count: mutable (reference)
-    return |msg: string| {
-        $count = $count + 1;
-        stdout << prefix << " #" << $count << ": " << msg << "\n";
-    };
-}
-
-log: fn(string) = make_logger("INFO");
-log("Starting");  // "INFO #1: Starting"
-log("Running");   // "INFO #2: Running"
-```
-
-### Multiple Mutable Captures
-
-```aria
-fn make_stats() -> fn(i32) {
-    count: i32 = 0;
-    sum: i32 = 0;
-    min: i32 = i32::MAX;
-    max: i32 = i32::MIN;
-    
-    return |value: i32| {
-        $count = $count + 1;
-        $sum = $sum + value;
-        
-        when value < $min then
-            $min = value;
-        end
-        
-        when value > $max then
-            $max = value;
-        end
-        
-        avg: f64 = ($sum as f64) / ($count as f64);
-        stdout << "Count: " << $count << ", Avg: " << avg;
-        stdout << ", Min: " << $min << ", Max: " << $max << "\n";
-    };
-}
-
-track: fn(i32) = make_stats();
-track(10);  // Count: 1, Avg: 10.0, Min: 10, Max: 10
-track(5);   // Count: 2, Avg: 7.5, Min: 5, Max: 10
-track(15);  // Count: 3, Avg: 10.0, Min: 5, Max: 15
+int32:result2 = complex(5)?;  // 5 * 100 + 20 = 520
 ```
 
 ---
 
-## Capture Lifetime
+## Capture Lifetime Safety
 
-### Heap Allocation
+**Critical Rule**: Captured pointers must **outlive** the closure.
 
-Captured variables are **moved to the heap** when necessary:
+### SAFE: Pointer outlives closure
 
 ```aria
-fn create_closure() -> fn() -> i32 {
-    value: i32 = 42;  // Stack variable
-    
-    return || value;  // Moved to heap, lives with closure
-    
-    // Stack frame destroyed, but 'value' lives on!
-}
-
-get_value: fn() -> i32 = create_closure();
-Result: i32 = get_value();  // 42 - still accessible
+func:process_with_callback = NIL((NIL)(int32):callback) {
+    int32:value = 42;
+    callback(value)?;  // OK - value still alive
+    pass(NIL);
+};
 ```
 
-### Shared Ownership
-
-Multiple closures can share mutable captures:
+### UNSAFE: Dangling pointer (closure outlives pointee)
 
 ```aria
-fn make_pair() -> (fn(), fn()) {
-    shared: i32 = 0;
+// ❌ DANGEROUS: Don't do this!
+func:make_broken_counter = (NIL)() {
+    int32:local_count = 0;
+    int32->:ref = @local_count;
     
-    increment: fn() = || {
-        $shared = $shared + 1;
-        stdout << "Inc: " << $shared << "\n";
-    };
-    
-    decrement: fn() = || {
-        $shared = $shared - 1;
-        stdout << "Dec: " << $shared << "\n";
-    };
-    
-    return (increment, decrement);
-}
+    pass(NIL() {
+        <-ref = <-ref + 1;  // ❌ DANGLING POINTER!
+        pass(NIL);
+    });
+};  // local_count destroyed here, but closure still has pointer!
 
-(inc, dec): (fn(), fn()) = make_pair();
-inc();  // Inc: 1
-inc();  // Inc: 2
-dec();  // Dec: 1
-inc();  // Inc: 2
+(NIL)():counter = make_broken_counter()?;
+counter()?;  // ❌ UNDEFINED BEHAVIOR - pointer is invalid
 ```
 
----
-
-## Capture Scope Rules
-
-### Nested Closures
+**Fix**: Use value capture or heap allocation:
 
 ```aria
-fn make_nested() -> fn() -> fn() -> i32 {
-    outer: i32 = 10;
+// ✅ SAFE: Value capture
+func:make_safe_counter = (NIL)() {
+    int32:count = 0;
     
-    return || {
-        middle: i32 = 20;
-        
-        return || {
-            // Inner closure can capture from both outer scopes
-            return outer + middle;  // 30
-        };
-    };
-}
+    pass(NIL() {
+        // Can't modify 'count' but that's intentional - it's a copy
+        println(count);
+        pass(NIL);
+    });
+};
 
-get_inner: fn() -> fn() -> i32 = make_nested();
-inner: fn() -> i32 = get_inner();
-Result: i32 = inner();  // 30
-```
-
-### Mutable in Nested
-
-```aria
-fn make_counter_factory() -> fn() -> fn() -> i32 {
-    factory_count: i32 = 0;
+// ✅ SAFE: Heap allocation (advanced)
+func:make_heap_counter = (NIL)() {
+    wild int32->:count = aria.alloc<int32>(1);
+    <-count = 0;
     
-    return || {
-        $factory_count = $factory_count + 1;
-        counter_id: i32 = $factory_count;
-        count: i32 = 0;
-        
-        return || {
-            $count = $count + 1;
-            stdout << "Counter #" << counter_id << ": " << $count << "\n";
-            return $count;
-        };
-    };
-}
-
-factory: fn() -> fn() -> i32 = make_counter_factory();
-counter1: fn() -> i32 = factory();  // Counter #1
-counter2: fn() -> i32 = factory();  // Counter #2
-
-counter1();  // Counter #1: 1
-counter1();  // Counter #1: 2
-counter2();  // Counter #2: 1
+    pass(NIL() {
+        <-count = <-count + 1;
+        println(<-count);
+        pass(NIL);
+    });
+    // Note: This leaks memory! Need proper cleanup strategy
+};
 ```
 
 ---
 
-## Copy vs Move Semantics
+## Capture Best Practices
 
-### Copyable Types (by value)
+### ✅ DO: Prefer Value Capture
 
 ```aria
-fn capture_primitives() {
-    num: i32 = 42;
-    flag: bool = true;
-    
-    closure: fn() = || {
-        // num and flag are copied
-        stdout << num << ", " << flag << "\n";
-    };
-    
-    // Original still accessible
-    stdout << num;  // 42
-}
+// Good: Safe, simple, no lifetime issues
+int32:factor = 2;
+(int32)(int32):double = int32(int32:x) { pass(x * factor); };
 ```
 
-### Move Types (moved)
+### ✅ DO: Use Pointers Only When Necessary
 
 ```aria
-fn capture_move() {
-    data: Vec<i32> = vec![1, 2, 3];
-    
-    closure: fn() = || {
-        // data is moved into closure
-        stdout << data.len() << "\n";
-    };
-    
-    // Error: data was moved
-    // stdout << data.len();
-}
+// Good: Need mutability, pointer lifetime is clear
+int32:accumulator = 0;
+int32->:acc_ref = @accumulator;
+
+process_items(items, NIL(int32:value) {
+    <-acc_ref = <-acc_ref + value;
+    pass(NIL);
+})?;
+
+println(accumulator);  // Final sum
 ```
 
-### Explicit Reference
+### ✅ DO: Document Capture Dependencies
 
 ```aria
-fn capture_reference() {
-    large_data: Vec<i32> = vec![1, 2, 3, 4, 5];
-    
-    closure: fn() = || {
-        // Capture reference to avoid moving large data
-        $large_data.push(6);
-        stdout << $large_data.len() << "\n";
-    };
-    
-    closure();  // 6
-    stdout << large_data.len();  // 6 (same data)
-}
+// Good: Clear what's captured and why
+func:make_validator = (bool)(Data)(int32:min, int32:max) {
+    // Captures 'min' and 'max' by value for range checking
+    pass(bool(Data:d) {
+        pass(d.size() >= min && d.size() <= max);
+    });
+};
 ```
 
----
-
-## Best Practices
-
-### ✅ DO: Use $ for Mutable State
+### ❌ DON'T: Return Closures with Dangling Pointers
 
 ```aria
-// Good: Explicit mutable capture
-fn make_counter() -> fn() -> i32 {
-    count: i32 = 0;
-    return || {
-        $count = $count + 1;
-        return $count;
-    };
-}
+// Wrong: Pointer outlives value
+func:broken = (NIL)() {
+    int32:local = 42;
+    int32->:ptr = @local;
+    pass(NIL() { println(<-ptr); pass(NIL); });  // ❌ DANGER
+};
+
+// Right: Return closure with value capture
+func:safe = (NIL)() {
+    int32:local = 42;
+    pass(NIL() { println(local); pass(NIL); });  // ✅ SAFE
+};
 ```
 
-### ✅ DO: Capture Minimal State
+### ❌ DON'T: Capture Large Structs by Value Unnecessarily
 
 ```aria
-// Good: Only capture what you need
-fn make_handler(user: User) -> fn() {
-    user_id: i32 = user.id;  // Extract only ID
-    return || {
-        process(user_id);  // Uses ID, not entire User
-    };
-}
-```
+// Wrong: Copying huge struct every time
+HugeStruct:big_data = load_data()?;
+process_items(items, NIL(Item:item) {
+    // Closure captures entire 'big_data' by value (expensive copy!)
+    transform(item, big_data)?;
+    pass(NIL);
+})?;
 
-### ✅ DO: Document Captured Variables
-
-```aria
-// Good: Clear what's captured
-fn create_validator(min: i32, max: i32) -> fn(i32) -> bool {
-    // Captures: min, max (by value)
-    return |value: i32| -> bool {
-        return value >= min and value <= max;
-    };
-}
-```
-
-### ❌ DON'T: Forget $ Prefix
-
-```aria
-// Wrong: Inconsistent $ usage
-fn broken() -> fn() {
-    count: i32 = 0;
-    return || {
-        count = count + 1;  // Error: can't modify immutable capture
-    };
-}
-
-// Right: Use $ for mutable
-fn works() -> fn() {
-    count: i32 = 0;
-    return || {
-        $count = $count + 1;  // Correct
-    };
-}
-```
-
-### ❌ DON'T: Capture Large Objects Unnecessarily
-
-```aria
-// Wrong: Captures entire database connection
-fn make_query(db: Database) -> fn(string) -> Result {
-    return |sql: string| {
-        db.execute(sql)  // Entire DB captured!
-    };
-}
-
-// Right: Capture only what's needed or use reference
-fn make_query(db: $Database) -> fn(string) -> Result {
-    return |sql: string| {
-        $db.execute(sql)  // Reference to DB
-    };
-}
+// Right: Use pointer for large data
+HugeStruct:big_data = load_data()?;
+HugeStruct->:data_ref = @big_data;
+process_items(items, NIL(Item:item) {
+    // Closure captures pointer (8 bytes), not entire struct
+    transform(item, <-data_ref)?;
+    pass(NIL);
+})?;
 ```
 
 ---
 
-## Advanced Patterns
+## Capture Performance
 
-### Closure State Machine
+### Value Capture (Copy)
 
-```aria
-enum State {
-    Idle,
-    Running,
-    Paused,
-    Stopped
-}
+**Pros**:
+- Safe (no lifetime issues)
+- Simple (no pointer dereferencing)
+- Fast for small types (int, bool, pointers)
 
-fn make_state_machine() -> fn(string) {
-    state: State = State::Idle;
-    
-    return |action: string| {
-        $state = match (action, $state) {
-            ("start", State::Idle) => State::Running,
-            ("pause", State::Running) => State::Paused,
-            ("resume", State::Paused) => State::Running,
-            ("stop", _) => State::Stopped,
-            _ => $state  // No change
-        };
-        
-        stdout << "State: " << $state << "\n";
-    };
-}
+**Cons**:
+- Expensive for large types (copy overhead)
+- Can't modify original variable
 
-machine: fn(string) = make_state_machine();
-machine("start");   // State: Running
-machine("pause");   // State: Paused
-machine("resume");  // State: Running
-machine("stop");    // State: Stopped
-```
+### Reference Capture (Pointer)
 
-### Shared Counter
+**Pros**:
+- No copy overhead (just pointer)
+- Can modify original variable
+- Good for large data
+
+**Cons**:
+- Unsafe (lifetime management required)
+- Extra dereference on access
+- More complex reasoning
+
+---
+
+## Real-World Examples
+
+### Accumulator Pattern
 
 ```aria
-fn make_shared_counter() -> (fn() -> i32, fn() -> i32, fn() -> i32) {
-    count: i32 = 0;
+func:sum_array = int32(int32[]:arr, int64:len) {
+    int32:sum = 0;
+    int32->:sum_ref = @sum;
     
-    increment: fn() -> i32 = || {
-        $count = $count + 1;
-        return $count;
-    };
+    // Closure captures sum_ref to accumulate
+    for_each(arr, len, NIL(int32:value) {
+        <-sum_ref = <-sum_ref + value;
+        pass(NIL);
+    })?;
     
-    decrement: fn() -> i32 = || {
-        $count = $count - 1;
-        return $count;
-    };
-    
-    get: fn() -> i32 = || {
-        return $count;
-    };
-    
-    return (increment, decrement, get);
-}
-
-(inc, dec, get): (fn() -> i32, fn() -> i32, fn() -> i32) = make_shared_counter();
-
-inc();  // 1
-inc();  // 2
-dec();  // 1
-stdout << get();  // 1
+    pass(sum);
+};
 ```
+
+### Configuration with Closures
+
+```aria
+struct:ServerConfig {
+    int32:port;
+    (Response)(Request):handler;
+};
+
+func:create_server = ServerConfig(int32:port, Database->:db) {
+    // Closure captures 'db' pointer for request handling
+    (Response)(Request):handler = Response(Request:req) {
+        // Access database through captured pointer
+        Data:data = db->query(req.params)?;
+        pass(Response.from_data(data)?);
+    };
+    
+    ServerConfig:config = {
+        port: port,
+        handler: handler
+    };
+    
+    pass(config);
+};
+```
+
+### Event System with Closures
+
+```aria
+struct:EventBus {
+    ((NIL)(Event))[][]:listeners;  // Array of listener arrays by event type
+};
+
+func:addEventListener = NIL(EventBus->:bus, int32:event_id, (NIL)(Event):callback) {
+    // Store callback (which may capture variables)
+    bus->listeners[event_id].push(callback)?;
+    pass(NIL);
+};
+
+// Usage
+EventBus:events = EventBus.new()?;
+EventBus->:events_ref = @events;
+
+int32:click_count = 0;
+int32->:count_ref = @click_count;
+
+addEventListener(events_ref, CLICK_EVENT, NIL(Event:e) {
+    <-count_ref = <-count_ref + 1;
+    println(`Total clicks: &{<-count_ref}`);
+    pass(NIL);
+})?;
+```
+
+---
+
+## Comparison with Other Languages
+
+### JavaScript (always reference capture)
+
+```javascript
+let counter = 0;
+const increment = () => counter++;  // Captures 'counter' by reference
+```
+
+### Rust (explicit move/borrow)
+
+```rust
+let multiplier = 10;
+let scale = |x| x * multiplier;  // Captures by reference
+let scale_owned = move |x| x * multiplier;  // Moves ownership
+```
+
+### Aria (explicit value vs pointer)
+
+```aria
+int32:multiplier = 10;
+
+// Value capture (copy)
+(int32)(int32):scale1 = int32(int32:x) { pass(x * multiplier); };
+
+// Reference capture (pointer)
+int32->:mult_ref = @multiplier;
+(int32)(int32):scale2 = int32(int32:x) { pass(x * (<-mult_ref)); };
+```
+
+**Aria's approach**: Explicit and visual - you see `@` and `<-` which tells you exactly what's happening.
 
 ---
 
 ## Related Topics
 
-- [Closures](closures.md) - Closure overview
-- [Lambda Expressions](lambda.md) - Lambda syntax
-- [Higher-Order Functions](higher_order_functions.md) - Functions using closures
-- [Function Declaration](function_declaration.md) - Regular functions
+- [Lambda Expressions](lambda.md) - Anonymous function syntax
+- [Anonymous Functions](anonymous_functions.md) - General concept
+- [Pointers](../memory/pointers.md) - Pointer syntax and semantics
+- [Memory Safety](../memory/safety.md) - Lifetime and safety rules
 
 ---
 
-**Remember**: **$** means **mutable capture** - it's your explicit way of saying "this closure can modify this variable". No $ means immutable copy!
+**Remember**: Prefer value capture (safe, simple). Use pointer capture only when you need mutability or have large data. Always ensure captured pointers outlive the closure.

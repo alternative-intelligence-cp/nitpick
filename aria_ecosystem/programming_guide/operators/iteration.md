@@ -12,17 +12,16 @@ See [Dollar Variable](../control_flow/dollar_variable.md) for complete documenta
 
 ## Quick Reference
 
+**Note**: Aria uses `till` for loops, NOT `for-in`. The `$` variable is automatically provided by `till`.
+
 ```aria
-// Mutable iteration variable
-for $i in 0..10 {
-    $i += 1;  // Can modify!
-    stdout << $i;
+// $ is the mutable iteration variable in till loops
+till(9, 1) {
+    process($);  // $ goes from 0 to 9
 }
 
-// Immutable (default)
-for i in 0..10 {
-    i += 1;  // ❌ Error!
-}
+// ❌ WRONG: Aria doesn't use for-in loops
+// for i in 0..10 { ... }  // This is Rust syntax!
 ```
 
 ---

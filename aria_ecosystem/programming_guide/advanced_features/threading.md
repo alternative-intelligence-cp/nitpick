@@ -55,16 +55,16 @@ import std.thread.Thread;
 fn main() {
     threads: []Thread = [];
     
-    for i in 0..4 {
+    till(3, 1) {
         thread: Thread = Thread.spawn(|| {
-            stdout << "Worker $i";
+            stdout << "Worker $($)";
         });
         threads.push(thread);
     }
     
     // Wait for all threads
-    for thread in threads {
-        thread.join();
+    till(threads.length - 1, 1) {
+        threads[$].join();
     }
 }
 ```
@@ -103,7 +103,7 @@ import std.thread.Thread;
 counter: Mutex<i32> = Mutex.new(0);
 
 fn worker() {
-    for i in 0..1000 {
+    till(999, 1) {
         lock = counter.lock();
         *lock += 1;
         // Mutex automatically unlocked when lock goes out of scope
@@ -112,12 +112,12 @@ fn worker() {
 
 fn main() {
     threads: []Thread = [];
-    for i in 0..4 {
+    till(3, 1) {
         threads.push(Thread.spawn(worker));
     }
     
-    for thread in threads {
-        thread.join();
+    till(threads.length - 1, 1) {
+        threads[$].join();
     }
     
     stdout << "Counter: ${counter.lock()}";  // Counter: 4000
@@ -133,8 +133,8 @@ import std.sync.Channel;
 import std.thread.Thread;
 
 fn producer(tx: Sender<i32>) {
-    for i in 0..10 {
-        tx.send(i);
+    till(9, 1) {
+        tx.send($);
     }
 }
 
@@ -178,7 +178,7 @@ impl<T, R> WorkerPool<T, R> {
         result_queue: Channel<R> = Channel.new();
         workers: []Thread = [];
         
-        for i in 0..num_workers {
+        till(num_workers - 1, 1) {
             rx = task_queue.receiver();
             tx = result_queue.sender();
             
@@ -208,8 +208,8 @@ impl<T, R> WorkerPool<T, R> {
     
     pub fn shutdown() {
         self.task_queue.close();
-        for worker in self.workers {
-            worker.join();
+        till(self.workers.length - 1, 1) {
+            self.workers[$].join();
         }
     }
 }
@@ -223,12 +223,12 @@ fn main() {
     pool: WorkerPool<i32, i32> = WorkerPool.new(4, process_data);
     
     // Submit tasks
-    for i in 0..100 {
-        pool.submit(i);
+    till(99, 1) {
+        pool.submit($);
     }
     
     // Collect results
-    for i in 0..100 {
+    till(99, 1) {
         Result: i32 = pool.get_result()?;
         stdout << result;
     }
@@ -246,8 +246,8 @@ import std.sync.Channel;
 import std.thread.Thread;
 
 fn producer(tx: Sender<string>) {
-    for i in 0..10 {
-        message: string = "Message $i";
+    till(9, 1) {
+        message: string = "Message $($)";
         tx.send(message);
         Thread.sleep(100);  // Simulate work
     }
@@ -268,17 +268,17 @@ fn main() {
     
     // Multiple consumers
     consumers: []Thread = [];
-    for i in 0..3 {
+    till(2, 1) {
         rx = channel.receiver();
-        consumer: Thread = Thread.spawn(|| consumer(i, rx));
+        consumer: Thread = Thread.spawn(|| consumer($, rx));
         consumers.push(consumer);
     }
     
     p.join();
     channel.close();
     
-    for c in consumers {
-        c.join();
+    till(consumers.length - 1, 1) {
+        consumers[$].join();
     }
 }
 ```
@@ -295,7 +295,8 @@ fn parallel_map<T, R>(items: []T, f: fn(T) -> R, num_threads: i32) -> []R {
     chunk_size: i32 = items.len() / num_threads;
     threads: []Thread<[]R> = [];
     
-    for i in 0..num_threads {
+    till(num_threads - 1, 1) {
+        i = $;
         start: i32 = i * chunk_size;
         end: i32 = if i == num_threads - 1 {
             items.len()
@@ -307,16 +308,16 @@ fn parallel_map<T, R>(items: []T, f: fn(T) -> R, num_threads: i32) -> []R {
         
         thread: Thread<[]R> = Thread.spawn(|| {
             chunk_results: []R = [];
-            for item in chunk {
-                chunk_results.push(f(item));
+            till(chunk.length - 1, 1) {
+                chunk_results.push(f(chunk[$]));
             }
             return chunk_results;
         });
         threads.push(thread);
     }
     
-    for thread in threads {
-        chunk_results: []R = thread.join();
+    till(threads.length - 1, 1) {
+        chunk_results: []R = threads[$].join();
         results.extend(chunk_results);
     }
     
@@ -362,17 +363,18 @@ fn worker(id: i32) {
 ```aria
 fn parallel_compute(data: []f64) -> f64 {
     threads: []Thread<f64> = [];
+    chunks = data.chunks(1000);
     
-    for chunk in data.chunks(1000) {
+    till(chunks.length - 1, 1) {
         thread: Thread<f64> = Thread.spawn(|| {
-            return expensive_computation(chunk);
+            return expensive_computation(chunks[$]);
         });
         threads.push(thread);
     }
     
     sum: f64 = 0.0;
-    for thread in threads {
-        sum += thread.join();
+    till(threads.length - 1, 1) {
+        sum += threads[$].join();
     }
     return sum;
 }
@@ -415,13 +417,13 @@ fn increment() {
 
 ```aria
 // ❌ Bad - too many threads
-for i in 0..10000 {
+till(9999, 1) {
     Thread.spawn(worker);
 }
 
 // ✅ Good - use thread pool
 pool: WorkerPool = WorkerPool.new(8);  // Match CPU cores
-for i in 0..10000 {
+till(9999, 1) {
     pool.submit(work);
 }
 ```

@@ -458,15 +458,15 @@ For int64, bit 63 is the sign bit.
 func:safe_add_i32 = (a: int32, b: int32) -> Result<int32, string> {
     // Positive overflow: both positive, sum negative
     if (a > 0i32 && b > 0i32 && (a + b) < 0i32) {
-        return Err("Positive overflow");
+        fail("Positive overflow");
     }
     
     // Negative underflow: both negative, sum positive
     if (a < 0i32 && b < 0i32 && (a + b) > 0i32) {
-        return Err("Negative underflow");
+        fail("Negative underflow");
     }
     
-    return Ok(a + b);
+    pass(a + b);
 }
 
 // Or just use TBB (automatic)

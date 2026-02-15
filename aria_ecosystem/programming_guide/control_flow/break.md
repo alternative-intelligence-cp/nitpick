@@ -41,16 +41,16 @@ while count < 100 {
 
 ---
 
-## With For Loop
+## With Till Loop
 
 ```aria
 numbers: []i32 = [1, 2, 3, 4, 5, 6, 7, 8];
 
-for num in numbers {
-    if num > 5 {
+till(numbers.length - 1, 1) {
+    if numbers[$] > 5 {
         break;  // Stop when we hit 6
     }
-    stdout << num << " ";
+    stdout << numbers[$] << " ";
 }
 // Output: 1 2 3 4 5
 ```
@@ -79,9 +79,9 @@ loop {
 names: []string = ["Alice", "Bob", "Charlie", "David"];
 found: string? = nil;
 
-for name in names {
-    if name.starts_with("C") {
-        found = name;
+till(names.length - 1, 1) {
+    if names[$].starts_with("C") {
+        found = names[$];
         break;  // Stop searching
     }
 }
@@ -96,8 +96,10 @@ stdout << "Found: " << (found ?? "none") << "\n";
 Break only exits the **innermost** loop:
 
 ```aria
-for i in 0..5 {
-    for j in 0..5 {
+till(4, 1) {
+    i: i32 = $;
+    till(4, 1) {
+        j: i32 = $;
         if j == 3 {
             break;  // Only exits inner loop
         }
@@ -119,8 +121,10 @@ Use a flag or labeled breaks (if supported):
 // Using flag
 done: bool = false;
 
-for i in 0..5 {
-    for j in 0..5 {
+till(4, 1) {
+    i: i32 = $;
+    till(4, 1) {
+        j: i32 = $;
         if i == 2 && j == 2 {
             done = true;
             break;
@@ -139,9 +143,9 @@ for i in 0..5 {
 ### Search and Stop
 
 ```aria
-for item in large_list {
-    if item.matches(criteria) {
-        result = item;
+till(large_list.length - 1, 1) {
+    if large_list[$].matches(criteria) {
+        result = large_list[$];
         break;
     }
 }
@@ -152,8 +156,8 @@ for item in large_list {
 ```aria
 processed: i32 = 0;
 
-for item in items {
-    process(item);
+till(items.length - 1, 1) {
+    process(items[$]);
     processed = processed + 1;
     
     if processed >= max_items {
@@ -167,8 +171,8 @@ for item in items {
 ```aria
 valid: bool = true;
 
-for field in form_fields {
-    if !field.is_valid() {
+till(form_fields.length - 1, 1) {
+    if !form_fields[$].is_valid() {
         valid = false;
         break;  // Stop checking
     }
@@ -183,9 +187,9 @@ for field in form_fields {
 
 ```aria
 // Good: Stop once found
-for user in users {
-    if user.id == target_id {
-        found_user = user;
+till(users.length - 1, 1) {
+    if users[$].id == target_id {
+        found_user = users[$];
         break;
     }
 }
@@ -195,8 +199,8 @@ for user in users {
 
 ```aria
 // Good: Stop on first error
-for file in files {
-    Result: bool = process_file(file);
+till(files.length - 1, 1) {
+    result: bool = process_file(files[$]);
     if !result {
         stderr << "Processing failed\n";
         break;
@@ -208,16 +212,16 @@ for file in files {
 
 ```aria
 // Wrong: Awkward
-for i in 0..10 {
-    process(i);
-    if i == 9 {
+till(9, 1) {
+    process($);
+    if $ == 9 {
         break;
     }
 }
 
 // Right: Let loop complete naturally
-for i in 0..10 {
-    process(i);
+till(9, 1) {
+    process($);
 }
 ```
 

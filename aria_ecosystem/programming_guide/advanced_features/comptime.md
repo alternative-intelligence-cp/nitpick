@@ -131,9 +131,9 @@ comptime {
 
 ```aria
 comptime {
-    for i in 0..10 {
-        stdout << "Generating code for iteration $i";
-        generate_function(i);
+    till(9, 1) {
+        stdout << "Generating code for iteration $($)";
+        generate_function($);
     }
 }
 ```
@@ -146,8 +146,8 @@ comptime {
 comptime {
     type_info: TypeInfo = @type_info(MyStruct);
     
-    for field in type_info.fields {
-        stdout << "Field: $field.name, Type: $field.type";
+    till(type_info.fields.length - 1, 1) {
+        stdout << "Field: ${type_info.fields[$].name}, Type: ${type_info.fields[$].type}";
     }
 }
 ```
@@ -191,8 +191,8 @@ const APP_NAME: string = full_name;  // "MyApp v1.0"
 ```aria
 comptime fn generate_powers_of_2(n: i32) -> [i32; n] {
     Result: [i32; n];
-    for i in 0..n {
-        result[i] = 1 << i;
+    till(n - 1, 1) {
+        result[$] = 1 << $;
     }
     return result;
 }
@@ -226,9 +226,10 @@ allocator: Allocator = Allocator.new();
 ```aria
 comptime fn crc_table() -> [u32; 256] {
     table: [u32; 256];
-    for i in 0..256 {
+    till(255, 1) {
+        i = $;
         value: u32 = i;
-        for j in 0..8 {
+        till(7, 1) {
             if (value & 1) != 0 {
                 value = (value >> 1) ^ 0xEDB88320;
             } else {
@@ -265,8 +266,9 @@ comptime {
 
 ```aria
 comptime {
-    for size in [8, 16, 32, 64, 128, 256] {
-        generate_buffer_type(size);
+    sizes = [8, 16, 32, 64, 128, 256];
+    till(sizes.length - 1, 1) {
+        generate_buffer_type(sizes[$]);
     }
 }
 ```

@@ -25,7 +25,7 @@ The `transform()` function (also known as **map**) creates a **new array** by ap
 // Transform array with mapper function
 int64[]:numbers = [1, 2, 3, 4, 5];
 
-int64[]:doubled = transform(numbers, n => n * 2);
+int64[]:doubled = transform(numbers, int64(int64:n) { pass(n * 2); })?;
 // doubled = [2, 4, 6, 8, 10]
 ```
 
@@ -36,13 +36,13 @@ int64[]:doubled = transform(numbers, n => n * 2);
 ```aria
 int64[]:numbers = [1, 2, 3, 4, 5];
 
-int64[]:doubled = transform(numbers, n => n * 2);
+int64[]:doubled = transform(numbers, int64(int64:n) { pass(n * 2); })?;
 // [2, 4, 6, 8, 10]
 
-int64[]:squared = transform(numbers, n => n * n);
+int64[]:squared = transform(numbers, int64(int64:n) { pass(n * n); })?;
 // [1, 4, 9, 16, 25]
 
-int64[]:plusTen = transform(numbers, n => n + 10);
+int64[]:plusTen = transform(numbers, int64(int64:n) { pass(n + 10); })?;
 // [11, 12, 13, 14, 15]
 ```
 
@@ -53,12 +53,12 @@ int64[]:plusTen = transform(numbers, n => n + 10);
 ```aria
 // int64 to string
 int64[]:numbers = [1, 2, 3];
-string[]:strings = transform(numbers, n => n.toString());
+string[]:strings = transform(numbers, string(int64:n) { pass(n.toString()); })?;
 // ["1", "2", "3"]
 
 // string to int64
 string[]:digits = ["10", "20", "30"];
-int64[]:values = transform(digits, s => s.toInt64());
+int64[]:values = transform(digits, int64(string:s) { pass(s.toInt64()); })?;
 // [10, 20, 30]
 ```
 
@@ -70,15 +70,15 @@ int64[]:values = transform(digits, s => s.toInt64());
 string[]:words = ["hello", "world", "aria"];
 
 // To uppercase
-string[]:upper = transform(words, w => w.toUpperCase());
+string[]:upper = transform(words, string(string:w) { pass(w.toUpperCase()); })?;
 // ["HELLO", "WORLD", "ARIA"]
 
 // Get lengths
-int64[]:lengths = transform(words, w => w.length);
+int64[]:lengths = transform(words, int64(string:w) { pass(w.length); })?;
 // [5, 5, 4]
 
 // Reverse strings
-string[]:reversed = transform(words, w => w.reverse());
+string[]:reversed = transform(words, string(string:w) { pass(w.reverse()); })?;
 // ["olleh", "dlrow", "aira"]
 ```
 
@@ -99,11 +99,11 @@ Person[]:people = [
 ];
 
 // Extract names
-string[]:names = transform(people, p => p.name);
+string[]:names = transform(people, string(Person:p) { pass(p.name); })?;
 // ["Alice", "Bob", "Charlie"]
 
 // Extract ages
-int64[]:ages = transform(people, p => p.age);
+int64[]:ages = transform(people, int64(Person:p) { pass(p.age); })?;
 // [30, 25, 35]
 ```
 
@@ -115,7 +115,7 @@ int64[]:ages = transform(people, p => p.age);
 
 ```aria
 // Inline lambda
-int64[]:doubled = transform(numbers, n => n * 2);
+int64[]:doubled = transform(numbers, int64(int64:n) { pass(n * 2); })?;
 ```
 
 ### Named Function
@@ -131,11 +131,11 @@ int64[]:result = transform(numbers, double);
 ### Multi-Line Lambda
 
 ```aria
-string[]:formatted = transform(numbers, n => {
+string[]:formatted = transform(numbers, string(int64:n) {
     string:prefix = is n < 0 : "NEG" : "POS";
     string:absStr = abs(n).toString();
     pass(`&{prefix}_&{absStr}`);
-});
+})?;
 ```
 
 ---
@@ -149,7 +149,7 @@ float64[]:scores = [45.0, 67.0, 89.0, 92.0];
 
 // Normalize to 0-1 range
 float64:max = 100.0;
-float64[]:normalized = transform(scores, s => s / max);
+float64[]:normalized = transform(scores, float64(float64:s) { pass(s / max); })?;
 // [0.45, 0.67, 0.89, 0.92]
 ```
 
@@ -159,9 +159,9 @@ float64[]:normalized = transform(scores, s => s / max);
 int64[]:prices = [1000, 2500, 750];
 
 // Format as currency
-string[]:formatted = transform(prices, p => {
+string[]:formatted = transform(prices, string(int64:p) {
     pass(`$&{p / 100}.&{p % 100}`);
-});
+})?;
 // ["$10.00", "$25.00", "$7.50"]
 ```
 
@@ -172,10 +172,10 @@ int64[]:widths = [10, 20, 30];
 int64[]:heights = [5, 10, 15];
 
 // Compute areas (assuming same length)
-int64[]:areas = transform(widths, w => {
+int64[]:areas = transform(widths, int64(int64:w) {
     int64:index = indexOf(widths, w);
     pass(w * heights[index]);
-});
+})?;
 ```
 
 ### Pattern 4: Object Transformation
@@ -193,9 +193,9 @@ int64[]:areas = transform(widths, w => {
 
 User[]:users = [...];
 
-UserView[]:views = transform(users, u => {
+UserView[]:views = transform(users, UserView(User:u) {
     pass({ u.username.toUpperCase(), u.email });
-});
+})?;
 ```
 
 ---
@@ -209,8 +209,8 @@ int64[]:numbers = [1, 2, 3, 4, 5];
 
 // Transform then filter
 int64[]:result = numbers
-    |> transform(n => n * 2)        // [2, 4, 6, 8, 10]
-    |> filter(n => n > 5);          // [6, 8, 10]
+    |> transform(int64(int64:n) { pass(n * 2); })?        // [2, 4, 6, 8, 10]
+    |> filter(bool(int64:n) { pass(n > 5); })?;          // [6, 8, 10]
 ```
 
 ### Multiple Transformations
@@ -219,9 +219,9 @@ int64[]:result = numbers
 string[]:words = ["hello", "world"];
 
 string[]:result = words
-    |> transform(w => w.toUpperCase())  // ["HELLO", "WORLD"]
-    |> transform(w => w.reverse())      // ["OLLEH", "DLROW"]
-    |> transform(w => `<&{w}>`);        // ["<OLLEH>", "<DLROW>"]
+    |> transform(string(string:w) { pass(w.toUpperCase()); })?  // ["HELLO", "WORLD"]
+    |> transform(string(string:w) { pass(w.reverse()); })?      // ["OLLEH", "DLROW"]
+    |> transform(string(string:w) { pass(`<&{w}>`); })?;        // ["<OLLEH>", "<DLROW>"]
 ```
 
 ### Filter, Transform, Reduce
@@ -230,9 +230,9 @@ string[]:result = words
 int64[]:numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 int64:sum = numbers
-    |> filter(n => n % 2 == 0)       // [2, 4, 6, 8, 10]
-    |> transform(n => n * n)         // [4, 16, 36, 64, 100]
-    |> reduce(0, (acc, n) => acc + n); // 220
+    |> filter(bool(int64:n) { pass(n % 2 == 0); })?       // [2, 4, 6, 8, 10]
+    |> transform(int64(int64:n) { pass(n * n); })?         // [4, 16, 36, 64, 100]
+    |> reduce(0, int64(int64:acc, int64:n) { pass(acc + n); })?; // 220
 ```
 
 ---
@@ -243,20 +243,20 @@ int64:sum = numbers
 
 ```aria
 // int64 → int64
-int64[]:result = transform(numbers, n => n + 1);
+int64[]:result = transform(numbers, int64(int64:n) { pass(n + 1); })?;
 ```
 
 ### Different Type
 
 ```aria
 // int64 → string
-string[]:result = transform(numbers, n => n.toString());
+string[]:result = transform(numbers, string(int64:n) { pass(n.toString()); })?;
 
 // string → int64
-int64[]:result = transform(strings, s => s.length);
+int64[]:result = transform(strings, int64(string:s) { pass(s.length); })?;
 
 // Person → string
-string[]:result = transform(people, p => p.name);
+string[]:result = transform(people, string(Person:p) { pass(p.name); })?;
 ```
 
 ---
@@ -268,7 +268,7 @@ string[]:result = transform(people, p => p.name);
 ```aria
 // Original unchanged
 int64[]:original = [1, 2, 3];
-int64[]:transformed = transform(original, n => n * 2);
+int64[]:transformed = transform(original, int64(int64:n) { pass(n * 2); })?;
 
 // original still [1, 2, 3]
 // transformed is [2, 4, 6]
@@ -297,7 +297,7 @@ int64[]:result = transform(data, composed);  // Single allocation
 
 ```aria
 // GOOD: Clear transformation
-string[]:names = transform(people, p => p.name);
+string[]:names = transform(people, string(Person:p) { pass(p.name); })?;
 ```
 
 ### ✅ Chain with Pipelines
@@ -314,24 +314,24 @@ result = data
 
 ```aria
 // GOOD: Pure function, no side effects
-transform(numbers, n => n * 2);
+transform(numbers, int64(int64:n) { pass(n * 2); })?;
 
 // BAD: Side effects
 int64:total = 0;
-transform(numbers, n => {
+transform(numbers, int64(int64:n) {
     total += n;  // ⚠️ Side effect!
     pass(n * 2);
-});
+})?;
 ```
 
 ### ❌ Don't Use for Iteration Only
 
 ```aria
 // BAD: transform for side effects only
-transform(users, u => {
+transform(users, User(User:u) {
     print(u.name);
     pass(u);  // Returning unchanged
-});
+})?;
 
 // GOOD: Use loop for side effects
 till(users.length - 1, 1) {
@@ -343,7 +343,7 @@ till(users.length - 1, 1) {
 
 ```aria
 // BAD: Unnecessary transformation
-int64[]:copy = transform(numbers, n => n);
+int64[]:copy = transform(numbers, int64(int64:n) { pass(n); })?;
 
 // GOOD: Direct assignment or clone
 int64[]:copy = numbers.clone();
@@ -356,7 +356,7 @@ int64[]:copy = numbers.clone();
 ### Aria
 
 ```aria
-int64[]:doubled = transform(numbers, n => n * 2);
+int64[]:doubled = transform(numbers, int64(int64:n) { pass(n * 2); })?;
 ```
 
 ### JavaScript
@@ -391,9 +391,9 @@ let doubled: Vec<i64> = numbers.iter()
 int64[][]:matrix = [[1, 2], [3, 4], [5, 6]];
 
 // Double all elements in 2D array
-int64[][]:doubled = transform(matrix, row => {
-    pass(transform(row, n => n * 2));
-});
+int64[][]:doubled = transform(matrix, int64[](int64[]:row) {
+    pass(transform(row, int64(int64:n) { pass(n * 2); })?);
+})?;
 // [[2, 4], [6, 8], [10, 12]]
 ```
 
@@ -403,9 +403,9 @@ int64[][]:doubled = transform(matrix, row => {
 int64[]:numbers = [1, 2, 3, 4, 5];
 
 // Double even, triple odd
-int64[]:result = transform(numbers, n => {
+int64[]:result = transform(numbers, int64(int64:n) {
     pass(is n % 2 == 0 : n * 2 : n * 3);
-});
+})?;
 // [3, 4, 9, 8, 15]
 ```
 
@@ -423,7 +423,7 @@ func:transformWithIndex = U[](T[]:array, func:(U)(T, int64):mapper) {
 };
 
 // Add index to each element
-string[]:indexed = transformWithIndex(words, (w, i) => {
+string[]:indexed = transformWithIndex(words, string(string:w, int64:i) {
     pass(`&{i}: &{w}`);
 });
 // ["0: hello", "1: world", "2: aria"]
@@ -456,12 +456,12 @@ func:parseInt = Result[int64](string:s) {
 
 string[]:strings = ["10", "20", "abc", "30"];
 
-Result[int64][]:results = transform(strings, parseInt);
+Result[int64][]:results = transform(strings, parseInt)?;
 
 // Filter successful parses
 int64[]:numbers = results
-    |> filter(r => r.isOk())
-    |> transform(r => r.unwrap());
+    |> filter(bool(Result[int64]:r) { pass(r.isOk()); })?
+    |> transform(int64(Result[int64]:r) { pass(r.unwrap()); })?;
 // [10, 20, 30]
 ```
 

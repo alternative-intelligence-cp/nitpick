@@ -186,11 +186,11 @@ Result: ProcessResult = wc.wait()?;
 ### ✅ DO: Check Exit Codes
 
 ```aria
-Result: ProcessResult = exec(command, args)?;
+ProcessResult:Result = exec(command, args)?;
 
 when result.exit_code != 0 then
     stderr << "Command failed: $(result.stderr)";
-    return Err("Execution error");
+    fail("Execution error");
 end
 ```
 

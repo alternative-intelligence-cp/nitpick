@@ -52,7 +52,7 @@ fn* fibonacci() -> i32 {
 fn main() {
     fib = fibonacci();
     
-    for i in 0..10 {
+    till(9, 1) {
         stdout << fib.next();
     }
     // Output: 0 1 1 2 3 5 8 13 21 34
@@ -73,8 +73,9 @@ fn* range(start: i32, end: i32) -> i32 {
 }
 
 fn main() {
-    for value in range(0, 5) {
-        stdout << value;  // 0 1 2 3 4
+    values = range(0, 5);
+    till(values.length - 1, 1) {
+        stdout << values[$];  // 0 1 2 3 4
     }
 }
 ```
@@ -115,8 +116,9 @@ async fn* async_range(start: i32, end: i32) -> i32 {
 }
 
 async fn main() {
-    async for value in async_range(0, 5) {
-        stdout << value;
+    values = await async_range(0, 5).collect();
+    till(values.length - 1, 1) {
+        stdout << values[$];
     }
 }
 ```
@@ -129,8 +131,8 @@ async fn main() {
 
 ```aria
 fn* lazy_map<T, R>(items: []T, f: fn(T) -> R) -> R {
-    for item in items {
-        yield f(item);
+    till(items.length - 1, 1) {
+        yield f(items[$]);
     }
 }
 
@@ -146,7 +148,7 @@ fn main() {
     squared = lazy_map(numbers, expensive);
     
     // Only compute first 3
-    for i in 0..3 {
+    till(2, 1) {
         stdout << squared.next();
     }
     // Computed: 1, 4, 9 (not 16, 25 - saved computation!)
@@ -165,9 +167,10 @@ fn* read_lines(file: File) -> string {
 }
 
 fn* filter_comments(lines: Generator<string>) -> string {
-    for line in lines {
-        if !line.starts_with("#") {
-            yield line;
+    line_list = lines.collect();
+    till(line_list.length - 1, 1) {
+        if !line_list[$].starts_with("#") {
+            yield line_list[$];
         }
     }
 }
@@ -176,9 +179,10 @@ fn main() {
     file: File = open("data.txt");
     lines = read_lines(file);
     filtered = filter_comments(lines);
+    filtered_list = filtered.collect();
     
-    for line in filtered {
-        process(line);
+    till(filtered_list.length - 1, 1) {
+        process(filtered_list[$]);
     }
 }
 ```
@@ -200,9 +204,12 @@ fn* primes() -> i32 {
     yield 2;
     candidates: []i32 = [];
     
-    for n in naturals().skip(3).step_by(2) {
+    nat_seq = naturals().skip(3).step_by(2).collect();
+    till(nat_seq.length - 1, 1) {
+        n = nat_seq[$];
         is_prime: bool = true;
-        for p in candidates {
+        till(candidates.length - 1, 1) {
+            p = candidates[$];
             if p * p > n {
                 break;
             }
@@ -223,7 +230,7 @@ fn main() {
     prime_gen = primes();
     
     // Get first 10 primes
-    for i in 0..10 {
+    till(9, 1) {
         stdout << prime_gen.next();
     }
     // Output: 2 3 5 7 11 13 17 19 23 29
@@ -273,8 +280,8 @@ fn main() {
 
 ```aria
 async fn* fetch_pages(base_url: string, num_pages: i32) -> Page {
-    for i in 0..num_pages {
-        url: string = "$base_url/page/$i";
+    till(num_pages - 1, 1) {
+        url: string = "$base_url/page/$($)";
         page: Page = await http.get(url)?;
         yield page;
     }
@@ -282,10 +289,11 @@ async fn* fetch_pages(base_url: string, num_pages: i32) -> Page {
 
 async fn main() {
     total_size: i32 = 0;
+    pages = await fetch_pages("https://api.example.com", 10).collect();
     
-    async for page in fetch_pages("https://api.example.com", 10) {
-        total_size += page.size;
-        stdout << "Downloaded page $page.id";
+    till(pages.length - 1, 1) {
+        total_size += pages[$].size;
+        stdout << "Downloaded page ${pages[$].id}";
     }
     
     stdout << "Total: $total_size bytes";
@@ -328,9 +336,9 @@ fn main() {
 
 ```aria
 fn* generate_data() -> Data {
-    for i in 0..1000000 {
+    till(999999, 1) {
         // Generate only when needed
-        yield expensive_computation(i);
+        yield expensive_computation($);
     }
 }
 
@@ -338,7 +346,7 @@ fn main() {
     data = generate_data();
     
     // Process only what you need
-    for i in 0..10 {
+    till(9, 1) {
         process(data.next());
     }
 }
@@ -348,17 +356,19 @@ fn main() {
 
 ```aria
 fn* parse_log(file: File) -> LogEntry {
-    for line in file.lines() {
-        if entry = parse_line(line) {
+    lines = file.lines();
+    till(lines.length - 1, 1) {
+        if entry = parse_line(lines[$]) {
             yield entry;
         }
     }
 }
 
 fn main() {
-    for entry in parse_log(open("app.log")) {
-        if entry.level == Error {
-            report_error(entry);
+    entries = parse_log(open("app.log")).collect();
+    till(entries.length - 1, 1) {
+        if entries[$].level == Error {
+            report_error(entries[$]);
         }
     }
 }
@@ -368,15 +378,17 @@ fn main() {
 
 ```aria
 fn* map<T, R>(gen: Generator<T>, f: fn(T) -> R) -> R {
-    for value in gen {
-        yield f(value);
+    values = gen.collect();
+    till(values.length - 1, 1) {
+        yield f(values[$]);
     }
 }
 
 fn* filter<T>(gen: Generator<T>, pred: fn(T) -> bool) -> T {
-    for value in gen {
-        if pred(value) {
-            yield value;
+    values = gen.collect();
+    till(values.length - 1, 1) {
+        if pred(values[$]) {
+            yield values[$];
         }
     }
 }
@@ -385,9 +397,10 @@ fn main() {
     numbers = range(0, 100);
     evens = filter(numbers, |x| x % 2 == 0);
     squared = map(evens, |x| x * x);
+    squared_five = squared.take(5);
     
-    for value in squared.take(5) {
-        stdout << value;  // 0 4 16 36 64
+    till(squared_five.length - 1, 1) {
+        stdout << squared_five[$];  // 0 4 16 36 64
     }
 }
 ```
@@ -398,8 +411,8 @@ fn main() {
 // ❌ Bad - coroutines are cooperative, not parallel
 fn* parallel_compute() -> i32 {
     // This still runs sequentially!
-    for i in 0..1000000 {
-        yield expensive(i);
+    till(999999, 1) {
+        yield expensive($);
     }
 }
 
@@ -408,8 +421,8 @@ import std.thread.Thread;
 
 fn parallel_compute() -> []i32 {
     threads: []Thread<i32> = [];
-    for i in 0..8 {
-        threads.push(Thread.spawn(|| compute_chunk(i)));
+    till(7, 1) {
+        threads.push(Thread.spawn(|| compute_chunk($)));
     }
     return threads.map(|t| t.join());
 }

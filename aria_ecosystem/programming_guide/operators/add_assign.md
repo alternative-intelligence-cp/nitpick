@@ -46,8 +46,8 @@ x = x + 3;
 
 ```aria
 sum: i32 = 0;
-for value in values {
-    sum += value;
+till(values.length - 1, 1) {
+    sum += values[$];
 }
 ```
 
@@ -97,8 +97,8 @@ x += 5.5;  // ❌ Type error!
 
 ```aria
 total: i32 = 0;
-for item in items {
-    total += item.price;
+till(items.length - 1, 1) {
+    total += items[$].price;
 }
 ```
 

@@ -176,16 +176,16 @@ rounded: i32 = (pi + 0.5) as i32;  // 3
 ```aria
 fn safe_divide(a: f64, b: f64) -> Result<f64> {
     when b == 0.0 then
-        return Err("Division by zero");
+        fail("Division by zero");
     end
     
     Result: f64 = a / b;
     
     when result.is_nan() or result.is_infinite() then
-        return Err("Invalid result");
+        fail("Invalid result");
     end
     
-    return Ok(result);
+    pass(result);
 }
 ```
 

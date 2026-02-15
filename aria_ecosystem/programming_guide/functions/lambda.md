@@ -1,38 +1,63 @@
-# Lambda Expressions
+# Lambda Expressions (Anonymous Functions)
 
 **Category**: Functions → Anonymous Functions  
-**Syntax**: `|params| -> return_type { body }`  
-**Philosophy**: Functions as values, concise and expressive
+**Syntax**: `returnType(paramType:param) { body }`  
+**Philosophy**: Functions are first-class values - no special lambda syntax needed
 
 ---
 
 ## What is a Lambda?
 
-A **lambda** is an anonymous function - a function without a name that can be passed as a value, stored in variables, or used inline.
+A **lambda** is an anonymous function - a function **without a name** that can be passed as a value, stored in variables, or used inline.
+
+**Key Insight**: In Aria, there is **no special lambda syntax**. Lambdas are just regular functions without a binding. No `=>`, no `|params|`, no magic - just functions.
+
+If you understand functions and pointers, you already understand lambdas.
 
 ---
 
 ## Basic Syntax
 
 ```aria
-// Simple lambda
-add: fn(i32, i32) -> i32 = |a: i32, b: i32| -> i32 {
-    return a + b;
-};
+// Anonymous function (lambda)
+int32(int32:a, int32:b) { pass(a + b); }
 
-Result: i32 = add(5, 3);  // 8
+// Assign to variable (function pointer)
+(int32)(int32, int32):add = int32(int32:a, int32:b) { pass(a + b); };
+
+// Use it
+int32:result = add(5, 3)?;  // 8 (unwrap Result)
 ```
 
 ---
 
-## Short Form (Single Expression)
+## Function Pointer Types
+
+The type of a function pointer is: `(returnType)(paramTypes)`
 
 ```aria
-// When body is single expression, braces and return optional
-square: fn(i32) -> i32 = |x: i32| -> i32 x * x;
+// Function pointer type declarations
+(int32)(int32):unary_op;              // Takes int32, returns int32
+(int32)(int32, int32):binary_op;      // Takes two int32, returns int32
+(NIL)():callback;                     // Takes nothing, returns NIL
+(string)(obj):formatter;              // Takes obj, returns string
+```
 
-// Even shorter: Infer return type
-square: fn(i32) -> i32 = |x: i32| x * x;
+**Note**: All Aria functions return `Result<T, E>`, so these actually return `Result<int32, ERR>`, etc. The `?` operator unwraps the Result.
+
+---
+
+## Immediate Execution
+
+Add `()` after the function body to execute immediately:
+
+```aria
+// Define and execute immediately
+int32:result = int32(int32:x) { pass(x * x); }(5)?;  // 25
+
+// Without immediate execution (stored for later)
+(int32)(int32):square = int32(int32:x) { pass(x * x); };
+int32:result = square(5)?;  // 25
 ```
 
 ---
@@ -41,56 +66,76 @@ square: fn(i32) -> i32 = |x: i32| x * x;
 
 ```aria
 // Higher-order function
-fn apply_twice(f: fn(i32) -> i32, x: i32) -> i32 {
-    return f(f(x));
-}
+func:apply_twice = int32((int32)(int32):f, int32:x) {
+    int32:temp = f(x)?;
+    pass(f(temp)?);
+};
 
-// Use with lambda
-Result: i32 = apply_twice(|n: i32| n * 2, 5);
+// Pass lambda inline
+int32:result = apply_twice(
+    int32(int32:n) { pass(n * 2); },
+    5
+)?;
 // First: 5 * 2 = 10
 // Second: 10 * 2 = 20
+// result = 20
 ```
 
 ---
 
 ## Common Patterns
 
-### Array Operations
+### Array Operations (map, filter, reduce)
 
 ```aria
-numbers: []i32 = [1, 2, 3, 4, 5];
+int32[]:numbers = [1, 2, 3, 4, 5];
 
 // Map: transform each element
-doubled: []i32 = numbers.map(|x: i32| x * 2);
+int32[]:doubled = map(numbers, 5, int32(int32:x) { pass(x * 2); })?;
 // [2, 4, 6, 8, 10]
 
 // Filter: keep elements matching predicate
-evens: []i32 = numbers.filter(|x: i32| x % 2 == 0);
+int32[]:evens = filter(numbers, 5, bool(int32:x) { pass(x % 2 == 0); })?;
 // [2, 4]
 
 // Reduce: combine elements
-sum: i32 = numbers.reduce(0, |acc: i32, x: i32| acc + x);
+int32:sum = reduce(numbers, 5, 0, int32(int32:acc, int32:x) { pass(acc + x); })?;
 // 15
 ```
 
 ### Inline Event Handlers
 
 ```aria
-button.on_click(|event: Event| {
-    stdout << "Button clicked at " << event.x << ", " << event.y << "\n";
-});
+struct:Button {
+    string:label;
+    (NIL)():onClick;  // Function pointer for callback
+};
+
+func:setup_button = NIL() {
+    Button:btn = {
+        label: "Click Me",
+        onClick: NIL() {
+            println("Button clicked!");
+            pass(NIL);
+        }
+    };
+    
+    // Trigger callback later
+    btn.onClick();
+    pass(NIL);
+};
 ```
 
 ### Sorting with Custom Comparator
 
 ```aria
-users: []User = get_users();
+User[]:users = get_users()?;
 
-// Sort by age
-users.sort_by(|a: User, b: User| a.age <=> b.age);
+// Sort by age (using spaceship operator)
+sort_by(users, int32(User:a, User:b) { pass(a.age <=> b.age); });
 
 // Sort by name length
-users.sort_by(|a: User, b: User| a.name.len() <=> b.name.len());
+sort_by(users, int32(User:a, User:b) { pass(a.name.len() <=> b.name.len()); });
 ```
 
 ---
@@ -99,54 +144,84 @@ users.sort_by(|a: User, b: User| a.name.len() <=> b.name.len());
 
 Lambdas can **capture** variables from their surrounding scope:
 
-```aria
-fn make_adder(x: i32) -> fn(i32) -> i32 {
-    // Lambda captures 'x' from outer scope
-    return |y: i32| x + y;
-}
+### Capture by Value (Copy Semantics)
 
-add_5: fn(i32) -> i32 = make_adder(5);
-Result: i32 = add_5(3);  // 8 (5 + 3)
+When you reference a variable in a closure, it's **copied by value**:
+
+```aria
+func:make_adder = (int32)(int32)(int32:n) {
+    // Returns a closure that captures 'n' by value
+    pass(int32(int32:x) { pass(x + n); });
+};
+
+(int32)(int32):add5 = make_adder(5)?;
+int32:result = add5(10)?;  // 15
+
+(int32)(int32):add100 = make_adder(100)?;
+int32:result2 = add100(10)?;  // 110
 ```
 
-### Capture by Value vs Reference
+**What happens**: The closure gets its **own copy** of `n`. Changes to the original don't affect the closure.
 
 ```aria
-// Capture by value (copy)
-counter: i32 = 0;
-increment: fn() -> i32 = || {
-    counter = counter + 1;  // Captures copy of counter
-    return counter;
+int32:multiplier = 10;
+(int32)(int32):scale = int32(int32:x) { pass(x * multiplier); };
+
+int32:result = scale(5)?;  // 50
+
+multiplier = 100;  // Changing original doesn't affect closure
+int32:result2 = scale(5)?;  // Still 50 (captured copy)
+```
+
+### Capture by Reference (Pointer Semantics)
+
+To modify captured variables, use **pointers**:
+
+```aria
+int32:counter = 0;
+int32->:counter_ref = @counter;  // Get pointer to counter
+
+(NIL)():increment = NIL() {
+    <-counter_ref = <-counter_ref + 1;  // Dereference and modify
+    pass(NIL);
 };
 
-// Capture by reference (with $)
-counter: i32 = 0;
-increment: fn() -> i32 = || {
-    $counter = $counter + 1;  // Modifies original counter
-    return $counter;
-};
+increment();  // counter = 1
+increment();  // counter = 2
+increment();  // counter = 3
+```
+
+**⚠️ Safety**: Captured pointers must outlive the closure. Dangling pointers cause undefined behavior.
+
+```aria
+// UNSAFE: Pointer outlives value
+func:make_broken_counter = (NIL)() {
+    int32:local_count = 0;
+    int32->:ref = @local_count;
+    
+    pass(NIL() {
+        <-ref = <-ref + 1;  // ❌ DANGLING POINTER when local_count destroyed!
+        pass(NIL);
+    });
+};  // local_count destroyed here, but closure still has pointer!
 ```
 
 ---
 
 ## Type Annotations
 
-### Explicit Types (Verbose)
+Function pointer types must be explicit when declaring variables:
 
 ```aria
-processor: fn(string, i32) -> bool = |s: string, n: i32| -> bool {
-    return s.len() > n;
+// Explicit function pointer type
+(int32)(string, int32):processor = int32(string:s, int32:n) {
+    pass(is s.len() > n : 1 : 0);
 };
-```
 
-### Type Inference (Concise)
-
-```aria
-// Compiler infers types from context
-numbers.map(|x| x * 2);  // x inferred as i32
-
-// But explicit is clearer
-numbers.map(|x: i32| -> i32 x * 2);
+// Multiple parameters
+(bool)(int32, int32, int32):in_range = bool(int32:val, int32:min, int32:max) {
+    pass(val >= min && val <= max);
+};
 ```
 
 ---
@@ -154,18 +229,18 @@ numbers.map(|x: i32| -> i32 x * 2);
 ## Multi-Line Lambdas
 
 ```aria
-complex_operation: fn(Data) -> Result = |data: Data| -> Result {
-    stddbg << "Processing data: " << data.id;
+(Result<Data, ERR>)(Data):complex_operation = Result<Data, ERR>(Data:data) {
+    stddbg.write(`Processing data: &{data.id}`);
     
-    when data.size() > MAX_SIZE then
-        stderr << "ERROR: Data too large\n";
-        return ERR;
+    if data.size() > MAX_SIZE then
+        stderr.write("ERROR: Data too large\n");
+        fail("Data too large");
     end
     
-    processed: Data = transform(data);
-    validated: Data = pass validate(processed);
+    Data:processed = transform(data)?;
+    Data:validated = validate(processed)?;
     
-    return validated;
+    pass(validated);
 };
 ```
 
@@ -174,36 +249,36 @@ complex_operation: fn(Data) -> Result = |data: Data| -> Result {
 ## Lambdas in Data Structures
 
 ```aria
-// Array of functions
-operations: []fn(i32) -> i32 = [
-    |x| x + 1,
-    |x| x * 2,
-    |x| x * x,
+// Array of function pointers
+(int32)(int32)[]:operations = [
+    int32(int32:x) { pass(x + 1); },
+    int32(int32:x) { pass(x * 2); },
+    int32(int32:x) { pass(x * x); }
 ];
 
-// Apply all operations
-value: i32 = 5;
-for op in operations {
-    value = op(value);
+// Apply all operations in sequence
+int32:value = 5;
+till (i < operations.len()) {
+    value = operations[$](value)?;
 }
 // 5 → 6 → 12 → 144
 ```
 
 ---
 
-## Immediate Invocation
+## Immediate Invocation for Initialization
 
 ```aria
-// Define and call lambda immediately
-Result: i32 = (|x: i32| x * x)(5);  // 25
-
-// Useful for complex initialization
-config: Config = (|() -> Config {
-    c: Config = Config::new();
+// Define and call lambda immediately for complex initialization
+Config:config = Config() {
+    Config:c = Config.new()?;
     c.timeout = 30;
     c.retries = 3;
-    return c;
-})();
+    pass(c);
+}()?;
+
+// Simpler example
+int32:squared = int32(int32:x) { pass(x * x); }(5)?;  // 25
 ```
 
 ---
@@ -214,70 +289,82 @@ config: Config = (|() -> Config {
 
 ```aria
 // Good: Simple transformation
-doubled: []i32 = numbers.map(|x| x * 2);
+int32[]:doubled = map(numbers, len, int32(int32:x) { pass(x * 2); })?;
 ```
 
-### ✅ DO: Capture Explicitly
+### ✅ DO: Be Explicit with Types
 
 ```aria
-// Good: Clear what's captured
-multiplier: i32 = 10;
-scale: fn(i32) -> i32 = |x: i32| x * multiplier;
+// Good: Clear parameter and return types
+sort_by(users, int32(User:a, User:b) { 
+    pass(a.priority <=> b.priority); 
+})?;
 ```
 
-### ✅ DO: Add Types for Clarity
+### ✅ DO: Capture by Value When Possible
 
 ```aria
-// Good: Explicit types when non-obvious
-users.sort_by(|a: User, b: User| -> i32 {
-    return a.priority <=> b.priority;
-});
+// Good: Safe value capture (copy)
+int32:multiplier = 10;
+(int32)(int32):scale = int32(int32:x) { pass(x * multiplier); };
 ```
 
 ### ❌ DON'T: Make Lambdas Too Complex
 
 ```aria
-// Wrong: Lambda is too long
-Result: []Data = items.map(|item| {
+// Wrong: Lambda is too long and complex
+Result<Data[], ERR>:result = map(items, len, Data(Item:item) {
     // 50 lines of complex logic...
     // This should be a named function!
-});
+})?;
 
 // Right: Extract to named function
-fn process_item(item: Item) -> Data {
-    // Complex logic here
-}
+func:process_item = Data(Item:item) {
+    // Complex logic here with clear name
+    pass(transformed_data);
+};
 
-Result: []Data = items.map(process_item);
+Result<Data[], ERR>:result = map(items, len, process_item)?;
 ```
 
-### ❌ DON'T: Capture Mutable State Carelessly
+### ❌ DON'T: Capture Dangling Pointers
 
 ```aria
-// Wrong: Side effects in lambda
-counter: i32 = 0;
-numbers.map(|x| {
-    $counter = $counter + 1;  // Side effect!
-    return x * 2;
-});
+// Wrong: Captured pointer outlives value
+func:broken = (NIL)() {
+    int32:local = 42;
+    int32->:ptr = @local;
+    pass(NIL() {
+        println(<-ptr);  // ❌ DANGLING POINTER!
+        pass(NIL);
+    });
+};  // local destroyed, but closure has pointer!
 
-// Right: Use reduce or for loop
-counter: i32 = numbers.len();
+// Right: Capture by value
+func:safe = (NIL)() {
+    int32:local = 42;
+    pass(NIL() {
+        println(local);  // ✅ Safe copy
+        pass(NIL);
+    });
+};
 ```
 
 ---
 
 ## Lambda vs Named Function
 
-**Use Lambda when**:
-- Function is used once (inline)
-- Logic is short and simple
-- Passed as callback/handler
+**Use Lambda (anonymous function) when**:
+- Function is used once inline
+- Logic is short and simple (< 10 lines)
+- Passed as callback/handler to another function
+- Complex initialization needs scoped logic
 
 **Use Named Function when**:
 - Function is reused multiple times
-- Logic is complex (>5 lines)
-- Function needs a descriptive name
+- Logic is complex or long
+- Function needs a descriptive, self-documenting name
+- Testing/debugging requires clear function identity
 
 ---
 
@@ -286,65 +373,103 @@ counter: i32 = numbers.len();
 ### Event Processing
 
 ```aria
-fn setup_handlers() {
-    app.on_start(|| {
-        stddbg << "Application started";
-        load_config();
-    });
+struct:App {
+    (NIL)():on_start;
+    (NIL)(Error):on_error;
+    (NIL)():on_shutdown;
+};
+
+func:setup_handlers = NIL(App->:app) {
+    app->on_start = NIL() {
+        stddbg.write("Application started\n");
+        load_config()?;
+        pass(NIL);
+    };
     
-    app.on_error(|err: Error| {
-        stderr << "ERROR: " << err.message << "\n";
-        log_error(err);
-    });
+    app->on_error = NIL(Error:err) {
+        stderr.write(`ERROR: &{err.message}\n`);
+        log_error(err)?;
+        pass(NIL);
+    };
     
-    app.on_shutdown(|| {
-        stddbg << "Shutting down...";
-        cleanup_resources();
-    });
-}
+    app->on_shutdown = NIL() {
+        stddbg.write("Shutting down...\n");
+        cleanup_resources()?;
+        pass(NIL);
+    };
+    
+    pass(NIL);
+};
 ```
 
 ### Data Pipeline
 
 ```aria
-fn process_logs(logs: []LogEntry) -> []ErrorEntry {
-    return logs
-        .filter(|log| log.level == "ERROR")
-        .map(|log| ErrorEntry{
+func:process_logs = ErrorEntry[](LogEntry[]:logs, int64:count) {
+    // Filter errors
+    LogEntry[]:errors = filter(logs, count, bool(LogEntry:log) {
+        pass(log.level == "ERROR");
+    })?;
+    
+    // Transform to ErrorEntry
+    ErrorEntry[]:entries = map(errors, errors.len(), ErrorEntry(LogEntry:log) {
+        ErrorEntry:entry = {
             timestamp: log.timestamp,
             message: log.message,
-            severity: calculate_severity(log),
-        })
-        .filter(|entry| entry.severity > 5);
-}
+            severity: calculate_severity(log)?
+        };
+        pass(entry);
+    })?;
+    
+    // Filter by severity
+    ErrorEntry[]:critical = filter(entries, entries.len(), bool(ErrorEntry:e) {
+        pass(e.severity > 5);
+    })?;
+    
+    pass(critical);
+};
 ```
 
-### Configuration Builder
+### Async Completion Handlers
 
 ```aria
-fn create_server_config() -> ServerConfig {
-    return ServerConfig::builder()
-        .port(8080)
-        .on_request(|req: Request| -> Response {
-            stddbg << "Received: " << req.method << " " << req.path;
-            return handle_request(req);
-        })
-        .on_error(|err: Error| {
-            stderr << "Server error: " << err << "\n";
-        })
-        .build();
-}
+func:fetch_data = NIL(string:url, (NIL)(string):onComplete) {
+    // Async HTTP request
+    string:data = http_get(url) ? "";
+    
+    // Call completion handler with result
+    onComplete(data)?;
+    pass(NIL);
+};
+
+// Usage
+fetch_data("https://example.com", NIL(string:response) {
+    println(response);
+    pass(NIL);
+})?;
 ```
+
+---
+
+## No Magic: Just Functions
+
+**Important**: Aria has no special lambda operator (`=>`, `|params|`, etc.). The "magic" of lambdas demystifies once you understand:
+
+1. **Functions are first-class values** - you can pass them around like any data
+2. **Function pointers** - just pointers to code (like C function pointers, but type-safe)
+3. **Closures capture by value** - they get a copy of the environment (or pointer if you need mutability)
+
+Drop down to assembly for a few minutes and see what a function actually is: just a pointer to an address in code memory. That's it. No magic.
 
 ---
 
 ## Related Topics
 
-- [Closures](closures.md) - Variable capture details
+- [Anonymous Functions](anonymous_functions.md) - General concept and patterns
+- [Closure Capture](closure_capture.md) - Detailed capture semantics
 - [Higher-Order Functions](higher_order_functions.md) - Functions taking functions
 - [Function Declaration](function_declaration.md) - Named functions
-- [Anonymous Functions](anonymous_functions.md) - General concept
 
 ---
 
-**Remember**: Lambdas are **functions as values**. Use them for concise, inline logic. For anything complex, use a named function instead.
+**Remember**: Lambdas are just **anonymous functions**. Use them for concise, inline logic. For anything complex, use a named function with a descriptive name instead.

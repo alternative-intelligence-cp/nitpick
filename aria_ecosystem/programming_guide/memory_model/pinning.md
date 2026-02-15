@@ -187,8 +187,8 @@ pin value;  // ❌ Unnecessary!
 ```aria
 // Wrong: Defeats GC purpose
 all_data: []Data = load_all();
-for item in all_data {
-    pin item;  // ❌ Too much!
+till(all_data.length - 1, 1) {
+    pin all_data[$];  // ❌ Too much!
 }
 ```
 

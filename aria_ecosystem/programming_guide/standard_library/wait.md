@@ -171,11 +171,11 @@ end
 ### ✅ DO: Check Exit Codes
 
 ```aria
-Result: ProcessResult = wait(child_pid)?;
+ProcessResult:Result = wait(child_pid)?;
 
 when result.exit_code != 0 then
     stderr << "Child process failed";
-    return Err("Child error");
+    fail("Child error");
 end
 ```
 

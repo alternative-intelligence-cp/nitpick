@@ -153,9 +153,9 @@ while response != "yes" {
 ### Filter
 
 ```aria
-for item in items {
-    when item != excluded_value then
-        results.push(item);
+till(items.length - 1, 1) {
+    when items[$] != excluded_value then
+        results.push(items[$]);
     end
 }
 ```

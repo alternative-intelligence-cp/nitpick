@@ -82,8 +82,8 @@ index++;
 ### ✅ DO: Prefer in Loops
 
 ```aria
-for i in 0..10 {
-    // Loop handles increment
+till(9, 1) {
+    // Loop handles increment via $
 }
 
 // Or manual

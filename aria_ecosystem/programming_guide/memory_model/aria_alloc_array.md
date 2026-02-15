@@ -79,8 +79,8 @@ defer aria_free(users);
 arr: []i32 = aria_alloc_array(i32, 10);
 defer aria_free(arr);
 
-for i in 0..arr.length() {
-    arr[i] = i * i;  // 0, 1, 4, 9, ...
+till(arr.length - 1, 1) {
+    arr[$] = $ * $;  // 0, 1, 4, 9, ...
 }
 ```
 

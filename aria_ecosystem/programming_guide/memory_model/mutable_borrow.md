@@ -205,8 +205,8 @@ stdout << x << ", " << y;  // 20, 10
 
 ```aria
 fn append_to_all(strings: &[]string, suffix: string) {
-    for $str in strings {
-        str = str + suffix;
+    till(strings.length - 1, 1) {
+        strings[$] = strings[$] + suffix;
     }
 }
 
@@ -296,8 +296,8 @@ fn take_ownership(value: i32) {
 
 ```aria
 fn apply_discount(products: &[]Product, discount: f64) {
-    for $product in products {
-        product.price = product.price * (1.0 - discount);
+    till(products.length - 1, 1) {
+        products[$].price = products[$].price * (1.0 - discount);
     }
 }
 

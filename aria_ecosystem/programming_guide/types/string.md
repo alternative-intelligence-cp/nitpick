@@ -203,13 +203,13 @@ fn parse_config(line: string) -> Result<(string, string)> {
     parts: []string = line.split("=");
     
     when parts.length() != 2 then
-        return Err("Invalid format");
+        fail("Invalid format");
     end
     
     key: string = parts[0].trim();
     value: string = parts[1].trim();
     
-    return Ok((key, value));
+    pass((key, value));
 }
 ```
 

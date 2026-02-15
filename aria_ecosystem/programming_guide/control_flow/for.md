@@ -1,22 +1,22 @@
-# For Loops
+# Till Loops
 
 **Category**: Control Flow → Iteration  
-**Keywords**: `for`, `in`  
-**Philosophy**: Iterate over collections naturally
+**Keywords**: `till`  
+**Philosophy**: Iterate with explicit bounds and index access
 
 ---
 
-## What is a For Loop?
+## What is a Till Loop?
 
-**For loops** iterate over collections (arrays, ranges, iterators) with clean, readable syntax.
+**Till loops** iterate over a range of indices with clean, readable syntax using the `$` index variable.
 
 ---
 
 ## Basic Syntax
 
 ```aria
-for item in collection {
-    // Use item
+till(end_index, step) {
+    // Use $ as index
 }
 ```
 
@@ -27,8 +27,8 @@ for item in collection {
 ```aria
 numbers: []i32 = [1, 2, 3, 4, 5];
 
-for num in numbers {
-    stdout << num << "\n";
+till(numbers.length - 1, 1) {
+    stdout << numbers[$] << "\n";
 }
 
 // Output:
@@ -45,14 +45,14 @@ for num in numbers {
 
 ```aria
 // 0 to 9
-for i in 0..10 {
-    stdout << i << " ";
+till(9, 1) {
+    stdout << $ << " ";
 }
 // Output: 0 1 2 3 4 5 6 7 8 9
 
 // 1 to 10 (inclusive)
-for i in 1..=10 {
-    stdout << i << " ";
+till(10, 1) {
+    stdout << $ + 1 << " ";  // Index is 0-9, add 1 for 1-10
 }
 // Output: 1 2 3 4 5 6 7 8 9 10
 ```
@@ -64,8 +64,8 @@ for i in 1..=10 {
 ```aria
 message: string = "Hello";
 
-for char in message {
-    stdout << char << "\n";
+till(message.length - 1, 1) {
+    stdout << message[$] << "\n";
 }
 
 // Output:
@@ -83,8 +83,8 @@ for char in message {
 ```aria
 items: []string = ["apple", "banana", "cherry"];
 
-for item, index in items {
-    stdout << index << ": " << item << "\n";
+till(items.length - 1, 1) {
+    stdout << $ << ": " << items[$] << "\n";
 }
 
 // Output:
@@ -97,13 +97,13 @@ for item, index in items {
 
 ## Mutable Iteration
 
-To modify items, capture them mutably with `$`:
+To modify items, use direct array indexing:
 
 ```aria
 numbers: []i32 = [1, 2, 3, 4, 5];
 
-for $num in numbers {
-    num = num * 2;  // Modifies original array
+till(numbers.length - 1, 1) {
+    numbers[$] = numbers[$] * 2;  // Modifies original array
 }
 
 stdout << numbers;  // [2, 4, 6, 8, 10]
@@ -111,18 +111,19 @@ stdout << numbers;  // [2, 4, 6, 8, 10]
 
 ---
 
-## Read-Only by Default
+## Read-Only vs Mutable Access
 
 ```aria
 numbers: []i32 = [1, 2, 3];
 
-for num in numbers {
-    num = num * 2;  // ❌ Error: num is immutable
+till(numbers.length - 1, 1) {
+    num: auto = numbers[$];  // Local copy
+    num = num * 2;           // ✅ Modifies local variable
 }
 
-// ✅ Correct: Use $ for mutable access
-for $num in numbers {
-    num = num * 2;
+// ✅ Direct array access for mutation:
+till(numbers.length - 1, 1) {
+    numbers[$] = numbers[$] * 2;
 }
 ```
 
@@ -135,11 +136,11 @@ Exit the loop early:
 ```aria
 numbers: []i32 = [1, 2, 3, 4, 5];
 
-for num in numbers {
-    if num == 3 {
+till(numbers.length - 1, 1) {
+    if numbers[$] == 3 {
         break;  // Exit loop
     }
-    stdout << num << " ";
+    stdout << numbers[$] << " ";
 }
 // Output: 1 2
 ```
@@ -153,22 +154,24 @@ Skip to next iteration:
 ```aria
 numbers: []i32 = [1, 2, 3, 4, 5];
 
-for num in numbers {
-    if num % 2 == 0 {
+till(numbers.length - 1, 1) {
+    if numbers[$] % 2 == 0 {
         continue;  // Skip even numbers
     }
-    stdout << num << " ";
+    stdout << numbers[$] << " ";
 }
 // Output: 1 3 5
 ```
 
 ---
 
-## Nested For Loops
+## Nested Till Loops
 
 ```aria
-for i in 1..=3 {
-    for j in 1..=3 {
+till(2, 1) {  // i: 0, 1, 2
+    i: i32 = $ + 1;  // 1, 2, 3
+    till(2, 1) {  // j: 0, 1, 2
+        j: i32 = $ + 1;  // 1, 2, 3
         stdout << "(" << i << "," << j << ") ";
     }
     stdout << "\n";
@@ -189,7 +192,10 @@ scores: Map<string, i32> = Map::new();
 scores.insert("Alice", 95);
 scores.insert("Bob", 87);
 
-for key, value in scores {
+keys: []string = scores.keys();
+till(keys.length - 1, 1) {
+    key: auto = keys[$];
+    value: auto = scores[key];
     stdout << key << ": " << value << "\n";
 }
 
@@ -204,9 +210,10 @@ for key, value in scores {
 
 ```aria
 numbers: []i32 = [1, 2, 3, 4, 5];
+reversed: []i32 = numbers.reverse();
 
-for num in numbers.reverse() {
-    stdout << num << " ";
+till(reversed.length - 1, 1) {
+    stdout << reversed[$] << " ";
 }
 // Output: 5 4 3 2 1
 ```
@@ -218,9 +225,9 @@ for num in numbers.reverse() {
 ```aria
 numbers: []i32 = [1, 2, 3, 4, 5, 6];
 
-for num in numbers {
-    if num % 2 == 0 {  // Only process even numbers
-        Result: i32 = num * num;
+till(numbers.length - 1, 1) {
+    if numbers[$] % 2 == 0 {  // Only process even numbers
+        result: i32 = numbers[$] * numbers[$];
         stdout << result << " ";
     }
 }
@@ -237,8 +244,8 @@ for num in numbers {
 numbers: []i32 = [1, 2, 3, 4, 5];
 sum: i32 = 0;
 
-for num in numbers {
-    sum = sum + num;
+till(numbers.length - 1, 1) {
+    sum = sum + numbers[$];
 }
 
 stdout << "Sum: " << sum << "\n";  // Sum: 15
@@ -250,8 +257,8 @@ stdout << "Sum: " << sum << "\n";  // Sum: 15
 names: []string = ["Alice", "Bob", "Charlie"];
 found: bool = false;
 
-for name in names {
-    if name == "Bob" {
+till(names.length - 1, 1) {
+    if names[$] == "Bob" {
         found = true;
         break;
     }
@@ -268,8 +275,8 @@ if found {
 numbers: []i32 = [1, 2, 3, 4, 5];
 squared: []i32 = [];
 
-for num in numbers {
-    squared.push(num * num);
+till(numbers.length - 1, 1) {
+    squared.push(numbers[$] * numbers[$]);
 }
 
 stdout << squared;  // [1, 4, 9, 16, 25]
@@ -281,8 +288,8 @@ stdout << squared;  // [1, 4, 9, 16, 25]
 items: []string = ["apple", "banana", "apple", "cherry", "apple"];
 count: i32 = 0;
 
-for item in items {
-    if item == "apple" {
+till(items.length - 1, 1) {
+    if items[$] == "apple" {
         count = count + 1;
     }
 }
@@ -297,7 +304,8 @@ stdout << "Apples: " << count << "\n";  // Apples: 3
 ```aria
 files: []string = ["a.txt", "b.txt", "c.txt"];
 
-for filename in files {
+till(files.length - 1, 1) {
+    filename: auto = files[$];
     file: File = pass open(filename);
     content: string = pass file.read();
     
@@ -312,8 +320,8 @@ for filename in files {
 ```aria
 items: []string = ["first", "second", "third"];
 
-for item, i in items {
-    stdout << "Item " << (i + 1) << ": " << item << "\n";
+till(items.length - 1, 1) {
+    stdout << "Item " << ($ + 1) << ": " << items[$] << "\n";
 }
 
 // Output:
@@ -328,9 +336,10 @@ for item, i in items {
 
 ```aria
 numbers: []i32 = [1, 2, 3, 4, 5, 6, 7, 8];
+chunks: [][]i32 = numbers.chunks(3);
 
-for chunk in numbers.chunks(3) {
-    stdout << "Chunk: " << chunk << "\n";
+till(chunks.length - 1, 1) {
+    stdout << "Chunk: " << chunks[$] << "\n";
 }
 
 // Output:
@@ -343,30 +352,30 @@ for chunk in numbers.chunks(3) {
 
 ## Best Practices
 
-### ✅ DO: Use For Loops for Collections
+### ✅ DO: Use Till Loops for Arrays
 
 ```aria
 // Good: Natural iteration
-for item in items {
-    process(item);
+till(items.length - 1, 1) {
+    process(items[$]);
 }
 ```
 
-### ✅ DO: Use Ranges for Counted Loops
+### ✅ DO: Use Till for Counted Loops
 
 ```aria
 // Good: Clear intent
-for i in 0..10 {
-    stdout << i << "\n";
+till(9, 1) {
+    stdout << $ << "\n";
 }
 ```
 
-### ✅ DO: Use $ for Mutation
+### ✅ DO: Use Direct Indexing for Mutation
 
 ```aria
 // Good: Explicit mutation
-for $item in items {
-    item.update();
+till(items.length - 1, 1) {
+    items[$].update();
 }
 ```
 
@@ -374,9 +383,9 @@ for $item in items {
 
 ```aria
 // Good: Stop when found
-for item in large_list {
-    if item.matches(criteria) {
-        result = item;
+till(large_list.length - 1, 1) {
+    if large_list[$].matches(criteria) {
+        result = large_list[$];
         break;
     }
 }
@@ -386,47 +395,42 @@ for item in large_list {
 
 ```aria
 // ❌ Wrong: Unsafe
-for item in items {
-    items.remove(item);  // Undefined behavior!
+till(items.length - 1, 1) {
+    items.remove(items[$]);  // Undefined behavior!
 }
 
 // ✅ Right: Collect items to remove
 to_remove: []Item = [];
-for item in items {
-    if should_remove(item) {
-        to_remove.push(item);
+till(items.length - 1, 1) {
+    if should_remove(items[$]) {
+        to_remove.push(items[$]);
     }
 }
 
-for item in to_remove {
-    items.remove(item);
+till(to_remove.length - 1, 1) {
+    items.remove(to_remove[$]);
 }
 ```
 
-### ❌ DON'T: Use Index When Item is Enough
+### ❌ DON'T: Use Index When Item Access is Simple
 
 ```aria
-// Wrong: Unnecessary indexing
-for i in 0..items.length() {
-    process(items[i]);
-}
-
-// Right: Direct iteration
-for item in items {
-    process(item);
+// Good: Direct access
+till(items.length - 1, 1) {
+    process(items[$]);
 }
 ```
 
 ---
 
-## For vs Loop vs While
+## Till vs Loop vs While
 
-### For Loop (Collections)
+### Till Loop (Index-Based Iteration)
 
 ```aria
-// Best for iterating collections
-for item in items {
-    process(item);
+// Best for iterating arrays/collections
+till(items.length - 1, 1) {
+    process(items[$]);
 }
 ```
 
@@ -462,13 +466,14 @@ while !queue.is_empty() {
 ```aria
 records: []Record = load_records();
 
-for record in records {
+till(records.length - 1, 1) {
+    record: auto = records[$];
     if !record.is_valid() {
         stderr << "Invalid record: " << record.id << "\n";
         continue;
     }
     
-    Result: bool = pass process_record(record);
+    result: bool = pass process_record(record);
     
     when result then
         stdout << "Processed: " << record.id << "\n";
@@ -484,7 +489,9 @@ for record in records {
 students: []Student = load_students();
 report: string = "Student Grades:\n";
 
-for student, index in students {
+till(students.length - 1, 1) {
+    student: auto = students[$];
+    index: i32 = $;
     avg: f64 = student.calculate_average();
     grade: string = letter_grade(avg);
     
@@ -504,9 +511,10 @@ matrix: [][]i32 = [
     [7, 8, 9]
 ];
 
-for row in matrix {
-    for cell in row {
-        stdout << cell << " ";
+till(matrix.length - 1, 1) {
+    row: auto = matrix[$];
+    till(row.length - 1, 1) {
+        stdout << row[$] << " ";
     }
     stdout << "\n";
 }
@@ -521,7 +529,8 @@ for row in matrix {
 - [While](while.md) - Condition-based loops
 - [Break](break.md) - Exit loops
 - [Continue](continue.md) - Skip iterations
+- [Dollar Variable](dollar_variable.md) - Index variable in loops
 
 ---
 
-**Remember**: For loops are **natural iteration** - use for collections, `$` for mutation, break/continue for control!
+**Remember**: Till loops use **index-based iteration** - use `$` for index, direct array access for values, break/continue for control!

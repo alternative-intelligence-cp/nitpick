@@ -128,16 +128,16 @@ double_all($numbers);
 ### Read-Only
 
 ```aria
-for item in &collection {
-    // item is &T (immutable reference)
+till(collection.length - 1, 1) {
+    // Access collection[$] (immutable)
 }
 ```
 
 ### Mutable
 
 ```aria
-for $item in collection {
-    // item is mutable
+till(collection.length - 1, 1) {
+    // Modify collection[$] (mutable)
 }
 ```
 

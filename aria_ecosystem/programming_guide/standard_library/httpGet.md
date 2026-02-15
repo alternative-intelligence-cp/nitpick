@@ -124,10 +124,10 @@ struct HttpResponse {
 ### ✅ DO: Check Status Codes
 
 ```aria
-response: HttpResponse = httpGet(url)?;
+HttpResponse:response = httpGet(url)?;
 
 when response.status != 200 then
-    return Err("HTTP $(response.status): $(response.status_text)");
+    fail("HTTP $(response.status): $(response.status_text)");
 end
 ```
 

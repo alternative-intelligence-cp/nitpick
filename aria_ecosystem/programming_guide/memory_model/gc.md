@@ -134,13 +134,13 @@ tree: Tree = aria_gc_alloc(Tree);
 
 // Shared ownership
 cache: Map<string, Data> = Map::new();
-for key in keys {
-    cache.insert(key, aria_gc_alloc(Data));
+till(keys.length - 1, 1) {
+    cache.insert(keys[$], aria_gc_alloc(Data));
 }
 
 // Don't want manual management
 objects: []Object = [];
-for i in 0..100 {
+till(99, 1) {
     objects.push(aria_gc_alloc(Object));
 }
 ```
@@ -189,13 +189,13 @@ global: Data = aria_gc_alloc(Data);  // Lives forever
 
 ```aria
 // Wrong: Allocates in hot loop
-for i in 0..1000000 {
+till(999999, 1) {
     temp: Data = aria_gc_alloc(Data);  // Creates garbage!
 }
 
 // Right: Reuse or use stack
 temp: Data = Data::new();  // Stack allocated
-for i in 0..1000000 {
+till(999999, 1) {
     temp.reset();  // Reuse same object
 }
 ```

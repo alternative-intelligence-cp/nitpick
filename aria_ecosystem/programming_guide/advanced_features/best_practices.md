@@ -207,8 +207,8 @@ fn calculate(data: []i32) -> i32 {
 
 // Only use mut when necessary
 fn process(data: []mut i32) {
-    for i in 0..data.len() {
-        data[i] *= 2;  // Mutation needed
+    till(data.len() - 1, 1) {
+        data[$] *= 2;  // Mutation needed
     }
 }
 ```
@@ -221,8 +221,8 @@ fn process(data: []mut i32) {
 // ❌ Inefficient - creates temp string each iteration
 fn bad_concat(words: []string) -> string {
     Result: string = "";
-    for word in words {
-        result = result ++ word;  // Reallocates each time
+    till(words.length - 1, 1) {
+        result = result ++ words[$];  // Reallocates each time
     }
     return result;
 }
@@ -231,8 +231,8 @@ fn bad_concat(words: []string) -> string {
 fn good_concat(words: []string) -> string {
     total_len: i32 = words.map(|w| w.len()).sum();
     Result: StringBuilder = StringBuilder.with_capacity(total_len);
-    for word in words {
-        result.append(word);
+    till(words.length - 1, 1) {
+        result.append(words[$]);
     }
     return result.to_string();
 }

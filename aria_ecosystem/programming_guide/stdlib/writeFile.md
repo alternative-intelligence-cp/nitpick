@@ -25,8 +25,8 @@ The `writeFile()` function writes content to a file, creating it if it doesn't e
 Result[void]:result = writeFile("output.txt", "Hello, World!");
 
 result
-    .onSuccess(_ => print("File written successfully"))
-    .onError(err => print(`Error: &{err}`));
+    .onSuccess(NIL(void:_) { print("File written successfully"); pass(NIL); })
+    .onError(NIL(Error:err) { print(`Error: &{err}`); pass(NIL); });
 ```
 
 ---
@@ -61,8 +61,8 @@ func:saveConfig = Result[void](Config:cfg) {
 
 Config:config = { theme: "dark", fontSize: 12 };
 saveConfig(config)
-    .onSuccess(_ => print("Config saved"))
-    .onError(err => print(`Failed: &{err}`));
+    .onSuccess(NIL(void:_) { print("Config saved"); pass(NIL); })
+    .onError(NIL(Error:err) { print(`Failed: &{err}`); pass(NIL); });
 ```
 
 ---
@@ -274,9 +274,10 @@ writeFile("script.sh", "#!/bin/bash\necho Hello", permissions: 0o755);
 ```aria
 Result[void]:result = writeFile("/root/protected.txt", "data");
 
-result.onError(err => {
+result.onError(NIL(Error:err) {
     // err = "Permission denied: /root/protected.txt"
     print(`Error: &{err}`);
+    pass(NIL);
 });
 ```
 
@@ -285,9 +286,10 @@ result.onError(err => {
 ```aria
 Result[void]:result = writeFile("huge.txt", veryLargeString);
 
-result.onError(err => {
+result.onError(NIL(Error:err) {
     // err = "No space left on device"
     print(`Error: &{err}`);
+    pass(NIL);
 });
 ```
 
@@ -296,9 +298,10 @@ result.onError(err => {
 ```aria
 Result[void]:result = writeFile("/invalid/path/file.txt", "data");
 
-result.onError(err => {
+result.onError(NIL(Error:err) {
     // err = "No such file or directory"
     print(`Error: &{err}`);
+    pass(NIL);
 });
 ```
 
@@ -358,7 +361,7 @@ writeFile("log.txt", "data");
 
 // GOOD: Handle errors
 writeFile("log.txt", "data")
-    .onError(err => logError(err));
+    .onError(NIL(Error:err) { logError(err); pass(NIL); });
 ```
 
 ### ❌ Don't Write Sensitive Data Without Protection
@@ -380,7 +383,7 @@ writeFile("passwords.enc", encrypted);
 
 ```aria
 Result[void]:result = writeFile("file.txt", "Hello");
-result.onError(err => print(err));
+result.onError(NIL(Error:err) { print(err); pass(NIL); });
 ```
 
 ### Python
@@ -486,11 +489,11 @@ writeLog(log);
 
 ```aria
 readFile("input.txt")
-    .map(content => content.toUpperCase())
-    .map(upper => upper.replace(" ", "_"))
-    .andThen(processed => writeFile("output.txt", processed))
-    .onSuccess(_ => print("Pipeline complete"))
-    .onError(err => print(`Pipeline failed: &{err}`));
+    .map(string(string:content) { pass(content.toUpperCase()); })
+    .map(string(string:upper) { pass(upper.replace(" ", "_")); })
+    .andThen(Result[void](string:processed) { pass(writeFile("output.txt", processed)); })
+    .onSuccess(NIL(void:_) { print("Pipeline complete"); pass(NIL); })
+    .onError(NIL(Error:err) { print(`Pipeline failed: &{err}`); pass(NIL); });
 ```
 
 ---

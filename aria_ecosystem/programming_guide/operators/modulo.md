@@ -126,11 +126,11 @@ end
 ### Alternating Pattern
 
 ```aria
-for i in 0..10 {
-    when i % 2 == 0 then
-        stdout << "Even: " << i;
+till(9, 1) {
+    when $ % 2 == 0 then
+        stdout << "Even: " << $;
     else
-        stdout << "Odd: " << i;
+        stdout << "Odd: " << $;
     end
 }
 ```

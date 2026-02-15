@@ -98,8 +98,8 @@ Result: i32 = (2 + 3) * 4;  // 5 * 4 = 20
 
 ```aria
 sum: i32 = 0;
-for value in values {
-    sum += value;
+till(values.length - 1, 1) {
+    sum += values[$];
 }
 ```
 
