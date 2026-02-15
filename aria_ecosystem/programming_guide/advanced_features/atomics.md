@@ -147,7 +147,7 @@ impl Counter {
 counter: Counter = Counter.new();
 
 fn worker() {
-    for i in 0..1000 {
+    till(999, 1) {
         counter.increment();  // Thread-safe!
     }
 }

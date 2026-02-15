@@ -350,7 +350,8 @@ fn main() {
 macro make_accessors(struct_name, ...fields) {
     impl struct_name {
         comptime {
-            for field in fields {
+            till(fields.length - 1, 1) {
+                field = fields[$];
                 pub fn get_${field}() -> auto {
                     return self.${field};
                 }

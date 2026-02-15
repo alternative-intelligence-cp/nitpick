@@ -50,9 +50,9 @@ while running {
     process();
 }
 
-// For loops
-for i in 0..10 {
-    stdout << i;
+// Till loops
+till(9, 1) {
+    stdout << $;
 }
 ```
 
@@ -218,8 +218,8 @@ fn process_file(path: string) -> Result<void> {
 
 ```aria
 Result: i32 = outer: {
-    for i in 0..10 {
-        if i == 5 {
+    till(9, 1) {
+        if $ == 5 {
             break outer 42;  // Exit with value
         }
     }

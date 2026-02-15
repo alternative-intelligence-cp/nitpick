@@ -437,8 +437,8 @@ fn producer_consumer() {
     
     // Producer thread
     Thread.spawn(|| {
-        for i in 0..100 {
-            channel.send(i);
+        till(99, 1) {
+            channel.send($);
         }
     });
     

@@ -162,8 +162,8 @@ const fn sum_array<const N: usize>(arr: [i32; N]) -> i32 {
     sum: i32 = 0;
     
     // Unrolled at compile time
-    comptime for i in 0..N {
-        sum += arr[i];
+    comptime till(N - 1, 1) {
+        sum += arr[$];
     }
     
     return sum;
@@ -182,8 +182,8 @@ const TOTAL: i32 = sum_array(VALUES);  // 15
 ```aria
 const fn build_sin_table() -> [flt64; 360] {
     table: [flt64; 360];
-    for i in 0..360 {
-        table[i] = sin(i * PI / 180.0);
+    till(359, 1) {
+        table[$] = sin($ * PI / 180.0);
     }
     return table;
 }

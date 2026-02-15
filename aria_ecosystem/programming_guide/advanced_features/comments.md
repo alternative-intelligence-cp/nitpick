@@ -145,8 +145,8 @@ fn calculate_hash(data: []u8) -> u64 {
     
     hash: u64 = 0xcbf29ce484222325;  // FNV offset basis
     
-    for byte in data {
-        hash ^= byte;
+    till(data.length - 1, 1) {
+        hash ^= data[$];
         hash *= 0x100000001b3;  // FNV prime
     }
     

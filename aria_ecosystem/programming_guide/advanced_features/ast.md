@@ -254,7 +254,8 @@ impl FunctionDecl {
         output += " " * indent ++ "FunctionDecl '$self.name'\n";
         
         output += " " * (indent + 2) ++ "Parameters:\n";
-        for param in self.parameters {
+        till(self.parameters.length - 1, 1) {
+            param = self.parameters[$];
             output += " " * (indent + 4) ++ "${param.name}: ${param.type}\n";
         }
         
@@ -287,8 +288,8 @@ impl FunctionDecl {
 fn type_check(ast: *Program) -> Result<void> {
     checker: TypeChecker = TypeChecker.new();
     
-    for decl in ast.declarations {
-        checker.visit_declaration(decl)?;
+    till(ast.declarations.length - 1, 1) {
+        checker.visit_declaration(ast.declarations[$])?;
     }
     
     return Ok();
@@ -303,8 +304,8 @@ fn type_check(ast: *Program) -> Result<void> {
 fn generate_code(ast: *Program) -> string {
     generator: CodeGenerator = CodeGenerator.new();
     
-    for decl in ast.declarations {
-        generator.visit_declaration(decl);
+    till(ast.declarations.length - 1, 1) {
+        generator.visit_declaration(ast.declarations[$]);
     }
     
     return generator.get_output();

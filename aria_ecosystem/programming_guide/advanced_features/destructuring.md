@@ -281,7 +281,8 @@ fn process_response(resp: Response) {
 ```aria
 users: []User = get_users();
 
-for User { name, age, .. } in users {
+till(users.length - 1, 1) {
+    User { name, age, .. } = users[$];
     if age >= 18 {
         stdout << "$name is an adult";
     }
@@ -290,7 +291,8 @@ for User { name, age, .. } in users {
 // With tuples
 points: [](i32, i32) = [(0, 0), (1, 1), (2, 4)];
 
-for (x, y) in points {
+till(points.length - 1, 1) {
+    (x, y) = points[$];
     stdout << "Point at ($x, $y)";
 }
 ```

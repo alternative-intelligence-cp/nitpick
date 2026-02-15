@@ -130,8 +130,8 @@ fn consumer() {
 import std.sync.{Channel, Thread};
 
 fn producer(ch: Channel<i32>) {
-    for i in 0..100 {
-        ch.send(i);
+    till(99, 1) {
+        ch.send($);
     }
 }
 

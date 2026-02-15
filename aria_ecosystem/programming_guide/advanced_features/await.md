@@ -127,14 +127,14 @@ async fn with_timeout() -> Result<Data> {
 
 ```aria
 async fn fetch_with_retry(url: string, retries: i32) -> Result<Data> {
-    for i in 0..retries {
+    till(retries - 1, 1) {
         match await fetch(url) {
             Ok(data) => return Ok(data),
             Err(e) => {
-                if i == retries - 1 {
+                if $ == retries - 1 {
                     return Err(e);
                 }
-                await sleep(1000 * (i + 1));  // Backoff
+                await sleep(1000 * ($ + 1));  // Backoff
             }
         }
     }
@@ -168,8 +168,8 @@ import std.async.join_all;
 
 async fn fetch_multiple(urls: []string) -> Result<[]Data> {
     tasks: []Future<Data> = [];
-    for url in urls {
-        tasks.push(fetch(url));
+    till(urls.length - 1, 1) {
+        tasks.push(fetch(urls[$]));
     }
     
     results: []Data = await join_all(tasks)?;
@@ -230,8 +230,9 @@ async fn wrong() {
 async fn process_stream() {
     stream: AsyncStream<Data> = get_stream();
     
-    async for item in stream {  // await built into async for
-        await process(item);
+    items = await stream.collect();
+    till(items.length - 1, 1) {
+        await process(items[$]);
     }
 }
 ```

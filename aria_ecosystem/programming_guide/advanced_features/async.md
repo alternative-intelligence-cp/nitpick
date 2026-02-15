@@ -149,15 +149,16 @@ async fn concurrent() -> Result<void> {
 
 ```aria
 async fn* async_generator() -> i32 {
-    for i in 0..10 {
+    till(9, 1) {
         await async_sleep(100);
-        yield i;
+        yield $;
     }
 }
 
 async fn use_generator() {
-    async for value in async_generator() {
-        stdout << value;
+    values = await async_generator().collect();
+    till(values.length - 1, 1) {
+        stdout << values[$];
     }
 }
 ```
@@ -199,8 +200,8 @@ async fn fetch_dashboard() -> Dashboard {
 async fn compute() -> i32 {
     // ❌ Bad - blocks thread with CPU work
     sum: i32 = 0;
-    for i in 0..1000000 {
-        sum += i;
+    till(999999, 1) {
+        sum += $;
     }
     return sum;
 }

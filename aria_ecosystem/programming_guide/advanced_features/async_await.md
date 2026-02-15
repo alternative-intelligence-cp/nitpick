@@ -165,8 +165,9 @@ async fn process_file(path: string) -> Result<void> {
 
 ```aria
 async fn handle_websocket(socket: WebSocket) {
-    async for message in socket {
-        match message {
+    messages = await socket.collect();
+    till(messages.length - 1, 1) {
+        match messages[$] {
             Text(text) => {
                 response: string = await process_message(text)?;
                 await socket.send(response)?;
@@ -187,8 +188,8 @@ import std.async.join_all;
 async fn fetch_all_users(ids: []i32) -> Result<[]User> {
     tasks: []Future<User> = [];
     
-    for id in ids {
-        tasks.push(fetch_user(id));
+    till(ids.length - 1, 1) {
+        tasks.push(fetch_user(ids[$]));
     }
     
     users: []User = await join_all(tasks)?;
@@ -310,16 +311,16 @@ async fn robust_fetch() -> Result<Data> {
 ```aria
 async fn blocking() {
     // ❌ Bad - blocks all async tasks
-    for i in 0..1000000 {
-        compute(i);
+    till(999999, 1) {
+        compute($);
     }
     
     // ✅ Good - yield periodically
-    for i in 0..1000000 {
-        if i % 1000 == 0 {
+    till(999999, 1) {
+        if $ % 1000 == 0 {
             await yield_now();
         }
-        compute(i);
+        compute($);
     }
 }
 ```

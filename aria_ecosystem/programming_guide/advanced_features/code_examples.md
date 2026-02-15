@@ -178,8 +178,8 @@ impl ConnectionPool {
     pub fn new(max_size: i32) -> ConnectionPool {
         connections: []Connection = [];
         
-        for i in 0..max_size {
-            connections.push(Connection { id: i });
+        till(max_size - 1, 1) {
+            connections.push(Connection { id: $ });
         }
         
         return ConnectionPool {
@@ -355,8 +355,8 @@ fn main() {
         .unwrap_or("8080")
         .parse()?;
     
-    for file in args.positional {
-        process_file(file);
+    till(args.positional.length - 1, 1) {
+        process_file(args.positional[$]);
     }
 }
 ```
@@ -421,8 +421,8 @@ async fn main() -> Result<void> {
     response: Response = await client.get("/users")?;
     users: []User = await response.json()?;
     
-    for user in users {
-        stdout << user.name;
+    till(users.length - 1, 1) {
+        stdout << users[$].name;
     }
     
     return Ok();

@@ -263,11 +263,11 @@ fn fetch_data() -> Result<Data, CustomError> {
 
 ```aria
 fn process_files(paths: []string) -> Result<void> {
-    for path in paths {
+    till(paths.length - 1, 1) {
         // Each iteration can fail
-        content: string = readFile(path)?;
+        content: string = readFile(paths[$])?;
         processed: string = process(content)?;
-        writeFile(path ++ ".processed", processed)?;
+        writeFile(paths[$] ++ ".processed", processed)?;
     }
     return Ok();
 }
@@ -281,8 +281,8 @@ fn process_files(paths: []string) -> Result<void> {
 fn fetch_all_users(ids: []i32) -> Result<[]User> {
     users: []User = [];
     
-    for id in ids {
-        user: User = fetch_user(id)?;  // Fail on first error
+    till(ids.length - 1, 1) {
+        user: User = fetch_user(ids[$])?;  // Fail on first error
         users.push(user);
     }
     
@@ -293,8 +293,8 @@ fn fetch_all_users(ids: []i32) -> Result<[]User> {
 fn try_fetch_all(ids: []i32) -> []Result<User> {
     results: []Result<User> = [];
     
-    for id in ids {
-        results.push(fetch_user(id));  // Continue on errors
+    till(ids.length - 1, 1) {
+        results.push(fetch_user(ids[$]));  // Continue on errors
     }
     
     return results;
