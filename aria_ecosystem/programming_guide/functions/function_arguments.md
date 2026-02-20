@@ -122,8 +122,8 @@ Result: i32 = multiply(get_x(), get_y());
 ```aria
 fn sum(numbers: []i32) -> i32 {
     total: i32 = 0;
-    for num in numbers {
-        total = total + num;
+    till(numbers.length - 1, 1) {
+        total = total + numbers[$];
     }
     return total;
 }

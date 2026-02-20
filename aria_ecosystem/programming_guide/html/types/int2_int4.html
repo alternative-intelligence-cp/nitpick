@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Small Integers (int2, int4) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Small Integers (int2, int4)</h1>
+<strong>Category</strong>: Types → Integers → Signed
+<strong>Sizes</strong>: 2-bit, 4-bit
+<strong>Ranges</strong>: int2 (-2 to +1), int4 (-8 to +7)
+<strong>Purpose</strong>: Ultra-small signed integers, nibble operations, educational
+<strong>Status</strong>: ✅ FULLY IMPLEMENTED
+<hr>
+<h2>Table of Contents</h2>
+<p>
+1. <a href="#overview">Overview</a>
+2. <a href="#int2-2-bit-signed-integer">int2: 2-Bit Signed Integer</a>
+3. <a href="#int4-4-bit-signed-integer">int4: 4-Bit Signed Integer</a>
+4. <a href="#twos-complement-at-small-scale">Two's Complement at Small Scale</a>
+5. <a href="#arithmetic-operations">Arithmetic Operations</a>
+6. <a href="#nibble-operations-int4">Nibble Operations (int4)</a>
+7. <a href="#bit-representation">Bit Representation</a>
+8. <a href="#use-cases">Use Cases</a>
+9. <a href="#storage-and-performance">Storage and Performance</a>
+10. <a href="#common-patterns">Common Patterns</a>
+11. <a href="#educational-value">Educational Value</a>
+12. <a href="#anti-patterns">Anti-Patterns</a>
+13. <a href="#related-concepts">Related Concepts</a>
+</p>
+<hr>
+<h2>Overview</h2>
+<p>
+Aria's <strong>int2</strong> and <strong>int4</strong> are <strong>ultra-small signed integers</strong> using 2 and 4 bits respectively.
+</p>
+<strong>Key Properties</strong>:
+<ul><li><strong>int2</strong>: 2 bits, range -2 to +1 (4 values)</li>
+<li><strong>int4</strong>: 4 bits, range -8 to +7 (16 values)</li>
+<li><strong>Asymmetric ranges</strong>: One more negative than positive</li>
+<li><strong>Two's complement</strong>: Standard signed representation</li>
+<li><strong>Nibble operations</strong>: int4 fits in half a byte</li>
+<li><strong>Educational</strong>: Understanding small-scale integer behavior</li>
+</ul>
+<strong>⚠️ UNCOMMON</strong>: Most languages start at 8-bit (byte).
+<hr>
+<h2>int2: 2-Bit Signed Integer</h2>
+<h3>Range</h3>
+<strong>Minimum</strong>: -2 (0b10)
+<strong>Maximum</strong>: +1 (0b01)
+<strong>Total values</strong>: 4 (2²)
+<strong>All values</strong>: -2, -1, 0, +1
+<h3>Declaration</h3>
+<pre><code>int2:negative_two = -2i2;    // Minimum
+<p>
+int2:negative_one = -1i2;
+int2:zero = 0i2;
+int2:positive_one = 1i2;     // Maximum</code></pre>
+</p>
+<h3>Literal Suffix</h3>
+<pre><code>int2:value = -1i2;           // Explicit int2 literal</code></pre>
+<h3>Bit Patterns</h3>
+<p>
+| Value | Binary | Hex |
+|-------|--------|-----|
+| +1 | 01 | 0x1 |
+| 0 | 00 | 0x0 |
+| -1 | 11 | 0x3 |
+| -2 | 10 | 0x2 |
+</p>
+<strong>Sign bit</strong>: Bit 1 (leftmost)
+<ul><li>0: Positive (0, +1)</li>
+<li>1: Negative (-2, -1)</li>
+</ul>
+<h3>Arithmetic Examples</h3>
+<pre><code>int2:a = 1i2;
+<p>
+int2:b = 1i2;
+int2:sum = a + b;            // 1 + 1 = 2, overflows to -2
+</p>
+<p>
+int2:c = -2i2;
+int2:d = -1i2;
+int2:sub = c - d;            // -2 - (-1) = -1</code></pre>
+</p>
+<h3>Common Use Cases</h3>
+<p>
+1. <strong>Educational</strong>: 4-value state machine
+2. <strong>Embedded</strong>: Ultra-compact sensor readings
+3. <strong>Quaternary logic</strong>: 4 distinct states
+4. <strong>Bit manipulation</strong>: Learning two's complement
+</p>
+<h3>Example: State Machine</h3>
+<pre><code>const:int2:STATE_INIT = -2i2;
+<p>
+const:int2:STATE_READY = -1i2;
+const:int2:STATE_RUNNING = 0i2;
+const:int2:STATE_DONE = 1i2;
+</p>
+<p>
+int2:current_state = STATE_INIT;
+</p>
+<p>
+func:transition_state = (state: int2) -> int2 {
+if (state == STATE_INIT) return STATE_READY;
+if (state == STATE_READY) return STATE_RUNNING;
+if (state == STATE_RUNNING) return STATE_DONE;
+return STATE_INIT;  // Loop
+}
+</p>
+<p>
+current_state = transition_state(current_state);  // -2 → -1</code></pre>
+</p>
+<hr>
+<h2>int4: 4-Bit Signed Integer</h2>
+<h3>Range</h3>
+<strong>Minimum</strong>: -8 (0b1000)
+<strong>Maximum</strong>: +7 (0b0111)
+<strong>Total values</strong>: 16 (2⁴)
+<strong>All values</strong>: -8, -7, -6, -5, -4, -3, -2, -1, 0, +1, +2, +3, +4, +5, +6, +7
+<h3>Declaration</h3>
+<pre><code>int4:minimum = -8i4;         // Minimum value
+<p>
+int4:zero = 0i4;
+int4:maximum = 7i4;          // Maximum value</code></pre>
+</p>
+<h3>Literal Suffix</h3>
+<pre><code>int4:value = 5i4;            // Explicit int4 literal
+<p>
+int4:negative = -3i4;</code></pre>
+</p>
+<h3>Nibble</h3>
+<strong>int4 = one nibble</strong> (half a byte):
+<ul><li>1 byte = 2 nibbles = 2 × int4</li>
+<li>Common in BCD (Binary Coded Decimal)</li>
+<li>Hex digit represents one nibble perfectly</li>
+</ul>
+<h3>Bit Patterns (Partial)</h3>
+<p>
+| Value | Binary | Hex |
+|-------|--------|-----|
+| +7 | 0111 | 0x7 |
+| +6 | 0110 | 0x6 |
+| +1 | 0001 | 0x1 |
+| 0 | 0000 | 0x0 |
+| -1 | 1111 | 0xF |
+| -2 | 1110 | 0xE |
+| -7 | 1001 | 0x9 |
+| -8 | 1000 | 0x8 |
+</p>
+<strong>Sign bit</strong>: Bit 3 (leftmost)
+<ul><li>0: Positive (0 to +7)</li>
+<li>1: Negative (-8 to -1)</li>
+</ul>
+<h3>Arithmetic Examples</h3>
+<pre><code>int4:a = 5i4;
+<p>
+int4:b = 3i4;
+int4:sum = a + b;            // 5 + 3 = 8, overflows to -8
+</p>
+<p>
+int4:c = 7i4;
+int4:d = 1i4;
+int4:overflow = c + d;       // 7 + 1 = 8, wraps to -8
+</p>
+<p>
+int4:e = -8i4;
+int4:f = e * -1i4;           // -8 × -1 = 8, overflows to -8 (abs(MIN) problem!)</code></pre>
+</p>
+<h3>Common Use Cases</h3>
+<p>
+1. <strong>BCD (Binary Coded Decimal)</strong>: Each nibble = decimal digit (0-9)
+2. <strong>Embedded systems</strong>: Compact sensor values
+3. <strong>Educational</strong>: Perfect size for teaching overflow
+4. <strong>Nibble packing</strong>: Two int4 per byte
+5. <strong>Color depths</strong>: 16-level grayscale (0-15, but signed -8 to +7)
+</p>
+<h3>Example: Nibble Packing</h3>
+<pre><code>// Pack two int4 into one byte
+<p>
+func:pack_nibbles = (high: int4, low: int4) -> uint8 {
+uint8:h = uint8(high) << 4u8;
+uint8:l = uint8(low) & 0x0Fu8;
+return h | l;
+}
+</p>
+<p>
+// Unpack byte into two int4
+func:unpack_nibbles = (packed: uint8) -> (int4, int4) {
+int4:high = int4((packed >> 4u8) & 0x0Fu8);
+int4:low = int4(packed & 0x0Fu8);
+pass((high, low));
+}
+</p>
+<p>
+int4:value1 = 5i4;
+int4:value2 = -3i4;
+</p>
+<p>
+uint8:packed = pack_nibbles(value1, value2);
+(int4:unpacked1, int4:unpacked2) = unpack_nibbles(packed);
+</p>
+<p>
+// unpacked1 = 5, unpacked2 = -3 ✓</code></pre>
+</p>
+<hr>
+<h2>Two's Complement at Small Scale</h2>
+<h3>Asymmetric Range</h3>
+<strong>All signed integers</strong> have one more negative value than positive:
+<p>
+| Type | Min | Max | Asymmetry |
+|------|-----|-----|-----------|
+| int1 | -1 | 0 | 1 more negative |
+| int2 | -2 | +1 | 1 more negative |
+| int4 | -8 | +7 | 1 more negative |
+| int8 | -128 | +127 | 1 more negative |
+</p>
+<strong>Formula</strong>:
+<ul><li>Min = -2^(N-1)</li>
+<li>Max = 2^(N-1) - 1</li>
+</ul>
+<strong>For int2</strong> (N=2):
+<ul><li>Min = -2^1 = -2</li>
+<li>Max = 2^1 - 1 = +1</li>
+</ul>
+<strong>For int4</strong> (N=4):
+<ul><li>Min = -2^3 = -8</li>
+<li>Max = 2^3 - 1 = +7</li>
+</ul>
+<h3>Demonstrating abs(MIN) Problem</h3>
+<pre><code>int4:minimum = -8i4;
+<p>
+int4:negated = -minimum;     // -(-8) = 8, but max is 7!
+// Overflows to -8 (wraps around)
+</p>
+<p>
+log.write("Negated: ");
+negated.write_to(log);
+log.write("\n");
+// Output: "Negated: -8"</code></pre>
+</p>
+<strong>This is why TBB exists</strong> - symmetric ranges avoid this issue.
+<hr>
+<h2>Arithmetic Operations</h2>
+<h3>Addition (int2)</h3>
+<pre><code>int2:a = 1i2;
+<p>
+int2:b = 1i2;
+int2:sum = a + b;            // 1 + 1 = 2, wraps to -2
+</p>
+<p>
+int2:c = -2i2;
+int2:d = 1i2;
+int2:add = c + d;            // -2 + 1 = -1</code></pre>
+</p>
+<h3>Addition (int4)</h3>
+<pre><code>int4:a = 7i4;
+<p>
+int4:b = 1i4;
+int4:overflow = a + b;       // 7 + 1 = 8, wraps to -8
+</p>
+<p>
+int4:c = -8i4;
+int4:d = -1i4;
+int4:underflow = c + d;      // -8 + (-1) = -9, wraps to 7</code></pre>
+</p>
+<h3>Multiplication (int4)</h3>
+<pre><code>int4:a = 4i4;
+<p>
+int4:b = 2i4;
+int4:product = a * b;        // 4 × 2 = 8, wraps to -8
+</p>
+<p>
+int4:c = -4i4;
+int4:d = 2i4;
+int4:neg = c * d;            // -4 × 2 = -8 (fits!)</code></pre>
+</p>
+<h3>Division (int4)</h3>
+<pre><code>int4:a = -8i4;
+<p>
+int4:b = -1i4;
+int4:quotient = a / b;       // -8 / -1 = 8, wraps to -8
+</p>
+<p>
+int4:c = 7i4;
+int4:d = 2i4;
+int4:truncate = c / d;       // 7 / 2 = 3 (truncate toward zero)</code></pre>
+</p>
+<hr>
+<h2>Nibble Operations (int4)</h2>
+<h3>Nibble Definition</h3>
+<strong>Nibble</strong> = 4 bits = half a byte
+<strong>Why useful</strong>:
+<ul><li>Hex digit = 1 nibble exactly (0x0 to 0xF)</li>
+<li>BCD uses nibbles for decimal digits</li>
+<li>Compact packing (2 nibbles per byte)</li>
+</ul>
+<h3>Extracting Nibbles from Byte</h3>
+<pre><code>func:extract_high_nibble = (byte: uint8) -> int4 {
+<p>
+return int4((byte >> 4u8) & 0x0Fu8);
+}
+</p>
+<p>
+func:extract_low_nibble = (byte: uint8) -> int4 {
+return int4(byte & 0x0Fu8);
+}
+</p>
+<p>
+uint8:value = 0xA7u8;  // Binary: 1010 0111
+</p>
+<p>
+int4:high = extract_high_nibble(value);  // 0xA = 10... wraps to -6
+int4:low = extract_low_nibble(value);    // 0x7 = 7 ✓</code></pre>
+</p>
+<h3>BCD (Binary Coded Decimal) with int4</h3>
+<strong>BCD</strong>: Each nibble represents decimal digit 0-9
+<pre><code>// Encode decimal 42 as BCD (two nibbles)
+<p>
+func:decimal_to_bcd = (value: uint8) -> uint8 {
+uint8:tens = value / 10u8;
+uint8:ones = value % 10u8;
+return (tens << 4u8) | ones;
+}
+</p>
+<p>
+// Decode BCD to decimal
+func:bcd_to_decimal = (bcd: uint8) -> uint8 {
+uint8:tens = (bcd >> 4u8) & 0x0Fu8;
+uint8:ones = bcd & 0x0Fu8;
+return (tens * 10u8) + ones;
+}
+</p>
+<p>
+uint8:decimal = 42u8;
+uint8:bcd = decimal_to_bcd(decimal);      // 0x42
+uint8:back = bcd_to_decimal(bcd);         // 42 ✓</code></pre>
+</p>
+<hr>
+<h2>Bit Representation</h2>
+<h3>int2 Bit Patterns</h3>
+<pre><code>Value | S M | Decimal
+<p>
+------|-----|--------
++1   | 0 1 |   1
+0   | 0 0 |   0
+-1   | 1 1 |  -1
+-2   | 1 0 |  -2</code></pre>
+</p>
+<strong>S</strong> = Sign bit
+<strong>M</strong> = Magnitude bit
+<h3>int4 Bit Patterns</h3>
+<pre><code>Value | S M M M | Decimal
+<p>
+------|---------|--------
++7   | 0 1 1 1 |   7
++1   | 0 0 0 1 |   1
+0   | 0 0 0 0 |   0
+-1   | 1 1 1 1 |  -1
+-8   | 1 0 0 0 |  -8</code></pre>
+</p>
+<strong>S</strong> = Sign bit
+<strong>MMM</strong> = Magnitude bits
+<hr>
+<h2>Use Cases</h2>
+<h3>1. Educational: Overflow Demonstration</h3>
+<pre><code>// Teach overflow at manageable scale
+<p>
+func:demonstrate_overflow = () -> void {
+int4:max = 7i4;
+</p>
+<p>
+log.write("Maximum: ");
+max.write_to(log);
+log.write("\n");
+</p>
+<p>
+int4:overflow = max + 1i4;
+</p>
+<p>
+log.write("Maximum + 1: ");
+overflow.write_to(log);
+log.write("\n");
+// Output: "Maximum + 1: -8"
+}</code></pre>
+</p>
+<h3>2. Embedded Systems: Sensor Values</h3>
+<pre><code>// Temperature sensor with limited precision (-8°C to +7°C)
+<p>
+extern "C" {
+func:read_temperature_sensor = int4();
+}
+</p>
+<p>
+int4:temp = read_temperature_sensor();
+</p>
+<p>
+if (temp < 0i4) {
+log.write("Freezing: ");
+temp.write_to(log);
+log.write("°C\n");
+}</code></pre>
+</p>
+<h3>3. Compact Storage: Array Packing</h3>
+<pre><code>// Store 16 int4 values in 8 bytes
+<p>
+struct:PackedInt4Array = {
+uint8[8]:data;
+</p>
+<p>
+func:get = (self, index: uint8) -> int4 {
+uint8:byte_index = index / 2u8;
+bool:is_high = (index % 2u8) == 0u8;
+</p>
+<p>
+uint8:byte = self.data[byte_index];
+</p>
+<p>
+if (is_high) {
+return int4((byte >> 4u8) & 0x0Fu8);
+} else {
+return int4(byte & 0x0Fu8);
+}
+}
+</p>
+<p>
+func:set = (self, index: uint8, value: int4) -> void {
+uint8:byte_index = index / 2u8;
+bool:is_high = (index % 2u8) == 0u8;
+</p>
+<p>
+uint8:byte = self.data[byte_index];
+uint8:nibble = uint8(value) & 0x0Fu8;
+</p>
+<p>
+if (is_high) {
+self.data[byte_index] = (nibble << 4u8) | (byte & 0x0Fu8);
+} else {
+self.data[byte_index] = (byte & 0xF0u8) | nibble;
+}
+}
+};
+</p>
+<p>
+PackedInt4Array:array = {data: [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]};
+</p>
+<p>
+array.set(0u8, 5i4);   // Store 5 at index 0
+array.set(1u8, -3i4);  // Store -3 at index 1
+</p>
+<p>
+int4:value = array.get(0u8);  // Retrieve 5</code></pre>
+</p>
+<h3>4. State Machines (int2)</h3>
+<pre><code>// Simple 4-state machine
+<p>
+const:int2:IDLE = 0i2;
+const:int2:PROCESSING = 1i2;
+const:int2:ERROR = -1i2;
+const:int2:SHUTDOWN = -2i2;
+</p>
+<p>
+int2:state = IDLE;
+</p>
+<p>
+func:handle_event = (current: int2, event: uint8) -> int2 {
+if (current == IDLE && event == 1u8) return PROCESSING;
+if (current == PROCESSING && event == 2u8) return ERROR;
+if (current == ERROR && event == 3u8) return SHUTDOWN;
+return current;  // No transition
+}</code></pre>
+</p>
+<hr>
+<h2>Storage and Performance</h2>
+<h3>Memory Footprint</h3>
+<strong>Theoretical</strong>:
+<ul><li>int2: 2 bits</li>
+<li>int4: 4 bits (1 nibble)</li>
+</ul>
+<strong>Practical</strong> (without packing):
+<ul><li>int2: 1 byte (wasteful)</li>
+<li>int4: 1 byte (wastes half)</li>
+</ul>
+<strong>With packing</strong>:
+<ul><li>int2 array: 4 values per byte</li>
+<li>int4 array: 2 values per byte</li>
+</ul>
+<h3>Performance</h3>
+<strong>Operations</strong>: Same speed as int8/int16 (CPU operates on bytes minimum)
+<strong>Packing overhead</strong>: Bit manipulation adds cost
+<strong>Use cases prioritize</strong>:
+<ul><li>Memory savings (packed arrays)</li>
+<li>Educational clarity</li>
+<li>NOT performance</li>
+</ul>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Range Checking Before Narrowing</h3>
+<pre><code>func:narrow_to_int4 = (value: int8) -> ?int4 {
+<p>
+if (value < -8i8 || value > 7i8) {
+return NIL;  // Out of range
+}
+</p>
+<p>
+return int4(value);  // Safe
+}
+</p>
+<p>
+int8:large = 100i8;
+?int4:result = narrow_to_int4(large);
+</p>
+<p>
+if (result == NIL) {
+stderr.write("Value out of int4 range!\n");
+}</code></pre>
+</p>
+<h3>Saturating Arithmetic (int4)</h3>
+<pre><code>func:saturating_add_int4 = (a: int4, b: int4) -> int4 {
+<p>
+int8:sum = int8(a) + int8(b);
+</p>
+<p>
+if (sum > 7i8) return 7i4;
+if (sum < -8i8) return -8i4;
+</p>
+<p>
+return int4(sum);
+}
+</p>
+<p>
+int4:a = 7i4;
+int4:b = 5i4;
+int4:saturated = saturating_add_int4(a, b);  // 7 (not overflow to -8)</code></pre>
+</p>
+<hr>
+<h2>Educational Value</h2>
+<h3>Teaching Integer Properties</h3>
+<strong>int2 and int4 are perfect teaching tools</strong>:
+<p>
+1. <strong>Small enough to enumerate all values</strong>:
+- int2: 4 values (can list completely)
+- int4: 16 values (manageable)
+</p>
+<p>
+2. <strong>Demonstrate overflow quickly</strong>:
+- int4: 7 + 1 = -8 (immediately visible)
+</p>
+<p>
+3. <strong>Show two's complement pattern</strong>:
+- Binary patterns clear at 2/4 bits
+</p>
+<p>
+4. <strong>Explain asymmetry</strong>:
+- Why one more negative? Clear at small scale.
+</p>
+<h3>Progression of Understanding</h3>
+<pre><code>int1 → int2 → int4 → int8 → int16...
+<p>
+Each step doubles values, but principles stay same:
+</p>
+<ul><li>Two's complement</li>
+<li>Asymmetric range</li>
+<li>Wrapping overflow</li>
+<li>abs(MIN) problem</code></pre></li>
+</ul>
+<hr>
+<h2>Anti-Patterns</h2>
+<h3>❌ Using int2/int4 for General Arithmetic</h3>
+<pre><code>// WRONG: Frequent overflow, confusing
+<p>
+int4:a = 10i4;  // Wraps to -6!
+int4:b = 5i4;
+int4:sum = a + b;  // Overflow mess
+</p>
+<p>
+// RIGHT: Use appropriately sized type
+int8:a = 10i8;
+int8:b = 5i8;
+int8:sum = a + b;  // 15 (correct)</code></pre>
+</p>
+<h3>❌ Ignoring Packing Overhead</h3>
+<pre><code>// WRONG: No memory savings, bit manipulation overhead
+<p>
+int4:value1 = 3i4;  // Stored in 1 byte (wastes 4 bits)
+int4:value2 = 5i4;  // Stored in 1 byte (wastes 4 bits)
+</p>
+<p>
+// RIGHT: Pack if memory constrained
+uint8:packed = pack_nibbles(value1, value2);  // Both in 1 byte</code></pre>
+</p>
+<h3>❌ Mixing with Larger Types Without Care</h3>
+<pre><code>// WRONG: Implicit overflow
+<p>
+int4:small = 7i4;
+int8:large = 100i8;
+int4:result = small + int4(large);  // 107 wraps to... confusion!
+</p>
+<p>
+// RIGHT: Widen before arithmetic
+int8:small_wide = int8(small);
+int8:result = small_wide + large;  // 107 (correct)</code></pre>
+</p>
+<hr>
+<h2>Related Concepts</h2>
+<h3>Other Small Integers</h3>
+<ul><li><strong>int1</strong>: 1-bit signed (-1, 0)</li>
+<li><strong>uint2, uint4</strong>: Unsigned variants (not particularly useful)</li>
+</ul>
+<h3>Larger Integers</h3>
+<ul><li><strong>int8, int16</strong>: Standard small integers</li>
+<li><strong>int32, int64</strong>: Production integers</li>
+</ul>
+<h3>Symmetric Alternatives</h3>
+<ul><li><strong>TBB family</strong>: Symmetric ranges (avoid abs(MIN) problem)</li>
+</ul>
+<hr>
+<h2>Summary</h2>
+<strong>int2</strong> and <strong>int4</strong> are Aria's ultra-small signed integers:
+<p>
+✅ <strong>int2</strong>: 2 bits, -2 to +1 (4 values)
+✅ <strong>int4</strong>: 4 bits, -8 to +7 (16 values, 1 nibble)
+✅ <strong>Educational excellence</strong>: Perfect for teaching overflow, two's complement
+✅ <strong>Compact storage</strong>: Pack 2 int4 per byte, 4 int2 per byte
+✅ <strong>Nibble operations</strong>: int4 fits hex digits, BCD encoding
+</p>
+<p>
+⚠️ <strong>Frequent overflow</strong>: Very limited range
+⚠️ <strong>Uncommon</strong>: Most languages start at 8-bit
+⚠️ <strong>Packing overhead</strong>: Bit manipulation adds cost
+</p>
+<strong>Use int2/int4 for</strong>:
+<ul><li>Educational demonstrations (overflow, two's complement)</li>
+<li>Embedded systems (ultra-compact sensors)</li>
+<li>Nibble operations (BCD, hex digits)</li>
+<li>State machines (few states)</li>
+</ul>
+<strong>Avoid for</strong>:
+<ul><li>General arithmetic (use int8+)</li>
+<li>Performance-critical code (overhead not worth savings)</li>
+<li>When overflow is likely (range too small)</li>
+</ul>
+<hr>
+<strong>Next</strong>: <a href="int128_int256_int512.md">Medium Integers (int128, int256, int512)</a>
+<strong>See Also</strong>: <a href="int1.md">int1</a>, <a href="int8_int16.md">int8/int16</a>, <a href="nibble_operations.md">Nibble Packing</a>
+<hr>
+<em>Aria Language Project - Complete Integer Spectrum Continues</em>
+<em>February 12, 2026 - Ultra-small integers for education and embedded systems</em>
+    </main>
+</body>
+</html>

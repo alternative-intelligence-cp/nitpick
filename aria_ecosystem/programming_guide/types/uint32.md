@@ -48,8 +48,8 @@ size := 1024u32;
 // Large array indices
 size: u32 = array.length();
 
-for i: u32 in 0..size {
-    process(array[i]);
+till(size - 1, 1) {
+    process(array[$]);
 }
 ```
 

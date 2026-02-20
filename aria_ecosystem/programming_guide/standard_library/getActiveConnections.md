@@ -52,7 +52,8 @@ import std.system;
 
 connections: []ConnectionInfo = getActiveConnections();
 
-for conn in connections do
+till(connections.length - 1, 1) {
+    conn = connections[$];
     stdout << "$(conn.protocol) $(conn.local_addr):$(conn.local_port) -> $(conn.remote_addr):$(conn.remote_port) [$(conn.state)]";
 end
 ```
@@ -65,7 +66,8 @@ connections: []ConnectionInfo = getActiveConnections();
 established: i32 = 0;
 listening: i32 = 0;
 
-for conn in connections do
+till(connections.length - 1, 1) {
+    conn = connections[$];
     when conn.state == "ESTABLISHED" then
         established += 1;
     elsif conn.state == "LISTEN" then
@@ -112,7 +114,8 @@ fn check_connection_leak() {
 ```aria
 connections: []ConnectionInfo = getActiveConnections();
 
-for conn in connections do
+till(connections.length - 1, 1) {
+    conn = connections[$];
     when conn.state == "CLOSE_WAIT" then
         logger.warn("Stuck connection", {
             remote = "$(conn.remote_addr):$(conn.remote_port)"

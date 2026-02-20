@@ -124,7 +124,8 @@ fn calculate_area(width: i32, height: i32) -> i32 {
 ```aria
 fn sum(numbers: []i32) -> i32 {
     total: i32 = 0;
-    for num in numbers {
+    till(numbers.length - 1, 1) {
+        num: i32 = numbers[$];
         total = total + num;
     }
     return total;
@@ -290,7 +291,8 @@ fn create_user(
 // ✅ Right: Use array
 fn sum(numbers: []i32) -> i32 {
     total: i32 = 0;
-    for num in numbers {
+    till(numbers.length - 1, 1) {
+        num: i32 = numbers[$];
         total = total + num;
     }
     return total;

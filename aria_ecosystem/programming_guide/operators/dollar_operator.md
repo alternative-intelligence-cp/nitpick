@@ -89,8 +89,8 @@ stdout << point.x << ", " << point.y;  // 15, 17
 
 ```aria
 fn double_all(arr: $[]i32) {
-    for i in 0..arr.length() {
-        arr[i] *= 2;
+    till(arr.length() - 1, 1) {
+        arr[$] *= 2;
     }
 }
 

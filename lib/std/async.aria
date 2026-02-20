@@ -77,21 +77,23 @@ pub struct Waker {
 }
 
 /// Wake the task (consumes the waker)
-pub func:wake = void(Waker:w) {
+pub func:wake = NIL(Waker:w) {
     // Call the wake function pointer
     // This notifies the scheduler to re-poll the associated task
     wild void@:fn = w.wake_fn;
     if (fn != NULL) {
         @call_ptr(fn, w.data);
     }
+    pass(NIL);
 };
 
 /// Wake the task by reference (does not consume)
-pub func:wake_by_ref = void(Waker@:w) {
+pub func:wake_by_ref = NIL(Waker@:w) {
     wild void@:fn = w->wake_by_ref_fn;
     if (fn != NULL) {
         @call_ptr(fn, w->data);
     }
+    pass(NIL);
 };
 
 /// Clone a waker
@@ -152,7 +154,7 @@ pub struct CoroutineFrame {
 }
 
 /// Resume a suspended coroutine
-pub func:coro_resume = void(wild CoroutineFrame@:frame) {
+pub func:coro_resume = NIL(wild CoroutineFrame@:frame) {
     if (frame->state != CoroState.SUSPENDED) {
         pass(NIL);  // Cannot resume non-suspended coroutine
     }
@@ -161,10 +163,11 @@ pub func:coro_resume = void(wild CoroutineFrame@:frame) {
 
     // Call LLVM coroutine resume intrinsic
     @llvm_coro_resume(frame->coro_handle);
+    pass(NIL);
 };
 
 /// Destroy a coroutine frame (runs destructors)
-pub func:coro_destroy = void(wild CoroutineFrame@:frame) {
+pub func:coro_destroy = NIL(wild CoroutineFrame@:frame) {
     if (frame->state == CoroState.RUNNING) {
         // Cannot destroy while running
         pass(NIL);
@@ -177,6 +180,7 @@ pub func:coro_destroy = void(wild CoroutineFrame@:frame) {
 
     // Free the frame memory
     free<CoroutineFrame>(frame);
+    pass(NIL);
 };
 
 // =============================================================================
@@ -268,7 +272,7 @@ pub func:deque_new = WorkDeque(int64:initial_capacity) {
 };
 
 /// Push a task to the bottom (owner only)
-pub func:deque_push = void(WorkDeque@:d, Task@:task) {
+pub func:deque_push = NIL(WorkDeque@:d, Task@:task) {
     int64:b = atomic_load(@d->bottom);
     int64:t = atomic_load(@d->top);
 
@@ -295,6 +299,7 @@ pub func:deque_push = void(WorkDeque@:d, Task@:task) {
 
     // Memory fence + increment bottom
     atomic_store(@d->bottom, b + 1);
+    pass(NIL);
 };
 
 /// Pop a task from the bottom (owner only, LIFO)
@@ -428,7 +433,7 @@ pub func:scheduler_init = result<void>(int32:num_threads) {
 };
 
 /// Shutdown the scheduler
-pub func:scheduler_shutdown = void() {
+pub func:scheduler_shutdown = NIL() {
     if (SCHEDULER == NULL) {
         pass(NIL);
     }
@@ -448,10 +453,11 @@ pub func:scheduler_shutdown = void() {
     free<Task@>(SCHEDULER->global_queue.buffer);
     free<Scheduler>(SCHEDULER);
     SCHEDULER = NULL;
+    pass(NIL);
 };
 
 /// Worker thread main loop
-func:worker_loop = void(Worker@:worker) {
+func:worker_loop = NIL(Worker@:worker) {
     while (!atomic_load(@SCHEDULER->shutdown)) {
         // Try local queue first (LIFO - cache locality)
         result<Task@>:task = deque_pop(@worker->local_queue);
@@ -476,7 +482,7 @@ func:worker_loop = void(Worker@:worker) {
                     Task@:t = task.unwrap();
                     if (t->has_wild_affinity && t->affinity_thread_id != worker->id) {
                         // Put it back - this task is pinned elsewhere
-                        deque_push(@SCHEDULER->workers[victim].local_queue, t);
+                        deque_push(@SCHEDULER->workers[victim].local_queue, t) ? NIL;
                         task = fail(ERR);
                     }
                 }
@@ -486,12 +492,12 @@ func:worker_loop = void(Worker@:worker) {
         if (task.is_ok()) {
             // Execute the task
             Task@:t = task.unwrap();
-            coro_resume(t->frame);
+            coro_resume(t->frame) ? NIL;
 
             // Check if task completed
             if (t->frame->state == CoroState.COMPLETE) {
                 // Cleanup
-                coro_destroy(t->frame);
+                coro_destroy(t->frame) ? NIL;
                 free<Task>(t);
             } else if (t->frame->state == CoroState.SUSPENDED) {
                 // Re-schedule (will be woken by Waker)
@@ -504,6 +510,7 @@ func:worker_loop = void(Worker@:worker) {
     }
 
     worker->running = false;
+    pass(NIL);
 };
 
 // =============================================================================
@@ -730,9 +737,10 @@ impl Future<void> for Timer {
 
 /// Sleep for the specified number of milliseconds
 /// Must be called from async context
-pub async func:sleep = void(int64:duration_ms) {
+pub async func:sleep = NIL(int64:duration_ms) {
     Timer:t = timeout(duration_ms);
     await t;
+    pass(NIL);
 };
 
 // =============================================================================

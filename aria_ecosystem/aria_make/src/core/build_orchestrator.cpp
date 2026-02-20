@@ -25,6 +25,7 @@
 #include <regex>
 #include <array>
 #include <variant>
+#include <set>
 #include <iostream>
 
 namespace aria::make {
@@ -488,6 +489,14 @@ bool BuildOrchestrator::parse_build_file() {
         auto target_value = std::make_unique<abc::ValueNode>();
         target_value->value = std::move(current_target);
         build_ast_->targets->elements.push_back(std::move(target_value));
+    }
+
+    // Extract compiler path from [project] section if specified
+    if (build_ast_->project) {
+        std::string compiler_from_file = build_ast_->project->get_string("compiler", "");
+        if (!compiler_from_file.empty()) {
+            config_.compiler = compiler_from_file;
+        }
     }
 
     return true;
@@ -1123,10 +1132,59 @@ bool BuildOrchestrator::build_single_target(const BuildTarget& target) {
         // Aria library (requires ariac -c support)
         result = build_library(target, all_flags, stdout_out, stderr_out);
     } else {
-        // Binary target - may need linking flags
-        std::vector<std::string> link_flags = all_flags;
+        // Binary target - may need linking flags and include paths
+        std::vector<std::string> compile_flags = all_flags;
         
-        // Add linking flags for FFI
+        // Add include paths for module resolution
+        // Collect directories containing dependency sources so the compiler
+        // can resolve 'use' statements via its module loader
+        std::set<std::string> include_dirs;
+        
+        if (dependencies_.count(target.name)) {
+            for (const auto& dep_name : dependencies_[target.name]) {
+                // Find the dependency target
+                for (const auto& dep_target : targets_) {
+                    if (dep_target.name == dep_name) {
+                        // Add source directories from Aria library dependencies
+                        if (dep_target.type == "library") {
+                            for (const auto& source : dep_target.sources) {
+                                fs::path src_path(source);
+                                std::string dir = src_path.parent_path().string();
+                                if (!dir.empty()) {
+                                    include_dirs.insert(dir);
+                                }
+                            }
+                            
+                            // Add library for linking via -L and -l flags
+                            // Example: libutils.a in .aria_make/build/
+                            // →  -L.aria_make/build -lutils
+                            fs::path lib_path = dep_target.output_path;
+                            std::string lib_dir = lib_path.parent_path().string();
+                            std::string lib_filename = lib_path.filename().string();
+                            
+                            // Extract library name from "libXXX.a" → "XXX"
+                            std::string lib_name = lib_filename;
+                            if (lib_filename.substr(0, 3) == "lib" && 
+                                lib_filename.substr(lib_filename.length() - 2) == ".a") {
+                                lib_name = lib_filename.substr(3, lib_filename.length() - 5);
+                            }
+                            
+                            compile_flags.push_back("-L" + lib_dir);
+                            compile_flags.push_back("-l" + lib_name);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Add include directories as -I flags
+        for (const auto& dir : include_dirs) {
+            compile_flags.push_back("-I");
+            compile_flags.push_back(dir);
+        }
+        
+        // Add linking flags for external FFI libraries
         for (const auto& lib_path : target.link_paths) {
             // Convert relative paths to absolute based on project root
             fs::path full_path;
@@ -1135,17 +1193,17 @@ bool BuildOrchestrator::build_single_target(const BuildTarget& target) {
             } else {
                 full_path = config_.project_root / lib_path;
             }
-            link_flags.push_back("-L" + full_path.string());
+            compile_flags.push_back("-L" + full_path.string());
         }
         for (const auto& lib : target.link_libraries) {
-            link_flags.push_back("-l" + lib);
+            compile_flags.push_back("-l" + lib);
         }
         
         result = execute_compile(
             target.name,
-            target.sources,
+            target.sources,  // Only compile this target's sources
             target.output_path,
-            link_flags,
+            compile_flags,
             stdout_out,
             stderr_out
         );

@@ -81,8 +81,8 @@ data: obj = readJSON("data.json")?;
 
 items: []i32 = data.items;  // Array from JSON
 
-for item in items do
-    stdout << "Item: $item";
+till(items.length - 1, 1) {
+    stdout << "Item: $(items[$])";
 end
 ```
 

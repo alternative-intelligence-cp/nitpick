@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>double: 64-Bit Non-Deterministic Floating Point - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>double: 64-Bit Non-Deterministic Floating Point</h1>
+<h2>Overview</h2>
+<strong>Purpose</strong>: IEEE 754 double-precision floating point for high-precision approximate arithmetic.
+<strong>Characteristics</strong>:
+<ul><li>64 bits (8 bytes): 1 sign + 11 exponent + 52 mantissa</li>
+<li>Range: ~±2.23×10⁻³⁰⁸ to ±1.80×10³⁰⁸</li>
+<li>Precision: ~15-16 decimal digits</li>
+<li><strong>Non-deterministic</strong>: Results may vary by platform (like float)</li>
+<li>Fast hardware support (native CPU operations, some GPU support)</li>
+</ul>
+<strong>When to Use</strong>:
+<ul><li>Scientific computing requiring precision beyond float</li>
+<li>Intermediate calculations to reduce accumulation error</li>
+<li>General-purpose programming (default in many languages)</li>
+<li>Large value ranges needed</li>
+</ul>
+<strong>When NOT to Use</strong>:
+<ul><li>Finance, legal, safety-critical (use fix256)</li>
+<li>Cross-platform determinism required (use tfp64)</li>
+<li>Exact decimal values needed (use frac)</li>
+<li>Memory/bandwidth constrained (use float if precision allows)</li>
+</ul>
+<hr>
+<h2>double vs float vs Deterministic Alternatives</h2>
+<h3>The Precision Spectrum</h3>
+<p>
+| Type | Bytes | Precision | Range | Speed | Determinism |
+|------|-------|-----------|-------|-------|-------------|
+| <strong>float</strong> | 4 | ~7 digits | ±3.4×10³⁸ | Fastest | ❌ |
+| <strong>double</strong> | 8 | ~15 digits | ±1.8×10³⁰⁸ | Fast | ❌ |
+| <strong>tfp64</strong> | 8 | ~14 digits | ±1.0×10⁷⁶ | Fast | ✅ |
+| <strong>fix256</strong> | 32 | ~38 digits | Fixed | Slow | ✅ |
+</p>
+<strong>The Trade-off</strong>: double provides more precision than float but still non-deterministic. Results can differ between:
+<ul><li>x86 vs ARM processors (different rounding in extended precision)</li>
+<li>Compiler optimization levels</li>
+<li>FMA (fused multiply-add) vs separate operations</li>
+<li>Library implementations (sin, cos, exp, etc.)</li>
+</ul>
+<h3>When double vs float</h3>
+<strong>Use double when</strong>:
+<ul><li>Need more than ~7 digits precision</li>
+<li>Accumulating many float operations (error reduction)</li>
+<li>Scientific computing (measurements, simulations)</li>
+<li>General-purpose programming (safer default)</li>
+</ul>
+<strong>Use float when</strong>:
+<ul><li>7 digits sufficient (graphics, audio)</li>
+<li>Memory bandwidth critical (large arrays)</li>
+<li>SIMD/GPU throughput matters (process 2× more floats)</li>
+<li>Embedded systems (limited precision hardware)</li>
+</ul>
+<h3>Example: Accumulated Precision</h3>
+<pre><code>// Float accumulation error
+<p>
+float:sum_f = 0.0;
+loop (10000000 times) {  // 10 million iterations
+sum_f += 0.1;
+}
+// Expected: 1000000.0
+// Actual: ~999838.0 (significant error!)
+</p>
+<p>
+// Double accumulation error
+double:sum_d = 0.0;
+loop (10000000 times) {
+sum_d += 0.1;
+}
+// Expected: 1000000.0
+// Actual: ~999999.9999998 (much closer)
+</p>
+<p>
+// Still not exact! For exact, use fix256
+fix256:sum_exact = fix256.zero();
+loop (10000000 times) {
+sum_exact += fix256.from_decimal("0.1");
+}
+// Exactly 1000000.0</code></pre>
+</p>
+<hr>
+<h2>IEEE 754 Double Precision Format</h2>
+<h3>Bit Layout</h3>
+<pre><code>Bit:    63    62-52         51-0
+<p>
+Sign  Exponent      Mantissa
+1     11 bits       52 bits</code></pre>
+</p>
+<strong>Sign Bit</strong> (bit 63):
+<ul><li>0 = positive</li>
+<li>1 = negative</li>
+</ul>
+<strong>Exponent</strong> (bits 62-52, 11 bits):
+<ul><li>Biased by 1023</li>
+<li>Stored value 0: Zero or subnormal</li>
+<li>Stored value 1-2046: Normal numbers (actual exponent = stored - 1023)</li>
+<li>Stored value 2047: Infinity or NaN</li>
+</ul>
+<strong>Mantissa</strong> (bits 51-0, 52 bits):
+<ul><li>Implicit leading 1 (except subnormals)</li>
+<li>Represents fractional part</li>
+<li>52 bits ≈ 15.95 decimal digits</li>
+</ul>
+<h3>Value Calculation</h3>
+<strong>Normal Numbers</strong>:
+<pre><code>value = (-1)^sign × 1.mantissa × 2^(exponent - 1023)</code></pre>
+<strong>Example</strong>: 123.456 as double
+<pre><code>123.456 = 1.92891... × 2^6
+<p>
+Sign: 0 (positive)
+Exponent: 6 + 1023 = 1029 = 10000000101₂
+Mantissa: 0.92891...
+</p>
+<p>
+Bit pattern: 0 10000000101 1110110111010010111100011010101000...
+Hex: 0x405EDD2F1A9FBE77</code></pre>
+</p>
+<h3>Special Values</h3>
+<strong>Zero</strong>:
+<pre><code>double:positive_zero = 0.0;    // All bits 0
+<p>
+double:negative_zero = -0.0;   // Sign bit 1, rest 0
+</p>
+<p>
+// Behave identically in most operations
+positive_zero == negative_zero;  // true
+</p>
+<p>
+// But differ in division
+1.0 / positive_zero;  // +Infinity
+1.0 / negative_zero;  // -Infinity</code></pre>
+</p>
+<strong>Infinity</strong>:
+<pre><code>double:pos_inf = double.infinity;
+<p>
+double:neg_inf = -double.infinity;
+</p>
+<p>
+// Arithmetic
+pos_inf + 1000000.0;  // +Infinity
+pos_inf * 2.0;        // +Infinity
+pos_inf / pos_inf;    // NaN (undefined)
+1.0 / 0.0;            // +Infinity
+</p>
+<p>
+// Comparison
+pos_inf > 1e308;  // true (infinity > all finite values)</code></pre>
+</p>
+<strong>NaN (Not a Number)</strong>:
+<pre><code>double:nan = double.nan;
+<p>
+// NaN generation
+double:a = 0.0 / 0.0;
+double:b = double.infinity - double.infinity;
+double:c = (-1.0).sqrt();
+</p>
+<p>
+// NaN comparison (NEVER equal to anything)
+nan == nan;     // false
+nan < 5.0;      // false
+nan >= 5.0;     // false
+nan != nan;     // true (only reliable way to check!)
+</p>
+<p>
+// Proper NaN checking
+bool:is_nan = value.is_nan();</code></pre>
+</p>
+<hr>
+<h2>Precision and Rounding</h2>
+<h3>Decimal Precision</h3>
+<strong>~15-16 Decimal Digits</strong>:
+<pre><code>double:precise = 123456789012345.0;   // Exactly representable
+<p>
+double:imprecise = 1234567890123456.0; // Rounded (16th digit lost)
+</p>
+<p>
+// Consecutive integers exactly representable up to 2^53
+double:max_safe_int = 9007199254740992.0;  // 2^53
+double:next = max_safe_int + 1.0;          // Exactly 2^53 + 1
+double:gap = max_safe_int + 1.5;           // Rounds (can't represent .5 at this scale)</code></pre>
+</p>
+<strong>Relative Precision</strong> (not absolute):
+<pre><code>// Large numbers lose fine detail
+<p>
+double:large = 1e15;
+double:large_plus = large + 0.1;  // Rounds to 1e15 (0.1 insignificant)
+</p>
+<p>
+// Small numbers retain detail
+double:small = 1e-15;
+double:small_plus = small + 1e-16;  // = 1.1e-15 (retained)</code></pre>
+</p>
+<h3>Guard Digits and Extended Precision</h3>
+<strong>x86 Extended Precision</strong> (80-bit):
+<ul><li>x87 FPU uses 80-bit internally (64-bit mantissa)</li>
+<li>Can cause differences between:</li>
+</ul>  - Register values (80-bit)
+<p>
+- Memory values (64-bit)
+</p>
+<ul><li>Optimizations affect which is used</li>
+</ul>
+<pre><code>// Example: x86 extended precision differences
+<p>
+double:a = 1.0 / 3.0;  // May compute in 80-bit, store as 64-bit
+</p>
+<p>
+// If kept in register (80-bit):
+double:b = a * 3.0;  // May be exactly 1.0
+</p>
+<p>
+// If spilled to memory (64-bit):
+double:c = a * 3.0;  // May be 0.9999999999999999
+</p>
+<p>
+// b != c on x86! (platform-dependent)</code></pre>
+</p>
+<hr>
+<h2>Common Pitfalls (Same as float, Different Scale)</h2>
+<h3>1. Decimal Approximations</h3>
+<pre><code>// Still not exact (better than float, but not perfect)
+<p>
+double:x = 0.1;  // Actually 0.1000000000000000055511151231257827...
+double:y = 0.2;  // Actually 0.2000000000000000111022302462515654...
+double:sum = x + y;
+</p>
+<p>
+if (sum == 0.3) {  // STILL NEVER TRUE!
+log.write("This still never prints\n");
+}
+</p>
+<p>
+// Use epsilon (smaller than float's epsilon)
+double:epsilon = 1e-10;
+if (abs(sum - 0.3) < epsilon) {
+log.write("Approximately equal\n");
+}
+</p>
+<p>
+// Or use exact types
+fix256:exact = fix256.from_decimal("0.1") + fix256.from_decimal("0.2");
+// Exactly 0.3</code></pre>
+</p>
+<h3>2. Catastrophic Cancellation</h3>
+<pre><code>// Subtracting nearly equal values destroys precision
+<p>
+double:a = 1.0000000000000001;
+double:b = 1.0000000000000000;
+double:diff = a - b;
+</p>
+<p>
+// Lost ~15 digits of precision
+// Only ~1 significant digit remains</code></pre>
+</p>
+<strong>Mitigation</strong>: Reformulate equations to avoid cancellation
+<pre><code>// BAD: Quadratic formula (b^2 - 4ac can cancel)
+<p>
+double:x = (-b + sqrt(b<em>b - 4</em>a<em>c)) / (2</em>a);
+</p>
+<p>
+// BETTER: Alternative form when b > 0
+double:x = (-2<em>c) / (b + sqrt(b</em>b - 4<em>a</em>c));</code></pre>
+</p>
+<h3>3. Associativity Still Lost</h3>
+<pre><code>// Arithmetic is NOT associative (even with double)
+<p>
+double:a = 1e200;
+double:b = -1e200;
+double:c = 1.0;
+</p>
+<p>
+double:result1 = (a + b) + c;  // 0.0 + 1.0 = 1.0
+double:result2 = a + (b + c);  // 1e200 + (-1e200 + 1.0) ≈ 0.0
+</p>
+<p>
+// Still not associative!</code></pre>
+</p>
+<h3>4. Integer Conversion Limits</h3>
+<pre><code>// Integers larger than 2^53 lose precision
+<p>
+int64:big = 9007199254740993;  // 2^53 + 1
+double:d = big.to_double();    // 9007199254740992.0 (rounded!)
+int64:back = d.to_int64();     // 9007199254740992 (information lost)
+</p>
+<p>
+big != back;  // true (precision lost)</code></pre>
+</p>
+<hr>
+<h2>Performance Characteristics</h2>
+<h3>CPU Performance</h3>
+<strong>Native Hardware</strong> (modern x86/ARM):
+<pre><code>double:a = 1.5;
+<p>
+double:b = 2.5;
+</p>
+<p>
+double:sum = a + b;      // ~1 cycle (same as float)
+double:product = a * b;  // ~3-5 cycles
+double:quotient = a / b; // ~10-20 cycles
+double:root = a.sqrt();  // ~10-15 cycles</code></pre>
+</p>
+<strong>SIMD Throughput</strong> (half of float):
+<pre><code>// SSE: Process 2 doubles (vs 4 floats)
+<p>
+// AVX: Process 4 doubles (vs 8 floats)
+// AVX-512: Process 8 doubles (vs 16 floats)
+</p>
+<p>
+simd<double, 4>:vec_a = {1.0, 2.0, 3.0, 4.0};
+simd<double, 4>:vec_b = {5.0, 6.0, 7.0, 8.0};
+simd<double, 4>:vec_sum = vec_a + vec_b;
+// Still fast, but half the throughput of float</code></pre>
+</p>
+<h3>Memory and Bandwidth</h3>
+<strong>Size</strong>: 8 bytes (2× float)
+<ul><li>Cache: Fit half as many doubles as floats</li>
+<li>Bandwidth: Transfer half the data rate</li>
+<li>Memory: Arrays take 2× space</li>
+</ul>
+<pre><code>// 1 million floats: 4 MB
+<p>
+float[1000000]:float_array;
+</p>
+<p>
+// 1 million doubles: 8 MB
+double[1000000]:double_array;
+</p>
+<p>
+// Bandwidth impact on large data processing</code></pre>
+</p>
+<hr>
+<h2>When double is the Right Choice</h2>
+<h3>Scientific Computing</h3>
+<pre><code>// Physical constants (need precision)
+<p>
+double:speed_of_light = 299792458.0;  // m/s
+double:gravitational_constant = 6.67430e-11;  // N⋅m²/kg²
+double:planck_constant = 6.62607015e-34;  // J⋅Hz⁻¹
+</p>
+<p>
+// Calculations with many operations
+double:orbital_period(double:semi_major_axis, double:central_mass) -> double {
+double:numerator = 4.0 <em> pi </em> pi <em> semi_major_axis </em> semi_major_axis * semi_major_axis;
+double:denominator = gravitational_constant * central_mass;
+return sqrt(numerator / denominator);
+}</code></pre>
+</p>
+<h3>Statistics and Data Analysis</h3>
+<pre><code>// Mean calculation (accumulation)
+<p>
+double:mean(double[]:values) -> double {
+double:sum = 0.0;
+loop (values.length:i) {
+sum += values[i];
+}
+return sum / values.length.to_double();
+}
+</p>
+<p>
+// Standard deviation (needs precision)
+double:std_dev(double[]:values, double:mean) -> double {
+double:sum_sq_diff = 0.0;
+loop (values.length:i) {
+double:diff = values[i] - mean;
+sum_sq_diff += diff * diff;
+}
+return sqrt(sum_sq_diff / values.length.to_double());
+}</code></pre>
+</p>
+<h3>Numerical Integration</h3>
+<pre><code>// Simpson's rule integration
+<p>
+double:integrate_simpsons(double:a, double:b, int32:n) -> double {
+double:h = (b - a) / n.to_double();
+double:sum = f(a) + f(b);
+</p>
+<p>
+loop (n-1 times:i) {
+double:x = a + (i+1).to_double() * h;
+sum += (i % 2 == 0 ? 2.0 : 4.0) * f(x);
+}
+</p>
+<p>
+return (h / 3.0) * sum;
+}</code></pre>
+</p>
+<hr>
+<h2>Conversion and Interop</h2>
+<h3>double ↔ float</h3>
+<pre><code>// double → float (precision loss)
+<p>
+double:d = 3.141592653589793;
+float:f = d.to_float();  // 3.14159274... (loses ~8 digits)
+</p>
+<p>
+// float → double (exact conversion)
+float:f = 3.14159274;
+double:d = f.to_double();  // Exactly 3.14159274... (no loss)</code></pre>
+</p>
+<h3>double ↔ Deterministic Types</h3>
+<pre><code>// double → tfp64 (loses determinism guarantee)
+<p>
+double:d = 1.5;
+tfp64:t = tfp64.from_double(d);
+</p>
+<p>
+// tfp64 → double (safe)
+tfp64:deterministic = tfp64.from_string("1.5");
+double:d = deterministic.to_double();
+</p>
+<p>
+// double → fix256 (for exact storage)
+double:approximate = 123.456789012345;
+fix256:exact = fix256.from_double(approximate);
+</p>
+<p>
+// fix256 → double (may lose precision if fix256 > 15 digits)
+fix256:exact_value = fix256.from_decimal("123.456789012345678901234");
+double:d = exact_value.to_double();  // Rounds to ~15 digits</code></pre>
+</p>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Compensated Summation (Kahan Algorithm)</h3>
+<pre><code>// Reduce rounding error in large sums
+<p>
+double:kahan_sum(double[]:values) -> double {
+double:sum = 0.0;
+double:c = 0.0;  // Running compensation
+</p>
+<p>
+loop (values.length:i) {
+double:y = values[i] - c;
+double:t = sum + y;
+c = (t - sum) - y;  // Algebraically zero, but captures rounding error
+sum = t;
+}
+</p>
+<p>
+return sum;
+}
+</p>
+<p>
+// Dramatically improves accuracy for large arrays</code></pre>
+</p>
+<h3>Relative Epsilon Comparison</h3>
+<pre><code>// Scale epsilon by magnitude
+<p>
+bool:approximately_equal_relative(double:a, double:b, double:rel_epsilon = 1e-9) -> double {
+double:diff = abs(a - b);
+double:larger = max(abs(a), abs(b));
+</p>
+<p>
+return diff <= larger * rel_epsilon;
+}
+</p>
+<p>
+// Works for both large and small values</code></pre>
+</p>
+<h3>Safe Math Functions</h3>
+<pre><code>// Avoid domain errors
+<p>
+double:safe_sqrt(double:x) -> double {
+if (x < 0.0) {
+log.write("ERROR: Negative square root\n");
+return double.nan;
+}
+return x.sqrt();
+}
+</p>
+<p>
+double:safe_log(double:x) -> double {
+if (x <= 0.0) {
+log.write("ERROR: Log of non-positive\n");
+return double.nan;
+}
+return x.log();
+}</code></pre>
+</p>
+<hr>
+<h2>Use Cases by Domain</h2>
+<h3>Scientific Simulation</h3>
+<pre><code>// N-body gravity simulation
+<p>
+struct:Body {
+double:x, y, z;      // Position
+double:vx, vy, vz;   // Velocity
+double:mass;
+}
+</p>
+<p>
+void:update_gravity(Body[]:bodies, double:dt) {
+loop (bodies.length:i) {
+double:fx = 0.0, fy = 0.0, fz = 0.0;
+</p>
+<p>
+loop (bodies.length:j) {
+if (i == j) continue;
+</p>
+<p>
+double:dx = bodies[j].x - bodies[i].x;
+double:dy = bodies[j].y - bodies[i].y;
+double:dz = bodies[j].z - bodies[i].z;
+</p>
+<p>
+double:r2 = dx<em>dx + dy</em>dy + dz*dz;
+double:r = sqrt(r2);
+double:f = G <em> bodies[i].mass </em> bodies[j].mass / r2;
+</p>
+<p>
+fx += f * dx / r;
+fy += f * dy / r;
+fz += f * dz / r;
+}
+</p>
+<p>
+bodies[i].vx += fx / bodies[i].mass * dt;
+bodies[i].vy += fy / bodies[i].mass * dt;
+bodies[i].vz += fz / bodies[i].mass * dt;
+}
+}</code></pre>
+</p>
+<h3>Machine Learning (Pre-Training)</h3>
+<pre><code>// Neural network layer (float for training speed, double for validation)
+<p>
+void:forward_pass(double[]:inputs, double[]:weights, double[]:outputs) {
+loop (outputs.length:i) {
+double:sum = 0.0;
+loop (inputs.length:j) {
+sum += inputs[j] <em> weights[i </em> inputs.length + j];
+}
+outputs[i] = activation_function(sum);
+}
+}</code></pre>
+</p>
+<h3>Geographic Calculations</h3>
+<pre><code>// Latitude/longitude (need precision for cm-level accuracy)
+<p>
+struct:GeoPoint {
+double:latitude;   // degrees (-90 to +90)
+double:longitude;  // degrees (-180 to +180)
+}
+</p>
+<p>
+// Haversine distance (great circle distance)
+double:distance_km(GeoPoint:p1, GeoPoint:p2) -> double {
+double:earth_radius = 6371.0;  // km
+</p>
+<p>
+double:lat1 = p1.latitude * pi / 180.0;
+double:lat2 = p2.latitude * pi / 180.0;
+double:dlat = lat2 - lat1;
+double:dlon = (p2.longitude - p1.longitude) * pi / 180.0;
+</p>
+<p>
+double:a = sin(dlat/2.0) * sin(dlat/2.0) +
+cos(lat1) <em> cos(lat2) </em> sin(dlon/2.0) * sin(dlon/2.0);
+double:c = 2.0 * atan2(sqrt(a), sqrt(1.0-a));
+</p>
+<p>
+return earth_radius * c;
+}</code></pre>
+</p>
+<hr>
+<h2>Anti-Patterns</h2>
+<h3>Using double for Everything</h3>
+<pre><code>// BAD: Overkill for graphics
+<p>
+struct:Vertex {
+double:x, y, z;  // Wastes memory, slows rendering
+}
+</p>
+<p>
+// GOOD: float sufficient for graphics
+struct:Vertex {
+float:x, y, z;  // Fast, plenty of precision
+}</code></pre>
+</p>
+<h3>Currency Calculations</h3>
+<pre><code>// BAD: Still not exact for money
+<p>
+double:price = 19.99;
+double:quantity = 3.0;
+double:total = price * quantity;  // 59.970000000000006 (not exact!)
+</p>
+<p>
+// GOOD: Use fix256
+fix256:price = fix256.from_decimal("19.99");
+fix256:quantity = fix256.from_integer(3);
+fix256:total = price * quantity;  // Exactly 59.97</code></pre>
+</p>
+<h3>Expecting Cross-Platform Identical Results</h3>
+<pre><code>// BAD: Networked simulation assuming identical doubles
+<p>
+// Server (x86)
+double:position = compute_physics(dt);
+send_to_clients(position);
+</p>
+<p>
+// Client (ARM)
+double:local_position = compute_physics(dt);
+// May differ slightly! Causes desync!
+</p>
+<p>
+// GOOD: Use tfp64 for deterministic networking
+tfp64:position = compute_deterministic_physics(dt);</code></pre>
+</p>
+<hr>
+<h2>Summary</h2>
+<strong>double is for</strong>:
+<ul><li>✅ Scientific computing (precision beyond float)</li>
+<li>✅ Statistics and data analysis</li>
+<li>✅ Intermediate calculations (reduce error)</li>
+<li>✅ General-purpose programming (safer default)</li>
+<li>✅ Large value ranges (±10³⁰⁸)</li>
+</ul>
+<strong>double is NOT for</strong>:
+<ul><li>❌ Finance, money (use fix256)</li>
+<li>❌ Cross-platform determinism (use tfp64)</li>
+<li>❌ Exact decimal values (use frac or fix256)</li>
+<li>❌ Memory-constrained large arrays (use float if precision allows)</li>
+<li>❌ Maximum SIMD throughput (use float for 2× throughput)</li>
+</ul>
+<strong>Key Principles</strong>:
+<p>
+1. <strong>~15 decimal digits</strong> precision (vs float's ~7)
+2. <strong>Non-deterministic</strong> (varies by platform, like float)
+3. <strong>Approximate</strong> (still can't represent 0.1 exactly)
+4. <strong>Fast</strong> (native hardware, but half SIMD throughput vs float)
+5. <strong>Use epsilon</strong> for comparisons (smaller epsilon than float)
+6. <strong>8 bytes</strong> (2× memory of float)
+</p>
+<strong>vs float</strong>:
+<ul><li>Use double when need more precision or accumulating errors</li>
+<li>Use float when 7 digits sufficient and speed/memory matters</li>
+</ul>
+<strong>vs Exact Types</strong>:
+<ul><li>Use fix256 when need exact values (finance, safety-critical)</li>
+<li>Use tfp64 when need determinism (networking, replay)</li>
+<li>Use frac when need exact rationals (fractions)</li>
+</ul>
+<strong>Remember</strong>: double is a tool for <strong>better approximation</strong> than float, but still not exact. Choose the right type for your domain.
+    </main>
+</body>
+</html>

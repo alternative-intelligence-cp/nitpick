@@ -37,8 +37,8 @@ async fn fetch_data(url: string) -> Data {
 fn download_files(urls: []string) -> []Data {
     results: []Data = [];
     
-    for url in urls {
-        data: Data = http_get(url);  // Blocks until complete
+    till(urls.length - 1, 1) {
+        data: Data = http_get(urls[$]);  // Blocks until complete
         results.push(data);
     }
     
@@ -53,8 +53,8 @@ fn download_files(urls: []string) -> []Data {
 async fn download_files(urls: []string) -> []Data {
     results: []Data = [];
     
-    for url in urls {
-        data: Data = await http_get(url);  // Yields while waiting
+    till(urls.length - 1, 1) {
+        data: Data = await http_get(urls[$]);  // Yields while waiting
         results.push(data);
     }
     
@@ -185,7 +185,8 @@ async fn fetch_with_timeout(url: string, timeout_ms: i32) -> Data? {
 
 ```aria
 async fn fetch_with_retry(url: string, max_attempts: i32) -> Data? {
-    for attempt in 1..=max_attempts {
+    till(max_attempts - 1, 1) {
+        attempt: i32 = $ + 1;
         stddbg << "Attempt " << attempt << "/" << max_attempts;
         
         data: Data? = await fetch_data(url);
@@ -210,7 +211,8 @@ async fn fetch_with_retry(url: string, max_attempts: i32) -> Data? {
 
 ```aria
 async fn process_in_background(items: []Item) {
-    for item in items {
+    till(items.length - 1, 1) {
+        item: Item = items[$];
         await process_item(item);
         
         // Yield to other tasks periodically
@@ -298,8 +300,8 @@ fn calculate_primes(n: i32) -> []i32 {
 ```aria
 // Wrong: Sequential awaits in loop
 async fn process_all(items: []Item) {
-    for item in items {
-        await process(item);  // Each waits for previous
+    till(items.length - 1, 1) {
+        await process(items[$]);  // Each waits for previous
     }
 }
 

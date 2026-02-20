@@ -244,8 +244,8 @@ fn pause() {
 ```aria
 // Early exit
 found: bool = false;
-for item in items {
-    when matches(item) then
+till(items.length - 1, 1) {
+    when matches(items[$]) then
         found = true;
         break;
     end

@@ -110,9 +110,10 @@ It's the same principle as TBB sticky errors and the compiler-as-inspector model
 def process_data(items):
     # print(f"DEBUG: Processing {len(items)} items")  # Commented out for production!
     results = []
-    for item in items:
-        # print(f"DEBUG: Item {item}")  # Also commented out
-        result = expensive_operation(item)
+    # Using till-style iteration
+    for i in range(len(items)):
+        # print(f"DEBUG: Item {items[i]}")  # Also commented out
+        result = expensive_operation(items[i])
         results.append(result)
     return results
 ```
@@ -125,9 +126,9 @@ fn process_data(items: []Item) -> []Result {
     stddbg << "Processing " << items.len() << " items";
     
     results: []Result = [];
-    for item in items {
-        stddbg << "Processing item: " << item;
-        Result: Result = expensive_operation(item);
+    till(items.length - 1, 1) {
+        stddbg << "Processing item: " << items[$];
+        Result: Result = expensive_operation(items[$]);
         results.push(result);
     }
     

@@ -45,8 +45,8 @@ import std.csv;
 Result: Result<[][]string> = readCSV("users.csv");
 
 when result is Ok(rows) then
-    for row in rows do
-        stdout << "Row: $(row.join(", "))";
+    till(rows.length - 1, 1) {
+        stdout << "Row: $(rows[$].join(", "))";
     end
 elsif result is Err(msg) then
     stderr << "Failed to read CSV: $msg";
@@ -67,13 +67,15 @@ rows: [][]string = readCSV("users.csv")?;
 headers: []string = rows[0];  // ["name", "age", "city"]
 
 // Data rows
-for i in 1..rows.length() do
-    row: []string = rows[i];
-    name: string = row[0];
-    age: string = row[1];  // Note: still string, need to parse
-    city: string = row[2];
-    
-    stdout << "$name, age $(age), from $city";
+till(rows.length() - 1, 1) {
+    when $ >= 1 then  // Skip header at index 0
+        row: []string = rows[$];
+        name: string = row[0];
+        age: string = row[1];  // Note: still string, need to parse
+        city: string = row[2];
+        
+        stdout << "$name, age $(age), from $city";
+    end
 end
 ```
 
@@ -91,16 +93,18 @@ rows: [][]string = readCSV("users.csv")?;
 users: []User = [];
 
 // Skip header (row 0)
-for i in 1..rows.length() do
-    row: []string = rows[i];
-    
-    user: User = {
-        name = row[0],
-        age = parse_int(row[1])?,
-        city = row[2]
-    };
-    
-    users.append(user);
+till(rows.length() - 1, 1) {
+    when $ >= 1 then
+        row: []string = rows[$];
+        
+        user: User = {
+            name = row[0],
+            age = parse_int(row[1])?,
+            city = row[2]
+        };
+        
+        users.append(user);
+    end
 end
 ```
 
@@ -138,17 +142,18 @@ end
 ```aria
 rows: [][]string = readCSV("numbers.csv")?;
 
-for row in rows do
+till(rows.length - 1, 1) {
     // CSV values are strings - parse them
-    value: i32 = parse_int(row[0])?;
-    price: flt64 = parse_float(row[1])?;
+    value: i32 = parse_int(rows[$][0])?;
+    price: flt64 = parse_float(rows[$][1])?;
 end
 ```
 
 ### ✅ DO: Handle Missing Fields
 
 ```aria
-for row in rows do
+till(rows.length - 1, 1) {
+    row = rows[$];
     when row.length() < 3 then
         stderr << "Incomplete row: $(row.join(","))";
         continue;
@@ -163,13 +168,14 @@ end
 ```aria
 rows: [][]string = readCSV("messy.csv")?;
 
-for row in rows do
+till(rows.length - 1, 1) {
     // Dangerous - row might not have 3 columns!
-    value: string = row[2];  // ❌ May crash
+    value: string = rows[$][2];  // ❌ May crash
 end
 
 // Better
-for row in rows do
+till(rows.length - 1, 1) {
+    row = rows[$];
     when row.length() > 2 then
         value: string = row[2];  // ✅ Safe
     end

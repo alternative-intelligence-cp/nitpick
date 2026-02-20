@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Standard Small Signed Integers (int8, int16) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Standard Small Signed Integers (int8, int16)</h1>
+<strong>Category</strong>: Types → Integers → Standard Signed
+<strong>Sizes</strong>: 8-bit, 16-bit
+<strong>Ranges</strong>: int8 (-128 to +127), int16 (-32,768 to +32,767)
+<strong>Purpose</strong>: Traditional two's complement signed integers with wrapping overflow
+<strong>Status</strong>: ✅ FULLY IMPLEMENTED
+<hr>
+<h2>Table of Contents</h2>
+<p>
+1. <a href="#overview">Overview</a>
+2. <a href="#int8-8-bit-signed-integer">int8: 8-bit Signed Integer</a>
+3. <a href="#int16-16-bit-signed-integer">int16: 16-bit Signed Integer</a>
+4. <a href="#vs-tbb-types-critical-differences">vs TBB Types (Critical Differences)</a>
+5. <a href="#when-to-use-standard-ints-vs-tbb">When to Use Standard Ints vs TBB</a>
+6. <a href="#overflow-wrapping-behavior">Overflow Wrapping Behavior</a>
+7. <a href="#abs-undefined-behavior-with-minimum-values">abs() Undefined Behavior with Minimum Values</a>
+8. <a href="#twos-complement-representation">Two's Complement Representation</a>
+9. <a href="#arithmetic-operations">Arithmetic Operations</a>
+10. <a href="#bit-manipulation">Bit Manipulation</a>
+11. <a href="#c-interoperability">C Interoperability</a>
+12. <a href="#performance-characteristics">Performance Characteristics</a>
+13. <a href="#common-patterns">Common Patterns</a>
+14. <a href="#anti-patterns">Anti-Patterns</a>
+15. <a href="#migration-from-cc">Migration from C/C++</a>
+16. <a href="#related-concepts">Related Concepts</a>
+</p>
+<hr>
+<h2>Overview</h2>
+<p>
+Aria's <strong>standard signed integers</strong> (<code>int8</code>, <code>int16</code>, <code>int32</code>, <code>int64</code>) are traditional two's complement integers with <strong>asymmetric ranges</strong> and <strong>wrapping overflow behavior</strong>.
+</p>
+<strong>Key Properties</strong>:
+<ul><li><strong>Asymmetric ranges</strong>: Minimum is -(2^(n-1)), maximum is 2^(n-1) - 1</li>
+<li><strong>Wrapping overflow</strong>: Overflow/underflow wraps around (defined behavior in Aria, UB in C!)</li>
+<li><strong>Two's complement</strong>: Industry-standard representation (compatible with all modern CPUs)</li>
+<li><strong>No error propagation</strong>: No ERR sentinel like TBB types</li>
+<li><strong>Fast</strong>: Zero-overhead native machine integers</li>
+</ul>
+<strong>⚠️ CRITICAL</strong>: Standard ints wrap on overflow (127 + 1 = -128). Use TBB types if you need overflow detection!
+<hr>
+<h2>int8: 8-bit Signed Integer</h2>
+<h3>Range</h3>
+<strong>Minimum</strong>: -128 (0x80, -2^7)
+<strong>Maximum</strong>: +127 (0x7F, 2^7 - 1)
+<strong>Total values</strong>: 256 (2^8)
+<strong>Asymmetric</strong>: One more negative value than positive (abs(-128) has no representation!)
+<h3>Declaration</h3>
+<pre><code>int8:small = 42;
+<p>
+int8:negative = -100;
+int8:min_value = -128;
+int8:max_value = 127;</code></pre>
+</p>
+<h3>Literal Suffix</h3>
+<pre><code>int8:byte_val = 50i8;  // Explicit int8 literal</code></pre>
+<strong>⚠️ CRITICAL</strong>: Aria requires <strong>explicit type suffixes</strong> for all numeric literals (Zero Implicit Conversion Policy).
+<h3>Common Use Cases</h3>
+<p>
+1. <strong>Byte-oriented data</strong>: Protocol headers, binary file formats
+2. <strong>Small counters</strong>: Loop indices for small ranges
+3. <strong>Flags/enums</strong>: When range -128 to +127 sufficient
+4. <strong>Memory-constrained</strong>: Embedded systems, large arrays needing tight packing
+5. <strong>C interop</strong>: Matching C's <code>int8_t</code>, <code>signed char</code> types
+</p>
+<h3>Example: Protocol Header</h3>
+<pre><code>struct:PacketHeader = {
+<p>
+int8:version;        // Protocol version (-128 to +127, but typically 0-10)
+int8:packet_type;    // Packet type ID
+int8:flags;          // Bit flags
+int8:reserved;       // Reserved for future use
+};
+</p>
+<p>
+PacketHeader:header = {
+version: 2i8,
+packet_type: 5i8,
+flags: 0x0Fi8,       // 4 bits set
+reserved: 0i8
+};</code></pre>
+</p>
+<hr>
+<h2>int16: 16-bit Signed Integer</h2>
+<h3>Range</h3>
+<strong>Minimum</strong>: -32,768 (0x8000, -2^15)
+<strong>Maximum</strong>: +32,767 (0x7FFF, 2^15 - 1)
+<strong>Total values</strong>: 65,536 (2^16)
+<strong>Asymmetric</strong>: One more negative value than positive (abs(-32768) has no representation!)
+<h3>Declaration</h3>
+<pre><code>int16:sample = 1234;
+<p>
+int16:audio_pcm = -15000;  // 16-bit PCM audio sample
+int16:min_value = -32768;
+int16:max_value = 32767;</code></pre>
+</p>
+<h3>Literal Suffix</h3>
+<pre><code>int16:value = 10000i16;  // Explicit int16 literal</code></pre>
+<h3>Common Use Cases</h3>
+<p>
+1. <strong>Audio processing</strong>: 16-bit PCM standard (CD quality: -32768 to +32767)
+2. <strong>Sensor data</strong>: Temperature sensors, accelerometers (0.01° precision)
+3. <strong>Small database keys</strong>: Row IDs for small tables (up to 32,767 records)
+4. <strong>Graphics coordinates</strong>: Screen positions for resolutions up to 32K
+5. <strong>Unicode BMP</strong>: Basic Multilingual Plane character codes (0 to 65535)
+6. <strong>C interop</strong>: Matching C's <code>int16_t</code>, <code>short</code> types
+</p>
+<h3>Example: Audio Processing</h3>
+<pre><code>// 16-bit PCM audio buffer (CD quality)
+<p>
+int16[]:audio_buffer = aria.alloc<int16>(44100);  // 1 second at 44.1kHz
+</p>
+<p>
+// Read audio samples
+till 44100 loop:i
+int16:sample = read_audio_sample();
+</p>
+<p>
+// Apply gain (watch for clipping!)
+int32:amplified = int32(sample) * 2;  // Widen to avoid overflow
+</p>
+<p>
+if (amplified > 32767) {
+audio_buffer[i] = 32767i16;  // Clip to max
+} else if (amplified < -32768) {
+audio_buffer[i] = -32768i16;  // Clip to min
+} else {
+audio_buffer[i] = int16(amplified);
+}
+end</code></pre>
+</p>
+<hr>
+<h2>vs TBB Types (Critical Differences)</h2>
+<p>
+| Feature | Standard int8/int16 | TBB tbb8/tbb16 |
+|---------|---------------------|----------------|
+| <strong>Range</strong> | Asymmetric (int8: -128 to +127) | Symmetric (tbb8: -127 to +127) |
+| <strong>Overflow</strong> | Wraps around (127 + 1 = -128) | Returns ERR sentinel |
+| <strong>Underflow</strong> | Wraps around (-128 - 1 = 127) | Returns ERR sentinel |
+| <strong>Division by zero</strong> | Undefined behavior (panic) | Returns ERR sentinel |
+| <strong>abs(MIN)</strong> | Undefined behavior (panic) | Returns ERR sentinel |
+| <strong>Error checking</strong> | Manual (check before operation) | Automatic (sticky ERR) |
+| <strong>Performance</strong> | Zero overhead | ~0-20% overhead |
+| <strong>C interop</strong> | Direct (same representation) | Requires conversion |
+| <strong>Use case</strong> | Performance, bit ops, C FFI | Safety-critical, error propagation |
+</p>
+<h3>Example: Overflow Difference</h3>
+<pre><code>// Standard int8 - WRAPS
+<p>
+int8:std = 127i8;
+std += 1i8;
+// Result: -128 (wrapped around!)
+</p>
+<p>
+// TBB tbb8 - RETURNS ERR
+tbb8:safe = 127;
+safe += 1;
+// Result: ERR (-128 sentinel value)
+</p>
+<p>
+if (safe == ERR) {
+stderr.write("Overflow detected!\n");
+}</code></pre>
+</p>
+<strong>Key insight</strong>: Standard ints wrap silently. TBB types propagate errors. Choose based on your domain!
+<hr>
+<h2>When to Use Standard Ints vs TBB</h2>
+<h3>Use Standard Ints (int8/int16) When:</h3>
+<p>
+1. <strong>Performance critical</strong>: Zero overhead, native machine instructions
+2. <strong>C interoperability</strong>: Matching C types exactly (FFI, binary protocols)
+3. <strong>Bit manipulation</strong>: Wrapping is desired behavior (cryptography, hashing)
+4. <strong>Modular arithmetic</strong>: Intentional wraparound (ring buffers, counters)
+5. <strong>Large arrays</strong>: Memory efficiency (millions of elements, every byte counts)
+6. <strong>Overflow impossible</strong>: Range constraints guarantee no overflow
+7. <strong>Manual checking</strong>: You handle overflow explicitly
+</p>
+<h3>Use TBB Types (tbb8/tbb16) When:</h3>
+<p>
+1. <strong>Safety-critical</strong>: Healthcare, finance, control systems (overflow = disaster)
+2. <strong>Overflow detection</strong>: Need to know when arithmetic fails
+3. <strong>Error propagation</strong>: Sticky errors through computation chains
+4. <strong>Symmetric ranges</strong>: abs(-N) must always work
+5. <strong>Therapy data</strong>: Nikola consciousness, emotional state quantization
+6. <strong>Sensor fusion</strong>: Multiple sensors, any can fail (ERR = malfunction)
+7. <strong>Accumulation</strong>: Long sums where overflow risk exists
+</p>
+<h3>Quick Decision Matrix</h3>
+<pre><code>// Financial calculation - USE TBB (overflow = catastrophe)
+<p>
+tbb16:account_balance = 1000;
+account_balance += transaction_amount;
+if (account_balance == ERR) {
+log_error("Transaction overflow!");
+rollback_transaction();
+}
+</p>
+<p>
+// Ring buffer index - USE STANDARD (wrapping intentional)
+int16:ring_index = 0i16;
+ring_index = (ring_index + 1i16) % 1024i16;  // Modular arithmetic
+</p>
+<p>
+// Audio sample - USE STANDARD (clipping, not overflow detection)
+int16:audio = read_pcm16();
+audio = clip(audio, -32768i16, 32767i16);
+</p>
+<p>
+// Therapy engagement score - USE TBB (patient safety, detect errors)
+tbb8:engagement = compute_engagement_score();
+if (engagement == ERR) {
+alert_clinician("Score computation failed!");
+}</code></pre>
+</p>
+<hr>
+<h2>Overflow Wrapping Behavior</h2>
+<h3>Defined in Aria (NOT Undefined Behavior!)</h3>
+<p>
+Unlike C/C++ where signed overflow is undefined behavior, Aria <strong>defines</strong> overflow as two's complement wrapping.
+</p>
+<pre><code>// Addition overflow
+<p>
+int8:a = 127i8;
+int8:b = 1i8;
+int8:c = a + b;  // c = -128 (wraps to minimum)
+</p>
+<p>
+// Subtraction underflow
+int8:d = -128i8;
+int8:e = 1i8;
+int8:f = d - e;  // f = 127 (wraps to maximum)
+</p>
+<p>
+// Multiplication overflow
+int8:g = 16i8;
+int8:h = 8i8;
+int8:i = g * h;  // i = -128 (128 wraps to -128)</code></pre>
+</p>
+<strong>Why defined?</strong>: Enables bit manipulation, modular arithmetic, cryptography without compiler optimization breaking code.
+<h3>Wrapping Examples</h3>
+<pre><code>// Incrementing past maximum
+<p>
+int8:counter = 127i8;
+counter += 1i8;  // counter = -128
+counter += 1i8;  // counter = -127
+counter += 1i8;  // counter = -126
+</p>
+<p>
+// Decrementing past minimum
+int8:countdown = -128i8;
+countdown -= 1i8;  // countdown = 127
+countdown -= 1i8;  // countdown = 126
+</p>
+<p>
+// Wrapping arithmetic (intentional)
+int16:angle = 359i16;  // Degrees
+angle = (angle + 5i16) % 360i16;  // Wraps to 4° (modular)</code></pre>
+</p>
+<strong>⚠️ WARNING</strong>: Wrapping is <strong>silent</strong>! If overflow is an error, use TBB types instead.
+<hr>
+<h2>abs() Undefined Behavior with Minimum Values</h2>
+<h3>The abs(INT_MIN) Problem</h3>
+<p>
+Standard signed integers have <strong>one more negative value than positive</strong>. Taking the absolute value of the minimum value <strong>has no representation</strong>!
+</p>
+<pre><code>int8:min = -128i8;
+<p>
+int8:result = abs(min);  // ⚠️ UNDEFINED BEHAVIOR! Panics in Aria
+</p>
+<p>
+// Why? abs(-128) = 128, but int8 max is 127!</code></pre>
+</p>
+<strong>Aria behavior</strong>: Calling <code>abs()</code> on INT_MIN <strong>panics</strong> (program termination with error message).
+<strong>C behavior</strong>: Undefined behavior (might return -128, might wrap, might crash, compiler can do ANYTHING).
+<h3>Safe Alternatives</h3>
+<strong>Option 1</strong>: Use TBB types (abs works correctly)
+<pre><code>tbb8:value = -127;  // tbb8 min is -127, not -128
+<p>
+tbb8:result = abs(value);  // result = 127 (works!)
+</p>
+<p>
+tbb8:min = -127;
+tbb8:abs_min = abs(min);  // abs_min = 127 (no problem)</code></pre>
+</p>
+<strong>Option 2</strong>: Check before calling abs()
+<pre><code>int8:value = -128i8;
+<p>
+if (value == -128i8) {
+// Handle special case
+stderr.write("Cannot take abs of INT8_MIN\n");
+} else {
+int8:result = abs(value);  // Safe (not minimum)
+}</code></pre>
+</p>
+<strong>Option 3</strong>: Widen to larger type
+<pre><code>int8:small = -128i8;
+<p>
+int16:wide = int16(small);  // -128 fits in int16
+int16:result = abs(wide);   // result = 128 (fits in int16)</code></pre>
+</p>
+<h3>Why TBB Fixes This</h3>
+<p>
+TBB types have <strong>symmetric ranges</strong>, so abs() always works:
+</p>
+<p>
+| Type | Range | abs(MIN) |
+|------|-------|----------|
+| int8 | -128 to +127 | <strong>UNDEFINED</strong> (128 doesn't fit) |
+| tbb8 | -127 to +127 | ✅ 127 (fits!) |
+| int16 | -32768 to +32767 | <strong>UNDEFINED</strong> (32768 doesn't fit) |
+| tbb16 | -32767 to +32767 | ✅ 32767 (fits!) |
+</p>
+<hr>
+<h2>Two's Complement Representation</h2>
+<h3>Bit Representation</h3>
+<strong>int8</strong> (8 bits):
+<pre><code>+127 = 0x7F = 0b01111111
+<p>
++1   = 0x01 = 0b00000001
+0   = 0x00 = 0b00000000
+-1   = 0xFF = 0b11111111
+-128 = 0x80 = 0b10000000</code></pre>
+</p>
+<strong>int16</strong> (16 bits):
+<pre><code>+32767 = 0x7FFF = 0b0111111111111111
+<p>
++1     = 0x0001 = 0b0000000000000001
+0     = 0x0000 = 0b0000000000000000
+-1     = 0xFFFF = 0b1111111111111111
+-32768 = 0x8000 = 0b1000000000000000</code></pre>
+</p>
+<h3>Sign Bit</h3>
+<strong>Most significant bit (MSB)</strong> determines sign:
+<ul><li><code>0</code> = positive or zero</li>
+<li><code>1</code> = negative</li>
+</ul>
+<pre><code>int8:positive = 42i8;    // 0b00101010 (MSB = 0)
+<p>
+int8:negative = -42i8;   // 0b11010110 (MSB = 1)</code></pre>
+</p>
+<h3>Computing Negative Values</h3>
+<p>
+To negate a value in two's complement:
+1. Flip all bits (bitwise NOT)
+2. Add 1
+</p>
+<pre><code>int8:value = 5i8;       // 0b00000101
+<p>
+// Negate manually:
+int8:inverted = ~value; // 0b11111010 (bitwise NOT)
+int8:negated = inverted + 1i8;  // 0b11111011 = -5
+</p>
+<p>
+// Or just:
+int8:neg_value = -value;  // -5 (compiler does the above)</code></pre>
+</p>
+<h3>Why One More Negative?</h3>
+<pre><code>Positive int8: 0 to 127 (128 values: 0b00000000 to 0b01111111)
+<p>
+Negative int8: -1 to -128 (128 values: 0b11111111 to 0b10000000)</code></pre>
+</p>
+<p>
+Zero uses one of the "positive" bit patterns, leaving 127 positive values but 128 negative patterns!
+</p>
+<hr>
+<h2>Arithmetic Operations</h2>
+<h3>Addition/Subtraction with Wrapping</h3>
+<pre><code>int8:a = 100i8;
+<p>
+int8:b = 50i8;
+int8:sum = a + b;  // 150... but wraps to -106!
+</p>
+<p>
+// Why? 150 = 0b10010110 (MSB=1, interpreted as negative)</code></pre>
+</p>
+<strong>Overflow detection</strong> (manual):
+<pre><code>func:safe_add_i8 = (a: int8, b: int8) -> Result<int8, string> {
+<p>
+// Overflow if: both positive and sum negative
+if (a > 0i8 && b > 0i8 && (a + b) < 0i8) {
+fail("Positive overflow");
+}
+</p>
+<p>
+// Underflow if: both negative and sum positive
+if (a < 0i8 && b < 0i8 && (a + b) > 0i8) {
+fail("Negative underflow");
+}
+</p>
+<p>
+pass(a + b);
+}</code></pre>
+</p>
+<strong>Or just use TBB</strong> (automatic):
+<pre><code>tbb8:a = 100;
+<p>
+tbb8:b = 50;
+tbb8:sum = a + b;  // ERR (overflow detected automatically)
+</p>
+<p>
+if (sum == ERR) {
+stderr.write("Addition overflow!\n");
+}</code></pre>
+</p>
+<h3>Multiplication with Wrapping</h3>
+<pre><code>int8:a = 16i8;
+<p>
+int8:b = 8i8;
+int8:product = a * b;  // 128... wraps to -128!
+</p>
+<p>
+int16:a16 = 16i16;
+int16:b16 = 8i16;
+int16:product16 = a16 * b16;  // 128 (fits in int16, no wrap)</code></pre>
+</p>
+<strong>Safe multiplication</strong> (widen, then narrow):
+<pre><code>int8:a = 16i8;
+<p>
+int8:b = 8i8;
+</p>
+<p>
+int16:wide_a = int16(a);
+int16:wide_b = int16(b);
+int16:wide_product = wide_a * wide_b;  // 128 (no overflow in int16)
+</p>
+<p>
+if (wide_product > 127i16 || wide_product < -128i16) {
+stderr.write("Product doesn't fit in int8!\n");
+} else {
+int8:result = int8(wide_product);  // Safe narrow
+}</code></pre>
+</p>
+<h3>Division</h3>
+<pre><code>int8:a = 100i8;
+<p>
+int8:b = 3i8;
+int8:quotient = a / b;   // 33 (truncates toward zero)
+int8:remainder = a % b;  // 1
+</p>
+<p>
+int8:neg_a = -100i8;
+int8:neg_quotient = neg_a / b;  // -33 (truncates toward zero)
+int8:neg_remainder = neg_a % b; // -1 (sign matches dividend)</code></pre>
+</p>
+<strong>Division by zero</strong>: Panics (undefined behavior, program terminates).
+<strong>With TBB</strong>: Returns ERR instead.
+<hr>
+<h2>Bit Manipulation</h2>
+<p>
+Standard ints excel at bit manipulation (wrapping is often desired).
+</p>
+<h3>Bitwise Operators</h3>
+<pre><code>int8:a = 0b00110011i8;
+<p>
+int8:b = 0b01010101i8;
+</p>
+<p>
+int8:and_result = a & b;   // 0b00010001 (AND)
+int8:or_result = a | b;    // 0b01110111 (OR)
+int8:xor_result = a ^ b;   // 0b01100110 (XOR)
+int8:not_result = ~a;      // 0b11001100 (NOT)</code></pre>
+</p>
+<h3>Bit Shifts</h3>
+<pre><code>int8:value = 0b00000001i8;  // 1
+<p>
+int8:left_shift = value << 1i8;   // 0b00000010 (2)
+int8:left_shift2 = value << 2i8;  // 0b00000100 (4)
+int8:left_shift7 = value << 7i8;  // 0b10000000 (-128)
+</p>
+<p>
+// Right shift (arithmetic - sign extends)
+int8:neg_value = -64i8;  // 0b11000000
+int8:right_shift = neg_value >> 1i8;  // 0b11100000 (-32, sign extended)</code></pre>
+</p>
+<strong>Arithmetic right shift</strong>: Sign bit propagates (extends sign).
+<strong>Overflow via shift</strong>: Left shift can overflow into sign bit (wraps).
+<h3>Bit Flags</h3>
+<pre><code>// Protocol flags (8 bits)
+<p>
+const:int8:FLAG_ACK = 0x01i8;     // 0b00000001
+const:int8:FLAG_SYN = 0x02i8;     // 0b00000010
+const:int8:FLAG_FIN = 0x04i8;     // 0b00000100
+const:int8:FLAG_RST = 0x08i8;     // 0b00001000
+</p>
+<p>
+int8:flags = 0i8;
+</p>
+<p>
+// Set flags
+flags |= FLAG_ACK;  // Set ACK
+flags |= FLAG_SYN;  // Set SYN
+</p>
+<p>
+// Check flags
+if ((flags & FLAG_ACK) != 0i8) {
+log.write("ACK flag set\n");
+}
+</p>
+<p>
+// Clear flags
+flags &= ~FLAG_SYN;  // Clear SYN (AND with inverted mask)
+</p>
+<p>
+// Toggle flags
+flags ^= FLAG_FIN;  // Toggle FIN</code></pre>
+</p>
+<hr>
+<h2>C Interoperability</h2>
+<h3>Direct Compatibility</h3>
+<p>
+Aria's standard ints match C's fixed-width types:
+</p>
+<p>
+| Aria Type | C Type | Size | Range |
+|-----------|--------|------|-------|
+| int8 | <code>int8_t</code> | 1 byte | -128 to 127 |
+| int16 | <code>int16_t</code> | 2 bytes | -32768 to 32767 |
+</p>
+<h3>FFI Example</h3>
+<pre><code>// C library function
+<p>
+extern "C" {
+func:c_audio_process = int16(
+samples: int16@,  // Pointer to int16 array
+count: int32      // Number of samples
+);
+}
+</p>
+<p>
+// Aria usage
+int16[]:audio_buffer = aria.alloc<int16>(1024);
+</p>
+<p>
+till 1024 loop:i
+audio_buffer[i] = read_audio_sample();
+end
+</p>
+<p>
+int16:result = c_audio_process(audio_buffer, 1024i32);
+</p>
+<p>
+if (result < 0i16) {
+stderr.write("Audio processing failed\n");
+}</code></pre>
+</p>
+<strong>No conversion needed</strong>: Aria int8/int16 are ABI-compatible with C.
+<hr>
+<h2>Performance Characteristics</h2>
+<h3>Zero Overhead</h3>
+<p>
+Standard ints compile to native machine instructions with <strong>no overhead</strong>:
+</p>
+<pre><code>int8:a = 10i8;
+<p>
+int8:b = 20i8;
+int8:sum = a + b;</code></pre>
+</p>
+<strong>Generated assembly</strong> (x86):
+<pre><code>mov al, 10      ; Load 10 into AL register
+<p>
+add al, 20      ; Add 20 to AL
+; Result in AL (one instruction!)</code></pre>
+</p>
+<strong>Performance</strong>: Identical to hand-written assembly.
+<h3>Memory Efficiency</h3>
+<pre><code>// Array of 1 million int8
+<p>
+int8[]:tiny = aria.alloc<int8>(1000000);
+// Memory: 1 MB
+</p>
+<p>
+// Array of 1 million int16
+int16[]:small = aria.alloc<int16>(1000000);
+// Memory: 2 MB
+</p>
+<p>
+// vs int32
+int32[]:standard = aria.alloc<int32>(1000000);
+// Memory: 4 MB (2-4× larger!)</code></pre>
+</p>
+<strong>Cache efficiency</strong>: Smaller types = more data per cache line = better performance for large arrays.
+<hr>
+<h2>Common Patterns</h2>
+<h3>Range-Checked Narrowing</h3>
+<pre><code>func:narrow_to_i8 = (value: int32) -> ?int8 {
+<p>
+if (value < -128i32 || value > 127i32) {
+return NIL;  // Out of range
+}
+</p>
+<p>
+return int8(value);  // Safe cast
+}
+</p>
+<p>
+// Usage
+int32:large = 1000i32;
+?int8:small = narrow_to_i8(large);
+</p>
+<p>
+if (small == NIL) {
+stderr.write("Value too large for int8\n");
+}</code></pre>
+</p>
+<h3>Saturating Arithmetic (Clipping)</h3>
+<pre><code>func:saturating_add_i8 = (a: int8, b: int8) -> int8 {
+<p>
+int16:wide_sum = int16(a) + int16(b);  // Widen to avoid wrap
+</p>
+<p>
+if (wide_sum > 127i16) {
+return 127i8;  // Saturate at max
+} else if (wide_sum < -128i16) {
+return -128i8;  // Saturate at min
+} else {
+return int8(wide_sum);
+}
+}
+</p>
+<p>
+// Audio clipping example
+int8:sample = 100i8;
+int8:gain = 50i8;
+int8:amplified = saturating_add_i8(sample, gain);  // 127 (saturated)</code></pre>
+</p>
+<h3>Modular Arithmetic (Ring Buffers)</h3>
+<pre><code>struct:RingBuffer = {
+<p>
+int16[1024]:data;
+int16:write_index;
+int16:read_index;
+};
+</p>
+<p>
+func:ring_write = (rb: RingBuffer@, value: int16) -> void {
+rb.data[rb.write_index] = value;
+rb.write_index = (rb.write_index + 1i16) % 1024i16;  // Wrap around
+}
+</p>
+<p>
+func:ring_read = (rb: RingBuffer@) -> int16 {
+int16:value = rb.data[rb.read_index];
+rb.read_index = (rb.read_index + 1i16) % 1024i16;  // Wrap around
+pass(value);
+}</code></pre>
+</p>
+<hr>
+<h2>Anti-Patterns</h2>
+<h3>❌ Ignoring Overflow Risk</h3>
+<pre><code>// WRONG: Accumulation without overflow check
+<p>
+int8:sum = 0i8;
+</p>
+<p>
+till 100 loop:i
+sum += 50i8;  // ❌ Overflows silently!
+end
+// sum is garbage (wrapped multiple times)
+</p>
+<p>
+// RIGHT: Use larger type or TBB
+tbb16:safe_sum = 0;
+</p>
+<p>
+till 100 loop:i
+safe_sum += 50;
+</p>
+<p>
+if (safe_sum == ERR) {
+stderr.write("Overflow detected!\n");
+break;
+}
+end</code></pre>
+</p>
+<h3>❌ Using abs(INT_MIN)</h3>
+<pre><code>// WRONG: abs() on minimum value
+<p>
+int8:value = -128i8;
+int8:absolute = abs(value);  // ❌ PANICS! No representation for 128
+</p>
+<p>
+// RIGHT: Use TBB or check first
+tbb8:safe_value = -127;
+tbb8:safe_abs = abs(safe_value);  // ✅ Works (tbb8 min is -127)
+</p>
+<p>
+// OR check before abs()
+if (value == -128i8) {
+stderr.write("Cannot take abs of INT8_MIN\n");
+} else {
+int8:absolute = abs(value);  // Safe
+}</code></pre>
+</p>
+<h3>❌ Mixing Signed/Unsigned Without Care</h3>
+<pre><code>// WRONG: Comparing signed to unsigned
+<p>
+int8:signed_val = -1i8;
+uint8:unsigned_val = 255u8;
+</p>
+<p>
+if (signed_val < unsigned_val) {  // ⚠️ Implicit conversion!
+// -1 converts to 255 (bit pattern reinterpreted)
+// Comparison might not do what you expect!
+}
+</p>
+<p>
+// RIGHT: Explicit widening to signed type
+int16:wide_signed = int16(signed_val);
+int16:wide_unsigned = int16(unsigned_val);
+</p>
+<p>
+if (wide_signed < wide_unsigned) {
+// Clear semantics
+}</code></pre>
+</p>
+<hr>
+<h2>Migration from C/C++</h2>
+<h3>Undefined Behavior → Defined in Aria</h3>
+<strong>C</strong>: Signed overflow is undefined behavior
+<pre><code>int8_t a = 127;
+<p>
+a += 1;  // UNDEFINED BEHAVIOR (compiler can do anything!)</code></pre>
+</p>
+<strong>Aria</strong>: Signed overflow wraps (defined behavior)
+<pre><code>int8:a = 127i8;
+<p>
+a += 1i8;  // a = -128 (defined as two's complement wrap)</code></pre>
+</p>
+<strong>Benefit</strong>: Predictable behavior, enables modular arithmetic and bit manipulation.
+<h3>Explicit Type Suffixes Required</h3>
+<strong>C</strong>: Implicit integer literal types
+<pre><code>int8_t x = 42;  // Literal is int (32-bit), implicitly converted</code></pre>
+<strong>Aria</strong>: Explicit suffix required
+<pre><code>int8:x = 42i8;  // Must specify i8 suffix (Zero Implicit Conversion)</code></pre>
+<h3>abs() Behavior</h3>
+<strong>C</strong>: abs(INT_MIN) is undefined behavior
+<pre><code>int8_t min = -128;
+<p>
+int8_t a = abs(min);  // UNDEFINED BEHAVIOR!</code></pre>
+</p>
+<strong>Aria</strong>: abs(INT_MIN) panics (caught at runtime)
+<pre><code>int8:min = -128i8;
+<p>
+int8:a = abs(min);  // Panics with error message</code></pre>
+</p>
+<strong>Better in Aria</strong>: Use TBB which has symmetric range (abs always works).
+<hr>
+<h2>Related Concepts</h2>
+<h3>Other Integer Types</h3>
+<ul><li><strong>int32, int64</strong>: Larger standard signed integers</li>
+<li><strong>uint8, uint16</strong>: Unsigned integers (0 to 255/65535)</li>
+<li><strong>tbb8, tbb16</strong>: Symmetric-range error-propagating integers</li>
+<li><strong>int1024, int2048, int4096</strong>: Large cryptographic integers</li>
+</ul>
+<h3>Special Values</h3>
+<ul><li><strong>NIL</strong>: Optional types (not applicable to int8/int16)</li>
+<li><strong>ERR</strong>: TBB error sentinel (not applicable to standard ints)</li>
+<li><strong>NULL</strong>: Pointer sentinel (not applicable to value types)</li>
+</ul>
+<h3>Related Operations</h3>
+<ul><li><strong>Bit manipulation</strong>: AND, OR, XOR, NOT, shifts</li>
+<li><strong>Saturating arithmetic</strong>: Clipping instead of wrapping</li>
+<li><strong>Widening conversions</strong>: int8 → int16 → int32 (safe)</li>
+<li><strong>Narrowing conversions</strong>: int32 → int16 → int8 (check range!)</li>
+</ul>
+<hr>
+<h2>Summary</h2>
+<strong>int8</strong> and <strong>int16</strong> are Aria's small standard signed integers:
+<p>
+✅ <strong>Asymmetric ranges</strong>: int8 (-128 to +127), int16 (-32,768 to +32,767)
+✅ <strong>Wrapping overflow</strong>: Defined behavior (not UB like C!)
+✅ <strong>Zero overhead</strong>: Native machine instructions
+✅ <strong>C compatible</strong>: Direct FFI, same ABI
+✅ <strong>Bit manipulation</strong>: Ideal for flags, masks, protocols
+</p>
+<p>
+⚠️ <strong>Overflow wraps silently</strong>: Use TBB if overflow is an error
+⚠️ <strong>abs(INT_MIN) panics</strong>: Use TBB for symmetric ranges
+⚠️ <strong>Manual error checking</strong>: No automatic ERR propagation
+</p>
+<strong>Use int8/int16 for</strong>:
+<ul><li>Performance-critical code (zero overhead)</li>
+<li>C interoperability (FFI, binary protocols)</li>
+<li>Bit manipulation (flags, cryptography, hashing)</li>
+<li>Modular arithmetic (ring buffers, counters)</li>
+<li>Memory efficiency (large arrays)</li>
+</ul>
+<strong>Use tbb8/tbb16 for</strong>:
+<ul><li>Safety-critical systems (overflow detection)</li>
+<li>Error propagation (sticky errors)</li>
+<li>Symmetric ranges (abs always works)</li>
+<li>Therapy data (Nikola consciousness)</li>
+<li>Sensor fusion (detect malfunctions)</li>
+</ul>
+<hr>
+<strong>Next</strong>: <a href="int32_int64.md">int32, int64 (Standard Medium/Large Signed Integers)</a>
+<strong>See Also</strong>: <a href="tbb8.md">tbb8</a>, <a href="tbb16.md">tbb16</a>, <a href="uint8.md">uint8</a>, <a href="uint16.md">uint16</a>
+<hr>
+<em>Aria Language Project - Traditional Integers with Defined Wrapping</em>
+<em>February 12, 2026 - Establishing timestamped prior art on standard integer semantics</em>
+    </main>
+</body>
+</html>

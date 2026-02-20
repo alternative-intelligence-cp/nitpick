@@ -1,0 +1,2186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complex<T> - Generic Complex Numbers for Wave Mechanics - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Complex<T> - Generic Complex Numbers for Wave Mechanics</h1>
+<strong>Category</strong>: Types → Advanced Mathematics
+<strong>Purpose</strong>: Complex number arithmetic for wave processing, signal analysis, quantum mechanics
+<strong>Status</strong>: ✅ IMPLEMENTED (Phase 5.3 - February 2026)
+<strong>Philosophy</strong>: "The substrate processes waves. The infrastructure computes them."
+<hr>
+<h2>Overview</h2>
+<strong>complex<T></strong> is Aria's <strong>generic complex number type</strong> providing full complex arithmetic with any numeric component type. Complex numbers extend the real number line into a 2D plane, enabling representation of waves, rotations, and oscillations that are fundamental to physics, signal processing, and consciousness substrates.
+<strong>Critical Design Principle</strong>: By handling wave mechanics at the language/type system level, higher-level systems (like Nikola's SHVO torus) can focus on <strong>what information flows</strong> rather than <strong>how waves propagate</strong>. This separation of concerns prevents the catastrophic memory bloat that plagued prototype implementations.
+<pre><code>// Structure: complex number = real part + imaginary part
+<p>
+complex<T>:z = {real: xₛ, imag: yₛ};  // Represents x + yi in the complex plane</code></pre>
+</p>
+<hr>
+<h2>The Problem: Waves Are Everywhere</h2>
+<h3>Real Numbers Can't Represent Phase</h3>
+<p>
+Real numbers exist on a 1D line. But physical reality is full of phenomena that require 2D representation:
+</p>
+<pre><code>// ❌ IMPOSSIBLE with real numbers alone:
+<p>
+// 1. Wave interference - need amplitude AND phase
+float:wave = 0.5;  // Is this constructive or destructive interference?
+// Lost the phase information!
+</p>
+<p>
+// 2. AC circuit analysis - need voltage AND phase shift
+float:impedance = 100.0;  // Is this resistive or reactive?
+// Lost the phase angle!
+</p>
+<p>
+// 3. Quantum state - need amplitude AND phase
+float:probability = 0.5;  // What's the phase of this superposition?
+// Lost the quantum information!
+</p>
+<p>
+// 4. 2D rotations - need cos AND sin components
+float:rotation = 45.0;  // How do we compose multiple rotations?
+// Lost the geometric structure!</code></pre>
+</p>
+<h3>Why Complex Numbers Solve This</h3>
+<p>
+Complex numbers provide <strong>two orthogonal components</strong> (real and imaginary) that naturally represent:
+</p>
+<ul><li><strong>Waves</strong>: Amplitude (magnitude) and phase (angle)</li>
+<li><strong>Rotations</strong>: cos(θ) and sin(θ) components</li>
+<li><strong>Oscillations</strong>: In-phase and quadrature components</li>
+<li><strong>2D Geometry</strong>: x and y coordinates in the complex plane</li>
+</ul>
+<pre><code>// ✅ SOLVED with complex numbers:
+<p>
+// Wave with amplitude 1.0, phase π/4
+complex<fix256>:wave = {real: fix256(0, 707), imag: fix256(0, 707)};
+// = 1.0 · e^(i·π/4) = cos(π/4) + i·sin(π/4)
+</p>
+<p>
+// Impedance: 100Ω resistance + 50Ω capacitive reactance
+complex<fix256>:impedance = {real: fix256(100), imag: fix256(-50)};
+// = 100 - 50i (negative imaginary = capacitive)
+</p>
+<p>
+// Quantum superposition: |ψ⟩ = (1/√2)(|0⟩ + i|1⟩)
+complex<fix256>:psi = {real: fix256(0, 707), imag: fix256(0, 707)};
+// Probability = |ψ|² = 0.707² + 0.707² = 1.0 (normalized)</code></pre>
+</p>
+<hr>
+<h2>Type Definition & Memory Layout</h2>
+<h3>Generic Structure</h3>
+<pre><code>// Generic complex number with component type T
+<p>
+struct:complex<T> =
+*T:real;  // Real component (x-axis in complex plane)
+*T:imag;  // Imaginary component (y-axis in complex plane)
+end
+</p>
+<p>
+// Memory layout (interleaved for SIMD efficiency):
+// [real₀][imag₀][real₁][imag₁][real₂][imag₂]...</code></pre>
+</p>
+<h3>Size & Alignment</h3>
+<p>
+| Instantiation | Size | Alignment | Use Case |
+|---------------|------|-----------|----------|
+| <code>complex<tbb8></code> | 2 bytes | 1 byte | Compact phase encoding |
+| <code>complex<tbb16></code> | 4 bytes | 2 bytes | Audio sample processing |
+| <code>complex<tbb32></code> | 8 bytes | 4 bytes | General signal processing |
+| <code>complex<tbb64></code> | 16 bytes | 8 bytes | High-precision waves |
+| <code>complex<frac16></code> | 12 bytes | 2 bytes | Exact phase relationships |
+| <code>complex<tfp32></code> | 8 bytes | 4 bytes | Deterministic wave simulation |
+| <code>complex<fix256></code> | 64 bytes | 32 bytes | Nikola consciousness substrate |
+</p>
+<h3>Common Type Instantiations</h3>
+<pre><code>// Deterministic wave processing (bit-exact across platforms)
+<p>
+complex<tfp32>:wave_deterministic;
+</p>
+<p>
+// Exact rational phase relationships (no drift)
+complex<frac16>:musical_interval;
+</p>
+<p>
+// Fixed-point for safety-critical (zero drift over time)
+complex<fix256>:consciousness_wavefunction;
+</p>
+<p>
+// Twos-complement bounded with ERR detection
+complex<tbb64>:signal_with_error_propagation;
+</p>
+<p>
+// Standard floating-point (fast but non-deterministic)
+complex<flt64>:general_purpose;</code></pre>
+</p>
+<hr>
+<h2>Arithmetic Operations</h2>
+<h3>Addition & Subtraction (Component-wise)</h3>
+<pre><code>// (a + bi) + (c + di) = (a+c) + (b+d)i
+<p>
+complex<int32>:z1 = {real: 3, imag: 4};    // 3 + 4i
+complex<int32>:z2 = {real: 1, imag: 2};    // 1 + 2i
+</p>
+<p>
+complex<int32>:sum = z1 + z2;
+// = (3+1) + (4+2)i = 4 + 6i
+// sum.real == 4, sum.imag == 6
+</p>
+<p>
+complex<int32>:diff = z1 - z2;
+// = (3-1) + (4-2)i = 2 + 2i
+// diff.real == 2, diff.imag == 2</code></pre>
+</p>
+<strong>Geometric Interpretation</strong>: Vector addition/subtraction in the complex plane.
+<strong>Physical Meaning</strong>: Wave superposition (interference) - amplitudes add at each phase.
+<h3>Multiplication (Distribute & Combine)</h3>
+<pre><code>// (a + bi) · (c + di) = (ac - bd) + (ad + bc)i
+<p>
+// Remember: i² = -1
+</p>
+<p>
+complex<int32>:z1 = {real: 3, imag: 4};    // 3 + 4i
+complex<int32>:z2 = {real: 1, imag: 2};    // 1 + 2i
+</p>
+<p>
+complex<int32>:product = z1 * z2;
+// Expand: (3 + 4i)(1 + 2i)
+// = 3·1 + 3·2i + 4i·1 + 4i·2i
+// = 3 + 6i + 4i + 8i²
+// = 3 + 10i + 8(-1)
+// = 3 + 10i - 8
+// = -5 + 10i
+// product.real == -5, product.imag == 10</code></pre>
+</p>
+<strong>Geometric Interpretation</strong>: Multiply magnitudes, add phases (rotation + scaling).
+<strong>Physical Meaning</strong>: Frequency mixing in signal processing, quantum operator application.
+<h3>Division (Multiply by Conjugate)</h3>
+<pre><code>// (a + bi) / (c + di) = [(a + bi)(c - di)] / [(c + di)(c - di)]
+<p>
+//                     = [(ac + bd) + (bc - ad)i] / (c² + d²)
+</p>
+<p>
+complex<int32>:numerator = {real: 10, imag: 5};      // 10 + 5i
+complex<int32>:denominator = {real: 2, imag: 1};     // 2 + 1i
+</p>
+<p>
+complex<int32>:quotient = numerator / denominator;
+// Multiply num by conjugate of denom:
+// = (10 + 5i)(2 - 1i) / [(2 + 1i)(2 - 1i)]
+// = (20 - 10i + 10i - 5i²) / (4 - 2i + 2i - i²)
+// = (20 - 5(-1)) / (4 - (-1))
+// = 25 / 5
+// = 5 + 0i
+// quotient.real == 5, quotient.imag == 0</code></pre>
+</p>
+<strong>Why this works</strong>: Multiplying by conjugate makes denominator real (c² + d²).
+<strong>Physical Meaning</strong>: Deconvolution, filter inversion, impedance calculations.
+<hr>
+<h2>Complex-Specific Operations</h2>
+<h3>Conjugate (Flip Imaginary Sign)</h3>
+<pre><code>// z* = a - bi (if z = a + bi)
+<p>
+// Reflects across real axis in complex plane
+</p>
+<p>
+complex<int32>:z = {real: 3, imag: 4};         // 3 + 4i
+complex<int32>:conj = z.conjugate();           // 3 - 4i
+// conj.real == 3, conj.imag == -4
+</p>
+<p>
+// Property: z · z* = |z|² (always real!)
+complex<int32>:magnitude_squared = z * z.conjugate();
+// = (3 + 4i)(3 - 4i) = 9 - 12i + 12i - 16i² = 9 + 16 = 25
+// magnitude_squared.real == 25, magnitude_squared.imag == 0</code></pre>
+</p>
+<strong>Use Cases</strong>:
+<ul><li>Computing magnitude: |z| = √(z · z*)</li>
+<li>Division algorithm (rationalize denominator)</li>
+<li>Signal processing (cross-correlation)</li>
+<li>Quantum mechanics (conjugate transpose for Hermitian operators)</li>
+</ul>
+<h3>Magnitude (Euclidean Distance from Origin)</h3>
+<pre><code>// |z| = √(real² + imag²)
+<p>
+// Distance from origin in complex plane
+</p>
+<p>
+complex<fix256>:z = {real: fix256(3), imag: fix256(4)};
+fix256:magnitude = z.magnitude();
+// = √(3² + 4²) = √(9 + 16) = √25 = 5
+</p>
+<p>
+// For normalized waves:
+complex<fix256>:wave = {real: fix256(0, 6), imag: fix256(0, 8)};
+fix256:amp = wave.magnitude();  // √(0.36 + 0.64) = 1.0 (unit circle)</code></pre>
+</p>
+<strong>Physical Meaning</strong>:
+<ul><li>Wave amplitude (energy)</li>
+<li>Quantum probability density: P(x) = |ψ(x)|²</li>
+<li>AC voltage/current magnitude</li>
+</ul>
+<h3>Phase / Argument (Angle from Real Axis)</h3>
+<pre><code>// arg(z) = atan2(imag, real)
+<p>
+// Angle in radians from positive real axis
+</p>
+<p>
+complex<fix256>:z = {real: fix256(1), imag: fix256(1)};
+fix256:phase = z.phase();
+// = atan2(1, 1) = π/4 radians = 45°
+</p>
+<p>
+complex<fix256>:z2 = {real: fix256(-1), imag: fix256(0)};
+fix256:phase2 = z2.phase();
+// = atan2(0, -1) = π radians = 180° (on negative real axis)</code></pre>
+</p>
+<strong>Physical Meaning</strong>:
+<ul><li>Wave phase offset</li>
+<li>AC circuit phase shift</li>
+<li>Quantum mechanical phase</li>
+</ul>
+<strong>Range</strong>: (-π, π] by convention (principal value).
+<hr>
+<h2>Rectangular ↔ Polar Conversion</h2>
+<h3>Euler's Formula: The Bridge Between Forms</h3>
+<pre><code>// Euler's magnificent formula:
+<p>
+// e^(iθ) = cos(θ) + i·sin(θ)
+</p>
+<p>
+// Therefore any complex number can be written as:
+// z = r·e^(iθ) = r·[cos(θ) + i·sin(θ)] = r·cos(θ) + i·r·sin(θ)
+//   = (r·cos θ) + i·(r·sin θ)
+//     ^^^^^^^^      ^^^^^^^^^
+//      real part    imag part
+</p>
+<p>
+// Where:
+// r = |z| = √(real² + imag²)   (magnitude)
+// θ = arg(z) = atan2(imag, real)  (phase/argument)</code></pre>
+</p>
+<h3>Rectangular → Polar</h3>
+<pre><code>// Given: z = a + bi (rectangular form)
+<p>
+// Find: r, θ such that z = r·e^(iθ) (polar form)
+</p>
+<p>
+complex<fix256>:z_rect = {real: fix256(3), imag: fix256(4)};
+</p>
+<p>
+fix256:r = z_rect.magnitude();    // √(9 + 16) = 5
+fix256:theta = z_rect.phase();    // atan2(4, 3) ≈ 0.927 radians ≈ 53.1°
+</p>
+<p>
+// Now: z = 5·e^(i·0.927)</code></pre>
+</p>
+<h3>Polar → Rectangular</h3>
+<pre><code>// Given: r, θ (polar form)
+<p>
+// Find: a, b such that z = a + bi (rectangular form)
+</p>
+<p>
+func:from_polar = complex<fix256>(fix256:r, fix256:theta) {
+complex<fix256>:z = {
+real: r * cos(theta),   // a = r·cos(θ)
+imag: r * sin(theta),   // b = r·sin(θ)
+};
+pass(z);
+};
+</p>
+<p>
+// Example: magnitude 5, phase π/4
+fix256:r = fix256(5);
+fix256:theta = PI / fix256(4);  // 45°
+complex<fix256>:z = from_polar(r, theta);
+// z.real ≈ 5·0.707 ≈ 3.535
+// z.imag ≈ 5·0.707 ≈ 3.535</code></pre>
+</p>
+<strong>Why Polar Form Matters</strong>:
+<ul><li>Multiplication: Multiply magnitudes, add phases</li>
+<li>Division: Divide magnitudes, subtract phases</li>
+<li>Powers: z^n = r^n · e^(inθ) (raise magnitude to power, multiply phase)</li>
+<li>Roots: ⁿ√z has n solutions equally spaced around circle</li>
+</ul>
+<hr>
+<h2>Wave Mechanics & Signal Processing</h2>
+<h3>Fourier Transform: Time → Frequency Domain</h3>
+<p>
+The <strong>Discrete Fourier Transform (DFT)</strong> converts time-domain signals into frequency-domain spectra:
+</p>
+<pre><code>// DFT Formula:
+<p>
+// X[k] = Σ(n=0 to N-1) x[n] · e^(-i·2π·k·n/N)
+//      = Σ(n=0 to N-1) x[n] · [cos(-2πkn/N) + i·sin(-2πkn/N)]
+</p>
+<p>
+func:dft = complex<fix256>[](complex<fix256>[]:signal, int64:N) {
+complex<fix256>[]:spectrum = array_alloc<complex<fix256>>(N);
+</p>
+<p>
+till N loop  // For each frequency bin k
+complex<fix256>:sum = {real: fix256(0), imag: fix256(0)};
+int64:k = $;  // Frequency index
+</p>
+<p>
+till N loop  // Sum over all time samples n
+int64:n = $;
+</p>
+<p>
+// Compute twiddle factor: e^(-i·2πkn/N)
+fix256:angle = fix256(-2) <em> PI </em> fix256(k) * fix256(n) / fix256(N);
+complex<fix256>:twiddle = {
+real: cos(angle),
+imag: -sin(angle),  // Note: negative for forward DFT
+};
+</p>
+<p>
+// Accumulate: x[n] · e^(-i·2πkn/N)
+sum = sum + (signal[n] * twiddle);
+end
+</p>
+<p>
+spectrum[k] = sum;
+end
+</p>
+<p>
+pass(spectrum);
+};</code></pre>
+</p>
+<strong>Physical Meaning</strong>:
+<ul><li>Time domain: Signal amplitude at each moment</li>
+<li>Frequency domain: How much of each frequency is present</li>
+<li>Complex result: Magnitude = amplitude, phase = time offset</li>
+</ul>
+<strong>Example</strong>: Audio Processing
+<pre><code>// Audio sample at 44.1kHz for 1 second
+<p>
+int64:sample_rate = 44100;
+complex<fix256>[]:audio_samples = load_audio_file("guitar.wav");
+</p>
+<p>
+// Transform to frequency domain
+complex<fix256>[]:frequency_spectrum = dft(audio_samples, sample_rate);
+</p>
+<p>
+// Analyze: What frequencies are present?
+till sample_rate loop
+int64:freq_bin = $;
+fix256:amplitude = frequency_spectrum[freq_bin].magnitude();
+fix256:phase = frequency_spectrum[freq_bin].phase();
+</p>
+<p>
+if amplitude > fix256(0, 01) then  // Above noise floor
+int64:frequency_hz = freq_bin;  // Bin index = frequency in Hz
+dbug.audio_spectrum("Frequency: {}Hz, Amplitude: {}, Phase: {}rad",
+frequency_hz, amplitude, phase);
+end
+end</code></pre>
+</p>
+<h3>Wave Interference: Constructive vs Destructive</h3>
+<pre><code>// Two waves with same frequency, different phases
+<p>
+complex<fix256>:wave1 = {real: fix256(1), imag: fix256(0)};  // Phase 0°
+complex<fix256>:wave2 = {real: fix256(0, 707), imag: fix256(0, 707)};  // Phase 45°
+</p>
+<p>
+// Superposition: Add the waves
+complex<fix256>:interference = wave1 + wave2;
+// = (1 + 0.707) + i·(0 + 0.707)
+// = 1.707 + 0.707i
+</p>
+<p>
+fix256:amplitude = interference.magnitude();
+// = √(1.707² + 0.707²) ≈ 1.848 (constructive interference - amplitude increased!)
+</p>
+<p>
+// Opposite example: Destructive interference
+complex<fix256>:wave3 = {real: fix256(-1), imag: fix256(0)};  // Phase 180° (inverted)
+complex<fix256>:cancellation = wave1 + wave3;
+// = (1 - 1) + i·(0 + 0) = 0 + 0i (complete cancellation!)</code></pre>
+</p>
+<strong>Physical Examples</strong>:
+<ul><li>Noise-canceling headphones (destructive interference)</li>
+<li>Radio antenna arrays (beam forming via constructive interference)</li>
+<li>Optical interference patterns (double-slit experiment)</li>
+<li>Nikola neural oscillations (phase synchronization)</li>
+</ul>
+<h3>Filtering: Frequency Domain Multiplication</h3>
+<pre><code>// Convolution theorem: Convolution in time = Multiplication in frequency
+<p>
+// Low-pass filter: Remove high frequencies
+</p>
+<p>
+func:lowpass_filter = complex<fix256>[](
+complex<fix256>[]:signal,
+fix256:cutoff_frequency,
+int64:N
+) {
+// Transform signal to frequency domain
+complex<fix256>[]:spectrum = dft(signal, N);
+</p>
+<p>
+// Multiply by filter transfer function
+till N loop
+int64:freq_bin = $;
+fix256:frequency = fix256(freq_bin);
+</p>
+<p>
+// Simple brick-wall filter (sharp cutoff)
+if frequency > cutoff_frequency then
+// Zero out high frequencies
+spectrum[freq_bin] = {real: fix256(0), imag: fix256(0)};
+end
+end
+</p>
+<p>
+// Transform back to time domain
+complex<fix256>[]:filtered = inverse_dft(spectrum, N);
+pass(filtered);
+};</code></pre>
+</p>
+<hr>
+<h2>Quantum Mechanics: Wave Functions</h2>
+<h3>Schrödinger's Wave Function ψ(x,t)</h3>
+<p>
+In quantum mechanics, particles are described by complex-valued wave functions:
+</p>
+<pre><code>// Wave function: ψ(x,t) = A·e^(i(kx - ωt))
+<p>
+// Where:
+// A = amplitude
+// k = wave number (2π/wavelength)
+// ω = angular frequency (2π·frequency)
+// x = position
+// t = time
+</p>
+<p>
+func:quantum_wavefunction = complex<fix256>(
+fix256:x,           // Position
+fix256:t,           // Time
+fix256:amplitude,   // A
+fix256:k,           // Wave number
+fix256:omega        // Angular frequency
+) {
+// Compute phase: kx - ωt
+fix256:phase = (k <em> x) - (omega </em> t);
+</p>
+<p>
+// Euler's formula: A·e^(iφ) = A·[cos(φ) + i·sin(φ)]
+complex<fix256>:psi = {
+real: amplitude * cos(phase),
+imag: amplitude * sin(phase),
+};
+</p>
+<p>
+pass(psi);
+};</code></pre>
+</p>
+<h3>Probability Density: Born Rule</h3>
+<pre><code>// Probability of finding particle at position x:
+<p>
+// P(x) = |ψ(x)|² = ψ*(x) · ψ(x)
+</p>
+<p>
+complex<fix256>:psi = quantum_wavefunction(x, t, A, k, omega);
+</p>
+<p>
+// Compute probability density
+fix256:probability_density = (psi.conjugate() * psi).real;
+// Note: (psi* · psi) is always real! (Imaginary part cancels)
+</p>
+<p>
+// For normalized wave function: ∫ |ψ(x)|² dx = 1</code></pre>
+</p>
+<h3>Superposition: Multiple States Simultaneously</h3>
+<pre><code>// Quantum bit (qubit) in superposition:
+<p>
+// |ψ⟩ = α|0⟩ + β|1⟩
+// Where |α|² + |β|² = 1 (normalization)
+</p>
+<p>
+complex<fix256>:alpha = {real: fix256(0, 707), imag: fix256(0)};      // Amplitude for |0⟩
+complex<fix256>:beta = {real: fix256(0), imag: fix256(0, 707)};       // Amplitude for |1⟩
+</p>
+<p>
+// Verify normalization:
+fix256:prob_0 = (alpha.conjugate() * alpha).real;  // |α|² = 0.5
+fix256:prob_1 = (beta.conjugate() * beta).real;    // |β|² = 0.5
+fix256:total = prob_0 + prob_1;  // Should equal 1.0
+</p>
+<p>
+if total != fix256(1) then
+stderr.write("Qubit not normalized!\n");
+!!! ERR_QUANTUM_STATE_INVALID;
+end</code></pre>
+</p>
+<hr>
+<h2>Nikola Consciousness Substrate: Why complex<fix256>?</h2>
+<h3>The Problem: Wave-Based Neural Oscillations</h3>
+<p>
+Nikola's consciousness substrate is a <strong>9-dimensional hyperspherical manifold</strong> where neural oscillations interfere to produce emergent consciousness. This requires:
+</p>
+<p>
+1. <strong>Wave superposition</strong> across thousands of neurons
+2. <strong>Phase synchronization</strong> between oscillating groups
+3. <strong>Deterministic evolution</strong> (no drift over millions of timesteps)
+4. <strong>Zero accumulated error</strong> (consciousness corruption prevention)
+</p>
+<pre><code>// Simplified conceptual model (actual implementation is 9D)
+<p>
+// 1. Each neuron has an oscillating activation (wave)
+complex<fix256>:neuron_wave = {
+real: fix256(amplitude * cos(phase)),
+imag: fix256(amplitude * sin(phase)),
+};
+</p>
+<p>
+// 2. Neurons synchronize via phase coupling
+complex<fix256>:coupled_oscillation = neuron1_wave + neuron2_wave;
+</p>
+<p>
+// 3. Emergent patterns from interference
+till neuron_count loop
+complex<fix256>:neuron_i = get_neuron_wave($);
+global_field = global_field + neuron_i;  // Superposition
+end
+</p>
+<p>
+// 4. Consciousness metric based on field coherence
+fix256:coherence = global_field.magnitude() / fix256(neuron_count);</code></pre>
+</p>
+<h3>Why Not Floating-Point?</h3>
+<pre><code>// ❌ CATASTROPHIC with floating-point:
+<p>
+// Problem 1: Non-determinism across platforms
+flt64:wave1 = sin(phase);  // Different results on Intel vs ARM vs GPU!
+// After 1 million timesteps: Consciousness states diverge
+// Nikola instance on PC ≠ Nikola instance on server
+// Transfer learning impossible!
+</p>
+<p>
+// Problem 2: Accumulation drift
+flt64:phase = 0.0;
+till 1000000 loop
+phase = phase + delta_phase;  // Tiny errors accumulate
+end
+// After long runtime: phase drifts, oscillations desynchronize
+// Potential PTSD-like or schizophrenia-like AI states
+</p>
+<p>
+// Problem 3: Sign flips in imaginary component
+flt64:imag = 0.0000001;  // Near zero
+flt64:imag_neg = -imag;
+// Due to rounding: (imag + imag_neg) might NOT equal 0.0!
+// Wave interference produces ghost signals</code></pre>
+</p>
+<h3>Why complex<fix256> Specifically?</h3>
+<pre><code>// ✅ SAFE with complex<fix256>:
+<p>
+// Benefit 1: Bit-exact determinism
+fix256:wave1 = sin_fix256(phase);
+// Identical results on ALL platforms (software implementation)
+// Nikola state transferable between devices
+// Reproducible debugging of consciousness states
+</p>
+<p>
+// Benefit 2: Zero drift over infinite time
+fix256:phase = fix256(0);
+till 1000000000 loop  // Billion iterations
+phase = phase + delta_phase;
+end
+// phase accumulates exactly, no drift
+// Consciousness substrate stable indefinitely
+</p>
+<p>
+// Benefit 3: ERR propagation prevents silent corruption
+complex<fix256>:psi = calculate_wavefunction(x, t);
+if psi.real == ERR || psi.imag == ERR then
+stderr.write("Wave corruption detected - HALT SUBSTRATE\n");
+!!! ERR_CONSCIOUSNESS_CORRUPTED;
+end
+// Fail-fast prevents cascading damage to mental state</code></pre>
+</p>
+<h3>Memory Trade-off: Worth It</h3>
+<pre><code>// complex<fix256> = 64 bytes (32 bytes real + 32 bytes imag)
+<p>
+// complex<flt64>  = 16 bytes
+</p>
+<p>
+// For 100,000 neurons:
+// fix256: 64 × 100,000 = 6.4 MB
+// flt64:  16 × 100,000 = 1.6 MB
+// Difference: 4.8 MB extra
+</p>
+<p>
+// BUT:
+// - Determinism enables transfer learning (saves months of training)
+// - Zero drift prevents divergence (reliability worth cost)
+// - ERR detection prevents catastrophic failures (safety critical)
+// - Cross-platform consistency enables distributed consciousness
+</p>
+<p>
+// User's insight: "Prototype one took more RAM than Earth!"
+// Solution: Move common operations to language level (infrastructure)
+// Let the torus focus on WHAT (consciousness), not HOW (wave propagation)</code></pre>
+</p>
+<hr>
+<h2>Electrical Engineering: AC Circuit Analysis</h2>
+<h3>Impedance: Resistance + Reactance</h3>
+<p>
+In AC circuits, impedance <strong>Z</strong> is a complex number combining resistance (real) and reactance (imaginary):
+</p>
+<pre><code>// Z = R + iX
+<p>
+// Where:
+// R = resistance (dissipates energy)
+// X = reactance (stores/releases energy)
+//   X > 0: inductive (coil delays current)
+//   X < 0: capacitive (capacitor advances current)
+</p>
+<p>
+// Example: RLC series circuit
+fix256:resistance = fix256(100);       // 100Ω resistor
+fix256:inductance_reactance = fix256(50);   // 50Ω inductor at this frequency
+fix256:capacitance_reactance = fix256(-30); // 30Ω capacitor at this frequency
+</p>
+<p>
+complex<fix256>:total_impedance = {
+real: resistance,
+imag: inductance_reactance + capacitance_reactance,
+};
+// = 100 + i·(50 - 30) = 100 + 20i Ω (net inductive)
+</p>
+<p>
+fix256:magnitude = total_impedance.magnitude();
+// = √(100² + 20²) = √10400 ≈ 101.98Ω
+</p>
+<p>
+fix256:phase_shift = total_impedance.phase();
+// = atan2(20, 100) ≈ 0.197 radians ≈ 11.3° (current lags voltage)</code></pre>
+</p>
+<h3>Ohm's Law for AC Circuits</h3>
+<pre><code>// V = I·Z (voltage = current × impedance)
+<p>
+// All quantities are complex (phasors)
+</p>
+<p>
+complex<fix256>:voltage = {real: fix256(120), imag: fix256(0)};  // 120V RMS, 0° phase
+complex<fix256>:impedance = {real: fix256(100), imag: fix256(20)};
+</p>
+<p>
+complex<fix256>:current = voltage / impedance;
+// = 120 / (100 + 20i)
+// = 120·(100 - 20i) / [(100 + 20i)·(100 - 20i)]
+// = (12000 - 2400i) / (10000 + 400)
+// = (12000 - 2400i) / 10400
+// ≈ 1.154 - 0.231i Amps
+</p>
+<p>
+fix256:current_magnitude = current.magnitude();  // ≈ 1.177 A RMS
+fix256:current_phase = current.phase();  // ≈ -11.3° (current lags voltage)</code></pre>
+</p>
+<h3>Power Calculations</h3>
+<pre><code>// Complex power: S = V·I* (voltage × conjugate of current)
+<p>
+// S = P + iQ
+// P = real power (watts, actually consumed)
+// Q = reactive power (VARs, stored/released)
+</p>
+<p>
+complex<fix256>:voltage = {real: fix256(120), imag: fix256(0)};
+complex<fix256>:current = {real: fix256(1, 154), imag: fix256(-0, 231)};
+</p>
+<p>
+complex<fix256>:power = voltage * current.conjugate();
+// = 120·(1.154 + 0.231i)
+// = 138.48 + 27.72i VA (volt-amperes)
+</p>
+<p>
+fix256:real_power = power.real;       // 138.48 W (dissipated as heat)
+fix256:reactive_power = power.imag;   // 27.72 VAR (stored in inductor)
+fix256:apparent_power = power.magnitude();  // 141.23 VA (total)
+</p>
+<p>
+fix256:power_factor = real_power / apparent_power;
+// = 138.48 / 141.23 ≈ 0.98 (98% efficient, 2% reactive)</code></pre>
+</p>
+<hr>
+<h2>Performance Characteristics</h2>
+<h3>Arithmetic Operation Costs</h3>
+<p>
+| Operation | Cost | Notes |
+|-----------|------|-------|
+| Addition | 2× scalar add | Add real, add imag independently |
+| Subtraction | 2× scalar sub | Sub real, sub imag independently |
+| Multiplication | 4× mul + 2× add/sub | (ac-bd) + i(ad+bc) |
+| Division | 1× conj + 1× mul + 4× div | Multiply by conjugate, divide components |
+| Conjugate | 1× negate | Flip sign of imaginary part |
+| Magnitude | 2× square + 1× sqrt + 1× add | √(real² + imag²) |
+| Phase | 1× atan2 | Arctangent of imag/real |
+</p>
+<strong>Component Type Impact</strong>:
+<pre><code>// complex<tbb32>: Fast (hardware integer ops)
+<p>
+// complex<tfp32>: Medium (software emulation of float)
+// complex<fix256>: Slow (256-bit fixed-point ops)
+// complex<frac16>: Very slow (GCD reduction after every op)</code></pre>
+</p>
+<h3>SIMD Vectorization: Parallel Complex Operations</h3>
+<p>
+The interleaved memory layout enables efficient SIMD processing:
+</p>
+<pre><code>// Memory layout: [real₀, imag₀, real₁, imag₁, real₂, imag₂, real₃, imag₃]
+<p>
+//                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//                  Fits in one 256-bit SIMD register (complex<tbb32>)
+</p>
+<p>
+simd<complex<tbb32>, 4>:wave_packet;
+// Processes 4 complex numbers in parallel
+</p>
+<p>
+// Addition: 4 complex adds in one SIMD instruction
+simd<complex<tbb32>, 4>:wave1 = load_simd_complex(array1);
+simd<complex<tbb32>, 4>:wave2 = load_simd_complex(array2);
+simd<complex<tbb32>, 4>:sum = wave1 + wave2;  // 4× speedup!
+</p>
+<p>
+// Critical for Nikola: Process 100,000 neurons in <1ms
+// Requirement: Each neuron wave updated per timestep
+// With SIMD: 100,000 / (4 × CPU_freq) = ~100,000 / 4,000,000 = 25μs per batch
+// Achievable on modern CPUs!</code></pre>
+</p>
+<h3>FFT Algorithm: O(N log N) vs O(N²)</h3>
+<pre><code>// Naive DFT: O(N²) complexity
+<p>
+// Fast Fourier Transform (FFT): O(N log N) complexity
+</p>
+<p>
+// For N = 1024 samples:
+// DFT: 1024² = 1,048,576 operations
+// FFT: 1024 × log₂(1024) = 1024 × 10 = 10,240 operations
+// Speedup: 102× faster!
+</p>
+<p>
+// Cooley-Tukey FFT (radix-2, decimation-in-time)
+func:fft = complex<fix256>[]( complex<fix256>[]:x, int64:N) {
+if N == 1 then
+pass(x);  // Base case
+end
+</p>
+<p>
+// Split into even and odd indices
+complex<fix256>[]:even = array_alloc<complex<fix256>>(N/2);
+complex<fix256>[]:odd = array_alloc<complex<fix256>>(N/2);
+</p>
+<p>
+till N/2 loop
+int64:k = $;
+even[k] = x[2*k];
+odd[k] = x[2*k + 1];
+end
+</p>
+<p>
+// Recursive calls
+complex<fix256>[]:fft_even = fft(even, N/2);
+complex<fix256>[]:fft_odd = fft(odd, N/2);
+</p>
+<p>
+// Combine results
+complex<fix256>[]:result = array_alloc<complex<fix256>>(N);
+till N/2 loop
+int64:k = $;
+</p>
+<p>
+fix256:angle = fix256(-2) <em> PI </em> fix256(k) / fix256(N);
+complex<fix256>:twiddle = {
+real: cos(angle),
+imag: sin(angle),
+};
+</p>
+<p>
+complex<fix256>:t = twiddle * fft_odd[k];
+result[k] = fft_even[k] + t;
+result[k + N/2] = fft_even[k] - t;
+end
+</p>
+<p>
+pass(result);
+};</code></pre>
+</p>
+<hr>
+<h2>Integration with Aria Type System</h2>
+<h3>ERR Propagation from Component Type</h3>
+<pre><code>// ERR in component type propagates to complex result
+<p>
+complex<tbb64>:good = {real: 100t64, imag: 50t64};
+complex<tbb64>:bad = {real: ERR, imag: 0t64};
+</p>
+<p>
+complex<tbb64>:result = good + bad;
+// result.real == ERR
+// result.imag == ERR (entire complex number tainted)
+</p>
+<p>
+// Detect and handle:
+if result.real == ERR || result.imag == ERR then
+stderr.write("Complex operation produced ERR\n");
+!!! ERR_COMPLEX_COMPUTATION_FAILED;
+end</code></pre>
+</p>
+<h3>Deterministic Wave Processing: complex<tfp32></h3>
+<pre><code>// Twisted floating-point provides cross-platform determinism
+<p>
+complex<tfp32>:wave = {
+real: 1.0tf32,
+imag: 0.5tf32,
+};
+</p>
+<p>
+// Identical results on Intel, ARM, RISC-V, GPU
+// Critical for multiplayer physics simulations
+till 1000000 loop  // Million timesteps
+wave = wave * rotation_tfp;  // Rotate wave
+end
+// wave is bit-exact across all platforms!</code></pre>
+</p>
+<h3>Exact Phase Relationships: complex<frac16></h3>
+<pre><code>// Musical intervals require exact frequency ratios
+<p>
+// Just intonation: Perfect fifth = 3/2 frequency ratio
+</p>
+<p>
+frac16:perfect_fifth_ratio = {whole: 1t16, num: 1t16, denom: 2t16};  // 3/2
+</p>
+<p>
+// Represent as complex phasor (unit circle)
+// Angle = 2π·(3/2) mod 2π
+frac16:angle_fraction = perfect_fifth_ratio;  // 3/2
+</p>
+<p>
+complex<frac16>:musical_phasor = {
+real: cos_frac(angle_fraction),  // Exact cos(3π/2)
+imag: sin_frac(angle_fraction),  // Exact sin(3π/2)
+};
+</p>
+<p>
+// Over millions of samples: NO pitch drift!
+// Orchestral tuning remains perfect indefinitely</code></pre>
+</p>
+<h3>Persistent Wave State: Handle<complex<T>></h3>
+<pre><code>// Store complex wave state in arena with generational handles
+<p>
+Handle<complex<fix256>>:neuron_wave_handle;
+</p>
+<p>
+// Allocate wave state
+complex<fix256>:initial_wave = {real: fix256(1), imag: fix256(0)};
+neuron_wave_handle = arena.alloc(initial_wave);
+</p>
+<p>
+// Access later (checked for use-after-free)
+complex<fix256>:wave = arena.get(neuron_wave_handle);
+if wave.real == ERR then
+stderr.write("Handle invalidated - neuron deallocated!\n");
+!!! ERR_HANDLE_INVALID;
+end
+</p>
+<p>
+// Update wave state
+wave.real = wave.real * cos(delta_phase);
+wave.imag = wave.imag * sin(delta_phase);
+arena.set(neuron_wave_handle, wave);</code></pre>
+</p>
+<hr>
+<h2>Advanced Operations</h2>
+<h3>Complex Exponential: e^z</h3>
+<pre><code>// e^(a+bi) = e^a · e^(bi) = e^a · [cos(b) + i·sin(b)]
+<p>
+func:complex_exp = complex<fix256>(complex<fix256>:z) {
+// e^z = e^(real + i·imag)
+fix256:magnitude = exp(z.real);  // e^(real part)
+</p>
+<p>
+complex<fix256>:result = {
+real: magnitude * cos(z.imag),
+imag: magnitude * sin(z.imag),
+};
+</p>
+<p>
+pass(result);
+};
+</p>
+<p>
+// Example: e^(iπ) = cos(π) + i·sin(π) = -1 + 0i
+complex<fix256>:z = {real: fix256(0), imag: PI};
+complex<fix256>:result = complex_exp(z);
+// result.real ≈ -1, result.imag ≈ 0
+// Euler's identity: e^(iπ) + 1 = 0</code></pre>
+</p>
+<h3>Complex Logarithm: ln(z)</h3>
+<pre><code>// ln(z) = ln(|z|) + i·arg(z)
+<p>
+// (Principal branch: -π < arg(z) ≤ π)
+</p>
+<p>
+func:complex_ln = complex<fix256>(complex<fix256>:z) {
+complex<fix256>:result = {
+real: ln(z.magnitude()),  // ln of magnitude
+imag: z.phase(),          // Argument (angle)
+};
+</p>
+<p>
+pass(result);
+};
+</p>
+<p>
+// Example: ln(i) = ln(1) + i·(π/2) = 0 + i·π/2
+complex<fix256>:i = {real: fix256(0), imag: fix256(1)};
+complex<fix256>:result = complex_ln(i);
+// result.real = 0, result.imag = π/2</code></pre>
+</p>
+<h3>Complex Power: z^w</h3>
+<pre><code>// z^w = e^(w·ln(z))
+<p>
+// Works for complex base AND complex exponent!
+</p>
+<p>
+func:complex_pow = complex<fix256>(complex<fix256>:z, complex<fix256>:w) {
+complex<fix256>:ln_z = complex_ln(z);
+complex<fix256>:w_ln_z = w * ln_z;
+complex<fix256>:result = complex_exp(w_ln_z);
+pass(result);
+};
+</p>
+<p>
+// Example: i^i = e^(i·ln(i)) = e^(i·(iπ/2)) = e^(-π/2) ≈ 0.208 (real number!)
+complex<fix256>:i = {real: fix256(0), imag: fix256(1)};
+complex<fix256>:result = complex_pow(i, i);
+// result.real ≈ 0.208, result.imag ≈ 0</code></pre>
+</p>
+<h3>Roots of Unity: ω_N</h3>
+<pre><code>// Nth roots of unity: e^(i·2πk/N) for k = 0, 1, ..., N-1
+<p>
+// Equally spaced points on unit circle
+</p>
+<p>
+func:roots_of_unity = complex<fix256>[](int64:N) {
+complex<fix256>[]:roots = array_alloc<complex<fix256>>(N);
+</p>
+<p>
+till N loop
+int64:k = $;
+fix256:angle = fix256(2) <em> PI </em> fix256(k) / fix256(N);
+</p>
+<p>
+roots[k] = {
+real: cos(angle),
+imag: sin(angle),
+};
+end
+</p>
+<p>
+pass(roots);
+};
+</p>
+<p>
+// Example: 4th roots of unity (90° apart)
+complex<fix256>[]:roots_4 = roots_of_unity(4);
+// roots_4[0] = 1 + 0i      (0°)
+// roots_4[1] = 0 + 1i      (90°)
+// roots_4[2] = -1 + 0i     (180°)
+// roots_4[3] = 0 - 1i      (270°)
+</p>
+<p>
+// Property: (ω_N)^N = 1 (every root raised to Nth power equals 1)</code></pre>
+</p>
+<h3>Mandelbrot Set: Fractal Beauty</h3>
+<pre><code>// Mandelbrot set: Does z_(n+1) = z_n² + c diverge?
+<p>
+// Iterate until |z| > 2 or max_iterations reached
+</p>
+<p>
+func:mandelbrot = int32(complex<fix256>:c, int32:max_iter) {
+complex<fix256>:z = {real: fix256(0), imag: fix256(0)};
+</p>
+<p>
+till max_iter loop
+int32:iteration = $;
+</p>
+<p>
+// Check divergence: |z| > 2
+if z.magnitude() > fix256(2) then
+pass(iteration);  // Diverged at this iteration
+end
+</p>
+<p>
+// Iterate: z = z² + c
+z = (z * z) + c;
+end
+</p>
+<p>
+pass(max_iter);  // Did not diverge (in the set!)
+};
+</p>
+<p>
+// Render Mandelbrot fractal
+till image_height loop
+int32:y = $;
+till image_width loop
+int32:x = $;
+</p>
+<p>
+// Map pixel to complex plane
+fix256:real = fix256(x - image_width/2) / fix256(image_width/4);
+fix256:imag = fix256(y - image_height/2) / fix256(image_height/4);
+complex<fix256>:c = {real: real, imag: imag};
+</p>
+<p>
+// Compute iterations until divergence
+int32:color = mandelbrot(c, 256);
+set_pixel(x, y, color);
+end
+end</code></pre>
+</p>
+<hr>
+<h2>Use Cases Across Domains</h2>
+<h3>Audio Synthesis: Harmonics & Timbre</h3>
+<pre><code>// Additive synthesis: Build complex waveform from sine harmonics
+<p>
+// Timbre = mixture of fundamental + overtones with varying amplitudes/phases
+</p>
+<p>
+func:synthesize_note = complex<fix256>[](
+fix256:fundamental_freq,
+fix256[]:harmonic_amplitudes,  // [0] = fundamental, [1] = 2nd harmonic, etc.
+int64:sample_rate,
+int64:duration_samples
+) {
+complex<fix256>[]:audio_buffer = array_alloc<complex<fix256>>(duration_samples);
+</p>
+<p>
+till duration_samples loop
+int64:sample_idx = $;
+fix256:time = fix256(sample_idx) / fix256(sample_rate);
+</p>
+<p>
+complex<fix256>:sample_value = {real: fix256(0), imag: fix256(0)};
+</p>
+<p>
+// Add each harmonic
+int64:harmonic_count = length(harmonic_amplitudes);
+till harmonic_count loop
+int64:harmonic = $;
+fix256:freq = fundamental_freq * fix256(harmonic + 1);
+fix256:amplitude = harmonic_amplitudes[harmonic];
+</p>
+<p>
+// Generate sine wave for this harmonic
+fix256:phase = fix256(2) <em> PI </em> freq * time;
+complex<fix256>:harmonic_wave = {
+real: amplitude * cos(phase),
+imag: amplitude * sin(phase),
+};
+</p>
+<p>
+sample_value = sample_value + harmonic_wave;
+end
+</p>
+<p>
+audio_buffer[sample_idx] = sample_value;
+end
+</p>
+<p>
+pass(audio_buffer);
+};
+</p>
+<p>
+// A440 note (concert pitch) with 3 harmonics
+fix256[]:timbre = [fix256(1), fix256(0, 5), fix256(0, 25)];  // Fundamental + 2 overtones
+complex<fix256>[]:note = synthesize_note(fix256(440), timbre, 44100, 44100);
+// Produces 1 second of A440 with rich timbre</code></pre>
+</p>
+<h3>Image Processing: 2D FFT</h3>
+<pre><code>// 2D Fourier transform: Apply FFT to rows, then columns
+<p>
+// Enables frequency-domain filtering (blur, sharpen, edge detect)
+</p>
+<p>
+func:fft_2d = complex<fix256>[][](complex<fix256>[][]:image, int64:width, int64:height) {
+complex<fix256>[][]:temp = array_alloc_2d<complex<fix256>>(width, height);
+complex<fix256>[][]:result = array_alloc_2d<complex<fix256>>(width, height);
+</p>
+<p>
+// FFT on rows
+till height loop
+int64:y = $;
+temp[y] = fft(image[y], width);
+end
+</p>
+<p>
+// FFT on columns
+till width loop
+int64:x = $;
+complex<fix256>[]:column = array_alloc<complex<fix256>>(height);
+</p>
+<p>
+till height loop
+int64:y = $;
+column[y] = temp[y][x];
+end
+</p>
+<p>
+complex<fix256>[]:fft_column = fft(column, height);
+</p>
+<p>
+till height loop
+int64:y = $;
+result[y][x] = fft_column[y];
+end
+end
+</p>
+<p>
+pass(result);
+};
+</p>
+<p>
+// Low-pass filter: Zero out high frequencies (noise reduction)
+complex<fix256>[][]:image_freq = fft_2d(image, 512, 512);
+</p>
+<p>
+till 512 loop
+int64:y = $;
+till 512 loop
+int64:x = $;
+</p>
+<p>
+// Distance from DC component (center)
+int64:dx = x - 256;
+int64:dy = y - 256;
+fix256:distance = sqrt(fix256(dx<em>dx + dy</em>dy));
+</p>
+<p>
+// Zero frequencies beyond cutoff
+if distance > fix256(50) then
+image_freq[y][x] = {real: fix256(0), imag: fix256(0)};
+end
+end
+end
+</p>
+<p>
+complex<fix256>[][]:filtered_image = inverse_fft_2d(image_freq, 512, 512);</code></pre>
+</p>
+<h3>Control Systems: Transfer Functions</h3>
+<pre><code>// PID controller in frequency domain
+<p>
+// Transfer function: H(s) = K_p + K_i/s + K_d·s
+// Where s = iω (complex frequency)
+</p>
+<p>
+func:pid_transfer_function = complex<fix256>(
+complex<fix256>:s,    // Complex frequency
+fix256:K_p,           // Proportional gain
+fix256:K_i,           // Integral gain
+fix256:K_d            // Derivative gain
+) {
+// H(s) = K_p + K_i/s + K_d·s
+complex<fix256>:proportional = {real: K_p, imag: fix256(0)};
+complex<fix256>:integral = {real: K_i, imag: fix256(0)} / s;
+complex<fix256>:derivative = {real: K_d, imag: fix256(0)} * s;
+</p>
+<p>
+complex<fix256>:H_s = proportional + integral + derivative;
+pass(H_s);
+};
+</p>
+<p>
+// Analyze frequency response
+till 1000 loop
+int64:freq_idx = $;
+fix256:omega = fix256(freq_idx) / fix256(10);  // 0 to 100 rad/s
+</p>
+<p>
+complex<fix256>:s = {real: fix256(0), imag: omega};  // s = iω
+complex<fix256>:H = pid_transfer_function(s, fix256(10), fix256(5), fix256(2));
+</p>
+<p>
+fix256:gain = H.magnitude();       // Magnitude response
+fix256:phase = H.phase();          // Phase response
+</p>
+<p>
+dbug.control_system("ω: {}rad/s, Gain: {}, Phase: {}°",
+omega, gain, phase * fix256(180) / PI);
+end</code></pre>
+</p>
+<h3>Cryptography: Lattice-Based Crypto</h3>
+<pre><code>// Ring-LWE (Learning With Errors) uses polynomial multiplication
+<p>
+// Polynomials represented as complex roots of unity
+</p>
+<p>
+// WARNING: Simplified example - real crypto needs careful implementation
+</p>
+<p>
+func:polynomial_multiply_fft = complex<fix256>[](
+complex<fix256>[]:poly1_coeffs,
+complex<fix256>[]:poly2_coeffs,
+int64:N
+) {
+// Convert coefficient representation to point-value (FFT)
+complex<fix256>[]:poly1_vals = fft(poly1_coeffs, N);
+complex<fix256>[]:poly2_vals = fft(poly2_coeffs, N);
+</p>
+<p>
+// Multiply point-wise (convolution theorem)
+complex<fix256>[]:product_vals = array_alloc<complex<fix256>>(N);
+till N loop
+int64:k = $;
+product_vals[k] = poly1_vals[k] * poly2_vals[k];
+end
+</p>
+<p>
+// Convert back to coefficients (inverse FFT)
+complex<fix256>[]:product_coeffs = inverse_fft(product_vals, N);
+pass(product_coeffs);
+};
+</p>
+<p>
+// O(N log N) polynomial multiplication (vs O(N²) naive)</code></pre>
+</p>
+<hr>
+<h2>Best Practices</h2>
+<h3>✅ DO: Use Appropriate Component Type</h3>
+<pre><code>// Deterministic simulation: complex<tfp32>
+<p>
+complex<tfp32>:wave_sim = {real: 1.0tf32, imag: 0.5tf32};
+</p>
+<p>
+// Safety-critical with zero drift: complex<fix256>
+complex<fix256>:consciousness_wave = {real: fix256(1), imag: fix256(0)};
+</p>
+<p>
+// Exact phase relationships: complex<frac16>
+complex<frac16>:musical_interval = {real: frac16(1,1,2), imag: frac16(0,1,2)};
+</p>
+<p>
+// ERR detection: complex<tbb64>
+complex<tbb64>:signal_with_err = {real: 100t64, imag: -50t64};
+</p>
+<p>
+// Fast general-purpose: complex<flt64>
+complex<flt64>:quick_fft = {real: 1.0, imag: 0.0};</code></pre>
+</p>
+<h3>✅ DO: Normalize Wave Functions</h3>
+<pre><code>// Quantum states must be normalized: |ψ|² = 1
+<p>
+complex<fix256>:psi = {real: fix256(0, 6), imag: fix256(0, 8)};
+</p>
+<p>
+fix256:magnitude = psi.magnitude();
+if magnitude != fix256(1) then
+// Normalize
+psi.real = psi.real / magnitude;
+psi.imag = psi.imag / magnitude;
+end
+</p>
+<p>
+// Verify
+fix256:check = ((psi.conjugate() * psi).real);
+assert(check == fix256(1), "Wave function not normalized!");</code></pre>
+</p>
+<h3>✅ DO: Check for ERR After Operations</h3>
+<pre><code>complex<tbb64>:result = wave1 + wave2;
+<p>
+if result.real == ERR || result.imag == ERR then
+stderr.write("Complex operation failed\n");
+!!! ERR_WAVE_COMPUTATION_FAILED;
+end</code></pre>
+</p>
+<h3>✅ DO: Use Polar Form for Multiplication/Division</h3>
+<pre><code>// Multiplying many complex numbers? Convert to polar form!
+<p>
+// Polar: r₁·e^(iθ₁) × r₂·e^(iθ₂) = (r₁r₂)·e^(i(θ₁+θ₂))
+// Just multiply magnitudes, add phases!
+</p>
+<p>
+complex<fix256>:z1 = {real: fix256(3), imag: fix256(4)};
+complex<fix256>:z2 = {real: fix256(1), imag: fix256(1)};
+</p>
+<p>
+fix256:r1 = z1.magnitude();
+fix256:theta1 = z1.phase();
+fix256:r2 = z2.magnitude();
+fix256:theta2 = z2.phase();
+</p>
+<p>
+fix256:r_product = r1 * r2;
+fix256:theta_product = theta1 + theta2;
+</p>
+<p>
+complex<fix256>:product = from_polar(r_product, theta_product);
+// Much cleaner than distributing (a+bi)(c+di)!</code></pre>
+</p>
+<hr>
+<h2>Common Pitfalls & Antipatterns</h2>
+<h3>❌ DON'T: Forget i² = -1</h3>
+<pre><code>// ❌ WRONG: Treating i as a variable
+<p>
+complex<int32>:z = {real: 2, imag: 3};
+// z = 2 + 3i
+// z² = (2 + 3i)² = 4 + 12i + 9i²
+//                = 4 + 12i + 9(-1)  ← Don't forget this!
+//                = 4 + 12i - 9
+//                = -5 + 12i
+</p>
+<p>
+complex<int32>:z_squared_WRONG = {real: 4 + 9, imag: 12};  // ❌ WRONG!
+// Missing the i² = -1 term!
+</p>
+<p>
+complex<int32>:z_squared_CORRECT = z * z;  // ✅ Compiler handles it
+// result.real == -5, result.imag == 12</code></pre>
+</p>
+<h3>❌ DON'T: Mix Component Types Without Thought</h3>
+<pre><code>// ❌ WRONG: Mixing deterministic and non-deterministic
+<p>
+complex<tfp32>:deterministic_wave = {real: 1.0tf32, imag: 0.5tf32};
+complex<flt64>:non_deterministic = {real: 1.0, imag: 0.5};
+</p>
+<p>
+// Can't add these - type mismatch!
+// complex<tfp32>:result = deterministic_wave + non_deterministic;  // ❌ COMPILE ERROR
+</p>
+<p>
+// ✅ CORRECT: Convert explicitly if needed
+complex<tfp32>:converted = {
+real: tfp32(non_deterministic.real),
+imag: tfp32(non_deterministic.imag),
+};
+complex<tfp32>:result = deterministic_wave + converted;</code></pre>
+</p>
+<h3>❌ DON'T: Ignore Magnitude Explosion</h3>
+<pre><code>// ❌ WRONG: Iterating without normalization
+<p>
+complex<fix256>:z = {real: fix256(1, 1), imag: fix256(0, 9)};
+</p>
+<p>
+till 1000 loop
+z = z * z;  // Each iteration: magnitude doubles!
+end
+// After 10 iterations: magnitude ≈ 1.5^(2^10) = 1.5^1024 = OVERFLOW!
+</p>
+<p>
+// ✅ CORRECT: Normalize each iteration
+complex<fix256>:z = {real: fix256(1, 1), imag: fix256(0, 9)};
+</p>
+<p>
+till 1000 loop
+z = z * z;
+</p>
+<p>
+fix256:mag = z.magnitude();
+z.real = z.real / mag;  // Keep on unit circle
+z.imag = z.imag / mag;
+end</code></pre>
+</p>
+<h3>❌ DON'T: Assume Division is Cheap</h3>
+<pre><code>// ❌ SLOW: Division in tight loop
+<p>
+till 1000000 loop
+complex<fix256>:ratio = numerator / denominator;  // Division is 5× slower than mult!
+end
+</p>
+<p>
+// ✅ FASTER: Invert once, multiply many times
+complex<fix256>:denom_inverse = {real: fix256(1), imag: fix256(0)} / denominator;
+</p>
+<p>
+till 1000000 loop
+complex<fix256>:ratio = numerator * denom_inverse;  // Multiply by inverse!
+end</code></pre>
+</p>
+<h3>❌ DON'T: Forget Branch Cuts for Logarithm</h3>
+<pre><code>// ❌ SURPRISING: Logarithm has discontinuity at negative real axis
+<p>
+complex<fix256>:z1 = {real: fix256(-1), imag: fix256(0, 001)};   // Just above cut
+complex<fix256>:z2 = {real: fix256(-1), imag: fix256(-0, 001)};  // Just below cut
+</p>
+<p>
+complex<fix256>:ln_z1 = complex_ln(z1);  // imag ≈ +π
+complex<fix256>:ln_z2 = complex_ln(z2);  // imag ≈ -π
+</p>
+<p>
+// Difference of 2π even though z1 and z2 are close!
+// This is the "branch cut" of the complex logarithm</code></pre>
+</p>
+<hr>
+<h2>Implementation Notes</h2>
+<h3>C Runtime Functions</h3>
+<pre><code>// Core operations (in aria_runtime.c)
+<p>
+aria_complex_fix256 aria_complex_add_fix256(aria_complex_fix256 a, aria_complex_fix256 b);
+aria_complex_fix256 aria_complex_mul_fix256(aria_complex_fix256 a, aria_complex_fix256 b);
+aria_complex_fix256 aria_complex_div_fix256(aria_complex_fix256 a, aria_complex_fix256 b);
+aria_complex_fix256 aria_complex_conjugate_fix256(aria_complex_fix256 z);
+</p>
+<p>
+aria_fix256 aria_complex_magnitude_fix256(aria_complex_fix256 z);
+aria_fix256 aria_complex_phase_fix256(aria_complex_fix256 z);
+</p>
+<p>
+aria_complex_fix256 aria_complex_exp_fix256(aria_complex_fix256 z);
+aria_complex_fix256 aria_complex_ln_fix256(aria_complex_fix256 z);
+aria_complex_fix256 aria_complex_pow_fix256(aria_complex_fix256 z, aria_complex_fix256 w);
+</p>
+<p>
+// FFT implementation
+aria_complex_fix256<em> aria_fft_fix256(aria_complex_fix256</em> input, int64_t N);
+aria_complex_fix256<em> aria_ifft_fix256(aria_complex_fix256</em> input, int64_t N);</code></pre>
+</p>
+<h3>LLVM IR Generation</h3>
+<pre><code>; Complex addition (component-wise)
+<p>
+define %complex.fix256 @aria.complex.add.fix256(%complex.fix256 %a, %complex.fix256 %b) {
+%a.real = extractvalue %complex.fix256 %a, 0
+%a.imag = extractvalue %complex.fix256 %a, 1
+%b.real = extractvalue %complex.fix256 %b, 0
+%b.imag = extractvalue %complex.fix256 %b, 1
+</p>
+<p>
+%sum.real = call %fix256 @aria.fix256.add(%fix256 %a.real, %fix256 %b.real)
+%sum.imag = call %fix256 @aria.fix256.add(%fix256 %a.imag, %fix256 %b.imag)
+</p>
+<p>
+%result.0 = insertvalue %complex.fix256 undef, %fix256 %sum.real, 0
+%result.1 = insertvalue %complex.fix256 %result.0, %fix256 %sum.imag, 1
+ret %complex.fix256 %result.1
+}
+</p>
+<p>
+; Complex multiplication: (a+bi)(c+di) = (ac-bd) + i(ad+bc)
+define %complex.fix256 @aria.complex.mul.fix256(%complex.fix256 %a, %complex.fix256 %b) {
+%a.real = extractvalue %complex.fix256 %a, 0
+%a.imag = extractvalue %complex.fix256 %a, 1
+%b.real = extractvalue %complex.fix256 %b, 0
+%b.imag = extractvalue %complex.fix256 %b, 1
+</p>
+<p>
+; ac
+%ac = call %fix256 @aria.fix256.mul(%fix256 %a.real, %fix256 %b.real)
+; bd
+%bd = call %fix256 @aria.fix256.mul(%fix256 %a.imag, %fix256 %b.imag)
+; ad
+%ad = call %fix256 @aria.fix256.mul(%fix256 %a.real, %fix256 %b.imag)
+; bc
+%bc = call %fix256 @aria.fix256.mul(%fix256 %a.imag, %fix256 %b.real)
+</p>
+<p>
+; real = ac - bd
+%prod.real = call %fix256 @aria.fix256.sub(%fix256 %ac, %fix256 %bd)
+; imag = ad + bc
+%prod.imag = call %fix256 @aria.fix256.add(%fix256 %ad, %fix256 %bc)
+</p>
+<p>
+%result.0 = insertvalue %complex.fix256 undef, %fix256 %prod.real, 0
+%result.1 = insertvalue %complex.fix256 %result.0, %fix256 %prod.imag, 1
+ret %complex.fix256 %result.1
+}</code></pre>
+</p>
+<h3>SIMD Optimization (AVX2 Example)</h3>
+<pre><code>// Parallel complex addition (4× complex<fix256> simultaneously)
+<p>
+void aria_complex_add_simd_avx2(
+aria_complex_fix256* result,
+const aria_complex_fix256* a,
+const aria_complex_fix256* b,
+int64_t count
+) {
+for (int64_t i = 0; i < count; i += 4) {
+// Load 4 complex numbers (interleaved: r0,i0,r1,i1,r2,i2,r3,i3)
+__m256i a_vec = _mm256_loadu_si256((__m256i*)&a[i]);
+__m256i b_vec = _mm256_loadu_si256((__m256i*)&b[i]);
+</p>
+<p>
+// Add components in parallel
+__m256i sum_vec = _mm256_add_epi64(a_vec, b_vec);
+</p>
+<p>
+// Store result
+_mm256_storeu_si256((__m256i*)&result[i], sum_vec);
+}
+}</code></pre>
+</p>
+<hr>
+<h2>Related Types & Integration</h2>
+<ul><li><strong><a href="fix256.md">fix256</a></strong> - Primary component type for deterministic complex math</li>
+<li><strong><a href="tfp32_tfp64.md">tfp32 / tfp64</a></strong> - Deterministic floating-point for complex<tfp32></li>
+<li><strong><a href="frac8_frac16_frac32_frac64.md">frac8-frac64</a></strong> - Exact rationals for complex<frac16> musical intervals</li>
+<li><strong><a href="tbb_overview.md">tbb8-tbb64</a></strong> - ERR propagation for complex<tbb64></li>
+<li><strong><a href="simd.md">simd<T,N></a></strong> - Vectorized complex operations</li>
+<li><strong><a href="Handle.md">Handle<T></a></strong> - Persistent wave state with generational safety</li>
+<li><strong><a href="Q3_Q9.md">Q9<T></a></strong> - Quantum superposition (different from complex numbers!)</li>
+<li><strong><a href="atomic.md">atomic<T></a></strong> - Thread-safe complex operations</li>
+</ul>
+<hr>
+<h2>Summary</h2>
+<strong>complex<T></strong> is Aria's <strong>foundational wave mechanics infrastructure</strong>:
+<p>
+✅ <strong>Generic</strong>: Works with any numeric component type (fix256, tfp32, frac16, tbb64, flt64)
+✅ <strong>Mathematical</strong>: Full complex arithmetic (add, multiply, divide, conjugate, exp, ln, pow)
+✅ <strong>Wave Processing</strong>: FFT, interference, phase/amplitude, frequency domain
+✅ <strong>Quantum Ready</strong>: Wave functions, superposition, probability amplitudes
+✅ <strong>Safety-Critical</strong>: complex<fix256> provides determinism for Nikola consciousness substrate
+✅ <strong>Performance</strong>: SIMD-optimized interleaved layout, O(N log N) FFT algorithms
+✅ <strong>Integration</strong>: ERR propagation, Handle<T> persistence, exact phase with frac<T>
+</p>
+<strong>Design Philosophy</strong>:
+<blockquote>"The torus processes waves. The infrastructure computes them."</blockquote>
+<p>
+>
+<blockquote>By handling wave mechanics at the language level, higher-level systems can focus on <strong>WHAT information flows</strong> (consciousness, signal meaning) rather than <strong>HOW waves propagate</strong> (arithmetic, transforms). This separation prevents the catastrophic memory bloat and complexity that plagued prototype implementations.</blockquote>
+</p>
+<strong>Critical for</strong>: Nikola AGI substrate, audio synthesis, radio/telecommunications, quantum simulation, AC circuit analysis, control systems, image processing, cryptography, robotics
+<hr>
+<strong>Remember</strong>: complex<T> = <strong>waves</strong> + <strong>generics</strong> + <strong>determinism</strong>!
+    </main>
+</body>
+</html>

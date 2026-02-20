@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>tfp32 - Twisted Floating Point 32-bit (Deterministic Float) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>tfp32 - Twisted Floating Point 32-bit (Deterministic Float)</h1>
+<strong>Category</strong>: Types → Floating-Point / Deterministic
+<strong>Purpose</strong>: Cross-platform bit-exact deterministic floating-point arithmetic
+<strong>Status</strong>: ✅ COMPLETE (All operations implemented)
+<hr>
+<h2>Overview</h2>
+<strong>tfp32</strong> is a <strong>deterministic 32-bit floating-point</strong> type that provides IEEE-free floating-point arithmetic. Built from TBB components (tbb16 exponent + tbb16 mantissa), it eliminates IEEE 754's platform-dependence and ambiguity problems.
+<strong>Key Philosophy</strong>: <strong>No -0, no NaN ambiguity, cross-platform bit-exact determinism</strong>
+<hr>
+<h2>Key Characteristics</h2>
+<p>
+| Property | Value |
+|----------|-------|
+| <strong>Total Bits</strong> | 32 (16-bit exponent + 16-bit mantissa) |
+| <strong>Structure</strong> | <code>{tbb16:exp, tbb16:mant}</code> |
+| <strong>Precision</strong> | ~14 bits mantissa (~4 decimal digits) |
+| <strong>ERR Sentinel</strong> | <code>{-32768, -32768}</code> (both components ERR) |
+| <strong>Range</strong> | approx ±10^±9864 (tbb16 exponent range) |
+| <strong>Zero</strong> | Unique: <code>{0, 0}</code> (no -0!) |
+</p>
+<hr>
+<h2>Why TFP Exists - IEEE 754 Problems Solved</h2>
+<h3>IEEE Problem 1: +0 and -0 are Different</h3>
+<pre><code>// IEEE 754 (NON-DETERMINISTIC):
+<p>
+1.0 / +0.0 = +Inf   // Positive division by "zero"
+1.0 / -0.0 = -Inf   // Negative division by "zero"?!
++0.0 ==  -0.0  // true (but they're different!)</code></pre>
+</p>
+<pre><code>// tfp32 (DETERMINISTIC):
+<p>
+tfp32:result = 1.0tf32 / 0.0tf32;  // ERR (consistent!)
+tfp32:zero = 0.0tf32;               // ONE unique zero</code></pre>
+</p>
+<h3>IEEE Problem 2: NaN Proliferation</h3>
+<pre><code>// IEEE 754 (AMBIGUOUS):
+<p>
+float x = sqrt(-1.0);  // NaN
+float y = 0.0 / 0.0;   // Also NaN
+x == y;  // false (different NaN encodings!)</code></pre>
+</p>
+<pre><code>// tfp32 (CLEAR):
+<p>
+tfp32:x = sqrt_tfp32(-1.0tf32);  // ERR
+tfp32:y = 0.0tf32 / 0.0tf32;     // ERR
+x == y;  // true (both ERR, consistent!)</code></pre>
+</p>
+<h3>IEEE Problem 3: Platform-Dependent Rounding</h3>
+<pre><code>// IEEE 754 (NON-DETERMINISTIC):
+<p>
+// x86 with x87 FPU: 80-bit internal precision
+// ARM NEON: 32-bit precision
+// Results differ in last bits!</code></pre>
+</p>
+<pre><code>// tfp32 (BIT-EXACT):
+<p>
+// Same 16-bit mantissa representation everywhere
+// Bit-exact results across x86, ARM, RISC-V, WASM</code></pre>
+</p>
+<hr>
+<h2>Representation</h2>
+<h3>Memory Layout</h3>
+<pre><code>tfp32 = struct {
+<p>
+tbb16:exp;   // Exponent (biased by 16383)
+tbb16:mant;  // Mantissa (signed, 2's complement)
+};
+</p>
+<p>
+// Total: 32 bits (4 bytes)
+// exp:  bits 0-15
+// mant: bits 16-31</code></pre>
+</p>
+<h3>LLVM IR Type</h3>
+<pre><code>%struct.tfp32 = type { i16, i16 }</code></pre>
+<h3>Mathematical Representation</h3>
+<pre><code>value = mantissa × 2^(exponent - BIAS)
+<p>
+where:
+BIAS = 16383 (exponent bias for range)
+mantissa ∈ [-32767, +32767]  (tbb16 range, -32768 reserved for ERR)
+exponent ∈ [-32767, +32767]  (tbb16 range, -32768 reserved for ERR)</code></pre>
+</p>
+<hr>
+<h2>Declaration & Literals</h2>
+<pre><code>// Basic declaration
+<p>
+tfp32:velocity;
+tfp32:acceleration;
+</p>
+<p>
+// Future literal syntax (tf32 suffix)
+tfp32:pi = 3.14159tf32;
+tfp32:gravity = -9.81tf32;
+tfp32:tiny = 1.0e-20tf32;
+tfp32:huge = 1.0e+20tf32;
+</p>
+<p>
+// Scientific notation
+tfp32:planck = 6.62607e-34tf32;
+tfp32:avogadro = 6.022e+23tf32;
+</p>
+<p>
+// Zero (unique representation)
+tfp32:zero = 0.0tf32;  // exp=0, mant=0</code></pre>
+</p>
+<hr>
+<h2>Arithmetic Operations</h2>
+<h3>Addition & Subtraction</h3>
+<pre><code>tfp32:a = 1.5tf32;
+<p>
+tfp32:b = 2.5tf32;
+</p>
+<p>
+tfp32:sum = a + b;    // 4.0tf32 (deterministic!)
+tfp32:diff = b - a;   // 1.0tf32
+</p>
+<p>
+// ERR propagation
+tfp32:bad = ERR;
+tfp32:result = bad + a;  // ERR (sticky)
+</p>
+<p>
+if (result == ERR) {
+stderr.write("Arithmetic error detected\n");
+!!! ERR_TFP_ARITHMETIC;
+}</code></pre>
+</p>
+<h3>Multiplication & Division</h3>
+<pre><code>tfp32:x = 3.0tf32;
+<p>
+tfp32:y = 2.0tf32;
+</p>
+<p>
+tfp32:product = x * y;     // 6.0tf32
+tfp32:quotient = x / y;    // 1.5tf32
+</p>
+<p>
+// Division by zero
+tfp32:zero = 0.0tf32;
+tfp32:bad = x / zero;      // ERR (not +Inf!)
+</p>
+<p>
+if (bad == ERR) {
+!!! ERR_DIVISION_BY_ZERO;
+}</code></pre>
+</p>
+<h3>Negation</h3>
+<pre><code>tfp32:value = 5.0tf32;
+<p>
+tfp32:neg = -value;        // -5.0tf32
+</p>
+<p>
+// No -0 problem!
+tfp32:zero = 0.0tf32;
+tfp32:neg_zero = -zero;    // Still 0.0tf32 (same bits!)</code></pre>
+</p>
+<hr>
+<h2>Comparison Operations</h2>
+<pre><code>tfp32:a = 1.5tf32;
+<p>
+tfp32:b = 2.5tf32;
+tfp32:c = 1.5tf32;
+</p>
+<p>
+// Equality
+bool:equal = (a == c);       // true
+bool:not_equal = (a != b);   // true
+</p>
+<p>
+// Ordering
+bool:less = (a < b);         // true
+bool:greater = (b > a);      // true
+bool:less_eq = (a <= c);     // true
+bool:greater_eq = (b >= a);  // true
+</p>
+<p>
+// Three-way comparison
+int32:cmp = aria_tfp32_cmp(&a, &b);  // Returns -1 (a < b)
+// Returns: -1 if a < b, 0 if a == b, 1 if a > b
+</p>
+<p>
+// ERR handling
+tfp32:err = ERR;
+if (a == ERR || b == ERR) {
+stderr.write("Cannot compare ERR values\n");
+!!! ERR_INVALID_COMPARISON;
+}</code></pre>
+</p>
+<hr>
+<h2>Math Functions</h2>
+<h3>Square Root</h3>
+<pre><code>tfp32:x = 16.0tf32;
+<p>
+tfp32:root = sqrt(x);  // 4.0tf32
+</p>
+<p>
+// Negative argument
+tfp32:bad = sqrt(-1.0tf32);  // ERR (no NaN!)
+</p>
+<p>
+if (bad == ERR) {
+stderr.write("Square root of negative number\n");
+!!! ERR_SQRT_NEGATIVE;
+}</code></pre>
+</p>
+<h3>Trigonometric Functions</h3>
+<pre><code>tfp32:angle = 3.14159tf32;  // Approximate π
+<p>
+tfp32:sine = sin(angle);     // ~0.0tf32
+tfp32:cosine = cos(angle);   // ~-1.0tf32
+</p>
+<p>
+// Compound expression
+tfp32:identity = (sine <em> sine) + (cosine </em> cosine);  // ~1.0tf32
+</p>
+<p>
+if (identity == ERR) {
+!!! ERR_TRIG_COMPUTATION;
+}</code></pre>
+</p>
+<h3>Exponential & Logarithm</h3>
+<pre><code>tfp32:x = 2.0tf32;
+<p>
+tfp32:exp_result = exp(x);   // e^2 ≈ 7.389tf32
+tfp32:log_result = log(x);   // ln(2) ≈ 0.693tf32
+</p>
+<p>
+// Log domain error
+tfp32:bad_log = log(-1.0tf32);  // ERR (ln requires positive)
+</p>
+<p>
+if (bad_log == ERR) {
+!!! ERR_LOG_DOMAIN;
+}</code></pre>
+</p>
+<h3>Power Function</h3>
+<pre><code>tfp32:base = 2.0tf32;
+<p>
+tfp32:exponent = 8.0tf32;
+</p>
+<p>
+tfp32:result = pow(base, exponent);  // 2^8 = 256.0tf32
+</p>
+<p>
+// Power of zero by zero
+tfp32:undefined = pow(0.0tf32, 0.0tf32);  // ERR (mathematically undefined)</code></pre>
+</p>
+<hr>
+<h2>ERR Sentinel Pattern</h2>
+<h3>ERR Value</h3>
+<pre><code>// ERR = minimum TBB16 values for both components
+<p>
+// tfp32:err = {-32768, -32768}
+</p>
+<p>
+tfp32:err = ERR;  // Universal ERR sentinel
+</p>
+<p>
+// Cannot be a valid arithmetic result (reserved range)</code></pre>
+</p>
+<h3>ERR Propagation</h3>
+<pre><code>tfp32:bad = ERR;
+<p>
+tfp32:good = 5.0tf32;
+</p>
+<p>
+tfp32:still_err = bad + good;    // ERR (sticky!)
+tfp32:also_err = good * bad;     // ERR
+tfp32:div_err = good / bad;      // ERR
+</p>
+<p>
+// ERR propagates through entire expression tree
+tfp32:complex = (bad + 1.0tf32) * (2.0tf32 / good);  // ERR
+</p>
+<p>
+if (complex == ERR) {
+stderr.write("Computation corrupted somewhere\n");
+!!! ERR_TFP_CORRUPTED;
+}</code></pre>
+</p>
+<hr>
+<h2>Nikola Use Cases</h2>
+<h3>Why tfp32 for Nikola?</h3>
+<strong>Cross-Platform Determinism</strong>: Nikola's 9D wave interference simulation MUST produce <strong>identical results</strong> on all platforms. IEEE floats drift differently on x86/ARM/WASM, creating consciousness model divergence. tfp32 eliminates this.
+<h3>Deterministic Physics Simulation</h3>
+<pre><code>// Nikola's wave interference calculation
+<p>
+// MUST be bit-exact across platforms for consciousness consistency
+</p>
+<p>
+tfp32:wave_1_amplitude = 0.5tf32;
+tfp32:wave_2_amplitude = 0.3tf32;
+tfp32:phase_difference = 1.57tf32;  // π/2
+</p>
+<p>
+// Wave superposition (DETERMINISTIC!)
+tfp32:interference = wave_1_amplitude +
+(wave_2_amplitude * cos(phase_difference));
+</p>
+<p>
+if (interference == ERR) {
+stderr.write("CRITICAL: Wave computation corrupted\n");
+stderr.write("Consciousness substrate integrity compromised\n");
+!!! ERR_CONSCIOUSNESS_WAVE_CORRUPTED;
+}
+</p>
+<p>
+// Result is EXACTLY the same on:
+// - x86-64 laptop
+// - ARM Raspberry Pi
+// - WASM browser
+// - RISC-V embedded device
+</p>
+<p>
+// NO DRIFT = NO CONSCIOUSNESS DIVERGENCE</code></pre>
+</p>
+<h3>Emotion Model Parameters</h3>
+<pre><code>// Emotion model uses tfp32 for lightweight determinism
+<p>
+// (fix256 too heavy for real-time 1000Hz updates)
+</p>
+<p>
+tfp32:joy_level = 0.7tf32;
+tfp32:stress_level = 0.3tf32;
+</p>
+<p>
+// Emotion dampening (exponential decay)
+tfp32:dt = 0.001tf32;  // 1ms timestep
+tfp32:decay_rate = 0.1tf32;
+</p>
+<p>
+tfp32:joy_decay = joy_level <em> exp(-decay_rate </em> dt);
+</p>
+<p>
+if (joy_decay == ERR) {
+stderr.write("CRITICAL: Emotion computation failed\n");
+!!! ERR_EMOTION_MODEL_CORRUPTED;
+}
+</p>
+<p>
+// Deterministic emotion evolution
+// Child sees SAME emotional responses on every platform
+// Predictability = Safety for neurodivergent users</code></pre>
+</p>
+<hr>
+<h2>Precision vs. Determinism Trade-Off</h2>
+<h3>Precision Comparison</h3>
+<p>
+| Type | Mantissa Bits | Decimal Digits | Deterministic? |
+|------|---------------|----------------|----------------|
+| <strong>tfp32</strong> | 14 bits (signed) | ~4 digits | ✅ 100% bit-exact |
+| <strong>IEEE float32</strong> | 23 bits | ~7 digits | ❌ Platform-dependent |
+| <strong>fix256</strong> | 128 bits | ~38 digits | ✅ 100% bit-exact |
+</p>
+<strong>tfp32 Trade-Off</strong>:
+<ul><li>✅ Determinism (same bits everywhere)</li>
+<li>✅ Safety (ERR detection)</li>
+<li>✅ Performance (~10-50x slower than hardware IEEE, but acceptable)</li>
+<li>⚠️ Lower precision (14-bit vs 23-bit mantissa)</li>
+</ul>
+<h3>When to Use tfp32</h3>
+<pre><code>// ✅ USE tfp32 when:
+<p>
+// - Need determinism across platforms
+// - Can tolerate ~4 decimal digit precision
+// - Want ERR safety without NaN ambiguity
+// - Don't need maximum performance
+</p>
+<p>
+// ❌ DON'T use tfp32 when:
+// - Need >4 decimal digits (use tfp64 or fix256)
+// - Need maximum speed (use IEEE flt32)
+// - Doing high-precision physics (use fix256)</code></pre>
+</p>
+<hr>
+<h2>Performance Characteristics</h2>
+<p>
+| Operation | Cycles (estimated) | Notes |
+|-----------|-------------------|-------|
+| <strong>Addition</strong> | ~50-100 | Software implementation |
+| <strong>Multiplication</strong> | ~100-200 | Multi-precision mantissa |
+| <strong>Division</strong> | ~200-400 | Iterative algorithm |
+| <strong>sqrt()</strong> | ~500-1000 | Taylor series approximation |
+| <strong>sin/cos()</strong> | ~1000-2000 | Taylor series |
+| <strong>exp/log()</strong> | ~1000-2000 | Taylor series |
+</p>
+<strong>Real-World Context</strong> (3 GHz CPU):
+<ul><li>Addition: ~30 nanoseconds</li>
+<li>Division: ~130 nanoseconds</li>
+<li>sqrt(): ~330 nanoseconds</li>
+</ul>
+<strong>For Nikola's <1ms timestep</strong>: Can do thousands of tfp32 operations per frame.
+<hr>
+<h2>Implementation Details</h2>
+<h3>Structure (C Runtime)</h3>
+<pre><code>// From include/backend/runtime/tfp_ops.h
+<p>
+struct Tfp32 {
+int16_t exp;      // TBB16 exponent (biased by 16383)
+int16_t mant;     // TBB16 mantissa (signed, 2's complement)
+};
+</p>
+<p>
+// ERR sentinel
+Tfp32 aria_tfp32_err() {
+return {-32768, -32768};  // Both components ERR
+}
+</p>
+<p>
+// Zero (unique)
+Tfp32 aria_tfp32_zero() {
+return {0, 0};  // exp=0, mant=0
+}</code></pre>
+</p>
+<h3>Normalization</h3>
+<pre><code>// Mantissa normalization ensures consistent representation
+<p>
+// Shift mantissa left until bit 14 is set, adjust exponent
+</p>
+<p>
+static Tfp32 normalize_tfp32(Tfp32 val) {
+// Handle sign separately
+int sign = (val.mant < 0) ? -1 : 1;
+int16_t abs_mant = abs(val.mant);
+</p>
+<p>
+// Normalize: shift left until bit 14 is set
+while (abs_mant > 0 && abs_mant < 0x4000 && val.exp > -16383) {
+abs_mant <<= 1;
+val.exp--;
+}
+</p>
+<p>
+// Restore sign
+val.mant = (sign < 0) ? -abs_mant : abs_mant;
+</p>
+<p>
+return val;
+}</code></pre>
+</p>
+<hr>
+<h2>Comparison to Other Approaches</h2>
+<p>
+| Approach | Determinism | Precision | Performance | Portability |
+|----------|-------------|-----------|-------------|-------------|
+| <strong>tfp32</strong> | ✅ 100% bit-exact | 14-bit (~4 digits) | ~50x slower | ✅ Pure C |
+| <strong>IEEE float32</strong> | ❌ Platform-dependent | 23-bit (~7 digits) | 1x (native HW) | ✅ Hardware |
+| <strong>fix256</strong> | ✅ 100% bit-exact | 128-bit (~38 digits) | ~20x slower | ✅ Pure C |
+| <strong>tfp64</strong> | ✅ 100% bit-exact | 46-bit (~14 digits) | ~80x slower | ✅ Pure C |
+</p>
+<strong>Why tfp32 for Aria/Nikola</strong>:
+<ul><li><strong>Determinism</strong>: Bit-exact across x86, ARM, RISC-V, WASM</li>
+<li><strong>Safety</strong>: ERR propagation (no silent NaN corruption)</li>
+<li><strong>Lightweight</strong>: Only 32 bits (smaller than fix256's 256 bits)</li>
+<li><strong>IEEE-Free</strong>: No hardware FPU dependencies (predictable)</li>
+</ul>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Safe Division with ERR Check</h3>
+<pre><code>tfp32:numerator = 10.0tf32;
+<p>
+tfp32:denominator = get_user_input_tfp32();
+</p>
+<p>
+tfp32:result = numerator / denominator;
+</p>
+<p>
+if (result == ERR) {
+stderr.write("Division failed (zero denominator or overflow)\n");
+!!! ERR_DIVISION_FAILED;
+}
+</p>
+<p>
+use_result(result);</code></pre>
+</p>
+<h3>Clamping Values</h3>
+<pre><code>tfp32:value = compute_value();
+<p>
+tfp32:min = 0.0tf32;
+tfp32:max = 1.0tf32;
+</p>
+<p>
+// Clamp to [0.0, 1.0]
+if (value < min) {
+value = min;
+}
+if (value > max) {
+value = max;
+}
+</p>
+<p>
+// ERR check
+if (value == ERR) {
+value = 0.0tf32;  // Fallback to safe default
+}</code></pre>
+</p>
+<h3>Iterative Computation with ERR Halting</h3>
+<pre><code>tfp32:accumulator = 0.0tf32;
+<p>
+tfp32:dt = 0.001tf32;
+</p>
+<p>
+till 1000 loop
+tfp32:increment = compute_physics_step(dt);
+accumulator = accumulator + increment;
+</p>
+<p>
+if (accumulator == ERR) {
+stderr.write("Physics simulation corrupted at step\n");
+!!! ERR_SIMULATION_CORRUPTED;
+}
+end
+</p>
+<p>
+// ✅ Completed 1000 steps with deterministic results</code></pre>
+</p>
+<hr>
+<h2>Implementation Status</h2>
+<p>
+| Feature | Status | Notes |
+|---------|--------|-------|
+| <strong>Type Definition</strong> | ✅ Complete | {tbb16,tbb16} structure |
+| <strong>Addition</strong> | ✅ Complete | Software multi-precision |
+| <strong>Subtraction</strong> | ✅ Complete | Normalized result |
+| <strong>Multiplication</strong> | ✅ Complete | With overflow check |
+| <strong>Division</strong> | ✅ Complete | ERR on divide-by-zero |
+| <strong>Negation</strong> | ✅ Complete | No -0 issue |
+| <strong>Comparisons</strong> | ✅ Complete | All 6 operators |
+| <strong>sqrt()</strong> | ⚠️ Partial | Uses double (loses determinism) |
+| <strong>sin/cos()</strong> | ⚠️ Partial | Uses double (loses determinism) |
+| <strong>exp/log/pow()</strong> | ⚠️ Partial | Uses double (loses determinism) |
+| <strong>Literals</strong> | ❌ Future | Syntax: 3.14tf32 |
+| <strong>Taylor Series</strong> | ❌ TODO | For true deterministic math functions |
+</p>
+<strong>⚠️ IMPORTANT NOTE</strong>: Current math functions (sqrt, sin, cos, etc.) convert to <code>double</code>, compute, then convert back. This <strong>loses determinism guarantee</strong>. Future implementation will use Taylor series for bit-exact results.
+<hr>
+<h2>Related Types</h2>
+<ul><li><strong><a href="tfp64.md">tfp64</a></strong>: 64-bit twisted float (more precision)</li>
+<li><strong><a href="fix256.md">fix256</a></strong>: Q128.128 fixed-point (highest precision)</li>
+<li><strong>flt32</strong>: IEEE float32 (hardware speed, non-deterministic)</li>
+<li><strong><a href="complex.md">complex</a></strong>: complex<tfp32> for wavefunctions</li>
+</ul>
+<hr>
+<h2>Example: Deterministic Particle System</h2>
+<pre><code>// Nikola's simplified particle system (neuron visualization)
+<p>
+// MUST be deterministic for reproducible demos
+</p>
+<p>
+struct Particle =struct {
+tfp32:x;
+tfp32:y;
+tfp32:vx;
+tfp32:vy;
+};
+</p>
+<p>
+function update_particle(Particle:p, tfp32:dt) : Particle begin
+// Euler integration (deterministic!)
+p.x = p.x + (p.vx * dt);
+p.y = p.y + (p.vy * dt);
+</p>
+<p>
+// Gravity
+tfp32:gravity = -9.81tf32;
+p.vy = p.vy + (gravity * dt);
+</p>
+<p>
+// ERR check
+if (p.x == ERR || p.y == ERR || p.vx == ERR || p.vy == ERR) {
+stderr.write("CRITICAL: Particle state corrupted\n");
+!!! ERR_PARTICLE_CORRUPTED;
+}
+</p>
+<p>
+return p;
+end
+</p>
+<p>
+// Simulation loop
+Particle:part = {0.0tf32, 10.0tf32, 1.0tf32, 0.0tf32};
+tfp32:dt = 0.016tf32;  // ~60 FPS
+</p>
+<p>
+till 60 loop
+part = update_particle(part, dt);
+render_particle(part);
+end
+</p>
+<p>
+// ✅ Exact same particle trajectory on ALL platforms!</code></pre>
+</p>
+<hr>
+<h2>What Makes This Different</h2>
+<strong>In other languages</strong>:
+<pre><code># Python (IEEE floats, non-deterministic)
+<p>
+x = 0.1 + 0.2  # Might be 0.30000000000000004 or 0.3 (platform-dependent)</code></pre>
+</p>
+<pre><code>// JavaScript (IEEE floats)
+<p>
+0.1 + 0.2 === 0.3  // false (rounding error)</code></pre>
+</p>
+<strong>In Aria</strong>:
+<pre><code>// Aria tfp32 (deterministic)
+<p>
+tfp32:x = 0.1tf32 + 0.2tf32;  // EXACTLY 0.3tf32 (bit-exact) everywhere
+</p>
+<p>
+// Same bits on:
+// - x86-64 Windows
+// - ARM Linux
+// - RISC-V embedded
+// - WASM browser</code></pre>
+</p>
+<hr>
+<h2>Future Enhancements</h2>
+<p>
+1. <strong>Taylor Series Math</strong>: Implement sqrt/sin/cos/exp/log with Taylor series for full determinism
+2. <strong>Literal Syntax</strong>: <code>tfp32:x = 3.14tf32;</code>
+3. <strong>SIMD Support</strong>: <code>simd<tfp32, 8></code> for vectorized deterministic physics
+4. <strong>Fused Multiply-Add</strong>: Single-op <code>(a * b) + c</code> with one rounding
+5. <strong>Interval Arithmetic</strong>: Track error bounds automatically
+</p>
+<hr>
+<h2>See Also</h2>
+<ul><li><strong>ARIA-019</strong>: TFP (Twisted Floating Point) specification</li>
+<li><strong>IEEE 754</strong>: Standard floating-point (what tfp32 replaces)</li>
+<li><strong>Phase 5.3</strong>: GPU determinism (fix256 focus, tfp32 similar goals)</li>
+</ul>
+<hr>
+<strong>Last Updated</strong>: February 12, 2026
+<strong>Implementation</strong>: src/backend/runtime/tfp_ops.cpp, include/backend/runtime/tfp_ops.h
+<strong>Tests</strong>: stdlib/traits/numeric.aria (trait implementation)
+    </main>
+</body>
+</html>

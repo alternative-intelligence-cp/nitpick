@@ -106,14 +106,14 @@ end
 // Spawn multiple tasks
 tasks: []Process = [];
 
-for file in files do
-    p: Process = spawn("process_file.sh", [file])?;
+till(files.length - 1, 1) {
+    p: Process = spawn("process_file.sh", [files[$]])?;
     tasks.append(p);
 end
 
 // Wait for all
-for task in tasks do
-    task.wait()?;
+till(tasks.length - 1, 1) {
+    tasks[$].wait()?;
 end
 ```
 

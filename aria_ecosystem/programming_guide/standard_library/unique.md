@@ -152,10 +152,10 @@ fn unique(arr: []T) -> []T {
     seen: set<T> = {};
     Result: []T = [];
     
-    for item in arr do
-        when not seen.contains(item) then
-            result.append(item);
-            seen.insert(item);
+    till(arr.length - 1, 1) {
+        when not seen.contains(arr[$]) then
+            result.append(arr[$]);
+            seen.insert(arr[$]);
         end
     end
     

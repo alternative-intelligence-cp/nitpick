@@ -99,7 +99,8 @@ Parameters can be **related** through constraints or usage:
 // U depends on T through function parameter
 fn map<T, U>(array: []T, f: fn(T) -> U) -> []U {
     Result: []U = [];
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         result.push(f(item));
     }
     return result;

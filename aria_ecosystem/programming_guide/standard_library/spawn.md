@@ -193,14 +193,14 @@ process.kill()?;
 // Good - parallel processing
 processes: []Process = [];
 
-for file in large_file_list do
-    p: Process = spawn("process_file.sh", [file])?;
+till(large_file_list.length - 1, 1) {
+    p: Process = spawn("process_file.sh", [large_file_list[$]])?;
     processes.append(p);
 end
 
 // Wait for all
-for p in processes do
-    p.wait()?;
+till(processes.length - 1, 1) {
+    processes[$].wait()?;
 end
 ```
 

@@ -196,8 +196,16 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             auto* prim = static_cast<PrimitiveType*>(aria_type);
             std::string prim_name = prim->getName();
             
+            // NIL type: Unit type (empty struct) for "no value"
+            if (prim_name == "NIL") {
+                llvm::StructType* nilType = llvm::StructType::getTypeByName(context, "struct.NIL");
+                if (!nilType) {
+                    nilType = llvm::StructType::create(context, {}, "struct.NIL");
+                }
+                llvm_type = nilType;
+            }
             // Boolean type
-            if (prim_name == "bool") {
+            else if (prim_name == "bool") {
                 llvm_type = builder.getInt1Ty();
             }
             // Fraction types: {whole, numerator, denominator} (all same TBB width)
@@ -1397,6 +1405,15 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
         return builder.getInt1Ty();
     }
     
+    // NIL type - unit type (empty struct)
+    if (type_name == "NIL") {
+        llvm::StructType* nilType = llvm::StructType::getTypeByName(context, "struct.NIL");
+        if (!nilType) {
+            nilType = llvm::StructType::create(context, {}, "struct.NIL");
+        }
+        return nilType;
+    }
+    
     // Floating point types
     if (type_name == "flt16") return builder.getHalfTy();
     if (type_name == "flt32") return builder.getFloatTy();
@@ -2011,6 +2028,9 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
         // Handle EXTERN statements - generate external function declarations
         if (decl->type == ASTNode::NodeType::EXTERN) {
             ExternStmt* externStmt = static_cast<ExternStmt*>(decl.get());
+            
+            std::cerr << "[DEBUG EXTERN] Processing extern block with " 
+                      << externStmt->declarations.size() << " declarations" << std::endl;
 
             // Helper lambda to map FFI type names to LLVM types
             auto mapFFIType = [this](ASTNode* typeNode) -> llvm::Type* {
@@ -2085,14 +2105,26 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     // Create function type
                     llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
 
-                    // Create function declaration if it doesn't exist
-                    if (!module->getFunction(funcDecl->funcName)) {
+                    // Create or update function declaration
+                    llvm::Function* func = module->getFunction(funcDecl->funcName);
+                    if (!func) {
+                        // Create new extern function
+                        std::cerr << "[DEBUG EXTERN] Creating NEW extern function: " 
+                                  << funcDecl->funcName << " with External linkage" << std::endl;
                         llvm::Function::Create(
                             funcType,
                             llvm::Function::ExternalLinkage,
                             funcDecl->funcName,
                             module.get()
                         );
+                    } else {
+                        // P0: Update linkage to external for existing functions
+                        // This handles the case where a function was referenced before its extern declaration
+                        std::cerr << "[DEBUG EXTERN] UPDATING linkage for existing function: " 
+                                  << funcDecl->funcName << " from " 
+                                  << (func->hasInternalLinkage() ? "Internal" : "External")
+                                  << " to External" << std::endl;
+                        func->setLinkage(llvm::Function::ExternalLinkage);
                     }
                 }
                 // OPAQUE_STRUCT and STRUCT_DECL in extern don't need special handling here
@@ -2142,7 +2174,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             // All Aria functions return Result<T> except:
             // 1. extern functions (no body)
             // 2. main function (C ABI compatibility)
-            // 3. void functions (Result<void> is meaningless and causes LLVM to crash)
+            // 3. void functions (void type should only exist in extern, but legacy code uses it)
             llvm::Type* actual_return_type;
             if (!funcDecl->body || funcDecl->funcName == "main" || value_type->isVoidTy()) {
                 // Extern functions, main, and void functions return raw type
@@ -2174,8 +2206,8 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             // Special case: main function and module init always have external linkage
             // Temporary: Until pub keyword is implemented, all functions in modules are external
             llvm::Function::LinkageTypes linkage;
-            if (funcDecl->funcName == "main" || funcDecl->funcName.find("__") == 0) {
-                // main and module init functions are always external
+            if (funcDecl->isExtern || funcDecl->funcName == "main" || funcDecl->funcName.find("__") == 0) {
+                // Extern functions, main, and module init functions are always external
                 linkage = llvm::Function::ExternalLinkage;
             } else if (funcDecl->isGPUKernel) {
                 // GPU/PTX Phase 3: GPU kernels MUST have external linkage
@@ -2887,6 +2919,15 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             
             llvm::AllocaInst* alloca = builder.CreateAlloca(varType, nullptr, varDecl->varName);
             
+            // P0: Apply explicit alignment from #[align(N)] attribute if specified
+            if (varDecl->alignment > 0) {
+                alloca->setAlignment(llvm::Align(varDecl->alignment));
+            }
+            // Apply default alignment for special types
+            else if (actualTypeName == "int128" || actualTypeName == "uint128") {
+                alloca->setAlignment(llvm::Align(16));
+            }
+            
             // Track the Aria type of this alloca (needed for member access, vectors, and TBB overflow detection)
             if (type_system) {
                 Type* aria_type = nullptr;
@@ -3004,8 +3045,22 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     } else {
                         // Non-optional type - cast initializer to match variable type if necessary
                         if (initVal->getType() != varType) {
+                            // P0: Auto-unwrap Optional<T> from FFI pointer returns
+                            // If initializer is Optional {i1, ptr} but variable is pointer, extract the pointer
+                            if (initVal->getType()->isStructTy() && varType->isPointerTy()) {
+                                llvm::StructType* initStructTy = llvm::cast<llvm::StructType>(initVal->getType());
+                                // Check if this is an Optional struct: {i1, ptr}
+                                if (initStructTy->getNumElements() == 2 &&
+                                    initStructTy->getElementType(0)->isIntegerTy(1) &&
+                                    initStructTy->getElementType(1)->isPointerTy()) {
+                                    // Extract the pointer (field 1) from Optional
+                                    initVal = builder.CreateExtractValue(initVal, 1, "unwrap_optional_ptr");
+                                    std::cerr << "[DEBUG IR_GEN] Auto-unwrapped Optional<ptr> for variable '" 
+                                              << varDecl->varName << "'" << std::endl;
+                                }
+                            }
                             // Check if we're promoting a literal to an LBIM struct type
-                            if (varType->isStructTy() && initVal->getType()->isIntegerTy()) {
+                            else if (varType->isStructTy() && initVal->getType()->isIntegerTy()) {
                                 llvm::StructType* struct_type = llvm::cast<llvm::StructType>(varType);
                                 std::string struct_name = struct_type->getName().str();
                                 
@@ -3576,6 +3631,10 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                             funcDecl->funcName,
                             module.get()
                         );
+                    } else {
+                        // P0: Update linkage to external for extern declarations
+                        // This handles the case where a function was called before its extern declaration
+                        func->setLinkage(llvm::Function::ExternalLinkage);
                     }
                 }
                 else if (decl->type == ASTNode::NodeType::OPAQUE_STRUCT) {
@@ -4347,9 +4406,19 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Standard precision: Handle different literal types using variant
             // Check for NULL/NIL literal (monostate)
             if (std::holds_alternative<std::monostate>(lit->value)) {
-                // NULL literal - return null pointer constant
-                // For pointer types, this creates a proper null pointer
-                return llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+                // Check if it's NIL or NULL based on explicit_type
+                if (lit->explicit_type == "NIL") {
+                    // NIL literal - unit type (empty struct)
+                    llvm::StructType* nilType = llvm::StructType::getTypeByName(context, "struct.NIL");
+                    if (!nilType) {
+                        nilType = llvm::StructType::create(context, {}, "struct.NIL");
+                    }
+                    return llvm::ConstantStruct::get(nilType, {});
+                } else {
+                    // NULL literal - return null pointer constant
+                    // For pointer types, this creates a proper null pointer
+                    return llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+                }
             } else if (std::holds_alternative<int64_t>(lit->value)) {
                 int64_t val = std::get<int64_t>(lit->value);
                 // Default to int64 for integer literals to match Aria's default integer type
@@ -4897,6 +4966,100 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     builder.CreateStore(rhs, elem_ptr);
                     
                     return rhs;
+                }
+                
+                // Handle struct field assignment: obj.field = value
+                if (binop->left->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                    MemberAccessExpr* member = static_cast<MemberAccessExpr*>(binop->left.get());
+                    
+                    // Get the object pointer (for now, only support direct identifiers)
+                    if (member->object->type != ASTNode::NodeType::IDENTIFIER) {
+                        return nullptr;  // TODO: Support nested member access
+                    }
+                    
+                    IdentifierExpr* obj_ident = static_cast<IdentifierExpr*>(member->object.get());
+                    auto obj_it = named_values.find(obj_ident->name);
+                    if (obj_it == named_values.end()) {
+                        return nullptr;  // Object not found
+                    }
+                    
+                    llvm::Value* object_ptr = obj_it->second;
+                    
+                    // Get the Aria type of the object
+                    auto type_it = value_types.find(object_ptr);
+                    if (type_it == value_types.end()) {
+                        return nullptr;  // No type information
+                    }
+                    
+                    Type* aria_type = type_it->second;
+                    
+                    // Only handle struct types for now
+                    if (aria_type->getKind() != TypeKind::STRUCT) {
+                        return nullptr;  // TODO: Support vector component assignment (.x = ...)
+                    }
+                    
+                    StructType* struct_type = static_cast<StructType*>(aria_type);
+                    
+                    // Find the field index
+                    int field_index = -1;
+                    Type* field_type = nullptr;
+                    const auto& fields = struct_type->getFields();
+                    for (size_t i = 0; i < fields.size(); ++i) {
+                        if (fields[i].name == member->member) {
+                            field_index = static_cast<int>(i);
+                            field_type = fields[i].type;
+                            break;
+                        }
+                    }
+                    
+                    if (field_index < 0) {
+                        return nullptr;  // Field not found
+                    }
+                    
+                    // Get the LLVM struct type
+                    llvm::Type* llvm_struct_type = mapType(struct_type);
+                    
+                    // Evaluate the right-hand side
+                    llvm::Value* rhs = codegenExpression(binop->right.get());
+                    if (!rhs) return nullptr;
+                    
+                    // Get pointer to the specific field
+                    llvm::Value* field_ptr = builder.CreateStructGEP(
+                        llvm_struct_type,
+                        object_ptr,
+                        field_index,
+                        member->member + ".ptr"
+                    );
+                    
+                    // Store the new value
+                    builder.CreateStore(rhs, field_ptr);
+                    
+                    // Assignment expression returns the assigned value
+                    return rhs;
+                }
+                
+                // Handle pointer dereference assignment: <-ptr = value or *ptr = value
+        if (binop->left->type == ASTNode::NodeType::UNARY_OP) {
+                    UnaryExpr* unary = static_cast<UnaryExpr*>(binop->left.get());
+                    
+                    // Only handle dereference operators (<- and *)
+                    if (unary->op.type == frontend::TokenType::TOKEN_LEFT_ARROW ||
+                        unary->op.type == frontend::TokenType::TOKEN_STAR) {
+                        
+                        // Evaluate the pointer operand (the thing being dereferenced)
+                        llvm::Value* ptr = codegenExpression(unary->operand.get());
+                        if (!ptr) return nullptr;
+                        
+                        // Evaluate the right-hand side value
+                        llvm::Value* rhs = codegenExpression(binop->right.get());
+                        if (!rhs) return nullptr;
+                        
+                        // Store through the pointer
+                        builder.CreateStore(rhs, ptr);
+                        
+                        // Assignment expression returns the assigned value
+                        return rhs;
+                    }
                 }
                 
                 if (binop->left->type != ASTNode::NodeType::IDENTIFIER) {
@@ -6292,7 +6455,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // Branch based on is_error
                 builder.CreateCondBr(isError, errorBlock, successBlock);
                 
-                // Error block: use default value
+                 // Error block: use default value
                 builder.SetInsertPoint(errorBlock);
                 llvm::Value* defaultVal = codegenExpression(unwrap->defaultValue.get());
                 if (!defaultVal) return nullptr;

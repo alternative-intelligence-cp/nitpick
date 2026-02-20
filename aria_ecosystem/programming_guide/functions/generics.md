@@ -262,7 +262,8 @@ struct Set<T> {
 ```aria
 fn map<T, U>(array: []T, f: fn(T) -> U) -> []U {
     Result: []U = [];
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         result.push(f(item));
     }
     return result;
@@ -347,7 +348,8 @@ fn add_numbers(a: i32, b: i32) -> i32 {
 // Wrong: Won't compile - T might not support +
 fn sum<T>(array: []T) -> T {
     total: T = 0;  // Error: can't assign 0 to T
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         total = total + item;  // Error: T might not have +
     }
     return total;
@@ -356,7 +358,8 @@ fn sum<T>(array: []T) -> T {
 // Right: Add constraint
 fn sum<T>(array: []T) -> T where T: Numeric {
     total: T = T::zero();
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         total = total + item;
     }
     return total;

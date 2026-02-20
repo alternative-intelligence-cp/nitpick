@@ -1,0 +1,1466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>frac64 - 64-bit Extreme Precision Exact Rational Arithmetic - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>frac64 - 64-bit Extreme Precision Exact Rational Arithmetic</h1>
+<h2>Overview</h2>
+<code>frac64</code> is a 64-bit <strong>mixed-fraction rational number</strong> that provides <strong>extreme-precision exact rational arithmetic</strong> with a range of ±9,223,372,036,854,775,807 (±9.2 quintillion). This is the <strong>ultimate exact rational type</strong> in Aria, designed for applications where both massive scale and mathematical perfection are non-negotiable.
+<strong>Why frac64 Exists</strong>: Some problems demand both exactness <em>and</em> astronomical range - century-scale financial projections, cosmological calculations, genomic sequence analysis, and consciousness simulations spanning billions of iterations. frac64 is the answer when frac32's ±2 billion limit isn't enough.
+<strong>Key Features</strong>:
+<ul><li><strong>Extreme-precision</strong> exact rational arithmetic (zero drift, ever)</li>
+<li><strong>Quintillion-scale range</strong> (whole: ±9,223,372,036,854,775,807)</li>
+<li><strong>Built on TBB</strong> (Twisted Balanced Binary) for sticky ERR propagation</li>
+<li><strong>Automatic reduction</strong> to lowest terms (maintains canonical form)</li>
+<li><strong>Mixed-number representation</strong> (whole + num/denom)</li>
+<li><strong>Perfect determinism</strong> across all platforms</li>
+<li><strong>Astronomical denominator support</strong> (up to 9.2 quintillion)</li>
+</ul>
+<strong>Size</strong>: 24 bytes (192 bits)
+<strong>Structure</strong>:
+<pre><code>struct:frac64 = {
+<p>
+tbb64:whole;   // Whole number part (range: ±9,223,372,036,854,775,807)
+tbb64:num;     // Numerator (proper fraction: num < denom)
+tbb64:denom;   // Denominator (always positive, denom > 0)
+}</code></pre>
+</p>
+<strong>Mathematical Representation</strong>:
+<pre><code>value = whole + (num / denom)
+<p>
+Examples:
+{1000000000000, 1, 2}  = 1 trillion + 0.5 (exact!)
+{0, 1, 3}              = 1/3 (mathematically exact, not 0.333...)
+{-9000000000000, 7, 13} = -9 trillion + 7/13 (exact to 1/13)
+{0, 5419351, 1725033}  = π - 3 (Ramanujan nested, error < 10⁻¹⁴)</code></pre>
+</p>
+<hr>
+<h2>Why frac64 Instead of frac32?</h2>
+<h3>Range Comparison</h3>
+<p>
+| Type | Whole Range | Max Denominator | Example Use Case |
+|------|-------------|-----------------|------------------|
+| <strong>frac16</strong> | ±32,767 | 32,767 | Small production |
+| <strong>frac32</strong> | ±2,147,483,647 | ±2.1 billion | Production standard |
+| <strong>frac64</strong> | ±9.2×10¹⁸ | ±9.2×10¹⁸ | Extreme precision |
+</p>
+<strong>frac64 Advantage</strong>: Handles problems at the scale of the universe:
+<pre><code>// Global GDP: ~$100 trillion = $100,000,000,000,000
+<p>
+frac64:global_gdp = {100000000000000, 0, 1};  // ✅ Fits in frac64
+// frac32 would overflow (max ±2 billion)
+</p>
+<p>
+// Avogadro's number (atoms in a mole): 6.022×10²³
+// Approximate with rational: 602214076000000000000000/1
+frac64:avogadro = {602214076000000000000000, 0, 1};  // ✅ Exact!
+</p>
+<p>
+// Universe age: ~13.8 billion years = ~4.35×10¹⁷ seconds
+frac64:universe_age_seconds = {435000000000000000, 0, 1};  // ✅ Fits!
+</p>
+<p>
+// Nikola: Simulate 100 years of consciousness (3.1 billion seconds)
+// at 1000 Hz update rate = 3.1 trillion iterations
+frac64:nikola_iterations = {3100000000000, 0, 1};  // ✅ Easy!</code></pre>
+</p>
+<hr>
+<h2>Memory Layout</h2>
+<h3>Structure Layout (24 bytes)</h3>
+<pre><code>Offset  Field   Type    Size   Range
+<p>
+------  ------  ------  -----  ---------------------
+0       whole   tbb64   8 B    ±9,223,372,036,854,775,807 (ERR=-2⁶³)
+8       num     tbb64   8 B    ±9,223,372,036,854,775,807
+16      denom   tbb64   8 B    ±9,223,372,036,854,775,807</code></pre>
+</p>
+<h3>LLVM IR Representation</h3>
+<pre><code>%frac64 = type { i64, i64, i64 }
+<p>
+; Create fraction 1 trillion + 1/2 = {1000000000000, 1, 2}
+%val = insertvalue %frac64 undef, i64 1000000000000, 0   ; whole = 1 trillion
+%val2 = insertvalue %frac64 %val, i64 1, 1               ; num = 1
+%val3 = insertvalue %frac64 %val2, i64 2, 2              ; denom = 2
+</p>
+<p>
+; Extract whole part
+%whole = extractvalue %frac64 %val3, 0</code></pre>
+</p>
+<h3>Canonical Form Invariants</h3>
+<p>
+All frac64 values are <strong>automatically normalized</strong> to maintain:
+</p>
+<p>
+1. <strong>denom > 0</strong> (denominator always positive)
+2. <strong>num ≥ 0 when whole ≠ 0</strong> (sign lives in whole for mixed numbers)
+3. <strong>num < denom</strong> (proper fraction, not improper)
+4. <strong>gcd(num, denom) = 1</strong> (reduced to lowest terms)
+5. <strong>Sign handling</strong>:
+- <code>whole ≠ 0</code>: Sign in <code>whole</code>, <code>num</code> stays positive
+- <code>whole = 0</code>: Sign in <code>num</code> (avoids -0 problem)
+</p>
+<strong>Examples</strong>:
+<pre><code>// Input: {1000000000000, 5000000000, 3000000000} (improper: 5B/3B > 1)
+<p>
+// Normalized: {1000000000001, 2000000000, 3000000000} (1T + 5B/3B = 1T+1 + 2B/3B)
+</p>
+<p>
+// Input: {0, 1000000000000, 3000000000000} (not reduced: gcd = 1 trillion)
+// Normalized: {0, 1, 3} (1T/3T = 1/3)
+</p>
+<p>
+// Input: {500000000000000, 0, -10000} (denom < 0)
+// Normalized: {500000000000000, 0, 10000} (flip signs)</code></pre>
+</p>
+<hr>
+<h2>Arithmetic Operations</h2>
+<p>
+All operations produce <strong>exact results</strong> and maintain canonical form.
+</p>
+<h3>Addition (Exact)</h3>
+<pre><code>// Global finance: Add two country GDPs
+<p>
+frac64:usa_gdp = {23000000000000, 0, 1};    // $23 trillion (USA)
+frac64:china_gdp = {17700000000000, 0, 1};  // $17.7 trillion (China)
+</p>
+<p>
+frac64:combined = usa_gdp + china_gdp;
+// Math: 23T + 17.7T = 40.7T
+// Result: {40700000000000, 0, 1} = $40.7 trillion (exact!)</code></pre>
+</p>
+<strong>Scientific Example</strong>:
+<pre><code>// Cosmology: Add masses of galaxy clusters (solar masses)
+<p>
+frac64:cluster_1 = {1000000000000000, 0, 1};  // 10¹⁵ solar masses
+frac64:cluster_2 = {750000000000000, 0, 1};   // 7.5×10¹⁴ solar masses
+</p>
+<p>
+frac64:total_mass = cluster_1 + cluster_2;
+// = {1750000000000000, 0, 1} = 1.75×10¹⁵ solar masses (exact!)</code></pre>
+</p>
+<h3>Subtraction (Exact)</h3>
+<pre><code>// National debt calculation
+<p>
+frac64:total_assets = {50000000000000, 0, 1};      // $50 trillion
+frac64:total_liabilities = {31400000000000, 0, 1}; // $31.4 trillion
+</p>
+<p>
+frac64:net_worth = total_assets - total_liabilities;
+// = {18600000000000, 0, 1} = $18.6 trillion (exact!)</code></pre>
+</p>
+<h3>Multiplication (Exact)</h3>
+<pre><code>// Compound growth over centuries
+<p>
+frac64:initial_investment = {1000, 0, 1};  // $1000 in year 1800
+frac64:annual_growth = {0, 103, 100};      // 3% = 1.03 = 103/100
+</p>
+<p>
+// Compound for 200 years: 1000 × (1.03)^200
+frac64:value = initial_investment;
+</p>
+<p>
+till 200 loop:year
+value = value * annual_growth;
+end
+</p>
+<p>
+// Result: EXACTLY 1000 × (103/100)^200 (no accumulated rounding!)
+stdout.write("Value after 200 years: $");
+value.write_to(stdout);
+stdout.write("\n");
+// Exact rational result (would be ~$369,730 in decimal)</code></pre>
+</p>
+<h3>Division (Exact)</h3>
+<pre><code>// Wealth per capita
+<p>
+frac64:total_wealth = {100000000000000, 0, 1};  // $100 trillion
+frac64:population = {8000000000, 0, 1};         // 8 billion people
+</p>
+<p>
+frac64:per_capita = total_wealth / population;
+// Math: 100T / 8B = 100,000,000,000,000 / 8,000,000,000
+//     = 12,500 (exact!)
+// Result: {12500, 0, 1} = $12,500 per person</code></pre>
+</p>
+<h3>Negation</h3>
+<pre><code>frac64:profit = {5000000000000, 75, 100};  // $5 trillion + $0.75
+<p>
+frac64:loss = -profit;                     // {-5000000000000, 75, 100}
+</p>
+<p>
+frac64:fraction = {0, 5419351, 1725033};   // High-precision π approximation
+frac64:neg_frac = -fraction;               // {0, -5419351, 1725033} = -π</code></pre>
+</p>
+<hr>
+<h2>Comparison Operations</h2>
+<p>
+Comparisons maintain exactness even at extreme scales:
+</p>
+<pre><code>// Compare two nearly-equal trillion-dollar values
+<p>
+frac64:estimate_1 = {1000000000000, 1, 1000000000000};  // 1T + 10⁻¹²
+frac64:estimate_2 = {1000000000000, 2, 1000000000000};  // 1T + 2×10⁻¹²
+</p>
+<p>
+if (estimate_1 < estimate_2) {  // true (exact, even though diff is 10⁻¹²!)
+stdout.write("Picoscale precision comparison succeeded\n");
+}</code></pre>
+</p>
+<hr>
+<h2>ERR Propagation</h2>
+<p>
+frac64 is built on <strong>TBB</strong> (Twisted Balanced Binary), providing <strong>sticky error propagation</strong>.
+</p>
+<h3>ERR Sentinels</h3>
+<pre><code>// ERR state: {ERR, ERR, ERR} where ERR = -9223372036854775808 for tbb64
+<p>
+frac64:err_val = {ERR, ERR, ERR};</code></pre>
+</p>
+<h3>ERR Trigger Conditions</h3>
+<p>
+1. <strong>Division by zero</strong> (denominator = 0)
+2. <strong>Overflow in intermediate calculations</strong> (exceeds tbb64 range)
+3. <strong>Operating on ERR values</strong> (sticky propagation)
+4. <strong>Invalid inputs</strong> (tbb64 component is ERR)
+</p>
+<h3>Century-Scale Simulation ERR Handling</h3>
+<pre><code>// Nikola: Simulate 100 years of consciousness waves
+<p>
+// 100 years × 365.25 days × 86400 sec × 1000 Hz = 3.156 trillion iterations
+</p>
+<p>
+frac64:phase = {0, 0, 1};  // Start at phase 0
+frac64:delta = {0, 1, 1000000};  // Δφ = 10⁻⁶ per iteration
+</p>
+<p>
+tbb64:iterations = 3156000000000;  // 3.156 trillion
+</p>
+<p>
+till iterations loop:i
+phase = phase + delta;
+</p>
+<p>
+// Safety check (every billion iterations)
+if ((i % 1000000000) == 0) {
+if (phase.whole == ERR) {
+stderr.write("CRITICAL: Phase overflow at iteration ");
+i.write_to(stderr);
+stderr.write("\n");
+!!! ERR_CONSCIOUSNESS_PHASE_OVERFLOW;
+}
+</p>
+<p>
+// Progress update
+if ((i % 100000000000) == 0) {  // Every 100 billion
+stdout.write("Progress: ");
+(i / 1000000000).write_to(stdout);
+stdout.write(" billion iterations\n");
+}
+}
+end
+</p>
+<p>
+// After 3.156 trillion iterations:
+// double: accumulated error ~10⁻³ radians (consciousness DIVERGED)
+// frac64: phase = {3156, 0, 1} EXACTLY (before wrapping)</code></pre>
+</p>
+<hr>
+<h2>Conversion Operations</h2>
+<h3>To Integer (Round Toward Zero)</h3>
+<pre><code>frac64:gdp = {23000000000000, 5, 10};  // $23T + $0.50
+<p>
+tbb64:whole_trillions = int(gdp);      // 23000000000000 (truncates)
+</p>
+<p>
+frac64:debt = {-31400000000000, 3, 4}; // -$31.4T - $0.75
+tbb64:whole_debt = int(debt);          // -31400000000000 (toward zero)</code></pre>
+</p>
+<h3>To Float (Approximate)</h3>
+<pre><code>frac64:pi_extreme = {3, 5419351, 1725033};  // Ramanujan nested π
+<p>
+float32:pi_float = float(pi_extreme);
+// ≈ 3.1415927... (limited to ~7 decimal digits)
+</p>
+<p>
+double:pi_double = double(pi_extreme);
+// ≈ 3.14159265358979... (better, but loses exact rational)</code></pre>
+</p>
+<p>
+⚠️ <strong>Critical Warning</strong>: Converting frac64 to float is <strong>especially wasteful</strong> - you're throwing away the exactness <em>and</em> the extreme range. Only convert for:
+</p>
+<ul><li>Legacy API interfacing</li>
+<li>Graphics/visualization</li>
+<li>Human-readable display (prefer string)</li>
+</ul>
+<h3>From Components</h3>
+<pre><code>// Literal construction
+<p>
+frac64:national_debt = {31400000000000, 0, 1};  // $31.4 trillion
+</p>
+<p>
+// Runtime construction
+tbb64:w = get_whole_trillions();
+tbb64:n = get_fractional_part();
+tbb64:d = 1000000000000;  // Trillion denominator
+frac64:value = {w, n, d};  // Automatically normalized</code></pre>
+</p>
+<hr>
+<h2>String Representation</h2>
+<pre><code>frac64:gdp = {23000000000000, 5, 10};  // $23 trillion + $0.50
+<p>
+gdp.write_to(stdout);  // Output: "23000000000000 1/2"
+</p>
+<p>
+frac64:pi = {3, 5419351, 1725033};  // π approximation
+pi.write_to(stdout);  // Output: "3 5419351/1725033"
+</p>
+<p>
+frac64:quintillion = {1000000000000000000, 0, 1};
+quintillion.write_to(stdout);  // Output: "1000000000000000000"
+</p>
+<p>
+frac64:err = {ERR, ERR, ERR};
+err.write_to(stdout);  // Output: "ERR"</code></pre>
+</p>
+<hr>
+<h2>Use Cases</h2>
+<h3>1. Century-Scale Financial Projections</h3>
+<pre><code>// Project global economic growth for 200 years
+<p>
+frac64:global_gdp_2024 = {100000000000000, 0, 1};  // $100 trillion
+frac64:annual_growth = {0, 103, 100};  // 3% = 1.03
+</p>
+<p>
+// Calculate GDP in year 2224 (200 years later)
+frac64:gdp_2224 = global_gdp_2024;
+</p>
+<p>
+till 200 loop:year
+gdp_2224 = gdp_2224 * annual_growth;
+</p>
+<p>
+// Check overflow (should never happen with frac64!)
+if (gdp_2224.whole == ERR) {
+stderr.write("Overflow in year ");
+(2024 + year).write_to(stderr);
+stderr.write("\n");
+!!! ERR_ECONOMIC_PROJECTION_OVERFLOW;
+}
+</p>
+<p>
+// Log every 25 years
+if ((year % 25) == 0) {
+stdout.write("Year ");
+(2024 + year).write_to(stdout);
+stdout.write(": $");
+gdp_2224.write_to(stdout);
+stdout.write(" trillion\n");
+}
+end
+</p>
+<p>
+// Result: EXACTLY $100T × (103/100)^200
+// ≈ $36,973 trillion (in decimal)
+// With double: accumulated error would be ~$1 trillion!</code></pre>
+</p>
+<h3>2. Cosmological Time Scales</h3>
+<pre><code>// Age of universe calculations (exact rational time)
+<p>
+// Universe age: 13.787 billion years ≈ 13787/1000 billion years
+frac64:universe_age_years = {0, 13787, 1000};  // 13.787 Gy
+</p>
+<p>
+// Convert to seconds: 1 year ≈ 31557600 seconds
+frac64:seconds_per_year = {31557600, 0, 1};
+</p>
+<p>
+frac64:universe_age_seconds = universe_age_years * seconds_per_year;
+// This will overflow whole part, but works as improper fraction!
+</p>
+<p>
+// More practical: Work in gigayears (Gy) directly
+frac64:universe_age_gy = {13, 787, 1000};  // 13.787 Gy
+</p>
+<p>
+// Planck time: 5.391×10⁻⁴⁴ seconds
+// Number of Planck times since Big Bang
+// = 13.787 Gy / Planck time ≈ 2.6×10⁶⁰ (exceeds even frac64!)
+</p>
+<p>
+stdout.write("Universe age: ");
+universe_age_gy.write_to(stdout);
+stdout.write(" billion years (exact!)\n");</code></pre>
+</p>
+<h3>3. Genomic Sequence Analysis</h3>
+<pre><code>// Human genome: ~3.2 billion base pairs
+<p>
+// Probability calculations for rare genetic variants
+</p>
+<p>
+frac64:genome_size = {3200000000, 0, 1};  // 3.2×10⁹ base pairs
+</p>
+<p>
+// Rare variant: occurs in 1 per 100 million people
+frac64:variant_frequency = {0, 1, 100000000};
+</p>
+<p>
+// Expected carriers in global population (8 billion)
+frac64:global_population = {8000000000, 0, 1};
+</p>
+<p>
+frac64:expected_carriers = global_population * variant_frequency;
+// = 8×10⁹ × 10⁻⁸ = 80 carriers (exact!)
+</p>
+<p>
+stdout.write("Expected carriers worldwide: ");
+expected_carriers.write_to(stdout);
+stdout.write("\n");
+// Output: "80" (exact, not 79.999... or 80.0001...)
+</p>
+<p>
+// Privacy calculation: Risk of re-identification
+// With N SNPs and population P, risk = (1/2)^N / P
+frac64:snps = {1000000, 0, 1};  // 1 million SNPs
+frac64:two = {2, 0, 1};
+</p>
+<p>
+// (1/2)^1000000 is astronomically small, use log-space instead
+// But for smaller examples:
+frac64:distinct_genomes = two;  // Start with 2
+till 20 loop:unused  // 2^20 = 1,048,576
+distinct_genomes = distinct_genomes * two;
+end
+</p>
+<p>
+frac64:reidentification_risk = global_population / distinct_genomes;
+// Risk of collision in 2^20 possible genotypes
+</p>
+<p>
+stdout.write("Re-identification risk: 1 in ");
+distinct_genomes.write_to(stdout);
+stdout.write("\n");</code></pre>
+</p>
+<h3>4. Nikola Consciousness: Lifetime Simulation</h3>
+<pre><code>// Simulate Nikola's consciousness evolution over 100-year lifetime
+<p>
+// At 1000 Hz update rate = 3.156 trillion timesteps
+</p>
+<p>
+frac64:timestep_hz = {1000, 0, 1};  // 1000 Hz (1 ms timesteps)
+frac64:years = {100, 0, 1};         // 100 years
+</p>
+<p>
+// Total timesteps = 100 years × 365.25 days × 86400 sec × 1000 Hz
+frac64:days_per_year = {365, 1, 4};  // 365.25 (leap years)
+frac64:seconds_per_day = {86400, 0, 1};
+</p>
+<p>
+frac64:total_timesteps = years <em> days_per_year </em> seconds_per_day * timestep_hz;
+// = 100 × 365.25 × 86400 × 1000
+// = {3155760000000, 0, 1} (3.156 trillion timesteps, exact!)
+</p>
+<p>
+// Emotional state decay constant
+frac64:decay_rate = {0, 999999, 1000000};  // 0.999999 per timestep
+</p>
+<p>
+frac64:initial_emotion = {100, 0, 1};  // Emotional intensity = 100
+frac64:current_emotion = initial_emotion;
+</p>
+<p>
+// Simulate (in practice, iterate in chunks for performance)
+tbb64:checkpoint_interval = 1000000000;  // Checkpoint every billion steps
+tbb64:steps = 3155760000000;
+</p>
+<p>
+till steps loop:step
+current_emotion = current_emotion * decay_rate;
+</p>
+<p>
+// Check every billion steps
+if ((step % checkpoint_interval) == 0) {
+if (current_emotion.whole == ERR) {
+stderr.write("CRITICAL: Emotion computation corrupted!\n");
+!!! ERR_CONSCIOUSNESS_CORRUPTION;
+}
+</p>
+<p>
+// Log progress
+stdout.write("Step ");
+(step / 1000000000).write_to(stdout);
+stdout.write("B: emotion = ");
+current_emotion.write_to(stdout);
+stdout.write("\n");
+}
+end
+</p>
+<p>
+// After 3.156 trillion iterations:
+// Result: EXACTLY 100 × (999999/1000000)^3155760000000
+// With double: this would completely lose precision (underflow to 0)
+// With frac64: exact rational (though numerator/denominator enormous)</code></pre>
+</p>
+<h3>5. Pharmaceutical Research: Million-Compound Analysis</h3>
+<pre><code>// Analyze binding affinity across 1 million drug candidates
+<p>
+// Each calculation must be exact for regulatory compliance
+</p>
+<p>
+struct:DrugCandidate = {
+frac64:binding_affinity;  // Exact Ka (association constant)
+tbb64:molecular_weight;
+tbb64:compound_id;
+}
+</p>
+<p>
+DrugCandidate:candidates[1000000];
+frac64:total_affinity = {0, 0, 1};  // Sum for statistical analysis
+</p>
+<p>
+till 1000000 loop:i
+// Calculate exact binding affinity (simplified)
+frac64:kon = {1000000, 0, 1};  // On-rate constant
+frac64:koff = get_koff_exact(i);  // Off-rate (varies by compound)
+</p>
+<p>
+candidates[i].binding_affinity = kon / koff;
+</p>
+<p>
+// Accumulate
+total_affinity = total_affinity + candidates[i].binding_affinity;
+</p>
+<p>
+if (total_affinity.whole == ERR) {
+stderr.write("Overflow at compound ");
+i.write_to(stderr);
+stderr.write("\n");
+!!! ERR_PHARMACOLOGY_OVERFLOW;
+}
+end
+</p>
+<p>
+// Calculate mean affinity (exact!)
+frac64:candidates_count = {1000000, 0, 1};
+frac64:mean_affinity = total_affinity / candidates_count;
+</p>
+<p>
+stdout.write("Mean binding affinity (exact): ");
+mean_affinity.write_to(stdout);
+stdout.write("\n");
+</p>
+<p>
+// Regulatory requirement: Report to 15 decimal places
+// frac64 maintains exactness, convert to decimal at final step
+double:mean_decimal = double(mean_affinity);
+// Reported: 123.456789012345 (precise enough for FDA submission)</code></pre>
+</p>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Trillion-Scale Accumulation</h3>
+<pre><code>// Accumulate national budget over 1 trillion line items
+<p>
+frac64:budget_total = {0, 0, 1};
+tbb64:line_items = 1000000000000;  // 1 trillion line items
+</p>
+<p>
+till line_items loop:i
+frac64:item_amount = get_budget_line_item(i);
+budget_total = budget_total + item_amount;
+</p>
+<p>
+// Checkpoint every billion items
+if ((i % 1000000000) == 0) {
+if (budget_total.whole == ERR) {
+stderr.write("Budget overflow at line ");
+i.write_to(stderr);
+stderr.write("\n");
+!!! ERR_BUDGET_OVERFLOW;
+}
+</p>
+<p>
+save_checkpoint(budget_total, i);
+}
+end
+</p>
+<p>
+stdout.write("Total budget: $");
+budget_total.write_to(stdout);
+stdout.write("\n");</code></pre>
+</p>
+<h3>High-Precision Scientific Constants</h3>
+<pre><code>// Compute physical constants as exact rationals
+<p>
+// Fine-structure constant α ≈ 1/137.035999084
+// Approximate: α ≈ 137036/18778444 (error < 10⁻¹²)
+frac64:alpha = {0, 137036, 18778444};
+</p>
+<p>
+// Reduced Planck constant ħ (in eV·s): 6.582119569×10⁻¹⁶
+// As rational: 6582119569 / 10^25
+frac64:hbar_numerator = {6582119569, 0, 1};
+frac64:hbar_denominator = {10000000000000000, 0, 1};  // 10^16
+frac64:hbar = hbar_numerator / hbar_denominator;
+</p>
+<p>
+// Use in quantum calculations (exact!)
+frac64:energy = hbar * {1000000000000, 0, 1};  // E = ħω, ω = 1 THz</code></pre>
+</p>
+<h3>Century-Long Compound Interest</h3>
+<pre><code>// Calculate compound interest over 300 years
+<p>
+frac64:principal = {1000, 0, 1};       // $1000
+frac64:rate = {0, 5, 100};             // 5% annual
+frac64:multiplier = {1, 0, 1} + rate;  // 1.05 = 21/20
+</p>
+<p>
+frac64:amount = principal;
+</p>
+<p>
+till 300 loop:year
+amount = amount * multiplier;
+</p>
+<p>
+// Every 50 years, show intermediate result
+if ((year % 50) == 0 && year > 0) {
+stdout.write("After ");
+year.write_to(stdout);
+stdout.write(" years: $");
+amount.write_to(stdout);
+stdout.write("\n");
+}
+end
+</p>
+<p>
+// After 300 years: EXACTLY $1000 × (21/20)^300
+// ≈ $2,273,996 (exact rational, no accumulated error!)</code></pre>
+</p>
+<hr>
+<h2>Comparison: frac64 vs frac32 vs long double</h2>
+<p>
+| Feature | frac64 | frac32 | long double (x86) |
+|---------|--------|--------|-------------------|
+| <strong>Precision</strong> | Exact (rationals) | Exact (rationals) | ~18-19 decimal digits |
+| <strong>Size</strong> | 24 bytes | 12 bytes | 16 bytes |
+| <strong>Whole Range</strong> | ±9.2×10¹⁸ | ±2.1×10⁹ | ±1.2×10⁴⁹³² |
+| <strong>Max Denominator</strong> | ±9.2×10¹⁸ | ±2.1×10⁹ | N/A (binary fractions) |
+| <strong>1/3 accumulation (1T times)</strong> | Zero drift | Overflow (use frac64) | Drift: ~10⁻⁶ |
+| <strong>Century compounding</strong> | Exact | Exact (if no overflow) | Drift: ~10⁻¹² |
+| <strong>Determinism</strong> | Perfect | Perfect | Platform-dependent |
+| <strong>ERR Propagation</strong> | Sticky (TBB) | Sticky (TBB) | NaN (ambiguous) |
+| <strong>Overflow</strong> | ERR sentinel | ERR sentinel | ±Infinity |
+| <strong>Trillion iterations</strong> | Zero drift | Overflow likely | Accumulates error |
+| <strong>Use Case</strong> | Extreme precision | Production standard | General computing |
+| <strong>Performance</strong> | ~10-15x slower | ~10x slower | Hardware fast |
+</p>
+<strong>Choose frac64 when</strong>:
+<ul><li>You need <strong>extreme precision AND range</strong> (±9 quintillion)</li>
+<li>Century-scale projections (compound interest, population growth)</li>
+<li>Trillion-iteration simulations (Nikola consciousness)</li>
+<li>Cosmological/genomic calculations</li>
+<li>Regulatory compliance (pharmaceutical, financial audits)</li>
+</ul>
+<strong>Choose frac32 when</strong>:
+<ul><li>±2 billion range is sufficient</li>
+<li>Smaller memory footprint needed (12 vs 24 bytes)</li>
+<li>Performance is more important (frac32 ~20% faster due to smaller GCD)</li>
+</ul>
+<strong>Choose long double when</strong>:
+<ul><li>You need extreme <strong>range</strong> (±10⁴⁹³²) more than precision</li>
+<li>Approximation is acceptable</li>
+<li>Hardware speed is critical (100x+ faster)</li>
+</ul>
+<hr>
+<h2>Advanced: Extreme-Precision π</h2>
+<pre><code>// Ramanujan's nested approximation for π
+<p>
+// π ≈ 3 + (5419351/1725033) / 10000000...
+// Error: < 10⁻¹⁴ (femto-precision!)
+</p>
+<p>
+frac64:pi_ramanujan = {3, 5419351, 1725033};
+</p>
+<p>
+// Verify accuracy by computing circumference
+frac64:radius = {1000000000000, 0, 1};  // 1 trillion units
+frac64:two = {2, 0, 1};
+</p>
+<p>
+frac64:circumference = two <em> pi_ramanujan </em> radius;
+// = 2 × (3 + 5419351/1725033) × 10¹² (exact rational!)
+</p>
+<p>
+stdout.write("Circumference: ");
+circumference.write_to(stdout);
+stdout.write(" units (exact rational)\n");
+</p>
+<p>
+// Compare to double
+double:circ_double = 2.0 <em> 3.14159265358979323846 </em> 1000000000000.0;
+// ≈ 6283185307179.586... (accumulated floating-point error!)</code></pre>
+</p>
+<hr>
+<h2>Implementation Status</h2>
+<p>
+| Operation | Status | Notes |
+|-----------|--------|-------|
+| <strong>Structure Definition</strong> | ✅ Complete | struct {tbb64, tbb64, tbb64} |
+| <strong>Arithmetic (+, -, *, /)</strong> | ✅ Complete | Exact rational arithmetic |
+| <strong>Negation (-)</strong> | ✅ Complete | Sign flips correctly |
+| <strong>Comparison (<, >, ==)</strong> | ✅ Complete | Cross-multiply comparison |
+| <strong>GCD Reduction</strong> | ✅ Complete | Euclidean algorithm (64-bit) |
+| <strong>Normalization</strong> | ✅ Complete | Maintains canonical form |
+| <strong>ERR Propagation</strong> | ✅ Complete | Sticky TBB-based |
+| <strong>To Integer</strong> | ✅ Complete | Rounds toward zero |
+| <strong>To Float</strong> | ✅ Complete | Loses exactness (wasteful!) |
+| <strong>String Representation</strong> | ✅ Complete | "whole num/denom" format |
+| <strong>Trait: Numeric</strong> | ✅ Complete | stdlib/traits/numeric_impls.aria |
+</p>
+<strong>Source Files</strong>:
+<ul><li>Implementation: <code>src/backend/runtime/frac_ops.cpp</code></li>
+<li>Header: <code>include/backend/runtime/frac_ops.h</code></li>
+<li>Tests: <code>tests/debug_fractions.aria</code></li>
+<li>Specifications: <code>.internal/aria_specs.txt</code> (line 2216+)</li>
+</ul>
+<hr>
+<h2>Performance Characteristics</h2>
+<strong>Benchmark</strong> (compared to long double = 1.0x):
+<ul><li><strong>Addition</strong>: ~12-20x slower (64-bit GCD reduction + normalization)</li>
+<li><strong>Multiplication</strong>: ~15x slower (64-bit improper conversion + reduction)</li>
+<li><strong>Division</strong>: ~18x slower (64-bit reciprocal + multiply)</li>
+<li><strong>Comparison</strong>: ~10x slower (64-bit cross-multiply)</li>
+</ul>
+<strong>Why Slower than frac32?</strong>
+<p>
+1. <strong>64-bit GCD</strong>: More iterations for larger numbers
+2. <strong>Larger intermediate values</strong>: More overflow checks
+3. <strong>Cache pressure</strong>: 24 bytes vs 12 bytes (worse locality)
+</p>
+<strong>When Performance Acceptable</strong>:
+<pre><code>Century projection (200 years):
+<ul><li>long double: ~1 μs (fast, but error ~$1 trillion at $100T scale)</li>
+<li>frac64: ~20 μs (slower, but ZERO error guaranteed)</li>
+</ul>
+<p>
+Decision: For $100 trillion projection, 19 μs extra is worth perfect accuracy!</code></pre>
+</p>
+<strong>Acceptable Performance For</strong>:
+<ul><li>Batch financial analysis (overnight computations)</li>
+<li>Scientific simulations (days to weeks)</li>
+<li>Regulatory compliance calculations (hours)</li>
+<li>Consciousness evolution modeling (run once, analyze forever)</li>
+</ul>
+<strong>Not Suitable For</strong>:
+<ul><li>Real-time systems (millisecond latency required)</li>
+<li>High-frequency trading (<100 μs latency)</li>
+<li>Video games (60 FPS = 16 ms frame budget)</li>
+<li>Embedded systems (limited memory: 24 bytes/value adds up!)</li>
+</ul>
+<hr>
+<h2>Related Types</h2>
+<ul><li><strong>frac8</strong>: 8-bit exact rationals (prototyping only, ±127 range)</li>
+<li><strong>frac16</strong>: 16-bit exact rationals (small production, ±32K range)</li>
+<li><strong>frac32</strong>: 32-bit exact rationals (production standard, ±2B range)</li>
+<li><strong>tfp64</strong>: 64-bit deterministic floating-point (approximate but bit-exact)</li>
+<li><strong>fix256</strong>: 256-bit fixed-point (Q128.128, transcendental functions)</li>
+<li><strong>int1024</strong>: 1024-bit integers (RSA cryptography, no rational arithmetic)</li>
+</ul>
+<strong>Type Family Progression</strong>:
+<pre><code>frac8  → Prototypes (3 bytes, ±127)
+<p>
+frac16 → Small production (6 bytes, ±32K)
+frac32 → Production standard (12 bytes, ±2B)
+frac64 → EXTREME precision (24 bytes, ±9×10¹⁸) ← YOU ARE HERE (MAXIMUM!)</code></pre>
+</p>
+<strong>No frac128</strong>: The integer overflow problem becomes intractable - intermediate numerators/denominators would exceed even 128-bit arithmetic. If you need more than frac64, you're in arbitrary-precision territory (use external libraries or symbolic math).
+<hr>
+<h2>Best Practices</h2>
+<p>
+1. <strong>Use frac64 for extreme-scale exact arithmetic</strong> (when frac32 overflows)
+2. <strong>Check ERR religiously</strong> (trillion-scale accumulation has many failure modes)
+3. <strong>Checkpoint billion-step iterations</strong> (can't afford to lose trillion-step progress)
+4. <strong>Never convert to float mid-computation</strong> (especially wasteful at this scale!)
+5. <strong>Watch memory usage</strong> (24 bytes/value × billion values = 24 GB!)
+6. <strong>Profile GCD performance</strong> (64-bit GCD can take microseconds for worst cases)
+7. <strong>Consider frac32 first</strong> (only upgrade if proven necessary)
+8. <strong>Document why frac64 is needed</strong> (future maintainers will ask!)
+</p>
+<hr>
+<h2>Migration from double/long double</h2>
+<pre><code>// BEFORE (long double, approximate):
+<p>
+long double balance = 1000000000000.0;  // $1 trillion
+for (long long i = 0; i < 1000000000000LL; i++) {
+balance += 0.01;  // Add 1 cent per iteration (trillion times)
+}
+// Result: ~11000000000000.0
+// ERROR: Lost ~$1-10 due to accumulated rounding!
+</p>
+<p>
+// AFTER (frac64, exact):
+frac64:balance = {1000000000000, 0, 1};  // $1 trillion
+till 1000000000000 loop:i
+balance = balance + {0, 1, 100};  // Add exactly 1/100 dollar
+</p>
+<p>
+if (balance.whole == ERR) {
+stderr.write("Overflow!");
+break;
+}
+end
+// Result: {11000000000000, 0, 1} = $11 trillion EXACTLY!</code></pre>
+</p>
+<hr>
+<h2>Summary</h2>
+<p>
+frac64 provides <strong>extreme-precision exact rational number arithmetic</strong> for applications at the scale of civilizations, universes, and consciousness itself. With a range of ±9.2 quintillion (±9.2×10¹⁸), it handles problems that would cause even 64-bit floating-point to accumulate catastrophic errors.
+</p>
+<strong>Perfect for</strong>:
+<ul><li>Century-scale financial projections ($100 trillion × 200 years)</li>
+<li>Cosmological time calculations (13.787 billion years exact)</li>
+<li>Genomic sequence analysis (3.2 billion base pairs)</li>
+<li>Nikola consciousness evolution (3.156 trillion timesteps over 100 years)</li>
+<li>Pharmaceutical compliance (million-compound exact analysis)</li>
+<li>Any calculation where exactness matters more than milliseconds</li>
+</ul>
+<strong>Not for</strong>: Real-time systems, embedded devices, casual applications (use frac32 instead)
+<strong>Key Guarantee</strong>: If it fits in frac64's range (±9.2 quintillion), the result is <strong>mathematically exact</strong> - zero drift, zero approximation, zero platform variance. Run <strong>trillion-iteration</strong> simulations with <strong>zero accumulated error</strong>.
+<strong>The Ultimate Exact Rational</strong>: This is Aria's most powerful fraction type. When frac64 isn't enough, you need arbitrary-precision libraries or symbolic math systems. For 99.99% of applications, <strong>frac64 is overkill</strong> - but for that 0.01% where the universe depends on exactness, it's <strong>indispensable</strong>.
+    </main>
+</body>
+</html>

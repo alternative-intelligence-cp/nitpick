@@ -389,7 +389,8 @@ fn unique_sorted<T>(array: []T) -> []T
     seen: Set<T> = Set::new();
     unique: []T = [];
     
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         when !seen.contains(item.clone()) then
             seen.insert(item.clone());
             unique.push(item);

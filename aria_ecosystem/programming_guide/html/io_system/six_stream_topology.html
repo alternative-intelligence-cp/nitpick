@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Six-Stream Topology (Hex-Stream) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Io System</div>
+        <h1>Six-Stream Topology (Hex-Stream)</h1>
+<strong>Category</strong>: I/O System → Architecture
+<strong>File Descriptors</strong>: 0, 1, 2, 4, 5, 6
+<strong>Philosophy</strong>: Debugging is infrastructure, not instrumentation
+<hr>
+<h2>The Traditional Three-Stream Model (Broken)</h2>
+<p>
+Every Unix system and most programming languages inherit this model:
+</p>
+<pre><code>Process
+<p>
+├─ stdin  (fd 0) ← Input
+├─ stdout (fd 1) → Output
+└─ stderr (fd 2) → Errors</code></pre>
+</p>
+<strong>The Problem</strong>: This model assumes programs are either:
+<p>
+1. <strong>Interactive</strong> (human I/O via stdin/stdout)
+2. <strong>Pipeline components</strong> (data transformation)
+</p>
+<p>
+It provides <strong>no separation</strong> between:
+</p>
+<ul><li>Production output vs debug output</li>
+<li>Human-readable vs machine-readable data</li>
+<li>Control plane vs data plane</li>
+</ul>
+<hr>
+<h2>Aria's Six-Stream Model (Hex-Stream)</h2>
+<pre><code>Process (Hex-Stream Architecture)
+<p>
+│
+├─ CONTROL PLANE ────────────────────
+│  ├─ stdin  (fd 0) ← User input
+│  ├─ stdout (fd 1) → User output
+│  ├─ stderr (fd 2) → Error messages
+│  └─ stddbg (fd 6) → Debug output
+│
+└─ DATA PLANE ───────────────────────
+├─ stddati (fd 4) ← Structured input
+└─ stddato (fd 5) → Structured output</code></pre>
+</p>
+<h3>File Descriptor Allocation</h3>
+<p>
+| FD | Stream | Direction | Plane | Purpose |
+|----|--------|-----------|-------|---------|
+| <strong>0</strong> | stdin | Input | Control | User/interactive input |
+| <strong>1</strong> | stdout | Output | Control | User/interactive output |
+| <strong>2</strong> | stderr | Output | Control | Error messages |
+| <strong>3</strong> | <em>(reserved)</em> | - | - | Future use |
+| <strong>4</strong> | stddati | Input | Data | Structured data in (JSON, msgpack, etc.) |
+| <strong>5</strong> | stddato | Output | Data | Structured data out |
+| <strong>6</strong> | stddbg | Output | Control | Debug/diagnostic output |
+</p>
+<strong>Design Decision</strong>: FD 3 is intentionally skipped to maintain clean 0-1-2 for traditional streams and 4-5-6 for new streams.
+<hr>
+<h2>Control Plane vs Data Plane</h2>
+<p>
+This architecture is inspired by <strong>network router design</strong>, where control traffic (routing protocols, health checks) is separate from data traffic (actual packets).
+</p>
+<h3>Control Plane (Human-Facing)</h3>
+<strong>Purpose</strong>: Interaction with humans (developers, operators, users)
+<strong>Streams</strong>:
+<ul><li><strong>stdin</strong>: Commands, user input, interactive queries</li>
+<li><strong>stdout</strong>: Results, status messages, human-readable output</li>
+<li><strong>stderr</strong>: Error messages, warnings, human-readable diagnostics</li>
+<li><strong>stddbg</strong>: Debug traces, performance metrics, diagnostic info</li>
+</ul>
+<strong>Characteristics</strong>:
+<ul><li>Text-oriented (though binary is allowed)</li>
+<li>Formatted for human readability</li>
+<li>Can be verbose</li>
+<li>May include ANSI color codes</li>
+<li>Line-buffered by default</li>
+</ul>
+<h3>Data Plane (Machine-Facing)</h3>
+<strong>Purpose</strong>: Structured data processing (APIs, pipelines, ETL)
+<strong>Streams</strong>:
+<ul><li><strong>stddati</strong>: Structured input (JSON, MessagePack, Protocol Buffers, etc.)</li>
+<li><strong>stddato</strong>: Structured output (same formats)</li>
+</ul>
+<strong>Characteristics</strong>:
+<ul><li>Binary or structured text (JSON, etc.)</li>
+<li>Optimized for parsing/serialization</li>
+<li>Compact representation</li>
+<li>Schema-driven</li>
+<li>Buffered for throughput</li>
+</ul>
+<hr>
+<h2>Why This Separation Matters</h2>
+<h3>1. Clean Pipeline Composition</h3>
+<strong>Traditional Approach</strong> (broken):
+<pre><code># stdout is polluted with debug info!
+<p>
+./step1 | ./step2 | ./step3</code></pre>
+</p>
+<strong>Aria Approach</strong>:
+<pre><code># Data flows through stddato → stddati
+<p>
+./step1 5>&1 | ./step2 6>step2.debug.log 5>&1 | ./step3
+</p>
+<h1>Or more simply with Aria's pipeline operator</h1>
+<p>
+./step1 |> ./step2 |> ./step3  # Automatically uses data plane</code></pre>
+</p>
+<h3>2. Always-On Debugging</h3>
+<strong>Traditional</strong>:
+<pre><code># Must choose: debug OR clean output
+<p>
+if DEBUG:
+print(f"Processing {item}", file=sys.stderr)
+results = process(item)
+print(json.dumps(results))  # Mixed with debug output!</code></pre>
+</p>
+<strong>Aria</strong>:
+<pre><code>// Debug output never interferes
+<p>
+stddbg << "Processing " << item;
+Result: Result = process(item);
+stddato << result;  // Clean structured output</code></pre>
+</p>
+<h3>3. Dual-Mode Programs</h3>
+<p>
+The same program can serve <strong>both humans and machines</strong>:
+</p>
+<pre><code>fn calculate_balance(account: Account) -> Balance {
+<p>
+// Debug logging (for developers)
+stddbg << "Calculating balance for account " << account.id;
+</p>
+<p>
+balance: Balance = account.compute_balance();
+</p>
+<p>
+// Human-readable output
+stdout << "Account " << account.id << ": $" << balance;
+</p>
+<p>
+// Machine-readable output
+stddato << {"account_id": account.id, "balance": balance};
+</p>
+<p>
+return balance;
+}</code></pre>
+</p>
+<strong>Usage</strong>:
+<pre><code># Human mode: See pretty output on stdout
+<p>
+./program
+</p>
+<h1>API mode: Get JSON on stddato (fd 5)</h1>
+<p>
+./program 5>output.json
+</p>
+<h1>Debug mode: See what's happening</h1>
+<p>
+./program 6>debug.log
+</p>
+<h1>All modes at once!</h1>
+<p>
+./program >human.txt 5>api.json 6>debug.log</code></pre>
+</p>
+<hr>
+<h2>Stream Redirection Examples</h2>
+<h3>Standard Usage (Human Mode)</h3>
+<pre><code>./aria_program
+<h1>stdin (0) = terminal input</h1>
+<h1>stdout (1) = terminal output</h1>
+<h1>stderr (2) = terminal errors</h1>
+<h1>stddbg (6) = /dev/null (discarded)</h1>
+<h1>stddati (4) = /dev/null (no data input)</h1>
+<h1>stddato (5) = /dev/null (no data output)</code></pre></h1>
+<h3>Data Processing Mode</h3>
+<pre><code>cat data.json | ./aria_program 4>&0 5>&1
+<h1>stddati (4) reads from stdin</h1>
+<h1>stddato (5) writes to stdout</h1>
+<h1>Control plane still available for monitoring</code></pre></h1>
+<h3>Debug Mode</h3>
+<pre><code>./aria_program 6>&2
+<h1>Debug output appears on stderr (visible in terminal)</code></pre></h1>
+<h3>Production with Logging</h3>
+<pre><code>./aria_program 6>/var/log/myapp/debug.log
+<h1>Debug output captured to file</h1>
+<h1>Production output clean on stdout</code></pre></h1>
+<h3>Full Separation</h3>
+<pre><code>./aria_program \
+</input/user.txt \          # stdin from file
+<p>
+>output/user.txt \          # stdout to file
+2>output/errors.txt \       # stderr to file
+4<data/input.json \         # stddati from file
+5>data/output.json \        # stddato to file
+6>logs/debug.log            # stddbg to file</code></pre>
+</p>
+<hr>
+<h2>Implementation Notes</h2>
+<h3>Bootstrap Requirements</h3>
+<p>
+The Hex-Stream topology is established during process startup <strong>before main()</strong> executes:
+</p>
+<p>
+1. <strong>Kernel provides FDs 0, 1, 2</strong> (standard Unix behavior)
+2. <strong>Aria runtime opens FDs 4, 5, 6</strong>:
+- FD 4 (stddati): Defaults to <code>/dev/null</code> unless redirected
+- FD 5 (stddato): Defaults to <code>/dev/null</code> unless redirected
+- FD 6 (stddbg): Defaults to <code>/dev/null</code> in production, or inherited from environment
+</p>
+<p>
+3. <strong>Language provides handles</strong>:
+- Global constants: <code>stdin</code>, <code>stdout</code>, <code>stderr</code>, <code>stddati</code>, <code>stddato</code>, <code>stddbg</code>
+- Type: <code>Stream</code> (language primitive)
+</p>
+<h3>Error Handling</h3>
+<p>
+If FDs 4, 5, or 6 cannot be opened during bootstrap:
+</p>
+<ul><li><strong>Fallback</strong>: Map to <code>/dev/null</code></li>
+<li><strong>Sticky Error</strong>: Runtime sets <code>STREAM_INIT_FAILED</code> flag</li>
+<li><strong>Observable</strong>: <code>stddbg.is_valid()</code> returns <code>false</code></li>
+</ul>
+<p>
+This ensures programs never crash due to I/O setup - they just silently discard output if streams are unavailable.
+</p>
+<hr>
+<h2>Comparison to Other Languages</h2>
+<h3>Python</h3>
+<pre><code>import sys
+<p>
+sys.stdin   # FD 0
+sys.stdout  # FD 1
+sys.stderr  # FD 2
+</p>
+<h1>No stddbg, stddati, stddato - must use libraries</code></pre></h1>
+<h3>Go</h3>
+<pre><code>os.Stdin   // FD 0
+<p>
+os.Stdout  // FD 1
+os.Stderr  // FD 2
+// No built-in debug stream</code></pre>
+</p>
+<h3>Rust</h3>
+<pre><code>std::io::stdin()   // FD 0
+<p>
+std::io::stdout()  // FD 1
+std::io::stderr()  // FD 2
+// No debug stream - use log crate</code></pre>
+</p>
+<h3>Aria</h3>
+<pre><code>stdin    // FD 0
+<p>
+stdout   // FD 1
+stderr   // FD 2
+stddati  // FD 4 (NEW)
+stddato  // FD 5 (NEW)
+stddbg   // FD 6 (NEW)</code></pre>
+</p>
+<strong>Only Aria</strong> provides debug and data streams as <strong>language primitives</strong>.
+<hr>
+<h2>Design Principles</h2>
+<p>
+1. <strong>Debug Output is Infrastructure</strong>: Not a library concern, not a logging framework - it's built into the I/O model
+</p>
+<p>
+2. <strong>Data ≠ Output</strong>: Structured data (JSON, etc.) should not compete with human-readable messages
+</p>
+<p>
+3. <strong>Production-Ready Debugging</strong>: Developers shouldn't delete debug statements before shipping
+</p>
+<p>
+4. <strong>Stream Redirection > Conditional Logic</strong>: Control behavior at deployment, not in code
+</p>
+<p>
+5. <strong>Separation of Concerns</strong>:
+- Control plane = human interaction
+- Data plane = machine processing
+</p>
+<hr>
+<h2>Hex-Stream Guarantees</h2>
+<p>
+Aria's compiler and runtime guarantee:
+</p>
+<p>
+✅ <strong>All six streams are always available</strong> (even if redirected to <code>/dev/null</code>)
+✅ <strong>Streams never alias</strong> (stddbg ≠ stdout, stddato ≠ stdout)
+✅ <strong>FD numbers are fixed</strong> (stddbg is always FD 6)
+✅ <strong>Buffering is appropriate</strong> (line-buffered for control, block-buffered for data)
+✅ <strong>No silent failures</strong> (sticky errors if streams are broken)
+</p>
+<hr>
+<h2>The "Aha!" Moment</h2>
+<p>
+Here's when you realize why this matters:
+</p>
+<strong>Traditional debugging</strong>:
+<p>
+1. Add <code>print("DEBUG: ...")</code> to find bug
+2. Mix debug output with production output
+3. Remove debug statements before commit
+4. Bug appears in production
+5. Add debug statements back
+6. Redeploy
+7. Repeat
+</p>
+<strong>Aria debugging</strong>:
+<p>
+1. Add <code>stddbg << "..."</code> to find bug
+2. Debug output goes to stddbg (separate from stdout)
+3. <strong>Leave debug statements in code</strong>
+4. Commit and deploy
+5. Bug appears in production
+6. Redirect stddbg to log file: <code>./program 6>debug.log</code>
+7. <strong>Immediately see what's happening</strong> - no code changes needed
+</p>
+<strong>Result</strong>: Debug code becomes <strong>documentation</strong> of the developer's thought process, <strong>permanently embedded</strong> in the codebase.
+<hr>
+<h2>Related Topics</h2>
+<ul><li><a href="io_overview.md">I/O System Overview</a></li>
+<li><a href="stddbg.md">stddbg</a> - Debug stream details</li>
+<li><a href="stddati.md">stddati</a> / <a href="stddato.md">stddato</a> - Data plane</li>
+<li><a href="control_plane.md">Control Plane</a> vs <a href="data_plane.md">Data Plane</a></li>
+<li><a href="stream_separation.md">Stream Separation Best Practices</a></li>
+</ul>
+<hr>
+<strong>The Six-Stream topology is Aria's "Uno reverse" on the Unix philosophy</strong>: Instead of composing small programs with pipes, Aria lets you compose <strong>multiple I/O channels</strong> within a single program.
+    </main>
+</body>
+</html>

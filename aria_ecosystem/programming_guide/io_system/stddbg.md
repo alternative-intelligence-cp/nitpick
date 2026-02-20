@@ -152,12 +152,12 @@ fn process_batch(items: []Item) -> []Result {
     stddbg << "Processing batch of " << items.len() << " items";
     
     results: []Result = [];
-    for i, item in items.enumerate() {
-        when i % 1000 == 0 then
-            stddbg << "  Progress: " << i << "/" << items.len();
+    till(items.len() - 1, 1) {
+        when $ % 1000 == 0 then
+            stddbg << "  Progress: " << $ << "/" << items.len();
         end
         
-        results.push(process_item(item));
+        results.push(process_item(items[$]));
     }
     
     stddbg << "Batch complete";

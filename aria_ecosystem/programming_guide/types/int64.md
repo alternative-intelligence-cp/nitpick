@@ -57,7 +57,8 @@ prod: i64 = a * b;       // Still can overflow!
 ```aria
 // Factorial up to ~20
 fact: i64 = 1;
-for i: i64 in 1..20 {
+till(19, 1) {
+    i: i64 = $ + 1;
     fact *= i;
 }
 // fact = 2432902008176640000
@@ -200,8 +201,8 @@ stdout << "Took ${duration}ms";
 ```aria
 // Sum large values
 total: i64 = 0;
-for value in large_values {
-    total += value as i64;
+till(large_values.length - 1, 1) {
+    total += large_values[$] as i64;
 }
 ```
 

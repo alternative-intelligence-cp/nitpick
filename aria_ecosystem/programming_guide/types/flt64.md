@@ -84,8 +84,8 @@ total: f64 = amount * (1.0 + interest);
 // Mean calculation
 fn mean(values: []f64) -> f64 {
     sum: f64 = 0.0;
-    for v in values {
-        sum += v;
+    till(values.length - 1, 1) {
+        sum += values[$];
     }
     return sum / (values.length() as f64);
 }
@@ -197,7 +197,8 @@ fn integrate(f: fn(f64) -> f64, a: f64, b: f64, n: i32) -> f64 {
     h: f64 = (b - a) / (n as f64);
     sum: f64 = (f(a) + f(b)) / 2.0;
     
-    for i: i32 in 1..n {
+    till(n - 1, 1) {
+        i: i32 = $ + 1;
         x: f64 = a + (i as f64) * h;
         sum += f(x);
     }

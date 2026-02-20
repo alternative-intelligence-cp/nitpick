@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lambda Expressions (Anonymous Functions) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Functions</div>
+        <h1>Lambda Expressions (Anonymous Functions)</h1>
+<strong>Category</strong>: Functions → Anonymous Functions
+<strong>Syntax</strong>: <code>returnType(paramType:param) { body }</code>
+<strong>Philosophy</strong>: Functions are first-class values - no special lambda syntax needed
+<hr>
+<h2>What is a Lambda?</h2>
+<p>
+A <strong>lambda</strong> is an anonymous function - a function <strong>without a name</strong> that can be passed as a value, stored in variables, or used inline.
+</p>
+<strong>Key Insight</strong>: In Aria, there is <strong>no special lambda syntax</strong>. Lambdas are just regular functions without a binding. No <code>=></code>, no <code>|params|</code>, no magic - just functions.
+<p>
+If you understand functions and pointers, you already understand lambdas.
+</p>
+<hr>
+<h2>Basic Syntax</h2>
+<pre><code>// Anonymous function (lambda)
+<p>
+int32(int32:a, int32:b) { pass(a + b); }
+</p>
+<p>
+// Assign to variable (function pointer)
+(int32)(int32, int32):add = int32(int32:a, int32:b) { pass(a + b); };
+</p>
+<p>
+// Use it
+int32:result = add(5, 3)?;  // 8 (unwrap Result)</code></pre>
+</p>
+<hr>
+<h2>Function Pointer Types</h2>
+<p>
+The type of a function pointer is: <code>(returnType)(paramTypes)</code>
+</p>
+<pre><code>// Function pointer type declarations
+<p>
+(int32)(int32):unary_op;              // Takes int32, returns int32
+(int32)(int32, int32):binary_op;      // Takes two int32, returns int32
+(NIL)():callback;                     // Takes nothing, returns NIL
+(string)(obj):formatter;              // Takes obj, returns string</code></pre>
+</p>
+<strong>Note</strong>: All Aria functions return <code>Result<T, E></code>, so these actually return <code>Result<int32, ERR></code>, etc. The <code>?</code> operator unwraps the Result.
+<hr>
+<h2>Immediate Execution</h2>
+<p>
+Add <code>()</code> after the function body to execute immediately:
+</p>
+<pre><code>// Define and execute immediately
+<p>
+int32:result = int32(int32:x) { pass(x * x); }(5)?;  // 25
+</p>
+<p>
+// Without immediate execution (stored for later)
+(int32)(int32):square = int32(int32:x) { pass(x * x); };
+int32:result = square(5)?;  // 25</code></pre>
+</p>
+<hr>
+<h2>Lambda as Function Parameter</h2>
+<pre><code>// Higher-order function
+<p>
+func:apply_twice = int32((int32)(int32):f, int32:x) {
+int32:temp = f(x)?;
+pass(f(temp)?);
+};
+</p>
+<p>
+// Pass lambda inline
+int32:result = apply_twice(
+int32(int32:n) { pass(n * 2); },
+5
+)?;
+// First: 5 * 2 = 10
+// Second: 10 * 2 = 20
+// result = 20</code></pre>
+</p>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Array Operations (map, filter, reduce)</h3>
+<pre><code>int32[]:numbers = [1, 2, 3, 4, 5];
+<p>
+// Map: transform each element
+int32[]:doubled = map(numbers, 5, int32(int32:x) { pass(x * 2); })?;
+// [2, 4, 6, 8, 10]
+</p>
+<p>
+// Filter: keep elements matching predicate
+int32[]:evens = filter(numbers, 5, bool(int32:x) { pass(x % 2 == 0); })?;
+// [2, 4]
+</p>
+<p>
+// Reduce: combine elements
+int32:sum = reduce(numbers, 5, 0, int32(int32:acc, int32:x) { pass(acc + x); })?;
+// 15</code></pre>
+</p>
+<h3>Inline Event Handlers</h3>
+<pre><code>struct:Button {
+<p>
+string:label;
+(NIL)():onClick;  // Function pointer for callback
+};
+</p>
+<p>
+func:setup_button = NIL() {
+Button:btn = {
+label: "Click Me",
+onClick: NIL() {
+println("Button clicked!");
+pass(NIL);
+}
+};
+</p>
+<p>
+// Trigger callback later
+btn.onClick();
+pass(NIL);
+};</code></pre>
+</p>
+<h3>Sorting with Custom Comparator</h3>
+<pre><code>User[]:users = get_users()?;
+<p>
+// Sort by age (using spaceship operator)
+sort_by(users, int32(User:a, User:b) { pass(a.age <=> b.age); });
+</p>
+<p>
+// Sort by name length
+sort_by(users, int32(User:a, User:b) { pass(a.name.len() <=> b.name.len()); });</code></pre>
+</p>
+<hr>
+<h2>Closures (Capturing Variables)</h2>
+<p>
+Lambdas can <strong>capture</strong> variables from their surrounding scope:
+</p>
+<h3>Capture by Value (Copy Semantics)</h3>
+<p>
+When you reference a variable in a closure, it's <strong>copied by value</strong>:
+</p>
+<pre><code>func:make_adder = (int32)(int32)(int32:n) {
+<p>
+// Returns a closure that captures 'n' by value
+pass(int32(int32:x) { pass(x + n); });
+};
+</p>
+<p>
+(int32)(int32):add5 = make_adder(5)?;
+int32:result = add5(10)?;  // 15
+</p>
+<p>
+(int32)(int32):add100 = make_adder(100)?;
+int32:result2 = add100(10)?;  // 110</code></pre>
+</p>
+<strong>What happens</strong>: The closure gets its <strong>own copy</strong> of <code>n</code>. Changes to the original don't affect the closure.
+<pre><code>int32:multiplier = 10;
+<p>
+(int32)(int32):scale = int32(int32:x) { pass(x * multiplier); };
+</p>
+<p>
+int32:result = scale(5)?;  // 50
+</p>
+<p>
+multiplier = 100;  // Changing original doesn't affect closure
+int32:result2 = scale(5)?;  // Still 50 (captured copy)</code></pre>
+</p>
+<h3>Capture by Reference (Pointer Semantics)</h3>
+<p>
+To modify captured variables, use <strong>pointers</strong>:
+</p>
+<pre><code>int32:counter = 0;
+<p>
+int32->:counter_ref = @counter;  // Get pointer to counter
+</p>
+<p>
+(NIL)():increment = NIL() {
+<-counter_ref = <-counter_ref + 1;  // Dereference and modify
+pass(NIL);
+};
+</p>
+<p>
+increment();  // counter = 1
+increment();  // counter = 2
+increment();  // counter = 3</code></pre>
+</p>
+<strong>⚠️ Safety</strong>: Captured pointers must outlive the closure. Dangling pointers cause undefined behavior.
+<pre><code>// UNSAFE: Pointer outlives value
+<p>
+func:make_broken_counter = (NIL)() {
+int32:local_count = 0;
+int32->:ref = @local_count;
+</p>
+<p>
+pass(NIL() {
+<-ref = <-ref + 1;  // ❌ DANGLING POINTER when local_count destroyed!
+pass(NIL);
+});
+};  // local_count destroyed here, but closure still has pointer!</code></pre>
+</p>
+<hr>
+<h2>Type Annotations</h2>
+<p>
+Function pointer types must be explicit when declaring variables:
+</p>
+<pre><code>// Explicit function pointer type
+<p>
+(int32)(string, int32):processor = int32(string:s, int32:n) {
+pass(is s.len() > n : 1 : 0);
+};
+</p>
+<p>
+// Multiple parameters
+(bool)(int32, int32, int32):in_range = bool(int32:val, int32:min, int32:max) {
+pass(val >= min && val <= max);
+};</code></pre>
+</p>
+<hr>
+<h2>Multi-Line Lambdas</h2>
+<pre><code>(Result<Data, ERR>)(Data):complex_operation = Result<Data, ERR>(Data:data) {
+<p>
+stddbg.write(<code>Processing data: &{data.id}</code>);
+</p>
+<p>
+if data.size() > MAX_SIZE then
+stderr.write("ERROR: Data too large\n");
+fail("Data too large");
+end
+</p>
+<p>
+Data:processed = transform(data)?;
+Data:validated = validate(processed)?;
+</p>
+<p>
+pass(validated);
+};</code></pre>
+</p>
+<hr>
+<h2>Lambdas in Data Structures</h2>
+<pre><code>// Array of function pointers
+<p>
+(int32)(int32)[]:operations = [
+int32(int32:x) { pass(x + 1); },
+int32(int32:x) { pass(x * 2); },
+int32(int32:x) { pass(x * x); }
+];
+</p>
+<p>
+// Apply all operations in sequence
+int32:value = 5;
+till (i < operations.len()) {
+value = operations<a href="value">$</a>?;
+}
+// 5 → 6 → 12 → 144</code></pre>
+</p>
+<hr>
+<h2>Immediate Invocation for Initialization</h2>
+<pre><code>// Define and call lambda immediately for complex initialization
+<p>
+Config:config = Config() {
+Config:c = Config.new()?;
+c.timeout = 30;
+c.retries = 3;
+pass(c);
+}()?;
+</p>
+<p>
+// Simpler example
+int32:squared = int32(int32:x) { pass(x * x); }(5)?;  // 25</code></pre>
+</p>
+<hr>
+<h2>Best Practices</h2>
+<h3>✅ DO: Use for Short, Inline Logic</h3>
+<pre><code>// Good: Simple transformation
+<p>
+int32[]:doubled = map(numbers, len, int32(int32:x) { pass(x * 2); })?;</code></pre>
+</p>
+<h3>✅ DO: Be Explicit with Types</h3>
+<pre><code>// Good: Clear parameter and return types
+<p>
+sort_by(users, int32(User:a, User:b) {
+pass(a.priority <=> b.priority);
+})?;</code></pre>
+</p>
+<h3>✅ DO: Capture by Value When Possible</h3>
+<pre><code>// Good: Safe value capture (copy)
+<p>
+int32:multiplier = 10;
+(int32)(int32):scale = int32(int32:x) { pass(x * multiplier); };</code></pre>
+</p>
+<h3>❌ DON'T: Make Lambdas Too Complex</h3>
+<pre><code>// Wrong: Lambda is too long and complex
+<p>
+Result<Data[], ERR>:result = map(items, len, Data(Item:item) {
+// 50 lines of complex logic...
+// This should be a named function!
+})?;
+</p>
+<p>
+// Right: Extract to named function
+func:process_item = Data(Item:item) {
+// Complex logic here with clear name
+pass(transformed_data);
+};
+</p>
+<p>
+Result<Data[], ERR>:result = map(items, len, process_item)?;</code></pre>
+</p>
+<h3>❌ DON'T: Capture Dangling Pointers</h3>
+<pre><code>// Wrong: Captured pointer outlives value
+<p>
+func:broken = (NIL)() {
+int32:local = 42;
+int32->:ptr = @local;
+pass(NIL() {
+println(<-ptr);  // ❌ DANGLING POINTER!
+pass(NIL);
+});
+};  // local destroyed, but closure has pointer!
+</p>
+<p>
+// Right: Capture by value
+func:safe = (NIL)() {
+int32:local = 42;
+pass(NIL() {
+println(local);  // ✅ Safe copy
+pass(NIL);
+});
+};</code></pre>
+</p>
+<hr>
+<h2>Lambda vs Named Function</h2>
+<strong>Use Lambda (anonymous function) when</strong>:
+<ul><li>Function is used once inline</li>
+<li>Logic is short and simple (< 10 lines)</li>
+<li>Passed as callback/handler to another function</li>
+<li>Complex initialization needs scoped logic</li>
+</ul>
+<strong>Use Named Function when</strong>:
+<ul><li>Function is reused multiple times</li>
+<li>Logic is complex or long</li>
+<li>Function needs a descriptive, self-documenting name</li>
+<li>Testing/debugging requires clear function identity</li>
+</ul>
+<hr>
+<h2>Real-World Examples</h2>
+<h3>Event Processing</h3>
+<pre><code>struct:App {
+<p>
+(NIL)():on_start;
+(NIL)(Error):on_error;
+(NIL)():on_shutdown;
+};
+</p>
+<p>
+func:setup_handlers = NIL(App->:app) {
+app->on_start = NIL() {
+stddbg.write("Application started\n");
+load_config()?;
+pass(NIL);
+};
+</p>
+<p>
+app->on_error = NIL(Error:err) {
+stderr.write(<code>ERROR: &{err.message}\n</code>);
+log_error(err)?;
+pass(NIL);
+};
+</p>
+<p>
+app->on_shutdown = NIL() {
+stddbg.write("Shutting down...\n");
+cleanup_resources()?;
+pass(NIL);
+};
+</p>
+<p>
+pass(NIL);
+};</code></pre>
+</p>
+<h3>Data Pipeline</h3>
+<pre><code>func:process_logs = ErrorEntry[](LogEntry[]:logs, int64:count) {
+<p>
+// Filter errors
+LogEntry[]:errors = filter(logs, count, bool(LogEntry:log) {
+pass(log.level == "ERROR");
+})?;
+</p>
+<p>
+// Transform to ErrorEntry
+ErrorEntry[]:entries = map(errors, errors.len(), ErrorEntry(LogEntry:log) {
+ErrorEntry:entry = {
+timestamp: log.timestamp,
+message: log.message,
+severity: calculate_severity(log)?
+};
+pass(entry);
+})?;
+</p>
+<p>
+// Filter by severity
+ErrorEntry[]:critical = filter(entries, entries.len(), bool(ErrorEntry:e) {
+pass(e.severity > 5);
+})?;
+</p>
+<p>
+pass(critical);
+};</code></pre>
+</p>
+<h3>Async Completion Handlers</h3>
+<pre><code>func:fetch_data = NIL(string:url, (NIL)(string):onComplete) {
+<p>
+// Async HTTP request
+string:data = http_get(url) ? "";
+</p>
+<p>
+// Call completion handler with result
+onComplete(data)?;
+pass(NIL);
+};
+</p>
+<p>
+// Usage
+fetch_data("https://example.com", NIL(string:response) {
+println(response);
+pass(NIL);
+})?;</code></pre>
+</p>
+<hr>
+<h2>No Magic: Just Functions</h2>
+<strong>Important</strong>: Aria has no special lambda operator (<code>=></code>, <code>|params|</code>, etc.). The "magic" of lambdas demystifies once you understand:
+<p>
+1. <strong>Functions are first-class values</strong> - you can pass them around like any data
+2. <strong>Function pointers</strong> - just pointers to code (like C function pointers, but type-safe)
+3. <strong>Closures capture by value</strong> - they get a copy of the environment (or pointer if you need mutability)
+</p>
+<p>
+Drop down to assembly for a few minutes and see what a function actually is: just a pointer to an address in code memory. That's it. No magic.
+</p>
+<hr>
+<h2>Related Topics</h2>
+<ul><li><a href="anonymous_functions.md">Anonymous Functions</a> - General concept and patterns</li>
+<li><a href="closure_capture.md">Closure Capture</a> - Detailed capture semantics</li>
+<li><a href="higher_order_functions.md">Higher-Order Functions</a> - Functions taking functions</li>
+<li><a href="function_declaration.md">Function Declaration</a> - Named functions</li>
+</ul>
+<hr>
+<strong>Remember</strong>: Lambdas are just <strong>anonymous functions</strong>. Use them for concise, inline logic. For anything complex, use a named function with a descriptive name instead.
+    </main>
+</body>
+</html>

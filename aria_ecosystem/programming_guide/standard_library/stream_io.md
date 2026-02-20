@@ -74,14 +74,14 @@ end
 output: File = openFile("output.txt", "w")?;
 defer output.close();
 
-for i in 0..1000000 do
-    output.write("Line $i\n")?;
+till(999999, 1) {
+    output.write("Line $($)\n")?;
     
     // Flush every 1000 lines
-    when i % 1000 == 0 then
+    when $ % 1000 == 0 then
         output.flush()?;
     end
-end
+}
 ```
 
 ---
@@ -140,8 +140,8 @@ defer output.close();
 
 buffer: []string = [];
 
-for item in large_dataset do
-    buffer.append(format_item(item));
+till(large_dataset.length - 1, 1) {
+    buffer.append(format_item(large_dataset[$]));
     
     // Flush when buffer reaches 1000 items
     when buffer.length() >= 1000 then

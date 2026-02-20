@@ -67,11 +67,11 @@ func:load_config = Result<Config, string>() {
 ```aria
 files: []string = ["a.txt", "b.txt", "c.txt"];
 
-for path in files do
-    when readFile(path) is Ok(content) then
+till(files.length - 1, 1) {
+    when readFile(files[$]) is Ok(content) then
         process(content);
     elsif is Err(msg) then
-        stderr << "Failed to read $path: $msg";
+        stderr << "Failed to read $(files[$]): $msg";
     end
 end
 ```

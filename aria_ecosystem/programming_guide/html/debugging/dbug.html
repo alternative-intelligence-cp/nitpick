@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug System (dbug) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Debugging</div>
+        <h1>Debug System (dbug)</h1>
+<strong>Built-in group-based debugging with assertions, conditional logging, and runtime control</strong>
+<hr>
+<h2>Overview</h2>
+<p>
+Aria provides a <strong>built-in debug system</strong> (<code>dbug</code>) that combines:
+</p>
+<ul><li><strong>Grouped logging</strong> - Tag debug output for selective filtering</li>
+<li><strong>Conditional checks</strong> - Assert-like functionality with custom actions</li>
+<li><strong>Format interpolation</strong> - String formatting with type-safe substitution</li>
+<li><strong>Runtime control</strong> - Enable/disable groups without recompilation</li>
+</ul>
+<strong>Philosophy</strong>: Debug instrumentation should be <strong>first-class</strong> in the language, not an afterthought. Safety-critical systems need robust debugging that stays in production code.
+<pre><code>// Enable specific debug group
+<p>
+dbug.enable('sensors');
+</p>
+<p>
+// Print debug message (only if group enabled)
+dbug.print('sensors', "Temperature: {{fix256}}, Pressure: {{fix256}}",
+[temp_reading, pressure_reading]);
+</p>
+<p>
+// Conditional check with custom action
+dbug.check('sensors', "Sensor out of range: {{fix256}}", [temp_reading],
+temp_reading < -40.0fx || temp_reading > 125.0fx,
+{ calibrate_sensor(); });</code></pre>
+</p>
+<hr>
+<h2>Core Functions</h2>
+<h3>dbug.print() - Grouped Logging</h3>
+<strong>Syntax</strong>: <code>dbug.print(group, format_string, data_array)</code>
+<strong>Purpose</strong>: Print debug messages tagged with a group label
+<strong>Parameters</strong>:
+<ul><li><code>group: string</code> - Debug group tag (e.g., "networking", "memory", "sensors")</li>
+<li><code>format_string: string</code> - Format template with <code>{{type}}</code> placeholders</li>
+<li><code>data_array: [dyn]</code> - Array of values to interpolate into format string</li>
+</ul>
+<strong>Behavior</strong>:
+<ul><li>Only prints if <code>group</code> is enabled via <code>dbug.enable(group)</code></li>
+<li>Outputs to <strong>hex stream</strong> (separate from stdout/stderr)</li>
+<li>Format string uses <code>{{type}}</code> placeholders (e.g., <code>{{int32}}</code>, <code>{{fix256}}</code>)</li>
+</ul>
+<strong>Examples</strong>:
+<pre><code>// Basic logging
+<p>
+dbug.print('network', "Packet received: {{uint32}} bytes from {{string}}",
+[packet_size, source_ip]);
+</p>
+<p>
+// Multiple values
+dbug.print('memory', "Allocated {{uint64}} bytes at {{ptr}}, total: {{uint64}}",
+[alloc_size, ptr_address, total_allocated]);
+</p>
+<p>
+// Complex types
+dbug.print('physics', "Position: {{vec3}}, velocity: {{vec3}}, t={{fix256}}",
+[position, velocity, timestamp]);</code></pre>
+</p>
+<strong>Group organization</strong>:
+<pre><code>// Hierarchical groups (by convention, use ':' separator)
+<p>
+dbug.enable('network:tcp');       // TCP-specific
+dbug.enable('network:udp');       // UDP-specific
+dbug.enable('memory:arena');      // Arena allocator
+dbug.enable('memory:refcount');   // Reference counting</code></pre>
+</p>
+<hr>
+<h3>dbug.check() - Conditional Assertions</h3>
+<strong>Syntax</strong>: <code>dbug.check(group, format_string, data_array, condition, action?)</code>
+<strong>Purpose</strong>: Assert-like checks with custom failure actions
+<strong>Parameters</strong>:
+<ul><li><code>group: string</code> - Debug group tag</li>
+<li><code>format_string: string</code> - Error message template</li>
+<li><code>data_array: [dyn]</code> - Values to interpolate</li>
+<li><code>condition: bool</code> - Condition to check (triggers if <strong>FALSE</strong>)</li>
+<li><code>action?: block</code> - Optional: Custom action to take on failure</li>
+</ul>
+<strong>Behavior</strong>:
+<ul><li>Evaluates <code>condition</code></li>
+<li>If <code>condition == false</code>:</li>
+</ul>  1. Prints formatted message to hex stream
+<p>
+2. Executes optional <code>action</code> block (if provided)
+3. If no action provided, calls <code>failsafe(ERR_DEBUG_CHECK_FAILED)</code>
+</p>
+<strong>Examples</strong>:
+<pre><code>// Simple assertion (no custom action)
+<p>
+dbug.check('sensors', "Temperature out of range: {{fix256}}", [temp],
+temp >= -40.0fx && temp <= 125.0fx);
+// If temp invalid: Prints message, calls failsafe()
+</p>
+<p>
+// With custom recovery action
+dbug.check('memory', "Buffer overflow detected: size={{uint64}}, max={{uint64}}",
+[requested_size, buffer_max],
+requested_size <= buffer_max,
+{
+// Custom recovery
+resize_buffer(requested_size);
+log.error("Buffer resized to prevent overflow");
+});
+</p>
+<p>
+// With state logging on failure
+dbug.check('network', "Invalid packet checksum: expected={{uint32}}, got={{uint32}}",
+[expected_checksum, actual_checksum],
+expected_checksum == actual_checksum,
+{
+log_packet_dump(packet);
+drop_packet(packet);
+stats.corrupted_packets += 1;
+});</code></pre>
+</p>
+<strong>Condition logic</strong>: Check triggers when condition is <strong>FALSE</strong>
+<pre><code>// This checks that value IS in range (triggers if NOT)
+<p>
+dbug.check('range', "Value out of range: {{int32}}", [value],
+value >= 0 && value <= 100);  // Triggers if value < 0 OR value > 100
+</p>
+<p>
+// Equivalent traditional assertion
+assert(value >= 0 && value <= 100, "Value out of range");</code></pre>
+</p>
+<hr>
+<h2>Format String Interpolation</h2>
+<strong>Syntax</strong>: <code>{{type}}</code> placeholders in format string
+<strong>Supported types</strong> (examples):
+<ul><li><code>{{int32}}</code>, <code>{{uint64}}</code>, <code>{{int128}}</code>, etc. - Integer types</li>
+<li><code>{{fix256}}</code>, <code>{{tfp64}}</code>, <code>{{float}}</code>, <code>{{double}}</code> - Numeric types</li>
+<li><code>{{bool}}</code> - Boolean (prints "true" or "false")</li>
+<li><code>{{string}}</code> - String values</li>
+<li><code>{{ptr}}</code> - Pointer addresses (hex format)</li>
+<li><code>{{vec3}}</code>, <code>{{vec9}}</code> - Vector types</li>
+<li><code>{{trit}}</code>, <code>{{nit}}</code> - Balanced number types</li>
+<li>Generic: <code>{{T}}</code> for template types</li>
+</ul>
+<strong>Order matching</strong>: Placeholders filled in order from <code>data_array</code>
+<pre><code>dbug.print('example', "a={{int32}}, b={{fix256}}, c={{string}}",
+<p>
+[42, 3.14fx, "hello"]);
+// Output: "a=42, b=3.14, c=hello"</code></pre>
+</p>
+<strong>Type safety</strong>: Compiler verifies placeholder types match array element types
+<pre><code>// ✓ GOOD: Types match
+<p>
+dbug.print('test', "Value: {{int32}}", [42]);
+</p>
+<p>
+// ✗ ERROR: Type mismatch
+dbug.print('test', "Value: {{int32}}", [3.14fx]);  // fix256 doesn't match int32!</code></pre>
+</p>
+<strong>Multiple identical types</strong>: Use positional ordering
+<pre><code>dbug.print('coords', "Position ({{fix256}}, {{fix256}}, {{fix256}})",
+<p>
+[x, y, z]);
+// First {{fix256}} = x, second = y, third = z</code></pre>
+</p>
+<hr>
+<h2>Runtime Control</h2>
+<h3>Enabling/Disabling Groups</h3>
+<pre><code>// Enable single group
+<p>
+dbug.enable('network');
+</p>
+<p>
+// Enable multiple groups
+dbug.enable('network');
+dbug.enable('memory');
+dbug.enable('sensors');
+</p>
+<p>
+// Disable group
+dbug.disable('network');
+</p>
+<p>
+// Toggle group
+dbug.toggle('debugging');
+</p>
+<p>
+// Check if enabled
+if dbug.is_enabled('sensors') {
+// Custom debug logic
+}</code></pre>
+</p>
+<h3>Global Control</h3>
+<pre><code>// Disable ALL debug output
+<p>
+dbug.disable_all();
+</p>
+<p>
+// Enable ALL groups
+dbug.enable_all();
+</p>
+<p>
+// List enabled groups
+string[]:enabled = dbug.list_enabled();
+till(enabled.length - 1, 1) {
+print("Debug enabled for: ", enabled[$]);
+}</code></pre>
+</p>
+<h3>Environment Variable Control</h3>
+<strong>Startup configuration</strong>:
+<pre><code># Enable specific groups at startup
+<p>
+export ARIA_DEBUG="network,memory,sensors"
+./my_aria_program
+</p>
+<h1>Enable all groups</h1>
+<p>
+export ARIA_DEBUG="*"
+./my_aria_program
+</p>
+<h1>Disable all (default)</h1>
+<p>
+export ARIA_DEBUG=""
+./my_aria_program</code></pre>
+</p>
+<strong>Runtime override</strong>:
+<pre><code>// Code-based enable overrides environment
+<p>
+dbug.enable('custom_group');  // Works even if not in ARIA_DEBUG</code></pre>
+</p>
+<hr>
+<h2>Output Channels</h2>
+<h3>Hex Stream (Default)</h3>
+<p>
+Debug output goes to <strong>hex stream</strong> (separate from normal I/O):
+</p>
+<pre><code>// Regular output (stdout)
+<p>
+stdout.print("Application started");
+</p>
+<p>
+// Debug output (hex stream, doesn't mix with stdout)
+dbug.print('startup', "Initializing modules: {{uint32}}", [module_count]);
+</p>
+<p>
+// Error output (stderr)
+stderr.print("Critical error occurred");</code></pre>
+</p>
+<strong>Why separate stream?</strong>
+<ul><li><strong>No pollution</strong> of production stdout/stderr</li>
+<li><strong>Can be redirected</strong> independently</li>
+<li><strong>Filtered at OS level</strong> (pipe to file, grep, etc.)</li>
+</ul>
+<strong>Redirection example</strong>:
+<pre><code># Send hex stream to file, keep stdout separate
+<p>
+./my_aria_program 2>debug.log  # Assuming hex stream → stderr by default</code></pre>
+</p>
+<h3>Custom Output Handler</h3>
+<pre><code>// Override default hex stream handler
+<p>
+dbug.set_output_handler({handler_fn});
+</p>
+<p>
+func:custom_debug_handler = void(string:group, string:message) {
+// Custom formatting
+timestamp:now = get_timestamp();
+log_file.write("[", now, "] [", group, "] ", message, "\n");
+}
+</p>
+<p>
+dbug.set_output_handler(custom_debug_handler);</code></pre>
+</p>
+<hr>
+<h2>Use Cases</h2>
+<h3>1. Sensor Debugging</h3>
+<pre><code>dbug.enable('sensors');
+<p>
+func:read_temperature = fix256() {
+fix256:raw_reading = adc_read();
+</p>
+<p>
+dbug.print('sensors', "Raw ADC: {{fix256}}", [raw_reading]);
+</p>
+<p>
+fix256:calibrated = apply_calibration(raw_reading);
+</p>
+<p>
+dbug.check('sensors', "Temperature out of physical range: {{fix256}}",
+[calibrated],
+calibrated >= -273.15fx && calibrated <= 1000.0fx,
+{
+// Recovery: Use last valid reading
+calibrated = last_valid_temperature;
+sensor_error_count += 1;
+});
+</p>
+<p>
+dbug.print('sensors', "Calibrated temp: {{fix256}}", [calibrated]);
+</p>
+<p>
+return calibrated;
+}</code></pre>
+</p>
+<h3>2. Memory Allocation Tracking</h3>
+<pre><code>dbug.enable('memory');
+<p>
+struct:ArenaAllocator {
+uint64:capacity,
+uint64:used,
+ptr:base_address,
+}
+</p>
+<p>
+func:arena_alloc = ptr(ArenaAllocator@:arena, uint64:size) {
+dbug.print('memory', "Alloc request: {{uint64}} bytes (used: {{uint64}}/{{uint64}})",
+[size, arena.used, arena.capacity]);
+</p>
+<p>
+dbug.check('memory', "Arena overflow: size={{uint64}}, available={{uint64}}",
+[size, arena.capacity - arena.used],
+arena.used + size <= arena.capacity,
+{
+// Auto-grow arena
+arena_grow(arena, size * 2);
+dbug.print('memory', "Arena grown to {{uint64}} bytes", [arena.capacity]);
+});
+</p>
+<p>
+ptr:allocated = arena.base_address + arena.used;
+arena.used += size;
+</p>
+<p>
+dbug.print('memory', "Allocated at {{ptr}}, new used: {{uint64}}",
+[allocated, arena.used]);
+</p>
+<p>
+return allocated;
+}</code></pre>
+</p>
+<h3>3. Network Protocol Debugging</h3>
+<pre><code>dbug.enable('network:tcp');
+<p>
+func:handle_tcp_packet = void(Packet:pkt) {
+dbug.print('network:tcp', "Packet: seq={{uint32}}, ack={{uint32}}, flags={{uint8}}",
+[pkt.seq_num, pkt.ack_num, pkt.flags]);
+</p>
+<p>
+dbug.check('network:tcp', "Invalid sequence number: {{uint32}}", [pkt.seq_num],
+pkt.seq_num >= expected_seq,
+{
+// Duplicate or out-of-order packet
+if pkt.seq_num < expected_seq {
+dbug.print('network:tcp', "Duplicate packet (seq={{uint32}})",
+[pkt.seq_num]);
+drop_packet(pkt);
+} else {
+dbug.print('network:tcp', "Out-of-order packet, buffering", []);
+buffer_packet(pkt);
+}
+});
+</p>
+<p>
+process_packet(pkt);
+}</code></pre>
+</p>
+<h3>4. Physics Simulation Validation</h3>
+<pre><code>dbug.enable('physics');
+<p>
+func:update_particle = void(Particle@:p, fix256:dt) {
+vec3:old_pos = p.position;
+</p>
+<p>
+// Update position
+p.position += p.velocity * dt;
+</p>
+<p>
+dbug.print('physics', "Particle {{uint32}}: pos={{vec3}}, vel={{vec3}}",
+[p.id, p.position, p.velocity]);
+</p>
+<p>
+// Energy conservation check
+fix256:kinetic = 0.5fx <em> p.mass </em> p.velocity.length_squared();
+fix256:potential = p.mass <em> GRAVITY </em> p.position.y;
+fix256:total_energy = kinetic + potential;
+</p>
+<p>
+dbug.check('physics', "Energy drift detected: E={{fix256}}, expected={{fix256}}",
+[total_energy, p.initial_energy],
+abs(total_energy - p.initial_energy) < 0.01fx,
+{
+// Log energy drift warning
+log.warn("Particle ", p.id, " energy drift: ",
+total_energy - p.initial_energy);
+});
+}</code></pre>
+</p>
+<h3>5. Nikola ATPM Phase Tracking</h3>
+<pre><code>dbug.enable('nikola:atpm');
+<p>
+func:update_atpm_phase = void(ATPMState@:state, fix256:dt) {
+vec9:old_phase = state.phase_vector;
+</p>
+<p>
+// Update phase
+state.phase_vector += state.phase_velocity * dt;
+</p>
+<p>
+dbug.print('nikola:atpm',
+"ATPM phase update: Δt={{fix256}}, |Δφ|={{fix256}}",
+[dt, (state.phase_vector - old_phase).length()]);
+</p>
+<p>
+// Verify phase coherence
+fix256:coherence = state.phase_vector.dot(state.target_pattern);
+</p>
+<p>
+dbug.check('nikola:atpm',
+"Phase coherence breakdown: coherence={{fix256}}",
+[coherence],
+coherence >= MIN_COHERENCE,
+{
+// Emergency phase reset
+dbug.print('nikola:atpm', "Emergency phase reset triggered", []);
+reset_phase_to_stable_attractor(state);
+});
+}</code></pre>
+</p>
+<hr>
+<h2>Advanced Patterns</h2>
+<h3>Hierarchical Group Organization</h3>
+<pre><code>// Top-level subsystems
+<p>
+dbug.enable('network');
+dbug.enable('memory');
+dbug.enable('physics');
+</p>
+<p>
+// Fine-grained modules (use ':' separator by convention)
+dbug.enable('network:tcp');
+dbug.enable('network:udp');
+dbug.enable('network:tls');
+</p>
+<p>
+dbug.enable('memory:arena');
+dbug.enable('memory:pool');
+dbug.enable('memory:gc');
+</p>
+<p>
+// Can enable entire hierarchy
+dbug.enable('network');  // Enables all network:* groups</code></pre>
+</p>
+<h3>Conditional Group Enabling</h3>
+<pre><code>// Enable based on build configuration
+<p>
+#if DEBUG_BUILD
+dbug.enable_all();
+#elif TESTING_BUILD
+dbug.enable('network');
+dbug.enable('memory');
+#else
+// Production: Only critical groups
+dbug.enable('failsafe');
+#endif
+</p>
+<p>
+// Runtime conditional enabling
+if performance_profiling_mode {
+dbug.enable('profiling');
+dbug.enable('timers');
+}</code></pre>
+</p>
+<h3>Performance Monitoring</h3>
+<pre><code>dbug.enable('perf');
+<p>
+func:expensive_operation = void() {
+timestamp:start = get_timestamp();
+</p>
+<p>
+// Operation
+do_complex_computation();
+</p>
+<p>
+timestamp:end = get_timestamp();
+fix256:elapsed = (end - start) / 1000.0fx;  // Convert to ms
+</p>
+<p>
+dbug.print('perf', "Operation took {{fix256}}ms", [elapsed]);
+</p>
+<p>
+dbug.check('perf', "Performance degradation: {{fix256}}ms (limit: 10ms)",
+[elapsed],
+elapsed < 10.0fx,
+{
+log.warn("Performance threshold exceeded!");
+trigger_profiler();
+});
+}</code></pre>
+</p>
+<h3>State Dumps on Failure</h3>
+<pre><code>dbug.enable('state');
+<p>
+func:critical_transaction = Result<void>() {
+// Capture initial state
+State:initial_state = snapshot_state();
+</p>
+<p>
+dbug.print('state', "Transaction starting: state={{uint32}}",
+[initial_state.checksum]);
+</p>
+<p>
+Result<void>:result = attempt_transaction();
+</p>
+<p>
+if result.is_error {
+// Dump full state on error
+dbug.check('state', "Transaction failed, dumping state", [],
+false,  // Always triggers
+{
+dump_state_to_file(initial_state, "error_state_dump.bin");
+dbug.print('state', "State dump written to error_state_dump.bin", []);
+});
+}
+</p>
+<p>
+return result;
+}</code></pre>
+</p>
+<hr>
+<h2>Comparison with Traditional Debugging</h2>
+<h3>vs printf Debugging</h3>
+<pre><code>// Traditional printf (mixed with stdout, hard to filter)
+<p>
+printf("Debug: x=%d, y=%d\n", x, y);  // Always runs, pollutes output
+</p>
+<p>
+// dbug (grouped, can be disabled, separate stream)
+dbug.print('debug', "x={{int32}}, y={{int32}}", [x, y]);  // Clean, filterable</code></pre>
+</p>
+<h3>vs Assertions</h3>
+<pre><code>// Traditional assert (only boolean check, crashes on failure)
+<p>
+assert(value >= 0 && value <= 100);  // Abrupt termination
+</p>
+<p>
+// dbug (custom actions, graceful degradation)
+dbug.check('validation', "Value out of range: {{int32}}", [value],
+value >= 0 && value <= 100,
+{
+value = clamp(value, 0, 100);  // Recovery instead of crash
+});</code></pre>
+</p>
+<h3>vs Logging Libraries</h3>
+<pre><code>// Traditional logging (requires setup, external dependency)
+<p>
+logger.info("network", "Packet size: {}", packet_size);  // External lib
+</p>
+<p>
+// dbug (built-in, first-class language support)
+dbug.print('network', "Packet size: {{uint32}}", [packet_size]);  // Native</code></pre>
+</p>
+<hr>
+<h2>Implementation Notes</h2>
+<h3>Group Storage</h3>
+<p>
+Groups stored as <strong>hash set</strong> of enabled group names:
+</p>
+<pre><code>// Runtime implementation (C)
+<p>
+#include <stdhash_set.h>
+</p>
+<p>
+static hash_set* enabled_groups = NULL;
+</p>
+<p>
+bool dbug_is_enabled(const char* group) {
+if (!enabled_groups) return false;
+return hash_set_contains(enabled_groups, group);
+}
+</p>
+<p>
+void dbug_enable(const char* group) {
+if (!enabled_groups) {
+enabled_groups = hash_set_create();
+}
+hash_set_insert(enabled_groups, group);
+}</code></pre>
+</p>
+<h3>Format String Parsing</h3>
+<p>
+Compile-time format string validation:
+</p>
+<pre><code>// Compiler checks:
+<p>
+// 1. Placeholder count matches array length
+// 2. Placeholder types match array element types
+// 3. All placeholders are valid type names
+</p>
+<p>
+// ✓ Valid
+dbug.print('test', "{{int32}} {{string}}", [42, "hello"]);
+</p>
+<p>
+// ✗ Error: Count mismatch (2 placeholders, 1 value)
+dbug.print('test', "{{int32}} {{string}}", [42]);
+</p>
+<p>
+// ✗ Error: Type mismatch (int32 placeholder, fix256 value)
+dbug.print('test', "{{int32}}", [3.14fx]);</code></pre>
+</p>
+<h3>Zero-Cost When Disabled</h3>
+<strong>Critical optimization</strong>: <code>dbug.print()</code> and <code>dbug.check()</code> should compile to <strong>no-op</strong> when group is disabled:
+<pre><code>// When 'network' group is DISABLED at compile-time:
+<p>
+dbug.print('network', "Message", [data]);  // ← Entire call removed by optimizer
+</p>
+<p>
+// Equivalent to:
+// (nothing - completely elided)</code></pre>
+</p>
+<strong>Implementation approach</strong>:
+<p>
+1. <strong>Compile-time constant propagation</strong> if groups known at compile time
+2. <strong>Branch prediction</strong> hints for runtime checks (likely disabled)
+3. <strong>Lazy evaluation</strong> of format strings (don't format if disabled)
+</p>
+<hr>
+<h2>Best Practices</h2>
+<h3>1. Use Descriptive Group Names</h3>
+<pre><code>// ✓ GOOD: Clear, hierarchical
+<p>
+dbug.enable('network:tcp:handshake');
+dbug.enable('memory:arena:allocation');
+dbug.enable('physics:collision:broadphase');
+</p>
+<p>
+// ✗ BAD: Vague, flat
+dbug.enable('debug');
+dbug.enable('stuff');
+dbug.enable('test');</code></pre>
+</p>
+<h3>2. Include Context in Messages</h3>
+<pre><code>// ✓ GOOD: Enough context to understand
+<p>
+dbug.print('network', "TCP handshake failed: client={{string}}, error={{int32}}",
+[client_ip, error_code]);
+</p>
+<p>
+// ✗ BAD: Not enough context
+dbug.print('network', "Failed: {{int32}}", [error_code]);  // Failed what?</code></pre>
+</p>
+<h3>3. Use Custom Actions for Recovery</h3>
+<pre><code>// ✓ GOOD: Attempt recovery
+<p>
+dbug.check('sensors', "Out of range: {{fix256}}", [reading],
+reading >= MIN && reading <= MAX,
+{
+reading = clamp(reading, MIN, MAX);
+sensor_error_count += 1;
+});
+</p>
+<p>
+// ✗ BAD: Just crash
+dbug.check('sensors', "Out of range: {{fix256}}", [reading],
+reading >= MIN && reading <= MAX);
+// No action → calls failsafe → program terminates</code></pre>
+</p>
+<h3>4. Disable Groups in Production (Selectively)</h3>
+<pre><code>// Production configuration
+<p>
+#if PRODUCTION_BUILD
+// Only safety-critical debug groups
+dbug.enable('failsafe');
+dbug.enable('safety_checks');
+// Disable verbose groups
+dbug.disable('network');
+dbug.disable('memory');
+#else
+// Development: Enable everything
+dbug.enable_all();
+#endif</code></pre>
+</p>
+<h3>5. Document Group Meanings</h3>
+<pre><code>// ✓ GOOD: Document what each group tracks
+<p>
+/**
+* Debug groups:
+*   'network' - All network activity
+*   'network:tcp' - TCP protocol specifics
+*   'network:udp' - UDP protocol specifics
+*   'memory' - Memory allocation/deallocation
+*   'memory:arena' - Arena allocator internals
+*   'physics' - Physics simulation state
+*   'physics:forces' - Force calculations
+*/
+func:main = int() {
+// ...
+}</code></pre>
+</p>
+<hr>
+<h2>Integration with Safety Systems</h2>
+<h3>Complement to failsafe()</h3>
+<pre><code>// dbug.check() with no action → calls failsafe
+<p>
+dbug.check('critical', "Invariant violated: {{int32}}", [state],
+state == VALID);
+// If state != VALID: Prints message, then calls failsafe(ERR_DEBUG_CHECK_FAILED)
+</p>
+<p>
+// Custom failsafe can log debug state
+func:failsafe = void(int32:err_code) {
+if err_code == ERR_DEBUG_CHECK_FAILED {
+// Debug check failed: Dump full state
+dbug.print('failsafe', "Entering failsafe from debug check", []);
+dump_system_state();
+}
+</p>
+<p>
+// ... handle error ...
+}</code></pre>
+</p>
+<h3>Complement to unknown/Result</h3>
+<pre><code>// Debug checks for early warning, before unknown propagates
+<p>
+func:divide_safe = fix256 | unknown(fix256:a, fix256:b) {
+dbug.check('math', "Division by near-zero: b={{fix256}}", [b],
+abs(b) > 0.0001fx,
+{
+log.warn("Near-zero division detected");
+});
+</p>
+<p>
+if b == 0.0fx {
+return unknown;  // Safety system handles this
+}
+</p>
+<p>
+return a / b;
+}</code></pre>
+</p>
+<hr>
+<h2>Planned Enhancements</h2>
+<h3>Future Additions</h3>
+<p>
+1. <strong>Level-based filtering</strong> (like traditional logging):
+``<code>aria
+dbug.set_level('network', LEVEL_INFO);   // Info and above
+dbug.set_level('memory', LEVEL_WARN);    // Only warnings/errors
+</code>`<code>
+</p>
+<p>
+2. <strong>Sampling for high-frequency events</strong>:
+</code>`<code>aria
+dbug.print_sampled('physics', rate_hz: 100, "State update {{vec3}}", [pos]);
+// Only prints 100 times per second (even if called thousands of times)
+</code>`<code>
+</p>
+<p>
+3. <strong>Conditional compilation</strong>:
+</code>`<code>aria
+#dbug('network') {
+// Code only compiled if 'network' group enabled at build time
+expensive_state_validation();
+}
+</code>`<code>
+</p>
+<p>
+4. <strong>Structured data output</strong> (JSON, etc.):
+</code>`<code>aria
+dbug.print_json('api', {
+"endpoint": endpoint_name,
+"latency_ms": latency,
+"status": status_code
+});
+</code>`<code>
+</p>
+<hr>
+<h2>Related Features</h2>
+<ul><li><strong><a href="unknown.md">unknown</a></strong> - Soft error handling (complementary to dbug checks)</li>
+<li><strong><a href="result.md">Result<T></a></strong> - Hard error handling (orthogonal to debug)</li>
+<li><strong><a href="failsafe.md">failsafe()</a></strong> - Final safety net (dbug can trigger)</li>
+</ul>
+<hr>
+<h2>Implementation Status</h2>
+<p>
+| Feature | Parser | Compiler | Runtime | Status |
+|---------|--------|----------|---------|--------|
+| </code>dbug.print()<code> | ⏳ | ⏳ | ⏳ | Planned |
+| </code>dbug.check()<code> | ⏳ | ⏳ | ⏳ | Planned |
+| Group enable/disable | ⏳ | ⏳ | ⏳ | Planned |
+| Format string interpolation | ⏳ | ⏳ | ⏳ | Planned |
+| Hex stream output | ⏳ | ⏳ | ⏳ | Planned |
+| Environment variable control | ⏳ | ⏳ | ⏳ | Planned |
+</p>
+<hr>
+<h2>Summary</h2>
+<strong>dbug = First-class debug system for safety-critical applications</strong>
+<h3>Quick Decision Guide</h3>
+<p>
+| Need | Use This | Why |
+|------|----------|-----|
+| Temporary debug print | </code>dbug.print()<code> | Can disable without removing code |
+| Validate invariants | </code>dbug.check()<code> | Assertions with custom recovery |
+| Filter debug output | Group tags | Enable/disable by subsystem |
+| Production debugging | Selective group enabling | Keep instrumentation in production |
+| Performance monitoring | </code>dbug.print()` + timestamps | Track timing without profiler |
+</p>
+<h3>Key Principles</h3>
+<p>
+1. <strong>Group-based filtering</strong> - Control debug output granularity
+2. <strong>Built-in formatting</strong> - Type-safe string interpolation
+3. <strong>Custom recovery</strong> - Assertions don't have to crash
+4. <strong>Separate output</strong> - Hex stream doesn't pollute stdout/stderr
+5. <strong>Zero-cost when disabled</strong> - No runtime overhead for disabled groups
+6. <strong>First-class language feature</strong> - Not an external library
+</p>
+<strong>For safety-critical systems</strong>: dbug provides production-grade debugging infrastructure that complements unknown/Result/failsafe without requiring external dependencies.
+<strong>Remember</strong>: "Debug instrumentation isn't technical debt - it's operational visibility. Keep it in production, control it with groups."
+    </main>
+</body>
+</html>

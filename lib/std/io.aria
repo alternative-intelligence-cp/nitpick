@@ -22,44 +22,140 @@ const int32:STDDBG_FD = 3i32;
 // =============================================================================
 
 /// Print a single character to stdout
-func:print_char = void(int32:ch) {
-    putchar(ch);
+pub func:print_char = NIL(int32:ch) {
+    int32:_ = putchar(ch);
+    pass(NIL);
 };
 
 /// Print a newline
-func:print_newline = void() {
+pub func:print_newline = NIL() {
     int32:nl = 10i32;
-    putchar(nl);
+    int32:_ = putchar(nl);
+    pass(NIL);
 };
 
 /// Print a single digit (0-9)
-func:print_digit = void(int32:d) {
+pub func:print_digit = NIL(int32:d) {
     int32:ch = 48i32 + d;
-    putchar(ch);
+    int32:_ = putchar(ch);
+    pass(NIL);
 };
 
 /// Print a space character
-func:print_space = void() {
+pub func:print_space = NIL() {
     int32:sp = 32i32;
-    putchar(sp);
+    int32:_ = putchar(sp);
+    pass(NIL);
 };
 
 /// Print a tab character
-func:print_tab = void() {
+pub func:print_tab = NIL() {
     int32:tab = 9i32;
-    putchar(tab);
+    int32:_ = putchar(tab);
+    pass(NIL);
 };
 
-// TODO: stderr functions need pointer casting support
-// - eprint_char, eprint_newline
-// - Currently can't cast int32@ to int8@ for write() call
+// =============================================================================
+// Integer Printing
+// =============================================================================
 
-// TODO: Full integer printing needs:
-// - Modulo operator for digit extraction
-// - Early return or better control flow for edge cases
-// - String support for easier formatting
+/// Print a signed 32-bit integer to stdout
+pub func:print_int32 = NIL(int32:n) {
+    // Handle negative numbers
+    if (n < 0i32) {
+        print_char(45i32) ? NIL;  // '-'
+        n = 0i32 - n;  // Make positive
+    }
+    
+    // Handle zero specially
+    if (n == 0i32) {
+        print_digit(0i32) ? NIL;
+    } else {
+        // Extract digits
+        int32[10]:digits;
+        int32:count = 0i32;
+        
+        while (n > 0i32) {
+            int32:digit = n % 10i32;
+            digits[count] = digit;
+            count = count + 1i32;
+            n = n / 10i32;
+        }
+        
+        // Print in reverse order
+        int32:i = count - 1i32;
+        while (i >= 0i32) {
+            print_digit(digits[i]) ? NIL;
+            i = i - 1i32;
+        }
+    }
+    pass(NIL);
+};
 
-// TODO: String printing needs:
-// - Way to access string.data field or builtin conversion
-// - Currently strings are opaque struct { char*, int64 }
+/// Print a signed 64-bit integer to stdout
+pub func:print_int64 = NIL(int64:n) {
+    // Handle negative numbers
+    if (n < 0i64) {
+        print_char(45i32) ? NIL;  // '-'
+        n = 0i64 - n;  // Make positive
+    }
+    
+    // Handle zero specially
+    if (n == 0i64) {
+        print_digit(0i32) ? NIL;
+    } else {
+        // Extract digits
+        int32[20]:digits;
+        int32:count = 0i32;
+        
+        while (n > 0i64) {
+            int64:digit_64 = n % 10i64;
+            // Narrow to int32 (safe for 0-9)
+            int32:digit = 0i32;
+            if (digit_64 == 0i64) digit = 0i32;
+            else if (digit_64 == 1i64) digit = 1i32;
+            else if (digit_64 == 2i64) digit = 2i32;
+            else if (digit_64 == 3i64) digit = 3i32;
+            else if (digit_64 == 4i64) digit = 4i32;
+            else if (digit_64 == 5i64) digit = 5i32;
+            else if (digit_64 == 6i64) digit = 6i32;
+            else if (digit_64 == 7i64) digit = 7i32;
+            else if (digit_64 == 8i64) digit = 8i32;
+            else digit = 9i32;
+            
+            digits[count] = digit;
+            count = count + 1i32;
+            n = n / 10i64;
+        }
+        
+        // Print in reverse order
+        int32:i = count - 1i32;
+        while (i >= 0i32) {
+            print_digit(digits[i]) ? NIL;
+            i = i - 1i32;
+        }
+    }
+    pass(NIL);
+};
+
+// =============================================================================
+// Six-Stream I/O Note
+// =============================================================================
+
+// NOTE: stderr (FD 2) and stddbg (FD 3) output functions require wild pointers
+// for C FFI compatibility. Once we have better wild pointer support in the
+// language, we'll add:
+//   - eprint_* functions (stderr output)
+//   - dbgprint_* functions (stddbg output)
+//  
+// For now, programs can use the runtime C++ stream functions directly
+// or we can add wrapper functions that take wild pointers as needed.
+
+// Six-stream topology is fully implemented in the runtime (streams.cpp):
+//   FD 0: stdin  (text, line-buffered)
+//   FD 1: stdout (text, line-buffered)  ← implemented here
+//   FD 2: stderr (text, unbuffered)     ← needs wild pointers
+//   FD 3: stddbg (text, unbuffered)     ← needs wild pointers
+//   FD 4: stddati (binary, buffered)    ← future work
+//   FD 5: stddato (binary, buffered)    ← future work
 

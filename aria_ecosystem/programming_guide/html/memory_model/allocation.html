@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Allocation Strategies - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Memory Model</div>
+        <h1>Memory Allocation Strategies</h1>
+<strong>Category</strong>: Memory Model → Allocation
+<strong>Keywords</strong>: <code>wild</code>, <code>gc</code>, <code>stack</code>, <code>wildx</code>
+<strong>Purpose</strong>: Understanding Aria's hybrid memory management system
+<hr>
+<h2>Overview</h2>
+<p>
+Aria provides <strong>four distinct memory allocation strategies</strong>, each optimized for different use cases:
+</p>
+<p>
+| Strategy | Management | Speed | Safety | Use Case |
+|----------|-----------|-------|--------|----------|
+| <strong>wild</strong> | Manual | Fastest | Unsafe | Performance-critical, full control |
+| <strong>gc</strong> | Automatic | Fast | Safe | General purpose, convenience |
+| <strong>stack</strong> | Automatic | Fastest | Limited | Local variables, short-lived data |
+| <strong>wildx</strong> | Manual | Fast | Unsafe | Executable memory (JIT compilers) |
+</p>
+<strong>Philosophy</strong>: You choose the right tool for each allocation. No one-size-fits-all.
+<hr>
+<h2>Stack Allocation (Default)</h2>
+<h3>Definition</h3>
+<strong>Stack allocation</strong> is the default for local variables. Memory is automatically allocated when entering a scope and freed when exiting.
+<ul><li><strong>Management</strong>: Automatic (compiler-managed)</li>
+<li><strong>Lifetime</strong>: Scope-bound</li>
+<li><strong>Speed</strong>: Fastest (just pointer increment)</li>
+<li><strong>Limitation</strong>: Fixed size, short-lived</li>
+</ul>
+<h3>Usage</h3>
+<pre><code>func:example = result() {
+<p>
+// Stack-allocated by default
+int64:x = 100;           // On stack
+string:name = "Alice";   // On stack
+int32[10]:buffer;        // 10 int32s on stack
+</p>
+<p>
+Point:p = {x: 10, y: 20}; // Struct on stack
+</p>
+<p>
+// All automatically freed when function returns
+pass(NIL);
+};</code></pre>
+</p>
+<h3>When to Use Stack</h3>
+<ul><li>✅ Local variables with known, small size</li>
+<li>✅ Short-lived data (function scope)</li>
+<li>✅ Performance-critical hot paths</li>
+<li>✅ When size is known at compile time</li>
+<li>❌ Large allocations (risk stack overflow)</li>
+<li>❌ Data that outlives function scope</li>
+<li>❌ Dynamically sized data</li>
+</ul>
+<hr>
+<h2>Wild Memory (Manual Management)</h2>
+<h3>Definition</h3>
+<strong>Wild memory</strong> is manually managed heap allocation. You explicitly allocate and must explicitly free. No automatic cleanup.
+<ul><li><strong>Management</strong>: Manual (you control everything)</li>
+<li><strong>Lifetime</strong>: Explicit (alloc → free)</li>
+<li><strong>Speed</strong>: Very fast (no GC overhead)</li>
+<li><strong>Risk</strong>: Memory leaks if you forget to free</li>
+</ul>
+<h3>Allocation and Deallocation</h3>
+<pre><code>// Allocate wild memory
+<p>
+wild int64@:ptr = aria.alloc<int64>(100);  // 100 int64s
+</p>
+<p>
+// Check for allocation failure
+if (ptr == NULL) {
+stderr.write("Allocation failed");
+fail(1);
+}
+</p>
+<p>
+// Use the memory
+ptr[0] = 42;
+ptr[99] = 1337;
+</p>
+<p>
+// MUST manually free
+aria.free(ptr);</code></pre>
+</p>
+<h3>The <code>defer</code> Pattern (RAII)</h3>
+<strong>Best practice</strong>: Use <code>defer</code> to ensure memory is always freed, even on early returns:
+<pre><code>func:processData = Result<int64>(uint64:size) {
+<p>
+wild int64@:buffer = aria.alloc<int64>(size);
+</p>
+<p>
+if (buffer == NULL) {
+fail(1);  // Early return - no cleanup needed yet
+}
+</p>
+<p>
+// defer ensures free() runs at scope exit
+defer aria.free(buffer);
+</p>
+<p>
+// Process data...
+if (someCondition) {
+fail(2);  // Early return - defer still runs!
+}
+</p>
+<p>
+// More processing...
+buffer[0] = computeValue();
+</p>
+<p>
+pass(buffer[0]);  // defer runs after this return too
+};</code></pre>
+</p>
+<h3>Specialized Wild Allocators</h3>
+<pre><code>// Buffer allocation (for I/O, networking)
+<p>
+wild uint8@:iobuf = aria.alloc_buffer(4096);
+defer aria.free(iobuf);
+</p>
+<p>
+// String allocation (for dynamic strings)
+wild string@:str = aria.alloc_string(1024);
+defer aria.free(str);
+</p>
+<p>
+// Array allocation (for dynamic arrays)
+wild int32@:arr = aria.alloc_array<int32>(1000);
+defer aria.free(arr);</code></pre>
+</p>
+<h3>When to Use Wild</h3>
+<ul><li>✅ Performance-critical allocations (no GC overhead)</li>
+<li>✅ Interop with C libraries (predictable layout)</li>
+<li>✅ Large, long-lived data structures</li>
+<li>✅ When you need full control of lifetime</li>
+<li>✅ Embedded systems (deterministic memory)</li>
+<li>❌ General-purpose code (prefer GC)</li>
+<li>❌ When forgetting free() is likely</li>
+<li>❌ Complex object graphs (hard to track)</li>
+</ul>
+<hr>
+<h2>Garbage Collection (Automatic Management)</h2>
+<h3>Definition</h3>
+<strong>GC memory</strong> is automatically managed. The garbage collector tracks references and frees memory when no longer reachable.
+<ul><li><strong>Management</strong>: Automatic (GC-managed)</li>
+<li><strong>Lifetime</strong>: Reference-counted or traced</li>
+<li><strong>Speed</strong>: Fast (slight GC overhead)</li>
+<li><strong>Safety</strong>: Memory-safe (no leaks)</li>
+</ul>
+<h3>Allocation</h3>
+<pre><code>// Allocate GC memory
+<p>
+gc obj@:user = aria.gc_alloc<obj>();
+</p>
+<p>
+// No need to free - GC handles it
+user->name = "Bob";
+user->age = 30;
+</p>
+<p>
+// When 'user' goes out of scope and no references remain,
+// GC automatically frees the memory</code></pre>
+</p>
+<h3>GC Initialization</h3>
+<p>
+The GC must be initialized at program start:
+</p>
+<pre><code>func:main = int64() {
+<p>
+// Initialize GC (typically done automatically by runtime)
+aria.gc_init(0, 0);  // Default params
+</p>
+<p>
+// Now GC allocations work
+gc obj@:data = aria.gc_alloc<obj>();
+</p>
+<p>
+pass(0);
+};</code></pre>
+</p>
+<h3>Mixed Wild and GC</h3>
+<p>
+You can mix allocation strategies in the same program:
+</p>
+<pre><code>func:mixedAllocation = result() {
+<p>
+// Stack allocation
+int64:counter = 0;
+</p>
+<p>
+// Wild allocation
+wild int64@:wildBuf = aria.alloc<int64>(1000);
+defer aria.free(wildBuf);
+</p>
+<p>
+// GC allocation
+gc obj@:gcData = aria.gc_alloc<obj>();
+</p>
+<p>
+// All three coexist peacefully
+counter++;
+wildBuf[0] = counter;
+gcData->value = counter;
+</p>
+<p>
+pass(NIL);
+};</code></pre>
+</p>
+<h3>When to Use GC</h3>
+<ul><li>✅ General-purpose allocations</li>
+<li>✅ Complex object graphs with shared ownership</li>
+<li>✅ When forgetting to free would cause leaks</li>
+<li>✅ Rapid prototyping and development</li>
+<li>✅ High-level application code</li>
+<li>❌ Real-time systems (GC pauses)</li>
+<li>❌ Performance-critical inner loops</li>
+<li>❌ C FFI interop (unpredictable addresses)</li>
+</ul>
+<hr>
+<h2>Executable Memory (JIT Compilation)</h2>
+<h3>Definition</h3>
+<strong>Wildx memory</strong> is executable wild memory for JIT (Just-In-Time) compilation. Allows runtime code generation.
+<ul><li><strong>Management</strong>: Manual (like wild)</li>
+<li><strong>Lifetime</strong>: Explicit (alloc → free)</li>
+<li><strong>Permission</strong>: Executable (can run as code)</li>
+<li><strong>Use Case</strong>: JIT compilers, dynamic code generation</li>
+</ul>
+<h3>Allocation</h3>
+<pre><code>// Allocate executable memory for JIT
+<p>
+wildx uint8@:codeBuf = aria.alloc_executable(4096);
+</p>
+<p>
+if (codeBuf == NULL) {
+fail(1);
+}
+defer aria.free_executable(codeBuf);
+</p>
+<p>
+// Write machine code to buffer
+codeBuf[0] = 0x48;  // x86-64 instruction bytes
+codeBuf[1] = 0xB8;
+codeBuf[2] = 0x2A;
+// ... (emit compiled code)
+</p>
+<p>
+// Cast to function pointer and execute
+func:generated = int64() {
+// Call generated code
+};</code></pre>
+</p>
+<h3>Security Considerations</h3>
+<p>
+Executable memory is <strong>dangerous</strong>:
+</p>
+<ul><li>⚠️ Must validate all generated code</li>
+<li>⚠️ Vulnerable to code injection attacks</li>
+<li>⚠️ OS may restrict executable allocations</li>
+<li>⚠️ Use only when absolutely necessary</li>
+</ul>
+<h3>When to Use Wildx</h3>
+<ul><li>✅ JIT compiler implementation</li>
+<li>✅ Dynamic code generation</li>
+<li>✅ Runtime optimization engines</li>
+<li>✅ Scripting language VMs</li>
+<li>❌ General-purpose code</li>
+<li>❌ User-controlled data</li>
+<li>❌ Security-sensitive applications</li>
+</ul>
+<hr>
+<h2>Comparison Matrix</h2>
+<p>
+| Feature | stack | wild | gc | wildx |
+|---------|-------|------|-----|-------|
+| <strong>Allocation Speed</strong> | Instant | Very Fast | Fast | Fast |
+| <strong>Deallocation</strong> | Automatic | Manual | Automatic | Manual |
+| <strong>Lifetime Control</strong> | Scope | Explicit | GC-decided | Explicit |
+| <strong>Memory Safety</strong> | Safe | Unsafe | Safe | Unsafe |
+| <strong>GC Overhead</strong> | None | None | Some | None |
+| <strong>Leak Risk</strong> | None | High | None | High |
+| <strong>Executable</strong> | No | No | No | Yes |
+| <strong>C FFI Compatible</strong> | Limited | Yes | No | Yes |
+| <strong>Size Limit</strong> | Small | Large | Large | Medium |
+</p>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Pattern 1: Stack + Defer for RAII</h3>
+<pre><code>func:processFile = Result<obj>(string:path) {
+<p>
+wild File@:file = openFile(path);
+if (file == NULL) { fail(1); }
+defer file->close();  // RAII cleanup
+</p>
+<p>
+wild uint8@:buffer = aria.alloc_buffer(4096);
+if (buffer == NULL) { fail(2); }
+defer aria.free(buffer);
+</p>
+<p>
+// Both cleaned up automatically on any return path
+obj:data = file->read(buffer, 4096);
+pass(data);
+};</code></pre>
+</p>
+<h3>Pattern 2: GC for Complex Data Structures</h3>
+<pre><code>struct:Node = {
+<p>
+int64:value;
+gc Node@:left;   // GC handles cycles
+gc Node@:right;
+};
+</p>
+<p>
+func:buildTree = Result<Node@>(int64:depth) {
+gc Node@:root = aria.gc_alloc<Node>();
+root->value = depth;
+</p>
+<p>
+if (depth > 0) {
+root->left = buildTree(depth - 1) ? NULL;
+root->right = buildTree(depth - 1) ? NULL;
+}
+</p>
+<p>
+pass(root);  // No need to free - GC handles tree
+};</code></pre>
+</p>
+<h3>Pattern 3: Wild for Performance</h3>
+<pre><code>func:matrixMultiply = Result<flt64@>(flt64@:a, flt64@:b, int64:n) {
+<p>
+wild flt64@:result = aria.alloc<flt64>(n * n);
+if (result == NULL) { fail(1); }
+defer aria.free(result);
+</p>
+<p>
+// Hot loop - no GC overhead
+for (int64:i = 0; i < n; i++) {
+for (int64:j = 0; j < n; j++) {
+flt64:sum = 0.0;
+for (int64:k = 0; k < n; k++) {
+sum += a[i <em> n + k] </em> b[k * n + j];
+}
+result[i * n + j] = sum;
+}
+}
+</p>
+<p>
+pass(result);  // Caller takes ownership
+};</code></pre>
+</p>
+<h3>Pattern 4: Wildx for JIT</h3>
+<pre><code>func:compileFunction = Result<func>(obj:ast) {
+<p>
+wildx uint8@:code = aria.alloc_executable(1024);
+if (code == NULL) { fail(1); }
+</p>
+<p>
+// Emit machine code
+emitPrologue(code);
+emitBody(code, ast);
+emitEpilogue(code);
+</p>
+<p>
+// Return function pointer
+func:compiled = code;
+pass(compiled);  // Caller must free with aria.free_executable
+};</code></pre>
+</p>
+<hr>
+<h2>Memory Pinning (GC Interaction)</h2>
+<h3>The <code>#</code> Operator</h3>
+<p>
+When passing GC memory to C functions, you must <strong>pin</strong> it to prevent the GC from moving it:
+</p>
+<pre><code>gc string@:str = aria.gc_alloc<string>();
+<p>
+str->data = "Hello from GC";
+</p>
+<p>
+extern "mylib" {
+func:processCString = int32(char*:str);
+}
+</p>
+<p>
+// Pin GC memory for C FFI
+#str;  // Prevent GC from moving str
+int32:result = processCString(str->data);
+// Automatically unpinned at scope exit</code></pre>
+</p>
+<h3>Why Pinning is Necessary</h3>
+<p>
+GC may move objects during collection. C pointers must stay valid:
+</p>
+<pre><code>gc obj@:gcData = aria.gc_alloc<obj>();
+<p>
+// WRONG: Don't pass GC pointers to C without pinning
+callCFunction(gcData);  // ❌ GC might move gcData!
+</p>
+<p>
+// CORRECT: Pin first
+#gcData;
+callCFunction(gcData);  // ✅ Safe, gcData won't move</code></pre>
+</p>
+<hr>
+<h2>Gotchas and Best Practices</h2>
+<h3>❌ Forgetting to Free Wild Memory</h3>
+<pre><code>// WRONG: Memory leak!
+<p>
+func:leak = result() {
+wild int64@:ptr = aria.alloc<int64>(1000);
+// ... use ptr ...
+pass(NIL);  // Forgot aria.free(ptr)! LEAK!
+}
+</p>
+<p>
+// CORRECT: Always use defer
+func:correct = result() {
+wild int64@:ptr = aria.alloc<int64>(1000);
+defer aria.free(ptr);  // Guaranteed cleanup
+pass(NIL);
+}</code></pre>
+</p>
+<h3>❌ Using Stack for Large Allocations</h3>
+<pre><code>// WRONG: Stack overflow risk!
+<p>
+func:danger = result() {
+int64[1000000]:huge;  // 8 MB on stack! ⚠️
+pass(NIL);
+}
+</p>
+<p>
+// CORRECT: Use heap (wild or gc)
+func:safe = result() {
+wild int64@:huge = aria.alloc<int64>(1000000);
+defer aria.free(huge);
+pass(NIL);
+}</code></pre>
+</p>
+<h3>❌ Returning Pointers to Stack Memory</h3>
+<pre><code>// WRONG: Dangling pointer!
+<p>
+func:danger = int64@() {
+int64:local = 42;
+pass(@local);  // ❌ local freed when function returns!
+}
+</p>
+<p>
+// CORRECT: Return heap-allocated memory
+func:safe = int64@() {
+wild int64@:heap = aria.alloc<int64>(1);
+*heap = 42;
+pass(heap);  // Caller must free
+}</code></pre>
+</p>
+<h3>✅ Check for Allocation Failure</h3>
+<pre><code>// Always check wild allocations
+<p>
+wild int64@:ptr = aria.alloc<int64>(size);
+if (ptr == NULL) {
+stderr.write("Allocation failed");
+fail(1);
+}
+defer aria.free(ptr);</code></pre>
+</p>
+<h3>✅ Use GC for Prototypes, Wild for Production</h3>
+<pre><code>// During development: Use GC for safety
+<p>
+gc obj@:data = aria.gc_alloc<obj>();
+// No defer needed, no leak risk
+</p>
+<p>
+// For production hot paths: Switch to wild
+wild obj@:data = aria.alloc<obj>(1);
+defer aria.free(data);
+// Faster, more predictable</code></pre>
+</p>
+<hr>
+<h2>Related Topics</h2>
+<ul><li><a href="defer.md">defer Keyword</a> - RAII-style automatic cleanup</li>
+<li><a href="../types/pointers.md">Pointers</a> - Pointer syntax and semantics</li>
+<li><a href="../operators/pin.md">Pinning Operator</a> - <code>#</code> for GC pinning</li>
+<li><a href="safety.md">Memory Safety</a> - Borrowing and ownership</li>
+<li><a href="../modules/extern.md">FFI System</a> - C interop considerations</li>
+</ul>
+<hr>
+<strong>Status</strong>: Comprehensive
+<strong>Specification</strong>: aria_specs.txt Lines 143-145, 148-154
+<strong>Key Insight</strong>: No silver bullet - choose the right strategy for each allocation
+    </main>
+</body>
+</html>

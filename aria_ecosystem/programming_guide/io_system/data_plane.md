@@ -141,16 +141,16 @@ fn main() {
     
     // Transform
     transformed: []Record = [];
-    for i, record in records.enumerate() {
+    till(records.len() - 1, 1) {
         // Progress on control plane
-        when i % 1000 == 0 then
-            stdout << "  Progress: " << i << "/" << records.len() << "\n";
+        when $ % 1000 == 0 then
+            stdout << "  Progress: " << $ << "/" << records.len() << "\n";
         end
         
         // Debug trace
-        stddbg << "Transforming record " << record.id;
+        stddbg << "Transforming record " << records[$].id;
         
-        transformed.push(transform(record));
+        transformed.push(transform(records[$]));
     }
     
     // Write transformed data to stddato
@@ -227,8 +227,9 @@ stddato.write_json(result);
 
 ### NDJSON (Newline-Delimited JSON)
 ```aria
-for line in stddati.lines() {
-    record: JsonValue = json::parse(line)?;
+lines = stddati.lines().collect();
+till(lines.length - 1, 1) {
+    record: JsonValue = json::parse(lines[$])?;
     process(record);
 }
 ```

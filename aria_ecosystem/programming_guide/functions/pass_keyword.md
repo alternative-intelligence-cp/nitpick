@@ -138,7 +138,8 @@ fn calculate_average(numbers: []tbb32) -> tbb32 {
     end
     
     sum: tbb32 = 0;
-    for num in numbers {
+    till(numbers.length - 1, 1) {
+        num: tbb32 = numbers[$];
         sum = pass add_checked(sum, num);  // Overflow-safe addition
     }
     

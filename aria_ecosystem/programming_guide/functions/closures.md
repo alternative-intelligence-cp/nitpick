@@ -101,7 +101,8 @@ stdout << say_hi();  // "Hi, Bob!"
 fn create_multipliers() -> []fn(i32) -> i32 {
     multipliers: []fn(i32) -> i32 = [];
     
-    for i in 1..=5 {
+    till(4, 1) {
+        i = $ + 1;
         // Each closure captures its own copy of i
         multipliers.push(|x: i32| x * i);
     }
@@ -425,7 +426,8 @@ fn rate_limit(max_calls: i32, window_ms: i32) -> fn() -> bool {
 // Max 5 calls per second
 can_call: fn() -> bool = rate_limit(5, 1000);
 
-for i in 1..10 {
+till(9, 1) {
+    i: i32 = $ + 1;
     when can_call() then
         stdout << "API call " << i << "\n";
     else

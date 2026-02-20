@@ -84,21 +84,21 @@ end
 children: []i32 = [];
 
 // Fork multiple children
-for i in 0..5 do
+till(4, 1) {
     fork_Result: ForkResult = fork()?;
     
     when fork_result is Parent(child_pid) then
         children.append(child_pid);
     elsif fork_result is Child then
-        work(i);
+        work($);
         exit(0);
     end
 end
 
 // Wait for all children
-for child_pid in children do
-    Result: ProcessResult = wait(child_pid)?;
-    stdout << "Child $child_pid exited: $(result.exit_code)";
+till(children.length - 1, 1) {
+    Result: ProcessResult = wait(children[$])?;
+    stdout << "Child $(children[$]) exited: $(result.exit_code)";
 end
 
 stdout << "All children completed";

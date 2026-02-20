@@ -87,8 +87,8 @@ diff: i32 = old ^ new;  // 0b0110 (bits that changed)
 fn xor_encrypt(data: []byte, key: byte) -> []byte {
     Result: []byte = aria_alloc_buffer(data.length());
     
-    for i in 0..data.length() {
-        result[i] = data[i] ^ key;
+    till(data.length() - 1, 1) {
+        result[$] = data[$] ^ key;
     }
     
     return result;
@@ -108,8 +108,8 @@ decrypted := xor_encrypt(encrypted, 0x5A);  // Original message
 fn find_unique(arr: []i32) -> i32 {
     Result: i32 = 0;
     
-    for num in arr {
-        result ^= num;  // Pairs cancel out
+    till(arr.length - 1, 1) {
+        result ^= arr[$];  // Pairs cancel out
     }
     
     return result;  // Only unique remains

@@ -1,0 +1,1677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>frac8, frac16, frac32, frac64 - Exact Rational Arithmetic (Zero Drift) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>frac8, frac16, frac32, frac64 - Exact Rational Arithmetic (Zero Drift)</h1>
+<strong>Mathematically perfect fractions - no floating-point drift, ever</strong>
+<hr>
+<h2>Overview</h2>
+<p>
+Aria's <code>frac</code> family provides <strong>exact rational number arithmetic</strong> using mixed-fraction representation (whole + numerator/denominator). Unlike floating-point types that approximate most fractions, frac types maintain <strong>perfect mathematical precision</strong> - 1/3 is exactly 1/3, not 0.333...
+</p>
+<p>
+| Feature | Floating-Point | frac Types |
+|---------|---------------|------------|
+| Precision | ❌ Approximates | ✅ Mathematically exact |
+| 1/3 Representation | 0.333... (rounded) | 1/3 (exact!) |
+| Accumulation Drift | ❌ Compounds over time | ✅ Zero drift, ever |
+| 0.1 + 0.2 | 0.30000000000000004 | 0.3 (exact!) |
+| Financial Math | ⚠️ Rounding errors accumulate | ✅ Perfect to the cent |
+| Musical Intervals | ⚠️ Pitch drift | ✅ Perfect tuning maintained |
+| Performance | ⚡ Hardware fast | 📊 Software (slower) |
+| Storage | 4-8 bytes | 3-18 bytes |
+</p>
+<strong>Critical Use Cases</strong>:
+<ul><li><strong>Financial calculations</strong>: Money must not drift (0.01 + 0.01 + 0.01 = 0.03, always!)</li>
+<li><strong>Musical synthesis</strong>: Frequency ratios must be exact (no pitch drift over time)</li>
+<li><strong>UI scaling</strong>: Responsive layouts need exact fractions (1/3 width, not 0.333...)</li>
+<li><strong>Cryptographic shares</strong>: Shamir secret sharing requires exact division</li>
+<li><strong>Scientific ratios</strong>: Physical constants as exact ratios (e.g., Planck constant)</li>
+</ul>
+<pre><code>// Problem: Floating-point accumulation drift
+<p>
+flt32:balance = 0.0f32;
+till(999, 1) {
+balance = balance + 0.01f32;  // Add 1 cent, 1000 times
+}
+// balance = 9.999999 or 10.000001 (NOT exactly 10.0!)
+// Lost money to rounding!
+</p>
+<p>
+// Solution: Exact rational arithmetic
+frac32:balance = {0, 0, 1};  // Start at 0
+till(999, 1) {
+balance = balance + {0, 1, 100};  // Add 1/100 (exactly 1 cent)
+}
+// balance = {10, 0, 1} = 10 + 0/1 = exactly 10.0
+// Perfect precision, zero drift!</code></pre>
+</p>
+<hr>
+<h2>Type Definitions</h2>
+<h3>frac8 Structure</h3>
+<pre><code>struct:frac8 = {
+<p>
+tbb8:whole,   // Whole number part [-127, +127]
+tbb8:num,     // Numerator (proper fraction: |num| < denom)
+tbb8:denom,   // Denominator (always positive, > 0)
+}</code></pre>
+</p>
+<strong>Memory layout</strong>:
+<pre><code>┌────────────┬────────────┬────────────┐
+<p>
+│whole(tbb8) │ num (tbb8) │denom(tbb8) │
+│  8 bits    │  8 bits    │  8 bits    │
+└────────────┴────────────┴────────────┘
+= 24 bits total (3 bytes)</code></pre>
+</p>
+<strong>Characteristics</strong>:
+<ul><li><strong>Whole range</strong>: -127 to +127 (tbb8, -128 = ERR)</li>
+<li><strong>Fraction precision</strong>: 1/127 minimum (7-bit denominator max)</li>
+<li><strong>Total range</strong>: ~-127.99 to +127.99</li>
+<li><strong>Use cases</strong>: Small exact values, UI percentages, basic fractions</li>
+</ul>
+<h3>frac16 Structure</h3>
+<pre><code>struct:frac16 = {
+<p>
+tbb16:whole,   // Whole number part [-32767, +32767]
+tbb16:num,     // Numerator
+tbb16:denom,   // Denominator (always positive)
+}</code></pre>
+</p>
+<strong>Memory layout</strong>:
+<pre><code>┌────────────────┬────────────────┬────────────────┐
+<p>
+│ whole (tbb16)  │  num (tbb16)   │ denom (tbb16)  │
+│   16 bits      │   16 bits      │   16 bits      │
+└────────────────┴────────────────┴────────────────┘
+= 48 bits total (6 bytes)</code></pre>
+</p>
+<strong>Characteristics</strong>:
+<ul><li><strong>Whole range</strong>: -32,767 to +32,767</li>
+<li><strong>Fraction precision</strong>: 1/32,767 minimum</li>
+<li><strong>Total range</strong>: ~-32,767.99997 to +32,767.99997</li>
+<li><strong>Use cases</strong>: Financial calculations, musical intervals, precise ratios</li>
+</ul>
+<h3>frac32 Structure</h3>
+<pre><code>struct:frac32 = {
+<p>
+tbb32:whole,   // Whole number part
+tbb32:num,     // Numerator
+tbb32:denom,   // Denominator
+}</code></pre>
+</p>
+<strong>Memory layout</strong>:
+<pre><code>┌────────────────┬────────────────┬────────────────┐
+<p>
+│ whole (tbb32)  │  num (tbb32)   │ denom (tbb32)  │
+│   32 bits      │   32 bits      │   32 bits      │
+└────────────────┴────────────────┴────────────────┘
+= 96 bits total (12 bytes)</code></pre>
+</p>
+<strong>Characteristics</strong>:
+<ul><li><strong>Whole range</strong>: -2,147,483,647 to +2,147,483,647</li>
+<li><strong>Fraction precision</strong>: 1/2,147,483,647 minimum</li>
+<li><strong>Total range</strong>: ±2.1 billion (with exact fractions!)</li>
+<li><strong>Use cases</strong>: High-precision financial, scientific ratios, cryptography</li>
+</ul>
+<h3>frac64 Structure</h3>
+<pre><code>struct:frac64 = {
+<p>
+tbb64:whole,   // Whole number part
+tbb64:num,     // Numerator
+tbb64:denom,   // Denominator
+}</code></pre>
+</p>
+<strong>Memory layout</strong>:
+<pre><code>┌────────────────┬────────────────┬────────────────┐
+<p>
+│ whole (tbb64)  │  num (tbb64)   │ denom (tbb64)  │
+│   64 bits      │   64 bits      │   64 bits      │
+└────────────────┴────────────────┴────────────────┘
+= 192 bits total (24 bytes)</code></pre>
+</p>
+<strong>Characteristics</strong>:
+<ul><li><strong>Whole range</strong>: ±9.2 quintillion</li>
+<li><strong>Fraction precision</strong>: 1/9.2quintillion minimum</li>
+<li><strong>Total range</strong>: Astronomical with sub-atomic precision</li>
+<li><strong>Use cases</strong>: Extreme-precision scientific, astronomical constants</li>
+</ul>
+<h3>Mathematical Representation</h3>
+<strong>For all frac types</strong>:
+<pre><code>value = whole + (num / denom)
+<p>
+Constraints:
+</p>
+<ul><li>denom > 0 (always positive)</li>
+<li>|num| < denom (proper fraction, automatically reduced)</li>
+<li>Sign carried by whole (if whole ≠ 0) or num (if whole = 0)</code></pre></li>
+</ul>
+<strong>Examples</strong>:
+<pre><code>{3, 1, 2}    = 3 + 1/2  = 3.5
+<p>
+{0, 1, 3}    = 0 + 1/3  = 1/3 (exact!)
+{-2, 1, 4}   = -2 + 1/4 = -1.75
+{0, -1, 2}   = 0 + -1/2 = -0.5
+{5, 0, 1}    = 5 + 0/1  = 5 (integer)
+{0, 2, 3}    = 0 + 2/3  = 2/3
+{-1, -1, 2}  = -1 + -1/2 = -1.5 (double negative)</code></pre>
+</p>
+<hr>
+<h2>The Floating-Point Problem Solved</h2>
+<h3>Problem 1: Binary Can't Represent Decimal</h3>
+<strong>Most decimal fractions are infinite in binary!</strong>
+<pre><code>// IEEE 754 (BROKEN for decimals!)
+<p>
+float money = 0.1f;  // Actually 0.100000001490116119384765625
+// Binary: 0.0001100110011001100110011... (infinite!)
+</p>
+<p>
+// Adding 10 times
+float total = 0.0f;
+for (int i = 0; i < 10; i++) {
+total += 0.1f;  // Add "10 cents" 10 times
+}
+// total = 1.0000001192092896 (NOT 1.0!)
+// Lost/gained money!</code></pre>
+</p>
+<strong>frac solution</strong>: Exact decimal representation
+<pre><code>// Aria frac (EXACT for decimals!)
+<p>
+frac16:money = {0, 1, 10};  // Exactly 1/10
+</p>
+<p>
+frac16:total = {0, 0, 1};  // Start at 0
+till(9, 1) {
+total = total + {0, 1, 10};  // Add exact 1/10
+}
+// total = {1, 0, 1} = 1 + 0/1 = EXACTLY 1.0
+// Perfect precision!</code></pre>
+</p>
+<h3>Problem 2: Accumulation Drift</h3>
+<strong>Floating-point errors compound over iterations</strong>
+<pre><code># Python (IEEE floats)
+<p>
+balance = 0.0
+for i in range(1000):
+balance += 0.01  # Add 1 cent
+</p>
+<p>
+print(balance)  # 9.999999999999831 (lost 0.000000000000169!)
+</p>
+<h1>Missing 17 billionths of a cent per iteration</h1>
+<h1>For 1 billion transactions: Lost $169!</code></pre></h1>
+<strong>frac solution</strong>: Zero accumulation drift
+<pre><code>// Aria frac (PERFECT accumulation)
+<p>
+frac32:balance = {0, 0, 1};
+till(999_999_999, 1) {  // 1 billion iterations!
+balance = balance + {0, 1, 100};  // Add 1 cent
+}
+// balance = {10000000, 0, 1} = exactly 10 million dollars
+// ZERO drift, ever!</code></pre>
+</p>
+<h3>Problem 3: Non-Associativity</h3>
+<strong>Floating-point addition is NOT associative</strong> ((a + b) + c ≠ a + (b + c))
+<pre><code>// Java (IEEE floats)
+<p>
+float a = (0.1f + 0.2f) + 0.3f;  // 0.6000000238418579
+float b = 0.1f + (0.2f + 0.3f);  // 0.6000000238418579
+</p>
+<p>
+// Different order can give different results!
+float x = 1e20f + 1.0f - 1e20f;  // 0.0 (1.0 lost to rounding!)
+float y = 1e20f - 1e20f + 1.0f;  // 1.0 (correct!)
+</p>
+<p>
+// Mathematical laws BROKEN!</code></pre>
+</p>
+<strong>frac solution</strong>: True associativity
+<pre><code>// Aria frac (MATHEMATICALLY CORRECT)
+<p>
+frac16:a = ({0, 1, 10} + {0, 2, 10}) + {0, 3, 10};  // 6/10
+frac16:b = {0, 1, 10} + ({0, 2, 10} + {0, 3, 10});  // 6/10
+</p>
+<p>
+a == b;  // TRUE! Associativity holds!
+</p>
+<p>
+// Order doesn't matter (as math requires)</code></pre>
+</p>
+<hr>
+<h2>Automatic Fraction Reduction</h2>
+<strong>All frac types automatically reduce to lowest terms</strong> (canonical form)
+<pre><code>// Unreduced fraction
+<p>
+frac16:x = {0, 2, 4};  // 2/4
+</p>
+<p>
+// Automatically reduced
+// x stored as: {0, 1, 2} = 1/2  (GCD reduced!)
+</p>
+<p>
+// Another example
+frac16:y = {0, 12, 18};  // 12/18
+// Stored as: {0, 2, 3} = 2/3  (divided by GCD(12, 18) = 6)
+</p>
+<p>
+// Ensures unique representation
+{0, 1, 2} == {0, 2, 4};  // true (both reduce to 1/2)
+{0, 2, 3} == {0, 4, 6};  // true (both reduce to 2/3)</code></pre>
+</p>
+<strong>Why reduction matters</strong>:
+<ul><li><strong>Canonical form</strong>: Every value has ONE representation (enables equality)</li>
+<li><strong>Prevents overflow</strong>: Denominators stay small (extends range)</li>
+<li><strong>Efficiency</strong>: Smaller numbers = faster GCD/LCM calculations</li>
+</ul>
+<strong>Reduction algorithm</strong>:
+<pre><code>1. Compute GCD(numerator, denominator)
+<p>
+2. numerator = numerator / GCD
+3. denominator = denominator / GCD
+4. Normalize sign (denom always positive)</code></pre>
+</p>
+<hr>
+<h2>Operations</h2>
+<h3>Arithmetic</h3>
+<strong>Addition/Subtraction</strong>: Find common denominator (LCM)
+<pre><code>frac16:a = {0, 1, 3};  // 1/3
+<p>
+frac16:b = {0, 1, 4};  // 1/4
+</p>
+<p>
+// Addition: 1/3 + 1/4 = 4/12 + 3/12 = 7/12
+frac16:sum = a + b;  // {0, 7, 12} (exact!)
+</p>
+<p>
+// Subtraction: 1/3 - 1/4 = 4/12 - 3/12 = 1/12
+frac16:diff = a - b;  // {0, 1, 12} (exact!)</code></pre>
+</p>
+<strong>Multiplication</strong>: Multiply straight across
+<pre><code>frac16:a = {0, 2, 3};  // 2/3
+<p>
+frac16:b = {0, 3, 4};  // 3/4
+</p>
+<p>
+// Multiplication: 2/3 * 3/4 = 6/12 = 1/2 (reduced)
+frac16:prod = a * b;  // {0, 1, 2} (exact, auto-reduced!)</code></pre>
+</p>
+<strong>Division</strong>: Multiply by reciprocal
+<pre><code>frac16:a = {0, 2, 3};  // 2/3
+<p>
+frac16:b = {0, 3, 4};  // 3/4
+</p>
+<p>
+// Division: (2/3) / (3/4) = (2/3) * (4/3) = 8/9
+frac16:quot = a / b;  // {0, 8, 9} (exact!)
+</p>
+<p>
+// Division by zero
+frac16:err = a / {0, 0, 1};  // ERR (denom becomes 0)</code></pre>
+</p>
+<h3>Mixed Number Arithmetic</h3>
+<pre><code>frac16:mixed1 = {3, 1, 2};  // 3 1/2 = 3.5
+<p>
+frac16:mixed2 = {2, 1, 4};  // 2 1/4 = 2.25
+</p>
+<p>
+// Addition: 3.5 + 2.25 = 5.75 = 5 3/4
+frac16:sum = mixed1 + mixed2;  // {5, 3, 4}
+</p>
+<p>
+// Multiplication: 3.5 * 2.25 = 7.875 = 7 7/8
+frac16:prod = mixed1 * mixed2;  // {7, 7, 8}</code></pre>
+</p>
+<h3>Comparison</h3>
+<pre><code>frac16:a = {0, 1, 2};  // 1/2
+<p>
+frac16:b = {0, 2, 4};  // 2/4 = 1/2 (reduced)
+frac16:c = {0, 1, 3};  // 1/3
+</p>
+<p>
+bool:eq = (a == b);  // true (both 1/2)
+bool:ne = (a != c);  // true (1/2 ≠ 1/3)
+bool:lt = (c < a);   // true (1/3 < 1/2)
+bool:le = (a <= b);  // true (1/2 <= 1/2)
+bool:gt = (a > c);   // true (1/2 > 1/3)
+bool:ge = (b >= a);  // true (1/2 >= 1/2)</code></pre>
+</p>
+<strong>Comparison implementation</strong>: Cross-multiply to avoid division
+<pre><code>To compare a/b vs c/d:
+<p>
+a/b < c/d  ⟺  a<em>d < b</em>c  (cross-multiply)
+</p>
+<p>
+Example: 1/2 vs 1/3
+1<em>3 < 2</em>1  ⟺  3 < 2  ⟺  false
+Therefore: 1/2 > 1/3 ✓</code></pre>
+</p>
+<h3>Conversion</h3>
+<pre><code>// To/from integers
+<p>
+int32:i = 42;
+frac16:f = frac16(i);  // {42, 0, 1}
+int32:back = int32(f);  // 42
+</p>
+<p>
+// Truncation
+frac16:x = {3, 1, 2};  // 3.5
+int32:trunc = int32(x);  // 3 (truncate toward zero)
+</p>
+<p>
+// To/from floating-point (LOSES EXACTNESS!)
+flt32:approx = 0.333f32;  // ~1/3
+frac16:exact = frac16_from_approx(approx);  // {0, 1, 3} (best match)
+// Warning: Conversion is lossy! Only exact if float represents exact fraction
+</p>
+<p>
+// Between frac sizes
+frac8:small = {10, 1, 2};  // 10.5
+frac16:large = frac16(small);  // {10, 1, 2} (same value, more range)
+frac8:down = frac8(large);  // May overflow if large > 127!</code></pre>
+</p>
+<h3>Reciprocal</h3>
+<pre><code>frac16:x = {0, 2, 3};  // 2/3
+<p>
+// Reciprocal: flip num/denom
+frac16:recip = reciprocal(x);  // {0, 3, 2} = 3/2 = 1.5
+</p>
+<p>
+// Integer reciprocal
+frac16:five = {5, 0, 1};
+frac16:one_fifth = reciprocal(five);  // {0, 1, 5} = 1/5 = 0.2
+</p>
+<p>
+// Zero reciprocal
+frac16:zero = {0, 0, 1};
+frac16:err = reciprocal(zero);  // ERR (division by zero!)</code></pre>
+</p>
+<hr>
+<h2>Musical Interval Mathematics</h2>
+<strong>Music theory requires exact frequency ratios</strong> (12-tone equal temperament is approximate!)
+<h3>Just Intonation (Exact Ratios)</h3>
+<pre><code>// Musical intervals as exact ratios
+<p>
+frac16:unison = {1, 0, 1};        // 1/1 = 1.0 (same note)
+frac16:minor_second = {0, 16, 15};  // Semitone (exact)
+frac16:major_second = {0, 9, 8};    // Whole tone
+frac16:minor_third = {0, 6, 5};     // m3
+frac16:major_third = {0, 5, 4};     // M3
+frac16:perfect_fourth = {0, 4, 3};  // P4
+frac16:tritone = {0, 7, 5};         // Diminished 5th
+frac16:perfect_fifth = {0, 3, 2};   // P5
+frac16:minor_sixth = {0, 8, 5};     // m6
+frac16:major_sixth = {0, 5, 3};     // M6
+frac16:minor_seventh = {0, 16, 9};  // m7
+frac16:major_seventh = {0, 15, 8};  // M7
+frac16:octave = {2, 0, 1};          // Octave (double frequency)
+</p>
+<p>
+// Combine intervals (multiply fractions)
+frac16:fifth_plus_third = perfect_fifth * major_third;
+// = 3/2 * 5/4 = 15/8 (major 7th)  ✓ EXACT!
+</p>
+<p>
+// No pitch drift over thousands of note combinations!</code></pre>
+</p>
+<h3>Synthesizer Tuning</h3>
+<pre><code>// Base frequency (A4 = 440 Hz)
+<p>
+flt32:a4_freq = 440.0f32;
+</p>
+<p>
+// Compute C note (perfect fifth down + major third down + octave up)
+frac16:c_ratio = reciprocal(perfect_fifth) <em> reciprocal(major_third) </em> octave;
+// = 2/3 <em> 4/5 </em> 2/1 = 16/15... (complicated, but EXACT!)
+</p>
+<p>
+flt32:c_freq = a4_freq * flt32(c_ratio);  // 523.25 Hz (exact C5)
+</p>
+<p>
+// Traditional 12-TET (approximate)
+flt32:c_approx = a4_freq * pow(2.0f32, 3.0f32/12.0f32);  // 523.2511... Hz
+// Close, but not exact! Accumulates drift over octaves.</code></pre>
+</p>
+<hr>
+<h2>Financial Calculations</h2>
+<h3>Money Without Drift</h3>
+<pre><code>// Account ledger (perfect cent precision)
+<p>
+struct:Account {
+frac32:balance,  // Dollars and cents (exact!)
+}
+</p>
+<p>
+func:add_transaction = void(Account@:account, frac32:amount) {
+account.balance = account.balance + amount;
+// No drift, ever! Perfect to the cent.
+}
+</p>
+<p>
+// Add 1000 transactions
+Account:checking = {balance: {0, 0, 1}};  // Start at $0.00
+till(999, 1) {
+add_transaction(&checking, {0, 152, 100});  // +$1.52 each
+}
+// checking.balance = {1520, 0, 1} = exactly $1,520.00
+// IEEE would have drift!</code></pre>
+</p>
+<h3>Interest Calculation</h3>
+<pre><code>// Compound interest (exact)
+<p>
+frac32:principal = {1000, 0, 1};  // $1,000.00
+frac32:rate = {0, 5, 100};  // 5% = 5/100 = 0.05 (exact!)
+uint32:years = 10;
+</p>
+<p>
+frac32:amount = principal;
+till(years - 1, 1) {
+frac32:interest = amount * rate;  // Exact interest
+amount = amount + interest;       // Exact accumulation
+}
+// amount = {1628, 89, 100} = $1,628.89 (EXACT to the cent!)
+// No rounding errors accumulated</code></pre>
+</p>
+<h3>Currency Exchange</h3>
+<pre><code>// Exchange rates as exact fractions
+<p>
+frac32:usd_to_eur = {0, 85, 100};  // $1.00 = €0.85 (exact!)
+</p>
+<p>
+frac32:dollars = {100, 0, 1};  // $100.00
+frac32:euros = dollars * usd_to_eur;  // €85.00 (exact conversion!)
+</p>
+<p>
+// Back and forth
+frac32:back_to_dollars = euros * reciprocal(usd_to_eur);
+// = {100, 0, 1} = $100.00 (EXACTLY what we started with!)
+// No loss in round-trip conversion</code></pre>
+</p>
+<hr>
+<h2>Use Cases</h2>
+<h3>Responsive UI Layout</h3>
+<pre><code>// 3-column layout (exact thirds!)
+<p>
+frac8:col_width = {0, 1, 3};  // 1/3 of viewport
+</p>
+<p>
+// Integer pixels from viewport width
+uint32:viewport_width = 1920;
+uint32:col_pixels = uint32(frac8_to_float(col_width) * flt32(viewport_width));
+// = 640 pixels per column (exact division!)
+</p>
+<p>
+// Traditional CSS (approximates)
+// width: 33.333% → rounding errors, gaps appear</code></pre>
+</p>
+<h3>Cryptographic Secret Sharing</h3>
+<strong>Shamir's Secret Sharing</strong> requires exact division of polynomial coefficients
+<pre><code>// Share secret S among 5 parties, require 3 to reconstruct
+<p>
+// Each share is point on polynomial: f(x) = S + a1<em>x + a2</em>x^2
+</p>
+<p>
+frac64:secret = {42, 0, 1};  // S = 42
+frac64:a1 = {17, 0, 1};
+frac64:a2 = {23, 0, 1};
+</p>
+<p>
+// Generate shares (exact polynomial evaluation)
+func:generate_share = frac64(frac64:secret, frac64:a1, frac64:a2, int32:x) {
+frac64:x_frac = frac64(x);
+frac64:x_squared = x_frac * x_frac;
+</p>
+<p>
+return secret + (a1 <em> x_frac) + (a2 </em> x_squared);
+}
+</p>
+<p>
+frac64:share1 = generate_share(secret, a1, a2, 1);  // f(1) = exact!
+frac64:share2 = generate_share(secret, a1, a2, 2);  // f(2) = exact!
+frac64:share3 = generate_share(secret, a1, a2, 3);  // f(3) = exact!
+</p>
+<p>
+// Lagrange interpolation (reconstruct secret from any 3 shares)
+// Requires EXACT arithmetic (floating-point would leak secret!)</code></pre>
+</p>
+<h3>Physical Constants as Ratios</h3>
+<pre><code>// Fine structure constant: α ≈ 1/137
+<p>
+frac16:alpha_approx = {0, 1, 137};
+</p>
+<p>
+// Better approximation: α ≈ 1/137.036
+// Express as mixed fraction
+frac32:alpha_better = {0, 1000, 137036};  // 1000/137036 ≈ 1/137.036
+// Reduced: {0, 125, 17129.5} ... (needs larger denom)
+</p>
+<p>
+// Proton-to-electron mass ratio: 1836.15
+frac32:mass_ratio = {1836, 3, 20};  // 1836 + 3/20 = 1836.15 (close!)</code></pre>
+</p>
+<hr>
+<h2>Advanced Patterns</h2>
+<h3>Continued Fractions</h3>
+<strong>Any real number can be approximated as continued fraction</strong>
+<pre><code>// √2 ≈ 1 + 1/(2 + 1/(2 + 1/(2 + ...)))
+<p>
+// Convergents: 1/1, 3/2, 7/5, 17/12, 41/29, ...
+</p>
+<p>
+frac16:sqrt2_approx1 = {1, 0, 1};   // 1/1 = 1.0
+frac16:sqrt2_approx2 = {1, 1, 2};   // 3/2 = 1.5
+frac16:sqrt2_approx3 = {1, 2, 5};   // 7/5 = 1.4
+frac16:sqrt2_approx4 = {1, 5, 12};  // 17/12 ≈ 1.4167
+frac16:sqrt2_approx5 = {1, 12, 29}; // 41/29 ≈ 1.4138
+</p>
+<p>
+// Each convergent is best rational approximation with that denominator size</code></pre>
+</p>
+<h3>Mediant (Farey Sequence)</h3>
+<pre><code>// Mediant of a/b and c/d = (a+c)/(b+d)
+<p>
+// Lies between the two fractions
+</p>
+<p>
+frac16:a = {0, 1, 3};  // 1/3
+frac16:b = {0, 1, 2};  // 1/2
+</p>
+<p>
+// Mediant: (1+1)/(3+2) = 2/5
+frac16:mediant = frac16_mediant(a, b);  // {0, 2, 5} = 0.4
+// Indeed: 1/3 < 2/5 < 1/2  ✓
+</p>
+<p>
+// Use: Find best rational approximation in range</code></pre>
+</p>
+<h3>Egyptian Fractions</h3>
+<strong>Express fraction as sum of distinct unit fractions</strong> (1/a + 1/b + 1/c + ...)
+<pre><code>// 5/6 = 1/2 + 1/3
+<p>
+frac16:five_sixths = {0, 5, 6};
+frac16:half = {0, 1, 2};
+frac16:third = {0, 1, 3};
+</p>
+<p>
+five_sixths == (half + third);  // true!
+</p>
+<p>
+// 3/4 = 1/2 + 1/4
+frac16:three_fourths = {0, 3, 4};
+frac16:quarter = {0, 1, 4};
+</p>
+<p>
+three_fourths == (half + quarter);  // true!</code></pre>
+</p>
+<hr>
+<h2>Error Handling</h2>
+<h3>ERR Propagation</h3>
+<pre><code>frac16:a = {10, 1, 2};
+<p>
+frac16:b = {0, 0, 1};  // Zero
+</p>
+<p>
+// Division by zero
+frac16:div = a / b;  // ERR (denominator becomes 0)
+</p>
+<p>
+// ERR propagates
+frac16:x = div + {5, 0, 1};  // ERR + 5 = ERR
+frac16:y = div <em> {2, 0, 1};  // ERR </em> 2 = ERR
+</p>
+<p>
+// Checking for ERR
+if x == ERR {
+log("Calculation failed!");
+}</code></pre>
+</p>
+<h3>Overflow Detection</h3>
+<pre><code>// frac8 whole range: [-127, +127]
+<p>
+frac8:big = {120, 0, 1};
+frac8:overflow = big + {10, 0, 1};  // 130 > 127 → ERR!
+</p>
+<p>
+// Denominator overflow
+frac16:tiny_denom = {0, 1, 30000};
+frac16:overflow2 = tiny_denom + {0, 1, 30001};  // LCM overflows!</code></pre>
+</p>
+<h3>Unknown Integration</h3>
+<pre><code>func:safe_divide = frac16 | unknown(frac16:a, frac16:b) {
+<p>
+if b == {0, 0, 1} {
+return unknown;  // Soft error
+}
+return a / b;
+}
+</p>
+<p>
+// Caller handles unknown
+frac16 | unknown:result = safe_divide({10, 0, 1}, {0, 0, 1});
+frac16:value = result ? {0, 0, 1};  // Default to 0 if unknown</code></pre>
+</p>
+<hr>
+<h2>Performance Characteristics</h2>
+<h3>Time Complexity</h3>
+<p>
+| Operation | Complexity | Notes |
+|-----------|------------|-------|
+| Addition/Subtraction | O(log n) | LCM computation (GCD-based) |
+| Multiplication | O(log n) | GCD for reduction |
+| Division | O(log n) | Reciprocal + multiply |
+| Reduction | O(log n) | Euclidean GCD algorithm |
+| Comparison | O(1) | Cross-multiplication |
+</p>
+<strong>Note</strong>: n = max(denominator values)
+<h3>Space Overhead</h3>
+<pre><code>// Size comparison (per value)
+<p>
+flt32:    4 bytes
+frac8:    3 bytes (smaller!)
+frac16:   6 bytes
+frac32:  12 bytes (3× larger than flt32)
+frac64:  24 bytes (3× larger than flt64)
+</p>
+<p>
+// Space-precision tradeoff
+// flt32:  7 decimal digits, 4 bytes
+// frac32: EXACT ratios,   12 bytes
+// Worth 3× space for financial/musical apps!</code></pre>
+</p>
+<h3>Performance Comparison</h3>
+<pre><code>// Speed test: 1 million additions
+<p>
+flt32:start_flt = get_time();
+till(999_999, 1) {
+flt32:x = a_flt + b_flt;  // Fast (hardware)
+}
+flt32:end_flt = get_time();
+// Time: ~3ms (native hardware)
+</p>
+<p>
+frac16:start_frac = get_time();
+till(999_999, 1) {
+frac16:x = a_frac + b_frac;  // Slower (LCM/GCD)
+}
+frac16:end_frac = get_time();
+// Time: ~150ms (50× slower)
+</p>
+<p>
+// Conclusion: Use frac when EXACTNESS matters more than speed</code></pre>
+</p>
+<hr>
+<h2>Choosing frac8 vs frac16 vs frac32 vs frac64</h2>
+<h3>Decision Matrix</h3>
+<p>
+| Need | Use This | Why |
+|------|----------|-----|
+| UI percentages | <code>frac8</code> | Small values, low precision OK |
+| Financial (dollars/cents) | <code>frac16</code> or <code>frac32</code> | Need exact cents, reasonable range |
+| Musical intervals | <code>frac16</code> | Frequency ratios fit easily |
+| Scientific ratios | <code>frac32</code> or <code>frac64</code> | High precision, large denominators |
+| Cryptographic shares | <code>frac64</code> | Maximum precision prevents leakage |
+| High-frequency trading | DO NOT USE | Too slow! Use scaled integers instead |
+| Speed-critical | DO NOT USE | Floating-point faster (if drift OK) |
+</p>
+<h3>Precision Requirements</h3>
+<pre><code>// When frac8 is enough
+<p>
+frac8:percentage = {0, 75, 100};  // 75% (exact!)
+frac8:slider = {0, 3, 10};  // 0.3 slider value
+</p>
+<p>
+// When you need frac16
+frac16:money = {5, 25, 100};  // $5.25
+frac16:musical = {0, 3, 2};  // Perfect fifth
+</p>
+<p>
+// When you need frac32
+frac32:interest = {0, 375, 10000};  // 3.75% interest (exact!)
+frac32:exchange_rate = {0, 134567, 100000};  // Precise exchange
+</p>
+<p>
+// When you need frac64
+frac64:crypto_coeff = {large_numerator, large_denominator};
+// Polynomial coefficients for secret sharing</code></pre>
+</p>
+<hr>
+<h2>Best Practices</h2>
+<h3>1. Use frac Only When Exactness Required</h3>
+<pre><code>// ✓ GOOD: Financial (needs exactness)
+<p>
+frac32:price = {19, 99, 100};  // $19.99 (exact!)
+</p>
+<p>
+// ✗ BAD: Physics simulation (speed matters more)
+frac32:velocity = {5, 5, 10};  // Should use flt32 (faster!)</code></pre>
+</p>
+<h3>2. Keep Denominators Small</h3>
+<pre><code>// ✓ GOOD: Simple denominator
+<p>
+frac16:half = {0, 1, 2};
+</p>
+<p>
+// ✗ BAD: Unnecessary large denominator
+frac16:half_bad = {0, 5000, 10000};  // Wastes range, slows GCD
+// Should reduce to {0, 1, 2}</code></pre>
+</p>
+<h3>3. Prefer Scaled Integers for Performance</h3>
+<pre><code>// ✓ BETTER: Scaled integer (faster!)
+<p>
+int32:cents = 1999;  // $19.99 as cents (int is fast!)
+</p>
+<p>
+// ✗ SLOWER: frac for simple scaling
+frac16:price = {19, 99, 100};  // Overkill for just cents!
+</p>
+<p>
+// Use frac when you need ARBITRARY fractions (1/3, 2/7, etc.)
+// Use scaled int when denominator is fixed (cents, basis points)</code></pre>
+</p>
+<h3>4. Document Fraction Semantics</h3>
+<pre><code>// ✓ GOOD: Clear documentation
+<p>
+/**
+* Interest rate as exact fraction.
+* Example: {0, 5, 100} = 5/100 = 0.05 = 5%
+*/
+frac32:annual_interest_rate;
+</p>
+<p>
+// ✗ BAD: Unclear meaning
+frac32:rate;  // Percent? Decimal? Per-year? Per-month?</code></pre>
+</p>
+<h3>5. Watch for Overflow in Operations</h3>
+<pre><code>// ✓ GOOD: Check for overflow
+<p>
+frac16:a = {30000, 0, 1};
+frac16:b = {30000, 0, 1};
+frac16 | ERR:sum = a + b;  // Might overflow frac16!
+</p>
+<p>
+if sum == ERR {
+// Promote to frac32
+frac32:a32 = frac32(a);
+frac32:b32 = frac32(b);
+frac32:sum32 = a32 + b32;  // Won't overflow
+}
+</p>
+<p>
+// ✗ BAD: Ignore overflow
+frac16:sum = a + b;  // Returns ERR silently!</code></pre>
+</p>
+<hr>
+<h2>Common Pitfalls</h2>
+<h3>Pitfall 1: Converting Float to frac (Loses Exactness!)</h3>
+<pre><code>// ✗ PROBLEM: Float to frac loses original meaning
+<p>
+flt32:f = 0.1f32;  // Actually 0.100000001490116... (not exact 1/10!)
+frac16:x = frac16_from_approx(f);  // What fraction? Ambiguous!
+</p>
+<p>
+// ✓ SOLUTION: Construct frac directly
+frac16:x = {0, 1, 10};  // EXACTLY 1/10 (what you meant)</code></pre>
+</p>
+<h3>Pitfall 2: Using frac for Performance</h3>
+<pre><code>// ✗ PROBLEM: frac is SLOW for high-throughput
+<p>
+till(9_999_999, 1) {
+frac16:result = a + b;  // 10M iterations * 150ns = 1.5 seconds!
+}
+</p>
+<p>
+// ✓ SOLUTION: Use flt or fix for speed-critical
+till(9_999_999, 1) {
+flt32:result = a_flt + b_flt;  // 10M iterations * 3ns = 30ms
+}</code></pre>
+</p>
+<h3>Pitfall 3: Large Denominators Cause Overflow</h3>
+<pre><code>// ✗ PROBLEM: Adding fractions with large denoms
+<p>
+frac16:a = {0, 1, 30000};
+frac16:b = {0, 1, 30001};
+frac16:sum = a + b;  // LCM(30000, 30001) = huge! → ERR
+</p>
+<p>
+// ✓ SOLUTION: Use larger frac type or approximate
+frac32:a32 = {0, 1, 30000};
+frac32:b32 = {0, 1, 30001};
+frac32:sum32 = a32 + b32;  // frac32 can handle</code></pre>
+</p>
+<h3>Pitfall 4: Comparing with Floats</h3>
+<pre><code>// ✗ PROBLEM: Comparing frac with float (ambiguous!)
+<p>
+frac16:exact = {0, 1, 3};  // Exactly 1/3
+flt32:approx = 0.333f32;   // ~1/3
+</p>
+<p>
+if flt32(exact) == approx { }  // Maybe true, maybe false!
+</p>
+<p>
+// ✓ SOLUTION: Stay in frac domain
+frac16:expected = {0, 1, 3};
+if exact == expected { }  // Definitely true!</code></pre>
+</p>
+<hr>
+<h2>Implementation Notes</h2>
+<h3>C Runtime Structure</h3>
+<pre><code>// Runtime: runtime/frac_ops.c
+<p>
+// frac16 structure
+typedef struct {
+int16_t whole;
+int16_t num;
+int16_t denom;
+} aria_frac16;
+</p>
+<p>
+// GCD (Euclidean algorithm)
+int16_t aria_gcd(int16_t a, int16_t b) {
+while (b != 0) {
+int16_t temp = b;
+b = a % b;
+a = temp;
+}
+return abs(a);
+}
+</p>
+<p>
+// LCM
+int16_t aria_lcm(int16_t a, int16_t b) {
+return (a * b) / aria_gcd(a, b);
+}
+</p>
+<p>
+// Reduction to lowest terms
+aria_frac16 aria_frac16_reduce(aria_frac16 f) {
+if (f.denom == 0) return FRAC16_ERR;  // Division by zero
+</p>
+<p>
+// Normalize sign (denom always positive)
+if (f.denom < 0) {
+f.num = -f.num;
+f.denom = -f.denom;
+}
+</p>
+<p>
+// Reduce
+int16_t g = aria_gcd(abs(f.num), f.denom);
+f.num /= g;
+f.denom /= g;
+</p>
+<p>
+// Convert improper to mixed
+f.whole += f.num / f.denom;
+f.num = f.num % f.denom;
+</p>
+<p>
+return f;
+}
+</p>
+<p>
+// Addition
+aria_frac16 aria_frac16_add(aria_frac16 a, aria_frac16 b) {
+// Check for ERR
+if (a.denom == 0 || b.denom == 0) return FRAC16_ERR;
+</p>
+<p>
+// Find common denominator
+int16_t lcd = aria_lcm(a.denom, b.denom);
+</p>
+<p>
+// Convert to improper fractions
+int32_t a_num = (int32_t)a.whole * a.denom + a.num;
+int32_t b_num = (int32_t)b.whole * b.denom + b.num;
+</p>
+<p>
+// Scale to LCD
+a_num = a_num * (lcd / a.denom);
+b_num = b_num * (lcd / b.denom);
+</p>
+<p>
+// Add numerators
+int32_t result_num = a_num + b_num;
+</p>
+<p>
+// Check overflow
+if (result_num > INT16_MAX || result_num < INT16_MIN) {
+return FRAC16_ERR;
+}
+</p>
+<p>
+// Build result and reduce
+aria_frac16 result = {0, (int16_t)result_num, lcd};
+return aria_frac16_reduce(result);
+}</code></pre>
+</p>
+<h3>LLVM IR Generation</h3>
+<pre><code>; frac16 type
+<p>
+%frac16 = type { i16, i16, i16 }  ; {whole, num, denom}
+</p>
+<p>
+; Addition function
+define %frac16 @frac16_add(%frac16 %a, %frac16 %b) {
+entry:
+; Extract components
+%a_whole = extractvalue %frac16 %a, 0
+%a_num = extractvalue %frac16 %a, 1
+%a_denom = extractvalue %frac16 %a, 2
+%b_whole = extractvalue %frac16 %b, 0
+%b_num = extractvalue %frac16 %b, 1
+%b_denom = extractvalue %frac16 %b, 2
+</p>
+<p>
+; Check for ERR (denom == 0)
+%a_err = icmp eq i16 %a_denom, 0
+%b_err = icmp eq i16 %b_denom, 0
+%is_err = or i1 %a_err, %b_err
+br i1 %is_err, label %return_err, label %compute
+</p>
+<p>
+compute:
+; Call runtime function
+%result = call %frac16 @aria_frac16_add(%frac16 %a, %frac16 %b)
+ret %frac16 %result
+</p>
+<p>
+return_err:
+; Return ERR
+%err = insertvalue %frac16 undef, i16 0, 0
+%err2 = insertvalue %frac16 %err, i16 0, 1
+%err3 = insertvalue %frac16 %err2, i16 0, 2
+ret %frac16 %err3
+}</code></pre>
+</p>
+<hr>
+<h2>Related Systems</h2>
+<ul><li><strong><a href="tbb_types.md">tbb8/tbb16/tbb32/tbb64</a></strong> - Twisted building blocks (components)</li>
+<li><strong><a href="fix256.md">fix256</a></strong> - Fixed-point (faster for decimal math)</li>
+<li><strong><a href="flt32_flt64.md">flt32/flt64</a></strong> - IEEE floats (approximate)</li>
+<li><strong><a href="tfp32_tfp64.md">tfp32/tfp64</a></strong> - Deterministic floats</li>
+<li><strong><a href="err.md">ERR</a></strong> - Error sentinel</li>
+</ul>
+<hr>
+<h2>Implementation Status</h2>
+<p>
+| Feature | Parser | Compiler | Runtime | Status |
+|---------|--------|----------|---------|--------|
+| <code>frac8/16/32/64</code> types | ✅ | ✅ | ✅ | Complete (Parser-level) |
+| Arithmetic ops | ✅ | ✅ | ✅ | Complete |
+| Automatic reduction | ✅ | ✅ | ✅ | Complete |
+| Comparison ops | ✅ | ✅ | ✅ | Complete |
+| ERR propagation | ✅ | ✅ | ✅ | Complete |
+| Literal syntax (<code>{3, 1, 2}</code>) | ✅ | ✅ | ✅ | Complete |
+| Conversion functions | ⚠️ | ⚠️ | ⚠️ | Partial |
+| Continued fraction support | ❌ | ❌ | ❌ | Future |
+</p>
+<strong>Design</strong>: ✅ Complete
+<strong>Implementation</strong>: ✅ Basic complete, advanced TBD
+<strong>Testing</strong>: ✅ Validated
+<strong>Documentation</strong>: ✅ This guide
+<hr>
+<h2>Summary</h2>
+<strong>frac types = Exact rational arithmetic for zero-drift mathematics</strong>
+<h3>Quick Decision Guide</h3>
+<p>
+| Need | Use This | Why |
+|------|----------|-----|
+| Financial calculations | <code>frac16</code> or <code>frac32</code> | Zero drift, exact cents |
+| Musical intervals | <code>frac16</code> | Exact frequency ratios |
+| UI scaling factors | <code>frac8</code> | Simple fractions (1/2, 1/3, 2/5) |
+| Cryptographic secret sharing | <code>frac64</code> | Maximum precision, no leakage |
+| High-performance math | <code>flt32/fix256</code> | frac too slow for hot paths |
+| Approximate values | <code>flt32/fix256</code> | frac is overkill |
+| Large whole numbers | <code>int64</code> | frac wastes space on fractions |
+</p>
+<h3>Key Principles</h3>
+<p>
+1. <strong>Mathematical exactness</strong> - 1/3 is exactly 1/3, forever
+2. <strong>Zero accumulation drift</strong> - Add 0.01 one billion times = exactly 10 million
+3. <strong>Automatic reduction</strong> - All fractions in canonical form
+4. <strong>Mixed representation</strong> - Whole + proper fraction (efficient)
+5. <strong>Deterministic</strong> - Same operations = same results (always)
+6. <strong>Slower than floats</strong> - Exactness has performance cost (~50×)
+</p>
+<strong>For Alternative Intelligence</strong>: frac types enable reasoning about exact proportions. Financial decisions, musical harmony, geometric ratios - these domains require ZERO tolerance for drift. Consciousness substrate built on approximate arithmetic accumulates subtle corruption over time. Exact rationals preserve truth.
+<strong>For Blockchain AI Society</strong>: Smart contracts with exact financial math enable trustless economic coordination. Nikola instances can provably agree on transaction amounts (no "lost penny" disputes). Resource pooling contracts compute fair shares exactly (no rounding bias). Reputation scores based on exact contribution ratios (1/3 of work = 1/3 of credit, always).
+<strong>Remember</strong>: "Floating-point approximates. Fixed-point scales integers. Fractions preserve truth. For exact proportions, truth matters more than speed."
+    </main>
+</body>
+</html>

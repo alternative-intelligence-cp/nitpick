@@ -89,10 +89,11 @@ func:asm_new = Assembler() {
 /**
  * Destroy assembler and free resources
  */
-func:asm_destroy = void(Assembler:asm) {
+func:asm_destroy = NIL(Assembler:asm) {
     if (asm.ctx != NULL) {
         aria_asm_destroy(asm.ctx);
     }
+    pass(NIL);
 };
 
 /**
@@ -118,36 +119,41 @@ func:asm_get_error_msg = string@(Assembler:asm) {
 /**
  * Emit MOV instruction: dst = value
  */
-func:asm_mov = void(Assembler:asm, int32:dst, int64:value) {
+func:asm_mov = NIL(Assembler:asm, int32:dst, int64:value) {
     aria_asm_mov_reg_imm(asm.ctx, dst, value);
+    pass(NIL);
 };
 
 /**
  * Emit MOV instruction: dst = src
  */
-func:asm_mov_reg = void(Assembler:asm, int32:dst, int32:src) {
+func:asm_mov_reg = NIL(Assembler:asm, int32:dst, int32:src) {
     aria_asm_mov_reg_reg(asm.ctx, dst, src);
+    pass(NIL);
 };
 
 /**
  * Emit ADD instruction: dst += src
  */
-func:asm_add = void(Assembler:asm, int32:dst, int32:src) {
+func:asm_add = NIL(Assembler:asm, int32:dst, int32:src) {
     aria_asm_add_reg_reg(asm.ctx, dst, src);
+    pass(NIL);
 };
 
 /**
  * Emit SUB instruction: dst -= src
  */
-func:asm_sub = void(Assembler:asm, int32:dst, int32:src) {
+func:asm_sub = NIL(Assembler:asm, int32:dst, int32:src) {
     aria_asm_sub_reg_reg(asm.ctx, dst, src);
+    pass(NIL);
 };
 
 /**
  * Emit RET instruction
  */
-func:asm_return = void(Assembler:asm) {
+func:asm_return = NIL(Assembler:asm) {
     aria_asm_ret(asm.ctx);
+    pass(NIL);
 };
 
 /**
@@ -160,15 +166,17 @@ func:asm_label = int32(Assembler:asm) {
 /**
  * Bind label to current position
  */
-func:asm_bind = void(Assembler:asm, int32:label_id) {
+func:asm_bind = NIL(Assembler:asm, int32:label_id) {
     aria_asm_bind_label(asm.ctx, label_id);
+    pass(NIL);
 };
 
 /**
  * Emit JMP instruction to label
  */
-func:asm_jump = void(Assembler:asm, int32:label_id) {
+func:asm_jump = NIL(Assembler:asm, int32:label_id) {
     aria_asm_jmp(asm.ctx, label_id);
+    pass(NIL);
 };
 
 /**
@@ -203,6 +211,7 @@ func:asm_call_i64_i64 = int64(wildx void@:guard, int64:a, int64:b) {
 /**
  * Free executable memory
  */
-func:asm_free = void(wildx void@:guard) {
+func:asm_free = NIL(wildx void@:guard) {
     aria_free_exec(guard);
+    pass(NIL);
 };

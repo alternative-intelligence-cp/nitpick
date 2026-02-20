@@ -83,6 +83,21 @@ llvm::Type* ExprCodegen::getLLVMType(Type* type) {
         return llvmStruct;
     }
     
+    // Handle array types: T[N] -> [N x T]
+    if (type->getKind() == TypeKind::ARRAY) {
+        ArrayType* arrayType = static_cast<ArrayType*>(type);
+        llvm::Type* elementLLVMType = getLLVMType(arrayType->getElementType());
+        
+        if (arrayType->isFixedSize()) {
+            // Fixed-size array: T[N] -> [N x T]
+            return llvm::ArrayType::get(elementLLVMType, arrayType->getSize());
+        } else {
+            // Dynamic array: T[] -> T* (pointer to first element)
+            // Dynamic arrays require runtime allocation
+            return llvm::PointerType::get(context, 0);
+        }
+    }
+    
     // ARIA-026: SAFETY FIX - Fail hard on non-primitive types instead of defaulting to i32
     // Gemini Safety Audit Fix #1: Type System Breach
     // Risk: 16-byte struct defaulting to 4-byte i32 could cause stack overflow
@@ -304,6 +319,11 @@ llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
     if (typeName == "vec9") return llvm::PointerType::get(context, 0);
     if (typeName == "tensor") return llvm::PointerType::get(context, 0);
     if (typeName == "matrix") return llvm::PointerType::get(context, 0);
+    
+    // FFI void pointer (C interop) - P3 fix
+    if (typeName == "void*" || typeName == "wild void*") {
+        return llvm::PointerType::get(context, 0);  // Opaque pointer (i8* equivalent)
+    }
     
     // SIMD types: simd<T, N> for explicit vectorization (P1-2 Phase 3)
     // Example: simd<int32, 4> -> <4 x i32>
@@ -1736,10 +1756,26 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
     // Handle empty template literal
     if (totalSegments == 0) {
         llvm::Value* emptyStr = createAriaString("");
-        llvm::Value* resultAlloca = builder.CreateAlloca(ariaStringType, nullptr, "result_tmp");
-        builder.CreateStore(emptyStr, resultAlloca);
-        llvm::Value* dataPtr = builder.CreateStructGEP(ariaStringType, resultAlloca, 0);
-        return builder.CreateLoad(llvm::PointerType::get(context, 0), dataPtr, "result_str_ptr");
+        
+        // FIX: Allocate on GC heap and return pointer (matches string literal behavior)
+        // Allocate AriaString struct on GC heap
+        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("aria_gc_alloc",
+            llvm::FunctionType::get(
+                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                {llvm::Type::getInt64Ty(context)},
+                false
+            )
+        );
+        llvm::Function* gcAlloc = llvm::cast<llvm::Function>(gcAllocCallee.getCallee());
+        llvm::Value* structSize = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 16); // sizeof(AriaString)
+        llvm::Value* heapPtr = builder.CreateCall(gcAlloc, { structSize }, "empty_str_gc");
+        
+        // Cast to AriaString* and store the empty string value
+        llvm::Value* strPtr = builder.CreateBitCast(heapPtr, llvm::PointerType::get(ariaStringType, 0), "empty_str_ptr");
+        builder.CreateStore(emptyStr, strPtr);
+        
+        // Return the pointer (AriaString*)
+        return strPtr;
     }
 
     // Stack allocation limit to prevent DoS attacks
@@ -1977,9 +2013,6 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
     // Valid path: continue with normal flow
     builder.SetInsertPoint(validBB);
 
-    // Load the AriaString struct from the result pointer
-    llvm::Value* resultStruct = builder.CreateLoad(ariaStringType, resultPtr, "result_str");
-    
     // Cleanup: Free heap-allocated array if needed
     if (totalSegments > MAX_STACK_SEGMENTS) {
         // Call aria_free on the heap-allocated array
@@ -1999,11 +2032,9 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         builder.CreateCall(aria_free, { heapPtr });
     }
 
-    // Extract data pointer from AriaString struct
-    llvm::Value* resultAlloca = builder.CreateAlloca(ariaStringType, nullptr, "result_tmp");
-    builder.CreateStore(resultStruct, resultAlloca);
-    llvm::Value* dataPtr = builder.CreateStructGEP(ariaStringType, resultAlloca, 0);
-    return builder.CreateLoad(llvm::PointerType::get(context, 0), dataPtr, "result_str_ptr");
+    // FIX: Return the AriaString* pointer directly (matches string literal behavior)
+    // println() expects either GlobalVariable* or AriaString* pointer, not raw char*
+    return resultPtr;
 }
 
 /**
@@ -2099,7 +2130,7 @@ llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* code
             llvm::BasicBlock* successEndBlock = codegen->builder.GetInsertBlock();
             codegen->builder.CreateBr(mergeBlock);
             
-            //Merge block: phi node
+            // Merge block: phi node
             codegen->builder.SetInsertPoint(mergeBlock);
             llvm::PHINode* phi = codegen->builder.CreatePHI(defaultVal->getType(), 2, "unwrap_result");
             phi->addIncoming(defaultVal, errorEndBlock);
@@ -2980,6 +3011,199 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 }
             }
 
+            // ====================================================================
+            // ATOMIC<T> METHOD DISPATCH
+            // ====================================================================
+            // Handle atomic<T> method calls by dispatching to runtime C functions
+            // counter.load() → aria_atomic_TYPE_load(&counter, SEQCST)
+            // Supports both "atomic<int32>" and "atomic_int32" type name formats
+            if (type_name.find("atomic<") == 0 || type_name.find("atomic_") == 0) {
+                // Extract the inner type from atomic<TYPE> or atomic_TYPE
+                std::string inner_type;
+                if (type_name.find("atomic<") == 0) {
+                    size_t start = type_name.find('<') + 1;
+                    size_t end = type_name.find('>');
+                    if (start == std::string::npos || end == std::string::npos) {
+                        throw std::runtime_error("Malformed atomic type: " + type_name);
+                    }
+                    inner_type = type_name.substr(start, end - start);
+                } else {
+                    // atomic_int32 → int32
+                    inner_type = type_name.substr(7);  // Skip "atomic_"
+                }
+                
+                // Map Aria type to runtime type name
+                std::string runtime_type = inner_type;  // int32 → int32, tbb32 → tbb32, etc.
+                
+                // Get the atomic variable (already a pointer from atomic_new)
+                llvm::Value* atomic_ptr = var_value;
+                
+                // Dispatch based on method name
+                std::string method_name = member_access->member;
+                
+                if (method_name == "load") {
+                    // atomic.load() → aria_atomic_TYPE_load(atomic_ptr, SEQCST)
+                    std::string func_name = "aria_atomic_" + runtime_type + "_load";
+                    llvm::Function* load_func = module->getFunction(func_name);
+                    
+                    if (!load_func) {
+                        // Determine return type based on inner type
+                        llvm::Type* ret_type = nullptr;
+                        if (inner_type == "int8") ret_type = builder.getInt8Ty();
+                        else if (inner_type == "int16") ret_type = builder.getInt16Ty();
+                        else if (inner_type == "int32") ret_type = builder.getInt32Ty();
+                        else if (inner_type == "int64") ret_type = builder.getInt64Ty();
+                        else if (inner_type == "bool") ret_type = builder.getInt1Ty();
+                        else throw std::runtime_error("Unsupported atomic type: " + inner_type);
+                        
+                        // Signature: TYPE aria_atomic_TYPE_load(AriaAtomicTYPE*, int32)
+                        llvm::FunctionType* func_type = llvm::FunctionType::get(
+                            ret_type,
+                            {llvm::PointerType::get(context, 0),  // atomic pointer
+                             builder.getInt32Ty()},               // memory order
+                            false
+                        );
+                        
+                        load_func = llvm::Function::Create(
+                            func_type,
+                            llvm::Function::ExternalLinkage,
+                            func_name,
+                            module
+                        );
+                    }
+                    
+                    // Memory order: ARIA_MEMORY_ORDER_SEQ_CST = 4
+                    llvm::Value* order = llvm::ConstantInt::get(builder.getInt32Ty(), 4);
+                    return builder.CreateCall(load_func, {atomic_ptr, order}, "atomic_load");
+                }
+                else if (method_name == "store") {
+                    // atomic.store(value) → aria_atomic_TYPE_store(atomic_ptr, value, SEQCST)
+                    if (expr->arguments.size() != 1) {
+                        throw std::runtime_error("atomic.store() requires exactly one argument");
+                    }
+                    
+                    std::string func_name = "aria_atomic_" + runtime_type + "_store";
+                    llvm::Function* store_func = module->getFunction(func_name);
+                    
+                    llvm::Value* value_arg = codegenExpressionNode(expr->arguments[0].get(), this);
+                    
+                    if (!store_func) {
+                        // Signature: void aria_atomic_TYPE_store(AriaAtomicTYPE*, TYPE, int32)
+                        llvm::FunctionType* func_type = llvm::FunctionType::get(
+                            builder.getVoidTy(),
+                            {llvm::PointerType::get(context, 0),  // atomic pointer
+                             value_arg->getType(),                // value type
+                             builder.getInt32Ty()},               // memory order
+                            false
+                        );
+                        
+                        store_func = llvm::Function::Create(
+                            func_type,
+                            llvm::Function::ExternalLinkage,
+                            func_name,
+                            module
+                        );
+                    }
+                    
+                    llvm::Value* order = llvm::ConstantInt::get(builder.getInt32Ty(), 4);
+                    return builder.CreateCall(store_func, {atomic_ptr, value_arg, order}, "atomic_store");
+                }
+                else if (method_name == "swap") {
+                    // atomic.swap(value) → aria_atomic_TYPE_exchange(atomic_ptr, value, SEQCST)
+                    if (expr->arguments.size() != 1) {
+                        throw std::runtime_error("atomic.swap() requires exactly one argument");
+                    }
+                    
+                    std::string func_name = "aria_atomic_" + runtime_type + "_exchange";
+                    llvm::Value* value_arg = codegenExpressionNode(expr->arguments[0].get(), this);
+                    llvm::Function* swap_func = module->getFunction(func_name);
+                    
+                    if (!swap_func) {
+                        // Signature: TYPE aria_atomic_TYPE_exchange(AriaAtomicTYPE*, TYPE, int32)
+                        llvm::FunctionType* func_type = llvm::FunctionType::get(
+                            value_arg->getType(),                // returns old value
+                            {llvm::PointerType::get(context, 0), // atomic pointer
+                             value_arg->getType(),               // new value
+                             builder.getInt32Ty()},              // memory order
+                            false
+                        );
+                        
+                        swap_func = llvm::Function::Create(
+                            func_type,
+                            llvm::Function::ExternalLinkage,
+                            func_name,
+                            module
+                        );
+                    }
+                    
+                    llvm::Value* order = llvm::ConstantInt::get(builder.getInt32Ty(), 4);
+                    return builder.CreateCall(swap_func, {atomic_ptr, value_arg, order}, "atomic_swap");
+                }
+                else if (method_name == "fetch_add") {
+                    // atomic.fetch_add(delta) → aria_atomic_TYPE_fetch_add(atomic_ptr, delta, SEQCST)
+                    if (expr->arguments.size() != 1) {
+                        throw std::runtime_error("atomic.fetch_add() requires exactly one argument");
+                    }
+                    
+                    std::string func_name = "aria_atomic_" + runtime_type + "_fetch_add";
+                    llvm::Value* delta_arg = codegenExpressionNode(expr->arguments[0].get(), this);
+                    llvm::Function* add_func = module->getFunction(func_name);
+                    
+                    if (!add_func) {
+                        llvm::FunctionType* func_type = llvm::FunctionType::get(
+                            delta_arg->getType(),
+                            {llvm::PointerType::get(context, 0),
+                             delta_arg->getType(),
+                             builder.getInt32Ty()},
+                            false
+                        );
+                        
+                        add_func = llvm::Function::Create(
+                            func_type,
+                            llvm::Function::ExternalLinkage,
+                            func_name,
+                            module
+                        );
+                    }
+                    
+                    llvm::Value* order = llvm::ConstantInt::get(builder.getInt32Ty(), 4);
+                    return builder.CreateCall(add_func, {atomic_ptr, delta_arg, order}, "atomic_fetch_add");
+                }
+                else if (method_name == "fetch_sub") {
+                    // atomic.fetch_sub(delta) → aria_atomic_TYPE_fetch_sub(atomic_ptr, delta, SEQCST)
+                    if (expr->arguments.size() != 1) {
+                        throw std::runtime_error("atomic.fetch_sub() requires exactly one argument");
+                    }
+                    
+                    std::string func_name = "aria_atomic_" + runtime_type + "_fetch_sub";
+                    llvm::Value* delta_arg = codegenExpressionNode(expr->arguments[0].get(), this);
+                    llvm::Function* sub_func = module->getFunction(func_name);
+                    
+                    if (!sub_func) {
+                        llvm::FunctionType* func_type = llvm::FunctionType::get(
+                            delta_arg->getType(),
+                            {llvm::PointerType::get(context, 0),
+                             delta_arg->getType(),
+                             builder.getInt32Ty()},
+                            false
+                        );
+                        
+                        sub_func = llvm::Function::Create(
+                            func_type,
+                            llvm::Function::ExternalLinkage,
+                            func_name,
+                            module
+                        );
+                    }
+                    
+                    llvm::Value* order = llvm::ConstantInt::get(builder.getInt32Ty(), 4);
+                    return builder.CreateCall(sub_func, {atomic_ptr, delta_arg, order}, "atomic_fetch_sub");
+                }
+                else {
+                    throw std::runtime_error("Unknown atomic method: " + method_name);
+                }
+            }
+
             mangled_func_name = type_name + "_" + member_access->member;
 
             // Inject the object as the first argument (UFCS transformation)
@@ -3809,6 +4033,102 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             builder.CreateStore(a, a_alloca);
             return builder.CreateCall(c_func, {a_alloca}, "frac.to_float");
         }
+    }
+    
+    // ====================================================================
+    // ATOMIC<T> OPERATIONS - Lock-free Concurrency Primitives
+    // ====================================================================
+    // P0 Feature: atomic<T> type and operations for thread-safe data structures
+    // Runtime: C++11 std::atomic wrappers with TBB sticky error propagation
+    // Memory Ordering: SeqCst (sequentially consistent) for safety - relaxed orderings future work
+    //
+    // Supported Types: int8-64, uint8-64, bool, tbb8-64 (with CAS-based ERR propagation)
+    // Operations: load, store, swap, compare_exchange, fetch_add, fetch_sub
+    //
+    // Design: atomic_new(initial) creates atomic, methods dispatch to runtime:
+    //   counter.load() → aria_atomic_TYPE_load(&counter, SEQCST)
+    //   counter.store(val) → aria_atomic_TYPE_store(&counter, val, SEQCST)
+    //   etc.
+    
+    // atomic_new(initial_value) -> atomic<T>*
+    // Creates a new atomic with the given initial value
+    // Type deduction: infer T from argument type (e.g., 0i32 → atomic<int32>)
+    if (callee_ident->name == "atomic_new") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("atomic_new() requires exactly one argument");
+        }
+        
+        // Evaluate the initial value argument
+        llvm::Value* initial_val = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!initial_val) {
+            throw std::runtime_error("Failed to generate code for atomic_new() argument");
+        }
+        
+        // Determine the type from the argument
+        llvm::Type* arg_type = initial_val->getType();
+        std::string runtime_type_name;
+        std::string aria_type_name;
+        
+        // Map LLVM type to runtime type name
+        if (arg_type->isIntegerTy(8)) {
+            runtime_type_name = "int8";
+            aria_type_name = "int8";
+        } else if (arg_type->isIntegerTy(16)) {
+            runtime_type_name = "int16";
+            aria_type_name = "int16";
+        } else if (arg_type->isIntegerTy(32)) {
+            runtime_type_name = "int32";
+            aria_type_name = "int32";
+        } else if (arg_type->isIntegerTy(64)) {
+            runtime_type_name = "int64";
+            aria_type_name = "int64";
+        } else if (arg_type->isIntegerTy(1)) {
+            runtime_type_name = "bool";
+            aria_type_name = "bool";
+        } else {
+            throw std::runtime_error("atomic_new() currently supports int8-64 and bool types");
+        }
+        
+        // Construct runtime function name: aria_atomic_TYPE_create
+        std::string runtime_func_name = "aria_atomic_" + runtime_type_name + "_create";
+        
+        // Get or declare the runtime function
+        llvm::Function* create_func = module->getFunction(runtime_func_name);
+        if (!create_func) {
+            // Get the opaque atomic type
+            std::string atomic_struct_name = "struct.AriaAtomic";
+            for (char& c : runtime_type_name) {
+                if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';  // toupper
+            }
+            atomic_struct_name += runtime_type_name.substr(0, 1);
+            atomic_struct_name += runtime_type_name.substr(1);
+            
+            // Get proper capitalization: int32 → Int32
+            std::string capitalized = runtime_type_name;
+            if (!capitalized.empty()) {
+                capitalized[0] = std::toupper(capitalized[0]);
+            }
+            atomic_struct_name = "struct.AriaAtomic" + capitalized;
+            
+            llvm::StructType* atomic_type = llvm::StructType::create(context, atomic_struct_name);
+            
+            // Signature: AriaAtomicTYPE* aria_atomic_TYPE_create(TYPE initial)
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(atomic_type, 0),  // returns atomic ptr
+                {arg_type},                              // takes initial value
+                false
+            );
+            
+            create_func = llvm::Function::Create(
+                func_type,
+                llvm::Function::ExternalLinkage,
+                runtime_func_name,
+                module
+            );
+        }
+        
+        // Call the runtime function
+        return builder.CreateCall(create_func, {initial_val}, "atomic_new");
     }
     
     // ====================================================================
@@ -8895,6 +9215,13 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
                 return builder.CreateFPToUI(sourceValue, targetLLVMType, "cast.checked_fptoui");
             }
         }
+    }
+    
+    // Pointer to Pointer casts (void* ↔ wild T->)
+    // In LLVM opaque pointer model (20.x+), all pointers are compatible "ptr" type
+    // Just return the source value - no bitcast needed with opaque pointers
+    if (sourceLLVMType->isPointerTy() && targetLLVMType->isPointerTy()) {
+        return sourceValue;  // No-op: ptr to ptr is identity in modern LLVM
     }
     
     throw std::runtime_error("Unsupported cast between types: " + 

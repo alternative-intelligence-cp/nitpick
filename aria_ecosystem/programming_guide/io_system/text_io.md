@@ -34,8 +34,9 @@ line: string = stdin.read_line();
 content: string = stdin.read_all();
 
 // Read line by line
-for line in stdin.lines() {
-    process_line(line);
+lines = stdin.lines().collect();
+till(lines.length - 1, 1) {
+    process_line(lines[$]);
 }
 ```
 

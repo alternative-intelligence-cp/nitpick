@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aria Programming Guide Syntax Audit - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a></div>
+        <h1>Aria Programming Guide Syntax Audit</h1>
+<strong>Date</strong>: February 14, 2026
+<strong>Status</strong>: Phase 1 (Type System) Complete, Phase 2 (Syntax Cleanup) Starting
+<strong>Auditor</strong>: GitHub Copilot (Claude Sonnet 4.5)
+<strong>Scope</strong>: 359 markdown files in programming_guide/
+<hr>
+<h2>Executive Summary</h2>
+<strong>Type documentation is COMPLETE</strong> (50 guides, ~41,273 lines, Sessions 1-26). Now we need to <strong>correct syntax inconsistencies</strong> across the remaining ~309 files before documenting new language features.
+<strong>Identified Issues</strong>:
+<p>
+1. <strong>Error handling syntax</strong> - 284 occurrences across 55 files (return Error/Err/Ok → fail/pass)
+2. <strong>Lambda operator</strong> - 495 occurrences across 44 files (=> doesn't exist in Aria)
+3. <strong>Loop syntax</strong> - 517 occurrences of C-style for loops (should be till/loop)
+4. <strong>Result type signatures</strong> - 12 occurrences of Result<T> (should be Result<T,E>)
+</p>
+<strong>High-Priority Files</strong> (need immediate fixing):
+<ul><li><code>advanced_features/error_handling.md</code> - Ironically has old error syntax!</li>
+<li><code>README.md</code> - Front door to the guide (needs to be current)</li>
+<li><code>stdlib/*</code> - Many lambda => examples need correction</li>
+</ul>
+<hr>
+<h2>Detailed Findings</h2>
+<h3>1. Error Handling Syntax (CRITICAL)</h3>
+<strong>Issue</strong>: Using Rust-style <code>return Error(...)</code>, <code>return Err(...)</code>, <code>return Ok(...)</code> instead of Aria's <code>fail(...)</code> and <code>pass(...)</code>.
+<strong>Scope</strong>:
+<ul><li><strong>284 total occurrences</strong> across 55 files</li>
+<li><strong>Affected directories</strong>:</li>
+</ul>  - <code>advanced_features/</code> - 18 files (including error_handling.md!)
+<p>
+- <code>operators/</code> - Question operator examples
+- <code>modules/</code> - C interop examples
+- <code>memory_model/</code> - Stack examples
+- <code>stdlib/</code> - Multiple files
+</p>
+<strong>Example (from error_handling.md:21)</strong>:
+<pre><code>// ❌ WRONG (current):
+<p>
+return Ok(config);
+</p>
+<p>
+// ✅ CORRECT (Aria syntax):
+pass(config);</code></pre>
+</p>
+<strong>Fix Strategy</strong>:
+<pre><code># Automated find/replace (after manual verification):
+<p>
+sed -i 's/return Error(/fail(/g' <em>*/</em>.md
+sed -i 's/return Err(/fail(/g' <em>*/</em>.md
+sed -i 's/return Ok(/pass(/g' <em>*/</em>.md
+sed -i 's/return Success(/pass(/g' <em>*/</em>.md</code></pre>
+</p>
+<strong>Manual Review Required</strong>: Some cases might be in comparison sections or historical notes (don't auto-replace everything blindly).
+<hr>
+<h3>2. Lambda Arrow Operator (CRITICAL)</h3>
+<strong>Issue</strong>: Using <code>=></code> arrow operator (doesn't exist in Aria - use <code>=</code> for lambdas).
+<strong>Scope</strong>:
+<ul><li><strong>495 total occurrences</strong> across 44 files</li>
+<li><strong>Heavily affected</strong>: <code>stdlib/filter.md</code> and other higher-order function examples</li>
+</ul>
+<strong>Example (from stdlib/filter.md)</strong>:
+<pre><code>// ❌ WRONG (current):
+<p>
+int64[]:evens = filter(numbers, n => n % 2 == 0);
+</p>
+<p>
+// ✅ CORRECT (Aria syntax - needs full lambda syntax):
+int64[]:evens = filter(numbers, func(int64:n) = (n % 2 == 0));</code></pre>
+</p>
+<strong>Fix Strategy</strong>:
+<ul><li><strong>NOT automatable</strong> - Context-dependent conversion</li>
+<li>Need to determine if inline lambda or stored function reference</li>
+<li>May need to add explicit type annotations</li>
+<li>Estimate: ~44 files × 30 minutes each = <strong>22 hours</strong></li>
+</ul>
+<strong>Priority</strong>: HIGH (affects stdlib documentation heavily)
+<hr>
+<h3>3. Loop Syntax (MEDIUM PRIORITY)</h3>
+<strong>Issue</strong>: Using C-style <code>for</code> loops instead of Aria's <code>till</code> keyword with <code>$</code> index variable.
+<strong>Scope</strong>:
+<ul><li><strong>517 occurrences</strong> of <code>for</code> loops</li>
+<li>Affects many example code blocks across guide</li>
+</ul>
+<strong>Example</strong>:
+<pre><code>// ❌ WRONG (C-style):
+<p>
+for (int i = 0; i < 10; i++) {
+print(i);
+}
+</p>
+<p>
+// ✅ CORRECT (Aria):
+till 10 loop
+print($);
+end</code></pre>
+</p>
+<strong>Fix Strategy</strong>:
+<ul><li><strong>Semi-automatable</strong> - Pattern recognition for simple loops</li>
+<li>Complex loops need manual restructuring</li>
+<li>Estimate: Review patterns in 10 files, then batch-apply</li>
+</ul>
+<strong>Priority</strong>: MEDIUM (doesn't affect correctness as much as readability)
+<hr>
+<h3>4. Result Type Signatures (LOW PRIORITY)</h3>
+<strong>Issue</strong>: Using <code>Result<T></code> instead of <code>Result<T,E></code> (missing error type parameter).
+<strong>Scope</strong>:
+<ul><li><strong>12 occurrences</strong> (mostly in older guides)</li>
+<li>Already fixed in Session 26 Result.md guide</li>
+</ul>
+<strong>Example</strong>:
+<pre><code>// ❌ OLD (single parameter):
+<p>
+Result<int64>
+</p>
+<p>
+// ✅ NEW (explicit error type):
+Result<int64, string>
+Result<int64, int8>
+Result<int64, ERR_TYPE></code></pre>
+</p>
+<strong>Fix Strategy</strong>:
+<ul><li>Manual review (context-dependent - what error type makes sense?)</li>
+<li>Low count, can fix during normal editing</li>
+</ul>
+<strong>Priority</strong>: LOW (only 12 occurrences, already documented correctly in new guides)
+<hr>
+<h3>5. Type Annotation Order (VERIFICATION NEEDED)</h3>
+<strong>Issue</strong>: Possible use of <code>name: Type</code> instead of Aria's <code>Type:name</code>.
+<strong>Scope</strong>:
+<ul><li>Only found 2 instances in initial grep</li>
+<li><code>functions/function_params.md</code> has example that might be incorrect</li>
+</ul>
+<strong>Example</strong>:
+<pre><code>// ❌ WRONG (Rust/TypeScript style):
+<p>
+fn function_name(param_name: Type) { }
+</p>
+<p>
+// ✅ CORRECT (Aria):
+func:function_name = (Type:param_name) { }</code></pre>
+</p>
+<strong>Fix Strategy</strong>:
+<ul><li>Needs manual verification (might be false positives)</li>
+<li>Check function signature guides first</li>
+</ul>
+<strong>Priority</strong>: LOW (very few instances found)
+<hr>
+<h2>Files Requiring Immediate Attention</h2>
+<h3>Tier 1: High-Visibility (Fix First)</h3>
+<p>
+1. <strong>README.md</strong> (11KB)
+- Front door to documentation
+- Needs current status update
+- Last updated: Feb 14 (today), but may have outdated syntax in examples
+</p>
+<p>
+2. <strong>advanced_features/error_handling.md</strong>
+- <strong>IRONIC</strong>: The error handling guide has old error handling syntax!
+- 10+ instances of <code>return Ok/Err</code> found
+- Critical because people will copy these examples
+</p>
+<p>
+3. <strong>stdlib/filter.md</strong> (and other stdlib/)
+- Heavy use of <code>=></code> lambda syntax
+- People will copy these patterns
+- Needs careful lambda syntax correction
+</p>
+<h3>Tier 2: Category Leaders</h3>
+<p>
+4-23. <strong>advanced_features/</strong> directory (32 files total)
+- 18 files have error handling issues
+- Many use <code>=></code> syntax
+- These are reference examples for advanced users
+</p>
+<h3>Tier 3: Batch Corrections</h3>
+<p>
+24-55. <strong>Remaining 32 files</strong> with error handling syntax
+- Can fix in batches after establishing patterns from Tier 1-2
+</p>
+<hr>
+<h2>Recommended Action Plan</h2>
+<h3>Session 27: High-Visibility Quick Wins (4-6 hours)</h3>
+<strong>Goal</strong>: Fix the most-copied examples to prevent syntax propagation.
+<p>
+1. <strong>Fix error_handling.md</strong> (~1 hour)
+- Replace all <code>return Ok/Err/Error</code> with <code>pass/fail</code>
+- Verify all Result<T,E> examples correct
+- Test examples for consistency
+</p>
+<p>
+2. <strong>Update README.md</strong> (~30 min)
+- Update status to reflect Session 26 completion
+- Ensure any code examples use correct syntax
+- Add note about syntax standardization in progress
+</p>
+<p>
+3. <strong>Fix stdlib/filter.md</strong> (~2 hours)
+- Convert all <code>=></code> lambda syntax to proper Aria lambdas
+- Document correct lambda pattern clearly
+- Use as reference for other stdlib files
+</p>
+<p>
+4. <strong>Document canonical patterns</strong> (~1 hour)
+- Create SYNTAX_REFERENCE.md with correct patterns
+- Use as reference for remaining corrections
+</p>
+<strong>Deliverable</strong>: 3-4 key files fixed, reference document created
+<hr>
+<h3>Session 28-30: Batch Corrections (15-20 hours)</h3>
+<strong>Goal</strong>: Fix all error handling and lambda syntax systematically.
+<p>
+1. <strong>Error handling batch</strong> (~5 hours)
+- Use sed for simple replacements (verify each directory first)
+- Manual review of edge cases
+- Test representative files after batch changes
+</p>
+<p>
+2. <strong>Lambda syntax batch</strong> (~10 hours)
+- More manual work required (context-dependent)
+- Fix stdlib/ files first (establish pattern)
+- Apply pattern to advanced_features/
+- Document common conversion patterns
+</p>
+<p>
+3. <strong>Loop syntax review</strong> (~3 hours)
+- Identify common for-loop patterns
+- Create till-loop equivalents
+- Script simple cases, manual review complex cases
+</p>
+<strong>Deliverable</strong>: All 55 error-syntax files, 44 lambda files corrected
+<hr>
+<h3>Session 31+: Language Feature Documentation</h3>
+<strong>Goal</strong>: Document operators, control flow, contracts with CORRECT syntax from start.
+<p>
+1. <strong>Operators</strong> (~10 hours, 8-10 guides)
+- Arithmetic, comparison, logical, bitwise
+- Special operators (?, ??, ?.)
+- Precedence & associativity reference
+- <strong>USE THESE AS CANONICAL EXAMPLES</strong>
+</p>
+<p>
+2. <strong>Control Flow</strong> (~12 hours, 8-10 guides)
+- till loops with $ index variable
+- loop...end (infinite/conditional)
+- when guards
+- pick/match statements
+- if/then/else/elseif
+- <strong>REFERENCE FOR LOOP SYNTAX</strong>
+</p>
+<p>
+3. <strong>Contracts</strong> (~8 hours, 5-6 guides)
+- requires/ensures clauses
+- Invariants
+- Runtime validation
+- Integration with Result<T,E>
+</p>
+<strong>Deliverable</strong>: 20-25 new guides with perfect syntax, usable as references for final cleanup
+<hr>
+<h3>Session 35+: Final Cleanup & Verification</h3>
+<strong>Goal</strong>: Ensure ALL 359 files have consistent, correct Aria syntax.
+<p>
+1. <strong>Automated syntax check</strong> (~5 hours)
+- Write grep patterns for all known issues
+- Verify zero occurrences of old syntax
+- Generate compliance report
+</p>
+<p>
+2. <strong>Cross-reference verification</strong> (~5 hours)
+- Ensure all type links work
+- Verify all examples compile (when compiler ready)
+- Check for orphaned files
+</p>
+<p>
+3. <strong>Index regeneration</strong> (~3 hours)
+- Update all category indexes
+- Regenerate table of contents
+- Ensure navigation works
+</p>
+<strong>Deliverable</strong>: Complete, syntax-correct programming guide ready for fuzzer/man pages/website
+<hr>
+<h2>Automation Opportunities</h2>
+<h3>Can Script (Low Risk)</h3>
+<pre><code># Simple replacements with manual verification:
+<p>
+find . -name "*.md" -exec sed -i 's/return Error(/fail(/g' {} +
+find . -name "*.md" -exec sed -i 's/return Err(/fail(/g' {} +
+find . -name "*.md" -exec sed -i 's/return Ok(/pass(/g' {} +</code></pre>
+</p>
+<h3>Cannot Script (High Risk)</h3>
+<ul><li>Lambda <code>=></code> to <code>=</code> conversions (context-dependent, need type annotations)</li>
+<li><code>for</code> to <code>till</code> loops (logic restructuring required)</li>
+<li>Result<T> to Result<T,E> (need to determine appropriate error type)</li>
+</ul>
+<h3>Best Approach</h3>
+<p>
+1. <strong>Fix 10 representative files manually</strong> - Establish patterns
+2. <strong>Script simple replacements</strong> - Use sed for safe patterns
+3. <strong>Manual review post-script</strong> - Verify changes make sense
+4. <strong>Test examples</strong> - Ensure code logic preserved
+</p>
+<hr>
+<h2>Estimated Timeline</h2>
+<p>
+| Phase | Scope | Hours | Sessions (4-6h each) |
+|-------|-------|-------|---------------------|
+| <strong>Tier 1 Fixes</strong> | 3-4 critical files | 4-6 | 1 session (Session 27) |
+| <strong>Error Syntax Batch</strong> | 55 files | 5-8 | 1-2 sessions |
+| <strong>Lambda Syntax Batch</strong> | 44 files | 10-15 | 2-3 sessions |
+| <strong>Loop Syntax Review</strong> | Unknown files | 3-5 | 1 session |
+| <strong>New Feature Docs</strong> | 20-25 guides | 30-40 | 5-7 sessions |
+| <strong>Final Verification</strong> | 359 files | 10-15 | 2-3 sessions |
+| <strong>TOTAL</strong> | | <strong>62-89 hours</strong> | <strong>12-18 sessions</strong> |
+</p>
+<strong>Optimistic</strong> (with good automation): 12-15 sessions (3-4 weeks at 1 session/day)
+<strong>Realistic</strong> (manual review heavy): 15-18 sessions (4-5 weeks)
+<strong>Conservative</strong> (unexpected issues): 18-20 sessions (5-6 weeks)
+<hr>
+<h2>Success Metrics</h2>
+<h3>After Session 27 (High-Visibility)</h3>
+<ul><li>✅ error_handling.md has zero <code>return Ok/Err/Error</code></li>
+<li>✅ README.md reflects current status (Session 26 complete)</li>
+<li>✅ stdlib/filter.md demonstrates correct lambda syntax</li>
+<li>✅ SYNTAX_REFERENCE.md exists as canonical reference</li>
+</ul>
+<h3>After Sessions 28-30 (Batch Corrections)</h3>
+<ul><li>✅ Zero grep hits for <code>return Error|Err|Ok|Success</code> in code examples</li>
+<li>✅ Zero grep hits for <code> => </code> in Aria code (except comparison sections)</li>
+<li>✅ Common loop patterns documented and converted</li>
+</ul>
+<h3>After Sessions 31+ (New Features)</h3>
+<ul><li>✅ Operator guides complete with precedence table</li>
+<li>✅ Control flow guides complete with till/loop/when/pick</li>
+<li>✅ Contract guides complete with requires/ensures</li>
+<li>✅ All new guides have perfect syntax (no corrections needed)</li>
+</ul>
+<h3>Final Verification</h3>
+<ul><li>✅ All 359 files pass syntax compliance checks</li>
+<li>✅ All cross-references resolved</li>
+<li>✅ Documentation ready for fuzzer generation</li>
+<li>✅ Documentation ready for man page extraction</li>
+<li>✅ Documentation ready for website deployment</li>
+</ul>
+<hr>
+<h2>Risks & Mitigations</h2>
+<h3>Risk 1: Breaking Working Examples</h3>
+<strong>Mitigation</strong>: Test representative examples after each batch, maintain backup copies
+<h3>Risk 2: Context Loss in Automated Replacements</h3>
+<strong>Mitigation</strong>: Manual review of scripted changes, fix 10 files manually first to establish patterns
+<h3>Risk 3: Scope Creep (Finding More Issues)</h3>
+<strong>Mitigation</strong>: Document new issues in this audit, but defer to later phases unless critical
+<h3>Risk 4: Inconsistent Patterns Discovered</h3>
+<strong>Mitigation</strong>: Create SYNTAX_REFERENCE.md early, use as single source of truth
+<h3>Risk 5: Compiler Not Ready for Testing</h3>
+<strong>Mitigation</strong>: Verify syntax against existing implementation docs, compiler tests when available
+<hr>
+<h2>Next Steps (Session 27)</h2>
+<p>
+1. <strong>Create SYNTAX_REFERENCE.md</strong> with canonical examples
+2. <strong>Fix advanced_features/error_handling.md</strong> completely
+3. <strong>Update README.md</strong> with Session 26 status
+4. <strong>Fix stdlib/filter.md</strong> lambda examples
+5. <strong>Document patterns found</strong> for batch application
+</p>
+<strong>Estimated Duration</strong>: 4-6 hours (1 session)
+<hr>
+<h2>Notes</h2>
+<ul><li><strong>Type guides are DONE</strong> - Don't touch types/ directory (already correct)</li>
+<li><strong>Backup before scripting</strong> - Use git to track all changes</li>
+<li><strong>Test as you go</strong> - Fix 10 files, verify pattern, then batch</li>
+<li><strong>Document discoveries</strong> - Update this audit as new issues found</li>
+<li><strong>Focus on user impact</strong> - Fix high-visibility files first to prevent syntax propagation</li>
+</ul>
+<hr>
+<strong>Philosophy</strong>: We're not just fixing syntax - we're establishing Aria's canonical style that will be copied by thousands of developers. Get it right once, benefit forever.
+<strong>Motivation</strong>: Clean documentation → correct fuzzer → accurate man pages → professional website → successful language adoption → changed lives.
+<strong>Timeline</strong>: No rush. Quality over speed. Building for decades, not quarters.
+    </main>
+</body>
+</html>

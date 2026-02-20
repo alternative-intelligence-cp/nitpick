@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Large Signed Integers: int128, int256, int512 - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Large Signed Integers: int128, int256, int512</h1>
+<h2>Overview</h2>
+<strong>Purpose</strong>: Large signed integers beyond native CPU support, for specialized precision and security applications.
+<strong>Sizes and Ranges</strong>:
+<ul><li><code>int128</code>: 128-bit signed (-170,141,183,460,469,231,731,687,303,715,884,105,728)</li>
+<li><code>int256</code>: 256-bit signed (±5.8×10⁷⁶)</li>
+<li><code>int512</code>: 512-bit signed (±6.7×10¹⁵³)</li>
+</ul>
+<strong>Key Characteristics</strong>:
+<ul><li>All require software implementation (no native CPU operations)</li>
+<li>Performance cost compared to int64</li>
+<li>Still use two's complement (asymmetric ranges)</li>
+<li>Overflow possible but at astronomical values</li>
+<li>For precision/capacity, not cryptographic security (use int1024+ for that)</li>
+</ul>
+<strong>When to Use</strong>:
+<ul><li>int128: UUIDs, IPv6 addresses, high-precision scientific computing</li>
+<li>int256: Hash value storage, blockchain addresses, crypto intermediates</li>
+<li>int512: Post-quantum signatures, extreme precision, concatenated hashes</li>
+</ul>
+<strong>vs Cryptographic Integers</strong> (int1024/2048/4096):
+<ul><li>These are for PRECISION (scientific, addressing, hashing)</li>
+<li>Crypto integers are for SECURITY (RSA keys, elliptic curves)</li>
+<li>Different design priorities (performance vs security guarantees)</li>
+</ul>
+<hr>
+<h2>int128: 128-Bit Signed Integer</h2>
+<h3>Range and Representation</h3>
+<strong>Range</strong>: -170,141,183,460,469,231,731,687,303,715,884,105,728 to +170,141,183,460,469,231,731,687,303,715,884,105,727
+<strong>Approximately</strong>: -1.7×10³⁸ to +1.7×10³⁸
+<strong>Bit Pattern</strong>: 128 bits (16 bytes)
+<ul><li>1 sign bit + 127 value bits</li>
+<li>Two's complement (MIN = -2¹²⁷, MAX = 2¹²⁷-1)</li>
+</ul>
+<strong>Asymmetry</strong>: One more negative value (abs(MIN) overflow)
+<pre><code>int128:min = -170141183460469231731687303715884105728;  // -2^127
+<p>
+int128:max =  170141183460469231731687303715884105727;  // 2^127 - 1
+</p>
+<p>
+// Asymmetry demonstration
+int128:x = int128.min;
+int128:y = -x;  // OVERFLOW! abs(MIN) > MAX</code></pre>
+</p>
+<h3>Common Use Cases</h3>
+<strong>1. UUID Storage</strong>
+<p>
+UUIDs are 128-bit identifiers. Storing as int128 allows efficient comparison:
+</p>
+<pre><code>// UUID: 550e8400-e29b-41d4-a716-446655440000
+<p>
+int128:uuid = 0x550e8400e29b41d4a716446655440000;
+</p>
+<p>
+// Comparison is simple integer comparison
+if (uuid1 < uuid2) {
+log.write("UUID1 comes before UUID2\n");
+}
+</p>
+<p>
+// Convert to canonical string format
+string:uuid_str = uuid.to_hex_string();  // "550e8400-e29b-41d4-a716-446655440000"</code></pre>
+</p>
+<strong>2. IPv6 Address Storage</strong>
+<p>
+IPv6 addresses are 128 bits. Signed int128 enables subnet calculations:
+</p>
+<pre><code>// IPv6: 2001:0db8:85a3:0000:0000:8a2e:0370:7334
+<p>
+int128:ipv6 = 0x20010db885a3000000008a2e03707334;
+</p>
+<p>
+// Subnet mask (first 64 bits)
+int128:mask = 0xffffffffffffffff0000000000000000;
+</p>
+<p>
+// Network address
+int128:network = ipv6 & mask;
+</p>
+<p>
+// Check if IP is in range
+bool:in_subnet = (ip & mask) == network;</code></pre>
+</p>
+<strong>3. High-Precision Scientific Computing</strong>
+<p>
+When int64 (±9×10¹⁸) is insufficient:
+</p>
+<pre><code>// Astronomical calculations (star distances in micrometers)
+<p>
+int128:distance_um = star_distance_km * 1000000000000000;  // km to micrometers
+</p>
+<p>
+// Financial calculations (pennies over centuries)
+int128:total_pennies = annual_pennies * years_of_operation;
+</p>
+<p>
+// Combinatorics (large factorial values)
+int128:combinations = compute_combinations(n, k);  // Must fit in 10^38</code></pre>
+</p>
+<strong>4. Precise Time Representation</strong>
+<p>
+Nanoseconds since epoch with extended range:
+</p>
+<pre><code>// Nanoseconds since Unix epoch
+<p>
+// int64 maxes out at ~292 years
+// int128 extends to ~5.4 billion years
+int128:nanos_since_epoch = current_time_ns();
+</p>
+<p>
+// Convert to seconds (divide by 10^9)
+int64:seconds = (nanos_since_epoch / 1000000000).to_int64();</code></pre>
+</p>
+<h3>Performance Considerations</h3>
+<strong>Not Native CPU Instructions</strong>:
+<pre><code>// int64: Single CPU instruction
+<p>
+int64:a = x + y;  // ~1 cycle
+</p>
+<p>
+// int128: Software emulation (multiple instructions)
+int128:b = x + y;  // ~10-20 cycles (add low 64, add high 64, handle carry)</code></pre>
+</p>
+<strong>Optimization Strategies</strong>:
+<ul><li>Cache int128 values (expensive to recompute)</li>
+<li>Use int64 when possible (check range first)</li>
+<li>Batch operations (reduce function call overhead)</li>
+<li>Consider using libraries optimized for your platform</li>
+</ul>
+<strong>When Performance Matters</strong>:
+<pre><code>// BAD: Repeated int128 operations in tight loop
+<p>
+loop (1000000 times:i) {
+int128:temp = large_values[i] * scale_factor;  // Expensive!
+process(temp);
+}
+</p>
+<p>
+// BETTER: Check if int64 sufficient first
+if (max_value * scale_factor < int64.max) {
+// Use faster int64 operations
+loop (1000000 times:i) {
+int64:temp = large_values[i].to_int64() * scale_factor;
+process(temp);
+}
+} else {
+// Fall back to int128 only when needed
+loop (1000000 times:i) {
+int128:temp = large_values[i] * scale_factor;
+process(temp);
+}
+}</code></pre>
+</p>
+<hr>
+<h2>int256: 256-Bit Signed Integer</h2>
+<h3>Range and Representation</h3>
+<strong>Range</strong>: ±5.8×10⁷⁶ (exactly ±2²⁵⁵ for extremes)
+<strong>Bit Pattern</strong>: 256 bits (32 bytes)
+<ul><li>1 sign bit + 255 value bits</li>
+<li>Two's complement</li>
+</ul>
+<strong>Scale</strong>: Vastly larger than int128
+<ul><li>int128 → int256: Multiply range by ~3.4×10³⁸</li>
+<li>Can hold 2 int128 values with room to spare</li>
+</ul>
+<pre><code>int256:min = -(2**255);
+<p>
+int256:max = (2**255) - 1;
+</p>
+<p>
+// Compare scales
+int256:a = int128.max.to_int256();
+int256:b = int256.max;
+// b is ~3.4×10^38 times larger than a</code></pre>
+</p>
+<h3>Common Use Cases</h3>
+<strong>1. Hash Value Storage</strong>
+<p>
+SHA-256 produces 256-bit hashes. Store as int256 for comparisons:
+</p>
+<pre><code>// SHA-256 hash as int256
+<p>
+int256:hash = compute_sha256(data);
+</p>
+<p>
+// Compare hashes (lexicographic order)
+if (hash1 < hash2) {
+log.write("Hash1 sorts before Hash2\n");
+}
+</p>
+<p>
+// Check if hash meets difficulty target (blockchain mining)
+int256:target = difficulty_to_target(current_difficulty);
+if (hash < target) {
+log.write("Valid block found!\n");
+}</code></pre>
+</p>
+<strong>2. Blockchain Addresses and Balances</strong>
+<p>
+Ethereum addresses are 160 bits, but intermediate calculations need 256:
+</p>
+<pre><code>// Ethereum address (160 bits, fits in int256)
+<p>
+int256:address = 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1;
+</p>
+<p>
+// Balance calculations (wei = 10^-18 ether)
+int256:balance_wei = account.get_balance();
+int256:transfer_amount = 1500000000000000000;  // 1.5 ether
+</p>
+<p>
+// Ensure no overflow
+if (balance_wei >= transfer_amount) {
+balance_wei -= transfer_amount;
+}</code></pre>
+</p>
+<strong>3. Elliptic Curve Cryptography Intermediates</strong>
+<p>
+ECC operations on 256-bit curves (secp256k1, P-256):
+</p>
+<pre><code>// Point coordinates on elliptic curve
+<p>
+int256:x = point.x_coordinate;
+int256:y = point.y_coordinate;
+</p>
+<p>
+// Modular arithmetic (mod prime P)
+int256:p = secp256k1_prime();
+int256:result = (x <em> x </em> x + 7) % p;  // y^2 = x^3 + 7 (secp256k1 curve equation)
+</p>
+<p>
+// Verify point is on curve
+bool:valid = (y * y % p) == result;</code></pre>
+</p>
+<strong>4. Merkle Tree Hashing</strong>
+<p>
+Concatenate and hash 256-bit values:
+</p>
+<pre><code>// Merkle tree node (combine two hashes)
+<p>
+int256:left_hash = leaves[i * 2];
+int256:right_hash = leaves[i * 2 + 1];
+</p>
+<p>
+// Concatenate (requires int512 temporarily)
+int512:concatenated = (left_hash.to_int512() << 256) | right_hash.to_int512();
+</p>
+<p>
+// Hash the concatenation
+int256:parent_hash = sha256(concatenated).to_int256();</code></pre>
+</p>
+<h3>Storage and Memory</h3>
+<strong>Size</strong>: 32 bytes per int256
+<ul><li>Array of 1000: 32 KB</li>
+<li>Array of 1,000,000: 32 MB</li>
+</ul>
+<strong>Alignment Considerations</strong>:
+<pre><code>// Struct with int256 (mind alignment)
+<p>
+struct:BlockHeader {
+int256:hash;           // 32 bytes
+int256:prev_hash;      // 32 bytes
+int64:timestamp;       // 8 bytes
+int32:nonce;           // 4 bytes
+// Total: 76 bytes (may align to 80)
+}</code></pre>
+</p>
+<hr>
+<h2>int512: 512-Bit Signed Integer</h2>
+<h3>Range and Representation</h3>
+<strong>Range</strong>: ±6.7×10¹⁵³ (exactly ±2⁵¹¹ for extremes)
+<strong>Bit Pattern</strong>: 512 bits (64 bytes)
+<ul><li>1 sign bit + 511 value bits</li>
+<li>Two's complement</li>
+</ul>
+<strong>Enormous Scale</strong>:
+<ul><li>Larger than number of atoms in observable universe (~10⁸⁰)</li>
+<li>Can represent essentially any physical quantity</li>
+<li>Overflow only in extreme theoretical calculations</li>
+</ul>
+<pre><code>int512:min = -(2**511);
+<p>
+int512:max = (2**511) - 1;
+</p>
+<p>
+// Even int256 is tiny compared to int512
+int512:a = int256.max.to_int512();
+int512:b = int512.max;
+// b is ~6.7×10^77 times larger than a</code></pre>
+</p>
+<h3>Common Use Cases</h3>
+<strong>1. Post-Quantum Cryptographic Signatures</strong>
+<p>
+Some post-quantum schemes use 512-bit or larger signatures:
+</p>
+<pre><code>// Concatenated signature components
+<p>
+int512:signature_r = signature.r_component;
+int512:signature_s = signature.s_component;
+</p>
+<p>
+// Verification involves 512-bit arithmetic
+bool:valid = verify_post_quantum_signature(message, signature_r, signature_s, public_key);</code></pre>
+</p>
+<strong>2. Multiple Hash Concatenation</strong>
+<p>
+Combining multiple 256-bit hashes:
+</p>
+<pre><code>// Concatenate two SHA-256 hashes into int512
+<p>
+int256:hash1 = sha256(data1);
+int256:hash2 = sha256(data2);
+</p>
+<p>
+int512:combined = (hash1.to_int512() << 256) | hash2.to_int512();
+</p>
+<p>
+// Or store array of hashes as single int512 for comparison
+int512:fingerprint = (h1 << 256) | h2;</code></pre>
+</p>
+<strong>3. Extreme Precision Requirements</strong>
+<p>
+Scientific calculations requiring >76 decimal digits of precision:
+</p>
+<pre><code>// Cosmological constants with extreme precision
+<p>
+int512:planck_units = calculate_planck_value() <em> (10</em>*100);
+</p>
+<p>
+// Quantum calculations with many significant figures
+int512:probability_numerator = exact_quantum_amplitude();
+int512:probability_denominator = normalization_factor();</code></pre>
+</p>
+<strong>4. Cryptographic Accumulator Intermediates</strong>
+<p>
+RSA accumulators and advanced zero-knowledge proofs:
+</p>
+<pre><code>// RSA accumulator (intermediate values during computation)
+<p>
+int512:accumulated_value = 1;
+loop (elements.length:i) {
+int512:element_prime = elements[i];
+accumulated_value = mod_exp(accumulated_value, element_prime, modulus);
+}</code></pre>
+</p>
+<h3>When int512 Is Overkill</h3>
+<strong>Consider int256 or smaller</strong> if:
+<ul><li>Values never exceed 10⁷⁶ (int256 range)</li>
+<li>Performance critical (int512 is slowest)</li>
+<li>Memory constrained (64 bytes per value)</li>
+</ul>
+<pre><code>// BAD: Using int512 for values that fit in int256
+<p>
+int512:timestamp_ns = get_time_ns();  // Will never exceed int128, let alone int512
+</p>
+<p>
+// GOOD: Right-size the type
+int128:timestamp_ns = get_time_ns();  // Sufficient for billions of years</code></pre>
+</p>
+<hr>
+<h2>Common Characteristics of Large Integers</h2>
+<h3>Software Implementation</h3>
+<strong>All operations are emulated</strong>:
+<ul><li>Addition: Add chunks, propagate carries</li>
+<li>Multiplication: Long multiplication algorithm</li>
+<li>Division: Long division algorithm (expensive!)</li>
+</ul>
+<strong>Performance Impact</strong>:
+<pre><code>// Relative operation costs (approximate)
+<p>
+int64:  1x   (baseline)
+int128: 3-5x (emulated on 64-bit CPU)
+int256: 8-15x
+int512: 20-40x
+</p>
+<p>
+// Division is particularly expensive
+int512:quotient = a / b;  // May take hundreds of cycles</code></pre>
+</p>
+<h3>Overflow Behavior</h3>
+<strong>Wrapping Overflow</strong> (like smaller integers):
+<pre><code>int128:x = int128.max;
+<p>
+x += 1;  // Wraps to int128.min
+</p>
+<p>
+// Detection
+int128:a = large_value_1;
+int128:b = large_value_2;
+int128:sum = a + b;
+</p>
+<p>
+// Overflow detection (signed addition)
+bool:overflow = (a > 0 && b > 0 && sum < 0) || (a < 0 && b < 0 && sum > 0);</code></pre>
+</p>
+<strong>Saturation Alternative</strong>:
+<pre><code>// Saturating addition (clamp to range)
+<p>
+int256:saturating_add(int256:a, int256:b) -> int256 {
+if (a > 0 && b > int256.max - a) return int256.max;
+if (a < 0 && b < int256.min - a) return int256.min;
+return a + b;
+}</code></pre>
+</p>
+<h3>Conversion Safety</h3>
+<strong>Narrowing Conversions</strong> (dangerous):
+<pre><code>int256:large = 0x123456789ABCDEF0123456789ABCDEF0;
+<p>
+int128:narrow = large.to_int128();  // TRUNCATES! Lost upper 128 bits
+</p>
+<p>
+// Safe conversion with check
+int128:safe_narrow(int256:value) -> int128 {
+if (value > int128.max || value < int128.min) {
+return ERR;  // Out of range
+}
+return value.to_int128();
+}</code></pre>
+</p>
+<strong>Widening Conversions</strong> (safe):
+<pre><code>int128:small = 12345;
+<p>
+int256:large = small.to_int256();  // Safe, sign-extends
+int512:huge = large.to_int512();   // Safe, sign-extends</code></pre>
+</p>
+<h3>Serialization</h3>
+<strong>Binary Representation</strong>:
+<pre><code>// Write int256 to binary file (32 bytes, little-endian)
+<p>
+int256:value = large_hash;
+file.write(value.to_bytes());  // 32 bytes written
+</p>
+<p>
+// Read back
+bytes:data = file.read(32);
+int256:restored = int256.from_bytes(data);</code></pre>
+</p>
+<strong>Hexadecimal Strings</strong> (common for hashes):
+<pre><code>int256:hash = 0x123abc...;
+<p>
+string:hex = hash.to_hex_string();  // "123abc..."
+int256:parsed = int256.from_hex_string(hex);</code></pre>
+</p>
+<hr>
+<h2>Large Integers vs Cryptographic Integers</h2>
+<h3>int128/256/512: Precision Focus</h3>
+<strong>Use When</strong>:
+<ul><li>Need exact values beyond int64 range</li>
+<li>Hash storage and comparison</li>
+<li>IPv6 addresses, UUIDs</li>
+<li>High-precision scientific computing</li>
+<li>Intermediate calculations in crypto (not keys themselves)</li>
+</ul>
+<strong>Optimizations</strong>:
+<ul><li>Fast for the size (optimized algorithms)</li>
+<li>Limited to basic arithmetic</li>
+<li>No cryptographic guarantees</li>
+</ul>
+<h3>int1024/2048/4096: Security Focus</h3>
+<strong>Use When</strong>:
+<ul><li>RSA key generation and operations</li>
+<li>Cryptographic signatures</li>
+<li>Primality testing</li>
+<li>Modular exponentiation</li>
+<li>Security-critical applications</li>
+</ul>
+<strong>Optimizations</strong>:
+<ul><li>Constant-time operations (side-channel resistance)</li>
+<li>Modular arithmetic primitives</li>
+<li>Cryptographic random number generation</li>
+<li>Security audit trail</li>
+</ul>
+<strong>Example Distinction</strong>:
+<pre><code>// Hash value: int256 (precision, fast comparison)
+<p>
+int256:block_hash = sha256(block_data);
+</p>
+<p>
+// RSA modulus: int2048 (security, constant-time operations)
+int2048:rsa_modulus = generate_rsa_modulus();</code></pre>
+</p>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Range-Checked Narrowing</h3>
+<pre><code>// Convert int256 to int128 with safety check
+<p>
+int128:to_int128_safe(int256:value) -> int128 {
+if (value > int128.max.to_int256()) {
+log.write("ERROR: Value exceeds int128.max\n");
+return int128.max;  // Saturate
+}
+if (value < int128.min.to_int256()) {
+log.write("ERROR: Value below int128.min\n");
+return int128.min;  // Saturate
+}
+return value.to_int128();
+}</code></pre>
+</p>
+<h3>Overflow-Safe Intermediate Values</h3>
+<pre><code>// Multiply two int128 values with overflow detection
+<p>
+int128:multiply_safe(int128:a, int128:b) -> int128 {
+// Use int256 for intermediate
+int256:wide_a = a.to_int256();
+int256:wide_b = b.to_int256();
+int256:product = wide_a * wide_b;
+</p>
+<p>
+// Check if result fits in int128
+if (product > int128.max.to_int256() || product < int128.min.to_int256()) {
+log.write("ERROR: Multiplication overflow\n");
+return ERR;
+}
+</p>
+<p>
+return product.to_int128();
+}</code></pre>
+</p>
+<h3>Efficient Comparison</h3>
+<pre><code>// Large integers support standard comparisons
+<p>
+int256:hash1 = compute_hash(data1);
+int256:hash2 = compute_hash(data2);
+</p>
+<p>
+if (hash1 < hash2) {
+log.write("Hash1 is lexicographically smaller\n");
+}
+</p>
+<p>
+// Equality is efficient (compare 32 bytes)
+if (hash1 == hash2) {
+log.write("Hashes match\n");
+}</code></pre>
+</p>
+<hr>
+<h2>Anti-Patterns</h2>
+<h3>Using Large Integers Unnecessarily</h3>
+<pre><code>// BAD: int256 for simple counter
+<p>
+int256:counter = 0;
+loop (100 times) {
+counter += 1;  // Wasteful, int32 sufficient
+}
+</p>
+<p>
+// GOOD: Right-size the type
+int32:counter = 0;
+loop (100 times) {
+counter += 1;
+}</code></pre>
+</p>
+<h3>Ignoring Performance Costs</h3>
+<pre><code>// BAD: Repeated division in tight loop (division is expensive!)
+<p>
+int512:total = 0;
+loop (values.length:i) {
+total += values[i] / scale_factor;  // Expensive division every iteration!
+}
+</p>
+<p>
+// GOOD: Factor out division
+int512:total = 0;
+loop (values.length:i) {
+total += values[i];
+}
+total /= scale_factor;  // Single division</code></pre>
+</p>
+<h3>Mixing Signed/Unsigned Carelessly</h3>
+<pre><code>// BAD: Implicit conversion dangers
+<p>
+int256:signed_value = -1000;
+uint256:unsigned_value = signed_value.to_uint256();  // WRONG! Negative wraps to huge positive
+</p>
+<p>
+// GOOD: Explicit bounds checking
+uint256:to_unsigned_safe(int256:value) -> uint256 {
+if (value < 0) {
+log.write("ERROR: Cannot convert negative to unsigned\n");
+return 0;
+}
+return value.to_uint256();
+}</code></pre>
+</p>
+<h3>Truncating Without Validation</h3>
+<pre><code>// BAD: Silent truncation
+<p>
+int256:large_hash = 0x123456789ABCDEF0123456789ABCDEF0;
+int128:truncated = large_hash.to_int128();  // Lost upper half!
+</p>
+<p>
+// GOOD: Validate before truncating
+if (large_hash > int128.max.to_int256()) {
+log.write("ERROR: Hash value too large for int128\n");
+handle_error();
+}</code></pre>
+</p>
+<hr>
+<h2>Performance Guidelines</h2>
+<h3>When to Use Large Integers</h3>
+<strong>int128</strong>:
+<ul><li>✅ UUIDs, IPv6 addresses (exact fit)</li>
+<li>✅ Nanosecond timestamps (extended range)</li>
+<li>✅ int64 overflow risk (checked upgrade)</li>
+<li>❌ Simple counters (use int32/int64)</li>
+<li>❌ Indices, array lengths (use uint64)</li>
+</ul>
+<strong>int256</strong>:
+<ul><li>✅ Hash values (SHA-256, exact fit)</li>
+<li>✅ Blockchain addresses/balances</li>
+<li>✅ ECC intermediate values</li>
+<li>❌ General arithmetic (too slow)</li>
+<li>❌ When int128 sufficient</li>
+</ul>
+<strong>int512</strong>:
+<ul><li>✅ Post-quantum signatures</li>
+<li>✅ Multiple hash concatenation</li>
+<li>✅ Extreme precision requirements</li>
+<li>❌ Almost everything else (consider int256)</li>
+<li>❌ Performance-critical code</li>
+</ul>
+<h3>Optimization Tips</h3>
+<p>
+1. <strong>Cache expensive calculations</strong>:
+``<code>aria
+int256:hash = expensive_hash_computation(data);
+// Reuse 'hash' instead of recomputing
+</code>`<code>
+</p>
+<p>
+2. <strong>Batch operations</strong>:
+</code>`<code>aria
+// Better to process in batches
+int256:sum = batch_sum(large_values);  // One function call
+// vs
+loop (large_values.length:i) {
+sum += large_values[i];  // Repeated overhead
+}
+</code>`<code>
+</p>
+<p>
+3. <strong>Use smaller types when possible</strong>:
+</code>`<code>aria
+// Check value range first
+if (max_expected_value < int64.max) {
+// Use faster int64
+} else {
+// Upgrade to int128
+}
+</code>``
+</p>
+<hr>
+<h2>Comparison with Standard Integers</h2>
+<p>
+| Type | Bytes | Range (approx) | Use Case |
+|------|-------|----------------|----------|
+| int64 | 8 | ±9×10¹⁸ | General purpose |
+| int128 | 16 | ±1.7×10³⁸ | UUIDs, IPv6, high precision |
+| int256 | 32 | ±5.8×10⁷⁶ | Hashes, blockchain, ECC |
+| int512 | 64 | ±6.7×10¹⁵³ | Post-quantum, extreme precision |
+| int1024 | 128 | ±8.9×10³⁰⁷ | <strong>Cryptographic keys</strong> (security focus) |
+</p>
+<strong>Rule of Thumb</strong>:
+<ul><li>Precision needs: int128/256/512 (this guide)</li>
+<li>Security needs: int1024/2048/4096 (cryptographic integers)</li>
+</ul>
+<hr>
+<h2>Summary</h2>
+<strong>int128/256/512 are specialized precision types</strong>:
+<ul><li>Beyond native CPU support (software emulation)</li>
+<li>Performance cost increases with size</li>
+<li>Still use two's complement (overflow behavior)</li>
+<li>For precision/capacity, not cryptographic security</li>
+</ul>
+<strong>Use the right tool</strong>:
+<ul><li>int128: UUIDs, IPv6, extended timestamps</li>
+<li>int256: Hashes, blockchain, ECC intermediates</li>
+<li>int512: Post-quantum signatures, extreme precision</li>
+<li>int1024+: Cryptographic keys and security-critical operations</li>
+</ul>
+<strong>Key Principle</strong>: <strong>Right-size your types</strong> - larger integers are slower, use only when needed.
+    </main>
+</body>
+</html>

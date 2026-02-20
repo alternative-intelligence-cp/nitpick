@@ -403,12 +403,12 @@ async func:main = i64() {
 **Solution**: `yield()` primitive
 ```aria
 async func:cpu_intensive = void() {
-    for (i in 0..1000000) {
+    till(999999, 1) {
         // Heavy computation
-        compute(i);
+        compute($);
         
         // Yield periodically
-        if (i % 1000 == 0) {
+        if ($ % 1000 == 0) {
             await yield();  // Let other tasks run
         }
     }
@@ -508,14 +508,14 @@ async func:fetch_all = array<string>(urls: array<string>) {
     array<Future<string>>:futures = array<Future<string>>(urls.len());
     
     // Spawn all requests concurrently
-    for (i in 0..urls.len()) {
-        futures[i] = spawn(fetch_url(urls[i]));
+    till(urls.len() - 1, 1) {
+        futures[$] = spawn(fetch_url(urls[$]));
     }
     
     // Wait for all to complete
     array<string>:results = array<string>(urls.len());
-    for (i in 0..urls.len()) {
-        results[i] = await futures[i];
+    till(urls.len() - 1, 1) {
+        results[$] = await futures[$];
     }
     
     pass(results);

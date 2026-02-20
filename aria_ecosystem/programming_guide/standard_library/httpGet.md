@@ -89,7 +89,9 @@ response: HttpResponse = httpGet("https://example.com")?;
 content_type: ?string = response.headers.get("Content-Type");
 
 // Print all headers
-for (key, value) in response.headers do
+header_entries = response.headers.entries();
+till(header_entries.length - 1, 1) {
+    (key, value) = header_entries[$];
     stdout << "$key: $value";
 end
 ```

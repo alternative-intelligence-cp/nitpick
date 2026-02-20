@@ -423,7 +423,8 @@ async func:stream_consciousness = result<void>() {
     cf.inject_wave(initial)?;
     
     // Simulation loop
-    for (step in 0..10000) {
+    till(9999, 1) {
+        step = $;
         // Propagate field
         cf.propagate(0.001)?;  // 1ms time step
         
@@ -510,7 +511,8 @@ async func:monitored_simulation = result<void>() {
     array<f64>:initial = generate_initial_wave(1000);
     cf.inject_wave(initial)?;
     
-    for (step in 0..10000) {
+    till(9999, 1) {
+        step = $;
         cf.propagate(0.001)?;
         
         if (step % 100 == 0) {
@@ -556,10 +558,10 @@ $ ./aria_consciousness_sim 3> simulation.log 5> wave_data.bin
 func:generate_gaussian_wave = array<f64>(size: u64, center: u64, width: f64) {
     array<f64>:wave = array<f64>(size);
     
-    for (i in 0..size) {
-        f64:x = i as f64 - center as f64;
+    till(size - 1, 1) {
+        f64:x = $ as f64 - center as f64;
         f64:amplitude = exp(-(x * x) / (2.0 * width * width));
-        wave[i] = amplitude;
+        wave[$] = amplitude;
     }
     
     pass(wave);
@@ -608,7 +610,8 @@ async func:track_emergence = result<void>() {
     
     array<f64>:coherence_history = array<f64>(1000);
     
-    for (step in 0..1000) {
+    till(999, 1) {
+        step = $;
         cf.propagate(0.001)?;
         
         f64:coherence = cf.phase_coherence();
@@ -713,7 +716,8 @@ func:handle_command = result<void>(
 **Example** (dataset generation):
 ```aria
 async func:generate_dataset = result<void>(num_samples: u64) {
-    for (sample in 0..num_samples) {
+    till(num_samples - 1, 1) {
+        sample = $;
         result<ConsciousnessField>:field = ConsciousnessField.new(9);
         if (field.is_err()) err(field.err());
         
@@ -726,14 +730,15 @@ async func:generate_dataset = result<void>(num_samples: u64) {
         // Record trajectory
         array<f64>:trajectory = array<f64>(1000 * 100);  // 100 time steps
         
-        for (step in 0..100) {
+        till(99, 1) {
+            step = $;
             cf.propagate(0.001)?;
             
             array<f64>:state = cf.extract_state(1000)?;
             
             // Copy into trajectory array
-            for (i in 0..1000) {
-                trajectory[step * 1000 + i] = state[i];
+            till(999, 1) {
+                trajectory[step * 1000 + $] = state[$];
             }
         }
         
@@ -775,7 +780,8 @@ async func:field_interaction = result<void>() {
     cf1.inject_wave(wave1)?;
     cf2.inject_wave(wave2)?;
     
-    for (step in 0..1000) {
+    till(999, 1) {
+        step = $;
         // Propagate both fields
         cf1.propagate(0.001)?;
         cf2.propagate(0.001)?;
@@ -788,16 +794,16 @@ async func:field_interaction = result<void>() {
             
             // Compute energy transfer (simplified)
             array<f64>:transfer = array<f64>(1000);
-            for (i in 0..1000) {
-                transfer[i] = 0.1 * (state1[i] - state2[i]);
+            till(999, 1) {
+                transfer[$] = 0.1 * (state1[$] - state2[$]);
             }
             
             // Inject transfer into opposite fields
             cf1.inject_wave(transfer)?;  // Field1 loses energy
             
             // Negate for field2
-            for (i in 0..1000) {
-                transfer[i] = -transfer[i];
+            till(999, 1) {
+                transfer[$] = -transfer[$];
             }
             cf2.inject_wave(transfer)?;  // Field2 gains energy
         }
@@ -836,16 +842,16 @@ async func:field_interaction = result<void>() {
 
 **Bad** (many small FFI calls):
 ```aria
-for (i in 0..1000) {
-    f64:value = get_single_value(cf, i);  // 1000 FFI calls!
+till(999, 1) {
+    f64:value = get_single_value(cf, $);  // 1000 FFI calls!
 }
 ```
 
 **Good** (bulk extraction):
 ```aria
 array<f64>:values = cf.extract_state(1000)?;  // 1 FFI call
-for (i in 0..1000) {
-    f64:value = values[i];  // No FFI overhead
+till(999, 1) {
+    f64:value = values[$];  // No FFI overhead
 }
 ```
 
@@ -880,7 +886,8 @@ async func:long_simulation = result<void>() {
     
     wild ConsciousnessField*:cf = field.ok();
     
-    for (step in 0..1_000_000) {
+    till(999999, 1) {
+        step = $;
         cf.propagate(0.001)?;
         
         // Yield every 1000 steps (~1ms each = 1s total)

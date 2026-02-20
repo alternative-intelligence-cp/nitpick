@@ -265,9 +265,9 @@ pub func:replace_char = int32(int8->:str, int8:old_ch, int8:new_ch) {
 
 // Pad string on left side with spaces to target length
 // dest must be pre-allocated with at least target_len+1 bytes
-pub func:pad_left_spaces = void(int8->:dest, int8->:src, int32:target_len) {
+pub func:pad_left_spaces = NIL(int8->:dest, int8->:src, int32:target_len) {
     if (dest == NULL || src == NULL || target_len <= 0) {
-        return;
+        pass(NIL);
     }
     
     // Get source length
@@ -284,7 +284,7 @@ pub func:pad_left_spaces = void(int8->:dest, int8->:src, int32:target_len) {
             i = i + 1;
         }
         dest[i] = 0;
-        return;
+        pass(NIL);
     } else {
         // Pad with spaces
     }
@@ -307,12 +307,13 @@ pub func:pad_left_spaces = void(int8->:dest, int8->:src, int32:target_len) {
     }
     
     dest[i] = 0;
+    pass(NIL);
 };
 
 // Pad string on right side with spaces
-pub func:pad_right_spaces = void(int8->:dest, int8->:src, int32:target_len) {
+pub func:pad_right_spaces = NIL(int8->:dest, int8->:src, int32:target_len) {
     if (dest == NULL || src == NULL || target_len <= 0) {
-        return;
+        pass(NIL);
     }
     
     // Copy source
@@ -329,7 +330,7 @@ pub func:pad_right_spaces = void(int8->:dest, int8->:src, int32:target_len) {
     }
     
     dest[i] = 0;
-};
+    pass(NIL);
 
 // ============================================================================
 // STRING COMPARISON UTILITIES
@@ -449,14 +450,14 @@ pub func:equals_ignore_case = int8(int8->:s1, int8->:s2) {
 
 // Copy substring to destination buffer
 // dest must be pre-allocated
-pub func:copy_substring = void(int8->:dest, int8->:src, int32:start, int32:length) {
+pub func:copy_substring = NIL(int8->:dest, int8->:src, int32:start, int32:length) {
     if (dest == NULL || src == NULL || start < 0 || length <= 0) {
         if (dest != NULL) {
             dest[0i64] = 0;
         } else {
             // null dest
         }
-        return;
+        pass(NIL);
     }
     
     int32:i = 0i32;
@@ -466,6 +467,7 @@ pub func:copy_substring = void(int8->:dest, int8->:src, int32:start, int32:lengt
     }
     
     dest[i] = 0;
+    pass(NIL);
 };
 
 // ============================================================================

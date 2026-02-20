@@ -164,11 +164,12 @@ pub func:pipe_close_read = result<void>(Pipe@:p) {
 };
 
 // Free pipe resources
-pub func:pipe_free = void(Pipe@:p) {
+pub func:pipe_free = NIL(Pipe@:p) {
     if (p->is_valid) {
         aria_pipe_free(p->handle);
         p->is_valid = false;
     }
+    pass(NIL);
 };
 
 // ============================================================================
@@ -233,11 +234,12 @@ pub func:terminate = result<void>(Process@:p) {
 };
 
 // Free process handle (does NOT kill process)
-pub func:process_free = void(Process@:p) {
+pub func:process_free = NIL(Process@:p) {
     if (p->is_valid) {
         aria_process_free(p->handle);
         p->is_valid = false;
     }
+    pass(NIL);
 };
 
 // ============================================================================
@@ -331,14 +333,17 @@ extern "libc" {
 }
 
 // Write to debug channel (FD 3)
-pub func:debug_write = void(string:msg) {
+pub func:debug_write = NIL(string:msg) {
     wild int8*:buf = msg.data;
     int64:len = msg.length();
     write(FD_STDDBG, buf, len);
+    pass(NIL);
 };
 
 // Write line to debug channel (FD 3)
-pub func:debug_writeln = void(string:msg) {
-    debug_write(msg);
-    debug_write("\n");
+pub func:debug_writeln = NIL(string:msg) {
+    debug_write(msg) ? NIL;
+    debug_write("\n") ? NIL;
+    pass(NIL);
+};
 };

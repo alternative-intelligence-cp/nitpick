@@ -81,8 +81,8 @@ temperature: i32 = -40;
 ```aria
 // Perfect for array indexing
 arr: []string = ["a", "b", "c"];
-for i: i32 in 0..arr.length() {
-    stdout << arr[i];
+till(arr.length() - 1, 1) {
+    stdout << arr[$];
 }
 ```
 
@@ -131,7 +131,8 @@ fn safe_multiply(a: i32, b: i32) -> Result<i32> {
 ```aria
 // Dangerous for large values
 factorial: i32 = 1;
-for i in 1..20 {
+till(19, 1) {
+    i := $ + 1;
     factorial *= i;  // Overflows quickly!
 }
 ```
@@ -180,8 +181,8 @@ integer: i32 = value as i32;  // 42 (truncates)
 
 ```aria
 // Standard loop pattern
-for i: i32 in 0..100 {
-    process(i);
+till(99, 1) {
+    process($);
 }
 ```
 
@@ -190,8 +191,8 @@ for i: i32 in 0..100 {
 ```aria
 // Track sizes and indices
 size: i32 = array.length();
-for i: i32 in 0..size {
-    item := array[i];
+till(size - 1, 1) {
+    item := array[$];
 }
 ```
 
@@ -200,8 +201,8 @@ for i: i32 in 0..size {
 ```aria
 // General arithmetic
 total: i32 = 0;
-for value in values {
-    total += value;
+till(values.length - 1, 1) {
+    total += values[$];
 }
 average: i32 = total / values.length();
 ```

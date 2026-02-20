@@ -350,15 +350,14 @@ fn process_file(path: String) -> Result<(), Error> {
 For large files, use streaming:
 
 ```aria
-fn process_large_file(path: String) -> Result<(), Error> {
-    let reader = BufReader::new(File::open(path)?);
+func:process_large_file = void(string:path) {
+    File?:file = openFile(path)?;
+    string[]?:lines = file.readLines()?;
     
-    for line in reader.lines() {
-        let line = line?;
+    till(lines.length - 1, 1) {
+        string:line = lines[$];
         process_line(line)?;
     }
-    
-    Ok(())
 }
 ```
 

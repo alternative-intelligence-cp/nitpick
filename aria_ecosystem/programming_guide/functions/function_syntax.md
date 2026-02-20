@@ -216,8 +216,8 @@ fn apply(value: i32, f: fn(i32) -> i32) -> i32 {
 }
 
 fn for_each<T>(array: []T, action: fn(T)) {
-    for item in array {
-        action(item);
+    till(array.length - 1, 1) {
+        action(array[$]);
     }
 }
 ```
@@ -292,8 +292,8 @@ impl Calculator {
 ```aria
 fn map<T, U>(array: []T, f: fn(T) -> U) -> []U {
     Result: []U = [];
-    for item in array {
-        result.push(f(item));
+    till(array.length - 1, 1) {
+        result.push(f(array[$]));
     }
     return result;
 }
@@ -345,8 +345,8 @@ fn greet_name(name: string) {
 // ✅ Right: Use array
 fn sum(numbers: []i32) -> i32 {
     total: i32 = 0;
-    for num in numbers {
-        total = total + num;
+    till(numbers.length - 1, 1) {
+        total = total + numbers[$];
     }
     return total;
 }

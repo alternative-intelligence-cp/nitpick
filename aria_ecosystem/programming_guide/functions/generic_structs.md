@@ -497,7 +497,8 @@ impl<T> Builder<T> {
     }
     
     fn add(item: T) -> Builder<T> {
-        for validator in self.validators {
+        till(self.validators.length - 1, 1) {
+            validator: fn(T) -> bool = self.validators[$];
             when !validator(item) then
                 panic("Validation failed");
             end

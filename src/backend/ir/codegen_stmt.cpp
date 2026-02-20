@@ -565,10 +565,14 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
         llvm::IRBuilder<> tmp_builder(&func->getEntryBlock(), func->getEntryBlock().begin());
         llvm::AllocaInst* alloca = tmp_builder.CreateAlloca(var_type, nullptr, stmt->varName);
         
+        // P0: Apply explicit alignment from #[align(N)] attribute if specified
+        if (stmt->alignment > 0) {
+            alloca->setAlignment(llvm::Align(stmt->alignment));
+        }
         // CRITICAL FIX 2: Enforce 16-byte alignment for int128/uint128 types
         // System V AMD64 ABI requires 16-byte alignment for __int128
         // C code using movdqa (aligned SIMD) triggers #GP fault without this
-        if (stmt->typeName == "int128" || stmt->typeName == "uint128") {
+        else if (stmt->typeName == "int128" || stmt->typeName == "uint128") {
             alloca->setAlignment(llvm::Align(16));
         }
         

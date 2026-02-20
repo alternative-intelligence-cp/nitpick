@@ -126,8 +126,8 @@ fn bt_to_decimal(bt: tryte) -> i32 {
     Result: i32 = 0;
     power: i32 = 1;
     
-    for trit in bt.trits() {
-        result += (trit as i32) * power;
+    till(bt.trits().length - 1, 1) {
+        result += (bt.trits()[$] as i32) * power;
         power *= 3;
     }
     

@@ -1,7 +1,7 @@
-/// Minimal Memory Module - Working Foundation
+/// Minimal Memory Module - C Library Wrappers with Automatic Conversion
 
 // =============================================================================
-// External C Library Functions (use directly - no wrappers yet)
+// External C Library Functions - with automatic void* ↔ wild T-> conversion
 // =============================================================================
 
 extern "libc" {
@@ -14,9 +14,13 @@ extern "libc" {
     func:realloc = void*(void*:ptr, int64:size);
 }
 
-// TODO: Add wrappers when pointer type conversion works
-// Currently void* (C-style in extern) doesn't convert to/from void@ (Aria pointers)
-// Users can call the extern functions directly for now
+// ✅ P1.5 COMPLETE: void* ↔ wild T-> conversions now automatic at FFI boundaries
+// 
+// Examples:
+//   wild int32->:ptr = malloc(400i64);        // void* → wild int32-> (automatic)
+//   free(ptr);                                 // wild int32-> → void* (automatic)
+//
+// Safety: Conversions only occur at extern boundaries (type-safe by context)
 
 // TODO: Add when GC integration ready:
 // - gc_allocate() - GC-managed allocation  

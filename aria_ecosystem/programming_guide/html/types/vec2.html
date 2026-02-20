@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The `vec2` Type (2D Vector) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>The <code>vec2</code> Type (2D Vector)</h1>
+<strong>Category</strong>: Types → Vectors → 2D
+<strong>Syntax</strong>: <code>vec2</code>
+<strong>Purpose</strong>: Two-dimensional vector for 2D graphics, physics, and mathematics
+<strong>First Available</strong>: Aria v0.0.1
+<strong>Status</strong>: ✅ Fully implemented with SIMD optimization
+<hr>
+<h2>Overview</h2>
+<code>vec2</code> is Aria's <strong>2-dimensional vector type</strong>, representing points or directions in 2D space with <code>x</code> and <code>y</code> components. This is a fundamental type for 2D graphics, game development, physics simulations, and UI layout.
+<strong>Key Characteristics</strong>:
+<ul><li><strong>2 components</strong>: <code>x</code> (horizontal) and <code>y</code> (vertical)</li>
+<li><strong>Component type</strong>: Typically <code>float</code> or <code>double</code> (defaults to <code>float</code>)</li>
+<li><strong>Size</strong>: 8 bytes (2 × 4-byte floats) or 16 bytes (2 × 8-byte doubles)</li>
+<li><strong>SIMD optimized</strong>: Can use SSE/AVX instructions for parallel operations</li>
+<li><strong>Memory layout</strong>: Contiguous <code>[x, y]</code> (cache-friendly)</li>
+<li><strong>Alignment</strong>:  8-byte (float) or 16-byte (double)</li>
+</ul>
+<strong>Common uses</strong>:
+<ul><li>✅ 2D positions (screen coordinates, world positions)</li>
+<li>✅ 2D velocities and accelerations (physics)</li>
+<li>✅ Direction vectors (movement, facing)</li>
+<li>✅ Texture coordinates (UV mapping)</li>
+<li>✅ UI offsets and sizes</li>
+<li>✅ 2D force vectors (gravity, thrust)</li>
+</ul>
+<strong>When NOT to use</strong>:
+<ul><li>❌ 3D graphics/physics (use <code>vec3</code> instead)</li>
+<li>❌ Nikola consciousness (use <code>vec9</code> for 9D state)</li>
+<li>❌ Single scalar values (use <code>float</code> or <code>double</code>)</li>
+</ul>
+<hr>
+<h2>Declaration & Initialization</h2>
+<h3>Basic Declaration</h3>
+<pre><code>// Constructor with explicit components
+<p>
+vec2:position = vec2(10.0, 20.0);  // x=10.0, y=20.0
+</p>
+<p>
+// Named components for clarity
+vec2:screen_pos = vec2(640.0, 480.0);  // Center of 1280×960 screen
+</p>
+<p>
+// Texture coordinates (typical range 0.0 to 1.0)
+vec2:uv = vec2(0.5, 0.5);  // Center of texture</code></pre>
+</p>
+<h3>Component Access</h3>
+<pre><code>vec2:pos = vec2(100.0, 200.0);
+<p>
+// Direct member access
+float:x_coord = pos.x;  // 100.0
+float:y_coord = pos.y;  // 200.0
+</p>
+<p>
+// Modification
+pos.x = 150.0;  // Now vec2(150.0, 200.0)
+pos.y += 50.0;  // Now vec2(150.0, 250.0)</code></pre>
+</p>
+<h3>Special Constructors</h3>
+<pre><code>// Uniform value (both components same)
+<p>
+vec2:ones = vec2(1.0);  // vec2(1.0, 1.0)
+vec2:twos = vec2(2.0);  // vec2(2.0, 2.0)
+</p>
+<p>
+// Zero vector
+vec2:origin = vec2::ZERO;  // vec2(0.0, 0.0)
+</p>
+<p>
+// Unit vectors (length = 1.0)
+vec2:right = vec2::RIGHT;   // vec2(1.0, 0.0) - positive X axis
+vec2:up = vec2::UP;         // vec2(0.0, 1.0) - positive Y axis
+vec2:left = vec2::LEFT;     // vec2(-1.0, 0.0) - negative X axis
+vec2:down = vec2::DOWN;     // vec2(0.0, -1.0) - negative Y axis
+</p>
+<p>
+// One vector
+vec2:ones = vec2::ONE;  // vec2(1.0, 1.0)</code></pre>
+</p>
+<hr>
+<h2>Arithmetic Operations</h2>
+<h3>Component-wise Addition/Subtraction</h3>
+<pre><code>vec2:a = vec2(10.0, 20.0);
+<p>
+vec2:b = vec2(5.0, 15.0);
+</p>
+<p>
+// Addition (component-wise)
+vec2:sum = a + b;  // vec2(15.0, 35.0)
+</p>
+<p>
+// Subtraction (component-wise)
+vec2:diff = a - b;  // vec2(5.0, 5.0)
+</p>
+<p>
+// Negation
+vec2:neg = -a;  // vec2(-10.0, -20.0)</code></pre>
+</p>
+<h3>Scalar Multiplication/Division</h3>
+<pre><code>vec2:velocity = vec2(100.0, 50.0);  // pixels per second
+<p>
+// Scale by scalar
+vec2:doubled = velocity * 2.0;  // vec2(200.0, 100.0)
+vec2:halved = velocity / 2.0;   // vec2(50.0, 25.0)
+</p>
+<p>
+// Compound assignment
+velocity *= 1.5;   // vec2(150.0, 75.0)
+velocity /= 3.0;   // vec2(50.0, 25.0)</code></pre>
+</p>
+<h3>Component-wise Multiplication/Division</h3>
+<pre><code>vec2:a = vec2(10.0, 20.0);
+<p>
+vec2:b = vec2(2.0, 4.0);
+</p>
+<p>
+// Component-wise multiplication (Hadamard product)
+vec2:product = a * b;  // vec2(20.0, 80.0) - NOT dot product!
+</p>
+<p>
+// Component-wise division
+vec2:quotient = a / b;  // vec2(5.0, 5.0)</code></pre>
+</p>
+<strong>Note</strong>: <code>*</code> between two vec2 is component-wise, NOT dot product! Use <code>dot()</code> method for dot product.
+<hr>
+<h2>Vector Operations</h2>
+<h3>Dot Product</h3>
+<p>
+The <strong>dot product</strong> measures how aligned two vectors are:
+</p>
+<pre><code>vec2:a = vec2(3.0, 4.0);
+<p>
+vec2:b = vec2(1.0, 0.0);
+</p>
+<p>
+float:dot = a.dot(b);  // 3.0<em>1.0 + 4.0</em>0.0 = 3.0
+</p>
+<p>
+// dot(a, b) = |a| <em> |b| </em> cos(θ)
+// - Positive: vectors point same general direction (θ < 90°)
+// - Zero: vectors perpendicular (θ = 90°)
+// - Negative: vectors point opposite directions (θ > 90°)</code></pre>
+</p>
+<strong>Common uses</strong>:
+<ul><li>Check if vectors point same direction</li>
+<li>Project vector onto another</li>
+<li>Calculate angle between vectors</li>
+<li>Determine if objects face toward/away from each other</li>
+</ul>
+<pre><code>// Check if moving toward target
+<p>
+vec2:position = vec2(100.0, 100.0);
+vec2:target = vec2(200.0, 150.0);
+vec2:velocity = vec2(50.0, 25.0);
+</p>
+<p>
+vec2:to_target = (target - position).normalize();
+float:alignment = velocity.normalize().dot(to_target);
+</p>
+<p>
+if (alignment > 0.0) {
+stdout.write("Moving toward target\n");
+} else {
+stdout.write("Moving away from target\n");
+}</code></pre>
+</p>
+<h3>Cross Product (2D→Scalar)</h3>
+<p>
+In 2D, the <strong>cross product</strong> returns a scalar (the Z component if vectors were 3D):
+</p>
+<pre><code>vec2:a = vec2(3.0, 4.0);
+<p>
+vec2:b = vec2(1.0, 2.0);
+</p>
+<p>
+float:cross = a.cross(b);  // (3.0<em>2.0) - (4.0</em>1.0) = 2.0
+</p>
+<p>
+// Geometric meaning:
+// - Positive: b is counter-clockwise from a
+// - Zero: vectors parallel
+// - Negative: b is clockwise from a</code></pre>
+</p>
+<strong>Common uses</strong>:
+<ul><li>Determine rotation direction (CW vs CCW)</li>
+<li>Calculate area of parallelogram formed by vectors</li>
+<li>Check which side of a line a point is on</li>
+</ul>
+<pre><code>// Determine turn direction
+<p>
+vec2:forward = vec2(1.0, 0.0);
+vec2:desired = vec2(1.0, 1.0);  // 45° turn
+</p>
+<p>
+float:turn = forward.cross(desired);
+if (turn > 0.0) {
+stdout.write("Turn left (CCW)\n");
+} else if (turn < 0.0) {
+stdout.write("Turn right (CW)\n");
+} else {
+stdout.write("No turn needed\n");
+}</code></pre>
+</p>
+<h3>Length (Magnitude)</h3>
+<pre><code>vec2:velocity = vec2(3.0, 4.0);
+<p>
+float:speed = velocity.length();  // sqrt(3²+4²) = 5.0
+</p>
+<p>
+// Squared length (faster, avoids sqrt)
+float:speed_sq = velocity.length_squared();  // 3²+4² = 25.0</code></pre>
+</p>
+<strong>Optimization tip</strong>: Use <code>length_squared()</code> for comparisons to avoid expensive <code>sqrt()</code>:
+<pre><code>vec2:position = vec2(100.0, 100.0);
+<p>
+vec2:target = vec2(150.0, 150.0);
+const float:MIN_DISTANCE_SQ = 25.0;  // 5.0² = 25.0
+</p>
+<p>
+vec2:diff = target - position;
+if (diff.length_squared() < MIN_DISTANCE_SQ) {
+stdout.write("Close enough!\n");  // Avoid sqrt!
+}</code></pre>
+</p>
+<h3>Normalization</h3>
+<strong>Normalizing</strong> a vector gives a unit vector (length = 1.0) in the same direction:
+<pre><code>vec2:velocity = vec2(300.0, 400.0);  // Length = 500.0
+<p>
+vec2:direction = velocity.normalize();  // vec2(0.6, 0.8), length = 1.0
+</p>
+<p>
+// Manual normalization
+float:len = velocity.length();
+vec2:manual_dir = velocity / len;  // Same result</code></pre>
+</p>
+<strong>Common uses</strong>:
+<ul><li>Get pure direction (ignore magnitude)</li>
+<li>Unit vectors for consistent movement speed</li>
+<li>Basis vectors for coordinate systems</li>
+</ul>
+<pre><code>// Constant-speed movement toward target
+<p>
+vec2:position = vec2(100.0, 100.0);
+vec2:target = vec2(200.0, 150.0);
+const float:SPEED = 5.0;  // pixels per frame
+</p>
+<p>
+vec2:direction = (target - position).normalize();
+vec2:velocity = direction * SPEED;  // Always moves at SPEED
+</p>
+<p>
+position += velocity;  // Move toward target</code></pre>
+</p>
+<h3>Distance</h3>
+<pre><code>vec2:point_a = vec2(10.0, 20.0);
+<p>
+vec2:point_b = vec2(40.0, 60.0);
+</p>
+<p>
+float:distance = point_a.distance(point_b);  // sqrt((40-10)² + (60-20)²) = 50.0
+</p>
+<p>
+// Equivalent to:
+float:manual_dist = (point_b - point_a).length();</code></pre>
+</p>
+<h3>Linear Interpolation (Lerp)</h3>
+<strong>Lerp</strong> smoothly interpolates between two vectors:
+<pre><code>vec2:start = vec2(0.0, 0.0);
+<p>
+vec2:end = vec2(100.0, 100.0);
+</p>
+<p>
+vec2:quarter = start.lerp(end, 0.25);  // vec2(25.0, 25.0)
+vec2:half = start.lerp(end, 0.5);      // vec2(50.0, 50.0)
+vec2:three_quarter = start.lerp(end, 0.75);  // vec2(75.0, 75.0)
+</p>
+<p>
+// lerp(a, b, t) = a + t<em>(b - a) = a</em>(1-t) + b*t</code></pre>
+</p>
+<strong>Common uses</strong>:
+<ul><li>Smooth animation between positions</li>
+<li>Camera movement</li>
+<li>UI transitions</li>
+</ul>
+<pre><code>// Smooth camera follow
+<p>
+vec2:camera_pos = vec2(100.0, 100.0);
+vec2:player_pos = vec2(200.0, 150.0);
+const float:LERP_SPEED = 0.1;  // 10% per frame
+</p>
+<p>
+camera_pos = camera_pos.lerp(player_pos, LERP_SPEED);  // Smooth follow</code></pre>
+</p>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Movement & Physics</h3>
+<pre><code>// Simple 2D physics
+<p>
+vec2:position = vec2(100.0, 100.0);
+vec2:velocity = vec2(50.0, -20.0);  // pixels/second
+vec2:acceleration = vec2(0.0, 98.0);  // gravity (pixels/s²)
+const float:dt = 0.016;  // 60 FPS timestep
+</p>
+<p>
+// Update velocity (Euler integration)
+velocity += acceleration * dt;
+</p>
+<p>
+// Update position
+position += velocity * dt;
+</p>
+<p>
+// Clamp to screen bounds
+if (position.y > 600.0) {
+position.y = 600.0;
+velocity.y = 0.0;  // Stop at ground
+}</code></pre>
+</p>
+<h3>Direction Vectors</h3>
+<pre><code>// Calculate direction from one point to another
+<p>
+vec2:enemy_pos = vec2(200.0, 150.0);
+vec2:player_pos = vec2(100.0, 100.0);
+</p>
+<p>
+vec2:to_player = (player_pos - enemy_pos).normalize();
+</p>
+<p>
+// Move toward player at constant speed
+const float:CHASE_SPEED = 3.0;
+enemy_pos += to_player * CHASE_SPEED;</code></pre>
+</p>
+<h3>Clamping to Bounds</h3>
+<pre><code>// Clamp position to screen rectangle
+<p>
+vec2:position = vec2(1300.0, 500.0);  // Off-screen!
+const vec2:min_bounds = vec2(0.0, 0.0);
+const vec2:max_bounds = vec2(1280.0, 720.0);
+</p>
+<p>
+position.x = clamp(position.x, min_bounds.x, max_bounds.x);  // 1280.0
+position.y = clamp(position.y, min_bounds.y, max_bounds.y);  // 500.0
+</p>
+<p>
+// Now position = vec2(1280.0, 500.0) - clamped to screen</code></pre>
+</p>
+<h3>Reflecting Vectors</h3>
+<pre><code>// Reflect velocity off surface (e.g., ball bouncing off wall)
+<p>
+vec2:velocity = vec2(50.0, -30.0);
+vec2:surface_normal = vec2(0.0, 1.0);  // Horizontal surface (facing up)
+</p>
+<p>
+// Reflection formula: v' = v - 2<em>(v·n)</em>n
+float:dot = velocity.dot(surface_normal);
+vec2:reflected = velocity - (surface_normal <em> (2.0 </em> dot));
+</p>
+<p>
+// Result: vec2(50.0, 30.0) - velocity reversed in Y, X unchanged</code></pre>
+</p>
+<hr>
+<h2>Use Cases</h2>
+<h3>2D Graphics</h3>
+<pre><code>// Screen pixel coordinates
+<p>
+vec2:mouse_pos = vec2(640.0, 360.0);  // Center of 1280×720 screen
+</p>
+<p>
+// Texture coordinates (UV mapping)
+vec2:tex_coord = vec2(0.5, 0.5);  // Center of texture (range 0.0-1.0)
+</p>
+<p>
+// Sprite position
+vec2:sprite_pos = vec2(100.0, 200.0);
+vec2:sprite_size = vec2(64.0, 64.0);</code></pre>
+</p>
+<h3>Game Development</h3>
+<pre><code>// Player state
+<p>
+vec2:player_position = vec2(320.0, 480.0);
+vec2:player_velocity = vec2(0.0, 0.0);
+const float:MOVE_SPEED = 200.0;  // pixels/second
+</p>
+<p>
+// Input handling (WASD movement)
+vec2:input_direction = vec2(0.0, 0.0);
+if (key_pressed('W')) { input_direction.y -= 1.0; }
+if (key_pressed('S')) { input_direction.y += 1.0; }
+if (key_pressed('A')) { input_direction.x -= 1.0; }
+if (key_pressed('D')) { input_direction.x += 1.0; }
+</p>
+<p>
+// Normalize to prevent faster diagonal movement
+if (input_direction.length_squared() > 0.0) {
+input_direction = input_direction.normalize();
+}
+</p>
+<p>
+player_velocity = input_direction * MOVE_SPEED;</code></pre>
+</p>
+<h3>UI Layout</h3>
+<pre><code>// Button position and size
+<p>
+vec2:button_position = vec2(100.0, 50.0);
+vec2:button_size = vec2(200.0, 60.0);
+</p>
+<p>
+// Check if mouse is over button
+vec2:mouse = vec2(150.0, 70.0);
+</p>
+<p>
+bool:mouse_over = (
+mouse.x >= button_position.x &&
+mouse.x <= button_position.x + button_size.x &&
+mouse.y >= button_position.y &&
+mouse.y <= button_position.y + button_size.y
+);</code></pre>
+</p>
+<h3>Physics Simulation</h3>
+<pre><code>// Circular orbit simulation
+<p>
+vec2:planet_pos = vec2(0.0, 0.0);  // At origin
+vec2:satellite_pos = vec2(100.0, 0.0);  // 100 units away
+vec2:satellite_vel = vec2(0.0, 50.0);  // Tangent velocity
+const float:GRAVITY = 1000.0;
+const float:dt = 0.01;  // Timestep
+</p>
+<p>
+// Gravitational acceleration toward planet
+vec2:to_planet = planet_pos - satellite_pos;
+float:dist_sq = to_planet.length_squared();
+vec2:accel = to_planet.normalize() * (GRAVITY / dist_sq);
+</p>
+<p>
+// Update orbit
+satellite_vel += accel * dt;
+satellite_pos += satellite_vel * dt;</code></pre>
+</p>
+<hr>
+<h2>Nikola Consciousness Applications</h2>
+<p>
+While Nikola primarily uses 9D vec9 for full consciousness state, <strong>vec2 can represent simplified 2D emotional/cognitive spaces</strong>:
+</p>
+<h3>2D Emotional Space</h3>
+<pre><code>// Emotional state on 2D valence-arousal model
+<p>
+vec2:emotional_state = vec2(0.0, 0.0);  // Neutral (valence=0, arousal=0)
+</p>
+<p>
+// Valence: -1.0 (negative) to +1.0 (positive)
+// Arousal: -1.0 (calm) to +1.0 (excited)
+</p>
+<p>
+vec2:happy_excited = vec2(0.8, 0.7);   // High valence, high arousal (joy)
+vec2:sad_calm = vec2(-0.6, -0.4);      // Low valence, low arousal (sadness)
+vec2:angry_excited = vec2(-0.5, 0.9);  // Low valence, high arousal (anger)
+vec2:content_calm = vec2(0.5, -0.2);   // Mid valence, low arousal (contentment)
+</p>
+<p>
+// Smooth emotional transition
+emotional_state = emotional_state.lerp(happy_excited, 0.05);  // 5% per frame</code></pre>
+</p>
+<h3>Simplified Cognitive State</h3>
+<pre><code>// 2D cognitive focus (attention vs processing depth)
+<p>
+vec2:cognitive = vec2(0.0, 0.0);
+</p>
+<p>
+// X-axis: Attention breadth (-1.0 narrow focus, +1.0 wide awareness)
+// Y-axis: Processing depth (-1.0 shallow/fast, +1.0 deep/slow)
+</p>
+<p>
+vec2:focused_deep = vec2(-0.8, 0.9);    // Narrow focus, deep thought
+vec2:aware_quick = vec2(0.7, -0.6);     // Wide awareness, quick reactions
+vec2:meditative = vec2(0.0, 0.8);       // Balanced attention, deep processing</code></pre>
+</p>
+<hr>
+<h2>Performance</h2>
+<h3>SIMD Optimization</h3>
+<p>
+vec2 operations can use <strong>SIMD instructions</strong> (SSE/AVX) for performance:
+</p>
+<pre><code>// Single operation (scalar)
+<p>
+vec2:a = vec2(1.0, 2.0);
+vec2:b = vec2(3.0, 4.0);
+vec2:c = a + b;  // ~4 CPU cycles (SIMD add)
+</p>
+<p>
+// Array of vec2 (SIMD batch processing possible)
+vec2[1000]:positions;
+vec2[1000]:velocities;
+</p>
+<p>
+for (tbb32:i = 0i32; i < 1000i32; ++i) {
+positions[i] += velocities[i];  // Compiler can vectorize (2-4 ops at once)
+}</code></pre>
+</p>
+<strong>Performance</strong>: ~2-4× faster than scalar floats when SIMD-optimized.
+<h3>Cache Efficiency</h3>
+<pre><code>// Good: Contiguous vec2 array (cache-friendly)
+<p>
+vec2[10000]:particle_positions;  // 80 KB contiguous memory
+</p>
+<p>
+// Better: Structure of Arrays (SoA) for maximum cache efficiency
+struct:ParticleSystem {
+float[10000]:x_positions;  // 40 KB contiguous
+float[10000]:y_positions;  // 40 KB contiguous
+// Better cache locality when only accessing X or Y
+};</code></pre>
+</p>
+<hr>
+<h2>Memory Layout</h2>
+<pre><code>vec2:position = vec2(100.0, 200.0);
+<p>
+// Memory layout (8 bytes for float components):
+// [float x = 100.0] [float y = 200.0]
+//  ↑ 4 bytes         ↑ 4 bytes</code></pre>
+</p>
+<strong>Alignment</strong>: Typically 8-byte aligned (for vec2<float>) or 16-byte aligned (for vec2<double>).
+<strong>Padding</strong>: No padding within vec2 (components are contiguous).
+<hr>
+<h2>Type Conversions</h2>
+<pre><code>// vec2 → individual components
+<p>
+vec2:pos = vec2(10.0, 20.0);
+float:x = pos.x;
+float:y = pos.y;
+</p>
+<p>
+// Individual components → vec2
+float:x_val = 5.0;
+float:y_val = 10.0;
+vec2:reconstructed = vec2(x_val, y_val);
+</p>
+<p>
+// Array subscript access (alternative to .x/.y)
+float:first = pos[0];   // 10.0 (same as pos.x)
+float:second = pos[1];  // 20.0 (same as pos.y)</code></pre>
+</p>
+<hr>
+<h2>Comparison Operations</h2>
+<pre><code>vec2:a = vec2(10.0, 20.0);
+<p>
+vec2:b = vec2(10.0, 20.0);
+vec2:c = vec2(5.0, 25.0);
+</p>
+<p>
+// Equality (component-wise exact match)
+bool:equal = (a == b);  // TRUE (both components match)
+bool:not_equal = (a != c);  // TRUE (components differ)
+</p>
+<p>
+// Comparison operators work component-wise
+// (less useful for vectors, typically use length comparisons instead)</code></pre>
+</p>
+<strong>Note</strong>: For approximate equality (floating-point safe), use epsilon comparison:
+<pre><code>const float:EPSILON = 0.001;
+<p>
+func:almost_equal = bool(vec2:a, vec2:b) {
+vec2:diff = a - b;
+pass(diff.length_squared() < EPSILON * EPSILON);
+};</code></pre>
+</p>
+<hr>
+<h2>vs Other Vector Types</h2>
+<h3>vec2 vs vec3</h3>
+<ul><li><strong>Dimensions</strong>: 2D vs 3D</li>
+<li><strong>Size</strong>: 8 bytes vs 12 bytes (float) or 16 bytes (aligned)</li>
+<li><strong>Use when</strong>: 2D graphics/UI vs 3D graphics/physics</li>
+<li><strong>Operations</strong>: 2D cross product (scalar) vs 3D cross product (vector)</li>
+</ul>
+<h3>vec2 vs vec9</h3>
+<ul><li><strong>Dimensions</strong>: 2D vs 9D</li>
+<li><strong>Purpose</strong>: Graphics/physics vs Nikola consciousness (9D gradient state)</li>
+<li><strong>Size</strong>: 8 bytes vs 36 bytes (float)</li>
+<li><strong>Complexity</strong>: Simple 2D math vs complex 9D wave interference</li>
+</ul>
+<hr>
+<h2>Related Topics</h2>
+<ul><li><a href="vec3.md">vec3</a> - 3D vectors for 3D graphics and physics</li>
+<li><a href="vec9.md">vec9</a> - 9D vectors for Nikola consciousness modeling</li>
+<li><a href="simd.md">simd</a> - SIMD vectorization for performance</li>
+<li><a href="float.md">float</a> - Component type (32-bit)</li>
+<li><a href="double.md">double</a> - Alternative component type (64-bit, more precision)</li>
+</ul>
+<hr>
+<strong>Remember</strong>:
+<p>
+1. <strong>2D only</strong> - use vec3 for 3D applications
+2. <strong>Component-wise <code>*</code></strong> - NOT dot product (use <code>.dot()</code> method)
+3. <strong>Normalize for direction</strong> - get unit vector (length = 1.0)
+4. <strong>Use <code>length_squared()</code> for comparisons</strong> - avoid expensive sqrt
+5. <strong>SIMD-friendly</strong> - operations can be vectorized for performance
+6. <strong>Contiguous memory</strong> - <code>[x, y]</code> layout (cache-efficient)
+7. <strong>8-byte size</strong> - (float components) or 16 bytes (double)
+</p>
+<strong>Common mistakes</strong>:
+<ul><li>Using <code>*</code> expecting dot product (it's component-wise!)</li>
+<li>Forgetting to normalize direction vectors</li>
+<li>Not using <code>length_squared()</code> for distance comparisons</li>
+<li>Mixing 2D (vec2) and 3D (vec3) operations</li>
+</ul>
+<hr>
+<strong>Status</strong>: ✅ Comprehensive
+<strong>Session</strong>: 16 (Vector Types)
+<strong>Lines</strong>: ~540
+<strong>Cross-references</strong>: Complete
+<strong>Examples</strong>: Executable Aria syntax
+    </main>
+</body>
+</html>

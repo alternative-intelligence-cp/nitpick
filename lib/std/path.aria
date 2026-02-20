@@ -31,14 +31,14 @@ pub func:find_last_separator = int32(int8->:path) {
 
 // Extract basename (filename without directory)
 // Copies result to dest buffer (must be pre-allocated)
-pub func:basename = void(int8->:dest, int8->:path) {
+pub func:basename = NIL(int8->:dest, int8->:path) {
     if (dest == NULL || path == NULL) {
         if (dest != NULL) {
             dest[0i64] = 0;
         } else {
             // null dest
         }
-        return;
+        pass(NIL);
     }
     
     int32:sep = find_last_separator(path);
@@ -51,11 +51,12 @@ pub func:basename = void(int8->:dest, int8->:path) {
     }
     
     dest[i] = 0;
+    pass(NIL);
 };
 
 // Extract dirname (directory path without filename)
 // Copies result to dest buffer (must be pre-allocated)
-pub func:dirname = void(int8->:dest, int8->:path) {
+pub func:dirname = NIL(int8->:dest, int8->:path) {
     if (dest == NULL || path == NULL) {
         if (dest != NULL) {
             dest[0i64] = 46;
@@ -63,7 +64,7 @@ pub func:dirname = void(int8->:dest, int8->:path) {
         } else {
             // null dest
         }
-        return;
+        pass(NIL);
     }
     
     int32:sep = find_last_separator(path);
@@ -71,7 +72,7 @@ pub func:dirname = void(int8->:dest, int8->:path) {
     if (sep == (0 - 1)) {
         dest[0i64] = 46;
         dest[1i64] = 0;
-        return;
+        pass(NIL);
     } else {
         // copy directory part
     }
@@ -83,6 +84,7 @@ pub func:dirname = void(int8->:dest, int8->:path) {
     }
     
     dest[i] = 0;
+    pass(NIL);
 };
 
 // ============================================================================
@@ -117,21 +119,21 @@ pub func:find_extension_pos = int32(int8->:path) {
 
 // Extract file extension (including dot)
 // Returns position of extension, or -1 if none
-pub func:extension = void(int8->:dest, int8->:path) {
+pub func:extension = NIL(int8->:dest, int8->:path) {
     if (dest == NULL || path == NULL) {
         if (dest != NULL) {
             dest[0i64] = 0;
         } else {
             // null dest
         }
-        return;
+        pass(NIL);
     }
     
     int32:dot = find_extension_pos(path);
     
     if (dot == (0 - 1)) {
         dest[0i64] = 0;
-        return;
+        pass(NIL);
     } else {
         // copy extension
     }
@@ -143,17 +145,18 @@ pub func:extension = void(int8->:dest, int8->:path) {
     }
     
     dest[i] = 0;
+    pass(NIL);
 };
 
 // Get filename without extension
-pub func:stem = void(int8->:dest, int8->:path) {
+pub func:stem = NIL(int8->:dest, int8->:path) {
     if (dest == NULL || path == NULL) {
         if (dest != NULL) {
             dest[0i64] = 0;
         } else {
             // null dest
         }
-        return;
+        pass(NIL);
     }
     
     // Get basename first
@@ -174,7 +177,7 @@ pub func:stem = void(int8->:dest, int8->:path) {
             i = i + 1;
         }
         dest[i] = 0;
-        return;
+        pass(NIL);
     }
     
     // Copy from start to dot
@@ -185,6 +188,7 @@ pub func:stem = void(int8->:dest, int8->:path) {
     }
     
     dest[i] = 0;
+    pass(NIL);
 };
 
 // ============================================================================
@@ -193,14 +197,14 @@ pub func:stem = void(int8->:dest, int8->:path) {
 
 // Join two path components with separator
 // dest must be pre-allocated with sufficient space
-pub func:join_path = void(int8->:dest, int8->:base, int8->:component) {
+pub func:join_path = NIL(int8->:dest, int8->:base, int8->:component) {
     if (dest == NULL || base == NULL || component == NULL) {
         if (dest != NULL) {
             dest[0i64] = 0;
         } else {
             // null dest
         }
-        return;
+        pass(NIL);
     }
     
     // Copy base
@@ -232,6 +236,7 @@ pub func:join_path = void(int8->:dest, int8->:base, int8->:component) {
     }
     
     dest[i] = 0;
+    pass(NIL);
 };
 
 // ============================================================================
@@ -311,9 +316,9 @@ pub func:count_components = int32(int8->:path) {
 };
 
 // Normalize path separators to forward slashes
-pub func:normalize_separators = void(int8->:path) {
+pub func:normalize_separators = NIL(int8->:path) {
     if (path == NULL) {
-        return;
+        pass(NIL);
     }
     
     int32:i = 0i32;
@@ -325,6 +330,7 @@ pub func:normalize_separators = void(int8->:path) {
         }
         i = i + 1;
     }
+    pass(NIL);
 };
 
 // ============================================================================
@@ -377,14 +383,14 @@ pub func:same_extension = int8(int8->:path1, int8->:path2) {
 
 // Replace extension with new one
 // dest must be pre-allocated, new_ext should include dot
-pub func:replace_extension = void(int8->:dest, int8->:path, int8->:new_ext) {
+pub func:replace_extension = NIL(int8->:dest, int8->:path, int8->:new_ext) {
     if (dest == NULL || path == NULL || new_ext == NULL) {
         if (dest != NULL) {
             dest[0i64] = 0;
         } else {
             // null dest
         }
-        return;
+        pass(NIL);
     }
     
     int32:dot = find_extension_pos(path);
@@ -416,6 +422,7 @@ pub func:replace_extension = void(int8->:dest, int8->:path, int8->:new_ext) {
     }
     
     dest[i] = 0;
+    pass(NIL);
 };
 
 // ============================================================================

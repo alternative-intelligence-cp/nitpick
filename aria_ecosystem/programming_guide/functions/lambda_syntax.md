@@ -130,7 +130,8 @@ parse = |s: string| -> i32 {
 
 // Optional return
 find = |array: []i32, target: i32| -> i32? {
-    for item in array {
+    till(array.length - 1, 1) {
+        item: i32 = array[$];
         when item == target then return item; end
     }
     return nil;

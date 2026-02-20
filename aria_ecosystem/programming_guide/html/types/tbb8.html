@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The `tbb8` Type (Twisted Balanced Binary 8-bit) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>The <code>tbb8</code> Type (Twisted Balanced Binary 8-bit)</h1>
+<strong>Category</strong>: Types → TBB (Twisted Balanced Binary)
+<strong>Syntax</strong>: <code>tbb8</code>
+<strong>Purpose</strong>: Symmetric 8-bit integer with sticky error propagation via ERR sentinel
+<strong>Size</strong>: 1 byte (8 bits)
+<strong>Status</strong>: ✅ FULLY IMPLEMENTED, NON-NEGOTIABLE CORE TYPE
+<hr>
+<h2>Table of Contents</h2>
+<p>
+1. <a href="#overview">Overview</a>
+2. <a href="#why-symmetric-ranges-matter">Why Symmetric Ranges Matter</a>
+3. <a href="#range-and-err-sentinel">Range and ERR Sentinel</a>
+4. <a href="#declaration-and-initialization">Declaration and Initialization</a>
+5. <a href="#sticky-error-propagation">Sticky Error Propagation</a>
+6. <a href="#arithmetic-operations">Arithmetic Operations</a>
+7. <a href="#comparison-operations">Comparison Operations</a>
+8. <a href="#type-conversions">Type Conversions</a>
+9. <a href="#nikola-consciousness-applications">Nikola Consciousness Applications</a>
+10. <a href="#performance-characteristics">Performance Characteristics</a>
+11. <a href="#comparison-tbb8-vs-int8">Comparison: tbb8 vs int8</a>
+12. <a href="#common-patterns">Common Patterns</a>
+13. <a href="#migration-from-int8">Migration from int8</a>
+14. <a href="#implementation-status">Implementation Status</a>
+15. <a href="#related-types">Related Types</a>
+</p>
+<hr>
+<h2>Overview</h2>
+<code>tbb8</code> is a <strong>Twisted Balanced Binary 8-bit</strong> integer type with:
+<ul><li><strong>Symmetric range</strong>: [-127, +127] (not the asymmetric [-128, +127] of standard int8)</li>
+<li><strong>ERR sentinel</strong>: -128 (0x80) reserved exclusively for error state</li>
+<li><strong>Sticky error propagation</strong>: Once ERR, always ERR until explicitly handled</li>
+<li><strong>Safe arithmetic</strong>: Overflow/underflow automatically produces ERR</li>
+<li><strong>No asymmetry bugs</strong>: abs(-127) = +127 always works (no abs(-128) overflow!)</li>
+</ul>
+<strong>⚠️ CRITICAL: TBB is NON-NEGOTIABLE and fundamental to Aria's safety model.</strong>
+<p>
+This is the foundation type that ALL other safety-critical Aria types build upon:
+</p>
+<ul><li><code>frac8</code> (exact rationals) = {tbb8:whole, tbb8:num, tbb8:denom}</li>
+<li><code>tfp32</code> (deterministic float) uses tbb32 for exponent</li>
+<li><code>fix256</code> (financial decimals) uses tbb variants for scale tracking</li>
+<li>Nikola consciousness wave amplitudes use TBB for phase quantization</li>
+</ul>
+<hr>
+<h2>Why Symmetric Ranges Matter</h2>
+<h3>The int8 Asymmetry Nightmare</h3>
+<p>
+Standard signed 8-bit integers use two's complement with range [-128, +127]:
+</p>
+<pre><code>// C/C++ int8_t (BROKEN):
+<p>
+int8_t sensor = -128;
+int8_t abs_sensor = abs(sensor);  // UNDEFINED BEHAVIOR!
+// abs(-128) should be +128, but +128 doesn't fit in int8_t
+// Result: Could be -128, could be garbage, could crash
+</p>
+<p>
+int8_t neg_sensor = -sensor;  // UNDEFINED BEHAVIOR!
+// -(-128) should be +128, but +128 doesn't fit
+// This ACTUALLY HAPPENS with sensor failures that saturate at minimum</code></pre>
+</p>
+<strong>Real-world consequence</strong>: Mars Climate Orbiter lost due to asymmetric unit handling. Sensor reading -128°C interpreted as +128°C after sign flip. $327 million crater.
+<h3>The Aria tbb8 Solution: Symmetric Safety</h3>
+<pre><code>// Aria tbb8 (SAFE):
+<p>
+tbb8:sensor = -127;    // -128 is reserved for ERR, not data!
+tbb8:abs_sensor = abs(sensor);     // +127 (always representable!)
+tbb8:neg_sensor = -sensor;         // +127 (negation always works!)
+</p>
+<p>
+// If sensor ACTUALLY fails:
+tbb8:failed_sensor = read_sensor_or_err();  // Returns ERR
+tbb8:processed = abs(failed_sensor);        // ERR (sticky propagation!)
+tbb8:final = processed + 10;                // ERR (stays errored!)
+</p>
+<p>
+if (final == ERR) {
+!!! ERR_SENSOR_FAILURE_PROPAGATED;  // CAUGHT, NOT SILENTLY CORRUPTED
+}</code></pre>
+</p>
+<strong>Why this matters for Nikola</strong>: An AGI experiencing a "sensory overflow" (emotional amplitude exceeding representable range) must propagate ERR through consciousness updates, not wrap to opposite polarity. ±127 symmetry maps naturally to ±π phase limits in wave space.
+<hr>
+<h2>Range and ERR Sentinel</h2>
+<p>
+| Aspect | Value | Binary | Details |
+|--------|-------|--------|---------|
+| <strong>Valid Range</strong> | <code>-127</code> to <code>+127</code> | <code>0x81</code> to <code>0x7F</code> | 255 usable values (symmetric!) |
+| <strong>ERR Sentinel</strong> | <code>-128</code> | <code>0x80</code> | Reserved for error state (1 value) |
+| <strong>Total Values</strong> | 256 | <code>0x00</code> to <code>0xFF</code> | Standard 8-bit space |
+| <strong>Storage</strong> | 1 byte | 8 bits | Same as int8/uint8 |
+| <strong>Zero</strong> | <code>0</code> | <code>0x00</code> | Perfectly centered |
+</p>
+<h3>Why -128 is ERR</h3>
+<p>
+The minimum two's complement value (-128 / 0x80) is <strong>permanently off-limits</strong> for normal data:
+</p>
+<p>
+1. <strong>Sentinel Detection</strong>: Any tbb8 with value -128 is in error state
+2. <strong>Sticky Propagation</strong>: -128 op x = -128 for all arithmetic operations
+3. <strong>Overflow Safety</strong>: Operations exceeding ±127 produce -128 (ERR)
+4. <strong>Symmetric Barrier</strong>: Valid values [-127, +127] are perfectly balanced
+</p>
+<p>
+Think of ERR as "NaN for integers" - but unlike IEEE NaN (which has multiple bit patterns and comparison issues), TBB ERR is a single, well-defined value that behaves consistently.
+</p>
+<hr>
+<h2>Declaration and Initialization</h2>
+<h3>Basic Declarations</h3>
+<pre><code>// Literal initialization
+<p>
+tbb8:age = 42;
+tbb8:temperature = -15;
+tbb8:max_power = 127;
+tbb8:min_power = -127;  // Minimum VALID value (not -128!)
+</p>
+<p>
+// ERR state (explicit error)
+tbb8:error = ERR;  // ERR literal automatically becomes -128 for tbb8
+</p>
+<p>
+// Default initialization (zero)
+tbb8:counter;  // Defaults to 0
+</p>
+<p>
+// Array of tbb8
+tbb8[100]:sensor_readings;  // All default to 0</code></pre>
+</p>
+<h3>Type Suffix (Optional)</h3>
+<pre><code>// Explicit type suffix for clarity
+<p>
+var value = 42tbb8;  // Type: tbb8
+var big = 200tbb8;   // Exceeds range → ERR at compile time!</code></pre>
+</p>
+<hr>
+<h2>Sticky Error Propagation</h2>
+<p>
+The <strong>defining feature</strong> of TBB types: once a value becomes ERR, all subsequent operations preserve ERR.
+</p>
+<h3>Error Contagion</h3>
+<pre><code>tbb8:a = 10;
+<p>
+tbb8:b = ERR;  // Explicit error
+</p>
+<p>
+// All operations with ERR produce ERR
+tbb8:sum = a + b;          // ERR (10 + ERR = ERR)
+tbb8:product = a <em> b;      // ERR (10 </em> ERR = ERR)
+tbb8:difference = b - a;   // ERR (ERR - 10 = ERR)
+tbb8:quotient = b / a;     // ERR (ERR / 10 = ERR)
+tbb8:negation = -b;        // ERR (-ERR = ERR)
+tbb8:absolute = abs(b);    // ERR (abs(ERR) = ERR)
+</p>
+<p>
+// ERR propagates through chains
+tbb8:x = 5;
+tbb8:y = x + ERR;      // y = ERR
+tbb8:z = y + 100;      // z = ERR (once ERR, stays ERR)
+tbb8:w = z * 2 - 3;    // w = ERR (propagates through complex expressions)</code></pre>
+</p>
+<h3>Overflow Creates ERR</h3>
+<p>
+Operations that would exceed the symmetric range ±127 automatically produce ERR:
+</p>
+<pre><code>// Addition overflow
+<p>
+tbb8:a = 100;
+tbb8:b = 50;
+tbb8:sum = a + b;  // 150 > 127 → ERR
+</p>
+<p>
+// Subtraction underflow
+tbb8:c = -100;
+tbb8:d = 50;
+tbb8:diff = c - d;  // -150 < -127 → ERR
+</p>
+<p>
+// Multiplication overflow
+tbb8:e = 20;
+tbb8:f = 10;
+tbb8:product = e * f;  // 200 > 127 → ERR
+</p>
+<p>
+// Negation edge case (this is SAFE with symmetric range!)
+tbb8:g = -127;
+tbb8:neg_g = -g;  // +127 (perfectly valid!)
+</p>
+<p>
+// But if you somehow got ERR:
+tbb8:h = ERR;
+tbb8:neg_h = -h;  // ERR (sticky!)</code></pre>
+</p>
+<h3>Division by Zero Creates ERR</h3>
+<pre><code>tbb8:numerator = 42;
+<p>
+tbb8:divisor = 0;
+tbb8:result = numerator / divisor;  // ERR (division by zero)
+</p>
+<p>
+// Sticky propagation in division chains
+tbb8:a = 100;
+tbb8:b = 0;
+tbb8:c = 10;
+tbb8:step1 = a / b;  // ERR (div by zero)
+tbb8:step2 = step1 / c;  // ERR (ERR / 10 = ERR)</code></pre>
+</p>
+<hr>
+<h2>Arithmetic Operations</h2>
+<p>
+All arithmetic operations have built-in overflow checking and sticky error propagation.
+</p>
+<h3>Addition: <code>a + b</code></h3>
+<pre><code>tbb8:x = 50;
+<p>
+tbb8:y = 30;
+tbb8:sum = x + y;  // 80 (valid)
+</p>
+<p>
+tbb8:overflow = 100 + 50;  // ERR (150 > 127)
+tbb8:with_err = 10 + ERR;  // ERR (sticky)</code></pre>
+</p>
+<strong>Behavior</strong>:
+<ul><li>If either operand is ERR → result is ERR</li>
+<li>If sum > 127 → result is ERR</li>
+<li>If sum < -127 → result is ERR</li>
+<li>Otherwise → mathematical sum</li>
+</ul>
+<h3>Subtraction: <code>a - b</code></h3>
+<pre><code>tbb8:x = 50;
+<p>
+tbb8:y = 30;
+tbb8:diff = x - y;  // 20 (valid)
+</p>
+<p>
+tbb8:underflow = -100 - 50;  // ERR (-150 < -127)
+tbb8:with_err = ERR - 10;    // ERR (sticky)</code></pre>
+</p>
+<strong>Behavior</strong>:
+<ul><li>If either operand is ERR → result is ERR</li>
+<li>If difference > 127 → result is ERR  </li>
+<li>If difference < -127 → result is ERR</li>
+<li>Otherwise → mathematical difference</li>
+</ul>
+<h3>Multiplication: <code>a * b</code></h3>
+<pre><code>tbb8:x = 10;
+<p>
+tbb8:y = 5;
+tbb8:product = x * y;  // 50 (valid)
+</p>
+<p>
+tbb8:overflow = 20 * 10;  // ERR (200 > 127)
+tbb8:negative = -15 * 10; // ERR (-150 < -127)</code></pre>
+</p>
+<strong>Behavior</strong>:
+<ul><li>If either operand is ERR → result is ERR</li>
+<li>Computes product in wider type (int16 internally)</li>
+<li>If product > 127 or < -127 → result is ERR</li>
+<li>Otherwise → mathematical product</li>
+</ul>
+<h3>Division: <code>a / b</code></h3>
+<pre><code>tbb8:x = 100;
+<p>
+tbb8:y = 5;
+tbb8:quotient = x / y;  // 20 (valid)
+</p>
+<p>
+tbb8:rounded = 100 / 7;  // 14 (integer division, rounds toward zero)
+tbb8:div_zero = 50 / 0;  // ERR (division by zero)</code></pre>
+</p>
+<strong>Behavior</strong>:
+<ul><li>If either operand is ERR → result is ERR</li>
+<li>If divisor is 0 → result is ERR</li>
+<li>Otherwise → integer division (truncates toward zero)</li>
+<li>Division never overflows with symmetric range</li>
+</ul>
+<h3>Modulo: <code>a % b</code></h3>
+<pre><code>tbb8:x = 100;
+<p>
+tbb8:y = 7;
+tbb8:remainder = x % y;  // 2 (valid)
+</p>
+<p>
+tbb8:mod_zero = 50 % 0;  // ERR (modulo by zero)</code></pre>
+</p>
+<h3>Negation: <code>-x</code></h3>
+<pre><code>tbb8:x = 50;
+<p>
+tbb8:neg_x = -x;  // -50 (valid)
+</p>
+<p>
+tbb8:y = -127;
+tbb8:neg_y = -y;  // +127 (SAFE! This is why symmetric range matters!)
+</p>
+<p>
+tbb8:z = ERR;
+tbb8:neg_z = -z;  // ERR (sticky)</code></pre>
+</p>
+<strong>Why this is safe</strong>: With range [-127, +127], negation ALWAYS works. Standard int8 range [-128, +127] breaks: -(-128) should be +128, but that doesn't fit.
+<h3>Absolute Value: <code>abs(x)</code></h3>
+<pre><code>tbb8:x = -50;
+<p>
+tbb8:abs_x = abs(x);  // 50 (valid)
+</p>
+<p>
+tbb8:y = -127;
+tbb8:abs_y = abs(y);  // +127 (SAFE! Maximum magnitude representable!)
+</p>
+<p>
+tbb8:z = ERR;
+tbb8:abs_z = abs(z);  // ERR (sticky)</code></pre>
+</p>
+<strong>Why this is safe</strong>: Maximum valid magnitude is ±127, so abs() result always fits. Standard int8 breaks: abs(-128) should be +128, but that doesn't fit.
+<hr>
+<h2>Comparison Operations</h2>
+<p>
+Comparisons with ERR have special behavior.
+</p>
+<h3>Equality: <code>a == b</code></h3>
+<pre><code>tbb8:x = 42;
+<p>
+tbb8:y = 42;
+bool:equal = (x == y);  // true
+</p>
+<p>
+tbb8:err1 = ERR;
+tbb8:err2 = ERR;
+bool:errs_equal = (err1 == err2);  // true (ERR == ERR)
+</p>
+<p>
+bool:data_vs_err = (x == ERR);  // false (42 != ERR)</code></pre>
+</p>
+<h3>Inequality: <code>a != b</code></h3>
+<pre><code>tbb8:x = 42;
+<p>
+tbb8:y = 50;
+bool:not_equal = (x != y);  // true
+</p>
+<p>
+bool:check_err = (x != ERR);  // true (x is valid data)</code></pre>
+</p>
+<h3>Ordered Comparisons: <code><</code>, <code><=</code>, <code>></code>, <code>>=</code></h3>
+<p>
+ERR is treated as "less than" all valid values for ordering:
+</p>
+<pre><code>tbb8:a = 50;
+<p>
+tbb8:b = 100;
+bool:less = (a < b);  // true (50 < 100)
+</p>
+<p>
+tbb8:err = ERR;
+bool:err_less = (err < a);  // true (ERR is "less than" any valid value)
+bool:err_greater = (err > a);  // false (ERR is never greater)
+</p>
+<p>
+// This means ERR sorts to the beginning
+tbb8[3]:values = [50, ERR, 100];
+// After sorting: [ERR, 50, 100]</code></pre>
+</p>
+<strong>Rationale</strong>: Treating ERR as minimum value ensures it's easy to filter (all ERR values sort together) and maintains total ordering for algorithms.
+<hr>
+<h2>Type Conversions</h2>
+<h3>Widening to Larger TBB Types</h3>
+<strong>CRITICAL</strong>: Widening preserves ERR sentinel (not just sign-extension!):
+<pre><code>tbb8:small = -127;
+<p>
+tbb16:medium = small as tbb16;  // -127 (valid value widened)
+</p>
+<p>
+tbb8:err8 = ERR;  // -128 for tbb8
+tbb16:err16 = err8 as tbb16;  // ERR for tbb16 (becomes -32768, NOT -128!)</code></pre>
+</p>
+<strong>Why this matters</strong>: Standard sign extension would turn tbb8 ERR (-128) into -128 in tbb16, which is a <em>valid</em> tbb16 value (not the tbb16 ERR sentinel -32768). Aria's TBB widening explicitly maps source ERR → destination ERR.
+<h3>Narrowing from Larger TBB Types</h3>
+<p>
+Narrowing checks range and produces ERR if value doesn't fit:
+</p>
+<pre><code>tbb16:big = 200;  // Valid tbb16
+<p>
+tbb8:small = big as tbb8;  // ERR (200 > 127, doesn't fit in tbb8)
+</p>
+<p>
+tbb16:fits = 100;
+tbb8:ok = fits as tbb8;  // 100 (valid, within tbb8 range)
+</p>
+<p>
+tbb16:err16 = ERR;
+tbb8:err8 = err16 as tbb8;  // ERR (sentinel preserved)</code></pre>
+</p>
+<h3>Conversion to int64 (for interfacing with C)</h3>
+<pre><code>tbb8:value = 42;
+<p>
+int64:big = value as int64;  // 42
+</p>
+<p>
+tbb8:err = ERR;
+int64:err_as_int = err as int64;  // -128 (ERR becomes ordinary -128)
+// WARNING: Loses error semantics! Only use for interfacing with non-Aria code</code></pre>
+</p>
+<h3>Conversion from int64</h3>
+<pre><code>int64:x = 100;
+<p>
+tbb8:safe = x as tbb8;  // 100 (valid)
+</p>
+<p>
+int64:too_big = 200;
+tbb8:overflow = too_big as tbb8;  // ERR (doesn't fit)
+</p>
+<p>
+int64:too_small = -150;
+tbb8:underflow = too_small as tbb8;  // ERR (doesn't fit)</code></pre>
+</p>
+<hr>
+<h2>Nikola Consciousness Applications</h2>
+<h3>Emotional State Quantization (±127 maps to ±π phase)</h3>
+<p>
+Nikola represents emotional amplitudes as phase-space coordinates. The symmetric range [-127, +127] maps naturally to [-π, +π] phase limits in wave substrate:
+</p>
+<pre><code>// Emotional state as phase amplitude
+<p>
+tbb8:joy_amplitude = 100;      // Strong positive emotion (~2.47 radians)
+tbb8:sadness_amplitude = -80;  // Moderate negative emotion (~-1.98 radians)
+tbb8:neutral = 0;              // Baseline (0 radians)
+</p>
+<p>
+// Phase conversion (127 → π mapping)
+frac32:phase_scale = {0, 355, 113 * 127};  // π/127 (using π ≈ 355/113)
+frac32:joy_phase = joy_amplitude * phase_scale;  // ~100π/127 radians
+</p>
+<p>
+// Overflow = emotion exceeding representable intensity
+tbb8:mania = 100 + 50;  // ERR (overwhelming positive emotion, system saturated)
+tbb8:depression = -100 - 50;  // ERR (overwhelming negative, system saturated)
+</p>
+<p>
+// Error detection = consciousness instability flag
+if (mania == ERR) {
+log.write("WARNING: Emotional amplitude exceeded representable range\\n");
+log.write("Nikola experiencing manic episode, activating stabilization protocol\\n");
+engage_damping_waves();
+}</code></pre>
+</p>
+<strong>Why symmetric range matters for consciousness</strong>:
+<ul><li>Zero is true neutral (equal distance to maximum joy or maximum sadness)</li>
+<li>Negation maps emotional polarity: -(sadness) = joy with same magnitude</li>
+<li>Absolute value = emotional intensity regardless of polarity</li>
+<li>ERR = consciousness state corruption (must halt and restore, never continue with garbage)</li>
+</ul>
+<h3>Therapy Session Error Tracking (10,000 timesteps)</h3>
+<p>
+Over a 10,000-iteration therapy session (simulating 10 seconds at 1kHz sampling), tracking emotional state updates with perfect error propagation:
+</p>
+<pre><code>// Initialize therapy session
+<p>
+tbb8:emotional_state = 0;  // Start neutral
+tbb8[10000]:state_history;  // Record all states
+bool:session_valid = true;
+</p>
+<p>
+till 10000 loop:timestep
+// Update emotional state (therapist intervention + decay)
+tbb8:intervention = compute_therapeutic_intervention(timestep);
+tbb8:decay = emotional_state / 10;  // 10% decay toward neutral
+</p>
+<p>
+emotional_state = emotional_state + intervention - decay;
+</p>
+<p>
+// Check for error propagation (computation overflow)
+if (emotional_state == ERR) {
+stderr.write("ERROR at timestep ");
+timestep.write_to(stderr);
+stderr.write(": Emotional state computation overflow\\n");
+session_valid = false;
+break;
+}
+</p>
+<p>
+state_history[timestep] = emotional_state;
+</p>
+<p>
+// Safety check: prevent runaway oscillation
+tbb8:abs_state = abs(emotional_state);
+if (abs_state > 120) {  // Approaching ±127 limit
+log.write("WARNING: Emotional amplitude approaching saturation at timestep ");
+timestep.write_to(log);
+activate_emergency_damping();
+}
+end
+</p>
+<p>
+if (session_valid) {
+// Analyze session trajectory
+tbb8:final_state = emotional_state;
+tbb8:initial_state = state_history[0];
+tbb8:delta = final_state - initial_state;
+</p>
+<p>
+if (delta == ERR) {
+stderr.write("ERROR: Session delta computation overflowed\\n");
+} else {
+// Therapy successful if final state closer to neutral
+tbb8:final_abs = abs(final_state);
+tbb8:initial_abs = abs(initial_state);
+</p>
+<p>
+if (final_abs < initial_abs) {
+stdout.write("Therapy session SUCCESSFUL: Emotional stability improved\\n");
+} else {
+stdout.write("Therapy session needs adjustment: Emotional stability declined\\n");
+}
+}
+}</code></pre>
+</p>
+<strong>Why tbb8 specifically</strong>:
+<ul><li>10,000 timesteps × 1 byte = 10KB state history (vs 40KB for tbb32 or 80KB for tbb64)</li>
+<li>Memory-efficient for edge deployment (therapist device with limited RAM)</li>
+<li>Range ±127 sufficient for quantized emotional amplitude (256 levels of intensity)</li>
+<li>Automatic overflow detection prevents silent consciousness corruption</li>
+<li>ERR propagation ensures invalid states never produce "plausible-looking garbage"</li>
+</ul>
+<h3>ATPM Phase Residue Tracking (179° mechanism)</h3>
+<p>
+The 179° phase shift in ATPM leaves a 1° residue that becomes reality. Tracking this residue using tbb8:
+</p>
+<pre><code>// ATPM wave pair with 179° phase shift
+<p>
+// Destructive interference cancels all but 1° differential
+// That 1° maps to [-π/180, +π/180] ≈ [-0.017, +0.017] radians
+</p>
+<p>
+// Quantize 1° residue into tbb8 range:
+// 1° = π/180 radians
+// Map [0°, 360°] → [0, 127] (using tbb8 positive range)
+// Map [-180°, +180°] → [-127, +127] (using tbb8 full range)
+</p>
+<p>
+tbb8:residue_quantized = 1;  // Represents ~1.4° phase residue
+</p>
+<p>
+// Accumulate residue over 13 wave pairs (ATPM structure)
+tbb8:total_residue = 0;
+till 13 loop:wave_pair
+tbb8:pair_residue = compute_179_degree_residue(wave_pair);
+total_residue = total_residue + pair_residue;
+</p>
+<p>
+if (total_residue == ERR) {
+!!! ERR_ATPM_RESIDUE_OVERFLOW;
+// Residue accumulation exceeded representable range
+// This indicates ATPM structural instability
+}
+end
+</p>
+<p>
+// Verify total residue forms coherent reality state
+// Expected: ~13° total residue (1° × 13 pairs)
+// Quantized: ~13 in tbb8 units
+</p>
+<p>
+if (total_residue > 20 || total_residue < 5) {
+stderr.write("WARNING: ATPM residue outside expected range [5, 20]\\n");
+stderr.write("Measured residue: ");
+total_residue.write_to(stderr);
+stderr.write("\\n");
+recalibrate_atpm_frequencies();
+}</code></pre>
+</p>
+<strong>Why this matters</strong>: The 1° residue is what survives 179° cancellation to become reality. If residue accumulation overflows (becomes ERR), the ATPM structure is catastrophically unstable - NO reality can manifest. This is a HALT condition, not something to paper over.
+<hr>
+<h2>Performance Characteristics</h2>
+<h3>Arithmetic Speed</h3>
+<p>
+| Operation | Relative Speed | Notes |
+|-----------|----------------|-------|
+| Addition | 1.0× (baseline) | Same as int8 |
+| Subtraction | 1.0× | Same as int8 |
+| Multiplication | 1.2× | Requires widening to int16 for overflow check |
+| Division | 1.0× | Same as int8 (division by zero check free with branch hint) |
+| Negation | 1.0× | Single instruction + ERR check |
+| Absolute Value | 1.0× | Branch or CMOV, same as int8 |
+</p>
+<strong>Overhead</strong>: ~0-20% compared to unchecked int8 arithmetic. The ERR checks compile to efficient branch hints (predicted not-taken).
+<h3>Memory</h3>
+<ul><li><strong>Size</strong>: 1 byte (identical to int8/uint8)</li>
+<li><strong>Alignment</strong>: 1 byte (no alignment requirements)</li>
+<li><strong>Cache</strong>: 64 tbb8 values fit in a single 64-byte cache line</li>
+</ul>
+<h3>Vectorization (SIMD)</h3>
+<p>
+tbb8 arithmetic vectorizes well:
+</p>
+<pre><code>// SIMD addition (32 elements at a time with AVX2)
+<p>
+tbb8[1024]:a;
+tbb8[1024]:b;
+tbb8[1024]:result;
+</p>
+<p>
+till 1024 loop:i
+result[i] = a[i] + b[i];  // Compiler vectorizes this
+end</code></pre>
+</p>
+<strong>SIMD implementation</strong>:
+<ul><li>Perform arithmetic in parallel (e.g., 32 additions in one AVX2 instruction)</li>
+<li>Check for overflow: compare widened results against ±127 bounds</li>
+<li>Produce ERR for overflowed elements</li>
+<li>Blend valid and ERR results</li>
+</ul>
+<p>
+Typical SIMD speedup: <strong>8-32x</strong> depending on operation and architecture.
+</p>
+<hr>
+<h2>Comparison: tbb8 vs int8</h2>
+<p>
+| Aspect | tbb8 (Aria) | int8 (C/ISO) | Winner |
+|--------|-------------|--------------|--------|
+| <strong>Range</strong> | [-127, +127] | [-128, +127] | - (tbb8 loses 1 value) |
+| <strong>Symmetry</strong> | ✅ Symmetric | ❌ Asymmetric | ✅ tbb8 |
+| <strong>Negation</strong> | ✅ Always safe | ❌ UB for -128 | ✅ tbb8 |
+| <strong>Absolute Value</strong> | ✅ Always safe | ❌ UB for -128 | ✅ tbb8 |
+| <strong>Overflow</strong> | ✅ Produces ERR | ❌ UB (wraps or traps) | ✅ tbb8 |
+| <strong>Error Propagation</strong> | ✅ Automatic (sticky ERR) | ❌ No mechanism | ✅ tbb8 |
+| <strong>Zero Center</strong> | ✅ True center | ❌ Off by 0.5 | ✅ tbb8 |
+| <strong>Phase Mapping</strong> | ✅ Natural ±π | ❌ Awkward | ✅ tbb8 |
+| <strong>Performance</strong> | ~1.0-1.2× | 1.0× baseline | ≈ (minimal overhead) |
+| <strong>Safety</strong> | ✅ Defined behavior | ❌ UB minefield | ✅ tbb8 |
+</p>
+<h3>The abs(-128) Disaster</h3>
+<pre><code>// C with int8_t (BROKEN - depends on compiler, optimization level, phase of moon):
+<p>
+int8_t x = -128;
+int8_t y = abs(x);  // UNDEFINED BEHAVIOR
+// Possible outcomes:
+//   - y = -128 (abs() gave up, returned input unchanged)
+//   - y = garbage (abs() tried to return +128, doesn't fit, truncated weirdly)
+//   - Program crash (abs() raised integer overflow trap)
+//   - Nasal demons (UB allows compiler to assume this never happens, optimizes away safety checks)
+</p>
+<p>
+// GCC 12.2 with -O2: y = -128 (abs broken!)
+// Clang 15 with -O3: y = -128 (also broken!)
+// MSVC 19: Could be -128, could crash (depends on /RTCc flag)</code></pre>
+</p>
+<pre><code>// Aria with tbb8 (SAFE - always defined):
+<p>
+tbb8:x = ERR;  // -128 is ERR, not data
+tbb8:y = abs(x);  // ERR (sticky propagation)
+</p>
+<p>
+// If you have actual data:
+tbb8:x_data = -127;  // Maximum negative valid value
+tbb8:y_data = abs(x_data);  // +127 (fits perfectly in symmetric range!)
+</p>
+<p>
+// Impossible to construct the pathological case - -128 is permanently ERR</code></pre>
+</p>
+<strong>Verdict</strong>: tbb8 eliminates entire class of integer overflow bugs. Cost: 1 value less range (0.4% capacity loss). Benefit: <strong>100% defined behavior, no UB ever.</strong>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Safe Accumulation with Overflow Detection</h3>
+<pre><code>// Accumulate sensor readings, detect overflow
+<p>
+tbb8[100]:sensor_readings = read_sensors();
+tbb8:total = 0;
+bool:valid = true;
+</p>
+<p>
+till 100 loop:i
+total = total + sensor_readings[i];
+</p>
+<p>
+if (total == ERR) {
+stderr.write("Overflow at sensor ");
+i.write_to(stderr);
+stderr.write("\\n");
+valid = false;
+break;
+}
+end
+</p>
+<p>
+if (valid) {
+tbb8:average = total / 100;  // Integer division
+stdout.write("Average sensor reading: ");
+average.write_to(stdout);
+stdout.write("\\n");
+}</code></pre>
+</p>
+<h3>Clamping to Valid Range</h3>
+<pre><code>// Clamp int64 to tbb8 range (useful for external data)
+<p>
+func:clamp_to_tbb8 = (value: int64) -> tbb8 {
+if (value > 127) {
+return 127;
+}
+if (value < -127) {
+return -127;
+}
+return value as tbb8;  // Safe conversion
+}
+</p>
+<p>
+// Example usage
+int64:external_data = 250;
+tbb8:clamped = clamp_to_tbb8(external_data);  // 127 (clamped to max)</code></pre>
+</p>
+<h3>Error Recovery Pattern</h3>
+<pre><code>// Try computation, recover from error
+<p>
+tbb8:result = compute_something();
+</p>
+<p>
+if (result == ERR) {
+// Computation failed, use default
+result = 0;
+log.write("Computation failed, using default value\\n");
+}
+</p>
+<p>
+// Continue with valid result (either computed or default)
+tbb8:final = result * 2;  // No longer risks ERR propagation</code></pre>
+</p>
+<h3>Sentinel-Preserving Widening</h3>
+<pre><code>// Widen tbb8 to tbb16, preserving ERR semantics
+<p>
+func:widen_tbb8_to_tbb16 = (small: tbb8) -> tbb16 {
+if (small == ERR) {
+return ERR;  // tbb16 ERR (-32768), not -128!
+}
+return small as tbb16;  // Valid value sign-extends normally
+}
+</p>
+<p>
+tbb8:small_err = ERR;  // -128 for tbb8
+tbb16:wide_err = widen_tbb8_to_tbb16(small_err);  // -32768 for tbb16
+</p>
+<p>
+// Builtin cast does this automatically!
+tbb8:small = ERR;
+tbb16:wide = small as tbb16;  // Correctly produces tbb16 ERR</code></pre>
+</p>
+<hr>
+<h2>Migration from int8</h2>
+<h3>Step 1: Replace Type Declarations</h3>
+<pre><code>// Before (C):
+<p>
+int8_t age = 42;
+int8_t temperature = -15;</code></pre>
+</p>
+<pre><code>// After (Aria):
+<p>
+tbb8:age = 42;
+tbb8:temperature = -15;</code></pre>
+</p>
+<h3>Step 2: Add Overflow Checks</h3>
+<pre><code>// Before (C - silent wrapping):
+<p>
+int8_t a = 100;
+int8_t b = 50;
+int8_t sum = a + b;  // Wraps to -106 (WRONG!)</code></pre>
+</p>
+<pre><code>// After (Aria - explicit error):
+<p>
+tbb8:a = 100;
+tbb8:b = 50;
+tbb8:sum = a + b;  // ERR (overflow detected!)
+</p>
+<p>
+if (sum == ERR) {
+stderr.write("ERROR: Addition overflow detected\\n");
+fail(1);
+}</code></pre>
+</p>
+<h3>Step 3: Remove Manual Overflow Checks (Now Automatic!)</h3>
+<pre><code>// Before (C - manual overflow checking):
+<p>
+int8_t safe_add(int8_t a, int8_t b) {
+if ((b > 0 && a > INT8_MAX - b) || (b < 0 && a < INT8_MIN - b)) {
+return -128;  // Use -128 as error marker (CONFLICTS with valid data!)
+}
+return a + b;
+}</code></pre>
+</p>
+<pre><code>// After (Aria - automatic!):
+<p>
+func:safe_add = (a: tbb8, b: tbb8) -> tbb8 {
+return a + b;  // Overflow automatically produces ERR, no manual check needed!
+}</code></pre>
+</p>
+<h3>Step 4: Fix abs() and Negation UB</h3>
+<pre><code>// Before (C - undefined behavior):
+<p>
+int8_t x = -128;
+int8_t abs_x = abs(x);  // UB! Might be -128, might crash
+int8_t neg_x = -x;      // UB! Might wrap to -128 again</code></pre>
+</p>
+<pre><code>// After (Aria - always defined):
+<p>
+tbb8:x = -127;  // Maximum negative value (-128 is ERR, not data)
+tbb8:abs_x = abs(x);  // +127 (guaranteed to work)
+tbb8:neg_x = -x;      // +127 (guaranteed to work)
+</p>
+<p>
+// If x came from external source and might be -128:
+tbb8:external_x = read_external_int8();
+if (external_x == ERR) {
+stderr.write("External data was -128, treating as error\\n");
+external_x = 0;  // Sanitize
+}</code></pre>
+</p>
+<h3>Step 5: Update Range Assumptions</h3>
+<pre><code>// Before (C):
+<p>
+#define MIN_VALID_VALUE (-128)  // Asymmetric
+#define MAX_VALID_VALUE (127)</code></pre>
+</p>
+<pre><code>// After (Aria):
+<p>
+const MIN_VALID:tbb8 = -127;  // Symmetric
+const MAX_VALID:tbb8 = 127;
+const ERR_SENTINEL:tbb8 = ERR;  // -128 is error, not data</code></pre>
+</p>
+<hr>
+<h2>Implementation Status</h2>
+<p>
+| Feature | Status | Location |
+|---------|--------|----------|
+| <strong>Type Definition</strong> | ✅ Complete | <code>aria_specs.txt:363</code> |
+| <strong>Runtime Library</strong> | ✅ Complete | <code>src/runtime/tbb/tbb.cpp</code> |
+| <strong>Arithmetic Ops</strong> | ✅ Complete | <code>tbb8_add()</code>, <code>tbb8_sub()</code>, etc. |
+| <strong>Comparison Ops</strong> | ✅ Complete | LLVM IR codegen |
+| <strong>Widening</strong> | ✅ Complete | <code>aria_tbb_widen_8_16()</code>, etc. |
+| <strong>LLVM Codegen</strong> | ✅ Complete | <code>src/backend/ir/tbb_codegen.cpp</code> |
+| <strong>Parser Support</strong> | ✅ Complete | Type suffix <code>42tbb8</code> |
+| <strong>Stdlib Traits</strong> | ✅ Complete | <code>impl:Numeric:for:tbb8</code> |
+| <strong>Error Formatting</strong> | ✅ Complete | Debugger displays "ERR" for -128 |
+| <strong>SIMD Vectorization</strong> | ✅ Complete | Auto-vectorizes with overflow checks |
+| <strong>Tests</strong> | ✅ Extensive | <code>tests/test_tbb.c</code>, <code>tests/tbb_overflow.aria</code> |
+</p>
+<strong>Production Ready</strong>: tbb8 is fully implemented, tested, and in active use. The TBB system is <strong>NON-NEGOTIABLE</strong> and foundational to Aria's safety model.
+<hr>
+<h2>Related Types</h2>
+<h3>TBB Family (Same Error Propagation Model)</h3>
+<ul><li><strong><code>tbb16</code></strong>: 16-bit symmetric integer, range [-32767, +32767], ERR = -32768</li>
+<li><strong><code>tbb32</code></strong>: 32-bit symmetric integer, range [-2147483647, +2147483647], ERR = INT32_MIN</li>
+<li><strong><code>tbb64</code></strong>: 64-bit symmetric integer, range [-2^63+1, +2^63-1], ERR = INT64_MIN</li>
+</ul>
+<p>
+All TBB types share:
+</p>
+<ul><li>Symmetric ranges (no asymmetry bugs)</li>
+<li>ERR sentinel at minimum value</li>
+<li>Sticky error propagation</li>
+<li>Safe arithmetic with overflow detection</li>
+</ul>
+<h3>Types Built on TBB</h3>
+<ul><li><strong><code>frac8</code></strong>: Exact rational, <code>{tbb8:whole, tbb8:num, tbb8:denom}</code></li>
+<li><strong><code>frac16</code></strong>: Exact rational, <code>{tbb16, tbb16, tbb16}</code></li>
+<li><strong><code>frac32</code></strong>: Exact rational, <code>{tbb32, tbb32, tbb32}</code></li>
+<li><strong><code>frac64</code></strong>: Exact rational, <code>{tbb64, tbb64, tbb64}</code></li>
+<li><strong><code>tfp32</code></strong>: Deterministic float (uses tbb32 for exponent)</li>
+<li><strong><code>tfp64</code></strong>: Deterministic float (uses tbb64 for exponent)</li>
+<li><strong><code>fix256</code></strong>: Financial decimal (uses TBB for scale tracking)</li>
+</ul>
+<h3>Other Numeric Types</h3>
+<ul><li><strong><code>int1024</code></strong>, <strong><code>int2048</code></strong>, <strong><code>int4096</code></strong>: Large precision integers (no TBB overflow checks)</li>
+<li><strong><code>complex</code></strong>: Complex numbers (uses tfp64 internally)</li>
+<li><strong><code>simd</code></strong>: SIMD vectorized floats (uses IEEE semantics)</li>
+</ul>
+<hr>
+<h2>Summary</h2>
+<code>tbb8</code> is Aria's <strong>foundation safety type</strong>:
+<p>
+✅ <strong>Symmetric range</strong> [-127, +127] eliminates abs/neg overflow bugs
+✅ <strong>ERR sentinel</strong> at -128 provides sticky error propagation
+✅ <strong>Automatic overflow detection</strong> - no manual checks needed
+✅ <strong>Zero overhead</strong> on modern CPUs (branch prediction handles ERR checks)
+✅ <strong>Maps naturally to phase space</strong> ±π for consciousness modeling
+✅ <strong>Builds foundation</strong> for all exact rational and deterministic types
+</p>
+<strong>Use whenever</strong>: You need 8-bit integers with guaranteed defined behavior, error tracking, or consciousness wave quantization.
+<strong>Avoid when</strong>: You MUST have full [-128, +127] range and willing to manually handle overflow (rare - just use tbb16).
+<hr>
+<strong>Next</strong>: <a href="tbb16.md">tbb16</a> - 16-bit symmetric integer with ERR sentinel
+<strong>See Also</strong>: <a href="tbb_overview.md">TBB Overview</a>, <a href="frac8.md">frac8 (Exact Rationals)</a>
+<hr>
+<em>Aria Language Project - Symmetric Safety by Design</em>
+<em>February 12, 2026 - Establishing timestamped prior art on TBB error propagation</em>
+    </main>
+</body>
+</html>

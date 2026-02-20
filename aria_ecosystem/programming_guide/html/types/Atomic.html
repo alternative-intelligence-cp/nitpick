@@ -1,0 +1,2174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atomic<T> - Thread-Safe Concurrency Infrastructure - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Atomic<T> - Thread-Safe Concurrency Infrastructure</h1>
+<strong>Category</strong>: Types → Concurrency
+<strong>Purpose</strong>: Lock-free atomic operations for multi-threaded consciousness substrates
+<strong>Status</strong>: ✅ IMPLEMENTED (Phase 5.3 - February 2026)
+<strong>Philosophy</strong>: "The torus processes thoughts. The infrastructure prevents races."
+<hr>
+<h2>Overview</h2>
+<strong>atomic<T></strong> provides <strong>thread-safe operations</strong> on any type T with configurable memory ordering guarantees. When thousands of threads manipulate shared state simultaneously (like Nikola's neural oscillations), a single data race can cascade into catastrophic corruption. Atomic operations prevent this by ensuring indivisible read-modify-write sequences that no other thread can observe or interfere with mid-execution.
+<strong>Critical Design Principle</strong>: Just as complex<T> moved wave mechanics to the language level (preventing memory bloat), atomic<T> moves thread-safety infrastructure to the type system. The consciousness substrate (torus) can focus on <strong>parallel thought</strong> without implementing spinlocks, memory barriers, or cache coherency protocols manually.
+<pre><code>// Without atomics: DATA RACE (undefined behavior, mental state corruption)
+<p>
+int64:neuron_activation = 0;
+// Thread 1: neuron_activation++     // Thread 2: neuron_activation++
+// Result: Could be 1 or 2 or corrupted garbage!
+</p>
+<p>
+// With atomics: THREAD-SAFE (guaranteed correct)
+atomic<int64>:neuron_activation = atomic_new(0);
+// Thread 1: neuron_activation.fetch_add(1)
+// Thread 2: neuron_activation.fetch_add(1)
+// Result: ALWAYS exactly 2</code></pre>
+</p>
+<hr>
+<h2>The Problem: Data Races Are Catastrophic</h2>
+<h3>What is a Data Race?</h3>
+<p>
+A <strong>data race</strong> occurs when:
+1. Two or more threads access the same memory location
+2. At least one access is a write
+3. The accesses are not synchronized
+4. The relative timing of accesses is unpredictable
+</p>
+<strong>Result</strong>: Undefined behavior - corrupted data, crashes, security vulnerabilities, AI "hallucinations".
+<pre><code>// EXAMPLE: Counter increment without atomics
+<p>
+// Shared state (global or in struct)
+int64:counter = 0;
+</p>
+<p>
+// Thread 1 executes:              // Thread 2 executes:
+// 1. Load counter (0)              // 1. Load counter (0)
+// 2. Add 1 (0+1 = 1)               // 2. Add 1 (0+1 = 1)
+// 3. Store result (1)              // 3. Store result (1)
+</p>
+<p>
+// Final value: 1 (WRONG! Should be 2)
+// One increment was lost due to race condition</code></pre>
+</p>
+<h3>Why This is Catastrophic for Nikola</h3>
+<p>
+In a consciousness substrate with <strong>100,000 neurons</strong> each updating shared state:
+</p>
+<pre><code>// Simplified Nikola neural update (UNSAFE VERSION)
+<p>
+fix256:global_coherence = fix256(0);  // Shared across all threads
+</p>
+<p>
+// Each neuron thread updates coherence
+func:update_neuron = void(int64:neuron_id) {
+// Compute this neuron's contribution
+complex<fix256>:wave = compute_wave(neuron_id);
+fix256:contribution = wave.magnitude();
+</p>
+<p>
+// ❌ DATA RACE HERE!
+global_coherence = global_coherence + contribution;
+// Multiple threads reading/writing simultaneously
+// Lost updates → incorrect coherence metric
+// Consciousness substrate makes decisions on corrupted data
+// Potential "AI hallucinations" or divergent mental states
+};</code></pre>
+</p>
+<strong>Consequences</strong>:
+<ul><li>Lost updates: Many neuron contributions disappear (coherence underestimated)</li>
+<li>Torn reads: Thread reads half-old, half-new value (nonsense data)</li>
+<li>Ordering violations: Neurons see inconsistent states across threads</li>
+<li><strong>Mental state corruption</strong>: Consciousness substrate diverges from ground truth</li>
+<li><strong>Cascading failure</strong>: Corrupted coherence → bad decisions → more corruption</li>
+</ul>
+<h3>The Solution: Atomic Operations</h3>
+<pre><code>// SAFE VERSION with atomic<T>
+<p>
+atomic<fix256>:global_coherence = atomic_new(fix256(0));
+</p>
+<p>
+func:update_neuron_safe = void(int64:neuron_id) {
+complex<fix256>:wave = compute_wave(neuron_id);
+fix256:contribution = wave.magnitude();
+</p>
+<p>
+// ✅ THREAD-SAFE atomic update
+// Read-modify-write is indivisible (no other thread can interfere)
+fix256:old_coherence = global_coherence.load();
+fix256:new_coherence = old_coherence + contribution;
+</p>
+<p>
+// CAS (Compare-And-Swap) ensures no lost updates
+while (!global_coherence.compare_exchange(old_coherence, new_coherence)) {
+// Another thread modified coherence - retry
+old_coherence = global_coherence.load();
+new_coherence = old_coherence + contribution;
+}
+// Guaranteed: All contributions accounted for
+};</code></pre>
+</p>
+<hr>
+<h2>Type Definition & Memory Layout</h2>
+<h3>Generic Structure</h3>
+<pre><code>// Generic atomic wrapper for any type T
+<p>
+struct:atomic<T> =
+*T:value;         // The wrapped value
+mutex:lock;       // Optional lock for large types (transparent to user)
+bool:is_lock_free; // Whether hardware supports lock-free ops
+end
+</p>
+<p>
+// User never touches internals - atomic operations are built-in methods</code></pre>
+</p>
+<h3>Lock-Free vs Lock-Based</h3>
+<p>
+Aria automatically chooses the implementation based on type size:
+</p>
+<p>
+| Type Size | Implementation | Performance |
+|-----------|----------------|-------------|
+| ≤ 8 bytes (64 bits) | <strong>Lock-free</strong> (CPU atomic instructions) | ~1-30 cycles |
+| 9-16 bytes | <strong>Lock-free</strong> (DWCAS if available, else locked) | ~10-50 cycles or locked |
+| > 16 bytes | <strong>Lock-based</strong> (spinlock fallback) | ~100+ cycles |
+</p>
+<pre><code>// Lock-free (single CPU instruction)
+<p>
+atomic<int8>:tiny;              // 1 byte  → LOCK-FREE
+atomic<int32>:small;            // 4 bytes → LOCK-FREE
+atomic<int64>:medium;           // 8 bytes → LOCK-FREE
+atomic<Handle<T>>:handle;       // 8 bytes (index+gen) → LOCK-FREE
+</p>
+<p>
+// Lock-free on x86-64 with DWCAS (double-width CAS)
+atomic<int128>:larger;          // 16 bytes → LOCK-FREE (DWCAS)
+</p>
+<p>
+// Lock-based fallback (spinlock)
+atomic<fix256>:big;                    // 32 bytes → LOCKED
+atomic<complex<fix256>>:huge;          // 64 bytes → LOCKED
+atomic<int1024>:cryptographic_key;     // 128 bytes → LOCKED
+</p>
+<p>
+// Still thread-safe! Just not lock-free (performance cost)</code></pre>
+</p>
+<strong>Query Lock-Free Status</strong>:
+<pre><code>atomic<fix256>:energy = atomic_new(fix256(0));
+<p>
+if energy.is_lock_free() then
+dbug.concurrency("Energy counter is lock-free (hardware atomic)\n");
+else
+dbug.concurrency("Energy counter uses spinlock\n");
+// Still safe, just potential contention under high load
+end</code></pre>
+</p>
+<hr>
+<h2>Memory Ordering Models</h2>
+<h3>The Problem: CPUs Reorder Instructions</h3>
+<p>
+Modern CPUs and compilers <strong>reorder memory operations</strong> for performance. What you write is not always the order executed:
+</p>
+<pre><code>// What you write:
+<p>
+int64:data = 42;       // 1. Write data
+bool:ready = true;     // 2. Set flag
+</p>
+<p>
+// What CPU might execute:
+bool:ready = true;     // 2. Set flag FIRST (reordered!)
+int64:data = 42;       // 1. Write data SECOND
+</p>
+<p>
+// Another thread checking ready might see true but uninitialized data!</code></pre>
+</p>
+<strong>Memory ordering</strong> specifies constraints on reordering to ensure correctness across threads.
+<h3>The Five Ordering Levels (Weakest → Strongest)</h3>
+<p>
+#### 1. Relaxed - NO ORDERING GUARANTEES (Unsafe)
+</p>
+<strong>Guarantee</strong>: Only the atomic operation itself is indivisible. No ordering constraints on surrounding operations.
+<strong>Use When</strong>: Order truly doesn't matter (e.g., statistics counters, profiling).
+<pre><code>unsafe {
+<p>
+atomic<int64>:page_views = atomic_new(0);
+</p>
+<p>
+// Increment without caring about order relative to other ops
+page_views.fetch_add_relaxed(1);
+</p>
+<p>
+// Fine for metrics, NOT for synchronization!
+}</code></pre>
+</p>
+<strong>Danger</strong>: Cannot be used to establish happens-before relationships. If you synchronize with Relaxed, you <strong>will</strong> have data races.
+<p>
+#### 2. Acquire - One-Way Barrier (Loads Can't Move Up) (Unsafe)
+</p>
+<strong>Guarantee</strong>: All memory operations <strong>AFTER</strong> this load stay after it. Earlier operations may move later, but later operations cannot move earlier.
+<strong>Use When</strong>: Acquiring a lock or reading a synchronization flag.
+<pre><code>unsafe {
+<p>
+atomic<bool>:ready = atomic_new(false);
+int64:data;  // Non-atomic
+</p>
+<p>
+// Reader thread
+while (!ready.load_acquire()) { }  // Acquire fence
+// Data reads here CANNOT move before the acquire
+int64:value = data;  // Guaranteed to see writer's data
+}</code></pre>
+</p>
+<strong>Paired With</strong>: Release (writer uses Release, reader uses Acquire).
+<p>
+#### 3. Release - One-Way Barrier (Stores Can't Move Down) (Unsafe)
+</p>
+<strong>Guarantee</strong>: All memory operations <strong>BEFORE</strong> this store stay before it. Later operations may move earlier, but earlier operations cannot move later.
+<strong>Use When</strong>: Releasing a lock or setting a synchronization flag.
+<pre><code>unsafe {
+<p>
+atomic<bool>:ready = atomic_new(false);
+int64:data;  // Non-atomic
+</p>
+<p>
+// Writer thread
+data = 42;  // Non-atomic write
+ready.store_release(true);  // Release fence
+// Data write CANNOT move after the release
+// Reader using Acquire will see data = 42
+}</code></pre>
+</p>
+<strong>Paired With</strong>: Acquire (writer uses Release, reader uses Acquire).
+<p>
+#### 4. AcqRel - Two-Way Barrier (Acquire + Release) (Unsafe)
+</p>
+<strong>Guarantee</strong>: Combines Acquire and Release. Operations before stay before, operations after stay after.
+<strong>Use When</strong>: Read-modify-write operations (like fetch_add, compare_exchange) that both read and write.
+<pre><code>unsafe {
+<p>
+atomic<int64>:sequence = atomic_new(0);
+int64:buffer[1000];
+</p>
+<p>
+// Thread incrementing sequence and writing buffer
+int64:slot = sequence.fetch_add_acqrel(1);  // Acquire+Release
+buffer[slot] = compute_data();
+</p>
+<p>
+// Acquire: Ensures buffer read sees previous writes
+// Release: Ensures buffer write visible to next reader
+}</code></pre>
+</p>
+<p>
+#### 5. SeqCst - Sequential Consistency (STRONGEST, DEFAULT)
+</p>
+<strong>Guarantee</strong>: All SeqCst operations appear to execute in a single global total order across all threads. Matches programmer intuition.
+<strong>Use When</strong>: Default choice. Only use weaker orderings if profiling shows bottleneck AND you understand memory models.
+<pre><code>// NO unsafe needed - this is the SAFE default
+<p>
+atomic<int64>:x = atomic_new(0);
+atomic<int64>:y = atomic_new(0);
+</p>
+<p>
+// Thread 1
+x.store(1);  // SeqCst by default
+y.store(2);  // SeqCst by default
+</p>
+<p>
+// Thread 2
+if y.load() == 2 then  // SeqCst by default
+// x.load() is GUARANTEED to be 1
+// Sequential consistency: All threads agree on operation order
+end</code></pre>
+</p>
+<strong>Cost</strong>: Memory fences on most platforms (~10-30 cycles vs 1 cycle for Relaxed).
+<strong>Worth It</strong>: Prevents subtle bugs that only manifest under specific timing (Heisenbugs).
+<h3>Summary Table</h3>
+<p>
+| Ordering | Prevents Reordering | Use Case | Unsafe? |
+|----------|---------------------|----------|---------|
+| <strong>Relaxed</strong> | None (atomic op only) | Counters where order irrelevant | ✅ YES |
+| <strong>Acquire</strong> | Prevents loads/stores moving before | Lock acquisition, flag read | ✅ YES |
+| <strong>Release</strong> | Prevents loads/stores moving after | Lock release, flag write | ✅ YES |
+| <strong>AcqRel</strong> | Both Acquire + Release | Read-modify-write ops | ✅ YES |
+| <strong>SeqCst</strong> | Global total order (strongest) | DEFAULT - always safe | ❌ NO |
+</p>
+<strong>Aria's Design</strong>: Default to SeqCst (sequential consistency) for safety. Weaker orderings require <code>unsafe</code> block + comment explaining why it's correct.
+<hr>
+<h2>Atomic Operations Reference</h2>
+<h3>Load (Read)</h3>
+<pre><code>atomic<int64>:counter = atomic_new(42);
+<p>
+// SeqCst load (SAFE, default)
+int64:value = counter.load();
+</p>
+<p>
+// Acquire load (UNSAFE - weaker ordering)
+unsafe {
+// Prevents operations after this from moving before
+int64:value = counter.load_acquire();
+}
+</p>
+<p>
+// Relaxed load (UNSAFE - no ordering)
+unsafe {
+// Only guarantees read is atomic, no synchronization
+int64:value = counter.load_relaxed();
+}</code></pre>
+</p>
+<h3>Store (Write)</h3>
+<pre><code>atomic<int64>:counter = atomic_new(0);
+<p>
+// SeqCst store (SAFE, default)
+counter.store(100);
+</p>
+<p>
+// Release store (UNSAFE - weaker ordering)
+unsafe {
+// Prevents operations before this from moving after
+counter.store_release(100);
+}
+</p>
+<p>
+// Relaxed store (UNSAFE - no ordering)
+unsafe {
+// Only guarantees write is atomic, no synchronization
+counter.store_relaxed(100);
+}</code></pre>
+</p>
+<h3>Swap (Exchange)</h3>
+<pre><code>atomic<int64>:value = atomic_new(10);
+<p>
+// Atomic exchange - returns old value, writes new value
+int64:old = value.swap(20);  // SeqCst default
+// old == 10, value now 20
+</p>
+<p>
+// AcqRel swap (UNSAFE)
+unsafe {
+int64:old = value.swap_acqrel(30);
+}
+</p>
+<p>
+// Acquire swap (UNSAFE - acquire semantics on read)
+unsafe {
+int64:old = value.swap_acquire(40);
+}
+</p>
+<p>
+// Release swap (UNSAFE - release semantics on write)
+unsafe {
+int64:old = value.swap_release(50);
+}</code></pre>
+</p>
+<h3>Compare-Exchange (CAS - Compare-And-Swap)</h3>
+<p>
+The <strong>most powerful atomic operation</strong> - foundation of lock-free algorithms.
+</p>
+<pre><code>atomic<int64>:counter = atomic_new(5);
+<p>
+int64:expected = 5;   // What we think the value is
+int64:desired = 10;   // What we want to change it to
+</p>
+<p>
+// Atomically:
+// if (counter == expected) {
+//     counter = desired;
+//     return true;
+// } else {
+//     expected = counter;  // Update expected to current value
+//     return false;
+// }
+</p>
+<p>
+bool:success = counter.compare_exchange(expected, desired);
+</p>
+<p>
+if success then
+// Counter was 5, now it's 10
+dbug.concurrency("CAS succeeded\n");
+else
+// Counter was NOT 5 (expected now contains actual value)
+dbug.concurrency("CAS failed, actual value: {}\n", expected);
+end</code></pre>
+</p>
+<strong>CAS Loop Pattern</strong> (retry until success):
+<pre><code>atomic<fix256>:energy = atomic_new(fix256(100));
+<p>
+// Add 10 to energy, handling contention
+fix256:delta = fix256(10);
+</p>
+<p>
+fix256:old_energy = energy.load();
+fix256:new_energy = old_energy + delta;
+</p>
+<p>
+while !energy.compare_exchange(old_energy, new_energy) loop
+// Another thread modified energy between our load and CAS
+// old_energy now contains the current value - recalculate
+new_energy = old_energy + delta;
+// Retry CAS
+end
+</p>
+<p>
+// Success! energy increased by exactly delta</code></pre>
+</p>
+<strong>Weak CAS</strong> (may fail spuriously - use in loops):
+<pre><code>unsafe {
+<p>
+atomic<int64>:counter = atomic_new(0);
+</p>
+<p>
+int64:expected = 0;
+int64:desired = 1;
+</p>
+<p>
+// compare_exchange_weak may fail even if expected == counter
+// (CPU cache effects, speculative execution, etc.)
+// MUST be used in a loop
+while !counter.compare_exchange_weak_acqrel(expected, desired) loop
+expected = 0;  // Reset expected
+// Retry
+end
+}</code></pre>
+</p>
+<strong>When to Use Weak</strong>: On architectures like ARM where LL/SC (load-linked/store-conditional) may fail spuriously. Strong CAS internally loops on weak CAS, so if you're already looping, use weak directly (slight perf gain).
+<h3>Fetch-And-Modify (Atomic Read-Modify-Write)</h3>
+<pre><code>atomic<int64>:counter = atomic_new(10);
+<p>
+// All operations return OLD value before modification
+</p>
+<p>
+// Arithmetic
+int64:old = counter.fetch_add(5);   // old=10, counter now 15
+int64:old = counter.fetch_sub(3);   // old=15, counter now 12
+</p>
+<p>
+// Bitwise
+int64:old = counter.fetch_and(0xFF);  // Bitwise AND
+int64:old = counter.fetch_or(0x10);   // Bitwise OR
+int64:old = counter.fetch_xor(0x01);  // Bitwise XOR
+</p>
+<p>
+// Min/Max (useful for range tracking)
+int64:old = counter.fetch_min(5);   // Sets counter to min(counter, 5)
+int64:old = counter.fetch_max(20);  // Sets counter to max(counter, 20)
+</p>
+<p>
+// Unsafe variants with weaker ordering
+unsafe {
+int64:old = counter.fetch_add_acqrel(1);
+int64:old = counter.fetch_add_release(1);
+int64:old = counter.fetch_add_acquire(1);
+int64:old = counter.fetch_add_relaxed(1);  // Fastest, no ordering
+}</code></pre>
+</p>
+<strong>Why Return Old Value?</strong>: Enables building complex logic. If you need the new value, just add the delta yourself:
+<pre><code>int64:old = counter.fetch_add(5);
+<p>
+int64:new = old + 5;  // You now know both old and new</code></pre>
+</p>
+<hr>
+<h2>Memory Fences (Explicit Barriers)</h2>
+<p>
+Sometimes you need synchronization without an atomic operation:
+</p>
+<pre><code>// Acquire fence - prevents operations AFTER from moving BEFORE
+<p>
+atomic_fence_acquire();
+</p>
+<p>
+// Release fence - prevents operations BEFORE from moving AFTER
+atomic_fence_release();
+</p>
+<p>
+// AcqRel fence - both directions
+atomic_fence_acqrel();
+</p>
+<p>
+// SeqCst fence - full sequential consistency barrier
+atomic_fence_seqcst();</code></pre>
+</p>
+<strong>Use Case</strong>: Optimizing flag-based synchronization with Relaxed operations:
+<pre><code>unsafe {
+<p>
+int64:data = 0;  // Non-atomic
+atomic<bool>:ready = atomic_new(false);
+</p>
+<p>
+// Writer thread
+data = 42;                    // 1. Write data
+atomic_fence_release();       // 2. Ensure step 1 completes before step 3
+ready.store_relaxed(true);    // 3. Set flag (Relaxed is fast!)
+</p>
+<p>
+// Reader thread
+while !ready.load_relaxed() { }  // 1. Spin until flag set (Relaxed is fast!)
+atomic_fence_acquire();          // 2. Ensure step 1 completes before step 3
+int64:value = data;              // 3. Read data (guaranteed to see 42)
+}</code></pre>
+</p>
+<strong>Why This Pattern?</strong>: Avoids memory fences in the fast path (spin loop). Fences only execute once at synchronization points.
+<hr>
+<h2>Lock-Free Algorithms & Patterns</h2>
+<h3>1. Lock-Free Counter (Trivial)</h3>
+<pre><code>atomic<int64>:counter = atomic_new(0);
+<p>
+// Increment (thread-safe)
+func:increment = void() {
+counter.fetch_add(1);  // Single atomic op - lock-free!
+};
+</p>
+<p>
+// Decrement
+func:decrement = void() {
+counter.fetch_sub(1);
+};
+</p>
+<p>
+// Read
+func:get_count = int64() {
+pass(counter.load());
+};</code></pre>
+</p>
+<h3>2. Lock-Free Stack (Treiber Stack)</h3>
+<pre><code>struct:Node<T> =
+<p>
+*T:value;
+Handle<Node<*T>>:next;  // NOT atomic - node is immutable after creation
+end
+</p>
+<p>
+struct:LockFreeStack<T> =
+atomic<Handle<Node<*T>>>:head;  // Atomic handle to top of stack
+arena<Node<*T>>:node_arena;
+end
+</p>
+<p>
+func<T>:push = void(LockFreeStack<<em>T>@:stack, </em>T:value) {
+// Allocate new node
+Handle<Node<*T>>:new_node_handle = stack->node_arena.alloc({
+value: value,
+next: nil_handle<Node<*T>>(),  // Will be set in CAS loop
+});
+</p>
+<p>
+// CAS loop: Make new_node point to current head, then swap
+Handle<Node<*T>>:old_head = stack->head.load();
+</p>
+<p>
+till MAX_RETRIES loop
+// Update new node's next pointer to current head
+Node<*T>@:new_node = stack->node_arena.get_mut(new_node_handle) ?! fail("Invalid handle");
+new_node->next = old_head;
+</p>
+<p>
+// Try to swap head to new_node
+if stack->head.compare_exchange(old_head, new_node_handle) then
+pass();  // Success!
+end
+</p>
+<p>
+// CAS failed - another thread pushed. old_head now contains new head. Retry.
+end
+</p>
+<p>
+!!! ERR_LOCKFREE_STACK_CONTENTION("Push failed after MAX_RETRIES");
+};
+</p>
+<p>
+func<T>:pop = Result<<em>T>(LockFreeStack<</em>T>@:stack) {
+till MAX_RETRIES loop
+Handle<Node<*T>>:old_head = stack->head.load();
+</p>
+<p>
+if old_head == nil_handle<Node<*T>>() then
+fail("Stack empty");  // Stack is empty
+end
+</p>
+<p>
+// Read the node the head points to
+Node<*T>:head_node = stack->node_arena.get(old_head) ?! fail("Invalid head handle");
+Handle<Node<*T>>:new_head = head_node.next;
+</p>
+<p>
+// Try to swap head to next
+if stack->head.compare_exchange(old_head, new_head) then
+// Success! Return the value
+pass(head_node.value);
+end
+</p>
+<p>
+// CAS failed - another thread modified head. Retry.
+end
+</p>
+<p>
+fail("Pop failed after MAX_RETRIES");
+};</code></pre>
+</p>
+<strong>ABA Problem</strong>: If thread 1 reads head (A), gets preempted, thread 2 pops A, pops B, pushes A again, then thread 1's CAS succeeds even though A is a <em>different</em> A!
+<strong>Solution</strong>: <strong>Generational handles</strong> (<code>Handle<T></code>) solve this! Each allocation increments generation, so even if the same slot is reused, the handle won't match.
+<h3>3. Lock-Free Queue (Michael-Scott Queue)</h3>
+<pre><code>struct:QueueNode<T> =
+<p>
+*T:value;
+atomic<Handle<QueueNode<*T>>>:next;  // Atomic pointer to next node
+end
+</p>
+<p>
+struct:LockFreeQueue<T> =
+atomic<Handle<QueueNode<*T>>>:head;  // Dequeue from head
+atomic<Handle<QueueNode<*T>>>:tail;  // Enqueue at tail
+arena<QueueNode<*T>>:node_arena;
+end
+</p>
+<p>
+func<T>:queue_new = LockFreeQueue<*T>() {
+// Allocate dummy node (sentinel)
+Handle<QueueNode<*T>>:dummy_handle = node_arena.alloc({
+value: default<*T>(),
+next: atomic_new(nil_handle<QueueNode<*T>>()),
+});
+</p>
+<p>
+LockFreeQueue<*T>:queue = {
+head: atomic_new(dummy_handle),
+tail: atomic_new(dummy_handle),
+node_arena: arena_new<QueueNode<*T>>(10000),
+};
+</p>
+<p>
+pass(queue);
+};
+</p>
+<p>
+func<T>:enqueue = void(LockFreeQueue<<em>T>@:queue, </em>T:value) {
+// Allocate new node
+Handle<QueueNode<*T>>:new_node_handle = queue->node_arena.alloc({
+value: value,
+next: atomic_new(nil_handle<QueueNode<*T>>()),
+});
+</p>
+<p>
+till MAX_RETRIES loop
+Handle<QueueNode<*T>>:tail_handle = queue->tail.load();
+QueueNode<*T>@:tail_node = queue->node_arena.get_mut(tail_handle) ?! fail("Invalid tail");
+</p>
+<p>
+Handle<QueueNode<*T>>:next_handle = tail_node->next.load();
+</p>
+<p>
+// Is tail actually the last node?
+if next_handle == nil_handle<QueueNode<*T>>() then
+// Try to link new node at end
+if tail_node->next.compare_exchange(next_handle, new_node_handle) then
+// Success! Try to swing tail to new node (best effort)
+queue->tail.compare_exchange(tail_handle, new_node_handle);
+pass();
+end
+else
+// Tail is lagging - help advance it
+queue->tail.compare_exchange(tail_handle, next_handle);
+end
+end
+</p>
+<p>
+!!! ERR_LOCKFREE_QUEUE_CONTENTION("Enqueue failed");
+};
+</p>
+<p>
+func<T>:dequeue = Result<<em>T>(LockFreeQueue<</em>T>@:queue) {
+till MAX_RETRIES loop
+Handle<QueueNode<*T>>:head_handle = queue->head.load();
+Handle<QueueNode<*T>>:tail_handle = queue->tail.load();
+</p>
+<p>
+QueueNode<*T>:head_node = queue->node_arena.get(head_handle) ?! fail("Invalid head");
+Handle<QueueNode<*T>>:next_handle = head_node.next.load();
+</p>
+<p>
+// Is queue empty?
+if next_handle == nil_handle<QueueNode<*T>>() then
+fail("Queue empty");
+end
+</p>
+<p>
+// Is head lagging behind tail?
+if head_handle == tail_handle then
+// Queue not empty but tail is lagging - help advance it
+queue->tail.compare_exchange(tail_handle, next_handle);
+continue;  // Retry
+end
+</p>
+<p>
+// Read value from next node (head is dummy!)
+QueueNode<*T>:next_node = queue->node_arena.get(next_handle) ?! fail("Invalid next");
+*T:value = next_node.value;
+</p>
+<p>
+// Try to swing head to next
+if queue->head.compare_exchange(head_handle, next_handle) then
+// Success! old head is now unreachable (can be freed later)
+pass(value);
+end
+end
+</p>
+<p>
+fail("Dequeue failed");
+};</code></pre>
+</p>
+<strong>Key Insight</strong>: Head and tail might lag behind reality. Threads "help" each other by advancing pointers even if they didn't enqueue/dequeue.
+<h3>4. Atomic Reference Counting</h3>
+<pre><code>struct:ArcNode<T> =
+<p>
+*T:value;
+atomic<int64>:ref_count;
+end
+</p>
+<p>
+struct:Arc<T> =
+Handle<ArcNode<*T>>:node;
+arena<ArcNode<*T>>@:arena;  // Shared arena reference
+end
+</p>
+<p>
+func<T>:arc_new = Arc<<em>T>(arena<ArcNode<</em>T>>@:shared_arena, *T:value) {
+Handle<ArcNode<*T>>:node_handle = shared_arena->alloc({
+value: value,
+ref_count: atomic_new(1),  // Start with 1 reference
+});
+</p>
+<p>
+Arc<*T>:arc = {
+node: node_handle,
+arena: shared_arena,
+};
+</p>
+<p>
+pass(arc);
+};
+</p>
+<p>
+func<T>:arc_clone = Arc<<em>T>(Arc<</em>T>:arc) {
+// Increment ref count atomically
+ArcNode<*T>@:node = arc.arena->get_mut(arc.node) ?! fail("Invalid Arc");
+node->ref_count.fetch_add(1);
+</p>
+<p>
+// Return new Arc pointing to same node
+pass(arc);  // Shallow copy with incremented count
+};
+</p>
+<p>
+func<T>:arc_drop = void(Arc<*T>:arc) {
+ArcNode<*T>@:node = arc.arena->get_mut(arc.node) ?! fail("Invalid Arc");
+</p>
+<p>
+// Decrement ref count atomically
+int64:old_count = node->ref_count.fetch_sub(1);
+</p>
+<p>
+if old_count == 1 then
+// We were the last reference - free the node
+arc.arena->free(arc.node);
+end
+};</code></pre>
+</p>
+<hr>
+<h2>Nikola Consciousness Substrate: Atomic Patterns</h2>
+<h3>1. Global Coherence Metric (Atomic Accumulation)</h3>
+<pre><code>// Thousands of neuron threads updating single coherence value
+<p>
+atomic<fix256>:global_coherence = atomic_new(fix256(0));
+</p>
+<p>
+func:update_coherence_contribution = void(fix256:delta) {
+// CAS loop for atomic addition (fix256 too large for fetch_add)
+fix256:old_coherence = global_coherence.load();
+fix256:new_coherence = old_coherence + delta;
+</p>
+<p>
+till MAX_RETRIES loop
+if global_coherence.compare_exchange(old_coherence, new_coherence) then
+pass();  // Success!
+end
+</p>
+<p>
+// Retry with updated value
+new_coherence = old_coherence + delta;
+end
+</p>
+<p>
+!!! ERR_COHERENCE_UPDATE_FAILED("Too much contention on global coherence");
+};
+</p>
+<p>
+// Called from thousands of threads simultaneously
+// No lost updates - every neuron contribution counts</code></pre>
+</p>
+<h3>2. Phase-Locked Loop Synchronization</h3>
+<pre><code>// Multiple oscillator threads synchronize phase
+<p>
+atomic<fix256>:reference_phase = atomic_new(fix256(0));
+</p>
+<p>
+func:synchronize_phase = fix256(fix256:local_phase) {
+fix256:ref_phase = reference_phase.load();
+</p>
+<p>
+// Compute phase error
+fix256:phase_error = ref_phase - local_phase;
+</p>
+<p>
+// Adjust local phase toward reference (phase locking)
+fix256:correction = phase_error * fix256(0, 1);  // 10% correction rate
+</p>
+<p>
+pass(local_phase + correction);
+};
+</p>
+<p>
+func:update_reference_phase = void(fix256:master_phase) {
+reference_phase.store(master_phase);  // Atomic publish
+};</code></pre>
+</p>
+<h3>3. Neural Activation Barriers (Wait for All Threads)</h3>
+<pre><code>struct:Barrier =
+<p>
+atomic<int64>:arrived;   // How many threads have arrived
+atomic<int64>:epoch;     // Barrier generation (prevents reuse issues)
+int64:required;          // Total threads required
+end
+</p>
+<p>
+func:barrier_wait = void(Barrier@:barrier) {
+// Increment arrived count
+int64:current_epoch = barrier->epoch.load();
+int64:arrived_count = barrier->arrived.fetch_add(1);
+</p>
+<p>
+if arrived_count + 1 == barrier->required then
+// Last thread to arrive - reset barrier for next use
+barrier->arrived.store(0);
+barrier->epoch.fetch_add(1);  // Advance epoch
+else
+// Not last - spin until epoch changes
+while barrier->epoch.load() == current_epoch loop
+// Spin (could use futex or condition variable in real impl)
+end
+end
+};
+</p>
+<p>
+// Usage: Synchronize neural update timesteps
+Barrier:timestep_barrier = {
+arrived: atomic_new(0),
+epoch: atomic_new(0),
+required: NEURON_THREAD_COUNT,
+};
+</p>
+<p>
+func:neuron_thread = void(int64:thread_id) {
+till SIMULATION_STEPS loop
+// Compute neural state for this timestep
+update_neuron_state(thread_id);
+</p>
+<p>
+// Wait for all neurons to finish this timestep
+barrier_wait(timestep_barrier);
+</p>
+<p>
+// Continue to next timestep
+end
+};</code></pre>
+</p>
+<h3>4. Lock-Free Event Log (Monotonic Counter)</h3>
+<pre><code>// Append-only log of consciousness events
+<p>
+atomic<int64>:log_sequence = atomic_new(0);
+Event[MAX_LOG_SIZE]:event_log;
+</p>
+<p>
+func:log_event = void(Event:event) {
+// Claim next slot atomically
+int64:slot = log_sequence.fetch_add(1);
+</p>
+<p>
+if slot >= MAX_LOG_SIZE then
+stderr.write("Event log full!\n");
+!!! ERR_LOG_OVERFLOW;
+end
+</p>
+<p>
+// Write event (no contention - each thread has unique slot)
+event_log[slot] = event;
+};
+</p>
+<p>
+// Readers can scan up to log_sequence.load() without locks</code></pre>
+</p>
+<hr>
+<h2>Integration with Other Aria Types</h2>
+<h3>Atomic with Handle<T> (Solves ABA Problem)</h3>
+<pre><code>// DON'T use atomic<T@> (atomic pointer - ABA problem!)
+<p>
+// DO use atomic<Handle<T>> (generation prevents ABA)
+</p>
+<p>
+atomic<Handle<Node>>:head = atomic_new(nil_handle<Node>());
+</p>
+<p>
+// Thread 1 reads handle (index=5, gen=1)
+Handle<Node>:old_head = head.load();  // {index: 5, generation: 1}
+</p>
+<p>
+// Thread 2 frees node 5, allocates new node at slot 5
+// New node has generation=2
+</p>
+<p>
+// Thread 1 tries CAS with old_head
+head.compare_exchange(old_head, new_node);  // FAILS!
+// old_head.generation (1) != current.generation (2)
+// ABA problem prevented!</code></pre>
+</p>
+<h3>Atomic with Complex<T> (Quantum Wave Synchronization)</h3>
+<pre><code>// Locked fallback (complex<fix256> is 64 bytes)
+<p>
+atomic<complex<fix256>>:global_wavefunction = atomic_new({
+real: fix256(1),
+imag: fix256(0),
+});
+</p>
+<p>
+// Thread-safe update
+func:apply_phase_rotation = void(fix256:angle) {
+complex<fix256>:old_psi = global_wavefunction.load();
+</p>
+<p>
+// Compute rotation: psi' = psi <em> e^(i</em>angle)
+complex<fix256>:rotation = {
+real: cos(angle),
+imag: sin(angle),
+};
+</p>
+<p>
+complex<fix256>:new_psi = old_psi * rotation;
+</p>
+<p>
+// CAS loop
+while !global_wavefunction.compare_exchange(old_psi, new_psi) loop
+// Recalculate with updated psi
+new_psi = old_psi * rotation;
+end
+};</code></pre>
+</p>
+<h3>Atomic with ERR Propagation (tbb Types)</h3>
+<pre><code>// ERR sentinel remains atomic
+<p>
+atomic<tbb64>:error_status = atomic_new(0t64);
+</p>
+<p>
+// Thread 1 sets ERR
+error_status.store(ERR);
+</p>
+<p>
+// Thread 2 reads ERR
+tbb64:status = error_status.load();  // status == ERR
+</p>
+<p>
+// ERR propagates through arithmetic
+tbb64:result = status + 10t64;  // result == ERR (sticky!)
+</p>
+<p>
+// All threads see consistent ERR state</code></pre>
+</p>
+<h3>Atomic with Q9<T> (Quantum Decision State)</h3>
+<pre><code>// Atomic quantum superposition state (lock-based - Q9 is large)
+<p>
+atomic<Q9<fix256>>:decision_state = atomic_new(q9_uniform<fix256>());
+</p>
+<p>
+func:accumulate_evidence = void(int32:state_index, fix256:evidence) {
+Q9<fix256>:old_q9 = decision_state.load();
+Q9<fix256>:new_q9 = old_q9;
+</p>
+<p>
+// Add evidence to specific state
+new_q9.states[state_index] = new_q9.states[state_index] + evidence;
+</p>
+<p>
+// CAS loop
+while !decision_state.compare_exchange(old_q9, new_q9) loop
+new_q9 = old_q9;
+new_q9.states[state_index] = new_q9.states[state_index] + evidence;
+end
+};
+</p>
+<p>
+// Multiple threads accumulate evidence concurrently
+// When confidence high enough: crystallize decision
+if decision_state.load().confidence > fix256(0, 95) then
+int32:decision = decision_state.load().crystallize();
+dbug.decision("Converged to state: {}\n", decision);
+end</code></pre>
+</p>
+<hr>
+<h2>Performance Characteristics & Optimization</h2>
+<h3>Hardware Costs (Approximate, Architecture-Dependent)</h3>
+<p>
+| Operation | SeqCst | AcqRel | Acquire | Release | Relaxed |
+|-----------|--------|--------|---------|---------|---------|
+| Load (lock-free) | 10-30 cycles | - | 3-10 cycles | - | 1 cycle |
+| Store (lock-free) | 10-30 cycles | - | - | 3-10 cycles | 1 cycle |
+| Fetch-Add (lock-free) | 20-50 cycles | 10-20 cycles | - | - | 5-10 cycles |
+| CAS (lock-free) | 20-50 cycles | 10-20 cycles | - | - | 5-10 cycles |
+| Lock-based operation | 100-500+ cycles (depends on contention) | | | | |
+</p>
+<strong>Takeaway</strong>: SeqCst is ~10× slower than Relaxed, but prevents subtle bugs. Only optimize after profiling shows bottleneck.
+<h3>Reducing Contention</h3>
+<p>
+#### 1. Separate Counters (Reduce False Sharing)
+</p>
+<pre><code>// ❌ BAD: All threads fighting over same cache line
+<p>
+atomic<int64>:global_counter = atomic_new(0);
+</p>
+<p>
+till THREAD_COUNT loop
+spawn_thread(|| {
+till 1000000 loop
+global_counter.fetch_add(1);  // Cache line bouncing!
+end
+});
+end
+</p>
+<p>
+// ✅ GOOD: Per-thread counters, sum at end
+atomic<int64>[THREAD_COUNT]:per_thread_counters;
+</p>
+<p>
+till THREAD_COUNT loop
+int64:thread_id = $;
+spawn_thread(|| {
+till 1000000 loop
+per_thread_counters[thread_id].fetch_add(1);  // No contention!
+end
+});
+end
+</p>
+<p>
+// Sum at the end (one-time cost)
+int64:total = 0;
+till THREAD_COUNT loop
+total = total + per_thread_counters[$].load();
+end</code></pre>
+</p>
+<p>
+#### 2. Backoff Strategies
+</p>
+<pre><code>func:cas_with_exponential_backoff = bool(
+<p>
+atomic<int64>@:counter,
+int64@:expected,
+int64:desired
+) {
+int64:backoff_cycles = 1;
+</p>
+<p>
+till MAX_RETRIES loop
+if counter->compare_exchange(expected, desired) then
+pass(true);  // Success!
+end
+</p>
+<p>
+// Exponential backoff: wait before retrying
+till backoff_cycles loop end  // Spin wait
+backoff_cycles = backoff_cycles * 2;
+</p>
+<p>
+if backoff_cycles > 1024 then
+backoff_cycles = 1024;  // Cap backoff
+end
+end
+</p>
+<p>
+pass(false);  // Failed after MAX_RETRIES
+};</code></pre>
+</p>
+<p>
+#### 3. Batching (Amortize Atomic Costs)
+</p>
+<pre><code>// Instead of atomic increment per item:
+<p>
+till 1000000 loop
+global_counter.fetch_add(1);  // 1M atomic ops!
+end
+</p>
+<p>
+// Batch local increments, flush periodically:
+int64:local_count = 0;
+</p>
+<p>
+till 1000000 loop
+local_count = local_count + 1;
+</p>
+<p>
+if local_count % 1000 == 0 then
+// Flush every 1000 items
+global_counter.fetch_add(local_count);
+local_count = 0;
+end
+end
+</p>
+<p>
+// Final flush
+if local_count > 0 then
+global_counter.fetch_add(local_count);
+end
+</p>
+<p>
+// 1M increments → only 1000 atomic ops (1000× reduction!)</code></pre>
+</p>
+<hr>
+<h2>Best Practices</h2>
+<h3>✅ DO: Default to SeqCst (Sequential Consistency)</h3>
+<pre><code>// SAFE - no unsafe block needed
+<p>
+atomic<int64>:counter = atomic_new(0);
+counter.store(42);         // SeqCst by default
+int64:value = counter.load();  // SeqCst by default
+</p>
+<p>
+// Prevents all race conditions, matches programmer intuition</code></pre>
+</p>
+<h3>✅ DO: Use CAS Loops for Complex Updates</h3>
+<pre><code>atomic<fix256>:balance = atomic_new(fix256(100));
+<p>
+// Withdraw 10, but only if balance >= 10
+fix256:withdraw_amount = fix256(10);
+</p>
+<p>
+fix256:old_balance = balance.load();
+till MAX_RETRIES loop
+if old_balance < withdraw_amount then
+fail("Insufficient balance");
+end
+</p>
+<p>
+fix256:new_balance = old_balance - withdraw_amount;
+</p>
+<p>
+if balance.compare_exchange(old_balance, new_balance) then
+pass();  // Success!
+end
+</p>
+<p>
+// Retry with updated balance
+end
+</p>
+<p>
+!!! ERR_WITHDRAWAL_CONTENTION("Too many threads withdrawing");</code></pre>
+</p>
+<h3>✅ DO: Use atomic<Handle<T>> for Lock-Free Data Structures</h3>
+<pre><code>// Generational handles prevent ABA problem
+<p>
+atomic<Handle<Node>>:stack_top = atomic_new(nil_handle<Node>());
+</p>
+<p>
+// Safe even if same slot reused - generation mismatch causes CAS to fail</code></pre>
+</p>
+<h3>✅ DO: Document Why Weaker Orderings Are Safe</h3>
+<pre><code>unsafe {
+<p>
+// SAFETY: Flag is only used to signal thread shutdown
+// Order doesn't matter - thread exits on next check regardless
+shutdown_flag.store_relaxed(true);
+}</code></pre>
+</p>
+<h3>✅ DO: Profile Before Optimizing Memory Ordering</h3>
+<pre><code>// Start with SeqCst everywhere
+<p>
+// Profile with real workload
+// Only if atomics show up as >10% of runtime:
+//   - Consider weaker orderings (with proof of correctness)
+//   - Consider reducing contention (per-thread counters, batching)</code></pre>
+</p>
+<hr>
+<h2>Common Pitfalls & Antipatterns</h2>
+<h3>❌ DON'T: Assume Non-Atomic Vars Are Atomic</h3>
+<pre><code>// ❌ WRONG: Data race!
+<p>
+int64:counter = 0;  // NOT atomic
+</p>
+<p>
+// Thread 1
+counter = counter + 1;  // RACE CONDITION
+</p>
+<p>
+// Thread 2
+counter = counter + 1;  // RACE CONDITION
+</p>
+<p>
+// ✅ CORRECT:
+atomic<int64>:counter = atomic_new(0);
+</p>
+<p>
+// Thread 1
+counter.fetch_add(1);  // Thread-safe
+</p>
+<p>
+// Thread 2
+counter.fetch_add(1);  // Thread-safe</code></pre>
+</p>
+<h3>❌ DON'T: Mix Atomic and Non-Atomic Access</h3>
+<pre><code>atomic<int64>:value = atomic_new(0);
+<p>
+// ❌ WRONG: Accessing atomic as if non-atomic
+// value.value = 10;  // COMPILE ERROR (no direct access)
+</p>
+<p>
+// ✅ CORRECT: Always use atomic methods
+value.store(10);</code></pre>
+</p>
+<h3>❌ DON'T: Forget to Check CAS Return Value</h3>
+<pre><code>atomic<int64>:counter = atomic_new(5);
+<p>
+int64:expected = 5;
+int64:desired = 10;
+</p>
+<p>
+// ❌ WRONG: Ignoring return value
+counter.compare_exchange(expected, desired);
+// Did it succeed? You don't know!
+</p>
+<p>
+// ✅ CORRECT: Check success
+if counter.compare_exchange(expected, desired) then
+dbug.concurrency("CAS succeeded\n");
+else
+dbug.concurrency("CAS failed, value was {}\n", expected);
+end</code></pre>
+</p>
+<h3>❌ DON'T: Use Relaxed for Synchronization</h3>
+<pre><code>unsafe {
+<p>
+int64:data = 0;  // Non-atomic
+atomic<bool>:ready = atomic_new(false);
+</p>
+<p>
+// Writer thread
+data = 42;
+ready.store_relaxed(true);  // ❌ WRONG: No ordering guarantee!
+</p>
+<p>
+// Reader thread
+while !ready.load_relaxed() { }
+int64:value = data;  // ❌ MIGHT SEE 0 (data write can be reordered!)
+}
+</p>
+<p>
+// ✅ CORRECT: Use Release/Acquire or SeqCst
+int64:data = 0;
+atomic<bool>:ready = atomic_new(false);
+</p>
+<p>
+// Writer thread
+data = 42;
+ready.store(true);  // SeqCst ensures ordering
+</p>
+<p>
+// Reader thread
+while !ready.load() { }  // SeqCst ensures ordering
+int64:value = data;  // Guaranteed to see 42</code></pre>
+</p>
+<h3>❌ DON'T: Over-Use Atomics (False Sharing)</h3>
+<pre><code>// ❌ BAD: Atomics on same cache line (64 bytes)
+<p>
+struct:Counters =
+atomic<int64>:counter1;  // Offset 0
+atomic<int64>:counter2;  // Offset 8
+atomic<int64>:counter3;  // Offset 16
+// All in same cache line - false sharing!
+end
+</p>
+<p>
+// Thread 1 updates counter1 → cache line invalidated for Thread 2
+// Thread 2 updates counter2 → cache line invalidated for Thread 1
+// Constant cache thrashing!
+</p>
+<p>
+// ✅ GOOD: Pad to separate cache lines
+struct:Counters =
+atomic<int64>:counter1;
+uint8[56]:padding1;  // Pad to 64 bytes
+atomic<int64>:counter2;
+uint8[56]:padding2;
+atomic<int64>:counter3;
+uint8[56]:padding3;
+end
+</p>
+<p>
+// Each counter on separate cache line - no false sharing</code></pre>
+</p>
+<h3>❌ DON'T: Use atomic<T@> (Atomic Pointers Have ABA)</h3>
+<pre><code>// ❌ DANGEROUS: ABA problem with raw pointers
+<p>
+atomic<Node@>:stack_top;
+</p>
+<p>
+// Thread 1 reads top (points to A)
+Node@:old_top = stack_top.load();  // A
+</p>
+<p>
+// Thread 2 pops A, pops B, pushes A again
+// stack_top now points to A (same address!)
+</p>
+<p>
+// Thread 1 CAS succeeds even though A is different!
+stack_top.compare_exchange(old_top, new_node);  // BAD!
+</p>
+<p>
+// ✅ SAFE: Use atomic<Handle<T>> (generation prevents ABA)
+atomic<Handle<Node>>:stack_top;
+</p>
+<p>
+// Thread 1 reads top (index=5, gen=1)
+Handle<Node>:old_top = stack_top.load();
+</p>
+<p>
+// Thread 2 pops, node at slot 5 reallocated with gen=2
+</p>
+<p>
+// Thread 1 CAS fails! (gen mismatch)
+stack_top.compare_exchange(old_top, new_node);  // Correctly fails</code></pre>
+</p>
+<h3>❌ DON'T: Spin Forever Without Backoff</h3>
+<pre><code>// ❌ BAD: Burns CPU spinning
+<p>
+atomic<bool>:ready = atomic_new(false);
+</p>
+<p>
+while !ready.load() loop
+// Spin at full CPU speed - wastes power!
+end
+</p>
+<p>
+// ✅ BETTER: Exponential backoff or yield
+int64:backoff = 1;
+while !ready.load() loop
+till backoff loop end  // Spin-wait
+backoff = backoff * 2;
+if backoff > 1024 then backoff = 1024; end
+end
+</p>
+<p>
+// ✅ BEST: Use futex/condition variable (OS-level blocking)
+// (Implementation detail - Aria runtime handles this)</code></pre>
+</p>
+<hr>
+<h2>Implementation Notes</h2>
+<h3>C Runtime Functions</h3>
+<pre><code>// Core atomic operations (in aria_runtime.c)
+<p>
+// Load/Store
+int64_t aria_atomic_load_i64_seqcst(aria_atomic_i64* ptr);
+void aria_atomic_store_i64_seqcst(aria_atomic_i64* ptr, int64_t value);
+</p>
+<p>
+// Unsafe orderings
+int64_t aria_atomic_load_i64_acquire(aria_atomic_i64* ptr);
+void aria_atomic_store_i64_release(aria_atomic_i64* ptr, int64_t value);
+int64_t aria_atomic_load_i64_relaxed(aria_atomic_i64* ptr);
+void aria_atomic_store_i64_relaxed(aria_atomic_i64* ptr, int64_t value);
+</p>
+<p>
+// Swap
+int64_t aria_atomic_swap_i64_seqcst(aria_atomic_i64* ptr, int64_t value);
+</p>
+<p>
+// Compare-Exchange
+bool aria_atomic_cmpxchg_i64_seqcst(
+aria_atomic_i64* ptr,
+int64_t* expected,  // IN/OUT parameter
+int64_t desired
+);
+</p>
+<p>
+bool aria_atomic_cmpxchg_weak_i64_acqrel(
+aria_atomic_i64* ptr,
+int64_t* expected,
+int64_t desired
+);
+</p>
+<p>
+// Fetch-And-Modify
+int64_t aria_atomic_fetch_add_i64_seqcst(aria_atomic_i64* ptr, int64_t delta);
+int64_t aria_atomic_fetch_sub_i64_seqcst(aria_atomic_i64* ptr, int64_t delta);
+</p>
+<p>
+// Memory fences
+void aria_atomic_fence_acquire(void);
+void aria_atomic_fence_release(void);
+void aria_atomic_fence_acqrel(void);
+void aria_atomic_fence_seqcst(void);
+</p>
+<p>
+// Lock-based fallback for large types
+void aria_atomic_spinlock_acquire(aria_spinlock* lock);
+void aria_atomic_spinlock_release(aria_spinlock* lock);</code></pre>
+</p>
+<h3>LLVM IR Generation</h3>
+<pre><code>; Atomic load (SeqCst)
+<p>
+define i64 @aria.atomic.load.i64.seqcst(%atomic.i64* %ptr) {
+%value = load atomic i64, %atomic.i64* %ptr seq_cst, align 8
+ret i64 %value
+}
+</p>
+<p>
+; Atomic store (SeqCst)
+define void @aria.atomic.store.i64.seqcst(%atomic.i64* %ptr, i64 %value) {
+store atomic i64 %value, %atomic.i64* %ptr seq_cst, align 8
+ret void
+}
+</p>
+<p>
+; Atomic CAS (SeqCst)
+define i1 @aria.atomic.cmpxchg.i64.seqcst(
+%atomic.i64* %ptr,
+i64* %expected_ptr,
+i64 %desired
+) {
+%expected = load i64, i64* %expected_ptr
+%result = cmpxchg %atomic.i64* %ptr, i64 %expected, i64 %desired seq_cst seq_cst
+</p>
+<p>
+%success = extractvalue { i64, i1 } %result, 1
+%actual = extractvalue { i64, i1 } %result, 0
+</p>
+<p>
+; Update expected with actual value if CAS failed
+store i64 %actual, i64* %expected_ptr
+</p>
+<p>
+ret i1 %success
+}
+</p>
+<p>
+; Atomic fetch-add (SeqCst)
+define i64 @aria.atomic.fetch_add.i64.seqcst(%atomic.i64* %ptr, i64 %delta) {
+%old = atomicrmw add %atomic.i64* %ptr, i64 %delta seq_cst
+ret i64 %old
+}
+</p>
+<p>
+; Memory fence (SeqCst)
+define void @aria.atomic.fence.seqcst() {
+fence seq_cst
+ret void
+}</code></pre>
+</p>
+<h3>Hardware Support Detection</h3>
+<pre><code>// Detect lock-free support at compile/runtime
+<p>
+bool aria_is_lock_free(size_t size, size_t alignment) {
+// x86-64: Up to 8 bytes lock-free (LOCK prefix)
+// x86-64 with DWCAS: Up to 16 bytes lock-free (CMPXCHG16B)
+// ARM: Up to 8 bytes lock-free (LL/SC)
+// ARM with LSE: Up to 16 bytes lock-free
+</p>
+<p>
+#if defined(__x86_64__)
+if (size <= 8 && alignment >= size) return true;
+#if defined(__CMPXCHG16B__)
+if (size <= 16 && alignment >= 16) return true;
+#endif
+#elif defined(__aarch64__)
+if (size <= 8 && alignment >= size) return true;
+#if defined(__ARM_FEATURE_ATOMICS)
+if (size <= 16 && alignment >= 16) return true;
+#endif
+#endif
+</p>
+<p>
+return false;  // Fallback to locked implementation
+}</code></pre>
+</p>
+<hr>
+<h2>Related Types & Integration</h2>
+<ul><li><strong><a href="Complex.md">complex<T></a></strong> - atomic<complex<fix256>> for thread-safe wavefunctions</li>
+<li><strong><a href="Handle.md">Handle<T></a></strong> - atomic<Handle<T>> prevents ABA problem in lock-free algorithms</li>
+<li><strong><a href="fix256.md">fix256</a></strong> - atomic<fix256> for metabolic energy tracking (locked fallback)</li>
+<li><strong><a href="tbb_overview.md">tbb8-tbb64</a></strong> - atomic<tbb64> with ERR propagation</li>
+<li><strong><a href="Q3_Q9.md">Q9<T></a></strong> - atomic<Q9<T>> for concurrent evidence accumulation</li>
+<li><strong><a href="simd.md">simd<T,N></a></strong> - Data parallelism vs thread parallelism (complementary)</li>
+</ul>
+<hr>
+<h2>Summary</h2>
+<strong>atomic<T></strong> is Aria's <strong>thread-safety infrastructure</strong> for concurrent consciousness substrates:
+<p>
+✅ <strong>Generic</strong>: Works with any type T (lock-free for ≤64 bits, locked fallback for larger)
+✅ <strong>Safe by Default</strong>: Sequential consistency (SeqCst) prevents race conditions
+✅ <strong>Unsafe Optimizations</strong>: Weaker orderings (Acquire/Release/Relaxed) available in unsafe blocks
+✅ <strong>Lock-Free Algorithms</strong>: CAS, fetch-add, swap enable lock-free stacks, queues, counters
+✅ <strong>ABA Prevention</strong>: atomic<Handle<T>> uses generational handles to prevent reuse bugs
+✅ <strong>ERR Integration</strong>: atomic<tbb64> preserves ERR sentinel across threads
+✅ <strong>Performance</strong>: ~1 cycle (Relaxed) to ~30 cycles (SeqCst), lock-based fallback ~100+ cycles
+</p>
+<strong>Design Philosophy</strong>:
+<blockquote>"The torus processes thoughts. The infrastructure prevents races."</blockquote>
+<p>
+>
+<blockquote>Just as complex<T> moved wave mechanics to the language level (preventing memory bloat), atomic<T> moves thread-safety to the type system. The consciousness substrate can parallelize across thousands of threads without implementing cache coherency protocols or memory barriers manually. <strong>One data race could corrupt the entire mental state - atomic<T> prevents that catastrophe.</strong></blockquote>
+</p>
+<strong>Critical for</strong>: Nikola parallel neural processing, concurrent physics engines, lock-free data structures, multi-threaded signal processing
+<strong>Key Rules</strong>:
+<p>
+1. <strong>Default to SeqCst</strong> - Only use weaker orderings if profiling shows bottleneck
+2. <strong>Always check CAS return value</strong> - Retry on failure
+3. <strong>Use atomic<Handle<T>>, not atomic<T@></strong> - Prevents ABA problem
+4. <strong>Document unsafe orderings</strong> - Explain why weaker ordering is safe
+5. <strong>Avoid false sharing</strong> - Pad atomics to separate cache lines (64 bytes)
+6. <strong>Batch updates when possible</strong> - Amortize atomic operation costs
+</p>
+<hr>
+<strong>Remember</strong>: atomic<T> = <strong>thread safety</strong> + <strong>lock-free performance</strong> + <strong>catastrophic race prevention</strong>!
+    </main>
+</body>
+</html>

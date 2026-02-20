@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIL vs NULL vs void - Critical Distinctions - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>NIL vs NULL vs void - Critical Distinctions</h1>
+<strong>Category</strong>: Types → Special Values
+<strong>Keywords</strong>: <code>NIL</code>, <code>NULL</code>, <code>void</code>
+<strong>Purpose</strong>: Three distinct concepts with different meanings and usage contexts
+<hr>
+<h2>Quick Reference</h2>
+<p>
+| Concept | Type | Usage | Example |
+|---------|------|-------|---------|
+| <strong>NIL</strong> | Unit type (absence of value) | Aria native optional types | <code>obj?:user = NIL;</code> |
+| <strong>NULL</strong> | Pointer sentinel (address 0x0) | Pointer initialization/comparison | <code>int64@:ptr = NULL;</code> |
+| <strong>void</strong> | FFI marker (no return value) | C function signatures only | <code>extern { func:exit = void(int32:code); }</code> |
+</p>
+<hr>
+<h2>NIL - Aria's Native "Absence of Value"</h2>
+<h3>Definition</h3>
+<strong>NIL</strong> represents "no value present" in Aria's type system. It is <strong>not an error</strong>, just the absence of a value.
+<ul><li><strong>Type</strong>: Special unit type, distinct from all other types</li>
+<li><strong>Purpose</strong>: Represents optional/maybe types in Aria native code</li>
+<li><strong>Semantics</strong>: "No value" (not failure, just absence)</li>
+<li><strong>Different From</strong>: NULL (which is specifically for pointers)</li>
+</ul>
+<h3>Usage</h3>
+<pre><code>// Optional types (? suffix)
+<p>
+obj?:user = getUser() ?? NIL;  // May or may not have a user
+string?:name = user?.name ?? NIL;  // Safe navigation returns NIL if chain breaks
+int64?:value = NIL;  // Explicitly no value
+</p>
+<p>
+// Function returns with NIL
+func:findConfig = obj?(string:key) {
+obj?:config = database.lookup(key);
+if (config == NIL) {
+pass(NIL);  // No config found, but not an error
+}
+pass(config);
+};
+</p>
+<p>
+// NIL coalescing with ??
+string:name = getName() ?? "Unknown";  // Default if NIL</code></pre>
+</p>
+<h3>When to Use NIL</h3>
+<ul><li>✅ Optional return values (may or may not exist)</li>
+<li>✅ Safe navigation chains (<code>obj?.field</code>)</li>
+<li>✅ Representing "no value" without being an error</li>
+<li>✅ Null coalescing with <code>??</code> operator</li>
+<li>❌ <strong>NOT</strong> for pointer initialization (use NULL)</li>
+<li>❌ <strong>NOT</strong> for error states (use ERR or result type)</li>
+</ul>
+<hr>
+<h2>NULL - C-Style Null Pointer Constant</h2>
+<h3>Definition</h3>
+<strong>NULL</strong> represents an invalid or uninitialized pointer (address <code>0x0</code>).
+<ul><li><strong>Type</strong>: Pointer sentinel value</li>
+<li><strong>Purpose</strong>: Pointer comparisons and initialization</li>
+<li><strong>Semantics</strong>: "Invalid/no pointer address"</li>
+<li><strong>Compatible With</strong>: <code>@</code> pointer types in Aria</li>
+</ul>
+<h3>Usage</h3>
+<pre><code>// Pointer initialization
+<p>
+int64@:ptr = NULL;  // Null pointer
+string@:str = NULL;
+</p>
+<p>
+// Pointer comparison
+wild int64@:allocation = aria.alloc<int64>(100);
+if (allocation == NULL) {
+stderr.write("Allocation failed");
+fail(1);
+}
+</p>
+<p>
+// Dereferencing check
+func:processPointer = result(int64@:ptr) {
+if (ptr == NULL) {
+fail(1);  // Can't process null pointer
+}
+</p>
+<p>
+// Safe to use ptr here
+pass(ptr);
+};</code></pre>
+</p>
+<h3>When to Use NULL</h3>
+<ul><li>✅ Initializing pointers that don't point anywhere yet</li>
+<li>✅ Checking if pointer allocation succeeded</li>
+<li>✅ Comparing pointers for validity</li>
+<li>✅ Indicating "no pointer" as opposed to "valid address"</li>
+<li>❌ <strong>NOT</strong> for non-pointer types (use NIL)</li>
+<li>❌ <strong>NOT</strong> in optional types (use NIL)</li>
+</ul>
+<hr>
+<h2>void - C FFI "No Return Value" Type</h2>
+<h3>Definition</h3>
+<strong>void</strong> represents a C function that doesn't return a value. It is <strong>ONLY</strong> valid in <code>extern</code> blocks for FFI compatibility.
+<ul><li><strong>Type</strong>: Not actually a type in Aria - only an FFI signature marker</li>
+<li><strong>Purpose</strong>: Compatibility with C libraries that use void returns</li>
+<li><strong>Restriction</strong>: <strong>CANNOT</strong> be used in Aria native code</li>
+<li><strong>Scope</strong>: <code>extern</code> blocks only</li>
+</ul>
+<h3>Usage (Extern Blocks ONLY)</h3>
+<pre><code>// VALID: C FFI with void returns
+<p>
+extern "libc" {
+func:free = void(void*:ptr);         // C free() returns void
+func:exit = void(int32:code);        // C exit() returns void
+func:printf = int32(string:fmt, ...); // C printf() returns int (not void)
+}
+</p>
+<p>
+// Calling C void functions
+// (internally translated to result type with NIL)
+Result:r = exit(0);  // r.val is NIL, r.err is NULL
+</p>
+<p>
+// C-style pointers in extern blocks
+extern "mylib" {
+func:malloc = void<em>(uint64:size);    // C-style void</em>
+func:process = void(int32<em>:data);    // C-style int32</em>
+}</code></pre>
+</p>
+<h3>❌ INVALID Usage (Aria Native Code)</h3>
+<pre><code>// WRONG: void cannot be used in Aria function signatures
+<p>
+func:ariaFunc = void() {  // ❌ SYNTAX ERROR!
+// ...
+};
+</p>
+<p>
+// WRONG: void cannot be a variable type
+void:x = 10;  // ❌ SYNTAX ERROR!
+</p>
+<p>
+// CORRECT: Aria functions always return result type
+func:ariaFunc = result() {
+pass(NIL);  // Aria way: return NIL for "no value"
+};</code></pre>
+</p>
+<h3>When to Use void</h3>
+<ul><li>✅ <strong>ONLY</strong> in <code>extern</code> block function signatures</li>
+<li>✅ Matching C library function prototypes exactly</li>
+<li>✅ C void* for generic pointers in FFI</li>
+<li>❌ <strong>NEVER</strong> in Aria native function signatures</li>
+<li>❌ <strong>NEVER</strong> as a variable type</li>
+<li>❌ <strong>NEVER</strong> in regular Aria code</li>
+</ul>
+<hr>
+<h2>Interplay and Rules</h2>
+<h3>1. Aria Native Code</h3>
+<pre><code>// Use NIL for "absence of value" semantics
+<p>
+func:getOptional = obj?() {
+bool:found = checkCondition();
+if (!found) {
+pass(NIL);  // No value, not an error
+}
+pass(someValue);
+};
+</p>
+<p>
+// Use NULL for pointer comparisons/initialization
+wild int64@:ptr = aria.alloc<int64>(1024);
+if (ptr == NULL) {
+fail(1);  // Allocation failed
+}
+defer aria.free(ptr);
+</p>
+<p>
+// NEVER use void (syntax error)
+// func:invalid = void() { };  // ❌ ERROR!</code></pre>
+</p>
+<h3>2. C FFI (extern blocks)</h3>
+<pre><code>extern "libc" {
+<p>
+// Use void for C functions with no return
+func:exit = void(int32:code);
+</p>
+<p>
+// Use C-style pointers (void<em>, int</em>)
+func:malloc = void*(uint64:size);
+func:free = void(void*:ptr);
+}
+</p>
+<p>
+// NULL works for C pointer parameters
+extern "mylib" {
+func:process = int32(void*:data);
+}
+</p>
+<p>
+void*:data = NULL;  // Valid in FFI context
+int32:status = process(data);</code></pre>
+</p>
+<h3>3. Type System Summary</h3>
+<p>
+| Concept | Has Type? | Usable in Variables? | Usable in Returns? |
+|---------|-----------|---------------------|-------------------|
+| <strong>NIL</strong> | Yes (unit type) | ✅ Yes (<code>obj?:x = NIL;</code>) | ✅ Yes (<code>pass(NIL);</code>) |
+| <strong>NULL</strong> | Yes (pointer sentinel) | ✅ Yes (<code>int64@:p = NULL;</code>) | ✅ Yes (as pointer value) |
+| <strong>void</strong> | ❌ No (FFI marker only) | ❌ No (syntax error) | ❌ No (extern only) |
+</p>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Pattern 1: Optional Return with NIL</h3>
+<pre><code>func:findUser = obj?(string:username) {
+<p>
+obj?:user = database.lookup(username);
+</p>
+<p>
+if (user == NIL) {
+pass(NIL);  // Not found, return NIL
+}
+</p>
+<p>
+pass(user);
+};
+</p>
+<p>
+// Usage with null coalescing
+obj?:user = findUser("alice") ?? createDefaultUser();</code></pre>
+</p>
+<h3>Pattern 2: Pointer Validation with NULL</h3>
+<pre><code>func:allocateBuffer = Result<int64@>(uint64:size) {
+<p>
+wild int64@:buffer = aria.alloc<int64>(size);
+</p>
+<p>
+if (buffer == NULL) {
+fail(1);  // Allocation failed
+}
+</p>
+<p>
+pass(buffer);
+};
+</p>
+<p>
+// Usage
+int64@:buf = allocateBuffer(1024) ? NULL;
+if (buf != NULL) {
+defer aria.free(buf);
+// Use buffer...
+}</code></pre>
+</p>
+<h3>Pattern 3: C FFI with void Returns</h3>
+<pre><code>extern "libc" {
+<p>
+func:free = void(void*:ptr);
+}
+</p>
+<p>
+// Aria wraps C void return as result with NIL
+wild int64@:ptr = aria.alloc<int64>(100);
+if (ptr != NULL) {
+// Use ptr...
+Result:r = free(ptr);  // r.val is NIL
+}</code></pre>
+</p>
+<hr>
+<h2>Examples Comparing All Three</h2>
+<h3>Aria Native - Using NIL for Optional Values</h3>
+<pre><code>func:findUser = obj?(string:username) {
+<p>
+obj?:user = database.lookup(username);
+</p>
+<p>
+if (user == NIL) {
+pass(NIL);  // No user found, return NIL
+}
+</p>
+<p>
+pass(user);
+};
+</p>
+<p>
+obj?:res = findUser("bob") ?? NIL;
+</p>
+<p>
+if (res == NIL) {
+print("User not found");
+} else {
+print(<code>Found user: &{res.name}</code>);
+}</code></pre>
+</p>
+<h3>Aria Native - Using NULL for Pointers</h3>
+<pre><code>wild int64@:ptr = aria.alloc<int64>(100);
+<p>
+if (ptr == NULL) {
+stderr.write("Allocation failed");
+fail(-1);
+}
+</p>
+<p>
+defer aria.free(ptr);
+</p>
+<p>
+// Use ptr...
+*ptr = 42;</code></pre>
+</p>
+<h3>C FFI - Using void for C Function Returns</h3>
+<pre><code>extern "libc" {
+<p>
+func:printf = int32(string:format, ...);  // C returns int
+func:exit = void(int32:code);             // C void return
+func:free = void(void<em>:ptr);              // C void return, void</em> param
+}
+</p>
+<p>
+// When calling C void functions, Aria internally returns result with NIL
+Result:r = exit(0);  // r.val is NIL, r.err is NULL (if no error)</code></pre>
+</p>
+<hr>
+<h2>Decision Tree: Which One to Use?</h2>
+<pre><code>Are you writing Aria native code or extern block?
+<p>
+│
+├─ Aria Native Code
+│  │
+│  ├─ Working with pointers (@)?
+│  │  └─> Use NULL (int64@:ptr = NULL;)
+│  │
+│  └─ Working with optional values (?)?
+│     └─> Use NIL (obj?:x = NIL;)
+│
+└─ Extern Block (C FFI)
+│
+├─ C function returns nothing?
+│  └─> Use void (func:exit = void(int32:code);)
+│
+└─ C function uses generic pointers?
+└─> Use void<em> (func:malloc = void</em>(uint64:size);)</code></pre>
+</p>
+<hr>
+<h2>Gotchas and Common Mistakes</h2>
+<h3>❌ Mistake 1: Using void in Aria Code</h3>
+<pre><code>// WRONG!
+<p>
+func:myFunc = void() {  // ❌ SYNTAX ERROR
+print("Hello");
+}
+</p>
+<p>
+// CORRECT:
+func:myFunc = result() {
+print("Hello");
+pass(NIL);  // Return NIL for "no value"
+}</code></pre>
+</p>
+<h3>❌ Mistake 2: Using NULL for Non-Pointers</h3>
+<pre><code>// WRONG!
+<p>
+int64:value = NULL;  // ❌ NULL is for pointers only
+</p>
+<p>
+// CORRECT:
+obj?:value = NIL;  // Use NIL for optional non-pointer types</code></pre>
+</p>
+<h3>❌ Mistake 3: Using NIL for Pointer Checks</h3>
+<pre><code>// WRONG!
+<p>
+int64@:ptr = aria.alloc<int64>(100);
+if (ptr == NIL) {  // ❌ Should use NULL
+fail(1);
+}
+</p>
+<p>
+// CORRECT:
+if (ptr == NULL) {  // ✅ NULL for pointers
+fail(1);
+}</code></pre>
+</p>
+<h3>✅ Correct Pattern: Each in Its Place</h3>
+<pre><code>// Optional value: NIL
+<p>
+obj?:config = loadConfig() ?? NIL;
+</p>
+<p>
+// Pointer check: NULL
+wild int64@:buffer = aria.alloc<int64>(1024);
+if (buffer == NULL) { fail(1); }
+</p>
+<p>
+// C FFI: void
+extern "libc" {
+func:exit = void(int32:code);
+}</code></pre>
+</p>
+<hr>
+<h2>Related Topics</h2>
+<ul><li><a href="result.md">result Type</a> - Aria's primary error-handling mechanism</li>
+<li><a href="../types/optional.md">Optional Types</a> - Using <code>?</code> suffix for maybe types</li>
+<li><a href="../types/pointers.md">Pointers</a> - <code>@</code> operator and pointer semantics</li>
+<li><a href="../operators/safe_navigation.md">Safe Navigation</a> - <code>?.</code> operator</li>
+<li><a href="../operators/null_coalesce.md">Null Coalescing</a> - <code>??</code> operator</li>
+<li><a href="../modules/extern.md">FFI System</a> - C interop and extern blocks</li>
+</ul>
+<hr>
+<strong>Status</strong>: Comprehensive
+<strong>Specification</strong>: aria_specs.txt Lines 47-142
+<strong>Critical Importance</strong>: Mixing these up causes compile errors or semantic bugs
+    </main>
+</body>
+</html>

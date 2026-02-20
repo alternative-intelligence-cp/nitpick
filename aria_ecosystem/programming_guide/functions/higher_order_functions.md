@@ -71,7 +71,8 @@ result2: i32 = times_10(5);  // 50
 ```aria
 fn map<T, U>(array: []T, f: fn(T) -> U) -> []U {
     Result: []U = [];
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         result.push(f(item));
     }
     return result;
@@ -87,7 +88,8 @@ doubled: []i32 = map(numbers, |x| x * 2);
 ```aria
 fn filter<T>(array: []T, predicate: fn(T) -> bool) -> []T {
     Result: []T = [];
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         when predicate(item) then
             result.push(item);
         end
@@ -105,7 +107,8 @@ evens: []i32 = filter(numbers, |x| x % 2 == 0);
 ```aria
 fn reduce<T, U>(array: []T, initial: U, f: fn(U, T) -> U) -> U {
     accumulator: U = initial;
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         accumulator = f(accumulator, item);
     }
     return accumulator;
@@ -143,7 +146,8 @@ Result: i32 = numbers
 
 ```aria
 fn for_each<T>(array: []T, action: fn(T)) {
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         action(item);
     }
 }
@@ -158,7 +162,8 @@ for_each(names, |name| {
 
 ```aria
 fn any<T>(array: []T, predicate: fn(T) -> bool) -> bool {
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         when predicate(item) then
             return true;
         end
@@ -174,7 +179,8 @@ has_even: bool = any(numbers, |x| x % 2 == 0);  // true
 
 ```aria
 fn all<T>(array: []T, predicate: fn(T) -> bool) -> bool {
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         when !predicate(item) then
             return false;
         end
@@ -190,7 +196,8 @@ all_even: bool = all(numbers, |x| x % 2 == 0);  // true
 
 ```aria
 fn find<T>(array: []T, predicate: fn(T) -> bool) -> T? {
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         when predicate(item) then
             return item;
         end
@@ -336,7 +343,8 @@ data: string? = retry(|| fetch_from_api(), 3);
 ```aria
 fn pipeline<T>(value: T, steps: []fn(T) -> T) -> T {
     Result: T = value;
-    for step in steps {
+    till(steps.length - 1, 1) {
+        step: fn(T) -> T = steps[$];
         result = step(result);
     }
     return result;
@@ -356,7 +364,8 @@ processed: string = pipeline(text, [
 
 ```aria
 fn validate<T>(value: T, validators: []fn(T) -> bool) -> bool {
-    for validator in validators {
+    till(validators.length - 1, 1) {
+        validator: fn(T) -> bool = validators[$];
         when !validator(value) then
             return false;
         end
@@ -389,7 +398,8 @@ impl<T> EventDispatcher<T> {
     }
     
     fn emit(event: T) {
-        for handler in self.handlers {
+        till(self.handlers.length - 1, 1) {
+            handler: fn(T) = self.handlers[$];
             handler(event);
         }
     }

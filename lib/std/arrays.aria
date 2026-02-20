@@ -6,10 +6,11 @@ extern "libc" {
 }
 
 /// Fill array with a value (using loop)
-func:fill_i32 = void(int32->:arr, int64:len, int32:val) {
+func:fill_i32 = NIL(int32->:arr, int64:len, int32:val) {
     till (len, 1i64) {
         arr[$] = val;
     }
+    pass(NIL);
 };
 
 /// Find minimum value in array
@@ -53,7 +54,7 @@ func:sum_i32 = int32(int32->:arr, int64:len) {
 };
 
 /// Reverse array in place
-func:reverse_i32 = void(int32->:arr, int64:len) {
+func:reverse_i32 = NIL(int32->:arr, int64:len) {
     int64:half = (len / 2);
     till (half, 1i64) {
         int64:j = ((len - $) - 1);
@@ -61,6 +62,7 @@ func:reverse_i32 = void(int32->:arr, int64:len) {
         arr[$] = arr[j];
         arr[j] = temp;
     }
+    pass(NIL);
 };
 
 /// Find first occurrence of value (returns -1 if not found)
@@ -77,13 +79,14 @@ func:find_i32 = int64(int32->:arr, int64:len, int32:val) {
 };
 
 /// Copy array from source to destination
-func:copy_i32 = void(int32->:src, int32->:dst, int32:length) {
+func:copy_i32 = NIL(int32->:src, int32->:dst, int32:length) {
     int32:i = 0i32;
     till (length, 1i64) {
         int32:val = src[i];
         dst[i] = val;
         i = (i + 1);
     }
+    pass(NIL);
 };
 
 /// Check if two arrays are equal

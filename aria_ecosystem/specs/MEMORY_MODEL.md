@@ -90,9 +90,9 @@ func:process_batch = void(items: array<string>) {
     // Create arena for temporary allocations
     arena:temp = arena.create(1024 * 1024);  // 1 MB
     
-    for (item in items) {
+    till(items.length - 1, 1) {
         // Allocate temporary strings in arena
-        string:processed = arena.alloc_string(item + " processed");
+        string:processed = arena.alloc_string(items[$] + " processed");
         io.stdout.write(processed);
     }
     
@@ -180,9 +180,9 @@ func:build_tree = wild tree_node*(values: array<i32>) {
     pool:node_pool = pool.create(sizeof(tree_node), 1000);
     
     wild tree_node*:root = null;
-    for (val in values) {
+    till(values.length - 1, 1) {
         wild tree_node*:node = pool.alloc(node_pool);
-        node->value = val;
+        node->value = values[$];
         node->left = null;
         node->right = null;
         

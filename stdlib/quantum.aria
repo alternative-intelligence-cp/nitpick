@@ -1,0 +1,704 @@
+/**
+ * Aria Standard Library - Quantum Types
+ * 
+ * Quantum types enable superposition-based reasoning: tracking multiple
+ * hypotheses simultaneously with confidence levels, then crystallizing to
+ * a definite value when evidence accumulates sufficiently.
+ * 
+ * Three variants:
+ * - Q3<T>:  3-state confidence (trit: -1, 0, +1)
+ * - Q9<T>:  9-state confidence (nit: -4 to +4)
+ * - Q21<T>: 21-state confidence (tbb8: -10 to +10 with saturation barriers)
+ * 
+ * Core concept: "You don't know the answer, so you operate on BOTH values
+ * as if each is true, accumulating evidence, and only 'crystallize' from
+ * Q<T> to T when confidence reaches threshold."
+ * 
+ * References:
+ * - Design: /home/randy/Workspace/TMP/ideas/aria-lang/quantum_type.idea
+ * - POC: /home/randy/Workspace/REPOS/educational/quantum-types-poc
+ */
+
+// =============================================================================
+// Q3<T> - Ternary Quantum Type (3 confidence states)
+// =============================================================================
+
+/**
+ * Q3<T>: Quantum type with ternary confidence (-1, 0, +1)
+ * 
+ * Tracks two hypotheses (A and B) with simple confidence:
+ * - c = -1: Lean toward hypothesis A
+ * - c =  0: Unknown / Equal confidence
+ * - c = +1: Lean toward hypothesis B
+ * 
+ * Memory efficient: Uses trit (fits in i8) for confidence.
+ * Best for: Simple binary decisions that don't need fine-grained confidence.
+ * 
+ * Example:
+ *   Q3<int32>:temp = q3_create(20, 25, 0);  // Could be either
+ *   temp = q3_add(temp, 5);                  // Both hypotheses evolve
+ *   temp.c = 1;                               // Evidence favors B
+ *   int32 | unknown:final = q3_crystallize(temp);  // Returns 30 (25+5)
+ */
+struct<T>:Q3 = {
+    T:a;        // Hypothesis A
+    T:b;        // Hypothesis B
+    trit:c;     // Confidence: -1 (lean A), 0 (unknown), +1 (lean B)
+};
+
+/**
+ * Create Q3<T> with initial hypotheses and confidence.
+ * 
+ * Args:
+ *   a: Hypothesis A value
+ *   b: Hypothesis B value
+ *   c: Initial confidence (-1, 0, or +1)
+ * 
+ * Returns:
+ *   Q3<T> instance
+ */
+pub func<T>:q3_create = Q3<T>(T:a, T:b, trit:c) {
+    Q3<T>:q;
+    q.a = a;
+    q.b = b;
+    q.c = c;
+    pass(q);
+};
+
+/**
+ * Create Q3<T> in UNKNOWN state (c = 0).
+ * 
+ * Convenience constructor for starting with zero confidence.
+ */
+pub func<T>:q3_unknown = Q3<T>(T:a, T:b) {
+    pass(q3_create(a, b, 0));
+};
+
+/**
+ * Create Q3<T> leaning toward hypothesis A (c = -1).
+ */
+pub func<T>:q3_lean_a = Q3<T>(T:a, T:b) {
+    pass(q3_create(a, b, -1));
+};
+
+/**
+ * Create Q3<T> leaning toward hypothesis B (c = +1).
+ */
+pub func<T>:q3_lean_b = Q3<T>(T:a, T:b) {
+    pass(q3_create(a, b, 1));
+};
+
+// =============================================================================
+// Q3<T> Arithmetic Operations (preserve superposition)
+// =============================================================================
+
+/**
+ * Add value to both hypotheses in Q3<T>.
+ * 
+ * Confidence remains unchanged - we're just evolving both possibilities.
+ * 
+ * Example:
+ *   Q3<int32>:q = q3_unknown(10, 20);
+ *   q = q3_add(q, 5);  // Now {a:15, b:25, c:0}
+ */
+pub func<T>:q3_add = Q3<T>(Q3<T>:q, T:value) {
+    q.a = q.a + value;
+    q.b = q.b + value;
+    pass(q);
+};
+
+/**
+ * Subtract value from both hypotheses in Q3<T>.
+ */
+pub func<T>:q3_sub = Q3<T>(Q3<T>:q, T:value) {
+    q.a = q.a - value;
+    q.b = q.b - value;
+    pass(q);
+};
+
+/**
+ * Multiply both hypotheses in Q3<T> by value.
+ */
+pub func<T>:q3_mul = Q3<T>(Q3<T>:q, T:value) {
+    q.a = q.a * value;
+    q.b = q.b * value;
+    pass(q);
+};
+
+/**
+ * Divide both hypotheses in Q3<T> by value.
+ * 
+ * Note: For integer types, performs integer division.
+ * Consider using floating point types if precision matters.
+ */
+pub func<T>:q3_div = Q3<T>(Q3<T>:q, T:value) {
+    q.a = q.a / value;
+    q.b = q.b / value;
+    pass(q);
+};
+
+// =============================================================================
+// Q3<T> Crystallization (collapse superposition to single value)
+// =============================================================================
+
+/**
+ * Crystallize Q3<T> to definite value if confidence sufficient.
+ * 
+ * Q3 threshold: abs(c) >= 1 (any non-zero confidence)
+ * 
+ * Returns:
+ *   - Hypothesis A if c = -1
+ *   - Hypothesis B if c = +1
+ *   - unknown if c = 0 (insufficient confidence)
+ * 
+ * Example:
+ *   Q3<int32>:q = {a:100, b:200, c:1};
+ *   T:val = q3_crystallize(q);  // Returns 200 (or unknown if c=0)
+ */
+pub func<T>:q3_crystallize = T(Q3<T>:q) {
+    if (q.c < 0) {
+        pass(q.a);
+    }
+    if (q.c > 0) {
+        pass(q.b);
+    }
+    // c == 0: unknown
+    pass(unknown);
+};
+
+/**
+ * Check if Q3<T> can crystallize (has non-zero confidence).
+ */
+pub func<T>:q3_can_crystallize = bool(Q3<T>:q) {
+    pass(q.c != 0);
+};
+
+/**
+ * Get the most likely value without crystallizing (peek).
+ * 
+ * Returns hypothesis with highest confidence, or A if tied (c=0).
+ * Non-destructive: Q3<T> remains in superposition.
+ */
+pub func<T>:q3_peek = T(Q3<T>:q) {
+    if (q.c <= 0) {
+        pass(q.a);
+    }
+    pass(q.b);
+};
+
+// =============================================================================
+// Q3<T> Confidence Manipulation
+// =============================================================================
+
+/**
+ * Adjust confidence toward hypothesis A.
+ * 
+ * Example:
+ *   Q3<int32>:q = q3_unknown(10, 20);
+ *   q = q3_shift_to_a(q);  // Now c = -1 (lean A)
+ */
+pub func<T>:q3_shift_to_a = Q3<T>(Q3<T>:q) {
+    if (q.c > -1) {
+        q.c = q.c - 1;
+    }
+    pass(q);
+};
+
+/**
+ * Adjust confidence toward hypothesis B.
+ */
+pub func<T>:q3_shift_to_b = Q3<T>(Q3<T>:q) {
+    if (q.c < 1) {
+        q.c = q.c + 1;
+    }
+    pass(q);
+};
+
+/**
+ * Reset confidence to unknown (c = 0).
+ */
+pub func<T>:q3_reset_confidence = Q3<T>(Q3<T>:q) {
+    q.c = 0;
+    pass(q);
+};
+
+/**
+ * Flip confidence (A becomes B, B becomes A, unknown stays unknown).
+ */
+pub func<T>:q3_flip_confidence = Q3<T>(Q3<T>:q) {
+    q.c = 0 - q.c;
+    pass(q);
+};
+
+// =============================================================================
+// Q3<T> Conditional Operations (Q-Functions)
+// =============================================================================
+
+/**
+ * Apply operation to Q3<T> if EITHER hypothesis meets condition.
+ * 
+ * Example:
+ *   Q3<int32>:q = q3_unknown(5, 15);
+ *   func<int32>:is_positive = bool(int32:v) { pass(v > 0); };
+ *   func<Q3<int32>>:increase_conf = Q3<int32>(Q3<int32>:x) { 
+ *       pass(q3_shift_to_b(x)); 
+ *   };
+ *   q = q3_qor(q, is_positive, increase_conf);
+ */
+// TODO: Implement when higher-order functions ready
+// pub func<T>:q3_qor = Q3<T>(Q3<T>:q, func<T>:predicate, func<Q3<T>>:action) {
+//     if (predicate(q.a) || predicate(q.b)) {
+//         pass(action(q));
+//     }
+//     pass(q);
+// }
+
+/**
+ * Apply operation to Q3<T> if BOTH hypotheses meet condition.
+ */
+// TODO: Implement when higher-order functions ready
+// pub func<T>:q3_qand = Q3<T>(Q3<T>:q, func<T>:predicate, func<Q3<T>>:action) {
+//     if (predicate(q.a) && predicate(q.b)) {
+//         pass(action(q));
+//     }
+//     pass(q);
+// }
+
+/**
+ * Apply operation to Q3<T> if EXACTLY ONE hypothesis meets condition.
+ */
+// TODO: Implement when higher-order functions ready
+// pub func<T>:q3_qxor = Q3<T>(Q3<T>:q, func<T>:predicate, func<Q3<T>>:action) {
+//     bool:a_match = predicate(q.a);
+//     bool:b_match = predicate(q.b);
+//     if (a_match != b_match) {
+//         pass(action(q));
+//     }
+//     pass(q);
+// }
+
+// =============================================================================
+// Q9<T> - Nonary Quantum Type (9 confidence states)
+// =============================================================================
+
+/**
+ * Q9<T>: Quantum type with 9-level confidence (-4 to +4)
+ * 
+ * Tracks two hypotheses (A and B) with fine-grained confidence:
+ * - c = -4: Strongly favor hypothesis A
+ * - c = -3: Moderately favor A
+ * - c = -2: Slightly favor A
+ * - c = -1: Weakly favor A
+ * - c =  0: Unknown / Equal confidence
+ * - c = +1: Weakly favor B
+ * - c = +2: Slightly favor B
+ * - c = +3: Moderately favor B
+ * - c = +4: Strongly favor B
+ * 
+ * Memory: Uses nit (i8) for confidence.
+ * Best for: Decisions requiring gradual confidence accumulation.
+ * 
+ * Crystallization threshold: abs(c) >= 3 (moderate or strong confidence)
+ * 
+ * Example:
+ *   Q9<int32>:temp = q9_create(20, 25, 0);  // Unknown
+ *   temp.c = 3;                              // Moderate confidence in B
+ *   int32 | unknown:final = q9_crystallize(temp);  // Returns 25 (B)
+ */
+struct<T>:Q9 = {
+    T:a;        // Hypothesis A
+    T:b;        // Hypothesis B
+    nit:c;      // Confidence: -4 to +4
+};
+
+/**
+ * Create Q9<T> with initial hypotheses and confidence.
+ * 
+ * Args:
+ *   a: Hypothesis A value
+ *   b: Hypothesis B value
+ *   c: Initial confidence (-4 to +4)
+ * 
+ * Returns:
+ *   Q9<T> instance
+ */
+pub func<T>:q9_create = Q9<T>(T:a, T:b, nit:c) {
+    Q9<T>:q;
+    q.a = a;
+    q.b = b;
+    q.c = c;
+    pass(q);
+};
+
+/**
+ * Create Q9<T> in UNKNOWN state (c = 0).
+ */
+pub func<T>:q9_unknown = Q9<T>(T:a, T:b) {
+    Q9<T>:q;
+    q.a = a;
+    q.b = b;
+    q.c = 0;
+    pass(q);
+};
+
+/**
+ * Create Q9<T> strongly favoring hypothesis A (c = -4).
+ */
+pub func<T>:q9_strong_a = Q9<T>(T:a, T:b) {
+    Q9<T>:q;
+    q.a = a;
+    q.b = b;
+    q.c = -4;
+    pass(q);
+};
+
+/**
+ * Create Q9<T> strongly favoring hypothesis B (c = +4).
+ */
+pub func<T>:q9_strong_b = Q9<T>(T:a, T:b) {
+    Q9<T>:q;
+    q.a = a;
+    q.b = b;
+    q.c = 4;
+    pass(q);
+};
+
+// =============================================================================
+// Q9<T> Arithmetic Operations (preserve superposition)
+// =============================================================================
+
+/**
+ * Add value to both hypotheses in Q9<T>.
+ * Confidence remains unchanged.
+ */
+pub func<T>:q9_add = Q9<T>(Q9<T>:q, T:value) {
+    q.a = q.a + value;
+    q.b = q.b + value;
+    pass(q);
+};
+
+/**
+ * Subtract value from both hypotheses in Q9<T>.
+ */
+pub func<T>:q9_sub = Q9<T>(Q9<T>:q, T:value) {
+    q.a = q.a - value;
+    q.b = q.b - value;
+    pass(q);
+};
+
+/**
+ * Multiply both hypotheses in Q9<T> by value.
+ */
+pub func<T>:q9_mul = Q9<T>(Q9<T>:q, T:value) {
+    q.a = q.a * value;
+    q.b = q.b * value;
+    pass(q);
+};
+
+/**
+ * Divide both hypotheses in Q9<T> by value.
+ */
+pub func<T>:q9_div = Q9<T>(Q9<T>:q, T:value) {
+    q.a = q.a / value;
+    q.b = q.b / value;
+    pass(q);
+};
+
+// =============================================================================
+// Q9<T> Crystallization
+// =============================================================================
+
+/**
+ * Crystallize Q9<T> to definite value if confidence sufficient.
+ * 
+ * Q9 threshold: abs(c) >= 3 (moderate or strong confidence)
+ * 
+ * Returns:
+ *   - Hypothesis A if c <= -3
+ *   - Hypothesis B if c >= +3
+ *   - unknown if -2 <= c <= +2
+ */
+pub func<T>:q9_crystallize = T(Q9<T>:q) {
+    if (q.c <= -3) {
+        pass(q.a);
+    }
+    if (q.c >= 3) {
+        pass(q.b);
+    }
+    // Insufficient confidence
+    pass(unknown);
+};
+
+/**
+ * Check if Q9<T> can crystallize (has sufficient confidence).
+ */
+pub func<T>:q9_can_crystallize = bool(Q9<T>:q) {
+    pass(q.c <= -3 || q.c >= 3);
+};
+
+/**
+ * Get the most likely value without crystallizing.
+ */
+pub func<T>:q9_peek = T(Q9<T>:q) {
+    if (q.c <= 0) {
+        pass(q.a);
+    }
+    pass(q.b);
+};
+
+// =============================================================================
+// Q9<T> Confidence Manipulation
+// =============================================================================
+
+/**
+ * Shift confidence toward hypothesis A by one step.
+ */
+pub func<T>:q9_shift_to_a = Q9<T>(Q9<T>:q) {
+    if (q.c > -4) {
+        q.c = q.c - 1;
+    }
+    pass(q);
+};
+
+/**
+ * Shift confidence toward hypothesis B by one step.
+ */
+pub func<T>:q9_shift_to_b = Q9<T>(Q9<T>:q) {
+    if (q.c < 4) {
+        q.c = q.c + 1;
+    }
+    pass(q);
+};
+
+/**
+ * Reset confidence to unknown (c = 0).
+ */
+pub func<T>:q9_reset_confidence = Q9<T>(Q9<T>:q) {
+    q.c = 0;
+    pass(q);
+};
+
+/**
+ * Flip confidence (A ↔ B).
+ */
+pub func<T>:q9_flip_confidence = Q9<T>(Q9<T>:q) {
+    q.c = 0 - q.c;
+    pass(q);
+};
+
+// =============================================================================
+// Q21<T> - 21-State Quantum Type (with saturation barriers)
+// =============================================================================
+
+/**
+ * Q21<T>: Quantum type with 21-level confidence and saturation barriers
+ * 
+ * Tracks two hypotheses with high-resolution confidence:
+ * - Range: -10 to +10  
+ * - Saturation barriers at ±6 (require strong evidence to cross)
+ * - Crystallization threshold: abs(c) >= 8
+ * 
+ * The tbb8 (ternary-balanced byte) type naturally models saturation:
+ * ±6 represent phase transitions requiring sustained evidence to overcome.
+ * 
+ * Memory: Uses tbb8 (i8) for confidence.
+ * Best for: Complex decisions with multiple evidence phases.
+ * 
+ * Example:
+ *   Q21<int32>:q = q21_create(100, 200, 0);
+ *   q.c = 8;  // High confidence in B, past the barrier
+ *   int32 | unknown:final = q21_crystallize(q);  // Returns 200
+ */
+struct<T>:Q21 = {
+    T:a;        // Hypothesis A
+    T:b;        // Hypothesis B
+    tbb8:c;     // Confidence: -10 to +10, barriers at ±6
+};
+
+/**
+ * Create Q21<T> with initial hypotheses and confidence.
+ * 
+ * Args:
+ *   a: Hypothesis A value
+ *   b: Hypothesis B value
+ *   c: Initial confidence (-10 to +10)
+ * 
+ * Returns:
+ *   Q21<T> instance
+ */
+pub func<T>:q21_create = Q21<T>(T:a, T:b, tbb8:c) {
+    Q21<T>:q;
+    q.a = a;
+    q.b = b;
+    q.c = c;
+    pass(q);
+};
+
+/**
+ * Create Q21<T> in UNKNOWN state (c = 0).
+ */
+pub func<T>:q21_unknown = Q21<T>(T:a, T:b) {
+    tbb8:c0 = 0;
+    Q21<T>:q;
+    q.a = a;
+    q.b = b;
+    q.c = c0;
+    pass(q);
+};
+
+/**
+ * Create Q21<T> with maximum confidence in A (c = -10).
+ */
+pub func<T>:q21_certain_a = Q21<T>(T:a, T:b) {
+    tbb8:c_neg10 = -10;
+    Q21<T>:q;
+    q.a = a;
+    q.b = b;
+    q.c = c_neg10;
+    pass(q);
+};
+
+/**
+ * Create Q21<T> with maximum confidence in B (c = +10).
+ */
+pub func<T>:q21_certain_b = Q21<T>(T:a, T:b) {
+    tbb8:c10 = 10;
+    Q21<T>:q;
+    q.a = a;
+    q.b = b;
+    q.c = c10;
+    pass(q);
+};
+
+// =============================================================================
+// Q21<T> Arithmetic Operations
+// =============================================================================
+
+/**
+ * Add value to both hypotheses in Q21<T>.
+ */
+pub func<T>:q21_add = Q21<T>(Q21<T>:q, T:value) {
+    q.a = q.a + value;
+    q.b = q.b + value;
+    pass(q);
+};
+
+/**
+ * Subtract value from both hypotheses in Q21<T>.
+ */
+pub func<T>:q21_sub = Q21<T>(Q21<T>:q, T:value) {
+    q.a = q.a - value;
+    q.b = q.b - value;
+    pass(q);
+};
+
+/**
+ * Multiply both hypotheses in Q21<T> by value.
+ */
+pub func<T>:q21_mul = Q21<T>(Q21<T>:q, T:value) {
+    q.a = q.a * value;
+    q.b = q.b * value;
+    pass(q);
+};
+
+/**
+ * Divide both hypotheses in Q21<T> by value.
+ */
+pub func<T>:q21_div = Q21<T>(Q21<T>:q, T:value) {
+    q.a = q.a / value;
+    q.b = q.b / value;
+    pass(q);
+};
+
+// =============================================================================
+// Q21<T> Crystallization
+// =============================================================================
+
+/**
+ * Crystallize Q21<T> to definite value if confidence sufficient.
+ * 
+ * Q21 threshold: abs(c) >= 8 (must be past the saturation barrier at ±6)
+ * 
+ * Returns:
+ *   - Hypothesis A if c <= -8
+ *   - Hypothesis B if c >= +8
+ *   - unknown if -7 <= c <= +7
+ */
+pub func<T>:q21_crystallize = T(Q21<T>:q) {
+    tbb8:neg8 = -8;
+    tbb8:pos8 = 8;
+    
+    if (q.c <= neg8) {
+        pass(q.a);
+    }
+    if (q.c >= pos8) {
+        pass(q.b);
+    }
+    pass(unknown);
+};
+
+/**
+ * Check if Q21<T> can crystallize.
+ */
+pub func<T>:q21_can_crystallize = bool(Q21<T>:q) {
+    tbb8:neg8 = -8;
+    tbb8:pos8 = 8;
+    pass(q.c <= neg8 || q.c >= pos8);
+};
+
+/**
+ * Get the most likely value without crystallizing.
+ */
+pub func<T>:q21_peek = T(Q21<T>:q) {
+    tbb8:c0 = 0;
+    if (q.c <= c0) {
+        pass(q.a);
+    }
+    pass(q.b);
+};
+
+// =============================================================================
+// Q21<T> Confidence Manipulation
+// =============================================================================
+
+/**
+ * Shift confidence toward hypothesis A by one step.
+ */
+pub func<T>:q21_shift_to_a = Q21<T>(Q21<T>:q) {
+    tbb8:neg10 = -10;
+    tbb8:one = 1;
+    if (q.c > neg10) {
+        q.c = q.c - one;
+    }
+    pass(q);
+};
+
+/**
+ * Shift confidence toward hypothesis B by one step.
+ */
+pub func<T>:q21_shift_to_b = Q21<T>(Q21<T>:q) {
+    tbb8:pos10 = 10;
+    tbb8:one = 1;
+    if (q.c < pos10) {
+        q.c = q.c + one;
+    }
+    pass(q);
+};
+
+/**
+ * Reset confidence to unknown (c = 0).
+ */
+pub func<T>:q21_reset_confidence = Q21<T>(Q21<T>:q) {
+    tbb8:c0 = 0;
+    q.c = c0;
+    pass(q);
+};
+
+/**
+ * Flip confidence (A ↔ B).
+ */
+pub func<T>:q21_flip_confidence = Q21<T>(Q21<T>:q) {
+    tbb8:c0 = 0;
+    q.c = c0 - q.c;
+    pass(q);
+};

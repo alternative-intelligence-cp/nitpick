@@ -237,7 +237,8 @@ nested: Vec<Vec<i32>> = Vec::new();
 ```aria
 fn sum<T>(array: []T) -> T where T: Numeric {
     total: T = T::zero();
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         total = total + item;
     }
     return total;

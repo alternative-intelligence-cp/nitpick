@@ -30,8 +30,8 @@
 buffer: []nyte = read_bytes(file, 1024);
 
 // Process byte by byte
-for byte in buffer {
-    process_nyte(byte);
+till(buffer.length - 1, 1) {
+    process_nyte(buffer[$]);
 }
 ```
 

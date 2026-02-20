@@ -78,12 +78,12 @@ stddato.write_json({"batch": batch_id, "status": "done"});
 fn process_batch(items: []Item) {
     total: usize = items.len();
     
-    for i, item in items.enumerate() {
+    till(total - 1, 1) {
         // Human progress on stdout
-        stdout << "Processing " << (i + 1) << "/" << total << "...\r";
+        stdout << "Processing " << ($ + 1) << "/" << total << "...\r";
         stdout.flush();  // Update immediately
         
-        process_item(item);
+        process_item(items[$]);
     }
     
     stdout << "\n";  // Newline after progress
@@ -97,8 +97,8 @@ fn display_results(results: []Result) {
     stdout << "\nResults:\n";
     stdout << "========\n";
     
-    for result in results {
-        stdout << "  " << result.name << ": " << result.value << "\n";
+    till(results.length - 1, 1) {
+        stdout << "  " << results[$].name << ": " << results[$].value << "\n";
     }
     
     stdout << "\nTotal: " << results.len() << " items\n";

@@ -36,20 +36,22 @@ pub func:partition_i32 = int32(int32->:arr, int32:low, int32:high) {
 };
 
 // Quicksort implementation for int32 arrays
-pub func:quicksort_i32_range = void(int32->:arr, int32:low, int32:high) {
+pub func:quicksort_i32_range = NIL(int32->:arr, int32:low, int32:high) {
     if (low < high) {
         int32:pi = partition_i32(arr, low, high);
-        quicksort_i32_range(arr, low, pi - 1);
-        quicksort_i32_range(arr, pi + 1, high);
+        quicksort_i32_range(arr, low, pi - 1) ? NIL;
+        quicksort_i32_range(arr, pi + 1, high) ? NIL;
     }
+    pass(NIL);
 };
 
 // Public quicksort interface
-pub func:sort_i32 = void(int32->:arr, int32:len) {
+pub func:sort_i32 = NIL(int32->:arr, int32:len) {
     if (len <= 1) {
-        return;
+        pass(NIL);
     }
-    quicksort_i32_range(arr, 0, len - 1);
+    quicksort_i32_range(arr, 0, len - 1) ? NIL;
+    pass(NIL);
 };
 
 // Quicksort for int64
@@ -75,19 +77,21 @@ pub func:partition_i64 = int32(int64->:arr, int32:low, int32:high) {
     return i + 1;
 };
 
-pub func:quicksort_i64_range = void(int64->:arr, int32:low, int32:high) {
+pub func:quicksort_i64_range = NIL(int64->:arr, int32:low, int32:high) {
     if (low < high) {
         int32:pi = partition_i64(arr, low, high);
-        quicksort_i64_range(arr, low, pi - 1);
-        quicksort_i64_range(arr, pi + 1, high);
+        quicksort_i64_range(arr, low, pi - 1) ? NIL;
+        quicksort_i64_range(arr, pi + 1, high) ? NIL;
     }
+    pass(NIL);
 };
 
-pub func:sort_i64 = void(int64->:arr, int32:len) {
+pub func:sort_i64 = NIL(int64->:arr, int32:len) {
     if (len <= 1) {
-        return;
+        pass(NIL);
     }
-    quicksort_i64_range(arr, 0, len - 1);
+    quicksort_i64_range(arr, 0, len - 1) ? NIL;
+    pass(NIL);
 };
 
 // Quicksort for flt64
@@ -113,28 +117,30 @@ pub func:partition_f64 = int32(*flt64:arr, int32:low, int32:high) {
     return i + 1;
 };
 
-pub func:quicksort_f64_range = void(*flt64:arr, int32:low, int32:high) {
+pub func:quicksort_f64_range = NIL(*flt64:arr, int32:low, int32:high) {
     if (low < high) {
         int32:pi = partition_f64(arr, low, high);
-        quicksort_f64_range(arr, low, pi - 1);
-        quicksort_f64_range(arr, pi + 1, high);
+        quicksort_f64_range(arr, low, pi - 1) ? NIL;
+        quicksort_f64_range(arr, pi + 1, high) ? NIL;
     }
+    pass(NIL);
 };
 
-pub func:sort_f64 = void(*flt64:arr, int32:len) {
+pub func:sort_f64 = NIL(*flt64:arr, int32:len) {
     if (len <= 1) {
-        return;
+        pass(NIL);
     }
-    quicksort_f64_range(arr, 0, len - 1);
+    quicksort_f64_range(arr, 0, len - 1) ? NIL;
+    pass(NIL);
 };
 
 // ============================================================================
 // BUBBLE SORT (stable, O(n²), good for small/nearly sorted arrays)
 // ============================================================================
 
-pub func:bubble_sort_i32 = void(int32->:arr, int32:len) {
+pub func:bubble_sort_i32 = NIL(int32->:arr, int32:len) {
     if (len <= 1) {
-        return;
+        pass(NIL);
     }
     
     int32:i = 0i32;
@@ -151,11 +157,12 @@ pub func:bubble_sort_i32 = void(int32->:arr, int32:len) {
         }
         i = i + 1;
     }
+    pass(NIL);
 };
 
-pub func:bubble_sort_i64 = void(int64->:arr, int32:len) {
+pub func:bubble_sort_i64 = NIL(int64->:arr, int32:len) {
     if (len <= 1) {
-        return;
+        pass(NIL);
     }
     
     int32:i = 0i32;
@@ -172,15 +179,16 @@ pub func:bubble_sort_i64 = void(int64->:arr, int32:len) {
         }
         i = i + 1;
     }
+    pass(NIL);
 };
 
 // ============================================================================
 // INSERTION SORT (stable, O(n²), efficient for small arrays)
 // ============================================================================
 
-pub func:insertion_sort_i32 = void(int32->:arr, int32:len) {
+pub func:insertion_sort_i32 = NIL(int32->:arr, int32:len) {
     if (len <= 1) {
-        return;
+        pass(NIL);
     }
     
     int32:i = 1i32;
@@ -197,11 +205,12 @@ pub func:insertion_sort_i32 = void(int32->:arr, int32:len) {
         arr[j + 1] = key;
         i = i + 1;
     }
+    pass(NIL);
 };
 
-pub func:insertion_sort_i64 = void(int64->:arr, int32:len) {
+pub func:insertion_sort_i64 = NIL(int64->:arr, int32:len) {
     if (len <= 1) {
-        return;
+        pass(NIL);
     }
     
     int32:i = 1i32;
@@ -217,6 +226,7 @@ pub func:insertion_sort_i64 = void(int64->:arr, int32:len) {
         arr[j + 1] = key;
         i = i + 1;
     }
+    pass(NIL);
 };
 
 // ============================================================================
@@ -224,7 +234,7 @@ pub func:insertion_sort_i64 = void(int64->:arr, int32:len) {
 // ============================================================================
 
 // Merge helper for merge sort
-pub func:merge_i32 = void(int32->:arr, int32:left, int32:mid, int32:right, int32->:temp) {
+pub func:merge_i32 = NIL(int32->:arr, int32:left, int32:mid, int32:right, int32->:temp) {
     int32:i = left;
     int32:j = mid + 1;
     int32:k = left;
@@ -261,27 +271,30 @@ pub func:merge_i32 = void(int32->:arr, int32:left, int32:mid, int32:right, int32
         arr[i] = temp[i];
         i = i + 1;
     }
+    pass(NIL);
 };
 
-pub func:merge_sort_i32_range = void(int32->:arr, int32:left, int32:right, int32->:temp) {
+pub func:merge_sort_i32_range = NIL(int32->:arr, int32:left, int32:right, int32->:temp) {
     if (left < right) {
         int32:mid = left + (right - left) / 2;
         
-        merge_sort_i32_range(arr, left, mid, temp);
-        merge_sort_i32_range(arr, mid + 1, right, temp);
-        merge_i32(arr, left, mid, right, temp);
+        merge_sort_i32_range(arr, left, mid, temp) ? NIL;
+        merge_sort_i32_range(arr, mid + 1, right, temp) ? NIL;
+        merge_i32(arr, left, mid, right, temp) ? NIL;
     }
+    pass(NIL);
 };
 
-pub func:merge_sort_i32 = void(int32->:arr, int32:len) {
+pub func:merge_sort_i32 = NIL(int32->:arr, int32:len) {
     if (len <= 1) {
-        return;
+        pass(NIL);
     }
     
     // Allocate temporary array for merging
     wild int32->:temp = aria_alloc(len * 4);
-    merge_sort_i32_range(arr, 0, len - 1, temp);
+    merge_sort_i32_range(arr, 0, len - 1, temp) ? NIL;
     aria_free(temp);
+    pass(NIL);
 };
 
 // ============================================================================
@@ -393,7 +406,7 @@ pub func:median_i32 = int32(int32->:arr, int32:len) {
 // ============================================================================
 
 // Reverse array in-place
-pub func:reverse_i32 = void(int32->:arr, int32:len) {
+pub func:reverse_i32 = NIL(int32->:arr, int32:len) {
     int32:left = 0i32;
     int32:right = len - 1;
     
@@ -404,9 +417,10 @@ pub func:reverse_i32 = void(int32->:arr, int32:len) {
         left = left + 1;
         right = right - 1;
     }
+    pass(NIL);
 };
 
-pub func:reverse_i64 = void(int64->:arr, int32:len) {
+pub func:reverse_i64 = NIL(int64->:arr, int32:len) {
     int32:left = 0i32;
     int32:right = len - 1;
     
@@ -417,6 +431,7 @@ pub func:reverse_i64 = void(int64->:arr, int32:len) {
         left = left + 1;
         right = right - 1;
     }
+    pass(NIL);
 };
 
 // Check if array is sorted

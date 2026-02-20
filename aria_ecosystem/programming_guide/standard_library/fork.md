@@ -82,21 +82,21 @@ end
 // Fork multiple child processes
 children: []i32 = [];
 
-for i in 0..5 do
+till(4, 1) {
     Result: ForkResult = fork()?;
     
     when result is Parent(child_pid) then
         children.append(child_pid);
     elsif result is Child then
-        stdout << "Child $i working...";
+        stdout << "Child $($) working...";
         // Do work...
         exit(0);
     end
 end
 
 // Parent waits for all children
-for child_pid in children do
-    wait(child_pid)?;
+till(children.length - 1, 1) {
+    wait(children[$])?;
 end
 
 stdout << "All children completed";
@@ -201,12 +201,12 @@ end
 
 ```aria
 // Dangerous - exponential process explosion!
-for i in 0..10 do
+till(9, 1) {
     fork()?;  // ❌ Creates 2^10 = 1024 processes!
 end
 
 // Better
-for i in 0..10 do
+till(9, 1) {
     Result: ForkResult = fork()?;
     when result is Child then
         work();

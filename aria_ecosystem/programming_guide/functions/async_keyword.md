@@ -346,7 +346,8 @@ user: User? = await with_timeout(fetch_user(123), 5000);
 
 ```aria
 async fn retry<T>(f: async fn() -> T?, max_attempts: i32) -> T? {
-    for attempt in 1..=max_attempts {
+    till(max_attempts - 1, 1) {
+        attempt: i32 = $ + 1;
         Result: T? = await f();
         when result != ERR then
             return result;

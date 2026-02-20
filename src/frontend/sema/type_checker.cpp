@@ -1488,10 +1488,25 @@ Type* TypeChecker::inferCastExpr(CastExpr* expr) {
         return typeSystem->getErrorType();
     }
     
-    // Both types must be primitive numeric types for now
-    // TODO: Support casting between other compatible types (pointers, etc.)
+    // Check if source or target are pointer types
+    // Pointer types can be:
+    // - PointerType instances (wild T->)
+    // - Primitive types containing '*' (void*, from extern blocks)
+    bool sourceIsPointer = (sourceType->getKind() == TypeKind::POINTER || 
+                           sourceType->toString().find('*') != std::string::npos);
+    bool targetIsPointer = (targetType->getKind() == TypeKind::POINTER ||
+                           targetType->toString().find('*') != std::string::npos);
+    
+    // Allow pointer-to-pointer casts (e.g., void* → wild T->)
+    // This is inherently unsafe (type erasure/reinterpretation)
+    // Programmer takes full responsibility via explicit @cast
+    if (sourceIsPointer && targetIsPointer) {
+        return targetType;  // Cast succeeds, return target type
+    }
+    
+    // Both types must be primitive numeric types for numeric casts
     if (!sourceType->isPrimitive() || !targetType->isPrimitive()) {
-        addError("Cast currently only supports primitive numeric types", expr);
+        addError("Cast supports numeric types and pointer types only", expr);
         return typeSystem->getErrorType();
     }
     
@@ -1665,6 +1680,90 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                     // Handle pointer types - strip the pointer for method lookup
                     if (!typeName.empty() && (typeName.back() == '*' || typeName.back() == '@')) {
                         typeName = typeName.substr(0, typeName.length() - 1);
+                    }
+
+                    // ====================================================================
+                    // SPECIAL HANDLING: atomic<T> methods
+                    // ====================================================================
+                    // atomic<T> methods resolve directly without UFCS transformation
+                    // Methods: load(), store(), swap(), compare_exchange(), fetch_add(), fetch_sub()
+                    // Supports both "atomic<int32>" and "atomic_int32" formats
+                    if (typeName.find("atomic<") == 0 || typeName.find("atomic_") == 0) {
+                        // Extract inner type
+                        std::string innerType;
+                        if (typeName.find("atomic<") == 0) {
+                            size_t start = typeName.find('<') + 1;
+                            size_t end = typeName.find('>');
+                            if (start != std::string::npos && end != std::string::npos) {
+                                innerType = typeName.substr(start, end - start);
+                            }
+                        } else {
+                            // atomic_int32 → int32
+                            innerType = typeName.substr(7);  // Skip "atomic_"
+                        }
+                        
+                        // Validate method name
+                        std::string method = memberExpr->member;
+                        if (method == "load") {
+                            // load() -> T (returns inner type)
+                            Type* retType = typeSystem->getPrimitiveType(innerType);
+                            if (retType) return retType;
+                            return typeSystem->getPrimitiveType("int32");  // fallback
+                        }
+                        else if (method == "store") {
+                            // store(value) -> void
+                            if (expr->arguments.size() != 1) {
+                                addError("atomic.store() requires exactly one argument", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            Type* argType = inferType(expr->arguments[0].get());
+                            if (argType->getKind() == TypeKind::ERROR) {
+                                return typeSystem->getErrorType();
+                            }
+                            return typeSystem->getPrimitiveType("void");
+                        }
+                        else if (method == "swap") {
+                            // swap(value) -> T (returns old value)
+                            if (expr->arguments.size() != 1) {
+                                addError("atomic.swap() requires exactly one argument", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            Type* argType = inferType(expr->arguments[0].get());
+                            if (argType->getKind() == TypeKind::ERROR) {
+                                return typeSystem->getErrorType();
+                            }
+                            // Return the same type as the argument
+                            return argType;
+                        }
+                        else if (method == "fetch_add" || method == "fetch_sub") {
+                            // fetch_add/sub(delta) -> T (returns old value)
+                            if (expr->arguments.size() != 1) {
+                                addError("atomic." + method + "() requires exactly one argument", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            Type* argType = inferType(expr->arguments[0].get());
+                            if (argType->getKind() == TypeKind::ERROR) {
+                                return typeSystem->getErrorType();
+                            }
+                            return argType;
+                        }
+                        else if (method == "compare_exchange") {
+                            // compare_exchange(expected, desired) -> bool
+                            if (expr->arguments.size() != 2) {
+                                addError("atomic.compare_exchange() requires exactly two arguments", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            Type* arg1 = inferType(expr->arguments[0].get());
+                            Type* arg2 = inferType(expr->arguments[1].get());
+                            if (arg1->getKind() == TypeKind::ERROR || arg2->getKind() == TypeKind::ERROR) {
+                                return typeSystem->getErrorType();
+                            }
+                            return typeSystem->getPrimitiveType("bool");
+                        }
+                        else {
+                            addError("Unknown atomic method: " + method, expr);
+                            return typeSystem->getErrorType();
+                        }
                     }
 
                     // Handle generic types - use base type for method lookup
@@ -2677,6 +2776,31 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             return typeSystem->getPrimitiveType("int64");
+        }
+        
+        // ====================================================================
+        // ATOMIC<T> OPERATIONS - Lock-free Concurrency (P0)
+        // ====================================================================
+        
+        // Builtin: atomic_new(initial_value) -> atomic<T>
+        // Creates a new atomic variable with the given initial value
+        // Type is inferred from argument: atomic_new(0i32) -> atomic<int32>
+        if (idExpr->name == "atomic_new") {
+            if (expr->arguments.size() != 1) {
+                addError("atomic_new() requires exactly one argument (initial value)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Infer the type of the initial value
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            
+            // For now, return a generic type named "atomic_TYPENAME"
+            // This will be handled specially in codegen
+            std::string atomicTypeName = "atomic_" + argType->toString();
+            return typeSystem->getGenericType(atomicTypeName);
         }
         
         // Pool allocator builtins
@@ -5259,7 +5383,10 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             }
             
             // Check if argument type is assignable to parameter type
-            if (!effectiveArgType->isAssignableTo(paramTypes[i])) {
+            // P1.5: Allow automatic void* ↔ wild T-> conversions at FFI boundaries
+            bool ffiPointerConversion = canConvertFFIPointer(effectiveArgType, paramTypes[i]);
+            
+            if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion) {
                 addError("Argument " + std::to_string(i + 1) + " has type '" + 
                         argType->toString() + "', but function expects '" + 
                         paramTypes[i]->toString() + "'", expr->arguments[i].get());
@@ -5350,7 +5477,13 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
         return simdType->getElementType();
     }
     
-    // Arrays are represented as pointer types
+    // Arrays support index access: int32[10][i] -> int32
+    if (arrayType->getKind() == TypeKind::ARRAY) {
+        ArrayType* arrType = static_cast<ArrayType*>(arrayType);
+        return arrType->getElementType();
+    }
+    
+    // Arrays are represented as pointer types (legacy compatibility)
     // Extract element type from pointer
     if (arrayType->getKind() == TypeKind::POINTER) {
         PointerType* ptrType = static_cast<PointerType*>(arrayType);
@@ -5520,18 +5653,9 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         StructType* structType = static_cast<StructType*>(objectType);
         const auto& fields = structType->getFields();
         
-        // DEBUG: Print struct information
-        std::cerr << "[DEBUG MEMBER ACCESS] Struct: " << structType->getName() 
-                  << ", Field: " << expr->member << std::endl;
-        std::cerr << "[DEBUG MEMBER ACCESS] Struct has " << fields.size() << " fields" << std::endl;
-
         // Look up member in struct fields
         for (const auto& field : fields) {
-            std::cerr << "[DEBUG MEMBER ACCESS]   Field '" << field.name 
-                      << "' has type: " << (field.type ? field.type->toString() : "NULL") << std::endl;
             if (field.name == expr->member) {
-                std::cerr << "[DEBUG MEMBER ACCESS] Found matching field! Returning type: " 
-                          << (field.type ? field.type->toString() : "NULL") <<std::endl;
                 // For safe navigation, result type is the same for now
                 // TODO: Return optional<field.type> when optional types are implemented
                 return field.type;
@@ -5841,8 +5965,10 @@ Type* TypeChecker::inferArrayLiteral(ArrayLiteralExpr* expr) {
         }
     }
     
-    // Return pointer to element type (arrays decay to pointers)
-    return typeSystem->getPointerType(elementType);
+    // P2.7 FIX: Return proper array type with size, not pointer type
+    // Array literals should have known size at compile time
+    size_t arraySize = expr->elements.size();
+    return typeSystem->getArrayType(elementType, arraySize);
 }
 
 // ============================================================================
@@ -6082,6 +6208,31 @@ bool TypeChecker::canCoerce(Type* from, Type* to) {
 }
 
 // ============================================================================
+// FFI Pointer Conversion (P1.5 - void* ↔ wild T-> Bridge)
+// ============================================================================
+
+bool TypeChecker::canConvertFFIPointer(Type* from, Type* to) {
+    // Check if one type is void* (C FFI) and the other is a wild pointer (Aria)
+    
+    std::string fromStr = from->toString();
+    std::string toStr = to->toString();
+    
+    // void* → wild T-> conversion (from extern function return value)
+    // Example: wild int32->:ptr = malloc(400);
+    if (fromStr == "void*" && to->getKind() == TypeKind::POINTER) {
+        return true;  // Allow automatic conversion from void* to any wild pointer
+    }
+    
+    // wild T-> → void* conversion (to extern function parameter)
+    // Example: free(ptr) where ptr is wild int32->
+    if (from->getKind() == TypeKind::POINTER && toStr == "void*") {
+        return true;  // Allow automatic conversion from any wild pointer to void*
+    }
+    
+    return false;
+}
+
+// ============================================================================
 // Error Handling
 // ============================================================================
 
@@ -6297,10 +6448,38 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 return typeSystem->getErrorType();
             }
             
-            // For now, return the element type with a note that it's an array
-            // TODO: Create proper ArrayType in TypeSystem
-            // Temporary: Use pointer type to represent arrays (common in many languages)
-            return typeSystem->getPointerType(elementType);
+            // Determine array size
+            int arraySize = -1;  // -1 indicates dynamic/unknown size (int32[])
+            
+            if (!arrayType->isDynamic && arrayType->sizeExpr) {
+                // Fixed-size array (int32[10])
+                // Need to evaluate constant expression for size
+                // For now, if it's a literal, extract the value
+                if (arrayType->sizeExpr->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* sizeLit = static_cast<LiteralExpr*>(arrayType->sizeExpr.get());
+                    
+                    // Extract integer from variant
+                    if (std::holds_alternative<int64_t>(sizeLit->value)) {
+                        int64_t size64 = std::get<int64_t>(sizeLit->value);
+                        if (size64 < 0) {
+                            addError("Array size must be non-negative, got " + std::to_string(size64), typeNode);
+                            return typeSystem->getErrorType();
+                        }
+                        arraySize = static_cast<int>(size64);
+                    } else {
+                        addError("Array size must be an integer literal", typeNode);
+                        return typeSystem->getErrorType();
+                    }
+                } else {
+                    // TODO: Evaluate constant expression for size
+                    // For now, treat as dynamic if not a simple literal
+                    addError("Array size must be a constant integer literal (for now)", typeNode);
+                    return typeSystem->getErrorType();
+                }
+            }
+            
+            // Create proper array type
+            return typeSystem->getArrayType(elementType, arraySize);
         }
         
         case ASTNode::NodeType::POINTER_TYPE: {
@@ -6451,7 +6630,8 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 return typeSystem->getSimdType(elementType, laneCount);
             }
             
-            if (genericType->baseName == "array" || genericType->baseName == "atomic") {
+            if (genericType->baseName == "array" || genericType->baseName == "atomic" || 
+                genericType->baseName == "Vec" || genericType->baseName == "HashMap") {
                 // Built-in generic types - handle specially
                 // For now, just return a placeholder struct type
                 // The actual implementation will be in stdlib once fully integrated
@@ -6488,6 +6668,89 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                     // atomic<T> has: T value (aligned appropriately for atomic operations)
                     std::vector<StructType::Field> fields;
                     fields.push_back({"value", argType, 0});
+                    
+                    return typeSystem->createStructType(mangledName, fields);
+                }
+                
+                // Vec<T> - Dynamic array (P0 feature for Nikola 0.1.0)
+                // Maps to runtime AriaArray struct (see src/runtime/collections/collections.cpp)
+                if (genericType->baseName == "Vec") {
+                    // Validate argument count
+                    if (resolvedTypeArgs.size() != 1) {
+                        addError("Vec<T> requires exactly 1 type argument, got " + 
+                                std::to_string(resolvedTypeArgs.size()), typeNode);
+                        return typeSystem->getErrorType();
+                    }
+                    
+                    Type* elemType = resolvedTypeArgs[0];
+                    
+                    // Create mangled name for Vec specialization
+                    std::string mangledName = "Vec_" + elemType->toString();
+                    
+                    // Check if we already have this specialization
+                    Type* existingType = typeSystem->getStructType(mangledName);
+                    if (existingType) {
+                        return existingType;
+                    }
+                    
+                    // Create Vec<T> struct type matching AriaArray layout:
+                    // typedef struct {
+                    //     void* data;          // Element array (stored as wild int8*)
+                    //     size_t length;       // Current count
+                    //     size_t capacity;     // Allocated capacity
+                    //     size_t element_size; // Bytes per element
+                    //     int type_id;         // GC type tracking
+                    // } AriaArray;
+                    std::vector<StructType::Field> fields;
+                    // Use wild int8* for data (generic pointer, matches C void*)
+                    fields.push_back({"data", typeSystem->getPointerType(typeSystem->getPrimitiveType("int8")), 0});
+                    fields.push_back({"length", typeSystem->getPrimitiveType("int64"), 8});
+                    fields.push_back({"capacity", typeSystem->getPrimitiveType("int64"), 16});
+                    fields.push_back({"element_size", typeSystem->getPrimitiveType("int64"), 24});
+                    fields.push_back({"type_id", typeSystem->getPrimitiveType("int32"), 32});
+                    
+                    return typeSystem->createStructType(mangledName, fields);
+                }
+                
+                // HashMap<K,V> - Hash table (P0 feature for Nikola 0.1.0)
+                // Maps to runtime AriaMap struct (see src/runtime/collections/map.cpp)
+                if (genericType->baseName == "HashMap") {
+                    // Validate argument count - HashMap requires TWO type arguments (key, value)
+                    if (resolvedTypeArgs.size() != 2) {
+                        addError("HashMap<K,V> requires exactly 2 type arguments, got " + 
+                                std::to_string(resolvedTypeArgs.size()), typeNode);
+                        return typeSystem->getErrorType();
+                    }
+                    
+                    Type* keyType = resolvedTypeArgs[0];
+                    Type* valueType = resolvedTypeArgs[1];
+                    
+                    // Create mangled name for HashMap specialization
+                    std::string mangledName = "HashMap_" + keyType->toString() + "_" + valueType->toString();
+                    
+                    // Check if we already have this specialization
+                    Type* existingType = typeSystem->getStructType(mangledName);
+                    if (existingType) {
+                        return existingType;
+                    }
+                    
+                    // Create HashMap<K,V> struct type matching AriaMap layout:
+                    // typedef struct {
+                    //     AriaMapEntry* entries;  // Array of entries (stored as wild int8*)
+                    //     size_t capacity;        // Total slots (power of 2)
+                    //     size_t length;          // Number of occupied entries
+                    //     size_t key_size;        // Size of keys in bytes
+                    //     size_t value_size;      // Size of values in bytes
+                    //     float load_factor;      // Max load before resize
+                    // } AriaMap;
+                    std::vector<StructType::Field> fields;
+                    // Use wild int8* for entries (generic pointer, matches C void*)
+                    fields.push_back({"entries", typeSystem->getPointerType(typeSystem->getPrimitiveType("int8")), 0});
+                    fields.push_back({"capacity", typeSystem->getPrimitiveType("int64"), 8});
+                    fields.push_back({"length", typeSystem->getPrimitiveType("int64"), 16});
+                    fields.push_back({"key_size", typeSystem->getPrimitiveType("int64"), 24});
+                    fields.push_back({"value_size", typeSystem->getPrimitiveType("int64"), 32});
+                    fields.push_back({"load_factor", typeSystem->getPrimitiveType("flt32"), 40});
                     
                     return typeSystem->createStructType(mangledName, fields);
                 }
@@ -6956,6 +7219,76 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             }
         }
         
+        // P2.7: Array Literal Object Literal Coercion
+        // Special handling for array literals with object literal elements assigned to struct array types
+        // Example: Point[2]:points = [{x: 1, y: 2}, {x: 3, y: 4}];
+        bool arrayLiteralObjectCoercion = false;
+        if (declaredType->getKind() == TypeKind::ARRAY &&
+            stmt->initializer->type == ASTNode::NodeType::ARRAY_LITERAL) {
+            
+            const ArrayType* declaredArray = static_cast<const ArrayType*>(declaredType);
+            Type* declaredElem = declaredArray->getElementType();
+            
+            // Check if element type is a struct
+            if (declaredElem->getKind() == TypeKind::STRUCT) {
+                ArrayLiteralExpr* arrayLit = static_cast<ArrayLiteralExpr*>(stmt->initializer.get());
+                const StructType* structType = static_cast<const StructType*>(declaredElem);
+                
+                // Check if all array elements are object literals
+                bool allObjectLiterals = true;
+                for (const auto& elem : arrayLit->elements) {
+                    if (elem->type != ASTNode::NodeType::OBJECT_LITERAL) {
+                        allObjectLiterals = false;
+                        break;
+                    }
+                }
+                
+                if (allObjectLiterals) {
+                    // Mark each object literal with the struct type name
+                    const auto& structFields = structType->getFields();
+                    
+                    for (const auto& elem : arrayLit->elements) {
+                        ObjectLiteralExpr* objLit = static_cast<ObjectLiteralExpr*>(elem.get());
+                        
+                        // Validate field count
+                        if (objLit->fields.size() != structFields.size()) {
+                            addError("Object literal in array has " + std::to_string(objLit->fields.size()) + 
+                                    " fields, but struct '" + structType->getName() + 
+                                    "' requires " + std::to_string(structFields.size()) + " fields", elem.get());
+                            return;
+                        }
+                        
+                        // Validate each field's type
+                        for (size_t i = 0; i < objLit->fields.size(); ++i) {
+                            const auto& litField = objLit->fields[i];
+                            const auto& structField = structFields[i];
+                            
+                            // Infer the field value's type
+                            Type* fieldValueType = inferType(litField.value.get());
+                            if (fieldValueType->getKind() == TypeKind::ERROR) {
+                                return;  // Error already reported
+                            }
+                            
+                            // Check type compatibility
+                            if (!fieldValueType->isAssignableTo(structField.type) && 
+                                !canCoerce(fieldValueType, structField.type)) {
+                                addError("Field '" + structField.name + "' of struct '" + 
+                                        structType->getName() + "' in array element expects type '" + 
+                                        structField.type->toString() + "', but got '" + 
+                                        fieldValueType->toString() + "'", litField.value.get());
+                                return;
+                            }
+                        }
+                        
+                        // Mark the object literal with the struct type name for IR generation
+                        objLit->type_name = structType->getName();
+                    }
+                    
+                    arrayLiteralObjectCoercion = true;
+                }
+            }
+        }
+        
         // Optional Type Integer Literal Coercion
         // Special handling for integer literals assigned to optional integer types
         // Example: int64?:opt = 42;  // 42 is int32, but should fit in int64
@@ -7006,6 +7339,28 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                     const auto& litField = objLit->fields[i];
                     const auto& structField = structFields[i];
                     
+                    // P2.7: Special handling for array literal fields with object literal elements
+                    // If field expects array of structs, mark object literals with struct type name
+                    if (litField.value->type == ASTNode::NodeType::ARRAY_LITERAL &&
+                        structField.type->getKind() == TypeKind::ARRAY) {
+                        
+                        const ArrayType* expectedArrayType = static_cast<const ArrayType*>(structField.type);
+                        Type* expectedElemType = expectedArrayType->getElementType();
+                        
+                        if (expectedElemType->getKind() == TypeKind::STRUCT) {
+                            const StructType* expectedStructType = static_cast<const StructType*>(expectedElemType);
+                            ArrayLiteralExpr* arrayLit = static_cast<ArrayLiteralExpr*>(litField.value.get());
+                            
+                            // Mark each object literal element with the struct type name
+                            for (const auto& elem : arrayLit->elements) {
+                                if (elem->type == ASTNode::NodeType::OBJECT_LITERAL) {
+                                    ObjectLiteralExpr* elemObjLit = static_cast<ObjectLiteralExpr*>(elem.get());
+                                    elemObjLit->type_name = expectedStructType->getName();
+                                }
+                            }
+                        }
+                    }
+                    
                     // Infer the field value's type
                     Type* fieldValueType = inferType(litField.value.get());
                     if (fieldValueType->getKind() == TypeKind::ERROR) {
@@ -7020,12 +7375,52 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                         compatible = true;
                     } else if ((fieldValueType->toString() == "int32" || fieldValueType->toString() == "int64") &&
                                isStandardIntType(structField.type)) {
-                        // Allow integer literal coercion for struct fields
+                        // Allow integer literal coercion for standard int struct fields
                         if (litField.value->type == ASTNode::NodeType::LITERAL) {
                             LiteralExpr* lit = static_cast<LiteralExpr*>(litField.value.get());
                             if (std::holds_alternative<int64_t>(lit->value)) {
                                 int64_t value = std::get<int64_t>(lit->value);
                                 compatible = integerFitsInType(value, structField.type->toString());
+                            }
+                        }
+                    } else if ((fieldValueType->toString() == "int32" || fieldValueType->toString() == "int64") &&
+                               isBalancedType(structField.type)) {
+                        // Allow integer literal coercion for balanced type struct fields (trit, nit, tryte, nyte)
+                        // Only when the value is unambiguous (fits in the target type's range)
+                        
+                        // Handle both direct literals and unary negation of literals
+                        int64_t value = 0;
+                        bool hasValue = false;
+                        
+                        if (litField.value->type == ASTNode::NodeType::LITERAL) {
+                            LiteralExpr* lit = static_cast<LiteralExpr*>(litField.value.get());
+                            if (std::holds_alternative<int64_t>(lit->value)) {
+                                value = std::get<int64_t>(lit->value);
+                                hasValue = true;
+                            }
+                        } else if (litField.value->type == ASTNode::NodeType::UNARY_OP) {
+                            // Handle unary negation: -2, -1, etc.
+                            UnaryExpr* unary = static_cast<UnaryExpr*>(litField.value.get());
+                            if (unary->op.type == TokenType::TOKEN_MINUS && unary->operand->type == ASTNode::NodeType::LITERAL) {
+                                LiteralExpr* lit = static_cast<LiteralExpr*>(unary->operand.get());
+                                if (std::holds_alternative<int64_t>(lit->value)) {
+                                    value = -std::get<int64_t>(lit->value);  // Negate the literal
+                                    hasValue = true;
+                                }
+                            }
+                        }
+                        
+                        if (hasValue) {
+                            // Check if value fits in the target balanced type
+                            if (isNitType(structField.type)) {
+                                // nit: [-4, 4] or -128 (ERR sentinel)
+                                compatible = ((value >= -4 && value <= 4) || value == -128);
+                            } else if (isTritType(structField.type)) {
+                                // trit: {-1, 0, 1} or -128 (ERR sentinel)
+                                compatible = (value == -1 || value == 0 || value == 1 || value == -128);
+                            } else if (isNyteType(structField.type) || isTryteType(structField.type)) {
+                                // tryte/nyte: [-29524, 29524]
+                                compatible = (value >= -29524 && value <= 29524);
                             }
                         }
                     }
@@ -7104,8 +7499,8 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         }
         
         // Check if initializer type is assignable to declared type
-        // Skip this check if we handled TBB, ERR, balanced, numeric exotic, standard int, high-precision literal, array literal int, optional int literal, or object literal struct coercion above
-        if (!tbbLiteralAssignment && !errLiteralAssignment && !balancedLiteralAssignment && !numericExoticLiteralAssignment && !standardIntLiteralAssignment && !highPrecisionLiteralAssignment && !arrayLiteralIntCoercion && !optionalIntLiteralCoercion && !objectLiteralStructAssignment) {
+        // Skip this check if we handled TBB, ERR, balanced, numeric exotic, standard int, high-precision literal, array literal int/object, optional int literal, or object literal struct coercion above
+        if (!tbbLiteralAssignment && !errLiteralAssignment && !balancedLiteralAssignment && !numericExoticLiteralAssignment && !standardIntLiteralAssignment && !highPrecisionLiteralAssignment && !arrayLiteralIntCoercion && !arrayLiteralObjectCoercion && !optionalIntLiteralCoercion && !objectLiteralStructAssignment) {
             // Special case: Allow T to be initialized to T? (wrapping)
             bool optionalWrapping = false;
             if (declaredType->getKind() == TypeKind::OPTIONAL) {
@@ -7127,7 +7522,11 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                 }
             }
             
-            if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType) && !optionalWrapping && !resultUnwrapping) {
+            // P1.5: Allow automatic void* ↔ wild T-> conversions at FFI boundaries
+            bool ffiPointerConversion = canConvertFFIPointer(initType, declaredType);
+            
+            if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType) && 
+                !optionalWrapping && !resultUnwrapping && !ffiPointerConversion) {
                 addError("Cannot initialize variable '" + stmt->varName + 
                         "' of type '" + declaredType->toString() + 
                         "' with value of type '" + initType->toString() + "'", stmt);
@@ -7307,7 +7706,19 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
 
     // Return type handling:
     // - Regular Aria functions return Result<T> for error handling
-    // - Extern functions (no body) return raw T for C ABI compatibility  
+    // - Extern functions (no body) return raw T for C ABI compatibility
+    
+    // DESIGN ENFORCEMENT: void type only allowed in extern blocks
+    // Aria uses NIL for no-value returns to force unfamiliarity and prevent C assumptions
+    Type* voidType = typeSystem->getPrimitiveType("void");
+    if (!stmt->body) {
+        // Extern function: void is allowed (FFI boundary)
+    } else if (valueType->equals(voidType)) {
+        // Non-extern function: void is forbidden, use NIL instead
+        addError("void return type only allowed in extern blocks. Use NIL for no-value returns in Aria code.", stmt);
+        return;
+    }
+    
     Type* actualReturnType;
     if (!stmt->body) {
         // Extern function: return raw type (no Result wrapping)
@@ -7445,36 +7856,37 @@ void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
             
             // Extract type name from typeNode (parser stores it there, not in typeName)
             std::string fieldTypeName;
+            Type* fieldType = nullptr;
+            
             if (fieldDecl->typeNode) {
-                // For simple types, it's a SimpleType with typeName field
-                if (fieldDecl->typeNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
-                    SimpleType* simpleType = static_cast<SimpleType*>(fieldDecl->typeNode.get());
-                    fieldTypeName = simpleType->typeName;
-                } else {
-                    // TODO: Handle complex types (arrays, pointers, etc.)
-                    addError("Complex field types not yet fully supported in struct '" + 
-                            stmt->structName + "'", field.get());
+                // Use resolveTypeNode to handle all type kinds (simple, array, pointer, etc.)
+                fieldType = resolveTypeNode(fieldDecl->typeNode.get());
+                
+                if (!fieldType || fieldType->getKind() == TypeKind::ERROR) {
+                    addError("Invalid type for field '" + fieldDecl->varName + 
+                            "' in struct '" + stmt->structName + "'", field.get());
                     continue;
                 }
+                
             } else if (!fieldDecl->typeName.empty()) {
                 // Fallback to legacy typeName field for backwards compatibility
                 fieldTypeName = fieldDecl->typeName;
+                
+                // Look up field type (check struct types first to avoid auto-creating primitives)
+                fieldType = typeSystem->getStructType(fieldTypeName);
+                if (!fieldType) {
+                    fieldType = typeSystem->getPrimitiveType(fieldTypeName);
+                }
+                
+                if (!fieldType || fieldType->getKind() == TypeKind::ERROR) {
+                    addError("Unknown field type '" + fieldTypeName + 
+                            "' in struct '" + stmt->structName + "'", field.get());
+                    continue;
+                }
+                
             } else {
                 addError("Missing type information for field '" + fieldDecl->varName + 
                         "' in struct '" + stmt->structName + "'", field.get());
-                continue;
-            }
-            
-            // Look up field type (check struct types first to avoid auto-creating primitives)
-            Type* fieldType = typeSystem->getStructType(fieldTypeName);
-            if (!fieldType) {
-                fieldType = typeSystem->getPrimitiveType(fieldTypeName);
-            }
-            
-            if (!fieldType || fieldType->getKind() == TypeKind::ERROR) {
-                addError("Unknown field type '" + fieldTypeName + 
-                        "' in struct '" + stmt->structName + "'", field.get());
-                // Continue checking other fields
                 continue;
             }
             
@@ -7746,12 +8158,26 @@ void TypeChecker::checkAssignment(BinaryExpr* expr) {
         }
     }
     
-    // Left side must be an lvalue (identifier, index, member access)
-    if (expr->left->type != ASTNode::NodeType::IDENTIFIER &&
-        expr->left->type != ASTNode::NodeType::INDEX &&
-        expr->left->type != ASTNode::NodeType::MEMBER_ACCESS &&
-        expr->left->type != ASTNode::NodeType::POINTER_MEMBER) {
-        addError("Left side of assignment must be a variable, array element, or member", expr->left.get());
+    // Left side must be an lvalue (identifier, index, member access, or dereference)
+    bool isValidLvalue = false;
+    
+    if (expr->left->type == ASTNode::NodeType::IDENTIFIER ||
+        expr->left->type == ASTNode::NodeType::INDEX ||
+        expr->left->type == ASTNode::NodeType::MEMBER_ACCESS ||
+        expr->left->type == ASTNode::NodeType::POINTER_MEMBER) {
+        isValidLvalue = true;
+    } else if (expr->left->type == ASTNode::NodeType::UNARY_OP) {
+        // Allow dereference operators (<- and *) on left side
+        // Example: <-ptr = 42; assigns through the pointer
+        UnaryExpr* unary = static_cast<UnaryExpr*>(expr->left.get());
+        if (unary->op.type == TokenType::TOKEN_LEFT_ARROW || 
+            unary->op.type == TokenType::TOKEN_STAR) {
+            isValidLvalue = true;
+        }
+    }
+    
+    if (!isValidLvalue) {
+        addError("Left side of assignment must be a variable, array element, member, or pointer dereference", expr->left.get());
         return;
     }
     
@@ -8823,26 +9249,45 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                         continue;
                     }
                     
+                    // Type-check the function declaration (handles both generic and non-generic)
+                    // This registers generic functions for later monomorphization
+                    checkFuncDecl(funcDecl);
+                    
                     // Build the function type from the declaration
                     // First, resolve parameter types
                     std::vector<Type*> paramTypes;
-                    for (const auto& param : funcDecl->parameters) {
-                        if (param->type == ASTNode::NodeType::PARAMETER) {
-                            ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
-                            Type* paramType = resolveTypeNode(paramNode->typeNode.get());
-                            if (paramType && paramType->getKind() != TypeKind::ERROR) {
-                                paramTypes.push_back(paramType);
-                            } else {
-                                // If we can't resolve param type, use void as fallback
-                                paramTypes.push_back(typeSystem->getPrimitiveType("void"));
+                    
+                    if (!funcDecl->genericParams.empty()) {
+                        // Generic function - use placeholder types
+                        for (const auto& param : funcDecl->parameters) {
+                            paramTypes.push_back(typeSystem->getUnknownType());
+                        }
+                    } else {
+                        // Non-generic function - resolve actual types
+                        for (const auto& param : funcDecl->parameters) {
+                            if (param->type == ASTNode::NodeType::PARAMETER) {
+                                ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
+                                Type* paramType = resolveTypeNode(paramNode->typeNode.get());
+                                if (paramType && paramType->getKind() != TypeKind::ERROR) {
+                                    paramTypes.push_back(paramType);
+                                } else {
+                                    // If we can't resolve param type, use void as fallback
+                                    paramTypes.push_back(typeSystem->getPrimitiveType("void"));
+                                }
                             }
                         }
                     }
                     
                     // Resolve return type
-                    Type* returnType = resolveTypeNode(funcDecl->returnType.get());
-                    if (!returnType || returnType->getKind() == TypeKind::ERROR) {
-                        returnType = typeSystem->getPrimitiveType("void");
+                    Type* returnType = nullptr;
+                    if (!funcDecl->genericParams.empty()) {
+                        // Generic function - use placeholder return type
+                        returnType = typeSystem->getUnknownType();
+                    } else {
+                        returnType = resolveTypeNode(funcDecl->returnType.get());
+                        if (!returnType || returnType->getKind() == TypeKind::ERROR) {
+                            returnType = typeSystem->getPrimitiveType("void");
+                        }
                     }
                     
                     // Create the function type
@@ -8850,7 +9295,7 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                     
                     // Create a new symbol for export
                     Symbol* funcSym = new Symbol(funcDecl->funcName, SymbolKind::FUNCTION, funcType, nullptr, funcDecl->line, funcDecl->column);
-                    funcSym->funcDecl = funcDecl;
+                    funcSym->funcDecl = funcDecl;  // Store AST for generic resolution
                     
                     // Export the function as PUBLIC
                     module->moduleInfo->exportSymbol(funcDecl->funcName, funcSym, Visibility::PUBLIC);
@@ -8858,15 +9303,33 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                 else if (decl->type == ASTNode::NodeType::STRUCT_DECL) {
                     StructDeclStmt* structDecl = static_cast<StructDeclStmt*>(decl.get());
                     
-                    // For now, export all structs as PUBLIC
-                    // TODO: Add pub modifier to struct declarations
-                    Type* structType = typeSystem->getPrimitiveType("void");  // Placeholder
+                    // Type-check the struct declaration to register generic structs
+                    // and create proper types in the type system
+                    checkStructDecl(structDecl);
+                    
+                    // Get the actual struct type from the type system
+                    Type* structType = nullptr;
+                    if (!structDecl->genericParams.empty()) {
+                        // Generic struct - it's registered but not instantiated yet
+                        structType = typeSystem->getPrimitiveType("void");  // Placeholder for generic
+                    } else {
+                        // Non-generic struct - should be in type system now
+                        structType = typeSystem->getStructType(structDecl->structName);
+                        if (!structType) {
+                            structType = typeSystem->getPrimitiveType("void");  // Fallback
+                        }
+                    }
+                    
                     Symbol* structSym = new Symbol(structDecl->structName, SymbolKind::TYPE, structType, nullptr, structDecl->line, structDecl->column);
                     
-                    // Export the struct as PUBLIC
+                    // Export the struct as PUBLIC (for now, export all structs)
+                    // TODO: Add pub modifier to struct declarations
                     module->moduleInfo->exportSymbol(structDecl->structName, structSym, Visibility::PUBLIC);
                 }
             }
+            
+            // Mark module as type-checked to avoid re-processing
+            module->state = ModuleState::CHECKED;
         }
     }
     

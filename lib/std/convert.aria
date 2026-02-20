@@ -51,37 +51,39 @@ func:count_digits = int32(int32:n) {
 };
 
 /// Print integer (positive only for now)
-func:print_int = void(int32:n) {
+func:print_int = NIL(int32:n) {
     bool:is_zero = (n == 0i32);
     
     if (is_zero) {
         int32:zero = 0i32;
-        print_digit(zero);
+        print_digit(zero) ? NIL;
     } else {
         int32:num_digits = count_digits(n);
         int32:pos = (num_digits - 1i32);
         
         while (pos >= 0i32) {
             int32:digit = digit_at(n, pos);
-            print_digit(digit);
+            print_digit(digit) ? NIL;
             pos = (pos - 1i32);
         }
     }
+    pass(NIL);
 };
 
 /// Print signed integer
-func:print_signed_int = void(int32:n) {
+func:print_signed_int = NIL(int32:n) {
     bool:negative = (n < 0i32);
     
     if (negative) {
         int32:minus = 45i32;  // ASCII '-'
-        print_char(minus);
+        print_char(minus) ? NIL;
         int32:zero = 0i32;
         int32:pos_val = zero - n;
-        print_int(pos_val);
+        print_int(pos_val) ? NIL;
     } else {
-        print_int(n);
+        print_int(n) ? NIL;
     }
+    pass(NIL);
 };
 
 /// Convert char to uppercase

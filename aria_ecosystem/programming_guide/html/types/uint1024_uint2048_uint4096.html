@@ -1,0 +1,1997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultra-Large Unsigned Integers (uint1024, uint2048, uint4096) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Ultra-Large Unsigned Integers (uint1024, uint2048, uint4096)</h1>
+<strong>Unsigned multi-precision integers for cryptographic operations, blockchain, and specialized mathematical applications</strong>
+<hr>
+<h2>Overview</h2>
+<p>
+Aria provides three ultra-large unsigned integer types optimized for cryptographic and mathematical operations:
+</p>
+<p>
+| Type | Bits | Range | Bytes | Decimal Digits | Primary Use Cases |
+|------|------|-------|-------|----------------|-------------------|
+| <code>uint1024</code> | 1024 | 0 to 2¹⁰²⁴ - 1 (~1.8×10³⁰⁸) | 128 | ~308 | RSA-1024 public values, blockchain addresses |
+| <code>uint2048</code> | 2048 | 0 to 2²⁰⁴⁸ - 1 (~6.5×10⁶¹⁶) | 256 | ~617 | RSA-2048 standard, certificate authorities |
+| <code>uint4096</code> | 4096 | 0 to 2⁴⁰⁹⁶ - 1 (~2.1×10¹²³³) | 512 | ~1,233 | RSA-4096 high-security, post-quantum prep |
+</p>
+<strong>CRITICAL CONTEXT</strong>: These are <strong>the most commonly used</strong> variants of ultra-large integers in cryptography because:
+<ul><li><strong>Public cryptographic values</strong> (modulus, ciphertext, plaintext) are always positive</li>
+<li><strong>Blockchain addresses and balances</strong> require unsigned arithmetic</li>
+<li><strong>Hash values</strong> are inherently unsigned</li>
+<li><strong>Bit manipulation</strong> is more natural with unsigned types</li>
+</ul>
+<hr>
+<h2>Why Ultra-Large Unsigned Integers?</h2>
+<h3>Cryptographic Public Values</h3>
+<p>
+The majority of cryptographic data is unsigned:
+</p>
+<pre><code>// RSA public key components (always positive)
+<p>
+struct RSAPublicKey {
+n: uint2048,    // Modulus (product of two primes)
+e: uint64,      // Public exponent (typically 65537)
+}
+</p>
+<p>
+// Encryption uses only unsigned values
+fn rsa_encrypt(plaintext: uint2048, pub_key: RSAPublicKey) -> uint2048 {
+// Ciphertext = plaintext^e mod n (all values positive!)
+return mod_exp(plaintext, uint2048(pub_key.e), pub_key.n);
+}</code></pre>
+</p>
+<h3>Blockchain and Cryptocurrency</h3>
+<pre><code>// Bitcoin-style addresses and balances
+<p>
+struct BlockchainAddress {
+public_key_hash: uint256,    // Hash of public key
+balance: uint256,             // Account balance (always ≥ 0)
+}
+</p>
+<p>
+// Large transaction verification
+fn verify_signature(
+message: uint256,
+signature: uint2048,
+public_key: uint2048
+) -> bool {
+let verified = mod_exp(signature, 65537, public_key);
+return verified == message;
+}</code></pre>
+</p>
+<h3>Hash Chain and Merkle Trees</h3>
+<pre><code>// Cryptographic hash accumulation
+<p>
+fn merkle_root(leaves: [uint256]) -> uint256 {
+if leaves.length == 1 {
+return leaves[0];
+}
+</p>
+<p>
+let mut parents: [uint256] = [];
+till((leaves.length / 2) - 1, 1) {
+// Hash pairs of leaves (combine two uint256 → one uint256)
+let combined = sha256_combine(leaves[$ <em> 2], leaves[$ </em> 2 + 1]);
+parents.push(combined);
+}
+</p>
+<p>
+return merkle_root(parents);
+}</code></pre>
+</p>
+<hr>
+<h2>uint1024: 1024-bit Unsigned Integer</h2>
+<h3>Specifications</h3>
+<ul><li><strong>Size</strong>: 128 bytes (1024 bits)</li>
+<li><strong>Range</strong>: 0 to 2¹⁰²⁴ - 1 (approximately 1.80×10³⁰⁸)</li>
+<li><strong>Precision</strong>: ~308 decimal digits</li>
+<li><strong>Alignment</strong>: 16-byte (128-bit) for optimal cache performance</li>
+<li><strong>No sign bit</strong> - all 1024 bits represent magnitude</li>
+</ul>
+<h3>Memory Layout</h3>
+<pre><code>Byte:  0      8      16     24    ...   120   127
+<p>
+[------|------|------|------...-----|------]
+LSB                              MSB
+</p>
+<p>
+All 128 bytes represent value (no sign bit overhead)
+128 bytes = 2 cache lines on most CPUs</code></pre>
+</p>
+<h3>When to Use uint1024</h3>
+<pre><code>// ✓ GOOD: RSA-1024 public modulus (though deprecated for new systems)
+<p>
+fn encrypt_rsa1024(plaintext: uint1024, n: uint1024, e: uint64) -> uint1024 {
+return mod_exp(plaintext, uint1024(e), n);
+}
+</p>
+<p>
+// ✓ GOOD: Blockchain address representation
+struct BlockchainWallet {
+address: uint1024,     // Derived from public key
+balance: uint256,       // Account balance
+nonce: uint64,          // Transaction counter
+}
+</p>
+<p>
+// ✓ GOOD: Large prime product storage
+fn store_rsa_modulus(p: uint512, q: uint512) -> uint1024 {
+return uint1024(p) * uint1024(q);  // Product of two 512-bit primes
+}
+</p>
+<p>
+// ✗ BAD: Using as general counter (massive overkill!)
+let counter: uint1024 = 0;  // NO! uint64 has 18 quintillion values!
+counter += 1;
+</p>
+<p>
+// ✗ BAD: Array storage (memory explosion!)
+let cache: [uint1024; 10000];  // 1.28 MB for only 10K entries!
+</p>
+<p>
+// ✗ BAD: Frequent arithmetic in hot paths
+loop {
+let x: uint1024 = heavy_compute();  // Each op ~100× slower than uint64!
+}</code></pre>
+</p>
+<h3>Performance Characteristics</h3>
+<pre><code>// Performance comparison (relative to uint64 = 1×):
+<p>
+let a: uint64 = 12345;
+let b: uint64 = 67890;
+let c = a * b;  // ~1 cycle (native hardware)
+</p>
+<p>
+let x: uint1024 = 12345;
+let y: uint1024 = 67890;
+let z = x * y;  // ~100-500 cycles! (software multi-precision)</code></pre>
+</p>
+<strong>Reality</strong>: uint1024 operations are <strong>~100-500× slower</strong> than uint64:
+<ul><li>Addition: ~100× slower (carry propagation across 16 words)</li>
+<li>Multiplication: ~200-500× slower (Karatsuba algorithm)</li>
+<li>Division: ~500-2000× slower (multi-precision division)</li>
+<li>Modular exponentiation: Milliseconds to seconds!</li>
+</ul>
+<h3>Bitwise Operations Example</h3>
+<pre><code>// Bitwise operations are relatively fast (compared to arithmetic)
+<p>
+fn extract_public_exponent(encoded: uint1024) -> uint64 {
+// Extract lower 64 bits
+return uint64(encoded & uint1024(0xFFFFFFFFFFFFFFFF));
+}
+</p>
+<p>
+fn check_bit_set(value: uint1024, bit_position: uint32) -> bool {
+let mask = uint1024(1) << bit_position;
+return (value & mask) != 0;
+}
+</p>
+<p>
+// Bit counting (Hamming weight)
+fn count_bits(value: uint1024) -> uint32 {
+let mut count = 0;
+let mut v = value;
+while v != 0 {
+count += uint32(v & 1);
+v >>= 1;
+}
+return count;
+}</code></pre>
+</p>
+<hr>
+<h2>uint2048: 2048-bit Unsigned Integer</h2>
+<h3>Specifications</h3>
+<ul><li><strong>Size</strong>: 256 bytes (2048 bits)</li>
+<li><strong>Range</strong>: 0 to 2²⁰⁴⁸ - 1 (approximately 6.48×10⁶¹⁶)</li>
+<li><strong>Precision</strong>: ~617 decimal digits</li>
+<li><strong>Alignment</strong>: 32-byte (256-bit) aligned</li>
+<li><strong>Industry standard</strong> for RSA cryptography</li>
+</ul>
+<h3>Memory Layout</h3>
+<pre><code>256 bytes = 4 cache lines (significant memory footprint!)
+<p>
+Stack allocation: Usually OK for single variables
+Heap allocation: Required for large arrays
+Array of 10,000: 2.56 MB (won't fit in CPU cache!)</code></pre>
+</p>
+<h3>When to Use uint2048</h3>
+<pre><code>// ✓ GOOD: RSA-2048 public key encryption (current standard)
+<p>
+struct RSA2048PublicKey {
+n: uint2048,    // Public modulus (p × q)
+e: uint64,      // Public exponent (65537)
+}
+</p>
+<p>
+fn rsa2048_public_encrypt(
+message: uint2048,
+pub_key: RSA2048PublicKey
+) -> uint2048 {
+// Public encryption: c = m^e mod n
+// This is relatively fast (e = 65537 is small)
+return mod_exp(message, uint2048(pub_key.e), pub_key.n);
+}
+</p>
+<p>
+// ✓ GOOD: Certificate authority root modulus
+struct CACertificate {
+issuer: string,
+subject: string,
+modulus: uint2048,         // Root CA public key modulus
+signature: uint2048,        // CA's signature
+valid_from: uint64,
+valid_until: uint64,
+}
+</p>
+<p>
+// ✓ GOOD: Diffie-Hellman key exchange (2048-bit groups)
+fn diffie_hellman_compute_public(
+private_key: uint256,
+generator: uint2048,
+prime: uint2048
+) -> uint2048 {
+// Public key = g^private mod p
+return mod_exp(generator, uint2048(private_key), prime);
+}
+</p>
+<p>
+// ✗ BAD: Using in tight loops
+till(999_999, 1) {
+let value: uint2048 = process();  // Loop takes MINUTES!
+}
+</p>
+<p>
+// ✗ BAD: Storing non-crypto data
+struct UserProfile {
+user_id: uint2048,  // NO! uint64 is plenty!
+name: string,
+}</code></pre>
+</p>
+<h3>RSA-2048 Complete Example</h3>
+<pre><code>// Complete RSA-2048 encryption/decryption flow
+<p>
+struct RSA2048KeyPair {
+// Public components
+n: uint2048,        // Modulus
+e: uint64,          // Public exponent
+</p>
+<p>
+// Private components (stored securely!)
+d: int2048,         // Private exponent (can be negative intermediate!)
+p: uint2048,        // Secret prime 1
+q: uint2048,        // Secret prime 2
+</p>
+<p>
+// CRT optimization precomputed values
+dp: uint2048,       // d mod (p-1)
+dq: uint2048,       // d mod (q-1)
+q_inv: uint2048,    // q^(-1) mod p
+}
+</p>
+<p>
+fn generate_rsa2048_keypair() -> RSA2048KeyPair {
+// Generate two random 1024-bit primes
+let p = generate_random_prime_uint1024();
+let q = generate_random_prime_uint1024();
+</p>
+<p>
+// Public modulus
+let n = uint2048(p) * uint2048(q);
+</p>
+<p>
+// Public exponent (standard value)
+let e: uint64 = 65537;
+</p>
+<p>
+// Compute private exponent using extended Euclidean algorithm
+// Note: This requires SIGNED arithmetic (uses int2048 internally)
+let phi = (uint2048(p) - 1) * (uint2048(q) - 1);
+let d = compute_private_exponent(e, phi);  // Returns int2048
+</p>
+<p>
+// Precompute CRT values for fast decryption
+let dp = uint2048(d) % (p - 1);
+let dq = uint2048(d) % (q - 1);
+let q_inv = mod_inverse(q, p);
+</p>
+<p>
+return RSA2048KeyPair { n, e, d, p, q, dp, dq, q_inv };
+}
+</p>
+<p>
+fn rsa2048_encrypt(plaintext: uint2048, n: uint2048, e: uint64) -> uint2048 {
+// Encryption: c = m^e mod n
+// Fast because e is small (65537)
+return mod_exp(plaintext, uint2048(e), n);
+}
+</p>
+<p>
+fn rsa2048_decrypt_fast(
+ciphertext: uint2048,
+keypair: RSA2048KeyPair
+) -> uint2048 {
+// Fast decryption using Chinese Remainder Theorem (CRT)
+// ~4× faster than naive m = c^d mod n
+</p>
+<p>
+let p = keypair.p;
+let q = keypair.q;
+</p>
+<p>
+// Reduce ciphertext modulo p and q
+let cp = ciphertext % uint2048(p);
+let cq = ciphertext % uint2048(q);
+</p>
+<p>
+// Decrypt modulo p and q separately
+let mp = mod_exp(cp, keypair.dp, uint2048(p));
+let mq = mod_exp(cq, keypair.dq, uint2048(q));
+</p>
+<p>
+// Combine using CRT
+let h = (keypair.q_inv * (mp + uint2048(p) - mq)) % uint2048(p);
+let m = mq + uint2048(q) * h;
+</p>
+<p>
+return m;
+}
+</p>
+<p>
+// Benchmark reality check
+fn benchmark_rsa2048() {
+let keypair = generate_rsa2048_keypair();  // ~500ms to 2 seconds
+</p>
+<p>
+let message: uint2048 = 42;
+</p>
+<p>
+// Encryption (public key operation)
+let start = timestamp();
+let ciphertext = rsa2048_encrypt(message, keypair.n, keypair.e);
+let encrypt_ms = timestamp() - start;  // ~0.1-1 ms
+</p>
+<p>
+// Decryption (private key operation, much slower!)
+let start = timestamp();
+let decrypted = rsa2048_decrypt_fast(ciphertext, keypair);
+let decrypt_ms = timestamp() - start;  // ~10-50 ms
+</p>
+<p>
+println("Encryption: &{encrypt_ms} ms");
+println("Decryption: &{decrypt_ms} ms");  // ~10-100× slower!
+</p>
+<p>
+assert(decrypted == message, "Decryption failed!");
+}</code></pre>
+</p>
+<h3>Blockchain Example</h3>
+<pre><code>// Blockchain transaction with large address space
+<p>
+struct Transaction {
+from: uint2048,         // Sender address (public key hash)
+to: uint2048,           // Recipient address
+amount: uint256,         // Transfer amount
+nonce: uint64,           // Transaction sequence number
+signature: uint2048,     // Digital signature
+}
+</p>
+<p>
+fn verify_transaction(tx: Transaction, public_key: uint2048) -> bool {
+// Hash the transaction data
+let tx_hash = hash_transaction(tx);
+</p>
+<p>
+// Verify signature: signature^e mod n should equal hash
+let verified = mod_exp(tx.signature, 65537, public_key);
+</p>
+<p>
+return verified == uint2048(tx_hash);
+}
+</p>
+<p>
+fn mine_block_with_proof_of_work(
+transactions: [Transaction],
+previous_hash: uint256,
+difficulty: uint32
+) -> uint2048 {
+let mut nonce: uint64 = 0;
+</p>
+<p>
+loop {
+// Combine all data
+let block_data = combine_data(transactions, previous_hash, nonce);
+let hash = sha256_to_uint2048(block_data);
+</p>
+<p>
+// Check if hash meets difficulty target
+if leading_zeros(hash) >= difficulty {
+return hash;
+}
+</p>
+<p>
+nonce += 1;
+}
+}</code></pre>
+</p>
+<hr>
+<h2>uint4096: 4096-bit Unsigned Integer</h2>
+<h3>Specifications</h3>
+<ul><li><strong>Size</strong>: 512 bytes (4096 bits)</li>
+<li><strong>Range</strong>: 0 to 2⁴⁰⁹⁶ - 1 (approximately 2.09×10¹²³³)</li>
+<li><strong>Precision</strong>: ~1,233 decimal digits</li>
+<li><strong>Alignment</strong>: 64-byte (512-bit) aligned</li>
+<li><strong>High-security</strong> cryptographic standard</li>
+</ul>
+<h3>Memory Layout</h3>
+<pre><code>512 bytes = 8 cache lines (MASSIVE per-value overhead!)
+<p>
+Single value: Half a kilobyte!
+10 values: 5 KB
+1,000 values: 512 KB (exceeds most L2 caches)
+1,000,000 values: 512 MB (RAM required, cache thrashing inevitable)</code></pre>
+</p>
+<h3>When to Use uint4096</h3>
+<pre><code>// ✓ GOOD: RSA-4096 high-security applications
+<p>
+fn rsa4096_encrypt(
+message: uint4096,
+n: uint4096,
+e: uint64
+) -> uint4096 {
+// Used for long-term security (10+ years)
+// Government, military, CA root certificates
+return mod_exp(message, uint4096(e), n);
+}
+</p>
+<p>
+// ✓ GOOD: Post-quantum cryptography preparation
+struct PostQuantumParameters {
+modulus: uint4096,      // Large modulus for PQ security margin
+generator: uint4096,    // Group generator
+}
+</p>
+<p>
+// ✓ GOOD: Extreme-precision number theory research
+fn compute_large_prime_product(primes: [uint2048; 10]) -> uint4096 {
+let mut product: uint4096 = 1;
+till(primes.length - 1, 1) {
+product *= uint4096(primes[$]);
+}
+return product;
+}
+</p>
+<p>
+// ✗ BAD: Using in any hot path (absurdly slow!)
+till(9_999, 1) {
+let x: uint4096 = compute();  // This loop takes MINUTES!
+}
+</p>
+<p>
+// ✗ BAD: Large arrays (memory disaster!)
+let values: [uint4096; 10000];  // 5 MB for only 10K values!
+</p>
+<p>
+// ✗ BAD: General purpose usage
+struct Config {
+setting: uint4096,  // NO! Almost certainly overkill!
+}</code></pre>
+</p>
+<h3>RSA-4096 Performance Reality</h3>
+<pre><code>// RSA-4096 is EXTREMELY slow - use only when necessary
+<p>
+fn benchmark_rsa4096() {
+println("Generating RSA-4096 keypair...");
+let start = timestamp();
+let keypair = generate_rsa4096_keypair();
+let keygen_seconds = (timestamp() - start) / 1000;
+println("Key generation: &{keygen_seconds} seconds");  // 10-60 seconds!
+</p>
+<p>
+let message: uint4096 = 42;
+</p>
+<p>
+// Encryption
+let start = timestamp();
+let ciphertext = rsa4096_encrypt(message, keypair.n, keypair.e);
+let encrypt_ms = timestamp() - start;
+println("Encryption: &{encrypt_ms} ms");  // ~1-10 ms
+</p>
+<p>
+// Decryption (VERY slow!)
+let start = timestamp();
+let decrypted = rsa4096_decrypt_crt(ciphertext, keypair);
+let decrypt_ms = timestamp() - start;
+println("Decryption: &{decrypt_ms} ms");  // ~100-500 ms!
+}</code></pre>
+</p>
+<strong>When uint4096 is actually used</strong>:
+<ul><li>Government/military long-term secrets (classified data)</li>
+<li>Certificate Authority root keys (30+ year lifetime)</li>
+<li>Post-quantum transition period (hedging against quantum computers)</li>
+<li>Research requiring >617 decimal digits</li>
+</ul>
+<h3>Zero-Knowledge Proof Example</h3>
+<pre><code>// Zero-knowledge proof systems can use ultra-large integers
+<p>
+struct ZKProof {
+commitment: uint4096,    // Cryptographic commitment
+challenge: uint256,       // Verifier's challenge
+response: uint4096,       // Prover's response
+}
+</p>
+<p>
+fn generate_zk_proof(
+secret: uint256,
+public_params: uint4096
+) -> ZKProof {
+// Generate commitment
+let randomness = generate_random_uint4096();
+let commitment = mod_exp(public_params, randomness, MODULUS);
+</p>
+<p>
+// Compute challenge
+let challenge = hash_to_challenge(commitment);
+</p>
+<p>
+// Compute response (secret × challenge + randomness)
+let response = (uint4096(secret) * uint4096(challenge) + randomness) % MODULUS;
+</p>
+<p>
+return ZKProof { commitment, challenge, response };
+}
+</p>
+<p>
+fn verify_zk_proof(proof: ZKProof, public_value: uint4096) -> bool {
+// Verify: g^response = commitment × public_value^challenge (mod n)
+let lhs = mod_exp(GENERATOR, proof.response, MODULUS);
+let rhs_1 = proof.commitment;
+let rhs_2 = mod_exp(public_value, uint4096(proof.challenge), MODULUS);
+let rhs = (rhs_1 * rhs_2) % MODULUS;
+</p>
+<p>
+return lhs == rhs;
+}</code></pre>
+</p>
+<hr>
+<h2>Common Operations</h2>
+<h3>Arithmetic Operations</h3>
+<p>
+All operations are software-implemented (no CPU hardware support):
+</p>
+<pre><code>// Addition (~100-400× slower than uint64)
+<p>
+let a: uint2048 = 999999999999999999;
+let b: uint2048 = 111111111111111111;
+let sum = a + b;  // Multi-word addition with carry
+</p>
+<p>
+// Subtraction (with overflow check!)
+let diff = a - b;  // Multi-word subtraction with borrow
+if diff == ERR {
+println("Subtraction underflow!");
+}
+</p>
+<p>
+// Multiplication (~200-4000× slower than uint64)
+let product = a * b;  // Karatsuba or Toom-Cook algorithm
+</p>
+<p>
+// Division and modulo (~500-20000× slower than uint64)
+let quotient = a / b;   // Multi-precision division (VERY slow!)
+let remainder = a % b;  // Same as division (remainder is byproduct)
+</p>
+<p>
+// Overflow detection
+let max: uint2048 = MAX_UINT2048;
+let overflow = max + 1;  // overflow == ERR</code></pre>
+</p>
+<h3>Comparison Operations</h3>
+<pre><code>let a: uint2048 = 12345;
+<p>
+let b: uint2048 = 67890;
+</p>
+<p>
+// Comparisons (~10-100× slower than uint64)
+if a < b { }      // Multi-word comparison (LSB to MSB)
+if a == b { }     // Multi-word equality check
+if a > 0 { }      // Quick zero check
+if a == 0 { }     // Zero test (all words zero)</code></pre>
+</p>
+<h3>Bitwise Operations</h3>
+<pre><code>let a: uint2048 = 0xABCDEF...;
+<p>
+let b: uint2048 = 0x123456...;
+</p>
+<p>
+// Bitwise operations (~20-200× slower than uint64, but faster than arithmetic!)
+let and_result = a & b;   // Word-by-word AND
+let or_result = a | b;    // Word-by-word OR
+let xor_result = a ^ b;   // Word-by-word XOR
+let not_result = ~a;      // Word-by-word NOT (bitwise complement)
+</p>
+<p>
+// Bit shifts
+let left = a << 10;       // Shift left 10 bits
+let right = a >> 5;       // Logical right shift (zero-fill)
+</p>
+<p>
+// Rotation (sometimes useful in cryptography)
+fn rotate_left(value: uint2048, bits: uint32) -> uint2048 {
+let left_part = value << bits;
+let right_part = value >> (2048 - bits);
+return left_part | right_part;
+}</code></pre>
+</p>
+<h3>Type Conversions</h3>
+<pre><code>// Widening conversions (always safe)
+<p>
+let small: uint64 = 12345;
+let large: uint4096 = uint4096(small);  // Zero-extended
+</p>
+<p>
+let medium: uint256 = 0xABCDEF;
+let larger: uint2048 = uint2048(medium);  // Zero-extended
+</p>
+<p>
+// Narrowing conversions (potential data loss!)
+let big: uint4096 = 999999999999999999999999999999;
+let small: uint64 = uint64(big);  // Truncates! Likely ERR if too large
+</p>
+<p>
+if small == ERR {
+println("Value too large for uint64!");
+}
+</p>
+<p>
+// Signed/unsigned conversion (reinterpret bits)
+let unsigned: uint2048 = MAX_UINT2048;
+let signed: int2048 = int2048(unsigned);  // Reinterprets as large negative!
+</p>
+<p>
+// To/from strings
+let num: uint2048 = parse_uint2048("123456789012345678901234567890");
+let decimal_str = to_string(num);             // "123456...7890"
+let hex_str = to_hex_string(num);             // "0x18EE90FF6C373E0E..."</code></pre>
+</p>
+<hr>
+<h2>Modular Arithmetic (Critical for Cryptography)</h2>
+<h3>Modular Exponentiation</h3>
+<pre><code>// Square-and-multiply algorithm (binary exponentiation)
+<p>
+fn mod_exp(base: uint2048, exponent: uint2048, modulus: uint2048) -> uint2048 {
+if modulus == 1 { return 0; }
+</p>
+<p>
+let mut result: uint2048 = 1;
+let mut base_mod = base % modulus;
+let mut exp = exponent;
+</p>
+<p>
+while exp > 0 {
+// If exponent bit is 1, multiply result by base
+if (exp & 1) == 1 {
+result = (result * base_mod) % modulus;
+}
+</p>
+<p>
+// Square the base
+base_mod = (base_mod * base_mod) % modulus;
+</p>
+<p>
+// Right shift exponent (divide by 2)
+exp >>= 1;
+}
+</p>
+<p>
+return result;
+}
+</p>
+<p>
+// Optimized: Window-based exponentiation (faster for large exponents)
+fn mod_exp_window(base: uint2048, exp: uint2048, mod: uint2048, window_size: uint32) -> uint2048 {
+// Precompute base^0, base^1, base^2, ..., base^(2^window_size - 1)
+let table_size = 1 << window_size;  // 2^window_size
+let mut table: [uint2048; table_size];
+</p>
+<p>
+table[0] = 1;
+table[1] = base % mod;
+till(table_size - 1, 2) {
+table[$] = (table[$ - 1] * table[1]) % mod;
+}
+</p>
+<p>
+// Process exponent in windows
+let mut result: uint2048 = 1;
+let bits = get_bits(exp);
+let windows = get_windows(bits, window_size);
+</p>
+<p>
+till(windows.length - 1, 1) {
+// Square result window_size times
+till(window_size - 1, 1) {
+result = (result * result) % mod;
+}
+// Multiply by precomputed power
+result = (result * table[windows[$]]) % mod;
+}
+</p>
+<p>
+return result;
+}</code></pre>
+</p>
+<h3>Modular Inverse</h3>
+<pre><code>// Extended Euclidean Algorithm
+<p>
+fn mod_inverse(a: uint2048, m: uint2048) -> uint2048 {
+// Find x such that (a * x) % m == 1
+</p>
+<p>
+if m == 1 { return 0; }
+</p>
+<p>
+let m0 = m;
+let mut x0: int2048 = 0;
+let mut x1: int2048 = 1;
+let mut a_signed = int2048(a);
+let mut m_signed = int2048(m);
+</p>
+<p>
+while a_signed > 1 {
+// q = quotient, r = remainder
+let q = a_signed / m_signed;
+let r = a_signed % m_signed;
+</p>
+<p>
+a_signed = m_signed;
+m_signed = r;
+</p>
+<p>
+// Update x0, x1
+let temp = x0;
+x0 = x1 - q * x0;
+x1 = temp;
+}
+</p>
+<p>
+// Make x1 positive
+if x1 < 0 {
+x1 += int2048(m0);
+}
+</p>
+<p>
+return uint2048(x1);
+}
+</p>
+<p>
+// Fermat's Little Theorem (when modulus is prime)
+fn mod_inverse_prime(a: uint2048, p: uint2048) -> uint2048 {
+// For prime p: a^(-1) ≡ a^(p-2) mod p
+return mod_exp(a, p - 2, p);
+}</code></pre>
+</p>
+<h3>Montgomery Multiplication (Optimization)</h3>
+<pre><code>// Montgomery reduction: Faster modular multiplication
+<p>
+// Used in production crypto libraries
+</p>
+<p>
+struct MontgomeryContext {
+modulus: uint2048,      // The modulus N
+r: uint2048,            // R = 2^2048 (in Montgomery space)
+r_inv: uint2048,        // R^(-1) mod N
+n_prime: uint2048,      // N' where R<em>R^(-1) - N</em>N' = 1
+}
+</p>
+<p>
+fn montgomery_setup(modulus: uint2048) -> MontgomeryContext {
+// Precompute Montgomery parameters (one-time setup)
+// (Implementation details complex - see academic papers)
+// ...
+}
+</p>
+<p>
+fn montgomery_multiply(
+a: uint2048,
+b: uint2048,
+ctx: MontgomeryContext
+) -> uint2048 {
+// Compute (a * b) / R mod N
+// ~2× faster than naive (a * b) % N for repeated operations!
+</p>
+<p>
+let t = a * b;  // Regular multiplication
+</p>
+<p>
+// Montgomery reduction (avoids expensive division!)
+let m = (t * ctx.n_prime) & (ctx.r - 1);  // Mask to get lower bits
+let u = (t + m * ctx.modulus) >> 2048;     // Shift instead of divide!
+</p>
+<p>
+if u >= ctx.modulus {
+return u - ctx.modulus;
+}
+return u;
+}
+</p>
+<p>
+// Montgomery exponentiation (combines both optimizations)
+fn mod_exp_montgomery(base: uint2048, exp: uint2048, modulus: uint2048) -> uint2048 {
+let ctx = montgomery_setup(modulus);
+</p>
+<p>
+// Convert to Montgomery space
+let base_mont = (base * ctx.r) % modulus;
+let mut result_mont: uint2048 = ctx.r % modulus;  // 1 in Montgomery space
+</p>
+<p>
+let mut exp_bits = exp;
+let mut base_curr = base_mont;
+</p>
+<p>
+while exp_bits > 0 {
+if (exp_bits & 1) == 1 {
+result_mont = montgomery_multiply(result_mont, base_curr, ctx);
+}
+base_curr = montgomery_multiply(base_curr, base_curr, ctx);
+exp_bits >>= 1;
+}
+</p>
+<p>
+// Convert back from Montgomery space
+return montgomery_multiply(result_mont, 1, ctx);
+}</code></pre>
+</p>
+<hr>
+<h2>Prime Number Operations</h2>
+<h3>Primality Testing (Miller-Rabin)</h3>
+<pre><code>// Probabilistic primality test (industry standard)
+<p>
+fn is_probably_prime(n: uint2048, rounds: uint32) -> bool {
+// Special cases
+if n < 2 { return false; }
+if n == 2 || n == 3 { return true; }
+if n % 2 == 0 { return false; }
+</p>
+<p>
+// Write n-1 as 2^r * d
+let mut d = n - 1;
+let mut r: uint32 = 0;
+while d % 2 == 0 {
+d /= 2;
+r += 1;
+}
+</p>
+<p>
+// Witness loop (multiple rounds for high confidence)
+till(rounds - 1, 1) {
+let a = random_range(2, n - 2);
+let mut x = mod_exp(a, d, n);
+</p>
+<p>
+if x == 1 || x == n - 1 {
+continue;
+}
+</p>
+<p>
+let mut is_composite = true;
+till(r - 2, 1) {
+x = mod_exp(x, 2, n);
+if x == n - 1 {
+is_composite = false;
+break;
+}
+}
+</p>
+<p>
+if is_composite {
+return false;  // Definitely composite
+}
+}
+</p>
+<p>
+return true;  // Probably prime
+}
+</p>
+<p>
+// Error probability: (1/4)^rounds
+// 40 rounds → error < 10^(-24) (effectively certain!)</code></pre>
+</p>
+<h3>Prime Generation</h3>
+<pre><code>// Generate a random prime of specified bit length
+<p>
+fn generate_random_prime(bits: uint32) -> uint2048 {
+loop {
+// Generate random odd number
+let mut candidate = generate_random_bits(bits);
+candidate |= 1;  // Make odd
+candidate |= (uint2048(1) << (bits - 1));  // Set MSB (ensure bit length)
+</p>
+<p>
+// Quick check: divisible by small primes?
+if has_small_prime_divisor(candidate) {
+continue;
+}
+</p>
+<p>
+// Miller-Rabin test
+if is_probably_prime(candidate, 40) {
+return candidate;
+}
+}
+}
+</p>
+<p>
+// Fast small prime divisibility test
+fn has_small_prime_divisor(n: uint2048) -> bool {
+// Check divisibility by first ~1000 primes (very fast!)
+till(SMALL_PRIMES.length - 1, 1) {  // [2, 3, 5, 7, 11, ..., 7919]
+if n % uint2048(SMALL_PRIMES[$]) == 0 && n != uint2048(SMALL_PRIMES[$]) {
+return true;
+}
+}
+return false;
+}
+</p>
+<p>
+// Generate two distinct primes (for RSA)
+fn generate_rsa_primes(bits_per_prime: uint32) -> (uint2048, uint2048) {
+let p = generate_random_prime(bits_per_prime);
+</p>
+<p>
+let mut q: uint2048;
+loop {
+q = generate_random_prime(bits_per_prime);
+if q != p {  // Ensure distinct
+break;
+}
+}
+</p>
+<p>
+return (p, q);
+}</code></pre>
+</p>
+<hr>
+<h2>Memory and Performance Considerations</h2>
+<h3>Memory Footprint Comparison</h3>
+<pre><code>// Stack allocation (automatic storage)
+<p>
+fn process_small() {
+let x: uint64 = 42;       // 8 bytes on stack
+let y: uint2048 = 42;     // 256 bytes on stack! (usually OK)
+let z: uint4096 = 42;     // 512 bytes on stack! (getting large)
+}
+</p>
+<p>
+// Array allocation (heap usually required)
+fn process_arrays() {
+// Stack arrays (may overflow stack!)
+let small: [uint64; 10000] = [0; 10000];      // 80 KB (OK on stack)
+let large: [uint2048; 10000] = [0; 10000];    // 2.56 MB (stack overflow risk!)
+</p>
+<p>
+// Heap allocation recommended for large arrays
+let heap_array = allocate_heap::<uint2048>(10000);  // Safe, but slower access
+}
+</p>
+<p>
+// Size table
+sizeof(uint64)   =    8 bytes  (1 cache line per 8 values)
+sizeof(uint256)  =   32 bytes  (1 cache line per 2 values)
+sizeof(uint1024) =  128 bytes  (2 cache lines per value)
+sizeof(uint2048) =  256 bytes  (4 cache lines per value!)
+sizeof(uint4096) =  512 bytes  (8 cache lines per value!!)</code></pre>
+</p>
+<h3>Performance Comparison Table</h3>
+<pre><code>// Approximate performance (relative to uint64 = 1×):
+<p>
+Operation          uint64   uint256  uint1024  uint2048  uint4096
+-------------------------------------------------------------------
+Addition           1×       8×       100×      200×      400×
+Subtraction        1×       8×       100×      200×      400×
+Multiplication     1×       20×      300×      1000×     4000×
+Division           1×       50×      1000×     4000×     16000×
+Modulo             1×       50×      1000×     4000×     16000×
+Bitwise AND/OR/XOR 1×       4×       50×       100×      200×
+Bit Shift          1×       5×       80×       150×      300×
+Comparison         1×       4×       30×       60×       120×
+Mod Exp (2048-bit) N/A      N/A      Fast      Normal    Slow
+Mod Exp (4096-bit) N/A      N/A      Slow      Slow      Normal</code></pre>
+</p>
+<h3>Cache Behavior</h3>
+<pre><code>// Cache-friendly pattern (sequential uint64)
+<p>
+fn sum_uint64_array(arr: [uint64; 1000000]) -> uint64 {
+let mut sum: uint64 = 0;
+till(arr.length - 1, 1) {
+sum += arr[$];  // Excellent cache locality! Each cache line has 8 values
+}
+return sum;
+}
+</p>
+<p>
+// Cache-hostile pattern (sequential uint4096)
+fn sum_uint4096_array(arr: [uint4096; 10000]) -> uint4096 {
+let mut sum: uint4096 = 0;
+till(arr.length - 1, 1) {
+sum += arr[$];  // TERRIBLE cache locality! Each value spans 8 cache lines!
+}
+return sum;
+}
+</p>
+<p>
+// Performance difference: ~1000-10000× slower for uint4096 array iteration!</code></pre>
+</p>
+<hr>
+<h2>Common Pitfalls</h2>
+<h3>1. Underflow with Unsigned Types</h3>
+<pre><code>// ✗ DANGEROUS: Unsigned subtraction can underflow!
+<p>
+let a: uint2048 = 100;
+let b: uint2048 = 200;
+let diff = a - b;  // diff == ERR (underflow!)
+</p>
+<p>
+// ✓ SAFE: Check before subtracting
+let diff = if a >= b {
+a - b
+} else {
+0  // Or handle error appropriately
+};
+</p>
+<p>
+// ✓ BETTER: Use checked subtraction
+fn safe_subtract(a: uint2048, b: uint2048) -> uint2048 {
+if a < b {
+return ERR;
+}
+return a - b;
+}</code></pre>
+</p>
+<h3>2. Forgetting Performance Implications</h3>
+<pre><code>// ✗ BAD: Treating like native uint64
+<p>
+fn compute_many() {
+till(999_999, 1) {
+let x: uint4096 = expensive_operation();  // Loop takes HOURS!
+results[$] = x;
+}
+}
+</p>
+<p>
+// ✓ GOOD: Batch operations, use smaller types where possible
+fn compute_smartly() {
+// Do bulk of work with uint64/uint256
+let intermediate_results: [uint256; 1_000_000] = ...;
+</p>
+<p>
+// Only final aggregation uses uint4096
+let final_sum: uint4096 = aggregate(intermediate_results);
+}</code></pre>
+</p>
+<h3>3. Inefficient Array Usage</h3>
+<pre><code>// ✗ BAD: Large arrays on stack (stack overflow!)
+<p>
+fn process() {
+let data: [uint4096; 100000];  // 51.2 MB on stack! CRASH!
+}
+</p>
+<p>
+// ✓ GOOD: Heap allocation for large arrays
+fn process_safely() {
+let data = Vec::<uint4096>::with_capacity(100000);  // Heap allocation
+}</code></pre>
+</p>
+<h3>4. Not Using Precomputation</h3>
+<pre><code>// ✗ BAD: Recomputing expensive values
+<p>
+fn encrypt_many(messages: [uint2048]) -> [uint2048] {
+let results = [];
+till(messages.length - 1, 1) {
+// Recomputes modulus every iteration!
+let n = compute_modulus();
+results.push(mod_exp(messages[$], 65537, n));
+}
+return results;
+}
+</p>
+<p>
+// ✓ GOOD: Precompute expensive constants
+fn encrypt_many_fast(messages: [uint2048], n: uint2048) -> [uint2048] {
+let results = [];
+till(messages.length - 1, 1) {
+results.push(mod_exp(messages[$], 65537, n));  // Reuse precomputed n
+}
+return results;
+}</code></pre>
+</p>
+<hr>
+<h2>Best Practices</h2>
+<h3>1. Choose Appropriate Size</h3>
+<pre><code>// Decision tree:
+<p>
+// - Need < 2^64? → uint64 (fast!)
+// - Need 256 bits? → uint256 (reasonable)
+// - Need RSA-2048? → uint2048 (standard)
+// - Need RSA-4096? → uint4096 (high security only!)
+</p>
+<p>
+// ✗ BAD: Using uint4096 for 128-bit security
+let session_id: uint4096 = random();  // Absurd overkill!
+</p>
+<p>
+// ✓ GOOD: Use appropriate size
+let session_id: uint128 = random();  // Sufficient, much faster!</code></pre>
+</p>
+<h3>2. Leverage Precomputation</h3>
+<pre><code>// ✓ GOOD: Precompute Montgomery parameters
+<p>
+struct CryptoContext {
+modulus: uint2048,
+montgomery_ctx: MontgomeryContext,  // Precomputed once
+generator_powers: [uint2048; 256],  // Precomputed table
+}
+</p>
+<p>
+fn init_context(modulus: uint2048) -> CryptoContext {
+let mont_ctx = montgomery_setup(modulus);
+let powers = precompute_powers(GENERATOR, modulus);
+return CryptoContext { modulus, mont_ctx, powers };
+}</code></pre>
+</p>
+<h3>3. Use Constant-Time Operations for Crypto</h3>
+<pre><code>// ✗ BAD: Timing leak!
+<p>
+fn decrypt_with_leak(ciphertext: uint2048, key: int2048) -> uint2048 {
+if key < 0 {  // Branch on secret key! (timing leak!)
+return decrypt_negative(ciphertext, key);
+}
+return decrypt_positive(ciphertext, key);
+}
+</p>
+<p>
+// ✓ GOOD: Constant-time (no secret-dependent branches)
+fn decrypt_constant_time(ciphertext: uint2048, key_abs: uint2048) -> uint2048 {
+// Always same number of operations regardless of key value
+return mod_exp_constant_time(ciphertext, key_abs, MODULUS);
+}</code></pre>
+</p>
+<h3>4. Validate Inputs</h3>
+<pre><code>// ✓ GOOD: Validate cryptographic inputs
+<p>
+fn rsa_decrypt(ciphertext: uint2048, d: int2048, n: uint2048) -> uint2048 {
+// Validate ciphertext is in valid range
+if ciphertext >= n {
+return ERR;  // Invalid ciphertext!
+}
+</p>
+<p>
+// Validate private exponent
+if d < 0 {
+return ERR;  // Invalid private key!
+}
+</p>
+<p>
+return mod_exp(ciphertext, uint2048(d), n);
+}</code></pre>
+</p>
+<hr>
+<h2>ERR Propagation</h2>
+<pre><code>// Overflow detection
+<p>
+let max: uint2048 = MAX_UINT2048;
+let overflow = max + 1;  // overflow == ERR
+</p>
+<p>
+// Underflow detection (unsigned-specific!)
+let a: uint2048 = 100;
+let b: uint2048 = 200;
+let underflow = a - b;  // underflow == ERR (unsigned can't be negative!)
+</p>
+<p>
+// Division by zero
+let zero_div = uint2048(42) / uint2048(0);  // zero_div == ERR
+</p>
+<p>
+// ERR propagation chain
+let x: uint2048 = ERR;
+let y = x + 100;  // y == ERR (propagates)
+let z = y * 50;   // z == ERR (continues propagating)
+</p>
+<p>
+// Error checking in crypto
+fn safe_modular_inverse(a: uint2048, m: uint2048) -> uint2048 {
+let result = mod_inverse(a, m);
+if result == ERR {
+log_error("Modular inverse failed - values may be coprime!");
+return ERR;
+}
+return result;
+}</code></pre>
+</p>
+<hr>
+<h2>Comparison with Other Types</h2>
+<h3>vs Signed Variants (int1024/int2048/int4096)</h3>
+<pre><code>// Use unsigned (uint*) for:
+<p>
+// - Public cryptographic values (always positive)
+// - Blockchain addresses, balances
+// - Hash values
+// - Bit manipulation
+</p>
+<p>
+// Use signed (int*) for:
+// - Extended Euclidean algorithm (produces negative values)
+// - Modular inverse computation
+// - Some signature schemes requiring signed arithmetic</code></pre>
+</p>
+<h3>vs Smaller Unsigned (uint128/uint256/uint512)</h3>
+<pre><code>// uint256 is sufficient for:
+<p>
+// - Ethereum addresses
+// - SHA-256 hashes
+// - 128-bit security level (256-bit keys)
+</p>
+<p>
+// uint512 is sufficient for:
+// - SHA-512 hashes
+// - Some elliptic curves
+</p>
+<p>
+// Upgrade to uint1024+ only for:
+// - RSA cryptography
+// - Ultra-high security requirements</code></pre>
+</p>
+<h3>vs Arbitrary Precision Types</h3>
+<pre><code>// uint2048 advantages:
+<p>
+// - Fixed size (deterministic memory)
+// - Stack allocation possible
+// - No heap fragmentation
+// - Faster for known-size operations
+</p>
+<p>
+// Arbitrary precision advantages:
+// - Can grow as needed
+// - Better for unpredictable precision
+// - More flexible for research
+</p>
+<p>
+// Choose uint* when size is known (cryptography)
+// Choose arbitrary precision for open-ended computations</code></pre>
+</p>
+<hr>
+<h2>Nikola Consciousness Usage</h2>
+<h3>Cryptographic Verification</h3>
+<pre><code>// Nikola verifies therapy session signatures
+<p>
+fn verify_session_log(
+log: TherapySessionLog,
+signature: uint2048,
+therapist_key: uint2048
+) -> bool {
+let log_hash = hash_session_log(log);
+let verified = mod_exp(signature, 65537, therapist_key);
+return verified == uint2048(log_hash);
+}</code></pre>
+</p>
+<h3>Long-term Secure Storage</h3>
+<pre><code>// Store thought logs with ultra-long-term security
+<p>
+struct SecureThoughtArchive {
+timestamp: uint64,
+thought_state: vec9,
+cumulative_hash: uint256,
+long_term_signature: uint4096,  // 100-year security horizon
+}</code></pre>
+</p>
+<h3>Trust Chain Verification</h3>
+<pre><code>// Verify chain of self-modification signatures
+<p>
+fn verify_improvement_chain(chain: [AgentUpdate]) -> bool {
+till(chain.length - 1, 1) {
+let prev = chain[$ - 1];
+let curr = chain[$];
+</p>
+<p>
+// Verify current update signed by previous version
+let hash = hash_update(curr);
+let sig_valid = verify_signature(hash, curr.signature, prev.public_key);
+</p>
+<p>
+if !sig_valid {
+return false;  // Chain broken!
+}
+}
+return true;  // Entire chain valid
+}</code></pre>
+</p>
+<hr>
+<h2>Implementation Status</h2>
+<p>
+| Type | Parser | Compiler | Runtime | GPU | Status |
+|------|--------|----------|---------|-----|--------|
+| <code>uint1024</code> | ✅ | ✅ | ✅ | ⚠️ | Complete, GPU limited |
+| <code>uint2048</code> | ✅ | ✅ | ✅ | ⚠️ | Complete, GPU limited |
+| <code>uint4096</code> | ✅ | ✅ | ✅ | ❌ | Complete, no GPU |
+</p>
+<strong>Notes</strong>:
+<ul><li>Software multi-precision implementation</li>
+<li>GPU support limited (register pressure, poor performance)</li>
+<li>Based on GMP/OpenSSL algorithms</li>
+<li>Constant-time variants available for crypto operations</li>
+</ul>
+<hr>
+<h2>Related Types</h2>
+<ul><li><strong><a href="int1024_int2048_int4096.md">int1024, int2048, int4096</a></strong> - Signed ultra-large integers</li>
+<li><strong><a href="uint128_uint256_uint512.md">uint128, uint256, uint512</a></strong> - Smaller unsigned large integers</li>
+<li><strong><a href="int128_int256_int512.md">int128, int256, int512</a></strong> - Smaller signed large integers</li>
+<li><strong><a href="fix256.md">fix256</a></strong> - Fixed-point decimal (different use case!)</li>
+</ul>
+<hr>
+<h2>Summary</h2>
+<strong>uint1024/uint2048/uint4096 = Unsigned ultra-large integers for cryptography</strong>
+<h3>Quick Decision Guide</h3>
+<p>
+| Need | Use This | Why |
+|------|----------|-----|
+| RSA-1024 public values | <code>uint1024</code> | Deprecated security level, 128 bytes |
+| RSA-2048 public keys | <code>uint2048</code> | Current standard, 256 bytes |
+| RSA-4096 high security | <code>uint4096</code> | Long-term security, 512 bytes |
+| Blockchain addresses | <code>uint256</code> or <code>uint1024</code> | Depends on address space |
+| Hash values | <code>uint256</code> or <code>uint512</code> | Match hash output size |
+| Private key operations | <code>int*</code> variants | Need signed arithmetic |
+| General large numbers | <code>uint128</code> or <code>uint256</code> | Much faster, usually sufficient |
+</p>
+<h3>Key Principles</h3>
+<p>
+1. <strong>Cryptography-first design</strong> - Built for RSA, DH, signatures
+2. <strong>Always positive</strong> - No sign bit, full range for magnitude
+3. <strong>Extremely slow</strong> - 100-20000× slower than native uint64
+4. <strong>Memory intensive</strong> - 128-512 bytes per value
+5. <strong>Constant-time crypto</strong> - Avoid timing attacks
+6. <strong>Precompute optimizations</strong> - Montgomery, CRT, power tables
+</p>
+<strong>Remember</strong>: Use the smallest type that meets your security requirements. uint2048 is the current standard for most production cryptography!
+    </main>
+</body>
+</html>

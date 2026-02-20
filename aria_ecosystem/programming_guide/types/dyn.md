@@ -67,13 +67,14 @@ end
 // Array of different types
 items: []dyn = [42, "hello", 3.14, true];
 
-for item in items do
+till(items.length - 1, 1) {
+    item = items[$];
     when item is i32(n) then
         stdout << "Integer: $n";
     elsif item is string(s) then
         stdout << "String: $s";
     end
-end
+}
 ```
 
 ### JSON-Like Data

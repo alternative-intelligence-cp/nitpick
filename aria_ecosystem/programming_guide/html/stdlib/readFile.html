@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The `readFile()` Function - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Stdlib</div>
+        <h1>The <code>readFile()</code> Function</h1>
+<strong>Category</strong>: Standard Library → I/O
+<strong>Syntax</strong>: <code>Result[string]:readFile(string:path)</code>
+<strong>Purpose</strong>: Read entire file contents as string with error handling
+<hr>
+<h2>Overview</h2>
+<p>
+The <code>readFile()</code> function reads the entire contents of a file and returns it as a string. It:
+</p>
+<ul><li>Returns <strong><code>Result[string]</code></strong> type (success or error)</li>
+<li>Reads <strong>entire file</strong> into memory</li>
+<li>Handles <strong>text files</strong> (for binary, use streams)</li>
+<li>Provides <strong>automatic error handling</strong></li>
+</ul>
+<strong>Philosophy</strong>: Safe file I/O with explicit error handling via Result type.
+<hr>
+<h2>Basic Syntax</h2>
+<pre><code>Result[string]:result = readFile("path/to/file.txt");
+<p>
+result?
+.onSuccess(NIL(string:content) {
+print(<code>File content: &{content}</code>);
+pass(NIL);
+})
+.onError(NIL(Error:err) {
+print(<code>Error: &{err}</code>);
+pass(NIL);
+});</code></pre>
+</p>
+<hr>
+<h2>Example 1: Basic File Reading</h2>
+<pre><code>Result[string]:result = readFile("config.txt");
+<p>
+if (result.isOk()) {
+string:content = result.unwrap();
+print(content);
+} else {
+string:error = result.err().unwrap();
+print(<code>Failed to read file: &{error}</code>);
+}</code></pre>
+</p>
+<hr>
+<h2>Example 2: Pipeline Style</h2>
+<pre><code>// Chain operations with pipeline
+<p>
+readFile("data.txt")
+.map(string(string:content) { pass(content.toUpperCase()); })
+.map(string(string:upper) { pass(upper.replace("\n", " ")); })
+.onSuccess(NIL(string:processed) { print(processed); pass(NIL); })
+.onError(NIL(Error:err) { print(<code>Error: &{err}</code>); pass(NIL); });</code></pre>
+</p>
+<hr>
+<h2>Example 3: Early Return on Error</h2>
+<pre><code>func:processConfigFile = Result<a href="string:path">void</a> {
+<p>
+// Read file, propagate error if fails
+Result[string]:result = readFile(path);
+if (result.isErr()) {
+pass(result.mapErr());  // Propagate error
+}
+</p>
+<p>
+string:content = result.unwrap();
+</p>
+<p>
+// Process content
+parseConfig(content);
+</p>
+<p>
+pass(Result.ok());
+};</code></pre>
+</p>
+<hr>
+<h2>Error Handling Patterns</h2>
+<h3>Pattern 1: Unwrap with Default</h3>
+<pre><code>// Use default if file doesn't exist
+<p>
+string:config = readFile("config.txt")
+.unwrapOr("default config");
+</p>
+<p>
+print(config);</code></pre>
+</p>
+<h3>Pattern 2: Match on Result</h3>
+<pre><code>Result[string]:result = readFile("data.txt");
+<p>
+pick(result.isOk()) {
+case true:
+string:data = result.unwrap();
+processData(data);
+</p>
+<p>
+case false:
+string:err = result.err().unwrap();
+handleError(err);
+}</code></pre>
+</p>
+<h3>Pattern 3: Early Exit</h3>
+<pre><code>func:loadAndProcess = Result[void]() {
+<p>
+// Early return on error
+Result[string]:data = readFile("input.txt");
+if (data.isErr()) {
+fail(<code>Cannot read input: &{data.err().unwrap()}</code>);
+}
+</p>
+<p>
+// Continue with valid data
+process(data.unwrap());
+pass(Result.ok());
+};</code></pre>
+</p>
+<hr>
+<h2>Common Use Cases</h2>
+<h3>Use Case 1: Configuration Files</h3>
+<pre><code>func:loadConfig = Config() {
+<p>
+Result[string]:content = readFile("app.config");
+</p>
+<p>
+if (content.isErr()) {
+print("Using default config");
+pass(Config.default());
+}
+</p>
+<p>
+pass(parseConfig(content.unwrap()));
+};</code></pre>
+</p>
+<h3>Use Case 2: Template Loading</h3>
+<pre><code>func:loadTemplate = string(string:name) {
+<p>
+string:path = <code>templates/&{name}.html</code>;
+</p>
+<p>
+pass(readFile(path).unwrapOr("<html>Not Found</html>"));
+};
+</p>
+<p>
+string:homepage = loadTemplate("home");</code></pre>
+</p>
+<h3>Use Case 3: Data Import</h3>
+<pre><code>func:importData = Result[int64[]]() {
+<p>
+Result[string]:raw = readFile("data.csv");
+if (raw.isErr()) {
+fail("Cannot read data file");
+}
+</p>
+<p>
+// Parse CSV
+int64[]:values = parseCSV(raw.unwrap());
+pass(Result.ok(values));
+};</code></pre>
+</p>
+<h3>Use Case 4: File Existence Check</h3>
+<pre><code>func:fileExists = bool(string:path) {
+<p>
+Result[string]:result = readFile(path);
+pass(result.isOk());
+};
+</p>
+<p>
+if (fileExists("important.txt")) {
+print("File found!");
+}</code></pre>
+</p>
+<hr>
+<h2>File Size Considerations</h2>
+<h3>Small Files</h3>
+<pre><code>// OK for small files (< 1 MB)
+<p>
+string:content = readFile("small.txt").unwrap();</code></pre>
+</p>
+<h3>Large Files</h3>
+<pre><code>// For large files, use streaming
+<p>
+func:processLargeFile = Result<a href="string:path">void</a> {
+Result[Stream]:stream = openFile(path, "r");
+if (stream.isErr()) {
+fail("Cannot open file");
+}
+</p>
+<p>
+// Read line by line
+while (!stream.eof()) {
+string:line = stream.readLine().unwrap();
+processLine(line);
+}
+</p>
+<p>
+stream.close();
+pass(Result.ok());
+};</code></pre>
+</p>
+<strong>Rule</strong>: Use <code>readFile()</code> for small files, use <code>openFile()</code> + streaming for large files.
+<hr>
+<h2>Common Errors</h2>
+<h3>File Not Found</h3>
+<pre><code>Result[string]:result = readFile("nonexistent.txt");
+<p>
+result.onError(NIL(Error:err) {
+// err = "File not found: nonexistent.txt"
+print(<code>Error: &{err}</code>);
+pass(NIL);
+});</code></pre>
+</p>
+<h3>Permission Denied</h3>
+<pre><code>Result[string]:result = readFile("/root/secret.txt");
+<p>
+result.onError(NIL(Error:err) {
+// err = "Permission denied: /root/secret.txt"
+print(<code>Error: &{err}</code>);
+pass(NIL);
+});</code></pre>
+</p>
+<h3>File Too Large</h3>
+<pre><code>// May run out of memory for very large files
+<p>
+Result[string]:result = readFile("huge_file.bin");
+</p>
+<p>
+result.onError(NIL(Error:err) {
+// err = "Out of memory"
+print(<code>Error: &{err}</code>);
+pass(NIL);
+});</code></pre>
+</p>
+<hr>
+<h2>Path Specifications</h2>
+<h3>Relative Paths</h3>
+<pre><code>// Relative to current working directory
+<p>
+readFile("data.txt");
+readFile("./data.txt");
+readFile("../shared/config.txt");</code></pre>
+</p>
+<h3>Absolute Paths</h3>
+<pre><code>// Absolute paths
+<p>
+readFile("/etc/hosts");
+readFile("/home/user/documents/file.txt");</code></pre>
+</p>
+<h3>Path Normalization</h3>
+<pre><code>// Paths are normalized automatically
+<p>
+readFile("./data/../config.txt");
+// Equivalent to: readFile("config.txt")</code></pre>
+</p>
+<hr>
+<h2>Text Encoding</h2>
+<h3>Default: UTF-8</h3>
+<pre><code>// Assumes UTF-8 encoding
+<p>
+Result[string]:text = readFile("utf8.txt");</code></pre>
+</p>
+<h3>Other Encodings (Future)</h3>
+<strong>Status</strong>: Encoding support TBD
+<p>
+Possible future syntax:
+</p>
+<pre><code>// Read with specific encoding (tentative)
+<p>
+Result[string]:text = readFile("latin1.txt", encoding: "ISO-8859-1");</code></pre>
+</p>
+<hr>
+<h2>Best Practices</h2>
+<h3>✅ Always Handle Errors</h3>
+<pre><code>// GOOD: Check for errors
+<p>
+Result[string]:result = readFile("data.txt");
+if (result.isErr()) {
+handleError(result.err().unwrap());
+} else {
+process(result.unwrap());
+}</code></pre>
+</p>
+<h3>✅ Use Defaults for Optional Files</h3>
+<pre><code>// GOOD: Graceful degradation
+<p>
+string:theme = readFile("theme.css")
+.unwrapOr("/<em> default theme </em>/");</code></pre>
+</p>
+<h3>✅ Validate Content After Reading</h3>
+<pre><code>// GOOD: Validate after reading
+<p>
+Result[string]:content = readFile("config.json");
+if (content.isOk()) {
+if (isValidJSON(content.unwrap())) {
+parseJSON(content.unwrap());
+} else {
+print("Invalid JSON in config file");
+}
+}</code></pre>
+</p>
+<h3>❌ Don't Ignore Errors</h3>
+<pre><code>// BAD: Ignoring potential errors
+<p>
+string:data = readFile("file.txt").unwrap();
+// May panic if file doesn't exist!
+</p>
+<p>
+// GOOD: Handle errors explicitly
+Result[string]:result = readFile("file.txt");
+result.onError(NIL(Error:err) { print(<code>Error: &{err}</code>); pass(NIL); });</code></pre>
+</p>
+<h3>❌ Don't Read Large Files Entirely</h3>
+<pre><code>// BAD: Reading 1GB file into memory
+<p>
+string:huge = readFile("gigabyte.log").unwrap();
+// OOM (Out of Memory) error!
+</p>
+<p>
+// GOOD: Stream large files
+Stream:stream = openFile("gigabyte.log", "r").unwrap();
+while (!stream.eof()) {
+processLine(stream.readLine().unwrap());
+}</code></pre>
+</p>
+<hr>
+<h2>Comparison with Other Languages</h2>
+<h3>Aria</h3>
+<pre><code>Result[string]:content = readFile("file.txt");
+<p>
+content.onError(NIL(Error:err) { print(err); pass(NIL); });</code></pre>
+</p>
+<h3>Python</h3>
+<pre><code>try:
+<p>
+with open("file.txt", "r") as f:
+content = f.read()
+except IOError as e:
+print(e)</code></pre>
+</p>
+<h3>Node.js</h3>
+<pre><code>fs.readFile("file.txt", "utf8", (err, data) => {
+<p>
+if (err) {
+console.log(err);
+} else {
+console.log(data);
+}
+});</code></pre>
+</p>
+<h3>Rust</h3>
+<pre><code>match fs::read_to_string("file.txt") {
+<p>
+Ok(content) => println!("{}", content),
+Err(e) => println!("Error: {}", e),
+}</code></pre>
+</p>
+<hr>
+<h2>Advanced Examples</h2>
+<h3>Example 1: Read Multiple Files</h3>
+<pre><code>func:readAll = Result[string[]](string[]:paths) {
+<p>
+string[]:contents = [];
+</p>
+<p>
+till(paths.length - 1, 1) {
+Result[string]:result = readFile(paths[$]);
+</p>
+<p>
+if (result.isErr()) {
+fail(<code>Failed to read &{paths[$]}</code>);
+}
+</p>
+<p>
+contents.append(result.unwrap());
+}
+</p>
+<p>
+pass(Result.ok(contents));
+};
+</p>
+<p>
+string[]:files = ["a.txt", "b.txt", "c.txt"];
+Result[string[]]:all = readAll(files);</code></pre>
+</p>
+<h3>Example 2: Conditional Processing</h3>
+<pre><code>func:processIfExists = void(string:path) {
+<p>
+readFile(path)
+.onSuccess(NIL(string:content) {
+// File exists, process it
+string[]:lines = content.split("\n");
+till(lines.length - 1, 1) {
+processLine(lines[$]);
+}
+pass(NIL);
+})
+.onError(NIL(Error:err) {
+// File doesn't exist, skip silently
+print(<code>Skipping &{path}</code>);
+pass(NIL);
+});
+};</code></pre>
+</p>
+<h3>Example 3: Retry on Failure</h3>
+<pre><code>func:readWithRetry = Result<a href="string:path, int64:maxRetries">string</a> {
+<p>
+int64:attempt = 0;
+</p>
+<p>
+while (attempt < maxRetries) {
+Result[string]:result = readFile(path);
+</p>
+<p>
+if (result.isOk()) {
+pass(result);
+}
+</p>
+<p>
+attempt++;
+sleep(1000);  // Wait 1 second
+}
+</p>
+<p>
+fail(<code>Failed to read after &{maxRetries} attempts</code>);
+};
+</p>
+<p>
+Result[string]:content = readWithRetry("network-file.txt", 3);</code></pre>
+</p>
+<h3>Example 4: Cached Reading</h3>
+<pre><code>%STRUCT FileCache {
+<p>
+string@:path,
+string:content,
+int64:timestamp
+}
+</p>
+<p>
+gc FileCache[]:cache = [];
+</p>
+<p>
+func:readCached = Result<a href="string:path">string</a> {
+// Check cache first
+till(cache.length - 1, 1) {
+if (cache[$].path == path) {
+int64:age = getCurrentTime() - cache[$].timestamp;
+</p>
+<p>
+if (age < 60000) {  // Cache valid for 60 seconds
+pass(Result.ok(cache[$].content));
+}
+}
+}
+</p>
+<p>
+// Not in cache, read from disk
+Result[string]:result = readFile(path);
+</p>
+<p>
+if (result.isOk()) {
+// Add to cache
+FileCache:entry = {
+path: path,
+content: result.unwrap(),
+timestamp: getCurrentTime()
+};
+cache.append(entry);
+}
+</p>
+<p>
+pass(result);
+};</code></pre>
+</p>
+<hr>
+<h2>Related Topics</h2>
+<ul><li><a href="writeFile.md">writeFile()</a> - Write files with Result handling</li>
+<li><a href="openFile.md">openFile()</a> - Stream-based file I/O</li>
+<li><a href="../types/result.md">Result Type</a> - Error handling with Result[T]</li>
+<li><a href="../types/strings.md">String Type</a> - String operations</li>
+<li><a href="readJSON.md">readJSON()</a> - Parse JSON files</li>
+<li><a href="readCSV.md">readCSV()</a> - Parse CSV files</li>
+</ul>
+<hr>
+<strong>Status</strong>: Comprehensive
+<strong>Specification</strong>: aria_specs.txt Line 223
+<strong>Unique Feature</strong>: Built-in Result type for safe file operations
+    </main>
+</body>
+</html>

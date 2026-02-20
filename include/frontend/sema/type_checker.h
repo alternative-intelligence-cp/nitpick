@@ -345,6 +345,17 @@ private:
     bool canCoerce(Type* from, Type* to);
     
     /**
+     * Check if FFI pointer conversion is allowed (P1.5)
+     * 
+     * Automatic conversions at extern boundaries:
+     * - void* → wild T-> (from C function return to Aria pointer)
+     * - wild T-> → void* (from Aria pointer to C function parameter)
+     * 
+     * Safety: Only works at FFI boundaries (extern blocks)
+     */
+    bool canConvertFFIPointer(Type* from, Type* to);
+    
+    /**
      * Check if binary operator is valid for given operand types
      * 
      * Returns: Result type if valid, ErrorType otherwise

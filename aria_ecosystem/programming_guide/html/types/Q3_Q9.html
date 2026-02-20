@@ -1,0 +1,1708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Types (Q3<T>, Q9<T>) - Foundation for Q21 - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Quantum Types (Q3<T>, Q9<T>) - Foundation for Q21</h1>
+<strong>Dual-hypothesis superposition types for speculative computation, evidence accumulation, and gradient thinking</strong>
+<hr>
+<h2>Overview</h2>
+<p>
+Aria provides a <strong>quantum type family</strong> that maintains <strong>two hypotheses simultaneously</strong> with graduated confidence levels. This document covers the foundational Q3<T> and Q9<T> types. For the advanced Q21 type with full superposition certainty modeling, see <a href="Q21.md">Q21</a>.
+</p>
+<p>
+| Type | Confidence States | Range | Memory Overhead | Primary Use Cases |
+|------|-------------------|-------|-----------------|-------------------|
+| <code>Q3<T></code> | 3 states (trit) | -1, 0, +1 | 2×sizeof(T) + 1 byte | Binary decisions with uncertainty |
+| <code>Q9<T></code> | 9 states (nit) | -4 to +4 | 2×sizeof(T) + 1 byte | Multi-level confidence evolution |
+| <strong><code>Q21</code></strong> | <strong>21 states (tbb8)</strong> | <strong>-10 to +10</strong> | <strong>1 byte</strong> | <strong>Superposition certainty modeling</strong> (see <a href="Q21.md">Q21.md</a>) |
+</p>
+<strong>Core Concept</strong>: Instead of choosing between two possibilities immediately, <strong>maintain both in superposition</strong> while accumulating evidence, then <strong>crystallize to a single value</strong> when confidence is sufficient.
+<pre><code>// Traditional: Immediate decision
+<p>
+int32:temp = (sensor_A > sensor_B) ? sensor_A : sensor_B;  // Choose now!
+</p>
+<p>
+// Quantum: Deferred decision with evidence accumulation
+Q9<int32>:temp = {a: sensor_A, b: sensor_B, c: 0};  // Both valid initially
+temp.qif((q > threshold), c += 1);  // Gather evidence for B
+temp.qif((q < threshold), c -= 1);  // Gather evidence for A
+int32:final = temp.#;  // Crystallize when confident (or unknown if uncertain)</code></pre>
+</p>
+<hr>
+<h2>Why Quantum Types?</h2>
+<h3>The Problem: Premature Decisions</h3>
+<p>
+Traditional programming forces immediate choices even with insufficient information:
+</p>
+<pre><code>// Sensor fusion problem
+<p>
+int32:altitude = gps_reading;  // But what if GPS is wrong?
+</p>
+<p>
+// Try both? Code duplication!
+int32:altitude_gps = compute_trajectory(gps_reading);
+int32:altitude_baro = compute_trajectory(barometer_reading);
+int32:altitude = (gps_confidence > baro_confidence) ? altitude_gps : altitude_baro;
+// Lost: The computation work on the unchosen branch!</code></pre>
+</p>
+<h3>The Solution: Compute Both, Decide Later</h3>
+<p>
+Quantum types <strong>defer the decision</strong> while continuing computation:
+</p>
+<pre><code>// Maintain both hypotheses in superposition
+<p>
+Q9<int32>:altitude = {a: gps_reading, b: barometer_reading, c: 0};
+</p>
+<p>
+// Operate on BOTH simultaneously (superposition preserved!)
+altitude = altitude + altitude_delta;  // Both hypotheses updated
+</p>
+<p>
+// Accumulate evidence over time
+if gps_valid { altitude.c -= 1; }      // Evidence for A (GPS)
+if baro_valid { altitude.c += 1; }     // Evidence for B (barometer)
+</p>
+<p>
+// Crystallize when confident (or return unknown)
+int32 | unknown:final_altitude = altitude.#;  // Confident? Get value. Uncertain? Get unknown.</code></pre>
+</p>
+<strong>Key insight</strong>: "You don't know the answer, so you go about your business like you do know, while treating both values as true and operating on them as such, and only 'crystallize' from a Q<T> to a T when the confidence level is high enough for your particular usage."
+<hr>
+<h2>Type Definitions</h2>
+<h3>Q9<T>: Fine-Grained Confidence (9 States)</h3>
+<pre><code>struct:Q9<T> = {
+<p>
+T:a,      // Hypothesis A
+T:b,      // Hypothesis B
+nit:c,    // Confidence: -4 to +4 (balanced nonary)
+}</code></pre>
+</p>
+<strong>Confidence scale</strong> (symmetric around zero):
+<pre><code>-4: Strongly confident in hypothesis A (DEFINITELY A)
+<p>
+-3: Very confident in A (VERY LIKELY A)
+-2: Confident in A (PROBABLY A)
+-1: Slightly lean toward A (POSSIBLY A)
+0: Unknown / Equal confidence / Superposition
++1: Slightly lean toward B (POSSIBLY B)
++2: Confident in B (PROBABLY B)
++3: Very confident in B (VERY LIKELY B)
++4: Strongly confident in B (DEFINITELY B)</code></pre>
+</p>
+<strong>Memory layout</strong>: <code>2×sizeof(T) + 1 byte</code> (two values plus confidence)
+<strong>When to use</strong>: Complex decisions requiring multi-level confidence tracking
+<h3>Q3<T>: Simple Confidence (3 States)</h3>
+<pre><code>struct:Q3<T> = {
+<p>
+T:a,      // Hypothesis A
+T:b,      // Hypothesis B
+trit:c,   // Confidence: -1, 0, +1 (balanced ternary)
+}</code></pre>
+</p>
+<strong>Confidence scale</strong> (simple ternary):
+<pre><code>-1: Lean toward A
+<p>
+0: Unknown / Equal
++1: Lean toward B</code></pre>
+</p>
+<strong>Memory layout</strong>: <code>2×sizeof(T) + 1 byte</code>
+<strong>When to use</strong>: Simple binary decisions with minimal confidence tracking (memory-efficient)
+<hr>
+<h2>Syntax and Access</h2>
+<h3>Reserved Keyword: <code>q</code></h3>
+<p>
+Inside quantum scopes (q-functions), <code>q</code> refers to the quantum value being operated on:
+</p>
+<pre><code>Q9<int32>:temperature = {a: 20, b: 25, c: 0};
+<p>
+// q-function: 'q' refers to temperature value
+temperature.qor((q > 22)) {
+print("At least one hypothesis is hot!");  // 25 > 22, so executes
+}</code></pre>
+</p>
+<h3>Field Access</h3>
+<pre><code>Q9<int32>:measurement = {a: 100, b: 200, c: -2};
+<p>
+// Direct field access
+int32:hypothesis_a = measurement.a;  // 100
+int32:hypothesis_b = measurement.b;  // 200
+nit:confidence = measurement.c;      // -2 (confident in A)</code></pre>
+</p>
+<h3>Special Shorthands</h3>
+<pre><code>// q.q - Apply operation to BOTH hypotheses (a AND b)
+<p>
+measurement.q.q += 10;  // Adds 10 to both a and b
+</p>
+<p>
+// q.qq - Apply operation to ALL THREE (a, b, AND c)
+measurement.q.qq *= 2;  // Multiplies a, b, and c by 2</code></pre>
+</p>
+<hr>
+<h2>Crystallization: The Foundation</h2>
+<strong>Crystallization</strong> = The process of collapsing quantum superposition into a single classical value
+<h3>The Crystallization Operator: <code>q.#</code></h3>
+<strong>Syntax</strong>: <code>value: T | unknown = quantum_value.#</code>
+<strong>Visual metaphor</strong>: <code>#</code> looks like a lattice/grid (ordered crystalline structure)
+<ul><li>Superposition (fluid quantum state) → Decision (solid classical value)</li>
+<li>Phase transition: uncertain → certain</li>
+</ul>
+<strong>Return behavior</strong>:
+<p>
+1. <strong>Returns <code>T</code></strong> (copy of winning hypothesis) when confidence meets threshold
+2. <strong>Returns <code>unknown</code></strong> when:
+- Confidence is zero (true superposition)
+- Confidence below threshold (insufficient evidence)
+- Special states (NEITHER/BOTH if using alternate semantics)
+</p>
+<strong>Thresholds</strong>:
+<ul><li><strong>Q9</strong>: <code>abs(c) >= 2</code> ("probably or better" - confident enough to commit)</li>
+<li><strong>Q3</strong>: <code>abs(c) >= 1</code> (any non-zero confidence)</li>
+</ul>
+<strong>Copy semantics</strong>: Crystallization returns a <strong>copy</strong>, preserving the quantum state for continued exploration!
+<h3>Crystallization Examples</h3>
+<pre><code>// High confidence: Crystallizes to value
+<p>
+Q9<int32>:confident = {a: 100, b: 200, c: -3};  // Very confident in A
+int32:value = confident.#;  // Returns 100 (copy of A)
+</p>
+<p>
+// Low confidence: Returns unknown
+Q9<int32>:uncertain = {a: 5, b: 7, c: 1};  // Only "possibly" B
+int32 | unknown:value = uncertain.#;  // Returns unknown (threshold not met!)
+</p>
+<p>
+// Accumulate more evidence
+uncertain.c += 1;  // c = 2 (now "probably" B)
+value = uncertain.#;  // Returns 7 (threshold met!)
+</p>
+<p>
+// Zero confidence: Unknown superposition
+Q9<int32>:superposition = {a: 10, b: 20, c: 0};  // Pure superposition
+int32 | unknown:value = superposition.#;  // Returns unknown</code></pre>
+</p>
+<h3>Why Copy Semantics?</h3>
+<p>
+Non-destructive crystallization allows <strong>peeking at current best</strong> while continuing to accumulate evidence:
+</p>
+<pre><code>Q9<int32>:measurement = {a: 100, b: 105, c: 1};
+<p>
+// Check current best (non-destructive)
+int32 | unknown:current_best = measurement.#;  // 105 (B winning)
+</p>
+<p>
+// Continue gathering evidence
+new_reading();
+if reading_favors_a { measurement.c -= 1; }  // c = 0 (now tied!)
+</p>
+<p>
+// Check again
+current_best = measurement.#;  // unknown (no longer confident!)</code></pre>
+</p>
+<hr>
+<h2>Arithmetic Operations</h2>
+<strong>ALL arithmetic operations preserve superposition</strong> - they operate on <strong>BOTH hypotheses</strong>:
+<pre><code>Q9<int32>:temp = {a: 20, b: 25, c: 0};
+<p>
+// Addition: Both hypotheses incremented
+temp += 5;  // Now {a: 25, b: 30, c: 0}
+</p>
+<p>
+// Subtraction
+temp -= 3;  // Now {a: 22, b: 27, c: 0}
+</p>
+<p>
+// Multiplication
+temp *= 2;  // Now {a: 44, b: 54, c: 0}
+</p>
+<p>
+// Division
+temp /= 2;  // Now {a: 22, b: 27, c: 0}
+</p>
+<p>
+// Confidence UNCHANGED by arithmetic! (evidence is separate from values)</code></pre>
+</p>
+<strong>Why this matters</strong>: You can compute trajectories for <strong>both hypotheses simultaneously</strong> without choosing:
+<pre><code>Q9<fix256>:position = {a: 100.0fx, b: 105.0fx, c: 0};
+<p>
+fix256:velocity = 5.0fx;
+fix256:timestep = 0.1fx;
+</p>
+<p>
+// Physics computation on BOTH hypotheses!
+position += velocity * timestep;  // Both trajectories updated
+// Result: {a: 100.5fx, b: 105.5fx, c: 0}
+</p>
+<p>
+// Later: Decide which trajectory is correct
+position.c = sensor_validates_lower() ? -2 : +2;
+fix256:true_position = position.#;  // Crystallize to correct value</code></pre>
+</p>
+<hr>
+<h2>Q-Functions: Conditional Quantum Operations</h2>
+<strong>Q-functions</strong> apply operations conditionally based on which hypotheses meet criteria:
+<h3>qor - Apply if EITHER Meets Condition</h3>
+<pre><code>Q9<int32>:temp = {a: 15, b: 25, c: 0};
+<p>
+// At least one hypothesis > 20? Execute block
+temp.qor((q > 20)) {
+print("At least one reading is hot!");  // Executes (b = 25 > 20)
+}</code></pre>
+</p>
+<strong>Logic</strong>: <code>(a meets condition) OR (b meets condition)</code>
+<strong>Use case</strong>: Warnings when <strong>at least one</strong> possibility is concerning
+<h3>qand - Apply if BOTH Meet Condition</h3>
+<pre><code>Q9<int32>:temp = {a: 15, b: 25, c: 0};
+<p>
+// Both hypotheses > 10? Execute block
+temp.qand((q > 10)) {
+print("Both readings above freezing!");  // Executes (15 > 10 AND 25 > 10)
+}
+</p>
+<p>
+// Both > 20? Would NOT execute
+temp.qand((q > 20)) {
+print("Never prints");  // Skipped (15 < 20)
+}</code></pre>
+</p>
+<strong>Logic</strong>: <code>(a meets condition) AND (b meets condition)</code>
+<strong>Use case</strong>: Actions requiring <strong>both</strong> possibilities to agree
+<h3>qxor - Apply if EXACTLY ONE Meets Condition</h3>
+<pre><code>Q9<int32>:voltage = {a: 3, b: 12, c: 0};
+<p>
+// Exactly one hypothesis in valid range [5, 10]?
+voltage.qxor((q >= 5 && q <= 10)) {
+print("Disagreement on valid range!");  // Neither in range, so skipped
+}
+</p>
+<p>
+Q9<int32>:voltage2 = {a: 7, b: 15, c: 0};
+voltage2.qxor((q >= 5 && q <= 10)) {
+print("One valid, one invalid!");  // Executes (7 valid, 15 invalid)
+}</code></pre>
+</p>
+<strong>Logic</strong>: <code>(a meets condition) XOR (b meets condition)</code>
+<strong>Use case</strong>: Detecting <strong>disagreement</strong> between hypotheses
+<h3>qnor - Apply if NEITHER Meets Condition</h3>
+<pre><code>Q9<int32>:temp = {a: -5, b: -10, c: 0};
+<p>
+// Neither hypothesis above freezing?
+temp.qnor((q > 0)) {
+print("Both readings frozen!");  // Executes (both < 0)
+}</code></pre>
+</p>
+<strong>Logic</strong>: <code>NOT ((a meets condition) OR (b meets condition))</code>
+<strong>Use case</strong>: Alarms when <strong>both</strong> possibilities are problematic
+<h3>qconf - Apply if Condition Met AND Confidence >= Threshold</h3>
+<pre><code>Q9<int32>:measurement = {a: 20, b: 100, c: 3};  // Very confident in B
+<p>
+// Confident (>= 2) AND value > 50?
+measurement.qconf((q > 50), 2) {
+print("High value with high confidence!");  // Executes (c=3 >= 2, b=100 > 50)
+}</code></pre>
+</p>
+<strong>Logic</strong>: <code>(hypothesis meets condition) AND (abs(c) >= threshold)</code>
+<strong>Use case</strong>: Actions requiring <strong>sufficient confidence</strong> in the result
+<h3>qnconf - Apply if Condition Met AND Confidence < Threshold</h3>
+<pre><code>Q9<int32>:uncertain = {a: 5, b: 95, c: 1};  // Low confidence
+<p>
+// Low confidence (< 2) but high value possible?
+uncertain.qnconf((q > 50), 2) {
+print("High value but uncertain!");  // Executes (c=1 < 2, b=95 > 50)
+}</code></pre>
+</p>
+<strong>Logic</strong>: <code>(hypothesis meets condition) AND (abs(c) < threshold)</code>
+<strong>Use case</strong>: Warnings when <strong>uncertain but concerning</strong> values possible
+<hr>
+<h2>Evidence Accumulation with qif</h2>
+<strong>The <code>qif</code> method</strong> updates confidence based on conditions (evidence gathering):
+<pre><code>Q9<int32>:altitude = {a: 100, b: 105, c: 0};  // Two sensor readings
+<p>
+// Gather evidence based on conditions
+altitude.qif((q == 100), c -= 1);  // If matches A, increase confidence in A
+altitude.qif((q == 105), c += 1);  // If matches B, increase confidence in B
+</p>
+<p>
+// After several measurements
+till(sensor_readings.length - 1, 1) {
+altitude.qif((q == sensor_readings[$]), c += sign(q - 102));  // Evidence toward closer value
+}
+</p>
+<p>
+// Crystallize when confident
+int32 | unknown:final = altitude.#;</code></pre>
+</p>
+<strong>Saturation arithmetic</strong>: Confidence <strong>saturates</strong> at extremes (no rollover!):
+<pre><code>Q9<int32>:saturated = {a: 10, b: 20, c: 4};  // Already at maximum confidence
+<p>
+saturated.c += 10;  // Clamps to +4 (does NOT wrap to negative!)
+// Result: c = 4 (saturated)</code></pre>
+</p>
+<strong>Why saturation matters</strong>: Prevents confidence from "rolling over" from maximum to minimum, which would flip the decision!
+<hr>
+<h2>Confidence Evolution Example</h2>
+<p>
+Realistic sensor fusion scenario:
+</p>
+<pre><code>// Drone altitude from two sensors
+<p>
+Q9<fix256>:altitude = {
+a: gps_reading,        // GPS: Good precision, can fail completely
+b: barometer_reading,  // Barometer: Lower precision, more reliable
+c: 0                   // Start uncertain
+};
+</p>
+<p>
+// Accumulate evidence over time
+till flight_duration loop:timestep {
+// Update both trajectory hypotheses
+altitude += velocity * dt;  // Both evolve simultaneously
+</p>
+<p>
+// GPS validation (precise but can fail)
+if gps_available && gps_valid {
+altitude.c -= 2;  // Strong evidence for A (GPS)
+} else if !gps_available {
+altitude.c += 1;  // Weak evidence for B (GPS down, trust barometer)
+}
+</p>
+<p>
+// Barometer cross-check
+if abs(barometer_reading - altitude.b) < 0.5 {
+altitude.c += 1;  // Barometer agrees with hypothesis B
+}
+</p>
+<p>
+// Crystallize current best estimate
+fix256 | unknown:current_altitude = altitude.#;
+</p>
+<p>
+if current_altitude is unknown {
+// Insufficient confidence: Take safe action
+navigation.use_conservative_mode();
+} else {
+// Confident: Use best estimate
+navigation.update_position(current_altitude);
+}
+}
+end</code></pre>
+</p>
+<strong>Key benefits</strong>:
+<p>
+1. <strong>Both sensors contribute</strong> even when one fails
+2. <strong>Evidence accumulates</strong> over multiple readings
+3. <strong>Graceful degradation</strong> when uncertain (returns <code>unknown</code>)
+4. <strong>Adaptive trust</strong> in sensors based on validation
+5. <strong>No premature commitment</strong> to wrong value
+</p>
+<hr>
+<h2>Integration with unknown/ok() Safety System</h2>
+<strong>CRITICAL SAFETY</strong>: Q<T> with <code>c = 0</code> (superposition) maps perfectly to Aria's <code>unknown</code> type system!
+<h3>Safety at Zero Confidence</h3>
+<p>
+When confidence is zero, value is in <strong>true superposition</strong> (neither hypothesis confirmed):
+</p>
+<pre><code>Q9<int32>:uncertain = {a: 100, b: 200, c: 0};  // Superposition
+<p>
+// COMPILE ERROR: Cannot use Q<T> with c=0 directly!
+int32:value = uncertain.a;  // ❌ FORBIDDEN (still in superposition!)
+</p>
+<p>
+// MUST acknowledge uncertainty with ok()
+int32:value = ok(uncertain.a);  // ✓ Explicit acknowledgment
+</p>
+<p>
+// OR wait for crystallization
+if abs(uncertain.c) >= 2 {
+int32:value = uncertain.#;  // ✓ Safe (confident)
+}</code></pre>
+</p>
+<h3>Safety Gradient</h3>
+<p>
+Confidence levels map to safety requirements:
+</p>
+<p>
+| Confidence | State | Safety Requirement |
+|------------|-------|--------------------|
+| c = 0 | Unknown/Superposition | <strong>MUST use ok()</strong> or crystallize |
+| abs(c) = 1 | Low confidence | Warning or require ok() (compiler flag) |
+| abs(c) >= 2 | High confidence | Safe to crystallize ✓ |
+| abs(c) >= 3 | Very high confidence | Confident decision ✓ |
+</p>
+<h3>Prevents Entire Class of Bugs</h3>
+<pre><code>// Fuzzer with safety
+<p>
+Q9<string>:mutation = fuzz_generate(original_input);
+</p>
+<p>
+// Initially c=0 (both mutations unexplored)
+if mutation.c == 0 {
+// MUST explore both before deciding
+test_both_hypotheses(mutation);
+}
+</p>
+<p>
+// Run tests, accumulate evidence
+run_test(mutation.a);
+if test_passed { mutation.c -= 2; }  // Evidence for A
+</p>
+<p>
+run_test(mutation.b);
+if test_passed { mutation.c += 2; }  // Evidence for B
+</p>
+<p>
+// Crystallize only when confident
+if abs(mutation.c) >= 3 {
+string:winner = mutation.#;  // Safe: High confidence
+log("Selected mutation: ", winner);
+} else {
+// Safety fallback: Insufficient evidence
+log("Both mutations failed or inconclusive");
+use_original_input();
+}</code></pre>
+</p>
+<strong>What this prevents</strong>:
+<ul><li>Using unresolved speculative values</li>
+<li>Forgetting to check confidence before committing</li>
+<li>Silent errors from premature crystallization</li>
+<li>Accidentally mixing quantum and classical values</li>
+</ul>
+<hr>
+<h2>Use Cases</h2>
+<h3>1. Sensor Fusion</h3>
+<p>
+Multiple sensors measuring the same physical quantity:
+</p>
+<pre><code>Q9<fix256>:temperature = {
+<p>
+a: thermistor_reading,
+b: thermocouple_reading,
+c: 0
+};
+</p>
+<p>
+// Cross-validate sensors
+if abs(thermistor_reading - thermocouple_reading) < 0.5 {
+// Sensors agree: High confidence
+temperature.c = 0;  // Reset to equal (could be either)
+} else {
+// Disagreement: Trust thermistor (historically more stable)
+temperature.c = -2;
+}
+</p>
+<p>
+fix256:trusted_temp = temperature.# ?? fallback_temp;</code></pre>
+</p>
+<h3>2. Parsing Ambiguity</h3>
+<p>
+Parser encountering ambiguous syntax:
+</p>
+<pre><code>Q9<ASTNode>:parsed = {
+<p>
+a: parse_as_expression(tokens),
+b: parse_as_statement(tokens),
+c: 0
+};
+</p>
+<p>
+// Gather evidence from context
+parsed.qif((q.type == EXPRESSION && in_expression_context), c -= 1);
+parsed.qif((q.type == STATEMENT && in_statement_context), c += 1);
+</p>
+<p>
+// Crystallize to best interpretation
+ASTNode | unknown:final_node = parsed.#;
+</p>
+<p>
+if final_node is unknown {
+// Ambiguity unresolved: Syntax error
+compiler_error("Ambiguous syntax, cannot determine interpretation");
+}</code></pre>
+</p>
+<h3>3. Speculative Execution</h3>
+<p>
+Branch prediction and speculative computation:
+</p>
+<pre><code>Q9<int32>:result = {
+<p>
+a: compute_if_condition_true(),
+b: compute_if_condition_false(),
+c: 0  // Don't know yet
+};
+</p>
+<p>
+// Later: Condition resolves
+if actual_condition {
+result.c = -4;  // A was correct
+} else {
+result.c = +4;  // B was correct
+}
+</p>
+<p>
+int32:final = result.#;  // Get the correct computation</code></pre>
+</p>
+<strong>Advantage</strong>: Both branches computed <strong>before</strong> condition known (speculative optimization)
+<h3>4. A/B Algorithm Testing</h3>
+<p>
+Compare two algorithms in production:
+</p>
+<pre><code>Q9<Result>:algorithm_result = {
+<p>
+a: run_algorithm_v1(input),
+b: run_algorithm_v2(input),
+c: 0
+};
+</p>
+<p>
+// Gather evidence based on quality metrics
+algorithm_result.qif((q.accuracy > 0.95), c += (q == b ? 1 : -1));
+algorithm_result.qif((q.latency < 100), c += (q == b ? 1 : -1));
+</p>
+<p>
+// Gradually shift traffic to better algorithm
+if abs(algorithm_result.c) >= 3 {
+log("Algorithm winner: ", algorithm_result.# == a ? "v1" : "v2");
+}</code></pre>
+</p>
+<h3>5. Fuzzing and Mutation Testing</h3>
+<p>
+Track original and mutated inputs simultaneously:
+</p>
+<pre><code>Q9<TestInput>:fuzzer_input = {
+<p>
+a: original_input,
+b: mutated_input,
+c: 0
+};
+</p>
+<p>
+// Test both
+run_test(fuzzer_input.a);
+if test_passed { fuzzer_input.c -= 1; }
+</p>
+<p>
+run_test(fuzzer_input.b);
+if test_passed { fuzzer_input.c += 1; }
+</p>
+<p>
+// Mutation better? Use it!
+TestInput:best = fuzzer_input.# ?? original_input;</code></pre>
+</p>
+<h3>6. Uncertainty Propagation (Scientific Computing)</h3>
+<p>
+Error bounds in physics simulations:
+</p>
+<pre><code>// Measurement with error bounds
+<p>
+Q9<fix256>:measurement = {
+a: value - error_margin,  // Lower bound
+b: value + error_margin,  // Upper bound
+c: 0  // Equal confidence initially
+};
+</p>
+<p>
+// Propagate uncertainty through calculation
+measurement *= conversion_factor;
+measurement += offset;
+</p>
+<p>
+// Result maintains error bounds
+fix256:lower_bound = measurement.a;
+fix256:upper_bound = measurement.b;
+fix256:best_estimate = (measurement.a + measurement.b) / 2.0fx;</code></pre>
+</p>
+<hr>
+<h2>Nikola AGI: Cognitive Modeling</h2>
+<h3>The Hierarchy of Cognitive States</h3>
+<strong>unknown</strong> (Binary Quantum):
+<ul><li>State: Either <strong>unknown</strong> OR <strong>known</strong> (never both)</li>
+<li>No superposition - binary quantum state</li>
+<li>Maps to: Classic uncertainty (do we have the data?)</li>
+</ul>
+<strong>Q3<T></strong> (Ternary with Selective Superposition):
+<ul><li>States: <strong>no / maybe / yes</strong></li>
+<li>"maybe" can coexist with "no" or "yes" (superposition)</li>
+<li>Maps to: Simple decisions with uncertainty band</li>
+</ul>
+<strong>Q9<T></strong> (Multi-Level Confidence Evolution):
+<ul><li>States: 9-level gradient from DEFINITELY A → DEFINITELY B</li>
+<li>Complex decisions that <strong>evolve over time</strong></li>
+<li>Maps to: <strong>How humans actually think and change beliefs</strong></li>
+</ul>
+<h3>Evidence Accumulation as Built-In Tracker</h3>
+<strong>The Problem Q9 Solves</strong>:
+<p>
+"You can start out really believing something is true and it can take quite a lot of evidence to convince you of the contrary. However, <strong>if nobody is tracking all that evidence it will never meet a threshold to change</strong>."
+</p>
+<p>
+Traditional code:
+</p>
+<pre><code>// Evidence scattered, no accumulation
+<p>
+if test1_passes { score += 1; }
+if test2_passes { score += 1; }
+// ...later, somewhere else...
+if test3_passes { score += 1; }  // Who's tracking? When do we decide?</code></pre>
+</p>
+<p>
+With Q9:
+</p>
+<pre><code>Q9<Solution>:best_approach = initial_guess();
+<p>
+// Evidence accumulates IN THE TYPE
+test1_result ? best_approach.c += 1 : best_approach.c -= 1;
+test2_result ? best_approach.c += 1 : best_approach.c -= 1;
+test3_result ? best_approach.c += 2 : best_approach.c -= 2;
+</p>
+<p>
+// Threshold is automatic - crystallization point is explicit
+if abs(best_approach.c) >= 3 {
+Solution:winner = best_approach.#;
+}</code></pre>
+</p>
+<strong>The confidence tracker prevents evidence from being lost or ignored.</strong>
+<h3>Reality in the Gradients</h3>
+<strong>Binary thinking</strong>: World is yes/no, true/false, 1/0
+<strong>Reality</strong>: "Everything in between which is generally where reality tends to exist"
+<p>
+Q9 embraces this:
+</p>
+<ul><li>Not "is this the right answer?" (binary)</li>
+<li>But "how confident are we?" (gradient)</li>
+<li>Not "should we use A or B?" (choice)</li>
+<li>But "which direction is evidence pointing?" (evolution)</li>
+</ul>
+<strong>For Nikola, this means</strong>:
+<ul><li>Reasoning that matches reality's gradients</li>
+<li>Explanations that show confidence evolution</li>
+<li>Decisions that acknowledge uncertainty</li>
+<li>Thought that mirrors human cognition</li>
+</ul>
+<h3>Safe Self-Improvement Loop</h3>
+<strong>The Constraint</strong>: Nikola will have a <strong>self-improvement loop in Aria</strong> - Nikola will WRITE Aria code to improve itself.
+<strong>Safety Example</strong>:
+<pre><code>// Nikola considering algorithm change to its own code
+<p>
+Q9<Algorithm>:improvement = {
+a: current_algorithm,
+b: proposed_algorithm,
+c: 0  // Start uncertain
+};
+</p>
+<p>
+// Run benchmarks
+till benchmarks.length loop:i {
+Benchmark:bench = benchmarks[i];
+Result:current_result = bench.run(improvement.a);
+Result:proposed_result = bench.run(improvement.b);
+</p>
+<p>
+// Accumulate evidence
+if proposed_result.better_than(current_result) {
+improvement.c += 1;  // Evidence for new algorithm
+} else {
+improvement.c -= 1;  // Evidence for keeping current
+}
+}
+end
+</p>
+<p>
+// Safety system prevents premature self-modification!
+if improvement.c == 0 {
+// Uncertain: DON'T modify!
+log("Insufficient evidence for algorithm change");
+log("Current wins: ", tally_a);
+log("Proposed wins: ", tally_b);
+log("DECISION: Keep current algorithm (insufficient confidence)");
+</p>
+<p>
+} else if abs(improvement.c) >= 3 {
+// Confident: Safe to modify
+Algorithm:winner = improvement.#;
+if winner == improvement.b {
+self.replace_algorithm(proposed_algorithm);  // Self-modification!
+log("SELF-MODIFICATION: Adopted new algorithm (confidence: ", improvement.c, ")");
+}
+}</code></pre>
+</p>
+<strong>Why This is Critical for Safe AI</strong>:
+<p>
+1. <strong>Nikola cannot accidentally commit unverified self-modifications</strong> (c=0 → unknown → requires ok())
+2. <strong>Evidence must accumulate to threshold</strong> before self-modification allowed
+3. <strong>Confidence gradient is auditable</strong> (humans can see why Nikola changed itself)
+4. <strong>Reasoning is expressed in code</strong> (not hidden in weights or black box)
+5. <strong>Safety types prevent self-improvement bugs</strong> (the language itself guards the self-improvement loop)
+</p>
+<strong>This is not just a type system - it's a SAFE SELF-IMPROVEMENT FRAMEWORK for AI.</strong>
+<hr>
+<h2>Alternative Semantics: NEITHER and BOTH</h2>
+<strong>Advanced usage</strong>: Some domains benefit from distinct extreme states
+<h3>Distinct Extremes Variant</h3>
+<pre><code>-4: NEITHER (complete rejection of both hypotheses)
+<p>
+-3: DEFINITELY A (full confidence in hypothesis A)
+-2: PROBABLY A
+-1: POSSIBLY A
+0: UNKNOWN (insufficient data / equal confidence)
++1: POSSIBLY B
++2: PROBABLY B
++3: DEFINITELY B (full confidence in hypothesis B)
++4: BOTH (complete acceptance of both hypotheses)</code></pre>
+</p>
+<strong>Mathematical symmetry preserved</strong>: Still zero-centered, equal spacing
+<strong>Semantic asymmetry exploited</strong>: NEITHER vs BOTH are qualitatively different states
+<h3>When to Use Distinct Extremes</h3>
+<strong>Fuzzer edge cases</strong>:
+<pre><code>Q9<string>:input_mutation = test_mutations(original);
+<p>
+if input_mutation.c == -4 {
+// NEITHER mutation works (both cause crashes)
+log("Both mutations fatal, reject both");
+} else if input_mutation.c == +4 {
+// BOTH mutations work (use either)
+log("Both mutations valid, can use either");
+}</code></pre>
+</p>
+<strong>Validation with multiple criteria</strong>:
+<pre><code>Q9<Config>:config_choice = validate_configs(config_a, config_b);
+<p>
+// All validation criteria pass for both? c = +4 (BOTH valid)
+// All validation criteria fail for both? c = -4 (NEITHER valid)
+// Mix? c = -3 to +3 (preference for one over the other)</code></pre>
+</p>
+<strong>Recommendation</strong>:
+<ul><li><strong>Use symmetric</strong> (-4 = strongly A, +4 = strongly B) for most cases - simpler, cleaner math</li>
+<li><strong>Use distinct extremes</strong> (-4 = neither, +4 = both) only when rejection and acceptance are meaningful states in your specific domain</li>
+</ul>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Pattern 1: Sensor Fusion with Fallback</h3>
+<pre><code>Q9<fix256>:sensor_reading = {a: sensor1, b: sensor2, c: 0};
+<p>
+// Cross-validate
+if abs(sensor1 - sensor2) < tolerance {
+// Agree: Average them
+sensor_reading.c = 0;  // Equal confidence
+fix256:average = (sensor1 + sensor2) / 2.0fx;
+use(average);
+} else {
+// Disagree: Accumulate evidence
+if sensor1_historically_reliable { sensor_reading.c -= 1; }
+if sensor2_historically_reliable { sensor_reading.c += 1; }
+</p>
+<p>
+fix256 | unknown:best = sensor_reading.#;
+if best is unknown {
+// Insufficient confidence: Use safe fallback
+use(fallback_value);
+} else {
+use(best);
+}
+}</code></pre>
+</p>
+<h3>Pattern 2: Gradual Algorithm Migration</h3>
+<pre><code>Q9<Algorithm>:algorithm = {a: legacy_algo, b: new_algo, c: -4};  // Start with legacy
+<p>
+// Gradually accumulate evidence
+till production_runtime loop:request {
+Result:legacy_result = legacy_algo.run(request);
+Result:new_result = new_algo.run(request);
+</p>
+<p>
+// Compare results
+if new_result.better_than(legacy_result) {
+algorithm.c += 1;  // Shift toward new
+}
+</p>
+<p>
+// Gradual migration as confidence grows
+if abs(algorithm.c) >= 2 {
+// Confident in new algorithm
+use_algorithm(new_algo);
+} else {
+// Still using legacy
+use_algorithm(legacy_algo);
+}
+}
+end</code></pre>
+</p>
+<h3>Pattern 3: Uncertainty-Aware Computation</h3>
+<pre><code>Q9<fix256>:uncertain_input = {a: lower_bound, b: upper_bound, c: 0};
+<p>
+// Compute with uncertainty
+Q9<fix256>:result = compute_trajectory(uncertain_input);
+</p>
+<p>
+// Check if result is certain enough
+if abs(result.a - result.b) < acceptable_error {
+// Uncertainty small enough: Use midpoint
+fix256:final = (result.a + result.b) / 2.0fx;
+} else {
+// Uncertainty too large: Request more data
+request_more_measurements();
+}</code></pre>
+</p>
+<hr>
+<h2>Implementation Notes</h2>
+<h3>Memory Layout</h3>
+<pre><code>Q9<int32> (4 + 4 + 1 = 9 bytes, typically 12 with padding):
+<p>
+┌──────────┬──────────┬───┬───┐
+│ a (int32)│ b (int32)│ c │pad│
+│ 4 bytes  │ 4 bytes  │ 1 │ 3 │
+└──────────┴──────────┴───┴───┘
+</p>
+<p>
+Q9<fix256> (32 + 32 + 1 = 65 bytes, typically 68 with padding):
+┌─────────────┬─────────────┬───┬───┐
+│ a (fix256)  │ b (fix256)  │ c │pad│
+│ 32 bytes    │ 32 bytes    │ 1 │ 3 │
+└─────────────┴─────────────┴───┴───┘</code></pre>
+</p>
+<strong>Alignment</strong>: Typically aligned to <code>alignof(T)</code> or 4 bytes (whichever is larger)
+<h3>Confidence Saturation</h3>
+<strong>CRITICAL</strong>: Confidence MUST saturate (no wrap-around!):
+<pre><code>// Correct saturation implementation
+<p>
+func:saturate_add = nit(nit:c, int:delta) {
+int:result = int(c) + delta;
+if result > 4 { return 4; }
+if result < -4 { return -4; }
+return nit(result);
+}
+</p>
+<p>
+// Usage
+Q9<int32>:q = {a: 10, b: 20, c: 4};
+q.c = saturate_add(q.c, 10);  // Clamps to 4 (does NOT wrap to -6!)</code></pre>
+</p>
+<strong>Why critical</strong>: Wrap-around would flip confidence from maximum to minimum, reversing the decision!
+<h3>Type Inference</h3>
+<p>
+Quantum types should infer from context:
+</p>
+<pre><code>// Explicit type
+<p>
+Q9<int32>:explicit = {a: 10, b: 20, c: 0};
+</p>
+<p>
+// Type inferred from values
+auto:inferred = Q9{a: 10, b: 20, c: 0};  // Infers Q9<int32>
+</p>
+<p>
+// Type inferred from crystallization target
+int32:result = some_quantum_function().#;  // Function returns Q9<int32></code></pre>
+</p>
+<hr>
+<h2>Best Practices</h2>
+<h3>1. Start with Zero Confidence</h3>
+<pre><code>// ✓ GOOD: Unknown initial state
+<p>
+Q9<int32>:measurement = {a: sensor1, b: sensor2, c: 0};
+</p>
+<p>
+// ✗ BAD: Premature bias
+Q9<int32>:measurement = {a: sensor1, b: sensor2, c: -4};  // Why so confident?</code></pre>
+</p>
+<h3>2. Use Appropriate Confidence Granularity</h3>
+<pre><code>// Simple binary decision? Use Q3
+<p>
+Q3<bool>:feature_enabled = {a: false, b: true, c: 0};
+</p>
+<p>
+// Complex multi-level decision? Use Q9
+Q9<Algorithm>:best_algo = {a: algo1, b: algo2, c: 0};</code></pre>
+</p>
+<h3>3. Always Handle unknown from Crystallization</h3>
+<pre><code>// ✓ GOOD: Handle uncertainty
+<p>
+int32 | unknown:value = quantum.#;
+if value is unknown {
+use_fallback();
+} else {
+use_value(value);
+}
+</p>
+<p>
+// ✗ BAD: Ignore uncertainty
+int32:value = quantum.# ?? panic("Should never happen");  // Famous last words!</code></pre>
+</p>
+<h3>4. Document Confidence Scale Interpretation</h3>
+<pre><code>// ✓ GOOD: Clear semantics
+<p>
+// Confidence scale for temperature sensors:
+//   -4 to -2: Trust thermistor (historically stable)
+//   -1 to +1: Both equal (cross-validated)
+//   +2 to +4: Trust thermocouple (high temp range)
+Q9<fix256>:temperature = {a: thermistor, b: thermocouple, c: 0};
+</p>
+<p>
+// ✗ BAD: Arbitrary confidence changes
+temperature.c += random_number();  // Why? What does this mean?</code></pre>
+</p>
+<h3>5. Leverage Safety System Integration</h3>
+<pre><code>// ✓ GOOD: Let safety system catch superposition misuse
+<p>
+Q9<int32>:uncertain = {a: 10, b: 20, c: 0};
+int32:safe = uncertain.# ?? fallback;  // Handles unknown gracefully
+</p>
+<p>
+// ✗ BAD: Force access to uncertain value
+int32:unsafe = uncertain.a;  // Compiler should warn/error (c=0 superposition!)</code></pre>
+</p>
+<hr>
+<h2>Comparison with Other Approaches</h2>
+<h3>vs Traditional Branching</h3>
+<pre><code>// Traditional: Immediate choice, lost computation
+<p>
+int32:result;
+if condition {
+result = expensive_compute_a();
+} else {
+result = expensive_compute_b();
+}
+// One branch's work is lost!
+</p>
+<p>
+// Quantum: Both computed, choose later
+Q9<int32>:result = {
+a: expensive_compute_a(),
+b: expensive_compute_b(),
+c: 0
+};
+// Later: Decide based on evidence
+result.c = determine_confidence();
+int32:final = result.#;</code></pre>
+</p>
+<h3>vs Union Types</h3>
+<pre><code>// Union: Can hold A OR B, but not both
+<p>
+union:Value = int32 | string;
+Value:v = 42;  // Is int32 right now
+</p>
+<p>
+// Quantum: Holds A AND B simultaneously
+Q9<int32>:q = {a: 42, b: 100, c: 0};  // Both exist!</code></pre>
+</p>
+<h3>vs Optional/Maybe</h3>
+<pre><code>// Optional: Value or nothing
+<p>
+int32 | unknown:maybe = get_value();
+</p>
+<p>
+// Quantum: Two values with confidence gradient
+Q9<int32>:q = {a: value1, b: value2, c: confidence};</code></pre>
+</p>
+<hr>
+<h2>ERR Propagation</h2>
+<p>
+Quantum types respect ERR semantics:
+</p>
+<pre><code>// ERR in hypothesis A
+<p>
+Q9<int32>:q = {a: ERR, b: 100, c: 0};
+</p>
+<p>
+// Arithmetic propagates ERR through A
+q += 10;  // Result: {a: ERR, b: 110, c: 0}
+</p>
+<p>
+// Crystallization with ERR
+int32:value = q.#;  // Returns ERR if winning hypothesis is ERR!
+</p>
+<p>
+// Checking for ERR
+if q.a == ERR {
+log("Hypothesis A failed!");
+}</code></pre>
+</p>
+<hr>
+<h2>Related Types</h2>
+<ul><li><strong><a href="trit_tryte.md">trit, tryte</a></strong> - Balanced ternary foundation for Q3</li>
+<li><strong><a href="nit_nyte.md">nit, nyte</a></strong> - Balanced nonary foundation for Q9</li>
+<li><strong><a href="unknown.md">unknown</a></strong> - Soft error handling (integrates with c=0 state)</li>
+<li><strong><a href="result.md">Result<T></a></strong> - Hard error handling (orthogonal to quantum types)</li>
+</ul>
+<hr>
+<h2>Implementation Status</h2>
+<p>
+| Feature | Parser | Compiler | Runtime | Status |
+|---------|--------|----------|---------|--------|
+| <code>Q3<T></code> generic type | ⏳ | ⏳ | ⏳ | Planned |
+| <code>Q9<T></code> generic type | ⏳ | ⏳ | ⏳ | Planned |
+| Arithmetic preservation | ⏳ | ⏳ | ⏳ | Planned |
+| Q-functions (qor, qand, etc.) | ⏳ | ⏳ | ⏳ | Planned |
+| Crystallization operator <code>#</code> | ⏳ | ⏳ | ⏳ | Planned |
+| Confidence saturation | ⏳ | ⏳ | ⏳ | Planned |
+| Safety system integration | ⏳ | ⏳ | ⏳ | Planned |
+</p>
+<strong>Proof of Concept</strong>: ✅ Fully implemented in JavaScript (TMP/js/quantum.js)
+<hr>
+<h2>Summary</h2>
+<strong>Q3<T>/Q9<T> = Dual-hypothesis superposition types for gradient thinking</strong>
+<strong>For advanced quantum confidence modeling</strong>, see <a href="Q21.md">Q21</a> - provides 5 confidence levels for ALL quantum states including superposition (BOTH) and negation (NONE) certainty.
+<h3>Quick Decision Guide</h3>
+<p>
+| Need | Use This | Why |
+|------|----------|-----|
+| Simple binary choice with uncertainty | <code>Q3<T></code> | 3 states, minimal overhead |
+| Multi-level confidence tracking | <code>Q9<T></code> | 9 states, nuanced decisions |
+| <strong>Confidence in superposition itself</strong> | <strong><code>Q21</code></strong> | <strong>21 states, models "certain it's BOTH"</strong> (see <a href="Q21.md">Q21.md</a>) |
+| <strong>Confidence in negation</strong> | <strong><code>Q21</code></strong> | <strong>Models "certain it's NEITHER A nor B"</strong> |
+| Sensor fusion | <code>Q9<T></code> | Evidence accumulation over time |
+| Speculative execution | <code>Q9<T></code> | Compute both branches, decide later |
+| Parsing ambiguity | <code>Q9<T></code> | Try multiple interpretations |
+| AI reasoning | <code>Q9<T></code> or <code>Q21</code> | Mirrors human belief evolution |
+| AGI consciousness substrate | <code>Q21</code> | Full superposition certainty modeling |
+| Fuzzing | <code>Q9<T></code> | Track original + mutated simultaneously |
+</p>
+<h3>Key Principles</h3>
+<p>
+1. <strong>Defer decisions</strong> - Maintain superposition while gathering evidence
+2. <strong>Evidence accumulation</strong> - Confidence tracks cumulative information
+3. <strong>Crystallization threshold</strong> - Commit only when sufficiently confident
+4. <strong>Safety integration</strong> - c=0 requires ok(), prevents misuse
+5. <strong>Gradient thinking</strong> - "Reality exists in the gradients, not binary absolutes"
+6. <strong>Auditable reasoning</strong> - Confidence evolution is visible and trackable
+</p>
+<strong>For Nikola</strong>: Q9<T> is the cognitive substrate for safe self-improvement - it's how an AI thinks in gradients, accumulates evidence, and makes auditable decisions.
+<strong>Remember</strong>: "You don't know the answer, so you go about your business like you do know, while treating both values as true, and only crystallize when confidence is high enough." This is not just syntax - it's a way of <strong>thinking</strong>.
+    </main>
+</body>
+</html>

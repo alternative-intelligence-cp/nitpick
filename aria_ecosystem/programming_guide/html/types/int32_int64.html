@@ -1,0 +1,1426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Standard Medium/Large Signed Integers (int32, int64) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Standard Medium/Large Signed Integers (int32, int64)</h1>
+<strong>Category</strong>: Types → Integers → Standard Signed
+<strong>Sizes</strong>: 32-bit, 64-bit
+<strong>Ranges</strong>: int32 (±2.1 billion), int64 (±9.2 quintillion)
+<strong>Purpose</strong>: Production workhorse integers with wrapping overflow
+<strong>Status</strong>: ✅ FULLY IMPLEMENTED
+<hr>
+<h2>Table of Contents</h2>
+<p>
+1. <a href="#overview">Overview</a>
+2. <a href="#int32-32-bit-signed-integer">int32: 32-bit Signed Integer</a>
+3. <a href="#int64-64-bit-signed-integer">int64: 64-bit Signed Integer</a>
+4. <a href="#vs-tbb-types-critical-differences">vs TBB Types (Critical Differences)</a>
+5. <a href="#when-to-use-standard-ints-vs-tbb">When to Use Standard Ints vs TBB</a>
+6. <a href="#overflow-wrapping-behavior">Overflow Wrapping Behavior</a>
+7. <a href="#abs-undefined-behavior-with-minimum-values">abs() Undefined Behavior with Minimum Values</a>
+8. <a href="#twos-complement-representation">Two's Complement Representation</a>
+9. <a href="#arithmetic-operations">Arithmetic Operations</a>
+10. <a href="#the-year-2038-problem">The Year 2038 Problem</a>
+11. <a href="#64-bit-timestamps-and-beyond">64-bit Timestamps and Beyond</a>
+12. <a href="#c-interoperability">C Interoperability</a>
+13. <a href="#performance-characteristics">Performance Characteristics</a>
+14. <a href="#common-patterns">Common Patterns</a>
+15. <a href="#anti-patterns">Anti-Patterns</a>
+16. <a href="#migration-from-cc">Migration from C/C++</a>
+17. <a href="#related-concepts">Related Concepts</a>
+</p>
+<hr>
+<h2>Overview</h2>
+<p>
+Aria's <strong>int32</strong> and <strong>int64</strong> are the production workhorses - traditional two's complement integers with <strong>asymmetric ranges</strong> and <strong>wrapping overflow</strong>.
+</p>
+<strong>Key Properties</strong>:
+<ul><li><strong>Asymmetric ranges</strong>: One more negative value than positive</li>
+<li><strong>Wrapping overflow</strong>: Defined behavior (not UB like C!)</li>
+<li><strong>Industry standard</strong>: Compatible with all modern platforms</li>
+<li><strong>No error propagation</strong>: No ERR sentinel like TBB</li>
+<li><strong>Fast</strong>: Native CPU instructions, zero overhead</li>
+</ul>
+<strong>⚠️ CRITICAL</strong>: Wrapping overflow can cause subtle bugs (Year 2038 problem!). Use TBB if overflow detection needed.
+<hr>
+<h2>int32: 32-bit Signed Integer</h2>
+<h3>Range</h3>
+<strong>Minimum</strong>: -2,147,483,648 (0x80000000, -2^31)
+<strong>Maximum</strong>: +2,147,483,647 (0x7FFFFFFF, 2^31 - 1)
+<strong>Total values</strong>: 4,294,967,296 (2^32)
+<strong>Approximately</strong>: ±2.1 billion
+<strong>Asymmetric</strong>: One more negative value (abs(-2,147,483,648) has no int32 representation!)
+<h3>Declaration</h3>
+<pre><code>int32:count = 1000000;
+<p>
+int32:database_id = -123456;
+int32:min_value = -2147483648;
+int32:max_value = 2147483647;</code></pre>
+</p>
+<h3>Literal Suffix</h3>
+<pre><code>int32:large = 1000000i32;  // Explicit int32 literal</code></pre>
+<h3>Common Use Cases</h3>
+<p>
+1. <strong>Default integer</strong>: Most general-purpose integer operations (±2.1B sufficient for 99% of cases)
+2. <strong>Database keys</strong>: Primary keys, row IDs (2.1 billion records)
+3. <strong>Counters</strong>: Loop indices, event counts, statistics
+4. <strong>File sizes</strong>: Files up to 2GB (int32 bytes)
+5. <strong>Array indices</strong>: Arrays up to 2.1 billion elements
+6. <strong>Unix timestamps</strong>: Seconds since epoch (until Year 2038!)
+7. <strong>C interop</strong>: Matching C's <code>int32_t</code>, <code>int</code> on 32/64-bit platforms
+</p>
+<h3>Example: Database Record IDs</h3>
+<pre><code>struct:UserRecord = {
+<p>
+int32:user_id;       // Primary key (2.1 billion users max)
+string:username;
+string:email;
+int32:created_at;    // Unix timestamp (seconds since 1970)
+};
+</p>
+<p>
+UserRecord:user = {
+user_id: 12345678i32,
+username: "alice",
+email: "alice@example.com",
+created_at: 1739318400i32  // February 12, 2025
+};
+</p>
+<p>
+// Query by ID
+func:find_user = (user_id: int32) -> ?UserRecord {
+// Database lookup
+return database_query("SELECT * FROM users WHERE user_id = ?", user_id);
+}</code></pre>
+</p>
+<h3>Production Scale Examples</h3>
+<pre><code>// E-commerce inventory (2.1 billion SKUs max)
+<p>
+int32:sku = 987654321i32;
+</p>
+<p>
+// Event processing (2.1 billion events)
+int32:event_count = 0i32;
+</p>
+<p>
+till event_stream.has_more() loop
+Event:event = event_stream.read();
+event_count += 1i32;
+</p>
+<p>
+if (event_count < 0i32) {
+// Wrapped! (overflow detection)
+stderr.write("Event count overflow!\n");
+break;
+}
+end
+</p>
+<p>
+// Geographic coordinates (scaled integers)
+int32:latitude = 37774929i32;   // 37.774929° (scaled by 1e6)
+int32:longitude = -122419416i32; // -122.419416° (scaled by 1e6)</code></pre>
+</p>
+<hr>
+<h2>int64: 64-bit Signed Integer</h2>
+<h3>Range</h3>
+<strong>Minimum</strong>: -9,223,372,036,854,775,808 (0x8000000000000000, -2^63)
+<strong>Maximum</strong>: +9,223,372,036,854,775,807 (0x7FFFFFFFFFFFFFFF, 2^63 - 1)
+<strong>Total values</strong>: 18,446,744,073,709,551,616 (2^64)
+<strong>Approximately</strong>: ±9.2 quintillion (9.2 × 10^18)
+<strong>Asymmetric</strong>: One more negative value (abs(INT64_MIN) has no int64 representation!)
+<h3>Declaration</h3>
+<pre><code>int64:huge = 9000000000000000000;  // 9 quintillion
+<p>
+int64:timestamp_ns = 1739318400000000000;  // Nanoseconds since epoch
+int64:min_value = -9223372036854775808;
+int64:max_value = 9223372036854775807;</code></pre>
+</p>
+<h3>Literal Suffix</h3>
+<pre><code>int64:value = 1000000000000i64;  // Explicit int64 literal (1 trillion)</code></pre>
+<h3>Common Use Cases</h3>
+<p>
+1. <strong>High-precision timestamps</strong>: Nanosecond Unix time (good until year 2262)
+2. <strong>Large file sizes</strong>: Files up to 8 exabytes (8,192 petabytes)
+3. <strong>Memory addresses</strong>: 64-bit pointers, virtual memory offsets
+4. <strong>Large datasets</strong>: Genomic data (billions of base pairs)
+5. <strong>Financial</strong>: High-value transactions (±$92 quintillion)
+6. <strong>Astronomical</strong>: Large counts (stars in galaxy, particles in universe)
+7. <strong>Cryptography</strong>: Large integers for key generation
+8. <strong>C interop</strong>: Matching C's <code>int64_t</code>, <code>long long</code>
+</p>
+<h3>Example: Nanosecond Timestamps</h3>
+<pre><code>// High-precision event timing
+<p>
+struct:HighResEvent = {
+int64:timestamp_ns;   // Nanoseconds since Unix epoch
+string:event_type;
+string:data;
+};
+</p>
+<p>
+func:get_current_time_ns = () -> int64 {
+// Get nanoseconds since January 1, 1970
+return system_time_nanoseconds();
+}
+</p>
+<p>
+HighResEvent:event = {
+timestamp_ns: get_current_time_ns(),
+event_type: "user_login",
+data: "alice"
+};
+</p>
+<p>
+// Compute elapsed time in nanoseconds
+int64:start = get_current_time_ns();
+perform_operation();
+int64:end = get_current_time_ns();
+int64:elapsed_ns = end - start;
+</p>
+<p>
+log.write("Operation took ");
+elapsed_ns.write_to(log);
+log.write(" nanoseconds\n");</code></pre>
+</p>
+<h3>Extreme Scale Examples</h3>
+<pre><code>// Genomic data: 3 billion genomes × 3.2 billion base pairs
+<p>
+int64:total_base_pairs = 9600000000000i64;  // 9.6 trillion
+</p>
+<p>
+// Financial: Global derivatives market
+int64:notional_value_cents = 920000000000000000i64;  // $9.2 quadrillion
+</p>
+<p>
+// Astronomical: Stars in Milky Way
+int64:star_count = 200000000000i64;  // 200 billion stars
+</p>
+<p>
+// Particle physics: Particles in human body
+int64:particle_count = 7000000000000000000000000000i64;  // 7 × 10^27 (octillion)
+// ⚠️ Wait, that's too big! int64 max is ~9.2 quintillion (10^18)
+// Need larger type for 10^27!</code></pre>
+</p>
+<hr>
+<h2>vs TBB Types (Critical Differences)</h2>
+<p>
+| Feature | Standard int32/int64 | TBB tbb32/tbb64 |
+|---------|----------------------|-----------------|
+| <strong>Range</strong> | Asymmetric (int32: -2.15B to +2.15B) | Symmetric (tbb32: -2.15B to +2.15B) |
+| <strong>Overflow</strong> | Wraps around (MAX + 1 = MIN) | Returns ERR sentinel |
+| <strong>Underflow</strong> | Wraps around (MIN - 1 = MAX) | Returns ERR sentinel |
+| <strong>Division by zero</strong> | Panics (undefined behavior) | Returns ERR sentinel |
+| <strong>abs(MIN)</strong> | Panics (undefined behavior) | Returns ERR sentinel |
+| <strong>Error checking</strong> | Manual (check before/after) | Automatic (sticky ERR) |
+| <strong>Performance</strong> | Zero overhead | ~0-3% overhead |
+| <strong>C interop</strong> | Direct (same representation) | Requires conversion |
+| <strong>Year 2038</strong> | Silent wraparound to 1901! | <strong>ERR detection!</strong> |
+</p>
+<h3>Year 2038 Problem Example</h3>
+<pre><code>// Standard int32 - WRAPS (disaster!)
+<p>
+int32:timestamp = 2147483647i32;  // January 19, 2038, 03:14:07 UTC (MAX)
+timestamp += 1i32;
+// Result: -2147483648 (December 13, 1901!) ⚠️ SILENT WRAPAROUND
+</p>
+<p>
+// TBB tbb32 - DETECTS ERROR
+tbb32:safe_timestamp = 2147483647;
+safe_timestamp += 1;
+// Result: ERR (overflow detected, program can HALT)
+</p>
+<p>
+if (safe_timestamp == ERR) {
+stderr.write("YEAR 2038 OVERFLOW DETECTED!\n");
+stderr.write("SYSTEM MUST MIGRATE TO 64-BIT TIMESTAMPS!\n");
+panic("Cannot continue with overflowed timestamp");
+}</code></pre>
+</p>
+<strong>Key insight</strong>: TBB types <strong>save your production system</strong> from the Year 2038 bug by detecting the overflow instead of silently wrapping to 1901!
+<hr>
+<h2>When to Use Standard Ints vs TBB</h2>
+<h3>Use Standard Ints (int32/int64) When:</h3>
+<p>
+1. <strong>Performance critical</strong>: Every cycle counts, zero overhead required
+2. <strong>C interoperability</strong>: FFI with C libraries, binary protocols
+3. <strong>Bit manipulation</strong>: Hashing, cryptography, compression (wrapping intentional)
+4. <strong>Large arrays</strong>: Billions of elements, memory efficiency critical
+5. <strong>Overflow impossible</strong>: Range constraints mathematically guarantee no overflow
+6. <strong>Legacy compatibility</strong>: Matching existing systems using int32/int64
+7. <strong>64-bit timestamps</strong>: int64 nanoseconds good until year 2262
+</p>
+<h3>Use TBB Types (tbb32/tbb64) When:</h3>
+<p>
+1. <strong>Safety-critical</strong>: Healthcare, finance, aviation (overflow = catastrophe)
+2. <strong>Year 2038 concerns</strong>: 32-bit timestamps that might overflow
+3. <strong>Error propagation</strong>: Sticky errors through computation chains
+4. <strong>Accumulation</strong>: Long-running sums, counters (overflow risk)
+5. <strong>Database transactions</strong>: Financial calculations (overflow detection required)
+6. <strong>Symmetric ranges</strong>: Need abs() to always work
+7. <strong>Nikola consciousness</strong>: Simulations where overflow = state corruption
+</p>
+<h3>Quick Decision Matrix</h3>
+<pre><code>// Web server request counter - USE TBB (detect overflow!)
+<p>
+tbb64:request_count = 0;
+request_count += 1;
+if (request_count == ERR) {
+log_error("Request counter overflow!");
+}
+</p>
+<p>
+// Memory address offset - USE STANDARD (uint64 better, but int64 for signed offsets)
+int64:offset = calculate_offset(base_address);
+</p>
+<p>
+// Hash function - USE STANDARD (wrapping intentional)
+int32:hash = compute_hash(data) % table_size;
+</p>
+<p>
+// Financial transaction - USE TBB (safety-critical!)
+tbb64:transaction_cents = account_balance + transaction_amount;
+if (transaction_cents == ERR) {
+rollback_transaction("Overflow!");
+}
+</p>
+<p>
+// Genomic position - USE STANDARD (3.2B base pairs, int64 sufficient, no arithmetic)
+int64:genome_position = 1234567890i64;
+</p>
+<p>
+// Unix timestamp (32-bit) - <strong>USE TBB</strong> (Year 2038!)
+tbb32:timestamp = get_current_unix_timestamp();</code></pre>
+</p>
+<hr>
+<h2>Overflow Wrapping Behavior</h2>
+<h3>Defined in Aria (NOT Undefined Behavior!)</h3>
+<p>
+Unlike C/C++ where signed overflow is undefined, Aria <strong>defines</strong> overflow as two's complement wrapping.
+</p>
+<pre><code>// int32 overflow
+<p>
+int32:max = 2147483647i32;
+int32:wrapped = max + 1i32;
+// wrapped = -2147483648 (wraps to minimum)
+</p>
+<p>
+// int64 overflow
+int64:max64 = 9223372036854775807i64;
+int64:wrapped64 = max64 + 1i64;
+// wrapped64 = -9223372036854775808 (wraps to minimum)</code></pre>
+</p>
+<strong>Why defined?</strong>: Predictable behavior for modular arithmetic, cryptography, hashing.
+<h3>Silent Wraparound Dangers</h3>
+<pre><code>// DANGEROUS: Accumulation without overflow check
+<p>
+int32:total_bytes = 0i32;
+</p>
+<p>
+till files.length loop:i
+int32:file_size = files[i].get_size();
+total_bytes += file_size;  // ⚠️ Can wrap silently!
+end
+</p>
+<p>
+// If total > 2.1GB, total_bytes wraps negative!
+// Causes: disk space calculation errors, buffer allocation failures</code></pre>
+</p>
+<strong>Safe version with TBB</strong>:
+<pre><code>tbb64:total_bytes = 0;
+<p>
+till files.length loop:i
+tbb64:file_size = files[i].get_size();
+total_bytes += file_size;
+</p>
+<p>
+if (total_bytes == ERR) {
+stderr.write("Total file size overflow!\n");
+break;
+}
+end</code></pre>
+</p>
+<hr>
+<h2>abs() Undefined Behavior with Minimum Values</h2>
+<h3>The abs(INT_MIN) Problem Revisited</h3>
+<pre><code>// int32
+<p>
+int32:min32 = -2147483648i32;
+int32:result32 = abs(min32);  // ⚠️ PANICS! (abs = 2147483648, doesn't fit)
+</p>
+<p>
+// int64
+int64:min64 = -9223372036854775808i64;
+int64:result64 = abs(min64);  // ⚠️ PANICS! (abs = 9223372036854775808, doesn't fit)</code></pre>
+</p>
+<strong>Why panic?</strong>: Minimum has no positive representation in asymmetric range.
+<h3>Safe Alternatives</h3>
+<strong>Option 1</strong>: Use TBB (symmetric ranges)
+<pre><code>// tbb32 has symmetric range: -2,147,483,647 to +2,147,483,647
+<p>
+tbb32:value = -2147483647;
+tbb32:result = abs(value);  // result = 2147483647 (fits!)
+</p>
+<p>
+// Note: tbb32 minimum is -2,147,483,647, not -2,147,483,648!</code></pre>
+</p>
+<strong>Option 2</strong>: Check before calling abs()
+<pre><code>int32:value = get_signed_value();
+<p>
+if (value == -2147483648i32) {
+stderr.write("Cannot take abs of INT32_MIN\n");
+// Handle special case
+} else {
+int32:result = abs(value);  // Safe
+}</code></pre>
+</p>
+<strong>Option 3</strong>: Widen to larger type
+<pre><code>int32:small = -2147483648i32;
+<p>
+int64:wide = int64(small);  // -2147483648 fits in int64
+int64:result = abs(wide);   // result = 2147483648 (fits in int64!)</code></pre>
+</p>
+<hr>
+<h2>Two's Complement Representation</h2>
+<h3>Bit Representation (int32)</h3>
+<pre><code>+2,147,483,647 = 0x7FFFFFFF = 0b01111111111111111111111111111111
+<p>
++1             = 0x00000001 = 0b00000000000000000000000000000001
+0             = 0x00000000 = 0b00000000000000000000000000000000
+-1             = 0xFFFFFFFF = 0b11111111111111111111111111111111
+-2,147,483,648 = 0x80000000 = 0b10000000000000000000000000000000</code></pre>
+</p>
+<h3>Bit Representation (int64)</h3>
+<pre><code>+9,223,372,036,854,775,807 = 0x7FFFFFFFFFFFFFFF
+<p>
+0                          = 0x0000000000000000
+-1                          = 0xFFFFFFFFFFFFFFFF
+-9,223,372,036,854,775,808 = 0x8000000000000000</code></pre>
+</p>
+<h3>Sign Bit</h3>
+<strong>Most significant bit (MSB)</strong> determines sign:
+<ul><li><code>0</code> = positive or zero</li>
+<li><code>1</code> = negative</li>
+</ul>
+<p>
+For int32, bit 31 is the sign bit.
+For int64, bit 63 is the sign bit.
+</p>
+<hr>
+<h2>Arithmetic Operations</h2>
+<h3>Safe Addition with Overflow Detection</h3>
+<pre><code>func:safe_add_i32 = (a: int32, b: int32) -> Result<int32, string> {
+<p>
+// Positive overflow: both positive, sum negative
+if (a > 0i32 && b > 0i32 && (a + b) < 0i32) {
+fail("Positive overflow");
+}
+</p>
+<p>
+// Negative underflow: both negative, sum positive
+if (a < 0i32 && b < 0i32 && (a + b) > 0i32) {
+fail("Negative underflow");
+}
+</p>
+<p>
+pass(a + b);
+}
+</p>
+<p>
+// Or just use TBB (automatic)
+tbb32:a = 2000000000;
+tbb32:b = 200000000;
+tbb32:sum = a + b;  // ERR (overflow detected)</code></pre>
+</p>
+<h3>Multiplication Overflow</h3>
+<pre><code>// int32 multiplication can overflow easily
+<p>
+int32:a = 100000i32;
+int32:b = 30000i32;
+int32:product = a * b;  // 3,000,000,000... overflow! wraps to negative
+</p>
+<p>
+// Safe multiplication: widen, check, narrow
+int64:wide_a = int64(a);
+int64:wide_b = int64(b);
+int64:wide_product = wide_a * wide_b;  // 3,000,000,000 (fits in int64)
+</p>
+<p>
+if (wide_product > 2147483647i64 || wide_product < -2147483648i64) {
+stderr.write("Product doesn't fit in int32!\n");
+} else {
+int32:result = int32(wide_product);  // Safe narrow
+}</code></pre>
+</p>
+<hr>
+<h2>The Year 2038 Problem</h2>
+<h3>What is it?</h3>
+<p>
+Unix timestamps stored as <strong>int32 seconds</strong> since January 1, 1970 00:00:00 UTC will overflow on:
+</p>
+<strong>January 19, 2038, 03:14:07 UTC</strong>
+<p>
+At this moment, 2,147,483,647 seconds will have elapsed, hitting <strong>INT32_MAX</strong>.
+</p>
+<p>
+One second later: <strong>INT32_MIN</strong> (-2,147,483,648), interpreted as <strong>December 13, 1901</strong>!
+</p>
+<h3>The Disaster Scenario</h3>
+<pre><code>// System using int32 timestamps (legacy code)
+<p>
+int32:current_time = get_unix_timestamp();  // Returns seconds since 1970
+</p>
+<p>
+// January 19, 2038, 03:14:07 UTC
+current_time = 2147483647i32;  // One second before overflow
+</p>
+<p>
+// One second later...
+current_time = get_unix_timestamp();
+// current_time = -2147483648 (wrapped to minimum!)
+</p>
+<p>
+// System interprets as December 13, 1901
+// Result:
+// - All "future" events appear to be in the past
+// - Certificates expire (current time < expiration time check fails)
+// - File modification times corrupted
+// - Database queries break (WHERE timestamp > ...)
+// - Financial transactions rejected
+// - Authentication systems fail</code></pre>
+</p>
+<h3>TBB to the Rescue!</h3>
+<pre><code>// Use TBB tbb32 to DETECT overflow instead of silent wraparound
+<p>
+tbb32:timestamp = 2147483647;  // January 19, 2038, 03:14:07 UTC
+</p>
+<p>
+timestamp += 1;  // One second later
+</p>
+<p>
+if (timestamp == ERR) {
+// ERROR DETECTED! System can HALT instead of corrupting data!
+stderr.write("⚠️ YEAR 2038 OVERFLOW DETECTED!\n");
+stderr.write("CRITICAL: Timestamp overflow imminent!\n");
+stderr.write("ACTION REQUIRED: Migrate to 64-bit timestamps!\n");
+</p>
+<p>
+// Trigger emergency shutdown, alert administrators
+panic("Cannot continue with overflowed timestamp");
+}</code></pre>
+</p>
+<strong>TBB benefit</strong>: System <strong>stops</strong> instead of running with corrupted time data!
+<h3>Proper Fix: Migrate to int64</h3>
+<pre><code>// Use int64 for timestamps (nanoseconds or microseconds)
+<p>
+int64:timestamp_ns = get_unix_timestamp_nanoseconds();
+</p>
+<p>
+// Nanoseconds since 1970, int64 good until year 2262
+// 9,223,372,036,854,775,807 nanoseconds = 292 years</code></pre>
+</p>
+<hr>
+<h2>64-bit Timestamps and Beyond</h2>
+<h3>Nanosecond Timestamps (Recommended)</h3>
+<pre><code>// int64 nanoseconds since Unix epoch
+<p>
+int64:now_ns = 1739318400000000000i64;  // Feb 12, 2025 (nanoseconds)
+</p>
+<p>
+// Good until: ~2262 (292 years from 1970)
+// Range: 1970 to 2262 (sufficient for all practical purposes)</code></pre>
+</p>
+<h3>Microsecond Timestamps</h3>
+<pre><code>// int64 microseconds since Unix epoch
+<p>
+int64:now_us = 1739318400000000i64;  // Feb 12, 2025 (microseconds)
+</p>
+<p>
+// Good until: ~292,277 AD (290,000 years!)</code></pre>
+</p>
+<h3>Millisecond Timestamps (JavaScript-style)</h3>
+<pre><code>// int64 milliseconds since Unix epoch
+<p>
+int64:now_ms = 1739318400000i64;  // Feb 12, 2025 (milliseconds)
+</p>
+<p>
+// Good until: ~292,277,026 AD (290 million years!)</code></pre>
+</p>
+<strong>Recommendation</strong>: Use <strong>int64 nanoseconds</strong> for high-precision timestamps (good until 2262).
+<hr>
+<h2>C Interoperability</h2>
+<h3>Direct ABI Compatibility</h3>
+<p>
+| Aria Type | C Type | Size | Range |
+|-----------|--------|------|-------|
+| int32 | <code>int32_t</code> | 4 bytes | ±2.1 billion |
+| int64 | <code>int64_t</code> | 8 bytes | ±9.2 quintillion |
+</p>
+<h3>FFI Example</h3>
+<pre><code>// C library functions
+<p>
+extern "C" {
+func:c_file_size = int64(pathname: int8@);
+func:c_timestamp = int32();
+func:c_process_id = int32();
+}
+</p>
+<p>
+// Aria usage
+int64:file_size = c_file_size("/var/log/system.log");
+</p>
+<p>
+log.write("File size: ");
+file_size.write_to(log);
+log.write(" bytes\n");
+</p>
+<p>
+int32:current_time = c_timestamp();
+int32:pid = c_process_id();</code></pre>
+</p>
+<strong>No conversion needed</strong>: Aria int32/int64 are ABI-compatible with C.
+<hr>
+<h2>Performance Characteristics</h2>
+<h3>Zero Overhead</h3>
+<pre><code>int32:a = 1000000i32;
+<p>
+int32:b = 2000000i32;
+int32:sum = a + b;</code></pre>
+</p>
+<strong>Generated assembly</strong> (x86-64):
+<pre><code>mov eax, 1000000    ; Load 1000000 into EAX
+<p>
+add eax, 2000000    ; Add 2000000 to EAX
+; Result in EAX (one instruction!)</code></pre>
+</p>
+<h3>int32 vs int64 Performance</h3>
+<strong>32-bit arithmetic</strong>: Single instruction on all CPUs
+<strong>64-bit arithmetic</strong>: Single instruction on 64-bit CPUs, two instructions on 32-bit CPUs
+<strong>Modern systems (64-bit)</strong>: int64 performance identical to int32.
+<h3>Memory Efficiency</h3>
+<pre><code>// 1 billion int32 values
+<p>
+int32[]:medium = aria.alloc<int32>(1000000000);
+// Memory: 4 GB
+</p>
+<p>
+// 1 billion int64 values
+int64[]:large = aria.alloc<int64>(1000000000);
+// Memory: 8 GB (2× larger)</code></pre>
+</p>
+<strong>Trade-off</strong>: int64 uses 2× memory but avoids overflow for large values.
+<hr>
+<h2>Common Patterns</h2>
+<h3>Range-Checked Narrowing (int64 → int32)</h3>
+<pre><code>func:narrow_to_i32 = (value: int64) -> ?int32 {
+<p>
+if (value < -2147483648i64 || value > 2147483647i64) {
+return NIL;  // Out of range
+}
+</p>
+<p>
+return int32(value);  // Safe cast
+}
+</p>
+<p>
+// Usage
+int64:large = 5000000000i64;  // 5 billion
+?int32:small = narrow_to_i32(large);
+</p>
+<p>
+if (small == NIL) {
+stderr.write("Value too large for int32\n");
+}</code></pre>
+</p>
+<h3>Overflow-Safe Accumulation</h3>
+<pre><code>// Unsafe: int32 can overflow
+<p>
+int32:sum = 0i32;
+</p>
+<p>
+till 1000000 loop:i
+sum += 10000i32;  // Total: 10 billion (overflow!)
+end
+</p>
+<p>
+// Safe: Use int64 for accumulation
+int64:safe_sum = 0i64;
+</p>
+<p>
+till 1000000 loop:i
+safe_sum += 10000i64;  // Total: 10 billion (fits!)
+end</code></pre>
+</p>
+<h3>Timestamp Conversion</h3>
+<pre><code>// Convert int32 seconds to int64 nanoseconds
+<p>
+int32:timestamp_s = 1739318400i32;  // Feb 12, 2025
+int64:timestamp_ns = int64(timestamp_s) * 1000000000i64;
+</p>
+<p>
+// Convert int64 nanoseconds to int32 seconds
+int64:ns = 1739318400000000000i64;
+int32:seconds = int32(ns / 1000000000i64);</code></pre>
+</p>
+<hr>
+<h2>Anti-Patterns</h2>
+<h3>❌ Using int32 for Modern Timestamps</h3>
+<pre><code>// WRONG: int32 timestamp (Year 2038 problem!)
+<p>
+int32:timestamp = get_unix_timestamp();  // ❌ Overflows in 2038!
+</p>
+<p>
+// RIGHT: int64 timestamp (good until 2262)
+int64:timestamp_ns = get_unix_timestamp_nanoseconds();  // ✅ Safe</code></pre>
+</p>
+<h3>❌ Ignoring Overflow in Financial Calculations</h3>
+<pre><code>// WRONG: int32 for money (can overflow!)
+<p>
+int32:account_balance_cents = 1000000000i32;  // $10 million
+account_balance_cents += 1500000000i32;  // Add $15 million
+// Result: -1794967296 (overflow! balance is now negative!)
+</p>
+<p>
+// RIGHT: Use TBB or int64
+tbb64:safe_balance_cents = 1000000000;
+safe_balance_cents += 1500000000;
+if (safe_balance_cents == ERR) {
+stderr.write("Transaction overflow!\n");
+rollback();
+}</code></pre>
+</p>
+<h3>❌ Using abs(INT_MIN)</h3>
+<pre><code>// WRONG: abs() on minimum value
+<p>
+int32:value = -2147483648i32;
+int32:absolute = abs(value);  // ❌ PANICS!
+</p>
+<p>
+// RIGHT: Check first or use TBB
+if (value == -2147483648i32) {
+stderr.write("Cannot take abs of INT32_MIN\n");
+} else {
+int32:absolute = abs(value);
+}</code></pre>
+</p>
+<hr>
+<h2>Migration from C/C++</h2>
+<h3>Undefined Behavior → Defined</h3>
+<strong>C</strong>: Signed overflow is undefined
+<pre><code>int32_t a = INT32_MAX;
+<p>
+a += 1;  // UNDEFINED BEHAVIOR</code></pre>
+</p>
+<strong>Aria</strong>: Signed overflow wraps (defined)
+<pre><code>int32:a = 2147483647i32;
+<p>
+a += 1i32;  // a = -2147483648 (defined wrapping)</code></pre>
+</p>
+<h3>Explicit Type Suffixes</h3>
+<strong>C</strong>: Implicit conversions
+<pre><code>int32_t x = 1000000;  // Literal is int, implicitly converted</code></pre>
+<strong>Aria</strong>: Explicit suffixes required
+<pre><code>int32:x = 1000000i32;  // Must specify i32</code></pre>
+<h3>Year 2038 Migration</h3>
+<strong>C legacy code</strong>:
+<pre><code>time_t timestamp = time(NULL);  // time_t is int32 on many systems</code></pre>
+<strong>Aria modern code</strong>:
+<pre><code>int64:timestamp_ns = get_unix_timestamp_nanoseconds();  // int64, safe until 2262</code></pre>
+<hr>
+<h2>Related Concepts</h2>
+<h3>Other Integer Types</h3>
+<ul><li><strong>int8, int16</strong>: Smaller standard signed integers</li>
+<li><strong>uint32, uint64</strong>: Unsigned integers (0 to 4.3B / 18.4 quintillion)</li>
+<li><strong>tbb32, tbb64</strong>: Symmetric-range error-propagating integers</li>
+<li><strong>int1024, int2048, int4096</strong>: Large cryptographic integers</li>
+</ul>
+<h3>Special Values</h3>
+<ul><li><strong>NIL</strong>: Optional types (not applicable to int32/int64)</li>
+<li><strong>ERR</strong>: TBB error sentinel (not applicable to standard ints)</li>
+<li><strong>NULL</strong>: Pointer sentinel (not applicable to value types)</li>
+</ul>
+<h3>Related Operations</h3>
+<ul><li><strong>Bit manipulation</strong>: Shifts, masks, flags</li>
+<li><strong>Overflow detection</strong>: Manual checking or TBB automatic</li>
+<li><strong>Widening</strong>: int32 → int64 (always safe)</li>
+<li><strong>Narrowing</strong>: int64 → int32 (check range!)</li>
+</ul>
+<hr>
+<h2>Summary</h2>
+<strong>int32</strong> and <strong>int64</strong> are Aria's production workhorse integers:
+<p>
+✅ <strong>Production scale</strong>: int32 (±2.1B), int64 (±9.2 quintillion)
+✅ <strong>Wrapping overflow</strong>: Defined behavior (not UB like C!)
+✅ <strong>Zero overhead</strong>: Native CPU instructions
+✅ <strong>C compatible</strong>: Direct FFI, same ABI
+✅ <strong>Industry standard</strong>: Two's complement on all platforms
+</p>
+<p>
+⚠️ <strong>Year 2038 problem</strong>: int32 timestamps overflow in 2038! Use int64 or TBB
+⚠️ <strong>Overflow wraps silently</strong>: Use TBB if overflow is an error
+⚠️ <strong>abs(INT_MIN) panics</strong>: Use TBB for symmetric ranges
+</p>
+<strong>Use int32 for</strong>:
+<ul><li>General-purpose integers (±2.1B sufficient)</li>
+<li>Database keys, counters, array indices</li>
+<li>C interoperability</li>
+<li>Performance-critical code</li>
+</ul>
+<strong>Use int64 for</strong>:
+<ul><li>Modern timestamps (nanoseconds, good until 2262)</li>
+<li>Large file sizes (exabytes)</li>
+<li>Memory addresses, offsets</li>
+<li>Genomic data, astronomical counts</li>
+</ul>
+<strong>Use tbb32/tbb64 for</strong>:
+<ul><li>Safety-critical systems</li>
+<li><strong>Year 2038 overflow detection</strong></li>
+<li>Financial calculations</li>
+<li>Error propagation</li>
+<li>Symmetric ranges</li>
+</ul>
+<hr>
+<strong>Next</strong>: <a href="uint8_uint16.md">uint8, uint16 (Unsigned Small Integers)</a>
+<strong>See Also</strong>: <a href="int8_int16.md">int8/int16</a>, <a href="tbb32.md">tbb32</a>, <a href="tbb64.md">tbb64</a>
+<hr>
+<em>Aria Language Project - Production Integers with Year 2038 Awareness</em>
+<em>February 12, 2026 - Establishing timestamped prior art on int32/int64 semantics</em>
+    </main>
+</body>
+</html>

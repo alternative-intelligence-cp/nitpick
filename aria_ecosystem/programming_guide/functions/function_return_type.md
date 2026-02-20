@@ -202,9 +202,9 @@ data: Data = await fetch_data();
 
 ```aria
 fn find<T>(array: []T, target: T) -> T? {
-    for item in array {
-        when item == target then
-            return item;
+    till(array.length - 1, 1) {
+        when array[$] == target then
+            return array[$];
         end
     }
     return nil;

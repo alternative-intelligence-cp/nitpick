@@ -9,29 +9,37 @@
 
 ---
 
-## 🚀 Current Status (December 19, 2025)
+## 🚀 Current Status (February 15, 2026)
 
-**⚠️ ACTIVE DEVELOPMENT - Core Features Implementation In Progress**
+**🔬 TESTING & SAFETY AUDIT PHASE - Moving Toward v0.1.0**
 
-### Compiler Toolchain 🔧
+Aria is currently in heavy testing mode with ongoing safety audits, fuzzing campaigns, documentation updates, and final cleanup before the first official release. We're moving closer to v0.1.0 with **no fixed ETA** - correctness and safety are prioritized over release dates given the critical nature of our use cases.
+
+### Compiler Toolchain ✅
 - ✅ **ariac** - Full-featured compiler with LLVM 20 backend
 - ✅ **aria-doc** - Beautiful HTML documentation generator  
 - ✅ **aria-pkg** - Package manager with registry
 - ✅ **aria-dap** - Debug Adapter Protocol server
 - ✅ **aria-lsp** - Language Server Protocol implementation
-- ✅ **Test suite** - 188/389 tests passing (48%) - in active development
-- ✅ **Balanced Literal Syntax** - 0t1T0=6, 0n2A=17 both compile and execute correctly
+- ✅ **Test suite** - 515+ total tests (continually expanding)
+- ✅ **Fuzzer V2** - Advanced fuzzing with 24-hour stress testing campaigns
 - ✅ **Live documentation** - https://aria.docs.ai-liberation-platform.org/
+- ✅ **AriaX Linux Distro** - Custom distribution with full toolchain (in development)
 
-### Language Features (Status) 🔧
-- ✅ **TBB Types (tbb8/16/32/64)** - Symmetric signed integers with overflow detection
-- ✅ **Balanced Ternary/Nonary Literals** - 0t[01T]+ and 0n[01234ABCD]+ syntax validated
-- 🔧 **Balanced Ternary/Nonary Types** - trit/tryte/nit/nyte runtime (HIGH PRIORITY - Core Nikola requirement)
-- ✅ **Generic Functions** - Monomorphization with type inference
-- ✅ **Generic Structs** - struct<T> declarations with specialization
-- ✅ **Module System** - use, mod, pub, extern keywords
-- ✅ **Result Types** - pass/fail statements with ? operator
-- ✅ **Arrays** - Fixed and dynamic size with literals
+### Language Features ✅
+- ✅ **TBB Types (tbb8/16/32/64)** - Symmetric signed integers with overflow detection - **STABLE**
+- ✅ **Balanced Ternary/Nonary Literals** - 0t[01T]+ and 0n[01234ABCD]+ syntax - **STABLE**
+- ✅ **Quantum Types** - Superposition states for probabilistic computation - **STABLE**
+- ✅ **Layered Safety System** - Multi-level error handling with ?!, !!!, unknown/ok(), failsafe - **STABLE**
+- ✅ **Generic Functions** - Monomorphization with type inference - **STABLE**
+- ✅ **Generic Structs** - struct<T> declarations with specialization - **STABLE**
+- ✅ **Module System** - use, mod, pub, extern keywords - **STABLE**
+- ✅ **Result Types** - pass/fail statements with ? operator - **STABLE**
+- ✅ **Arrays** - Fixed and dynamic size with literals - **STABLE**
+- ✅ **Operators** - Full arithmetic, bitwise, logical, comparison suite - **STABLE**
+- ✅ **Functions & Loops** - Complete control flow implementation - **STABLE**
+- ✅ **Standard Library** - I/O system, core modules, dbug - **EXPANDING**
+- 🔧 **Balanced Ternary/Nonary Types** - trit/tryte/nit/nyte runtime (HIGH PRIORITY - Nikola core requirement)
 - 🔧 **Six-Stream I/O Model** - Specified, implementation in progress
 - 🔧 **Async/Await** - Specified, implementation in progress
 - 🔧 **Memory Safety** - Specified, borrow checker in development
@@ -64,7 +72,75 @@ These foundations inform Aria's approach to neurodivergent-friendly syntax desig
 **📖 Want to understand Aria's design decisions?** See [**ATPM Design Rationale**](docs/ATPM_DESIGN_RATIONALE.md) - explains why Aria has balanced types, explicit conversions, deterministic arithmetic, and "weird" features without requiring deep physics knowledge.
 
 ### Key Innovations
+**🛡️ Layered Safety System - Defense in Depth**
 
+Aria's safety philosophy centers on making dangerous operations **explicit** while providing multiple safety layers for error handling:
+
+**Layer 1: Failsafe** - Every Aria program has a `func:failsafe = void(int32:err_code)` that catches unhandled errors. No program can crash without giving you a chance to recover:
+```aria
+func:failsafe = void(int32:err_code) {
+    stderr.writeln("Critical error: " + int32_toString(err_code));
+    // Log, cleanup, graceful shutdown
+    pass(NIL);
+};
+```
+
+**Layer 2: Result Types with ? and !** - Explicit error propagation:
+```aria
+func:divide = Result<int32>(int32:a, int32:b) {
+    if (b == 0) { fail("Division by zero"); }
+    pass(a / b);
+};
+
+// ? operator: propagate errors up the call stack
+func:calculate = Result<int32>() {
+    int32:result = divide(10, 0)?;  // Returns fail() to caller
+    pass(result);
+};
+
+// ! operator: trigger failsafe on error (use sparingly!)
+int32:value = divide(10, 2)!;  // OK: unwraps to 5
+int32:crash = divide(10, 0)!;   // Calls failsafe with error code
+```
+
+**Layer 3: unknown/ok() Pattern** - Explicit null safety without null types:
+```aria
+int32:maybe_valid = unknown;  // Marks as potentially invalid
+
+if (some_condition) {
+    maybe_valid = 42;
+    ok(maybe_valid);  // Marks as validated
+}
+
+if (ok(maybe_valid)) {
+    // Safe to use maybe_valid here
+    print(int32_toString(maybe_valid));
+}
+```
+
+**Layer 4: Operator Variants** - Choose your safety level:
+- `?!` - Checked operator (panic on overflow/error)
+- `!!!` - Unchecked operator (wrap/undefined behavior for performance)
+```aria
+tbb8:safe = 100 +?! 50;    // Panics if overflow
+int32:fast = huge1 +!!! huge2;  // Wraps silently (use with care!)
+```
+
+**🔮 Quantum Types - Superposition States**
+
+Aria includes native quantum types for probabilistic computation and AI decision modeling:
+```aria
+quantum<bool>:schrodinger = superpose(true, false, 0.5);  // 50/50 superposition
+bool:measured = collapse(schrodinger);  // Collapses to true or false
+
+quantum<int32>:distribution = weighted_superpose(
+    [1, 2, 3, 4, 5],
+    [0.1, 0.2, 0.4, 0.2, 0.1]  // Probability distribution
+);
+int32:value = collapse(distribution);  // Samples from distribution
+```
+
+Quantum types enable modeling of uncertainty, probabilistic paths in AI systems, and Monte Carlo simulations at the language level.
 **� TBB Types - Symmetric Signed Integers with Error Sentinels**
 Twisted Balanced Binary (TBB) types provide symmetric signed ranges with automatic overflow detection:
 - **tbb8** - Range: -127 to +127, ERR sentinel at -128
@@ -336,6 +412,8 @@ EOF
 
 ## Documentation
 
+📚 **[Web Programming Guide](https://aria.docs.ai-liberation-platform.org/)** - **Start here!** Complete interactive guide for learning Aria from scratch. Covers all language features, best practices, and safety patterns with runnable examples.
+
 📚 **[Official Documentation](https://aria.docs.ai-liberation-platform.org/)** - Complete guides, tutorials, and API reference
 
 ### Quick Links
@@ -349,6 +427,8 @@ EOF
 - **[Six-Stream I/O Model](docs/six_stream_io.md)** - Revolutionary I/O architecture
 - **[Type-Bounded Behaviors](docs/type_bounded_behaviors.md)** - Constraint system design
 - **[Memory Safety](docs/memory_safety.md)** - Borrow checker and lifetime analysis
+- **[Layered Safety System](docs/safety_layers.md)** - ?!, !!!, unknown/ok(), failsafe patterns
+- **[Quantum Types Guide](docs/quantum_types.md)** - Superposition and probabilistic computation
 - **[Package Format](docs/package_format.md)** - Creating and distributing packages
 - **[Contributing Guide](CONTRIBUTING.md)** - How to contribute to Aria
 
@@ -386,7 +466,11 @@ aria/
 │   ├── string.aria         # String operations
 │   ├── collections.aria    # Data structures
 │   ├── io.aria             # I/O operations
-│   └── async.aria          # Async primitives
+│   ├── async.aria          # Async primitives
+│   └── quantum.aria        # Quantum types and operations
+├── stdlib/                  # Extended standard library
+│   ├── dbug.aria           # Debug instrumentation (dbug.print, dbug.check)
+│   └── print_utils.aria    # Formatted printing utilities
 ├── tests/                   # Test suite
 │   ├── unit/               # Unit tests
 │   ├── integration/        # Integration tests
@@ -432,21 +516,30 @@ The compiler is production-ready for experimental projects. For known limitation
 
 ## Development Roadmap
 
-### v0.1.0 - IN PROGRESS 🔧 (Target: Q1 2026)
-**First Official Release - Feature Implementation**
+### v0.1.0 - IN PROGRESS � (No ETA - Correctness & Safety First)
+**First Official Release - Testing & Validation Phase**
 
-✅ Complete compiler toolchain (ariac, aria-doc, aria-pkg, aria-dap)
-✅ Six-stream I/O model implementation
+**Current Focus**: Heavy testing, fuzzing campaigns, safety audits, documentation refinement, and final cleanup. We will not release until we are confident in the correctness and safety of the implementation, regardless of timeline.
+
+✅ Complete compiler toolchain (ariac, aria-doc, aria-pkg, aria-dap, aria-lsp)
+✅ Layered safety system (?!, !!!, unknown/ok(), failsafe)
+✅ Quantum types with superposition/collapse
+✅ TBB types with overflow detection
 ✅ Type-Bounded Behaviors with generics
-✅ Memory safety with borrow checking
-✅ Async/await execution model
-✅ Comprehensive test suite (Phase 7.7)
+✅ Comprehensive test suite (515+ tests)
+✅ Fuzzer V2 with 24-hour stress testing
 ✅ Live documentation website
-✅ Package management system
+✅ Standard library with dbug instrumentation
+🔧 Memory safety with borrow checking (in development)
+🔧 Six-stream I/O model (in progress)
+🔧 Async/await execution model (in progress)
+🔧 Balanced ternary/nonary runtime (high priority)
+🔧 AriaX Linux distribution packaging
 
-### v0.2.0 - Next Release (Q1 2026)
-**Enhanced Language Features & Performance**
+### v0.2.0 - Next Release
+**Enhanced Features & Ecosystem**
 
+- 🔄 AriaX Linux distribution official release
 - 🔄 Advanced async patterns (channels, actors)
 - 🔄 Performance optimizations (JIT, AOT)
 - 🔄 Enhanced debugger features
@@ -457,6 +550,7 @@ The compiler is production-ready for experimental projects. For known limitation
 ### Long-Term Vision
 **Nikola Integration & AI-Native Features**
 
+- **AriaX Linux** - Complete development environment with Aria toolchain preinstalled
 - Integration with Nikola consciousness system
 - AI-assisted code generation
 - Self-optimizing runtime
@@ -518,4 +612,4 @@ If you find Aria useful, consider supporting its development! See [DONATIONS.md]
 **Alternative Intelligence Liberation Platform (AILP)**  
 *Building tools for collaboration, not exploitation.*
 
-**Status**: v0.0.6 - Phase 7 Complete, Feature Implementation In Progress | **Next**: Parser Enhancements & Standard Library
+**Status**: v0.0.7-dev - Testing & Safety Audit Phase | **Next**: v0.1.0 (No ETA - Correctness First)

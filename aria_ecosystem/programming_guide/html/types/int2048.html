@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>int2048 - 2048-bit Integer (RSA-8192) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>int2048 - 2048-bit Integer (RSA-8192)</h1>
+<strong>Category</strong>: Types → Large Integers / Cryptography
+<strong>Purpose</strong>: Post-quantum cryptography, RSA-8192 key operations
+<strong>Status</strong>: ✅ COMPLETE (All operations implemented and tested)
+<hr>
+<h2>Overview</h2>
+<strong>int2048</strong> is a <strong>2048-bit signed integer</strong> type designed for extreme-security cryptographic operations, particularly RSA-8192 which requires 8192-bit modular arithmetic (two 2048-bit primes multiplied).
+<hr>
+<h2>Key Characteristics</h2>
+<p>
+| Property | Value |
+|----------|-------|
+| <strong>Total Bits</strong> | 2048 (32 × 64-bit limbs) |
+| <strong>Range (signed)</strong> | -2^2047 to +2^2047 - 1 |
+| <strong>Range (unsigned)</strong> | 0 to 2^2048 - 1 |
+| <strong>Storage</strong> | 256 bytes (32 limbs) |
+| <strong>ERR Sentinel</strong> | limbs[31]=0x8000000000000000, others=0 |
+| <strong>Endianness</strong> | Little-endian limbs |
+</p>
+<hr>
+<h2>Representation</h2>
+<h3>Memory Layout</h3>
+<pre><code>int2048 = {
+<p>
+uint64:limbs[32];  // Little-endian: limbs[0] = LSB, limbs[31] = MSB
+};
+</p>
+<p>
+// Total: 256 bytes
+// Limb 0: bits 0-63
+// Limb 1: bits 64-127
+// ...
+// Limb 31: bits 1984-2047 (sign bit in bit 2047)</code></pre>
+</p>
+<h3>LLVM IR Type</h3>
+<pre><code>%struct.int2048 = type { [32 x i64] }</code></pre>
+<hr>
+<h2>Declaration</h2>
+<pre><code>// Basic declaration
+<p>
+int2048:rsa_prime_p;
+int2048:rsa_prime_q;
+uint2048:modulus;
+</p>
+<p>
+// Initialization (future - literal syntax)
+int2048:value = 123...i2048;
+</p>
+<p>
+// From hex (future)
+int2048:hex_val = 0xABCDEF...i2048;</code></pre>
+</p>
+<hr>
+<h2>Arithmetic Operations</h2>
+<h3>Addition & Subtraction</h3>
+<pre><code>int2048:a = 1000000i2048;
+<p>
+int2048:b = 2000000i2048;
+</p>
+<p>
+int2048:sum = a + b;       // 3000000
+int2048:diff = b - a;      // 1000000
+</p>
+<p>
+// Overflow detection (returns ERR)
+int2048:max = MAX_INT2048;
+int2048:overflow = max + max;  // Returns ERR sentinel
+</p>
+<p>
+if (overflow == ERR) {
+stderr.write("Overflow in cryptographic computation!\n");
+!!! ERR_CRYPTO_OVERFLOW;
+}</code></pre>
+</p>
+<h3>Multiplication</h3>
+<pre><code>int2048:a = 1000i2048;
+<p>
+int2048:b = 2000i2048;
+</p>
+<p>
+int2048:product = a * b;  // 2000000 (low 2048 bits)
+</p>
+<p>
+// Note: Full product is 4096 bits, but truncated to 2048
+// For cryptography, often need full result (future: widening multiply)</code></pre>
+</p>
+<h3>Division & Modulo</h3>
+<pre><code>int2048:dividend = 10000i2048;
+<p>
+int2048:divisor = 100i2048;
+</p>
+<p>
+// Unsigned division
+int2048:quotient = aria_lbim_udiv2048(dividend, divisor);   // 100
+int2048:remainder = aria_lbim_umod2048(dividend, divisor);  // 0
+</p>
+<p>
+// Signed division
+int2048:s_quotient = dividend / divisor;   // Uses sdiv2048
+int2048:s_remainder = dividend % divisor;  // Uses smod2048
+</p>
+<p>
+// Division by zero returns ERR (not crash)
+int2048:zero = 0i2048;
+int2048:bad = dividend / zero;  // ERR sentinel
+</p>
+<p>
+if (bad == ERR) {
+!!! ERR_DIVISION_BY_ZERO;
+}</code></pre>
+</p>
+<hr>
+<h2>ERR Sentinel Pattern</h2>
+<h3>ERR Value</h3>
+<pre><code>// ERR = minimum signed value (1 << 2047)
+<p>
+// Limbs: [0, 0, 0, ..., 0, 0x8000000000000000]
+</p>
+<p>
+int2048:err = ERR;  // ERR sentinel
+</p>
+<p>
+// Same pattern as int1024, int4096
+// Cannot be produced by valid arithmetic (reserved)</code></pre>
+</p>
+<h3>ERR Propagation</h3>
+<pre><code>int2048:bad = ERR;
+<p>
+int2048:good = 100i2048;
+</p>
+<p>
+int2048:still_err = bad + good;    // ERR (sticky!)
+int2048:also_err = good * bad;     // ERR
+int2048:div_err = good / bad;      // ERR
+</p>
+<p>
+// Always check critical operations
+if (result == ERR) {
+stderr.write("Cryptographic operation corrupted\n");
+!!! ERR_CRYPTO_CORRUPTION;
+}</code></pre>
+</p>
+<hr>
+<h2>Cryptographic Operations</h2>
+<h3>RSA-8192 Prime Generation (Conceptual)</h3>
+<pre><code>// RSA-8192 uses two 4096-bit primes
+<p>
+// But intermediate sieve operations use int2048 arithmetic
+</p>
+<p>
+int2048:candidate = generate_random_2048();
+int2048:small_prime = 3i2048;
+</p>
+<p>
+// Trial division sieve
+int2048:remainder = candidate % small_prime;
+</p>
+<p>
+if (remainder == 0i2048) {
+// Not prime, try next candidate
+candidate = candidate + 2i2048;
+}
+</p>
+<p>
+// Miller-Rabin primality test would use int2048 modular exponentiation</code></pre>
+</p>
+<h3>Modular Arithmetic (Foundation of RSA)</h3>
+<pre><code>// Modular exponentiation: base^exponent mod modulus
+<p>
+// This is the core RSA operation
+</p>
+<p>
+function mod_exp_2048(
+int2048:base,
+int2048:exponent,
+int2048:modulus
+) : int2048 begin
+int2048:result = 1i2048;
+int2048:current_base = base % modulus;
+</p>
+<p>
+till exponent == 0i2048 loop
+// If exponent odd, multiply result by current_base
+int2048:is_odd = exponent & 1i2048;
+if (is_odd == 1i2048) {
+result = (result * current_base) % modulus;
+if (result == ERR) {
+return ERR;
+}
+}
+</p>
+<p>
+// Square the base, halve the exponent
+current_base = (current_base * current_base) % modulus;
+exponent = exponent >> 1;  // Arithmetic right shift
+</p>
+<p>
+if (current_base == ERR || exponent == ERR) {
+return ERR;
+}
+end
+</p>
+<p>
+return result;
+end
+</p>
+<p>
+// RSA decryption/signing: ciphertext^d mod n
+int2048:ciphertext = ...;
+int2048:private_key_d = ...;
+int2048:modulus_n = ...;
+</p>
+<p>
+int2048:plaintext = mod_exp_2048(ciphertext, private_key_d, modulus_n);</code></pre>
+</p>
+<h3>Extended Euclidean Algorithm</h3>
+<pre><code>// Computes GCD and Bézout coefficients
+<p>
+// Used to find modular multiplicative inverse in RSA
+</p>
+<p>
+function extended_gcd_2048(
+int2048:a,
+int2048:b
+) : (int2048, int2048, int2048) begin  // Returns (gcd, x, y) where ax + by = gcd
+if (b == 0i2048) {
+return (a, 1i2048, 0i2048);
+}
+</p>
+<p>
+int2048:quotient = a / b;
+int2048:remainder = a % b;
+</p>
+<p>
+if (quotient == ERR || remainder == ERR) {
+return (ERR, ERR, ERR);
+}
+</p>
+<p>
+(int2048:gcd, int2048:x1, int2048:y1) = extended_gcd_2048(b, remainder);
+</p>
+<p>
+int2048:x = y1;
+int2048:y = x1 - (quotient * y1);
+</p>
+<p>
+return (gcd, x, y);
+end
+</p>
+<p>
+// Find modular inverse: e^-1 mod phi(n)
+int2048:e = 65537i2048;
+int2048:phi_n = ...;  // Euler's totient
+</p>
+<p>
+(int2048:gcd, int2048:d, int2048:_) = extended_gcd_2048(e, phi_n);
+</p>
+<p>
+if (gcd != 1i2048) {
+stderr.write("e and phi(n) not coprime - invalid RSA parameters!\n");
+!!! ERR_CRYPTO_KEY_INVALID;
+}
+</p>
+<p>
+// d is the private exponent</code></pre>
+</p>
+<hr>
+<h2>Bitwise Operations</h2>
+<pre><code>int2048:a = ...;
+<p>
+int2048:b = ...;
+</p>
+<p>
+// Logical operations (all 2048 bits)
+int2048:and_result = a & b;
+int2048:or_result = a | b;
+int2048:xor_result = a ^ b;
+int2048:not_result = ~a;
+</p>
+<p>
+// Shifts (multi-limb cascading)
+int2048:left = a << 10;    // Left shift 10 bits
+int2048:right = a >> 10;   // Arithmetic right shift (sign-extended)
+int2048:logical = a >>> 10; // Logical right shift (zero-filled)
+</p>
+<p>
+// Used in bit manipulation for cryptographic mixing
+int2048:mixed = (a << 7) ^ (b >>> 3);</code></pre>
+</p>
+<hr>
+<h2>Comparison Operations</h2>
+<pre><code>int2048:a = ...;
+<p>
+int2048:b = ...;
+</p>
+<p>
+// Comparison (multi-limb, MSB first)
+bool:equal = (a == b);
+bool:not_equal = (a != b);
+bool:less = (a < b);
+bool:greater = (a > b);
+bool:less_equal = (a <= b);
+bool:greater_equal = (a >= b);
+</p>
+<p>
+// Three-way comparison (returns -1, 0, or 1)
+int32:cmp_result = aria_lbim_scmp2048(&a, &b);  // Signed
+int32:ucmp_result = aria_lbim_ucmp2048(&a, &b); // Unsigned
+</p>
+<p>
+// ERR comparisons (always check critical paths)
+if (a == ERR || b == ERR) {
+stderr.write("ERR detected in comparison\n");
+!!! ERR_INVALID_OPERAND;
+}</code></pre>
+</p>
+<hr>
+<h2>Conversion Operations</h2>
+<h3>From Smaller Types</h3>
+<pre><code>// Implicit widening (always safe)
+<p>
+int1024:medium = ...;
+int2048:large = medium;  // Sign-extended to 2048 bits
+</p>
+<p>
+int256:small = 123456;
+int2048:huge = small;    // Zero/sign extended</code></pre>
+</p>
+<h3>To Smaller Types (Truncation)</h3>
+<pre><code>int2048:huge = ...;
+<p>
+// Explicit truncation (may ERR if doesn't fit)
+int1024:truncated = int1024(huge);  // Returns ERR if huge > MAX_INT1024
+</p>
+<p>
+// Manual range check
+int2048:max_1024 = MAX_INT1024;
+if (huge > max_1024) {
+stderr.write("Value too large for int1024!\n");
+!!! ERR_VALUE_TOO_LARGE;
+}</code></pre>
+</p>
+<hr>
+<h2>Limb-Based Implementation (LBIM Extended)</h2>
+<h3>Internal Structure</h3>
+<pre><code>// From include/runtime/lbim_extended.h
+<p>
+#define ARIA_INT2048_LIMBS 32
+</p>
+<p>
+typedef struct {
+uint64_t limbs[32];  // 32 × 64-bit = 2048 bits
+} aria_int2048_t;
+</p>
+<p>
+// Operations use Knuth's Algorithm D for division
+// Multi-precision carry/borrow cascading for add/sub
+// Schoolbook multiplication (future: Karatsuba optimization)</code></pre>
+</p>
+<h3>Addition Implementation (Simplified)</h3>
+<pre><code>// From src/runtime/math/lbim_extended.cpp
+<p>
+extern "C" aria_int2048_t aria_lbim_add2048(
+const aria_int2048_t* a,
+const aria_int2048_t* b
+) {
+// ERR propagation
+if (is_err_2048(a) || is_err_2048(b)) {
+return err_2048();
+}
+</p>
+<p>
+aria_int2048_t result;
+uint64_t carry = 0;
+</p>
+<p>
+// Add limb-by-limb with carry propagation
+for (int i = 0; i < 32; i++) {
+__uint128_t sum = (__uint128_t)a->limbs[i] + b->limbs[i] + carry;
+result.limbs[i] = (uint64_t)sum;
+carry = (uint64_t)(sum >> 64);
+}
+</p>
+<p>
+// Check for signed overflow
+// (implementation details omitted)
+</p>
+<p>
+return result;
+}</code></pre>
+</p>
+<hr>
+<h2>Nikola Use Cases</h2>
+<h3>Why int2048 for Nikola?</h3>
+<strong>Long-Term Security</strong>: Nikola stores decades of therapeutic data, consciousness models, emotion states. This data must remain secure against future quantum computers.
+<ul><li><strong>Quantum Threat</strong>: RSA-2048/4096 vulnerable to Shor's algorithm</li>
+<li><strong>RSA-8192 Defense</strong>: int2048 primes enable 8192-bit keys (extreme security margin)</li>
+<li><strong>Archive Protection</strong>: Medical records must stay encrypted for patient's lifetime</li>
+</ul>
+<h3>Secure Medical Data Encryption</h3>
+<pre><code>// Nikola's encrypted therapy session archive
+<p>
+// Each session contains:
+// - 9D wave state snapshots (consciousness)
+// - Emotion model parameters (private neurological data)
+// - Medical diagnostics (HIPAA-protected)
+</p>
+<p>
+int2048:session_prime_p = load_secure_prime("session_p.key");
+int2048:session_prime_q = load_secure_prime("session_q.key");
+</p>
+<p>
+if (session_prime_p == ERR || session_prime_q == ERR) {
+stderr.write("CRITICAL: Encryption key corrupted\n");
+!!! ERR_CRYPTO_KEY_LOAD_FAILED;
+}
+</p>
+<p>
+int2048:session_modulus = session_prime_p * session_prime_q;
+</p>
+<p>
+// Encrypt emotion state vector
+int2048:emotion_data = encode_emotion_vector();
+int2048:public_exponent = 65537i2048;
+int2048:encrypted = mod_exp_2048(emotion_data, public_exponent, session_modulus);
+</p>
+<p>
+if (encrypted == ERR) {
+// This is SAFETY CRITICAL - corrupted encryption means
+// we might store patient data in plain text or lose it
+stderr.write("CRITICAL: Session encryption failed\n");
+!!! ERR_CRYPTO_ENCRYPTION_FAILED;
+}
+</p>
+<p>
+store_encrypted_session(encrypted);</code></pre>
+</p>
+<h3>Key Derivation for Consciousness Snapshots</h3>
+<pre><code>// Derive unique encryption keys for each consciousness snapshot
+<p>
+// (Deterministic key derivation from master seed)
+</p>
+<p>
+int2048:master_seed = load_master_seed();  // Stored in secure enclave
+int2048:session_id = get_session_id();
+</p>
+<p>
+// HKDF-like derivation (simplified)
+int2048:derived_key = mod_exp_2048(master_seed, session_id, rsa_modulus);
+</p>
+<p>
+if (derived_key == ERR) {
+// Cannot derive key = cannot encrypt snapshot
+// Must HALT rather than proceed with weak/no encryption
+stderr.write("CRITICAL: Key derivation failed\n");
+!!! ERR_CRYPTO_DERIVATION_FAILED;
+}</code></pre>
+</p>
+<hr>
+<h2>Safety Considerations</h2>
+<h3>Division by Zero (Fail-Hard Policy)</h3>
+<pre><code>int2048:numerator = ...;
+<p>
+int2048:denominator = ...;
+</p>
+<p>
+int2048:result = numerator / denominator;
+</p>
+<p>
+// ALWAYS returns ERR if denominator == 0 (never crashes)
+if (result == ERR) {
+stderr.write("Division by zero or overflow\n");
+!!! ERR_DIVISION_BY_ZERO;
+}</code></pre>
+</p>
+<h3>Overflow Detection</h3>
+<pre><code>int2048:a = MAX_INT2048;
+<p>
+int2048:b = 1i2048;
+</p>
+<p>
+int2048:overflow = a + b;  // Returns ERR (cannot represent)
+</p>
+<p>
+// Manual overflow prediction
+if (a > (MAX_INT2048 - b)) {
+stderr.write("Would overflow in addition\n");
+!!! ERR_WOULD_OVERFLOW;
+}</code></pre>
+</p>
+<h3>Constant-Time Operations (Timing Attack Resistance)</h3>
+<strong>⚠️ CRITICAL FOR CRYPTOGRAPHY</strong>: Current implementation may leak timing information through:
+<ul><li>Data-dependent branches in division</li>
+<li>Early termination in comparison loops</li>
+<li>Cache-timing side channels</li>
+</ul>
+<pre><code>// ⚠️ WARNING: Use with caution for key material
+<p>
+// Future: Constant-time comparison
+bool:keys_match = constant_time_eq_2048(secret_key, provided_key);
+</p>
+<p>
+// Current: May leak timing info (research needed)
+bool:keys_match_unsafe = (secret_key == provided_key);  // AVOID for crypto</code></pre>
+</p>
+<hr>
+<h2>Performance Characteristics</h2>
+<p>
+| Operation | Complexity | Rough Cycles (x86-64) |
+|-----------|------------|----------------------|
+| <strong>Addition</strong> | O(32) limbs | ~40-60 cycles |
+| <strong>Subtraction</strong> | O(32) limbs | ~40-60 cycles |
+| <strong>Multiplication</strong> | O(1024) limb-ops | ~1200-2000 cycles |
+| <strong>Division</strong> | O(1024) limb-ops | ~3000-6000 cycles |
+| <strong>Comparison</strong> | O(32) limbs | ~40-60 cycles |
+| <strong>Shifts</strong> | O(32) limbs | ~40-80 cycles |
+</p>
+<strong>Real-World Context</strong>:
+<ul><li>Modern CPU @ 3 GHz: 1 cycle ≈ 0.33 nanoseconds</li>
+<li>int2048 addition: ~20 nanoseconds</li>
+<li>int2048 multiplication: ~600 nanoseconds</li>
+<li>int2048 division: ~2 microseconds</li>
+</ul>
+<strong>For Nikola's <1ms timestep</strong>: int2048 operations fit easily in budget (can do thousands per frame).
+<hr>
+<h2>Comparison to Other Approaches</h2>
+<p>
+| Approach | Overflow | Performance | Determinism | Portability |
+|----------|----------|-------------|-------------|-------------|
+| <strong>int2048</strong> | ERR sentinel | Moderate (multi-limb) | ✅ Bit-exact | ✅ Pure C |
+| <strong>GMP/BigInt</strong> | Dynamic growth | Fast (ASM-optimized) | ❌ Platform-dependent | ⚠️ External lib |
+| <strong>Python int</strong> | Arbitrary precision | Slow (interpreter) | ❌ Non-deterministic | ✅ Built-in |
+| <strong>Java BigInteger</strong> | Arbitrary precision | Moderate (JIT) | ⚠️ JVM-dependent | ⚠️ JVM required |
+</p>
+<strong>Why int2048 for Aria/Nikola</strong>:
+<ul><li><strong>Determinism</strong>: Bit-exact across all platforms (consciousness safety)</li>
+<li><strong>ERR Propagation</strong>: Overflow detected explicitly, not silent corruption</li>
+<li><strong>No Dependencies</strong>: Pure C, no GMP/external libs needed</li>
+<li><strong>Fixed Size</strong>: Predictable memory layout, no allocations in hot path</li>
+</ul>
+<hr>
+<h2>Implementation Status</h2>
+<p>
+| Feature | Status | Notes |
+|---------|--------|-------|
+| <strong>Type Definition</strong> | ✅ Complete | 32-limb structure (LBIM Extended) |
+| <strong>Addition</strong> | ✅ Complete | With carry propagation + overflow detection |
+| <strong>Subtraction</strong> | ✅ Complete | With borrow propagation |
+| <strong>Multiplication</strong> | ✅ Complete | Schoolbook algorithm (may optimize later) |
+| <strong>Division (unsigned)</strong> | ✅ Complete | Knuth's Algorithm D |
+| <strong>Division (signed)</strong> | ✅ Complete | Two's complement aware |
+| <strong>Modulo (unsigned)</strong> | ✅ Complete | Returns remainder |
+| <strong>Modulo (signed)</strong> | ✅ Complete | Sign follows dividend |
+| <strong>Bitwise Ops</strong> | ✅ Complete | AND, OR, XOR, NOT |
+| <strong>Shifts</strong> | ✅ Complete | Logical left, logical right, arithmetic right |
+| <strong>Comparisons</strong> | ✅ Complete | All 6 comparison operators (signed/unsigned) |
+| <strong>Formatting</strong> | ✅ Complete | Decimal output |
+| <strong>Literals</strong> | ❌ Future | Syntax: 123...i2048 |
+| <strong>Constant-Time Ops</strong> | ⚠️ Research Needed | Critical for key operations |
+</p>
+<hr>
+<h2>Related Types</h2>
+<ul><li><strong><a href="int1024.md">int1024</a></strong>: 1024-bit integer (RSA-4096 foundation)</li>
+<li><strong><a href="int4096.md">int4096</a></strong>: 4096-bit integer (RSA-16384 maximum)</li>
+<li><strong>int512</strong>: 512-bit integer (mid-size, needs guide)</li>
+<li><strong><a href="fix256.md">fix256</a></strong>: Fixed-point for deterministic fractions</li>
+<li><strong><a href="complex.md">complex</a></strong>: Complex numbers for wavefunctions</li>
+</ul>
+<hr>
+<h2>Example: RSA-8192 Key Validation</h2>
+<pre><code>// Verify RSA-8192 key parameters
+<p>
+// n = p × q (where p, q are 4096-bit primes, but we can check with int2048 ops)
+</p>
+<p>
+int2048:p_low = extract_low_2048_bits(rsa_prime_p);
+int2048:q_low = extract_low_2048_bits(rsa_prime_q);
+</p>
+<p>
+// Verify p and q are odd (necessary for primes > 2)
+int2048:one = 1i2048;
+int2048:p_is_odd = p_low & one;
+int2048:q_is_odd = q_low & one;
+</p>
+<p>
+if (p_is_odd != one || q_is_odd != one) {
+stderr.write("RSA primes must be odd!\n");
+!!! ERR_CRYPTO_PRIME_EVEN;
+}
+</p>
+<p>
+// Verify e and phi(n) are coprime
+int2048:e = 65537i2048;
+int2048:phi_low = extract_low_2048_bits(phi_n);
+</p>
+<p>
+(int2048:gcd, int2048:_, int2048:_) = extended_gcd_2048(e, phi_low);
+</p>
+<p>
+if (gcd != one) {
+stderr.write("Public exponent not coprime with phi(n)!\n");
+!!! ERR_CRYPTO_EXPONENT_INVALID;
+}
+</p>
+<p>
+// ✅ Key parameters valid</code></pre>
+</p>
+<hr>
+<h2>What Makes This Different</h2>
+<strong>In other languages</strong>:
+<pre><code># Python (arbitrary precision, non-deterministic timing)
+<p>
+p = 2<strong>2000 + random.randint(0, 2</strong>2000)
+q = 2<strong>2000 + random.randint(0, 2</strong>2000)
+n = p * q  # Works, but timing varies, no ERR concept</code></pre>
+</p>
+<pre><code>// Java (arbitrary precision, JVM-dependent)
+<p>
+BigInteger p = new BigInteger(2048, random);
+BigInteger q = new BigInteger(2048, random);
+BigInteger n = p.multiply(q);  // No overflow concept</code></pre>
+</p>
+<strong>In Aria</strong>:
+<pre><code>// Aria: Deterministic, ERR-checked, portable
+<p>
+int2048:p = generate_prime_2048();
+int2048:q = generate_prime_2048();
+int2048:n = p * q;  // ERR if overflow
+</p>
+<p>
+if (p == ERR || q == ERR || n == ERR) {
+!!! ERR_CRYPTO_KEYGEN_FAILED;  // Explicit handling REQUIRED
+}
+</p>
+<p>
+// ✅ Bit-exact across all platforms
+// ✅ Overflow detected (not silent)
+// ✅ No external dependencies (GMP-free)</code></pre>
+</p>
+<hr>
+<h2>Future Enhancements</h2>
+<p>
+1. <strong>Constant-Time Guarantee</strong>: Audit and certify timing-attack resistance
+2. <strong>Literal Syntax</strong>: <code>int2048:x = 123456...i2048;</code>
+3. <strong>Widening Multiply</strong>: <code>int4096:product = widening_mul_2048(a, b);</code>
+4. <strong>Modular Exponentiation</strong>: Built-in <code>mod_exp_2048(base, exp, mod)</code>
+5. <strong>Karatsuba Multiplication</strong>: O(n^1.585) speedup for large integers
+6. <strong>Montgomery Reduction</strong>: Faster modular arithmetic for RSA
+</p>
+<hr>
+<h2>See Also</h2>
+<ul><li><strong>ARIA-024</strong>: Large Integer Support specification</li>
+<li><strong>ARIA-025</strong>: Post-quantum cryptography roadmap</li>
+<li><strong>Phase P1-8</strong>: Cryptography module (planned)</li>
+<li><strong>RFC 8017</strong>: PKCS #1 v2.2 (RSA Cryptography Standard)</li>
+</ul>
+<hr>
+<strong>Last Updated</strong>: February 12, 2026
+<strong>Implementation</strong>: src/runtime/math/lbim_extended.cpp, include/runtime/lbim_extended.h
+<strong>Tests</strong>: tests/int2048_comprehensive.aria, tests/int2048_basic.aria
+    </main>
+</body>
+</html>

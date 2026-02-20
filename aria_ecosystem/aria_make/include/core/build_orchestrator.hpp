@@ -69,7 +69,7 @@ struct BuildConfig {
     fs::path state_dir = ".aria_make";
 
     // Compiler path (default: search PATH for ariac, or use full path)
-    std::string compiler = "/home/randy/._____RANDY_____/REPOS/aria/build/ariac";
+    std::string compiler = "/home/randy/Workspace/REPOS/aria/build/ariac";
 
     // Global compiler flags
     std::vector<std::string> global_flags;

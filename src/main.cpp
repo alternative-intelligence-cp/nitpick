@@ -22,6 +22,7 @@
 #include <string>
 #include <memory>
 #include <cstdlib>
+#include <climits>  // For PATH_MAX
 #include <unistd.h>  // For readlink
 #include <filesystem> // For absolute path resolution
 
@@ -93,6 +94,7 @@ struct CompilerOptions {
     std::vector<std::string> link_libraries;  // -l<lib> libraries to link
     std::vector<std::string> library_paths;   // -L<path> library search paths
     std::vector<std::string> linker_flags;    // -Wl,<option> flags passed to linker
+    bool build_library = false;               // -c: Compile library (no failsafe required)
     
     // GPU/PTX Backend Options (NVIDIA CUDA)
     bool emit_ptx = false;            // --emit-ptx: Generate PTX assembly
@@ -139,6 +141,7 @@ void print_help() {
     std::cout << "  --emit-deps       Emit JSON dependency manifest (for aria_make)\n";
     std::cout << "  --ast-dump        Dump AST and exit\n";
     std::cout << "  --tokens          Dump tokens and exit\n";
+    std::cout << "  -c                Compile library (no failsafe required)\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
     std::cout << "  -v, --verbose     Verbose output\n\n";
     std::cout << "GPU Target Options (NVIDIA CUDA/PTX):\n";
@@ -239,6 +242,8 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             }
         } else if (arg == "--gpu-debug") {
             opts.enable_gpu_debug = true;
+        } else if (arg == "-c") {
+            opts.build_library = true;
         } else if (arg == "-E") {
             opts.preprocess_only = true;
         } else if (arg == "--ast-dump") {
@@ -302,6 +307,8 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".s";
         } else if (opts.emit_ptx) {
             opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".ptx";
+        } else if (opts.build_library) {
+            opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".o";
         } else {
             opts.output_file = "a.out";
         }
@@ -669,8 +676,9 @@ llvm::Module* compile_to_module(
     }
     
     // Validate that the mandatory failsafe() function exists
-    // Every Aria program must define failsafe(int32) for error handling accountability
-    if (!type_checker.validateFailsafeExists()) {
+    // Every Aria executable must define failsafe(int32) for error handling accountability
+    // Libraries (-c flag) are exempt as they're components, not final programs
+    if (!opts.build_library && !type_checker.validateFailsafeExists()) {
         for (const auto& err : type_checker.getErrors()) {
             diags.error(aria::SourceLocation(filename, 0, 0), err);
         }
@@ -681,6 +689,14 @@ llvm::Module* compile_to_module(
     const auto& loaded_modules = module_loader.getLoadedModules();
     for (const auto& [path, loaded_module] : loaded_modules) {
         if (loaded_module && loaded_module->ast) {
+            // Skip modules already type-checked during import processing
+            if (loaded_module->state == aria::sema::ModuleState::CHECKED) {
+                if (opts.verbose) {
+                    std::cout << "  Skipping already-checked module: " << path << "\n";
+                }
+                continue;
+            }
+            
             if (opts.verbose) {
                 std::cout << "  Type checking module: " << path << "\n";
             }
@@ -689,6 +705,7 @@ llvm::Module* compile_to_module(
             aria::sema::TypeChecker module_type_checker(&type_system, loaded_module->moduleInfo->getSymbolTable(), 
                                                         &generic_resolver, &monomorphizer, &module_loader, path);
             module_type_checker.check(loaded_module->ast.get());
+            loaded_module->state = aria::sema::ModuleState::CHECKED;
             
             if (module_type_checker.hasErrors()) {
                 for (const auto& err : module_type_checker.getErrors()) {
@@ -996,6 +1013,102 @@ bool emit_assembly(llvm::Module* module, const std::string& output_file) {
 }
 
 /**
+ * Emit object file (.o) for library compilation
+ */
+bool emit_object(llvm::Module* module, const std::string& output_file) {
+    // Initialize native target only
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmParser();
+    llvm::InitializeNativeTargetAsmPrinter();
+
+    std::string target_triple = llvm::sys::getDefaultTargetTriple();
+    module->setTargetTriple(target_triple);
+
+    std::string error;
+    auto target = llvm::TargetRegistry::lookupTarget(target_triple, error);
+
+    if (!target) {
+        std::cerr << "Error: " << error << "\n";
+        return false;
+    }
+
+    bool useLargeIntMode = hasLargeIntegerTypes(module);
+    if (useLargeIntMode) {
+        std::cerr << "[WARN] Large integer types (128+ bit) detected. "
+                  << "Using unoptimized codegen to avoid LLVM bugs.\n";
+    }
+
+    auto cpu = "generic";
+    auto features = "";
+    llvm::TargetOptions opt;
+
+    if (useLargeIntMode) {
+        opt.EnableGlobalISel = true;
+        opt.GlobalISelAbort = llvm::GlobalISelAbortMode::Disable;
+    }
+
+    llvm::CodeGenOptLevel codegenOpt = useLargeIntMode ?
+        llvm::CodeGenOptLevel::None : llvm::CodeGenOptLevel::Default;
+
+    auto target_machine = target->createTargetMachine(
+        target_triple,
+        cpu,
+        features,
+        opt,
+        llvm::Reloc::PIC_,
+        llvm::CodeModel::Small,
+        codegenOpt
+    );
+
+    module->setDataLayout(target_machine->createDataLayout());
+
+    // ARIA-021: For large integers (128+ bits), skip optimization entirely
+    if (!useLargeIntMode) {
+        // Create analysis managers
+        llvm::LoopAnalysisManager LAM;
+        llvm::FunctionAnalysisManager FAM;
+        llvm::CGSCCAnalysisManager CGAM;
+        llvm::ModuleAnalysisManager MAM;
+
+        // Create pass builder and register analyses
+        llvm::PassBuilder PB(target_machine);
+        PB.registerModuleAnalyses(MAM);
+        PB.registerCGSCCAnalyses(CGAM);
+        PB.registerFunctionAnalyses(FAM);
+        PB.registerLoopAnalyses(LAM);
+        PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+        // Use default O1 optimization pipeline
+        llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O1);
+
+        // Run optimization pipeline
+        MPM.run(*module, MAM);
+    }
+    // For large integers: no optimization passes at all, direct codegen
+
+    std::error_code ec;
+    llvm::raw_fd_ostream out(output_file, ec, llvm::sys::fs::OF_None);
+
+    if (ec) {
+        std::cerr << "Error: Could not open output file: " << ec.message() << "\n";
+        return false;
+    }
+
+    llvm::legacy::PassManager pass;
+    auto file_type = llvm::CodeGenFileType::ObjectFile;  // Object file, not assembly
+
+    if (target_machine->addPassesToEmitFile(pass, out, nullptr, file_type)) {
+        std::cerr << "Error: Target machine can't emit a file of this type\n";
+        return false;
+    }
+
+    pass.run(*module);
+    out.flush();
+
+    return true;
+}
+
+/**
  * Emit PTX assembly for GPU execution (NVIDIA CUDA)
  * Phase 2: PTX Code Generation
  * 
@@ -1123,14 +1236,32 @@ bool emit_ptx(
  * Link object file to executable
  */
 bool link_executable(const std::string& object_file, const std::string& output_file, const CompilerOptions& opts) {
+    // Get compiler executable directory for runtime library search
+    std::string exe_dir;
+    char exe_path[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path)-1);
+    if (len != -1) {
+        exe_path[len] = '\0';
+        std::string full_exe_path(exe_path);
+        size_t last_slash = full_exe_path.find_last_of('/');
+        if (last_slash != std::string::npos) {
+            exe_dir = full_exe_path.substr(0, last_slash);
+        }
+    }
+    
     // Try to find the runtime library in several locations
     std::vector<std::string> search_paths = {
-        "build/libaria_runtime.a",           // Build directory (development)
-        "../build/libaria_runtime.a",        // Relative to executable
+        "build/libaria_runtime.a",           // Build directory (development, cwd)
+        "../build/libaria_runtime.a",        // Relative to cwd
         "libaria_runtime.a",                 // Current directory
         "/usr/local/lib/libaria_runtime.a",  // Installation directory
         "/usr/lib/libaria_runtime.a"         // System installation
     };
+    
+    // Add path relative to compiler executable (if we could determine it)
+    if (!exe_dir.empty()) {
+        search_paths.insert(search_paths.begin(), exe_dir + "/libaria_runtime.a");
+    }
     
     std::string runtime_lib;
     for (const auto& path : search_paths) {
@@ -1159,6 +1290,9 @@ bool link_executable(const std::string& object_file, const std::string& output_f
     if (!runtime_lib.empty()) {
         cmd << " " << runtime_lib;
     }
+    
+    // Link libatomic for C++11 atomic operations (required by aria_runtime atomics)
+    cmd << " -latomic";
     
     // Add library search paths (-L)
     for (const auto& lib_path : opts.library_paths) {
@@ -1357,6 +1491,14 @@ int main(int argc, char** argv) {
         }
         if (opts.verbose) {
             std::cout << "Assembly written to: " << opts.output_file << "\n";
+        }
+    } else if (opts.build_library) {
+        // -c flag: Compile to object file (no linking)
+        if (!emit_object(final_module, opts.output_file)) {
+            return 1;
+        }
+        if (opts.verbose) {
+            std::cout << "Object file written to: " << opts.output_file << "\n";
         }
     } else {
         // Generate executable

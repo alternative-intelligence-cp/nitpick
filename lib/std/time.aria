@@ -28,7 +28,7 @@ pub func:get_clock = int64() {
 };
 
 /// Simple delay using busy while (rough approximation)
-pub func:delay_ms = void(int32:milliseconds) {
+pub func:delay_ms = NIL(int32:milliseconds) {
     int64:start = get_clock();
     int64:target = (milliseconds * 1000);
     int64:current = start;
@@ -36,6 +36,7 @@ pub func:delay_ms = void(int32:milliseconds) {
     while ((current - start) < target) {
         current = get_clock();
     }
+    pass(NIL);
 };
 
 /// Calculate elapsed clock ticks
@@ -241,15 +242,16 @@ pub func:make_timestamp = int64(int32:year, int32:month, int32:day, int32:hour, 
 // ============================================================================
 
 // Helper: Write 2-digit number to buffer
-pub func:write_2digit = void(int8->:buf, int32:offset, int32:value) {
+pub func:write_2digit = NIL(int8->:buf, int32:offset, int32:value) {
     int32:tens = value / 10;
     int32:ones = value - (tens * 10);
     buf[offset] = 48 + tens;
     buf[offset + 1] = 48 + ones;
+    pass(NIL);
 };
 
 // Helper: Write 4-digit year to buffer
-pub func:write_4digit = void(int8->:buf, int32:offset, int32:value) {
+pub func:write_4digit = NIL(int8->:buf, int32:offset, int32:value) {
     int32:thousands = value / 1000;
     int32:remainder = value - (thousands * 1000);
     int32:hundreds = remainder / 100;
@@ -261,13 +263,14 @@ pub func:write_4digit = void(int8->:buf, int32:offset, int32:value) {
     buf[offset + 1] = 48 + hundreds;
     buf[offset + 2] = 48 + tens;
     buf[offset + 3] = 48 + ones;
+    pass(NIL);
 };
 
 // Format timestamp as ISO 8601: YYYY-MM-DD HH:MM:SS
 // Buffer must be at least 20 bytes (19 chars + null terminator)
-pub func:format_iso8601 = void(int8->:buf, int64:timestamp) {
+pub func:format_iso8601 = NIL(int8->:buf, int64:timestamp) {
     if (buf == null) {
-        return;
+        pass(NIL);
     }
     
     int32:year = get_year(timestamp);
@@ -276,43 +279,45 @@ pub func:format_iso8601 = void(int8->:buf, int64:timestamp) {
     int32:second = get_second(timestamp);
     
     // Write YYYY-MM-DD HH:MM:SS
-    write_4digit(buf, 0, year);
+    write_4digit(buf, 0, year) ? NIL;
     buf[4i64] = 45;
-    write_2digit(buf, 5, 1);
+    write_2digit(buf, 5, 1) ? NIL;
     buf[7i64] = 45;
-    write_2digit(buf, 8, 1);
+    write_2digit(buf, 8, 1) ? NIL;
     buf[10] = 32;
-    write_2digit(buf, 11, hour);
+    write_2digit(buf, 11, hour) ? NIL;
     buf[13] = 58;
-    write_2digit(buf, 14, minute);
+    write_2digit(buf, 14, minute) ? NIL;
     buf[16] = 58;
-    write_2digit(buf, 17, second);
+    write_2digit(buf, 17, second) ? NIL;
     buf[19] = 0;
+    pass(NIL);
 };
 
 // Format as time only: HH:MM:SS
 // Buffer must be at least 9 bytes
-pub func:format_time = void(int8->:buf, int64:timestamp) {
+pub func:format_time = NIL(int8->:buf, int64:timestamp) {
     if (buf == null) {
-        return;
+        pass(NIL);
     }
     
     int32:hour = get_hour(timestamp);
     int32:minute = get_minute(timestamp);
     int32:second = get_second(timestamp);
     
-    write_2digit(buf, 0, hour);
+    write_2digit(buf, 0, hour) ? NIL;
     buf[2i64] = 58;
-    write_2digit(buf, 3, minute);
+    write_2digit(buf, 3, minute) ? NIL;
     buf[5i64] = 58;
-    write_2digit(buf, 6, second);
+    write_2digit(buf, 6, second) ? NIL;
     buf[8i64] = 0;
+    pass(NIL);
 };
 
 // Format duration as HH:MM:SS
-pub func:format_duration = void(int8->:buf, int64:seconds) {
+pub func:format_duration = NIL(int8->:buf, int64:seconds) {
     if (buf == null) {
-        return;
+        pass(NIL);
     }
     
     int32:hours = seconds / 3600;
@@ -320,12 +325,13 @@ pub func:format_duration = void(int8->:buf, int64:seconds) {
     int32:minutes = remainder / 60;
     int32:secs = remainder - (minutes * 60);
     
-    write_2digit(buf, 0, hours);
+    write_2digit(buf, 0, hours) ? NIL;
     buf[2i64] = 58;
-    write_2digit(buf, 3, minutes);
+    write_2digit(buf, 3, minutes) ? NIL;
     buf[5i64] = 58;
-    write_2digit(buf, 6, secs);
+    write_2digit(buf, 6, secs) ? NIL;
     buf[8i64] = 0;
+    pass(NIL);
 };
 
 // ============================================================================

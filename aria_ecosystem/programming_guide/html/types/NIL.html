@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The `NIL` Constant (Aria's "No Value") - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>The <code>NIL</code> Constant (Aria's "No Value")</h1>
+<strong>Category</strong>: Types → Special Values → Optional
+<strong>Syntax</strong>: <code>NIL</code>
+<strong>Purpose</strong>: Represents "no value present" in Aria's optional type system
+<strong>Type</strong>: Unit type (type-safe absence indicator)
+<strong>Status</strong>: ✅ FULLY IMPLEMENTED, IDIOMATIC STANDARD
+<hr>
+<h2>Table of Contents</h2>
+<p>
+1. <a href="#overview">Overview</a>
+2. <a href="#nil-vs-null-vs-err">NIL vs NULL vs ERR</a>
+3. <a href="#optional-types-t-syntax">Optional Types (?T Syntax)</a>
+4. <a href="#safe-navigation--operator">Safe Navigation (?.  Operator)</a>
+5. <a href="#null-coalescing--operator">Null Coalescing (?? Operator)</a>
+6. <a href="#pattern-matching-with-nil">Pattern Matching with NIL</a>
+7. <a href="#nil-in-function-returns">NIL in Function Returns</a>
+8. <a href="#nikola-consciousness-applications">Nikola Consciousness Applications</a>
+9. <a href="#performance-characteristics">Performance Characteristics</a>
+10. <a href="#common-patterns">Common Patterns</a>
+11. <a href="#anti-patterns">Anti-Patterns</a>
+12. <a href="#migration-from-null-based-languages">Migration from Null-Based Languages</a>
+13. <a href="#implementation-details">Implementation Details</a>
+14. <a href="#related-concepts">Related Concepts</a>
+</p>
+<hr>
+<h2>Overview</h2>
+<code>NIL</code> represents the <strong>absence of a value</strong> in Aria's type system. It is <strong>not an error</strong> - just the indication that no value is present.
+<strong>Key Properties</strong>:
+<ul><li><strong>Type-safe</strong>: Only exists in optional types (<code>?T</code>)</li>
+<li><strong>Explicit</strong>: Cannot be created accidentally (must use <code>NIL</code> keyword)</li>
+<li><strong>Distinct</strong>: Different from NULL (pointers), ERR (TBB errors), and void (FFI marker)</li>
+<li><strong>Composable</strong>: Works seamlessly with <code>?.</code> (safe navigation) and <code>??</code> (null coalescing)</li>
+<li><strong>Zero-cost</strong>: Optimizes to efficient null checks in generated code</li>
+</ul>
+<strong>⚠️ CRITICAL</strong>: NIL is for <strong>optional types</strong> only. Use NULL for pointers, ERR for TBB errors, and Result<T,E> for errors with context.
+<hr>
+<h2>NIL vs NULL vs ERR</h2>
+<p>
+| Concept | Purpose | Type System | Example | When to Use |
+|---------|---------|-------------|---------|-------------|
+| <strong>NIL</strong> | No value present (absence) | Optional types (<code>?T</code>) | <code>user?:data = NIL;</code> | Value may or may not exist (not an error) |
+| <strong>NULL</strong> | Null pointer (address 0x0) | Pointers (<code>@</code> types) | <code>int32@:ptr = NULL;</code> | Pointer initialization, C FFI |
+| <strong>ERR</strong> | TBB error sentinel | TBB types only | <code>tbb32:err = ERR;</code> | Arithmetic errors (overflow, div-by-zero) |
+| <strong>void</strong> | No return value (FFI marker) | <code>extern</code> blocks only | <code>extern { func:exit = void(int32); }</code> | C function signatures |
+</p>
+<h3>Quick Decision Guide</h3>
+<pre><code>// Situation: Database lookup might not find user
+<p>
+?User:user = find_user(username);  // ✅ NIL if not found (expected)
+</p>
+<p>
+// Situation: Pointer to allocated memory
+int32@:buffer = aria.alloc<int32>(size);  // ✅ NULL if allocation failed
+</p>
+<p>
+// Situation: Sensor reading could fail
+tbb16:temperature = read_sensor();  // ✅ ERR if sensor malfunction
+</p>
+<p>
+// Situation: C library function returns void
+extern { func:c_exit = void(int32:code); }  // ✅ void for C FFI</code></pre>
+</p>
+<hr>
+<h2>Optional Types (?T Syntax)</h2>
+<p>
+An <strong>optional type</strong> represents a value that might or might not be present.
+</p>
+<h3>Declaration</h3>
+<pre><code>// Optional integer - might be a value, might be NIL
+<p>
+?int32:user_id = NIL;
+</p>
+<p>
+// Optional string - starts with no value
+?string:cached_name = NIL;
+</p>
+<p>
+// Optional custom type
+struct:User = { string:name, int32:age };
+?User:current_user = NIL;
+</p>
+<p>
+// Optional TBB type (NIL is different from ERR!)
+?tbb32:sensor_reading = NIL;  // No reading YET (different from ERR = sensor failed)</code></pre>
+</p>
+<h3>Assignment</h3>
+<pre><code>?int32:value = NIL;  // Start with no value
+<p>
+value = 42;  // Assign a value
+</p>
+<p>
+value = NIL;  // Back to no value</code></pre>
+</p>
+<h3>Checking for NIL</h3>
+<pre><code>?string:name = get_cached_name();
+<p>
+if (name == NIL) {
+stderr.write("No cached name\n");
+} else {
+log.write("Name: ");
+name.write_to(log);  // Safe - not NIL
+log.write("\n");
+}
+</p>
+<p>
+// Inequality check
+if (name != NIL) {
+// Have a name, use it
+process_name(name);
+}</code></pre>
+</p>
+<hr>
+<h2>Safe Navigation (?. Operator)</h2>
+<p>
+The <strong>safe navigation operator</strong> (<code>?.</code>) short-circuits if any value in chain is NIL.
+</p>
+<h3>Basic Safe Navigation</h3>
+<pre><code>struct:Address = { string:city, string:zip };
+<p>
+struct:User = { string:name, ?Address:address };
+</p>
+<p>
+?User:user = find_user(username);
+</p>
+<p>
+// Safe navigation - returns NIL if user is NIL OR address is NIL
+?string:city = user?.address?.city;
+</p>
+<p>
+if (city == NIL) {
+stderr.write("User or address not found\n");
+} else {
+log.write("City: ");
+city.write_to(log);
+log.write("\n");
+}</code></pre>
+</p>
+<strong>How it works</strong>: Each <code>?.</code> in the chain checks for NIL. If any step is NIL, the entire expression becomes NIL immediately (no further evaluation).
+<h3>Safe Method Calls</h3>
+<pre><code>struct:Logger = {
+<p>
+func:log = (message: string) -> void { ... }
+};
+</p>
+<p>
+?Logger:logger = get_logger();
+</p>
+<p>
+// Safe method call - only calls if logger is not NIL
+logger?.log("Application started");  // No-op if logger is NIL</code></pre>
+</p>
+<h3>Deep Chains</h3>
+<pre><code>struct:Config = { ?Database:db };
+<p>
+struct:Database = { ?Connection:conn };
+struct:Connection = { ?string:uri };
+</p>
+<p>
+?Config:config = load_config();
+</p>
+<p>
+// Safe navigation through deep nesting
+?string:db_uri = config?.db?.conn?.uri;
+</p>
+<p>
+if (db_uri == NIL) {
+stderr.write("Database URI not configured\n");
+use_default_database();
+}</code></pre>
+</p>
+<hr>
+<h2>Null Coalescing (?? Operator)</h2>
+<p>
+The <strong>null coalescing operator</strong> (<code>??</code>) provides a default value when NIL is encountered.
+</p>
+<h3>Basic Null Coalescing</h3>
+<pre><code>?string:cached_name = get_cache("user_name");
+<p>
+// Use cached name if present, otherwise "Unknown"
+string:name = cached_name ?? "Unknown";
+</p>
+<p>
+log.write("Name: ");
+name.write_to(log);  // Guaranteed to have a value
+log.write("\n");</code></pre>
+</p>
+<h3>Chained Coalescing</h3>
+<pre><code>?string:primary = get_primary_name();
+<p>
+?string:secondary = get_secondary_name();
+?string:tertiary = get_tertiary_name();
+</p>
+<p>
+// Try primary, then secondary, then tertiary, finally use default
+string:name = primary ?? secondary ?? tertiary ?? "Default Name";</code></pre>
+</p>
+<h3>With Safe Navigation</h3>
+<pre><code>struct:User = { ?string:nickname, string:legal_name };
+<p>
+?User:user = find_user(id);
+</p>
+<p>
+// Get nickname if present, otherwise legal name, otherwise "Anonymous"
+string:display_name = user?.nickname ?? user?.legal_name ?? "Anonymous";</code></pre>
+</p>
+<h3>Coalescing to NIL-Producing Expression</h3>
+<pre><code>?string:cache = get_cache("key");
+<p>
+?string:fallback = get_fallback_cache("key");
+</p>
+<p>
+// Both might be NIL - result could still be NIL!
+?string:result = cache ?? fallback;
+</p>
+<p>
+if (result == NIL) {
+stderr.write("No cache available\n");
+}</code></pre>
+</p>
+<hr>
+<h2>Pattern Matching with NIL</h2>
+<h3>Using <code>when</code> Conditionals</h3>
+<pre><code>?int32:value = get_optional_value();
+<p>
+when value == NIL then
+stderr.write("No value present\n");
+else
+log.write("Value: ");
+value.write_to(log);
+log.write("\n");
+end</code></pre>
+</p>
+<h3>Pattern Matching (pick statement - future syntax)</h3>
+<pre><code>?string:result = fetch_data();
+<p>
+pick result {
+NIL: {
+stderr.write("No data available\n");
+}
+some_value: {
+log.write("Data: ");
+some_value.write_to(log);
+log.write("\n");
+}
+}</code></pre>
+</p>
+<h3>Unwrapping with Assertion</h3>
+<pre><code>?User:user = find_user(id);
+<p>
+// Assert that user is NOT NIL (panic if it is!)
+User:valid_user = user!;  // Unwrap operator (! suffix)
+</p>
+<p>
+// Only do this if you're CERTAIN user is not NIL
+// Otherwise, program panics: "Unwrapped NIL value"</code></pre>
+</p>
+<strong>⚠️ WARNING</strong>: Unwrapping NIL causes a <strong>panic</strong> (program termination). Only use when you can guarantee the value exists!
+<hr>
+<h2>NIL in Function Returns</h2>
+<h3>Optional Return Values</h3>
+<pre><code>// Function that may or may not find a user
+<p>
+func:find_user = (username: string) -> ?User {
+User?:user = database_lookup(username);
+</p>
+<p>
+if (user == NIL) {
+pass(NIL);  // Not found - return NIL
+}
+</p>
+<p>
+pass(user);  // Found - return user
+}
+</p>
+<p>
+// Usage
+?User:user = find_user("alice");
+</p>
+<p>
+if (user == NIL) {
+stderr.write("User not found\n");
+} else {
+log.write("Found user: ");
+user.name.write_to(log);
+log.write("\n");
+}</code></pre>
+</p>
+<h3>NIL vs Result<T, E></h3>
+<pre><code>// NIL: When "not found" is the only failure mode
+<p>
+func:get_cache = (key: string) -> ?string {
+if (!cache_contains(key)) return NIL;
+return cache_fetch(key);
+}
+</p>
+<p>
+// Result: When multiple failure modes exist
+enum:CacheError = { NotFound, Expired, Corrupted };
+</p>
+<p>
+func:get_cache_result = (key: string) -> Result<string, CacheError> {
+if (!cache_contains(key)) fail(NotFound);
+</p>
+<p>
+?CacheEntry:entry = cache_fetch_entry(key);
+if (entry.timestamp < current_time()) fail(Expired);
+if (!entry.validate_checksum()) fail(Corrupted);
+</p>
+<p>
+pass(entry.value);
+}</code></pre>
+</p>
+<strong>Rule of thumb</strong>: Use <code>?T</code> when absence is the only "error". Use <code>Result<T, E></code> when you need to distinguish between multiple error types.
+<h3>Multiple Optional Parameters</h3>
+<pre><code>func:create_user = (
+<p>
+name: string,
+email: ?string,          // Optional email
+phone: ?string,          // Optional phone
+address: ?Address        // Optional address
+) -> User {
+User:user = {
+name: name,
+email: email ?? "no-email@example.com",
+phone: phone ?? "000-000-0000",
+address: address ?? default_address
+};
+</p>
+<p>
+return user;
+}
+</p>
+<p>
+// Usage - any optional parameter can be NIL
+User:alice = create_user("Alice", "alice@example.com", NIL, NIL);
+User:bob = create_user("Bob", NIL, "555-1234", NIL);</code></pre>
+</p>
+<hr>
+<h2>Nikola Consciousness Applications</h2>
+<h3>Missing Patient Records (Therapy Data)</h3>
+<pre><code>struct:TherapySession = {
+<p>
+int32:session_id,
+string:patient_name,
+?string:therapist_notes,  // Optional (therapist might not have written notes yet)
+?tbb16:emotional_score    // Optional (might not be scored yet)
+};
+</p>
+<p>
+?TherapySession:session = fetch_session(session_id);
+</p>
+<p>
+if (session == NIL) {
+stderr.write("Session not found\n");
+return HTTP_404_NOT_FOUND;
+}
+</p>
+<p>
+// Session exists - check optional fields
+string:notes = session.therapist_notes ?? "[No notes yet]";
+tbb16:emotion = session.emotional_score ?? 0;  // Default to neutral (0) if not scored
+</p>
+<p>
+log.write("Session ");
+session.session_id.write_to(log);
+log.write(": ");
+session.patient_name.write_to(log);
+log.write("\n");
+log.write("Notes: ");
+notes.write_to(log);
+log.write("\n");
+log.write("Emotional score: ");
+emotion.write_to(log);
+log.write("\n");</code></pre>
+</p>
+<h3>Sensor Fusion with Missing Data</h3>
+<pre><code>// Nikola emotional state from multiple sensors (some might be offline)
+<p>
+struct:EmotionalSensors = {
+?tbb16:audio_emotion,    // Voice tone analysis (microphone might fail)
+?tbb16:facial_emotion,   // Facial expression (camera might fail)
+?tbb16:posture_emotion   // Body language (depth sensor might fail)
+};
+</p>
+<p>
+EmotionalSensors:sensors = read_all_emotion_sensors();
+</p>
+<p>
+// Compute emotional state using only available sensors
+tbb16:combined_emotion = 0;
+int32:sensor_count = 0;
+</p>
+<p>
+// Audio sensor
+if (sensors.audio_emotion != NIL) {
+// Check that sensor didn't ERROR (ERR is different from NIL!)
+if (sensors.audio_emotion != ERR) {
+combined_emotion = combined_emotion + sensors.audio_emotion;
+sensor_count = sensor_count + 1;
+}
+}
+</p>
+<p>
+// Facial sensor
+if (sensors.facial_emotion != NIL) {
+if (sensors.facial_emotion != ERR) {
+combined_emotion = combined_emotion + sensors.facial_emotion;
+sensor_count = sensor_count + 1;
+}
+}
+</p>
+<p>
+// Posture sensor
+if (sensors.posture_emotion != NIL) {
+if (sensors.posture_emotion != ERR) {
+combined_emotion = combined_emotion + sensors.posture_emotion;
+sensor_count = sensor_count + 1;
+}
+}
+</p>
+<p>
+if (sensor_count == 0) {
+stderr.write("No emotional sensors available\n");
+return ERR;  // Can't compute emotion
+}
+</p>
+<p>
+tbb16:average_emotion = combined_emotion / sensor_count;
+</p>
+<p>
+log.write("Emotional state (");
+sensor_count.write_to(log);
+log.write(" sensors): ");
+average_emotion.write_to(log);
+log.write("\n");</code></pre>
+</p>
+<strong>Key distinction</strong>: NIL = sensor not present/configured. ERR = sensor malfunction. Both need handling!
+<h3>Configuration with Defaults</h3>
+<pre><code>struct:NikolaConfig = {
+<p>
+?int32:sample_rate_hz,        // Optional (default: 1000 Hz)
+?int32:max_sessions,          // Optional (default: 100)
+?string:log_path,             // Optional (default: "/var/log/nikola")
+?tbb64:simulation_timesteps   // Optional (default: 10,000)
+};
+</p>
+<p>
+?NikolaConfig:config = load_config("nikola.conf");
+</p>
+<p>
+// Apply defaults for missing config values
+int32:sample_rate = config?.sample_rate_hz ?? 1000;
+int32:max_sessions = config?.max_sessions ?? 100;
+string:log_path = config?.log_path ?? "/var/log/nikola";
+tbb64:timesteps = config?.simulation_timesteps ?? 10000;
+</p>
+<p>
+log.write("Nikola configuration:\n");
+log.write("  Sample rate: "); sample_rate.write_to(log); log.write(" Hz\n");
+log.write("  Max sessions: "); max_sessions.write_to(log); log.write("\n");
+log.write("  Log path: "); log_path.write_to(log); log.write("\n");
+log.write("  Simulation timesteps: "); timesteps.write_to(log); log.write("\n");</code></pre>
+</p>
+<hr>
+<h2>Performance Characteristics</h2>
+<h3>Zero-Cost Abstraction</h3>
+<p>
+Optional types compile to efficient null checks with no runtime overhead:
+</p>
+<pre><code>?int32:value = get_value();
+<p>
+if (value == NIL) {
+handle_no_value();
+} else {
+process_value(value);
+}</code></pre>
+</p>
+<strong>Generated code</strong> (pseudocode):
+<pre><code>// Optimized to single comparison
+<p>
+int32_t* value_ptr = get_value();
+if (value_ptr == NULL) {
+handle_no_value();
+} else {
+process_value(*value_ptr);
+}</code></pre>
+</p>
+<strong>Performance</strong>: Identical to manual null pointer checks in C/C++.
+<h3>Safe Navigation Optimization</h3>
+<pre><code>?User:user = find_user(id);
+<p>
+?string:city = user?.address?.city;</code></pre>
+</p>
+<strong>Generated code</strong> (pseudocode):
+<pre><code>User* user = find_user(id);
+<p>
+const char* city = NULL;
+</p>
+<p>
+if (user != NULL) {
+Address* address = user->address;
+if (address != NULL) {
+city = address->city;
+}
+}</code></pre>
+</p>
+<strong>Performance</strong>: Short-circuit evaluation means only necessary checks are performed. Branch predictors optimize common cases (likely not NIL).
+<h3>Null Coalescing Optimization</h3>
+<pre><code>string:name = cached_name ?? fallback_name ?? "Default";</code></pre>
+<strong>Generated code</strong> (pseudocode):
+<pre><code>const char* name;
+<p>
+if (cached_name != NULL) {
+name = cached_name;
+} else if (fallback_name != NULL) {
+name = fallback_name;
+} else {
+name = "Default";
+}</code></pre>
+</p>
+<strong>Performance</strong>: Lazy evaluation - only evaluates expressions until non-NIL found.
+<h3>Memory Layout</h3>
+<p>
+Optional types typically use <strong>pointer representation</strong> or <strong>tag byte</strong>:
+</p>
+<p>
+| Implementation | Size Overhead | Use Case |
+|----------------|---------------|----------|
+| <strong>Nullable pointer</strong> | 0 bytes (pointer itself is null) | Heap-allocated types, strings |
+| <strong>Tagged union</strong> | 1 byte (bool flag) | Small stack values (int32, tbb32) |
+| <strong>Niche optimization</strong> | 0 bytes (use invalid value as NIL sentinel) | Types with unused bit patterns |
+</p>
+<strong>Example</strong>: <code>?string</code> is just a nullable pointer (8 bytes on 64-bit). <code>?int32</code> might be a 5-byte tagged union (4 bytes + 1 byte tag).
+<hr>
+<h2>Common Patterns</h2>
+<h3>Optional Chaining with Fallback</h3>
+<pre><code>?Config:config = load_config();
+<p>
+?Database:db = config?.database;
+?string:connection_string = db?.connection_string;
+</p>
+<p>
+string:conn = connection_string ?? "localhost:5432";  // Default connection
+</p>
+<p>
+log.write("Database connection: ");
+conn.write_to(log);
+log.write("\n");</code></pre>
+</p>
+<h3>Early Return on NIL</h3>
+<pre><code>func:process_user = (username: string) -> result {
+<p>
+?User:user = find_user(username);
+</p>
+<p>
+if (user == NIL) {
+stderr.write("User not found\n");
+fail(1);  // Early return on NIL
+}
+</p>
+<p>
+// Safe to use user here (guaranteed not NIL)
+log.write("Processing user: ");
+user.name.write_to(log);
+log.write("\n");
+</p>
+<p>
+pass(0);
+}</code></pre>
+</p>
+<h3>Transform Optional Value</h3>
+<pre><code>?string:cached_data = get_cache("key");
+<p>
+// Map operation: transform value if present, NIL otherwise
+?int32:cached_length = cached_data?.length;  // NIL if cached_data is NIL
+</p>
+<p>
+if (cached_length == NIL) {
+stderr.write("No cached data\n");
+} else {
+log.write("Cached data length: ");
+cached_length.write_to(log);
+log.write("\n");
+}</code></pre>
+</p>
+<h3>Filter Pattern</h3>
+<pre><code>?User[]:all_users = fetch_all_users();
+<p>
+// Filter out users with no email
+User[]:users_with_email = [];
+</p>
+<p>
+if (all_users != NIL) {
+till all_users.length loop:i
+User:user = all_users[i];
+</p>
+<p>
+if (user.email != NIL) {
+users_with_email.append(user);
+}
+end
+}</code></pre>
+</p>
+<hr>
+<h2>Anti-Patterns</h2>
+<h3>❌ Using NIL for Errors</h3>
+<pre><code>// WRONG: NIL should not represent errors
+<p>
+func:divide = (a: int32, b: int32) -> ?int32 {
+if (b == 0) return NIL;  // ❌ Division by zero is ERROR, not absence!
+return a / b;
+}
+</p>
+<p>
+// RIGHT: Use Result or ERR
+func:divide_tbb = tbb32(tbb32:a, tbb32:b) {
+if b == 0 then pass(ERR); end  // ✅ Clear error signal
+pass(a / b);
+};
+</p>
+<p>
+func:divide_result = Result<int32, string>(int32:a, int32:b) {
+if b == 0 then fail("Division by zero"); end  // ✅ Error with context
+pass(a / b);
+};</code></pre>
+</p>
+<h3>❌ Unwrapping Without Checking</h3>
+<pre><code>?User:user = find_user(id);
+<p>
+// WRONG: Unwrapping without checking (can panic!)
+User:valid_user = user!;  // ❌ Panics if user is NIL!
+</p>
+<p>
+// RIGHT: Check before unwrapping
+if (user == NIL) {
+stderr.write("User not found\n");
+return;
+}
+</p>
+<p>
+User:valid_user = user!;  // ✅ Safe (already checked)
+</p>
+<p>
+// BETTER: Use if-let or pattern matching (future syntax)
+if let User:valid_user = user {
+// valid_user is guaranteed non-NIL in this scope
+process_user(valid_user);
+}</code></pre>
+</p>
+<h3>❌ Confusing NIL with ERR</h3>
+<pre><code>// WRONG: Mixing NIL and ERR semantics
+<p>
+?tbb32:sensor = read_sensor();  // ❌ Sensor failure returns ERR, not NIL!
+</p>
+<p>
+// RIGHT: Use tbb32 directly (ERR handles failure)
+tbb32:sensor = read_sensor();  // ✅ ERR if sensor malfunction
+</p>
+<p>
+if (sensor == ERR) {
+stderr.write("Sensor malfunction\n");
+}
+</p>
+<p>
+// OR use optional for "sensor not present" vs ERR for "sensor malfunction"
+?tbb32:sensor = get_optional_sensor();
+</p>
+<p>
+if (sensor == NIL) {
+stderr.write("Sensor not configured\n");
+} else if (sensor == ERR) {
+stderr.write("Sensor malfunction\n");
+} else {
+log.write("Sensor reading: ");
+sensor.write_to(log);
+log.write("\n");
+}</code></pre>
+</p>
+<h3>❌ Excessive Unwrapping</h3>
+<pre><code>// WRONG: Manually unwrapping nested optionals
+<p>
+?Config:config = load_config();
+</p>
+<p>
+if (config != NIL) {
+if (config.database != NIL) {
+if (config.database.connection != NIL) {
+string:conn = config.database.connection.uri;
+}
+}
+}
+</p>
+<p>
+// RIGHT: Use safe navigation
+?string:conn = config?.database?.connection?.uri;
+</p>
+<p>
+if (conn == NIL) {
+stderr.write("Database connection not configured\n");
+}</code></pre>
+</p>
+<hr>
+<h2>Migration from Null-Based Languages</h2>
+<h3>JavaScript/TypeScript</h3>
+<pre><code>// JavaScript - null and undefined both exist
+<p>
+const user = findUser(username);
+</p>
+<p>
+if (user === null || user === undefined) {
+console.error("User not found");
+}
+</p>
+<p>
+// Nullable chaining (TypeScript)
+const city = user?.address?.city ?? "Unknown";</code></pre>
+</p>
+<pre><code>// Aria - only NIL, no separate "undefined"
+<p>
+?User:user = find_user(username);
+</p>
+<p>
+if (user == NIL) {
+stderr.write("User not found\n");
+}
+</p>
+<p>
+// Safe navigation + null coalescing
+string:city = user?.address?.city ?? "Unknown";</code></pre>
+</p>
+<strong>Key difference</strong>: Aria has <strong>one</strong> absence value (NIL), not two (null + undefined).
+<h3>Python</h3>
+<pre><code># Python - None is the absence value
+<p>
+user = find_user(username)
+</p>
+<p>
+if user is None:
+print("User not found", file=sys.stderr)
+</p>
+<h1>No built-in safe navigation or null coalescing (until Python 3.10)</h1>
+<p>
+city = user.address.city if user and user.address else "Unknown"</code></pre>
+</p>
+<pre><code>// Aria - NIL with built-in operators
+<p>
+?User:user = find_user(username);
+</p>
+<p>
+if (user == NIL) {
+stderr.write("User not found\n");
+}
+</p>
+<p>
+// Safe navigation + null coalescing (built-in)
+string:city = user?.address?.city ?? "Unknown";</code></pre>
+</p>
+<h3>Java/Kotlin</h3>
+<pre><code>// Java - null is the absence value (NullPointerException danger!)
+<p>
+User user = findUser(username);
+</p>
+<p>
+if (user == null) {
+System.err.println("User not found");
+return;
+}
+</p>
+<p>
+// No safe navigation (use Optional<T>)
+String city = user.getAddress() != null ? user.getAddress().getCity() : "Unknown";</code></pre>
+</p>
+<pre><code>// Kotlin - nullable types (similar to Aria!)
+<p>
+val user: User? = findUser(username)
+</p>
+<p>
+if (user == null) {
+System.err.println("User not found")
+return
+}
+</p>
+<p>
+// Safe navigation + Elvis operator
+val city = user?.address?.city ?: "Unknown"</code></pre>
+</p>
+<pre><code>// Aria - very similar to Kotlin!
+<p>
+?User:user = find_user(username);
+</p>
+<p>
+if (user == NIL) {
+stderr.write("User not found\n");
+return;
+}
+</p>
+<p>
+// Safe navigation + null coalescing
+string:city = user?.address?.city ?? "Unknown";</code></pre>
+</p>
+<strong>Aria is closest to Kotlin</strong> in null safety design!
+<hr>
+<h2>Implementation Details</h2>
+<h3>Nullable Pointer Representation</h3>
+<p>
+For heap-allocated types (strings, objects):
+</p>
+<pre><code>// ?string is just a nullable pointer
+<p>
+typedef struct {
+const char* data;  // NULL = NIL
+size_t length;
+} aria_string;
+</p>
+<p>
+aria_string* optional_string;  // NULL pointer = NIL</code></pre>
+</p>
+<strong>Size</strong>: Same as pointer (8 bytes on 64-bit), no overhead.
+<h3>Tagged Union Representation</h3>
+<p>
+For small stack types:
+</p>
+<pre><code>// ?int32 is a tagged union
+<p>
+typedef struct {
+bool has_value;  // false = NIL
+int32_t value;
+} optional_int32;</code></pre>
+</p>
+<strong>Size</strong>: <code>sizeof(int32) + sizeof(bool)</code> = 5 bytes (padding may increase to 8).
+<h3>Niche Optimization</h3>
+<p>
+For types with unused bit patterns:
+</p>
+<pre><code>// ?tbb32 can use ERR (-2,147,483,648) as NIL representation!
+<p>
+// No tag byte needed - ERR value is never valid data, so repurpose as NIL
+typedef int32_t optional_tbb32;  // INT32_MIN = NIL
+</p>
+<p>
+// Check for NIL
+if (value == INT32_MIN) {
+// NIL
+}</code></pre>
+</p>
+<strong>Size</strong>: Same as tbb32 (4 bytes), <strong>zero overhead!</strong>
+<p>
+⚠️ <strong>NOTE</strong>: This is implementation detail! In code, always use <code>NIL</code>, never <code>INT32_MIN</code>.
+</p>
+<hr>
+<h2>Related Concepts</h2>
+<h3>Other Special Values</h3>
+<ul><li><strong>NULL</strong>: C-style null pointer (address 0x0) - pointer types only</li>
+<li><strong>ERR</strong>: TBB error sentinel - arithmetic/data errors</li>
+<li><strong>void</strong>: C FFI marker (no return value) - extern blocks only</li>
+</ul>
+<h3>Error Handling Alternatives</h3>
+<ul><li><strong>Result<T, E></strong>: Errors with context (parsing, validation, I/O failures)</li>
+<li><strong>Panics (!!!)</strong>: Unrecoverable errors (logic bugs, invariant violations)</li>
+<li><strong>Exceptions (try/catch)</strong>: Exceptional conditions (network timeouts, file errors)</li>
+</ul>
+<h3>Related Operators</h3>
+<ul><li><strong>Safe navigation (<code>?.</code>)</strong>: Short-circuit on NIL</li>
+<li><strong>Null coalescing (<code>??</code>)</strong>: Default value on NIL</li>
+<li><strong>Unwrap (<code>!</code>)</strong>: Assert not NIL (panics if NIL)</li>
+</ul>
+<hr>
+<h2>Summary</h2>
+<code>NIL</code> is Aria's <strong>type-safe absence value</strong> for optional types:
+<p>
+✅ <strong>Type-safe</strong>: Only exists in optional types (<code>?T</code>)
+✅ <strong>Explicit</strong>: Must use <code>NIL</code> keyword (cannot be created accidentally)
+✅ <strong>Composable</strong>: Works with <code>?.</code> (safe navigation) and <code>??</code> (null coalescing)
+✅ <strong>Zero-cost</strong>: Compiles to efficient null checks (same as C pointers)
+✅ <strong>Distinct</strong>: Different from NULL (pointers), ERR (TBB errors), void (FFI)
+✅ <strong>Clear semantics</strong>: "No value present" (not an error, just absence)
+</p>
+<strong>Use NIL for</strong>:
+<ul><li>Optional values ("may or may not exist" without being an error)</li>
+<li>Database queries that might not find records</li>
+<li>Cache lookups (cache miss is not an error)</li>
+<li>Configuration fields with defaults</li>
+<li>Sensor data that might be unavailable</li>
+</ul>
+<strong>Don't use NIL for</strong>:
+<ul><li>Errors (use ERR for TBB data errors, Result for errors with context)</li>
+<li>Pointers (use NULL instead)</li>
+<li>C FFI (use NULL for pointers, void for no-return)</li>
+<li>Indicating failure (NIL = absence, not failure)</li>
+</ul>
+<hr>
+<strong>Next</strong>: <a href="NULL.md">NULL (C Pointer Sentinel)</a> - Legacy null pointers
+<strong>See Also</strong>: <a href="ERR.md">ERR (TBB Error Sentinel)</a>, <a href="result.md">Result Type</a>, <a href="optional_types.md">Optional Types</a>
+<hr>
+<em>Aria Language Project - Type-Safe Absence by Design</em>
+<em>February 12, 2026 - Establishing timestamped prior art on NIL semantics</em>
+    </main>
+</body>
+</html>

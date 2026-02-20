@@ -120,8 +120,15 @@ class ManPageConverter:
 
     def generate_man_name(self, md_file, metadata):
         """Generate man page name from file and metadata"""
+        # Handle missing metadata
+        if metadata is None:
+            metadata = {}
+        
         # Category prefix
-        category = metadata.get("category", "misc").lower().replace(" ", "-")
+        category = metadata.get("category", "misc")
+        if category is None:
+            category = "misc"
+        category = category.lower().replace(" ", "-")
 
         # Base name from file (without .md)
         base_name = md_file.stem

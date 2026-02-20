@@ -238,14 +238,14 @@ path: string = `C:\Users\alice\Documents`;
 ```aria
 // Inefficient - creates many intermediate strings
 Result: string = "";
-for i in 0..1000 {
+till(999, 1) {
     result += "line\n";  // ❌ Slow!
 }
 
 // Better - use StringBuilder or collect
 lines: []string = aria_alloc([]string, 1000);
-for i in 0..1000 {
-    lines[i] = "line";
+till(999, 1) {
+    lines[$] = "line";
 }
 Result: string = lines.join("\n");  // ✅
 ```

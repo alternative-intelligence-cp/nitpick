@@ -82,6 +82,9 @@ private:
     std::vector<GenericParamInfo> parseGenericParams();  // Parse <T: Trait, U>
     bool isGenericTypeReference() const;            // Check for *T syntax
     
+    // P0: Attribute parsing for #[align(N)], etc.
+    uint64_t parseAlignmentAttribute();  // Returns 0 if no #[align] present
+    
     // Phase 2.5: Type and module parsing
     ASTNodePtr parseType();
     ASTNodePtr parseUseStatement();

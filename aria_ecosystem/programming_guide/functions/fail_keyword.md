@@ -185,7 +185,8 @@ fn robust_process(data: string) -> Result {
 
 ```aria
 fn fetch_with_retry(url: string, max_attempts: i32) -> Data? {
-    for attempt in 1..=max_attempts {
+    till(max_attempts - 1, 1) {
+        attempt: i32 = $ + 1;
         stddbg << "Attempt " << attempt << "/" << max_attempts;
         
         data: Data? = fetch(url);

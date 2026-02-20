@@ -75,7 +75,7 @@ stdout << "Memory increased by $increase bytes";
 fn detect_leak() {
     initial: MemoryInfo = getMemoryUsage();
     
-    for i in 0..1000 do
+    till(999, 1) {
         // Allocate without freeing
         data: *Data = allocate_data();
     end

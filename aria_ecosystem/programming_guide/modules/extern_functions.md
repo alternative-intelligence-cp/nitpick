@@ -107,8 +107,8 @@ pub extern "C" fn aria_process_array(arr: *i32, len: usize) -> i32 {
     }
     
     sum: i32 = 0;
-    for i in 0..len {
-        sum += arr[i];
+    till(len - 1, 1) {
+        sum += arr[$];
     }
     
     return sum;

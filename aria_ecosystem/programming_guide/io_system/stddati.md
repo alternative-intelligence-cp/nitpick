@@ -102,8 +102,9 @@ use std::json;
 
 fn main() {
     // Read multiple JSON objects, one per line
-    for line in stddati.lines() {
-        record: json::Value = json::parse(line)?;
+    lines = stddati.lines().collect();
+    till(lines.length - 1, 1) {
+        record: json::Value = json::parse(lines[$])?;
         process_record(record);
     }
 }
@@ -138,8 +139,9 @@ fn main() {
 ```aria
 // Extract data from database, transform, output to stddato
 fn main() {
-    for record in stddati.read_ndjson() {
-        transformed: Record = transform(record);
+    records = stddati.read_ndjson().collect();
+    till(records.length - 1, 1) {
+        transformed: Record = transform(records[$]);
         stddato << transformed;
     }
 }
@@ -202,8 +204,8 @@ fn main() {
     stddbg << "Processing batch of " << items.len() << " items";
     
     results: []Result = [];
-    for item in items {
-        results.push(process_item(item));
+    till(items.length - 1, 1) {
+        results.push(process_item(items[$]));
     }
     
     // Output results to stddato
@@ -289,8 +291,9 @@ nc -l 8080 | ./program 4>&0
 bytes: []u8 = stddati.read_all()?;
 
 // Read line by line
-for line in stddati.lines() {
-    process_line(line);
+lines = stddati.lines().collect();
+till(lines.length - 1, 1) {
+    process_line(lines[$]);
 }
 
 // Read fixed number of bytes
@@ -498,8 +501,9 @@ fn main() {
     stddbg << "Starting log processor";
     
     // Read NDJSON logs from stddati
-    for line in stddati.lines() {
-        log_entry: json::Value = json::parse(line)?;
+    lines = stddati.lines().collect();
+    till(lines.length - 1, 1) {
+        log_entry: json::Value = json::parse(lines[$])?;
         
         // Extract fields
         timestamp: string = log_entry["timestamp"].as_string()?;

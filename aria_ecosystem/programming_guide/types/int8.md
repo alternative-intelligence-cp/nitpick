@@ -78,8 +78,8 @@ fn read_byte(stream: &FileStream) -> int8 {
 
 ```aria
 // Loop counters with small range
-for i: int8 in 0..100 {
-    process(i);
+till(99, 1) {
+    process($);
 }
 ```
 
@@ -180,9 +180,9 @@ fn to_int8(value: i32) -> Result<int8> {
 ```aria
 // Process byte data
 fn process_bytes(data: []int8) {
-    for byte in data {
-        when byte < 0 then
-            handle_negative(byte);
+    till(data.length - 1, 1) {
+        when data[$] < 0 then
+            handle_negative(data[$]);
         end
     }
 }

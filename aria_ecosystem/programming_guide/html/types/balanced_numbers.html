@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Balanced Ternary and Nonary Types - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Balanced Ternary and Nonary Types</h1>
+<strong>Category</strong>: Types → Balanced Number Systems
+<strong>Types</strong>: <code>trit</code>, <code>tryte</code>, <code>nit</code>, <code>nyte</code>
+<strong>Purpose</strong>: Non-binary balanced number systems for specialized applications
+<hr>
+<h2>Overview</h2>
+<p>
+Aria includes built-in support for <strong>balanced ternary</strong> (base-3) and <strong>balanced nonary</strong> (base-9) number systems. These use symmetric digit sets centered around zero, enabling elegant representations of negative numbers without two's complement.
+</p>
+<strong>⚠️ CRITICAL: These types and their representations are NOT NEGOTIABLE.</strong>
+<hr>
+<h2>Quick Reference</h2>
+<p>
+| Type | Base | Digits | Range | Storage | Values |
+|------|------|--------|-------|---------|--------|
+| <strong>trit</strong> | 3 | {-1, 0, 1} | Single digit | 2 bits | 3 |
+| <strong>tryte</strong> | 3^10 | 10 trits | -29524 to +29524 | uint16 | 59,049 |
+| <strong>nit</strong> | 9 | {-4, -3, -2, -1, 0, 1, 2, 3, 4} | Single digit | 4 bits | 9 |
+| <strong>nyte</strong> | 9^5 | 5 nits | -29524 to +29524 | uint16 | 59,049 |
+</p>
+<hr>
+<h2>Balanced Ternary System</h2>
+<h3>The <code>trit</code> Type</h3>
+<p>
+A <strong>trit</strong> (ternary digit) is a single balanced ternary digit with three possible values:
+</p>
+<pre><code>-1  (negative one)
+<p>
+0  (zero)
++1  (positive one)</code></pre>
+</p>
+<p>
+#### Declaration and Usage
+</p>
+<pre><code>// Single trit values
+<p>
+trit:negative = -1;
+trit:zero = 0;
+trit:positive = 1;
+</p>
+<p>
+// Arithmetic
+trit:sum = negative + positive;  // 0
+trit:product = negative <em> negative;  // 1 ((-1) </em> (-1) = 1)</code></pre>
+</p>
+<p>
+#### Why Balanced Ternary?
+</p>
+<p>
+Unlike binary (0, 1) or standard ternary (0, 1, 2), balanced ternary uses {-1, 0, 1}:
+</p>
+<ul><li><strong>Symmetric</strong>: Negative and positive are mirror images</li>
+<li><strong>No two's complement</strong>: Negation simply flips signs of all trits</li>
+<li><strong>Natural zero</strong>: Zero is represented by all trits = 0</li>
+<li><strong>Efficient</strong>: Some algorithms run faster in balanced ternary</li>
+</ul>
+<h3>The <code>tryte</code> Type</h3>
+<p>
+A <strong>tryte</strong> is 10 trits packed together, representing numbers from <code>-29524</code> to <code>+29524</code>:
+</p>
+<pre><code>tryte = 10 trits = 3^10 values = 59,049 total values
+<p>
+Storage: uint16 (16 bits, using 14.87 bits effective)</code></pre>
+</p>
+<p>
+#### Declaration and Usage
+</p>
+<pre><code>// Tryte declarations
+<p>
+tryte:small = 100;
+tryte:negative = -5000;
+tryte:max = 29524;    // Maximum value
+tryte:min = -29524;   // Minimum value
+</p>
+<p>
+// Arithmetic
+tryte:a = 1000;
+tryte:b = 2000;
+tryte:sum = a + b;    // 3000
+</p>
+<p>
+// Overflow wraps or produces error (TBD)
+tryte:overflow = 20000 + 15000;  // Exceeds +29524</code></pre>
+</p>
+<p>
+#### Internal Representation
+</p>
+<pre><code>Decimal 100 in balanced ternary:
+<p>
+= 10201 (base 3, balanced)
+= [1, 0, 2, 0, 1] trits
+= [+1, 0, -1, 0, +1] (where 2 = -1 in balanced form)
+</p>
+<p>
+Stored in uint16 with custom encoding</code></pre>
+</p>
+<hr>
+<h2>Balanced Nonary System</h2>
+<h3>The <code>nit</code> Type</h3>
+<p>
+A <strong>nit</strong> (nonary digit) is a single balanced nonary digit with nine possible values:
+</p>
+<pre><code>-4, -3, -2, -1, 0, +1, +2, +3, +4</code></pre>
+<p>
+#### Declaration and Usage
+</p>
+<pre><code>// Single nit values
+<p>
+nit:neg_four = -4;
+nit:zero = 0;
+nit:pos_four = 4;
+</p>
+<p>
+// Arithmetic
+nit:sum = -2 + 3;  // 1
+nit:diff = 4 - 2;  // 2</code></pre>
+</p>
+<p>
+#### Why Balanced Nonary?
+</p>
+<p>
+Balanced nonary (base-9 with symmetric digits) offers:
+</p>
+<ul><li><strong>Higher density</strong>: 9 values per digit vs 3 for ternary</li>
+<li><strong>Still symmetric</strong>: Centered around zero like balanced ternary</li>
+<li><strong>Base-9 efficiency</strong>: Some calculations benefit from base-9</li>
+<li><strong>Compatibility</strong>: 9 = 3^2, so relates to ternary naturally</li>
+</ul>
+<h3>The <code>nyte</code> Type</h3>
+<p>
+A <strong>nyte</strong> is 5 nits packed together, representing numbers from <code>-29524</code> to <code>+29524</code>:
+</p>
+<pre><code>nyte = 5 nits = 9^5 values = 59,049 total values
+<p>
+Storage: uint16 (16 bits, using 15.88 bits effective)</code></pre>
+</p>
+<strong>Interesting Property</strong>: <code>tryte</code> and <code>nyte</code> have the <strong>same range</strong> (59,049 values) but different digit representations!
+<p>
+#### Declaration and Usage
+</p>
+<pre><code>// Nyte declarations
+<p>
+nyte:value = 1000;
+nyte:negative = -10000;
+nyte:max = 29524;   // Same range as tryte
+nyte:min = -29524;
+</p>
+<p>
+// Arithmetic
+nyte:a = 5000;
+nyte:b = 3000;
+nyte:product = a + b;  // 8000</code></pre>
+</p>
+<p>
+#### Internal Representation
+</p>
+<pre><code>Decimal 100 in balanced nonary:
+<p>
+= 5 nits representing 100
+= Stored in uint16 with custom encoding
+= Each nit is 4 bits (to hold -4 to +4)</code></pre>
+</p>
+<hr>
+<h2>Comparison: tryte vs nyte</h2>
+<p>
+| Feature | tryte (10 trits) | nyte (5 nits) |
+|---------|-----------------|---------------|
+| <strong>Base</strong> | 3 | 9 |
+| <strong>Digits per value</strong> | 10 | 5 |
+| <strong>Digit range</strong> | {-1, 0, 1} | {-4, -3, -2, -1, 0, 1, 2, 3, 4} |
+| <strong>Total range</strong> | -29524 to +29524 | -29524 to +29524 |
+| <strong>Storage</strong> | uint16 | uint16 |
+| <strong>Total values</strong> | 59,049 | 59,049 |
+| <strong>Bits per digit</strong> | ~1.59 | ~3.17 |
+</p>
+<strong>Key Insight</strong>: Both represent the same numeric range but with different internal digit structures!
+<hr>
+<h2>Use Cases</h2>
+<h3>Balanced Ternary (trit/tryte)</h3>
+<p>
+#### 1. Quantum-Inspired Logic
+</p>
+<pre><code>// Representing qutrit states (3-level quantum)
+<p>
+trit:superposition = -1;  // |->
+trit:ground = 0;          // |0>
+trit:excited = 1;         // |+>
+</p>
+<p>
+func:applyGate = trit(trit:state) {
+// Quantum-like operations
+pass(-state);  // NOT gate (flip sign)
+};</code></pre>
+</p>
+<p>
+#### 2. Error Correction
+</p>
+<pre><code>// Symmetric error codes
+<p>
+tryte:data = 12345;
+tryte:checksum = computeChecksum(data);
+</p>
+<p>
+// Error detection naturally handles +/- errors</code></pre>
+</p>
+<p>
+#### 3. Numeric Algorithms
+</p>
+<pre><code>// Some numeric methods benefit from balanced ternary
+<p>
+tryte:value = balancedTernaryMultiply(a, b);</code></pre>
+</p>
+<h3>Balanced Nonary (nit/nyte)</h3>
+<p>
+#### 1. Compact Encoding
+</p>
+<pre><code>// More compact than ternary for same range
+<p>
+nyte:compact = encodeData(largeValue);  // 5 digits instead of 10</code></pre>
+</p>
+<p>
+#### 2. Base-9 Arithmetic
+</p>
+<pre><code>// Algorithms optimized for base-9
+<p>
+nyte:result = base9Transform(input);</code></pre>
+</p>
+<p>
+#### 3. Compatibility with Ternary
+</p>
+<pre><code>// Since 9 = 3^2, can convert efficiently
+<p>
+nyte:nonary = 1000;
+tryte:ternary = nonaryToTernary(nonary);</code></pre>
+</p>
+<hr>
+<h2>Conversion Functions</h2>
+<h3>Between Balanced Types</h3>
+<pre><code>// trit ↔ nit (single digit)
+<p>
+nit:from_trit = tritToNit(my_trit);
+trit:from_nit = nitToTrit(my_nit);  // May lose precision
+</p>
+<p>
+// tryte ↔ nyte (multi-digit, same range)
+nyte:from_tryte = tryteToNyte(my_tryte);
+tryte:from_nyte = nyteToTryte(my_nyte);</code></pre>
+</p>
+<h3>To/From Standard Integers</h3>
+<pre><code>// From int64
+<p>
+int64:standard = 12345;
+tryte:as_tryte = int64ToTryte(standard);  // May overflow
+nyte:as_nyte = int64ToNyte(standard);    // May overflow
+</p>
+<p>
+// To int64
+tryte:balanced = 10000;
+int64:converted = tryteToInt64(balanced);  // Always safe</code></pre>
+</p>
+<hr>
+<h2>Arithmetic Operations</h2>
+<h3>Supported Operations</h3>
+<p>
+| Operation | tryte | nyte | Behavior |
+|-----------|-------|------|----------|
+| Addition (<code>+</code>) | ✅ | ✅ | Wraps or errors on overflow |
+| Subtraction (<code>-</code>) | ✅ | ✅ | Wraps or errors on underflow |
+| Multiplication (<code>*</code>) | ✅ | ✅ | Wraps or errors on overflow |
+| Division (<code>/</code>) | ✅ | ✅ | Balanced division |
+| Modulo (<code>%</code>) | ✅ | ✅ | Balanced modulo |
+| Negation (<code>-x</code>) | ✅ | ✅ | Simply flip all digit signs |
+| Comparison | ✅ | ✅ | Standard ordering |
+</p>
+<h3>Negation Efficiency</h3>
+<p>
+Balanced types make negation trivial:
+</p>
+<pre><code>tryte:positive = 12345;
+<p>
+tryte:negative = -positive;  // Just flip signs of internal trits
+</p>
+<p>
+// Compare to two's complement:
+// - Requires invert all bits + add 1
+// - Balanced: just flip signs!</code></pre>
+</p>
+<hr>
+<h2>Common Patterns</h2>
+<h3>Pattern 1: Quantum State Simulation</h3>
+<pre><code>// Represent qutrit (3-level quantum) states
+<p>
+trit:qutrit_state[100];  // Array of 100 qutrits
+</p>
+<p>
+func:applyHadamard = trit(trit:state) {
+// Balanced ternary makes quantum gates elegant
+if (state == 0) {
+pass(1);
+} else if (state == 1) {
+pass(-1);
+} else {
+pass(0);
+}
+};</code></pre>
+</p>
+<h3>Pattern 2: Efficient Negation</h3>
+<pre><code>func:invertSign = tryte(tryte:value) {
+<p>
+pass(-value);  // O(1) negation!
+};
+</p>
+<p>
+// vs two's complement:
+// func invertSign(int16 value) {
+//     return ~value + 1;  // Two operations
+// }</code></pre>
+</p>
+<h3>Pattern 3: Compact Data Storage</h3>
+<pre><code>struct:CompactData = {
+<p>
+nyte:field1;  // 16 bits, range -29524 to +29524
+nyte:field2;
+nyte:field3;
+};
+</p>
+<p>
+// 3 nytes = 3 * 16 = 48 bits for 3 balanced nonary values
+// vs 3 int16 = same storage but different semantics</code></pre>
+</p>
+<hr>
+<h2>Gotchas and Limitations</h2>
+<h3>❌ Limited Range</h3>
+<pre><code>// WRONG: Assuming int64 range
+<p>
+tryte:large = 100000;  // ❌ OVERFLOW! Max is 29524
+</p>
+<p>
+// CORRECT: Check range
+int64:value = 100000;
+if (value > 29524 || value < -29524) {
+stderr.write("Value out of tryte range");
+fail(1);
+}
+tryte:safe = value;</code></pre>
+</p>
+<h3>❌ Not All Values Use All Digits</h3>
+<pre><code>// tryte has 10 trits but not all combinations are valid for every value
+<p>
+// Some values have leading zeros (just like decimal)
+</p>
+<p>
+tryte:small = 5;
+// Internal: 0000000011 (balanced ternary)
+//           ^^^^^^^^^^ leading zeros</code></pre>
+</p>
+<h3>✅ Negation is Free</h3>
+<pre><code>// Take advantage of efficient negation
+<p>
+tryte:value = 10000;
+tryte:negative = -value;  // Trivial operation
+</p>
+<p>
+// This is much faster than two's complement negation</code></pre>
+</p>
+<hr>
+<h2>Implementation Details</h2>
+<h3>Storage Format (IMPORTANT)</h3>
+<p>
+Both <code>tryte</code> and <code>nyte</code> use <code>uint16</code> for storage:
+</p>
+<pre><code>// Internal representation
+<p>
+tryte: uint16:storage;  // 16 bits
+// Encodes 10 trits (3^10 = 59049 values)
+</p>
+<p>
+nyte: uint16:storage;   // 16 bits
+// Encodes 5 nits (9^5 = 59049 values)</code></pre>
+</p>
+<h3>Encoding Scheme</h3>
+<p>
+The exact encoding scheme (how trits/nits map to bits) is implementation-defined but must:
+</p>
+<p>
+1. Support full range: -29524 to +29524
+2. Enable efficient arithmetic operations
+3. Make negation O(1) operation
+4. Preserve balanced digit semantics
+</p>
+<hr>
+<h2>Related Topics</h2>
+<ul><li><a href="tbb8.md">tbb8 Type</a> - Twisted Balanced Binary with ERR sentinels</li>
+<li><a href="int64.md">int Types</a> - Standard binary integers</li>
+<li><a href="../advanced_features/type_conversion.md">Type Conversion</a> - Converting between types</li>
+<li><a href="../operators/arithmetic.md">Arithmetic Operators</a> - Math operations</li>
+</ul>
+<hr>
+<h2>References</h2>
+<ul><li><strong>Balanced Ternary</strong>: https://en.wikipedia.org/wiki/Balanced_ternary</li>
+<li><strong>Ternary Computing</strong>: Historical use in Soviet Setun computer</li>
+<li><strong>Nonary System</strong>: https://en.wikipedia.org/wiki/Nonary</li>
+</ul>
+<hr>
+<strong>Status</strong>: Comprehensive
+<strong>Specification</strong>: aria_specs.txt Lines 37-40
+<strong>Non-Negotiable</strong>: Digit sets and storage format are fixed language features
+    </main>
+</body>
+</html>

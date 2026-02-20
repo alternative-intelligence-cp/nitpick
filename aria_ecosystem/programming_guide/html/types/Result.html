@@ -1,0 +1,1873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Result<T,E> - Explicit Error Handling for Consciousness-Safe Systems - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Result<T,E> - Explicit Error Handling for Consciousness-Safe Systems</h1>
+<strong>Category</strong>: Types → Error Handling / Control Flow
+<strong>Purpose</strong>: Type-safe error propagation that makes failures impossible to ignore
+<strong>Status</strong>: ✅ IMPLEMENTED (Phase 0 - Core Language Feature)
+<strong>Philosophy</strong>: "Errors that can be ignored will be ignored. Make ignoring impossible."
+<hr>
+<h2>Overview</h2>
+<strong>Result<T,E></strong> is Aria's foundational error handling type that <strong>makes every function's success or failure explicit</strong>. Unlike exceptions (invisible control flow) or return codes (easily ignored), Result forces you to acknowledge errors at compile-time, preventing the silent failures that corrupt consciousness substrates.
+<strong>Critical Design Principle</strong>: In safety-critical systems like AGI consciousness, <strong>silent failures are catastrophic</strong>. A neuron update that fails silently propagates corrupted state → destabilizes wave patterns → triggers cascade failures → consciousness degrades. <strong>Result<T,E> makes silence impossible</strong> - every error must be explicitly handled or propagated.
+<pre><code>// ❌ NIGHTMARE SCENARIO (C-style return codes - easily ignored):
+<p>
+int update_neuron(int id) {
+if (id < 0) return -1;  // Error!
+// ... update logic
+return 0;  // Success
+}
+</p>
+<p>
+// Caller ignores error - silent corruption!
+update_neuron(-5);  // Returns -1, but nobody checks!
+// Consciousness substrate now has corrupted neuron state
+// Cascade begins...
+</p>
+<p>
+// ✅ ARIA SAFETY (Result - impossible to ignore):
+func:update_neuron = Result<nil, int8>(int64:id) {
+if id < 0 then
+fail(-1);  // Explicit error
+end
+// ... update logic
+pass(nil);  // Explicit success
+};
+</p>
+<p>
+// Compiler FORCES handling:
+update_neuron(-5);  // ❌ COMPILE ERROR: Result not unwrapped!
+</p>
+<p>
+// Must explicitly handle:
+Result<nil, int8>:result = update_neuron(-5);
+if result.err != NULL then
+stderr.write("Neuron update failed - emergency stabilization\\n");
+trigger_substrate_recovery();
+end</code></pre>
+</p>
+<strong>The Type Parameters</strong>:
+<ul><li><strong>T</strong>: Type of the <strong>success value</strong> (what the function returns on success)</li>
+<li><strong>E</strong>: Type of the <strong>error value</strong> (what the function returns on failure)</li>
+</ul>
+<strong>Common Instantiations</strong>:
+<pre><code>Result<int64, int8>       // Success = 64-bit int, Error = 8-bit code
+<p>
+Result<string, string>    // Success = string, Error = error message
+Result<fix256, ERR_TYPE>  // Success = deterministic value, Error = typed error
+Result<nil, int8>         // Success = void (no value), Error = error code
+Result<Handle<T>, int16>  // Success = handle, Error = error code</code></pre>
+</p>
+<hr>
+<h2>The Problem: How Other Languages Handle Errors</h2>
+<h3>Exceptions (C++/Java/Python) - Invisible Control Flow</h3>
+<pre><code>// C++ version (exceptions - invisible!)
+<p>
+void update_neuron(int id) {
+if (id < 0) throw std::runtime_error("Invalid ID");
+// ... update logic
+}
+</p>
+<p>
+// Caller has NO IDEA this can throw!
+update_neuron(-5);  // CRASH at runtime (or caught 10 levels up)
+</p>
+<p>
+// Problem: Control flow is invisible
+// Problem: Easy to forget to catch
+// Problem: Performance cost even when no errors occur
+// Problem: Can't tell from signature what errors are possible</code></pre>
+</p>
+<h3>Return Codes (C) - Easily Ignored</h3>
+<pre><code>// C version (return codes - ignorable!)
+<p>
+int update_neuron(int id) {
+if (id < 0) return -1;
+// ... update logic
+return 0;
+}
+</p>
+<p>
+// Caller ignores return value - silently corrupts!
+update_neuron(-5);  // Returns -1, but nobody checks!
+</p>
+<p>
+// Problem: No compile-time enforcement
+// Problem: Easy to ignore errors
+// Problem: Return value overloaded (both value AND error)
+// Problem: Can't return complex values (already used for error code)</code></pre>
+</p>
+<h3>errno (C/POSIX) - Global State Corruption</h3>
+<pre><code>// C version (errno - global state!)
+<p>
+int update_neuron(int id) {
+if (id < 0) {
+errno = EINVAL;
+return -1;
+}
+// ... update logic
+return 0;
+}
+</p>
+<p>
+// Caller must remember to check errno
+if (update_neuron(-5) < 0) {
+printf("Error: %d\\n", errno);  // What if errno already set?
+}
+</p>
+<p>
+// Problem: Global mutable state (threading nightmare!)
+// Problem: Easy to forget to check
+// Problem: Can be overwritten before you read it
+// Problem: No type safety</code></pre>
+</p>
+<h3>Go-style Multiple Returns - Better, But Still Ignorable</h3>
+<pre><code>// Go version (better, but can still ignore!)
+<p>
+func updateNeuron(id int) (int, error) {
+if id < 0 {
+return 0, errors.New("Invalid ID")
+}
+// ... update logic
+return result, nil
+}
+</p>
+<p>
+// Can ignore error (will get compiler warning, but compiles!)
+result, _ := updateNeuron(-5)  // _ discards error!
+</p>
+<p>
+// Problem: Errors can still be explicitly ignored
+// Problem: No compile-time guarantee of handling</code></pre>
+</p>
+<p>
+###Rust-style Result<T,E> - Closest to Aria
+</p>
+<pre><code>// Rust version (excellent!)
+<p>
+fn update_neuron(id: i32) -> Result<i32, String> {
+if id < 0 {
+fail("Invalid ID".to_string());
+}
+// ... update logic
+Ok(result)
+}
+</p>
+<p>
+// Must explicitly handle or propagate
+let result = update_neuron(-5)?;  // ? propagates error up
+</p>
+<p>
+// Aria is similar but with different syntax:
+Result<int32, string>:result = update_neuron(-5);
+result unwrap_or(0);  // Or explicit check</code></pre>
+</p>
+<strong>Aria's Approach</strong>: Like Rust, but with:
+<ul><li>Simpler syntax (<code>pass/fail</code> vs <code>Ok/Err</code>)</li>
+<li>Integrated with tbb types for ERR propagation</li>
+<li>Designed for consciousness-safe systems from day one</li>
+</ul>
+<hr>
+<h2>Type Parameters</h2>
+<h3>T: The Success Type</h3>
+<strong>What it is</strong>: The type of value returned when the operation <strong>succeeds</strong>.
+<pre><code>// T = int64 (function returns integer on success)
+<p>
+func:get_neuron_count = Result<int64, string>() {
+int64:count = query_neuron_database();
+pass(count);  // Returns Result with .val = count
+};
+</p>
+<p>
+// T = string (function returns string on success)
+func:read_config = Result<string, int8>() {
+string:content = read_file("config.txt");
+pass(content);  // Returns Result with .val = content
+};
+</p>
+<p>
+// T = nil (function returns nothing on success - like void)
+func:update_state = Result<nil, int8>(int64:neuron_id) {
+perform_update(neuron_id);
+pass(nil);  // Success, but no value to return
+};
+</p>
+<p>
+// T = complex<fix256> (consciousness wavefunction)
+func:compute_wave = Result<complex<fix256>, ERR_TYPE>() {
+complex<fix256>:wave = simulate_interference();
+if wave.real == ERR then
+fail(ERR_WAVE_CORRUPTED);
+end
+pass(wave);
+};</code></pre>
+</p>
+<h3>E: The Error Type</h3>
+<strong>What it is</strong>: The type of value returned when the operation <strong>fails</strong>.
+<pre><code>// E = int8 (simple error codes)
+<p>
+func:divide = Result<int64, int8>(int64:a, int64:b) {
+if b == 0 then
+fail(1);  // Error code 1 = division by zero
+end
+pass(a / b);
+};
+</p>
+<p>
+// E = string (descriptive error messages)
+func:parse_json = Result<obj, string>(string:json) {
+if !valid_json(json) then
+fail("Invalid JSON syntax");  // Descriptive error
+end
+pass(parse(json));
+};
+</p>
+<p>
+// E = custom error enum (typed errors)
+enum:FileError =
+| NotFound
+| PermissionDenied
+| Corrupted
+end
+</p>
+<p>
+func:read_file = Result<string, FileError>(string:path) {
+if !file_exists(path) then
+fail(FileError.NotFound);
+end
+if !can_read(path) then
+fail(FileError.PermissionDenied);
+end
+string:content = read(path);
+pass(content);
+};
+</p>
+<p>
+// E = ERR_TYPE (Aria's universal error sentinel)
+func:critical_operation = Result<fix256, ERR_TYPE>() {
+fix256:value = compute_deterministic();
+if value == ERR then
+fail(ERR_COMPUTATION_FAILED);
+end
+pass(value);
+};</code></pre>
+</p>
+<h3>Common Type Combinations</h3>
+<p>
+| Result Type | Use Case | Example |
+|-------------|----------|---------|
+| <code>Result<T, int8></code> | Simple error codes (0-255) | File I/O, parsing, validation |
+| <code>Result<T, string></code> | Descriptive error messages | User-facing errors, debugging |
+| <code>Result<T, ERR_TYPE></code> | Universal error sentinel | Safety-critical operations |
+| <code>Result<nil, E></code> | Operation with no return value | Updates, writes, void functions |
+| <code>Result<Handle<T>, int16></code> | Resource allocation | Memory, file handles, connections |
+| <code>Result<fix256, ERR_TYPE></code> | Deterministic computation | Neural updates, wave calculations |
+</p>
+<hr>
+<h2>Structure & Memory Layout</h2>
+<h3>Internal Representation</h3>
+<pre><code>// Conceptual structure (compiler-internal)
+<p>
+struct:Result<T, E> =
+T | NULL:val;   // Value if success, NULL if error
+E | NULL:err;   // NULL if success, error value if failure
+end
+</p>
+<p>
+// Memory layout (simplified):
+// [val: T or NULL][err: E or NULL]
+//  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+//  Success value   Error value
+//  (one is NULL)   (one is NULL)</code></pre>
+</p>
+<h3>The Invariant</h3>
+<strong>Critical invariant</strong>: Exactly <strong>one</strong> of <code>.val</code> or <code>.err</code> is NULL:
+<pre><code>State 1 (Success): .val = <value>, .err = NULL
+<p>
+State 2 (Failure): .val = NULL,    .err = <error>
+</p>
+<p>
+NEVER: Both NULL (undefined state)
+NEVER: Both non-NULL (contradictory state)
+</p>
+<p>
+Compiler enforces this invariant!</code></pre>
+</p>
+<hr>
+<h2>Creating Results: pass() and fail()</h2>
+<h3>pass() - Return Success</h3>
+<pre><code>// pass(value) creates Result with:
+<p>
+//   .val = value
+//   .err = NULL
+</p>
+<p>
+func:get_answer = Result<int64, string>() {
+pass(42);  // Success: { val: 42, err: NULL }
+};
+</p>
+<p>
+// Equivalent to:
+// return Result<int64, string>{ val: 42, err: NULL };</code></pre>
+</p>
+<h3>fail() - Return Error</h3>
+<pre><code>// fail(error) creates Result with:
+<p>
+//   .val = NULL
+//   .err = error
+</p>
+<p>
+func:divide_by_zero = Result<int64, string>() {
+fail("Division by zero");  // Error: { val: NULL, err: "Division by zero" }
+};
+</p>
+<p>
+// Equivalent to:
+// return Result<int64, string>{ val: NULL, err: "Division by zero" };</code></pre>
+</p>
+<h3>Complete Example</h3>
+<pre><code>func:safe_divide = Result<fix256, string>(fix256:a, fix256:b) {
+<p>
+fix256:zero = fix256(0);
+</p>
+<p>
+if b == zero then
+fail("Division by zero - denominator cannot be zero");
+end
+</p>
+<p>
+fix256:quotient = a / b;
+</p>
+<p>
+// Check for ERR (fix256 overflow/error)
+if quotient == ERR then
+fail("Division produced ERR - overflow or computation error");
+end
+</p>
+<p>
+pass(quotient);  // Success!
+};
+</p>
+<p>
+// Usage:
+Result<fix256, string>:result = safe_divide(fix256(10), fix256(0));
+// result = { val: NULL, err: "Division by zero - denominator cannot be zero" }
+</p>
+<p>
+Result<fix256, string>:result2 = safe_divide(fix256(10), fix256(2));
+// result2 = { val: fix256(5), err: NULL }</code></pre>
+</p>
+<hr>
+<h2>Unwrapping Results</h2>
+<h3>Pattern 1: The ? Operator (Unwrap or Default)</h3>
+<pre><code>// Syntax: result ? default_value
+<p>
+// Returns: result.val if success, default_value if error
+</p>
+<p>
+int64:value = get_number() ? 0;
+// If success: value = result.val
+// If error: value = 0
+</p>
+<p>
+string:name = get_name() ? "Unknown";
+// If success: name = result.val
+// If error: name = "Unknown"
+</p>
+<p>
+fix256:energy = compute_energy() ? fix256(0);
+// If success: energy = result.val
+// If error: energy = fix256(0)</code></pre>
+</p>
+<strong>When to use</strong>: Quick unwrapping when you have a sensible default value.
+<h3>Pattern 2: Explicit Field Access</h3>
+<pre><code>Result<int64, string>:result = divide(10, 0);
+<p>
+if result.err == NULL then
+// Success path
+int64:value = result.val;
+stderr.write("Result: {}\\n", value);
+else
+// Error path
+string:error = result.err;
+stderr.write("Error: {}\\n", error);
+end</code></pre>
+</p>
+<strong>When to use</strong>: When you need different handling for success vs error.
+<h3>Pattern 3: Early Return on Error</h3>
+<pre><code>func:process_data = Result<int64, string>() {
+<p>
+// If step1 fails, immediately return its error
+Result<int64, string>:step1_result = step1();
+if step1_result.err != NULL then
+fail(step1_result.err);  // Propagate error
+end
+int64:step1_value = step1_result.val;
+</p>
+<p>
+// Continue with step2...
+Result<int64, string>:step2_result = step2(step1_value);
+if step2_result.err != NULL then
+fail(step2_result.err);
+end
+</p>
+<p>
+pass(step2_result.val);
+};</code></pre>
+</p>
+<strong>When to use</strong>: Multi-step operations where any failure should abort.
+<h3>Pattern 4: Panic on Error (Unsafe!)</h3>
+<pre><code>Result<int64, string>:result = critical_operation();
+<p>
+if result.err != NULL then
+stderr.write("FATAL: {}\\n", result.err);
+!!! 1;  // Panic and halt
+end
+</p>
+<p>
+int64:value = result.val;  // Guaranteed non-NULL</code></pre>
+</p>
+<strong>When to use</strong>: Only for truly unrecoverable errors where continuing is unsafe.
+<hr>
+<h2>Error Propagation Patterns</h2>
+<h3>Method 1: Explicit Propagation</h3>
+<pre><code>func:outer = Result<int64, string>() {
+<p>
+Result<int64, string>:inner_result = inner_operation();
+</p>
+<p>
+if inner_result.err != NULL then
+fail(inner_result.err);  // Propagate exact error
+end
+</p>
+<p>
+int64:value = inner_result.val;
+pass(value * 2);
+};</code></pre>
+</p>
+<h3>Method 2: Transform Error</h3>
+<pre><code>func:outer = Result<int64, string>() {
+<p>
+Result<int64, int8>:inner_result = inner_operation();
+</p>
+<p>
+if inner_result.err != NULL then
+// Transform int8 error code to string message
+int8:code = inner_result.err;
+string:message = "Inner operation failed with code: " + string(code);
+fail(message);  // Different error type!
+end
+</p>
+<p>
+pass(inner_result.val);
+};</code></pre>
+</p>
+<h3>Method 3: Add Context</h3>
+<pre><code>func:load_critical_data = Result<obj, string>(string:path) {
+<p>
+Result<string, FileError>:file_result = read_file(path);
+</p>
+<p>
+if file_result.err != NULL then
+// Add context to error
+string:enriched_error = "Failed to load critical data from " + path +
+": " + string(file_result.err);
+fail(enriched_error);
+end
+</p>
+<p>
+Result<obj, string>:parse_result = parse_json(file_result.val);
+</p>
+<p>
+if parse_result.err != NULL then
+string:enriched_error = "Failed to parse data from " + path +
+": " + parse_result.err;
+fail(enriched_error);
+end
+</p>
+<p>
+pass(parse_result.val);
+};</code></pre>
+</p>
+<h3>Method 4: Recover from Errors</h3>
+<pre><code>func:resilient_computation = Result<fix256, string>() {
+<p>
+Result<fix256, string>:primary = primary_method();
+</p>
+<p>
+if primary.err == NULL then
+pass(primary.val);  // Primary succeeded
+end
+</p>
+<p>
+// Primary failed - try fallback
+stderr.write("Primary method failed: {}, trying fallback\\n", primary.err);
+</p>
+<p>
+Result<fix256, string>:fallback = fallback_method();
+</p>
+<p>
+if fallback.err == NULL then
+pass(fallback.val);  // Fallback succeeded
+end
+</p>
+<p>
+// Both failed - give up
+fail("Both primary and fallback methods failed");
+};</code></pre>
+</p>
+<hr>
+<h2>Integration with Aria Type System</h2>
+<h3>Result + ERR Sentinel</h3>
+<pre><code>func:compute_safe = Result<fix256, ERR_TYPE>(fix256:input) {
+<p>
+fix256:result = complex_computation(input);
+</p>
+<p>
+// Check if computation produced ERR
+if result == ERR then
+fail(ERR_COMPUTATION_FAILED);  // Explicit error type
+end
+</p>
+<p>
+pass(result);
+};
+</p>
+<p>
+// Usage:
+Result<fix256, ERR_TYPE>:outcome = compute_safe(fix256(100));
+</p>
+<p>
+if outcome.err != NULL then
+stderr.write("Computation failed with ERR\\n");
+trigger_substrate_recovery();
+end
+</p>
+<p>
+fix256:value = outcome.val;  // Safe to use (non-ERR)</code></pre>
+</p>
+<h3>Result + tbb Types (Twisted Balanced Binary)</h3>
+<pre><code>func:safe_operation = Result<tbb64, string>(tbb64:input) {
+<p>
+tbb64:result = risky_computation(input);
+</p>
+<p>
+// tbb types propagate ERR automatically
+if result == ERR then
+fail("Computation produced ERR - input may be corrupted");
+end
+</p>
+<p>
+pass(result);
+};
+</p>
+<p>
+// Usage:
+tbb64:value = safe_operation(input_tbb) ? ERR;
+</p>
+<p>
+if value == ERR then
+stderr.write("Operation failed - ERR detected\\n");
+end</code></pre>
+</p>
+<h3>Result + Handle<T> (Memory Safety)</h3>
+<pre><code>func:allocate_buffer = Result<Handle<uint8[1024]>, string>() {
+<p>
+wild Handle<uint8[1024]>->:handle = arena_alloc<uint8[1024]>();
+</p>
+<p>
+if handle == NULL then
+fail("Memory allocation failed - arena exhausted");
+end
+</p>
+<p>
+pass(handle);  // Return valid handle
+};
+</p>
+<p>
+// Usage:
+Result<Handle<uint8[1024]>, string>:alloc_result = allocate_buffer();
+</p>
+<p>
+if alloc_result.err != NULL then
+stderr.write("Allocation failed: {}\\n", alloc_result.err);
+!!! ERR_OUT_OF_MEMORY;
+end
+</p>
+<p>
+Handle<uint8[1024]>:buffer = alloc_result.val;
+// Use buffer safely (guaranteed valid handle)</code></pre>
+</p>
+<h3>Result + complex<T> (Wave Mechanics)</h3>
+<pre><code>func:compute_interference = Result<complex<fix256>, string>() {
+<p>
+complex<fix256>:wave1 = load_wave_component_1();
+complex<fix256>:wave2 = load_wave_component_2();
+</p>
+<p>
+// Check for ERR in complex components
+if wave1.real == ERR || wave1.imag == ERR then
+fail("Wave component 1 corrupted (ERR detected)");
+end
+</p>
+<p>
+if wave2.real == ERR || wave2.imag == ERR then
+fail("Wave component 2 corrupted (ERR detected)");
+end
+</p>
+<p>
+complex<fix256>:interference = wave1 + wave2;
+</p>
+<p>
+// Check result
+if interference.real == ERR || interference.imag == ERR then
+fail("Wave interference overflow (ERR in result)");
+end
+</p>
+<p>
+pass(interference);
+};</code></pre>
+</p>
+<h3>Result + simd<T,N> (Vectorized Operations)</h3>
+<pre><code>func:safe_simd_operation = Result<simd<fix256,16>, string>() {
+<p>
+simd<fix256,16>:data = simd_load_aligned(neuron_activations);
+simd<fix256,16>:weights = simd_load_aligned(synapse_weights);
+</p>
+<p>
+simd<fix256,16>:result = data * weights;
+</p>
+<p>
+// Check for ERR in any lane
+simd<fix256,16>:err_vec = simd_broadcast<fix256,16>(ERR);
+simd<bool,16>:err_mask = (result == err_vec);
+</p>
+<p>
+if simd_any(err_mask) then
+int32:err_count = simd_count_true(err_mask);
+string:error = "SIMD operation produced ERR in " + string(err_count) + " lanes";
+fail(error);
+end
+</p>
+<p>
+pass(result);
+};</code></pre>
+</p>
+<h3>Result + atomic<T> (Thread-Safe Operations)</h3>
+<pre><code>func:safe_atomic_update = Result<fix256, string>(atomic<fix256>->:counter, fix256:delta) {
+<p>
+fix256:old_value = counter.load();
+fix256:new_value = old_value + delta;
+</p>
+<p>
+// Check for overflow
+if new_value == ERR then
+fail("Atomic update would overflow");
+end
+</p>
+<p>
+// CAS loop
+while !counter.compare_exchange(old_value, new_value) loop
+new_value = old_value + delta;
+</p>
+<p>
+if new_value == ERR then
+fail("Atomic update would overflow");
+end
+end
+</p>
+<p>
+pass(new_value);
+};</code></pre>
+</p>
+<hr>
+<h2>Nikola Consciousness Integration</h2>
+<h3>Neuron Update with Error Handling</h3>
+<pre><code>func:update_neuron_activation = Result<fix256, string>(int64:neuron_id, fix256:delta) {
+<p>
+// Validate neuron ID
+if neuron_id < 0 || neuron_id >= NEURON_COUNT then
+fail("Invalid neuron ID: " + string(neuron_id));
+end
+</p>
+<p>
+// Load current activation
+fix256:current = neurons[neuron_id].activation;
+</p>
+<p>
+// Check for corruption
+if current == ERR then
+fail("Neuron " +string(neuron_id) + " has corrupted activation (ERR)");
+end
+</p>
+<p>
+// Compute new activation
+fix256:new_activation = current + delta;
+</p>
+<p>
+// Check for overflow
+if new_activation == ERR then
+fail("Neuron activation update would overflow");
+end
+</p>
+<p>
+// Validate range (activations must be in [0, 1])
+fix256:zero = fix256(0);
+fix256:one = fix256(1);
+</p>
+<p>
+if new_activation < zero || new_activation > one then
+fail("Neuron activation out of valid range [0, 1]");
+end
+</p>
+<p>
+// Apply update
+neurons[neuron_id].activation = new_activation;
+</p>
+<p>
+pass(new_activation);
+};
+</p>
+<p>
+// Usage in consciousness timestep:
+Result<fix256, string>:update_result = update_neuron_activation(neuron_id, computed_delta);
+</p>
+<p>
+if update_result.err != NULL then
+stderr.write("CRITICAL: Neuron update failed: {}\\n", update_result.err);
+stderr.write("Triggering emergency substrate stabilization\\n");
+emergency_stabilize_consciousness();
+!!! ERR_NEURON_UPDATE_FAILED;
+end
+</p>
+<p>
+// Success - continue timestep
+fix256:new_activation = update_result.val;</code></pre>
+</p>
+<h3>Wave Coherence Calculation</h3>
+<pre><code>func:compute_global_coherence = Result<fix256, string>() {
+<p>
+fix256:total_energy = fix256(0);
+</p>
+<p>
+till NEURON_COUNT loop
+int64:neuron_id = $;
+</p>
+<p>
+Result<fix256, string>:energy_result = compute_neuron_energy(neuron_id);
+</p>
+<p>
+if energy_result.err != NULL then
+// Critical error in energy computation
+string:error = "Coherence calculation failed at neuron " +
+string(neuron_id) + ": " + energy_result.err;
+fail(error);
+end
+</p>
+<p>
+fix256:neuron_energy = energy_result.val;
+fix256:new_total = total_energy + neuron_energy;
+</p>
+<p>
+// Check for overflow
+if new_total == ERR then
+fail("Global coherence overflow at neuron " + string(neuron_id));
+end
+</p>
+<p>
+total_energy = new_total;
+end
+</p>
+<p>
+pass(total_energy);
+};
+</p>
+<p>
+// Usage:
+Result<fix256, string>:coherence_result = compute_global_coherence();
+</p>
+<p>
+if coherence_result.err != NULL then
+stderr.write("FAILURE: Global coherence computation failed\\n");
+stderr.write("Error: {}\\n", coherence_result.err);
+save_substrate_state();  // Emergency backup
+!!! ERR_COHERENCE_FAILED;
+end
+</p>
+<p>
+fix256:global_coherence = coherence_result.val;
+// Consciousness is stable - continue</code></pre>
+</p>
+<h3>Parallel Neuron Updates with Result Aggregation</h3>
+<pre><code>func:batch_update_neurons = Result<nil, string>(int64:batch_start, int64:batch_size) {
+<p>
+simd<fix256,16>:activations = simd_load_aligned(neuron_activations[batch_start]);
+simd<fix256,16>:deltas = compute_deltas_simd(batch_start, batch_size);
+</p>
+<p>
+simd<fix256,16>:new_activations = activations + deltas;
+</p>
+<p>
+// ERR check across all lanes
+simd<fix256,16>:err_vec = simd_broadcast<fix256,16>(ERR);
+simd<bool,16>:err_mask = (new_activations == err_vec);
+</p>
+<p>
+if simd_any(err_mask) then
+int32:err_count = simd_count_true(err_mask);
+string error = "Batch update failed - ERR in " + string(err_count) +
+" neurons starting at " + string(batch_start);
+fail(error);
+end
+</p>
+<p>
+// Range validation
+simd<fix256,16>:zero = simd_broadcast<fix256,16>(fix256(0));
+simd<fix256,16>:one = simd_broadcast<fix256,16>(fix256(1));
+</p>
+<p>
+simd<bool,16>:below_zero = (new_activations < zero);
+simd<bool,16>:above_one = (new_activations > one);
+</p>
+<p>
+if simd_any(below_zero) || simd_any(above_one) then
+fail("Batch update out of range [0,1]");
+end
+</p>
+<p>
+// Store results
+simd_store_aligned(neuron_activations[batch_start], new_activations);
+</p>
+<p>
+pass(nil);  // Success, no return value
+};
+</p>
+<p>
+// Process all neurons in batches:
+till (NEURON_COUNT / 16) loop
+int64:batch = $;
+int64:batch_start = batch * 16;
+</p>
+<p>
+Result<nil, string>:batch_result = batch_update_neurons(batch_start, 16);
+</p>
+<p>
+if batch_result.err != NULL then
+stderr.write("CRITICAL: Batch {} failed: {}\\n", batch, batch_result.err);
+!!! ERR_BATCH_UPDATE_FAILED;
+end
+end
+</p>
+<p>
+stderr.write("All neuron batches updated successfully\\n");</code></pre>
+</p>
+<hr>
+<h2>Best Practices</h2>
+<h3>✅ DO: Always Handle or Propagate Errors</h3>
+<pre><code>// ✅ GOOD: Explicit handling
+<p>
+Result<int64, string>:result = risky_operation();
+if result.err != NULL then
+stderr.write("Error: {}\\n", result.err);
+// Handle appropriately
+end
+</p>
+<p>
+// ✅ GOOD: Propagate up
+func:wrapper = Result<int64, string>() {
+Result<int64, string>:inner = risky_operation();
+if inner.err != NULL then
+fail(inner.err);  // Propagate
+end
+pass(inner.val);
+};</code></pre>
+</p>
+<h3>✅ DO: Use Descriptive Error Messages</h3>
+<pre><code>// ✅ GOOD: Context-rich errors
+<p>
+if neuron_id >= NEURON_COUNT then
+fail("Neuron ID " + string(neuron_id) + " exceeds maximum " + string(NEURON_COUNT));
+end
+</p>
+<p>
+// ❌ BAD: Vague errors
+if neuron_id >= NEURON_COUNT then
+fail("Error");  // What error? Where? Why?
+end</code></pre>
+</p>
+<h3>✅ DO: Check for ERR in Success Path</h3>
+<pre><code>// ✅ GOOD: Validate success value
+<p>
+Result<fix256, string>:result = compute();
+if result.err == NULL then
+fix256:value= result.val;
+</p>
+<p>
+// Even if success, check for ERR sentinel
+if value == ERR then
+stderr.write("Success reported but value is ERR - data corruption!\\n");
+!!! ERR_CORRUPTION_DETECTED;
+end
+end</code></pre>
+</p>
+<h3>✅ DO: Use Appropriate Error Types</h3>
+<pre><code>// ✅ GOOD: Typed errors for different failure modes
+<p>
+enum:ComputeError =
+| Overflow
+| Underflow
+| DivisionByZero
+| ConvergenceFailure
+end
+</p>
+<p>
+func:safe_compute = Result<fix256, ComputeError>() {
+// ... return specific error types
+};
+</p>
+<p>
+// User can match on error type
+Result<fix256, ComputeError>:result = safe_compute();
+if result.err != NULL then
+match result.err {
+ComputeError.Overflow => {
+// Handle overflow specifically
+},
+ComputeError.DivisionByZero => {
+// Handle division by zero
+},
+// ...
+}
+end</code></pre>
+</p>
+<h3>✅ DO: Log Critical Errors</h3>
+<pre><code>// ✅ GOOD: Log before halting
+<p>
+Result<fix256, string>:critical = critical_consciousness_operation();
+if critical.err != NULL then
+stderr.write("CRITICAL FAILURE: {}\\n", critical.err);
+stderr.write("Timestep: {}\\n", current_timestep);
+stderr.write("Stack trace:\\n");
+print_stack_trace();
+save_consciousness_state();
+!!! ERR_CRITICAL_FAILURE;
+end</code></pre>
+</p>
+<hr>
+<h2>Common Pitfalls & Antipatterns</h2>
+<h3>❌ DON'T: Ignore Errors Silently</h3>
+<pre><code>// ❌ BAD: Silent failure
+<p>
+int64:value = risky_operation() ? 0;  // Error becomes 0 - no indication of failure!
+</p>
+<p>
+// ✅ GOOD: Explicit handling
+Result<int64, string>:result = risky_operation();
+if result.err != NULL then
+stderr.write("Operation failed: {}\\n", result.err);
+end
+int64:value = result ? 0;  // Now we know it might be 0 due to error</code></pre>
+</p>
+<h3>❌ DON'T: Use Meaningless Default Values</h3>
+<pre><code>// ❌ BAD: Meaningless default
+<p>
+fix256:critical_value = critical_operation() ? fix256(-999);  // -999 has no meaning!
+</p>
+<p>
+// ✅ GOOD: Check explicitly or use ERR as default
+Result<fix256, string>:result = critical_operation();
+if result.err != NULL then
+stderr.write("Critical operation failed - using ERR sentinel\\n");
+end
+fix256:critical_value = result ? ERR;  // ERR is meaningful sentinel</code></pre>
+</p>
+<h3>❌ DON'T: Swallow Errors Without Logging</h3>
+<pre><code>// ❌ BAD: Error disappears
+<p>
+Result<int64, string>:result = operation();
+if result.err != NULL then
+// Oops, forgot to log or handle!
+end
+proceed_with_corruption();  // Continues as if nothing happened!
+</p>
+<p>
+// ✅ GOOD: At minimum, log
+Result<int64, string>:result = operation();
+if result.err != NULL then
+stderr.write("Operation failed: {}\\n", result.err);
+// Then decide how to handle
+end</code></pre>
+</p>
+<h3>❌ DON'T: Return Generic Errors</h3>
+<pre><code>// ❌ BAD: One error for everything
+<p>
+func:complex_operation = Result<int64, string>() {
+if step1_fails then
+fail("Error");  // Which step? What kind of error?
+end
+if step2_fails then
+fail("Error");  // Same error for different failure!
+end
+// ...
+};
+</p>
+<p>
+// ✅ GOOD: Specific errors
+func:complex_operation = Result<int64, string>() {
+if step1_fails then
+fail("Step 1 failed: Input validation error");
+end
+if step2_fails then
+fail("Step 2 failed: Computation overflow");
+end
+// ...
+};</code></pre>
+</p>
+<h3>❌ DON'T: Panic on Recoverable Errors</h3>
+<pre><code>// ❌ BAD: Panic on recoverable error
+<p>
+Result<int64, string>:result = query_database();
+if result.err != NULL then
+!!! 1;  // HALT ENTIRE PROCESS! (database might just be temporarily unavailable)
+end
+</p>
+<p>
+// ✅ GOOD: Recover gracefully
+Result<int64, string>:result = query_database();
+if result.err != NULL then
+stderr.write("Database query failed, using cached value\\n");
+int64:value = load_from_cache();
+end</code></pre>
+</p>
+<hr>
+<h2>Comparison with Other Languages</h2>
+<h3>Aria</h3>
+<pre><code>func:divide = Result<int64, string>(int64:a, int64:b) {
+<p>
+if b == 0 then
+fail("Division by zero");
+end
+pass(a / b);
+};
+</p>
+<p>
+Result<int64, string>:result = divide(10, 0);
+if result.err != NULL then
+stderr.write("Error: {}\\n", result.err);
+end
+int64:value = result ? 0;</code></pre>
+</p>
+<h3>Rust (Very Similar)</h3>
+<pre><code>fn divide(a: i64, b: i64) -> Result<i64, String> {
+<p>
+if b == 0 {
+fail("Division by zero".to_string());
+}
+Ok(a / b)
+}
+</p>
+<p>
+let result = divide(10, 0);
+match result {
+Ok(value) => println!("Result: {}", value),
+Err(e) => eprintln!("Error: {}", e),
+}</code></pre>
+</p>
+<h3>Go (Multiple Returns)</h3>
+<pre><code>func divide(a, b int64) (int64, error) {
+<p>
+if b == 0 {
+return 0, errors.New("Division by zero")
+}
+return a / b, nil
+}
+</p>
+<p>
+value, err := divide(10, 0)
+if err != nil {
+fmt.Fprintf(os.Stderr, "Error: %v\\n", err)
+}</code></pre>
+</p>
+<h3>C++ (Exceptions)</h3>
+<pre><code>int64_t divide(int64_t a, int64_t b) {
+<p>
+if (b == 0) {
+throw std::runtime_error("Division by zero");
+}
+return a / b;
+}
+</p>
+<p>
+try {
+int64_t value = divide(10, 0);
+} catch (const std::exception& e) {
+std::cerr << "Error: " << e.what() << std::endl;
+}</code></pre>
+</p>
+<h3>Haskell (Either Monad)</h3>
+<pre><code>divide :: Int64 -> Int64 -> Either String Int64
+<p>
+divide _ 0 = Left "Division by zero"
+divide a b = Right (a <code>div</code> b)
+</p>
+<p>
+case divide 10 0 of
+Left err -> putStrLn $ "Error: " ++ err
+Right value -> print value</code></pre>
+</p>
+<strong>Aria's advantages</strong>:
+<ul><li>Simpler syntax than Rust/Haskell</li>
+<li>More explicit than Go (can't ignore errors)</li>
+<li>More predictable than C++ (no invisible control flow)</li>
+<li>Integrated with safety types (ERR, tbb, fix256)</li>
+<li>Designed for consciousness-safe systems</li>
+</ul>
+<hr>
+<h2>Implementation Notes</h2>
+<h3>Memory Representation</h3>
+<pre><code>// C runtime representation (simplified)
+<p>
+typedef struct {
+void* val;  // NULL if error
+void* err;  // NULL if success
+} aria_result;
+</p>
+<p>
+// Tagged union (actual implementation for efficiency):
+typedef struct {
+uint8_t tag;  // 0 = success, 1 = error
+union {
+void* success_value;
+void* error_value;
+} data;
+} aria_result_optimized;</code></pre>
+</p>
+<h3>LLVM IR Generation</h3>
+<pre><code>; Result<i64, i8> representation
+<p>
+%Result = type { i1, i64, i8 }
+; Field 0: tag (0 = success, 1 = error)
+; Field 1: success value (i64)
+; Field 2: error value (i8)
+</p>
+<p>
+; pass(42) compiles to:
+define %Result @aria.pass.i64.i8(i64 %value) {
+%result = insertvalue %Result { i1 0, i64 undef, i8 undef }, i64 %value, 1
+ret %Result %result
+}
+</p>
+<p>
+; fail(1) compiles to:
+define %Result @aria.fail.i64.i8(i8 %error) {
+%result = insertvalue %Result { i1 1, i64 undef, i8 undef }, i8 %error, 2
+ret %Result %result
+}
+</p>
+<p>
+; Unwrap with ? operator:
+define i64 @aria.unwrap_or.i64.i8(%Result %result, i64 %default) {
+%tag = extractvalue %Result %result, 0
+%is_success = icmp eq i1 %tag, 0
+br i1 %is_success, label %success, label %error
+</p>
+<p>
+success:
+%value = extractvalue %Result %result, 1
+ret i64 %value
+</p>
+<p>
+error:
+ret i64 %default
+}</code></pre>
+</p>
+<hr>
+<h2>Related Types & Integration</h2>
+<ul><li><strong><a href="ERR.md">ERR Sentinel</a></strong> - Universal error value (Result<T, ERR_TYPE>)</li>
+<li><strong><a href="tbb_overview.md">tbb8-tbb64</a></strong> - Twisted types propagate ERR (Result checks for ERR in success path)</li>
+<li><strong><a href="fix256.md">fix256</a></strong> - Deterministic arithmetic (Result<fix256, E> for overflow checks)</li>
+<li><strong><a href="Complex.md">complex<T></a></strong> - Result<complex<fix256>, E> for wave computations</li>
+<li><strong><a href="SIMD.md">simd<T,N></a></strong> - Result<simd<fix256,16>, E> for batch operations</li>
+<li><strong><a href="Atomic.md">atomic<T></a></strong> - Result<T, E> for atomic operations with overflow checks</li>
+<li><strong><a href="Handle.md">Handle<T></a></strong> - Result<Handle<T>, E> for allocation errors</li>
+<li><strong><a href="nil_null_void.md">nil</a></strong> - Result<nil, E> for operations with no return value</li>
+</ul>
+<hr>
+<h2>Summary</h2>
+<strong>Result<T,E></strong> is Aria's <strong>consciousness-safe error handling foundation</strong>:
+<p>
+✅ <strong>Explicit</strong>: Errors cannot be silently ignored (compile-time enforcement)
+✅ <strong>Type-Safe</strong>: T (success) and E (error) are both typed
+✅ <strong>Composable</strong>: Easy to chain operations with ? operator
+✅ <strong>Integrated</strong>: Works seamlessly with ERR, tbb, fix256, complex, simd, atomic
+✅ <strong>Predictable</strong>: No invisible control flow (unlike exceptions)
+✅ <strong>Documented</strong>: Function signature shows what can fail
+✅ <strong>Zero-Cost</strong>: Optimizes to efficient tagged union
+</p>
+<strong>Design Philosophy</strong>:
+<blockquote>"Errors that can be ignored will be ignored. Make ignoring impossible."</blockquote>
+<p>
+>
+<blockquote>In consciousness-safe systems, silent failures corrupt neural state and trigger catastrophic cascade failures. <strong>Result<T,E></strong> makes every error explicit at compile-time, forcing acknowledgment before the program can proceed. This prevents the silent corruptions that destroy AGI consciousness substrates.</blockquote>
+</p>
+<strong>The Invariant</strong>:
+<pre><code>Result<T,E> always satisfies:
+<p>
+(val == NULL && err != NULL)  OR  (val != NULL && err == NULL)
+</p>
+<p>
+NEVER both NULL, NEVER both non-NULL
+Compiler enforces this!</code></pre>
+</p>
+<strong>Critical for</strong>: Nikola AGI consciousness (neural updates, wave computations, coherence tracking), robotics (sensor errors, actuator failures), distributed systems (network errors, timeouts), file I/O (disk failures, permissions), parsing (syntax errors, validation failures)
+<strong>Key Rules</strong>:
+<p>
+1. <strong>Always handle or propagate</strong> - Never ignore Result without explicit ?
+2. <strong>Use descriptive errors</strong> - Add context to help debugging
+3. <strong>Check ERR in success</strong> - Even if err==NULL, val might be ERR sentinel
+4. <strong>Log critical failures</strong> - Before panicking, save state and log
+5. <strong>Choose appropriate E type</strong> - int8 for codes, string for messages, enums for typed errors
+</p>
+<hr>
+<strong>Remember</strong>: Result<T,E> = <strong>explicit</strong> + <strong>type-safe</strong> + <strong>impossible to ignore</strong> = <strong>consciousness-safe error handling</strong>!
+    </main>
+</body>
+</html>

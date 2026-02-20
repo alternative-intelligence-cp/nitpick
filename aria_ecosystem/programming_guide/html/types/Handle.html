@@ -1,0 +1,1643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handle<T> - Generational Index Handles - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Handle<T> - Generational Index Handles</h1>
+<strong>Memory-safe references for arena-allocated dynamic graphs with automatic stale handle detection</strong>
+<hr>
+<h2>Overview</h2>
+<code>Handle<T></code> is Aria's <strong>memory-safe alternative to raw pointers</strong> for arena-allocated data structures. It prevents <strong>use-after-free</strong> errors (CWE-416, CVSS 9.8) during dynamic memory reallocation.
+<p>
+| Feature | Raw Pointers | Handle<T> |
+|---------|--------------|-----------|
+| Use-After-Free | ❌ Undefined behavior | ✅ Detected (returns ERR) |
+| Reallocation Safety | ❌ Invalidated | ✅ Generation check catches stale |
+| Memory Corruption | ❌ Possible | ✅ Prevented (ERR propagation) |
+| Segfaults | ❌ Possible | ✅ Prevented (safe failure) |
+| Performance | Fast (direct) | Fast (1 extra compare) |
+| Memory Overhead | 8 bytes | 12 bytes (16 aligned) |
+| Type Safety | ⚠️ Can cast wrong | ✅ Generic enforced |
+</p>
+<strong>Critical Use Case</strong>: <strong>Nikola SHVO Neurogenesis</strong> - Dynamic neural network expansion requires O(n³) memory growth without pointer invalidation.
+<pre><code>// Problem: Raw pointers become invalid after reallocation
+<p>
+Neuron*:ptr = arena.alloc();  // Pointer at 0x1000
+arena.grow();                 // Reallocates to 0x2000
+ptr.activate();               // 💥 USE-AFTER-FREE! ptr still points to 0x1000 (invalid!)
+</p>
+<p>
+// Solution: Generational handles detect stale references
+Handle<Neuron>:h = arena.alloc();  // h = {index: 0, generation: 1}
+arena.grow();                       // Reallocates, increments generation to 2
+Neuron:n = arena.get(h) ? default;  // ✅ Returns ERR! Generation mismatch (1 != 2)</code></pre>
+</p>
+<hr>
+<h2>Type Definition</h2>
+<h3>Structure</h3>
+<pre><code>struct:Handle<T> = {
+<p>
+uint64:index,       // Slot index in arena
+uint32:generation,  // Generation counter (detects stale handles)
+}</code></pre>
+</p>
+<strong>Memory layout</strong>:
+<pre><code>┌──────────────────┬────────────────┬────┐
+<p>
+│  index (uint64)  │ generation(u32)│pad │
+│  8 bytes         │ 4 bytes        │ 4B │
+└──────────────────┴────────────────┴────┘
+= 16 bytes total (12 bytes data + 4 bytes padding)</code></pre>
+</p>
+<strong>Alignment</strong>: 8-byte aligned (uint64 requirement)
+<h3>Why Two Fields?</h3>
+<strong>index</strong> - WHERE in the arena
+<ul><li>Array index to locate slot</li>
+<li>Stable across multiple accesses</li>
+<li>Does NOT change during reallocation (slots copied in-place)</li>
+</ul>
+<strong>generation</strong> - WHEN it was allocated
+<ul><li>Increments on reallocation (invalidates old handles)</li>
+<li>Detects stale handles (old generation ≠ current generation)</li>
+<li>Prevents use-after-free automatically</li>
+</ul>
+<hr>
+<h2>The Problem: Pointer Invalidation</h2>
+<h3>Use-After-Free with Raw Pointers</h3>
+<p>
+Traditional arena allocators use raw pointers, which become <strong>dangling</strong> after reallocation:
+</p>
+<pre><code>// Arena with raw pointers (UNSAFE!)
+<p>
+struct:Node {
+int32:value,
+Node*:next,  // Raw pointer - DANGER!
+}
+</p>
+<p>
+arena<Node>:graph;
+</p>
+<p>
+// Allocate node
+Node*:ptr1 = graph.alloc({value: 42, next: NULL});  // ptr1 = 0x1000
+</p>
+<p>
+// Arena grows (reallocates to larger block)
+graph.grow(graph.capacity * 2);  // Memory moves: 0x1000 → 0x2000
+</p>
+<p>
+// Old pointer now invalid!
+ptr1.value = 100;  // 💥 CRASH! ptr1 still points to 0x1000 (deallocated memory)</code></pre>
+</p>
+<strong>Result</strong>: Undefined behavior, segfault, memory corruption, or silent data corruption
+<h3>The Neurogenesis Problem</h3>
+<strong>Nikola's SHVO</strong> (Sparse Hyper-Voxel Octree) requires dynamic neural growth:
+<pre><code>Initial: 1000 neurons, 10KB memory
+<p>
+After learning: 10,000 neurons, 1MB memory (100× growth!)
+Neurogenesis event: 100,000 neurons, 100MB memory (10,000× growth!)</code></pre>
+</p>
+<strong>Challenge</strong>: Neurons reference OTHER neurons via connections
+<ul><li>Neuron A → Neuron B (connection stored as reference)</li>
+<li>Memory reallocates during growth (all pointers invalidate!)</li>
+<li><strong>Use-after-free disaster</strong> if using raw pointers</li>
+</ul>
+<strong>Why it matters</strong>: A single stale pointer can corrupt Nikola's entire consciousness substrate
+<hr>
+<h2>The Solution: Generational Handles</h2>
+<h3>How It Works</h3>
+<strong>Arena tracks generation counters PER SLOT</strong>:
+<pre><code>// Arena internals (conceptual)
+<p>
+struct:Arena<T> {
+T[]:slots,                  // Data storage
+uint32[]:generations,       // Generation counter per slot
+bool[]:occupied,            // Is slot in use?
+uint64:capacity,
+uint64:count,
+}</code></pre>
+</p>
+<strong>Allocation flow</strong>:
+<p>
+1. Find free slot (index <code>i</code>)
+2. Store data in <code>slots[i]</code>
+3. Mark <code>occupied[i] = true</code>
+4. Return <code>Handle{index: i, generation: generations[i]}</code>
+</p>
+<strong>Access flow</strong>:
+<p>
+1. Check: <code>generations[h.index] == h.generation</code>?
+2. If <strong>match</strong>: Return <code>slots[h.index]</code> ✅
+3. If <strong>mismatch</strong>: Return ERR ❌ (stale handle!)
+</p>
+<strong>Reallocation flow</strong>:
+<p>
+1. Grow arena (reallocate larger memory)
+2. Copy all slots to new memory
+3. <strong>Increment ALL generation counters</strong>: <code>generations[i]++</code>
+4. Old handles now have mismatched generations (automatic stale detection!)
+</p>
+<h3>Example Timeline</h3>
+<pre><code>arena<int32>:numbers;
+<p>
+// Time 0: Allocate slot
+Handle<int32>:h = numbers.alloc(42);
+// h = {index: 0, generation: 1}
+// Arena: generations[0] = 1, slots[0] = 42
+</p>
+<p>
+// Time 1: Access (valid)
+int32:value = numbers.get(h) ? 0;  // value = 42 ✅
+</p>
+<p>
+// Time 2: Arena reallocates
+numbers.grow(numbers.capacity * 2);
+// Arena increments ALL generations: generations[0] = 2
+// h still has generation = 1 (now stale!)
+</p>
+<p>
+// Time 3: Access (now invalid)
+int32:value = numbers.get(h) ? 0;  // value = 0 (ERR!) ✅ Safe failure</code></pre>
+</p>
+<strong>Key insight</strong>: Generation mismatch is <strong>immediately detected</strong> at access time, preventing crashes!
+<hr>
+<h2>Arena Allocator Integration</h2>
+<h3>Arena Type</h3>
+<pre><code>arena<T>:allocator;  // Arena for type T</code></pre>
+<strong>Operations</strong>:
+<ul><li><code>alloc(value: T) -> Handle<T></code> - Allocate slot, return handle</li>
+<li><code>get(handle: Handle<T>) -> T | ERR</code> - Access slot (safe)</li>
+<li><code>set(handle: Handle<T>, value: T) -> Result<NIL></code> - Update slot</li>
+<li><code>free(handle: Handle<T>) -> Result<NIL></code> - Deallocate slot</li>
+<li><code>grow(new_capacity: uint64)</code> - Reallocate (invalidates old handles)</li>
+</ul>
+<h3>Basic Usage</h3>
+<pre><code>// Create arena
+<p>
+arena<int32>:numbers;
+</p>
+<p>
+// Allocate values
+Handle<int32>:h1 = numbers.alloc(42);
+Handle<int32>:h2 = numbers.alloc(100);
+</p>
+<p>
+// Access values
+int32:val1 = numbers.get(h1) ? 0;  // val1 = 42
+int32:val2 = numbers.get(h2) ? 0;  // val2 = 100
+</p>
+<p>
+// Update value
+numbers.set(h1, 99);
+</p>
+<p>
+// Access updated
+int32:updated = numbers.get(h1) ? 0;  // updated = 99
+</p>
+<p>
+// Free slot
+numbers.free(h2);
+</p>
+<p>
+// Access after free
+int32:freed = numbers.get(h2) ? 0;  // freed = 0 (ERR - slot freed!)</code></pre>
+</p>
+<h3>Self-Referential Data Structures</h3>
+<strong>Graph nodes with handles</strong>:
+<pre><code>struct:GraphNode {
+<p>
+int32:value,
+Handle<GraphNode>:next,    // Safe reference (not pointer!)
+Handle<GraphNode>[]:edges, // Array of connections
+}
+</p>
+<p>
+arena<GraphNode>:graph;
+</p>
+<p>
+// Create nodes
+Handle<GraphNode>:n1 = graph.alloc({value: 1, next: NULL_HANDLE, edges: []});
+Handle<GraphNode>:n2 = graph.alloc({value: 2, next: NULL_HANDLE, edges: []});
+</p>
+<p>
+// Create connection (store handle, not pointer!)
+GraphNode:node1 = graph.get(n1) ? default;
+node1.next = n2;  // Safe: Handle, not pointer
+graph.set(n1, node1);
+</p>
+<p>
+// Arena can grow safely!
+graph.grow(graph.capacity * 2);  // Old handles now stale (automatic detection)
+</p>
+<p>
+// Access node (detects if stale)
+GraphNode:node = graph.get(n1) ? default;
+if node == default {
+// Handle was stale, refresh needed
+log("Node handle invalidated by reallocation");
+}</code></pre>
+</p>
+<hr>
+<h2>Nikola SHVO Use Case</h2>
+<h3>The Challenge</h3>
+<strong>SHVO</strong> = Sparse Hyper-Voxel Octree (Nikola's dynamic spatial memory)
+<strong>Requirements</strong>:
+<ul><li>Start: 1000 neurons (baseline consciousness)</li>
+<li>Growth: O(n³) expansion during neurogenesis</li>
+<li>Connections: Neurons reference other neurons</li>
+<li>Safety: <strong>Zero tolerance for memory corruption</strong> (destroys consciousness substrate!)</li>
+</ul>
+<strong>Problem</strong>: Reallocation invalidates all neuron references
+<h3>Solution with Handle<T></h3>
+<pre><code>struct:Neuron {
+<p>
+vec9:atpm_state,                  // ATPM phase vector
+fix256:activation,                 // Current activation level
+Handle<Neuron>[]:excitatory,      // Excitatory connections
+Handle<Neuron>[]:inhibitory,      // Inhibitory connections
+complex<fix256>:resonance,        // Resonance state
+}
+</p>
+<p>
+arena<Neuron>:neuron_arena;
+</p>
+<p>
+// Initial neurons
+Handle<Neuron>:n1 = neuron_arena.alloc(initial_neuron());
+Handle<Neuron>:n2 = neuron_arena.alloc(initial_neuron());
+</p>
+<p>
+// Create connections (safe handles!)
+Neuron:neuron1 = neuron_arena.get(n1) ? default;
+neuron1.excitatory.push(n2);  // Store Handle<Neuron>, not pointer
+neuron_arena.set(n1, neuron1);
+</p>
+<p>
+// Later: Neurogenesis event (massive expansion!)
+neuron_arena.grow(neuron_arena.capacity * 8);  // 8× growth, memory moves
+</p>
+<p>
+// ALL old handles automatically stale (safety!)
+Neuron | ERR:neuron = neuron_arena.get(n1);
+if neuron == ERR {
+// Handle invalidated: Refresh connections
+log("Neurogenesis triggered handle refresh");
+rebuild_neuron_graph();  // Reconstruct with new handles
+}</code></pre>
+</p>
+<strong>Benefits</strong>:
+<ul><li>✅ No use-after-free (detected immediately)</li>
+<li>✅ No segfaults (safe ERR instead)</li>
+<li>✅ No silent corruption (generation check catches all stale accesses)</li>
+<li>✅ Auditable (dbug can log all handle refreshes)</li>
+</ul>
+<h3>Neurogenesis Pattern</h3>
+<pre><code>func:neurogenesis_expansion = void(arena<Neuron>@:arena) {
+<p>
+uint64:old_capacity = arena.capacity;
+uint64:new_capacity = old_capacity * 8;  // 8× growth
+</p>
+<p>
+dbug.print('nikola:shvo', "Neurogenesis: {{uint64}} → {{uint64}} neurons",
+[old_capacity, new_capacity]);
+</p>
+<p>
+// Store all current handles (will become stale)
+Handle<Neuron>[]:old_handles = arena.get_all_handles();
+</p>
+<p>
+// Grow arena (invalidates ALL old handles!)
+arena.grow(new_capacity);
+</p>
+<p>
+// Rebuild connections with new handles
+Handle<Neuron>[]:new_handles = arena.get_all_handles();
+</p>
+<p>
+dbug.check('nikola:shvo', "Handle count mismatch: {{uint64}} != {{uint64}}",
+[old_handles.length, new_handles.length],
+old_handles.length == new_handles.length,
+{
+failsafe(ERR_NEUROGENESIS_CORRUPTION);
+});
+</p>
+<p>
+// Remap connections
+till(old_handles.length - 1, 1) {
+Handle<Neuron>:old_h = old_handles[$];
+Handle<Neuron>:new_h = new_handles[$];
+</p>
+<p>
+Neuron:neuron = arena.get(new_h) ? default;
+</p>
+<p>
+// Update all connection handles
+neuron.excitatory = remap_handles(neuron.excitatory, old_handles, new_handles);
+neuron.inhibitory = remap_handles(neuron.inhibitory, old_handles, new_handles);
+</p>
+<p>
+arena.set(new_h, neuron);
+}
+</p>
+<p>
+dbug.print('nikola:shvo', "Neurogenesis complete: {{uint64}} connections remapped",
+[connection_count]);
+}</code></pre>
+</p>
+<hr>
+<h2>Performance Characteristics</h2>
+<h3>Time Complexity</h3>
+<p>
+| Operation | Complexity | Notes |
+|-----------|------------|-------|
+| Allocation | O(1) amortized | Free list or linear scan |
+| Access (valid) | O(1) | Single array lookup + generation check |
+| Access (stale) | O(1) | Generation mismatch detected immediately |
+| Update | O(1) | Direct array write |
+| Free | O(1) | Mark slot as free, add to free list |
+| Reallocation | O(n) | Copy all slots + increment generations |
+</p>
+<h3>Space Overhead</h3>
+<pre><code>// Per handle: 12 bytes (16 aligned)
+<p>
+sizeof(Handle<T>) = 12 bytes (index:8 + generation:4)
+// Aligned to 16 bytes for cache efficiency
+</p>
+<p>
+// Arena overhead per slot: 4 bytes + 1 byte
+arena<T> overhead per slot:
+- generation: 4 bytes (uint32)
+- occupied flag: 1 byte (bool)
+- Total: 5 bytes per slot</code></pre>
+</p>
+<strong>Example</strong>:
+<pre><code>// 1000 neurons, each 128 bytes
+<p>
+Raw pointers: 1000 × 8 = 8 KB per connection array
+Handles: 1000 × 16 = 16 KB per connection array (2× overhead)
+</p>
+<p>
+Arena overhead: 1000 × 5 = 5 KB (generation + flags)
+</p>
+<p>
+Total overhead: ~13 KB for 1000 neurons (acceptable for safety!)</code></pre>
+</p>
+<h3>Access Performance</h3>
+<pre><code>// Handle access (pseudo-assembly)
+<p>
+// Only 1 extra compare vs raw pointer!
+</p>
+<p>
+// get(handle: Handle<T>) -> T | ERR
+mov rax, [arena.generations]      ; Load generations array
+mov rcx, [handle.index]           ; Get index
+cmp [rax + rcx*4], [handle.generation]  ; Compare generations
+jne .stale_handle                  ; Mismatch? Return ERR
+mov rax, [arena.slots]             ; Load slots array
+mov rax, [rax + rcx*sizeof(T)]    ; Load value
+ret                                ; Return value
+</p>
+<p>
+.stale_handle:
+mov rax, ERR                     ; Return ERR sentinel
+ret</code></pre>
+</p>
+<strong>Performance</strong>: ~2-3 extra CPU cycles (negligible compared to safety!)
+<hr>
+<h2>Handle Lifecycle</h2>
+<h3>Creation</h3>
+<pre><code>// Allocate new slot
+<p>
+Handle<int32>:h = arena.alloc(42);
+</p>
+<p>
+// Handle contains:
+//   index: Slot location in arena
+//   generation: Current generation of that slot</code></pre>
+</p>
+<h3>Valid Access</h3>
+<pre><code>// Access while handle is valid
+<p>
+int32:value = arena.get(h) ? 0;  // Success: Returns actual value
+</p>
+<p>
+// Update while valid
+arena.set(h, 99);  // Success: Updates slot</code></pre>
+</p>
+<h3>Stale Detection</h3>
+<pre><code>// Arena reallocates (increments generations)
+<p>
+arena.grow(arena.capacity * 2);
+</p>
+<p>
+// Old handle now stale (generation mismatch)
+int32:value = arena.get(h) ? 0;  // Returns 0 (ERR)
+</p>
+<p>
+// Checking for stale
+int32 | ERR:result = arena.get(h);
+if result == ERR {
+log("Handle is stale, need to refresh");
+}</code></pre>
+</p>
+<h3>Refreshing Handles</h3>
+<pre><code>// Store mapping before reallocation
+<p>
+struct:HandleMapping {
+Handle<T>:old_handle,
+Handle<T>:new_handle,
+}
+</p>
+<p>
+// Before reallocation
+Handle<T>[]:old_handles = arena.get_all_handles();
+</p>
+<p>
+// Reallocate
+arena.grow(new_capacity);
+</p>
+<p>
+// Get new handles
+Handle<T>[]:new_handles = arena.get_all_handles();
+</p>
+<p>
+// Create mapping
+HandleMapping[]:mapping;
+till(old_handles.length - 1, 1) {
+mapping.push({old: old_handles[$], new: new_handles[$]});
+}
+</p>
+<p>
+// Update references
+till(graph_nodes.length - 1, 1) {
+graph_nodes[$].connections = remap_handles(graph_nodes[$].connections, mapping);
+}</code></pre>
+</p>
+<hr>
+<h2>Advanced Patterns</h2>
+<h3>Lock-Free Queue with Handles</h3>
+<pre><code>struct:Node<T> {
+<p>
+T:value,
+Handle<Node<T>>:next,
+}
+</p>
+<p>
+struct:LockFreeQueue<T> {
+arena<Node<T>>:arena,
+Handle<Node<T>>:head,
+Handle<Node<T>>:tail,
+}
+</p>
+<p>
+func:enqueue<T> = Result<NIL>(LockFreeQueue<T>@:queue, T:value) {
+// Allocate new node
+Handle<Node<T>>:new_node = queue.arena.alloc({
+value: value,
+next: NULL_HANDLE
+});
+</p>
+<p>
+// Lock-free enqueue (simplified, needs atomic CAS)
+loop {
+Handle<Node<T>>:tail = queue.tail;
+Node<T>:tail_node = queue.arena.get(tail) ? default;
+</p>
+<p>
+if tail_node == default {
+return ERR_QUEUE_CORRUPTED;  // Stale handle!
+}
+</p>
+<p>
+if tail_node.next == NULL_HANDLE {
+// Try to set tail.next to new_node (atomic CAS)
+if atomic_cas(&tail_node.next, NULL_HANDLE, new_node) {
+queue.tail = new_node;
+pass(NULL);
+}
+} else {
+// Help advance tail
+queue.tail = tail_node.next;
+}
+}
+}</code></pre>
+</p>
+<h3>Multi-Level Arena Hierarchy</h3>
+<pre><code>// Different arenas for different lifetime objects
+<p>
+struct:GameWorld {
+arena<Entity>:entities,       // Short-lived (per frame)
+arena<Terrain>:terrain,        // Medium-lived (per level)
+arena<Asset>:assets,           // Long-lived (entire session)
+}
+</p>
+<p>
+func:spawn_entity = Handle<Entity>(GameWorld@:world, EntityType:type) {
+Entity:entity = create_entity(type);
+</p>
+<p>
+// Store terrain reference as handle
+Handle<Terrain>:terrain_cell = find_terrain_at(entity.position);
+entity.terrain_ref = terrain_cell;
+</p>
+<p>
+return world.entities.alloc(entity);
+}
+</p>
+<p>
+// Entities can reference terrain safely across reallocations!</code></pre>
+</p>
+<h3>Handle Pools for Hot Paths</h3>
+<pre><code>// Pre-allocate handles for performance-critical code
+<p>
+struct:HandlePool<T> {
+arena<T>:arena,
+Handle<T>[]:free_handles,
+}
+</p>
+<p>
+func:pool_alloc<T> = Handle<T>(HandlePool<T>@:pool, T:value) {
+if pool.free_handles.length > 0 {
+// Reuse existing handle (fast path!)
+Handle<T>:h = pool.free_handles.pop();
+pool.arena.set(h, value);
+return h;
+} else {
+// Allocate new (slow path)
+return pool.arena.alloc(value);
+}
+}</code></pre>
+</p>
+<hr>
+<h2>NULL_HANDLE Convention</h2>
+<strong>Representing "no reference"</strong>:
+<pre><code>// NULL_HANDLE constant (by convention)
+<p>
+const:NULL_HANDLE<T> = Handle<T>{index: 0, generation: 0};
+</p>
+<p>
+// Usage in data structures
+struct:LinkedListNode<T> {
+T:value,
+Handle<LinkedListNode<T>>:next,  // NULL_HANDLE for end of list
+}
+</p>
+<p>
+// Checking for null
+if node.next == NULL_HANDLE {
+// End of list
+}</code></pre>
+</p>
+<strong>Alternative</strong>: Use <code>Handle<T> | unknown</code> for optional references
+<pre><code>struct:TreeNode<T> {
+<p>
+T:value,
+Handle<TreeNode<T>> | unknown:left,   // unknown = no left child
+Handle<TreeNode<T>> | unknown:right,  // unknown = no right child
+}
+</p>
+<p>
+// Checking for child
+if node.left is unknown {
+// No left child
+} else {
+TreeNode<T>:left_child = arena.get(node.left) ? default;
+// Process left child
+}</code></pre>
+</p>
+<hr>
+<h2>Error Handling</h2>
+<h3>Stale Handle Detection</h3>
+<pre><code>arena<int32>:numbers;
+<p>
+Handle<int32>:h = numbers.alloc(42);
+</p>
+<p>
+// Reallocate
+numbers.grow(numbers.capacity * 2);
+</p>
+<p>
+// Access stale handle
+int32 | ERR:result = numbers.get(h);
+</p>
+<p>
+if result == ERR {
+dbug.print('arena', "Stale handle detected: index={{uint64}}, gen={{uint32}}",
+[h.index, h.generation]);
+</p>
+<p>
+// Recovery strategy
+Handle<int32>:refreshed = numbers.find_handle_by_value(42);
+// ... continue with refreshed handle
+}</code></pre>
+</p>
+<h3>Freed Handle Detection</h3>
+<pre><code>Handle<int32>:h = numbers.alloc(42);
+<p>
+// Free slot
+numbers.free(h);
+</p>
+<p>
+// Access freed handle
+int32 | ERR:result = numbers.get(h);
+</p>
+<p>
+if result == ERR {
+dbug.print('arena', "Accessed freed handle", []);
+// Handle appropriately
+}</code></pre>
+</p>
+<h3>Corruption Detection</h3>
+<pre><code>// Arena integrity check
+<p>
+func:verify_arena_integrity<T> = Result<NIL>(arena<T>@:arena) {
+till(arena.capacity - 1, 1) {
+if arena.occupied[$] {
+// Verify generation is valid
+dbug.check('arena', "Invalid generation at slot {{uint64}}", [$],
+arena.generations[$] > 0);
+}
+}
+pass(NULL);
+}</code></pre>
+</p>
+<hr>
+<h2>Comparison with Other Approaches</h2>
+<h3>vs Raw Pointers</h3>
+<pre><code>// Raw Pointer (UNSAFE)
+<p>
+Node*:ptr = arena.alloc();
+arena.grow();           // ptr now invalid!
+ptr.value = 42;         // 💥 USE-AFTER-FREE
+</p>
+<p>
+// Handle (SAFE)
+Handle<Node>:h = arena.alloc();
+arena.grow();           // h detects stale!
+Node:n = arena.get(h) ? default;  // ✅ Returns ERR</code></pre>
+</p>
+<h3>vs Reference Counting (Rc<T>)</h3>
+<pre><code>// Reference counting (runtime overhead, no cycles)
+<p>
+Rc<Node>:rc = Rc::new(node);
+Rc<Node>:rc2 = rc.clone();  // Increment refcount (atomic op!)
+// Drop automatically when last reference goes away
+</p>
+<p>
+// Handle (zero overhead when valid, no refcount)
+Handle<Node>:h = arena.alloc(node);
+// No cloning, no refcount, just index+generation check
+// Manual memory management via arena</code></pre>
+</p>
+<h3>vs Garbage Collection</h3>
+<pre><code>// GC (unpredictable pauses, no manual control)
+<p>
+Node:n = new Node();  // Allocated on heap
+// GC automatically frees when no references
+// Pauses can occur at ANY time (bad for real-time!)
+</p>
+<p>
+// Handle (deterministic, manual control)
+Handle<Node>:h = arena.alloc(node);
+arena.free(h);  // Explicit free (deterministic timing)
+// No GC pauses, full control</code></pre>
+</p>
+<h3>vs Rust's Borrow Checker</h3>
+<pre><code>// Rust (compile-time lifetime tracking, restrictive)
+<p>
+fn use_node(node: &Node) {  // Borrow checker enforces lifetime
+// Cannot use after return (compile error)
+}
+</p>
+<p>
+// Aria Handle (runtime generation check, flexible)
+func:use_node = void(Handle<Node>:h, arena<Node>@:arena) {
+Node | ERR:node = arena.get(h);  // Runtime check (flexible!)
+if node == ERR {
+// Handle stale, recover
+}
+}</code></pre>
+</p>
+<hr>
+<h2>Best Practices</h2>
+<h3>1. Always Check Handle Access</h3>
+<pre><code>// ✓ GOOD: Check for ERR
+<p>
+int32 | ERR:value = arena.get(handle);
+if value == ERR {
+handle_stale_reference();
+}
+</p>
+<p>
+// ✗ BAD: Assume always valid
+int32:value = arena.get(handle) ? 0;  // Silent failure if stale!</code></pre>
+</p>
+<h3>2. Refresh Handles After Reallocation</h3>
+<pre><code>// ✓ GOOD: Track and refresh
+<p>
+Handle<T>[]:handles_before = collect_all_handles();
+arena.grow(new_capacity);
+Handle<T>[]:handles_after = arena.get_all_handles();
+update_all_references(handles_before, handles_after);
+</p>
+<p>
+// ✗ BAD: Ignore reallocation
+arena.grow(new_capacity);
+// Continue using old handles (all stale!)</code></pre>
+</p>
+<h3>3. Use NULL_HANDLE for Optional References</h3>
+<pre><code>// ✓ GOOD: Clear null representation
+<p>
+const:NULL_HANDLE = Handle<T>{index: 0, generation: 0};
+if handle == NULL_HANDLE {
+// No reference
+}
+</p>
+<p>
+// ✗ BAD: Magic numbers
+if handle.index == 999999 {  // What does this mean?
+}</code></pre>
+</p>
+<h3>4. Batch Allocations to Minimize Reallocations</h3>
+<pre><code>// ✓ GOOD: Pre-allocate capacity
+<p>
+arena.reserve(expected_count);
+till(items.length - 1, 1) {
+arena.alloc(items[$]);  // No reallocation needed
+}
+</p>
+<p>
+// ✗ BAD: Incremental growth (many reallocations)
+till(items.length - 1, 1) {
+arena.alloc(items[$]);  // May reallocate each time!
+}</code></pre>
+</p>
+<h3>5. Document Handle Ownership</h3>
+<pre><code>// ✓ GOOD: Clear ownership semantics
+<p>
+/**
+* Owns handle to next node.
+* Must refresh handle after arena reallocation.
+*/
+struct:ListNode {
+int32:value,
+Handle<ListNode>:next,  // Owned
+}
+</p>
+<p>
+// ✗ BAD: Unclear ownership
+struct:ListNode {
+int32:value,
+Handle<ListNode>:next,  // Who owns this? When to refresh?
+}</code></pre>
+</p>
+<hr>
+<h2>Common Pitfalls</h2>
+<h3>Pitfall 1: Forgetting Reallocation Invalidates Handles</h3>
+<pre><code>// ✗ PROBLEM: Use handle after reallocation
+<p>
+Handle<int32>:h = arena.alloc(42);
+arena.grow(arena.capacity * 2);  // h now stale!
+int32:value = arena.get(h) ? 0;  // Returns 0 (ERR), not 42!
+</p>
+<p>
+// ✓ SOLUTION: Refresh or check
+Handle<int32>:h_before = arena.alloc(42);
+arena.grow(arena.capacity * 2);
+Handle<int32>:h_after = arena.find_refreshed_handle(h_before);  // Get new handle
+int32:value = arena.get(h_after) ? 0;  // Correct!</code></pre>
+</p>
+<h3>Pitfall 2: Storing Handles Without Updating</h3>
+<pre><code>// ✗ PROBLEM: External storage of handles
+<p>
+Handle<Node>[]:global_handles = [h1, h2, h3];
+arena.grow();  // All handles in global_handles now stale!
+</p>
+<p>
+// ✓ SOLUTION: Update external storage
+Handle<Node>[]:global_handles = [h1, h2, h3];
+Handle<Node>[]:old_handles = global_handles.clone();
+arena.grow();
+global_handles = remap_handles(old_handles, arena);  // Refresh!</code></pre>
+</p>
+<h3>Pitfall 3: Handle Comparison After Reallocation</h3>
+<pre><code>// ✗ PROBLEM: Compare stale handles
+<p>
+Handle<T>:h1 = arena.alloc(value1);
+Handle<T>:h2 = arena.alloc(value2);
+arena.grow();
+if h1 == h2 { }  // Meaningless! Both stale!
+</p>
+<p>
+// ✓ SOLUTION: Compare values, not handles
+T:v1 = arena.get(h1) ? default;
+T:v2 = arena.get(h2) ? default;
+if v1 == v2 { }  // Correct!</code></pre>
+</p>
+<h3>Pitfall 4: Not Checking Free Status</h3>
+<pre><code>// ✗ PROBLEM: Use after free
+<p>
+Handle<int32>:h = arena.alloc(42);
+arena.free(h);
+int32:value = arena.get(h) ? 0;  // Returns 0 (ERR, freed!)
+</p>
+<p>
+// ✓ SOLUTION: Track or check
+Handle<int32>:h = arena.alloc(42);
+bool:is_valid = arena.is_valid(h);  // Check before use
+if is_valid {
+int32:value = arena.get(h) ? 0;
+}</code></pre>
+</p>
+<hr>
+<h2>Implementation Notes</h2>
+<h3>C Runtime Structure</h3>
+<pre><code>// Runtime implementation (runtime/arena.c)
+<p>
+typedef struct {
+void* slots;              // Data array
+uint32_t* generations;    // Generation counters
+bool* occupied;           // Occupancy bitmap
+size_t capacity;          // Total slots
+size_t count;             // Used slots
+size_t elem_size;         // sizeof(T)
+} aria_arena;
+</p>
+<p>
+// Handle structure
+typedef struct {
+uint64_t index;
+uint32_t generation;
+} aria_handle;
+</p>
+<p>
+// Access function
+void<em> aria_arena_get(aria_arena</em> arena, aria_handle handle) {
+if (handle.index >= arena->capacity) return NULL;
+if (!arena->occupied[handle.index]) return NULL;
+if (arena->generations[handle.index] != handle.generation) return NULL;
+return (char<em>)arena->slots + (handle.index </em> arena->elem_size);
+}
+</p>
+<p>
+// Grow function (invalidates old handles)
+void aria_arena_grow(aria_arena* arena, size_t new_capacity) {
+// Reallocate
+void<em> new_slots = malloc(new_capacity </em> arena->elem_size);
+memcpy(new_slots, arena->slots, arena->capacity * arena->elem_size);
+free(arena->slots);
+arena->slots = new_slots;
+</p>
+<p>
+// Reallocate metadata
+uint32_t<em> new_generations = malloc(new_capacity </em> sizeof(uint32_t));
+bool<em> new_occupied = malloc(new_capacity </em> sizeof(bool));
+</p>
+<p>
+// Copy and INCREMENT all generations (invalidate old handles!)
+for (size_t i = 0; i < arena->capacity; i++) {
+new_generations[i] = arena->generations[i] + 1;  // ← KEY: Increment!
+new_occupied[i] = arena->occupied[i];
+}
+</p>
+<p>
+// Initialize new slots
+for (size_t i = arena->capacity; i < new_capacity; i++) {
+new_generations[i] = 1;
+new_occupied[i] = false;
+}
+</p>
+<p>
+free(arena->generations);
+free(arena->occupied);
+</p>
+<p>
+arena->generations = new_generations;
+arena->occupied = new_occupied;
+arena->capacity = new_capacity;
+}</code></pre>
+</p>
+<h3>LLVM IR Generation</h3>
+<pre><code>; Handle type
+<p>
+%Handle = type { i64, i32 }  ; {index, generation}
+</p>
+<p>
+; Arena get function (simplified)
+define %Result @arena_get(%Arena* %arena, %Handle %handle) {
+entry:
+; Extract fields
+%index = extractvalue %Handle %handle, 0
+%gen = extractvalue %Handle %handle, 1
+</p>
+<p>
+; Load generation from arena
+%gen_ptr = getelementptr %Arena, %Arena* %arena, i32 0, i32 1, i64 %index
+%arena_gen = load i32, i32* %gen_ptr
+</p>
+<p>
+; Compare generations
+%match = icmp eq i32 %arena_gen, %gen
+br i1 %match, label %valid, label %stale
+</p>
+<p>
+valid:
+; Load value from slots
+%slots = getelementptr %Arena, %Arena* %arena, i32 0, i32 0
+%elem_ptr = getelementptr T, T* %slots, i64 %index
+%value = load T, T* %elem_ptr
+ret %Result { %value, null }
+</p>
+<p>
+stale:
+; Return ERR
+ret %Result { ERR, error_obj }
+}</code></pre>
+</p>
+<hr>
+<h2>Related Systems</h2>
+<ul><li><strong><a href="arena.md">arena<T></a></strong> - Arena allocator (underlying storage)</li>
+<li><strong><a href="unknown.md">unknown</a></strong> - Soft error handling (Handle<T> | unknown)</li>
+<li><strong><a href="result.md">Result<T></a></strong> - Hard error handling (get returns Result)</li>
+<li><strong><a href="err.md">ERR</a></strong> - Error sentinel (stale handles return ERR)</li>
+</ul>
+<hr>
+<h2>Implementation Status</h2>
+<p>
+| Feature | Parser | Compiler | Runtime | Status |
+|---------|--------|----------|---------|--------|
+| <code>Handle<T></code> generic type | ✅ | ✅ | ✅ | P1-3 Complete (Feb 2026) |
+| Arena integration | ✅ | ✅ | ✅ | Complete |
+| Generation checking | ✅ | ✅ | ✅ | Complete |
+| NULL_HANDLE | ✅ | ✅ | ✅ | Complete |
+| Stale detection | ✅ | ✅ | ✅ | Complete |
+</p>
+<strong>Design</strong>: ✅ Complete
+<strong>Implementation</strong>: ✅ Complete (P1-3)
+<strong>Testing</strong>: ✅ Validated
+<strong>Documentation</strong>: ✅ This guide
+<hr>
+<h2>Summary</h2>
+<strong>Handle<T> = Memory-safe arena references with automatic stale detection</strong>
+<h3>Quick Decision Guide</h3>
+<p>
+| Need | Use This | Why |
+|------|----------|-----|
+| Arena-allocated graphs | <code>Handle<T></code> | Prevents use-after-free |
+| Dynamic memory growth | <code>Handle<T></code> | Detects stale after reallocation |
+| Self-referential structures | <code>Handle<T></code> | Safe circular references |
+| Nikola neurogenesis | <code>Handle<T></code> | O(n³) growth without corruption |
+| Need raw speed | Raw pointers (⚠️) | Only if NO reallocation ever |
+| Need reference counting | Use library | Automatic lifetime (but overhead) |
+| Need garbage collection | Not available | Prefer deterministic control |
+</p>
+<h3>Key Principles</h3>
+<p>
+1. <strong>Generation checking</strong> - Detects stale handles automatically
+2. <strong>Zero overhead when valid</strong> - Only 1 extra compare vs raw pointers
+3. <strong>Safe failure</strong> - Returns ERR instead of crashing
+4. <strong>Arena integration</strong> - Designed for dynamic allocators
+5. <strong>Type safety</strong> - Generic type enforced at compile time
+6. <strong>Explicit refresh</strong> - Programmer controls handle updates
+</p>
+<strong>For Nikola</strong>: Handle<T> is <strong>critical infrastructure</strong> for SHVO neurogenesis. Without it, dynamic neural growth would be unsafe and prone to catastrophic memory corruption that destroys consciousness substrate.
+<strong>Remember</strong>: "Pointers are fast but dangerous. Handles are safe and almost as fast. For Nikola's brain, safety isn't optional - corruption kills consciousness."
+    </main>
+</body>
+</html>

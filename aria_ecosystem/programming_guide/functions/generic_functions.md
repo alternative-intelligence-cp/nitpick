@@ -92,8 +92,9 @@ fn len<T>(array: []T) -> usize {
 // Generic array reverse
 fn reverse<T>(array: []T) -> []T {
     reversed: []T = [];
-    for i in (array.len() - 1)..0 {
-        reversed.push(array[i]);
+    i = array.len() - 1;
+    till(array.len() - 1, 1) {
+        reversed.push(array[i - $]);
     }
     return reversed;
 }
@@ -145,7 +146,8 @@ fn print_value<T>(value: T) where T: Display {
 
 // T must implement Comparable
 fn is_sorted<T>(array: []T) -> bool where T: Comparable {
-    for i in 0..(array.len() - 1) {
+    till(array.len() - 2, 1) {
+        i: i32 = $;
         when array[i] > array[i + 1] then
             return false;
         end
@@ -164,7 +166,8 @@ fn unique_sorted<T>(array: []T) -> []T
     seen: Set<T> = Set::new();
     unique: []T = [];
     
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         when !seen.contains(item) then
             seen.insert(item);
             unique.push(item);
@@ -277,7 +280,8 @@ numbers: []i32 = Builder<i32>::new()
 ```aria
 fn filter<T>(array: []T, predicate: fn(T) -> bool) -> []T {
     Result: []T = [];
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         when predicate(item) then
             result.push(item);
         end
@@ -287,7 +291,8 @@ fn filter<T>(array: []T, predicate: fn(T) -> bool) -> []T {
 
 fn map<T, U>(array: []T, transform: fn(T) -> U) -> []U {
     Result: []U = [];
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         result.push(transform(item));
     }
     return result;
@@ -318,7 +323,8 @@ fn last<T>(array: []T) -> T {
 // Good: Clear requirements
 fn sum<T>(array: []T) -> T where T: Numeric {
     total: T = 0;
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         total = total + item;
     }
     return total;

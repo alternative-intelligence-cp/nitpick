@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unsigned Small Integers (uint8, uint16) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>Unsigned Small Integers (uint8, uint16)</h1>
+<strong>Category</strong>: Types → Integers → Unsigned
+<strong>Sizes</strong>: 8-bit, 16-bit
+<strong>Ranges</strong>: uint8 (0 to 255), uint16 (0 to 65,535)
+<strong>Purpose</strong>: Traditional unsigned integers for non-negative values, bit manipulation
+<strong>Status</strong>: ✅ FULLY IMPLEMENTED
+<hr>
+<h2>Table of Contents</h2>
+<p>
+1. <a href="#overview">Overview</a>
+2. <a href="#uint8-8-bit-unsigned-integer">uint8: 8-bit Unsigned Integer</a>
+3. <a href="#uint16-16-bit-unsigned-integer">uint16: 16-bit Unsigned Integer</a>
+4. <a href="#vs-signed-integers-critical-differences">vs Signed Integers (Critical Differences)</a>
+5. <a href="#when-to-use-unsigned-vs-signed">When to Use Unsigned vs Signed</a>
+6. <a href="#overflow-wrapping-behavior">Overflow Wrapping Behavior</a>
+7. <a href="#underflow-wrapping-behavior">Underflow Wrapping Behavior</a>
+8. <a href="#binary-representation">Binary Representation</a>
+9. <a href="#arithmetic-operations">Arithmetic Operations</a>
+10. <a href="#bit-manipulation">Bit Manipulation</a>
+11. <a href="#c-interoperability">C Interoperability</a>
+12. <a href="#performance-characteristics">Performance Characteristics</a>
+13. <a href="#common-patterns">Common Patterns</a>
+14. <a href="#anti-patterns">Anti-Patterns</a>
+15. <a href="#migration-from-cc">Migration from C/C++</a>
+16. <a href="#related-concepts">Related Concepts</a>
+</p>
+<hr>
+<h2>Overview</h2>
+<p>
+Aria's <strong>unsigned integers</strong> (<code>uint8</code>, <code>uint16</code>, <code>uint32</code>, <code>uint64</code>) represent <strong>non-negative values only</strong> with wrapping modular arithmetic.
+</p>
+<strong>Key Properties</strong>:
+<ul><li><strong>Non-negative only</strong>: Range starts at 0 (no negative values)</li>
+<li><strong>Wrapping overflow</strong>: Overflow wraps to 0 (modular arithmetic)</li>
+<li><strong>Wrapping underflow</strong>: Underflow wraps to MAX (0 - 1 = MAX)</li>
+<li><strong>Double the positive range</strong>: uint8 goes to 255 vs int8's 127</li>
+<li><strong>Binary alignment</strong>: Natural for bit manipulation, memory addresses, sizes</li>
+<li><strong>Fast</strong>: Zero-overhead native machine instructions</li>
+</ul>
+<strong>⚠️ CRITICAL</strong>: Underflow wraps (0 - 1 = 255 for uint8). This catches many beginners!
+<hr>
+<h2>uint8: 8-bit Unsigned Integer</h2>
+<h3>Range</h3>
+<strong>Minimum</strong>: 0 (0x00)
+<strong>Maximum</strong>: 255 (0xFF, 2^8 - 1)
+<strong>Total values</strong>: 256 (2^8)
+<strong>Exactly double</strong> the positive range of int8 (which goes to +127).
+<h3>Declaration</h3>
+<pre><code>uint8:byte = 42u8;
+<p>
+uint8:max_value = 255u8;
+uint8:min_value = 0u8;</code></pre>
+</p>
+<h3>Literal Suffix</h3>
+<pre><code>uint8:value = 200u8;  // Explicit uint8 literal (u8 suffix)</code></pre>
+<strong>⚠️ CRITICAL</strong>: Aria requires <strong>explicit type suffixes</strong> for all numeric literals.
+<h3>Common Use Cases</h3>
+<p>
+1. <strong>Byte data</strong>: Raw bytes, binary protocols, file I/O
+2. <strong>RGB colors</strong>: Red, green, blue channels (0-255 each)
+3. <strong>ASCII characters</strong>: Character codes (0-127), extended ASCII (128-255)
+4. <strong>Percentages</strong>: 0-100% scaled to 0-255
+5. <strong>Pixel values</strong>: Grayscale images (0=black, 255=white)
+6. <strong>Network packets</strong>: Protocol headers, checksums
+7. <strong>Memory-constrained</strong>: Embedded systems, large arrays
+</p>
+<h3>Example: RGB Color</h3>
+<pre><code>struct:Color = {
+<p>
+uint8:red;
+uint8:green;
+uint8:blue;
+};
+</p>
+<p>
+Color:hot_pink = {
+red: 255u8,    // Full red
+green: 105u8,  // Some green
+blue: 180u8    // Lots of blue
+};
+</p>
+<p>
+// Brighten color (saturating addition)
+func:brighten = (color: Color@, amount: uint8) -> void {
+// Saturate at 255 (prevent wrapping)
+uint16:new_red = uint16(color.red) + uint16(amount);
+color.red = new_red > 255u16 ? 255u8 : uint8(new_red);
+</p>
+<p>
+uint16:new_green = uint16(color.green) + uint16(amount);
+color.green = new_green > 255u16 ? 255u8 : uint8(new_green);
+</p>
+<p>
+uint16:new_blue = uint16(color.blue) + uint16(amount);
+color.blue = new_blue > 255u16 ? 255u8 : uint8(new_blue);
+}</code></pre>
+</p>
+<hr>
+<h2>uint16: 16-bit Unsigned Integer</h2>
+<h3>Range</h3>
+<strong>Minimum</strong>: 0 (0x0000)
+<strong>Maximum</strong>: 65,535 (0xFFFF, 2^16 - 1)
+<strong>Total values</strong>: 65,536 (2^16)
+<strong>Exactly double</strong> the positive range of int16 (which goes to +32,767).
+<h3>Declaration</h3>
+<pre><code>uint16:port = 8080u16;
+<p>
+uint16:pixel_count = 65535u16;
+uint16:max_value = 65535u16;
+uint16:min_value = 0u16;</code></pre>
+</p>
+<h3>Literal Suffix</h3>
+<pre><code>uint16:value = 50000u16;  // Explicit uint16 literal (u16 suffix)</code></pre>
+<h3>Common Use Cases</h3>
+<p>
+1. <strong>Network ports</strong>: TCP/UDP ports (0-65535)
+2. <strong>Unicode BMP</strong>: Basic Multilingual Plane character codes
+3. <strong>Image dimensions</strong>: Width/height up to 65,535 pixels
+4. <strong>Array sizes</strong>: Small arrays (up to 65K elements)
+5. <strong>Checksums</strong>: CRC-16, Fletcher-16
+6. <strong>Sensor IDs</strong>: Device identifiers (up to 65K devices)
+7. <strong>Industry standard</strong>: MIDI note numbers, DNS record types
+</p>
+<h3>Example: Network Socket</h3>
+<pre><code>struct:SocketAddress = {
+<p>
+uint8[4]:ip_address;  // IPv4: 192.168.1.1
+uint16:port;          // Port: 0-65535
+};
+</p>
+<p>
+SocketAddress:web_server = {
+ip_address: [192u8, 168u8, 1u8, 1u8],
+port: 443u16  // HTTPS
+};
+</p>
+<p>
+// Validate port range (though all uint16 values valid for ports)
+func:is_privileged_port = (port: uint16) -> bool {
+return port < 1024u16;  // Ports 0-1023 are privileged
+}
+</p>
+<p>
+if (is_privileged_port(web_server.port)) {
+log.write("Privileged port, requires root\n");
+}</code></pre>
+</p>
+<hr>
+<h2>vs Signed Integers (Critical Differences)</h2>
+<p>
+| Feature | Unsigned uint8/uint16 | Signed int8/int16 |
+|---------|----------------------|-------------------|
+| <strong>Range</strong> | uint8: 0 to 255 | int8: -128 to +127 |
+| <strong>Negative values</strong> | NONE (0 is minimum) | Yes (negative numbers) |
+| <strong>Overflow</strong> | Wraps to 0 | Wraps to negative MIN |
+| <strong>Underflow</strong> | Wraps to MAX (0 - 1 = 255) | Wraps to positive MAX |
+| <strong>Bit pattern</strong> | All 256 patterns non-negative | MSB is sign bit |
+| <strong>Comparison</strong> | Simple (all positive) | Must handle negatives |
+| <strong>Use case</strong> | Counts, sizes, bytes, colors | Offsets, differences, signed
+</p>
+<p>
+data |
+</p>
+<h3>Example: Underflow Difference</h3>
+<pre><code>// Unsigned uint8 - WRAPS TO MAX
+<p>
+uint8:u = 0u8;
+u -= 1u8;
+// u = 255 (wrapped to maximum!) ⚠️ DANGER!
+</p>
+<p>
+// Signed int8 - WRAPS TO MAX (positive)
+int8:s = -128i8;
+s -= 1i8;
+// s = 127 (wrapped from MIN to MAX)</code></pre>
+</p>
+<strong>Key insight</strong>: Unsigned underflow is <strong>especially dangerous</strong> because 0 - 1 = MAX (not negative!).
+<hr>
+<h2>When to Use Unsigned vs Signed</h2>
+<h3>Use Unsigned (uint8/uint16) When:</h3>
+<p>
+1. <strong>Never negative</strong>: Values cannot be negative by definition (counts, sizes, ages)
+2. <strong>Bit manipulation</strong>: Flags, masks, bitfields (no sign bit to worry about)
+3. <strong>Binary data</strong>: Raw bytes, protocols, file formats
+4. <strong>Memory addresses</strong>: Offsets, indices (never negative)
+5. <strong>Full positive range</strong>: Need 0-255 instead of -128 to +127
+6. <strong>C interop</strong>: Matching <code>uint8_t</code>, <code>unsigned char</code>, <code>uint16_t</code>, <code>unsigned short</code>
+7. <strong>Modular arithmetic</strong>: Intentional wrapping (hash functions, ring buffers)
+</p>
+<h3>Use Signed (int8/int16) When:</h3>
+<p>
+1. <strong>Can be negative</strong>: Temperatures, offsets, deltas, differences
+2. <strong>Arithmetic</strong>: Addition/subtraction where result might be negative
+3. <strong>Comparisons</strong>: Need to represent "less than zero"
+4. <strong>Default choice</strong>: When unsure, signed is safer (underflow doesn't wrap to large positive!)
+5. <strong>Symmetric ranges</strong>: When TBB needed (error propagation)
+</p>
+<h3>Quick Decision Matrix</h3>
+<pre><code>// RGB color channel - USE UNSIGNED (0-255, never negative)
+<p>
+uint8:red = 128u8;
+</p>
+<p>
+// Temperature offset - USE SIGNED (can be negative)
+int8:temp_delta = -5i8;  // -5°C change
+</p>
+<p>
+// Array index - USE UNSIGNED (never negative)
+uint16:index = 1000u16;
+</p>
+<p>
+// Coordinate difference - USE SIGNED (can be negative)
+int16:x_delta = -50i16;  // Moved left
+</p>
+<p>
+// Byte count - USE UNSIGNED (never negative)
+uint32:file_size = 1024u32;
+</p>
+<p>
+// Loop counter - EITHER (but unsigned for large counts)
+uint16:i = 0u16;
+till 10000u16 loop { i += 1u16; }</code></pre>
+</p>
+<hr>
+<h2>Overflow Wrapping Behavior</h2>
+<h3>Modular Arithmetic</h3>
+<p>
+Unsigned overflow wraps according to <strong>modular arithmetic</strong> (mod 256 for uint8, mod 65536 for uint16).
+</p>
+<pre><code>// uint8 overflow
+<p>
+uint8:max = 255u8;
+uint8:wrapped = max + 1u8;
+// wrapped = 0 (255 + 1 = 256 % 256 = 0)
+</p>
+<p>
+uint8:value = 250u8;
+value += 10u8;
+// value = 4 (250 + 10 = 260 % 256 = 4)
+</p>
+<p>
+// uint16 overflow
+uint16:max16 = 65535u16;
+uint16:wrapped16 = max16 + 1u16;
+// wrapped16 = 0 (65535 + 1 = 65536 % 65536 = 0)</code></pre>
+</p>
+<strong>Defined behavior</strong>: Wrapping is well-defined (not UB like C signed overflow).
+<h3>Example: Ring Buffer Index</h3>
+<pre><code>// Ring buffer using uint8 wrapping
+<p>
+struct:RingBuffer8 = {
+uint8[256]:data;
+uint8:write_index;
+uint8:read_index;
+};
+</p>
+<p>
+func:ring_write = (rb: RingBuffer8@, value: uint8) -> void {
+rb.data[rb.write_index] = value;
+rb.write_index += 1u8;  // Wraps to 0 after 255 (automatic!)
+}
+</p>
+<p>
+func:ring_read = (rb: RingBuffer8@) -> uint8 {
+uint8:value = rb.data[rb.read_index];
+rb.read_index += 1u8;  // Wraps to 0 after 255
+pass(value);
+}</code></pre>
+</p>
+<hr>
+<h2>Underflow Wrapping Behavior</h2>
+<h3>The Underflow Trap</h3>
+<strong>Most dangerous property of unsigned integers</strong>: Subtracting below zero wraps to MAX!
+<pre><code>// DANGER: Underflow wraps to maximum!
+<p>
+uint8:count = 0u8;
+count -= 1u8;
+// count = 255 (NOT -1!) ⚠️
+</p>
+<p>
+// Common bug: Loop counting down
+uint8:i = 10u8;
+</p>
+<p>
+loop {
+log.write("i = "); i.write_to(log); log.write("\n");
+</p>
+<p>
+i -= 1u8;
+</p>
+<p>
+if (i == 0u8) break;  // ⚠️ BUG! Skips i=0, wraps to 255!
+end</code></pre>
+</p>
+<strong>Why dangerous</strong>: Code expecting "less than zero" gets <strong>large positive value</strong> instead!
+<h3>Safe Countdown Pattern</h3>
+<pre><code>// SAFE: Use signed integer for countdown
+<p>
+int16:i = 10i16;
+</p>
+<p>
+loop {
+log.write("i = "); i.write_to(log); log.write("\n");
+</p>
+<p>
+i -= 1i16;
+</p>
+<p>
+if (i < 0i16) break;  // ✅ SAFE (can go negative)
+end
+</p>
+<p>
+// OR: Count up instead
+uint8:i = 0u8;
+</p>
+<p>
+till 11u8 loop {
+log.write("i = "); i.write_to(log); log.write("\n");
+i += 1u8;
+}</code></pre>
+</p>
+<h3>Underflow Detection</h3>
+<pre><code>func:safe_subtract_u8 = (a: uint8, b: uint8) -> ?uint8 {
+<p>
+if (b > a) {
+return NIL;  // Would underflow
+}
+</p>
+<p>
+return a - b;  // Safe
+}
+</p>
+<p>
+// Usage
+uint8:count = 5u8;
+?uint8:result = safe_subtract_u8(count, 10u8);
+</p>
+<p>
+if (result == NIL) {
+stderr.write("Underflow prevented!\n");
+}</code></pre>
+</p>
+<hr>
+<h2>Binary Representation</h2>
+<h3>Bit Representation (uint8)</h3>
+<pre><code>255 = 0xFF = 0b11111111 (all bits set)
+<p>
+128 = 0x80 = 0b10000000 (MSB set, but NOT negative!)
+1   = 0x01 = 0b00000001
+0   = 0x00 = 0b00000000</code></pre>
+</p>
+<strong>No sign bit</strong>: MSB (bit 7) is just another data bit, not a sign!
+<h3>Bit Representation (uint16)</h3>
+<pre><code>65535 = 0xFFFF = 0b1111111111111111 (all bits set)
+<p>
+32768 = 0x8000 = 0b1000000000000000 (MSB set, but NOT negative!)
+1     = 0x0001 = 0b0000000000000001
+0     = 0x0000 = 0b0000000000000000</code></pre>
+</p>
+<h3>Conversion from Signed</h3>
+<pre><code>// Signed to unsigned (reinterpret bits)
+<p>
+int8:neg = -1i8;  // 0b11111111 (all bits set)
+uint8:u = uint8(neg);  // 0b11111111 = 255
+</p>
+<p>
+// Why? Bit pattern unchanged, interpretation changed
+// -1 (signed) = 0xFF = 255 (unsigned)
+</p>
+<p>
+int8:neg128 = -128i8;  // 0b10000000
+uint8:u128 = uint8(neg128);  // 0b10000000 = 128</code></pre>
+</p>
+<hr>
+<h2>Arithmetic Operations</h2>
+<h3>Addition with Overflow</h3>
+<pre><code>uint8:a = 200u8;
+<p>
+uint8:b = 100u8;
+uint8:sum = a + b;  // 300... wraps to 44 (300 % 256 = 44)
+</p>
+<p>
+// Safe addition: widen, check, narrow
+uint16:wide_a = uint16(a);
+uint16:wide_b = uint16(b);
+uint16:wide_sum = wide_a + wide_b;  // 300 (fits in uint16)
+</p>
+<p>
+if (wide_sum > 255u16) {
+stderr.write("Sum doesn't fit in uint8!\n");
+} else {
+uint8:result = uint8(wide_sum);  // Safe
+}</code></pre>
+</p>
+<h3>Subtraction with Underflow</h3>
+<pre><code>uint8:a = 50u8;
+<p>
+uint8:b = 100u8;
+uint8:diff = a - b;  // -50... underflows to 206 (256 - 50 = 206)
+</p>
+<p>
+// Safe subtraction: check first
+if (a < b) {
+stderr.write("Underflow would occur!\n");
+} else {
+uint8:result = a - b;  // Safe
+}</code></pre>
+</p>
+<h3>Multiplication with Overflow</h3>
+<pre><code>uint8:a = 20u8;
+<p>
+uint8:b = 20u8;
+uint8:product = a * b;  // 400... wraps to 144 (400 % 256 = 144)
+</p>
+<p>
+// Safe multiplication: widen
+uint16:wide_product = uint16(a) * uint16(b);  // 400 (fits!)</code></pre>
+</p>
+<h3>Division</h3>
+<pre><code>uint8:a = 100u8;
+<p>
+uint8:b = 3u8;
+uint8:quotient = a / b;   // 33 (truncates)
+uint8:remainder = a % b;  // 1
+</p>
+<p>
+// Division by zero: PANIC (undefined behavior)
+uint8:zero = 0u8;
+uint8:crash = a / zero;  // ⚠️ PANICS!</code></pre>
+</p>
+<hr>
+<h2>Bit Manipulation</h2>
+<p>
+Unsigned integers are <strong>ideal</strong> for bit manipulation (no sign bit complications).
+</p>
+<h3>Bitwise Operators</h3>
+<pre><code>uint8:a = 0b10101010u8;
+<p>
+uint8:b = 0b11001100u8;
+</p>
+<p>
+uint8:and_result = a & b;   // 0b10001000 (AND)
+uint8:or_result = a | b;    // 0b11101110 (OR)
+uint8:xor_result = a ^ b;   // 0b01100110 (XOR)
+uint8:not_result = ~a;      // 0b01010101 (NOT/flip)</code></pre>
+</p>
+<h3>Bit Shifts</h3>
+<pre><code>uint8:value = 0b00000001u8;  // 1
+<p>
+uint8:left = value << 1u8;   // 0b00000010 (2)
+uint8:left2 = value << 2u8;  // 0b00000100 (4)
+uint8:left7 = value << 7u8;  // 0b10000000 (128, NOT negative!)
+</p>
+<p>
+// Right shift (logical - zero-fill, NOT sign-extend)
+uint8:high = 0b11000000u8;  // 192
+uint8:right = high >> 1u8;  // 0b01100000 (96, zero-filled!)
+</p>
+<p>
+// Compare to signed (arithmetic shift, sign-extends)
+int8:signed_high = -64i8;   // 0b11000000
+int8:signed_right = signed_high >> 1i8;  // 0b11100000 (-32, sign-extended)</code></pre>
+</p>
+<strong>Key difference</strong>: Unsigned right-shift <strong>zero-fills</strong> (logical), signed right-shift <strong>sign-extends</strong> (arithmetic).
+<h3>Bit Manipulation Patterns</h3>
+<pre><code>// Set bit
+<p>
+uint8:flags = 0u8;
+flags |= (1u8 << 3u8);  // Set bit 3: 0b00001000
+</p>
+<p>
+// Clear bit
+flags &= ~(1u8 << 3u8);  // Clear bit 3
+</p>
+<p>
+// Toggle bit
+flags ^= (1u8 << 3u8);  // Toggle bit 3
+</p>
+<p>
+// Test bit
+if ((flags & (1u8 << 3u8)) != 0u8) {
+log.write("Bit 3 is set\n");
+}
+</p>
+<p>
+// Extract bit field (bits 3-5)
+uint8:mask = 0b00111000u8;  // Bits 3, 4, 5
+uint8:field = (flags & mask) >> 3u8;</code></pre>
+</p>
+<hr>
+<h2>C Interoperability</h2>
+<h3>Direct ABI Compatibility</h3>
+<p>
+| Aria Type | C Type | Size | Range |
+|-----------|--------|------|-------|
+| uint8 | <code>uint8_t</code>, <code>unsigned char</code> | 1 byte | 0 to 255 |
+| uint16 | <code>uint16_t</code>, <code>unsigned short</code> | 2 bytes | 0 to 65,535 |
+</p>
+<h3>FFI Example</h3>
+<pre><code>// C library functions
+<p>
+extern "C" {
+func:c_read_byte = uint8(fd: int32);
+func:c_write_byte = int32(fd: int32, byte: uint8);
+func:c_checksum = uint16(data: uint8@, length: uint32);
+}
+</p>
+<p>
+// Aria usage
+uint8:byte = c_read_byte(file_descriptor);
+</p>
+<p>
+log.write("Read byte: 0x");
+byte.write_hex_to(log);
+log.write("\n");
+</p>
+<p>
+int32:result = c_write_byte(file_descriptor, 0xFFu8);
+</p>
+<p>
+if (result < 0i32) {
+stderr.write("Write failed\n");
+}</code></pre>
+</p>
+<strong>No conversion needed</strong>: Aria uint8/uint16 are ABI-compatible with C.
+<hr>
+<h2>Performance Characteristics</h2>
+<h3>Zero Overhead</h3>
+<pre><code>uint8:a = 100u8;
+<p>
+uint8:b = 50u8;
+uint8:sum = a + b;</code></pre>
+</p>
+<strong>Generated assembly</strong> (x86):
+<pre><code>mov al, 100     ; Load 100 into AL
+<p>
+add al, 50      ; Add 50
+; Result in AL (one instruction!)</code></pre>
+</p>
+<h3>Memory Efficiency</h3>
+<pre><code>// 1 million uint8
+<p>
+uint8[]:bytes = aria.alloc<uint8>(1000000);
+// Memory: 1 MB
+</p>
+<p>
+// vs int16
+int16[]:shorts = aria.alloc<int16>(1000000);
+// Memory: 2 MB (2× larger)
+</p>
+<p>
+// vs uint32
+uint32[]:ints = aria.alloc<uint32>(1000000);
+// Memory: 4 MB (4× larger)</code></pre>
+</p>
+<strong>Cache efficiency</strong>: Smaller types = more data per cache line = better performance for large arrays.
+<hr>
+<h2>Common Patterns</h2>
+<h3>Saturating Arithmetic (No Wrapping)</h3>
+<pre><code>func:saturating_add_u8 = (a: uint8, b: uint8) -> uint8 {
+<p>
+uint16:wide_sum = uint16(a) + uint16(b);
+</p>
+<p>
+if (wide_sum > 255u16) {
+return 255u8;  // Saturate at max
+} else {
+return uint8(wide_sum);
+}
+}
+</p>
+<p>
+func:saturating_sub_u8 = (a: uint8, b: uint8) -> uint8 {
+if (b > a) {
+return 0u8;  // Saturate at min (prevent underflow wrap!)
+} else {
+return a - b;
+}
+}
+</p>
+<p>
+// Image brightness adjustment
+uint8:pixel = 200u8;
+uint8:brighter = saturating_add_u8(pixel, 100u8);  // 255 (saturated, not wrapped to 44)</code></pre>
+</p>
+<h3>Range-Checked Narrowing</h3>
+<pre><code>func:narrow_to_u8 = (value: uint32) -> ?uint8 {
+<p>
+if (value > 255u32) {
+return NIL;  // Out of range
+}
+</p>
+<p>
+return uint8(value);  // Safe cast
+}
+</p>
+<p>
+// Usage
+uint32:large = 1000u32;
+?uint8:small = narrow_to_u8(large);
+</p>
+<p>
+if (small == NIL) {
+stderr.write("Value too large for uint8\n");
+}</code></pre>
+</p>
+<h3>Byte Packing/Unpacking</h3>
+<pre><code>// Pack two uint8 into uint16
+<p>
+func:pack_u16 = (high: uint8, low: uint8) -> uint16 {
+return (uint16(high) << 8u16) | uint16(low);
+}
+</p>
+<p>
+// Unpack uint16 into two uint8
+func:unpack_u16 = (value: uint16) -> (uint8, uint8) {
+uint8:high = uint8((value >> 8u16) & 0xFFu16);
+uint8:low = uint8(value & 0xFFu16);
+return (high, low);
+}
+</p>
+<p>
+// Network byte order (big-endian)
+uint16:port = pack_u16(0x1Fu8, 0x90u8);  // 0x1F90 = 8080</code></pre>
+</p>
+<hr>
+<h2>Anti-Patterns</h2>
+<h3>❌ Counting Down with Unsigned</h3>
+<pre><code>// WRONG: Underflow trap!
+<p>
+uint8:i = 10u8;
+</p>
+<p>
+loop {
+i -= 1u8;
+</p>
+<p>
+if (i == 0u8) break;  // ❌ BUG! Skips 0, wraps to 255, infinite loop!
+end
+</p>
+<p>
+// RIGHT: Use signed for countdown
+int16:i = 10i16;
+</p>
+<p>
+loop {
+i -= 1i16;
+</p>
+<p>
+if (i < 0i16) break;  // ✅ SAFE
+end</code></pre>
+</p>
+<h3>❌ Subtracting Without Underflow Check</h3>
+<pre><code>// WRONG: Subtraction can underflow
+<p>
+uint8:balance = 50u8;
+uint8:withdrawal = 100u8;
+</p>
+<p>
+balance -= withdrawal;  // ❌ Underflows to 206, balance appears large!
+</p>
+<p>
+// RIGHT: Check before subtracting
+if (withdrawal > balance) {
+stderr.write("Insufficient balance!\n");
+} else {
+balance -= withdrawal;  // Safe
+}</code></pre>
+</p>
+<h3>❌ Mixing Signed and Unsigned</h3>
+<pre><code>// WRONG: Comparing signed to unsigned
+<p>
+int8:signed_val = -1i8;
+uint8:unsigned_val = 1u8;
+</p>
+<p>
+if (signed_val < unsigned_val) {  // ⚠️ Implicit conversion!
+// -1 converts to 255 unsigned (bit pattern reinterpreted)
+// Comparison: 255 < 1 is FALSE (unexpected!)
+}
+</p>
+<p>
+// RIGHT: Explicit widening to signed
+int16:wide_signed = int16(signed_val);  // -1
+int16:wide_unsigned = int16(unsigned_val);  // 1
+</p>
+<p>
+if (wide_signed < wide_unsigned) {  // TRUE (as expected)
+// Correct comparison
+}</code></pre>
+</p>
+<hr>
+<h2>Migration from C/C++</h2>
+<h3>Underflow Behavior</h3>
+<strong>C</strong>: Unsigned underflow wraps (defined)
+<pre><code>uint8_t a = 0;
+<p>
+a -= 1;  // a = 255 (wraps, defined behavior)</code></pre>
+</p>
+<strong>Aria</strong>: Same (wraps, defined)
+<pre><code>uint8:a = 0u8;
+<p>
+a -= 1u8;  // a = 255 (wraps, defined)</code></pre>
+</p>
+<strong>Both are dangerous!</strong> Use signed for values that can go negative.
+<h3>Explicit Type Suffixes</h3>
+<strong>C</strong>: Implicit conversions
+<pre><code>uint8_t x = 200;  // Literal is int, implicitly converted</code></pre>
+<strong>Aria</strong>: Explicit suffix required
+<pre><code>uint8:x = 200u8;  // Must specify u8 suffix</code></pre>
+<h3>Comparison Warnings</h3>
+<strong>C</strong>: Signed/unsigned comparison warnings
+<pre><code>int a = -1;
+<p>
+unsigned int b = 1;
+if (a < b) { }  // Warning: comparison between signed and unsigned</code></pre>
+</p>
+<strong>Aria</strong>: Same warning, but stricter
+<pre><code>int32:a = -1i32;
+<p>
+uint32:b = 1u32;
+if (a < b) { }  // ⚠️ WARNING: Implicit conversion in comparison</code></pre>
+</p>
+<hr>
+<h2>Related Concepts</h2>
+<h3>Other Integer Types</h3>
+<ul><li><strong>int8, int16</strong>: Signed small integers</li>
+<li><strong>uint32, uint64</strong>: Larger unsigned integers</li>
+<li><strong>int32, int64</strong>: Larger signed integers</li>
+<li><strong>tbb8, tbb16</strong>: Symmetric-range error-propagating integers</li>
+</ul>
+<h3>Special Values</h3>
+<ul><li><strong>NIL</strong>: Optional types (not applicable to uint8/uint16)</li>
+<li><strong>ERR</strong>: TBB error sentinel (not applicable to unsigned ints)</li>
+<li><strong>NULL</strong>: Pointer sentinel (not applicable to value types)</li>
+</ul>
+<h3>Related Operations</h3>
+<ul><li><strong>Bit manipulation</strong>: AND, OR, XOR, NOT, shifts</li>
+<li><strong>Saturating arithmetic</strong>: Clamping instead of wrapping</li>
+<li><strong>Modular arithmetic</strong>: Intentional wrapping (hash functions, ring buffers)</li>
+<li><strong>Widening</strong>: uint8 → uint16 → uint32 (always safe)</li>
+<li><strong>Narrowing</strong>: uint32 → uint16 → uint8 (check range!)</li>
+</ul>
+<hr>
+<h2>Summary</h2>
+<strong>uint8</strong> and <strong>uint16</strong> are Aria's small unsigned integers:
+<p>
+✅ <strong>Non-negative only</strong>: uint8 (0-255), uint16 (0-65,535)
+✅ <strong>Double positive range</strong>: vs int8/int16 (twice the positive values)
+✅ <strong>Wrapping overflow</strong>: Defined modular arithmetic
+✅ <strong>Zero overhead</strong>: Native machine instructions
+✅ <strong>Bit manipulation</strong>: Ideal (no sign bit complications)
+✅ <strong>C compatible</strong>: Direct FFI, same ABI
+</p>
+<p>
+⚠️ <strong>Underflow wraps to MAX</strong>: 0 - 1 = 255 (DANGER!)
+⚠️ <strong>Cannot be negative</strong>: Wrong choice if values can go below zero
+⚠️ <strong>Signed/unsigned mixing</strong>: Implicit conversions can surprise
+</p>
+<strong>Use uint8/uint16 for</strong>:
+<ul><li>Never-negative values (counts, sizes, ages)</li>
+<li>Bit manipulation (flags, masks, bitfields)</li>
+<li>Binary data (bytes, protocols, file formats)</li>
+<li>RGB colors (0-255 per channel)</li>
+<li>Network ports (0-65535)</li>
+<li>Memory efficiency (large arrays)</li>
+</ul>
+<strong>Use int8/int16 for</strong>:
+<ul><li>Can-be-negative values (temperatures, deltas, offsets)</li>
+<li>Default choice (safer for arithmetic)</li>
+<li>Counters that might go negative</li>
+</ul>
+<strong>Use TBB types for</strong>:
+<ul><li>Safety-critical (overflow detection)</li>
+<li>Error propagation (sticky errors)</li>
+<li>Symmetric ranges (abs works)</li>
+</ul>
+<hr>
+<strong>Next</strong>: <a href="uint32_uint64.md">uint32, uint64 (Unsigned Medium/Large Integers)</a>
+<strong>See Also</strong>: <a href="int8_int16.md">int8/int16</a>, <a href="uint32_uint64.md">uint32/uint64</a>, <a href="../operators/bitwise.md">Bit Manipulation</a>
+<hr>
+<em>Aria Language Project - Unsigned Integers with Underflow Awareness</em>
+<em>February 12, 2026 - Establishing timestamped prior art on unsigned integer semantics</em>
+    </main>
+</body>
+</html>

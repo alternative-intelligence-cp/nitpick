@@ -164,9 +164,9 @@ medium: int16 = large as int16;  // Truncates!
 ```aria
 // Process 16-bit audio
 fn process_audio(samples: []int16) {
-    for sample in samples {
+    till(samples.length - 1, 1) {
         // Normalize to -1.0 to 1.0
-        normalized: flt32 = (sample as flt32) / 32768.0;
+        normalized: flt32 = (samples[$] as flt32) / 32768.0;
         process_sample(normalized);
     }
 }

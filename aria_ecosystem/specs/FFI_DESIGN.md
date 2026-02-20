@@ -613,11 +613,11 @@ async func:run_consciousness_simulation = result<void>() {
     cf.inject_wave(initial_wave)?;
     
     // Simulate propagation
-    for (t in 0..1000) {
+    till(999, 1) {
         cf.propagate(0.001);  // 1ms time steps
         
         // Extract state periodically
-        if (t % 100 == 0) {
+        if ($ % 100 == 0) {
             array<f64>:state = cf.extract_state(9)?;
             
             // Output to 6-stream I/O (binary data)

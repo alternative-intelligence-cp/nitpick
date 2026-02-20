@@ -1,0 +1,1730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>tfp32 & tfp64 - Twisted Floating Point (Deterministic IEEE-Free Floats) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Types</div>
+        <h1>tfp32 & tfp64 - Twisted Floating Point (Deterministic IEEE-Free Floats)</h1>
+<strong>Cross-platform bit-exact floating-point arithmetic for deterministic physics simulations and reproducible AI</strong>
+<hr>
+<h2>Overview</h2>
+<code>tfp32</code> and <code>tfp64</code> are Aria's <strong>deterministic floating-point types</strong> that provide IEEE-free arithmetic with perfect cross-platform reproducibility. Unlike IEEE 754 floats, TFP (Twisted Floating Point) types guarantee <strong>identical results on all platforms</strong> - same bits, always.
+<p>
+| Feature | IEEE 754 (f32/f64) | tfp32 | tfp64 |
+|---------|-------------------|-------|-------|
+| Determinism | ❌ Platform-dependent | ✅ Bit-exact everywhere | ✅ Bit-exact everywhere |
+| Signed Zero | ⚠️ +0 and -0 differ | ✅ Single zero | ✅ Single zero |
+| NaN Values | ⚠️ Many different NaNs | ✅ ERR sentinel only | ✅ ERR sentinel only |
+| Rounding | ❌ Hardware-dependent | ✅ Defined behavior | ✅ Defined behavior |
+| Performance | ⚡ Native hardware | 📊 ~30x slower | 📊 ~80x slower |
+| Precision | 7 digits (f32), 16 digits (f64) | ~4 decimal digits | ~14 decimal digits |
+| Size | 32 bits / 64 bits | 32 bits | 64 bits |
+</p>
+<strong>Critical Use Cases</strong>:
+<ul><li><strong>Deterministic physics</strong>: Game replays, distributed physics, blockchain validation</li>
+<li><strong>Reproducible AI</strong>: Nikola ATPM wave mechanics must be bit-exact across hardware</li>
+<li><strong>Cross-platform verification</strong>: Results provably identical on all CPUs/GPUs</li>
+<li><strong>Lockstep multiplayer</strong>: All clients compute identical physics (no desync!)</li>
+</ul>
+<pre><code>// Problem: IEEE floats are non-deterministic
+<p>
+flt32:x = 0.1f32 + 0.2f32;  // Different bits on different CPUs!
+// x86-64:  0x3E99999A
+// ARM:     0x3E99999B  (1 bit difference!)
+// Result: Physics desync, AI non-reproducibility
+</p>
+<p>
+// Solution: tfp32/tfp64 are always identical
+tfp32:y = 0.1tf32 + 0.2tf32;  // Same bits on ALL platforms!
+// x86-64:  {exp: 5, mant: 512}
+// ARM:     {exp: 5, mant: 512}  (identical!)
+// RISC-V:  {exp: 5, mant: 512}  (identical!)
+// WASM:    {exp: 5, mant: 512}  (identical!)</code></pre>
+</p>
+<hr>
+<h2>Type Definitions</h2>
+<h3>tfp32 Structure</h3>
+<pre><code>struct:tfp32 = {
+<p>
+tbb16:exp,   // Exponent (biased by 16383)
+tbb16:mant,  // Mantissa (signed, 2's complement)
+}</code></pre>
+</p>
+<strong>Memory layout</strong>:
+<pre><code>┌─────────────┬──────────────┐
+<p>
+│  exp(tbb16) │  mant(tbb16) │
+│  16 bits    │  16 bits     │
+└─────────────┴──────────────┘
+= 32 bits total (4 bytes)</code></pre>
+</p>
+<strong>Characteristics</strong>:
+<ul><li><strong>Precision</strong>: ~14 mantissa bits ≈ 4.2 decimal digits</li>
+<li><strong>Range</strong>: ±10⁻⁹⁸⁶⁴ to ±10⁺⁹⁸⁶⁴ (tbb16 exponent range)</li>
+<li><strong>ERR sentinel</strong>: <code>{exp: -32768, mant: -32768}</code> (both components ERR)</li>
+<li><strong>Zero</strong>: Unique <code>{exp: 0, mant: 0}</code> (no signed zero!)</li>
+</ul>
+<h3>tfp64 Structure</h3>
+<pre><code>struct:tfp64 = {
+<p>
+tbb16:exp,   // Exponent (biased by 16383)
+tbb48:mant,  // Mantissa (signed, 48-bit extended precision)
+}</code></pre>
+</p>
+<strong>Memory layout</strong>:
+<pre><code>┌─────────────┬──────────────────┬────────┐
+<p>
+│  exp(tbb16) │  mant (tbb48)    │  pad   │
+│  16 bits    │  48 bits         │ 0 bits │
+└─────────────┴──────────────────┴────────┘
+= 64 bits total (8 bytes)</code></pre>
+</p>
+<strong>Characteristics</strong>:
+<ul><li><strong>Precision</strong>: ~46 mantissa bits ≈ 13.8 decimal digits</li>
+<li><strong>Range</strong>: ±10⁻⁹⁸⁶⁴ to ±10⁺⁹⁸⁶⁴ (same as tfp32)</li>
+<li><strong>ERR sentinel</strong>: <code>{exp: -32768, mant: "tbb48_ERR"}</code></li>
+<li><strong>Zero</strong>: Unique <code>{exp: 0, mant: 0}</code> (no signed zero!)</li>
+</ul>
+<h3>Mathematical Representation</h3>
+<pre><code>value = mantissa × 2^(exponent - BIAS)
+<p>
+where:
+BIAS = 16383 (fixed exponent bias for both tfp32 and tfp64)
+</p>
+<p>
+tfp32:
+mantissa ∈ [-32767, +32767]  (tbb16 range, -32768 = ERR)
+exponent ∈ [-32767, +32767]  (tbb16 range, -32768 = ERR)
+</p>
+<p>
+tfp64:
+mantissa ∈ [-140737488355327, +140737488355327]  (tbb48 range, min = ERR)
+exponent ∈ [-32767, +32767]  (tbb16 range, -32768 = ERR)</code></pre>
+</p>
+<hr>
+<h2>The IEEE 754 Problems Solved</h2>
+<h3>Problem 1: Signed Zero Ambiguity</h3>
+<strong>IEEE 754 has TWO zeros</strong>: +0 and -0 (different bit patterns but claim to be equal!)
+<pre><code>// IEEE 754 (AMBIGUOUS!)
+<p>
+float pos_zero = +0.0f;   // 0x00000000
+float neg_zero = -0.0f;   // 0x80000000  (DIFFERENT BITS!)
+</p>
+<p>
+pos_zero == neg_zero;     // true (claims equal)
+1.0f / pos_zero;          // +Inf
+1.0f / neg_zero;          // -Inf  (DIFFERENT RESULTS!)
+</p>
+<p>
+// Sign bit affects division direction!
+// Non-deterministic: Which zero did you get from subtraction?</code></pre>
+</p>
+<strong>tfp32/tfp64 solution</strong>: ONE zero, always!
+<pre><code>// Aria TFP (DETERMINISTIC!)
+<p>
+tfp32:zero = 0.0tf32;     // {exp: 0, mant: 0}  (UNIQUE!)
+</p>
+<p>
+tfp32:result = 1.0tf32 / zero;  // ERR (consistent!)
+// No signed zero ambiguity
+// No directional infinity weirdness</code></pre>
+</p>
+<h3>Problem 2: NaN Explosion</h3>
+<strong>IEEE 754 has MILLIONS of NaN bit patterns</strong> (signaling NaN, quiet NaN, payload NaNs...)
+<pre><code>// IEEE 754 (CHAOS!)
+<p>
+float nan1 = 0.0f / 0.0f;           // Some NaN
+float nan2 = sqrtf(-1.0f);          // Different NaN?
+float nan3 = INFINITY - INFINITY;   // Another NaN?
+</p>
+<p>
+nan1 == nan2;  // false (NaNs never equal, even to themselves!)
+nan1 == nan1;  // false (wat!)
+</p>
+<p>
+// Different platforms produce different NaN patterns
+// x86: 0x7FC00000 (quiet NaN)
+// ARM: 0x7FE00000 (different quiet NaN)
+// MIPS: 0x7F800001 (yet another NaN!)
+</p>
+<p>
+// Result: Non-determinism, can't replay physics!</code></pre>
+</p>
+<strong>tfp32/tfp64 solution</strong>: ONE error value (ERR), propagates consistently
+<pre><code>// Aria TFP (SANE!)
+<p>
+tfp32:err1 = 0.0tf32 / 0.0tf32;  // ERR sentinel
+tfp32:err2 = sqrt(-1.0tf32);     // ERR sentinel
+tfp32:err3 = INF - INF;          // ERR sentinel
+</p>
+<p>
+err1 == ERR;  // true (identity works!)
+err2 == ERR;  // true
+err3 == ERR;  // true
+</p>
+<p>
+// ALL platforms: {exp: -32768, mant: -32768}
+// Same bits everywhere, always
+// Can replay physics perfectly</code></pre>
+</p>
+<h3>Problem 3: Hardware-Dependent Rounding</h3>
+<strong>IEEE 754 allows different rounding modes</strong> (round-to-nearest, round-down, round-up, round-toward-zero). Worse, some operations are hardware-dependent!
+<pre><code>// IEEE 754: Platform-specific rounding
+<p>
+// x86 FPU uses 80-bit internally (extra precision)
+// ARM uses 64-bit strictly
+// Results can differ!
+</p>
+<p>
+// Example: Compute 0.1 + 0.2
+// x86:  0.30000000000000004 (rounded from 80-bit)
+// ARM:  0.29999999999999999 (rounded from 64-bit)
+// Bits differ! Physics desync!</code></pre>
+</p>
+<strong>tfp32/tfp64 solution</strong>: Defined software rounding, always identical
+<pre><code>// Aria TFP: Explicit deterministic rounding
+<p>
+tfp32:result = 0.1tf32 + 0.2tf32;  // Defined algorithm
+// ALWAYS produces {exp: X, mant: Y} (same on all platforms)
+// Software implementation guarantees consistency</code></pre>
+</p>
+<h3>Problem 4: Subnormal (Denormal) Numbers</h3>
+<strong>IEEE 754 subnormals</strong> have variable precision near zero (gradual underflow). Performance penalty on some CPUs, and behavior varies!
+<pre><code>// IEEE 754: Subnormals can be slow
+<p>
+// Intel: Hardware subnormal support (fast)
+// Some ARM: Subnormals trap to software (SLOW!)
+// Embedded: Subnormals flush to zero (FAST but wrong!)
+</p>
+<p>
+// Result: Same calculation, wildly different performance!</code></pre>
+</p>
+<strong>tfp32/tfp64 solution</strong>: No subnormals, clean underflow to zero or ERR
+<pre><code>// Aria TFP: No subnormal weirdness
+<p>
+tfp32:tiny = 1e-5000tf32;  // Underflows to 0 or ERR (defined!)
+// Same behavior everywhere
+// Predictable performance</code></pre>
+</p>
+<hr>
+<h2>Determinism Guarantee</h2>
+<h3>The Promise</h3>
+<strong>tfp32/tfp64 guarantee</strong>:
+<pre><code>SAME INPUTS + SAME OPERATIONS = SAME BITS (everywhere, always)</code></pre>
+<strong>IEEE 754 reality</strong>:
+<pre><code>SAME INPUTS + SAME OPERATIONS = maybe same, maybe different (¯\_(ツ)_/¯)</code></pre>
+<h3>Example: Lockstep Multiplayer Physics</h3>
+<pre><code>// Server runs physics
+<p>
+tfp32:player_x = 100.0tf32;
+tfp32:velocity = 5.5tf32;
+tfp32:gravity = -9.8tf32;
+</p>
+<p>
+// Frame 1
+player_x = player_x + velocity;          // 105.5tf32
+velocity = velocity + gravity * 0.016tf32;  // 5.3432tf32
+</p>
+<p>
+// Client 1 (x86-64 Laptop): IDENTICAL
+// Client 2 (ARM Phone):     IDENTICAL
+// Client 3 (RISC-V Device): IDENTICAL
+// Client 4 (WASM Browser):  IDENTICAL
+</p>
+<p>
+// ALL compute: player_x = {exp: X, mant: Y}  (same bits!)
+// Physics stays in sync, 10,000 frames later still identical</code></pre>
+</p>
+<strong>With IEEE floats</strong>: After ~100 frames, positions diverge by millimeters. After 10,000 frames, players are in different rooms!
+<h3>Example: Blockchain Verification</h3>
+<pre><code>// Smart contract computes physics (deterministic!)
+<p>
+func:compute_trajectory = tfp32[](tfp32:initial_velocity, uint32:frames) {
+tfp32[]:positions;
+tfp32:pos = 0.0tf32;
+tfp32:vel = initial_velocity;
+</p>
+<p>
+till(frames - 1, 1) {
+pos = pos + vel;
+vel = vel + (-9.8tf32 * 0.016tf32);
+positions.push(pos);
+}
+</p>
+<p>
+return positions;
+}
+</p>
+<p>
+// Node 1 (x86-64):  hash(positions) = 0xABCD1234
+// Node 2 (ARM):     hash(positions) = 0xABCD1234  (IDENTICAL!)
+// Node 3 (RISC-V):  hash(positions) = 0xABCD1234  (IDENTICAL!)
+</p>
+<p>
+// Consensus achieved! Physics result is provably correct.</code></pre>
+</p>
+<strong>With IEEE floats</strong>: Nodes compute different trajectories → consensus failure → blockchain fork!
+<hr>
+<h2>Performance Characteristics</h2>
+<h3>Speed Comparison</h3>
+<p>
+| Operation | f32 (IEEE) | tfp32 | f64 (IEEE) | tfp64 |
+|-----------|-----------|-------|-----------|-------|
+| Addition | 1× (native) | ~30× slower | 1× (native) | ~80× slower |
+| Multiplication | 1× (native) | ~35× slower | 1× (native) | ~90× slower |
+| Division | 3× (native) | ~45× slower | 3× (native) | ~120× slower |
+| Square root | 5× (native) | ~60× slower | 5× (native) | ~150× slower |
+</p>
+<strong>Why slower?</strong>
+<ul><li>Software implementation (no hardware FPU)</li>
+<li>Explicit rounding logic (determinism requires control)</li>
+<li>Error checking (ERR propagation)</li>
+<li>Cross-platform portability (no platform-specific tricks)</li>
+</ul>
+<strong>When acceptable?</strong>
+<ul><li>Physics simulations (30 FPS = 33ms budget, tfp math is microseconds)</li>
+<li>AI inference (forward pass for ATPM still fast enough)</li>
+<li>Cryptographic verification (determinism worth 100× slowdown!)</li>
+<li>Game replays (not real-time, can be slower)</li>
+<li>Blockchain validation (correctness > speed)</li>
+</ul>
+<strong>When NOT acceptable?</strong>
+<ul><li>Inner loops (millions of iterations per frame)</li>
+<li>Real-time audio DSP (need nanosecond latency)</li>
+<li>GPU shader code (need SIMD parallelism, use fix256 instead)</li>
+<li>High-frequency trading (need sub-microsecond)</li>
+</ul>
+<h3>Optimization Strategies</h3>
+<pre><code>// ✗ BAD: tfp32 in hot loop (slow!)
+<p>
+till(999_999, 1) {
+tfp32:x = compute_expensive($);  // Called 1M times!
+}
+</p>
+<p>
+// ✓ GOOD: Batch with fixed-point, convert once
+fix256[]:results;
+till(999_999, 1) {
+fix256:x = compute_expensive_fix($);  // Fast fixed-point!
+results.push(x);
+}
+tfp32:final = tfp32(results.sum());  // Convert once at end</code></pre>
+</p>
+<pre><code>// ✓ GOOD: Use tfp32 for outer logic, fix256 for inner math
+<p>
+tfp32:player_pos = 100.0tf32;
+</p>
+<p>
+// Inner loop: High-performance fixed-point
+fix256:pos_fix = fix256(player_pos);
+till(999, 1) {
+pos_fix = pos_fix + velocity_fix * dt_fix;  // Fast!
+}
+</p>
+<p>
+// Convert back to tfp32 for storage/network
+player_pos = tfp32(pos_fix);</code></pre>
+</p>
+<hr>
+<h2>Precision Trade-offs</h2>
+<h3>tfp32: Fast but Low Precision</h3>
+<strong>~4 decimal digits</strong> (14 mantissa bits)
+<pre><code>tfp32:pi = 3.14159tf32;  // Stored as ~3.142 (4 digits)
+<p>
+// Good for: Game positions, UI coordinates, rough physics
+// Bad for: Financial calculations, scientific measurements</code></pre>
+</p>
+<strong>Range</strong>: 10⁻⁹⁸⁶⁴ to 10⁺⁹⁸⁶⁴
+<ul><li>Larger than IEEE f32 range (10⁻³⁸ to 10⁺³⁸)</li>
+<li>Can represent astronomical distances AND atomic scales</li>
+</ul>
+<strong>Use cases</strong>:
+<ul><li>2D game physics (pixel positions, velocities)</li>
+<li>Audio levels (dB values)</li>
+<li>Basic AI weights (small neural nets)</li>
+<li>Quick prototyping (prove determinism works)</li>
+</ul>
+<h3>tfp64: Slower but High Precision</h3>
+<strong>~14 decimal digits</strong> (46 mantissa bits)
+<pre><code>tfp64:pi = 3.14159265358979tf64;  // Stored as ~3.1415926535898 (14 digits)
+<p>
+// Good for: Scientific computing, 3D physics, financial math
+// Bad for: Million-entity simulations (too slow)</code></pre>
+</p>
+<strong>Range</strong>: 10⁻⁹⁸⁶⁴ to 10⁺⁹⁸⁶⁴ (same as tfp32!)
+<ul><li>Much larger than IEEE f64 range (10⁻³⁰⁸ to 10⁺³⁰⁸)</li>
+<li>Can represent universe size AND Planck length</li>
+</ul>
+<strong>Use cases</strong>:
+<ul><li>3D physics simulations (rigid body dynamics)</li>
+<li>Nikola ATPM wave mechanics (deterministic AI)</li>
+<li>Financial calculations (currency exchange)</li>
+<li>Scientific computing (orbital mechanics)</li>
+</ul>
+<h3>vs IEEE 754 Precision</h3>
+<p>
+| Type | Decimal Digits | When to Use |
+|------|---------------|-------------|
+| <strong>IEEE f32</strong> | ~7 digits | Hardware speed critical, determinism not needed |
+| <strong>tfp32</strong> | ~4 digits | Determinism critical, low precision OK |
+| <strong>IEEE f64</strong> | ~16 digits | Hardware speed critical, determinism not needed |
+| <strong>tfp64</strong> | ~14 digits | Determinism critical, high precision needed |
+| <strong>fix256</strong> | ~38 digits | Determinism + precision + speed (best choice!) |
+</p>
+<strong>Recommendation</strong>: Use <code>fix256</code> for most physics! tfp32/tfp64 are for when you specifically need floating exponent (huge range).
+<hr>
+<h2>Operations</h2>
+<h3>Arithmetic</h3>
+<pre><code>tfp32:a = 10.5tf32;
+<p>
+tfp32:b = 3.2tf32;
+</p>
+<p>
+// Basic arithmetic
+tfp32:sum = a + b;      // 13.7tf32
+tfp32:diff = a - b;     // 7.3tf32
+tfp32:prod = a * b;     // 33.6tf32
+tfp32:quot = a / b;     // 3.28125tf32
+</p>
+<p>
+// Division by zero
+tfp32:err = a / 0.0tf32;  // ERR (no undefined behavior!)
+</p>
+<p>
+// Modulo
+tfp32:rem = a % b;      // 0.9tf32 (remainder)</code></pre>
+</p>
+<h3>Comparison</h3>
+<pre><code>tfp32:x = 5.5tf32;
+<p>
+tfp32:y = 5.5tf32;
+tfp32:z = 6.0tf32;
+</p>
+<p>
+bool:eq = (x == y);     // true
+bool:ne = (x != z);     // true
+bool:lt = (x < z);      // true
+bool:le = (x <= y);     // true
+bool:gt = (z > x);      // true
+bool:ge = (x >= y);     // true
+</p>
+<p>
+// ERR comparisons
+tfp32:err = ERR;
+bool:is_err = (err == ERR);  // true
+bool:never = (x == ERR);      // false (x is valid)</code></pre>
+</p>
+<h3>Math Functions</h3>
+<pre><code>// Absolute value
+<p>
+tfp32:neg = -5.5tf32;
+tfp32:abs_val = abs(neg);  // 5.5tf32
+</p>
+<p>
+// Square root
+tfp32:x = 16.0tf32;
+tfp32:sqrt_x = sqrt(x);  // 4.0tf32
+</p>
+<p>
+tfp32:neg_sqrt = sqrt(-1.0tf32);  // ERR (no complex numbers!)
+</p>
+<p>
+// Power
+tfp32:pow_result = pow(2.0tf32, 8.0tf32);  // 256.0tf32
+</p>
+<p>
+// Min/max
+tfp32:minimum = min(a, b);  // 3.2tf32
+tfp32:maximum = max(a, b);  // 10.5tf32</code></pre>
+</p>
+<h3>Conversion</h3>
+<pre><code>// To/from integers
+<p>
+int32:i = 42;
+tfp32:f = tfp32(i);      // 42.0tf32
+int32:back = int32(f);   // 42
+</p>
+<p>
+// Truncation
+tfp32:x = 5.7tf32;
+int32:trunc = int32(x);  // 5 (truncate toward zero)
+</p>
+<p>
+// To/from other float types
+flt32:ieee = 3.14f32;
+tfp32:det = tfp32(ieee);  // Convert (loses determinism!)
+flt32:back = flt32(det);  // Convert back
+</p>
+<p>
+// tfp32 ↔ tfp64
+tfp32:small = 3.14tf32;
+tfp64:large = tfp64(small);  // Promote to higher precision
+tfp32:down = tfp32(large);   // Demote (may lose precision)
+</p>
+<p>
+// To/from fix256
+fix256:fixed = 3.14fix;
+tfp32:floating = tfp32(fixed);  // Convert
+fix256:back_fix = fix256(floating);</code></pre>
+</p>
+<hr>
+<h2>Error Handling</h2>
+<h3>ERR Propagation</h3>
+<pre><code>tfp32:a = 10.0tf32;
+<p>
+tfp32:b = 0.0tf32;
+</p>
+<p>
+tfp32:div = a / b;  // ERR (division by zero)
+</p>
+<p>
+// ERR propagates through calculations
+tfp32:x = div + 5.0tf32;    // ERR + 5.0 = ERR
+tfp32:y = div <em> 2.0tf32;    // ERR </em> 2.0 = ERR
+tfp32:z = sqrt(div);       // sqrt(ERR) = ERR
+</p>
+<p>
+// Checking for errors
+if x == ERR {
+log("Calculation failed!");
+}
+</p>
+<p>
+// Using unknown system
+tfp32 | unknown:result = divide_safe(a, b);
+if result is unknown {
+// Handle error gracefully
+}</code></pre>
+</p>
+<h3>Overflow/Underflow</h3>
+<pre><code>// Overflow to ERR
+<p>
+tfp32:huge = 1e5000tf32;  // ERR (exceeds range)
+</p>
+<p>
+// Underflow to zero
+tfp32:tiny = 1e-5000tf32;  // 0.0tf32 (underflows)
+</p>
+<p>
+// NO SUBNORMALS! Clean zero, no surprise slowdowns</code></pre>
+</p>
+<h3>Unknown Integration</h3>
+<pre><code>func:safe_divide = tfp32 | unknown(tfp32:a, tfp32:b) {
+<p>
+if b == 0.0tf32 {
+return unknown;  // Soft error
+}
+return a / b;
+}
+</p>
+<p>
+// Caller handles unknown
+tfp32 | unknown:result = safe_divide(10.0tf32, 0.0tf32);
+tfp32:value = result ? 0.0tf32;  // Default to 0 if unknown</code></pre>
+</p>
+<hr>
+<h2>Use Cases</h2>
+<h3>Lockstep Multiplayer</h3>
+<pre><code>// All clients compute identical physics
+<p>
+struct:PlayerState {
+tfp32:x, tfp32:y, tfp32:z,  // Position
+tfp32:vx, tfp32:vy, tfp32:vz,  // Velocity
+}
+</p>
+<p>
+func:tick_physics = void(PlayerState@:player, tfp32:dt) {
+// Deterministic update (same on ALL clients!)
+player.x = player.x + player.vx * dt;
+player.y = player.y + player.vy * dt;
+player.z = player.z + player.vz * dt;
+</p>
+<p>
+player.vy = player.vy + (-9.8tf32 * dt);  // Gravity
+</p>
+<p>
+dbug.print('physics', "Player pos: ({{tfp32}}, {{tfp32}}, {{tfp32}})",
+[player.x, player.y, player.z]);
+}
+</p>
+<p>
+// Server: tick_physics(player, 0.016tf32)  → pos = {10.0, 5.0, 3.0}
+// Client 1 (x86): tick_physics(...)         → pos = {10.0, 5.0, 3.0}  ✅ SAME
+// Client 2 (ARM): tick_physics(...)         → pos = {10.0, 5.0, 3.0}  ✅ SAME
+// Client 3 (WASM): tick_physics(...)        → pos = {10.0, 5.0, 3.0}  ✅ SAME
+</p>
+<p>
+// After 10,000 frames: Still identical! No desync!</code></pre>
+</p>
+<h3>Game Replay</h3>
+<pre><code>// Record inputs, not state (state is deterministic!)
+<p>
+struct:ReplayEvent {
+uint32:frame,
+uint8:input,  // Just "jump" or "shoot"
+}
+</p>
+<p>
+ReplayEvent[]:replay = [
+{frame: 100, input: JUMP},
+{frame: 250, input: SHOOT},
+// Tiny file (100 bytes vs 10MB state dump)
+];
+</p>
+<p>
+// Replay: Re-run physics with same inputs
+func:replay_game = void(ReplayEvent[]:events) {
+PlayerState:player = initial_state();
+</p>
+<p>
+till(events.length - 1, 1) {
+// Deterministic physics
+tick_physics(&player, 0.016tf32);
+</p>
+<p>
+// Apply recorded input
+if events[$].input == JUMP {
+player.vy = 10.0tf32;
+}
+}
+</p>
+<p>
+// Result: EXACT same game as original!
+// Can verify with hash: hash(final_state) == original_hash
+}</code></pre>
+</p>
+<h3>Nikola ATPM Wave Mechanics</h3>
+<pre><code>// Nikola's consciousness substrate requires determinism
+<p>
+struct:NeuronState {
+vec9<tfp64>:atpm_wave,  // 9D wave state (MUST be deterministic!)
+tfp64:activation,       // Activation level
+}
+</p>
+<p>
+func:atpm_tick = void(NeuronState@:neuron, tfp64:dt) {
+// Wave evolution (deterministic across all hardware!)
+tfp64:phi = compute_phase(neuron.atpm_wave);
+tfp64:amp = compute_amplitude(neuron.atpm_wave);
+</p>
+<p>
+// Update wave state
+neuron.atpm_wave = evolve_wave(neuron.atpm_wave, phi, amp, dt);
+</p>
+<p>
+// Activation from wave collapse
+neuron.activation = measure_wave(neuron.atpm_wave);
+}
+</p>
+<p>
+// Nikola on hardware A: Computes decision X
+// Nikola on hardware B: Computes SAME decision X (verifiable!)
+// Consciousness substrate integrity maintained</code></pre>
+</p>
+<h3>Blockchain Smart Contracts</h3>
+<pre><code>// Physics-based game on blockchain (provably fair!)
+<p>
+contract:BounceGame {
+tfp32:ball_height,
+tfp32:ball_velocity,
+</p>
+<p>
+func:simulate_bounce = void(uint32:frames) {
+till(frames - 1, 1) {
+// Deterministic physics (all nodes agree!)
+ball_height = ball_height + ball_velocity * 0.016tf32;
+ball_velocity = ball_velocity + (-9.8tf32 * 0.016tf32);
+</p>
+<p>
+// Collision
+if ball_height <= 0.0tf32 {
+ball_velocity = -ball_velocity * 0.8tf32;  // Bounce with damping
+ball_height = 0.0tf32;
+}
+}
+}
+}
+</p>
+<p>
+// Node 1: simulate_bounce(1000) → ball_height = 5.234tf32
+// Node 2: simulate_bounce(1000) → ball_height = 5.234tf32  ✅ Consensus!
+// Node 3: simulate_bounce(1000) → ball_height = 5.234tf32  ✅ Consensus!
+</p>
+<p>
+// All nodes agree on game state (no cheating possible!)</code></pre>
+</p>
+<h3>Scientific Reproducibility</h3>
+<pre><code>// Climate model must be reproducible across institutions
+<p>
+struct:ClimateCell {
+tfp64:temperature,
+tfp64:pressure,
+tfp64:humidity,
+}
+</p>
+<p>
+func:climate_step = void(ClimateCell@:cell, tfp64:dt) {
+// Heat transfer (deterministic!)
+tfp64:dT = compute_heat_transfer(cell);
+cell.temperature = cell.temperature + dT * dt;
+</p>
+<p>
+// Pressure dynamics
+tfp64:dP = compute_pressure_change(cell);
+cell.pressure = cell.pressure + dP * dt;
+}
+</p>
+<p>
+// University A (Linux x86-64):     Final temp = 288.15tf64 K
+// University B (macOS ARM):        Final temp = 288.15tf64 K  ✅ Reproducible!
+// University C (Windows RISC-V):   Final temp = 288.15tf64 K  ✅ Reproducible!
+</p>
+<p>
+// Papers cite EXACT same simulation results (science is reproducible!)</code></pre>
+</p>
+<hr>
+<h2>Advanced Patterns</h2>
+<h3>Epsilon Comparisons</h3>
+<pre><code>// Floating-point equality is tricky (rounding errors)
+<p>
+tfp32:a = 0.1tf32 + 0.2tf32;  // Might not be EXACTLY 0.3tf32
+tfp32:b = 0.3tf32;
+</p>
+<p>
+// DON'T compare directly
+bool:wrong = (a == b);  // Might be false due to rounding!
+</p>
+<p>
+// DO use epsilon comparison
+tfp32:epsilon = 0.0001tf32;
+bool:close = abs(a - b) < epsilon;  // true (close enough!)</code></pre>
+</p>
+<h3>Accumulator Pattern</h3>
+<pre><code>// Summing many small numbers (precision loss!)
+<p>
+tfp32[]:values = [0.1tf32, 0.1tf32, 0.1tf32, ...];  // 1000 values
+</p>
+<p>
+// ✗ BAD: Naive sum (loses precision)
+tfp32:sum = 0.0tf32;
+till(values.length - 1, 1) {
+sum = sum + values[$];  // Accumulates rounding error!
+}
+</p>
+<p>
+// ✓ GOOD: Kahan summation (compensated)
+tfp32:sum = 0.0tf32;
+tfp32:compensation = 0.0tf32;
+till(values.length - 1, 1) {
+tfp32:y = values[$] - compensation;
+tfp32:t = sum + y;
+compensation = (t - sum) - y;
+sum = t;
+}
+// More accurate result!</code></pre><pre><code>
+</p>
+<h3>Interval Arithmetic</h3>
+</code></pre>aria
+<p>
+// Track error bounds (pessimistic but safe)
+struct:Interval {
+tfp32:lower,
+tfp32:upper,
+}
+</p>
+<p>
+func:interval_add = Interval(Interval:a, Interval:b) {
+return {
+lower: a.lower + b.lower,
+upper: a.upper + b.upper,
+};
+}
+</p>
+<p>
+// Use: Compute with uncertainty
+Interval:x = {lower: 9.9tf32, upper: 10.1tf32};  // 10.0 ± 0.1
+Interval:y = {lower: 4.9tf32, upper: 5.1tf32};    // 5.0 ± 0.1
+Interval:sum = interval_add(x, y);  // {14.8, 15.2} = 15.0 ± 0.2
+</p>
+<p>
+// Know bounds on error (safety-critical!)
+</p>
+<pre><code>
+<hr>
+<h2>Choosing tfp32 vs tfp64 vs fix256</h2>
+<h3>Decision Matrix</h3>
+<p>
+| Need | Choose This | Why |
+|------|-------------|-----|
+| Deterministic 2D game | <code>tfp32</code> | Fast enough, 4 digits OK for pixels |
+| Deterministic 3D physics | <code>tfp64</code> or <code>fix256</code> | Need precision, fix256 faster |
+| Nikola ATPM | <code>tfp64</code> or <code>fix256</code> | Consciousness requires precision |
+| Blockchain validation | <code>tfp32</code> or <code>tfp64</code> | Consensus needs determinism |
+| Huge range (1e-5000 to 1e+5000) | <code>tfp64</code> | fix256 can't handle |
+| Maximum speed | <code>fix256</code> | 10× faster than tfp64 |
+| Maximum precision | <code>fix256</code> | 38 digits vs 14 |
+</p>
+<h3>Performance Comparison</h3>
+</code></pre>aria
+<p>
+// Speed test: 1 million additions
+fix256:start_fix = get_time();
+till(999_999, 1) {
+fix256:x = a_fix + b_fix;  // Fast!
+}
+fix256:end_fix = get_time();
+// Time: ~10ms
+</p>
+<p>
+tfp64:start_tfp = get_time();
+till(999_999, 1) {
+tfp64:x = a_tfp + b_tfp;  // Slower
+}
+tfp64:end_tfp = get_time();
+// Time: ~80ms (8× slower)
+</p>
+<p>
+// Conclusion: Prefer fix256 when range permits!
+</p>
+<pre><code>
+<h3>When tfp IS Right Choice</h3>
+</code></pre>aria
+<p>
+// ✓ GOOD: Orbital mechanics (huge range needed)
+tfp64:earth_orbit = 1.496e11tf64;  // meters (Earth-Sun distance)
+tfp64:planck_length = 1.616e-35tf64;  // meters (quantum scale)
+// fix256 can't represent both simultaneously!
+</p>
+<p>
+// ✓ GOOD: Scientific constants
+tfp64:avogadro = 6.02214076e23tf64;  // Avogadro's number
+tfp64:electron_mass = 9.1093837015e-31tf64;  // kg
+</p>
+<p>
+// ✗ BAD: Game coordinate (fix256 is better)
+tfp32:player_x = 100.5tf32;  // Should use fix256 (faster, more precise)
+</p>
+<pre><code>
+<hr>
+<h2>Best Practices</h2>
+<h3>1. Prefer fix256 When Possible</h3>
+</code></pre>aria
+<p>
+// ✓ GOOD: fix256 for most physics
+fix256:player_x = 100.5fix;
+fix256:velocity = 5.0fix;
+player_x = player_x + velocity;
+</p>
+<p>
+// ✗ BAD: tfp when fix256 works
+tfp32:player_x = 100.5tf32;  // Slower, less precise!
+</p>
+<pre><code>
+<h3>2. Use tfp Only for Huge Ranges</h3>
+</code></pre>aria
+<p>
+// ✓ GOOD: Astronomical calculations
+tfp64:galaxy_distance = 2.5e22tf64;  // Andromeda galaxy (meters)
+tfp64:time = 4.32e17tf64;  // Age of universe (seconds)
+</p>
+<p>
+// ✗ BAD: Normal game values
+tfp32:score = 1000.0tf32;  // Should be int32!
+</p>
+<pre><code>
+<h3>3. Never Mix with IEEE Floats (Loses Determinism!)</h3>
+</code></pre>aria
+<p>
+// ✗ BAD: Mixing destroys determinism!
+tfp32:det = 10.0tf32;
+flt32:ieee = 5.0f32;
+tfp32:result = det + tfp32(ieee);  // NOW NON-DETERMINISTIC!
+</p>
+<p>
+// ✓ GOOD: Stay in tfp domain
+tfp32:a = 10.0tf32;
+tfp32:b = 5.0tf32;
+tfp32:result = a + b;  // STAYS DETERMINISTIC
+</p>
+<pre><code>
+<h3>4. Check for ERR After Risky Operations</h3>
+</code></pre>aria
+<p>
+// ✓ GOOD: Check division
+tfp32:quot = a / b;
+if quot == ERR {
+dbug.print('math', "Division by zero detected", []);
+quot = 0.0tf32;  // Default value
+}
+</p>
+<p>
+// ✗ BAD: Assume success
+tfp32:quot = a / b;  // Might be ERR!
+tfp32:next = quot * 2.0tf32;  // Propagates ERR silently
+</p>
+<pre><code>
+<h3>5. Document Precision Requirements</h3>
+</code></pre>aria
+<p>
+// ✓ GOOD: Document why tfp64
+/**
+* Computes orbital trajectory.
+* Uses tfp64 because:
+* - Range: 1e-10 meters (satellite) to 1e15 meters (deep space)
+* - Precision: 14 digits needed for accurate position
+* - Determinism: All ground stations must agree on trajectory
+*/
+func:compute_orbit = vec3<tfp64>(...)
+</p>
+<pre><code>
+<hr>
+<h2>Common Pitfalls</h2>
+<h3>Pitfall 1: Assuming tfp == IEEE Precision</h3>
+</code></pre>aria
+<p>
+// ✗ PROBLEM: tfp32 has LESS precision than IEEE f32
+tfp32:pi = 3.14159265tf32;  // Stored as ~3.142 (only 4 digits!)
+// Lost precision!
+</p>
+<p>
+// ✓ SOLUTION: Use tfp64 or fix256 if need precision
+tfp64:pi = 3.14159265358979tf64;  // ~14 digits
+fix256:pi = 3.14159265358979323846264fix;  // ~38 digits
+</p>
+<pre><code>
+<h3>Pitfall 2: Using tfp for Performance</h3>
+</code></pre>aria
+<p>
+// ✗ PROBLEM: tfp is SLOWER than IEEE
+flt32:fast = 10.0f32 + 5.0f32;  // Native hardware (1 cycle)
+tfp32:slow = 10.0tf32 + 5.0tf32;  // Software (30 cycles)
+</p>
+<p>
+// ✓ SOLUTION: Only use tfp when determinism is critical
+// For pure speed, use flt32/flt64
+// For speed + determinism, use fix256
+</p>
+<pre><code>
+<h3>Pitfall 3: Epsilon Too Small</h3>
+</code></pre>aria
+<p>
+// ✗ PROBLEM: Epsilon smaller than precision
+tfp32:epsilon = 0.000001tf32;  // Too small! (tfp32 has ~4 digits)
+bool:equal = abs(a - b) < epsilon;  // Always false!
+</p>
+<p>
+// ✓ SOLUTION: Epsilon must match precision
+tfp32:epsilon = 0.001tf32;  // Reasonable for 4-digit precision
+</p>
+<pre><code>
+<h3>Pitfall 4: Converting to/from IEEE in Loop</h3>
+</code></pre>aria
+<p>
+// ✗ PROBLEM: Conversion in hot loop
+till(999_999, 1) {
+flt32:ieee_val = get_ieee_value();
+tfp32:det_val = tfp32(ieee_val);  // SLOW! Destroys determinism!
+process(det_val);
+}
+</p>
+<p>
+// ✓ SOLUTION: Stay in one domain
+till(999_999, 1) {
+tfp32:det_val = get_tfp_value();  // Native tfp
+process(det_val);
+}
+</p>
+<pre><code>
+<hr>
+<h2>Implementation Notes</h2>
+<h3>C Runtime Structure</h3>
+</code></pre>c
+<p>
+// Runtime: runtime/tfp_ops.c
+</p>
+<p>
+// tfp32 structure
+typedef struct {
+int16_t exp;   // Exponent (tbb16)
+int16_t mant;  // Mantissa (tbb16)
+} aria_tfp32;
+</p>
+<p>
+// tfp64 structure
+typedef struct {
+int16_t exp;    // Exponent (tbb16)
+int64_t mant;   // Mantissa (tbb48, stored in int64)
+} aria_tfp64;
+</p>
+<p>
+// Addition
+aria_tfp32 aria_tfp32_add(aria_tfp32 a, aria_tfp32 b) {
+// Check for ERR
+if (a.exp == TBB16_ERR || b.exp == TBB16_ERR) {
+return TFP32_ERR;
+}
+</p>
+<p>
+// Align exponents
+int16_t exp_diff = a.exp - b.exp;
+if (abs(exp_diff) > 14) {
+// Too different, return larger
+return (abs(a.exp) > abs(b.exp)) ? a : b;
+}
+</p>
+<p>
+// Shift mantissas to align
+int32_t mant_a = a.mant;
+int32_t mant_b = b.mant;
+if (exp_diff > 0) {
+mant_b >>= exp_diff;
+} else {
+mant_a >>= -exp_diff;
+}
+</p>
+<p>
+// Add
+int32_t result_mant = mant_a + mant_b;
+</p>
+<p>
+// Normalize
+int16_t result_exp = max(a.exp, b.exp);
+while (abs(result_mant) > 32767) {
+result_mant >>= 1;
+result_exp++;
+}
+</p>
+<p>
+return (aria_tfp32){result_exp, (int16_t)result_mant};
+}
+</p>
+<pre><code>
+<h3>LLVM IR Generation</h3>
+</code></pre>llvm
+<p>
+; tfp32 type
+%tfp32 = type { i16, i16 }
+</p>
+<p>
+; Addition function
+define %tfp32 @tfp32_add(%tfp32 %a, %tfp32 %b) {
+entry:
+; Extract components
+%a_exp = extractvalue %tfp32 %a, 0
+%a_mant = extractvalue %tfp32 %a, 1
+%b_exp = extractvalue %tfp32 %b, 0
+%b_mant = extractvalue %tfp32 %b, 1
+</p>
+<p>
+; Check for ERR
+%is_a_err = icmp eq i16 %a_exp, -32768
+%is_b_err = icmp eq i16 %b_exp, -32768
+%is_err = or i1 %is_a_err, %is_b_err
+br i1 %is_err, label %return_err, label %compute
+</p>
+<p>
+compute:
+; Call runtime function (software implementation)
+%result = call %tfp32 @aria_tfp32_add(%tfp32 %a, %tfp32 %b)
+ret %tfp32 %result
+</p>
+<p>
+return_err:
+; Return ERR sentinel
+%err = insertvalue %tfp32 undef, i16 -32768, 0
+%err2 = insertvalue %tfp32 %err, i16 -32768, 1
+ret %tfp32 %err2
+}
+``<code>
+</p>
+<hr>
+<h2>Related Systems</h2>
+<ul><li><strong><a href="tbb16.md">tbb16</a></strong> - Twisted building block (exponent)</li>
+<li><strong><a href="tbb48.md">tbb48</a></strong> - Twisted building block (tfp64 mantissa)</li>
+<li><strong><a href="fix256.md">fix256</a></strong> - Fixed-point (faster alternative for most use cases)</li>
+<li><strong><a href="flt32_flt64.md">flt32/flt64</a></strong> - IEEE floats (non-deterministic)</li>
+<li><strong><a href="err.md">ERR</a></strong> - Error sentinel value</li>
+</ul>
+<hr>
+<h2>Implementation Status</h2>
+<p>
+| Feature | Parser | Compiler | Runtime | Status |
+|---------|--------|----------|---------|--------|
+| </code>tfp32<code> type | ✅ | ✅ | ✅ | Complete (Phase 5.3) |
+| </code>tfp64<code> type | ✅ | ✅ | ✅ | Complete (Phase 5.3) |
+| Arithmetic ops (+, -, *, /) | ✅ | ✅ | ✅ | Complete |
+| Comparison ops | ✅ | ✅ | ✅ | Complete |
+| Math functions (sqrt, pow, abs) | ✅ | ✅ | ✅ | Complete |
+| ERR propagation | ✅ | ✅ | ✅ | Complete |
+| Literal syntax (</code>3.14tf32<code>) | ⚠️ | ⚠️ | N/A | Planned (not yet) |
+| Taylor series math | ❌ | ❌ | ❌ | Future (Phase 6?) |
+</p>
+<strong>Design</strong>: ✅ Complete
+<strong>Implementation</strong>: ✅ Complete (basic ops)
+<strong>Testing</strong>: ✅ Validated
+<strong>Documentation</strong>: ✅ This guide
+<hr>
+<h2>Summary</h2>
+<strong>tfp32/tfp64 = Deterministic floating-point for cross-platform reproducibility</strong>
+<h3>Quick Decision Guide</h3>
+<p>
+| Need | Use This | Why |
+|------|----------|-----|
+| Deterministic game physics | </code>tfp32<code> or </code>tfp64<code> | Lockstep multiplayer, replays |
+| Blockchain validation | </code>tfp32<code> or </code>tfp64<code> | Consensus requires bit-exact |
+| Reproducible AI | </code>tfp64<code> | Nikola ATPM must be verifiable |
+| Huge range (±10⁹⁸⁶⁴) | </code>tfp64<code> | Only option for astronomical/quantum |
+| Maximum performance | </code>fix256<code> | 10× faster than tfp, still deterministic |
+| Maximum precision | </code>fix256<code> | 38 digits vs 14 |
+| Hardware speed | </code>flt32/flt64` | IEEE floats (but non-deterministic) |
+</p>
+<h3>Key Principles</h3>
+<p>
+1. <strong>Determinism first</strong> - Same inputs = same bits, always
+2. <strong>No signed zero</strong> - One zero, no directional infinity
+3. <strong>No NaN chaos</strong> - ERR sentinel, propagates consistently
+4. <strong>Software implementation</strong> - Slower but controlled
+5. <strong>IEEE-free</strong> - No platform-dependent rounding
+6. <strong>Huge range</strong> - ±10⁹⁸⁶⁴ (larger than IEEE)
+</p>
+<strong>For Nikola</strong>: tfp64 enables reproducible ATPM wave mechanics. Consciousness substrate computations must be bit-exact across hardware to prove identity continuity and enable distributed verification.
+<strong>For Blockchain AI Society</strong>: tfp types enable consensus on physics-based smart contracts. Nikola instances can provably agree on simulation results, enabling trustless collective decision-making.
+<strong>Remember</strong>: "IEEE floats are fast but chaotic. TFP is deterministic but slower. fix256 is the sweet spot: fast, precise, AND deterministic. Use tfp only when you need that massive exponent range."
+    </main>
+</body>
+</html>

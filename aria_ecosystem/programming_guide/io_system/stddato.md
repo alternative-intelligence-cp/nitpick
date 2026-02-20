@@ -124,12 +124,13 @@ fn main() {
 use std::json;
 
 fn main() {
-    for record in process_records() {
+    records = process_records().collect();
+    till(records.length - 1, 1) {
         // Human progress
-        stdout << "Processing record " << record.id;
+        stdout << "Processing record " << records[$].id;
         
         // Machine output (one JSON per line)
-        stddato.write_json(record);
+        stddato.write_json(records[$]);
         stddato << "\n";  // Newline separator
     }
 }
@@ -218,12 +219,12 @@ fn main() {
     
     // Transform
     output_data: []Record = [];
-    for record in input_data {
-        transformed: Record = transform(record);
+    till(input_data.length - 1, 1) {
+        transformed: Record = transform(input_data[$]);
         output_data.push(transformed);
         
         // Progress to stdout
-        stdout << "Processed record " << record.id;
+        stdout << "Processed record " << input_data[$].id;
     }
     
     // Write to stddato
@@ -398,8 +399,8 @@ end
 
 ```aria
 // Block-buffered by default (good for throughput)
-for item in large_dataset {
-    stddato.write_json(item)?;  // Buffered
+till(large_dataset.length - 1, 1) {
+    stddato.write_json(large_dataset[$])?;  // Buffered
 }
 
 // Force flush when needed
@@ -574,8 +575,8 @@ fn main() {
     stdout << "\nActive Users:";
     stdout << "ID    | Name          | Email";
     stdout << "------|---------------|------------------";
-    for row in rows {
-        stdout << row["id"] << " | " << row["name"] << " | " << row["email"];
+    till(rows.length - 1, 1) {
+        stdout << rows[$]["id"] << " | " << rows[$]["name"] << " | " << rows[$]["email"];
     }
     stdout << "\nTotal: " << rows.len() << " users";
     

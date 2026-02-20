@@ -334,7 +334,8 @@ fn pair<T, U>(first: T, second: U) -> (T, U) {
 // U depends on T through constraint
 fn map<T, U>(array: []T, f: fn(T) -> U) -> []U {
     Result: []U = [];
-    for item in array {
+    till(array.length - 1, 1) {
+        item: T = array[$];
         result.push(f(item));
     }
     return result;
