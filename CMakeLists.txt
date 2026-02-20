@@ -360,8 +360,8 @@ endif()
 
 # Link aglob for std.fs.glob support (ARIA-010)
 if(AGLOB_FOUND)
-    target_link_libraries(aria_runtime aglob)
-    message(STATUS "aria_runtime linked with aglob for glob support")
+    target_link_libraries(aria_runtime aglob atomic)
+    message(STATUS "aria_runtime linked with aglob and atomic for glob and atomics support")
 endif()
 
 # Install runtime library so the compiler can find it
@@ -374,6 +374,12 @@ install(TARGETS aria_runtime DESTINATION lib)
 # Main compiler executable
 add_executable(ariac src/main.cpp ${ARIA_SOURCES})
 target_link_libraries(ariac ${llvm_libs} uring atomic)
+
+# Testing compiler executable (separate binary for testing without disrupting fuzzer)
+# Build with: cmake --build build --target ariac_testing
+# Use with: ./build/ariac_testing your_test.aria
+add_executable(ariac_testing src/main.cpp ${ARIA_SOURCES})
+target_link_libraries(ariac_testing ${llvm_libs} uring atomic)
 
 # LSP server executable (Phase 7.3)
 add_executable(aria-ls src/tools/lsp/aria-ls.cpp 

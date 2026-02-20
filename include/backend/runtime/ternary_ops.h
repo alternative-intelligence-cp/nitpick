@@ -328,6 +328,38 @@ int8_t aria_tbb8_from_int(int32_t value);
 int32_t aria_tbb8_to_int(int8_t value);
 
 // ==============================================================================
+// Wave9 Encoding Functions (Pack/Unpack nyte from 5 nits)
+// ==============================================================================
+
+/**
+ * @brief Pack 5 nits into a nyte for Wave9 encoding
+ * @param n0 Nit 0 (least significant)
+ * @param n1 Nit 1
+ * @param n2 Nit 2
+ * @param n3 Nit 3
+ * @param n4 Nit 4 (most significant)
+ * @return Packed nyte value, or NYTE_ERR if any nit is out of range [-4, 4]
+ * 
+ * Used by Wave9 compression: nyte_from_wave()
+ * Encoding: nyte = (n4*9^4 + n3*9^3 + n2*9^2 + n1*9 + n0) + NYTE_BIAS
+ */
+uint16_t aria_pack_nyte(int8_t n0, int8_t n1, int8_t n2, int8_t n3, int8_t n4);
+
+/**
+ * @brief Unpack nyte into 5 nits for Wave9 decoding
+ * @param packed Packed nyte value
+ * @param n0 Output: nit 0 (least significant)
+ * @param n1 Output: nit 1
+ * @param n2 Output: nit 2
+ * @param n3 Output: nit 3
+ * @param n4 Output: nit 4 (most significant)
+ * 
+ * Used by Wave9 decompression: wave_from_nyte()
+ * If packed == NYTE_ERR, all outputs are set to INT8_MIN
+ */
+void aria_unpack_nyte(uint16_t packed, int8_t* n0, int8_t* n1, int8_t* n2, int8_t* n3, int8_t* n4);
+
+// ==============================================================================
 /**
  * @brief Initialize lookup tables for ternary arithmetic
  * 

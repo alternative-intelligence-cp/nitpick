@@ -23,6 +23,10 @@ public:
     bool isStack;              // stack keyword
     bool isGC;                 // gc keyword (explicit)
     
+    // P0: Alignment attribute support - #[align(N)]
+    // Used for cache line alignment (64), SIMD (16/32/64), and FFI compatibility
+    uint64_t alignment = 0;    // 0 = natural alignment, >0 = explicit alignment in bytes
+    
     // Borrow checker annotations (set during borrow checking phase)
     int scope_depth;           // Scope depth where variable is declared (for Appendage Theory)
     bool requires_drop;        // True if variable needs explicit cleanup (wild/stack)
@@ -107,6 +111,10 @@ public:
     std::string structName;
     std::vector<ASTNodePtr> fields;  // VarDeclStmt instances (field declarations)
     std::vector<GenericParamInfo> genericParams;  // For generics: struct<T, U>
+    
+    // P0: Alignment attribute support - #[align(N)] for entire struct
+    // Ensures all instances of this struct are aligned to N bytes
+    uint64_t alignment = 0;    // 0 = natural alignment, >0 = explicit alignment in bytes
     
     StructDeclStmt(const std::string& name, const std::vector<ASTNodePtr>& fieldList,
                    int line = 0, int column = 0)

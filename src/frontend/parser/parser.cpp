@@ -1599,7 +1599,7 @@ bool Parser::isTypeKeyword(frontend::TokenType type) const {
         type == TokenType::TOKEN_KW_BOOL || type == TokenType::TOKEN_KW_STRING ||
         type == TokenType::TOKEN_KW_DYN || type == TokenType::TOKEN_KW_OBJ ||
         type == TokenType::TOKEN_KW_RESULT || type == TokenType::TOKEN_KW_ARRAY ||
-        type == TokenType::TOKEN_KW_STRUCT ||
+        type == TokenType::TOKEN_KW_STRUCT || type == TokenType::TOKEN_KW_NIL ||
         // Note: TOKEN_KW_FUNC removed - handled as identifier in expressions
         // Balanced ternary/nonary
         type == TokenType::TOKEN_KW_TRIT || type == TokenType::TOKEN_KW_TRYTE ||
@@ -1748,6 +1748,25 @@ ASTNodePtr Parser::parseStatement() {
         return parseVarDecl();
     }
     
+    // P0: Check for alignment attribute #[align(N)] - variable declaration
+    if (peek().type == TokenType::TOKEN_HASH) {
+        size_t saved = current;
+        advance(); // consume '#'
+        
+        if (check(TokenType::TOKEN_LEFT_BRACKET)) {
+            advance(); // consume '['
+            
+            if (check(TokenType::TOKEN_IDENTIFIER) && peek().lexeme == "align") {
+                // It's an alignment attribute, restore position and parse as var decl
+                current = saved;
+                return parseVarDecl();
+            }
+        }
+        
+        // Not an alignment attribute, restore position and fall through
+        current = saved;
+    }
+    
     // Check for generic type reference (variable declaration): *T:name = ...
     if (isGenericTypeReference()) {
         return parseVarDecl();
@@ -1773,9 +1792,30 @@ ASTNodePtr Parser::parseStatement() {
             }
         }
         
+        // Check for array type suffix: CustomType[] or CustomType[size]
+        if (check(TokenType::TOKEN_LEFT_BRACKET)) {
+            advance(); // consume '['
+            
+            // Skip size expression if present
+            if (!check(TokenType::TOKEN_RIGHT_BRACKET)) {
+                // Skip the size expression (simple lookahead, just scan tokens)
+                int bracketDepth = 1;
+                while (bracketDepth > 0 && !isAtEnd()) {
+                    if (check(TokenType::TOKEN_LEFT_BRACKET)) bracketDepth++;
+                    if (check(TokenType::TOKEN_RIGHT_BRACKET)) bracketDepth--;
+                    if (bracketDepth > 0) advance();
+                }
+            }
+            
+            // Should be at ']' now
+            if (check(TokenType::TOKEN_RIGHT_BRACKET)) {
+                advance(); // consume ']'
+            }
+        }
+        
         // Now check for colon (variable declaration) or other tokens
         if (check(TokenType::TOKEN_COLON)) {
-            // It's a type annotation: CustomType:name or Box<int64>:name
+            // It's a type annotation: CustomType:name or Box<int64>:name or CustomType[N]:name
             current = saved; // reset position
             return parseVarDecl();
         } else {
@@ -2099,6 +2139,9 @@ ASTNodePtr Parser::parseStatement() {
 ASTNodePtr Parser::parseVarDecl() {
     using namespace frontend;
     
+    // P0: Parse #[align(N)] attribute if present
+    uint64_t alignment = parseAlignmentAttribute();
+    
     bool isWild = false;
     bool isConst = false;
     bool isFixed = false;
@@ -2184,6 +2227,7 @@ ASTNodePtr Parser::parseVarDecl() {
     varDecl->isFixed = isFixed;
     varDecl->isStack = isStack;
     varDecl->isGC = isGC;
+    varDecl->alignment = alignment;  // P0: Set explicit alignment if specified
     
     return varDecl;
 }
@@ -2364,6 +2408,9 @@ ASTNodePtr Parser::parseFuncDecl() {
 ASTNodePtr Parser::parseStructDecl() {
     using namespace frontend;
     
+    // P0: Parse #[align(N)] attribute for entire struct if present
+    uint64_t structAlignment = parseAlignmentAttribute();
+    
     Token structToken = previous(); // 'struct' keyword
     
     // Phase 3.4: Parse generic parameters if present: struct<T, E>
@@ -2383,6 +2430,9 @@ ASTNodePtr Parser::parseStructDecl() {
     
     std::vector<ASTNodePtr> fields;
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        // P0: Parse #[align(N)] attribute for struct field if present
+        uint64_t fieldAlignment = parseAlignmentAttribute();
+        
         // Parse field type (use parseType to handle generics, pointers, etc.)
         ASTNodePtr fieldTypeNode = parseType();
         if (!fieldTypeNode) {
@@ -2405,6 +2455,8 @@ ASTNodePtr Parser::parseStructDecl() {
             fieldTypeNode->column
         );
         
+        fieldDecl->alignment = fieldAlignment;  // P0: Set field alignment if specified
+        
         fields.push_back(fieldDecl);
         
         // Consume semicolon after field
@@ -2425,6 +2477,7 @@ ASTNodePtr Parser::parseStructDecl() {
     
     // Store generic parameters
     structDecl->genericParams = genericParams;
+    structDecl->alignment = structAlignment;  // P0: Set struct alignment if specified
     
     return structDecl;
 }
@@ -4204,6 +4257,87 @@ ASTNodePtr Parser::parse() {
 // ============================================================================
 
 // Parse generic parameters with optional trait constraints: <T: Trait1 & Trait2, U>
+/**
+ * P0: Parse alignment attribute #[align(N)] before variable or struct declarations
+ * Returns alignment in bytes, or 0 if no attribute present
+ * 
+ * Syntax: #[align(64)] or #[align(16)]
+ * Examples:
+ *   #[align(64)] flt64[1024]:buffer = ...;  // Cache line aligned array
+ *   #[align(64)] struct:WaveData = { ... };  // Entire struct aligned
+ */
+uint64_t Parser::parseAlignmentAttribute() {
+    using namespace frontend;
+    
+    // Check for #[
+    if (!check(TokenType::TOKEN_HASH)) {
+        return 0;  // No attribute
+    }
+    
+    // Save position in case this isn't an align attribute
+    size_t saved = current;
+    
+    advance();  // Consume HASH
+    
+    // Must be followed by '['
+    if (!check(TokenType::TOKEN_LEFT_BRACKET)) {
+        current = saved;  // Not an attribute, restore position
+        return 0;
+    }
+    
+    advance();  // Consume LEFT_BRACKET
+    
+    // Must be 'align' identifier
+    if (!check(TokenType::TOKEN_IDENTIFIER) || peek().lexeme != "align") {
+        error("Unknown attribute. Only #[align(N)] is currently supported");
+        current = saved;
+        return 0;
+    }
+    
+    advance();  // Consume 'align'
+    
+    // Must have (
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'align'");
+    
+    // Parse alignment value (must be integer literal)
+    Token alignToken = peek();
+    if (alignToken.type != TokenType::TOKEN_INTEGER) {
+        error("Expected integer literal for alignment value");
+        return 0;
+    }
+    
+    advance();  // Consume number
+    
+    // Convert to uint64_t
+    uint64_t alignment = 0;
+    try {
+        alignment = std::stoull(alignToken.lexeme);
+    } catch (...) {
+        error("Invalid alignment value: " + alignToken.lexeme);
+        return 0;
+    }
+    
+    // Validate alignment is power of 2
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+        error("Alignment must be a non-zero power of 2 (1, 2, 4, 8, 16, 32, 64, 128, ...)");
+        return 0;
+    }
+    
+    // Validate reasonable maximum (4096 = page size)
+    if (alignment > 4096) {
+        error("Alignment cannot exceed 4096 bytes (page size)");
+        return 0;
+    }
+    
+    // Must have )
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after alignment value");
+    
+    // Must have ]
+    consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after attribute");
+    
+    return alignment;
+}
+
 std::vector<GenericParamInfo> Parser::parseGenericParams() {
     using namespace frontend;
     

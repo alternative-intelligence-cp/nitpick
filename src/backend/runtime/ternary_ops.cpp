@@ -719,3 +719,95 @@ int32_t aria_tbb8_to_int(int8_t value) {
     }
     return static_cast<int32_t>(value);
 }
+
+// ==============================================================================
+// Wave9 Encoding Functions (Pack/Unpack nyte from 5 nits)
+// ==============================================================================
+
+/**
+ * @brief Pack 5 nits into a nyte
+ * @param n0 Nit 0 (least significant)
+ * @param n1 Nit 1
+ * @param n2 Nit 2
+ * @param n3 Nit 3
+ * @param n4 Nit 4 (most significant)
+ * @return Packed nyte value (uint16)
+ * 
+ * Encoding formula:
+ *   nyte = (n4*9^4 + n3*9^3 + n2*9^2 + n1*9^1 + n0*9^0) + NYTE_BIAS
+ * 
+ * Each nit must be in range [-4, 4]. Invalid nits return NYTE_ERR.
+ */
+extern "C" uint16_t aria_pack_nyte(int8_t n0, int8_t n1, int8_t n2, int8_t n3, int8_t n4) {
+    // Validate all nits are in range [-4, 4]
+    if (n0 < -4 || n0 > 4 ||
+        n1 < -4 || n1 > 4 ||
+        n2 < -4 || n2 > 4 ||
+        n3 < -4 || n3 > 4 ||
+        n4 < -4 || n4 > 4) {
+        return NYTE_ERR;
+    }
+    
+    // Compute positional value in balanced nonary
+    int32_t value = n0 * POW9[0] +
+                    n1 * POW9[1] +
+                    n2 * POW9[2] +
+                    n3 * POW9[3] +
+                    n4 * POW9[4];
+    
+    // Check if result is in valid nyte range
+    if (value < -NYTE_BIAS || value > NYTE_BIAS) {
+        return NYTE_ERR;
+    }
+    
+    // Apply bias to map to unsigned range
+    return static_cast<uint16_t>(value + NYTE_BIAS);
+}
+
+/**
+ * @brief Unpack nyte into 5 nits
+ * @param packed Packed nyte value
+ * @param n0 Output: nit 0 (least significant)
+ * @param n1 Output: nit 1
+ * @param n2 Output: nit 2
+ * @param n3 Output: nit 3
+ * @param n4 Output: nit 4 (most significant)
+ * 
+ * Decoding formula:
+ *   value = packed - NYTE_BIAS
+ *   For each nit from LSB to MSB:
+ *     nit[i] = (value / 9^i) mod 9, adjusted to [-4, 4]
+ * 
+ * If packed == NYTE_ERR, all nits are set to INT8_MIN (error sentinel)
+ */
+extern "C" void aria_unpack_nyte(uint16_t packed, int8_t* n0, int8_t* n1, int8_t* n2, int8_t* n3, int8_t* n4) {
+    if (packed == NYTE_ERR) {
+        // Error propagation
+        *n0 = *n1 = *n2 = *n3 = *n4 = INT8_MIN;
+        return;
+    }
+    
+    // Remove bias to get signed value
+    int32_t value = static_cast<int32_t>(packed) - NYTE_BIAS;
+    
+    // Extract each nit using division and modulo
+    for (int i = 0; i < 5; ++i) {
+        int quotient = value / POW9[i];
+        int rem = quotient % 9;
+        
+        // Adjust remainder to balanced range [-4, 4]
+        if (rem > 4) rem -= 9;
+        else if (rem < -4) rem += 9;
+        
+        int8_t nit = static_cast<int8_t>(rem);
+        
+        // Store in output parameter
+        switch (i) {
+            case 0: *n0 = nit; break;
+            case 1: *n1 = nit; break;
+            case 2: *n2 = nit; break;
+            case 3: *n3 = nit; break;
+            case 4: *n4 = nit; break;
+        }
+    }
+}

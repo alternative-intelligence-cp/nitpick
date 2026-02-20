@@ -967,17 +967,10 @@ std::string Monomorphizer::requestStructSpecialization(
     for (const auto& field : specialized->fields) {
         VarDeclStmt* fieldDecl = static_cast<VarDeclStmt*>(field.get());
         
-        std::cerr << "[DEBUG MONOMORPH] Field: " << fieldDecl->varName 
-                  << ", typeName: '" << fieldDecl->typeName << "'" << std::endl;
-        
         // Look up field type
         Type* fieldType = typeSystem->getStructType(fieldDecl->typeName);
-        std::cerr << "[DEBUG MONOMORPH]   getStructType returned: " 
-                  << (fieldType ? "found" : "null") << std::endl;
         if (!fieldType) {
             fieldType = typeSystem->getPrimitiveType(fieldDecl->typeName);
-            std::cerr << "[DEBUG MONOMORPH]   getPrimitiveType returned: " 
-                      << (fieldType ? fieldType->toString() : "null") << std::endl;
         }
         
         if (!fieldType || fieldType->getKind() == TypeKind::ERROR) {
@@ -985,9 +978,6 @@ std::string Monomorphizer::requestStructSpecialization(
                     "' in specialized struct '" + mangledName + "'");
             return "";
         }
-        
-        std::cerr << "[DEBUG MONOMORPH]   Final field type: " 
-                  << (fieldType ? fieldType->toString() : "NULL") << std::endl;
         
         fields.push_back(StructType::Field(fieldDecl->varName, fieldType, 0, false));
     }

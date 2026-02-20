@@ -1,13 +1,43 @@
-# Phase 4.2: Adversarial Fuzzing
+# Aria Fuzzing Framework
+
+> **⭐ NEW (Feb 18, 2026)**: [Full-Stack Fuzzer](FULLSTACK_FUZZER.md) with runtime linking is now available!  
+> See [QUICKSTART.md](QUICKSTART.md) for quick usage guide.
 
 ## Overview
 
-This framework performs mutation-based fuzzing of the Aria compiler to find:
+The Aria project includes multiple fuzzing tools for different testing needs:
+
+### 🚀 **Full-Stack Fuzzer** (Recommended for Release Validation)
+- **Tests**: Complete pipeline (parse → typecheck → codegen → link → execute)
+- **Features**: P2.7 structs, stdlib collections, async syntax, integer math
+- **Speed**: ~14 tests/sec with execution, ~60/sec without
+- **Best for**: Release validation, runtime bug detection
+- **Quick Start**: `./run_fullstack_campaign.sh 200 --execute`
+- **Docs**: [FULLSTACK_FUZZER.md](FULLSTACK_FUZZER.md)
+
+### ⚡ **V2 Fuzzer** (Fast Frontend Testing)
+- **Tests**: Parse + typecheck only (no linking)
+- **Speed**: ~70 tests/sec
+- **Best for**: Parser development, fast iteration
+- **Location**: `v2/`
+
+### 🔧 **Legacy Adversarial Fuzzer** (This Directory)
+- **Tests**: Mutation-based testing
+- **Status**: Being updated to support full linking
+- **Features**: Crash detection, corpus management
+
+---
+
+## Legacy Framework: Adversarial Fuzzing
+
+This framework performs mutation-based fuzzing to find:
 
 1. **Crashes** - Segfaults, aborts, assertion failures
 2. **Hangs** - Infinite loops, excessive resource usage
 3. **ICE** - Internal Compiler Errors
 4. **Memory Issues** - ASAN/UBSAN violations
+
+> **Note**: This fuzzer is being updated to support full linking like the new Full-Stack Fuzzer.
 
 ## Quick Start
 

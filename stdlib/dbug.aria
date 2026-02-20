@@ -1,0 +1,309 @@
+/**
+ * Aria Standard Library - Debug Utilities
+ * 
+ * Sophisticated debug helper with group-based filtering and assertions.
+ * Unlike simple print debugging, dbug lets you leave debug code in production
+ * and selectively enable it by group tags.
+ * 
+ * Philosophy:
+ * - Debug code stays in the codebase (no commenting out)
+ * - Group-based filtering (enable only what you need)
+ * - Assertions with custom messages
+ * - No performance impact when disabled
+ * 
+ * Usage:
+ *   dbug_enable("network");          // Enable network debug group
+ *   dbug_print("network", "Connected to server");
+ *   dbug_check("validation", "Age must be positive", age > 0);
+ * 
+ * Groups:
+ * - Use descriptive tags: "network", "database", "auth", "parser", etc.
+ * - Multiple groups can be active simultaneously
+ * - Special group "all" enables everything
+ */
+
+// =============================================================================
+// Global Debug State (Simplified - No Dynamic Allocation)
+// =============================================================================
+
+/**
+ * Maximum number of debug groups that can be tracked.
+ */
+const int32:DBUG_MAX_GROUPS = 8;
+
+/**
+ * Enabled groups (simple fixed array approach).
+ * Workaround: Using individual variables instead of array due to compiler limitation.
+ */
+string:_dbug_group_0 = "";
+string:_dbug_group_1 = "";
+string:_dbug_group_2 = "";
+string:_dbug_group_3 = "";
+string:_dbug_group_4 = "";
+string:_dbug_group_5 = "";
+string:_dbug_group_6 = "";
+string:_dbug_group_7 = "";
+
+int32:_dbug_enabled_count = 0;
+bool:_dbug_all_enabled = false;
+
+// =============================================================================
+// Internal Helper Functions
+// =============================================================================
+
+/**
+ * Get enabled group by index (0-7).
+ */
+func:_dbug_get_group = string(int32:index) {
+    string:result = "";
+    if (index == 0) { result = _dbug_group_0; }
+    if (index == 1) { result = _dbug_group_1; }
+    if (index == 2) { result = _dbug_group_2; }
+    if (index == 3) { result = _dbug_group_3; }
+    if (index == 4) { result = _dbug_group_4; }
+    if (index == 5) { result = _dbug_group_5; }
+    if (index == 6) { result = _dbug_group_6; }
+    if (index == 7) { result = _dbug_group_7; }
+    pass(result);
+};
+
+/**
+ * Set enabled group at index.
+ */
+func:_dbug_set_group = NIL(int32:index, string:value) {
+    if (index == 0) { _dbug_group_0 = value; pass(NIL); }
+    if (index == 1) { _dbug_group_1 = value; pass(NIL); }
+    if (index == 2) { _dbug_group_2 = value; pass(NIL); }
+    if (index == 3) { _dbug_group_3 = value; pass(NIL); }
+    if (index == 4) { _dbug_group_4 = value; pass(NIL); }
+    if (index == 5) { _dbug_group_5 = value; pass(NIL); }
+    if (index == 6) { _dbug_group_6 = value; pass(NIL); }
+    if (index == 7) { _dbug_group_7 = value; pass(NIL); }
+    pass(NIL);
+};
+
+// =============================================================================
+// Group Management Functions
+// =============================================================================
+
+/**
+ * Enable debug output for a specific group.
+ */
+pub func:dbug_enable = NIL(string:group) {
+    // Check for special "all" group
+    if (group == "all") {
+        _dbug_all_enabled = true;
+    } else {
+        // Check if already enabled
+        bool:already_enabled = false;
+        int32:i = 0;
+        while (i < _dbug_enabled_count) {
+            if (_dbug_get_group(i) == group) {
+                already_enabled = true;
+            }
+            i = i + 1;
+        }
+        
+        // Add to enabled list (if not already enabled and space available)
+        if (!already_enabled) {
+            if (_dbug_enabled_count < DBUG_MAX_GROUPS) {
+                _dbug_set_group(_dbug_enabled_count, group) ? NIL;
+                _dbug_enabled_count = _dbug_enabled_count + 1;
+            } else {
+                drop(println("[DBUG WARNING] Max groups reached (8), cannot enable more"));
+            }
+        }
+    }
+    
+    pass(NIL);
+};
+
+/**
+ * Disable debug output for a specific group.
+ */
+pub func:dbug_disable = NIL(string:group) {
+    // Check for special "all" group
+    if (group == "all") {
+        _dbug_all_enabled = false;
+        _dbug_enabled_count = 0;
+    } else {
+        // Find and remove from enabled list
+        bool:found = false;
+        int32:i = 0;
+        while (i < _dbug_enabled_count) {
+            if (_dbug_get_group(i) == group) {
+                // Shift remaining elements down
+                int32:j = i;
+                while (j < _dbug_enabled_count - 1) {
+                    _dbug_set_group(j, _dbug_get_group(j + 1)) ? NIL;
+                    j = j + 1;
+                }
+                _dbug_enabled_count = _dbug_enabled_count - 1;
+                found = true;
+            }
+            i = i + 1;
+        }
+    }
+    
+    pass(NIL);
+};
+
+/**
+ * Check if a debug group is currently enabled.
+ */
+pub func:dbug_is_enabled = bool(string:group) {
+    bool:enabled = false;
+    
+    // "all" group means everything is enabled
+    if (_dbug_all_enabled) {
+        enabled = true;
+    } else {
+        // Check if this specific group is in the enabled list
+        int32:i = 0;
+        while (i < _dbug_enabled_count) {
+            if (_dbug_get_group(i) == group) {
+                enabled = true;
+            }
+            i = i + 1;
+        }
+    }
+    
+    pass(enabled);
+};
+
+/**
+ * List all currently enabled debug groups.
+ */
+pub func:dbug_list_enabled = NIL() {
+    if (_dbug_all_enabled) {
+        drop(println("[DBUG] All groups enabled"));
+    } else if (_dbug_enabled_count == 0) {
+        drop(println("[DBUG] No groups enabled"));
+    } else {
+        drop(println("[DBUG] Enabled groups:"));
+        int32:i = 0;
+        while (i < _dbug_enabled_count) {
+            drop(print("  - "));
+            drop(println(_dbug_get_group(i)));
+            i = i + 1;
+        }
+    }
+    
+    pass(NIL);
+};
+
+// =============================================================================
+// Core Debug Functions
+// =============================================================================
+
+/**
+ * Print a debug message if the group is enabled.
+ */
+pub func:dbug_print = NIL(string:group, string:message) {
+    if (dbug_is_enabled(group)) {
+        drop(print("[DBUG:"));
+        drop(print(group));
+        drop(print("] "));
+        drop(println(message));
+    }
+    pass(NIL);
+};
+
+/**
+ * Print a debug message with a label.
+ */
+pub func:dbug_print_labeled = NIL(string:group, string:label, string:message) {
+    if (dbug_is_enabled(group)) {
+        drop(print("[DBUG:"));
+        drop(print(group));
+        drop(print("] "));
+        drop(print(label));
+        drop(print(": "));
+        drop(println(message));
+    }
+    pass(NIL);
+};
+
+/**
+ * Assert-style debugging with custom message.
+ */
+pub func:dbug_check = NIL(string:group, string:message, bool:condition) {
+    if (!condition) {
+        // Assertion failed - print error
+        drop(print("X ASSERTION FAILED ["));
+        drop(print(group));
+        drop(print("]: "));
+        drop(println(message));
+        
+        // If group is enabled, print additional context
+        if (dbug_is_enabled(group)) {
+            drop(println("  (Debug group enabled for more context)"));
+        }
+        
+        // Halt execution (infinite loop until abort/exit is available)
+        drop(println("  [Program halted due to assertion failure]"));
+        while (true) {
+            // Spin forever
+        }
+    }
+    pass(NIL);
+};
+
+/**
+ * Soft assertion - prints warning but continues execution.
+ */
+pub func:dbug_warn = NIL(string:group, string:message, bool:condition) {
+    if (!condition) {
+        drop(print("! WARNING ["));
+        drop(print(group));
+        drop(print("]: "));
+        drop(println(message));
+        
+        if (dbug_is_enabled(group)) {
+            drop(println("  (Enable debug group for more details)"));
+        }
+    }
+    pass(NIL);
+};
+
+// =============================================================================
+// Convenience Functions
+// =============================================================================
+
+/**
+ * Print a debug separator line for visual grouping.
+ */
+pub func:dbug_separator = NIL(string:group) {
+    if (dbug_is_enabled(group)) {
+        drop(print("[DBUG:"));
+        drop(print(group));
+        drop(println("] ========================================"));
+    }
+    pass(NIL);
+};
+
+/**
+ * Print entry point for a function (helps trace execution flow).
+ */
+pub func:dbug_enter = NIL(string:group, string:function_name) {
+    if (dbug_is_enabled(group)) {
+        drop(print("[DBUG:"));
+        drop(print(group));
+        drop(print("] -> Entering: "));
+        drop(println(function_name));
+    }
+    pass(NIL);
+};
+
+/**
+ * Print exit point for a function.
+ */
+pub func:dbug_exit = NIL(string:group, string:function_name) {
+    if (dbug_is_enabled(group)) {
+        drop(print("[DBUG:"));
+        drop(print(group));
+        drop(print("] <- Exiting: "));
+        drop(println(function_name));
+    }
+    pass(NIL);
+};

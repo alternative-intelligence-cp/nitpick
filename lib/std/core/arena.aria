@@ -197,8 +197,9 @@ func:new_arena_with_block_size = arena_result(initial_capacity: int64, block_siz
  *       // All allocations freed implicitly on next reset
  *   }
  */
-func:reset = void(arena: arena@) {
+func:reset = NIL(arena: arena@) {
     @extern("aria_arena_reset", arena.handle);
+    pass(NIL);
 }
 
 /**
@@ -214,8 +215,9 @@ func:reset = void(arena: arena@) {
  *   // Keep first 64KB, free the rest
  *   reset_limit(my_arena, 65536);
  */
-func:reset_limit = void(arena: arena@, max_retain: int64) {
+func:reset_limit = NIL(arena: arena@, max_retain: int64) {
     @extern("aria_arena_reset_limit", arena.handle, max_retain);
+    pass(NIL);
 }
 
 /**
@@ -231,8 +233,9 @@ func:reset_limit = void(arena: arena@, max_retain: int64) {
  *   arena@:my_arena = res.unwrap();
  *   defer destroy(my_arena);  // Automatic cleanup
  */
-func:destroy = void(arena: arena@) {
+func:destroy = NIL(arena: arena@) {
     @extern("aria_arena_destroy", arena.handle);
+    pass(NIL);
 }
 
 // =============================================================================
@@ -376,8 +379,9 @@ func:arena_alloc_array_zeroed<T> = alloc_result<T>(arena: arena@, count: int64) 
  *   print(sys_bytes);
  *   print(" reserved from OS)");
  */
-func:get_stats = void(arena: arena@, user_bytes: int64@, sys_bytes: int64@, blocks: int64@) {
+func:get_stats = NIL(arena: arena@, user_bytes: int64@, sys_bytes: int64@, blocks: int64@) {
     @extern("aria_arena_get_stats", arena.handle, user_bytes, sys_bytes, blocks);
+    pass(NIL);
 }
 
 /**

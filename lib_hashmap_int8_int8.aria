@@ -1,0 +1,113 @@
+// HashMap<K,V> Standard Library Implementation
+// Specialization: HashMap<int8, int8>
+// Use case: Small value mappings, configuration flags, character mappings, etc.
+
+func:failsafe = void(int32:code) { pass(NIL); };
+
+// ============================================================================
+// Runtime Function Declarations (Simple API - panics on error)
+// ============================================================================
+
+extern func:aria_map_new_simple = wild int8*(int64:key_size, int64:value_size);
+extern func:aria_map_insert_simple = void(wild int8*:map, wild int8*:key, wild int8*:value);
+extern func:aria_map_get_simple = wild int8*(wild int8*:map, wild int8*:key);
+extern func:aria_map_has = int32(wild int8*:map, wild int8*:key);
+extern func:aria_map_remove = int32(wild int8*:map, wild int8*:key);
+extern func:aria_map_length = int64(wild int8*:map);
+extern func:aria_map_clear = void(wild int8*:map);
+extern func:aria_map_free = void(wild int8*:map);
+
+// ============================================================================
+// HashMap<int8, int8> Constructor
+// ============================================================================
+
+// Creates a new HashMap<int8, int8> with default capacity (16)
+// Returns: HashMap<int8, int8> struct initialized and ready to use
+func:HashMap_int8_int8_new = HashMap<int8, int8>() {
+    HashMap<int8, int8>:map;
+    
+    // Call runtime to create map
+    // key_size = sizeof(int8) = 1 byte
+    // value_size = sizeof(int8) = 1 byte
+    map.entries = aria_map_new_simple(1i64, 1i64);
+    map.capacity = 16i64;  // Default capacity from runtime
+    map.length = 0i64;
+    map.key_size = 1i64;
+    map.value_size = 1i64;
+    map.load_factor = 0.75f32;  // Default load factor
+    
+    pass(map);
+};
+
+// ============================================================================
+// HashMap<int8, int8> Core Operations
+// ============================================================================
+
+// Insert or update a key-value pair
+// Parameters: 
+//   - entries: Pointer to map entries (use map.entries)
+//   - key: int8 key to insert/update
+//   - value: int8 value to associate with key
+func:HashMap_int8_int8_insert = void(wild int8->:entries, int8:key, int8:value) {
+    aria_map_insert_simple(entries, @key, @value);
+};
+
+// Get value for a key
+// Parameters:
+//   - entries: Pointer to map entries (use map.entries)
+//   - key: int8 key to lookup
+//   - out_value: Pointer to int8 where value will be stored
+// Returns: 1 if key found (out_value set), 0 if not found (out_value unchanged)
+func:HashMap_int8_int8_get = int32(wild int8->:entries, int8:key, int8->:out_value) {
+    // Get pointer to value (returns NIL if not found, or borrowed pointer if found)
+    // For int8, no cast needed - already int8->
+    int8->:val_ptr = aria_map_get_simple(entries, @key);
+    if (val_ptr == NIL) {
+        pass(0i32);  // Key not found
+    }
+    
+    // Dereference using blueprint arrow syntax
+    out_value[0] = <-val_ptr;
+    pass(1i32);  // Key found, value stored
+};
+
+// Check if key exists in map
+// Parameters:
+//   - entries: Pointer to map entries (use map.entries)
+//   - key: int8 key to check
+// Returns: 1 if key exists, 0 if not
+func:HashMap_int8_int8_has = int32(wild int8->:entries, int8:key) {
+    pass(aria_map_has(entries, @key));
+};
+
+// Remove a key-value pair
+// Parameters:
+//   - entries: Pointer to map entries (use map.entries)
+//   - key: int8 key to remove
+// Returns: 1 if key was removed, 0 if key didn't exist
+func:HashMap_int8_int8_remove = int32(wild int8->:entries, int8:key) {
+    pass(aria_map_remove(entries, @key));
+};
+
+// ============================================================================
+// HashMap<int8, int8> Utility Functions
+// ============================================================================
+
+// Get current number of entries in map
+// Parameters:
+//   - entries: Pointer to map entries (use map.entries)
+// Returns: int64 count of entries
+// NOTE: To update map struct length field, manually assign: map.length = HashMap_int8_int8_length(map.entries);
+func:HashMap_int8_int8_length = int64(wild int8->:entries) {
+    pass(aria_map_length(entries));
+};
+
+// Remove all entries from map (keeps capacity)
+// Parameters:
+//   - entries: Pointer to map entries (use map.entries)
+func:HashMap_int8_int8_clear = void(wild int8->:entries) {
+    aria_map_clear(entries);
+};
+
+// NOTE: To free the map, call aria_map_free(map.entries) directly
+// (Similar to Vec pattern - FFI call safer than wrapper with wild accountability)

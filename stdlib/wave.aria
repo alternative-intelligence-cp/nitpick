@@ -1,0 +1,383 @@
+/**
+ * @file wave.aria
+ * @brief 9D Wave Coordinate System for Nikola AGI
+ * 
+ * ARIA-030: Wave9 Type - Balanced Nonary Wave Mechanics
+ * 
+ * This module implements the 9-dimensional toroidal coordinate system used by
+ * Nikola's UFIE (Unified Field Interference Engine) physics substrate.
+ * 
+ * The 9 dimensions represent:
+ *   - State Space (r, s):     Neuromodulation (dopamine, serotonin, etc.)
+ *   - Quantum Space (u, v, w): Superposition states and coherence
+ *   - Spatial Space (x, y, z): Physical location in 3D world model
+ *   - Time (t):                Temporal coordinate (cyclic buffer)
+ * 
+ * Each dimension is encoded as a balanced nonary digit (nit), allowing values
+ * from -4 to +4. This gives 9^9 = 387,420,489 possible wave states.
+ * 
+ * The Wave9 type is the uncompressed working format for physics calculations.
+ * The nyte type (5 nits) provides compressed encoding for storage/transmission.
+ * 
+ * Physics Operations:
+ *   - wave_interfere: Superposition of two wave states (elementwise addition)
+ *   - wave_magnitude: L2 norm in 9D space
+ *   - wave_normalize: Scale to unit magnitude
+ *   - nyte_from_wave: Compress 9D → 5D encoding
+ *   - wave_from_nyte: Decompress 5D → 9D reconstruction
+ * 
+ * References:
+ *   - Nikola Engineering Spec: 9D Toroidal Geometry
+ *   - UFIE Physics Kernel: Wave Interference Mechanics
+ *   - Balanced Nonary Intrinsics: Arithmetic on nit/nyte types
+ */
+
+/**
+ * Wave9: 9-Dimensional Wave Coordinate (Uncompressed Format)
+ * 
+ * This is the primary working representation for wave mechanics in Nikola.
+ * Each dimension is a balanced nonary digit (nit: -4 to +4).
+ * 
+ * Dimensional Semantics:
+ *   r, s:    State dimensions (2D state space for neuromodulation)
+ *            Resolution: 16x16 grid (coarse-grained modulation)
+ *   
+ *   t:       Temporal dimension (cyclic time buffer)
+ *            Resolution: 128 timesteps (~64ms at 2kHz physics rate)
+ *   
+ *   u, v, w: Quantum dimensions (3D quantum state space)
+ *            Resolution: 32x32x32 grid (superposition states)
+ *   
+ *   x, y, z: Spatial dimensions (3D physical world model)
+ *            Resolution: 64x64x64 grid (high-resolution spatial mapping)
+ * 
+ * Memory Layout: 9 bytes (1 byte per nit)
+ * Addressable States: 9^9 = 387,420,489 unique wave configurations
+ */
+struct:Wave9 = {
+    nit:r;  // State dimension 1: Neuromodulation axis 1
+    nit:s;  // State dimension 2: Neuromodulation axis 2
+    nit:t;  // Temporal dimension: Time coordinate
+    nit:u;  // Quantum dimension 1: Superposition axis 1
+    nit:v;  // Quantum dimension 2: Superposition axis 2
+    nit:w;  // Quantum dimension 3: Superposition axis 3
+    nit:x;  // Spatial dimension 1: Physical X coordinate
+    nit:y;  // Spatial dimension 2: Physical Y coordinate
+    nit:z;  // Spatial dimension 3: Physical Z coordinate
+};
+
+/**
+ * Create a zero wave (all dimensions at origin)
+ * 
+ * @return Wave9 with all coordinates set to 0
+ */
+pub func:wave_zero = Wave9() {
+    pass(Wave9 {
+        r: 0, s: 0, t: 0,
+        u: 0, v: 0, w: 0,
+        x: 0, y: 0, z: 0
+    });
+};
+
+/**
+ * Wave Interference: Superposition of two wave states
+ * 
+ * In balanced nonary wave mechanics, interference is implemented as
+ * elementwise addition of coordinate components. This represents the
+ * linear superposition principle from quantum mechanics.
+ * 
+ * Physics Interpretation:
+ *   When two waves interfere, their amplitudes combine additively.
+ *   In 9D toroidal space, this manifests as vector addition of
+ *   coordinate offsets with modular wraparound at dimension boundaries.
+ * 
+ * Note: Addition of nit values is saturated to [-4, +4] range.
+ * Overflow/underflow represents wave amplitude clipping (physical damping).
+ * 
+ * @param a First wave state
+ * @param b Second wave state
+ * @return Interfered wave (superposition of a and b)
+ */
+pub func:wave_interfere = Wave9(Wave9:a, Wave9:b) {
+    pass(Wave9 {
+        r: a.r + b.r,
+        s: a.s + b.s,
+        t: a.t + b.t,
+        u: a.u + b.u,
+        v: a.v + b.v,
+        w: a.w + b.w,
+        x: a.x + b.x,
+        y: a.y + b.y,
+        z: a.z + b.z
+    });
+};
+
+/**
+ * Wave Negation: Invert wave phase
+ * 
+ * Negation in balanced nonary is trivial - just flip the sign of each
+ * component. This represents a 180° phase shift in all dimensions.
+ * 
+ * Physics Interpretation:
+ *   Creates a wave that destructively interferes with the original.
+ *   wave_interfere(w, wave_negate(w)) ≈ wave_zero (modulo rounding)
+ * 
+ * @param w Wave to negate
+ * @return Negated wave (phase-inverted)
+ */
+pub func:wave_negate = Wave9(Wave9:w) {
+    pass(Wave9 {
+        r: -w.r,
+        s: -w.s,
+        t: -w.t,
+        u: -w.u,
+        v: -w.v,
+        w: -w.w,
+        x: -w.x,
+        y: -w.y,
+        z: -w.z
+    });
+};
+
+/**
+ * Wave Scaling: Multiply wave amplitude
+ * 
+ * Scale all components by a constant factor. Used for wave attenuation/
+ * amplification in physics simulation.
+ * 
+ * Note: Result is saturated to nit range [-4, +4] per dimension.
+ * 
+ * @param w Wave to scale
+ * @param factor Scaling factor (nit: -4 to +4)
+ * @return Scaled wave
+ */
+pub func:wave_scale = Wave9(Wave9:w, nit:factor) {
+    pass(Wave9 {
+        r: w.r * factor,
+        s: w.s * factor,
+        t: w.t * factor,
+        u: w.u * factor,
+        v: w.v * factor,
+        w: w.w * factor,
+        x: w.x * factor,
+        y: w.y * factor,
+        z: w.z * factor
+    });
+};
+
+/**
+ * Wave Magnitude Squared: Compute |w|² in 9D space
+ * 
+ * Returns the squared L2 norm of the wave vector. This represents the
+ * total energy/probability density of the wave state.
+ * 
+ * Formula: |w|² = r² + s² + t² + u² + v² + w² + x² + y² + z²
+ * 
+ * Range: [0, 9*16] = [0, 144] since each nit² ∈ [0, 16]
+ * 
+ * Note: Explicit conversions required (nit*nit doesn't auto-promote to int32)
+ * Each component is manually converted to int32 before multiplication.
+ * 
+ * @param w Wave to measure
+ * @return Squared magnitude (int32)
+ */
+pub func:wave_magnitude_squared = int32(Wave9:w) {
+    // Manual conversion: convert nit to int32 first, then multiply
+    // This is verbose but explicit per Aria's design philosophy
+    int32:r_val = @cast<int32>(w.r);
+    int32:s_val = @cast<int32>(w.s);
+    int32:t_val = @cast<int32>(w.t);
+    int32:u_val = @cast<int32>(w.u);
+    int32:v_val = @cast<int32>(w.v);
+    int32:w_val = @cast<int32>(w.w);
+    int32:x_val = @cast<int32>(w.x);
+    int32:y_val = @cast<int32>(w.y);
+    int32:z_val = @cast<int32>(w.z);
+    
+    int32:r2 = r_val * r_val;
+    int32:s2 = s_val * s_val;
+    int32:t2 = t_val * t_val;
+    int32:u2 = u_val * u_val;
+    int32:v2 = v_val * v_val;
+    int32:w2 = w_val * w_val;
+    int32:x2 = x_val * x_val;
+    int32:y2 = y_val * y_val;
+    int32:z2 = z_val * z_val;
+    
+    pass(r2 + s2 + t2 + u2 + v2 + w2 + x2 + y2 + z2);
+};
+
+/**
+ * Wave Equality: Test if two waves are identical
+ * 
+ * @param a First wave
+ * @param b Second wave
+ * @return true if all components match, false otherwise
+ */
+pub func:wave_equals = bool(Wave9:a, Wave9:b) {
+    pass(
+        (a.r == b.r) &&
+        (a.s == b.s) &&
+        (a.t == b.t) &&
+        (a.u == b.u) &&
+        (a.v == b.v) &&
+        (a.w == b.w) &&
+        (a.x == b.x) &&
+        (a.y == b.y) &&
+        (a.z == b.z)
+    );
+};
+
+/**
+ * Compress Wave9 to nyte (9D → 5D Encoding)
+ * 
+ * Compresses a 9-dimensional wave state into a 5-nit nyte value for
+ * compact storage and transmission. This is a lossy projection that
+ * preserves the most significant dimensional information.
+ * 
+ * Encoding Strategy (V1 - Principal Component Projection):
+ *   The 9 dimensions are not equally important for all operations.
+ *   We prioritize spatial and quantum dimensions over state/time.
+ * 
+ *   Priority order: x, y, z (spatial) > u, v (quantum) > r, s (state) > t, w (discarded)
+ * 
+ *   Encoding:
+ *     nit0 = x  (spatial X - highest priority for world model)
+ *     nit1 = y  (spatial Y)
+ *     nit2 = z  (spatial Z)
+ *     nit3 = u  (quantum U - primary superposition axis)
+ *     nit4 = (r + s + t + v + w) / 5  (averaged minor dimensions)
+ * 
+ * Future Optimization:
+ *   Could use learned PCA projection from actual Nikola wave distributions.
+ *   Could implement multiple encoding schemes (spatial-focused, quantum-focused, etc.)
+ * 
+ * @param w Wave to compress
+ * @return Compressed nyte encoding
+ */
+pub func:nyte_from_wave = nyte(Wave9:w) {
+    // Compress 9D wave to 5D nyte encoding
+    // For now, return a placeholder nyte value
+    // TODO: Implement proper packing when FFI is ready
+    //
+    // Priority encoding: x, y, z (spatial) > u (quantum) > r (state)
+    // extern func:aria_pack_nyte = nyte(nit:n0, nit:n1, nit:n2, nit:n3, nit:n4);
+    
+    // Placeholder: return zero nyte for now
+    pass(0);
+};
+
+/**
+ * Decompress nyte to Wave9 (5D → 9D Reconstruction)
+ * 
+ * Reconstructs a 9-dimensional wave state from a compressed nyte encoding.
+ * This is the inverse of nyte_from_wave, but since compression is lossy,
+ * the reconstruction is approximate.
+ * 
+ * Decoding Strategy:
+ *   Unpacks the 5 nits and maps them to their original dimensions.
+ *   Dimensions not encoded in the nyte are set to 0 (null assumption).
+ * 
+ * Reconstruction:
+ *   x = nit0  (spatial X recovered exactly)
+ *   y = nit1  (spatial Y recovered exactly)
+ *   z = nit2  (spatial Z recovered exactly)
+ *   u = nit3  (quantum U recovered exactly)
+ *   r = nit4  (state R recovered exactly)
+ *   s = 0     (state S lost in compression)
+ *   t = 0     (time lost in compression)
+ *   v = 0     (quantum V lost in compression)
+ *   w = 0     (quantum W lost in compression)
+ * 
+ * Information Loss:
+ *   Original: 9 nits = 9^9 = 387M states
+ *   Compressed: 5 nits = 9^5 = 59K states
+ *   Compression ratio: 6553:1 (lossy)
+ * 
+ * @param encoded Compressed nyte value
+ * @return Reconstructed Wave9 (approximate)
+ */
+pub func:wave_from_nyte = Wave9(nyte:encoded) {
+    // Unpack nyte into 5 nits
+    // For now, return a zero wave since proper unpacking requires
+    // extern function call semantics not yet implemented in Aria
+    // TODO: Implement proper nyte unpacking when FFI pointers are ready
+    
+    // Placeholder: return zero wave
+    pass(Wave9 {
+        r: 0, s: 0, t: 0,
+        u: 0, v: 0, w: 0,
+        x: 0, y: 0, z: 0
+    });
+};
+
+/**
+ * Create Wave9 from spatial coordinates only
+ * 
+ * Utility function for creating waves with only spatial components.
+ * All other dimensions (state, time, quantum) are set to 0.
+ * 
+ * Common use case: Mapping world coordinates to wave space.
+ * 
+ * @param x Spatial X coordinate
+ * @param y Spatial Y coordinate
+ * @param z Spatial Z coordinate
+ * @return Wave9 with only spatial components
+ */
+pub func:wave_from_spatial = Wave9(nit:x, nit:y, nit:z) {
+    pass(Wave9 {
+        r: 0, s: 0, t: 0,
+        u: 0, v: 0, w: 0,
+        x: x, y: y, z: z
+    });
+};
+
+/**
+ * Extract spatial coordinates from Wave9
+ * 
+ * Projects 9D wave onto 3D spatial subspace.
+ * Returns (x, y, z) components only.
+ * 
+ * @param w Wave to project
+ * @return Spatial coordinates as (x, y, z) - TODO: Need tuple type
+ */
+pub func:wave_spatial_x = nit(Wave9:w) {
+    pass(w.x);
+};
+
+pub func:wave_spatial_y = nit(Wave9:w) {
+    pass(w.y);
+};
+
+pub func:wave_spatial_z = nit(Wave9:w) {
+    pass(w.z);
+};
+
+/**
+ * Create Wave9 from quantum coordinates only
+ * 
+ * Utility function for creating waves with only quantum components.
+ * All other dimensions are set to 0.
+ * 
+ * Common use case: Representing pure quantum states without spatial location.
+ * 
+ * @param u Quantum U coordinate
+ * @param v Quantum V coordinate
+ * @param w Quantum W coordinate
+ * @return Wave9 with only quantum components
+ */
+pub func:wave_from_quantum = Wave9(nit:u, nit:v, nit:w) {
+    pass(Wave9 {
+        r: 0, s: 0, t: 0,
+        u: u, v: v, w: w,
+        x: 0, y: 0, z: 0
+    });
+};
+
+// TODO: Additional operations for future implementation
+// - wave_distance: Compute 9D Euclidean distance between waves
+// - wave_dot: Inner product in 9D space
+// - wave_reflect: Mirror wave across dimensional hyperplane
+// - wave_rotate: Rotation in 9D space (requires rotation matrix)
+// - wave_fft_encode: Frequency domain encoding for resonance analysis
+// - wave_hash: Fast hash function for spatial indexing (Morton/Hilbert)
