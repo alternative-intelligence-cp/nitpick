@@ -1,0 +1,358 @@
+// ============================================================================
+// JSON Parser - Tokenizer (Lexer)
+// ============================================================================
+// Reads JSON text and produces tokens for the parser.
+// Handles:
+// - Whitespace skipping
+// - String literals with escape sequences
+// - Numbers (integers and floating point)
+// - Keywords (true, false, null)
+// - Structural characters ({, }, [, ], :, ,)
+// - Line/column tracking for error reporting
+// ============================================================================
+
+use std.io;
+use std.cstring;
+use std.core.memory;
+
+// Import types
+// NOTE: In real Aria this would be: use json_parser.types;
+// For now include types in same compilation unit
+
+// ============================================================================
+// Tokenizer State
+// ============================================================================
+
+struct:Tokenizer {
+    int8->:input,         // Input JSON string
+    int32:pos,             // Current position in input
+    int32:line,            // Current line number (1-indexed)
+    int32:column           // Current column number (1-indexed)
+}
+
+// ============================================================================
+// Character Classification Helpers
+// ============================================================================
+
+func:is_whitespace = int8(int8:ch) {
+    return (ch == 32i8) || (ch == 9i8) || (ch == 10i8) || (ch == 13i8);
+};
+
+func:is_digit = int8(int8:ch) {
+    return (ch >= 48i8) && (ch <= 57i8);
+};
+
+func:is_alpha = int8(int8:ch) {
+    return ((ch >= 65i8) && (ch <= 90i8)) || ((ch >= 97i8) && (ch <= 122i8));
+};
+
+// ============================================================================
+// Tokenizer Methods
+// ============================================================================
+
+/// Create a new tokenizer from JSON input string
+pub func:tokenizer_new = Tokenizer(int8->:input) {
+    Tokenizer:tok = Tokenizer {
+        input: input,
+        pos: 0i32,
+        line: 1i32,
+        column: 1i32
+    };
+    return tok;
+};
+
+/// Peek current character without consuming
+func:peek = int8(Tokenizer@:tok) {
+    if (tok->input[tok->pos] == 0i8) {
+        return 0i8;  // End of input
+    } else {
+        return tok->input[tok->pos];
+    }
+};
+
+/// Consume and return current character, advancing position
+func:advance = int8(Tokenizer@:tok) {
+    int8:ch = tok->input[tok->pos];
+    
+    if (ch == 0i8) {
+        return 0i8;  // End of input
+    } else {
+        tok->pos = tok->pos + 1;
+        
+        // Track line/column
+        if (ch == 10i8) {  // Newline
+            tok->line = tok->line + 1;
+            tok->column = 1i32;
+        } else {
+            tok->column = tok->column + 1;
+        }
+        
+        return ch;
+    }
+};
+
+/// Skip whitespace characters
+func:skip_whitespace = NIL(Tokenizer@:tok) {
+    loop {
+        int8:ch = peek(tok) ? 0i8;
+        
+        if (is_whitespace(ch) ? 0i8) {
+            advance(tok) ? 0i8;
+        } else {
+            break;
+        }
+    }
+    
+    pass(NIL);
+};
+
+/// Parse a JSON string literal
+/// Returns allocated string (caller must free)
+func:parse_string = int8->(Tokenizer@:tok) {
+    // Skip opening quote
+    advance(tok) ? 0i8;
+    
+    // Allocate buffer for string (max 1024 chars)
+    wild int8->:buffer = alloc_array<int8>(1024i64);
+    int32:len = 0i32;
+    
+    loop {
+        int8:ch = peek(tok) ? 0i8;
+        
+        if (ch == 0i8) {
+            // Unexpected end of input
+            return NULL;
+        }
+        
+        if (ch == 34i8) {  // Closing quote
+            advance(tok) ? 0i8;
+            buffer[len] = 0i8;  // Null terminate
+            return buffer;
+        }
+        
+        if (ch == 92i8) {  // Backslash (escape sequence)
+            advance(tok) ? 0i8;
+            int8:next_ch = advance(tok) ? 0i8;
+            
+            // Handle escape sequences
+            if (next_ch == 34i8) {  // \"
+                buffer[len] = 34i8;
+            } else {
+                if (next_ch == 92i8) {  // \\
+                    buffer[len] = 92i8;
+                } else {
+                    if (next_ch == 110i8) {  // \n
+                        buffer[len] = 10i8;
+                    } else {
+                        if (next_ch == 114i8) {  // \r
+                            buffer[len] = 13i8;
+                        } else {
+                            if (next_ch == 116i8) {  // \t
+                                buffer[len] = 9i8;
+                            } else {
+                                // Unknown escape, just use the character
+                                buffer[len] = next_ch;
+                            }
+                        }
+                    }
+                }
+            }
+            len = len + 1;
+        } else {
+            // Regular character
+            buffer[len] = ch;
+            len = len + 1;
+            advance(tok) ? 0i8;
+        }
+    }
+    
+    pass(NULL);  // Should never reach here
+};
+
+/// Parse a JSON number
+func:parse_number = flt64(Tokenizer@:tok) {
+    wild int8->:buffer = alloc_array<int8>(64i64);
+    int32:len = 0i32;
+    
+    // Handle negative sign
+    int8:ch = peek(tok) ? 0i8;
+    if (ch == 45i8) {  // '-'
+        buffer[len] = ch;
+        len = len + 1;
+        advance(tok) ? 0i8;
+    } else {
+        // no sign
+    }
+    
+    // Parse digits before decimal
+    loop {
+        ch = peek(tok) ? 0i8;
+        if (is_digit(ch) ? 0i8) {
+            buffer[len] = ch;
+            len = len + 1;
+            advance(tok) ? 0i8;
+        } else {
+            break;
+        }
+    }
+    
+    // Parse decimal part if present
+    ch = peek(tok) ? 0i8;
+    if (ch == 46i8) {  // '.'
+        buffer[len] = ch;
+        len = len + 1;
+        advance(tok) ? 0i8;
+        
+        // Parse digits after decimal
+        loop {
+            ch = peek(tok) ? 0i8;
+            if (is_digit(ch) ? 0i8) {
+                buffer[len] = ch;
+                len = len + 1;
+                advance(tok) ? 0i8;
+            } else {
+                break;
+            }
+        }
+    } else {
+        // no decimal
+    }
+    
+    // Null terminate and parse
+    buffer[len] = 0i8;
+    
+    // Use stdlib parse_float
+    extern "aria" {
+        func:parse_float_c = flt64(int8->:str);
+    }
+    
+    flt64:result = parse_float_c(buffer);
+    free<int8>(buffer);
+    
+    return result;
+};
+
+/// Parse a keyword (true, false, null)
+func:parse_keyword = int32(Tokenizer@:tok, int8->:expected) {
+    int32:i = 0i32;
+    
+    loop {
+        if (expected[i] == 0i8) {
+            // Reached end of expected keyword
+            return 1i32;  // Success
+        } else {
+            int8:ch = peek(tok) ? 0i8;
+            if (ch == expected[i]) {
+                advance(tok) ? 0i8;
+                i = i + 1;
+            } else {
+                return 0i32;  // Mismatch
+            }
+        }
+    }
+    
+    pass(0i32);  // Should never reach here
+};
+
+/// Get the next token from the input
+pub func:tokenizer_next = Token(Tokenizer@:tok) {
+    skip_whitespace(tok) ? NIL;
+    
+    // Save position for token
+    int32:token_line = tok->line;
+    int32:token_col = tok->column;
+    
+    int8:ch = peek(tok) ? 0i8;
+    
+    // End of file
+    if (ch == 0i8) {
+        Token:token = Token {
+            type: TOK_EOF,
+            line: token_line,
+            column: token_col,
+            str_value: NULL,
+            num_value: 0.0
+        };
+        return token;
+    }
+    
+    // Structural characters
+    if (ch == 123i8) {  // '{'
+        advance(tok) ? 0i8;
+        Token:token = Token { type: TOK_LEFT_BRACE, line: token_line, column: token_col, str_value: NULL, num_value: 0.0 };
+        return token;
+    }
+    if (ch == 125i8) {  // '}'
+        advance(tok) ? 0i8;
+        Token:token = Token { type: TOK_RIGHT_BRACE, line: token_line, column: token_col, str_value: NULL, num_value: 0.0 };
+        return token;
+    }
+    if (ch == 91i8) {  // '['
+        advance(tok) ? 0i8;
+        Token:token = Token { type: TOK_LEFT_BRACKET, line: token_line, column: token_col, str_value: NULL, num_value: 0.0 };
+        return token;
+    }
+    if (ch == 93i8) {  // ']'
+        advance(tok) ? 0i8;
+        Token:token = Token { type: TOK_RIGHT_BRACKET, line: token_line, column: token_col, str_value: NULL, num_value: 0.0 };
+        return token;
+    }
+    if (ch == 44i8) {  // ','
+        advance(tok) ? 0i8;
+        Token:token = Token { type: TOK_COMMA, line: token_line, column: token_col, str_value: NULL, num_value: 0.0 };
+        return token;
+    }
+    if (ch == 58i8) {  // ':'
+        advance(tok) ? 0i8;
+        Token:token = Token { type: TOK_COLON, line: token_line, column: token_col, str_value: NULL, num_value: 0.0 };
+        return token;
+    }
+    
+    // String literal
+    if (ch == 34i8) {  // '"'
+        int8->:str_val = parse_string(tok) ? NULL;
+        Token:token = Token { type: TOK_STRING, line: token_line, column: token_col, str_value: str_val, num_value: 0.0 };
+        return token;
+    }
+    
+    // Number
+    if (is_digit(ch) ? 0i8 || ch == 45i8) {  // Digit or '-'
+        flt64:num_val = parse_number(tok) ? 0.0;
+        Token:token = Token { type: TOK_NUMBER, line: token_line, column: token_col, str_value: NULL, num_value: num_val };
+        return token;
+    }
+    
+    // Keywords
+    if (ch == 116i8) {  // 't' - possibly 'true'
+        if (parse_keyword(tok, "true") ? 0i32) {
+            Token:token = Token { type: TOK_TRUE, line: token_line, column: token_col, str_value: NULL, num_value: 0.0 };
+            return token;
+        } else {
+            // Error
+        }
+    }
+    if (ch == 102i8) {  // 'f' - possibly 'false'
+        if (parse_keyword(tok, "false") ? 0i32) {
+            Token:token = Token { type: TOK_FALSE, line: token_line, column: token_col, str_value: NULL, num_value: 0.0 };
+            return token;
+        } else {
+            // Error
+        }
+    }
+    if (ch == 110i8) {  // 'n' - possibly 'null'
+        if (parse_keyword(tok, "null") ? 0i32) {
+            Token:token = Token { type: TOK_NULL, line: token_line, column: token_col, str_value: NULL, num_value: 0.0 };
+            return token;
+        } else {
+            // Error
+        }
+    }
+    
+    // Unknown character - error
+    Token:error_token = Token { type: TOK_ERROR, line: token_line, column: token_col, str_value: NULL, num_value: 0.0 };
+    return error_token;
+};
+
+func:failsafe = void(int32:err_code) {
+    // Error handling
+};

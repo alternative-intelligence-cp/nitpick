@@ -1,0 +1,172 @@
+// ============================================================================
+// JSON Parser - Type Definitions
+// ============================================================================
+// Defines the core data structures for JSON parsing:
+// - JsonValue: Represents any JSON value (null, bool, number, string, array, object)
+// - ParseError: Error information with line/column tracking
+// - Token: Lexical tokens used by the tokenizer
+// ============================================================================
+
+use std.io;
+
+// ============================================================================
+// JSON Value Types
+// ============================================================================
+
+// JSON value type discriminator
+enum:JsonType {
+    JSON_NULL = 0i32,
+    JSON_BOOL = 1i32,
+    JSON_NUMBER = 2i32,
+    JSON_STRING = 3i32,
+    JSON_ARRAY = 4i32,
+    JSON_OBJECT = 5i32
+}
+
+// A JSON value - can be any of the JSON types
+// Uses a tagged union pattern
+struct:JsonValue {
+    int32:type,           // JsonType discriminator
+    
+    // Union of possible values (only one is valid based on type)
+    int8:bool_val,        // For JSON_BOOL (0 = false, 1 = true)
+    flt64:num_val,        // For JSON_NUMBER
+    int8->:str_val,       // For JSON_STRING
+    
+    // For JSON_ARRAY
+    wild JsonValue@->:array_vals,
+    int32:array_len,
+    
+    // For JSON_OBJECT  
+    wild int8->->:obj_keys,      // Array of string keys
+    wild JsonValue@->:obj_vals,  // Array of values
+    int32:obj_len
+}
+
+// ============================================================================
+// Parse Error
+// ============================================================================
+
+struct:ParseError {
+    int32:line,
+    int32:column,
+    int8->:message
+}
+
+// ============================================================================
+// Tokenizer Types
+// ============================================================================
+
+enum:TokenType {
+    TOK_EOF = 0i32,
+    TOK_LEFT_BRACE = 1i32,      // {
+    TOK_RIGHT_BRACE = 2i32,     // }
+    TOK_LEFT_BRACKET = 3i32,    // [
+    TOK_RIGHT_BRACKET = 4i32,   // ]
+    TOK_COMMA = 5i32,            // ,
+    TOK_COLON = 6i32,            // :
+    TOK_STRING = 7i32,           // "..."
+    TOK_NUMBER = 8i32,           // 123, 45.67
+    TOK_TRUE = 9i32,             // true
+    TOK_FALSE = 10i32,           // false
+    TOK_NULL = 11i32,            // null
+    TOK_ERROR = 12i32            // Error token
+}
+
+struct:Token {
+    int32:type,              // TokenType
+    int32:line,
+    int32:column,
+    
+    // Token value (for STRING and NUMBER)
+    int8->:str_value,        // For TOK_STRING (allocated)
+    flt64:num_value          // For TOK_NUMBER
+}
+
+// ============================================================================
+// Helper: Create JsonValue instances
+// ============================================================================
+
+pub func:json_null = JsonValue() {
+    JsonValue:val = JsonValue {
+        type: JSON_NULL,
+        bool_val: 0,
+        num_val: 0.0,
+        str_val: NULL,
+        array_vals: NULL,
+        array_len: 0,
+        obj_keys: NULL,
+        obj_vals: NULL,
+        obj_len: 0
+    };
+    return val;
+};
+
+pub func:json_bool = JsonValue(int8:b) {
+    JsonValue:val = JsonValue {
+        type: JSON_BOOL,
+        bool_val: b,
+        num_val: 0.0,
+        str_val: NULL,
+        array_vals: NULL,
+        array_len: 0,
+        obj_keys: NULL,
+        obj_vals: NULL,
+        obj_len: 0
+    };
+    return val;
+};
+
+pub func:json_number = JsonValue(flt64:n) {
+    JsonValue:val = JsonValue {
+        type: JSON_NUMBER,
+        bool_val: 0,
+        num_val: n,
+        str_val: NULL,
+        array_vals: NULL,
+        array_len: 0,
+        obj_keys: NULL,
+        obj_vals: NULL,
+        obj_len: 0
+    };
+    return val;
+};
+
+pub func:json_string = JsonValue(int8->:s) {
+    JsonValue:val = JsonValue {
+        type: JSON_STRING,
+        bool_val: 0,
+        num_val: 0.0,
+        str_val: s,
+        array_vals: NULL,
+        array_len: 0,
+        obj_keys: NULL,
+        obj_vals: NULL,
+        obj_len: 0
+    };
+    return val;
+};
+
+// ============================================================================
+// Helper: Token name for error messages
+// ============================================================================
+
+pub func:token_name = int8->(int32:type) {
+    if (type == TOK_EOF) { return "EOF"; }
+    if (type == TOK_LEFT_BRACE) { return "{"; }
+    if (type == TOK_RIGHT_BRACE) { return "}"; }
+    if (type == TOK_LEFT_BRACKET) { return "["; }
+    if (type == TOK_RIGHT_BRACKET) { return "]"; }
+    if (type == TOK_COMMA) { return ","; }
+    if (type == TOK_COLON) { return ":"; }
+    if (type == TOK_STRING) { return "string"; }
+    if (type == TOK_NUMBER) { return "number"; }
+    if (type == TOK_TRUE) { return "true"; }
+    if (type == TOK_FALSE) { return "false"; }
+    if (type == TOK_NULL) { return "null"; }
+    return "error";
+};
+
+func:failsafe = void(int32:err_code) {
+    // Error handling
+};
