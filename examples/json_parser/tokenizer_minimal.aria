@@ -1,0 +1,82 @@
+// ============================================================================
+// JSON Tokenizer - Minimal Test (no std.io)
+// ============================================================================
+
+// Token types
+enum:TokenType = {
+    TOK_EOF = 0,
+    TOK_LBRACE = 1,           // {
+    TOK_RBRACE = 2           // }
+};
+
+// Token structure
+struct:Token = {
+    int32:type;
+};
+
+// Tokenizer state
+struct:Tokenizer = {
+    int8->:input;
+    int32:pos;
+};
+
+func:tokenizer_init = Tokenizer(int8->:input_str) {
+    Tokenizer:tok = Tokenizer {
+        input: input_str,
+        pos: 0
+    };
+    pass(tok);
+};
+
+func:peek = int8(Tokenizer->:tok) {
+    pass((<-tok).input[(<-tok).pos]);
+};
+
+func:advance = int8(Tokenizer->:tok) {
+    int8:ch = (<-tok).input[(<-tok).pos];
+    if (ch != 0i8) {
+        (<-tok).pos = (<-tok).pos + 1;
+    } else {
+        // EOF
+    }
+    pass(ch);
+};
+
+func:next_token = Token(Tokenizer->:tok) {
+    int8:ch = peek(tok) ? 0i8;
+    
+    if (ch == 0i8) {
+        Token:t = Token { type: 0 };  // TOK_EOF
+        pass(t);
+    } else {
+        if (ch == 123i8) {  // {
+            advance(tok) ? 0i8;
+            Token:t = Token { type: 1 };  // TOK_LBRACE
+            pass(t);
+        } else {
+            if (ch == 125i8) {  // }
+                advance(tok) ? 0i8;
+                Token:t = Token { type: 2 };  // TOK_RBRACE
+                pass(t);
+            } else {
+                // Unknown - return EOF for now
+                Token:t = Token { type: 0 };
+                pass(t);
+            }
+        }
+    }
+};
+
+func:main = int32() {
+    Tokenizer:tok = tokenizer_init("{}") ? Tokenizer{ input: null, pos: 0 };
+    
+    // Get tokens and return sum of types (should be 1 + 2 = 3)
+    Token:t1 = next_token(@tok) ? Token{ type: 0 };
+    Token:t2 = next_token(@tok) ? Token{ type: 0 };
+    
+    pass(t1.type + t2.type);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    pass(NIL);
+};

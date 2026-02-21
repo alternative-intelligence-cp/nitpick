@@ -1,0 +1,202 @@
+// ============================================================================
+// JSON Tokenizer - Complete Test (all in one file)
+// ============================================================================
+
+use std.io;
+
+// Token types
+enum:TokenType = {
+    TOK_EOF = 0,
+    TOK_LBRACE = 1,           // {
+    TOK_RBRACE = 2,           // }
+    TOK_LBRACKET = 3,         // [
+    TOK_RBRACKET = 4,         // ]
+    TOK_COLON = 5,            // :
+    TOK_COMMA = 6,            // ,
+    TOK_STRING = 7,           // "string"
+    TOK_NUMBER = 8,           // 123 or 45.67
+    TOK_TRUE = 9,             // true
+    TOK_FALSE = 10,           // false
+    TOK_NULL = 11,            // null
+    TOK_ERROR = 12            // Error
+};
+
+// Token structure
+struct:Token = {
+    int32:type;
+    int32:line;
+    int32:column;
+};
+
+// Tokenizer state
+struct:Tokenizer = {
+    int8->:input;             // Pointer to input string
+    int32:pos;                // Current position
+    int32:line;               // Current line (1-indexed)
+    int32:column;             // Current column (1-indexed)
+};
+
+// ============================================================================
+// Character classification helpers
+// ============================================================================
+
+func:is_whitespace = int8(int8:ch) {
+    int8:result = 0i8;
+    if (ch == 32i8) { result = 1i8; } // space
+    if (ch == 9i8) { result = 1i8; }  // tab
+    if (ch == 10i8) { result = 1i8; } // newline
+    if (ch == 13i8) { result = 1i8; } // carriage return
+    pass(result);
+};
+
+// ============================================================================
+// Tokenizer initialization
+// ============================================================================
+
+pub func:tokenizer_init = Tokenizer(int8->:input_str) {
+    Tokenizer:tok = Tokenizer {
+        input: input_str,
+        pos: 0,
+        line: 1,
+        column: 1
+    };
+    pass(tok);
+};
+
+// ============================================================================
+// Tokenizer helpers
+// ============================================================================
+
+func:peek = int8(Tokenizer->:tok) {
+    pass((<-tok).input[(<-tok).pos]);
+};
+
+func:advance = int8(Tokenizer->:tok) {
+    int8:ch = (<-tok).input[(<-tok).pos];
+    
+    if (ch == 0i8) {
+        pass(0i8);  // EOF
+    } else {
+        (<-tok).pos = (<-tok).pos + 1;
+        
+        // Update line/column tracking
+        if (ch == 10i8) {  // newline
+            (<-tok).line = (<-tok).line + 1;
+            (<-tok).column = 1;
+        } else {
+            (<-tok).column = (<-tok).column + 1;
+        }
+        
+        pass(ch);
+    }
+};
+
+func:skip_whitespace = NIL(Tokenizer->:tok) {
+    int8:ch = peek(tok) ? 0i8;
+    int8:is_ws = is_whitespace(ch) ? 0i8;
+    while (is_ws != 0i8) {
+        advance(tok) ? 0i8;
+        ch = peek(tok) ? 0i8;
+        is_ws = is_whitespace(ch) ? 0i8;
+    }
+    pass(NIL);
+};
+
+// ============================================================================
+// Get next token
+// ============================================================================
+
+pub func:next_token = Token(Tokenizer->:tok) {
+    skip_whitespace(tok) ? NIL;
+    
+    // Save position for token
+    int32:tok_line = (<-tok).line;
+    int32:tok_col = (<-tok).column;
+    
+    int8:ch = peek(tok) ? 0i8;
+    
+    // EOF
+    if (ch == 0i8) {
+        Token:t = Token { type: 0, line: tok_line, column: tok_col };  // TOK_EOF
+        pass(t);
+    } else {
+        // Structural characters
+        if (ch == 123i8) {  // {
+            advance(tok) ? 0i8;
+            Token:t = Token { type: 1, line: tok_line, column: tok_col };  // TOK_LBRACE
+            pass(t);
+        } else {
+            if (ch == 125i8) {  // }
+                advance(tok) ? 0i8;
+                Token:t = Token { type: 2, line: tok_line, column: tok_col };  // TOK_RBRACE
+                pass(t);
+            } else {
+                if (ch == 91i8) {  // [
+                    advance(tok) ? 0i8;
+                    Token:t = Token { type: 3, line: tok_line, column: tok_col };  // TOK_LBRACKET
+                    pass(t);
+                } else {
+                    if (ch == 93i8) {  // ]
+                        advance(tok) ? 0i8;
+                        Token:t = Token { type: 4, line: tok_line, column: tok_col };  // TOK_RBRACKET
+                        pass(t);
+                    } else {
+                        if (ch == 58i8) {  // :
+                            advance(tok) ? 0i8;
+                            Token:t = Token { type: 5, line: tok_line, column: tok_col };  // TOK_COLON
+                            pass(t);
+                        } else {
+                            if (ch == 44i8) {  // ,
+                                advance(tok) ? 0i8;
+                                Token:t = Token { type: 6, line: tok_line, column: tok_col };  // TOK_COMMA
+                                pass(t);
+                            } else {
+                                // For now, return error for any other character
+                                Token:t = Token { type: 12, line: tok_line, column: tok_col };  // TOK_ERROR
+                                pass(t);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+};
+
+// ============================================================================
+// Test program
+// ============================================================================
+
+func:test_tokenizer_basic = NIL() {
+    // Simpletest input: {}
+    // Using wild pointer to constant string
+    int8->:input = "{}";
+    
+    Tokenizer:tok = tokenizer_init(input) ? Tokenizer{ input: NULL, pos: 0, line: 0, column: 0 };
+    
+    // Get first token - should be {  (type = 1)
+    Token:t1 = next_token(@tok) ? Token{ type: 0, line: 0, column: 0 };
+    print_int32(t1.type) ? NIL;
+    print_newline() ? NIL;
+    
+    // Get second token - should be } (type = 2)
+    Token:t2 = next_token(@tok) ? Token{ type: 0, line: 0, column: 0 };
+    print_int32(t2.type) ? NIL;
+    print_newline() ? NIL;
+    
+    // Get third token - should be EOF (type = 0)
+    Token:t3 = next_token(@tok) ? Token{ type: 0, line: 0, column: 0 };
+    print_int32(t3.type) ? NIL;
+    print_newline() ? NIL;
+    
+    pass(NIL);
+};
+
+func:main = int32() {
+    test_tokenizer_basic() ? NIL;
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    pass(NIL);
+};
