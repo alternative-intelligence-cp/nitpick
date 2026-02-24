@@ -80,6 +80,12 @@ add_executable(ariash
     src/repl/ariash_main.cpp
 )
 
+# Bake in the path to the Aria tools directory so the specialist can be found
+# at runtime without requiring the ARIA_TOOLS env var to be set.
+target_compile_definitions(ariash PRIVATE
+    ARIA_TOOLS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../tools"
+)
+
 target_link_libraries(ariash PRIVATE aria_shell_job)
 
 set_target_properties(ariash PROPERTIES

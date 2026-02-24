@@ -17,8 +17,72 @@
 #include "executor/executor.hpp"
 #include <iostream>
 #include <sstream>
+#include <cstdio>
+#include <cstdlib>
+#include <array>
+#include <string>
 
 using namespace ariash;
+
+// ---------------------------------------------------------------------------
+// Aria Specialist integration
+// ---------------------------------------------------------------------------
+
+#ifndef ARIA_TOOLS_DIR
+#define ARIA_TOOLS_DIR ""
+#endif
+
+/**
+ * Query the Aria language specialist (Mistral-7B + LoRA checkpoint-200).
+ * Prints the response to stdout with a leading newline.
+ * Falls back to a helpful error if the specialist is not available.
+ */
+void specialistQuery(const std::string& question) {
+    // Resolve tools directory: env var overrides baked-in cmake path
+    const char* env_tools = std::getenv("ARIA_TOOLS");
+    std::string tools_dir = env_tools ? std::string(env_tools) : ARIA_TOOLS_DIR;
+
+    if (tools_dir.empty()) {
+        std::cerr << "[specialist] ARIA_TOOLS not set and ARIA_TOOLS_DIR not baked in.\n"
+                  << "            Set ARIA_TOOLS=/path/to/aria/tools and retry.\n";
+        return;
+    }
+
+    std::string script = tools_dir + "/aria_specialist_infer.py";
+
+    // Escape single quotes in the question for the shell
+    std::string safe_q;
+    safe_q.reserve(question.size() + 8);
+    for (char c : question) {
+        if (c == '\'') safe_q += "'\\''";
+        else           safe_q += c;
+    }
+
+    // Build command: python3 <script> '<question>' 2>/dev/null
+    std::string cmd = "python3 '" + script + "' '" + safe_q + "' 2>/dev/null";
+
+    std::cout << "\n[aria-specialist]\n";
+    std::cout.flush();
+
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) {
+        std::cerr << "[specialist] Failed to launch specialist subprocess.\n";
+        return;
+    }
+
+    std::array<char, 256> buf;
+    while (fgets(buf.data(), buf.size(), pipe) != nullptr) {
+        std::cout << buf.data();
+    }
+    std::cout << "\n";
+    std::cout.flush();
+
+    int exit_code = pclose(pipe);
+    if (exit_code != 0) {
+        std::cerr << "[specialist] Process exited with code " << exit_code
+                  << ". Is aria_specialist_infer.py in " << tools_dir << " ?\n";
+    }
+}
 
 void printBanner() {
     std::cout << "\n";
@@ -36,6 +100,7 @@ void printBanner() {
     std::cout << "  • ESC toggles modes [RUN] ↔ [EDIT]\n";
     std::cout << "  • Multi-line: Type ;;  then Enter (EDIT mode)\n";
     std::cout << "  • 'help' for more, 'exit' to quit\n";
+    std::cout << "  • ?<question> to ask the Aria language specialist\n";
     std::cout << "\n";
 }
 
@@ -69,7 +134,13 @@ void printHelp() {
     std::cout << "Other Shortcuts:\n";
     std::cout << "  Ctrl+C        - Cancel current input\n";
     std::cout << "  Ctrl+D        - Exit shell\n";
-    std::cout << "  Ctrl+L        - Clear screen\n\n";
+    std::cout << "  Ctrl+L        - Clear screen\n";
+    std::cout << "\n";
+    std::cout << "Aria Specialist (AI):\n";
+    std::cout << "  ?<question>   - Ask the Aria language specialist\n";
+    std::cout << "  Example:  ?How do I write a function that returns a Result?\n";
+    std::cout << "  Example:  ?What is the syntax for a struct?\n";
+    std::cout << "  (Requires: ARIA_TOOLS env var or cmake ARIA_TOOLS_DIR baked in)\n\n";
 }
 
 int main() {
@@ -131,7 +202,21 @@ int main() {
             printBanner();
             return;
         }
-        
+
+        // Aria Specialist query: ?<question>
+        if (!trimmed.empty() && trimmed[0] == '?') {
+            std::string question = trimmed.substr(1);
+            // Trim leading space after '?'
+            size_t qs = question.find_first_not_of(" \t");
+            if (qs != std::string::npos) question = question.substr(qs);
+            if (question.empty()) {
+                std::cout << "Usage: ?<question>  (e.g. ?How do I declare a pointer?)\n";
+            } else {
+                specialistQuery(question);
+            }
+            return;
+        }
+
         // Execute code
         try {
             // Lex
