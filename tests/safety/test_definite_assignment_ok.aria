@@ -1,12 +1,15 @@
 // Test 1: Unconditional assignment (should compile)
 // Reading after unconditional assignment should be OK
 
-func:main = int8() {
+func:main = int32() {
     int64:x;
     x = 42;
-    print(x);  // OK: x is definitely assigned
-    int8:ret = 0;
-    pass(ret);
+    // OK: x is definitely assigned — use in comparison
+    if (x == 42i64) {
+        pass(0i32);
+    } else {
+        pass(1i32);
+    }
 };
 
 func:failsafe = NIL(int32:err_code) {

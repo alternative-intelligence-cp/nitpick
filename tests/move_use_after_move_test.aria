@@ -7,3 +7,15 @@ func:test_use_after_move = int32() {
     int32:zero = 0;
     pass(zero);
 };
+
+func:main = int32() {
+    Result<int32>:r = test_use_after_move();
+    pick(r.is_error) {
+        (false) { pass(r.value); },
+        (true) { pass(1i32); }
+    }
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};
