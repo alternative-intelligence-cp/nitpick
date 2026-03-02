@@ -1,7 +1,7 @@
 // Test 4: Assignment in both branches (should compile)
 // Variable assigned in all paths should be OK
 
-func:main = int8() {
+func:main = int32() {
     int64:x;
     bool:condition = true;
     
@@ -11,9 +11,12 @@ func:main = int8() {
         x = 100;
     }
     
-    print(x);  // OK: x is definitely assigned (both branches assign it)
-    int8:ret = 0;
-    pass(ret);
+    // OK: x is definitely assigned — use in comparison
+    if (x > 0i64) {
+        pass(0i32);
+    } else {
+        pass(1i32);
+    }
 };
 
 func:failsafe = NIL(int32:err_code) {
