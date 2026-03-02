@@ -1,25 +1,29 @@
 // Ultra simple Result member access test
 // Just test that .is_error, .value, .error compile
 
-func:get_ok = result<int64>() {
+func:get_ok = int64() {
     pass(42);
-}
+};
 
 func:main = int32() {
-    result<int64>:r = get_ok();
+    Result<int64>:r = get_ok();
     
-    // Test .is_error member access
-    bool:err = r.is_error;
-    
-    // Test .value member access  
-    int64:val = r.value;
-    
-    // Test .error member access
-    int64:errptr = r.error;
-    
-    // If all compiled, we succeeded
-    pass(0);
-}
+    // Use pick to safely access .value (compiler-enforced)
+    pick(r.is_error) {
+        (false) {
+            // KNOWN_SUCCESS — safe to access .value
+            int64:val = r.value;
+            drop(val);
+            // .error is null on success
+            int64:errptr = r.error;
+            drop(errptr);
+            pass(0i32);
+        },
+        (true) {
+            pass(1i32);
+        }
+    }
+};
 
 func:failsafe = NIL(int32:err_code) {
     // Error handling
