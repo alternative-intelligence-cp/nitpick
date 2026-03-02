@@ -53,17 +53,17 @@ test_files=$(find tests -name "*.aria" -type f \
     ! -name "helper.aria" \
     ! -name "helper_multi.aria" \
     ! -name "math_utils.aria" \
-    ! -path "*/integration/math.aria" \
-    ! -path "*/integration/utils.aria" \
-    ! -path "*/tests/debug_init_bug.aria" \
-    ! -path "*/tests/debug_init_func.aria" \
-    ! -path "*/tests/debug_struct_return.aria" \
-    ! -path "*/tests/debug_fractions.aria" \
-    ! -path "*/tests/minimal_literal_test.aria" \
-    ! -path "*/tests/simple_literal_test.aria" \
-    ! -path "*/tests/simple_test.aria" \
-    ! -path "*/tests/move_semantics_test1.aria" \
-    ! -path "*/tests/move_wild_test.aria" \
+    ! -path "tests/integration/math.aria" \
+    ! -path "tests/integration/utils.aria" \
+    ! -path "tests/debug_init_bug.aria" \
+    ! -path "tests/debug_init_func.aria" \
+    ! -path "tests/debug_struct_return.aria" \
+    ! -path "tests/debug_fractions.aria" \
+    ! -path "tests/minimal_literal_test.aria" \
+    ! -path "tests/simple_literal_test.aria" \
+    ! -path "tests/simple_test.aria" \
+    ! -path "tests/move_semantics_test1.aria" \
+    ! -path "tests/move_wild_test.aria" \
     | sort)
 
 # Count total
