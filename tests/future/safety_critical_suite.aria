@@ -19,7 +19,7 @@ struct:TestResult = {
 int32:total_tests = 0;
 int32:passed_tests = 0;
 
-func:report = void(TestResult:res) {
+func:report = NIL(TestResult:res) {
    total_tests = total_tests + 1;
    if (res.passed) {
        passed_tests = passed_tests + 1;
@@ -276,7 +276,7 @@ func:test_fix256_precision = TestResult() {
 bool:freed_flag = false;
 
 // Mock function to simulate free and set flag
-func:mock_free = void(wild int8->:ptr) {
+func:mock_free = NIL(wild int8->:ptr) {
    // In a real scenario, this would call runtime.aria_free(ptr)
    // Here we just set the flag to verify execution flow
    freed_flag = true;
@@ -412,6 +412,6 @@ pub func:main = int32() {
    }
 };
 
-func:failsafe = void(int32:err_code) {
+func:failsafe = NIL(int32:err_code) {
     // Error handling
 };

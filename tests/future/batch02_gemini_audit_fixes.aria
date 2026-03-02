@@ -10,7 +10,7 @@
 // ==============================================================================
 // Physical Consequence Prevented: Robot grip force 300 Nm appears as 44 Nm
 
-func:test_bug004_tbb8_wraparound = void() {
+func:test_bug004_tbb8_wraparound = NIL() {
     // Before fix: 300 would wrap to 44 (0x012C → 0x2C)
     // After fix: 300 should return ERR sentinel (-128)
     
@@ -26,7 +26,7 @@ func:test_bug004_tbb8_wraparound = void() {
     }
 };
 
-func:test_bug004_tbb8_underflow = void() {
+func:test_bug004_tbb8_underflow = NIL() {
     // Test negative overflow
     int32:test_val = -300;  // Use variable to test runtime validation
     tbb8:val_tbb8 = tbb8_from_int(test_val);
@@ -39,7 +39,7 @@ func:test_bug004_tbb8_underflow = void() {
     }
 };
 
-func:test_bug004_tbb8_valid_positive = void() {
+func:test_bug004_tbb8_valid_positive = NIL() {
     // Test edge of valid range (should work)
     tbb8:val_tbb8 = tbb8_from_int(127);
     
@@ -52,7 +52,7 @@ func:test_bug004_tbb8_valid_positive = void() {
     }
 };
 
-func:test_bug004_tbb8_valid_negative = void() {
+func:test_bug004_tbb8_valid_negative = NIL() {
     // Test negative edge of valid range
     tbb8:val_tbb8 = tbb8_from_int(-127);
     
@@ -65,7 +65,7 @@ func:test_bug004_tbb8_valid_negative = void() {
     }
 };
 
-func:test_bug004_tbb16_wraparound = void() {
+func:test_bug004_tbb16_wraparound = NIL() {
     // Test tbb16 overflow (35000 > 32767)
     int32:test_val = 35000;  // Use variable to test runtime validation
     tbb16:val_tbb16 = tbb16_from_int(test_val);
@@ -79,7 +79,7 @@ func:test_bug004_tbb16_wraparound = void() {
     }
 };
 
-func:test_bug004_tbb32_wraparound = void() {
+func:test_bug004_tbb32_wraparound = NIL() {
     // Test tbb32 overflow (would require int64 input in real code)
     // This tests that the mechanism exists
     tbb32:val_tbb32 = tbb32_from_int(2147483647);  // Max valid
@@ -98,7 +98,7 @@ func:test_bug004_tbb32_wraparound = void() {
 // ==============================================================================
 // Physical Consequence Prevented: permission && validated = true when should be false
 
-func:test_bug005_trit_and_logic = void() {
+func:test_bug005_trit_and_logic = NIL() {
     // Before fix: True (1) AND False (-1) = 1 (bitwise 0x01 & 0xFF = 0x01)
     // After fix: Should be -1 (min(1, -1) = -1)
     
@@ -114,7 +114,7 @@ func:test_bug005_trit_and_logic = void() {
     }
 };
 
-func:test_bug005_trit_or_logic = void() {
+func:test_bug005_trit_or_logic = NIL() {
     // Test OR logic: OR(false, true) = true
     trit:false_val = -1;
     trit:true_val = 1;
@@ -128,7 +128,7 @@ func:test_bug005_trit_or_logic = void() {
     }
 };
 
-func:test_bug005_trit_and_both_false = void() {
+func:test_bug005_trit_and_both_false = NIL() {
     // AND(false, false) = false
     trit:false1 = -1;
     trit:false2 = -1;
@@ -142,7 +142,7 @@ func:test_bug005_trit_and_both_false = void() {
     }
 };
 
-func:test_bug005_trit_and_both_true = void() {
+func:test_bug005_trit_and_both_true = NIL() {
     // AND(true, true) = true
     trit:true1 = 1;
     trit:true2 = 1;
@@ -156,7 +156,7 @@ func:test_bug005_trit_and_both_true = void() {
     }
 };
 
-func:test_bug005_trit_unknown_and_true = void() {
+func:test_bug005_trit_unknown_and_true = NIL() {
     // AND(unknown, true) = unknown (Kleene logic)
     trit:unknown = 0;
     trit:true_val = 1;
@@ -170,7 +170,7 @@ func:test_bug005_trit_unknown_and_true = void() {
     }
 };
 
-func:test_bug005_nit_and_logic = void() {
+func:test_bug005_nit_and_logic = NIL() {
     // Test nonary AND logic (uses same Kleene semantics)
     nit:val1 = 3;   // "more true"
     nit:val2 = -2;  // "more false"
@@ -185,7 +185,7 @@ func:test_bug005_nit_and_logic = void() {
     }
 };
 
-func:test_bug005_nit_or_logic = void() {
+func:test_bug005_nit_or_logic = NIL() {
     // Test nonary OR logic
     nit:val1 = 2;
     nit:val2 = -3;
@@ -205,7 +205,7 @@ func:test_bug005_nit_or_logic = void() {
 // ==============================================================================
 // Physical Consequence Prevented: Corrupted sensor reading appears valid
 
-func:test_bug006_trit_err_propagation_add = void() {
+func:test_bug006_trit_err_propagation_add = NIL() {
     // Before fix: ERR (-128) + 1 = -127 (becomes "valid")
     // After fix: ERR + 1 = ERR (sticky error)
     
@@ -221,7 +221,7 @@ func:test_bug006_trit_err_propagation_add = void() {
     }
 };
 
-func:test_bug006_trit_err_propagation_mul = void() {
+func:test_bug006_trit_err_propagation_mul = NIL() {
     // ERR * valid = ERR
     trit:err_trit = -128;
     trit:val = 1;
@@ -235,7 +235,7 @@ func:test_bug006_trit_err_propagation_mul = void() {
     }
 };
 
-func:test_bug006_trit_err_propagation_and = void() {
+func:test_bug006_trit_err_propagation_and = NIL() {
     // ERR && true = ERR
     trit:err_trit = -128;
     trit:true_val = 1;
@@ -249,7 +249,7 @@ func:test_bug006_trit_err_propagation_and = void() {
     }
 };
 
-func:test_bug006_nit_err_propagation = void() {
+func:test_bug006_nit_err_propagation = NIL() {
     // NIT_ERR + valid = NIT_ERR
     nit:err_nit = -128;
     nit:val = 2;
@@ -268,7 +268,7 @@ func:test_bug006_nit_err_propagation = void() {
 // ==============================================================================
 // Physical Consequence Prevented: Accumulated sensor values hit ceiling, appear valid
 
-func:test_bug007_nit_add_overflow = void() {
+func:test_bug007_nit_add_overflow = NIL() {
     // Before fix: 3 + 2 = 4 (saturated)
     // After fix: 3 + 2 = ERR (overflow for nit range [-4, 4])
     
@@ -284,7 +284,7 @@ func:test_bug007_nit_add_overflow = void() {
     }
 };
 
-func:test_bug007_nit_add_underflow = void() {
+func:test_bug007_nit_add_underflow = NIL() {
     // -3 + (-2) = -5, out of range [-4, 4]
     nit:val1 = -3;
     nit:val2 = -2;
@@ -298,7 +298,7 @@ func:test_bug007_nit_add_underflow = void() {
     }
 };
 
-func:test_bug007_nit_mul_overflow = void() {
+func:test_bug007_nit_mul_overflow = NIL() {
     // 3 * 2 = 6, out of range
     nit:val1 = 3;
     nit:val2 = 2;
@@ -312,7 +312,7 @@ func:test_bug007_nit_mul_overflow = void() {
     }
 };
 
-func:test_bug007_nit_valid_addition = void() {
+func:test_bug007_nit_valid_addition = NIL() {
     // Test edge case: 4 + 0 = 4 (should work)
     nit:max_nit = 4;
     nit:zero = 0;
@@ -326,7 +326,7 @@ func:test_bug007_nit_valid_addition = void() {
     }
 };
 
-func:test_bug007_nit_edge_valid = void() {
+func:test_bug007_nit_edge_valid = NIL() {
     // 2 + 2 = 4 (exactly at edge, valid)
     nit:val1 = 2;
     nit:val2 = 2;
@@ -340,7 +340,7 @@ func:test_bug007_nit_edge_valid = void() {
     }
 };
 
-func:test_bug007_nit_just_over_edge = void() {
+func:test_bug007_nit_just_over_edge = NIL() {
     // 2 + 3 = 5 (one past edge, overflow)
     nit:val1 = 2;
     nit:val2 = 3;
@@ -358,7 +358,7 @@ func:test_bug007_nit_just_over_edge = void() {
 // Integration Test: All Bugs Combined
 // ==============================================================================
 
-func:test_integration_safety_chain = void() {
+func:test_integration_safety_chain = NIL() {
     drop(print("=== Integration Test: Safety Barrier Chain ==="));
     
     // Scenario: Robot control with multiple safety checks
@@ -478,6 +478,6 @@ func:main = int32() {
     pass(0);
 };
 
-func:failsafe = void(int32:err_code) {
+func:failsafe = NIL(int32:err_code) {
     // Error handling
 };
