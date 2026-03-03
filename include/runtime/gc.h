@@ -290,6 +290,12 @@ void aria_gc_init(size_t nursery_size, size_t old_gen_threshold);
  */
 void aria_gc_shutdown(void);
 
+/**
+ * @brief Release GC-visible memory (coroutine frames, etc.) back to free store.
+ * @param ptr Pointer previously allocated with malloc/aria_gc_alloc.
+ */
+void aria_gc_free(void* ptr);
+
 #ifdef __cplusplus
 }
 #endif

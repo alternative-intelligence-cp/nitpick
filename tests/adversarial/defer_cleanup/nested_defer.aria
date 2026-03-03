@@ -7,11 +7,11 @@
  */
 
 func:main = int32() {
-    wild int8->outer = alloc(100);
+    wild int8->:outer = alloc(100);
     defer { free(outer); }
 
     {
-        wild int8->inner = alloc(50);
+        wild int8->:inner = alloc(50);
         defer { free(inner); }
 
         // Use both outer and inner here
@@ -21,7 +21,7 @@ func:main = int32() {
     // Only outer is valid here
     // outer's defer runs when function exits
 
-    return 0;
+    pass(0i32);
 };
 
 func:failsafe = NIL(int32:err_code) {
