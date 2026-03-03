@@ -44,6 +44,15 @@ struct Frac64 {
 #pragma pack(pop)
 
 // ============================================================================
+// Construction from parts
+// ============================================================================
+
+Frac8  frac8_from_parts(int8_t whole, int8_t num, int8_t denom);
+Frac16 frac16_from_parts(int16_t whole, int16_t num, int16_t denom);
+Frac32 frac32_from_parts(int32_t whole, int32_t num, int32_t denom);
+Frac64 frac64_from_parts(int64_t whole, int64_t num, int64_t denom);
+
+// ============================================================================
 // GCD Operations
 // ============================================================================
 

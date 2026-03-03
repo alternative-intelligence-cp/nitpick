@@ -603,4 +603,8 @@ int aria_tfp64_to_string(char* buffer, size_t size, Tfp64 f) {
     return snprintf(buffer, size, "%.15g", val);
 }
 
+// Bare-name aliases used by IR-generated code (no aria_ prefix)
+Tfp32 tfp32_from_parts(int16_t exp, int16_t mant) { return aria_tfp32_from_parts(exp, mant); }
+Tfp64 tfp64_from_parts(int16_t exp, int64_t mant) { return aria_tfp64_from_parts(exp, mant); }
+
 } // extern "C"
