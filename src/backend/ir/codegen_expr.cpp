@@ -2446,6 +2446,24 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     // COMPARISON OPERATORS
+    // Detect unsigned types so ordered comparisons use ICmpU* not ICmpS*
+    bool isUnsigned = false;
+    auto isUnsignedTypeName = [](const std::string& n) {
+        return n == "uint8" || n == "uint16" || n == "uint32" || n == "uint64";
+    };
+    if (expr->left->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* id = static_cast<IdentifierExpr*>(expr->left.get());
+        auto it = var_aria_types.find(id->name);
+        if (it != var_aria_types.end() && isUnsignedTypeName(it->second)) isUnsigned = true;
+    }
+    if (!isUnsigned && expr->right->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* id = static_cast<IdentifierExpr*>(expr->right.get());
+        auto it = var_aria_types.find(id->name);
+        if (it != var_aria_types.end() && isUnsignedTypeName(it->second)) isUnsigned = true;
+    }
+    if (!isUnsigned && leftLiteral && isUnsignedTypeName(leftLiteral->explicit_type)) isUnsigned = true;
+    if (!isUnsigned && rightLiteral && isUnsignedTypeName(rightLiteral->explicit_type)) isUnsigned = true;
+
     if (op == TokenType::TOKEN_EQUAL_EQUAL) {
         // Debug: Check type compatibility
         std::cerr << "[DEBUG COMPARISON] Left type: ";
@@ -2472,6 +2490,8 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     if (op == TokenType::TOKEN_LESS) {
         if (isFloat) {
             return builder.CreateFCmpOLT(left, right, "lttmp");
+        } else if (isUnsigned) {
+            return builder.CreateICmpULT(left, right, "lttmp");
         } else {
             return builder.CreateICmpSLT(left, right, "lttmp");
         }
@@ -2480,6 +2500,8 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     if (op == TokenType::TOKEN_LESS_EQUAL) {
         if (isFloat) {
             return builder.CreateFCmpOLE(left, right, "letmp");
+        } else if (isUnsigned) {
+            return builder.CreateICmpULE(left, right, "letmp");
         } else {
             return builder.CreateICmpSLE(left, right, "letmp");
         }
@@ -2497,6 +2519,8 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         
         if (isFloat) {
             return builder.CreateFCmpOGT(left, right, "gttmp");
+        } else if (isUnsigned) {
+            return builder.CreateICmpUGT(left, right, "gttmp");
         } else {
             return builder.CreateICmpSGT(left, right, "gttmp");
         }
@@ -2505,6 +2529,8 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     if (op == TokenType::TOKEN_GREATER_EQUAL) {
         if (isFloat) {
             return builder.CreateFCmpOGE(left, right, "getmp");
+        } else if (isUnsigned) {
+            return builder.CreateICmpUGE(left, right, "getmp");
         } else {
             return builder.CreateICmpSGE(left, right, "getmp");
         }

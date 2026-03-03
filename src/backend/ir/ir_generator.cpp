@@ -5638,6 +5638,29 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
             }
             
+            // Detect unsigned integer operands so comparisons use ICmpU* not ICmpS*
+            // Signed arithmetic is identical bit-for-bit, but ordered relational ops differ.
+            bool isUnsigned = false;
+            auto isUnsignedName = [](const std::string& n) {
+                return n == "uint8" || n == "uint16" || n == "uint32" || n == "uint64";
+            };
+            if (leftType && leftType->isPrimitive())
+                if (isUnsignedName(static_cast<PrimitiveType*>(leftType)->getName())) isUnsigned = true;
+            if (!isUnsigned && rightType && rightType->isPrimitive())
+                if (isUnsignedName(static_cast<PrimitiveType*>(rightType)->getName())) isUnsigned = true;
+            if (!isUnsigned && binop->left->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* id = static_cast<IdentifierExpr*>(binop->left.get());
+                auto it = var_aria_types.find(id->name);
+                if (it != var_aria_types.end() && isUnsignedName(it->second)) isUnsigned = true;
+            }
+            if (!isUnsigned && binop->right->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* id = static_cast<IdentifierExpr*>(binop->right.get());
+                auto it = var_aria_types.find(id->name);
+                if (it != var_aria_types.end() && isUnsignedName(it->second)) isUnsigned = true;
+            }
+            if (!isUnsigned && leftLiteral && isUnsignedName(leftLiteral->explicit_type)) isUnsigned = true;
+            if (!isUnsigned && rightLiteral && isUnsignedName(rightLiteral->explicit_type)) isUnsigned = true;
+
             // Generate appropriate operation based on operator
             switch (binop->op.type) {
                 // Arithmetic operators
@@ -6222,6 +6245,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Use FCmp for floating point, ICmp for integers
                     if (L->getType()->isFloatingPointTy()) {
                         return builder.CreateFCmpOLT(L, R, "lttmp");
+                    } else if (isUnsigned) {
+                        return builder.CreateICmpULT(L, R, "lttmp");
                     } else {
                         return builder.CreateICmpSLT(L, R, "lttmp");
                     }
@@ -6289,6 +6314,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Use FCmp for floating point, ICmp for integers
                     if (L->getType()->isFloatingPointTy()) {
                         return builder.CreateFCmpOLE(L, R, "letmp");
+                    } else if (isUnsigned) {
+                        return builder.CreateICmpULE(L, R, "letmp");
                     } else {
                         return builder.CreateICmpSLE(L, R, "letmp");
                     }
@@ -6357,6 +6384,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Use FCmp for floating point, ICmp for integers
                     if (L->getType()->isFloatingPointTy()) {
                         return builder.CreateFCmpOGT(L, R, "gttmp");
+                    } else if (isUnsigned) {
+                        return builder.CreateICmpUGT(L, R, "gttmp");
                     } else {
                         return builder.CreateICmpSGT(L, R, "gttmp");
                     }
@@ -6424,6 +6453,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Use FCmp for floating point, ICmp for integers
                     if (L->getType()->isFloatingPointTy()) {
                         return builder.CreateFCmpOGE(L, R, "getmp");
+                    } else if (isUnsigned) {
+                        return builder.CreateICmpUGE(L, R, "getmp");
                     } else {
                         return builder.CreateICmpSGE(L, R, "getmp");
                     }
