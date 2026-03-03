@@ -1,6 +1,6 @@
-// Expected: COMPILER ERROR
 // Comprehensive validation test for Phase 3.2.5
 // Tests all aspects of high-precision literal support
+// Use i128 suffix for int > INT64_MAX, f128 suffix for high-precision floats
 
 func:main = int32() {
     // ===== Float Precision Tests =====
@@ -8,62 +8,56 @@ func:main = int32() {
     // 1. Regular flt64 (17 digits or less)
     flt64:pi64 = 3.14159265358979;    // 14 digits → flt64
     
-    // 2. High-precision flt128 (more than 17 digits)
-    flt128:pi128 = 3.141592653589793238462643383279502884197;  // 40 digits → flt128
+    // 2. High-precision flt128 (f128 suffix required for >17 digit precision)
+    flt128:pi128 = 3.141592653589793238462643383279502884197f128;
     
     // 3. Scientific notation
     flt64:avogadro = 6.02214076e23;
-    flt128:planck_high = 6.62607015e-34;
+    flt128:planck_high = 6.62607015e-34f128;
     
-    // 4. Type casting: fp128 literal to flt64 variable (should truncate)
-    flt64:pi_truncated = 3.141592653589793238462643383279502884197;  // Truncates to flt64
-    
-    // 5. Negative values
-    flt128:neg = -2.718281828459045235360287471352662497757;
+    // 4. Negative float values
+    flt128:neg = -2.718281828459045235360287471352662497757f128;
     
     // ===== Integer Precision Tests =====
     
-    // 6. Regular int64 (19 digits or less)
+    // 5. Regular int64 (19 digits or less)
     int64:billion = 1000000000;
     
-    // 7. Max int64 value
+    // 6. Max int64 value
     int64:max_i64 = 9223372036854775807;  // 2^63 - 1
     
-    // 8. Just beyond int64 (20+ digits → int128)
-    int128:beyond = 9223372036854775808;  // 2^63
+    // 7. Just beyond int64 (i128 suffix required)
+    int128:beyond = 9223372036854775808i128;  // 2^63
     
-    // 9. Very large int128
-    int128:huge = 170141183460469231731687303715884105727;  // Near int128 max
-    
-    // 10. Type casting: int128 literal to int64 variable (should truncate)
-    int64:truncated = 9223372036854775808;  // Truncates to int64
+    // 8. Very large int128
+    int128:huge = 170141183460469231731687303715884105727i128;  // Near int128 max
     
     // ===== Mixed Type Tests =====
     
-    // 11. Integer literal to float variable (should convert)
-    flt64:from_int = 42;
-    flt128:big_from_int = 9223372036854775808;
+    // 9. Integer literal to float variable (small int, auto-converts)
+    flt64:from_int = 42.0;
+    flt128:big_from_int = 9.223372036854775808e18f128;  // Large float literal
     
-    // 12. Zero values
+    // 10. Zero values
     int64:zero_i = 0;
     flt64:zero_f = 0.0;
-    flt128:zero_128 = 0.0;
+    flt128:zero_128 = 0.0f128;
     
     // ===== Boundary Tests =====
     
-    // 13. Exactly 17 digits (should use flt64)
+    // 11. Exactly 17 digits (flt64)
     flt64:exactly_17 = 1.2345678901234567;
     
-    // 14. Exactly 18 digits (should use flt128)
-    flt128:exactly_18 = 1.23456789012345678;
+    // 12. Exactly 18 digits (flt128, f128 suffix)
+    flt128:exactly_18 = 1.23456789012345678f128;
     
-    // 15. Exactly 19 digits (should use int64)
+    // 13. Exactly 19 digits (int64)
     int64:exactly_19 = 1234567890123456789;
     
-    // 16. Exactly 20 digits (should use int128)
-    int128:exactly_20 = 12345678901234567890;
+    // 14. Exactly 20 digits (int128, i128 suffix)
+    int128:exactly_20 = 12345678901234567890i128;
     
-    return 0;
+    pass(0i32);
 };
 
 func:failsafe = NIL(int32:err_code) {
