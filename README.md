@@ -76,12 +76,11 @@ These foundations inform Aria's approach to neurodivergent-friendly syntax desig
 
 Aria's safety philosophy centers on making dangerous operations **explicit** while providing multiple safety layers for error handling:
 
-**Layer 1: Failsafe** - Every Aria program has a `func:failsafe = void(int32:err_code)` that catches unhandled errors. No program can crash without giving you a chance to recover:
+**Layer 1: Failsafe** - Every Aria program has a `func:failsafe = NIL(int32:err_code)` that catches unhandled errors. No program can crash without giving you a chance to recover:
 ```aria
-func:failsafe = void(int32:err_code) {
-    stderr.writeln("Critical error: " + int32_toString(err_code));
+func:failsafe = NIL(int32:err_code) {
     // Log, cleanup, graceful shutdown
-    pass(NIL);
+    // (use extern C calls or dbug:: for output here if needed)
 };
 ```
 
@@ -244,11 +243,17 @@ Borrow checker ensures memory safety at compile time:
 
 ### Hello World
 ```aria
-func:main = int64() {
+func:main = int32() {
     print("Hello, World!");
     pass(0);
 };
+
+func:failsafe = NIL(int32:err_code) {};
 ```
+
+> **Note:** The `failsafe` function is required in every Aria program. It handles any unrecovered errors that bubble up through the `Result<T>` system.
+
+> **Note:** The examples below (TBB, Six-Stream, Async, Generics) are illustrative code snippets showing language features — they are not complete standalone programs. See **Your First Aria Program** for a complete compilable example.
 
 ### TBB Types with Overflow Detection
 ```aria
@@ -376,10 +381,12 @@ cmake --build . -j$(nproc)
 ```bash
 # Create hello.aria
 cat > hello.aria << 'EOF'
-func:main = int8() {
+func:main = int32() {
     print("Hello from Aria!");
     pass(0);
 };
+
+func:failsafe = NIL(int32:err_code) {};
 EOF
 
 # Compile

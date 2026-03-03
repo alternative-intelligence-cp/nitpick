@@ -8111,7 +8111,41 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
         throw std::runtime_error("Null index expression");
     }
     
-    // Generate code for the array/vector
+    // Special handling for identifier bases: avoid loading the whole array value.
+    // For fixed-size arrays [N x T], we need the raw alloca pointer, not the loaded value.
+    if (expr->array->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr->array.get());
+        auto it = named_values.find(ident->name);
+        if (it != named_values.end()) {
+            llvm::Value* var = it->second;
+            if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
+                llvm::Type* allocated_type = allocaInst->getAllocatedType();
+                if (allocated_type->isArrayTy()) {
+                    // Properly-typed fixed-size array [N x T]
+                    auto* arrTy = llvm::cast<llvm::ArrayType>(allocated_type);
+                    llvm::Type* elemType = arrTy->getElementType();
+                    
+                    llvm::Value* indexVal = codegenExpressionNode(expr->index.get(), this);
+                    if (!indexVal) {
+                        throw std::runtime_error("Failed to generate index expression");
+                    }
+                    if (!indexVal->getType()->isIntegerTy(64)) {
+                        indexVal = builder.CreateSExtOrTrunc(indexVal,
+                                       builder.getInt64Ty(), "idx.i64");
+                    }
+                    std::vector<llvm::Value*> gep_indices = {
+                        llvm::ConstantInt::get(builder.getInt64Ty(), 0),
+                        indexVal
+                    };
+                    llvm::Value* elem_ptr = builder.CreateInBoundsGEP(
+                        allocated_type, var, gep_indices, "array.index.ptr");
+                    return builder.CreateLoad(elemType, elem_ptr, "array.index.val");
+                }
+            }
+        }
+    }
+
+    // General path: generate code for the array/vector
     llvm::Value* arrayVal = codegenExpressionNode(expr->array.get(), this);
     if (!arrayVal) {
         throw std::runtime_error("Failed to generate code for indexed object");
