@@ -1,46 +1,51 @@
-// Test: Unwrap operator (?) without full result types
-// Phase: Session 8 - Result Types
+// Test: Unwrap operator (?) with Result<T> types
 
-// Test 1: Simple unwrap - just returns the left side for now
+// Helper: returns 42 (at call site it becomes Result<int32>)
+func:get_42 = int32() {
+    pass(42i32);
+};
+
+// Helper: returns 10 (at call site it becomes Result<int32>)
+func:get_10 = int32() {
+    pass(10i32);
+};
+
+// Test 1: Simple unwrap - call returns Result<int32>, unwrap with default 99
 func:test_unwrap = int32() {
-    int32:value = 42;
-    int32:default_val = 99;
-    int32:result = value ? default_val;  // Should return 42
+    Result<int32>:r = get_42();
+    int32:result = r ? 99i32;  // Should return 42 (success)
     pass(result);
 };
 
 // Test 2: Unwrap in expression context
 func:test_unwrap_expr = int32() {
-    int32:x = 10;
-    int32:y = 20;
-    int32:five = 5;
-    // Unwrap in an expression - should return x (10)
-    int32:sum = (x ? y) + five;  // Should be 10 + 5 = 15
-    int32:expected_sum = 15;
+    int32:five = 5i32;
+    // Call returns Result<int32>, unwrap to get int32
+    Result<int32>:r = get_10();
+    int32:x = r ? 0i32;        // Should be 10
+    int32:sum = x + five;      // Should be 10 + 5 = 15
+    int32:expected_sum = 15i32;
     if (sum == expected_sum) {
-        int32:success = 0;
-        pass(success);  // Success
+        pass(0i32);  // Success
     }
-    int32:failure = 1;
-    pass(failure);  // Failure
+    pass(1i32);  // Failure
 };
 
 // Main function
 func:main = int32() {
-    int32:result1 = test_unwrap();
-    int32:expected = 42;
-    
+    Result<int32>:r1 = test_unwrap();
+    int32:result1 = r1 ? -1i32;
+    int32:expected = 42i32;
+
     if (result1 == expected) {
-        int32:result2 = test_unwrap_expr();
-        int32:success_val = 0;
-        if (result2 == success_val) {
-            int32:success = 0;
-            pass(success);  // All tests passed
+        Result<int32>:r2 = test_unwrap_expr();
+        int32:result2 = r2 ? -1i32;
+        if (result2 == 0i32) {
+            pass(0i32);  // All tests passed
         }
     }
-    
-    int32:failure = 1;
-    pass(failure);  // Failed
+
+    pass(1i32);  // Failed
 };
 
 func:failsafe = NIL(int32:err_code) {

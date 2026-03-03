@@ -9,13 +9,13 @@ func:test_pool_lifecycle = int32() {
     // pool_new(64, 4096);  // 64-byte blocks, 4KB capacity
     // pool_destroy(0);     // Would normally use handle from pool_new
     
-    return 0;
+    pass(0i32);
 };
 
 func:main = int32() {
-    test_pool_lifecycle();
+    int32:r = test_pool_lifecycle() ? -1i32;
     print("Pool builtins registered successfully");
-    pass(0);
+    pass(0i32);
 };
 
 func:failsafe = NIL(int32:err_code) {

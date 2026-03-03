@@ -20,11 +20,11 @@ func<T>:max = *T(*T:a, *T:b) {
 
 // Test 4: Main function calling generics
 func:main = int32() {
-    // Simple calls without explicit types (type inference)
-    int64:r1 = identity(42);
-    int64:r2 = first_of_pair(10, 3.14);
+    // Use typed literals so generics return base type directly (no Result wrapping)
+    int64:r1 = identity(42i64);
+    int64:r2 = first_of_pair(10i64, 3.14f64);
     
-    pass(0);
+    pass(0i32);
 };
 
 func:failsafe = NIL(int32:err_code) {

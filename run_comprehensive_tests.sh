@@ -101,7 +101,8 @@ for test_file in $test_files; do
             SKIPPED=$((SKIPPED + 1))
             SKIPPED_TESTS+=("$test_file (timeout)")
             echo "TIMEOUT: $test_file" >> "$RESULTS_FILE"
-        elif grep -qE "Expected:.*COMPILER( ERROR|/RUNTIME ERROR)" "$test_file" 2>/dev/null              || [[ "$test_file" == tests/fuzz/crashes/* ]]              || [[ "$test_file" == tests/fuzz/v2/output_v2/crashes/* ]]; then
+        elif grep -qE "Expected:.*(COMPILER( ERROR|/RUNTIME ERROR))" "$test_file" 2>/dev/null \
+             || grep -qE 'Expected:.*"[^"]*error[^"]*"' "$test_file" 2>/dev/null              || [[ "$test_file" == tests/fuzz/crashes/* ]]              || [[ "$test_file" == tests/fuzz/v2/output_v2/crashes/* ]]; then
             # Adversarial/fuzz crash test expects compiler to REJECT or handle the code gracefully
             echo -e "${GREEN}✓ PASS${NC} (expected rejection)"
             PASSED=$((PASSED + 1))

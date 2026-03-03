@@ -9,13 +9,13 @@ func:test_slab_lifecycle = int32() {
     // slab_new(64, 4096);  // 64-byte objects, 4KB slab size
     // slab_destroy(0);     // Would normally use handle from slab_new
     
-    return 0;
+    pass(0i32);
 };
 
 func:main = int32() {
-    test_slab_lifecycle();
+    int32:r = test_slab_lifecycle() ? -1i32;
     print("Slab builtins registered successfully");
-    pass(0);
+    pass(0i32);
 };
 
 func:failsafe = NIL(int32:err_code) {

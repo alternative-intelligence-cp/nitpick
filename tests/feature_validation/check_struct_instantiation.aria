@@ -59,24 +59,22 @@ func:test_struct_in_function = int64() {
 };
 
 func:main = int32() {
-    int32:result = 0;
-    
-    result = test_point_creation();
-    if (result != 0) {
-        pass(result);
+    int64:r1 = test_point_creation() ? -1i64;
+    if (r1 != 0i64) {
+        pass(1i32);
     }
-    
-    result = test_duration();
-    if (result != 0) {
-        pass(result);
+
+    int64:r2 = test_duration() ? -1i64;
+    if (r2 != 0i64) {
+        pass(2i32);
     }
-    
-    result = test_struct_in_function();
-    if (result != 0) {
-        pass(result);
+
+    int64:r3 = test_struct_in_function() ? -1i64;
+    if (r3 != 0i64) {
+        pass(3i32);
     }
-    
-    pass(42);  // All tests passed!
+
+    pass(0i32);
 };
 
 func:failsafe = NIL(int32:err_code) {

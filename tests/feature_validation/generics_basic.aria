@@ -42,34 +42,34 @@ func<T,U>:pair = int64(*T:first, *U:second) {
 // Test 5: Using generics with type inference (turbofish not implemented yet)
 func:test_explicit = int64() {
     // Identity with int8
-    int8:x1 = 42;
+    int8:x1 = 42i8;
     int8:val1 = identity(x1);
-    
+
     // Max with int64
-    int64:bigger = max(100, 200);
-    
-    if (val1 == 42) {
-        if (bigger == 200) {
-            pass(0);
+    int64:bigger = max(100i64, 200i64);
+
+    if (val1 == 42i8) {
+        if (bigger == 200i64) {
+            pass(0i64);
         }
     }
-    pass(1);
+    pass(1i64);
 };
 
 // Test 6: Type inference
 func:test_inference = int64() {
     // Compiler should infer T=int8
-    int8:result1 = max(10, 20);
-    
+    int8:result1 = max(10i8, 20i8);
+
     // Compiler should infer T=int64
-    int64:result3 = identity(12345678);
-    
-    if (result1 == 20) {
-        if (result3 == 12345678) {
-            pass(0);
+    int64:result3 = identity(12345678i64) ? -1i64;
+
+    if (result1 == 20i8) {
+        if (result3 == 12345678i64) {
+            pass(0i64);
         }
     }
-    pass(1);
+    pass(1i64);
 };
 
 // Test 7: Generic with array (arrays not fully implemented - commented out) (arrays not fully implemented - commented out)
@@ -90,18 +90,18 @@ func:test_inference = int64() {
 // Main test runner
 func:main = int32() {
     // Test explicit type parameters
-    int64:r1 = test_explicit();
-    if (r1 != 0) {
-        pass(1);
+    int64:r1 = test_explicit() ? -1i64;
+    if (r1 != 0i64) {
+        pass(1i32);
     }
-    
+
     // Test type inference
-    int64:r2 = test_inference();
-    if (r2 != 0) {
-        pass(2);
+    int64:r2 = test_inference() ? -1i64;
+    if (r2 != 0i64) {
+        pass(2i32);
     }
-    
-    pass(0);
+
+    pass(0i32);
 };
 
 // EXPECTED COMPILATION RESULT (current state):
