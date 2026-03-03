@@ -7734,6 +7734,31 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     currentFunctionReturnType = actualReturnType;
     currentFunctionValueType = valueType;
     
+    // PRE-REGISTER FUNCTION SYMBOL FOR SELF-RECURSION SUPPORT
+    // Build a forward-reference symbol BEFORE entering the function scope so the
+    // function name is visible inside the body.  This allows recursive calls like
+    //   func:fib = int32(int32:n) { ... pass(fib(n-1i32)); ... }
+    // to resolve correctly during type-checking.
+    {
+        std::vector<Type*> earlyParamTypes;
+        for (const auto& param : stmt->parameters) {
+            if (param->type == ASTNode::NodeType::PARAMETER) {
+                ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
+                Type* pt = resolveTypeNode(paramNode->typeNode.get());
+                earlyParamTypes.push_back((pt && pt->getKind() != TypeKind::ERROR)
+                    ? pt : typeSystem->getPrimitiveType("void"));
+            }
+        }
+        Type* earlyFuncType = new FunctionType(earlyParamTypes, actualReturnType,
+                                               stmt->isAsync, false);
+        Symbol* earlySym = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
+                                                      earlyFuncType,
+                                                      stmt->line, stmt->column);
+        if (earlySym) {
+            earlySym->setFuncDecl(stmt);
+        }
+    }
+
     // CRITICAL FIX: Enter function scope BEFORE defining parameters
     // This prevents parameter name collisions between different functions
     // Without this, all parameters are registered in global scope and collide!
@@ -7792,32 +7817,8 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     currentFunctionReturnType = previousReturnType;
     currentFunctionValueType = previousValueType;
     
-    // Build parameter types for function type
-    std::vector<Type*> paramTypes;
-    for (const auto& param : stmt->parameters) {
-        if (param->type == ASTNode::NodeType::PARAMETER) {
-            ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
-            Type* paramType = resolveTypeNode(paramNode->typeNode.get());
-            if (paramType && paramType->getKind() != TypeKind::ERROR) {
-                paramTypes.push_back(paramType);
-            } else {
-                // Use void as fallback for error types
-                paramTypes.push_back(typeSystem->getPrimitiveType("void"));
-            }
-        }
-    }
-    
-    // Create proper function type
-    // Regular functions: int32() returns Result{err: *tbb*, val: int32}
-    // Extern functions: int32() returns int32 (raw type, no wrapping)
-    Type* funcType = new FunctionType(paramTypes, actualReturnType, stmt->isAsync, false);
-    
-    // Define function symbol in symbol table with complete function type
-    Symbol* funcSymbol = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
-                                                    funcType, stmt->line, stmt->column);
-    if (funcSymbol) {
-        funcSymbol->setFuncDecl(stmt);  // Store AST for generic resolution and CTFE
-    }
+    // Note: The function symbol was pre-registered before the scope entry (above)
+    // to support self-recursion.  No further defineSymbol() call needed here.
 }
 
 // ============================================================================

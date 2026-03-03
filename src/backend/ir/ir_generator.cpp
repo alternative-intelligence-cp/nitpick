@@ -1701,7 +1701,31 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
             return mapType(aria_type);
         }
     }
-    
+
+    // Fixed-size array types: elementType[N] (e.g., "int32[4]", "flt64[8]")
+    // Must be checked last so named struct types win over generic parsing.
+    {
+        auto bracket_pos = type_name.rfind('[');
+        if (bracket_pos != std::string::npos && type_name.back() == ']') {
+            std::string elem_str = type_name.substr(0, bracket_pos);
+            std::string size_str = type_name.substr(bracket_pos + 1,
+                                                     type_name.size() - bracket_pos - 2);
+            if (!size_str.empty()) {
+                // Sized array: int32[4] -> [4 x i32]
+                llvm::Type* elem_type = mapTypeFromName(elem_str);
+                try {
+                    uint64_t arr_size = std::stoull(size_str);
+                    return llvm::ArrayType::get(elem_type, arr_size);
+                } catch (...) {
+                    // Fall through to default
+                }
+            } else {
+                // Dynamic / unsized array: int32[] -> opaque pointer
+                return llvm::PointerType::get(context, 0);
+            }
+        }
+    }
+
     // Default to i32 for unknown types (temporary)
     return builder.getInt32Ty();
 }
@@ -3131,7 +3155,34 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                             }
                         }
                         
-                        builder.CreateStore(initVal, alloca);
+                        // ARRAY INIT FIX: When the declared variable is a fixed-size array
+                        // [N x T] and the initializer is an ARRAY_LITERAL (returned as a
+                        // flat pointer to a tmp alloca), copy element-by-element into the
+                        // properly-typed alloca using two-index GEP.  This avoids storing
+                        // a raw pointer value into an integer/array slot.
+                        if (varType->isArrayTy() && initVal->getType()->isPointerTy()) {
+                            auto* arrType = llvm::cast<llvm::ArrayType>(varType);
+                            llvm::Type* elemType = arrType->getElementType();
+                            uint64_t numElems = arrType->getNumElements();
+                            for (uint64_t i = 0; i < numElems; ++i) {
+                                // Load element i from the tmp flat alloca
+                                llvm::Value* srcPtr = builder.CreateGEP(
+                                    elemType, initVal,
+                                    llvm::ConstantInt::get(builder.getInt64Ty(), i),
+                                    "arr.init.src");
+                                llvm::Value* elem = builder.CreateLoad(elemType, srcPtr, "arr.init.elem");
+                                // Store into our typed alloca via two-index GEP
+                                std::vector<llvm::Value*> destIdx = {
+                                    llvm::ConstantInt::get(builder.getInt64Ty(), 0),
+                                    llvm::ConstantInt::get(builder.getInt64Ty(), i)
+                                };
+                                llvm::Value* destPtr = builder.CreateInBoundsGEP(
+                                    varType, alloca, destIdx, "arr.init.dst");
+                                builder.CreateStore(elem, destPtr);
+                            }
+                        } else {
+                            builder.CreateStore(initVal, alloca);
+                        }
                     }
                 }
             } else if (isOptional) {
@@ -4949,7 +5000,30 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     llvm::Value* array_ptr = nullptr;
                     if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
                         llvm::Type* allocated_type = allocaInst->getAllocatedType();
-                        if (allocated_type->isPointerTy()) {
+                        if (allocated_type->isArrayTy()) {
+                            // Properly-typed fixed-size array [N x T] — use two-index GEP
+                            auto* arrTy = llvm::cast<llvm::ArrayType>(allocated_type);
+                            llvm::Type* elemType = arrTy->getElementType();
+                            // Cast index to i64 for GEP
+                            if (!index_value->getType()->isIntegerTy(64)) {
+                                index_value = builder.CreateSExtOrTrunc(index_value,
+                                                  builder.getInt64Ty(), "idx.i64");
+                            }
+                            std::vector<llvm::Value*> gep_indices = {
+                                llvm::ConstantInt::get(builder.getInt64Ty(), 0),
+                                index_value
+                            };
+                            llvm::Value* elem_ptr = builder.CreateInBoundsGEP(
+                                allocated_type, var, gep_indices, "arrayidx");
+                            // Cast rhs to element type if needed
+                            if (rhs->getType() != elemType) {
+                                if (rhs->getType()->isIntegerTy() && elemType->isIntegerTy()) {
+                                    rhs = builder.CreateIntCast(rhs, elemType, true, "rhs.cast");
+                                }
+                            }
+                            builder.CreateStore(rhs, elem_ptr);
+                            return rhs;
+                        } else if (allocated_type->isPointerTy()) {
                             array_ptr = builder.CreateLoad(allocated_type, var, baseIdent->name + ".ptr");
                         } else {
                             array_ptr = var;
@@ -4958,7 +5032,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         array_ptr = var;
                     }
                     
-                    // Determine element type
+                    // Determine element type (legacy flat-pointer path)
                     llvm::Type* elem_type = builder.getInt64Ty();  // Default assumption
                     
                     // Create GEP and store
@@ -7165,18 +7239,38 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             
             // Get element type (arrays decay to pointers)
             llvm::Type* elem_type = nullptr;
-            if (auto* ptr_type = llvm::dyn_cast<llvm::PointerType>(array_ptr->getType())) {
+            if (auto* alloca = llvm::dyn_cast<llvm::AllocaInst>(array_ptr)) {
+                llvm::Type* alloc_ty = alloca->getAllocatedType();
+                if (alloc_ty->isArrayTy()) {
+                    // Properly-typed fixed-size array [N x T] — use two-index GEP
+                    auto* arrTy = llvm::cast<llvm::ArrayType>(alloc_ty);
+                    elem_type = arrTy->getElementType();
+                    // Cast index to i64 for GEP
+                    if (!index_value->getType()->isIntegerTy(64)) {
+                        index_value = builder.CreateSExtOrTrunc(index_value,
+                                          builder.getInt64Ty(), "idx.i64");
+                    }
+                    std::vector<llvm::Value*> gep_indices = {
+                        llvm::ConstantInt::get(builder.getInt64Ty(), 0),
+                        index_value
+                    };
+                    llvm::Value* elem_ptr = builder.CreateInBoundsGEP(
+                        alloc_ty, array_ptr, gep_indices, "arrayidx");
+                    return builder.CreateLoad(elem_type, elem_ptr, "elem");
+                } else {
+                    elem_type = alloc_ty;
+                }
+            } else if (auto* ptr_type = llvm::dyn_cast<llvm::PointerType>(array_ptr->getType())) {
+                (void)ptr_type;
                 // Modern LLVM uses opaque pointers, need to track element type separately
                 // For now, assume int64 (common case for literals)
                 elem_type = llvm::Type::getInt64Ty(context);
-            } else if (auto* alloca = llvm::dyn_cast<llvm::AllocaInst>(array_ptr)) {
-                elem_type = alloca->getAllocatedType();
             } else {
                 // Fallback to int32
                 elem_type = llvm::Type::getInt32Ty(context);
             }
             
-            // Create GEP to access element at index
+            // Create GEP to access element at index (flat pointer / non-array alloca)
             llvm::Value* elem_ptr = builder.CreateGEP(elem_type, array_ptr, index_value, "arrayidx");
             
             // Load and return the element value
