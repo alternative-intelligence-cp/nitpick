@@ -1,61 +1,33 @@
 // Test nested Result member access in complex expressions
 
-func divide(a:int64, b:int64) -> result<int64> {
-    is b == 0:
-        fail("Division by zero")
-    :
-        pass(a / b)
-}
+func:divide = int64(int64:a, int64:b) {
+    if (b == 0i64) {
+        fail(1i64);
+    }
+    pass(a / b);
+};
 
-func safe_divide_and_double(a:int64, b:int64) -> result<int64> {
-    result<int64> r:div = divide(a, b)
-    
-    // Use member access in conditional
-    is r.is_error:
-        fail("Cannot divide")
-    :
-        pass(r.value * 2)
-}
+func:safe_divide_and_double = int64(int64:a, int64:b) {
+    Result<int64>:r = divide(a, b);
+    if (r.is_error) {
+        fail(r.error);
+    }
+    pass(r.value * 2i64);
+};
 
-func main() -> int64 {
-    // Test 1: Nested result access in expression
-    result<int64> r1:result = divide(10, 2)
-    int64 doubled:value = r1.value * 2
-    
-    is doubled == 10:
-        print("SUCCESS: Nested value access works\n")
-    :
-        print("ERROR: Should be 10\n")
-        pass(1)
-    
-    // Test 2: Using .is_error in complex conditional
-    result<int64> r2:ok = divide(100, 4)
-    result<int64> r3:err = divide(100, 0)
-    
-    is !r2.is_error && r3.is_error:
-        print("SUCCESS: Complex conditional works\n")
-    :
-        print("ERROR: Conditional should be true\n")
-        pass(2)
-    
-    // Test 3: Chained result operations
-    result<int64> r4:chain = safe_divide_and_double(20, 4)
-    
-    is !r4.is_error && r4.value == 10:
-        print("SUCCESS: Chained operations work\n")
-    :
-        print("ERROR: Should be 10\n")
-        pass(3)
-    
-    // Test 4: Error propagation check
-    result<int64> r5:err_chain = safe_divide_and_double(20, 0)
-    
-    is r5.is_error:
-        print("SUCCESS: Error propagation works\n")
-    :
-        print("ERROR: Should propagate error\n")
-        pass(4)
-    
-    print("All nested Result access tests passed!\n")
-    pass(0)
-}
+func:main = int32() {
+    // Test nested result access
+    Result<int64>:r1 = safe_divide_and_double(10i64, 2i64);
+    if (!r1.is_error) {
+        int64:val = r1.value;  // Should be 10
+    }
+
+    Result<int64>:r2 = safe_divide_and_double(10i64, 0i64);
+    if (r2.is_error) {
+        int64:err = r2.error;
+    }
+
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {};

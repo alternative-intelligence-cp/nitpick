@@ -7,15 +7,16 @@ func<T>:identity = *T(*T:value) {
 };
 
 // Caller that uses the generic twice with different types
-func:test_identity = int64() {
-    identity(42);
-    identity(100);
-    pass(42);  // Return int32 literal explicitly
+func:test_identity = int32() {
+    drop(identity(42));
+    drop(identity(100));
+    pass(0i32);
 };
 
 // Entry point  
 func:main = int32() {
-    pass(test_identity());
+    int32:r = test_identity() ? -1i32;
+    pass(r);
 };
 
 func:failsafe = NIL(int32:err_code) {

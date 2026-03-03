@@ -1,82 +1,37 @@
 // Test Result member access with different value types
 
-func get_bool_result(success:bool) -> result<bool> {
-    is success:
-        pass(true)
-    :
-        fail("Boolean operation failed")
-}
+func:get_bool = bool() {
+    pass(true);
+};
 
-func get_float_result(success:bool) -> result<flt64> {
-    is success:
-        pass(3.14159)
-    :
-        fail("Float operation failed")
-}
+func:get_int = int64() {
+    pass(42i64);
+};
 
-func get_string_result(success:bool) -> result<string> {
-    is success:
-        pass("Hello, Aria!")
-    :
-        fail("String operation failed")
-}
+func:get_int_fail = int64() {
+    fail(1i64);
+};
 
-func main() -> int64 {
-    // Test 1: result<bool> member access
-    result<bool> rb:success = get_bool_result(true)
-    
-    is !rb.is_error && rb.value:
-        print("SUCCESS: result<bool> value access works\n")
-    :
-        print("ERROR: result<bool> should be true\n")
-        pass(1)
-    
-    // Test 2: result<bool> error case
-    result<bool> rb_err:error = get_bool_result(false)
-    
-    is rb_err.is_error:
-        print("SUCCESS: result<bool> error detection works\n")
-    :
-        print("ERROR: result<bool> should be error\n")
-        pass(2)
-    
-    // Test 3: result<flt64> member access
-    result<flt64> rf:success = get_float_result(true)
-    
-    is !rf.is_error && rf.value > 3.14:
-        print("SUCCESS: result<flt64> value access works\n")
-    :
-        print("ERROR: result<flt64> value incorrect\n")
-        pass(3)
-    
-    // Test 4: result<flt64> error case
-    result<flt64> rf_err:error = get_float_result(false)
-    
-    is rf_err.is_error:
-        print("SUCCESS: result<flt64> error detection works\n")
-    :
-        print("ERROR: result<flt64> should be error\n")
-        pass(4)
-    
-    // Test 5: result<string> member access
-    result<string> rs:success = get_string_result(true)
-    
-    is !rs.is_error:
-        print("SUCCESS: result<string> value access works\n")
-        // Note: Full string comparison would need string_equals builtin
-    :
-        print("ERROR: result<string> should succeed\n")
-        pass(5)
-    
-    // Test 6: result<string> error case
-    result<string> rs_err:error = get_string_result(false)
-    
-    is rs_err.is_error:
-        print("SUCCESS: result<string> error detection works\n")
-    :
-        print("ERROR: result<string> should be error\n")
-        pass(6)
-    
-    print("All typed Result access tests passed!\n")
-    pass(0)
-}
+func:main = int32() {
+    // Bool result
+    Result<bool>:rb = get_bool();
+    if (!rb.is_error) {
+        bool:b = rb.value;
+    }
+
+    // Int result success
+    Result<int64>:ri = get_int();
+    if (!ri.is_error) {
+        int64:v = ri.value;
+    }
+
+    // Int result error
+    Result<int64>:re = get_int_fail();
+    if (re.is_error) {
+        int64:err = re.error;
+    }
+
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {};

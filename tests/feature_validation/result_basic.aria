@@ -1,46 +1,35 @@
 // TDD Test: Result Types with pass/fail and ? operator
-// Status: ❌ NOT IMPLEMENTED - This will NOT compile until result system works
 
-// Test 1: Simple pass statement
+// Test 1: Simple function returning int64
 func:get_value = int64() {
-    pass(0i32);  // was: pass(42)
+    pass(42i64);
 };
 
-// Test 2: Simple fail statement  
-func:get_error = int64() {
-    fail(1);
-};
-
-// Test 3: Conditional pass/fail
-func:divide = int64(int64:a, int64:b) {
-    if (b == 0) {
-        fail(1);  // Division by zero error
+// Test 2: Conditional logic with fail
+func:safe_divide = int64(int64:a, int64:b) {
+    if (b == 0i64) {
+        fail(1i32);
     }
-    pass(0i32);  // was: pass(a)  // Just return a for now (division not implemented)
+    pass(a);
 };
 
-// Test 4: Result unwrapping with ? operator
-func:test_unwrap = int64() {
-    int64:r1 = get_value();
-    int64:val = r1 ? 0;  // Unwrap with default value 0
-    
-    if (val == 42) {
-        pass(0i32);  // was: pass(0)  // Success
+// Test 3: Result unwrapping with ? operator
+func:test_unwrap = int32() {
+    // get_value() returns int64; at call site it's Result<int64>
+    Result<int64>:r1 = get_value();
+    int64:val = r1 ? 0i64;  // Unwrap with default value 0
+
+    if (val == 42i64) {
+        pass(0i32);  // Success
     }
-    pass(0i32);  // was: pass(1)  // Failure
+    pass(1i32);  // Failure
 };
 
 func:main = int32() {
-    int64:test_result = test_unwrap();
-    pass(0i32);  // was: pass(test_result)
+    Result<int32>:r = test_unwrap();
+    int32:result = r ? -1i32;
+    pass(result);
 };
-
-// EXPECTED BEHAVIOR when complete:
-// - pass(value) returns success with value
-// - fail(code) returns error with code
-// - result:r = func() captures the result
-// - value ? default unwraps result or uses default
-// - Main should return 0 (all tests pass)
 
 func:failsafe = NIL(int32:err_code) {
     // Error handling

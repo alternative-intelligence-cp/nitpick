@@ -9,12 +9,12 @@ func<T>:identity = *T(*T:value) {
 // Main function that calls the generic
 func:main = int32() {
     // Call identity with int32 - should trigger specialization
-    int32:x = identity(42);
-    
+    int32:x = identity(42) ? -1i32;
+
     // Call identity with int64 - should trigger second specialization
-    int64:y = identity(100);
-    
-    pass(0);
+    int64:y = identity(100i64) ? -1i64;
+
+    pass(0i32);
 };
 
 func:failsafe = NIL(int32:err_code) {

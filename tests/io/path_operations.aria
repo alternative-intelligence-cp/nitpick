@@ -1,3 +1,4 @@
+// Expected: COMPILER ERROR - uses unimplemented path stdlib functions
 func:main = int32() {
     string:rel_path = "./test.txt";
     string:abs_path = pathAbsolute(rel_path);
@@ -27,13 +28,13 @@ func:main = int32() {
     string:abs_test = "/usr/bin/test";
     string:rel_test = "relative/path";
     
-    if (pathIsAbsolute(abs_test)) {
+    if (pathIsAbsolute(abs_test) ? false) {
         print(abs_test);
     } else {
         print(abs_test);
     }
     
-    if (pathIsAbsolute(rel_test)) {
+    if (pathIsAbsolute(rel_test) ? false) {
         print(rel_test);
     } else {
         print(rel_test);
