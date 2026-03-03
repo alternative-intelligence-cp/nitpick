@@ -2724,7 +2724,22 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 }
 
                 std::string returnTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
-                llvm::Type* return_type = mapTypeFromName(returnTypeStr);
+                llvm::Type* inner_return_type = mapTypeFromName(returnTypeStr);
+
+                // Impl methods return Result<T> just like regular functions
+                llvm::Type* return_type;
+                llvm::StructType* result_struct_type = nullptr;
+                if (inner_return_type->isVoidTy()) {
+                    return_type = inner_return_type;
+                } else {
+                    std::vector<llvm::Type*> result_fields = {
+                        inner_return_type,
+                        llvm::PointerType::get(context, 0),
+                        llvm::Type::getInt1Ty(context)
+                    };
+                    result_struct_type = llvm::StructType::get(context, result_fields);
+                    return_type = result_struct_type;
+                }
 
                 llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
 
@@ -2761,6 +2776,16 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
 
                         // Track Aria type name for UFCS method resolution
                         var_aria_types[param->paramName] = paramTypeStr;
+
+                        // Register in value_types so member access (self.field)
+                        // can look up the struct layout
+                        if (type_system) {
+                            Type* ariaParamType = type_system->getStructType(paramTypeStr);
+                            if (!ariaParamType) ariaParamType = type_system->getPrimitiveType(paramTypeStr);
+                            if (ariaParamType) {
+                                value_types[alloca] = ariaParamType;
+                            }
+                        }
                     }
                     idx++;
                 }
@@ -2773,8 +2798,18 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 if (!builder.GetInsertBlock()->getTerminator()) {
                     if (return_type->isVoidTy()) {
                         builder.CreateRetVoid();
+                    } else if (result_struct_type) {
+                        // Return default success Result{zero, null, false}
+                        llvm::Value* defaultResult = llvm::UndefValue::get(result_struct_type);
+                        defaultResult = builder.CreateInsertValue(defaultResult,
+                            llvm::Constant::getNullValue(inner_return_type), 0);
+                        defaultResult = builder.CreateInsertValue(defaultResult,
+                            llvm::Constant::getNullValue(llvm::PointerType::get(context, 0)), 1);
+                        defaultResult = builder.CreateInsertValue(defaultResult,
+                            builder.getInt1(false), 2);
+                        builder.CreateRet(defaultResult);
                     } else {
-                        builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
+                        builder.CreateRet(llvm::Constant::getNullValue(return_type));
                     }
                 }
 

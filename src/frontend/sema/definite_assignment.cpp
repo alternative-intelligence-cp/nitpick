@@ -243,6 +243,28 @@ void DefiniteAssignmentAnalyzer::checkAssignment(BinaryExpr* assign) {
         IdentifierExpr* ident = static_cast<IdentifierExpr*>(assign->left.get());
         ctx.assign(ident->name);
     }
+    // For member access (buf.field = ...) or index (buf[i] = ...) assignments,
+    // extract the root variable identifier and mark it as assigned.
+    // Rationale: writing to any field/element of an aggregate counts as
+    // initialising that aggregate for the purpose of subsequent reads of the
+    // same field/element.
+    else if (assign->left->type == ASTNode::NodeType::MEMBER_ACCESS ||
+             assign->left->type == ASTNode::NodeType::INDEX) {
+        ASTNode* obj = assign->left.get();
+        // Walk down chains of member access / index until we reach an identifier
+        while (obj) {
+            if (obj->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                obj = static_cast<MemberAccessExpr*>(obj)->object.get();
+            } else if (obj->type == ASTNode::NodeType::INDEX) {
+                obj = static_cast<IndexExpr*>(obj)->array.get();
+            } else {
+                break;
+            }
+        }
+        if (obj && obj->type == ASTNode::NodeType::IDENTIFIER) {
+            ctx.assign(static_cast<IdentifierExpr*>(obj)->name);
+        }
+    }
     // Note: We deliberately don't call checkExpression(assign->left) because
     // the LHS is being assigned to, not read from
 }
