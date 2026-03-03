@@ -5,14 +5,14 @@
  */
 
 async func:get_value = int32() {
-    return 42;
+    pass(42i32);
 };
 
 func:main = int32() {
     // Call the async function to prevent DCE
     // Note: Discarding result for now until async type system is complete
-    get_value();
-    return 0;
+    drop(get_value());
+    pass(0i32);
 };
 
 func:failsafe = NIL(int32:err_code) {

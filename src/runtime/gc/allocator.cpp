@@ -383,6 +383,13 @@ void aria_gc_shutdown(void) {
     GCState::instance().shutdown();
 }
 
+void aria_gc_free(void* ptr) {
+    // Release GC-visible memory (coroutine frames etc.) back to free store
+    if (ptr) {
+        ::free(ptr);
+    }
+}
+
 } // extern "C"
 
 } // namespace runtime

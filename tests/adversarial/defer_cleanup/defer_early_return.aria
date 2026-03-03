@@ -7,20 +7,20 @@
  */
 
 func:test = int32(bool:cond) {
-    wild int8->p = alloc(1024);
+    wild int8->:p = alloc(1024);
     defer { free(p); }
 
     if (cond) {
-        return 1;  // Early return - defer must still run
+        pass(1i32);  // Early return - defer must still run
     }
 
-    return 0;  // Normal return - defer runs here too
+    pass(0i32);  // Normal return - defer runs here too
 };
 
 func:main = int32() {
     int32:r1 = test(true);
     int32:r2 = test(false);
-    return 0;
+    pass(0i32);
 };
 
 func:failsafe = NIL(int32:err_code) {

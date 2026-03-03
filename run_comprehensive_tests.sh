@@ -101,6 +101,11 @@ for test_file in $test_files; do
             SKIPPED=$((SKIPPED + 1))
             SKIPPED_TESTS+=("$test_file (timeout)")
             echo "TIMEOUT: $test_file" >> "$RESULTS_FILE"
+        elif grep -qE "Expected:.*COMPILER( ERROR|/RUNTIME ERROR)" "$test_file" 2>/dev/null; then
+            # Adversarial test expects compiler to REJECT the code — non-zero exit is correct
+            echo -e "${GREEN}✓ PASS${NC} (expected rejection)"
+            PASSED=$((PASSED + 1))
+            echo "PASS: $test_file" >> "$RESULTS_FILE"
         else
             echo -e "${RED}✗ FAIL${NC}"
             FAILED=$((FAILED + 1))
