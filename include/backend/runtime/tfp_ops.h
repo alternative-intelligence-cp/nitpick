@@ -44,6 +44,10 @@ Tfp64 aria_tfp64_from_double(double val);
 Tfp32 aria_tfp32_from_parts(int16_t exp, int16_t mant);
 Tfp64 aria_tfp64_from_parts(int16_t exp, int64_t mant);
 
+// Bare-name aliases used by IR-generated code
+Tfp32 tfp32_from_parts(int16_t exp, int16_t mant);
+Tfp64 tfp64_from_parts(int16_t exp, int64_t mant);
+
 // ============================================================================
 // Conversion to double (for printing/debugging only - lossy)
 // ============================================================================

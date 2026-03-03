@@ -58,7 +58,6 @@ test_files=$(find tests -name "*.aria" -type f \
     ! -path "tests/debug_init_bug.aria" \
     ! -path "tests/debug_init_func.aria" \
     ! -path "tests/debug_struct_return.aria" \
-    ! -path "tests/debug_fractions.aria" \
     ! -path "tests/minimal_literal_test.aria" \
     ! -path "tests/simple_literal_test.aria" \
     ! -path "tests/simple_test.aria" \
