@@ -1,0 +1,52 @@
+// Tests: passing fixed-size arrays as function parameters by value.
+// Verifies that element access inside the function is correct, not a segfault.
+
+// Sum all elements of an int32[4] parameter
+func:sum4 = int32(int32[4]:arr) {
+    pass(arr[0] + arr[1] + arr[2] + arr[3]);
+};
+
+// Return element at index 2 of an int32[3] parameter
+func:get2 = int32(int32[3]:v) {
+    pass(v[2]);
+};
+
+// Mutate a copy of the array parameter (should not affect original)
+func:double_first = int32(int32[2]:p) {
+    p[0] = p[0] * 2i32;
+    pass(p[0]);
+};
+
+func:main = int32() {
+    // --- Test 1: sum4 ---
+    int32[4]:a = [10i32, 20i32, 30i32, 40i32];
+    Result<int32>:r1 = sum4(a);
+    int32:s1 = r1 ? 999i32;
+    // s1 should be 100
+    if (s1 != 100i32) { pass(1i32); }
+
+    // --- Test 2: get2 ---
+    int32[3]:b = [0i32, 0i32, 0i32];
+    b[0] = 7i32;
+    b[1] = 8i32;
+    b[2] = 9i32;
+    Result<int32>:r2 = get2(b);
+    int32:s2 = r2 ? 999i32;
+    // s2 should be 9
+    if (s2 != 9i32) { pass(2i32); }
+
+    // --- Test 3: double_first doesn't corrupt original ---
+    int32[2]:c = [0i32, 0i32];
+    c[0] = 5i32;
+    c[1] = 6i32;
+    Result<int32>:r3 = double_first(c);
+    int32:s3 = r3 ? 999i32;
+    // s3 should be 10 (5 * 2)
+    if (s3 != 10i32) { pass(3i32); }
+    // c[0] should still be 5 (pass-by-value copy: callee's mutation is local)
+    if (c[0] != 5i32) { pass(4i32); }
+
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {};
