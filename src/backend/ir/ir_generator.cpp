@@ -1712,13 +1712,24 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
                                                      type_name.size() - bracket_pos - 2);
             if (!size_str.empty()) {
                 // Sized array: int32[4] -> [4 x i32]
+                // Also handle typeNode->toString() form: int32[Literal(4)]
                 llvm::Type* elem_type = mapTypeFromName(elem_str);
+                // Try plain integer first
                 try {
                     uint64_t arr_size = std::stoull(size_str);
                     return llvm::ArrayType::get(elem_type, arr_size);
-                } catch (...) {
-                    // Fall through to default
+                } catch (...) {}
+                // Try Literal(N) form that typeNode->toString() emits for parameter array types
+                if (size_str.size() > 9 &&
+                    size_str.substr(0, 8) == "Literal(" &&
+                    size_str.back() == ')') {
+                    std::string inner = size_str.substr(8, size_str.size() - 9);
+                    try {
+                        uint64_t arr_size = std::stoull(inner);
+                        return llvm::ArrayType::get(elem_type, arr_size);
+                    } catch (...) {}
                 }
+                // Fall through to default
             } else {
                 // Dynamic / unsized array: int32[] -> opaque pointer
                 return llvm::PointerType::get(context, 0);
@@ -1878,7 +1889,17 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
             if (idx < funcDecl->parameters.size()) {
                 ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[idx].get());
                 arg.setName(param->paramName);
-                named_values[param->paramName] = &arg;
+
+                // For array-type parameters: store into a local alloca so that element
+                // access via codegenIndex (which dyn_cast<AllocaInst>s) works correctly.
+                if (arg.getType()->isArrayTy()) {
+                    llvm::AllocaInst* param_alloca = builder.CreateAlloca(
+                        arg.getType(), nullptr, param->paramName + "_arr_alloca");
+                    builder.CreateStore(&arg, param_alloca);
+                    named_values[param->paramName] = param_alloca;
+                } else {
+                    named_values[param->paramName] = &arg;
+                }
 
                 // Track Aria type name for UFCS method resolution
                 if (param->typeNode) {
@@ -2417,21 +2438,29 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     // To ensure consistent access semantics, we copy all struct params to stack allocas.
                     // This matches Clang's behavior and ensures member access works correctly.
                     llvm::Value* param_storage = nullptr;
-                    if (arg.getType()->isStructTy()) {
-                        std::cerr << "[DEBUG_STRUCT_PARAM] Creating alloca for struct parameter: " << param->paramName << std::endl;
+                    if (arg.getType()->isStructTy() || arg.getType()->isArrayTy()) {
+                        // Struct and array parameters must be copied to a local alloca.
+                        // Structs: LLVM ABI may pass in registers or via hidden pointer.
+                        // Arrays: cannot be GEP'd as values — need an addressable alloca
+                        //         so that element access (arr[i]) can use two-index inbounds GEP.
+                        if (arg.getType()->isArrayTy()) {
+                            std::cerr << "[DEBUG_ARRAY_PARAM] Creating alloca for array parameter: " << param->paramName << std::endl;
+                        } else {
+                            std::cerr << "[DEBUG_STRUCT_PARAM] Creating alloca for struct parameter: " << param->paramName << std::endl;
+                        }
                         
-                        // Create alloca at function entry for the struct parameter
+                        // Create alloca at function entry for the parameter
                         llvm::AllocaInst* param_alloca = builder.CreateAlloca(arg.getType(), nullptr, param->paramName + "_alloca");
                         
                         // Copy the argument value into the alloca
                         builder.CreateStore(&arg, param_alloca);
                         
                         // Store the ALLOCA (not the argument) in named_values
-                        // This ensures that when we access the parameter, we load from the alloca
+                        // This ensures element access loads from a properly-typed alloca
                         param_storage = param_alloca;
                         named_values[param->paramName] = param_alloca;
                     } else {
-                        // For non-struct types (primitives, pointers), store argument directly
+                        // For non-struct/non-array types (primitives, pointers), store argument directly
                         param_storage = &arg;
                         named_values[param->paramName] = &arg;
                     }
