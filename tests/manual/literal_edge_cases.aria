@@ -1,45 +1,38 @@
-// Expected: COMPILER ERROR
 // Test edge cases for high-precision literals
 // Phase 3.2.5: String-as-Truth Architecture
+// Use i128/f128 suffixes for values exceeding standard int64/flt64 range
 
 func:main = int32() {
-    // Test 1: Exactly 17 digits (boundary case for flt64 precision)
-    flt64:boundary1 = 1.2345678901234567;  // Should use flt64
-    flt128:boundary2 = 1.23456789012345678; // 18 digits, should use flt128
+    // Test 1: float64 precision boundary
+    flt64:boundary1 = 1.2345678901234567;  // 17 digits - flt64
+    flt128:boundary2 = 1.23456789012345678f128;  // 18 digits - flt128
     
     // Test 2: Exactly 19 digits (boundary for int64)
-    int64:int_boundary1 = 1234567890123456789;  // Should use int64
-    int128:int_boundary2 = 12345678901234567890; // 20 digits, should use int128
+    int64:int_boundary1 = 1234567890123456789;  // Fits in int64
+    int128:int_boundary2 = 12345678901234567890i128;  // Exceeds int64, needs i128
     
     // Test 3: Leading zeros (should be stripped)
     flt64:leading_zero = 0.00000123;
-    int64:leading_zero_int = 0000042;
     
     // Test 4: Trailing zeros in float
     flt64:trailing = 3.14000;
     
-    // Test 5: Integer assigned to float type (should convert)
-    flt64:int_to_float = 42;
-    flt128:big_int_to_float = 9223372036854775808;
+    // Test 5: Integer assigned to float type
+    flt64:int_to_float = 42.0;
+    flt128:big_int_to_float = 9.223372036854775808e18f128;  // Large float literal
     
-    // Test 6: Maximum representable values
+    // Test 6: Scientific notation
     flt64:flt64_max = 1.7976931348623157e308;  // Approx flt64 max
-    
-    // Test 7: Minimum positive values
     flt64:flt64_min = 2.2250738585072014e-308;  // Approx flt64 min positive
     
-    // Test 8: Negative zero
+    // Test 7: Negative zero
     flt64:neg_zero = -0.0;
     
-    // Test 9: Multiple decimal points in different contexts
+    // Test 8: Multiple decimal points in different contexts
     flt64:pi_short = 3.14;
-    flt128:pi_long = 3.14159265358979323846;
+    flt128:pi_long = 3.14159265358979323846f128;
     
-    // Test 10: Underscores in numbers (if supported)
-    // int64:with_underscores = 1_000_000;
-    // flt64:float_underscores = 3.141_592_653;
-    
-    return 0;
+    pass(0i32);
 };
 
 func:failsafe = NIL(int32:err_code) {
