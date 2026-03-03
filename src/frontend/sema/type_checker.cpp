@@ -8078,7 +8078,10 @@ void TypeChecker::checkImplDecl(ImplDeclStmt* stmt) {
                     ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
                     if (pnode->typeNode) {
                         std::string paramTypeName = pnode->typeNode->toString();
-                        Type* ptype = typeSystem->getPrimitiveType(paramTypeName);
+                        // Try struct type first (covers user-defined struct params like
+                        // 'Counter:self'), then primitive, then i64 fallback
+                        Type* ptype = typeSystem->getStructType(paramTypeName);
+                        if (!ptype) ptype = typeSystem->getPrimitiveType(paramTypeName);
                         if (!ptype) ptype = typeSystem->getPrimitiveType("int64");  // fallback
                         paramTypes.push_back(ptype);
                     }
@@ -8086,8 +8089,17 @@ void TypeChecker::checkImplDecl(ImplDeclStmt* stmt) {
             }
 
             std::string retTypeName = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
-            Type* retType = typeSystem->getPrimitiveType(retTypeName);
+            // Same struct-first lookup for the return type
+            Type* retType = typeSystem->getStructType(retTypeName);
+            if (!retType) retType = typeSystem->getPrimitiveType(retTypeName);
             if (!retType) retType = typeSystem->getPrimitiveType("void");
+
+            // Impl methods are regular Aria functions — wrap return in Result<T>
+            // (same as checkFuncDecl does for non-extern functions)
+            Type* voidT = typeSystem->getPrimitiveType("void");
+            if (funcDecl->body && !retType->equals(voidT) && retType->getKind() != TypeKind::RESULT) {
+                retType = typeSystem->getResultType(retType);
+            }
 
             Type* funcType = typeSystem->getFunctionType(paramTypes, retType, false);
 
