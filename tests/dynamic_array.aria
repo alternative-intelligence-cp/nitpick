@@ -1,0 +1,42 @@
+// Dynamic array test: create, push, length, and read-back
+// Uses array_new / array_push / array_length / array_get builtins
+
+func:main = int32() {
+    // Create a dynamic array with 4-byte (int32) elements
+    int8->:arr = array_new(4i64);
+
+    // Push three values
+    array_push(arr, 10i32);
+    array_push(arr, 20i32);
+    array_push(arr, 30i32);
+
+    // Verify length is 3
+    int64:len = array_length(arr);
+    if (len != 3i64) { pass(1i32); }
+
+    // Read back elements via byte pointer (little-endian: low byte = value for val < 128)
+    int8->:p0 = array_get(arr, 0i64);
+    int8:v0 = <-p0;
+    if (v0 != 10i8) { pass(2i32); }
+
+    int8->:p1 = array_get(arr, 1i64);
+    int8:v1 = <-p1;
+    if (v1 != 20i8) { pass(3i32); }
+
+    int8->:p2 = array_get(arr, 2i64);
+    int8:v2 = <-p2;
+    if (v2 != 30i8) { pass(4i32); }
+
+    // Push a fourth element and verify new length
+    array_push(arr, 42i32);
+    int64:len2 = array_length(arr);
+    if (len2 != 4i64) { pass(5i32); }
+
+    // Verify the fourth element
+    int8->:p3 = array_get(arr, 3i64);
+    int8:v3 = <-p3;
+    if (v3 != 42i8) { pass(6i32); }
+
+    pass(0i32);
+};
+func:failsafe = NIL(int32:err_code) {};
