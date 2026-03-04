@@ -7889,22 +7889,31 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             param_types.push_back(args[i]->getType());
         }
         
-        // Try to determine return type
-        // Strategy: Extract type from method_ptr if it's been cast from a known function
-        // For now, default to i64 (will be fixed with full type system integration)
-        llvm::Type* return_type = llvm::Type::getInt64Ty(context);
-        
-        // TODO: Full type system integration - store function type with closure
-        // For proper type inference, we need to:
-        // 1. Store the FunctionType in the closure metadata OR
-        // 2. Query the type system for the variable's type OR
-        // 3. Perform type inference analysis on the lambda body
-        //
-        // Current limitation: All closures assumed to return i64
-        // This works for now but will need fixing for:
-        // - void returns
-        // - non-i64 primitive returns  
-        // - struct/array returns
+        // Try to determine return type from var_aria_types
+        // func_ptr variables are stored as "func_ptr:retTypeName"
+        llvm::Type* return_type = llvm::Type::getInt64Ty(context); // default fallback
+        {
+            auto type_it = var_aria_types.find(callee_ident->name);
+            if (type_it != var_aria_types.end()) {
+                const std::string& aria_type = type_it->second;
+                if (aria_type.size() > 9 && aria_type.substr(0, 9) == "func_ptr:") {
+                    std::string ret_str = aria_type.substr(9);
+                    if (ret_str == "void") {
+                        return_type = llvm::Type::getVoidTy(context);
+                    } else {
+                        llvm::Type* inner_type = getLLVMTypeFromString(ret_str);
+                        if (inner_type) {
+                            // Wrap in Result<T>: { T, i8*, i1 } matching module-level functions
+                            return_type = llvm::StructType::get(context, {
+                                inner_type,
+                                llvm::PointerType::get(context, 0),
+                                llvm::Type::getInt1Ty(context)
+                            });
+                        }
+                    }
+                }
+            }
+        }
         
         llvm::FunctionType* closure_func_type = llvm::FunctionType::get(
             return_type,
@@ -7912,15 +7921,12 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             false  // not vararg
         );
         
-        // Cast method_ptr (i8*) to typed function pointer
-        llvm::Value* typed_func_ptr = builder.CreateBitCast(
-            method_ptr,
-            llvm::PointerType::get(closure_func_type, 0),
-            "typed_method_ptr"
-        );
+        // In LLVM 16+ (opaque pointer mode), all pointers are plain `ptr`.
+        // No bitcast is needed — method_ptr is already `ptr`, and CreateCall
+        // takes the FunctionType + a ptr callee directly.
         
         // Create indirect call through function pointer
-        return builder.CreateCall(closure_func_type, typed_func_ptr, args, "closure_call");
+        return builder.CreateCall(closure_func_type, method_ptr, args, "closure_call");
         
     } else if (direct_func) {
         // ====================================================================

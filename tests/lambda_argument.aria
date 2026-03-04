@@ -1,0 +1,36 @@
+// Test: Function pointer arguments (higher-order functions)
+// Phase B: Passing lambdas as arguments to functions
+
+func:failsafe = NIL(int32:err_code) { };
+
+// Higher-order function: applies f to x
+func:apply = int32((int32)(int32):f, int32:x) {
+    int32:result = f(x) ? -1i32;
+    pass(result);
+};
+
+// Higher-order function: applies f to both a and b, then adds results
+func:apply_and_add = int32((int32)(int32):f, int32:a, int32:b) {
+    int32:ra = f(a) ? -1i32;
+    int32:rb = f(b) ? -1i32;
+    int32:total = ra + rb;
+    pass(total);
+};
+
+func:main = int32() {
+    // Test 1: pass identity lambda to apply
+    (int32)(int32):identity = int32(int32:x) { pass(x); };
+    int32:r1 = apply(identity, 42i32) ? -1i32;
+    if (r1 != 42i32) { pass(1i32); }
+
+    // Test 2: pass doubling lambda to apply
+    (int32)(int32):dbl = int32(int32:x) { int32:v = x + x; pass(v); };
+    int32:r2 = apply(dbl, 21i32) ? -1i32;
+    if (r2 != 42i32) { pass(2i32); }
+
+    // Test 3: higher-order with two applications
+    int32:r3 = apply_and_add(dbl, 10i32, 11i32) ? -1i32;
+    if (r3 != 42i32) { pass(3i32); }
+
+    pass(0i32);
+};

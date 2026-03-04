@@ -397,6 +397,16 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         
         case ASTNode::NodeType::CAST:
             return inferCastExpr(static_cast<CastExpr*>(expr));
+
+        case ASTNode::NodeType::LAMBDA: {
+            // Lambda expression used as a function pointer initializer.
+            // The IR generator handles LAMBDA codegen directly when the declared
+            // variable has a FUNCTION_TYPE typeNode.  Return a placeholder so
+            // the assignment compatibility check doesn't error.
+            Type* placeholder = typeSystem->getPrimitiveType("uint64");
+            if (!placeholder) placeholder = typeSystem->getPrimitiveType("int64");
+            return placeholder ? placeholder : typeSystem->getErrorType();
+        }
         
         default:
             addError("Type inference not implemented for node type: " + 
@@ -5924,6 +5934,11 @@ Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
             return typeSystem->getErrorType();
         }
     }
+    else if (resultType->getKind() == TypeKind::UNKNOWN) {
+        // Unknown call result (e.g. function pointer call whose return type isn't
+        // tracked by the type checker yet).  Trust the default value's type.
+        return defaultType;
+    }
     else {
         std::string validTypes = expr->isFailsafe ? 
             "Result<T>" : 
@@ -6938,6 +6953,16 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             return specializedType;
         }
         
+        case ASTNode::NodeType::FUNCTION_TYPE: {
+            // Function pointer type: (retType)(paramTypes...)
+            // Return a placeholder primitive type so the type checker doesn't error.
+            // The IR generator handles FUNCTION_TYPE specially via typeNode check
+            // before stmt->typeName is used, so this placeholder is never lowered.
+            Type* placeholder = typeSystem->getPrimitiveType("uint64");
+            if (!placeholder) placeholder = typeSystem->getPrimitiveType("int64");
+            return placeholder ? placeholder : typeSystem->getErrorType();
+        }
+
         default:
             addError("Unsupported type node in type resolution", typeNode);
             return typeSystem->getErrorType();
@@ -6964,6 +6989,16 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         // For generic structs, this will be the mangled name (_Aria_M_Box_<hash>_int64)
         // For other types, this will be the canonical name (int64, string, etc.)
         stmt->typeName = declaredType->toString();
+
+        // FUNCTION_TYPE: function pointer variable — IR generator handles all codegen.
+        // Register as unknown (so call sites don't error) and skip all type checks.
+        if (stmt->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
+            symbolTable->defineSymbol(stmt->varName,
+                                     SymbolKind::VARIABLE,
+                                     typeSystem->getUnknownType(),
+                                     stmt->line, stmt->column);
+            return;
+        }
     } else {
         // Legacy path: Get declared type from typeName string
         // Try struct first to avoid auto-creating primitive types
@@ -7839,6 +7874,13 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
             }
             
             // Define parameter in symbol table (will be visible in function body)
+            // FUNCTION_TYPE params (function pointer args) use UNKNOWN so call sites don't error.
+            if (paramNode->typeNode &&
+                paramNode->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
+                symbolTable->defineSymbol(paramNode->paramName, SymbolKind::VARIABLE,
+                                         typeSystem->getUnknownType(), param->line, param->column);
+                continue;
+            }
             symbolTable->defineSymbol(paramNode->paramName, SymbolKind::VARIABLE,
                                      paramType, param->line, param->column);
         }

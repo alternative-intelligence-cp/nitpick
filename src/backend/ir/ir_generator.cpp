@@ -1856,8 +1856,14 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
         std::vector<llvm::Type*> paramTypes;
         for (const auto& param : funcDecl->parameters) {
             ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
-            std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
-            paramTypes.push_back(mapTypeFromName(paramTypeStr));
+            if (pnode->typeNode && pnode->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
+                // Function pointer params are fat pointers: {ptr, ptr} (method_ptr, env_ptr)
+                llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+                paramTypes.push_back(llvm::StructType::get(context, {ptrTy, ptrTy}));
+            } else {
+                std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
+                paramTypes.push_back(mapTypeFromName(paramTypeStr));
+            }
         }
         
         // Create function type with Result<T> return
@@ -2031,6 +2037,10 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             ParameterNode* pn = static_cast<ParameterNode*>(param.get());
             if (pn->isWild) {
                 pre_params.push_back(builder.getPtrTy());
+            } else if (pn->typeNode && pn->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
+                // Function pointer params are fat pointers: {ptr, ptr} (method_ptr, env_ptr)
+                llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+                pre_params.push_back(llvm::StructType::get(context, {ptrTy, ptrTy}));
             } else {
                 std::string pstr = pn->typeNode ? pn->typeNode->toString() : "void";
                 pre_params.push_back(mapTypeFromName(pstr));
@@ -2255,6 +2265,10 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 if (pnode->isWild) {
                     // Wild pointers always map to LLVM ptr regardless of base type
                     param_types.push_back(builder.getPtrTy());
+                } else if (pnode->typeNode && pnode->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
+                    // Function pointer params are fat pointers: {ptr, ptr} (method_ptr, env_ptr)
+                    llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+                    param_types.push_back(llvm::StructType::get(context, {ptrTy, ptrTy}));
                 } else {
                     std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
                     param_types.push_back(mapTypeFromName(paramTypeStr));
@@ -2526,7 +2540,16 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     // Track Aria type name for UFCS method resolution
                     if (param->typeNode) {
                         std::string typeStr = param->typeNode->toString();
-                        var_aria_types[param->paramName] = typeStr;
+                        
+                        // FUNCTION_TYPE params: register as "func_ptr:retType" so closure
+                        // call path in codegen_expr recognizes them as callable fat pointers
+                        if (param->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
+                            aria::FunctionType* fnType = static_cast<aria::FunctionType*>(param->typeNode.get());
+                            std::string retStr = fnType->returnType ? fnType->returnType->toString() : "void";
+                            var_aria_types[param->paramName] = "func_ptr:" + retStr;
+                        } else {
+                            var_aria_types[param->paramName] = typeStr;
+                        }
                         
                         std::cerr << "[DEBUG] Registering parameter '" << param->paramName << "' with type '" << typeStr << "'" << std::endl;
                         
@@ -3039,7 +3062,129 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
         case ASTNode::NodeType::VAR_DECL: {
             // Variable declaration
             VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(stmt);
-            
+
+            // ================================================================
+            // FUNCTION POINTER VARIABLE: (retType)(params):name = lambda
+            // ================================================================
+            if (varDecl->typeNode &&
+                varDecl->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
+                aria::FunctionType* funcPtrType = static_cast<aria::FunctionType*>(varDecl->typeNode.get());
+
+                // Allocate fat pointer {ptr, ptr} on stack
+                llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+                llvm::StructType* fatPtrTy = llvm::StructType::get(context, {ptrTy, ptrTy});
+                llvm::AllocaInst* fpAlloca = builder.CreateAlloca(fatPtrTy, nullptr, varDecl->varName);
+                named_values[varDecl->varName] = fpAlloca;
+
+                // Determine base return type string for closure call info
+                std::string retTypeStr = funcPtrType->returnType ? funcPtrType->returnType->toString() : "void";
+                // Store as "func_ptr:retType" so closure call path can look up return type
+                var_aria_types[varDecl->varName] = "func_ptr:" + retTypeStr;
+
+                // Generate the lambda body as an internal function
+                if (varDecl->initializer &&
+                    varDecl->initializer->type == ASTNode::NodeType::LAMBDA) {
+                    LambdaExpr* lambda = static_cast<LambdaExpr*>(varDecl->initializer.get());
+
+                    // Generate unique internal function name
+                    static int fp_counter = 0;
+                    std::string fnName = "_funcptr_" + varDecl->varName + "_" + std::to_string(fp_counter++);
+
+                    auto savedIP = builder.saveIP();
+                    auto outer_named = named_values;
+                    auto outer_types = var_aria_types;
+                    named_values.clear();
+                    var_aria_types.clear();
+
+                    // Build: env_ptr (i8*) + explicit param types
+                    std::vector<llvm::Type*> paramTypes;
+                    paramTypes.push_back(llvm::PointerType::get(context, 0)); // hidden env ptr
+                    for (const auto& paramNode : lambda->parameters) {
+                        ParameterNode* pn = static_cast<ParameterNode*>(paramNode.get());
+                        std::string pts = pn->typeNode ? pn->typeNode->toString() : "int64";
+                        paramTypes.push_back(mapTypeFromName(pts));
+                    }
+
+                    // Return type — wrap in Result<T> like module-level functions
+                    std::string lambdaRetStr = lambda->returnTypeName.empty() ? retTypeStr : lambda->returnTypeName;
+                    llvm::Type* innerRet = lambdaRetStr == "void" ? llvm::Type::getVoidTy(context)
+                                                                   : mapTypeFromName(lambdaRetStr);
+                    llvm::Type* actualRet;
+                    if (innerRet->isVoidTy()) {
+                        actualRet = innerRet;
+                    } else {
+                        // Result<T>: { T, i8*, i1 }
+                        actualRet = llvm::StructType::get(context, {
+                            innerRet,
+                            llvm::PointerType::get(context, 0),
+                            llvm::Type::getInt1Ty(context)
+                        });
+                    }
+
+                    llvm::FunctionType* fnType = llvm::FunctionType::get(actualRet, paramTypes, false);
+                    llvm::Function* fn = llvm::Function::Create(
+                        fnType, llvm::Function::InternalLinkage, fnName, module.get());
+
+                    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", fn);
+                    builder.SetInsertPoint(entry);
+
+                    // Map env ptr arg (skip it, unnamed)
+                    auto argIt = fn->arg_begin();
+                    argIt->setName("env");
+                    ++argIt;
+
+                    // Map explicit parameters to allocas
+                    size_t paramIdx = 0;
+                    for (; argIt != fn->arg_end(); ++argIt, ++paramIdx) {
+                        if (paramIdx < lambda->parameters.size()) {
+                            ParameterNode* pn = static_cast<ParameterNode*>(lambda->parameters[paramIdx].get());
+                            argIt->setName(pn->paramName);
+                            llvm::AllocaInst* a = builder.CreateAlloca(argIt->getType(), nullptr, pn->paramName);
+                            builder.CreateStore(&*argIt, a);
+                            named_values[pn->paramName] = a;
+                            var_aria_types[pn->paramName] = pn->typeNode ? pn->typeNode->toString() : "";
+                        }
+                    }
+
+                    // Generate body using IRGenerator::codegenStatement (handles PASS/FAIL)
+                    if (lambda->body) {
+                        codegenStatement(lambda->body.get());
+                    }
+
+                    // Default terminator if body didn't provide one
+                    if (!builder.GetInsertBlock()->getTerminator()) {
+                        if (actualRet->isVoidTy()) {
+                            builder.CreateRetVoid();
+                        } else {
+                            builder.CreateRet(llvm::UndefValue::get(actualRet));
+                        }
+                    }
+
+                    // Restore outer scope
+                    named_values = outer_named;
+                    var_aria_types = outer_types;
+                    builder.restoreIP(savedIP);
+
+                    // Build fat pointer and store into alloca
+                    llvm::Value* funcAsPtr = builder.CreateBitCast(fn, ptrTy);
+                    llvm::Value* nullEnv = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(ptrTy));
+                    builder.CreateStore(funcAsPtr,
+                        builder.CreateStructGEP(fatPtrTy, fpAlloca, 0, "method_field"));
+                    builder.CreateStore(nullEnv,
+                        builder.CreateStructGEP(fatPtrTy, fpAlloca, 1, "env_field"));
+
+                    // Restore fat pointer alloca mapping (cleared above)
+                    named_values[varDecl->varName] = fpAlloca;
+                    var_aria_types[varDecl->varName] = "func_ptr:" + retTypeStr;
+                }
+                // FUNCTION_TYPE handled — fall to return below
+                return nullptr;
+            }
+
+            // ================================================================
+            // NORMAL VARIABLE DECLARATION (non-function-pointer)
+            // ================================================================
+
             // Get the type name - might be in typeName or need to extract from typeNode
             std::string actualTypeName = varDecl->typeName;
             if (actualTypeName.empty() && varDecl->typeNode) {
@@ -3972,7 +4117,6 @@ skip_comparison:
         }
 
         case ASTNode::NodeType::PASS: {
-            std::cerr << "[DEBUG PASS] Generating pass statement" << std::endl;
             // Pass statement - return success with value
             // Builds Result{val: value, err: NULL, is_error: false}
             PassStmt* passStmt = static_cast<PassStmt*>(stmt);
@@ -3982,11 +4126,9 @@ skip_comparison:
             
             // Generate code for the value expression
             llvm::Value* value = codegenExpression(passStmt->value.get());
-            std::cerr << "[DEBUG PASS] Pass value generated, is null: " << (value == nullptr) << std::endl;
             if (value) {
                 llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
                 llvm::Type* returnType = currentFunc->getReturnType();
-                std::cerr << "[DEBUG PASS] Return type is struct: " << returnType->isStructTy() << std::endl;
                 
                 // P1-4: Check postconditions before returning
                 if (current_func_decl && !current_func_decl->postconditions.empty()) {
@@ -4483,6 +4625,150 @@ skip_comparison:
                     named_values.erase(paramNode->paramName);
                 }
             }
+            return nullptr;
+        }
+
+        case ASTNode::NodeType::FUNC_DECL: {
+            // Local function declaration inside a function body (lambda/nested function).
+            //
+            // Two-path execution:
+            //   1. Module-level FUNC_DECLs are handled by processModuleDeclarations.
+            //   2. This case handles FUNC_DECLs that appear as statements inside a
+            //      function body — they create a normal LLVM module-level function
+            //      (LLVM has no nested functions) with InternalLinkage, then restore
+            //      the outer function's builder insert point so code generation of
+            //      subsequent statements is unaffected.
+            //
+            // The generated function uses the same Result<T> return convention as
+            // all other Aria functions, so the caller can use the ? unwrap operator.
+
+            FuncDeclStmt* localFunc = static_cast<FuncDeclStmt*>(stmt);
+
+            // Skip generic templates — specialisations are handled by monomorphisation
+            if (!localFunc->genericParams.empty()) {
+                return nullptr;
+            }
+
+            // No body → extern-style declaration — nothing to generate locally
+            if (!localFunc->body) {
+                return nullptr;
+            }
+
+            // ---- Save outer context ----------------------------------------
+            // Save builder insert point so subsequent outer statements still go
+            // into the right basic block after this inner function is created.
+            auto savedIP = builder.saveIP();
+
+            // Save outer symbol tables; the inner function gets a fresh scope
+            std::map<std::string, llvm::Value*>  outer_named_values  = named_values;
+            std::map<std::string, std::string>   outer_var_aria_types = var_aria_types;
+            named_values.clear();
+            var_aria_types.clear();
+
+            // ---- Build LLVM parameter types --------------------------------
+            std::vector<llvm::Type*> inner_param_types;
+            for (const auto& param : localFunc->parameters) {
+                ParameterNode* pn = static_cast<ParameterNode*>(param.get());
+                std::string pstr = pn->typeNode ? pn->typeNode->toString() : "void";
+                inner_param_types.push_back(mapTypeFromName(pstr));
+            }
+
+            // ---- Build LLVM return type (Result<T> wrapper) ----------------
+            std::string rstr = localFunc->returnType ? localFunc->returnType->toString() : "void";
+            llvm::Type* inner_raw_ret = mapTypeFromName(rstr);
+
+            llvm::Type*         inner_ret_type      = inner_raw_ret;
+            llvm::StructType*   inner_result_struct  = nullptr;
+
+            if (!inner_raw_ret->isVoidTy()) {
+                // Regular Aria functions return Result<T> = {T, void*, i1}
+                std::vector<llvm::Type*> rf = {
+                    inner_raw_ret,
+                    llvm::PointerType::get(context, 0),   // error (void*)
+                    builder.getInt1Ty()                    // is_error (i1)
+                };
+                inner_result_struct = llvm::StructType::get(context, rf);
+                inner_ret_type      = inner_result_struct;
+            }
+
+            llvm::FunctionType* inner_func_type =
+                llvm::FunctionType::get(inner_ret_type, inner_param_types, false);
+
+            // ---- Create the LLVM function ----------------------------------
+            // Use InternalLinkage for locals (visible only within this translation unit).
+            llvm::Function* inner_func = llvm::Function::Create(
+                inner_func_type,
+                llvm::Function::InternalLinkage,
+                localFunc->funcName,
+                module.get()
+            );
+
+            // ---- Entry block + parameter allocas ---------------------------
+            llvm::BasicBlock* inner_entry =
+                llvm::BasicBlock::Create(context, "entry", inner_func);
+            builder.SetInsertPoint(inner_entry);
+
+            size_t pidx = 0;
+            for (auto& arg : inner_func->args()) {
+                if (pidx < localFunc->parameters.size()) {
+                    ParameterNode* pn =
+                        static_cast<ParameterNode*>(localFunc->parameters[pidx].get());
+                    arg.setName(pn->paramName);
+
+                    std::string paramTypeStr = pn->typeNode ? pn->typeNode->toString() : "void";
+                    llvm::Type* paramType = mapTypeFromName(paramTypeStr);
+
+                    llvm::AllocaInst* alloca =
+                        builder.CreateAlloca(paramType, nullptr, pn->paramName);
+                    builder.CreateStore(&arg, alloca);
+
+                    named_values[pn->paramName]    = alloca;
+                    var_aria_types[pn->paramName]  = paramTypeStr;
+
+                    // Register in value_types for member-access resolution
+                    if (type_system) {
+                        Type* ariaType = type_system->getStructType(paramTypeStr);
+                        if (!ariaType) ariaType = type_system->getPrimitiveType(paramTypeStr);
+                        if (ariaType) value_types[alloca] = ariaType;
+                    }
+                }
+                ++pidx;
+            }
+
+            // ---- Generate body ---------------------------------------------
+            // codegenStatement(BLOCK) handles PASS, FAIL, and all other Aria
+            // statement types correctly — this is the same path used by
+            // processModuleDeclarations for top-level functions.
+            codegenStatement(localFunc->body.get());
+
+            // ---- Default terminator if the body left no terminator ---------
+            llvm::BasicBlock* inner_last = builder.GetInsertBlock();
+            if (inner_last && !inner_last->getTerminator()) {
+                if (inner_ret_type->isVoidTy()) {
+                    builder.CreateRetVoid();
+                } else if (inner_result_struct) {
+                    // Return default success Result{zero, NULL, false}
+                    llvm::Value* def = llvm::UndefValue::get(inner_result_struct);
+                    def = builder.CreateInsertValue(
+                        def, llvm::Constant::getNullValue(inner_raw_ret), 0);
+                    def = builder.CreateInsertValue(
+                        def,
+                        llvm::ConstantPointerNull::get(
+                            llvm::cast<llvm::PointerType>(
+                                inner_result_struct->getElementType(1))),
+                        1);
+                    def = builder.CreateInsertValue(def, builder.getInt1(false), 2);
+                    builder.CreateRet(def);
+                } else {
+                    builder.CreateRet(llvm::Constant::getNullValue(inner_ret_type));
+                }
+            }
+
+            // ---- Restore outer context -------------------------------------
+            named_values    = outer_named_values;
+            var_aria_types  = outer_var_aria_types;
+            builder.restoreIP(savedIP);
+
             return nullptr;
         }
 
