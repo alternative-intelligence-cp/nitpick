@@ -629,7 +629,21 @@ ASTNodePtr Parser::parsePrimary() {
         // Return as identifier so it can be used in member access chain
         return std::make_shared<IdentifierExpr>(typeName, line, col);
     }
-    
+
+    // Lambda expression: retType(params) { body }
+    // Detect: typeKw ( [typeKw : name | ')'] ) { ...
+    // Only trigger parseLambda if params look like typed parameters (not plain expression)
+    if (isTypeKeyword(token.type) && peekNext().type == TokenType::TOKEN_LEFT_PAREN) {
+        // Lookahead: after '(', is there a type keyword (typed param) or ')'?
+        // This distinguishes lambda from a hypothetical function call starting with a type keyword
+        if (current + 2 < tokens.size()) {
+            TokenType afterParen = tokens[current + 2].type;
+            if (isTypeKeyword(afterParen) || afterParen == TokenType::TOKEN_RIGHT_PAREN) {
+                return parseLambda();
+            }
+        }
+    }
+
     // $ iteration variable (for till/loop constructs)
     if (token.type == TokenType::TOKEN_DOLLAR) {
         int line = token.line;
@@ -1542,7 +1556,7 @@ ASTNodePtr Parser::parseLambda() {
         error("Expected '{' for lambda body (no arrow operator in Aria)");
         return nullptr;
     }
-    
+    advance(); // consume '{' -- parseBlock() requires '{' already consumed
     ASTNodePtr body = parseBlock();
     
     // Create and return the lambda node
@@ -1748,6 +1762,44 @@ ASTNodePtr Parser::parseStatement() {
         return parseVarDecl();
     }
     
+    // Check for function pointer variable declaration: (retType)(params):name = lambda
+    // Syntax: (int32)(int32):square = int32(int32:x) { pass(x * x); };
+    if (peek().type == TokenType::TOKEN_LEFT_PAREN) {
+        size_t saved = current;
+        advance(); // consume '('
+        // Scan for matching ')' of the return type group
+        int depth = 1;
+        while (depth > 0 && !isAtEnd()) {
+            if (check(TokenType::TOKEN_LEFT_PAREN)) depth++;
+            else if (check(TokenType::TOKEN_RIGHT_PAREN)) depth--;
+            if (depth > 0) advance();
+        }
+        // Now at ')' of return type — advance past it
+        if (check(TokenType::TOKEN_RIGHT_PAREN)) {
+            advance(); // consume ')'
+            // Should be '(' for parameter types group
+            if (check(TokenType::TOKEN_LEFT_PAREN)) {
+                advance(); // consume '('
+                // Scan for matching ')' of param types group
+                depth = 1;
+                while (depth > 0 && !isAtEnd()) {
+                    if (check(TokenType::TOKEN_LEFT_PAREN)) depth++;
+                    else if (check(TokenType::TOKEN_RIGHT_PAREN)) depth--;
+                    if (depth > 0) advance();
+                }
+                if (check(TokenType::TOKEN_RIGHT_PAREN)) {
+                    advance(); // consume ')'
+                    // Should be ':' for variable name
+                    if (check(TokenType::TOKEN_COLON)) {
+                        current = saved;
+                        return parseVarDecl();
+                    }
+                }
+            }
+        }
+        current = saved; // not a func ptr var decl, fall through
+    }
+
     // P0: Check for alignment attribute #[align(N)] - variable declaration
     if (peek().type == TokenType::TOKEN_HASH) {
         size_t saved = current;
@@ -2964,6 +3016,31 @@ ASTNodePtr Parser::parseType() {
         advance(); // consume '*'
         prefixPointer = true;
         typeToken = peek(); // get the actual type token
+    }
+
+    // Handle function pointer type: (retType)(paramType1, paramType2, ...)
+    // Syntax: (int32)(int32, int32) means a function taking two int32 and returning int32
+    if (typeToken.type == TokenType::TOKEN_LEFT_PAREN) {
+        int fpLine = typeToken.line, fpCol = typeToken.column;
+        advance(); // consume '('
+        ASTNodePtr retType = parseType();
+        if (!retType) {
+            error("Expected return type in function pointer type");
+            return nullptr;
+        }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after return type in function pointer type");
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' for parameter types in function pointer type");
+        std::vector<ASTNodePtr> paramTypes;
+        while (!check(TokenType::TOKEN_RIGHT_PAREN) && !isAtEnd()) {
+            ASTNodePtr pType = parseType();
+            if (!pType) break;
+            paramTypes.push_back(pType);
+            if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+                consume(TokenType::TOKEN_COMMA, "Expected ',' between parameter types in function pointer type");
+            }
+        }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after parameter types in function pointer type");
+        return std::make_shared<FunctionType>(retType, paramTypes, fpLine, fpCol);
     }
 
     // Check for type keyword or identifier (for generic types)
