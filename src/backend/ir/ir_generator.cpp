@@ -4930,6 +4930,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     
                     // Standard negation for non-numeric types
+                    if (operand->getType()->isFloatingPointTy()) {
+                        return builder.CreateFNeg(operand, "fnegtmp");
+                    }
                     return builder.CreateNeg(operand, "negtmp");
                 }
                 
@@ -5833,6 +5836,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             "aria_fix256_add", funcType);
                         return builder.CreateCall(addFunc, {L, R}, "fix256.add");
                     }
+                    // Float addition: use FAdd for floating-point types
+                    if (L->getType()->isFloatingPointTy()) {
+                        return builder.CreateFAdd(L, R, "faddtmp");
+                    }
                     // Layer 1 Safety: Safe addition returns Unknown on overflow
                     return generateSafeAdd(L, R, "addtmp");
                 case frontend::TokenType::TOKEN_MINUS:
@@ -5907,6 +5914,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionCallee subFunc = module->getOrInsertFunction(
                             "aria_fix256_sub", funcType);
                         return builder.CreateCall(subFunc, {L, R}, "fix256.sub");
+                    }
+                    // Float subtraction: use FSub for floating-point types
+                    if (L->getType()->isFloatingPointTy()) {
+                        return builder.CreateFSub(L, R, "fsubtmp");
                     }
                     // Layer 1 Safety: Safe subtraction returns Unknown on overflow
                     return generateSafeSub(L, R, "subtmp");
@@ -5983,6 +5994,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             "aria_fix256_mul", funcType);
                         return builder.CreateCall(mulFunc, {L, R}, "fix256.mul");
                     }
+                    // Float multiplication: use FMul for floating-point types
+                    if (L->getType()->isFloatingPointTy()) {
+                        return builder.CreateFMul(L, R, "fmultmp");
+                    }
                     // Layer 1 Safety: Safe multiplication returns Unknown on overflow
                     return generateSafeMul(L, R, "multmp");
                 case frontend::TokenType::TOKEN_SLASH:
@@ -6057,6 +6072,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionCallee divFunc = module->getOrInsertFunction(
                             "aria_fix256_div", funcType);
                         return builder.CreateCall(divFunc, {L, R}, "fix256.div");
+                    }
+                    // Float division: use FDiv for floating-point types
+                    if (L->getType()->isFloatingPointTy()) {
+                        return builder.CreateFDiv(L, R, "fdivtmp");
                     }
                     // Layer 1 Safety: Safe division returns Unknown on divide-by-zero
                     return generateSafeSDiv(L, R, "divtmp");

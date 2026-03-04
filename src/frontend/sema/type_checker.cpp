@@ -246,10 +246,55 @@ void TypeChecker::check(ASTNode* module) {
         addError("Null module node", 0, 0);
         return;
     }
-    
+
+    // -------------------------------------------------------------------------
+    // PRE-PASS: Forward-declare all non-generic module-level functions so that
+    // mutual recursion (funcA calls funcB, funcB calls funcA) resolves cleanly.
+    // Without this, calling a function declared later in the file raises
+    // "Undefined identifier" during type-checking of the earlier function.
+    // -------------------------------------------------------------------------
+    auto preRegisterFunctions = [&](const std::vector<std::shared_ptr<ASTNode>>& stmts) {
+        for (const auto& stmt : stmts) {
+            if (!stmt || stmt->type != ASTNode::NodeType::FUNC_DECL) continue;
+            FuncDeclStmt* fd = static_cast<FuncDeclStmt*>(stmt.get());
+            // Skip generics (handled during monomorphization)
+            if (!fd->genericParams.empty()) continue;
+            // Skip if already in symbol table (self-recursion pre-reg inside checkFuncDecl
+            // may have registered it, but at module level nothing has run yet)
+            if (symbolTable->lookupSymbol(fd->funcName)) continue;
+
+            // Build parameter types
+            std::vector<Type*> paramTypes;
+            for (const auto& param : fd->parameters) {
+                if (param->type == ASTNode::NodeType::PARAMETER) {
+                    ParameterNode* pn = static_cast<ParameterNode*>(param.get());
+                    Type* pt = resolveTypeNode(pn->typeNode.get());
+                    paramTypes.push_back((pt && pt->getKind() != TypeKind::ERROR)
+                        ? pt : typeSystem->getPrimitiveType("void"));
+                }
+            }
+
+            // Build return type (Result<T> for body functions, raw for extern)
+            Type* valueType = resolveTypeNode(fd->returnType.get());
+            if (!valueType) valueType = typeSystem->getPrimitiveType("void");
+            Type* retType;
+            if (!fd->body) {
+                retType = valueType;  // extern: raw return
+            } else {
+                retType = new ResultType(valueType);
+            }
+
+            Type* funcType = new FunctionType(paramTypes, retType, fd->isAsync, false);
+            Symbol* sym = symbolTable->defineSymbol(fd->funcName, SymbolKind::FUNCTION,
+                                                     funcType, fd->line, fd->column);
+            if (sym) sym->setFuncDecl(fd);
+        }
+    };
+
     // Module should be a BLOCK or PROGRAM node containing statements
     if (module->type == ASTNode::NodeType::BLOCK) {
         BlockStmt* blockStmt = static_cast<BlockStmt*>(module);
+        preRegisterFunctions(blockStmt->statements);
         for (const auto& stmt : blockStmt->statements) {
             if (stmt) {
                 checkStatement(stmt.get());
@@ -259,6 +304,7 @@ void TypeChecker::check(ASTNode* module) {
         // If PROGRAM node exists, it likely contains a body (assume BlockStmt)
         // For now, treat as block with statements vector
         BlockStmt* blockStmt = static_cast<BlockStmt*>(module);
+        preRegisterFunctions(blockStmt->statements);
         for (const auto& stmt : blockStmt->statements) {
             if (stmt) {
                 checkStatement(stmt.get());
