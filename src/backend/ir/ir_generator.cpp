@@ -2017,6 +2017,73 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
 void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_ptr<ASTNode>>& declarations,
                                                     const std::string& modulePrefix) {
     // -------------------------------------------------------------------------
+    // GLOBAL PRE-PASS: Create LLVM GlobalVariables for all module-level VAR_DECL
+    // nodes BEFORE any function bodies are generated.  Function bodies that
+    // reference module-level globals rely on named_values being populated; if
+    // the globals are not registered first their references silently produce
+    // nullptr and the whole function body is skipped.
+    // -------------------------------------------------------------------------
+    for (const auto& decl : declarations) {
+        if (!decl || decl->type != ASTNode::NodeType::VAR_DECL) continue;
+        VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(decl.get());
+
+        // Idempotent: skip if already registered
+        if (named_values.count(varDecl->varName)) continue;
+
+        std::string typeStr = varDecl->typeNode ? varDecl->typeNode->toString() : "int32";
+        llvm::Type* varType = mapTypeFromName(typeStr);
+        if (!varType) varType = llvm::Type::getInt32Ty(context);
+
+        llvm::Constant* initVal = nullptr;
+        if (varDecl->initializer && varDecl->initializer->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* lit = static_cast<LiteralExpr*>(varDecl->initializer.get());
+            if (std::holds_alternative<bool>(lit->value)) {
+                initVal = llvm::ConstantInt::get(varType, std::get<bool>(lit->value) ? 1 : 0);
+            } else if (std::holds_alternative<int64_t>(lit->value)) {
+                initVal = llvm::ConstantInt::get(varType, (uint64_t)std::get<int64_t>(lit->value), true);
+            } else if (std::holds_alternative<double>(lit->value)) {
+                initVal = llvm::ConstantFP::get(varType, std::get<double>(lit->value));
+            } else if (std::holds_alternative<std::string>(lit->value)) {
+                const std::string& s = std::get<std::string>(lit->value);
+                if (s != "unknown" && s != "ERR") {
+                    llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                    if (!ariaStrType) {
+                        ariaStrType = llvm::StructType::create(context,
+                            {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                             llvm::Type::getInt64Ty(context)},
+                            "struct.AriaString");
+                    }
+                    llvm::Constant* strData = llvm::ConstantDataArray::getString(context, s, true);
+                    llvm::GlobalVariable* strDataGV = new llvm::GlobalVariable(
+                        *module, strData->getType(), true,
+                        llvm::GlobalValue::PrivateLinkage, strData, ".gv_str_data");
+                    std::vector<llvm::Constant*> strFields = {
+                        llvm::ConstantExpr::getPointerCast(strDataGV,
+                            llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)),
+                        llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), (uint64_t)s.length())
+                    };
+                    llvm::GlobalVariable* strGV = new llvm::GlobalVariable(
+                        *module, ariaStrType, true,
+                        llvm::GlobalValue::PrivateLinkage,
+                        llvm::ConstantStruct::get(ariaStrType, strFields), ".gv_str");
+                    initVal = strGV;
+                }
+            }
+        }
+        if (!initVal) {
+            initVal = llvm::Constant::getNullValue(varType);
+        }
+
+        llvm::GlobalVariable* gv = new llvm::GlobalVariable(
+            *module, varType, varDecl->isConst,
+            llvm::GlobalValue::ExternalLinkage, initVal, varDecl->varName);
+        named_values[varDecl->varName] = gv;
+        var_aria_types[varDecl->varName] = typeStr;
+        std::cerr << "[GLOBAL PRE-PASS] Registered '" << varDecl->varName
+                  << "' type=" << typeStr << std::endl;
+    }
+
+    // -------------------------------------------------------------------------
     // PRE-PASS: Forward-declare all non-generic functions so mutual recursion
     // works: when function A's body is generated and calls function B, B's
     // declaration must already exist in the LLVM module.
@@ -2240,6 +2307,78 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 // OPAQUE_STRUCT and STRUCT_DECL in extern don't need special handling here
                 // They're used for type resolution which happens at call sites
             }
+            continue;
+        }
+
+        // Handle module-level VAR_DECL (global variables and constants).
+        // These become LLVM GlobalVariable objects accessible to all functions in the
+        // module. Without this, any function that references a module-level global would
+        // find nothing in named_values and silently produce broken/empty IR.
+        if (decl->type == ASTNode::NodeType::VAR_DECL) {
+            VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(decl.get());
+
+            // Skip if already registered (e.g. pre-pass or repeated codegen call)
+            if (named_values.count(varDecl->varName)) continue;
+
+            // Determine LLVM type from the declared Aria type
+            std::string typeStr = varDecl->typeNode ? varDecl->typeNode->toString() : "int32";
+            llvm::Type* varType = mapTypeFromName(typeStr);
+            if (!varType) varType = llvm::Type::getInt32Ty(context);
+
+            // Compute a constant initializer from the literal, if present.
+            // Module-level initializers must be compile-time constants (LLVM requirement).
+            llvm::Constant* initVal = nullptr;
+            if (varDecl->initializer && varDecl->initializer->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(varDecl->initializer.get());
+                if (std::holds_alternative<bool>(lit->value)) {
+                    initVal = llvm::ConstantInt::get(varType, std::get<bool>(lit->value) ? 1 : 0);
+                } else if (std::holds_alternative<int64_t>(lit->value)) {
+                    initVal = llvm::ConstantInt::get(varType, (uint64_t)std::get<int64_t>(lit->value), true);
+                } else if (std::holds_alternative<double>(lit->value)) {
+                    initVal = llvm::ConstantFP::get(varType, std::get<double>(lit->value));
+                } else if (std::holds_alternative<std::string>(lit->value)) {
+                    // String global: create a constant AriaString and use its address as init.
+                    const std::string& s = std::get<std::string>(lit->value);
+                    if (s != "unknown" && s != "ERR") {
+                        llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                        if (!ariaStrType) {
+                            ariaStrType = llvm::StructType::create(context,
+                                {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                                 llvm::Type::getInt64Ty(context)},
+                                "struct.AriaString");
+                        }
+                        llvm::Constant* strData = llvm::ConstantDataArray::getString(context, s, true);
+                        llvm::GlobalVariable* strDataGV = new llvm::GlobalVariable(
+                            *module, strData->getType(), true,
+                            llvm::GlobalValue::PrivateLinkage, strData, ".gv_str_data");
+                        std::vector<llvm::Constant*> strFields = {
+                            llvm::ConstantExpr::getPointerCast(strDataGV,
+                                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)),
+                            llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), (uint64_t)s.length())
+                        };
+                        llvm::GlobalVariable* strGV = new llvm::GlobalVariable(
+                            *module, ariaStrType, true,
+                            llvm::GlobalValue::PrivateLinkage,
+                            llvm::ConstantStruct::get(ariaStrType, strFields), ".gv_str");
+                        initVal = strGV;  // ptr to global AriaString
+                    }
+                }
+            }
+            if (!initVal) {
+                initVal = llvm::Constant::getNullValue(varType);
+            }
+
+            // Create the LLVM GlobalVariable with ExternalLinkage so cross-module
+            // calls can resolve it; mark const if declared const in Aria source.
+            llvm::GlobalVariable* gv = new llvm::GlobalVariable(
+                *module, varType, varDecl->isConst,
+                llvm::GlobalValue::ExternalLinkage, initVal, varDecl->varName);
+
+            // Register in runtime symbol tables
+            named_values[varDecl->varName] = gv;
+            var_aria_types[varDecl->varName] = typeStr;
+            std::cerr << "[GLOBAL VAR] Registered '" << varDecl->varName
+                      << "' type=" << typeStr << std::endl;
             continue;
         }
 
@@ -4966,6 +5105,33 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 // If it's a pointer (alloca or parameter), load it
                 if (val->getType()->isPointerTy()) {
+                    // CRITICAL FIX: Function arguments stored directly as pointer values ARE
+                    // the value — not a pointer to a value that needs loading. This is the case
+                    // for string parameters (string = ptr to AriaString), which are stored in
+                    // named_values as the LLVM Argument itself, NOT as an alloca.
+                    // Without this check the load defaults to i32, mismatching the ptr type of
+                    // a string literal on the other side of a comparison (ICmpInst assert).
+                    if (llvm::isa<llvm::Argument>(val)) {
+                        auto typeIt = value_types.find(val);
+                        // (value_types entry was already registered during parameter setup)
+                        return val;
+                    }
+                    // GlobalVariable: look up the stored Aria type to determine load type,
+                    // then emit a properly-typed load (avoids the i32-default fallback that
+                    // was causing loads of wrong type from bool/string globals).
+                    if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(val)) {
+                        llvm::Type* loadType = gv->getValueType();
+                        // Prefer var_aria_types lookup for semantic accuracy
+                        auto ariaIt = var_aria_types.find(ident->name);
+                        if (ariaIt != var_aria_types.end()) {
+                            llvm::Type* ariaType = mapTypeFromName(ariaIt->second);
+                            if (ariaType) loadType = ariaType;
+                        }
+                        llvm::Value* loaded = builder.CreateLoad(loadType, val, ident->name);
+                        auto typeIt = value_types.find(val);
+                        if (typeIt != value_types.end()) value_types[loaded] = typeIt->second;
+                        return loaded;
+                    }
                     // Get the allocated type from the alloca
                     llvm::Type* loadType = builder.getInt32Ty();  // Default
                     if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(val)) {
@@ -6482,6 +6648,67 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::Value* zero = llvm::ConstantInt::get(i32Type, 0);
                         return builder.CreateICmpEQ(cmpResult, zero, "eq_result");
                     }
+                    // STRING EQUALITY: detect string types and call aria_string_equals
+                    // Pointer equality for strings gives wrong results — two literals with the
+                    // same content but different addresses would compare as unequal.
+                    {
+                        bool leftIsString = false, rightIsString = false;
+                        // Check via value_types (covers function parameters registered there)
+                        if (leftType && leftType->isPrimitive() &&
+                            static_cast<PrimitiveType*>(leftType)->getName() == "string")
+                            leftIsString = true;
+                        if (rightType && rightType->isPrimitive() &&
+                            static_cast<PrimitiveType*>(rightType)->getName() == "string")
+                            rightIsString = true;
+                        // Check via var_aria_types (covers local variables and globals)
+                        if (!leftIsString && binop->left->type == ASTNode::NodeType::IDENTIFIER) {
+                            auto* id = static_cast<IdentifierExpr*>(binop->left.get());
+                            auto it2 = var_aria_types.find(id->name);
+                            if (it2 != var_aria_types.end() && it2->second == "string") leftIsString = true;
+                        }
+                        if (!rightIsString && binop->right->type == ASTNode::NodeType::IDENTIFIER) {
+                            auto* id = static_cast<IdentifierExpr*>(binop->right.get());
+                            auto it2 = var_aria_types.find(id->name);
+                            if (it2 != var_aria_types.end() && it2->second == "string") rightIsString = true;
+                        }
+                        // Check if either side is a string literal (always a string)
+                        if (!leftIsString && binop->left->type == ASTNode::NodeType::LITERAL) {
+                            auto* lit = static_cast<LiteralExpr*>(binop->left.get());
+                            if (std::holds_alternative<std::string>(lit->value)) {
+                                const std::string& s = std::get<std::string>(lit->value);
+                                if (s != "unknown" && s != "ERR") leftIsString = true;
+                            }
+                        }
+                        if (!rightIsString && binop->right->type == ASTNode::NodeType::LITERAL) {
+                            auto* lit = static_cast<LiteralExpr*>(binop->right.get());
+                            if (std::holds_alternative<std::string>(lit->value)) {
+                                const std::string& s = std::get<std::string>(lit->value);
+                                if (s != "unknown" && s != "ERR") rightIsString = true;
+                            }
+                        }
+                        if (leftIsString || rightIsString) {
+                            std::cerr << "[STRING ==] Emitting aria_string_equals call" << std::endl;
+                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                            if (!ariaStrType) {
+                                ariaStrType = llvm::StructType::create(context,
+                                    {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                                     llvm::Type::getInt64Ty(context)},
+                                    "struct.AriaString");
+                            }
+                            llvm::FunctionType* eqFT = llvm::FunctionType::get(
+                                llvm::Type::getInt1Ty(context),
+                                {ariaStrType, ariaStrType}, false);
+                            llvm::FunctionCallee eqFn = module->getOrInsertFunction("aria_string_equals", eqFT);
+                            // Load AriaString value from pointer (both sides are ptr to AriaString)
+                            llvm::Value* lStr = L->getType()->isPointerTy()
+                                ? builder.CreateLoad(ariaStrType, L, "str.lhs")
+                                : L;
+                            llvm::Value* rStr = R->getType()->isPointerTy()
+                                ? builder.CreateLoad(ariaStrType, R, "str.rhs")
+                                : R;
+                            return builder.CreateCall(eqFn, {lStr, rStr}, "str.eq");
+                        }
+                    }
                     // Ensure operands have same type for comparison
                     if (L->getType() != R->getType()) {
                         // Promote to larger type (only for integer types)
@@ -6573,6 +6800,62 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             } else {
                                 L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
                             }
+                        }
+                    }
+                    // STRING INEQUALITY: use aria_string_equals and negate
+                    {
+                        bool leftIsString = false, rightIsString = false;
+                        if (leftType && leftType->isPrimitive() &&
+                            static_cast<PrimitiveType*>(leftType)->getName() == "string")
+                            leftIsString = true;
+                        if (rightType && rightType->isPrimitive() &&
+                            static_cast<PrimitiveType*>(rightType)->getName() == "string")
+                            rightIsString = true;
+                        if (!leftIsString && binop->left->type == ASTNode::NodeType::IDENTIFIER) {
+                            auto* id = static_cast<IdentifierExpr*>(binop->left.get());
+                            auto it2 = var_aria_types.find(id->name);
+                            if (it2 != var_aria_types.end() && it2->second == "string") leftIsString = true;
+                        }
+                        if (!rightIsString && binop->right->type == ASTNode::NodeType::IDENTIFIER) {
+                            auto* id = static_cast<IdentifierExpr*>(binop->right.get());
+                            auto it2 = var_aria_types.find(id->name);
+                            if (it2 != var_aria_types.end() && it2->second == "string") rightIsString = true;
+                        }
+                        if (!leftIsString && binop->left->type == ASTNode::NodeType::LITERAL) {
+                            auto* lit = static_cast<LiteralExpr*>(binop->left.get());
+                            if (std::holds_alternative<std::string>(lit->value)) {
+                                const std::string& s = std::get<std::string>(lit->value);
+                                if (s != "unknown" && s != "ERR") leftIsString = true;
+                            }
+                        }
+                        if (!rightIsString && binop->right->type == ASTNode::NodeType::LITERAL) {
+                            auto* lit = static_cast<LiteralExpr*>(binop->right.get());
+                            if (std::holds_alternative<std::string>(lit->value)) {
+                                const std::string& s = std::get<std::string>(lit->value);
+                                if (s != "unknown" && s != "ERR") rightIsString = true;
+                            }
+                        }
+                        if (leftIsString || rightIsString) {
+                            std::cerr << "[STRING !=] Emitting aria_string_equals + negate" << std::endl;
+                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                            if (!ariaStrType) {
+                                ariaStrType = llvm::StructType::create(context,
+                                    {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                                     llvm::Type::getInt64Ty(context)},
+                                    "struct.AriaString");
+                            }
+                            llvm::FunctionType* eqFT = llvm::FunctionType::get(
+                                llvm::Type::getInt1Ty(context),
+                                {ariaStrType, ariaStrType}, false);
+                            llvm::FunctionCallee eqFn = module->getOrInsertFunction("aria_string_equals", eqFT);
+                            llvm::Value* lStr = L->getType()->isPointerTy()
+                                ? builder.CreateLoad(ariaStrType, L, "str.lhs")
+                                : L;
+                            llvm::Value* rStr = R->getType()->isPointerTy()
+                                ? builder.CreateLoad(ariaStrType, R, "str.rhs")
+                                : R;
+                            llvm::Value* eq = builder.CreateCall(eqFn, {lStr, rStr}, "str.eq");
+                            return builder.CreateNot(eq, "str.ne");
                         }
                     }
                     // Use FCmp for floating point, ICmp for integers

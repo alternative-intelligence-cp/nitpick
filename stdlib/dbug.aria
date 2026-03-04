@@ -98,7 +98,7 @@ pub func:dbug_enable = NIL(string:group) {
         bool:already_enabled = false;
         int32:i = 0;
         while (i < _dbug_enabled_count) {
-            if (_dbug_get_group(i) == group) {
+            if ((_dbug_get_group(i) ? "") == group) {
                 already_enabled = true;
             }
             i = i + 1;
@@ -131,11 +131,11 @@ pub func:dbug_disable = NIL(string:group) {
         bool:found = false;
         int32:i = 0;
         while (i < _dbug_enabled_count) {
-            if (_dbug_get_group(i) == group) {
+            if ((_dbug_get_group(i) ? "") == group) {
                 // Shift remaining elements down
                 int32:j = i;
                 while (j < _dbug_enabled_count - 1) {
-                    _dbug_set_group(j, _dbug_get_group(j + 1)) ? NIL;
+                    _dbug_set_group(j, _dbug_get_group(j + 1) ? "") ? NIL;
                     j = j + 1;
                 }
                 _dbug_enabled_count = _dbug_enabled_count - 1;
@@ -161,7 +161,7 @@ pub func:dbug_is_enabled = bool(string:group) {
         // Check if this specific group is in the enabled list
         int32:i = 0;
         while (i < _dbug_enabled_count) {
-            if (_dbug_get_group(i) == group) {
+            if ((_dbug_get_group(i) ? "") == group) {
                 enabled = true;
             }
             i = i + 1;
@@ -184,7 +184,7 @@ pub func:dbug_list_enabled = NIL() {
         int32:i = 0;
         while (i < _dbug_enabled_count) {
             drop(print("  - "));
-            drop(println(_dbug_get_group(i)));
+            drop(println(_dbug_get_group(i) ? ""));
             i = i + 1;
         }
     }
@@ -200,7 +200,7 @@ pub func:dbug_list_enabled = NIL() {
  * Print a debug message if the group is enabled.
  */
 pub func:dbug_print = NIL(string:group, string:message) {
-    if (dbug_is_enabled(group)) {
+    if (dbug_is_enabled(group) ? false) {
         drop(print("[DBUG:"));
         drop(print(group));
         drop(print("] "));
@@ -213,7 +213,7 @@ pub func:dbug_print = NIL(string:group, string:message) {
  * Print a debug message with a label.
  */
 pub func:dbug_print_labeled = NIL(string:group, string:label, string:message) {
-    if (dbug_is_enabled(group)) {
+    if (dbug_is_enabled(group) ? false) {
         drop(print("[DBUG:"));
         drop(print(group));
         drop(print("] "));
@@ -236,7 +236,7 @@ pub func:dbug_check = NIL(string:group, string:message, bool:condition) {
         drop(println(message));
         
         // If group is enabled, print additional context
-        if (dbug_is_enabled(group)) {
+        if (dbug_is_enabled(group) ? false) {
             drop(println("  (Debug group enabled for more context)"));
         }
         
@@ -259,7 +259,7 @@ pub func:dbug_warn = NIL(string:group, string:message, bool:condition) {
         drop(print("]: "));
         drop(println(message));
         
-        if (dbug_is_enabled(group)) {
+        if (dbug_is_enabled(group) ? false) {
             drop(println("  (Enable debug group for more details)"));
         }
     }
@@ -274,7 +274,7 @@ pub func:dbug_warn = NIL(string:group, string:message, bool:condition) {
  * Print a debug separator line for visual grouping.
  */
 pub func:dbug_separator = NIL(string:group) {
-    if (dbug_is_enabled(group)) {
+    if (dbug_is_enabled(group) ? false) {
         drop(print("[DBUG:"));
         drop(print(group));
         drop(println("] ========================================"));
@@ -286,7 +286,7 @@ pub func:dbug_separator = NIL(string:group) {
  * Print entry point for a function (helps trace execution flow).
  */
 pub func:dbug_enter = NIL(string:group, string:function_name) {
-    if (dbug_is_enabled(group)) {
+    if (dbug_is_enabled(group) ? false) {
         drop(print("[DBUG:"));
         drop(print(group));
         drop(print("] -> Entering: "));
@@ -299,7 +299,7 @@ pub func:dbug_enter = NIL(string:group, string:function_name) {
  * Print exit point for a function.
  */
 pub func:dbug_exit = NIL(string:group, string:function_name) {
-    if (dbug_is_enabled(group)) {
+    if (dbug_is_enabled(group) ? false) {
         drop(print("[DBUG:"));
         drop(print(group));
         drop(print("] <- Exiting: "));

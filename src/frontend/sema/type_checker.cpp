@@ -9340,7 +9340,46 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
         // Check if we've already type-checked this module
         // (Simple check: if exports is empty, we haven't type-checked yet)
         if (module->moduleInfo->getExports().empty() && module->ast) {
-            // Export PUBLIC top-level declarations
+            // PRE-PASS: Register all global variable and constant declarations first.
+            // This must happen before type-checking functions, because module-level
+            // functions may reference global variables defined in the same module.
+            // Also register ALL function signatures (inc. private helpers) so that
+            // public functions calling private helpers can resolve their types.
+            // Note: STRUCT_DECL is handled in the main pass below (not idempotent).
+            // Note: Constants use VAR_DECL with isConst=true — no separate node type.
+            for (const auto& decl : module->ast->declarations) {
+                if (decl->type == ASTNode::NodeType::VAR_DECL) {
+                    checkVarDecl(static_cast<VarDeclStmt*>(decl.get()));
+                } else if (decl->type == ASTNode::NodeType::FUNC_DECL) {
+                    // Register ALL functions (public and private) so calls to private
+                    // helpers inside public functions resolve correctly.
+                    FuncDeclStmt* fd = static_cast<FuncDeclStmt*>(decl.get());
+                    if (!fd->genericParams.empty()) continue; // generics handled later
+                    std::vector<Type*> pts;
+                    for (const auto& p : fd->parameters) {
+                        if (p->type == ASTNode::NodeType::PARAMETER) {
+                            ParameterNode* pn = static_cast<ParameterNode*>(p.get());
+                            Type* pt = resolveTypeNode(pn->typeNode.get());
+                            pts.push_back((pt && pt->getKind() != TypeKind::ERROR)
+                                          ? pt : typeSystem->getPrimitiveType("void"));
+                        }
+                    }
+                    // Return type must be wrapped in Result<T> for body functions,
+                    // same as the standalone program pre-pass (see preRegisterFunctions).
+                    Type* valueType = resolveTypeNode(fd->returnType.get());
+                    if (!valueType) valueType = typeSystem->getPrimitiveType("void");
+                    Type* retType = fd->body ? new ResultType(valueType) : valueType;
+                    Type* ft = new FunctionType(pts, retType, fd->isAsync, false);
+                    // Only define if not already in symbol table
+                    if (!symbolTable->lookupSymbol(fd->funcName)) {
+                        Symbol* sym = symbolTable->defineSymbol(fd->funcName,
+                                          SymbolKind::FUNCTION, ft, fd->line, fd->column);
+                        if (sym) sym->setFuncDecl(fd);
+                    }
+                }
+            }
+
+            // MAIN PASS: Export PUBLIC top-level declarations
             for (const auto& decl : module->ast->declarations) {
                 if (decl->type == ASTNode::NodeType::FUNC_DECL) {
                     FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(decl.get());
