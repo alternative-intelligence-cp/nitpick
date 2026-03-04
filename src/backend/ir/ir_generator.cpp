@@ -2010,6 +2010,61 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
 
 void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_ptr<ASTNode>>& declarations,
                                                     const std::string& modulePrefix) {
+    // -------------------------------------------------------------------------
+    // PRE-PASS: Forward-declare all non-generic functions so mutual recursion
+    // works: when function A's body is generated and calls function B, B's
+    // declaration must already exist in the LLVM module.
+    // -------------------------------------------------------------------------
+    for (const auto& decl : declarations) {
+        if (!decl || decl->type != ASTNode::NodeType::FUNC_DECL) continue;
+        FuncDeclStmt* fd = static_cast<FuncDeclStmt*>(decl.get());
+
+        // Skip generics (specialised by monomorphisation) and already-declared
+        if (!fd->genericParams.empty()) continue;
+        std::string pre_name = modulePrefix.empty() ? fd->funcName
+                                                     : modulePrefix + "." + fd->funcName;
+        if (module->getFunction(pre_name)) continue;   // already declared
+
+        // Build parameter type list
+        std::vector<llvm::Type*> pre_params;
+        for (const auto& param : fd->parameters) {
+            ParameterNode* pn = static_cast<ParameterNode*>(param.get());
+            if (pn->isWild) {
+                pre_params.push_back(builder.getPtrTy());
+            } else {
+                std::string pstr = pn->typeNode ? pn->typeNode->toString() : "void";
+                pre_params.push_back(mapTypeFromName(pstr));
+            }
+        }
+
+        // Build return type (Result<T> wrapper for regular functions)
+        llvm::Type* pre_ret;
+        if (fd->returnIsWild) {
+            pre_ret = builder.getPtrTy();
+        } else {
+            std::string rstr = fd->returnType ? fd->returnType->toString() : "void";
+            llvm::Type* inner = mapTypeFromName(rstr);
+            if (!fd->body || fd->funcName == "main" || fd->isAsync || inner->isVoidTy()) {
+                pre_ret = fd->isAsync
+                    ? llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)
+                    : inner;
+            } else {
+                std::vector<llvm::Type*> rf = {
+                    inner,
+                    llvm::PointerType::get(context, 0),
+                    builder.getInt1Ty()
+                };
+                pre_ret = llvm::StructType::get(context, rf);
+            }
+        }
+
+        llvm::FunctionType* pre_ft = llvm::FunctionType::get(pre_ret, pre_params, false);
+        llvm::Function::Create(pre_ft, llvm::Function::ExternalLinkage, pre_name, module.get());
+    }
+    // -------------------------------------------------------------------------
+    // MAIN PASS: Generate full function bodies (declarations already exist)
+    // -------------------------------------------------------------------------
+
     for (const auto& decl : declarations) {
         if (!decl) continue;
         
@@ -2269,13 +2324,16 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     : llvm::Function::InternalLinkage;
             }
             
-            // Create LLVM function
-            llvm::Function* func = llvm::Function::Create(
-                func_type,
-                linkage,
-                func_name,
-                module.get()
-            );
+            // Create LLVM function (reuse forward declaration if pre-pass created it)
+            llvm::Function* func = module->getFunction(func_name);
+            if (!func) {
+                func = llvm::Function::Create(
+                    func_type,
+                    linkage,
+                    func_name,
+                    module.get()
+                );
+            }
 
             // Phase 4.6: Mark async functions with presplitcoroutine attribute
             // This tells CoroSplit that this function contains coroutine intrinsics
