@@ -8245,6 +8245,50 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             return result_value;
         }
         
+        case ASTNode::NodeType::MOVE: {
+            // move(x) — transfer ownership by loading the pointer value from the source
+            // variable and nullifying its alloca.  The borrow checker already guarantees
+            // that the source is not used again after the move at compile time.
+            MoveExpr* moveExpr = static_cast<MoveExpr*>(expr);
+
+            auto srcIt = named_values.find(moveExpr->variableName);
+            if (srcIt == named_values.end()) {
+                std::cerr << "[ERROR] move(): source variable '"
+                          << moveExpr->variableName << "' not found in scope" << std::endl;
+                return nullptr;
+            }
+
+            llvm::Value* srcAlloca = srcIt->second;
+
+            // Determine the type stored in the source variable's alloca.
+            llvm::Type* loadType = builder.getPtrTy();  // default: opaque pointer
+            if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(srcAlloca)) {
+                loadType = allocaInst->getAllocatedType();
+            }
+
+            // Load the current value from the source variable.
+            llvm::Value* srcVal = builder.CreateLoad(loadType, srcAlloca, "move_src");
+
+            // Nullify source alloca (defensive: prevents use of stale pointer even if
+            // the borrow checker somehow allowed it through).
+            if (loadType->isPointerTy()) {
+                builder.CreateStore(
+                    llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
+                    srcAlloca
+                );
+            }
+
+            // Propagate value_types metadata for the moved value (needed for UFCS / TBB dispatch).
+            auto valTypeIt = value_types.find(srcAlloca);
+            if (valTypeIt != value_types.end()) {
+                value_types[srcVal] = valTypeIt->second;
+            }
+
+            std::cerr << "[DEBUG] move(): transferred ownership of '"
+                      << moveExpr->variableName << "', nullified source" << std::endl;
+            return srcVal;
+        }
+
         default:
             // Other expression types not yet implemented
             return nullptr;
