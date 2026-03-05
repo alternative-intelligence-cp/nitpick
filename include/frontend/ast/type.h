@@ -46,10 +46,11 @@ public:
 class PointerType : public TypeNode {
 public:
     ASTNodePtr baseType;  // The type being pointed to
-    bool isNative = true; // true=fat pointer (@), false=thin pointer (*)
+    bool isNative = true; // true=fat pointer (->), false=thin pointer (*)
+    bool isErased = false; // true for ?-> / ?* (type-erased pointer, C's void*)
 
     PointerType(ASTNodePtr base, int line = 0, int column = 0)
-        : TypeNode(NodeType::POINTER_TYPE, line, column), baseType(base), isNative(true) {}
+        : TypeNode(NodeType::POINTER_TYPE, line, column), baseType(base), isNative(true), isErased(false) {}
 
     std::string toString() const override;
 };

@@ -9,7 +9,11 @@ std::string SimpleType::toString() const {
 
 std::string PointerType::toString() const {
     std::ostringstream oss;
-    if (baseType) {
+    if (isErased) {
+        // ARIA-P3: ?-> / ?* — type-erased pointer (Aria's honest void*)
+        // Internally serialised as "?@" (fat) or "?*" (thin)
+        oss << "?" << (isNative ? "@" : "*");
+    } else if (baseType) {
         // ARIA-015: @ for native fat pointers, * for FFI thin pointers
         oss << baseType->toString() << (isNative ? "@" : "*");
     } else {

@@ -1393,6 +1393,15 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
         return llvm::StructType::get(context, {builder.getInt1Ty(), valueType});
     }
     
+    // ARIA-P3: ?@ / ?* — type-erased pointer (maps to LLVM opaque ptr)
+    // "?" is the type-slot occupant meaning "type at this address is unknown".
+    // ?@  serialised from ?->  (fat erased, Aria code)
+    // ?*  serialised from ?*   (thin erased, extern/FFI)
+    // Both compile to llvm::PointerType::get(context, 0) — same as every other ptr.
+    if (type_name == "?@" || type_name == "?*") {
+        return llvm::PointerType::get(context, 0);
+    }
+
     // Check for pointer types (e.g., "int64@", "string@")
     // Arrays are represented as pointers in the type system
     if (type_name.size() >= 1 && type_name.back() == '@') {

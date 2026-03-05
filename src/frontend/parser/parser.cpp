@@ -3043,6 +3043,30 @@ ASTNodePtr Parser::parseType() {
         return std::make_shared<FunctionType>(retType, paramTypes, fpLine, fpCol);
     }
 
+    // ARIA-P3: ?-> / ?* — type-erased pointer
+    // "?" in type position followed by "->" or "*" creates an erased pointer.
+    // - ?->  : fat erased pointer  (Aria code)     — honest replacement for void*
+    // - ?*   : thin erased pointer (extern blocks) — C-ABI compatible opaque ptr
+    // Internal serialisation: "?@" (fat) / "?*" (thin), both map to LLVM opaque ptr.
+    if (typeToken.type == TokenType::TOKEN_QUESTION) {
+        Token nextTok = peekNext();
+        if (nextTok.type == TokenType::TOKEN_ARROW || nextTok.type == TokenType::TOKEN_STAR) {
+            advance(); // consume '?'
+            advance(); // consume '->' or '*'
+            bool native = (nextTok.type == TokenType::TOKEN_ARROW);
+            if (native && isInsideExternBlock) {
+                error("Use '?*' for type-erased pointers inside extern blocks, not '?->'.");
+            } else if (!native && !isInsideExternBlock) {
+                error("Use '?->' for type-erased pointers in Aria code, not '?*'.");
+            }
+            auto erasedPtr = std::make_shared<PointerType>(nullptr, typeToken.line, typeToken.column);
+            erasedPtr->isNative  = native;
+            erasedPtr->isErased  = true;
+            prefixPointer = false; // prefix '*' + '?->' is nonsensical; ignore it
+            return erasedPtr;
+        }
+    }
+
     // Check for type keyword or identifier (for generic types)
     if (isTypeKeyword(typeToken.type) || typeToken.type == TokenType::TOKEN_IDENTIFIER) {
         advance(); // Consume the type token

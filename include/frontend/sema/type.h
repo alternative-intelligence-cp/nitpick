@@ -111,18 +111,20 @@ public:
 
 class PointerType : public Type {
 private:
-    Type* pointeeType;  // Type being pointed to
+    Type* pointeeType;  // Type being pointed to (nullptr when isErased=true)
     bool isMutable;     // True for mutable references
     bool isWild;        // True for wild (unsafe) pointers
+    bool isErased;      // True for ?-> / ?* (type-erased pointer, C's void*)
     
 public:
-    PointerType(Type* pointeeType, bool isMutable = false, bool isWild = false)
+    PointerType(Type* pointeeType, bool isMutable = false, bool isWild = false, bool isErased = false)
         : Type(TypeKind::POINTER), pointeeType(pointeeType),
-          isMutable(isMutable), isWild(isWild) {}
+          isMutable(isMutable), isWild(isWild), isErased(isErased) {}
     
     Type* getPointeeType() const { return pointeeType; }
     bool isMutableRef() const { return isMutable; }
     bool isWildPointer() const { return isWild; }
+    bool isErasedPointer() const { return isErased; }
     
     bool equals(const Type* other) const override;
     bool isAssignableTo(const Type* target) const override;
@@ -589,6 +591,7 @@ public:
     
     // Composite types
     PointerType* getPointerType(Type* pointeeType, bool isMutable = false, bool isWild = false);
+    PointerType* getErasedPointerType(bool isMutable = false, bool isWild = false); // ARIA-P3: ?-> / ?*
     ArrayType* getArrayType(Type* elementType, int size);
     VectorType* getVectorType(Type* componentType, int dimension);
     FunctionType* getFunctionType(const std::vector<Type*>& paramTypes, Type* returnType,
