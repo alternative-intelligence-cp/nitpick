@@ -1,0 +1,147 @@
+/**
+ * rpn_calc.aria  —  Reverse Polish Notation Calculator in Aria Lang
+ *
+ * Demonstrates: int64[N] stack array, string operator dispatch,
+ * string_from_int display, divide-by-zero error detection.
+ *
+ * Stack: int64[16] local array + int32 top pointer.
+ *   push(v):  stk[top] = v;  top = top + 1;
+ *   pop():    top = top - 1;  v = stk[top];
+ *
+ * Expressions:
+ *   Expr 1:  3 4 + 2 * 7 /       =>  ((3+4)*2)/7  = 2
+ *   Expr 2:  5 1 2 + 4 * + 3 -   =>  5+((1+2)*4)-3  = 14
+ *   Expr 3:  10 0 /               =>  divide-by-zero
+ *
+ * Compiler notes:
+ *   WORKS: int64[N] local array + variable int32 index
+ *   WORKS: string_equals(a,b) in if conditions
+ *   WORKS: string_from_int(int64)
+ *   WORKS: int64 arithmetic in functions (no cast needed)
+ *   BUG:   @cast<int64>(int32) returns 1 (Result tag), not value
+ *            -> use int64 throughout to avoid
+ *   NOTE:  'stack' is a reserved keyword -> use 'stk'
+ */
+
+func:i64str = string(int64:n) {
+    pass(string_from_int(n));
+};
+
+func:apply_op = int64(int64:a, int64:b, string:op) {
+    if (string_equals(op, "+")) { pass(a + b); }
+    if (string_equals(op, "-")) { pass(a - b); }
+    if (string_equals(op, "*")) { pass(a * b); }
+    if (string_equals(op, "/")) {
+        if (b == 0i64) {
+            drop(println("  [!] Division by zero"));
+            pass(-9223372036854775807i64);
+        }
+        pass(a / b);
+    }
+    pass(0i64);
+};
+
+func:print_result = int32(string:label, int64:val, string:expected) {
+    string:vstr = string_from_int(val);
+    string:line = string_concat(label, string_concat(vstr, string_concat("  [expected: ", string_concat(expected, "]"))));
+    drop(println(line));
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    drop(println("FATAL: failsafe triggered"));
+};
+
+func:main = int32() {
+    int64[16]:stk;
+    int32:top = 0;
+
+    drop(println("=== RPN Calculator (Aria Lang) ==="));
+    drop(println(""));
+
+    // ── Expr 1:  3 4 + 2 * 7 /  =>  2 ───────────────────────────────────────
+    drop(println("Expr 1:  3 4 + 2 * 7 /"));
+
+    stk[top] = 3i64;  top = top + 1;
+    stk[top] = 4i64;  top = top + 1;
+
+    top = top - 1;  int64:e1b1 = stk[top];
+    top = top - 1;  int64:e1a1 = stk[top];
+    int64:e1r1 = apply_op(e1a1, e1b1, "+");
+    stk[top] = e1r1;  top = top + 1;
+
+    stk[top] = 2i64;  top = top + 1;
+
+    top = top - 1;  int64:e1b2 = stk[top];
+    top = top - 1;  int64:e1a2 = stk[top];
+    int64:e1r2 = apply_op(e1a2, e1b2, "*");
+    stk[top] = e1r2;  top = top + 1;
+
+    stk[top] = 7i64;  top = top + 1;
+
+    top = top - 1;  int64:e1b3 = stk[top];
+    top = top - 1;  int64:e1a3 = stk[top];
+    int64:e1r3 = apply_op(e1a3, e1b3, "/");
+    stk[top] = e1r3;  top = top + 1;
+
+    top = top - 1;
+    int64:res1 = stk[top];
+    drop(print_result("  Result: ", res1, "2"));
+    drop(println(""));
+
+    // ── Expr 2:  5 1 2 + 4 * + 3 -  =>  14 ──────────────────────────────────
+    top = 0;
+    drop(println("Expr 2:  5 1 2 + 4 * + 3 -"));
+
+    stk[top] = 5i64;  top = top + 1;
+    stk[top] = 1i64;  top = top + 1;
+    stk[top] = 2i64;  top = top + 1;
+
+    top = top - 1;  int64:e2b1 = stk[top];
+    top = top - 1;  int64:e2a1 = stk[top];
+    int64:e2r1 = apply_op(e2a1, e2b1, "+");
+    stk[top] = e2r1;  top = top + 1;
+
+    stk[top] = 4i64;  top = top + 1;
+
+    top = top - 1;  int64:e2b2 = stk[top];
+    top = top - 1;  int64:e2a2 = stk[top];
+    int64:e2r2 = apply_op(e2a2, e2b2, "*");
+    stk[top] = e2r2;  top = top + 1;
+
+    top = top - 1;  int64:e2b3 = stk[top];
+    top = top - 1;  int64:e2a3 = stk[top];
+    int64:e2r3 = apply_op(e2a3, e2b3, "+");
+    stk[top] = e2r3;  top = top + 1;
+
+    stk[top] = 3i64;  top = top + 1;
+
+    top = top - 1;  int64:e2b4 = stk[top];
+    top = top - 1;  int64:e2a4 = stk[top];
+    int64:e2r4 = apply_op(e2a4, e2b4, "-");
+    stk[top] = e2r4;  top = top + 1;
+
+    top = top - 1;
+    int64:res2 = stk[top];
+    drop(print_result("  Result: ", res2, "14"));
+    drop(println(""));
+
+    // ── Expr 3:  10 0 /  =>  error ───────────────────────────────────────────
+    top = 0;
+    drop(println("Expr 3:  10 0 /  (divide-by-zero)"));
+
+    stk[top] = 10i64;  top = top + 1;
+    stk[top] = 0i64;   top = top + 1;
+
+    top = top - 1;  int64:e3b1 = stk[top];
+    top = top - 1;  int64:e3a1 = stk[top];
+    int64:e3r1 = apply_op(e3a1, e3b1, "/");
+
+    if (e3r1 == -9223372036854775807i64) {
+        drop(println("  Caught: error sentinel returned"));
+    }
+    drop(println(""));
+
+    drop(println("Done."));
+    pass(0i32);
+};
