@@ -237,8 +237,15 @@ int8_t aria_nit_or(int8_t a, int8_t b);
  */
 int8_t aria_nit_not(int8_t a);
 
+/**
+ * @brief Check if a nit value is the ERR sentinel (-128)
+ * @param a Nit value to check
+ * @return 1 if a == NIT_ERR (-128), 0 otherwise
+ */
+int8_t aria_nit_is_err(int8_t a);
+
 // ==============================================================================
-// Composite Nyte Operations (5 Nits, Biased Radix Packing)
+// Composite Nyte Operations (5 Nits, Direct int16 Storage)
 // ==============================================================================
 
 /**

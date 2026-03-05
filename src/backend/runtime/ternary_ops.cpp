@@ -539,152 +539,106 @@ int8_t aria_nit_not(int8_t a) {
     return static_cast<int8_t>(-a);
 }
 
+int8_t aria_nit_is_err(int8_t a) {
+    // Returns 1 (true) if a is the ERR sentinel (-128), 0 otherwise
+    return (a == NIT_ERR) ? 1 : 0;
+}
+
 // ==============================================================================
-// Composite Nyte Operations (Biased Arithmetic - Faster than Tryte)
+// Composite Nyte Operations (Direct int16 Storage - Unbiased)
+// Values are stored directly as int16_t in [-29524, 29524].
+// Error sentinel: 0x8000 = INT16_MIN = -32768 (outside valid range).
 // ==============================================================================
 
+// Local sentinel for unbiased nyte (INT16_MIN, outside [-29524, 29524])
+static constexpr uint16_t NYTE_DIRECT_ERR = 0x8000u;
+
 uint16_t aria_nyte_add(uint16_t a, uint16_t b) {
-    // Sticky error
-    if (a == NYTE_ERR || b == NYTE_ERR) return NYTE_ERR;
-    
-    // Unbias to signed integers
-    int32_t a_val = static_cast<int32_t>(a) - NYTE_BIAS;
-    int32_t b_val = static_cast<int32_t>(b) - NYTE_BIAS;
-    
-    // Add
+    if (a == NYTE_DIRECT_ERR || b == NYTE_DIRECT_ERR) return NYTE_DIRECT_ERR;
+    int32_t a_val = static_cast<int32_t>(static_cast<int16_t>(a));
+    int32_t b_val = static_cast<int32_t>(static_cast<int16_t>(b));
     int32_t sum = a_val + b_val;
-    
-    // Range check
-    if (sum < TERNARY_MIN || sum > TERNARY_MAX) {
-        return NYTE_ERR;
-    }
-    
-    // Rebias and return
-    return static_cast<uint16_t>(sum + NYTE_BIAS);
+    if (sum < TERNARY_MIN || sum > TERNARY_MAX) return NYTE_DIRECT_ERR;
+    return static_cast<uint16_t>(static_cast<int16_t>(sum));
 }
 
 uint16_t aria_nyte_sub(uint16_t a, uint16_t b) {
-    if (a == NYTE_ERR || b == NYTE_ERR) return NYTE_ERR;
-    
-    int32_t a_val = static_cast<int32_t>(a) - NYTE_BIAS;
-    int32_t b_val = static_cast<int32_t>(b) - NYTE_BIAS;
-    
+    if (a == NYTE_DIRECT_ERR || b == NYTE_DIRECT_ERR) return NYTE_DIRECT_ERR;
+    int32_t a_val = static_cast<int32_t>(static_cast<int16_t>(a));
+    int32_t b_val = static_cast<int32_t>(static_cast<int16_t>(b));
     int32_t diff = a_val - b_val;
-    
-    if (diff < TERNARY_MIN || diff > TERNARY_MAX) {
-        return NYTE_ERR;
-    }
-    
-    return static_cast<uint16_t>(diff + NYTE_BIAS);
+    if (diff < TERNARY_MIN || diff > TERNARY_MAX) return NYTE_DIRECT_ERR;
+    return static_cast<uint16_t>(static_cast<int16_t>(diff));
 }
 
 uint16_t aria_nyte_mul(uint16_t a, uint16_t b) {
-    if (a == NYTE_ERR || b == NYTE_ERR) return NYTE_ERR;
-    
-    int32_t a_val = static_cast<int32_t>(a) - NYTE_BIAS;
-    int32_t b_val = static_cast<int32_t>(b) - NYTE_BIAS;
-    
+    if (a == NYTE_DIRECT_ERR || b == NYTE_DIRECT_ERR) return NYTE_DIRECT_ERR;
+    int32_t a_val = static_cast<int32_t>(static_cast<int16_t>(a));
+    int32_t b_val = static_cast<int32_t>(static_cast<int16_t>(b));
     int64_t product = static_cast<int64_t>(a_val) * static_cast<int64_t>(b_val);
-    
-    if (product < TERNARY_MIN || product > TERNARY_MAX) {
-        return NYTE_ERR;
-    }
-    
-    return static_cast<uint16_t>(static_cast<int32_t>(product) + NYTE_BIAS);
+    if (product < TERNARY_MIN || product > TERNARY_MAX) return NYTE_DIRECT_ERR;
+    return static_cast<uint16_t>(static_cast<int16_t>(static_cast<int32_t>(product)));
 }
 
 uint16_t aria_nyte_div(uint16_t a, uint16_t b) {
-    if (a == NYTE_ERR || b == NYTE_ERR) return NYTE_ERR;
-    
-    int32_t a_val = static_cast<int32_t>(a) - NYTE_BIAS;
-    int32_t b_val = static_cast<int32_t>(b) - NYTE_BIAS;
-    
-    if (b_val == 0) return NYTE_ERR;
-    
+    if (a == NYTE_DIRECT_ERR || b == NYTE_DIRECT_ERR) return NYTE_DIRECT_ERR;
+    int32_t a_val = static_cast<int32_t>(static_cast<int16_t>(a));
+    int32_t b_val = static_cast<int32_t>(static_cast<int16_t>(b));
+    if (b_val == 0) return NYTE_DIRECT_ERR;
     int32_t quotient = a_val / b_val;
-    return static_cast<uint16_t>(quotient + NYTE_BIAS);
+    return static_cast<uint16_t>(static_cast<int16_t>(quotient));
 }
 
 uint16_t aria_nyte_mod(uint16_t a, uint16_t b) {
-    // Sticky Error Propagation
-    if (a == NYTE_ERR || b == NYTE_ERR) return NYTE_ERR;
-    
-    // Unbias (convert to semantic values)
-    int32_t val_a = static_cast<int32_t>(a) - NYTE_BIAS;
-    int32_t val_b = static_cast<int32_t>(b) - NYTE_BIAS;
-    
-    // Division by Zero Check
-    if (val_b == 0) return NYTE_ERR;
-    
-    // Calculate Balanced Remainder: r = a - (b * round(a/b))
-    // Same round-to-nearest logic for base-9 balanced system
+    if (a == NYTE_DIRECT_ERR || b == NYTE_DIRECT_ERR) return NYTE_DIRECT_ERR;
+    int32_t val_a = static_cast<int32_t>(static_cast<int16_t>(a));
+    int32_t val_b = static_cast<int32_t>(static_cast<int16_t>(b));
+    if (val_b == 0) return NYTE_DIRECT_ERR;
+    // Balanced (round-to-nearest) modulo
     double quot_d = static_cast<double>(val_a) / static_cast<double>(val_b);
-    int32_t q;
-    if (quot_d >= 0) {
-        q = static_cast<int32_t>(quot_d + 0.5);
-    } else {
-        q = static_cast<int32_t>(quot_d - 0.5);
-    }
-    
+    int32_t q = (quot_d >= 0) ? static_cast<int32_t>(quot_d + 0.5)
+                              : static_cast<int32_t>(quot_d - 0.5);
     int32_t result_balanced = val_a - (val_b * q);
-    
-    // Bounds check (defensive coding)
-    if (result_balanced < TERNARY_MIN || result_balanced > TERNARY_MAX) {
-        return NYTE_ERR;
-    }
-    
-    // Re-bias and return
-    return static_cast<uint16_t>(result_balanced + NYTE_BIAS);
+    if (result_balanced < TERNARY_MIN || result_balanced > TERNARY_MAX)
+        return NYTE_DIRECT_ERR;
+    return static_cast<uint16_t>(static_cast<int16_t>(result_balanced));
 }
 
 uint16_t aria_nyte_neg(uint16_t a) {
-    if (a == NYTE_ERR) return NYTE_ERR;
-    
-    int32_t a_val = static_cast<int32_t>(a) - NYTE_BIAS;
-    int32_t neg_val = -a_val;
-    
-    return static_cast<uint16_t>(neg_val + NYTE_BIAS);
+    if (a == NYTE_DIRECT_ERR) return NYTE_DIRECT_ERR;
+    int32_t a_val = static_cast<int32_t>(static_cast<int16_t>(a));
+    return static_cast<uint16_t>(static_cast<int16_t>(-a_val));
 }
 
 int32_t aria_nyte_cmp(uint16_t a, uint16_t b) {
-    if (a == NYTE_ERR || b == NYTE_ERR) return -2;
-    
-    int32_t a_val = static_cast<int32_t>(a) - NYTE_BIAS;
-    int32_t b_val = static_cast<int32_t>(b) - NYTE_BIAS;
-    
+    if (a == NYTE_DIRECT_ERR || b == NYTE_DIRECT_ERR) return -2;
+    int32_t a_val = static_cast<int32_t>(static_cast<int16_t>(a));
+    int32_t b_val = static_cast<int32_t>(static_cast<int16_t>(b));
     if (a_val < b_val) return -1;
     if (a_val > b_val) return 1;
     return 0;
 }
 
 uint16_t aria_bin_to_nyte(int32_t value) {
-    if (value < TERNARY_MIN || value > TERNARY_MAX) {
-        return NYTE_ERR;
-    }
-    return static_cast<uint16_t>(value + NYTE_BIAS);
+    if (value < TERNARY_MIN || value > TERNARY_MAX) return NYTE_DIRECT_ERR;
+    return static_cast<uint16_t>(static_cast<int16_t>(value));
 }
 
 int32_t aria_nyte_to_bin(uint16_t nyte) {
-    if (nyte == NYTE_ERR) return INT32_MIN;
-    return static_cast<int32_t>(nyte) - NYTE_BIAS;
+    if (nyte == NYTE_DIRECT_ERR) return INT32_MIN;
+    return static_cast<int32_t>(static_cast<int16_t>(nyte));
 }
 
 int8_t aria_nyte_get_nit(uint16_t nyte, uint8_t index) {
-    if (nyte == NYTE_ERR || index > 4) return INT8_MIN;
-    
+    if (nyte == NYTE_DIRECT_ERR || index > 4) return INT8_MIN;
     int32_t value = aria_nyte_to_bin(nyte);
     if (value == INT32_MIN) return INT8_MIN;
-    
     // Extract nit at index using division/modulo
-    for (uint8_t i = 0; i < index; ++i) {
-        value /= 9;
-    }
-    
+    for (uint8_t i = 0; i < index; ++i) value /= 9;
     int rem = value % 9;
     // Adjust for balanced nonary [-4, 4]
     if (rem > 4) rem -= 9;
     else if (rem < -4) rem += 9;
-    
     return static_cast<int8_t>(rem);
 }
 // ==============================================================================

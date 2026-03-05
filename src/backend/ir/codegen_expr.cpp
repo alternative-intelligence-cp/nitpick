@@ -6310,12 +6310,14 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
         
-        llvm::Function* func = module->getFunction("nit_is_err");
+        // Call aria_nit_is_err (returns i8 0/1), truncate to i1 for bool
+        llvm::Function* func = module->getFunction("aria_nit_is_err");
         if (!func) {
-            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt1Ty(), {builder.getInt8Ty()}, false);
-            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nit_is_err", module);
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), {builder.getInt8Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "aria_nit_is_err", module);
         }
-        return builder.CreateCall(func, {a}, "nit_is_err_result");
+        llvm::Value* result_i8 = builder.CreateCall(func, {a}, "nit_is_err_i8");
+        return builder.CreateTrunc(result_i8, builder.getInt1Ty(), "nit_is_err_result");
     }
     
     // ====================================================================
