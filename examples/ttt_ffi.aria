@@ -1,0 +1,227 @@
+/**
+ * ttt_ffi.aria  —  Tic-Tac-Toe with Python FFI Display
+ *
+ * ╔══════════════════════════════════════════════════════════════╗
+ * ║  Extends tictactoe.aria with a Python curses GUI display   ║
+ * ║  via a C FFI shim (ttt_display.c → libttt_display.so).    ║
+ * ║                                                            ║
+ * ║  FFI call chain:                                           ║
+ * ║    Aria → extern block → C shim → Python curses           ║
+ * ╚══════════════════════════════════════════════════════════════╝
+ *
+ * Build:
+ *   cd examples
+ *   gcc -shared -fPIC -o libttt_display.so ttt_display.c
+ *   ../build/ariac ttt_ffi.aria \
+ *       -L. -lttt_display -Wl,-rpath,'$ORIGIN' \
+ *       -o ttt_ffi
+ *   ./ttt_ffi
+ *
+ * What this tests:
+ *   ✓ extern block with three C function declarations
+ *   ✓ Calling void-ish (int32-returning) C functions from Aria
+ *   ✓ Passing int64 values across the Aria → C boundary
+ *   ✓ C shim writing shared state to /tmp and launching Python
+ *   ✓ Python curses reading the .dat file and rendering the board
+ *
+ * Game (same as tictactoe.aria — X wins middle row):
+ *   X:4  O:0  X:2  O:6  X:3  O:8  X:5 → X wins [3,4,5]
+ *
+ * Wave9 position map:
+ *   r(0) s(1) t(2)
+ *   u(3) v(4) w(5)
+ *   x(6) y(7) z(8)
+ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C FFI: ttt_display.so
+// ─────────────────────────────────────────────────────────────────────────────
+
+extern "ttt_display" {
+    func:ttt_ffi_init = int32();
+    func:ttt_ffi_set  = int32(int64:pos, int64:val);
+    func:ttt_ffi_show = int32();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave9 board (same self-contained definition as tictactoe.aria)
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct:Wave9 = {
+    nit:r;  nit:s;  nit:t;
+    nit:u;  nit:v;  nit:w;
+    nit:x;  nit:y;  nit:z;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Display helpers (terminal output — unchanged from original TTT)
+// ─────────────────────────────────────────────────────────────────────────────
+
+func:cell_char = string(nit:c) {
+    if (c == 1)  { pass("X"); }
+    if (c == -1) { pass("O"); }
+    pass(".");
+};
+
+func:print_row = int32(nit:a, nit:b, nit:c) {
+    string:ca  = cell_char(a);
+    string:cb  = cell_char(b);
+    string:cc  = cell_char(c);
+    string:row = string_concat(ca, string_concat(" | ", string_concat(cb, string_concat(" | ", cc))));
+    drop(println(row));
+    pass(0i32);
+};
+
+func:print_board = int32(Wave9:b) {
+    drop(print_row(b.r, b.s, b.t));
+    drop(println("--+---+--"));
+    drop(print_row(b.u, b.v, b.w));
+    drop(println("--+---+--"));
+    drop(print_row(b.x, b.y, b.z));
+    pass(0i32);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Win detection (same as original)
+// ─────────────────────────────────────────────────────────────────────────────
+
+func:nit_and = nit(nit:a, nit:b) {
+    if (a == 1  && b == 1)  { pass(1i32);  }
+    if (a == -1 && b == -1) { pass(-1i32); }
+    pass(0i32);
+};
+
+func:check_winner = int32(Wave9:b) {
+    // rows
+    nit:r0a = nit_and(b.r, b.s);  nit:r0b = nit_and(r0a, b.t);
+    if (r0b == 1)  { pass(1); }  if (r0b == -1) { pass(-1); }
+    nit:r1a = nit_and(b.u, b.v);  nit:r1b = nit_and(r1a, b.w);
+    if (r1b == 1)  { pass(1); }  if (r1b == -1) { pass(-1); }
+    nit:r2a = nit_and(b.x, b.y);  nit:r2b = nit_and(r2a, b.z);
+    if (r2b == 1)  { pass(1); }  if (r2b == -1) { pass(-1); }
+    // cols
+    nit:c0a = nit_and(b.r, b.u);  nit:c0b = nit_and(c0a, b.x);
+    if (c0b == 1)  { pass(1); }  if (c0b == -1) { pass(-1); }
+    nit:c1a = nit_and(b.s, b.v);  nit:c1b = nit_and(c1a, b.y);
+    if (c1b == 1)  { pass(1); }  if (c1b == -1) { pass(-1); }
+    nit:c2a = nit_and(b.t, b.w);  nit:c2b = nit_and(c2a, b.z);
+    if (c2b == 1)  { pass(1); }  if (c2b == -1) { pass(-1); }
+    // diagonals
+    nit:d0a = nit_and(b.r, b.v);  nit:d0b = nit_and(d0a, b.z);
+    if (d0b == 1)  { pass(1); }  if (d0b == -1) { pass(-1); }
+    nit:d1a = nit_and(b.t, b.v);  nit:d1b = nit_and(d1a, b.x);
+    if (d1b == 1)  { pass(1); }  if (d1b == -1) { pass(-1); }
+    pass(0i32);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Move helper: mutate board + print + call C FFI
+// ─────────────────────────────────────────────────────────────────────────────
+
+func:print_move_header = int32(string:player, int64:pos) {
+    string:s = string_concat("  ", string_concat(player, string_concat(" → pos ", string_from_int(pos))));
+    drop(println(s));
+    pass(0i32);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Error handler
+// ─────────────────────────────────────────────────────────────────────────────
+
+func:failsafe = NIL(int32:err_code) {
+    drop(println("FATAL: failsafe triggered"));
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// main
+// ─────────────────────────────────────────────────────────────────────────────
+
+func:main = int32() {
+
+    // ── Init C display layer ─────────────────────────────────────────────────
+    drop(ttt_ffi_init());
+
+    // ── Init board ───────────────────────────────────────────────────────────
+    Wave9:board;
+    board.r = 0;  board.s = 0;  board.t = 0;
+    board.u = 0;  board.v = 0;  board.w = 0;
+    board.x = 0;  board.y = 0;  board.z = 0;
+
+    nit:X = 1;
+    nit:O = -1;
+
+    // FFI int64 values for player pieces.
+    // NOTE: literal -1i64 is zero-extended to 0x00000000FFFFFFFF when passed
+    // across the extern boundary — a known Aria compiler bug with negative
+    // int64 literals (sign is lost in the 32-bit intermediate).
+    // Workaround: compute -1 as (0i64 - 1i64) for correct sign extension.
+    int64:FFI_X    =  1i64;
+    int64:FFI_O    = 0i64 - 1i64;   // = -1, correctly sign-extended
+    int64:FFI_NONE =  0i64;
+
+    drop(println("=== Tic-Tac-Toe  (Aria → C → Python FFI) ==="));
+    drop(println(""));
+
+    // ── Move 1: X plays position 4 (v) ──────────────────────────────────────
+    board.v = X;
+    drop(ttt_ffi_set(4i64, FFI_X));
+    drop(print_move_header("X", 4i64));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Move 2: O plays position 0 (r) ──────────────────────────────────────
+    board.r = O;
+    drop(ttt_ffi_set(0i64, FFI_O));
+    drop(print_move_header("O", 0i64));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Move 3: X plays position 2 (t) ──────────────────────────────────────
+    board.t = X;
+    drop(ttt_ffi_set(2i64, FFI_X));
+    drop(print_move_header("X", 2i64));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Move 4: O plays position 6 (x) ──────────────────────────────────────
+    board.x = O;
+    drop(ttt_ffi_set(6i64, FFI_O));
+    drop(print_move_header("O", 6i64));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Move 5: X plays position 3 (u) ──────────────────────────────────────
+    board.u = X;
+    drop(ttt_ffi_set(3i64, FFI_X));
+    drop(print_move_header("X", 3i64));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Move 6: O plays position 8 (z) ──────────────────────────────────────
+    board.z = O;
+    drop(ttt_ffi_set(8i64, FFI_O));
+    drop(print_move_header("O", 8i64));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Move 7: X plays position 5 (w) — wins middle row [3,4,5] ────────────
+    board.w = X;
+    drop(ttt_ffi_set(5i64, FFI_X));
+    drop(print_move_header("X", 5i64));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Check winner ─────────────────────────────────────────────────────────
+    int32:winner = check_winner(board);
+    if (winner == 1)  { drop(println("X WINS!")); }
+    if (winner == -1) { drop(println("O WINS!")); }
+    if (winner == 0)  { drop(println("NO WINNER")); }
+
+    drop(println(""));
+    drop(println("Launching Python curses display..."));
+
+    // ── Launch Python curses TUI via C FFI ───────────────────────────────────
+    drop(ttt_ffi_show());
+
+    pass(0i32);
+};
