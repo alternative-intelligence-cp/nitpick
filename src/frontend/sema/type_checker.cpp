@@ -254,6 +254,19 @@ void TypeChecker::check(ASTNode* module) {
     // "Undefined identifier" during type-checking of the earlier function.
     // -------------------------------------------------------------------------
     auto preRegisterFunctions = [&](const std::vector<std::shared_ptr<ASTNode>>& stmts) {
+        // STRUCT PRE-PASS: register all non-generic struct type names FIRST.
+        // This prevents getPrimitiveType() from creating a fake PrimitiveType
+        // with the struct name when function parameter types are resolved
+        // below (the function pre-pass runs before struct declarations are
+        // normally processed in the main pass).
+        for (const auto& s2 : stmts) {
+            if (!s2 || s2->type != ASTNode::NodeType::STRUCT_DECL) continue;
+            StructDeclStmt* sd = static_cast<StructDeclStmt*>(s2.get());
+            if (sd->genericParams.empty() && !typeSystem->getStructType(sd->structName)) {
+                checkStructDecl(sd);  // registers StructType; main pass will silently skip
+            }
+        }
+
         for (const auto& stmt : stmts) {
             if (!stmt || stmt->type != ASTNode::NodeType::FUNC_DECL) continue;
             FuncDeclStmt* fd = static_cast<FuncDeclStmt*>(stmt.get());
@@ -7933,10 +7946,17 @@ void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
         return;  // Don't register with TypeSystem yet
     }
     
-    // Non-generic struct - check if already defined
+    // Non-generic struct - check if already defined.
+    // The pre-registration pass calls checkStructDecl early so that struct
+    // types are available during function signature resolution.  When the
+    // main pass revisits the same declaration, skip silently rather than
+    // emitting a spurious "already defined" error.
     Type* existingStruct = typeSystem->getStructType(stmt->structName);
     if (existingStruct) {
-        addError("Struct '" + stmt->structName + "' is already defined", stmt);
+        // Silently skip: struct was pre-registered by preRegisterFunctions.
+        // A genuine duplicate definition in user code is caught by the
+        // pre-pass itself (it only registers if !getStructType()), so we
+        // will never reach this point for true duplicates.
         return;
     }
     

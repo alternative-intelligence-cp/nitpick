@@ -1,0 +1,305 @@
+/**
+ * test_wavemech.aria — stdlib/wavemech.aria unit tests
+ *
+ * Tests:
+ *   1.  nyte_from_wave: compress Wave9 → nyte, verify packed nits
+ *   2.  wave_from_nyte: decompress nyte → Wave9, verify extracted dims
+ *   3.  roundtrip (wave → nyte → wave): x/y/z/u/r preserved, s/t/v/w→0
+ *   4.  nyte_interfere: additive superposition of two nytes
+ *   5.  nyte_phase_shift: uniform nit offset across all 5 nyt dims
+ *   6.  wave_kleene_and: elementwise min (Kleene AND)
+ *   7.  wave_kleene_or:  elementwise max (Kleene OR)
+ *   8.  wave_err_guard: clean wave → false
+ *   9.  wave_err_guard: wave with ERR nit → true
+ *   10. nyte_is_err: clean nyte → false
+ *   11. nyte_is_err: nyte with ERR nit → true
+ *
+ * Expected: PASS — exits with code 0
+ */
+
+// ---------------------------------------------------------------------------
+// FFI: nyte packing intrinsics
+// ---------------------------------------------------------------------------
+extern func:aria_pack_nyte    = nyte(nit:n0, nit:n1, nit:n2, nit:n3, nit:n4);
+extern func:aria_nyte_get_nit = nit(nyte:packed, int32:index);
+
+// ---------------------------------------------------------------------------
+// Wave9 struct (mirrors stdlib/wave.aria)
+// ---------------------------------------------------------------------------
+struct:Wave9 = {
+    nit:r;
+    nit:s;
+    nit:t;
+    nit:u;
+    nit:v;
+    nit:w;
+    nit:x;
+    nit:y;
+    nit:z;
+};
+
+// ---------------------------------------------------------------------------
+// wave.aria encoding stubs (re-implemented inline for self-contained test)
+// ---------------------------------------------------------------------------
+func:nyte_from_wave = nyte(Wave9:w) {
+    pass(aria_pack_nyte(w.x, w.y, w.z, w.u, w.r));
+};
+
+func:wave_from_nyte = Wave9(nyte:encoded) {
+    nit:n0 = aria_nyte_get_nit(encoded, 0);
+    nit:n1 = aria_nyte_get_nit(encoded, 1);
+    nit:n2 = aria_nyte_get_nit(encoded, 2);
+    nit:n3 = aria_nyte_get_nit(encoded, 3);
+    nit:n4 = aria_nyte_get_nit(encoded, 4);
+    pass(Wave9 {
+        r: n4, s: 0, t: 0,
+        u: n3, v: 0, w: 0,
+        x: n0, y: n1, z: n2
+    });
+};
+
+// ---------------------------------------------------------------------------
+// wavemech.aria functions (re-implemented inline for self-contained test)
+// ---------------------------------------------------------------------------
+func:nyte_interfere = nyte(nyte:a, nyte:b) {
+    pass(a + b);
+};
+
+func:nyte_phase_shift = nyte(nyte:wave, nit:phase) {
+    nit:d0 = aria_nyte_get_nit(wave, 0) + phase;
+    nit:d1 = aria_nyte_get_nit(wave, 1) + phase;
+    nit:d2 = aria_nyte_get_nit(wave, 2) + phase;
+    nit:d3 = aria_nyte_get_nit(wave, 3) + phase;
+    nit:d4 = aria_nyte_get_nit(wave, 4) + phase;
+    pass(aria_pack_nyte(d0, d1, d2, d3, d4));
+};
+
+func:wave_kleene_and = Wave9(Wave9:a, Wave9:b) {
+    pass(Wave9 {
+        r: nit_and(a.r, b.r),
+        s: nit_and(a.s, b.s),
+        t: nit_and(a.t, b.t),
+        u: nit_and(a.u, b.u),
+        v: nit_and(a.v, b.v),
+        w: nit_and(a.w, b.w),
+        x: nit_and(a.x, b.x),
+        y: nit_and(a.y, b.y),
+        z: nit_and(a.z, b.z)
+    });
+};
+
+func:wave_kleene_or = Wave9(Wave9:a, Wave9:b) {
+    pass(Wave9 {
+        r: nit_or(a.r, b.r),
+        s: nit_or(a.s, b.s),
+        t: nit_or(a.t, b.t),
+        u: nit_or(a.u, b.u),
+        v: nit_or(a.v, b.v),
+        w: nit_or(a.w, b.w),
+        x: nit_or(a.x, b.x),
+        y: nit_or(a.y, b.y),
+        z: nit_or(a.z, b.z)
+    });
+};
+
+func:wave_err_guard = bool(Wave9:w) {
+    pass(
+        nit_is_err(w.r) ||
+        nit_is_err(w.s) ||
+        nit_is_err(w.t) ||
+        nit_is_err(w.u) ||
+        nit_is_err(w.v) ||
+        nit_is_err(w.w) ||
+        nit_is_err(w.x) ||
+        nit_is_err(w.y) ||
+        nit_is_err(w.z)
+    );
+};
+
+func:nyte_is_err = bool(nyte:n) {
+    nit:n0 = aria_nyte_get_nit(n, 0);
+    nit:n1 = aria_nyte_get_nit(n, 1);
+    nit:n2 = aria_nyte_get_nit(n, 2);
+    nit:n3 = aria_nyte_get_nit(n, 3);
+    nit:n4 = aria_nyte_get_nit(n, 4);
+    pass(
+        nit_is_err(n0) ||
+        nit_is_err(n1) ||
+        nit_is_err(n2) ||
+        nit_is_err(n3) ||
+        nit_is_err(n4)
+    );
+};
+
+// ---------------------------------------------------------------------------
+// failsafe (required by Aria compiler)
+// ---------------------------------------------------------------------------
+func:failsafe = NIL(int32:err_code) { };
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+func:main = int32() {
+
+    // ── Test 1: nyte_from_wave — verify packed nits match wave dims ──────────
+    // Wave: x=1, y=2, z=3, u=-1, r=2  (s,t,v,w discarded → 0)
+    nit:wx = nit_from_int(1);
+    nit:wy = nit_from_int(2);
+    nit:wz = nit_from_int(3);
+    nit:wu = nit_from_int(-1);
+    nit:wr = nit_from_int(2);
+    Wave9:w1 = Wave9 {
+        r: wr, s: 0, t: 0,
+        u: wu, v: 0, w: 0,
+        x: wx, y: wy, z: wz
+    };
+    nyte:packed = nyte_from_wave(w1);
+    // Encoding: nit0=x, nit1=y, nit2=z, nit3=u, nit4=r
+    if (aria_nyte_get_nit(packed, 0) != wx) { pass(1i32); }
+    if (aria_nyte_get_nit(packed, 1) != wy) { pass(1i32); }
+    if (aria_nyte_get_nit(packed, 2) != wz) { pass(1i32); }
+    if (aria_nyte_get_nit(packed, 3) != wu) { pass(1i32); }
+    if (aria_nyte_get_nit(packed, 4) != wr) { pass(1i32); }
+
+    // ── Test 2: wave_from_nyte — verify decoded dims match packed nits ───────
+    nyte:src_nyte = aria_pack_nyte(
+        nit_from_int(3),
+        nit_from_int(-2),
+        nit_from_int(1),
+        nit_from_int(4),
+        nit_from_int(-3)
+    );
+    Wave9:decoded = wave_from_nyte(src_nyte);
+    if (decoded.x != nit_from_int(3))  { pass(2i32); }
+    if (decoded.y != nit_from_int(-2)) { pass(2i32); }
+    if (decoded.z != nit_from_int(1))  { pass(2i32); }
+    if (decoded.u != nit_from_int(4))  { pass(2i32); }
+    if (decoded.r != nit_from_int(-3)) { pass(2i32); }
+    // Discarded dims must be 0
+    if (decoded.s != 0) { pass(2i32); }
+    if (decoded.t != 0) { pass(2i32); }
+    if (decoded.v != 0) { pass(2i32); }
+    if (decoded.w != 0) { pass(2i32); }
+
+    // ── Test 3: roundtrip wave → nyte → wave (x/y/z/u/r preserved) ──────────
+    Wave9:original = Wave9 {
+        r: nit_from_int(-1), s: nit_from_int(2), t: nit_from_int(1),
+        u: nit_from_int(3),  v: nit_from_int(-2), w: nit_from_int(4),
+        x: nit_from_int(2),  y: nit_from_int(-3), z: nit_from_int(1)
+    };
+    nyte:rt_nyte = nyte_from_wave(original);
+    Wave9:restored = wave_from_nyte(rt_nyte);
+    // Priority dims are preserved
+    if (restored.x != original.x) { pass(3i32); }
+    if (restored.y != original.y) { pass(3i32); }
+    if (restored.z != original.z) { pass(3i32); }
+    if (restored.u != original.u) { pass(3i32); }
+    if (restored.r != original.r) { pass(3i32); }
+    // Discarded dims come back as 0
+    if (restored.s != 0) { pass(3i32); }
+    if (restored.t != 0) { pass(3i32); }
+    if (restored.v != 0) { pass(3i32); }
+    if (restored.w != 0) { pass(3i32); }
+
+    // ── Test 4: nyte_interfere — verify each nit is summed ──────────────────
+    nit:one = nit_from_int(1);
+    nit:two = nit_from_int(2);
+    nyte:na = aria_pack_nyte(one, one, one, one, one);
+    nyte:nb = aria_pack_nyte(two, two, two, two, two);
+    nyte:ni = nyte_interfere(na, nb);
+    nit:three = nit_from_int(3);
+    if (aria_nyte_get_nit(ni, 0) != three) { pass(4i32); }
+    if (aria_nyte_get_nit(ni, 1) != three) { pass(4i32); }
+    if (aria_nyte_get_nit(ni, 2) != three) { pass(4i32); }
+    if (aria_nyte_get_nit(ni, 3) != three) { pass(4i32); }
+    if (aria_nyte_get_nit(ni, 4) != three) { pass(4i32); }
+
+    // ── Test 5: nyte_phase_shift — shift each dim by +2 ─────────────────────
+    nit:shift_phase = nit_from_int(2);
+    nyte:base = aria_pack_nyte(one, one, one, one, one);  // all nits = 1
+    nyte:shifted = nyte_phase_shift(base, shift_phase);
+    // Each nit should now be 1 + 2 = 3
+    if (aria_nyte_get_nit(shifted, 0) != three) { pass(5i32); }
+    if (aria_nyte_get_nit(shifted, 1) != three) { pass(5i32); }
+    if (aria_nyte_get_nit(shifted, 2) != three) { pass(5i32); }
+    if (aria_nyte_get_nit(shifted, 3) != three) { pass(5i32); }
+    if (aria_nyte_get_nit(shifted, 4) != three) { pass(5i32); }
+
+    // ── Test 6: wave_kleene_and — elementwise min ────────────────────────────
+    Wave9:ka = Wave9 {
+        r: nit_from_int(2),  s: nit_from_int(-1), t: nit_from_int(3),
+        u: nit_from_int(0),  v: nit_from_int(4),  w: nit_from_int(-2),
+        x: nit_from_int(1),  y: nit_from_int(-4), z: nit_from_int(2)
+    };
+    Wave9:kb = Wave9 {
+        r: nit_from_int(-1), s: nit_from_int(2),  t: nit_from_int(-3),
+        u: nit_from_int(1),  v: nit_from_int(-4), w: nit_from_int(3),
+        x: nit_from_int(3),  y: nit_from_int(-2), z: nit_from_int(-1)
+    };
+    Wave9:kand = wave_kleene_and(ka, kb);
+    // min(2,-1)=-1, min(-1,2)=-1, min(3,-3)=-3, min(0,1)=0,
+    // min(4,-4)=-4, min(-2,3)=-2, min(1,3)=1, min(-4,-2)=-4, min(2,-1)=-1
+    if (kand.r != nit_from_int(-1)) { pass(6i32); }
+    if (kand.s != nit_from_int(-1)) { pass(6i32); }
+    if (kand.t != nit_from_int(-3)) { pass(6i32); }
+    if (kand.u != nit_from_int(0))  { pass(6i32); }
+    if (kand.v != nit_from_int(-4)) { pass(6i32); }
+    if (kand.w != nit_from_int(-2)) { pass(6i32); }
+    if (kand.x != nit_from_int(1))  { pass(6i32); }
+    if (kand.y != nit_from_int(-4)) { pass(6i32); }
+    if (kand.z != nit_from_int(-1)) { pass(6i32); }
+
+    // ── Test 7: wave_kleene_or — elementwise max ─────────────────────────────
+    Wave9:kor = wave_kleene_or(ka, kb);
+    // max(2,-1)=2, max(-1,2)=2, max(3,-3)=3, max(0,1)=1,
+    // max(4,-4)=4, max(-2,3)=3, max(1,3)=3, max(-4,-2)=-2, max(2,-1)=2
+    if (kor.r != nit_from_int(2))  { pass(7i32); }
+    if (kor.s != nit_from_int(2))  { pass(7i32); }
+    if (kor.t != nit_from_int(3))  { pass(7i32); }
+    if (kor.u != nit_from_int(1))  { pass(7i32); }
+    if (kor.v != nit_from_int(4))  { pass(7i32); }
+    if (kor.w != nit_from_int(3))  { pass(7i32); }
+    if (kor.x != nit_from_int(3))  { pass(7i32); }
+    if (kor.y != nit_from_int(-2)) { pass(7i32); }
+    if (kor.z != nit_from_int(2))  { pass(7i32); }
+
+    // ── Test 8: wave_err_guard — clean wave → false ──────────────────────────
+    Wave9:clean = Wave9 {
+        r: 0, s: nit_from_int(1), t: nit_from_int(-2),
+        u: nit_from_int(3), v: 0, w: nit_from_int(-1),
+        x: nit_from_int(2), y: 0, z: nit_from_int(-3)
+    };
+    bool:is_err_clean = wave_err_guard(clean);
+    if (is_err_clean) { pass(8i32); }
+
+    // ── Test 9: wave_err_guard — wave with ERR nit → true ────────────────────
+    nit:big = nit_from_int(4);
+    nit:err_nit = big + big;  // 4+4=8, out of [-4,4] → ERR sentinel (-128)
+    Wave9:err_wave = Wave9 {
+        r: 0, s: 0, t: 0,
+        u: 0, v: 0, w: 0,
+        x: err_nit, y: 0, z: 0
+    };
+    bool:is_err_dirty = wave_err_guard(err_wave);
+    if (!is_err_dirty) { pass(9i32); }
+
+    // ── Test 10: nyte_is_err — clean nyte → false ────────────────────────────
+    nyte:clean_nyte = aria_pack_nyte(
+        nit_from_int(1), nit_from_int(-2), nit_from_int(3),
+        nit_from_int(-1), nit_from_int(2)
+    );
+    bool:ny_clean = nyte_is_err(clean_nyte);
+    if (ny_clean) { pass(10i32); }
+
+    // ── Test 11: nyte_is_err — ERR nyte → true ───────────────────────────────
+    nit:err_nit2 = nit_from_int(4) + nit_from_int(4);  // overflow → ERR
+    nyte:err_nyte = aria_pack_nyte(
+        nit_from_int(1), err_nit2, nit_from_int(0),
+        nit_from_int(0), nit_from_int(0)
+    );
+    bool:ny_err = nyte_is_err(err_nyte);
+    if (!ny_err) { pass(11i32); }
+
+    // ── All tests passed ─────────────────────────────────────────────────────
+    pass(0i32);
+};
