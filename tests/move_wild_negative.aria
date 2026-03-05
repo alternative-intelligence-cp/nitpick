@@ -1,0 +1,28 @@
+/**
+ * move_wild_negative.aria — Negative test: use-after-move MUST be rejected
+ *
+ * This file is EXPECTED TO FAIL COMPILATION.
+ * The borrow checker must emit:
+ *   - "Use after move: variable 'buffer' was moved"
+ *   - "Cannot free moved variable 'buffer'"
+ *
+ * Verified working as of commit a351a0c.
+ * Run: ariac move_wild_negative.aria -o /dev/null
+ * Expected: Summary: 2 errors  (exit non-zero)
+ */
+
+extern func:malloc = wild int8*(int64:size);
+extern func:free = void(wild int8*:ptr);
+
+func:failsafe = NIL(int32:err_code) { };
+
+func:main = int32() {
+    wild int8->:buffer = malloc(100i64);
+    wild int8->:moved = move(buffer);
+
+    // ERROR: buffer was moved — borrow checker must reject this
+    free(buffer);   // use-after-move
+
+    free(moved);
+    pass(0i32);
+};
