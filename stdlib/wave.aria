@@ -54,6 +54,10 @@
  * Memory Layout: 9 bytes (1 byte per nit)
  * Addressable States: 9^9 = 387,420,489 unique wave configurations
  */
+// FFI: nyte packing intrinsics (from backend/runtime/ternary_ops.h)
+extern func:aria_pack_nyte   = nyte(nit:n0, nit:n1, nit:n2, nit:n3, nit:n4);
+extern func:aria_nyte_get_nit = nit(nyte:packed, int32:index);
+
 struct:Wave9 = {
     nit:r;  // State dimension 1: Neuromodulation axis 1
     nit:s;  // State dimension 2: Neuromodulation axis 2
@@ -256,15 +260,9 @@ pub func:wave_equals = bool(Wave9:a, Wave9:b) {
  * @return Compressed nyte encoding
  */
 pub func:nyte_from_wave = nyte(Wave9:w) {
-    // Compress 9D wave to 5D nyte encoding
-    // For now, return a placeholder nyte value
-    // TODO: Implement proper packing when FFI is ready
-    //
     // Priority encoding: x, y, z (spatial) > u (quantum) > r (state)
-    // extern func:aria_pack_nyte = nyte(nit:n0, nit:n1, nit:n2, nit:n3, nit:n4);
-    
-    // Placeholder: return zero nyte for now
-    pass(0);
+    // Dimensions s, t, v, w are discarded in this 5D projection.
+    pass(aria_pack_nyte(w.x, w.y, w.z, w.u, w.r));
 };
 
 /**
@@ -298,16 +296,17 @@ pub func:nyte_from_wave = nyte(Wave9:w) {
  * @return Reconstructed Wave9 (approximate)
  */
 pub func:wave_from_nyte = Wave9(nyte:encoded) {
-    // Unpack nyte into 5 nits
-    // For now, return a zero wave since proper unpacking requires
-    // extern function call semantics not yet implemented in Aria
-    // TODO: Implement proper nyte unpacking when FFI pointers are ready
-    
-    // Placeholder: return zero wave
+    // Unpack the 5 nits and map back to their respective dimensions.
+    // Discarded dimensions (s, t, v, w) are reconstructed as 0.
+    nit:n0 = aria_nyte_get_nit(encoded, 0);  // x (spatial X)
+    nit:n1 = aria_nyte_get_nit(encoded, 1);  // y (spatial Y)
+    nit:n2 = aria_nyte_get_nit(encoded, 2);  // z (spatial Z)
+    nit:n3 = aria_nyte_get_nit(encoded, 3);  // u (quantum U)
+    nit:n4 = aria_nyte_get_nit(encoded, 4);  // r (state R)
     pass(Wave9 {
-        r: 0, s: 0, t: 0,
-        u: 0, v: 0, w: 0,
-        x: 0, y: 0, z: 0
+        r: n4, s: 0, t: 0,
+        u: n3, v: 0, w: 0,
+        x: n0, y: n1, z: n2
     });
 };
 

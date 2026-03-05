@@ -8321,7 +8321,13 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
     }
     
     // Handle vector component access (.x, .y, .z)
-    if (objectType->isVectorTy() || (objectType->isStructTy() && objectType->getStructNumElements() == 9)) {
+    // vec9 is an anonymous 9-element LLVM struct (no LLVM name).
+    // User-defined 9-field structs (e.g. Wave9) ARE named; those must fall through
+    // to the regular struct member-access path below.
+    bool isAnonymousVec9Struct = objectType->isStructTy()
+        && objectType->getStructNumElements() == 9
+        && !llvm::cast<llvm::StructType>(objectType)->hasName();
+    if (objectType->isVectorTy() || isAnonymousVec9Struct) {
         int index = -1;
         
         if (expr->member == "x") index = 0;
