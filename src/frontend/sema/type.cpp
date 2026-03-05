@@ -127,6 +127,12 @@ bool PointerType::equals(const Type* other) const {
         return false;
     }
     const PointerType* otherPtr = static_cast<const PointerType*>(other);
+    // Erased pointers: only equal to other erased pointers (same wildness)
+    if (isErased || otherPtr->isErasedPointer()) {
+        return isErased == otherPtr->isErasedPointer() &&
+               isMutable == otherPtr->isMutable &&
+               isWild == otherPtr->isWild;
+    }
     return pointeeType->equals(otherPtr->pointeeType) &&
            isMutable == otherPtr->isMutable &&
            isWild == otherPtr->isWild;
@@ -142,6 +148,22 @@ bool PointerType::isAssignableTo(const Type* target) const {
     }
     
     const PointerType* targetPtr = static_cast<const PointerType*>(target);
+    
+    // ARIA-P3: Any typed pointer is implicitly assignable to an erased pointer (?->/?*)
+    // This mirrors C's implicit T* -> void* promotion.
+    // The reverse (?-> -> T->) requires an explicit cast<T->(p).
+    if (targetPtr->isErasedPointer()) {
+        // Wild rule still applies: wild T@ → wild ?@, but not wild T@ → ?@
+        if (isWild != targetPtr->isWild) {
+            return false;
+        }
+        return true;
+    }
+    
+    // Erased pointer cannot be assigned to a typed pointer without an explicit cast
+    if (isErased && !targetPtr->isErasedPointer()) {
+        return false;
+    }
     
     // Pointee types must be compatible
     if (!pointeeType->equals(targetPtr->pointeeType)) {
@@ -166,8 +188,13 @@ std::string PointerType::toString() const {
     if (isWild) {
         ss << "wild ";
     }
-    ss << pointeeType->toString();
-    ss << "@";
+    if (isErased) {
+        // ARIA-P3: type-erased pointer (?-> or ?*)
+        ss << "?@";
+    } else {
+        ss << pointeeType->toString();
+        ss << "@";
+    }
     if (isMutable) {
         ss << "mut";
     }
@@ -867,7 +894,16 @@ PrimitiveType* TypeSystem::getPrimitiveType(const std::string& name) {
 
 PointerType* TypeSystem::getPointerType(Type* pointeeType, bool isMutable, bool isWild) {
     // TODO: Implement caching for pointer types
-    auto type = std::make_unique<PointerType>(pointeeType, isMutable, isWild);
+    auto type = std::make_unique<PointerType>(pointeeType, isMutable, isWild, /*isErased=*/false);
+    PointerType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+// ARIA-P3: Type-erased pointer factory (?-> / ?*)
+// Creates a sema PointerType with isErased=true and no pointee type.
+PointerType* TypeSystem::getErasedPointerType(bool isMutable, bool isWild) {
+    auto type = std::make_unique<PointerType>(/*pointeeType=*/nullptr, isMutable, isWild, /*isErased=*/true);
     PointerType* ptr = type.get();
     types.push_back(std::move(type));
     return ptr;

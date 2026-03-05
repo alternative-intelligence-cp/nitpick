@@ -6544,8 +6544,14 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
         }
         
         case ASTNode::NodeType::POINTER_TYPE: {
-            // Pointer type: int32@, string@, etc.
+            // Pointer type: int32@, string@, ?@ (erased), etc.
             aria::PointerType* ptrType = static_cast<aria::PointerType*>(typeNode);
+            
+            // ARIA-P3: ?-> / ?* — type-erased pointer
+            // baseType is null; create an erased sema PointerType directly.
+            if (ptrType->isErased) {
+                return typeSystem->getErasedPointerType();
+            }
             
             // Resolve base type
             Type* baseType = resolveTypeNode(ptrType->baseType.get());

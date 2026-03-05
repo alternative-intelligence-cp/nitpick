@@ -3,13 +3,13 @@
 // Demonstrates Type system with UFCS: atomic.load(order) → AtomicInt32_load(atomic, order)
 
 // Runtime extern functions (implemented in runtime/atomic.cpp)
-extern func:aria_atomic_int32_create = wild int8*(int32:initial_value);
-extern func:aria_atomic_int32_destroy = void(wild int8*:atomic_ptr);
-extern func:aria_atomic_int32_load = int32(wild int8*:atomic_ptr, int32:order);
-extern func:aria_atomic_int32_store = void(wild int8*:atomic_ptr, int32:value, int32:order);
-extern func:aria_atomic_int32_fetch_add = int32(wild int8*:atomic_ptr, int32:value, int32:order);
-extern func:aria_atomic_int32_fetch_sub = int32(wild int8*:atomic_ptr, int32:value, int32:order);
-extern func:aria_atomic_int32_compare_exchange_strong = bool(wild int8*:atomic_ptr, int32->:expected, int32:desired, int32:order);
+extern func:aria_atomic_int32_create = wild ?*(int32:initial_value);
+extern func:aria_atomic_int32_destroy = void(wild ?*:atomic_ptr);
+extern func:aria_atomic_int32_load = int32(wild ?*:atomic_ptr, int32:order);
+extern func:aria_atomic_int32_store = void(wild ?*:atomic_ptr, int32:value, int32:order);
+extern func:aria_atomic_int32_fetch_add = int32(wild ?*:atomic_ptr, int32:value, int32:order);
+extern func:aria_atomic_int32_fetch_sub = int32(wild ?*:atomic_ptr, int32:value, int32:order);
+extern func:aria_atomic_int32_compare_exchange_strong = bool(wild ?*:atomic_ptr, int32->:expected, int32:desired, int32:order);
 
 // Type:AtomicInt32 - Zero-cost abstraction over C11 atomics
 pub Type:AtomicInt32 = {
@@ -56,6 +56,6 @@ pub Type:AtomicInt32 = {
     
     // Public interface - the atomic pointer
     struct:interface = {
-        wild int8->:ptr;
+        wild ?->:ptr;
     };
 };
