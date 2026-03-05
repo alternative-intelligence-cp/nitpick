@@ -1,0 +1,302 @@
+/**
+ * tictactoe.aria  —  Tic-Tac-Toe in Aria Lang
+ *
+ * ╔══════════════════════════════════════════════════════════════╗
+ * ║  HISTORIC: First game ever written in the Aria programming  ║
+ * ║            language.        March 5, 2026.                  ║
+ * ╚══════════════════════════════════════════════════════════════╝
+ *
+ * Board layout — Wave9 nit fields map to positions 0-8:
+ *
+ *   r(0) │ s(1) │ t(2)
+ *   ─────┼──────┼─────
+ *   u(3) │ v(4) │ w(5)
+ *   ─────┼──────┼─────
+ *   x(6) │ y(7) │ z(8)
+ *
+ * Cell values:  0 = empty  │  1 = X  │  -1 = O
+ *
+ * Win detection via Kleene AND over each winning line [a,b,c]:
+ *   X wins:  nit_and(nit_and(a, b), c) == 1
+ *   O wins:  nit_and(nit_and(-a, -b), -c) == 1   (negate → all 1s)
+ *
+ * Game script (7 moves — X wins on middle row):
+ *   X: 4  O: 0  X: 2  O: 6  X: 3  O: 8  X: 5 → X wins [3,4,5]
+ *
+ * Final board:
+ *   O │ . │ X
+ *   X │ X │ X   ← X wins the middle row!
+ *   O │ . │ O
+ *
+ * Implementation note:
+ *   Aria's Result<T> auto-unwrap applies on FIRST declaration only.
+ *   Re-assignment from a function call does not auto-unwrap yet.
+ *   Workaround: direct Wave9 field mutation for moves; unique
+ *   variable names for each winner-check call.
+ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave9: the game board.  Nine nit fields = nine cells.
+// (Self-contained — does not import stdlib/wave.aria)
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct:Wave9 = {
+    nit:r;  nit:s;  nit:t;
+    nit:u;  nit:v;  nit:w;
+    nit:x;  nit:y;  nit:z;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Display helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+func:cell_char = string(nit:c) {
+    if (c == 1)  { pass("X"); }
+    if (c == -1) { pass("O"); }
+    pass(".");
+};
+
+func:print_row = int32(nit:a, nit:b, nit:c) {
+    string:ca  = cell_char(a);
+    string:cb  = cell_char(b);
+    string:cc  = cell_char(c);
+    string:sep = " | ";
+    string:row = string_concat(ca, string_concat(sep, string_concat(cb, string_concat(sep, cc))));
+    drop(println(row));
+    pass(0i32);
+};
+
+func:print_board = int32(Wave9:b) {
+    drop(print_row(b.r, b.s, b.t));
+    drop(println("--+---+--"));
+    drop(print_row(b.u, b.v, b.w));
+    drop(println("--+---+--"));
+    drop(print_row(b.x, b.y, b.z));
+    pass(0i32);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Win detection
+//
+// check_winner checks all 8 lines using Kleene AND.
+// Each nit intermediate has a unique name so no variable is re-assigned.
+// Returns  1 = X wins │ -1 = O wins │ 0 = no winner yet.
+// ─────────────────────────────────────────────────────────────────────────────
+
+func:check_winner = int32(Wave9:b) {
+
+    // ── Rows ──────────────────────────────────────────────────────────────
+    // Row 0: r, s, t
+    nit:r0_xab  = nit_and(b.r, b.s);
+    nit:r0_xabc = nit_and(r0_xab, b.t);
+    if (r0_xabc == 1) { pass(1i32); }
+    nit:r0_na   = -b.r;
+    nit:r0_nb   = -b.s;
+    nit:r0_nc   = -b.t;
+    nit:r0_oab  = nit_and(r0_na, r0_nb);
+    nit:r0_oabc = nit_and(r0_oab, r0_nc);
+    if (r0_oabc == 1) { pass(-1i32); }
+
+    // Row 1: u, v, w  ← THE WINNING LINE in this game
+    nit:r1_xab  = nit_and(b.u, b.v);
+    nit:r1_xabc = nit_and(r1_xab, b.w);
+    if (r1_xabc == 1) { pass(1i32); }
+    nit:r1_na   = -b.u;
+    nit:r1_nb   = -b.v;
+    nit:r1_nc   = -b.w;
+    nit:r1_oab  = nit_and(r1_na, r1_nb);
+    nit:r1_oabc = nit_and(r1_oab, r1_nc);
+    if (r1_oabc == 1) { pass(-1i32); }
+
+    // Row 2: x, y, z
+    nit:r2_xab  = nit_and(b.x, b.y);
+    nit:r2_xabc = nit_and(r2_xab, b.z);
+    if (r2_xabc == 1) { pass(1i32); }
+    nit:r2_na   = -b.x;
+    nit:r2_nb   = -b.y;
+    nit:r2_nc   = -b.z;
+    nit:r2_oab  = nit_and(r2_na, r2_nb);
+    nit:r2_oabc = nit_and(r2_oab, r2_nc);
+    if (r2_oabc == 1) { pass(-1i32); }
+
+    // ── Columns ───────────────────────────────────────────────────────────
+    // Col 0: r, u, x
+    nit:c0_xab  = nit_and(b.r, b.u);
+    nit:c0_xabc = nit_and(c0_xab, b.x);
+    if (c0_xabc == 1) { pass(1i32); }
+    nit:c0_na   = -b.r;
+    nit:c0_nb   = -b.u;
+    nit:c0_nc   = -b.x;
+    nit:c0_oab  = nit_and(c0_na, c0_nb);
+    nit:c0_oabc = nit_and(c0_oab, c0_nc);
+    if (c0_oabc == 1) { pass(-1i32); }
+
+    // Col 1: s, v, y
+    nit:c1_xab  = nit_and(b.s, b.v);
+    nit:c1_xabc = nit_and(c1_xab, b.y);
+    if (c1_xabc == 1) { pass(1i32); }
+    nit:c1_na   = -b.s;
+    nit:c1_nb   = -b.v;
+    nit:c1_nc   = -b.y;
+    nit:c1_oab  = nit_and(c1_na, c1_nb);
+    nit:c1_oabc = nit_and(c1_oab, c1_nc);
+    if (c1_oabc == 1) { pass(-1i32); }
+
+    // Col 2: t, w, z
+    nit:c2_xab  = nit_and(b.t, b.w);
+    nit:c2_xabc = nit_and(c2_xab, b.z);
+    if (c2_xabc == 1) { pass(1i32); }
+    nit:c2_na   = -b.t;
+    nit:c2_nb   = -b.w;
+    nit:c2_nc   = -b.z;
+    nit:c2_oab  = nit_and(c2_na, c2_nb);
+    nit:c2_oabc = nit_and(c2_oab, c2_nc);
+    if (c2_oabc == 1) { pass(-1i32); }
+
+    // ── Diagonals ─────────────────────────────────────────────────────────
+    // Diag 1: r, v, z
+    nit:d1_xab  = nit_and(b.r, b.v);
+    nit:d1_xabc = nit_and(d1_xab, b.z);
+    if (d1_xabc == 1) { pass(1i32); }
+    nit:d1_na   = -b.r;
+    nit:d1_nb   = -b.v;
+    nit:d1_nc   = -b.z;
+    nit:d1_oab  = nit_and(d1_na, d1_nb);
+    nit:d1_oabc = nit_and(d1_oab, d1_nc);
+    if (d1_oabc == 1) { pass(-1i32); }
+
+    // Diag 2: t, v, x
+    nit:d2_xab  = nit_and(b.t, b.v);
+    nit:d2_xabc = nit_and(d2_xab, b.x);
+    if (d2_xabc == 1) { pass(1i32); }
+    nit:d2_na   = -b.t;
+    nit:d2_nb   = -b.v;
+    nit:d2_nc   = -b.x;
+    nit:d2_oab  = nit_and(d2_na, d2_nb);
+    nit:d2_oabc = nit_and(d2_oab, d2_nc);
+    if (d2_oabc == 1) { pass(-1i32); }
+
+    pass(0i32);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// failsafe
+// ─────────────────────────────────────────────────────────────────────────────
+
+func:failsafe = NIL(int32:err_code) {
+    drop(println("Panic: unhandled error"));
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// main — the historic first game
+//
+// X plays scripted moves: 4, 2, 3, 5
+// O plays greedily:       0, 6, 8    (center taken → corners in order)
+// X wins after 7 moves on middle row [u,v,w] = positions [3,4,5].
+// ─────────────────────────────────────────────────────────────────────────────
+
+func:main = int32() {
+
+    nit:X  = nit_from_int(1);
+    nit:O  = nit_from_int(-1);
+    nit:zn = nit_from_int(0);
+
+    Wave9:board = Wave9 {
+        r: zn, s: zn, t: zn,
+        u: zn, v: zn, w: zn,
+        x: zn, y: zn, z: zn
+    };
+
+    drop(println(""));
+    drop(println("================================"));
+    drop(println(" ARIA LANG TIC-TAC-TOE v0.1    "));
+    drop(println(" First game ever played  2026  "));
+    drop(println("================================"));
+    drop(println("  0 | 1 | 2   <- position map  "));
+    drop(println("  3 | 4 | 5                    "));
+    drop(println("  6 | 7 | 8                    "));
+    drop(println("  X = human   O = greedy AI    "));
+    drop(println("================================"));
+    drop(println(""));
+
+    // ── Move 1: X takes center (pos 4 = field v) ──────────────────────────
+    board.v = X;
+    drop(println("Move 1 — X plays pos 4 (center):"));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Move 2: O greedy AI — center taken, takes top-left corner (pos 0 = r) ──
+    board.r = O;
+    drop(println("Move 2 — O plays pos 0 (top-left):"));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Move 3: X takes top-right corner (pos 2 = field t) ────────────────
+    board.t = X;
+    drop(println("Move 3 — X plays pos 2 (top-right):"));
+    drop(print_board(board));
+    // Intermediate check: no winner yet
+    int32:w3 = check_winner(board);
+    if (w3 != 0i32) { pass(10i32); }  // unexpected early win = test failure
+    drop(println("  (no winner yet)"));
+    drop(println(""));
+
+    // ── Move 4: O greedy AI — center=X, r=O, t=X → takes bottom-left (pos 6 = x) ──
+    board.x = O;
+    drop(println("Move 4 — O plays pos 6 (bottom-left):"));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Move 5: X takes left-middle (pos 3 = field u) ─────────────────────
+    //   X now holds v(4) and u(3) — threatens middle row [u,v,w]!
+    board.u = X;
+    drop(println("Move 5 — X plays pos 3 (left-middle):"));
+    drop(println("         X threatens middle row [3,4,5] — can O stop it?"));
+    drop(print_board(board));
+    // Intermediate check: no winner yet
+    int32:w5 = check_winner(board);
+    if (w5 != 0i32) { pass(11i32); }  // unexpected early win = test failure
+    drop(println("  (no winner yet)"));
+    drop(println(""));
+
+    // ── Move 6: O greedy AI — center=X, r=O, t=X, x=O → takes bottom-right (pos 8 = z) ──
+    //   O misses X's threat on pos 5!
+    board.z = O;
+    drop(println("Move 6 — O plays pos 8 (bottom-right):"));
+    drop(println("         O grabs a corner instead of blocking pos 5!"));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Move 7: X takes right-middle (pos 5 = field w) ────────────────────
+    //   X completes middle row [u(3), v(4), w(5)] = ALL X  → X WINS!
+    board.w = X;
+    drop(println("Move 7 — X plays pos 5 (right-middle):"));
+    drop(print_board(board));
+    drop(println(""));
+
+    // ── Final result ──────────────────────────────────────────────────────
+    int32:winner = check_winner(board);
+
+    if (winner == 1i32) {
+        drop(println("X WINS! Middle row complete: positions 3-4-5."));
+        drop(println("  Kleene AND: nit_and(nit_and(u, v), w) = 1"));
+    }
+    if (winner == -1i32) {
+        drop(println("O WINS!"));
+    }
+    if (winner == 0i32) {
+        drop(println("Draw."));
+    }
+
+    drop(println(""));
+    drop(println("================================"));
+    drop(println(" Game over. Thanks for playing! "));
+    drop(println(" Doom port coming soon...       "));
+    drop(println("================================"));
+    drop(println(""));
+
+    // Test assertion: this scripted game must end in X winning
+    if (winner != 1i32) { pass(1i32); }
+
+    pass(0i32);
+};
