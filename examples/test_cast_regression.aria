@@ -1,0 +1,76 @@
+/**
+ * test_cast_regression.aria
+ *
+ * Regression test for two related compiler bugs fixed together:
+ *
+ *  BUG-CAST-01  @cast<int64>(int32_val) returned null LLVM Value
+ *  ─────────────────────────────────────────────────────────────
+ *  Root cause: ir_generator.cpp::codegenExpression switch had NO case for
+ *  NodeType::CAST.  The VarDecl initializer produced a nullptr.  The alloca
+ *  was left uninitialised and any subsequent read was UB (often printed 0).
+ *  Fix: Added case NodeType::CAST with sext/zext/trunc/fpext/fptosi logic.
+ *
+ *  BUG-CAST-02  Negative int64 literals zero-extended at FFI boundary
+ *  ─────────────────────────────────────────────────────────────────
+ *  Root cause: ExprCodegen::codegenLiteral() ignored LiteralExpr::explicit_type
+ *  (the "i64" / "i32" suffix stored by the parser).  Small values like -1
+ *  fell through to the range-based fallback which emitted i32(-1).  When
+ *  passed as an i64 argument the runtime zero-extended the i32, giving
+ *  0x00000000FFFFFFFF = 4294967295 instead of -1.
+ *  Fix: codegenLiteral now checks explicit_type first and emits the exact
+ *  bit-width the programmer specified.
+ *  Also fixed: getLLVMTypeFromString() now accepts short-form names
+ *  (i8/i16/i32/i64/u8/u16/u32/u64/f32/f64/f128) in addition to the long
+ *  forms it already handled (int8…int64, uint8…uint64, flt32…flt128).
+ *
+ *  Also fixed: println(string_from_int(…)) misidentified the returned
+ *  AriaString* as a raw char* when struct.AriaString was absent from the
+ *  LLVM module (i.e. no string literals in the program).  Now the println
+ *  codegen always creates the struct type if it does not yet exist.
+ *
+ * Expected output (one value per line):
+ *  -5
+ *  2147483647
+ *  -1
+ *  127
+ *  -1
+ *  9223372036854775807
+ *  -128
+ *
+ * Run:
+ *   ariac examples/test_cast_regression.aria -o /tmp/cast_reg && /tmp/cast_reg
+ */
+
+func:failsafe = NIL(int32:err_code) { };
+
+func:main = int32() {
+
+    // ── BUG-CAST-01: @cast<int64> widening from int32 ────────────────────────
+    int32:a    = -5i32;
+    int64:b    = @cast<int64>(a);
+    drop(println(string_from_int(b)));   // expected: -5
+
+    int32:max32  = 2147483647i32;
+    int64:max32w = @cast<int64>(max32);
+    drop(println(string_from_int(max32w)));  // expected: 2147483647
+
+    int8:neg8  = -1i8;
+    int64:neg8w = @cast<int64>(neg8);
+    drop(println(string_from_int(neg8w)));   // expected: -1
+
+    int8:max8  = 127i8;
+    int64:max8w = @cast<int64>(max8);
+    drop(println(string_from_int(max8w)));   // expected: 127
+
+    // ── BUG-CAST-02: negative int64 literals ─────────────────────────────────
+    int64:neg = -1i64;
+    drop(println(string_from_int(neg)));     // expected: -1
+
+    int64:big = 9223372036854775807i64;      // INT64_MAX
+    drop(println(string_from_int(big)));     // expected: 9223372036854775807
+
+    int64:small = -128i64;
+    drop(println(string_from_int(small)));   // expected: -128
+
+    pass(0i32);
+};

@@ -151,12 +151,8 @@ func:main = int32() {
     nit:O = -1;
 
     // FFI int64 values for player pieces.
-    // NOTE: literal -1i64 is zero-extended to 0x00000000FFFFFFFF when passed
-    // across the extern boundary — a known Aria compiler bug with negative
-    // int64 literals (sign is lost in the 32-bit intermediate).
-    // Workaround: compute -1 as (0i64 - 1i64) for correct sign extension.
     int64:FFI_X    =  1i64;
-    int64:FFI_O    = 0i64 - 1i64;   // = -1, correctly sign-extended
+    int64:FFI_O    = -1i64;
     int64:FFI_NONE =  0i64;
 
     drop(println("=== Tic-Tac-Toe  (Aria → C → Python FFI) ==="));

@@ -187,10 +187,10 @@ llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
     if (typeName == "int1") return llvm::Type::getInt1Ty(context);
     if (typeName == "int2") return llvm::Type::getInt8Ty(context);   // Smallest LLVM int
     if (typeName == "int4") return llvm::Type::getInt8Ty(context);   // Smallest LLVM int
-    if (typeName == "int8") return llvm::Type::getInt8Ty(context);
-    if (typeName == "int16") return llvm::Type::getInt16Ty(context);
-    if (typeName == "int32") return llvm::Type::getInt32Ty(context);
-    if (typeName == "int64") return llvm::Type::getInt64Ty(context);
+    if (typeName == "int8"  || typeName == "i8")  return llvm::Type::getInt8Ty(context);
+    if (typeName == "int16" || typeName == "i16") return llvm::Type::getInt16Ty(context);
+    if (typeName == "int32" || typeName == "i32") return llvm::Type::getInt32Ty(context);
+    if (typeName == "int64" || typeName == "i64") return llvm::Type::getInt64Ty(context);
 
     // ARIA-024: Large integers use Limb-Based Integral Model (LBIM)
     // Stored as structs of i64 limbs to bypass LLVM IPSCCP/ConstraintElimination bugs
@@ -262,21 +262,21 @@ llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
     }
 
     // Unsigned integer types (standard sizes)
-    if (typeName == "uint8") return llvm::Type::getInt8Ty(context);
-    if (typeName == "uint16") return llvm::Type::getInt16Ty(context);
-    if (typeName == "uint32") return llvm::Type::getInt32Ty(context);
-    if (typeName == "uint64") return llvm::Type::getInt64Ty(context);
+    if (typeName == "uint8"  || typeName == "u8")  return llvm::Type::getInt8Ty(context);
+    if (typeName == "uint16" || typeName == "u16") return llvm::Type::getInt16Ty(context);
+    if (typeName == "uint32" || typeName == "u32") return llvm::Type::getInt32Ty(context);
+    if (typeName == "uint64" || typeName == "u64") return llvm::Type::getInt64Ty(context);
     
     // TBB (Twisted Balanced Binary) - symmetric signed with error sentinel
-    if (typeName == "tbb8") return llvm::Type::getInt8Ty(context);
+    if (typeName == "tbb8")  return llvm::Type::getInt8Ty(context);
     if (typeName == "tbb16") return llvm::Type::getInt16Ty(context);
     if (typeName == "tbb32") return llvm::Type::getInt32Ty(context);
     if (typeName == "tbb64") return llvm::Type::getInt64Ty(context);
     
     // Floating point types
-    if (typeName == "flt32") return llvm::Type::getFloatTy(context);
-    if (typeName == "flt64") return llvm::Type::getDoubleTy(context);
-    if (typeName == "flt128") return llvm::Type::getFP128Ty(context);
+    if (typeName == "flt32"  || typeName == "f32") return llvm::Type::getFloatTy(context);
+    if (typeName == "flt64"  || typeName == "f64") return llvm::Type::getDoubleTy(context);
+    if (typeName == "flt128" || typeName == "f128") return llvm::Type::getFP128Ty(context);
     // ARIA-017: Extended precision floats (library-based, stored as limb arrays)
     if (typeName == "flt256") {
         llvm::Type* limbArray = llvm::ArrayType::get(llvm::Type::getInt64Ty(context), 4);
@@ -1201,9 +1201,27 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
     // Integer literal
     if (std::holds_alternative<int64_t>(expr->value)) {
         int64_t val = std::get<int64_t>(expr->value);
-        
-        // Determine appropriate integer type based on value range
-        // Default to i32 for small values, i64 for larger
+
+        // BUG-FIX (Zero Implicit Conversion): Honor explicit type suffix first.
+        // Without this, -1i64 in a function call arg becomes i32(-1) which then
+        // gets zero-extended to 0x00000000ffffffff at the FFI boundary.
+        if (expr->hasExplicitType()) {
+            const std::string& et = expr->getExplicitType();
+            llvm::Type* explicit_llvm_type = getLLVMTypeFromString(et);
+            if (explicit_llvm_type && explicit_llvm_type->isIntegerTy()) {
+                unsigned bits = explicit_llvm_type->getIntegerBitWidth();
+                // Signed if suffix starts with 'i', "int", or "tbb"; unsigned if 'u'
+                bool is_signed = !et.empty() &&
+                                 (et[0] == 'i' ||
+                                  et.substr(0, 3) == "int" ||
+                                  et.substr(0, 3) == "tbb");
+                return llvm::ConstantInt::get(context,
+                    llvm::APInt(bits, static_cast<uint64_t>(val), is_signed));
+            }
+        }
+
+        // Range-based fallback for untyped (legacy) literals.
+        // Default to i32 for small values, i64 for larger.
         if (val >= INT32_MIN && val <= INT32_MAX) {
             return llvm::ConstantInt::get(context, llvm::APInt(32, val, true));
         } else {
@@ -3698,22 +3716,24 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 str_ptr = arg;
             }
         } else if (arg->getType()->isPointerTy()) {
-            // BUGFIX (Feb 2026): Handle AriaString* pointers from variables
-            // When a string variable is loaded, it returns AriaString* (pointer to struct)
-            // We need to load the struct and extract the data field
-            
-            // Get AriaString struct type
+            // Handle AriaString* pointers from string variables and runtime functions
+            // (e.g. string_from_int, string_concat return AriaString*)
+            // We need to load the AriaString struct and extract the char* data field.
+
+            // Get or create AriaString struct type { i8*, i64 }
+            // Must always create it here if missing — e.g. when there are no string
+            // literals in the program so the type was never added to the module.
             llvm::StructType* ariaStringType = llvm::StructType::getTypeByName(context, "struct.AriaString");
-            if (ariaStringType) {
-                // Try to load as AriaString* and extract data field
-                // Load the struct from the pointer
-                llvm::Value* str_struct = builder.CreateLoad(ariaStringType, arg, "str_struct");
-                // Extract the data field (char* at index 0)
-                str_ptr = builder.CreateExtractValue(str_struct, 0, "str_data");
-            } else {
-                // No AriaString type found, assume it's a raw char* pointer
-                str_ptr = arg;
+            if (!ariaStringType) {
+                ariaStringType = llvm::StructType::create(context, {
+                    llvm::PointerType::get(context, 0),   // data: char*
+                    llvm::Type::getInt64Ty(context)        // length: int64
+                }, "struct.AriaString");
             }
+
+            // Load the AriaString struct from the pointer, then extract data field
+            llvm::Value* str_struct = builder.CreateLoad(ariaStringType, arg, "str_struct");
+            str_ptr = builder.CreateExtractValue(str_struct, 0, "str_data");
         } else {
             throw std::runtime_error(
                 callee_ident->name + "() requires a string argument. "
