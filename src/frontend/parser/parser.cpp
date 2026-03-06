@@ -69,6 +69,9 @@ const std::unordered_map<TokenType, int> Parser::precedence = {
     {TokenType::TOKEN_SLASH, 13},
     {TokenType::TOKEN_PERCENT, 13},
     
+    // Cast shorthand (binds tighter than pipeline, looser than postfix)
+    {TokenType::TOKEN_FAT_ARROW, 15},
+    
     // Pipeline
     {TokenType::TOKEN_PIPE_RIGHT, 14},
     {TokenType::TOKEN_PIPE_LEFT, 14},
@@ -356,6 +359,20 @@ ASTNodePtr Parser::parseExpression(int minPrecedence) {
                 left, op, right,
                 op.line, op.column
             );
+            continue;
+        }
+        
+        // Cast shorthand: expr => TypeName
+        // Right-hand side is a type, not an expression, so handled separately.
+        if (op.type == TokenType::TOKEN_FAT_ARROW) {
+            advance(); // consume '=>'
+            ASTNodePtr typeNode = parseType();
+            if (!typeNode) {
+                error("Expected type name after '=>'");
+                return nullptr;
+            }
+            std::string targetTypeName = typeNode->toString();
+            left = std::make_shared<CastExpr>(left, typeNode, targetTypeName, false, op.line, op.column);
             continue;
         }
         

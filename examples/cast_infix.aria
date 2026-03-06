@@ -1,0 +1,46 @@
+// Test / example: => infix cast operator
+//
+// Syntax:  expr => TargetType
+//
+// This is the shorthand form of @cast<TargetType>(expr).
+// It is an infix operator in the > family:
+//   ->   pointer
+//   <-   dereference
+//   @    address-of
+//   *    generic type param
+//   =>   cast / coerce to type
+//
+// Precedence: tighter than additive (+/-), so
+//   a + b => int64   means   a + (b => int64)
+//
+// Reads:  "a becomes int64"  /  "a as int64"
+
+func:failsafe = NIL(int32:err_code) { };
+
+func:main = int32() {
+    // --- widening (sext) ---
+    int32:a = -5;
+    int64:b = a => int64;           // i32 -5  sext to i64 → -5
+    println(string_from_int(b));    // -5
+
+    // --- narrowing (trunc) ---
+    int8:c = a => int8;             // i32 -5  trunc to i8 → -5 (0xFFFFFFFB → 0xFB)
+    println(string_from_int(c));    // -5
+
+    int64:big   = 2147483647i64;
+    int32:trunc = big => int32;     // i64 INT32_MAX  trunc to i32 (fits exactly)
+    println(string_from_int(trunc));// 2147483647
+
+    // --- cast in expression context ---
+    int32:x = 100;
+    int32:y = 7;
+    int64:result = x => int64 + y => int64;  // (x=>int64) + (y=>int64)
+    println(string_from_int(result));         // 107
+
+    // --- chained cast ---
+    int64:big2  = 300i64;
+    int16:small = big2 => int32 => int16;    // i64 → i32 → i16
+    println(string_from_int(small));          // 300
+
+    pass(0i32);
+};
