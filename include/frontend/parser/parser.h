@@ -42,6 +42,9 @@ private:
     bool match(frontend::TokenType type);
     bool match(const std::vector<frontend::TokenType>& types);
     frontend::Token consume(frontend::TokenType type, const std::string& message);
+    // Like consume(TOKEN_IDENTIFIER) but also accepts contextual keywords that are
+    // valid as names (stack, gc, result, func, obj, process, buffer).
+    frontend::Token consumeName(const std::string& context);
     void synchronize();  // Error recovery
     void error(const std::string& message);
     

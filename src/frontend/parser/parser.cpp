@@ -153,6 +153,26 @@ Token Parser::consume(TokenType type, const std::string& message) {
     return peek();
 }
 
+// Accept TOKEN_IDENTIFIER or any contextual keyword that may reasonably be used
+// as a variable/parameter name (allocation qualifiers, common soft keywords).
+Token Parser::consumeName(const std::string& context) {
+    Token t = peek();
+    switch (t.type) {
+        case TokenType::TOKEN_IDENTIFIER:
+        case TokenType::TOKEN_KW_RESULT:
+        case TokenType::TOKEN_KW_FUNC:
+        case TokenType::TOKEN_KW_OBJ:
+        case TokenType::TOKEN_KW_BUFFER:
+        case TokenType::TOKEN_KW_PROCESS:
+        case TokenType::TOKEN_KW_STACK:   // allocation qualifier — contextual
+        case TokenType::TOKEN_KW_GC:      // allocation qualifier — contextual
+            return advance();
+        default:
+            error("Expected " + context + " name");
+            return t;
+    }
+}
+
 void Parser::error(const std::string& message) {
     Token token = peek();
     std::stringstream ss;
@@ -743,6 +763,25 @@ ASTNodePtr Parser::parsePrimary() {
     // Allow 'buffer' keyword to be used as identifier (common variable name)
     if (token.type == TokenType::TOKEN_KW_BUFFER) {
         std::string lexeme = token.lexeme;  // Save before advance()
+        int line = token.line;
+        int col = token.column;
+        advance();
+        return std::make_shared<IdentifierExpr>(lexeme, line, col);
+    }
+
+    // Allow 'stack' keyword as identifier (allocation qualifier, contextual)
+    // e.g.  int32:stack = 42;  or  push(stack, value)
+    if (token.type == TokenType::TOKEN_KW_STACK) {
+        std::string lexeme = token.lexeme;
+        int line = token.line;
+        int col = token.column;
+        advance();
+        return std::make_shared<IdentifierExpr>(lexeme, line, col);
+    }
+
+    // Allow 'gc' keyword as identifier (allocation qualifier, contextual)
+    if (token.type == TokenType::TOKEN_KW_GC) {
+        std::string lexeme = token.lexeme;
         int line = token.line;
         int col = token.column;
         advance();
@@ -1546,7 +1585,7 @@ ASTNodePtr Parser::parseLambda() {
         
         consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
         
-        Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
+        Token nameToken = consumeName("parameter");
         std::string paramName = nameToken.lexeme;
         
         // Create parameter node: ParameterNode(typeNode, paramName, defaultValue, line, column)
@@ -2262,12 +2301,16 @@ ASTNodePtr Parser::parseVarDecl() {
     consume(TokenType::TOKEN_COLON, "Expected ':' after type in variable declaration");
     
     // Get variable name (can be identifier or certain keywords used as names)
+    // Contextual allocation-qualifier keywords (stack, gc) are valid variable names
+    // since in the post-':' position there is no ambiguity — qualifiers were already consumed.
     Token nameToken = peek();
     if (nameToken.type == TokenType::TOKEN_IDENTIFIER ||
         nameToken.type == TokenType::TOKEN_KW_RESULT ||
         nameToken.type == TokenType::TOKEN_KW_FUNC ||
         nameToken.type == TokenType::TOKEN_KW_OBJ ||
-        nameToken.type == TokenType::TOKEN_KW_BUFFER) {  // Allow 'buffer' as variable name
+        nameToken.type == TokenType::TOKEN_KW_BUFFER ||
+        nameToken.type == TokenType::TOKEN_KW_STACK ||  // 'stack' is contextual (allocation qualifier)
+        nameToken.type == TokenType::TOKEN_KW_GC) {     // 'gc'    is contextual (allocation qualifier)
         advance();
     } else {
         error("Expected variable name");
@@ -2374,7 +2417,7 @@ ASTNodePtr Parser::parseFuncDecl() {
             
             consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
             
-            Token paramNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
+            Token paramNameToken = consumeName("parameter");
             
             auto param = std::make_shared<ParameterNode>(
                 paramTypeNode,  // Pass ASTNodePtr instead of string
@@ -2841,7 +2884,7 @@ ASTNodePtr Parser::parseTraitDecl() {
             consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
 
             // Parse parameter name
-            Token paramName = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
+            Token paramName = consumeName("parameter");
 
             params.emplace_back(paramTypeNode, paramName.lexeme, nullptr, paramName.line, paramName.column);
         }
@@ -3594,7 +3637,7 @@ ASTNodePtr Parser::parseExternStatement() {
                     
                     consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
                     
-                    Token paramNameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
+                    Token paramNameToken = consumeName("parameter");
                     
                     auto param = std::make_shared<ParameterNode>(
                         paramType,  // Pass SimpleType instead of string
