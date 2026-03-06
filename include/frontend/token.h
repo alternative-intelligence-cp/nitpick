@@ -275,6 +275,7 @@ enum class TokenType {
     TOKEN_HASH,         // # - memory pinning operator
     TOKEN_ARROW,        // -> - pointer type & member access (int64->:ptr, ptr->member)
     TOKEN_LEFT_ARROW,   // <- - pointer dereference (value <- ptr)
+    TOKEN_FAT_ARROW,    // => - cast/coerce operator  (expr => TargetType)
     TOKEN_SAFE_NAV,     // ?. - safe navigation
     TOKEN_NULL_COALESCE,// ?? - null coalescing
     TOKEN_QUESTION,     // ? - unwrap operator

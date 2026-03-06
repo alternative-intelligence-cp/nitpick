@@ -402,6 +402,8 @@ void Lexer::scanToken() {
         case '=':
             if (match('=')) {
                 addToken(TokenType::TOKEN_EQUAL_EQUAL);
+            } else if (match('>')) {
+                addToken(TokenType::TOKEN_FAT_ARROW);  // => cast operator
             } else {
                 addToken(TokenType::TOKEN_EQUAL);
             }
