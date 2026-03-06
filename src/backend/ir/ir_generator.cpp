@@ -8298,6 +8298,72 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             return srcVal;
         }
 
+        case ASTNode::NodeType::CAST: {
+            // @cast<TargetType>(expr) and @cast_unchecked<TargetType>(expr)
+            // Previously missing from this switch → returned nullptr → variable stayed uninit.
+            CastExpr* castExpr = static_cast<CastExpr*>(expr);
+
+            llvm::Value* sourceValue = codegenExpression(castExpr->expression.get());
+            if (!sourceValue) return nullptr;
+
+            // mapTypeFromName understands full Aria type names like "int64", "uint32"
+            llvm::Type* targetType = mapTypeFromName(castExpr->targetType);
+            if (!targetType) return nullptr;
+
+            llvm::Type* sourceType = sourceValue->getType();
+
+            // Trivial: same type already
+            if (sourceType == targetType) return sourceValue;
+
+            bool srcIsInt   = sourceType->isIntegerTy();
+            bool tgtIsInt   = targetType->isIntegerTy();
+            bool srcIsFloat = sourceType->isFloatingPointTy();
+            bool tgtIsFloat = targetType->isFloatingPointTy();
+
+            // Integer → Integer
+            if (srcIsInt && tgtIsInt) {
+                unsigned srcBits = sourceType->getIntegerBitWidth();
+                unsigned tgtBits = targetType->getIntegerBitWidth();
+                if (tgtBits > srcBits) {
+                    // Widening: signed types use sext, unsigned use zext
+                    const std::string& tn = castExpr->targetType;
+                    bool isSigned = !tn.empty() &&
+                                    (tn[0] == 'i' ||
+                                     tn.substr(0, 3) == "int" ||
+                                     tn.substr(0, 3) == "tbb");
+                    return isSigned
+                        ? builder.CreateSExt(sourceValue, targetType, "cast.sext")
+                        : builder.CreateZExt(sourceValue, targetType, "cast.zext");
+                } else {
+                    return builder.CreateTrunc(sourceValue, targetType, "cast.trunc");
+                }
+            }
+
+            // Float → Float
+            if (srcIsFloat && tgtIsFloat) {
+                unsigned srcBits = sourceType->getPrimitiveSizeInBits();
+                unsigned tgtBits = targetType->getPrimitiveSizeInBits();
+                return tgtBits > srcBits
+                    ? builder.CreateFPExt(sourceValue, targetType, "cast.fpext")
+                    : builder.CreateFPTrunc(sourceValue, targetType, "cast.fptrunc");
+            }
+
+            // Integer → Float
+            if (srcIsInt && tgtIsFloat)
+                return builder.CreateSIToFP(sourceValue, targetType, "cast.sitofp");
+
+            // Float → Integer
+            if (srcIsFloat && tgtIsInt)
+                return builder.CreateFPToSI(sourceValue, targetType, "cast.fptosi");
+
+            // Pointer → Pointer (no-op in opaque pointer model)
+            if (sourceType->isPointerTy() && targetType->isPointerTy())
+                return sourceValue;
+
+            std::cerr << "[WARN] Unsupported cast in codegenExpression, returning nullptr" << std::endl;
+            return nullptr;
+        }
+
         default:
             // Other expression types not yet implemented
             return nullptr;
