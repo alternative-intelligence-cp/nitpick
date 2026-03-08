@@ -22,8 +22,12 @@
 #include <string>
 #include <memory>
 #include <cstdlib>
+#include <cerrno>   // For errno
+#include <cstring>  // For strerror
 #include <climits>  // For PATH_MAX
-#include <unistd.h>  // For readlink
+#include <unistd.h>  // For readlink, access
+#include <sys/types.h>
+#include <sys/wait.h>  // For waitpid, WIFEXITED, WEXITSTATUS
 #include <filesystem> // For absolute path resolution
 
 // Aria compiler components
@@ -1265,7 +1269,7 @@ bool link_executable(const std::string& object_file, const std::string& output_f
     
     std::string runtime_lib;
     for (const auto& path : search_paths) {
-        if (std::system(("test -f " + path + " 2>/dev/null").c_str()) == 0) {
+        if (access(path.c_str(), F_OK) == 0) {
             runtime_lib = path;
             break;
         }
@@ -1280,44 +1284,69 @@ bool link_executable(const std::string& object_file, const std::string& output_f
     }
     
     // Build linker command
-    std::ostringstream cmd;
-    cmd << "clang++";
-    
+    // Use a vector of arguments instead of a shell command string to avoid
+    // shell interpretation of special characters (e.g. $ORIGIN in -rpath).
+    std::vector<std::string> link_args;
+    link_args.push_back("clang++");
+
     // Add object file
-    cmd << " " << object_file;
-    
+    link_args.push_back(object_file);
+
     // Add runtime library if found
     if (!runtime_lib.empty()) {
-        cmd << " " << runtime_lib;
+        link_args.push_back(runtime_lib);
     }
-    
+
     // Link libatomic for C++11 atomic operations (required by aria_runtime atomics)
-    cmd << " -latomic";
-    
+    link_args.push_back("-latomic");
+
     // Add library search paths (-L)
     for (const auto& lib_path : opts.library_paths) {
-        cmd << " -L" << lib_path;
+        link_args.push_back("-L" + lib_path);
     }
-    
+
     // Add libraries to link (-l)
     for (const auto& lib : opts.link_libraries) {
-        cmd << " -l" << lib;
+        link_args.push_back("-l" + lib);
     }
-    
+
     // Add linker flags (-Wl,...)
     for (const auto& flag : opts.linker_flags) {
-        cmd << " -Wl," << flag;
+        link_args.push_back("-Wl," + flag);
     }
-    
+
     // Add output file
-    cmd << " -o " << output_file;
-    
+    link_args.push_back("-o");
+    link_args.push_back(output_file);
+
     if (opts.verbose) {
-        std::cout << "[LINK] " << cmd.str() << "\n";
+        std::cout << "[LINK]";
+        for (const auto& a : link_args) std::cout << " " << a;
+        std::cout << "\n";
     }
-    
-    int result = std::system(cmd.str().c_str());
-    return result == 0;
+
+    // Build argv for execvp (no shell — avoids expansion of $ORIGIN etc.)
+    std::vector<char*> argv_vec;
+    for (auto& s : link_args) argv_vec.push_back(const_cast<char*>(s.c_str()));
+    argv_vec.push_back(nullptr);
+
+    pid_t pid = fork();
+    if (pid == -1) {
+        std::cerr << "ariac: fork failed: " << strerror(errno) << "\n";
+        return false;
+    }
+    if (pid == 0) {
+        // Child: exec clang++ directly — no shell involved
+        execvp("clang++", argv_vec.data());
+        std::cerr << "ariac: execvp(clang++): " << strerror(errno) << "\n";
+        _exit(127);
+    }
+    int wstatus = 0;
+    if (waitpid(pid, &wstatus, 0) == -1) {
+        std::cerr << "ariac: waitpid failed: " << strerror(errno) << "\n";
+        return false;
+    }
+    return WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0;
 }
 
 /**
