@@ -75,6 +75,9 @@ private:
             : continueTarget(cont), breakTarget(brk) {}
     };
     std::vector<LoopContext> loop_stack;
+
+    // Pick context stack for fall() support (maps label -> body BasicBlock)
+    std::vector<std::map<std::string, llvm::BasicBlock*>> pick_context_stack;
     
     // Defer statement support (RAII cleanup)
     std::vector<std::vector<BlockStmt*>> defer_stack;

@@ -4147,6 +4147,16 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 check_blocks.push_back(check_block);
                 body_blocks.push_back(body_block);
             }
+
+            // Register labeled blocks for fall() support
+            std::map<std::string, llvm::BasicBlock*> labeled_blocks;
+            for (size_t i = 0; i < pickStmt->cases.size(); i++) {
+                PickCase* pc = static_cast<PickCase*>(pickStmt->cases[i].get());
+                if (!pc->label.empty()) {
+                    labeled_blocks[pc->label] = body_blocks[i];
+                }
+            }
+            pick_context_stack.push_back(labeled_blocks);
             
             // Branch to first check
             if (!check_blocks.empty()) {
@@ -4254,13 +4264,11 @@ skip_comparison:
                 }
             }
             
-            // End block
+            // End block (continuation after pick)
             end_block->insertInto(func);
             builder.SetInsertPoint(end_block);
-            
-            // No valid code path should reach here - all cases should return via pass/fail
-            // Add unreachable to satisfy LLVM requirements
-            builder.CreateUnreachable();
+            // Pop pick context
+            pick_context_stack.pop_back();
             return nullptr;
         }
 
@@ -4638,13 +4646,14 @@ skip_comparison:
             builder.SetInsertPoint(bodyBB);
             codegenStatement(whenStmt->body.get());
             if (!builder.GetInsertBlock()->getTerminator()) {
+                // Mark body ran at least once before looping
+                builder.CreateStore(builder.getInt1(true), completedFlag);
                 builder.CreateBr(condBB);
             }
             
             // Decision block
             function->insert(function->end(), decisionBB);
             builder.SetInsertPoint(decisionBB);
-            builder.CreateStore(builder.getInt1(true), completedFlag);
             llvm::Value* completed = builder.CreateLoad(builder.getInt1Ty(), completedFlag, "completed");
             
             if (thenBB && endBB) {
@@ -4917,6 +4926,23 @@ skip_comparison:
             var_aria_types  = outer_var_aria_types;
             builder.restoreIP(savedIP);
 
+            return nullptr;
+        }
+
+        case ASTNode::NodeType::FALL: {
+            // fall() statement: explicit fallthrough to labeled pick arm
+            FallStmt* fallStmt = static_cast<FallStmt*>(stmt);
+            if (pick_context_stack.empty()) {
+                throw std::runtime_error("fall() statement must be inside a pick statement");
+            }
+            const auto& ctx = pick_context_stack.back();
+            auto it = ctx.find(fallStmt->target_label);
+            if (it == ctx.end()) {
+                throw std::runtime_error("fall() target '" + fallStmt->target_label + "' not found");
+            }
+            if (!builder.GetInsertBlock()->getTerminator()) {
+                builder.CreateBr(it->second);
+            }
             return nullptr;
         }
 
