@@ -255,6 +255,23 @@ class AriaCorpusBuilder:
                 "q": "How do I return from a function in Aria?",
                 "a": "Use `pass()` for success or `fail()` for errors:\n```aria\nfunc:get_value = int32() {\n    pass(42);  // return success with value 42\n}\n\nfunc:checked_value = Result<int32>(int32:x) {\n    if (x < 0) {\n        fail(-1);  // return error\n    } else {\n        pass(ok(x));  // return success\n    }\n}\n```"
             },
+            # --- March 2026 additions ---
+            {
+                "q": "How do I cast a value to a different type in Aria?",
+                "a": "Use the `=>` cast operator. It is infix: `expression => TypeName`.\n\n```aria\nint64:big = 1000i64;\nint8:small = big => int8;   // truncate to 8-bit\n\nfloat64:pi = 3.14159;\nint32:truncated = pi => int32;  // truncates, does not round\n```\n\nThe cast operator has precedence level 5.5, between additive (+/-) and bitwise shift (<</>>) operators, so it binds tighter than shifts but looser than addition:\n\n```aria\n// Casts 'a' first, then adds:\nint8:result = b + a => int8;\n\n// Casts the entire sum:\nint8:result = (b + a) => int8;\n```\n\nNote: `=>` is the cast operator, NOT a lambda. Aria does not have a `=>` lambda syntax."
+            },
+            {
+                "q": "What type is the $ variable in an Aria loop?",
+                "a": "`$` is always **`int64`** in both `loop` and `till`. This is fixed, not inferred.\n\n```aria\nloop(0, 10, 1) {\n    int64:i = $;   // ✅ correct\n    int32:i = $;   // ❌ ERROR: cannot assign int64 to int32\n}\n```\n\nWhen using `$` as an array subscript, always capture it with `int64`:\n\n```aria\nint64[512]:grid;\nloop(0, 512, 1) {\n    int64:idx = $;\n    grid[idx] = 0i64;\n}\n```\n\nThe element type of a collection you index with `$` is independent — it is inferred from the collection type, not from `$` itself."
+            },
+            {
+                "q": "Can I use 'stack' or 'gc' as variable names in Aria?",
+                "a": "`stack` and `gc` are **contextual keywords** in Aria. They are reserved as allocation specifiers in memory allocation syntax, but are valid as ordinary variable names everywhere else.\n\n```aria\n// As allocation specifiers (keyword context):\nint32:x = stack int32(42);   // stack-allocate\nint32:y = gc int32(0);       // GC-allocate\n\n// As variable names (perfectly fine):\nint32:stack = 0;   // ✅ valid identifier\nint32:gc = 0;      // ✅ valid identifier\n\nfunc:push = void(int32:stack) {  // parameter named 'stack' — fine\n    // ...\n}\n```\n\nThe parser distinguishes the two uses by context — `stack`/`gc` followed by a type name is an allocation; otherwise it is a plain identifier."
+            },
+            {
+                "q": "What are the pointer and memory operators in Aria?",
+                "a": "Aria has four closely related pointer/memory operators that form a family:\n\n| Operator | Name | Use |\n|----------|------|-----|\n| `->` | pointer-to / member access | `int8->:ptr` (type); `ptr->field` (access) |\n| `<-` | dereference | `<-ptr` reads value at pointer |\n| `@` | address-of | `@var` gets pointer to variable |\n| `=>` | cast | `expr => TypeName` converts type |\n\n```aria\nint32:value = 42;\nint32->:ptr = @value;     // @ — take address\nint32:copy = <-ptr;       // <- — dereference\nint8:narrow = copy => int8;  // => — cast\n```"
+            },
         ]
         
         for qa in syntax_qa:
@@ -271,6 +288,59 @@ class AriaCorpusBuilder:
                 weight=2.0
             ))
     
+    def process_markdown_docs(self, docs_root: Path):
+        """Process programming guide markdown files into training examples."""
+        # Exclude generated html output and META planning dirs
+        skip_dirs = {'html', 'META', '__pycache__'}
+
+        md_files = [
+            p for p in docs_root.rglob("*.md")
+            if not any(part in skip_dirs for part in p.parts)
+        ]
+
+        print(f"Processing {len(md_files)} programming guide markdown files...")
+
+        for md_path in sorted(md_files):
+            try:
+                with open(md_path, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+            except Exception as e:
+                print(f"  Error reading {md_path}: {e}")
+                continue
+
+            if len(content) < 80:
+                continue
+
+            # Derive a human-readable topic from the file name and path
+            stem = md_path.stem.replace('_', ' ').replace('-', ' ')
+            section = md_path.parent.name.replace('_', ' ').replace('-', ' ')
+
+            # Build a natural instruction from file name
+            topic_lower = stem.lower()
+            if any(w in topic_lower for w in ('operator', 'syntax', 'expression')):
+                instruction = f"Explain the {stem} in Aria"
+            elif any(w in topic_lower for w in ('loop', 'if', 'while', 'till', 'control', 'iteration', 'dollar')):
+                instruction = f"How does {stem} work in Aria?"
+            elif any(w in topic_lower for w in ('function', 'lambda', 'closure', 'generic', 'async')):
+                instruction = f"Explain {stem} in Aria with examples"
+            elif any(w in topic_lower for w in ('struct', 'enum', 'type', 'pointer', 'memory')):
+                instruction = f"Describe the {stem} type system feature in Aria"
+            else:
+                instruction = f"Explain the Aria {section} concept: {stem}"
+
+            self.examples.append(TrainingExample(
+                instruction=instruction,
+                input="",
+                output=content,
+                metadata={
+                    "source": str(md_path.relative_to(self.repo_root)),
+                    "category": "programming_guide",
+                    "type": "doc_page",
+                    "confidence": "canonical"
+                },
+                weight=2.5  # High weight — human-authored reference docs
+            ))
+
     def build_corpus(self):
         """Build complete training corpus."""
         print("Building Aria training corpus...")
@@ -308,6 +378,12 @@ class AriaCorpusBuilder:
         # Generate synthetic Q&A
         print("Generating synthetic Q&A pairs...")
         self.generate_synthetic_qa()
+
+        # Process programming guide markdown docs
+        print("Processing programming guide markdown docs...")
+        guide_path = self.repo_root / "aria_ecosystem" / "programming_guide"
+        if guide_path.exists():
+            self.process_markdown_docs(guide_path)
         
         print(f"\nTotal examples generated: {len(self.examples)}")
         
