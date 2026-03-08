@@ -1,0 +1,1820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Utilities (dbug) - Aria Programming Guide</title>
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-code: #2d2d2d;
+            --bg-sidebar: #252526;
+            --text-main: #d4d4d4;
+            --text-dim: #808080;
+            --accent: #4ec9b0;
+            --accent-hover: #6fdfca;
+            --link: #569cd6;
+            --border: #3e3e42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+        }
+        
+        /* Sidebar navigation */
+        nav {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        nav h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        nav .category {
+            margin-bottom: 20px;
+        }
+        
+        nav .category h3 {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        nav ul {
+            list-style: none;
+        }
+        
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            display: block;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover {
+            background: var(--bg-code);
+            color: var(--accent-hover);
+        }
+        
+        nav a.active {
+            background: var(--accent);
+            color: var(--bg-main);
+            font-weight: 500;
+        }
+        
+        /* Main content */
+        main {
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: var(--accent);
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 15px;
+        }
+        
+        h2 {
+            color: var(--accent);
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+        
+        h3 {
+            color: var(--text-main);
+            font-size: 1.3em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--text-main);
+        }
+        
+        code {
+            background: var(--bg-code);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: var(--accent);
+        }
+        
+        pre {
+            background: var(--bg-code);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border-left: 3px solid var(--accent);
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-main);
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 30px 0;
+        }
+        
+        .breadcrumb {
+            color: var(--text-dim);
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        
+        .breadcrumb a {
+            color: var(--text-dim);
+        }
+        
+        .breadcrumb a:hover {
+            color: var(--accent);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h2>Aria Guide</h2>
+        <div class="category">
+<h3>General</h3>
+<ul>
+<li><a href="/SYNTAX_AUDIT_FEB14_2026.html">Syntax Audit Feb14 2026</a></li>
+<li><a href="/UPDATE_PROGRESS.html">Update Progress</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Meta</h3>
+<ul>
+<li><a href="/META/ARIA/DBUG_MODULE_COMPLETE.html">Dbug Module Complete</a></li>
+<li><a href="/META/ARIA/DBUG_WATCHPOINTS_COMPLETE.html">Dbug Watchpoints Complete</a></li>
+<li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Advanced Features</h3>
+<ul>
+<li><a href="/advanced_features/ast.html">Ast</a></li>
+<li><a href="/advanced_features/async.html">Async</a></li>
+<li><a href="/advanced_features/async_await.html">Async Await</a></li>
+<li><a href="/advanced_features/atomics.html">Atomics</a></li>
+<li><a href="/advanced_features/await.html">Await</a></li>
+<li><a href="/advanced_features/best_practices.html">Best Practices</a></li>
+<li><a href="/advanced_features/brace_delimited.html">Brace Delimited</a></li>
+<li><a href="/advanced_features/code_examples.html">Code Examples</a></li>
+<li><a href="/advanced_features/colons.html">Colons</a></li>
+<li><a href="/advanced_features/comments.html">Comments</a></li>
+<li><a href="/advanced_features/common_patterns.html">Common Patterns</a></li>
+<li><a href="/advanced_features/compile_time.html">Compile Time</a></li>
+<li><a href="/advanced_features/comptime.html">Comptime</a></li>
+<li><a href="/advanced_features/concurrency.html">Concurrency</a></li>
+<li><a href="/advanced_features/const.html">Const</a></li>
+<li><a href="/advanced_features/context_stack.html">Context Stack</a></li>
+<li><a href="/advanced_features/coroutines.html">Coroutines</a></li>
+<li><a href="/advanced_features/destructuring.html">Destructuring</a></li>
+<li><a href="/advanced_features/error_handling.html">Error Handling</a></li>
+<li><a href="/advanced_features/error_propagation.html">Error Propagation</a></li>
+<li><a href="/advanced_features/idioms.html">Idioms</a></li>
+<li><a href="/advanced_features/lexer.html">Lexer</a></li>
+<li><a href="/advanced_features/macros.html">Macros</a></li>
+<li><a href="/advanced_features/metaprogramming.html">Metaprogramming</a></li>
+<li><a href="/advanced_features/multiline_comments.html">Multiline Comments</a></li>
+<li><a href="/advanced_features/nasm_macros.html">Nasm Macros</a></li>
+<li><a href="/advanced_features/parser.html">Parser</a></li>
+<li><a href="/advanced_features/pattern_matching.html">Pattern Matching</a></li>
+<li><a href="/advanced_features/semicolons.html">Semicolons</a></li>
+<li><a href="/advanced_features/threading.html">Threading</a></li>
+<li><a href="/advanced_features/tokens.html">Tokens</a></li>
+<li><a href="/advanced_features/whitespace_insensitive.html">Whitespace Insensitive</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Control Flow</h3>
+<ul>
+<li><a href="/control_flow/break.html">Break</a></li>
+<li><a href="/control_flow/continue.html">Continue</a></li>
+<li><a href="/control_flow/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/control_flow/fail.html">Fail</a></li>
+<li><a href="/control_flow/fall.html">Fall</a></li>
+<li><a href="/control_flow/fallthrough.html">Fallthrough</a></li>
+<li><a href="/control_flow/for.html">For</a></li>
+<li><a href="/control_flow/for_syntax.html">For Syntax</a></li>
+<li><a href="/control_flow/if_else.html">If Else</a></li>
+<li><a href="/control_flow/if_syntax.html">If Syntax</a></li>
+<li><a href="/control_flow/iteration_variable.html">Iteration Variable</a></li>
+<li><a href="/control_flow/loop.html">Loop</a></li>
+<li><a href="/control_flow/loop_direction.html">Loop Direction</a></li>
+<li><a href="/control_flow/loop_syntax.html">Loop Syntax</a></li>
+<li><a href="/control_flow/pass.html">Pass</a></li>
+<li><a href="/control_flow/pick.html">Pick</a></li>
+<li><a href="/control_flow/pick_patterns.html">Pick Patterns</a></li>
+<li><a href="/control_flow/pick_syntax.html">Pick Syntax</a></li>
+<li><a href="/control_flow/till.html">Till</a></li>
+<li><a href="/control_flow/till_direction.html">Till Direction</a></li>
+<li><a href="/control_flow/till_syntax.html">Till Syntax</a></li>
+<li><a href="/control_flow/when_syntax.html">When Syntax</a></li>
+<li><a href="/control_flow/when_then.html">When Then</a></li>
+<li><a href="/control_flow/when_then_end.html">When Then End</a></li>
+<li><a href="/control_flow/while.html">While</a></li>
+<li><a href="/control_flow/while_syntax.html">While Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Debugging</h3>
+<ul>
+<li><a href="/debugging/dbug.html">Dbug</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Functions</h3>
+<ul>
+<li><a href="/functions/anonymous_functions.html">Anonymous Functions</a></li>
+<li><a href="/functions/async_functions.html">Async Functions</a></li>
+<li><a href="/functions/async_keyword.html">Async Keyword</a></li>
+<li><a href="/functions/closure_capture.html">Closure Capture</a></li>
+<li><a href="/functions/closures.html">Closures</a></li>
+<li><a href="/functions/fail_keyword.html">Fail Keyword</a></li>
+<li><a href="/functions/func_keyword.html">Func Keyword</a></li>
+<li><a href="/functions/function_arguments.html">Function Arguments</a></li>
+<li><a href="/functions/function_declaration.html">Function Declaration</a></li>
+<li><a href="/functions/function_params.html">Function Params</a></li>
+<li><a href="/functions/function_return_type.html">Function Return Type</a></li>
+<li><a href="/functions/function_syntax.html">Function Syntax</a></li>
+<li><a href="/functions/generic_functions.html">Generic Functions</a></li>
+<li><a href="/functions/generic_parameters.html">Generic Parameters</a></li>
+<li><a href="/functions/generic_star_prefix.html">Generic Star Prefix</a></li>
+<li><a href="/functions/generic_structs.html">Generic Structs</a></li>
+<li><a href="/functions/generic_syntax.html">Generic Syntax</a></li>
+<li><a href="/functions/generic_types.html">Generic Types</a></li>
+<li><a href="/functions/generics.html">Generics</a></li>
+<li><a href="/functions/higher_order_functions.html">Higher Order Functions</a></li>
+<li><a href="/functions/immediate_execution.html">Immediate Execution</a></li>
+<li><a href="/functions/lambda.html">Lambda</a></li>
+<li><a href="/functions/lambda_syntax.html">Lambda Syntax</a></li>
+<li><a href="/functions/monomorphization.html">Monomorphization</a></li>
+<li><a href="/functions/multiple_generics.html">Multiple Generics</a></li>
+<li><a href="/functions/pass_keyword.html">Pass Keyword</a></li>
+<li><a href="/functions/type_inference.html">Type Inference</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Io System</h3>
+<ul>
+<li><a href="/io_system/binary_io.html">Binary Io</a></li>
+<li><a href="/io_system/control_plane.html">Control Plane</a></li>
+<li><a href="/io_system/data_plane.html">Data Plane</a></li>
+<li><a href="/io_system/debug_io.html">Debug Io</a></li>
+<li><a href="/io_system/hex_stream.html">Hex Stream</a></li>
+<li><a href="/io_system/io_overview.html">Io Overview</a></li>
+<li><a href="/io_system/six_stream_topology.html">Six Stream Topology</a></li>
+<li><a href="/io_system/stddati.html">Stddati</a></li>
+<li><a href="/io_system/stddato.html">Stddato</a></li>
+<li><a href="/io_system/stddbg.html">Stddbg</a></li>
+<li><a href="/io_system/stderr.html">Stderr</a></li>
+<li><a href="/io_system/stdin.html">Stdin</a></li>
+<li><a href="/io_system/stdout.html">Stdout</a></li>
+<li><a href="/io_system/stream_separation.html">Stream Separation</a></li>
+<li><a href="/io_system/text_io.html">Text Io</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Memory Model</h3>
+<ul>
+<li><a href="/memory_model/address_operator.html">Address Operator</a></li>
+<li><a href="/memory_model/allocation.html">Allocation</a></li>
+<li><a href="/memory_model/allocators.html">Allocators</a></li>
+<li><a href="/memory_model/aria_alloc.html">Aria Alloc</a></li>
+<li><a href="/memory_model/aria_alloc_array.html">Aria Alloc Array</a></li>
+<li><a href="/memory_model/aria_alloc_buffer.html">Aria Alloc Buffer</a></li>
+<li><a href="/memory_model/aria_alloc_string.html">Aria Alloc String</a></li>
+<li><a href="/memory_model/aria_free.html">Aria Free</a></li>
+<li><a href="/memory_model/aria_gc_alloc.html">Aria Gc Alloc</a></li>
+<li><a href="/memory_model/borrow_operator.html">Borrow Operator</a></li>
+<li><a href="/memory_model/borrowing.html">Borrowing</a></li>
+<li><a href="/memory_model/defer.html">Defer</a></li>
+<li><a href="/memory_model/gc.html">Gc</a></li>
+<li><a href="/memory_model/immutable_borrow.html">Immutable Borrow</a></li>
+<li><a href="/memory_model/mutable_borrow.html">Mutable Borrow</a></li>
+<li><a href="/memory_model/pin_operator.html">Pin Operator</a></li>
+<li><a href="/memory_model/pinning.html">Pinning</a></li>
+<li><a href="/memory_model/pointer_syntax.html">Pointer Syntax</a></li>
+<li><a href="/memory_model/raii.html">Raii</a></li>
+<li><a href="/memory_model/stack.html">Stack</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Modules</h3>
+<ul>
+<li><a href="/modules/c_interop.html">C Interop</a></li>
+<li><a href="/modules/c_pointers.html">C Pointers</a></li>
+<li><a href="/modules/cfg.html">Cfg</a></li>
+<li><a href="/modules/conditional_compilation.html">Conditional Compilation</a></li>
+<li><a href="/modules/extern.html">Extern</a></li>
+<li><a href="/modules/extern_blocks.html">Extern Blocks</a></li>
+<li><a href="/modules/extern_functions.html">Extern Functions</a></li>
+<li><a href="/modules/extern_syntax.html">Extern Syntax</a></li>
+<li><a href="/modules/ffi.html">Ffi</a></li>
+<li><a href="/modules/libc_integration.html">Libc Integration</a></li>
+<li><a href="/modules/mod.html">Mod</a></li>
+<li><a href="/modules/mod_keyword.html">Mod Keyword</a></li>
+<li><a href="/modules/module_aliases.html">Module Aliases</a></li>
+<li><a href="/modules/module_definition.html">Module Definition</a></li>
+<li><a href="/modules/module_paths.html">Module Paths</a></li>
+<li><a href="/modules/nested_modules.html">Nested Modules</a></li>
+<li><a href="/modules/pub.html">Pub</a></li>
+<li><a href="/modules/public_visibility.html">Public Visibility</a></li>
+<li><a href="/modules/use.html">Use</a></li>
+<li><a href="/modules/use_syntax.html">Use Syntax</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Operators</h3>
+<ul>
+<li><a href="/operators/add.html">Add</a></li>
+<li><a href="/operators/add_assign.html">Add Assign</a></li>
+<li><a href="/operators/address.html">Address</a></li>
+<li><a href="/operators/ampersand.html">Ampersand</a></li>
+<li><a href="/operators/and_assign.html">And Assign</a></li>
+<li><a href="/operators/arrow.html">Arrow</a></li>
+<li><a href="/operators/assign.html">Assign</a></li>
+<li><a href="/operators/at_operator.html">At Operator</a></li>
+<li><a href="/operators/backtick.html">Backtick</a></li>
+<li><a href="/operators/bitwise_and.html">Bitwise And</a></li>
+<li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
+<li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
+<li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/cast_operator.html">Cast Operator</a></li>
+<li><a href="/operators/colon.html">Colon</a></li>
+<li><a href="/operators/decrement.html">Decrement</a></li>
+<li><a href="/operators/div_assign.html">Div Assign</a></li>
+<li><a href="/operators/divide.html">Divide</a></li>
+<li><a href="/operators/dollar_operator.html">Dollar Operator</a></li>
+<li><a href="/operators/dollar_variable.html">Dollar Variable</a></li>
+<li><a href="/operators/dot.html">Dot</a></li>
+<li><a href="/operators/equal.html">Equal</a></li>
+<li><a href="/operators/greater_equal.html">Greater Equal</a></li>
+<li><a href="/operators/greater_than.html">Greater Than</a></li>
+<li><a href="/operators/hash_operator.html">Hash Operator</a></li>
+<li><a href="/operators/increment.html">Increment</a></li>
+<li><a href="/operators/interpolation.html">Interpolation</a></li>
+<li><a href="/operators/is_operator.html">Is Operator</a></li>
+<li><a href="/operators/is_ternary.html">Is Ternary</a></li>
+<li><a href="/operators/iteration.html">Iteration</a></li>
+<li><a href="/operators/left_shift.html">Left Shift</a></li>
+<li><a href="/operators/less_equal.html">Less Equal</a></li>
+<li><a href="/operators/less_than.html">Less Than</a></li>
+<li><a href="/operators/logical_and.html">Logical And</a></li>
+<li><a href="/operators/logical_not.html">Logical Not</a></li>
+<li><a href="/operators/logical_or.html">Logical Or</a></li>
+<li><a href="/operators/lshift_assign.html">Lshift Assign</a></li>
+<li><a href="/operators/member_access.html">Member Access</a></li>
+<li><a href="/operators/minus.html">Minus</a></li>
+<li><a href="/operators/minus_assign.html">Minus Assign</a></li>
+<li><a href="/operators/mod_assign.html">Mod Assign</a></li>
+<li><a href="/operators/modulo.html">Modulo</a></li>
+<li><a href="/operators/mul_assign.html">Mul Assign</a></li>
+<li><a href="/operators/mult_assign.html">Mult Assign</a></li>
+<li><a href="/operators/multiply.html">Multiply</a></li>
+<li><a href="/operators/not_equal.html">Not Equal</a></li>
+<li><a href="/operators/null_coalesce.html">Null Coalesce</a></li>
+<li><a href="/operators/null_coalescing.html">Null Coalescing</a></li>
+<li><a href="/operators/or_assign.html">Or Assign</a></li>
+<li><a href="/operators/pin.html">Pin</a></li>
+<li><a href="/operators/pipe_backward.html">Pipe Backward</a></li>
+<li><a href="/operators/pipe_forward.html">Pipe Forward</a></li>
+<li><a href="/operators/pipeline.html">Pipeline</a></li>
+<li><a href="/operators/plus.html">Plus</a></li>
+<li><a href="/operators/plus_assign.html">Plus Assign</a></li>
+<li><a href="/operators/pointer_member.html">Pointer Member</a></li>
+<li><a href="/operators/question_operator.html">Question Operator</a></li>
+<li><a href="/operators/range.html">Range</a></li>
+<li><a href="/operators/range_exclusive.html">Range Exclusive</a></li>
+<li><a href="/operators/range_inclusive.html">Range Inclusive</a></li>
+<li><a href="/operators/right_shift.html">Right Shift</a></li>
+<li><a href="/operators/rshift_assign.html">Rshift Assign</a></li>
+<li><a href="/operators/safe_nav.html">Safe Nav</a></li>
+<li><a href="/operators/safe_navigation.html">Safe Navigation</a></li>
+<li><a href="/operators/spaceship.html">Spaceship</a></li>
+<li><a href="/operators/string_interpolation.html">String Interpolation</a></li>
+<li><a href="/operators/sub_assign.html">Sub Assign</a></li>
+<li><a href="/operators/subtract.html">Subtract</a></li>
+<li><a href="/operators/template_literal.html">Template Literal</a></li>
+<li><a href="/operators/template_syntax.html">Template Syntax</a></li>
+<li><a href="/operators/ternary_is.html">Ternary Is</a></li>
+<li><a href="/operators/three_way_comparison.html">Three Way Comparison</a></li>
+<li><a href="/operators/type_annotation.html">Type Annotation</a></li>
+<li><a href="/operators/unwrap.html">Unwrap</a></li>
+<li><a href="/operators/xor_assign.html">Xor Assign</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Standard Library</h3>
+<ul>
+<li><a href="/standard_library/createLogger.html">Createlogger</a></li>
+<li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/dbug.html">Dbug</a></li>
+<li><a href="/standard_library/exec.html">Exec</a></li>
+<li><a href="/standard_library/filter.html">Filter</a></li>
+<li><a href="/standard_library/fork.html">Fork</a></li>
+<li><a href="/standard_library/functional_programming.html">Functional Programming</a></li>
+<li><a href="/standard_library/getActiveConnections.html">Getactiveconnections</a></li>
+<li><a href="/standard_library/getMemoryUsage.html">Getmemoryusage</a></li>
+<li><a href="/standard_library/http_client.html">Http Client</a></li>
+<li><a href="/standard_library/httpGet.html">Httpget</a></li>
+<li><a href="/standard_library/log_levels.html">Log Levels</a></li>
+<li><a href="/standard_library/math.html">Math</a></li>
+<li><a href="/standard_library/math_round.html">Math Round</a></li>
+<li><a href="/standard_library/openFile.html">Openfile</a></li>
+<li><a href="/standard_library/print.html">Print</a></li>
+<li><a href="/standard_library/process_management.html">Process Management</a></li>
+<li><a href="/standard_library/readCSV.html">Readcsv</a></li>
+<li><a href="/standard_library/readFile.html">Readfile</a></li>
+<li><a href="/standard_library/readJSON.html">Readjson</a></li>
+<li><a href="/standard_library/reverse.html">Reverse</a></li>
+<li><a href="/standard_library/sort.html">Sort</a></li>
+<li><a href="/standard_library/spawn.html">Spawn</a></li>
+<li><a href="/standard_library/stream_io.html">Stream Io</a></li>
+<li><a href="/standard_library/structured_logging.html">Structured Logging</a></li>
+<li><a href="/standard_library/system_diagnostics.html">System Diagnostics</a></li>
+<li><a href="/standard_library/transform.html">Transform</a></li>
+<li><a href="/standard_library/unique.html">Unique</a></li>
+<li><a href="/standard_library/wait.html">Wait</a></li>
+<li><a href="/standard_library/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Stdlib</h3>
+<ul>
+<li><a href="/stdlib/filter.html">Filter</a></li>
+<li><a href="/stdlib/print.html">Print</a></li>
+<li><a href="/stdlib/readFile.html">Readfile</a></li>
+<li><a href="/stdlib/reduce.html">Reduce</a></li>
+<li><a href="/stdlib/transform.html">Transform</a></li>
+<li><a href="/stdlib/writeFile.html">Writefile</a></li>
+</ul>
+</div>
+<div class="category">
+<h3>Types</h3>
+<ul>
+<li><a href="/types/Atomic.html">Atomic</a></li>
+<li><a href="/types/atomic.html">Atomic</a></li>
+<li><a href="/types/balanced_nonary.html">Balanced Nonary</a></li>
+<li><a href="/types/balanced_numbers.html">Balanced Numbers</a></li>
+<li><a href="/types/balanced_ternary.html">Balanced Ternary</a></li>
+<li><a href="/types/bool.html">Bool</a></li>
+<li><a href="/types/complex.html">Complex</a></li>
+<li><a href="/types/Complex.html">Complex</a></li>
+<li><a href="/types/double.html">Double</a></li>
+<li><a href="/types/dyn.html">Dyn</a></li>
+<li><a href="/types/ERR.html">Err</a></li>
+<li><a href="/types/fix256.html">Fix256</a></li>
+<li><a href="/types/float.html">Float</a></li>
+<li><a href="/types/flt128.html">Flt128</a></li>
+<li><a href="/types/flt256.html">Flt256</a></li>
+<li><a href="/types/flt32.html">Flt32</a></li>
+<li><a href="/types/flt512.html">Flt512</a></li>
+<li><a href="/types/flt64.html">Flt64</a></li>
+<li><a href="/types/frac16.html">Frac16</a></li>
+<li><a href="/types/frac32.html">Frac32</a></li>
+<li><a href="/types/frac64.html">Frac64</a></li>
+<li><a href="/types/frac8.html">Frac8</a></li>
+<li><a href="/types/frac8_frac16_frac32_frac64.html">Frac8 Frac16 Frac32 Frac64</a></li>
+<li><a href="/types/func_return.html">Func Return</a></li>
+<li><a href="/types/Handle.html">Handle</a></li>
+<li><a href="/types/int1.html">Int1</a></li>
+<li><a href="/types/int1024.html">Int1024</a></li>
+<li><a href="/types/int1024_int2048_int4096.html">Int1024 Int2048 Int4096</a></li>
+<li><a href="/types/int128.html">Int128</a></li>
+<li><a href="/types/int128_int256_int512.html">Int128 Int256 Int512</a></li>
+<li><a href="/types/int16.html">Int16</a></li>
+<li><a href="/types/int2.html">Int2</a></li>
+<li><a href="/types/int2_int4.html">Int2 Int4</a></li>
+<li><a href="/types/int2048.html">Int2048</a></li>
+<li><a href="/types/int256.html">Int256</a></li>
+<li><a href="/types/int32.html">Int32</a></li>
+<li><a href="/types/int32_int64.html">Int32 Int64</a></li>
+<li><a href="/types/int4.html">Int4</a></li>
+<li><a href="/types/int4096.html">Int4096</a></li>
+<li><a href="/types/int512.html">Int512</a></li>
+<li><a href="/types/int64.html">Int64</a></li>
+<li><a href="/types/int8.html">Int8</a></li>
+<li><a href="/types/int8_int16.html">Int8 Int16</a></li>
+<li><a href="/types/matrix.html">Matrix</a></li>
+<li><a href="/types/NIL.html">Nil</a></li>
+<li><a href="/types/nil_null_void.html">Nil Null Void</a></li>
+<li><a href="/types/nil_vs_null_vs_void.html">Nil Vs Null Vs Void</a></li>
+<li><a href="/types/nit.html">Nit</a></li>
+<li><a href="/types/nit_nyte.html">Nit Nyte</a></li>
+<li><a href="/types/NULL.html">Null</a></li>
+<li><a href="/types/nyte.html">Nyte</a></li>
+<li><a href="/types/obj.html">Obj</a></li>
+<li><a href="/types/pointer.html">Pointer</a></li>
+<li><a href="/types/pointers.html">Pointers</a></li>
+<li><a href="/types/Q21.html">Q21</a></li>
+<li><a href="/types/Q3_Q9.html">Q3 Q9</a></li>
+<li><a href="/types/Result.html">Result</a></li>
+<li><a href="/types/result_err_val.html">Result Err Val</a></li>
+<li><a href="/types/result_unwrap.html">Result Unwrap</a></li>
+<li><a href="/types/SIMD.html">Simd</a></li>
+<li><a href="/types/simd.html">Simd</a></li>
+<li><a href="/types/string.html">String</a></li>
+<li><a href="/types/struct.html">Struct</a></li>
+<li><a href="/types/struct_declaration.html">Struct Declaration</a></li>
+<li><a href="/types/struct_fields.html">Struct Fields</a></li>
+<li><a href="/types/struct_generics.html">Struct Generics</a></li>
+<li><a href="/types/struct_pointers.html">Struct Pointers</a></li>
+<li><a href="/types/tbb_err_sentinel.html">Tbb Err Sentinel</a></li>
+<li><a href="/types/tbb_overview.html">Tbb Overview</a></li>
+<li><a href="/types/tbb_sticky_errors.html">Tbb Sticky Errors</a></li>
+<li><a href="/types/tbb16.html">Tbb16</a></li>
+<li><a href="/types/tbb32.html">Tbb32</a></li>
+<li><a href="/types/tbb64.html">Tbb64</a></li>
+<li><a href="/types/tbb8.html">Tbb8</a></li>
+<li><a href="/types/tbb8_new.html">Tbb8 New</a></li>
+<li><a href="/types/tensor.html">Tensor</a></li>
+<li><a href="/types/tfp32.html">Tfp32</a></li>
+<li><a href="/types/tfp32_tfp64.html">Tfp32 Tfp64</a></li>
+<li><a href="/types/tfp64.html">Tfp64</a></li>
+<li><a href="/types/trit.html">Trit</a></li>
+<li><a href="/types/trit_tryte.html">Trit Tryte</a></li>
+<li><a href="/types/tryte.html">Tryte</a></li>
+<li><a href="/types/type_suffix_reference.html">Type Suffix Reference</a></li>
+<li><a href="/types/uint1024_uint2048_uint4096.html">Uint1024 Uint2048 Uint4096</a></li>
+<li><a href="/types/uint128.html">Uint128</a></li>
+<li><a href="/types/uint128_uint256_uint512.html">Uint128 Uint256 Uint512</a></li>
+<li><a href="/types/uint16.html">Uint16</a></li>
+<li><a href="/types/uint256.html">Uint256</a></li>
+<li><a href="/types/uint32.html">Uint32</a></li>
+<li><a href="/types/uint32_uint64.html">Uint32 Uint64</a></li>
+<li><a href="/types/uint512.html">Uint512</a></li>
+<li><a href="/types/uint64.html">Uint64</a></li>
+<li><a href="/types/uint8.html">Uint8</a></li>
+<li><a href="/types/uint8_uint16.html">Uint8 Uint16</a></li>
+<li><a href="/types/vec2.html">Vec2</a></li>
+<li><a href="/types/vec3.html">Vec3</a></li>
+<li><a href="/types/vec9.html">Vec9</a></li>
+<li><a href="/types/void.html">Void</a></li>
+<li><a href="/types/zero_implicit_conversion.html">Zero Implicit Conversion</a></li>
+</ul>
+</div>
+    </nav>
+    <main>
+        <div class="breadcrumb"><a href="/">Home</a> / Standard Library</div>
+        <h1>Debug Utilities (dbug)</h1>
+<strong>Module</strong>: stdlib.dbug
+<strong>Category</strong>: Standard Library → Development Tools
+<strong>Philosophy</strong>: Debug code is permanent infrastructure, not temporary scaffolding
+<hr>
+<h2>Overview</h2>
+<p>
+The <code>dbug</code> module provides sophisticated debugging utilities that let you leave debug code in your production codebase. Unlike <code>print</code> debugging that you comment out before shipping, <code>dbug</code> uses <strong>group-based filtering</strong> to selectively enable debug output.
+</p>
+<strong>Key Benefits</strong>:
+<ul><li>Debug code stays in source (no commenting out/uncommenting cycle)</li>
+<li>Zero performance impact when disabled</li>
+<li>Group-based filtering (enable only what you need)</li>
+<li>Assert-like functionality for invariant checking</li>
+<li>Function entry/exit tracing</li>
+<li>Soft warnings that don't halt execution</li>
+</ul>
+<hr>
+<h2>Quick Start</h2>
+<pre><code>use stdlib.dbug;
+<p>
+func:main = int32() {
+// Enable the "network" debug group
+dbug_enable("network");
+</p>
+<p>
+// This prints (network group is enabled)
+dbug_print("network", "Connecting to server");
+</p>
+<p>
+// This doesn't print (parser group is disabled)
+dbug_print("parser", "Parsing token");
+</p>
+<p>
+// Assert that condition is true
+int32:port = 443;
+dbug_check("network", "Port must be valid", port > 0);
+</p>
+<p>
+pass(0);
+}</code></pre>
+</p>
+<hr>
+<h2>Core Concepts</h2>
+<h3>Debug Groups</h3>
+<p>
+Groups are string tags that categorize debug output. Use descriptive names:
+</p>
+<pre><code>"network"      // Networking operations
+<p>
+"parser"       // Parsing/lexing
+"validation"   // Input validation
+"database"     // Database queries
+"auth"         // Authentication
+"cache"        // Caching operations
+"perf"         // Performance measurements</code></pre>
+</p>
+<strong>Special group</strong>: <code>"all"</code> enables/disables every group at once.
+<h3>Filtering Logic</h3>
+<ul><li>Messages print <strong>only if</strong> their group is enabled</li>
+<li>When disabled: zero overhead (condition check, no string formatting)</li>
+<li>When enabled: formatted output to stdout</li>
+</ul>
+<hr>
+<h2>Group Management</h2>
+<h3>dbug_enable(group)</h3>
+<p>
+Enable debug output for a specific group.
+</p>
+<pre><code>dbug_enable("network");       // Enable network debugging
+<p>
+dbug_enable("parser");        // Also enable parser debugging
+dbug_enable("all");           // Enable EVERYTHING</code></pre>
+</p>
+<h3>dbug_disable(group)</h3>
+<p>
+Disable debug output for a group.
+</p>
+<pre><code>dbug_disable("network");      // Disable network debugging
+<p>
+dbug_disable("all");          // Disable EVERYTHING</code></pre>
+</p>
+<h3>dbug_is_enabled(group) → bool</h3>
+<p>
+Check if a group is currently active.
+</p>
+<pre><code>if (dbug_is_enabled("network")) {
+<p>
+// Expensive debug computation only when needed
+string:stats = calculate_network_stats();
+dbug_print("network", stats);
+}</code></pre>
+</p>
+<h3>dbug_list_enabled()</h3>
+<p>
+Show all currently enabled groups (useful for troubleshooting).
+</p>
+<pre><code>dbug_list_enabled();
+<p>
+// Output:
+// [DBUG] Enabled groups:
+//   - network
+//   - parser</code></pre>
+</p>
+<hr>
+<h2>Core Debug Functions</h2>
+<h3>dbug_print(group, message)</h3>
+<p>
+Print a message if the group is enabled.
+</p>
+<strong>Signature</strong>:
+<pre><code>pub func:dbug_print = void(string:group, string:message);</code></pre>
+<strong>Output format</strong>: <code>[DBUG:group] message</code>
+<strong>Examples</strong>:
+<pre><code>dbug_print("network", "Connection established");
+<p>
+// Output (if enabled): [DBUG:network] Connection established
+</p>
+<p>
+dbug_print("parser", "Entering parse_expression");
+// Output (if enabled): [DBUG:parser] Entering parse_expression
+</p>
+<p>
+dbug_print("cache", "Cache miss");
+// Output (if enabled): [DBUG:cache] Cache miss</code></pre>
+</p>
+<strong>When to use</strong>:
+<ul><li>Progress tracking ("Processing batch 3 of 10")</li>
+<li>State changes ("Status: CONNECTING → CONNECTED")</li>
+<li>Milestone events ("Loaded 1000 records")</li>
+</ul>
+<h3>dbug_print_labeled(group, label, message)</h3>
+<p>
+Print a labeled message (variable name + value style).
+</p>
+<strong>Signature</strong>:
+<pre><code>pub func:dbug_print_labeled = void(string:group, string:label, string:message);</code></pre>
+<strong>Output format</strong>: <code>[DBUG:group] label: message</code>
+<strong>Examples</strong>:
+<pre><code>dbug_print_labeled("network", "Hostname", "api.example.com");
+<p>
+// Output: [DBUG:network] Hostname: api.example.com
+</p>
+<p>
+dbug_print_labeled("auth", "User ID", "12345");
+// Output: [DBUG:auth] User ID: 12345
+</p>
+<p>
+dbug_print_labeled("parser", "Token type", "IDENTIFIER");
+// Output: [DBUG:parser] Token type: IDENTIFIER</code></pre>
+</p>
+<strong>When to use</strong>:
+<ul><li>Variable inspection</li>
+<li>Parameter logging</li>
+<li>State dumps</li>
+</ul>
+<h3>dbug_check(group, message, condition)</h3>
+<strong>Hard assertion</strong> - halts execution if condition is false.
+<strong>Signature</strong>:
+<pre><code>pub func:dbug_check = void(string:group, string:message, bool:condition);</code></pre>
+<strong>Behavior</strong>:
+<ul><li>If <code>condition</code> is <code>true</code>: No output, execution continues</li>
+<li>If <code>condition</code> is <code>false</code>:</li>
+</ul>  1. <strong>Always prints</strong> error message (ignores group enable status)
+<p>
+2. Shows additional context if group is enabled
+3. <strong>Halts execution</strong> (infinite loop until manual intervention)
+</p>
+<strong>Output format</strong> (on failure):
+<pre><code>✗ ASSERTION FAILED [group]: message
+<p>
+(Enable more debug output in this group for details)
+[Program halted due to assertion failure]</code></pre>
+</p>
+<strong>Examples</strong>:
+<pre><code>// Validate age is positive
+<p>
+int32:age = get_user_age();
+dbug_check("validation", "Age must be positive", age > 0);
+</p>
+<p>
+// Ensure buffer size is reasonable
+int64:buffer_size = allocate_buffer();
+dbug_check("memory", "Buffer size must be positive", buffer_size > 0);
+</p>
+<p>
+// Verify port is in valid range
+int32:port = parse_port();
+dbug_check("network", "Port must be in range", port > 0 && port < 65536);
+</p>
+<p>
+// Check pointer is not null
+UserData->:user = find_user(id);
+dbug_check("database", "User must exist", user != NULL);</code></pre>
+</p>
+<strong>When to use</strong>:
+<ul><li>Invariants that "should never" be violated</li>
+<li>Preconditions at function entry</li>
+<li>Invariants in algorithms ("array should never be empty here")</li>
+<li>Development-time safety checks</li>
+</ul>
+<strong>Important</strong>:
+<ul><li>Failed assertions <strong>always</strong> print (even if group disabled)</li>
+<li>Use for conditions that indicate <strong>programmer error</strong></li>
+<li>Not for runtime errors (use <code>result</code> types for those)</li>
+</ul>
+<h3>dbug_warn(group, message, condition)</h3>
+<strong>Soft assertion</strong> - prints warning but continues execution.
+<strong>Signature</strong>:
+<pre><code>pub func:dbug_warn = void(string:group, string:message, bool:condition);</code></pre>
+<strong>Behavior</strong>:
+<ul><li>If <code>condition</code> is <code>true</code>: No output</li>
+<li>If <code>condition</code> is <code>false</code>:</li>
+</ul>  1. Prints warning message
+<p>
+2. Shows extra context if group is enabled
+3. <strong>Execution continues</strong>
+</p>
+<strong>Output format</strong> (on failure):
+<pre><code>⚠ WARNING [group]: message
+<p>
+(Enable debug group for more details)</code></pre>
+</p>
+<strong>Examples</strong>:
+<pre><code>// Warn about performance issues
+<p>
+float64:cache_hit_rate = calculate_hit_rate();
+dbug_warn("cache", "Cache hit rate is low", cache_hit_rate > 0.9);
+</p>
+<p>
+// Warn about unusual but non-fatal conditions
+int64:response_time_ms = measure_response();
+dbug_warn("perf", "Response time exceeds threshold", response_time_ms < 100);
+</p>
+<p>
+// Warn about deprecated usage
+bool:using_old_api = check_api_version();
+dbug_warn("compat", "Using deprecated API", !using_old_api);</code></pre>
+</p>
+<strong>When to use</strong>:
+<ul><li>Performance problems (not errors)</li>
+<li>Unusual but valid conditions</li>
+<li>Deprecation notices</li>
+<li>Heuristic violations</li>
+</ul>
+<strong>Difference from dbug_check</strong>:
+<ul><li><code>dbug_check</code>: "This should <strong>never</strong> happen" → <strong>halts</strong></li>
+<li><code>dbug_warn</code>: "This is unusual but okay" → <strong>continues</strong></li>
+</ul>
+<hr>
+<h2>Convenience Functions</h2>
+<h3>dbug_separator(group)</h3>
+<p>
+Print a visual separator line for grouping output.
+</p>
+<pre><code>dbug_separator("network");
+<p>
+// Output: [DBUG:network] ========================================</code></pre>
+</p>
+<strong>When to use</strong>:
+<ul><li>Before/after major sections</li>
+<li>Visual grouping of related messages</li>
+<li>Making dense output more readable</li>
+</ul>
+<h3>dbug_enter(group, function_name)</h3>
+<p>
+Log function entry (execution tracing).
+</p>
+<pre><code>func:process_request = void(int32:user_id) {
+<p>
+dbug_enter("handlers", "process_request");
+// ... function body ...
+}
+// Output: [DBUG:handlers] → Entering: process_request</code></pre>
+</p>
+<h3>dbug_exit(group, function_name)</h3>
+<p>
+Log function exit (execution tracing).
+</p>
+<pre><code>func:process_request = void(int32:user_id) {
+<p>
+dbug_enter("handlers", "process_request");
+// ... function body ...
+dbug_exit("handlers", "process_request");
+}
+// Output: [DBUG:handlers] ← Exiting: process_request</code></pre>
+</p>
+<strong>Entry/Exit Pattern</strong>:
+<pre><code>func:complex_operation = result<int32>(string:input) {
+<p>
+dbug_enter("compute", "complex_operation");
+dbug_separator("compute");
+</p>
+<p>
+dbug_print("compute", "Step 1: Validate input");
+// ...
+</p>
+<p>
+dbug_print("compute", "Step 2: Process");
+// ...
+</p>
+<p>
+dbug_separator("compute");
+dbug_exit("compute", "complex_operation");
+pass(result_ok(42));
+}</code></pre>
+</p>
+<hr>
+<h2>Variable Watchpoints</h2>
+<strong>New in dbug</strong>: Track variable changes automatically!
+<h3>Concept</h3>
+<p>
+Watchpoints let you monitor variables for changes and get alerts when they're modified. Perfect for:
+</p>
+<ul><li>Tracking loop counters</li>
+<li>Monitoring state transitions</li>
+<li>Debugging unexpected mutations</li>
+<li>Finding "who changed this value?"</li>
+</ul>
+<h3>How It Works</h3>
+<strong>Important</strong>: Watchpoints are <strong>not automatic</strong> (would require compiler instrumentation). Instead:
+<p>
+1. You register a variable pointer: <code>dbug_watch_int64("group", "label", @var)</code>
+2. You manually trigger checks: <code>dbug_watch_check_all()</code>
+3. Dbug compares current value to last known value
+4. If changed AND group enabled → prints alert
+5. Updates last known value
+</p>
+<strong>Think of it as</strong>: Manual checkpoints where you want to know "did this variable change since last check?"
+<h3>dbug_watch_int64(group, label, ptr)</h3>
+<p>
+Register an int64 variable for change tracking.
+</p>
+<strong>Signature</strong>:
+<pre><code>pub func:dbug_watch_int64 = bool(string:group, string:label, int64->:variable_ptr);</code></pre>
+<strong>Parameters</strong>:
+<ul><li><code>group</code>: Debug group for filtering</li>
+<li><code>label</code>: Descriptive name (e.g., "counter", "balance")</li>
+<li><code>variable_ptr</code>: Pointer to the variable (<code>@your_var</code>)</li>
+</ul>
+<strong>Returns</strong>: <code>true</code> if registered, <code>false</code> if max watches reached
+<strong>Example</strong>:
+<pre><code>int64:counter = 0i64;
+<p>
+dbug_watch_int64("loop", "counter", @counter);
+</p>
+<p>
+while (counter < 100i64) {
+counter = counter + 1i64;
+dbug_watch_check_all();  // Alerts when counter changes
+}</code></pre>
+</p>
+<strong>Output</strong>:
+<pre><code>[DBUG:loop] 👁 Watching: counter
+<p>
+[DBUG:loop] ⚡ CHANGED: counter (was 0, now 1)
+[DBUG:loop] ⚡ CHANGED: counter (was 1, now 2)
+[DBUG:loop] ⚡ CHANGED: counter (was 2, now 3)
+...</code></pre>
+</p>
+<h3>dbug_watch_check_all()</h3>
+<p>
+Check all registered watchpoints for changes.
+</p>
+<strong>When to call</strong>:
+<ul><li><strong>End of loop iterations</strong> (track iteration variables)</li>
+<li><strong>After function calls</strong> that might modify state</li>
+<li><strong>Before/after critical sections</strong></li>
+<li><strong>Wherever you suspect changes</strong> happening</li>
+</ul>
+<strong>Example</strong>:
+<pre><code>int64:x = 0i64;
+<p>
+int64:y = 0i64;
+</p>
+<p>
+dbug_watch_int64("math", "x", @x);
+dbug_watch_int64("math", "y", @y);
+</p>
+<p>
+x = 10i64;
+y = 20i64;
+</p>
+<p>
+dbug_watch_check_all();  // Shows both x and y changed</code></pre>
+</p>
+<strong>Important</strong>: Only alerts <strong>on check call</strong>, not continuously.
+<h3>dbug_watch_remove(ptr)</h3>
+<p>
+Stop watching a specific variable.
+</p>
+<pre><code>int64:temp = 0i64;
+<p>
+int64->:ptr = @temp;
+</p>
+<p>
+dbug_watch_int64("debug", "temp", ptr);
+// ... use temp ...
+dbug_watch_remove(ptr);  // Stop tracking</code></pre>
+</p>
+<h3>dbug_watch_clear_all()</h3>
+<p>
+Remove all watchpoints at once (cleanup).
+</p>
+<pre><code>// Set up multiple watches
+<p>
+dbug_watch_int64("test", "a", @a);
+dbug_watch_int64("test", "b", @b);
+dbug_watch_int64("test", "c", @c);
+</p>
+<p>
+run_test();
+</p>
+<p>
+// Clean up all at once
+dbug_watch_clear_all();</code></pre>
+</p>
+<h3>dbug_watch_list()</h3>
+<p>
+Show all currently active watchpoints.
+</p>
+<pre><code>dbug_watch_list();
+<p>
+// Output:
+// [DBUG] Active watchpoints:
+//   [loop] counter = 42
+//   [state] current_state = 2
+//   [balance] account_balance = 1500</code></pre>
+</p>
+<h3>Practical Examples</h3>
+<p>
+#### Tracking Loop Counter
+</p>
+<pre><code>dbug_enable("loop");
+<p>
+int64:i = 0i64;
+dbug_watch_int64("loop", "loop counter", @i);
+</p>
+<p>
+while (i < 5i64) {
+// ... work ...
+i = i + 1i64;
+dbug_watch_check_all();  // See each increment
+}
+</p>
+<p>
+dbug_watch_clear_all();</code></pre>
+</p>
+<p>
+#### State Machine Debugging
+</p>
+<pre><code>int64:STATE_IDLE = 0i64;
+<p>
+int64:STATE_PROCESSING = 1i64;
+int64:STATE_DONE = 2i64;
+</p>
+<p>
+int64:state = STATE_IDLE;
+dbug_watch_int64("fsm", "state", @state);
+</p>
+<p>
+state = STATE_PROCESSING;
+dbug_watch_check_all();  // Alert: state changed 0 → 1
+</p>
+<p>
+process_data();
+</p>
+<p>
+state = STATE_DONE;
+dbug_watch_check_all();  // Alert: state changed 1 → 2</code></pre>
+</p>
+<p>
+#### Multiple Variable Tracking
+</p>
+<pre><code>int64:balance = 1000i64;
+<p>
+int64:transactions = 0i64;
+int64:fees = 0i64;
+</p>
+<p>
+dbug_watch_int64("account", "balance", @balance);
+dbug_watch_int64("account", "transactions", @transactions);
+dbug_watch_int64("account", "fees", @fees);
+</p>
+<p>
+// Show what we're watching
+dbug_watch_list();
+</p>
+<p>
+// Do operations
+balance = balance - 100i64;  // Withdrawal
+transactions = transactions + 1i64;
+fees = fees + 2i64;
+</p>
+<p>
+dbug_watch_check_all();  // Shows all three changed</code></pre>
+</p>
+<p>
+#### Strategic Checkpoints
+</p>
+<pre><code>func:complex_computation = void() {
+<p>
+int64:intermediate_result = 0i64;
+dbug_watch_int64("compute", "result", @intermediate_result);
+</p>
+<p>
+// Checkpoint 1: After phase 1
+intermediate_result = phase1();
+dbug_watch_check_all();
+</p>
+<p>
+// Checkpoint 2: After phase 2
+intermediate_result = phase2(intermediate_result);
+dbug_watch_check_all();
+</p>
+<p>
+// Checkpoint 3: After phase 3
+intermediate_result = phase3(intermediate_result);
+dbug_watch_check_all();
+</p>
+<p>
+pass();
+}</code></pre>
+</p>
+<h3>Limitations & Design</h3>
+<strong>Why Manual Checks?</strong>
+<ul><li>Automatic tracking needs compiler instrumentation</li>
+<li>Manual checkpoints give you control</li>
+<li>More efficient (check only when needed)</li>
+<li>Predictable behavior</li>
+</ul>
+<strong>Current Support</strong>:
+<ul><li>✅ int64 variables</li>
+<li>❌ int32, float64, etc. (TODO: easy to add)</li>
+<li>❌ Strings, structs (TODO: needs comparison logic)</li>
+<li>❌ Continuous monitoring (not possible without threading)</li>
+</ul>
+<strong>Max Watchpoints</strong>: 16 simultaneous (increase <code>DBUG_MAX_WATCHES</code> if needed)
+<strong>Performance</strong>:
+<ul><li>Each <code>dbug_watch_check_all()</code> loops through all watches</li>
+<li>O(n) where n = number of active watches</li>
+<li>Negligible for < 20 watches</li>
+</ul>
+<strong>Best Practices</strong>:
+<ul><li>✅ Use for variables you suspect are changing unexpectedly</li>
+<li>✅ Place checks at logical boundaries (loop ends, function returns)</li>
+<li>✅ Clear watches when done (<code>dbug_watch_clear_all()</code>)</li>
+<li>✅ Use group filtering to reduce noise</li>
+<li>❌ Don't check every line (too verbose)</li>
+<li>❌ Don't forget to clear (wastes watch slots)</li>
+</ul>
+<hr>
+<h2>Performance Timing</h2>
+<p>
+Measure execution time for code sections without external profiling tools.
+</p>
+<h3>dbug_time_start(group, label) → int64</h3>
+<p>
+Start a timing measurement. Returns current clock ticks.
+</p>
+<strong>Parameters</strong>:
+<ul><li><code>group</code> - Debug group (must be enabled)</li>
+<li><code>label</code> - Description of what's being timed</li>
+</ul>
+<strong>Returns</strong>: Clock ticks (or 0 if group disabled)
+<pre><code>int64:start = dbug_time_start("perf", "Database query");</code></pre>
+<h3>dbug_time_end(group, label, start_time)</h3>
+<p>
+End a timing measurement and print elapsed ticks.
+</p>
+<strong>Parameters</strong>:
+<ul><li><code>group</code> - Debug group (must be enabled)</li>
+<li><code>label</code> - Description (should match start label)</li>
+<li><code>start_time</code> - Value returned from <code>dbug_time_start</code></li>
+</ul>
+<pre><code>dbug_time_end("perf", "Database query", start);
+<p>
+// Output: [DBUG:perf] TIMING END: Database query took 123456 ticks</code></pre>
+</p>
+<h3>Timing Examples</h3>
+<p>
+#### Basic Timing
+</p>
+<pre><code>dbug_enable("perf");
+<p>
+int64:t = dbug_time_start("perf", "File processing");
+</p>
+<p>
+// Do work
+process_large_file("data.txt");
+</p>
+<p>
+dbug_time_end("perf", "File processing", t);
+// Output: [DBUG:perf] TIMING END: File processing took 987654 ticks</code></pre>
+</p>
+<p>
+#### Multiple Sections
+</p>
+<pre><code>dbug_enable("perf");
+<p>
+int64:total = dbug_time_start("perf", "Batch job");
+</p>
+<p>
+int64:t1 = dbug_time_start("perf", "Load data");
+load_from_database();
+dbug_time_end("perf", "Load data", t1);
+</p>
+<p>
+int64:t2 = dbug_time_start("perf", "Transform data");
+apply_transformations();
+dbug_time_end("perf", "Transform data", t2);
+</p>
+<p>
+int64:t3 = dbug_time_start("perf", "Save results");
+write_to_disk();
+dbug_time_end("perf", "Save results", t3);
+</p>
+<p>
+dbug_time_end("perf", "Batch job", total);</code></pre>
+</p>
+<p>
+#### Comparative Timing
+</p>
+<pre><code>dbug_enable("perf");
+<p>
+// Time algorithm A
+int64:t_a = dbug_time_start("perf", "Algorithm A");
+result_a = sort_bubble(data);
+dbug_time_end("perf", "Algorithm A", t_a);
+</p>
+<p>
+// Time algorithm B
+int64:t_b = dbug_time_start("perf", "Algorithm B");
+result_b = sort_quick(data);
+dbug_time_end("perf", "Algorithm B", t_b);
+</p>
+<p>
+// Compare which is faster</code></pre>
+</p>
+<h3>Timing Notes</h3>
+<strong>Clock Source</strong>: Uses C <code>clock()</code> function (CPU time, not wall time)
+<strong>Units</strong>: Ticks are platform-dependent (typically microseconds)
+<strong>Overhead</strong>: Minimal when group disabled (just a boolean check)
+<strong>Best Practices</strong>:
+<ul><li>✅ Use for quick performance checks</li>
+<li>✅ Time inner loops separately from outer logic</li>
+<li>✅ Compare relative timings (A vs B)</li>
+<li>❌ Don't rely on absolute tick values (platform-dependent)</li>
+<li>❌ Don't use for wall-clock measurements (use system time for that)</li>
+</ul>
+<hr>
+<h2>Statistics Counters</h2>
+<p>
+Track occurrences without manual counting code.
+</p>
+<h3>dbug_count(group, label)</h3>
+<p>
+Increment a counter by 1.
+</p>
+<strong>Parameters</strong>:
+<ul><li><code>group</code> - Debug group (must be enabled)</li>
+<li><code>label</code> - Counter name</li>
+</ul>
+<pre><code>while (process_next_item()) {
+<p>
+dbug_count("stats", "items_processed");
+}</code></pre>
+</p>
+<h3>dbug_count_reset(group, label)</h3>
+<p>
+Reset a counter to zero.
+</p>
+<pre><code>dbug_count_reset("stats", "items_processed");</code></pre>
+<h3>dbug_count_show(group, label)</h3>
+<p>
+Print current value of a specific counter.
+</p>
+<pre><code>dbug_count_show("stats", "items_processed");
+<p>
+// Output: [DBUG:stats] items_processed: 42</code></pre>
+</p>
+<h3>dbug_count_show_all()</h3>
+<p>
+Print all active counters.
+</p>
+<pre><code>dbug_count_show_all();
+<p>
+// Output:
+// [DBUG] Active counters:
+//   [stats] items_processed: 42
+//   [stats] errors: 3
+//   [network] requests: 127</code></pre>
+</p>
+<h3>Counter Examples</h3>
+<p>
+#### Basic Counting
+</p>
+<pre><code>dbug_enable("stats");
+<p>
+int32:i = 0;
+while (i < 100) {
+dbug_count("stats", "loop_iterations");
+i = i + 1;
+}
+</p>
+<p>
+dbug_count_show("stats", "loop_iterations");
+// Output: [DBUG:stats] loop_iterations: 100</code></pre>
+</p>
+<p>
+#### Success/Error Tracking
+</p>
+<pre><code>dbug_enable("stats");
+<p>
+int32:i = 0;
+while (i < 50) {
+bool:success = attempt_operation();
+</p>
+<p>
+if (success) {
+dbug_count("stats", "successes");
+} else {
+dbug_count("stats", "failures");
+}
+</p>
+<p>
+dbug_count("stats", "total_attempts");
+i = i + 1;
+}
+</p>
+<p>
+drop(println("\nFinal statistics:"));
+dbug_count_show("stats", "successes");
+dbug_count_show("stats", "failures");
+dbug_count_show("stats", "total_attempts");</code></pre>
+</p>
+<p>
+#### Multiple Counters by Category
+</p>
+<pre><code>dbug_enable("stats");
+<p>
+while (process_events()) {
+string:event_type = get_next_event_type();
+</p>
+<p>
+if (event_type == "click") {
+dbug_count("stats", "clicks");
+} else if (event_type == "scroll") {
+dbug_count("stats", "scrolls");
+} else if (event_type == "keypress") {
+dbug_count("stats", "keypresses");
+}
+</p>
+<p>
+dbug_count("stats", "total_events");
+}
+</p>
+<p>
+dbug_count_show_all();</code></pre>
+</p>
+<p>
+#### Reset Pattern
+</p>
+<pre><code>dbug_enable("stats");
+<p>
+// First batch
+process_batch_1();
+dbug_count_show("stats", "items");
+</p>
+<p>
+// Reset for second batch
+dbug_count_reset("stats", "items");
+process_batch_2();
+dbug_count_show("stats", "items");</code></pre>
+</p>
+<h3>Counter Limitations</h3>
+<strong>Max Counters</strong>: 32 simultaneous (increase <code>DBUG_MAX_COUNTERS</code> if needed)
+<strong>Storage</strong>: Each counter uses ~40 bytes (group + label + count + active flag)
+<strong>Performance</strong>:
+<ul><li>Finding counter is O(n) where n = number of active counters</li>
+<li>Negligible for < 50 counters</li>
+<li>Increment is O(1) after first lookup (cached internally)</li>
+</ul>
+<strong>Group Filtering</strong>:
+<ul><li><code>dbug_count()</code> still increments if group disabled</li>
+<li><code>dbug_count_show()</code> respects group filtering (won't print if disabled)</li>
+<li>This lets you collect stats even when not displaying them</li>
+</ul>
+<strong>Best Practices</strong>:
+<ul><li>✅ Use for tracking occurrences (loops, events, operations)</li>
+<li>✅ Show all counters at program end (<code>dbug_count_show_all()</code>)</li>
+<li>✅ Reset counters between logical sections</li>
+<li>✅ Use descriptive labels ("http_requests" not "count1")</li>
+<li>❌ Don't create hundreds of counters (use proper profiling)</li>
+<li>❌ Don't use for timing (use <code>dbug_time_*</code> functions)</li>
+</ul>
+<hr>
+<h2>Real-World Examples</h2>
+<h3>Network Connection Handler</h3>
+<pre><code>use stdlib.dbug;
+<p>
+func:connect_to_server = bool(string:hostname, int32:port) {
+dbug_enter("network", "connect_to_server");
+</p>
+<p>
+dbug_print_labeled("network", "Target", hostname);
+dbug_check("network", "Port must be valid", port > 0 && port < 65536);
+</p>
+<p>
+dbug_print("network", "Resolving DNS");
+// ... resolve hostname ...
+</p>
+<p>
+dbug_print("network", "Opening TCP socket");
+// ... create socket ...
+</p>
+<p>
+dbug_print("network", "Sending handshake");
+// ... send initial data ...
+</p>
+<p>
+dbug_exit("network", "connect_to_server");
+pass(true);
+}
+</p>
+<p>
+// Usage:
+// dbug_enable("network");  // See all network operations
+// connect_to_server("api.example.com", 443);</code></pre>
+</p>
+<h3>Parser with Assertions</h3>
+<pre><code>use stdlib.dbug;
+<p>
+func:parse_expression = result<AST>(TokenStream:tokens) {
+dbug_enter("parser", "parse_expression");
+</p>
+<p>
+// Precondition check
+dbug_check("parser", "Token stream cannot be empty", tokens.length > 0);
+</p>
+<p>
+dbug_print("parser", "Building AST");
+AST:tree = build_tree(tokens);
+</p>
+<p>
+// Invariant check
+dbug_check("parser", "AST root must exist", tree.root != NULL);
+</p>
+<p>
+dbug_print("parser", "Type checking");
+bool:valid = type_check(tree);
+dbug_warn("parser", "Type check should succeed", valid);
+</p>
+<p>
+dbug_exit("parser", "parse_expression");
+pass(result_ok(tree));
+}</code></pre>
+</p>
+<h3>Cache System with Performance Warnings</h3>
+<pre><code>use stdlib.dbug;
+<p>
+func:cache_lookup = result<string>(string:key) {
+dbug_enter("cache", "cache_lookup");
+dbug_print_labeled("cache", "Key", key);
+</p>
+<p>
+// Check for hit
+bool:hit = check_cache(key);
+</p>
+<p>
+if (hit) {
+dbug_print("cache", "✓ Cache HIT");
+string:value = get_from_cache(key);
+dbug_exit("cache", "cache_lookup");
+pass(result_ok(value));
+} else {
+dbug_print("cache", "✗ Cache MISS");
+</p>
+<p>
+// Warn if miss rate is getting high (but don't fail)
+float64:miss_rate = calculate_miss_rate();
+dbug_warn("cache", "High miss rate detected", miss_rate < 0.3);
+</p>
+<p>
+string:value = fetch_from_database(key);
+cache_store(key, value);
+</p>
+<p>
+dbug_exit("cache", "cache_lookup");
+pass(result_ok(value));
+}
+}</code></pre>
+</p>
+<h3>Batch Processing with Timing and Statistics</h3>
+<pre><code>use stdlib.dbug;
+<p>
+func:process_file = bool(string:filename) {
+// Returns true on success, false on error
+// Simulated file processing
+pass(true);  // or false for errors
+};
+</p>
+<p>
+func:batch_processor = void() {
+dbug_enable("batch");
+dbug_enable("stats");
+</p>
+<p>
+drop(println("Starting batch file processor..."));
+</p>
+<p>
+// Time the entire batch
+int64:total_time = dbug_time_start("batch", "Batch processing");
+</p>
+<p>
+// Process 100 files
+int32:i = 0;
+while (i < 100) {
+// Time individual file
+int64:file_time = dbug_time_start("batch", "Single file");
+</p>
+<p>
+bool:success = process_file("file.txt");
+</p>
+<p>
+dbug_time_end("batch", "Single file", file_time);
+</p>
+<p>
+// Track statistics
+if (success) {
+dbug_count("stats", "files_success");
+} else {
+dbug_count("stats", "files_failed");
+}
+dbug_count("stats", "files_total");
+</p>
+<p>
+// Checkpoint every 25 files
+if (i % 25 == 0 && i > 0) {
+dbug_separator("batch");
+drop(print("Checkpoint at file #"));
+printInt32(i);
+drop(println(""));
+dbug_count_show_all();
+dbug_separator("batch");
+}
+</p>
+<p>
+i = i + 1;
+}
+</p>
+<p>
+dbug_time_end("batch", "Batch processing", total_time);
+</p>
+<p>
+// Final statistics
+drop(println("\n=== FINAL STATISTICS ==="));
+dbug_count_show_all();
+};
+</p>
+<p>
+// Output example:
+// [DBUG:batch] TIMING START: Batch processing
+// [DBUG:batch] TIMING START: Single file
+// [DBUG:batch] TIMING END: Single file took 1234 ticks
+// ...
+// ──────────────────────────────────────────────────
+// Checkpoint at file #25
+// [DBUG] Active counters:
+//   [stats] files_success: 23
+//   [stats] files_failed: 2
+//   [stats] files_total: 25
+// ──────────────────────────────────────────────────
+// ...
+// [DBUG:batch] TIMING END: Batch processing took 123456 ticks
+//
+// === FINAL STATISTICS ===
+// [DBUG] Active counters:
+//   [stats] files_success: 94
+//   [stats] files_failed: 6
+//   [stats] files_total: 100</code></pre>
+</p>
+<hr>
+<h2>Workflow Tips</h2>
+<h3>Development Phase</h3>
+<pre><code>// Enable ALL debug output while developing
+<p>
+dbug_enable("all");
+</p>
+<p>
+// Your code with liberal dbug calls
+// ...
+</p>
+<p>
+// When feature works, disable
+dbug_disable("all");</code></pre>
+</p>
+<h3>Debugging Specific Issue</h3>
+<pre><code>// Problem: Network code not working
+<p>
+// Solution: Enable just that group
+</p>
+<p>
+dbug_enable("network");
+connect_to_database();  // Now you see all network debug output</code></pre>
+</p>
+<h3>Production Deployment</h3>
+<pre><code>// All dbug calls stay in source code
+<p>
+// Simply don't enable any groups
+// Zero performance impact
+</p>
+<p>
+func:main = int32() {
+// No dbug_enable calls
+</p>
+<p>
+// All these compile to no-ops (condition check only)
+dbug_print("network", "...");
+dbug_print("parser", "...");
+</p>
+<p>
+pass(0);
+}</code></pre>
+</p>
+<h3>Temporary Investigation</h3>
+<pre><code>func:main = int32() {
+<p>
+// Enable for investigation
+dbug_enable("database");
+</p>
+<p>
+buggy_function();  // Debug output visible
+</p>
+<p>
+// Disable after investigation
+dbug_disable("database");
+</p>
+<p>
+rest_of_program();  // No debug output
+</p>
+<p>
+pass(0);
+}</code></pre>
+</p>
+<hr>
+<h2>Performance Characteristics</h2>
+<p>
+| Operation | Disabled Group | Enabled Group |
+|-----------|----------------|---------------|
+| <code>dbug_print</code> | One string comparison + branch | String concatenation + print |
+| <code>dbug_check</code> | Condition eval + branch | Comparison + potential print/halt |
+| <code>dbug_warn</code> | Condition eval + branch | Comparison + potential print |
+| Group lookup | O(n) where n = enabled groups | O(n) (typically n < 10) |
+</p>
+<strong>Memory</strong>: Fixed <code>32 * string</code> array (group names), one boolean (all flag)
+<strong>Recommendations</strong>:
+<ul><li>Keep number of enabled groups < 10 for best performance</li>
+<li>Use conditional computation for expensive debug info:</li>
+</ul>  <pre><code>  if (dbug_is_enabled("stats")) {
+<p>
+string:expensive_stats = calculate_all_stats();
+dbug_print("stats", expensive_stats);
+}
+``<code>
+</p>
+<hr>
+<h2>Comparison with Other Approaches</h2>
+<p>
+| Approach | Pros | Cons |
+|----------|------|------|
+| <strong>Manual commenting</strong> | Simple | Error-prone, loses debug code |
+| <strong>Preprocessor #ifdef</strong> | Zero runtime cost | Requires recompilation, brittle |
+| <strong>Logging libraries</strong> | Feature-rich | Heavy dependencies, complex |
+| <strong>print() everywhere</strong> | Built-in | Always outputs, no filtering |
+| <strong>dbug module</strong> | Leave code in place, selective | Small runtime check when disabled |
+</p>
+<hr>
+<h2>Future Enhancements</h2>
+<p>
+When Aria gains additional features, dbug will expand:
+</p>
+<h3>Format Strings (Planned)</code></pre>aria</h3>
+<p>
+// TODO: After format strings land
+dbug_printf("network", "Received {{}} bytes from {{}}", bytes, ip_addr);
+dbug_checkf("val", "Expected {} but got {}", count == 5, 5, count);
+</p>
+<pre><code>
+<h3>Struct Dumping (Planned)</code></pre>aria</h3>
+<p>
+// TODO: After reflection/metaprogramming
+dbug_dump_struct("debug", "User data", user);
+// Output:
+// [DBUG:debug] User data:
+//   id: 12345
+//   name: "Alice"
+//   age: 30
+</p>
+<pre><code>
+<h3>Timing Measurements (Planned)</code></pre>aria</h3>
+<p>
+// TODO: After higher-order functions
+dbug_measure_time("perf", "Database query", func() {
+query_database();
+});
+// Output: [DBUG:perf] Database query took 45ms
+</p>
+<pre><code>
+<hr>
+<h2>Best Practices</h2>
+<h3>✓ DO</h3>
+<ul><li><strong>Use descriptive group names</strong>: </code>"network"<code>, </code>"parser"<code> not </code>"dbg1"<code>, </code>"test"<code></li>
+<li><strong>Check expensive computations</strong>: Use </code>dbug_is_enabled()<code> before costly work</li>
+<li><strong>Leave debug code in</strong>: That's the whole point!</li>
+<li><strong>Use assertions liberally</strong>: Catch bugs early in development</li>
+<li><strong>Group related code</strong>: Same group for related components</li>
+</ul>
+<h3>✗ DON'T</h3>
+<ul><li><strong>Don't use for production errors</strong>: Use </code>result<code> types for runtime errors</li>
+<li><strong>Don't enable > 20 groups</strong>: Performance degrades with many groups</li>
+<li><strong>Don't rely on debug output for correctness</strong>: It should be supplementary</li>
+<li><strong>Don't use as logging</strong>: This is for development, not production monitoring</li>
+<li><strong>Don't forget to disable "all"</strong>: Leave explicit enables for subsystems</li>
+</ul>
+<hr>
+<h2>Integration with Other Tools</h2>
+<h3>With stddbg stream (I/O system)</h3>
+</code>dbug<code> prints to stdout. For separate debug stream:
+</code></pre>aria
+<p>
+// TODO: When stddbg stream is implemented
+// dbug will automatically use stddbg instead of stdout
+</p>
+<pre><code>
+<h3>With GDB</h3>
+<p>
+When assertions fail, program halts (infinite loop). Attach GDB:
+</code></pre>bash
+$ gdb -p <pid>
+(gdb) bt  # Backtrace shows where assertion failed
+</p>
+<pre><code>
+<h3>With Result Types</h3>
+</code></pre>aria
+<p>
+func:risky_operation = result<int32>() {
+dbug_enter("ops", "risky_operation");
+</p>
+<p>
+result<int32>:r = might_fail();
+if (r.is_error) {
+dbug_print("ops", "Operation failed as expected");
+dbug_exit("ops", "risky_operation");
+pass(r);  // Propagate error
+}
+</p>
+<p>
+// Continue with success path
+dbug_print("ops", "Operation succeeded");
+dbug_exit("ops", "risky_operation");
+pass(r);
+}
+</code>``
+</p>
+<hr>
+<h2>See Also</h2>
+<ul><li><a href="debug_io.md">Debug I/O (stddbg)</a> - Dedicated debug stream</li>
+<li><a href="../control_flow/error_handling.md">Error Handling</a> - Result types for runtime errors</li>
+<li><a href="assertions.md">Assertions</a> - Compile-time assertions (TODO)</li>
+<li><a href="../testing/unit_tests.md">Testing</a> - Test framework (TODO)</li>
+</ul>
+    </main>
+</body>
+</html>

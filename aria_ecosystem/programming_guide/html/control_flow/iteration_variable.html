@@ -229,6 +229,8 @@
 <div class="category">
 <h3>Meta</h3>
 <ul>
+<li><a href="/META/ARIA/DBUG_MODULE_COMPLETE.html">Dbug Module Complete</a></li>
+<li><a href="/META/ARIA/DBUG_WATCHPOINTS_COMPLETE.html">Dbug Watchpoints Complete</a></li>
 <li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
 </ul>
 </div>
@@ -424,6 +426,7 @@
 <li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
 <li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
 <li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/cast_operator.html">Cast Operator</a></li>
 <li><a href="/operators/colon.html">Colon</a></li>
 <li><a href="/operators/decrement.html">Decrement</a></li>
 <li><a href="/operators/div_assign.html">Div Assign</a></li>
@@ -492,6 +495,7 @@
 <ul>
 <li><a href="/standard_library/createLogger.html">Createlogger</a></li>
 <li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/dbug.html">Dbug</a></li>
 <li><a href="/standard_library/exec.html">Exec</a></li>
 <li><a href="/standard_library/filter.html">Filter</a></li>
 <li><a href="/standard_library/fork.html">Fork</a></li>
@@ -724,12 +728,34 @@ stdout << "Index: " << $ << "\n";
 }</code></pre>
 </p>
 <hr>
-<h2>Type is Inferred</h2>
+<h2>Type of <code>$</code> — Always <code>int64</code></h2>
+<code>$</code> has type <strong><code>int64</code></strong> in both <code>loop</code> and <code>till</code>. This is fixed, not inferred.
+<pre><code>loop(0, 10, 1) {
+<p>
+int64:i = $;   // ✅ correct — $ is int64
+int32:i = $;   // ❌ ERROR: cannot assign int64 to int32
+}</code></pre>
+</p>
+<p>
+When capturing <code>$</code> into a named variable for array indexing, always use <code>int64</code>:
+</p>
+<pre><code>int64[512]:grid;
+<p>
+loop(0, 512, 1) {
+int64:idx = $;
+grid[idx] = 0i64;
+}</code></pre>
+</p>
+<hr>
+<h2>Type of Iteration Variable — Inferred From Collection</h2>
+<p>
+The <em>element</em> variable you declare from the collection is inferred from the collection's element type — not from <code>$</code>:
+</p>
 <pre><code>numbers: []i32 = [1, 2, 3];
 <p>
 till(numbers.length - 1, 1) {
 num: auto = numbers[$];
-// num is inferred as i32
+// num is inferred as i32 (from the array element type)
 }
 </p>
 <p>
@@ -944,7 +970,7 @@ products[$].updated_at = now();
 <p>
 till(students.length - 1, 1) {
 student: auto = students[$];
-rank: i32 = $;  // Index is the rank
+rank: int64 = $;  // Index is the rank ($ is int64)
 // Both student and rank are clear
 stdout << format("{}. {} - GPA: {}",
 rank + 1, student.name, student.gpa);

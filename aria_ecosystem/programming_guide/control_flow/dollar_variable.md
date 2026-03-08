@@ -23,6 +23,29 @@ till(array.length - 1, 1) {
 
 ---
 
+## Type of `$` — Always `int64`
+
+`$` is always type **`int64`**, regardless of the collection element type. This is fixed, not inferred.
+
+```aria
+till(items.length - 1, 1) {
+    int64:idx = $;   // ✅ correct
+    int32:idx = $;   // ❌ ERROR: cannot assign int64 to int32
+}
+```
+
+This matters when using `$` as an array subscript or passing it to a function that expects a specific integer type — always capture it as `int64`:
+
+```aria
+int64[256]:buf;
+till(256, 1) {
+    int64:i = $;
+    buf[i] = 0i64;
+}
+```
+
+---
+
 ## $ as Index
 
 In `till` loops, `$` automatically holds the current index:
@@ -214,9 +237,9 @@ till(scores.length - 1, 1) {
 ### ✅ DO: Store $ if Needed Multiple Times
 
 ```aria
-// Good: Store index for clarity
+// Good: Store index for clarity (use int64, not int32)
 till(items.length - 1, 1) {
-    idx: i32 = $;
+    idx: int64 = $;
     stdout << idx << ": " << items[idx] << "\n";
 }
 ```

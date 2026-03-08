@@ -109,14 +109,39 @@ till(items.length - 1, 1) {
 
 ---
 
-## Type is Inferred
+## Type of `$` — Always `int64`
+
+`$` has type **`int64`** in both `loop` and `till`. This is fixed, not inferred.
+
+```aria
+loop(0, 10, 1) {
+    int64:i = $;   // ✅ correct — $ is int64
+    int32:i = $;   // ❌ ERROR: cannot assign int64 to int32
+}
+```
+
+When capturing `$` into a named variable for array indexing, always use `int64`:
+
+```aria
+int64[512]:grid;
+loop(0, 512, 1) {
+    int64:idx = $;
+    grid[idx] = 0i64;
+}
+```
+
+---
+
+## Type of Iteration Variable — Inferred From Collection
+
+The *element* variable you declare from the collection is inferred from the collection's element type — not from `$`:
 
 ```aria
 numbers: []i32 = [1, 2, 3];
 
 till(numbers.length - 1, 1) {
     num: auto = numbers[$];
-    // num is inferred as i32
+    // num is inferred as i32 (from the array element type)
 }
 
 users: []User = load_users();
@@ -374,7 +399,7 @@ students: []Student = load_students();
 
 till(students.length - 1, 1) {
     student: auto = students[$];
-    rank: i32 = $;  // Index is the rank
+    rank: int64 = $;  // Index is the rank ($ is int64)
     // Both student and rank are clear
     stdout << format("{}. {} - GPA: {}", 
         rank + 1, student.name, student.gpa);

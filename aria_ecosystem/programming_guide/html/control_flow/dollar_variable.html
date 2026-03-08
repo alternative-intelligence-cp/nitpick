@@ -229,6 +229,8 @@
 <div class="category">
 <h3>Meta</h3>
 <ul>
+<li><a href="/META/ARIA/DBUG_MODULE_COMPLETE.html">Dbug Module Complete</a></li>
+<li><a href="/META/ARIA/DBUG_WATCHPOINTS_COMPLETE.html">Dbug Watchpoints Complete</a></li>
 <li><a href="/META/ARIA/SYNTAX_REFERENCE.html">Syntax Reference</a></li>
 </ul>
 </div>
@@ -424,6 +426,7 @@
 <li><a href="/operators/bitwise_not.html">Bitwise Not</a></li>
 <li><a href="/operators/bitwise_or.html">Bitwise Or</a></li>
 <li><a href="/operators/bitwise_xor.html">Bitwise Xor</a></li>
+<li><a href="/operators/cast_operator.html">Cast Operator</a></li>
 <li><a href="/operators/colon.html">Colon</a></li>
 <li><a href="/operators/decrement.html">Decrement</a></li>
 <li><a href="/operators/div_assign.html">Div Assign</a></li>
@@ -492,6 +495,7 @@
 <ul>
 <li><a href="/standard_library/createLogger.html">Createlogger</a></li>
 <li><a href="/standard_library/createPipe.html">Createpipe</a></li>
+<li><a href="/standard_library/dbug.html">Dbug</a></li>
 <li><a href="/standard_library/exec.html">Exec</a></li>
 <li><a href="/standard_library/filter.html">Filter</a></li>
 <li><a href="/standard_library/fork.html">Fork</a></li>
@@ -657,6 +661,25 @@ stdout << $ << ": " << array[$] << "\n";
 }</code></pre>
 </p>
 <hr>
+<h2>Type of <code>$</code> — Always <code>int64</code></h2>
+<code>$</code> is always type <strong><code>int64</code></strong>, regardless of the collection element type. This is fixed, not inferred.
+<pre><code>till(items.length - 1, 1) {
+<p>
+int64:idx = $;   // ✅ correct
+int32:idx = $;   // ❌ ERROR: cannot assign int64 to int32
+}</code></pre>
+</p>
+<p>
+This matters when using <code>$</code> as an array subscript or passing it to a function that expects a specific integer type — always capture it as <code>int64</code>:
+</p>
+<pre><code>int64[256]:buf;
+<p>
+till(256, 1) {
+int64:i = $;
+buf[i] = 0i64;
+}</code></pre>
+</p>
+<hr>
 <h2>$ as Index</h2>
 <p>
 In <code>till</code> loops, <code>$</code> automatically holds the current index:
@@ -812,10 +835,10 @@ scores[$] = scores[$] + bonus;
 }</code></pre>
 </p>
 <h3>✅ DO: Store $ if Needed Multiple Times</h3>
-<pre><code>// Good: Store index for clarity
+<pre><code>// Good: Store index for clarity (use int64, not int32)
 <p>
 till(items.length - 1, 1) {
-idx: i32 = $;
+idx: int64 = $;
 stdout << idx << ": " << items[idx] << "\n";
 }</code></pre>
 </p>
