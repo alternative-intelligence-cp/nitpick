@@ -1743,8 +1743,8 @@ ERR,        // TBB error sentinel literal (context-dependent based on type)
 NIL,        // Aria's "no value" sentinel for optional types (different from NULL pointer)
 NULL,       // Null pointer constant (address 0x0) for @ pointer types
 void,       // C FFI only - "no return value" type (NOT usable in Aria native code)
-stack,      // explicit stack allocation
-gc,         // explicit GC allocation
+stack,      // explicit stack allocation keyword  !! NOTE (March 2026): 'stack' and 'gc' are contextual - valid as variable names outside allocation contexts !!
+gc,         // explicit GC allocation keyword     !! NOTE (March 2026): 'stack' and 'gc' are contextual - valid as variable names outside allocation contexts !!
 wildx,      // executable memory allocation (for JIT)
 unsafe,     // Mark block/operation as requiring manual safety verification (weaker memory orderings, raw pointers, etc.)
 sync,       // Synchronization primitive marker (for lock-free patterns)
@@ -1980,12 +1980,18 @@ $,         // iteration variable in till loops, safe reference
 :,         // type annotation
 fall(),    // explicit fallthrough in pick
 is,        // ternary condition keyword
+=>,        // CAST / COERCE operator  !! DECIDED March 6, 2026 !!
+           //   expr => TypeName   (e.g.  a => int8,  val => float64)
+           //   Infix: source on left, target type on right
+           //   Reads: "a becomes int8"
+           //   Precedence: lower than unary, higher than additive
+           //   Operator system: -> (pointer), <- (deref), @ (address), => (cast)
 
-NOTE: => is NOT a lambda operator. Lambda syntax is just: returnType(params) { body }
+NOTE: => is the CAST operator, NOT a lambda. Lambda syntax is just: returnType(params) { body }
       All functions return Result type implicitly with {err, val} fields
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   OPERATOR PRECEDENCE TABLE (February 2026)
+   OPERATOR PRECEDENCE TABLE (Updated March 2026)
    ═══════════════════════════════════════════════════════════════════════════
 
 Operators listed from HIGHEST to LOWEST precedence.
@@ -1998,6 +2004,7 @@ PRECEDENCE LEVEL | OPERATORS              | ASSOCIATIVITY | EXAMPLE
 3  Dereference   | <-                     | Right-to-left | <-ptr
 4  Multiplicative| * / %                  | Left-to-right | a * b / c
 5  Additive      | + -                    | Left-to-right | a + b - c
+5.5 Cast         | =>                     | Left-to-right | a => int8  (binds tighter than additive: b + a => int8  casts a then adds)
 6  Bitwise Shift | << >>                  | Left-to-right | x << 2
 7  Relational    | < <= > >= <=>          | Left-to-right | a < b   x <=> y
 8  Equality      | == !=                  | Left-to-right | a == b
@@ -3328,8 +3335,13 @@ SEE ALSO:
 
 /* CLOSURES AND LAMBDAS - ANONYMOUS FUNCTIONS (February 2026)
 
-!! IMPORTANT: => IS NOT A LAMBDA OPERATOR IN ARIA !!
+!! IMPORTANT: => IS THE CAST OPERATOR IN ARIA, NOT A LAMBDA OPERATOR !!
 Aria does not use => for lambdas. Lambda syntax is simply: returnType(params) { body }
+
+=> is used exclusively for type casting (coercion):
+   int8:b = a => int8;       // cast a to int8
+   float64:d = val => float64;  // widen val to float64
+   int8:c = b + a => int8;   // casts a, then adds to b (cast binds tighter than +)
 
 PHILOSOPHY: "Functions are first-class values" - pass them around like any other data
 
@@ -4281,6 +4293,11 @@ when(c <= i){
 //  - step is ALWAYS POSITIVE (magnitude only)
 //  - if start < limit: counts UP from start to limit by step
 //  - if start > limit: counts DOWN from start to limit by step
+//
+// !! IMPORTANT (March 2026): $ is ALWAYS type int64 in loop and till.
+//    Capture it as int64, not int32:
+//      int64:i = $;   // ✅ correct
+//      int32:i = $;   // ❌ type error — $ is int64
 loop(1,100,1){ // loop(start,limit,step)
     //print(`iteration: &{$}`)
     //$ goes: 1, 2, 3, ..., 100 (counts up from 1 to 100 by 1)
