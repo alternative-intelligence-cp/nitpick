@@ -1,0 +1,197 @@
+/**
+ * alife.aria  —  Conway's Game of Life
+ *
+ * Grid layout : 16 rows × 32 cols, flat row-major  (int64[512])
+ *               Index formula:  row * COLS + col
+ *
+ * Patterns seeded at start:
+ *   Glider       — top-left  (rows  1-3,  cols  1-3)
+ *   Blinker      — top-right (row   1,    cols 25-27)
+ *   R-pentomino  — centre    (rows  6-8,  cols 12-14)
+ *   Beacon       — lower     (rows 10-13, cols 20-23)  period-2 oscillator
+ *
+ * Build:
+ *   cd examples
+ *   gcc -shared -fPIC -o libalife.so libalife.c
+ *   ../build/ariac alife.aria -L. -lalife -Wl,-rpath,'$ORIGIN' -o alife
+ *   ./alife
+ *
+ * What this tests:
+ *   ✓ Large fixed-size arrays  (int64[512] × 2 buffers)
+ *   ✓ Nested loop / $ capture  (int64:r = $  outer, int64:c = $ inner)
+ *   ✓ int64 index arithmetic   (r * COLS + c, rr * COLS + c - 1i64, …)
+ *   ✓ Inline bounds-checked 8-neighbour count
+ *   ✓ Conway survival/birth rules in conditional chain
+ *   ✓ extern FFI block — five C functions (int64 params)
+ *   ✓ -Wl,-rpath,$ORIGIN  (exercises the fork/execvp linker fix)
+ */
+
+// ── C FFI: libalife.so ────────────────────────────────────────────────────
+extern "alife" {
+    func:alife_init  = int32();
+    func:alife_put   = int32(int64:row, int64:col, int64:alive);
+    func:alife_show  = int32(int64:gen);
+    func:alife_sleep = int32(int64:ms);
+    func:alife_done  = int32();
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────
+func:main = int32() {
+
+    // Two 512-cell grids — flat row-major, 16 rows × 32 cols
+    int64[512]:curr;
+    int64[512]:next;
+    int64:COLS = 32i64;
+
+    // Zero-initialise both grids
+    loop(0, 512, 1) {
+        int64:i = $;
+        curr[i] = 0i64;
+        next[i] = 0i64;
+    }
+
+    // ── Seed: Glider  (rows 1-3, cols 1-3) ────────────────────────────────
+    //   . # .      index = row * 32 + col
+    //   . . #
+    //   # # #
+    curr[34] = 1i64;    // (1,2)   1*32+2
+    curr[67] = 1i64;    // (2,3)   2*32+3
+    curr[97] = 1i64;    // (3,1)   3*32+1
+    curr[98] = 1i64;    // (3,2)   3*32+2
+    curr[99] = 1i64;    // (3,3)   3*32+3
+
+    // ── Seed: Blinker  (row 1, cols 25-27) ────────────────────────────────
+    //   # # #
+    curr[57] = 1i64;    // (1,25)  1*32+25
+    curr[58] = 1i64;    // (1,26)  1*32+26
+    curr[59] = 1i64;    // (1,27)  1*32+27
+
+    // ── Seed: R-pentomino  (rows 6-8, cols 12-14) ─────────────────────────
+    //   . # #
+    //   # # .
+    //   . # .
+    curr[205] = 1i64;   // (6,13)  6*32+13
+    curr[206] = 1i64;   // (6,14)  6*32+14
+    curr[236] = 1i64;   // (7,12)  7*32+12
+    curr[237] = 1i64;   // (7,13)  7*32+13
+    curr[269] = 1i64;   // (8,13)  8*32+13
+
+    // ── Seed: Beacon  (rows 10-13, cols 20-23) — period-2 oscillator ──────
+    //   # # . .
+    //   # # . .
+    //   . . # #
+    //   . . # #
+    curr[340] = 1i64;   // (10,20)  10*32+20
+    curr[341] = 1i64;   // (10,21)  10*32+21
+    curr[372] = 1i64;   // (11,20)  11*32+20
+    curr[373] = 1i64;   // (11,21)  11*32+21
+    curr[406] = 1i64;   // (12,22)  12*32+22
+    curr[407] = 1i64;   // (12,23)  12*32+23
+    curr[438] = 1i64;   // (13,22)  13*32+22
+    curr[439] = 1i64;   // (13,23)  13*32+23
+
+    // ── Setup display ──────────────────────────────────────────────────────
+    drop(alife_init());
+
+    // ── Main evolution loop ────────────────────────────────────────────────
+    int64:gen = 0i64;
+
+    while (gen < 400i64) {
+
+        // Push current grid to display layer (one FFI call per cell)
+        loop(0, 16, 1) {
+            int64:r = $;
+            loop(0, 32, 1) {
+                int64:c = $;
+                int64:idx = r * COLS + c;
+                int64:v   = curr[idx];
+                drop(alife_put(r, c, v));
+            }
+        }
+        drop(alife_show(gen));
+        drop(alife_sleep(80i64));
+
+        // ── Compute next generation ────────────────────────────────────────
+        loop(0, 16, 1) {
+            int64:r = $;
+            loop(0, 32, 1) {
+                int64:c = $;
+
+                // Count live neighbours — all 8 directions, bounds-checked
+                int64:n = 0i64;
+
+                // Row ABOVE  (r - 1)
+                if (r > 0i64) {
+                    int64:rr = r - 1i64;
+                    if (c > 0i64) {
+                        int64:i00 = rr * COLS + c - 1i64;
+                        n = n + curr[i00];
+                    }
+                    int64:i01 = rr * COLS + c;
+                    n = n + curr[i01];
+                    if (c < 31i64) {
+                        int64:i02 = rr * COLS + c + 1i64;
+                        n = n + curr[i02];
+                    }
+                }
+
+                // Same row — left & right
+                if (c > 0i64) {
+                    int64:i10 = r * COLS + c - 1i64;
+                    n = n + curr[i10];
+                }
+                if (c < 31i64) {
+                    int64:i12 = r * COLS + c + 1i64;
+                    n = n + curr[i12];
+                }
+
+                // Row BELOW  (r + 1)
+                if (r < 15i64) {
+                    int64:rb = r + 1i64;
+                    if (c > 0i64) {
+                        int64:i20 = rb * COLS + c - 1i64;
+                        n = n + curr[i20];
+                    }
+                    int64:i21 = rb * COLS + c;
+                    n = n + curr[i21];
+                    if (c < 31i64) {
+                        int64:i22 = rb * COLS + c + 1i64;
+                        n = n + curr[i22];
+                    }
+                }
+
+                // Apply Conway's rules
+                //   Live cell survives with 2 or 3 neighbours
+                //   Dead cell is born with exactly 3 neighbours
+                int64:idx  = r * COLS + c;
+                int64:live = curr[idx];
+                int64:s    = 0i64;
+
+                if (live == 1i64) {
+                    if (n == 2i64) { s = 1i64; }
+                    if (n == 3i64) { s = 1i64; }
+                }
+                if (live == 0i64) {
+                    if (n == 3i64) { s = 1i64; }
+                }
+
+                next[idx] = s;
+            }
+        }
+
+        // Swap: copy next → curr
+        loop(0, 512, 1) {
+            int64:i = $;
+            curr[i] = next[i];
+        }
+
+        gen = gen + 1i64;
+    }
+
+    drop(alife_done());
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    drop(alife_done());
+};
