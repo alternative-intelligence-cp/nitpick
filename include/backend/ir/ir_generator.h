@@ -280,6 +280,9 @@ private:
      * @return Result LBIM struct (remainder)
      */
     llvm::Value* generateLBIMMod(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+    llvm::Value* generateLBIMAnd(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+    llvm::Value* generateLBIMOr(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+    llvm::Value* generateLBIMXor(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
 
     // ========================================================================
     // Unknown-Safe Arithmetic (Layer 1 Safety)

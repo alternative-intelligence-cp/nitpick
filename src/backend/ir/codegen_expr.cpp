@@ -854,6 +854,14 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
     } else if (op == frontend::TokenType::TOKEN_PERCENT) {
         opSuffix = "_mod";
     }
+    // Bitwise operators (sign-independent: AND/OR/XOR same for int* and uint*)
+    else if (op == frontend::TokenType::TOKEN_AMPERSAND) {
+        opSuffix = "_and";
+    } else if (op == frontend::TokenType::TOKEN_PIPE) {
+        opSuffix = "_or";
+    } else if (op == frontend::TokenType::TOKEN_CARET) {
+        opSuffix = "_xor";
+    }
     // Comparison operators
     else if (op == frontend::TokenType::TOKEN_EQUAL_EQUAL) {
         opSuffix = "_eq";
@@ -2302,7 +2310,10 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
             op == TokenType::TOKEN_PERCENT ||
             op == TokenType::TOKEN_EQUAL_EQUAL || op == TokenType::TOKEN_BANG_EQUAL ||
             op == TokenType::TOKEN_LESS || op == TokenType::TOKEN_LESS_EQUAL ||
-            op == TokenType::TOKEN_GREATER || op == TokenType::TOKEN_GREATER_EQUAL) {
+            op == TokenType::TOKEN_GREATER || op == TokenType::TOKEN_GREATER_EQUAL ||
+            op == TokenType::TOKEN_AMPERSAND ||
+            op == TokenType::TOKEN_PIPE ||
+            op == TokenType::TOKEN_CARET) {
 
             std::cerr << "[LBIM] Lowering " << leftLBIMType << " operation (runtime)" << std::endl;
 
@@ -2698,15 +2709,33 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     // BITWISE OPERATORS
+    // Guard: LBIM extended types (int2048/int4096/uint2048/uint4096) are stored as
+    // structs but were not caught by getExprLBIMTypeName above. Route them to runtime.
+    auto lbimBitwiseGuard = [&](const char* opSuffix) -> llvm::Value* {
+        if (!left->getType()->isStructTy()) return nullptr;
+        auto* st = llvm::cast<llvm::StructType>(left->getType());
+        std::string sname = st->getName().str();
+        // Struct name is e.g. "struct.int2048" — drop "struct." prefix
+        if (sname.size() > 7) {
+            std::string lbimTypeName = sname.substr(7);
+            llvm::Value* res = generateLBIMBinaryOp(lbimTypeName, op, left, right);
+            if (res) return res;
+        }
+        return nullptr;
+    };
+
     if (op == TokenType::TOKEN_AMPERSAND) {
+        if (auto* r = lbimBitwiseGuard("_and")) return r;
         return builder.CreateAnd(left, right, "andtmp");
     }
     
     if (op == TokenType::TOKEN_PIPE) {
+        if (auto* r = lbimBitwiseGuard("_or")) return r;
         return builder.CreateOr(left, right, "ortmp");
     }
     
     if (op == TokenType::TOKEN_CARET) {
+        if (auto* r = lbimBitwiseGuard("_xor")) return r;
         return builder.CreateXor(left, right, "xortmp");
     }
     

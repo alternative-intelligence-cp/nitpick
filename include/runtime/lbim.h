@@ -146,6 +146,31 @@ aria_int1024_t aria_lbim_sdiv1024(aria_int1024_t dividend, aria_int1024_t diviso
  */
 aria_int1024_t aria_lbim_smod1024(aria_int1024_t dividend, aria_int1024_t divisor);
 
+// ═══════════════════════════════════════════════════════════════════════
+// Bitwise Operations (int128/256/512/1024)
+// Sign-independent: same function for int* and uint* variants.
+// ═══════════════════════════════════════════════════════════════════════
+
+aria_int128_t  aria_lbim_and128 (aria_int128_t  a, aria_int128_t  b);
+aria_int128_t  aria_lbim_or128  (aria_int128_t  a, aria_int128_t  b);
+aria_int128_t  aria_lbim_xor128 (aria_int128_t  a, aria_int128_t  b);
+aria_int128_t  aria_lbim_not128 (aria_int128_t  a);
+
+aria_int256_t  aria_lbim_and256 (aria_int256_t  a, aria_int256_t  b);
+aria_int256_t  aria_lbim_or256  (aria_int256_t  a, aria_int256_t  b);
+aria_int256_t  aria_lbim_xor256 (aria_int256_t  a, aria_int256_t  b);
+aria_int256_t  aria_lbim_not256 (aria_int256_t  a);
+
+aria_int512_t  aria_lbim_and512 (aria_int512_t  a, aria_int512_t  b);
+aria_int512_t  aria_lbim_or512  (aria_int512_t  a, aria_int512_t  b);
+aria_int512_t  aria_lbim_xor512 (aria_int512_t  a, aria_int512_t  b);
+aria_int512_t  aria_lbim_not512 (aria_int512_t  a);
+
+aria_int1024_t aria_lbim_and1024(aria_int1024_t a, aria_int1024_t b);
+aria_int1024_t aria_lbim_or1024 (aria_int1024_t a, aria_int1024_t b);
+aria_int1024_t aria_lbim_xor1024(aria_int1024_t a, aria_int1024_t b);
+aria_int1024_t aria_lbim_not1024(aria_int1024_t a);
+
 #ifdef __cplusplus
 }
 #endif
