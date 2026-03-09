@@ -16,12 +16,18 @@ class TypeCategory(Enum):
     INTEGER = auto()
     UNSIGNED = auto()
     FLOAT = auto()
-    TBB = auto()  # Restricted Bounds
+    FIXED = auto()    # fix256
+    TBB = auto()      # Twisted Balanced Binary
+    TRIT = auto()     # Balanced ternary (trit/tryte/nit/nyte)
+    FRAC = auto()     # Exact rational (frac8-64)
+    TFP = auto()      # Twisted FP (tfp32/64)
+    VEC = auto()      # Vector types (vec2/3/9)
     BOOL = auto()
     STRING = auto()
     VOID = auto()
     RESULT = auto()
     WILD = auto()
+    ATOMIC = auto()
     CUSTOM = auto()
 
 
@@ -42,21 +48,33 @@ class PrimitiveType:
     
     def full_name(self) -> str:
         """Get the full type name used in variable declarations."""
-        # Map shorthand to full names
+        # Aria uses its own type names directly — no remapping needed.
+        # Short aliases (i8, u32 etc.) are not used in Aria source.
         type_map = {
             'i8': 'int8', 'i16': 'int16', 'i32': 'int32', 'i64': 'int64',
             'u8': 'uint8', 'u16': 'uint16', 'u32': 'uint32', 'u64': 'uint64',
-            'f32': 'float32', 'f64': 'float64',
-            'flt32': 'float32', 'flt64': 'float64', 'flt128': 'float128',
-            'flt256': 'float256', 'flt512': 'float512',
-            'tbb8': 'tbb8', 'tbb16': 'tbb16', 'tbb32': 'tbb32', 'tbb64': 'tbb64',
-            'bool': 'bool', 'string': 'string', 'void': 'void'
         }
         return type_map.get(self.name, self.name)
     
     def literal_suffix(self) -> str:
         """Get the suffix for literals (e.g., 'i32' for 42i32)."""
-        return self.name
+        # Suffix map for types where suffix != type name
+        suffix_map = {
+            'flt32': 'f32', 'flt64': 'f64', 'flt128': 'f128',
+            'flt256': 'f256', 'flt512': 'f512',
+            'uint1': 'u8', 'uint2': 'u8', 'uint4': 'u8',
+            'uint8': 'u8', 'uint16': 'u16', 'uint32': 'u32', 'uint64': 'u64',
+            'uint128': 'u128', 'uint256': 'u256', 'uint512': 'u512',
+            'uint1024': 'u1024', 'uint2048': 'u2048', 'uint4096': 'u4096',
+            'int1': 'i8', 'int2': 'i8', 'int4': 'i8',
+            'int8': 'i8', 'int16': 'i16', 'int32': 'i32', 'int64': 'i64',
+            'int128': 'i128', 'int256': 'i256', 'int512': 'i512',
+            'int1024': 'i1024', 'int2048': 'i2048', 'int4096': 'i4096',
+            'fix256': 'fix256',
+            'tbb8': 'tbb8', 'tbb16': 'tbb16', 'tbb32': 'tbb32', 'tbb64': 'tbb64',
+            'bool': '',
+        }
+        return suffix_map.get(self.name, self.name)
 
 
 @dataclass
@@ -84,156 +102,77 @@ class GrammarRule:
 
 
 class TypeSystemParser:
-    """Parses TYPE_SYSTEM.md to extract type definitions."""
+    """Defines the complete Aria type system from the spec."""
     
-    def __init__(self, spec_path: Path):
-        self.spec_path = spec_path
+    def __init__(self, aria_root: Path = None):
         self.types: Dict[str, PrimitiveType] = {}
-        self._parse()
+        self._define_all_types()
     
-    def _parse(self):
-        """Parse the type system specification."""
-        content = self.spec_path.read_text()
+    def _define_all_types(self):
+        """Hardcode all types from aria_specs.txt — no file parsing needed."""
+        T = PrimitiveType
+        C = TypeCategory
         
-        # Parse integer types
-        self._parse_integers(content)
-        # Parse unsigned types
-        self._parse_unsigned(content)
-        # Parse floating-point types
-        self._parse_floats(content)
-        # Parse TBB types
-        self._parse_tbb(content)
-        # Parse other primitives
-        self._parse_primitives(content)
-    
-    def _parse_integers(self, content: str):
-        """Extract signed integer types."""
-        # Find the integer table in the spec
-        int_pattern = r'\|\s*`(i\d+)`\s*\|\s*(\d+)\s*bytes?\s*\|\s*(-?[\d^]+)\s*to\s*(-?[\d^]+)'
+        # --- Signed integers ---
+        self.types['int1']   = T('int1',   C.INTEGER, 1,   min_value=-1,                    max_value=0)
+        self.types['int2']   = T('int2',   C.INTEGER, 2,   min_value=-2,                    max_value=1)
+        self.types['int4']   = T('int4',   C.INTEGER, 4,   min_value=-8,                    max_value=7)
+        self.types['int8']   = T('int8',   C.INTEGER, 8,   min_value=-128,                  max_value=127)
+        self.types['int16']  = T('int16',  C.INTEGER, 16,  min_value=-32768,                max_value=32767)
+        self.types['int32']  = T('int32',  C.INTEGER, 32,  min_value=-2147483648,           max_value=2147483647)
+        self.types['int64']  = T('int64',  C.INTEGER, 64,  min_value=-(2**63),              max_value=2**63-1)
+        self.types['int128'] = T('int128', C.INTEGER, 128, min_value=None,                  max_value=None)
+        self.types['int256'] = T('int256', C.INTEGER, 256, min_value=None,                  max_value=None)
+        self.types['int512'] = T('int512', C.INTEGER, 512, min_value=None,                  max_value=None)
+        # Large LBIM types: use small safe literals
+        for name, bits in [('int1024',1024),('int2048',2048),('int4096',4096)]:
+            self.types[name] = T(name, C.INTEGER, bits, min_value=None, max_value=None)
         
-        for match in re.finditer(int_pattern, content):
-            name = match.group(1)
-            size_bytes = int(match.group(2))
-            min_val_str = match.group(3)
-            max_val_str = match.group(4)
-            
-            # Parse min/max (handle 2^31-1 notation)
-            min_val = self._parse_bound(min_val_str, size_bytes, signed=True, is_min=True)
-            max_val = self._parse_bound(max_val_str, size_bytes, signed=True, is_min=False)
-            
-            self.types[name] = PrimitiveType(
-                name=name,
-                category=TypeCategory.INTEGER,
-                size_bits=size_bytes * 8,
-                min_value=min_val,
-                max_value=max_val
-            )
-    
-    def _parse_unsigned(self, content: str):
-        """Extract unsigned integer types."""
-        uint_pattern = r'\|\s*`(u\d+)`\s*\|\s*(\d+)\s*bytes?\s*\|\s*(\d+)\s*to\s*([\d^]+)'
+        # --- Unsigned integers ---
+        self.types['uint1']   = T('uint1',   C.UNSIGNED, 1,   min_value=0, max_value=1)
+        self.types['uint2']   = T('uint2',   C.UNSIGNED, 2,   min_value=0, max_value=3)
+        self.types['uint4']   = T('uint4',   C.UNSIGNED, 4,   min_value=0, max_value=15)
+        self.types['uint8']   = T('uint8',   C.UNSIGNED, 8,   min_value=0, max_value=255)
+        self.types['uint16']  = T('uint16',  C.UNSIGNED, 16,  min_value=0, max_value=65535)
+        self.types['uint32']  = T('uint32',  C.UNSIGNED, 32,  min_value=0, max_value=4294967295)
+        self.types['uint64']  = T('uint64',  C.UNSIGNED, 64,  min_value=0, max_value=None)
+        self.types['uint128'] = T('uint128', C.UNSIGNED, 128, min_value=0, max_value=None)
+        self.types['uint256'] = T('uint256', C.UNSIGNED, 256, min_value=0, max_value=None)
+        self.types['uint512'] = T('uint512', C.UNSIGNED, 512, min_value=0, max_value=None)
+        for name, bits in [('uint1024',1024),('uint2048',2048),('uint4096',4096)]:
+            self.types[name] = T(name, C.UNSIGNED, bits, min_value=0, max_value=None)
         
-        for match in re.finditer(uint_pattern, content):
-            name = match.group(1)
-            size_bytes = int(match.group(2))
-            max_val_str = match.group(4)
-            
-            max_val = self._parse_bound(max_val_str, size_bytes, signed=False, is_min=False)
-            
-            self.types[name] = PrimitiveType(
-                name=name,
-                category=TypeCategory.UNSIGNED,
-                size_bits=size_bytes * 8,
-                min_value=0,
-                max_value=max_val
-            )
-    
-    def _parse_floats(self, content: str):
-        """Extract floating-point types."""
-        float_types = {
-            'f32': 32,
-            'f64': 64,
-            'flt32': 32,
-            'flt64': 64,
-            'flt128': 128,
-            'flt256': 256,
-            'flt512': 512
-        }
+        # --- Floating point ---
+        for name, bits in [('flt32',32),('flt64',64),('flt128',128),('flt256',256),('flt512',512)]:
+            self.types[name] = T(name, C.FLOAT, bits)
         
-        for name, size_bits in float_types.items():
-            if name in content or name.replace('flt', 'f') in content:
-                self.types[name] = PrimitiveType(
-                    name=name,
-                    category=TypeCategory.FLOAT,
-                    size_bits=size_bits
-                )
-    
-    def _parse_tbb(self, content: str):
-        """Extract TBB (Restricted Bounds) types."""
-        tbb_types = ['tbb8', 'tbb16', 'tbb32', 'tbb64']
+        # --- Fixed point ---
+        self.types['fix256'] = T('fix256', C.FIXED, 256)
         
-        for name in tbb_types:
-            if name in content:
-                size_bits = int(name[3:])
-                self.types[name] = PrimitiveType(
-                    name=name,
-                    category=TypeCategory.TBB,
-                    size_bits=size_bits,
-                    min_value=0,
-                    max_value=2**size_bits - 1
-                )
-    
-    def _parse_primitives(self, content: str):
-        """Add other primitive types."""
-        # Boolean
-        self.types['bool'] = PrimitiveType(
-            name='bool',
-            category=TypeCategory.BOOL,
-            size_bits=8
-        )
+        # --- Twisted Balanced Binary ---
+        self.types['tbb8']  = T('tbb8',  C.TBB, 8,  min_value=-127,       max_value=127)
+        self.types['tbb16'] = T('tbb16', C.TBB, 16, min_value=-32767,     max_value=32767)
+        self.types['tbb32'] = T('tbb32', C.TBB, 32, min_value=-2147483647,max_value=2147483647)
+        self.types['tbb64'] = T('tbb64', C.TBB, 64, min_value=None,       max_value=None)
         
-        # String
-        self.types['string'] = PrimitiveType(
-            name='string',
-            category=TypeCategory.STRING,
-            size_bits=0  # Variable size
-        )
+        # --- Balanced ternary / nonary ---
+        self.types['trit']  = T('trit',  C.TRIT, 8,  min_value=-1, max_value=1)
+        self.types['tryte'] = T('tryte', C.TRIT, 16, min_value=None, max_value=None)
+        self.types['nit']   = T('nit',   C.TRIT, 8,  min_value=-4, max_value=4)
+        self.types['nyte']  = T('nyte',  C.TRIT, 16, min_value=None, max_value=None)
         
-        # Void
-        self.types['void'] = PrimitiveType(
-            name='void',
-            category=TypeCategory.VOID,
-            size_bits=0
-        )
-    
-    def _parse_bound(self, bound_str: str, size_bytes: int, signed: bool, is_min: bool) -> int:
-        """Parse a numeric bound, handling scientific notation."""
-        bound_str = bound_str.strip()
+        # --- Fractions ---
+        for name, bits in [('frac8',8),('frac16',16),('frac32',32),('frac64',64)]:
+            self.types[name] = T(name, C.FRAC, bits)
         
-        # Handle 2^N notation
-        if '^' in bound_str:
-            match = re.search(r'2\^(\d+)', bound_str)
-            if match:
-                exp = int(match.group(1))
-                val = 2 ** exp
-                if '-1' in bound_str or is_min:
-                    val -= 1
-                if bound_str.startswith('-'):
-                    val = -val
-                return val
+        # --- Twisted floating point ---
+        self.types['tfp32'] = T('tfp32', C.TFP, 32)
+        self.types['tfp64'] = T('tfp64', C.TFP, 64)
         
-        # Handle direct numbers
-        try:
-            return int(bound_str.replace(',', ''))
-        except ValueError:
-            # Fallback: calculate from size
-            if signed:
-                if is_min:
-                    return -(2 ** (size_bytes * 8 - 1))
-                else:
-                    return 2 ** (size_bytes * 8 - 1) - 1
-            else:
-                return 2 ** (size_bytes * 8) - 1
+        # --- Primitives ---
+        self.types['bool']   = T('bool',   C.BOOL,   8)
+        self.types['string'] = T('string', C.STRING, 0)
+        self.types['NIL']    = T('NIL',    C.VOID,   0)
     
     def get_type(self, name: str) -> Optional[PrimitiveType]:
         """Get a type by name."""
@@ -295,11 +234,24 @@ class OperatorParser:
         self.operators['>>'] = Operator('>>', 'shr', 9, 'left', 2,
                                         {TypeCategory.INTEGER, TypeCategory.UNSIGNED, TypeCategory.TBB})
         
-        # Ternary
-        self.operators['?:'] = Operator('?:', 'ternary', 10, 'right', 3, set())
+        # Ternary (Aria: is COND : TRUE_EXPR : FALSE_EXPR)
+        self.operators['is::'] = Operator('is::', 'ternary', 10, 'right', 3, set())
         
-        # Null coalescing
+        # Null coalescing / unwrap
         self.operators['??'] = Operator('??', 'null_coalesce', 11, 'right', 2, set())
+        self.operators['?']  = Operator('?',  'unwrap',        11, 'right', 1, set())
+        self.operators['?!'] = Operator('?!', 'emphatic_unwrap',11,'right', 1, set())
+        
+        # Spaceship
+        all_ord = {TypeCategory.INTEGER, TypeCategory.UNSIGNED, TypeCategory.FLOAT, TypeCategory.TBB}
+        self.operators['<=>'] = Operator('<=>', 'spaceship', 4, 'left', 2, all_ord)
+        
+        # Cast (infix)
+        self.operators['=>'] = Operator('=>', 'cast', 12, 'right', 2, set())
+        
+        # Pipeline
+        self.operators['|>'] = Operator('|>', 'pipe_fwd', 13, 'left', 2, set())
+        self.operators['<|'] = Operator('<|', 'pipe_bwd', 13, 'right', 2, set())
     
     def get_operator(self, symbol: str) -> Optional[Operator]:
         """Get an operator by symbol."""
@@ -378,12 +330,34 @@ class GrammarParser:
             ['while', '(', 'Expr', ')', 'Block']
         ])
         
+        # for range: for (i in 1..N) { }
         self.rules['ForStmt'] = GrammarRule('ForStmt', [
-            ['for', '(', 'Identifier', 'till', 'Expr', ')', 'Block']
+            ['for', '(', 'Identifier', 'in', 'Expr', '..', 'Expr', ')', 'Block']
         ])
         
-        self.rules['ReturnStmt'] = GrammarRule('ReturnStmt', [
-            ['return', 'Expr', ';']
+        # till loop: till(N, step) { ... $ ... }
+        self.rules['TillStmt'] = GrammarRule('TillStmt', [
+            ['till', '(', 'Expr', ',', 'Expr', ')', 'Block']
+        ])
+        
+        # loop + break
+        self.rules['LoopStmt'] = GrammarRule('LoopStmt', [
+            ['loop', 'Block']
+        ])
+        
+        # pass/fail (not return)
+        self.rules['PassStmt'] = GrammarRule('PassStmt', [
+            ['pass', '(', 'Expr', ')', ';']
+        ])
+        
+        # pick statement
+        self.rules['PickStmt'] = GrammarRule('PickStmt', [
+            ['pick', '(', 'Expr', ')', '{', 'PickCase+', '}']
+        ])
+        
+        # when/then/end
+        self.rules['WhenStmt'] = GrammarRule('WhenStmt', [
+            ['when', '(', 'Expr', ')', 'Block', 'then', 'Block', 'end', 'Block']
         ])
         
         self.rules['DeferStmt'] = GrammarRule('DeferStmt', [
@@ -431,10 +405,9 @@ class GrammarParser:
 
 
 # Module interface
-def load_type_system(aria_root: Path) -> TypeSystemParser:
-    """Load the type system from specs."""
-    spec_path = aria_root / 'aria_ecosystem' / 'specs' / 'TYPE_SYSTEM.md'
-    return TypeSystemParser(spec_path)
+def load_type_system(aria_root: Path = None) -> TypeSystemParser:
+    """Load the complete Aria type system."""
+    return TypeSystemParser()
 
 
 def load_operators() -> OperatorParser:

@@ -121,7 +121,8 @@ class AriaFuzzer:
                 # Generate program
                 strategy = random.choice([
                     'minimal', 'type_test', 'control_flow',
-                    'functions', 'edge_case'
+                    'functions', 'edge_case',
+                    'pick', 'when', 'defer', 'result', 'cast', 'pipeline',
                 ])
                 program = self.generator.generate_program(strategy)
                 
