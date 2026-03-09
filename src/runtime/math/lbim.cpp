@@ -381,3 +381,113 @@ extern "C" aria_int1024_t aria_lbim_smod1024(aria_int1024_t dividend, aria_int10
     sdiv_mod<16>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return remainder;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Bitwise Operations (int128/256/512/1024)
+// These are sign-independent: the same function handles both the signed
+// (int*) and unsigned (uint*) variants for each width.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ----- int128 -----
+
+extern "C" aria_int128_t aria_lbim_and128(aria_int128_t a, aria_int128_t b) {
+    aria_int128_t r;
+    for (int i = 0; i < 2; ++i) r.limbs[i] = a.limbs[i] & b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int128_t aria_lbim_or128(aria_int128_t a, aria_int128_t b) {
+    aria_int128_t r;
+    for (int i = 0; i < 2; ++i) r.limbs[i] = a.limbs[i] | b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int128_t aria_lbim_xor128(aria_int128_t a, aria_int128_t b) {
+    aria_int128_t r;
+    for (int i = 0; i < 2; ++i) r.limbs[i] = a.limbs[i] ^ b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int128_t aria_lbim_not128(aria_int128_t a) {
+    aria_int128_t r;
+    for (int i = 0; i < 2; ++i) r.limbs[i] = ~a.limbs[i];
+    return r;
+}
+
+// ----- int256 -----
+
+extern "C" aria_int256_t aria_lbim_and256(aria_int256_t a, aria_int256_t b) {
+    aria_int256_t r;
+    for (int i = 0; i < 4; ++i) r.limbs[i] = a.limbs[i] & b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int256_t aria_lbim_or256(aria_int256_t a, aria_int256_t b) {
+    aria_int256_t r;
+    for (int i = 0; i < 4; ++i) r.limbs[i] = a.limbs[i] | b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int256_t aria_lbim_xor256(aria_int256_t a, aria_int256_t b) {
+    aria_int256_t r;
+    for (int i = 0; i < 4; ++i) r.limbs[i] = a.limbs[i] ^ b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int256_t aria_lbim_not256(aria_int256_t a) {
+    aria_int256_t r;
+    for (int i = 0; i < 4; ++i) r.limbs[i] = ~a.limbs[i];
+    return r;
+}
+
+// ----- int512 -----
+
+extern "C" aria_int512_t aria_lbim_and512(aria_int512_t a, aria_int512_t b) {
+    aria_int512_t r;
+    for (int i = 0; i < 8; ++i) r.limbs[i] = a.limbs[i] & b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int512_t aria_lbim_or512(aria_int512_t a, aria_int512_t b) {
+    aria_int512_t r;
+    for (int i = 0; i < 8; ++i) r.limbs[i] = a.limbs[i] | b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int512_t aria_lbim_xor512(aria_int512_t a, aria_int512_t b) {
+    aria_int512_t r;
+    for (int i = 0; i < 8; ++i) r.limbs[i] = a.limbs[i] ^ b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int512_t aria_lbim_not512(aria_int512_t a) {
+    aria_int512_t r;
+    for (int i = 0; i < 8; ++i) r.limbs[i] = ~a.limbs[i];
+    return r;
+}
+
+// ----- int1024 -----
+
+extern "C" aria_int1024_t aria_lbim_and1024(aria_int1024_t a, aria_int1024_t b) {
+    aria_int1024_t r;
+    for (int i = 0; i < 16; ++i) r.limbs[i] = a.limbs[i] & b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int1024_t aria_lbim_or1024(aria_int1024_t a, aria_int1024_t b) {
+    aria_int1024_t r;
+    for (int i = 0; i < 16; ++i) r.limbs[i] = a.limbs[i] | b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int1024_t aria_lbim_xor1024(aria_int1024_t a, aria_int1024_t b) {
+    aria_int1024_t r;
+    for (int i = 0; i < 16; ++i) r.limbs[i] = a.limbs[i] ^ b.limbs[i];
+    return r;
+}
+
+extern "C" aria_int1024_t aria_lbim_not1024(aria_int1024_t a) {
+    aria_int1024_t r;
+    for (int i = 0; i < 16; ++i) r.limbs[i] = ~a.limbs[i];
+    return r;
+}

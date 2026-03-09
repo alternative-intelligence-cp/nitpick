@@ -1180,6 +1180,45 @@ llvm::Value* IRGenerator::generateLBIMMod(llvm::Value* L, llvm::Value* R, unsign
     }
 }
 
+llvm::Value* IRGenerator::generateLBIMAnd(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // Limb-wise bitwise AND for LBIM struct types
+    llvm::Type* structType = L->getType();
+    llvm::Value* result = llvm::UndefValue::get(structType);
+    for (unsigned i = 0; i < numLimbs; ++i) {
+        llvm::Value* limbL = builder.CreateExtractValue(L, {0, i}, "limbL");
+        llvm::Value* limbR = builder.CreateExtractValue(R, {0, i}, "limbR");
+        llvm::Value* andVal = builder.CreateAnd(limbL, limbR, "lbim.and");
+        result = builder.CreateInsertValue(result, andVal, {0, i}, "res.limb");
+    }
+    return result;
+}
+
+llvm::Value* IRGenerator::generateLBIMOr(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // Limb-wise bitwise OR for LBIM struct types
+    llvm::Type* structType = L->getType();
+    llvm::Value* result = llvm::UndefValue::get(structType);
+    for (unsigned i = 0; i < numLimbs; ++i) {
+        llvm::Value* limbL = builder.CreateExtractValue(L, {0, i}, "limbL");
+        llvm::Value* limbR = builder.CreateExtractValue(R, {0, i}, "limbR");
+        llvm::Value* orVal = builder.CreateOr(limbL, limbR, "lbim.or");
+        result = builder.CreateInsertValue(result, orVal, {0, i}, "res.limb");
+    }
+    return result;
+}
+
+llvm::Value* IRGenerator::generateLBIMXor(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // Limb-wise bitwise XOR for LBIM struct types
+    llvm::Type* structType = L->getType();
+    llvm::Value* result = llvm::UndefValue::get(structType);
+    for (unsigned i = 0; i < numLimbs; ++i) {
+        llvm::Value* limbL = builder.CreateExtractValue(L, {0, i}, "limbL");
+        llvm::Value* limbR = builder.CreateExtractValue(R, {0, i}, "limbR");
+        llvm::Value* xorVal = builder.CreateXor(limbL, limbR, "lbim.xor");
+        result = builder.CreateInsertValue(result, xorVal, {0, i}, "res.limb");
+    }
+    return result;
+}
+
 // ============================================================================
 // Unknown-Safe Arithmetic (Layer 1 Safety)
 // Prevents undefined behavior by returning Unknown sentinel values
@@ -7207,10 +7246,19 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 // Bitwise operators
                 case frontend::TokenType::TOKEN_AMPERSAND:
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        return generateLBIMAnd(L, R, numLimbs);
+                    }
                     return builder.CreateAnd(L, R, "andtmp");
                 case frontend::TokenType::TOKEN_PIPE:
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        return generateLBIMOr(L, R, numLimbs);
+                    }
                     return builder.CreateOr(L, R, "ortmp");
                 case frontend::TokenType::TOKEN_CARET:
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        return generateLBIMXor(L, R, numLimbs);
+                    }
                     return builder.CreateXor(L, R, "xortmp");
                 case frontend::TokenType::TOKEN_SHIFT_LEFT:
                     return builder.CreateShl(L, R, "shltmp");
