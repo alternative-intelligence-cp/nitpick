@@ -1277,8 +1277,29 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         
         // Require compatible types
         if (!exoticIntLiteralComparison && !leftType->equals(rightType) && !canCoerce(leftType, rightType) && !canCoerce(rightType, leftType)) {
-            addError("Cannot compare incompatible types: '" + 
-                    leftType->toString() + "' and '" + rightType->toString() + "'", 0, 0);
+            // BUG-001: Give a specific, actionable message when one side is Result<T>
+            // and the other is its inner T — guide the user to use raw()
+            std::string msg;
+            if (leftType->getKind() == TypeKind::RESULT) {
+                auto* resType = static_cast<ResultType*>(leftType);
+                if (resType->getValueType() && resType->getValueType()->equals(rightType)) {
+                    msg = "Cannot compare Result<" + rightType->toString() + "> to " +
+                          rightType->toString() + " directly. Use raw() to unwrap: raw(expr) op " +
+                          rightType->toString();
+                }
+            } else if (rightType->getKind() == TypeKind::RESULT) {
+                auto* resType = static_cast<ResultType*>(rightType);
+                if (resType->getValueType() && resType->getValueType()->equals(leftType)) {
+                    msg = "Cannot compare " + leftType->toString() + " to Result<" +
+                          leftType->toString() + "> directly. Use raw() to unwrap: " +
+                          leftType->toString() + " op raw(expr)";
+                }
+            }
+            if (msg.empty()) {
+                msg = "Cannot compare incompatible types: '" +
+                      leftType->toString() + "' and '" + rightType->toString() + "'";
+            }
+            addError(msg, 0, 0);
             return typeSystem->getErrorType();
         }
         
