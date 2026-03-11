@@ -1232,7 +1232,8 @@ llvm::Value* IRGenerator::generateSafeSDiv(llvm::Value* L, llvm::Value* R, const
     llvm::IntegerType* intType = llvm::dyn_cast<llvm::IntegerType>(resultType);
     
     if (!intType) {
-        // Fallback for non-integer types - just do regular division
+        if (resultType->isFloatingPointTy())
+            return builder.CreateFDiv(L, R, name);
         return builder.CreateSDiv(L, R, name);
     }
     
@@ -1286,7 +1287,8 @@ llvm::Value* IRGenerator::generateSafeAdd(llvm::Value* L, llvm::Value* R, const 
     llvm::IntegerType* intType = llvm::dyn_cast<llvm::IntegerType>(resultType);
     
     if (!intType) {
-        // Fallback for non-integer types - just do regular addition
+        if (resultType->isFloatingPointTy())
+            return builder.CreateFAdd(L, R, name);
         return builder.CreateAdd(L, R, name);
     }
     
@@ -1333,7 +1335,8 @@ llvm::Value* IRGenerator::generateSafeSub(llvm::Value* L, llvm::Value* R, const 
     llvm::IntegerType* intType = llvm::dyn_cast<llvm::IntegerType>(resultType);
     
     if (!intType) {
-        // Fallback for non-integer types - just do regular subtraction
+        if (resultType->isFloatingPointTy())
+            return builder.CreateFSub(L, R, name);
         return builder.CreateSub(L, R, name);
     }
     
@@ -1365,7 +1368,8 @@ llvm::Value* IRGenerator::generateSafeMul(llvm::Value* L, llvm::Value* R, const 
     llvm::IntegerType* intType = llvm::dyn_cast<llvm::IntegerType>(resultType);
     
     if (!intType) {
-        // Fallback for non-integer types - just do regular multiplication
+        if (resultType->isFloatingPointTy())
+            return builder.CreateFMul(L, R, name);
         return builder.CreateMul(L, R, name);
     }
     
@@ -5947,12 +5951,17 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (!rhs) return nullptr;
                     
                     // Perform operation
+                    // BUG-002: Float compound assignments must use FAdd/FSub/FMul/FDiv.
+                    // Safe-overflow intrinsics only apply to integers.
+                    bool isFP = currentVal->getType()->isFloatingPointTy();
                     // ARIA-024: Check for LBIM types for compound assignment
                     unsigned numLimbs = isLBIMType(currentVal->getType());
                     switch (binop->op.type) {
                         case frontend::TokenType::TOKEN_PLUS_EQUAL:
                             if (numLimbs) {
                                 result = generateLBIMAdd(currentVal, rhs, numLimbs);
+                            } else if (isFP) {
+                                result = builder.CreateFAdd(currentVal, rhs, "faddtmp");
                             } else {
                                 // Layer 1 Safety: Safe addition returns Unknown on overflow
                                 result = generateSafeAdd(currentVal, rhs, "addtmp");
@@ -5961,6 +5970,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         case frontend::TokenType::TOKEN_MINUS_EQUAL:
                             if (numLimbs) {
                                 result = generateLBIMSub(currentVal, rhs, numLimbs);
+                            } else if (isFP) {
+                                result = builder.CreateFSub(currentVal, rhs, "fsubtmp");
                             } else {
                                 // Layer 1 Safety: Safe subtraction returns Unknown on overflow
                                 result = generateSafeSub(currentVal, rhs, "subtmp");
@@ -5969,6 +5980,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         case frontend::TokenType::TOKEN_STAR_EQUAL:
                             if (numLimbs) {
                                 result = generateLBIMMul(currentVal, rhs, numLimbs);
+                            } else if (isFP) {
+                                result = builder.CreateFMul(currentVal, rhs, "fmultmp");
                             } else {
                                 // Layer 1 Safety: Safe multiplication returns Unknown on overflow
                                 result = generateSafeMul(currentVal, rhs, "multmp");
@@ -5977,6 +5990,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         case frontend::TokenType::TOKEN_SLASH_EQUAL:
                             if (numLimbs) {
                                 result = generateLBIMDiv(currentVal, rhs, numLimbs);
+                            } else if (isFP) {
+                                result = builder.CreateFDiv(currentVal, rhs, "fdivtmp");
                             } else {
                                 // Layer 1 Safety: Safe division returns Unknown on divide-by-zero
                                 result = generateSafeSDiv(currentVal, rhs, "divtmp");
@@ -5985,6 +6000,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         case frontend::TokenType::TOKEN_PERCENT_EQUAL:
                             if (numLimbs) {
                                 result = generateLBIMMod(currentVal, rhs, numLimbs);
+                            } else if (isFP) {
+                                result = builder.CreateFRem(currentVal, rhs, "fremtmp");
                             } else {
                                 // Layer 1 Safety: Safe modulo returns Unknown on divide-by-zero
                                 result = generateSafeSRem(currentVal, rhs, "modtmp");
