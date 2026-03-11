@@ -1,0 +1,541 @@
+// chess.aria — CPU vs CPU terminal chess in Aria
+//
+// Pseudo-legal move generation, random move selection, 200-ply limit.
+// Demonstrates: heap arrays, user-defined functions with wild pointer params,
+//               integer arithmetic (/, %), recursive logic, terminal animation.
+//
+// Piece codes:
+//   0 = empty
+//   1=wP  2=wN  3=wB  4=wR  5=wQ  6=wK
+//   7=bP  8=bN  9=bB 10=bR 11=bQ 12=bK
+//
+// Board layout: index = rank*8 + file, rank 0 = white's back rank.
+// Press Ctrl+C to exit early.
+
+use "../../stdlib/print_utils.aria".*;
+
+extern func:aria_term_clear  = void();
+extern func:aria_sleep_ms    = void(int64:ms);
+extern func:aria_write_bytes = void(wild int8*:buf, int64:len);
+extern func:malloc           = wild int8*(int64:size);
+extern func:free             = void(wild int8*:ptr);
+extern func:rand             = int32();
+
+// ── piece_char ───────────────────────────────────────────────────────────────
+// Returns the ASCII display character for a piece code.
+func:piece_char = int8(int8:p) {
+    if (p == 0i8)  { pass(46i8);  }   // '.'
+    if (p == 1i8)  { pass(80i8);  }   // 'P'
+    if (p == 2i8)  { pass(78i8);  }   // 'N'
+    if (p == 3i8)  { pass(66i8);  }   // 'B'
+    if (p == 4i8)  { pass(82i8);  }   // 'R'
+    if (p == 5i8)  { pass(81i8);  }   // 'Q'
+    if (p == 6i8)  { pass(75i8);  }   // 'K'
+    if (p == 7i8)  { pass(112i8); }   // 'p'
+    if (p == 8i8)  { pass(110i8); }   // 'n'
+    if (p == 9i8)  { pass(98i8);  }   // 'b'
+    if (p == 10i8) { pass(114i8); }   // 'r'
+    if (p == 11i8) { pass(113i8); }   // 'q'
+    if (p == 12i8) { pass(107i8); }   // 'k'
+    pass(63i8);   // '?' fallback
+};
+
+// ── id8 ──────────────────────────────────────────────────────────────────────
+// Identity function for int8. Workaround: passing b[idx] as an int8 argument
+// forces the compiler to use getelementptr i8 (correct stride) instead of
+// getelementptr i64 (wrong stride caused by index type inference bug).
+func:id8 = int8(int8:v) { pass(v); };
+
+// ── init_board ───────────────────────────────────────────────────────────────
+// Sets the board to the standard starting position.
+func:init_board = NIL(wild int8->:b) {
+    // Rank 0: white back rank  a1..h1
+    b[0i64] = 4i8;   // R
+    b[1i64] = 2i8;   // N
+    b[2i64] = 3i8;   // B
+    b[3i64] = 5i8;   // Q
+    b[4i64] = 6i8;   // K
+    b[5i64] = 3i8;   // B
+    b[6i64] = 2i8;   // N
+    b[7i64] = 4i8;   // R
+
+    // Rank 1: white pawns  a2..h2
+    int64:i = 8i64;
+    while (i < 16i64) {
+        b[i] = 1i8;
+        i += 1i64;
+    }
+
+    // Ranks 2-5: empty
+    while (i < 48i64) {
+        b[i] = 0i8;
+        i += 1i64;
+    }
+
+    // Rank 6: black pawns  a7..h7
+    while (i < 56i64) {
+        b[i] = 7i8;
+        i += 1i64;
+    }
+
+    // Rank 7: black back rank  a8..h8
+    b[56i64] = 10i8;  // r
+    b[57i64] = 8i8;   // n
+    b[58i64] = 9i8;   // b
+    b[59i64] = 11i8;  // q
+    b[60i64] = 12i8;  // k
+    b[61i64] = 9i8;   // b
+    b[62i64] = 8i8;   // n
+    b[63i64] = 10i8;  // r
+};
+
+// ── print_board ──────────────────────────────────────────────────────────────
+// Clears the screen and renders the board with rank/file labels.
+// Format per line: "8 r n b q k b n r\n"  (19 chars)
+func:print_board = NIL(wild int8->:b, int32:ply, int32:white_to_move) {
+    aria_term_clear();
+
+    // Allocate a small reusable row buffer (20 bytes)
+    wild int8->:row = malloc(20i64);
+
+    // Header:  "  a b c d e f g h\n"
+    row[0i64]  = 32i8;   // ' '
+    row[1i64]  = 32i8;   // ' '
+    row[2i64]  = 97i8;   // 'a'
+    row[3i64]  = 32i8;
+    row[4i64]  = 98i8;   // 'b'
+    row[5i64]  = 32i8;
+    row[6i64]  = 99i8;   // 'c'
+    row[7i64]  = 32i8;
+    row[8i64]  = 100i8;  // 'd'
+    row[9i64]  = 32i8;
+    row[10i64] = 101i8;  // 'e'
+    row[11i64] = 32i8;
+    row[12i64] = 102i8;  // 'f'
+    row[13i64] = 32i8;
+    row[14i64] = 103i8;  // 'g'
+    row[15i64] = 32i8;
+    row[16i64] = 104i8;  // 'h'
+    row[17i64] = 10i8;   // '\n'
+    aria_write_bytes(row, 18i64);
+
+    // 8 rank rows, top-to-bottom (rank 7 down to rank 0)
+    // Count upward (rank_i 0..7) to avoid negative-int comparison issues;
+    // rank is kept outside the loop to avoid variable-in-body compiler issues.
+    int32:rank_i = 0;
+    int32:rank   = 7;
+    while (rank_i < 8) {
+        row[0i64] = @cast<int8>(48 + rank + 1);  // '1'..'8'
+        row[1i64] = 32i8;  // ' '
+
+        int32:file = 0;
+        while (file < 8) {
+            int64:sq  = @cast<int64>(rank * 8 + file);
+            int64:col = @cast<int64>(2 + file * 2);
+            row[col]            = piece_char(b[sq]) ? 46i8;
+            row[col + 1i64]     = 32i8;  // ' '
+            file += 1;
+        }
+
+        row[18i64] = 10i8;  // '\n'
+        aria_write_bytes(row, 19i64);
+        rank_i += 1;
+        rank = rank - 1;
+    }
+
+    // Footer (same as header)
+    row[0i64]  = 32i8;
+    row[1i64]  = 32i8;
+    row[2i64]  = 97i8;
+    row[3i64]  = 32i8;
+    row[4i64]  = 98i8;
+    row[5i64]  = 32i8;
+    row[6i64]  = 99i8;
+    row[7i64]  = 32i8;
+    row[8i64]  = 100i8;
+    row[9i64]  = 32i8;
+    row[10i64] = 101i8;
+    row[11i64] = 32i8;
+    row[12i64] = 102i8;
+    row[13i64] = 32i8;
+    row[14i64] = 103i8;
+    row[15i64] = 32i8;
+    row[16i64] = 104i8;
+    row[17i64] = 10i8;
+    aria_write_bytes(row, 18i64);
+
+    free(row);
+
+    // Print ply / whose turn
+    drop(print("Move "));
+    drop(println(int32_toString(ply / 2 + 1)));
+    if (white_to_move == 1) {
+        drop(println("White to move"));
+    } else {
+        drop(println("Black to move"));
+    }
+};
+
+// ── try_add_move ─────────────────────────────────────────────────────────────
+// Attempts to add a move from sq32 to (nf, nr).
+// Bounds-checks, checks piece ownership, and appends to the move buffer.
+// Returns updated move count.
+func:try_add_move = int32(wild int8->:b, wild int8->:mvs, int32:count,
+                          int32:sq32, int32:nf, int32:nr, int32:white_turn) {
+    // Bounds check
+    if (nf < 0) { pass(count); }
+    if (nf > 7) { pass(count); }
+    if (nr < 0) { pass(count); }
+    if (nr > 7) { pass(count); }
+
+    int64:nsq = @cast<int64>(nr * 8 + nf);
+    int32:t   = @cast<int32>(id8(b[nsq]) ? 0i8);
+
+    // Can land on empty or enemy
+    int32:can_land = 0;
+    if (t == 0) { can_land += 1; }
+    if (white_turn == 1 && t >= 7 && t <= 12) { can_land += 1; }
+    if (white_turn == 0 && t >= 1 && t <= 6)  { can_land += 1; }
+
+    if (can_land == 1) {
+        int64:mi = @cast<int64>(count) * 2i64;
+        mvs[mi]          = @cast<int8>(sq32);
+        mvs[mi + 1i64]   = @cast<int8>(nr * 8 + nf);
+        count += 1;
+    }
+    pass(count);
+};
+
+// ── add_ray ──────────────────────────────────────────────────────────────────
+// Generates all moves along a single ray direction (df, dr) from (file, rank).
+// Stops on hitting any piece; includes capture of enemy piece.
+// Returns updated move count.
+func:add_ray = int32(wild int8->:b, wild int8->:mvs, int32:count,
+                     int32:sq32, int32:rank, int32:file,
+                     int32:dr, int32:df, int32:white_turn) {
+    int32:nf = file + df;
+    int32:nr = rank + dr;
+    int32:blocked = 0;
+
+    while (nf >= 0 && nf <= 7 && nr >= 0 && nr <= 7 && blocked == 0) {
+        int64:nsq = @cast<int64>(nr * 8 + nf);
+        int32:t   = @cast<int32>(id8(b[nsq]) ? 0i8);
+
+        // Stop ray after this square if a piece is here
+        if (t != 0) { blocked += 1; }
+
+        // Can we move here?
+        int32:can_land = 0;
+        if (t == 0) { can_land += 1; }
+        if (white_turn == 1 && t >= 7 && t <= 12) { can_land += 1; }
+        if (white_turn == 0 && t >= 1 && t <= 6)  { can_land += 1; }
+
+        if (can_land == 1) {
+            int64:mi = @cast<int64>(count) * 2i64;
+            mvs[mi]        = @cast<int8>(sq32);
+            mvs[mi + 1i64] = @cast<int8>(nr * 8 + nf);
+            count += 1;
+        }
+
+        nf = nf + df;
+        nr = nr + dr;
+    }
+    pass(count);
+};
+
+// ── gen_sq_pawn ──────────────────────────────────────────────────────────────
+// Adds pseudo-legal pawn moves for the pawn at sq32/rank/file.
+// Separated from gen_moves to avoid a compiler crash (ICmpInst type mismatch
+// triggered by mixing direct count++ code with ? 0i32 call patterns).
+func:gen_sq_pawn = int32(wild int8->:b, wild int8->:mvs, int32:count,
+                         int32:sq32, int32:rank, int32:file, int32:white_turn) {
+    if (white_turn == 1) {
+        // Forward 1
+        if (rank < 7) {
+            int64:fwd = @cast<int64>(sq32 + 8);
+            int32:wfv1 = @cast<int32>(id8(b[fwd]) ? 0i8); if (wfv1 == 0) {
+                int64:mi = @cast<int64>(count) * 2i64;
+                mvs[mi]        = @cast<int8>(sq32);
+                mvs[mi + 1i64] = @cast<int8>(sq32 + 8);
+                count += 1;
+                // Forward 2 from starting rank
+                if (rank == 1) {
+                    int64:fwd2 = @cast<int64>(sq32 + 16);
+                    int32:wfv2_1 = @cast<int32>(id8(b[fwd2]) ? 0i8); if (wfv2_1 == 0) {
+                        int64:mi2 = @cast<int64>(count) * 2i64;
+                        mvs[mi2]        = @cast<int8>(sq32);
+                        mvs[mi2 + 1i64] = @cast<int8>(sq32 + 16);
+                        count += 1;
+                    }
+                }
+            }
+        }
+        // Capture left (file-1, rank+1) = sq+7
+        if (file > 0 && rank < 7) {
+            int64:tl = @cast<int64>(sq32 + 7);
+            int32:tl32 = @cast<int32>(id8(b[tl]) ? 0i8);
+            if (tl32 >= 7 && tl32 <= 12) {
+                int64:mi = @cast<int64>(count) * 2i64;
+                mvs[mi]        = @cast<int8>(sq32);
+                mvs[mi + 1i64] = @cast<int8>(sq32 + 7);
+                count += 1;
+            }
+        }
+        // Capture right (file+1, rank+1) = sq+9
+        if (file < 7 && rank < 7) {
+            int64:tr = @cast<int64>(sq32 + 9);
+            int32:tr32 = @cast<int32>(id8(b[tr]) ? 0i8);
+            if (tr32 >= 7 && tr32 <= 12) {
+                int64:mi = @cast<int64>(count) * 2i64;
+                mvs[mi]        = @cast<int8>(sq32);
+                mvs[mi + 1i64] = @cast<int8>(sq32 + 9);
+                count += 1;
+            }
+        }
+    } else {
+        // Black pawn: moves towards lower ranks
+        // Forward 1
+        if (rank > 0) {
+            int64:fwd = @cast<int64>(sq32 - 8);
+            int32:wfv2 = @cast<int32>(id8(b[fwd]) ? 0i8); if (wfv2 == 0) {
+                int64:mi = @cast<int64>(count) * 2i64;
+                mvs[mi]        = @cast<int8>(sq32);
+                mvs[mi + 1i64] = @cast<int8>(sq32 - 8);
+                count += 1;
+                // Forward 2 from starting rank
+                if (rank == 6) {
+                    int64:fwd2 = @cast<int64>(sq32 - 16);
+                    int32:wfv2_2 = @cast<int32>(id8(b[fwd2]) ? 0i8); if (wfv2_2 == 0) {
+                        int64:mi2 = @cast<int64>(count) * 2i64;
+                        mvs[mi2]        = @cast<int8>(sq32);
+                        mvs[mi2 + 1i64] = @cast<int8>(sq32 - 16);
+                        count += 1;
+                    }
+                }
+            }
+        }
+        // Capture left (file-1, rank-1) = sq-9
+        if (file > 0 && rank > 0) {
+            int64:tl = @cast<int64>(sq32 - 9);
+            int32:tl32 = @cast<int32>(id8(b[tl]) ? 0i8);
+            if (tl32 >= 1 && tl32 <= 6) {
+                int64:mi = @cast<int64>(count) * 2i64;
+                mvs[mi]        = @cast<int8>(sq32);
+                mvs[mi + 1i64] = @cast<int8>(sq32 - 9);
+                count += 1;
+            }
+        }
+        // Capture right (file+1, rank-1) = sq-7
+        if (file < 7 && rank > 0) {
+            int64:tr = @cast<int64>(sq32 - 7);
+            int32:tr32 = @cast<int32>(id8(b[tr]) ? 0i8);
+            if (tr32 >= 1 && tr32 <= 6) {
+                int64:mi = @cast<int64>(count) * 2i64;
+                mvs[mi]        = @cast<int8>(sq32);
+                mvs[mi + 1i64] = @cast<int8>(sq32 - 7);
+                count += 1;
+            }
+        }
+    }
+    pass(count);
+};
+
+// ── gen_moves ────────────────────────────────────────────────────────────────
+// Generates pseudo-legal moves for the side to move.
+// Moves are stored in mvs as pairs: mvs[i*2]=from_sq, mvs[i*2+1]=to_sq.
+// Returns the total move count.
+func:gen_moves = int32(wild int8->:b, wild int8->:mvs, int32:white_turn) {
+    int32:count = 0;
+    int64:sq    = 0i64;
+
+    while (sq < 64i64) {
+        int8:p   = id8(b[sq]) ? 0i8;
+        int32:p32 = @cast<int32>(p);
+        int32:sq32 = @cast<int32>(sq);
+        int32:rank = sq32 / 8;
+        int32:file = sq32 % 8;
+
+        // Check ownership
+        int32:owns = 0;
+        if (white_turn == 1 && p32 >= 1 && p32 <= 6)  { owns += 1; }
+        if (white_turn == 0 && p32 >= 7 && p32 <= 12) { owns += 1; }
+
+        if (owns == 1) {
+            // Normalise to piece type 1-6
+            int32:ptype = p32;
+            if (ptype >= 7) { ptype = ptype - 6i32; }
+
+            // ── PAWN (delegated to avoid compiler ICmpInst bug) ───────────────
+            if (ptype == 1) {
+                count = gen_sq_pawn(b, mvs, count, sq32, rank, file, white_turn) ? 0i32;
+            }
+
+            // ── KNIGHT ───────────────────────────────────────────────────────
+            if (ptype == 2) {
+                count = try_add_move(b, mvs, count, sq32, file + 2, rank + 1, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file + 2, rank - 1, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file - 2, rank + 1, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file - 2, rank - 1, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file + 1, rank + 2, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file + 1, rank - 2, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file - 1, rank + 2, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file - 1, rank - 2, white_turn) ? 0i32;
+            }
+
+            // ── BISHOP ───────────────────────────────────────────────────────
+            if (ptype == 3) {
+                count = add_ray(b, mvs, count, sq32, rank, file,  1,  1, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file,  1, -1, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file, -1,  1, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file, -1, -1, white_turn) ? 0i32;
+            }
+
+            // ── ROOK ─────────────────────────────────────────────────────────
+            if (ptype == 4) {
+                count = add_ray(b, mvs, count, sq32, rank, file,  1,  0, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file, -1,  0, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file,  0,  1, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file,  0, -1, white_turn) ? 0i32;
+            }
+
+            // ── QUEEN ────────────────────────────────────────────────────────
+            if (ptype == 5) {
+                count = add_ray(b, mvs, count, sq32, rank, file,  1,  0, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file, -1,  0, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file,  0,  1, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file,  0, -1, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file,  1,  1, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file,  1, -1, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file, -1,  1, white_turn) ? 0i32;
+                count = add_ray(b, mvs, count, sq32, rank, file, -1, -1, white_turn) ? 0i32;
+            }
+
+            // ── KING ─────────────────────────────────────────────────────────
+            if (ptype == 6) {
+                count = try_add_move(b, mvs, count, sq32, file + 1, rank,     white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file - 1, rank,     white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file,     rank + 1, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file,     rank - 1, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file + 1, rank + 1, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file + 1, rank - 1, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file - 1, rank + 1, white_turn) ? 0i32;
+                count = try_add_move(b, mvs, count, sq32, file - 1, rank - 1, white_turn) ? 0i32;
+            }
+        }
+
+        sq += 1i64;
+    }
+    pass(count);
+};
+
+// ── apply_move ───────────────────────────────────────────────────────────────
+// Applies a move on the board. Returns the captured piece (0 = none).
+// Handles pawn promotion (auto-promotes to queen).
+func:apply_move = int8(wild int8->:b, int8:from_sq, int8:to_sq) {
+    int64:from = @cast<int64>(from_sq);
+    int64:to   = @cast<int64>(to_sq);
+    int8:piece    = id8(b[from]) ? 0i8;
+    int8:captured = id8(b[to]) ? 0i8;
+    b[to]   = piece;
+    b[from] = 0i8;
+
+    // White pawn promotion (reaches rank 7)
+    int64:to_rank = to / 8i64;
+    if (piece == 1i8 && to_rank == 7i64) { b[to] = 5i8; }   // promote to Q
+    // Black pawn promotion (reaches rank 0)
+    if (piece == 7i8 && to_rank == 0i64) { b[to] = 11i8; }  // promote to q
+
+    pass(captured);
+};
+
+// ── main ─────────────────────────────────────────────────────────────────────
+func:main = int32() {
+    // Heap-allocate board (64 bytes) and move buffer (400 bytes = 200 moves)
+    wild int8->:board = malloc(64i64);
+    wild int8->:moves = malloc(400i64);
+
+    drop(init_board(board));
+
+    // Small buffer for move notation: "e2-e4\n\0"
+    wild int8->:mvstr = malloc(8i64);
+
+    int32:white_turn = 1;   // white moves first
+    int32:ply        = 0;
+    int32:game_over  = 0;
+
+    // game loop — use ply=200 to exit early, avoid compound while conditions
+    while (ply < 200) {
+        drop(print_board(board, ply, white_turn));
+
+        // Generate moves for the side to move
+        int32:mc = gen_moves(board, moves, white_turn) ? 0i32;
+
+        if (mc == 0) {
+            // No moves available — stalemate or checkmate
+            drop(println("No moves available. Game over."));
+            game_over += 1;
+            ply = 200i32;   // exit loop via ply limit
+        }
+        if (mc > 0) {
+            // Pick a pseudo-random move
+            int32:rng   = rand();
+            int32:which = rng % mc;
+            if (which < 0) { which = 0i32 - which; }   // abs in case rand() < 0
+
+            int64:mi       = @cast<int64>(which) * 2i64;
+            int8:from_sq   = id8(moves[mi]) ? 0i8;
+            int8:to_sq     = id8(moves[mi + 1i64]) ? 0i8;
+
+            // Build "a1-a2\n" notation string
+            int32:from32 = @cast<int32>(from_sq);
+            int32:to32   = @cast<int32>(to_sq);
+            int32:ff = from32 % 8;
+            int32:fr = from32 / 8;
+            int32:tf = to32 % 8;
+            int32:tr = to32 / 8;
+            mvstr[0i64] = @cast<int8>(97 + ff);   // 'a'..'h'
+            mvstr[1i64] = @cast<int8>(49 + fr);   // '1'..'8'
+            mvstr[2i64] = 45i8;                    // '-'
+            mvstr[3i64] = @cast<int8>(97 + tf);
+            mvstr[4i64] = @cast<int8>(49 + tr);
+            mvstr[5i64] = 10i8;                    // '\n'
+            aria_write_bytes(mvstr, 6i64);
+
+            // Apply the chosen move; check for king capture
+            int8:captured = apply_move(board, from_sq, to_sq) ? 0i8;
+            int32:cap32 = @cast<int32>(captured);
+
+            if (cap32 == 6)  {
+                drop(print_board(board, ply + 1, white_turn));
+                drop(println("White king captured — Black wins!"));
+                game_over += 1;
+                ply = 200i32;   // exit loop
+            }
+            if (cap32 == 12) {
+                drop(print_board(board, ply + 1, white_turn));
+                drop(println("Black king captured — White wins!"));
+                game_over += 1;
+                ply = 200i32;   // exit loop
+            }
+
+            if (game_over == 0) {
+                white_turn = 1i32 - white_turn;
+                ply += 1;
+                aria_sleep_ms(250i64);
+            }
+        }
+    }
+
+    if (game_over == 0) {
+        drop(println("200-ply limit reached. Draw."));
+    }
+
+    free(board);
+    free(moves);
+    free(mvstr);
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    drop(println("chess: failsafe triggered"));
+};
