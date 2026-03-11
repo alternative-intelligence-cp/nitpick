@@ -287,27 +287,23 @@ func:ConsciousnessField.new = result<ConsciousnessField>(dimensions: u64) {
         err("Dimensions must be between 3 and 9");
     }
     
-    unsafe {
-        wild ffi.nikola_field*:handle = ffi.nikola_create_field(dimensions);
-        
-        if (handle == null) {
-            err("Failed to create consciousness field");
-        }
-        
-        pass(ConsciousnessField {
-            handle: handle,
-            dimensions: dimensions,
-        });
+    wild ffi.nikola_field*:handle = ffi.nikola_create_field(dimensions);
+    
+    if (handle == null) {
+        err("Failed to create consciousness field");
     }
+    
+    pass(ConsciousnessField {
+        handle: handle,
+        dimensions: dimensions,
+    });
 }
 
 // Destructor
 func:ConsciousnessField.destroy = void(self: wild ConsciousnessField*) {
-    unsafe {
-        if (self->handle != null) {
-            ffi.nikola_destroy_field(self->handle);
-            self->handle = null;
-        }
+    if (self->handle != null) {
+        ffi.nikola_destroy_field(self->handle);
+        self->handle = null;
     }
 }
 
@@ -320,15 +316,13 @@ func:ConsciousnessField.inject_wave = result<void>(
         err("Wave data cannot be empty");
     }
     
-    unsafe {
-        // Safety: array guarantees valid pointer and length
-        ffi.nikola_inject_wave(
-            self->handle,
-            wave_data.data(),
-            wave_data.len()
-        );
-        pass();
-    }
+    // array guarantees valid pointer and length
+    ffi.nikola_inject_wave(
+        self->handle,
+        wave_data.data(),
+        wave_data.len()
+    );
+    pass();
 }
 
 // Evolve field forward in time
@@ -340,10 +334,8 @@ func:ConsciousnessField.propagate = result<void>(
         err("Time step must be in (0.0, 1.0]");
     }
     
-    unsafe {
-        ffi.nikola_propagate(self->handle, time_step);
-        pass();
-    }
+    ffi.nikola_propagate(self->handle, time_step);
+    pass();
 }
 
 // Extract current field state
@@ -357,29 +349,23 @@ func:ConsciousnessField.extract_state = result<array<f64>>(
     
     array<f64>:output = array<f64>(buffer_size);
     
-    unsafe {
-        ffi.nikola_extract_state(
-            self->handle,
-            output.data(),
-            buffer_size
-        );
-    }
+    ffi.nikola_extract_state(
+        self->handle,
+        output.data(),
+        buffer_size
+    );
     
     pass(output);
 }
 
 // Get phase coherence metric (0.0 to 1.0)
 func:ConsciousnessField.phase_coherence = f64(self: wild ConsciousnessField*) {
-    unsafe {
-        pass(ffi.nikola_get_phase_coherence(self->handle));
-    }
+    pass(ffi.nikola_get_phase_coherence(self->handle));
 }
 
 // Get total energy in field
 func:ConsciousnessField.total_energy = f64(self: wild ConsciousnessField*) {
-    unsafe {
-        pass(ffi.nikola_get_total_energy(self->handle));
-    }
+    pass(ffi.nikola_get_total_energy(self->handle));
 }
 
 // Get toroidal coordinates for specific field index
@@ -389,13 +375,11 @@ func:ConsciousnessField.toroidal_coords = result<array<f64>>(
 ) {
     array<f64>:coords = array<f64>(self->dimensions);
     
-    unsafe {
-        ffi.nikola_get_toroidal_coordinates(
-            self->handle,
-            coords.data(),
-            index
-        );
-    }
+    ffi.nikola_get_toroidal_coordinates(
+        self->handle,
+        coords.data(),
+        index
+    );
     
     pass(coords);
 }
@@ -584,9 +568,7 @@ extern func:fft = void(
 func:analyze_frequencies = result<array<f64>>(wave: array<f64>) {
     array<f64>:spectrum = array<f64>(wave.len());
     
-    unsafe {
-        fft(wave.data(), wave.len(), spectrum.data());
-    }
+    fft(wave.data(), wave.len(), spectrum.data());
     
     pass(spectrum);
 }

@@ -1346,29 +1346,25 @@ DEFAULT: Sequential Consistency (SeqCst)
     // Thread 1: x.store(1); y.store(2);  
     // Thread 2: if (y.load() == 2) { assert(x.load() == 1); } // GUARANTEED
 
-UNSAFE: Acquire/Release (AcqRel)
-- Marked as unsafe - requires explicit safety justification
+Acquire/Release (AcqRel) — EXPERT ONLY
 - Acquire (load): Prevent later operations from moving before this load
 - Release (store): Prevent earlier operations from moving after this store
 - Use case: Implementing efficient mutexes, seqlocks, lock-free queues
 - Performance: Cheaper than SeqCst (no full barrier, only one-way)
+- The function name carries the intent: _acquire/_release means you own the ordering
 - Example (Seqlock pattern for Nikola's metric tensor):
-    unsafe {
-        uint64:seq1 = seq_counter.load_acquire();
-        metric_data = tensor.read();  // Cannot move before seq1 load
-        uint64:seq2 = seq_counter.load_acquire();
-        if (seq1 == seq2 && seq1 % 2 == 0) { /* consistent read */ }
-    }
+    uint64:seq1 = seq_counter.load_acquire();
+    metric_data = tensor.read();  // Cannot move before seq1 load
+    uint64:seq2 = seq_counter.load_acquire();
+    if (seq1 == seq2 && seq1 % 2 == 0) { /* consistent read */ }
 
-UNSAFE: Relaxed
-- Marked as unsafe - EXPERT ONLY
+Relaxed — EXPERT ONLY
 - No ordering guarantees except atomicity of individual operations
 - Use case: Counters, statistics where order doesn't matter
 - Performance: Fastest (no memory barriers at all)
+- The function name carries the intent: _relaxed means you own the lack of ordering
 - Example (metabolic energy counter):
-    unsafe {
-        energy_total.fetch_add_relaxed(delta);  // Order doesn't matter for total
-    }
+    energy_total.fetch_add_relaxed(delta);  // Order doesn't matter for total
 
 MEMORY FENCES (explicit synchronization):
 - atomic_fence_acquire() - Prevent loads/stores from moving before this point
@@ -1385,28 +1381,26 @@ atomic<int64>:counter = atomic_new(0);  // Create from value
 atomic<fix256>:energy = atomic_new(hamiltonian());
 
 LOAD (Read):
-int64:value = counter.load();  // SeqCst by default
-unsafe { int64:value = counter.load_acquire(); }  // Acquire
-unsafe { int64:value = counter.load_relaxed(); }  // Relaxed
+int64:value = counter.load();            // SeqCst by default
+int64:value = counter.load_acquire();    // Acquire (expert: you own the ordering)
+int64:value = counter.load_relaxed();    // Relaxed (expert: no ordering guarantee)
 
 STORE (Write):
-counter.store(42);  // SeqCst by default
-unsafe { counter.store_release(42); }  // Release
-unsafe { counter.store_relaxed(42); }  // Relaxed
+counter.store(42);               // SeqCst by default
+counter.store_release(42);       // Release (expert: you own the ordering)
+counter.store_relaxed(42);       // Relaxed (expert: no ordering guarantee)
 
 SWAP (Exchange):
-int64:old = counter.swap(new_value);  // SeqCst atomic exchange
-unsafe { int64:old = counter.swap_acqrel(new_value); }  // AcqRel
+int64:old = counter.swap(new_value);          // SeqCst atomic exchange
+int64:old = counter.swap_acqrel(new_value);   // AcqRel (expert: you own the ordering)
 
 COMPARE-EXCHANGE (CAS - Compare-And-Swap):
 bool:success = counter.compare_exchange(expected, desired);
 // If counter == expected, set to desired and return true
 // If counter != expected, set expected = counter and return false
 // Uses SeqCst for both success and failure by default
-unsafe { 
-    bool:success = counter.compare_exchange_weak_acqrel(expected, desired);
-    // Weak: May spuriously fail (retry in loop) - faster on some platforms
-}
+bool:success = counter.compare_exchange_weak_acqrel(expected, desired);
+// Weak: May spuriously fail (retry in loop) - faster on some platforms (expert)
 
 FETCH-AND-MODIFY (Arithmetic):
 int64:old = counter.fetch_add(delta);  // old_value = counter; counter += delta;
@@ -1416,7 +1410,7 @@ int64:old = counter.fetch_or(mask);    // old_value = counter; counter |= mask;
 int64:old = counter.fetch_xor(mask);   // old_value = counter; counter ^= mask;
 // All return old value BEFORE modification
 // All use SeqCst by default
-unsafe { int64:old = counter.fetch_add_relaxed(delta); }  // Relaxed variant
+int64:old = counter.fetch_add_relaxed(delta);  // Relaxed variant (expert)
 
 ERR PROPAGATION WITH ATOMICS:
 - atomic<tbb64>:value can hold ERR sentinel
@@ -1440,103 +1434,95 @@ PATTERN 1: SEQLOCK (Readers Never Block Writers)
 Purpose: Nikola's metric tensor reads (geometry) while physics updates it
 Guarantees: Readers get consistent snapshot OR retry (never torn reads)
 
-unsafe {
-    struct:Seqlock<T> {
-        atomic<uint64>:sequence;  // Even = unlocked, Odd = locked
-        *T:data;                   // Protected data (NOT atomic)
-    };
-    
-    // Writer (physics update):
-    func:write<T> = NIL(Seqlock<*T>@:lock, *T:new_value) {
-        uint64:seq = lock->sequence.fetch_add_release(1);  // Lock: seq++, now odd
-        lock->data = new_value;  // Write data
-        lock->sequence.store_release(seq + 2);  // Unlock: seq++, now even again
-        pass(NIL);
-    };
-    
-    // Reader (geometry query):
-    func:read<T> = *T(Seqlock<*T>@:lock) {
-        loop {
-            uint64:seq1 = lock->sequence.load_acquire();
-            if (seq1 % 2 == 1) { continue; }  // Odd = writer is active, retry
-            *T:value = lock->data;  // Read data
-            atomic_fence_acquire();  // Ensure read completes before seq2
-            uint64:seq2 = lock->sequence.load_acquire();
-            if (seq1 == seq2) { pass(value); }  // Sequence unchanged, consistent!
-            // else retry - writer interfered
-        }
-    };
-}
+struct:Seqlock<T> {
+    atomic<uint64>:sequence;  // Even = unlocked, Odd = locked
+    *T:data;                   // Protected data (NOT atomic)
+};
+
+// Writer (physics update):
+func:write<T> = NIL(Seqlock<*T>@:lock, *T:new_value) {
+    uint64:seq = lock->sequence.fetch_add_release(1);  // Lock: seq++, now odd
+    lock->data = new_value;  // Write data
+    lock->sequence.store_release(seq + 2);  // Unlock: seq++, now even again
+    pass(NIL);
+};
+
+// Reader (geometry query):
+func:read<T> = *T(Seqlock<*T>@:lock) {
+    loop {
+        uint64:seq1 = lock->sequence.load_acquire();
+        if (seq1 % 2 == 1) { continue; }  // Odd = writer is active, retry
+        *T:value = lock->data;  // Read data
+        atomic_fence_acquire();  // Ensure read completes before seq2
+        uint64:seq2 = lock->sequence.load_acquire();
+        if (seq1 == seq2) { pass(value); }  // Sequence unchanged, consistent!
+        // else retry - writer interfered
+    }
+};
 
 PATTERN 2: LOCK-FREE QUEUE (For Nikola's event pipeline)
 Purpose: Thread-safe queue for tool-use events, neurogenesis requests
 Guarantees: Progress guarantees (at least one thread makes progress)
 
-unsafe {
-    struct:LockFreeQueue<T> {
-        atomic<Handle<Node<*T>>>:head;
-        atomic<Handle<Node<*T>>>:tail;
-    };
-    
-    func:enqueue<T> = result<NIL>(LockFreeQueue<*T>@:queue, *T:value) {
-        Handle<Node<*T>>:new_node = arena.alloc(Node { value, next: NULL });
-        loop {
-            Handle<Node<*T>>:tail = queue->tail.load_acquire();
-            Handle<Node<*T>>:next = tail->next.load_acquire();
-            if (tail == queue->tail.load_acquire()) {  // Tail still valid?
-                if (next == NULL) {  // Tail is last node?
-                    if (tail->next.compare_exchange_weak_release(next, new_node)) {
-                        queue->tail.compare_exchange_weak_release(tail, new_node);
-                        pass(NIL);  // Success!
-                    }
-                } else {
-                    queue->tail.compare_exchange_weak_release(tail, next);  // Help advance tail
+struct:LockFreeQueue<T> {
+    atomic<Handle<Node<*T>>>:head;
+    atomic<Handle<Node<*T>>>:tail;
+};
+
+func:enqueue<T> = result<NIL>(LockFreeQueue<*T>@:queue, *T:value) {
+    Handle<Node<*T>>:new_node = arena.alloc(Node { value, next: NULL });
+    loop {
+        Handle<Node<*T>>:tail = queue->tail.load_acquire();
+        Handle<Node<*T>>:next = tail->next.load_acquire();
+        if (tail == queue->tail.load_acquire()) {  // Tail still valid?
+            if (next == NULL) {  // Tail is last node?
+                if (tail->next.compare_exchange_weak_release(next, new_node)) {
+                    queue->tail.compare_exchange_weak_release(tail, new_node);
+                    pass(NIL);  // Success!
                 }
+            } else {
+                queue->tail.compare_exchange_weak_release(tail, next);  // Help advance tail
             }
         }
-    };
-}
+    }
+};
 
 PATTERN 3: TRANSACTIONAL METABOLIC LOCK (Energy conservation)
 Purpose: Prevent concurrent processes from draining Nikola's energy below zero
 Guarantees: Energy conservation law never violated (thermodynamic constitutionalism)
 
-unsafe {
-    atomic<fix256>:virtual_atp = atomic_new(MAX_ENERGY);
-    
-    func:deduct_energy = result<NIL>(fix256:cost) {
-        loop {
-            fix256:current = virtualATP.load_acquire();
-            if (current < cost) { fail(ERR_INSUFFICIENT_ENERGY); }  // Would go negative!
-            fix256:new_energy = current - cost;
-            if (virtual_atp.compare_exchange_weak_acqrel(current, new_energy)) {
-                pass(NIL);  // Successfully deducted
-            }
-            // CAS failed, another thread modified energy - retry
+atomic<fix256>:virtual_atp = atomic_new(MAX_ENERGY);
+
+func:deduct_energy = result<NIL>(fix256:cost) {
+    loop {
+        fix256:current = virtualATP.load_acquire();
+        if (current < cost) { fail(ERR_INSUFFICIENT_ENERGY); }  // Would go negative!
+        fix256:new_energy = current - cost;
+        if (virtual_atp.compare_exchange_weak_acqrel(current, new_energy)) {
+            pass(NIL);  // Successfully deducted
         }
-    };
-}
+        // CAS failed, another thread modified energy - retry
+    }
+};
 
 PATTERN 4: SPINLOCK (Only for VERY short critical sections)
 Purpose: Protect tiny critical sections (<100 cycles)
 WARNING: Can cause priority inversion - use seqlock or lock-free instead!
 
-unsafe {
-    atomic<bool>:spinlock = atomic_new(false);
-    
-    func:lock = NIL(atomic<bool>@:lock) {
-        while (lock->swap_acquire(true)) {
-            // Spin until we set it to true (was false)
-            while (lock->load_relaxed()) { /* spin */ }  // Reduce bus traffic
-        }
-        pass(NIL);
-    };
-    
-    func:unlock = NIL(atomic<bool>@:lock) {
-        lock->store_release(false);
-        pass(NIL);
-    };
-}
+atomic<bool>:spinlock = atomic_new(false);
+
+func:lock = NIL(atomic<bool>@:lock) {
+    while (lock->swap_acquire(true)) {
+        // Spin until we set it to true (was false)
+        while (lock->load_relaxed()) { /* spin */ }  // Reduce bus traffic
+    }
+    pass(NIL);
+};
+
+func:unlock = NIL(atomic<bool>@:lock) {
+    lock->store_release(false);
+    pass(NIL);
+};
 
 */
 
@@ -1749,7 +1735,6 @@ void,       // C FFI only - "no return value" type (NOT usable in Aria native co
 stack,      // explicit stack allocation keyword  !! NOTE (March 2026): 'stack' and 'gc' are contextual - valid as variable names outside allocation contexts !!
 gc,         // explicit GC allocation keyword     !! NOTE (March 2026): 'stack' and 'gc' are contextual - valid as variable names outside allocation contexts !!
 wildx,      // executable memory allocation (for JIT)
-unsafe,     // Mark block/operation as requiring manual safety verification (weaker memory orderings, raw pointers, etc.)
 sync,       // Synchronization primitive marker (for lock-free patterns)
 atomic,     // Atomic operation marker (redundant with atomic<T> type but aids readability)
 requires,   // Design by Contract: function preconditions (P1-4 COMPLETE - February 2026)
@@ -2859,7 +2844,6 @@ Using them means you explicitly accept responsibility for correctness.
 ├─────────────┼─────────────────────────────────────────────────────────────────┤
 │ wild        │ Allocate raw heap memory (untracked, no GC)                     │
 │ wildx       │ Allocate executable memory (for JIT code generation)            │
-│ unsafe {}   │ Block of raw pointer ops / weak memory orderings                │
 │ ok(v)       │ Acknowledge unknown value, strip taint, continue                │
 │ drop(expr)  │ Evaluate expr for side effect, discard Result without checking  │
 │ raw(r)      │ Extract Result<T>.val without is_error check                    │
@@ -4286,7 +4270,7 @@ Not supported:
   ❌ Named defers (can't selectively cancel)
   ❌ Conditional defer (can't skip defer based on runtime condition)
 
-Workaround for conditional defer:
+Pattern — conditional defer (boolean guard):
 bool:should_cleanup = true;
 defer {
     if (should_cleanup) {
@@ -4853,9 +4837,10 @@ Planned enhancements:
   ⚠️ OOM detection → failsafe
   ⚠️ Panic! macro → failsafe
 
-Current workarounds:
+Current behavior (planned enhancement):
   - Contract violations currently return error Result (not failsafe)
   - Manual error code checks required for critical contracts
+  - Automatic failsafe triggering on contract violations is a planned enhancement
 
 ---
 
@@ -6180,9 +6165,10 @@ Not yet implemented:
   ❌ Tagged template literals (custom string processors)
   ❌ Raw string interpolation (preserve all escapes)
 
-Workarounds:
+Current patterns (intentional design — no printf-style format strings):
   - Format specifiers: Use formatting functions
     `Value: &{format_int(value, 2)}`  // Custom formatter
+    (Printf-style specifiers are intentionally absent: injection risk, ambiguous types)
   
   - Tagged templates: Use regular functions
     func:sql = string(string:template, ...) { /* validate */ };
