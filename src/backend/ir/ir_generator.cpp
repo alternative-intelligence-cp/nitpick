@@ -3547,15 +3547,18 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                     std::cerr << "[DEBUG IR_GEN] Auto-unwrapped Optional<ptr> for variable '" 
                                               << varDecl->varName << "'" << std::endl;
                                 }
-                                // Auto-unwrap Result<T> from Aria function call returns.
-                                // When an Aria function returns {T, ptr, i8} (Result<T>) but the
-                                // variable is declared as plain T, extract field 0 (the value).
-                                // This applies whether T is a primitive, pointer (string), or struct (Wave9).
+                                // BUG-003 FIX: Silent Result<T>→T extraction removed.
+                                // The type checker now rejects this at compile time.
+                                // If this branch is reached, codegen received
+                                // ill-typed IR that slipped past the type checker.
                                 else if (initStructTy->getNumElements() == 3 &&
                                          initStructTy->getElementType(1)->isPointerTy() &&
                                          initStructTy->getElementType(2)->isIntegerTy(8) &&
                                          initStructTy->getElementType(0) == varType) {
-                                    initVal = builder.CreateExtractValue(initVal, 0, "unwrap_result_val");
+                                    // Do NOT silently unwrap.  Leave initVal as the full Result struct;
+                                    // the store will type-mismatch and surface the bug clearly.
+                                    std::cerr << "[BUG-003] Reached silent-unwrap codegen path that should "
+                                              << "have been blocked by the type checker. Report this as a compiler bug.\n";
                                 }
                             }
                             // Check if we're promoting a literal to an LBIM struct type

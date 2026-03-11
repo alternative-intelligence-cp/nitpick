@@ -267,6 +267,30 @@ void TypeChecker::check(ASTNode* module) {
             }
         }
 
+        // TYPE_DECL PRE-PASS: also pre-register Type:X = {...} struct types.
+        // Type:X desugars to a struct + prefixed methods. The struct must be registered
+        // before function pre-passes resolve parameter types, otherwise a fake
+        // PrimitiveType("X") gets created and function arguments fail to match.
+        for (const auto& s2 : stmts) {
+            if (!s2 || s2->type != ASTNode::NodeType::TYPE_DECL) continue;
+            TypeDeclStmt* td = static_cast<TypeDeclStmt*>(s2.get());
+            if (!typeSystem->getStructType(td->typeName)) {
+                // Build and register the merged struct (internal + interface fields).
+                std::vector<ASTNodePtr> mergedFields;
+                if (td->internalStruct) {
+                    auto is = std::static_pointer_cast<StructDeclStmt>(td->internalStruct);
+                    for (const auto& f : is->fields) mergedFields.push_back(f);
+                }
+                if (td->interfaceStruct) {
+                    auto is = std::static_pointer_cast<StructDeclStmt>(td->interfaceStruct);
+                    for (const auto& f : is->fields) mergedFields.push_back(f);
+                }
+                auto merged = std::make_shared<StructDeclStmt>(
+                    td->typeName, mergedFields, td->line, td->column);
+                checkStructDecl(merged.get());  // registers StructType only; methods follow in main pass
+            }
+        }
+
         for (const auto& stmt : stmts) {
             if (!stmt || stmt->type != ASTNode::NodeType::FUNC_DECL) continue;
             FuncDeclStmt* fd = static_cast<FuncDeclStmt*>(stmt.get());
@@ -7769,17 +7793,25 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                 }
             }
             
-            // Special case: Automatic Result<T> → T unwrapping for function call assignments
-            // Function calls return Result<T>, but can be assigned directly to T variables
-            // The IR generator will insert automatic unwrapping (panic on error)
-            bool resultUnwrapping = false;
+            // BUG-003 FIX: Implicit Result<T> → T unwrapping is FORBIDDEN.
+            // Every function with a body returns Result<T>. The caller must
+            // explicitly handle the result — either by:
+            //   1. Declaring the variable as Result<T> and checking .is_error
+            //   2. Using raw(expr) to explicitly assert "I know this won't fail"
+            // Silent unwrapping violates Aria's safety hierarchy and hides
+            // error paths from auditors, lawyers, and the type system.
             if (initType->getKind() == TypeKind::RESULT) {
                 const ResultType* resultType = static_cast<const ResultType*>(initType);
-                Type* valueType = resultType->getValueType();
-                if (valueType->isAssignableTo(declaredType)) {
-                    resultUnwrapping = true;
+                Type* innerType = resultType->getValueType();
+                if (innerType->isAssignableTo(declaredType)) {
+                    addError("Cannot silently unwrap Result<" + declaredType->toString() + "> "
+                            "into '" + stmt->varName + "' of type '" + declaredType->toString() + "'. "
+                            "Declare as Result<" + declaredType->toString() + "> and check .is_error, "
+                            "or use raw(expr) to explicitly assert the call cannot fail.", stmt);
+                    return;
                 }
             }
+            bool resultUnwrapping = false;  // never set; kept to avoid restructuring the condition below
             
             // P1.5: Allow automatic void* ↔ wild T-> conversions at FFI boundaries
             bool ffiPointerConversion = canConvertFFIPointer(initType, declaredType);
@@ -8206,11 +8238,15 @@ void TypeChecker::checkTypeDecl(TypeDeclStmt* stmt) {
     
     // Step 1: Check if Type name already exists
     Type* existingType = typeSystem->getStructType(stmt->typeName);
-    if (existingType) {
-        addError("Type '" + stmt->typeName + "' is already defined", stmt);
-        return;
+    bool preRegistered = (existingType != nullptr);
+    if (preRegistered) {
+        // The struct was pre-registered by the TYPE_DECL pre-pass in preRegisterFunctions
+        // so that function signatures could resolve this type during the function pre-pass.
+        // We still need to process and register the methods below — skip to Step 3.
+        goto register_methods;
     }
     
+    {
     // Step 2: Merge struct:internal + struct:interface into single struct
     std::vector<ASTNodePtr> mergedFields;
     
@@ -8238,9 +8274,13 @@ void TypeChecker::checkTypeDecl(TypeDeclStmt* stmt) {
     
     // Process the merged struct through normal struct checking
     checkStructDecl(mergedStruct.get());
+    } // end scope for Step 2 locals
     
-    // Step 3: Register Type in symbol table
-    symbolTable->defineSymbol(stmt->typeName, SymbolKind::TYPE, existingType);
+register_methods:
+    {
+    // Step 3: Register Type in symbol table with the actual (now-created) struct type
+    Type* structType = typeSystem->getStructType(stmt->typeName);
+    symbolTable->defineSymbol(stmt->typeName, SymbolKind::TYPE, structType);
     
     // Step 4: Process func:create as TypeName_create
     if (stmt->createFunc) {
@@ -8269,6 +8309,7 @@ void TypeChecker::checkTypeDecl(TypeDeclStmt* stmt) {
     // Note: struct:type (static members) would be handled similarly to regular structs
     // For now, we skip static member struct processing
     // Type.MEMBER access is already transformed by parser to Type_MEMBER() calls
+    } // end register_methods block
 }
 
 // ============================================================================

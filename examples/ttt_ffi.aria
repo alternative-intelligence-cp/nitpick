@@ -64,9 +64,9 @@ func:cell_char = string(nit:c) {
 };
 
 func:print_row = int32(nit:a, nit:b, nit:c) {
-    string:ca  = cell_char(a);
-    string:cb  = cell_char(b);
-    string:cc  = cell_char(c);
+    string:ca  = raw(cell_char(a));
+    string:cb  = raw(cell_char(b));
+    string:cc  = raw(cell_char(c));
     string:row = string_concat(ca, string_concat(" | ", string_concat(cb, string_concat(" | ", cc))));
     drop(println(row));
     pass(0i32);
@@ -147,8 +147,8 @@ func:main = int32() {
     board.u = 0;  board.v = 0;  board.w = 0;
     board.x = 0;  board.y = 0;  board.z = 0;
 
-    nit:X = 1;
-    nit:O = -1;
+    nit:X = nit_from_int(1);
+    nit:O = nit_from_int(-1);
 
     // FFI int64 values for player pieces.
     int64:FFI_X    =  1i64;
@@ -208,7 +208,7 @@ func:main = int32() {
     drop(println(""));
 
     // ── Check winner ─────────────────────────────────────────────────────────
-    int32:winner = check_winner(board);
+    int32:winner = raw(check_winner(board));
     if (winner == 1)  { drop(println("X WINS!")); }
     if (winner == -1) { drop(println("O WINS!")); }
     if (winner == 0)  { drop(println("NO WINNER")); }
