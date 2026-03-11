@@ -453,4 +453,120 @@ impl CircuitBreaker {
 
 ---
 
+## TOS Safety Vocabulary
+
+Aria is safe by default. The keywords and builtins below let you explicitly opt out of that safety.
+Using them means **you accept responsibility** for correctness at that call site.
+
+| Keyword / fn | What it does |
+|---|---|
+| `wild` | Raw heap allocation (untracked) |
+| `wildx` | Executable memory allocation (JIT) |
+| `unsafe {}` | Block of raw pointer ops / weak memory orderings |
+| `ok(v)` | Acknowledge unknown value, strip taint, continue |
+| `drop(expr)` | Evaluate expr for side effects, discard Result without checking |
+| `raw(result)` | Extract `Result<T>.val` without `is_error` check |
+| `?` | Unwrap with default value (safe — provides fallback) |
+| `??` | Null-coalescing for NIL optionals (safe — provides fallback) |
+| `?!` | Emphatic unwrap — triggers `failsafe()` on error |
+| `!!!` | Direct `failsafe()` call / panic |
+
+---
+
+## drop() — Discard Result
+
+**Status**: ✅ Implemented (March 2026)
+
+```aria
+drop(expr);  // evaluate expr, discard Result — void return
+```
+
+`drop()` evaluates an expression fully (including side effects) and silently throws away
+the `Result<T>`. No error check is performed.
+
+Use it when you genuinely don't care whether an operation succeeded:
+
+```aria
+// Discard Result<nil> from println
+drop(println("Starting process..."));
+
+// Fire-and-forget log write
+drop(writeFile("audit.log", entry));
+
+// Best-effort notification; failure is acceptable
+drop(notifyService(event));
+```
+
+### ⚠️ WARNING: You own the consequences
+
+`drop()` is an explicit contract: *I know this can fail and I accept that.*
+It bypasses Aria's "no silent failure" guarantee at that exact call site.
+The compiler trusts you. If the operation fails and you haven't handled it, that's on you.
+
+### ❌ Don't
+
+```aria
+// Don't drop() failures that actually matter:
+drop(writeFile("critical_backup.bin", data));  // if this fails, data is lost
+```
+
+### ✅ Do
+
+```aria
+// Do drop() only when failure is genuinely acceptable:
+drop(println("debug: entering loop"));  // cosmetic output
+```
+
+---
+
+## raw() — Force Unwrap Result
+
+**Status**: ✅ Implemented (March 2026)
+
+```aria
+T:x = raw(result_expr);  // extract .val without is_error check
+```
+
+`raw()` extracts the `.val` field from a `Result<T>` unconditionally.
+The `is_error` flag is **not** checked. If the Result is an error, you get back the
+ERR sentinel for that type (e.g. `0x80000000` for `tbb32`, undefined for `int32`).
+
+This is the **sharpest tool** in the TOS vocabulary. It maps directly to a single
+LLVM `extractvalue` instruction — zero overhead, zero safety net.
+
+Use it only when you can formally prove the Result cannot be an error:
+
+```aria
+// You've already checked above — raw() for clean extraction
+Result<int32>:r = divide(a, b);
+if r.err != NULL then
+    fail("division failed");
+end
+int32:val = raw(r);  // safe: we already verified r is not error
+
+// Performance-critical path where success is guaranteed by design
+int32:x = raw(safe_add(10, 32));  // x = 42
+```
+
+### ❌ Don't replace `?` with `raw()` out of laziness
+
+```aria
+// ❌ BAD - raw() as a lazy alternative to proper handling
+int32:x = raw(might_fail());  // if it fails: x = ERR or garbage
+
+// ✅ GOOD - use ? with a sensible default
+int32:x = might_fail() ? 0;
+
+// ✅ ALSO GOOD - use ?! when failure is truly unrecoverable
+int32:x = must_succeed()?!;
+```
+
+### ⚠️ When raw() is actually appropriate
+
+- You previously checked `.err` and want to avoid a second branch
+- Integration with code that is statically guaranteed to return success
+- Benchmarking / micro-optimization with formal proof of correctness
+
+---
+
 **Remember**: Good error handling makes code **reliable** and **user-friendly**!
