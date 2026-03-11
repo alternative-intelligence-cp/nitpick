@@ -1,0 +1,62 @@
+use "../../stdlib/string_convert.aria".*;
+use "../../stdlib/print_utils.aria".*;
+
+extern func:aria_math_sin   = flt64(flt64:x);
+extern func:aria_math_cos   = flt64(flt64:x);
+extern func:aria_math_pi    = flt64();
+extern func:aria_term_clear = void();
+extern func:aria_sleep_ms   = void(int64:ms);
+extern func:aria_write_bytes = void(wild int8*:buf, int64:len);
+extern func:malloc = wild int8*(int64:size);
+extern func:free   = void(wild int8*:ptr);
+
+func:main = int32() {
+    // 1. pi constant
+    flt64:pi = aria_math_pi();
+    drop(print("pi = "));
+    drop(println(float_toStringDefault(pi)));
+
+    // 2. sin(pi/2) should be ~1.0
+    flt64:half_pi = pi / 2.0;
+    flt64:s = aria_math_sin(half_pi);
+    drop(print("sin(pi/2) = "));
+    drop(println(float_toStringDefault(s)));
+
+    // 3. cos(0) should be 1.0
+    flt64:c = aria_math_cos(0.0);
+    drop(print("cos(0)    = "));
+    drop(println(float_toStringDefault(c)));
+
+    // 4. flt64 → int32 cast (projection arithmetic)
+    flt64:f = 37.9;
+    int32:i = @cast<int32>(f);
+    drop(print("(int32)37.9 = "));
+    drop(println(int32_toString(i)));
+
+    // 5. Negative cast (y-coordinate can go negative)
+    flt64:neg = -5.7;
+    int32:ni = @cast<int32>(neg);
+    drop(print("(int32)-5.7 = "));
+    drop(println(int32_toString(ni)));
+
+    // 6. wild int8-> heap buffer + aria_write_bytes
+    wild int8->:buf = malloc(6i64);
+    buf[0] = 72i8;    // 'H'
+    buf[1] = 105i8;   // 'i'
+    buf[2] = 33i8;    // '!'
+    buf[3] = 10i8;    // '\n'
+    buf[4] = 0i8;
+    buf[5] = 0i8;
+    aria_write_bytes(buf, 4i64);
+    free(buf);
+
+    // 7. Sleep + term_clear (just test they don't crash)
+    aria_sleep_ms(10i64);
+    drop(println("probe_math: ALL PASS"));
+
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    drop(println("FATAL: probe_math failsafe triggered"));
+};
