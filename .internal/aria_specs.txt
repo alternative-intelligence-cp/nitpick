@@ -2109,6 +2109,12 @@ Diverges for Aria-specific operators (?, ?!, <=>, |>, <-, etc.)
 // SAFETY & ERROR HANDLING (MANDATORY - Feb 2026)
 failsafe(),    // MANDATORY error handler: func:failsafe = void(int32:err_code) { ... }
 ok(),          // Check if value is unknown/error state: int32:valid = ok(value);
+drop(),        // Discard Result without error check (TOS explicit bypass): drop(expr); → void
+               // You own the consequences. Compiler accepts, runtime is your problem.
+               // Example: drop(println("hello"));  // discard Result<nil> from println
+raw(),         // Extract Result<T> value without is_error check (TOS explicit bypass): T:x = raw(result_expr);
+               // Bypasses "no checky no val" rule. You are explicitly taking responsibility.
+               // Example: int32:x = raw(safe_add(10, 32));  // x = 42 (unsafe extraction)
 
 // MEMORY MANAGEMENT
 aria.alloc(),      // wild memory allocation
@@ -2839,6 +2845,123 @@ Result<T> is Aria's unified error handling mechanism:
   ✅ Prevents silent failures in safety-critical systems
 
 "Make errors impossible to ignore, make corruption impossible to spread."
+
+---
+
+TOS SAFETY VOCABULARY - EXPLICIT BYPASS TABLE (March 2026):
+
+Aria is safe by default. These keywords/functions let you opt OUT of that safety.
+Using them means you explicitly accept responsibility for correctness.
+"You asked for it. You own it."
+
+┌─────────────┬─────────────────────────────────────────────────────────────────┐
+│ Keyword/fn  │ What it does                                                    │
+├─────────────┼─────────────────────────────────────────────────────────────────┤
+│ wild        │ Allocate raw heap memory (untracked, no GC)                     │
+│ wildx       │ Allocate executable memory (for JIT code generation)            │
+│ unsafe {}   │ Block of raw pointer ops / weak memory orderings                │
+│ ok(v)       │ Acknowledge unknown value, strip taint, continue                │
+│ drop(expr)  │ Evaluate expr for side effect, discard Result without checking  │
+│ raw(r)      │ Extract Result<T>.val without is_error check                    │
+│ ?           │ Unwrap with default value (safe - provides fallback)            │
+│ ??          │ Null-coalescing for NIL optionals (safe - provides fallback)    │
+│ ?!          │ Emphatic unwrap (triggers failsafe on error - safe-ish)         │
+│ !!!         │ Direct failsafe() call / panic                                  │
+└─────────────┴─────────────────────────────────────────────────────────────────┘
+
+---
+
+DROP() BUILTIN - DISCARD RESULT (March 2026):
+
+STATUS: ✅ IMPLEMENTED AND TESTED
+
+Signature:   drop(expr) → void
+Purpose:     Evaluate an expression for its side effects and silently discard
+             the Result<T> without performing any error check.
+Category:    TOS explicit bypass. Named: reserved builtin (cannot shadow).
+
+Semantics:
+  - Evaluates `expr` fully (including any side effects)
+  - Throws away the Result struct — does NOT check is_error
+  - Returns nothing (void); cannot be used as an rvalue
+
+When to use:
+  - Calling I/O functions like println() when you genuinely don't care if they fail
+  - Discarding fire-and-forget operations in non-critical paths
+  - Explicitly signalling to reader: "I know this can fail; I don't care here"
+
+Safety note:
+  Using drop() is intentionally opting out of Aria's "no silent failure" guarantee.
+  The compiler accepts it. What happens at runtime is entirely your responsibility.
+
+Examples:
+  drop(println("hello"));           // discard Result<nil> from println
+  drop(writeFile("log.txt", msg));  // fire-and-forget log write
+  drop(notifyService());            // best-effort notification, ignore errors
+
+Implementation:
+  - Type checker: src/frontend/sema/type_checker.cpp
+    → Validates argument, accepts any Result<T>, returns void type
+  - Codegen:      src/backend/ir/codegen_expr.cpp
+    → Emits expression IR, discards result (no check generated)
+
+---
+
+RAW() BUILTIN - FORCE UNWRAP RESULT (March 2026):
+
+STATUS: ✅ IMPLEMENTED AND TESTED
+
+Signature:   raw(Result<T>) → T
+Purpose:     Extract the .val field of a Result<T> directly, bypassing the
+             "no checky no val" rule. The is_error flag is NOT checked.
+Category:    TOS explicit bypass. Named: reserved builtin (cannot shadow).
+
+Semantics:
+  - Evaluates argument, which must be of type Result<T>
+  - Returns the T value (field 0 of the Result struct) unconditionally
+  - If the Result is actually an error, the returned value is ERR sentinel
+  - No branch, no check, no failsafe — just the raw extraction
+
+When to use:
+  - When you have ALREADY checked the Result by other means and want to extract
+  - When integrating with code that guarantees success (and you can prove it)
+  - Performance-critical paths where you can formally verify no error is possible
+  - NOT for "I'm lazy and don't want to check" — use ? or ?! for that
+
+Safety note:
+  raw() is the sharpest tool in the TOS vocabulary. If the Result contains
+  an error, you get back whatever ERR sentinel the type carries (tbb32 → MIN_INT,
+  int32 → undefined, etc.). No crash, but potentially wrong data that propagates.
+  The compiler fully trusts you. You accepted responsibility when you typed 'raw'.
+
+Examples:
+  // You've already verified the operation succeeds in all paths above
+  int32:x = raw(safe_add(10, 32));      // x = 42  (dangerous if safe_add can fail)
+  int32:q = raw(safe_div(100, 4));      // q = 25  (dangerous if divisor could be 0)
+
+  // Pattern: check & extract (this is basically what ? does, but explicit)
+  Result<int32>:r = divide(a, b);
+  if r.err != NULL then
+      fail("division failed");
+  end
+  int32:val = raw(r);   // safe here because we checked above
+
+Rejected use:
+  // ❌ BAD - replacing ? for laziness
+  int32:x = raw(might_fail());  // If it fails: x = ERR or garbage
+
+  // ✅ GOOD - use ? with a sensible default instead
+  int32:x = might_fail() ? 0;
+
+Implementation:
+  - Type checker: src/frontend/sema/type_checker.cpp
+    → Validates arg is Result<T>, returns inner T type
+    → raw added to reservedBuiltins — cannot be shadowed
+  - Codegen:      src/backend/ir/codegen_expr.cpp
+    → builder.CreateExtractValue(arg, 0, "raw.value")
+    → Single LLVM extractvalue instruction, zero overhead
+
+---
 
 */
 
