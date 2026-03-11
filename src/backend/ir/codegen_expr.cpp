@@ -8442,6 +8442,67 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
         }
     }
 
+    // Struct field array access: obj.array_field[i]
+    // e.g., gl.groups[0], c.nums[i]
+    // We need a pointer to the element, so we use struct GEP + array GEP instead
+    // of loading the whole array value (which would give us a non-pointer).
+    if (expr->array->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        MemberAccessExpr* memberExpr = static_cast<MemberAccessExpr*>(expr->array.get());
+        if (memberExpr->object->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* objIdent = static_cast<IdentifierExpr*>(memberExpr->object.get());
+            auto obj_it = named_values.find(objIdent->name);
+            if (obj_it != named_values.end()) {
+                llvm::Value* structPtr = obj_it->second;
+                llvm::Type* structAllocType = nullptr;
+                if (auto* ai = llvm::dyn_cast<llvm::AllocaInst>(structPtr))
+                    structAllocType = ai->getAllocatedType();
+                else if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(structPtr))
+                    structAllocType = gv->getValueType();
+                if (structAllocType && structAllocType->isStructTy()) {
+                    int fieldIdx = -1;
+                    if (type_system) {
+                        auto ariaTypeIt = var_aria_types.find(objIdent->name);
+                        if (ariaTypeIt != var_aria_types.end()) {
+                            sema::StructType* ariaStructType =
+                                type_system->getStructType(ariaTypeIt->second);
+                            if (ariaStructType) {
+                                fieldIdx = ariaStructType->getFieldIndex(memberExpr->member);
+                            }
+                        }
+                    }
+                    if (fieldIdx >= 0) {
+                        llvm::StructType* llvmStructTy =
+                            llvm::cast<llvm::StructType>(structAllocType);
+                        llvm::Type* fieldLLVMType = llvmStructTy->getElementType(fieldIdx);
+                        if (fieldLLVMType->isArrayTy()) {
+                            auto* arrTy = llvm::cast<llvm::ArrayType>(fieldLLVMType);
+                            llvm::Type* elemTy = arrTy->getElementType();
+                            llvm::Value* fieldPtr = builder.CreateStructGEP(
+                                structAllocType, structPtr, fieldIdx,
+                                memberExpr->member + ".field.ptr");
+                            llvm::Value* idxVal =
+                                codegenExpressionNode(expr->index.get(), this);
+                            if (!idxVal)
+                                throw std::runtime_error(
+                                    "Failed to codegen struct-field array index");
+                            if (!idxVal->getType()->isIntegerTy(64))
+                                idxVal = builder.CreateSExtOrTrunc(
+                                    idxVal, builder.getInt64Ty(), "idx.i64");
+                            std::vector<llvm::Value*> gepIdx = {
+                                llvm::ConstantInt::get(builder.getInt64Ty(), 0), idxVal};
+                            llvm::Value* elemPtr = builder.CreateInBoundsGEP(
+                                fieldLLVMType, fieldPtr, gepIdx,
+                                memberExpr->member + ".elem.ptr");
+                            return builder.CreateLoad(elemTy, elemPtr,
+                                                     memberExpr->member + ".elem");
+                        }
+                    }
+                }
+            }
+        }
+        // Fall through to general path for more complex cases
+    }
+
     // General path: generate code for the array/vector
     llvm::Value* arrayVal = codegenExpressionNode(expr->array.get(), this);
     if (!arrayVal) {

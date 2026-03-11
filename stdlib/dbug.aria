@@ -23,7 +23,7 @@
  */
 
 // =============================================================================
-// Global Debug State (Simplified - No Dynamic Allocation)
+// Global Debug State
 // =============================================================================
 
 /**
@@ -32,17 +32,12 @@
 const int32:DBUG_MAX_GROUPS = 8;
 
 /**
- * Enabled groups (simple fixed array approach).
- * Workaround: Using individual variables instead of array due to compiler limitation.
+ * Internal struct holding the enabled group names.
+ * Fields are zero-initialized (null string pointers) at module level.
+ * Only indices 0.._dbug_enabled_count-1 are ever read.
  */
-string:_dbug_group_0 = "";
-string:_dbug_group_1 = "";
-string:_dbug_group_2 = "";
-string:_dbug_group_3 = "";
-string:_dbug_group_4 = "";
-string:_dbug_group_5 = "";
-string:_dbug_group_6 = "";
-string:_dbug_group_7 = "";
+struct:_DbugGroups = { string[8]:groups; };
+_DbugGroups:_dbug_state;
 
 int32:_dbug_enabled_count = 0;
 bool:_dbug_all_enabled = false;
@@ -55,30 +50,14 @@ bool:_dbug_all_enabled = false;
  * Get enabled group by index (0-7).
  */
 func:_dbug_get_group = string(int32:index) {
-    string:result = "";
-    if (index == 0) { result = _dbug_group_0; }
-    if (index == 1) { result = _dbug_group_1; }
-    if (index == 2) { result = _dbug_group_2; }
-    if (index == 3) { result = _dbug_group_3; }
-    if (index == 4) { result = _dbug_group_4; }
-    if (index == 5) { result = _dbug_group_5; }
-    if (index == 6) { result = _dbug_group_6; }
-    if (index == 7) { result = _dbug_group_7; }
-    pass(result);
+    pass(_dbug_state.groups[index]);
 };
 
 /**
  * Set enabled group at index.
  */
 func:_dbug_set_group = NIL(int32:index, string:value) {
-    if (index == 0) { _dbug_group_0 = value; pass(NIL); }
-    if (index == 1) { _dbug_group_1 = value; pass(NIL); }
-    if (index == 2) { _dbug_group_2 = value; pass(NIL); }
-    if (index == 3) { _dbug_group_3 = value; pass(NIL); }
-    if (index == 4) { _dbug_group_4 = value; pass(NIL); }
-    if (index == 5) { _dbug_group_5 = value; pass(NIL); }
-    if (index == 6) { _dbug_group_6 = value; pass(NIL); }
-    if (index == 7) { _dbug_group_7 = value; pass(NIL); }
+    _dbug_state.groups[index] = value;
     pass(NIL);
 };
 

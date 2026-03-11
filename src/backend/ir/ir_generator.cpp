@@ -293,6 +293,13 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
                         break;
                 }
             }
+            // String type - stored as pointer to AriaString struct {char* data, int64 length}
+            // Consistent with mapTypeFromName("string") which returns ptr to struct.AriaString.
+            // Without this case, string falls to getIntNTy(0) = i0 (bitWidth == 0 for non-numeric),
+            // which corrupts array-of-string field types (e.g. string[8] → [8 x i0] instead of [8 x ptr]).
+            else if (prim_name == "string") {
+                llvm_type = llvm::PointerType::get(context, 0);
+            }
             // Integer and TBB types (TBB uses same representation as int)
             else {
                 llvm_type = builder.getIntNTy(prim->getBitWidth());
@@ -5665,7 +5672,94 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return nullptr;
                     }
 
-                    // Only handle identifier base for now (not nested indexing)
+                    // Struct field array write: obj.array_field[i] = value
+                    if (indexExpr->array->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                        MemberAccessExpr* memberExpr =
+                            static_cast<MemberAccessExpr*>(indexExpr->array.get());
+                        if (memberExpr->object->type == ASTNode::NodeType::IDENTIFIER) {
+                            IdentifierExpr* objIdent =
+                                static_cast<IdentifierExpr*>(memberExpr->object.get());
+                            auto obj_it = named_values.find(objIdent->name);
+                            if (obj_it != named_values.end()) {
+                                llvm::Value* structPtr = obj_it->second;
+                                llvm::Type* sAllocTy = nullptr;
+                                if (auto* ai = llvm::dyn_cast<llvm::AllocaInst>(structPtr))
+                                    sAllocTy = ai->getAllocatedType();
+                                else if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(structPtr))
+                                    sAllocTy = gv->getValueType();
+                                if (sAllocTy && sAllocTy->isStructTy()) {
+                                    int fldIdx = -1;
+                                    auto type_it = value_types.find(obj_it->second);
+                                    if (type_it != value_types.end() &&
+                                        type_it->second->getKind() == TypeKind::STRUCT) {
+                                        StructType* sType =
+                                            static_cast<StructType*>(type_it->second);
+                                        const auto& flds = sType->getFields();
+                                        for (size_t fi = 0; fi < flds.size(); ++fi) {
+                                            if (flds[fi].name == memberExpr->member) {
+                                                fldIdx = static_cast<int>(fi);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (fldIdx < 0) {
+                                        // Fallback: look up struct type by Aria type name
+                                        auto var_it = var_aria_types.find(objIdent->name);
+                                        if (var_it != var_aria_types.end()) {
+                                            sema::StructType* semaST =
+                                                type_system->getStructType(var_it->second);
+                                            if (semaST)
+                                                fldIdx = semaST->getFieldIndex(memberExpr->member);
+                                        }
+                                    }
+                                    if (fldIdx >= 0) {
+                                        llvm::StructType* llvmSTy =
+                                            llvm::cast<llvm::StructType>(sAllocTy);
+                                        llvm::Type* fieldTy =
+                                            llvmSTy->getElementType(fldIdx);
+                                        if (fieldTy->isArrayTy()) {
+                                            llvm::Type* elemTy =
+                                                llvm::cast<llvm::ArrayType>(fieldTy)
+                                                    ->getElementType();
+                                            llvm::Value* fieldPtr =
+                                                builder.CreateStructGEP(
+                                                    sAllocTy, structPtr, fldIdx,
+                                                    memberExpr->member + ".field.ptr");
+                                            llvm::Value* idx_v = codegenExpression(
+                                                indexExpr->index.get());
+                                            if (!idx_v) return nullptr;
+                                            if (!idx_v->getType()->isIntegerTy(64))
+                                                idx_v = builder.CreateSExtOrTrunc(
+                                                    idx_v, builder.getInt64Ty(),
+                                                    "idx.i64");
+                                            std::vector<llvm::Value*> gepIdx = {
+                                                llvm::ConstantInt::get(
+                                                    builder.getInt64Ty(), 0),
+                                                idx_v};
+                                            llvm::Value* elemPtr =
+                                                builder.CreateInBoundsGEP(
+                                                    fieldTy, fieldPtr, gepIdx,
+                                                    memberExpr->member + ".welem.ptr");
+                                            llvm::Value* rhs =
+                                                codegenExpression(binop->right.get());
+                                            if (!rhs) return nullptr;
+                                            if (rhs->getType() != elemTy) {
+                                                if (rhs->getType()->isIntegerTy() &&
+                                                    elemTy->isIntegerTy())
+                                                    rhs = builder.CreateIntCast(
+                                                        rhs, elemTy, true, "rhs.cast");
+                                            }
+                                            builder.CreateStore(rhs, elemPtr);
+                                            return rhs;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // MEMBER_ACCESS base but couldn't handle (non-array field, etc.)
+                        return nullptr;
+                    }
+                    // Only handle identifier base for non-MEMBER_ACCESS cases
                     if (indexExpr->array->type != ASTNode::NodeType::IDENTIFIER) {
                         return nullptr;
                     }
@@ -8233,6 +8327,83 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                         llvm::Value* nd_ptr = builder.CreateInBoundsGEP(
                                             nd_alloc_ty, nd_alloca, gep_idx, "arrnd.read.ptr");
                                         return builder.CreateLoad(nd_elem_ty, nd_ptr, "arrnd.read.val");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Struct field array read: obj.array_field[i]
+                if (indexExpr->array->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                    MemberAccessExpr* memberExpr =
+                        static_cast<MemberAccessExpr*>(indexExpr->array.get());
+                    if (memberExpr->object->type == ASTNode::NodeType::IDENTIFIER) {
+                        IdentifierExpr* objIdent =
+                            static_cast<IdentifierExpr*>(memberExpr->object.get());
+                        auto obj_it = named_values.find(objIdent->name);
+                        if (obj_it != named_values.end()) {
+                            llvm::Value* structPtr = obj_it->second;
+                            llvm::Type* sAllocTy = nullptr;
+                            if (auto* ai = llvm::dyn_cast<llvm::AllocaInst>(structPtr))
+                                sAllocTy = ai->getAllocatedType();
+                            else if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(structPtr))
+                                sAllocTy = gv->getValueType();
+                            if (sAllocTy && sAllocTy->isStructTy()) {
+                                // Find field index via value_types / type_system
+                                int fieldIdx = -1;
+                                auto type_it = value_types.find(obj_it->second);
+                                if (type_it != value_types.end() &&
+                                    type_it->second->getKind() == TypeKind::STRUCT) {
+                                    StructType* sType =
+                                        static_cast<StructType*>(type_it->second);
+                                    const auto& flds = sType->getFields();
+                                    for (size_t fi = 0; fi < flds.size(); ++fi) {
+                                        if (flds[fi].name == memberExpr->member) {
+                                            fieldIdx = static_cast<int>(fi);
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (fieldIdx < 0) {
+                                    // Fallback: look up struct type by Aria type name
+                                    auto var_it = var_aria_types.find(objIdent->name);
+                                    if (var_it != var_aria_types.end()) {
+                                        sema::StructType* semaST =
+                                            type_system->getStructType(var_it->second);
+                                        if (semaST)
+                                            fieldIdx = semaST->getFieldIndex(memberExpr->member);
+                                    }
+                                }
+                                if (fieldIdx >= 0) {
+                                    llvm::StructType* llvmSTy =
+                                        llvm::cast<llvm::StructType>(sAllocTy);
+                                    llvm::Type* fieldTy =
+                                        llvmSTy->getElementType(fieldIdx);
+                                    if (fieldTy->isArrayTy()) {
+                                        auto* arrTy =
+                                            llvm::cast<llvm::ArrayType>(fieldTy);
+                                        llvm::Type* elemTy = arrTy->getElementType();
+                                        llvm::Value* fieldPtr =
+                                            builder.CreateStructGEP(
+                                                sAllocTy, structPtr, fieldIdx,
+                                                memberExpr->member + ".field.ptr");
+                                        llvm::Value* idx_v =
+                                            codegenExpression(indexExpr->index.get());
+                                        if (!idx_v) return nullptr;
+                                        if (!idx_v->getType()->isIntegerTy(64))
+                                            idx_v = builder.CreateSExtOrTrunc(
+                                                idx_v, builder.getInt64Ty(), "idx.i64");
+                                        std::vector<llvm::Value*> gepIdx = {
+                                            llvm::ConstantInt::get(
+                                                builder.getInt64Ty(), 0),
+                                            idx_v};
+                                        llvm::Value* elemPtr =
+                                            builder.CreateInBoundsGEP(
+                                                fieldTy, fieldPtr, gepIdx,
+                                                memberExpr->member + ".elem.ptr");
+                                        return builder.CreateLoad(
+                                            elemTy, elemPtr,
+                                            memberExpr->member + ".elem");
                                     }
                                 }
                             }
