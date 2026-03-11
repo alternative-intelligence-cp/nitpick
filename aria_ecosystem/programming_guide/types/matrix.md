@@ -131,7 +131,7 @@ a: mat3x3<flt64> = coefficients;
 b: vec3 = constants;
 
 // Solve Ax = b
-x: vec3 = a.inverse().unwrap() * b;
+vec3:x = a.inverse()?! * b;
 ```
 
 ---

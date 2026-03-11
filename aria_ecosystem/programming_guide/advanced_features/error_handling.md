@@ -363,23 +363,23 @@ _ = risky_operation();
 risky_operation()?;
 
 // ✅ Or explicitly handle
-match risky_operation() {
-    Ok(_) => {},
-    Err(e) => stderr << "Warning: $e",
-}
+result<void>:op = risky_operation();
+if op.is_error then
+    stderr.write("Warning: {}\n", op.err);
+end
 ```
 
-### ❌ DON'T: Use unwrap() in Production
+### ❌ DON'T: Skip the Error Check
 
 ```aria
-// ❌ Bad - can panic
-value: i32 = maybe_value.unwrap();
+// ❌ Bad - bypasses error check entirely
+int32:value = raw(maybe_value);
 
-// ✅ Good - handle None case
-value: i32 = maybe_value.unwrap_or(0);
+// ✅ Good - use fallback value
+int32:value = maybe_value ? 0;
 
-// ✅ Or propagate
-value: i32 = maybe_value.ok_or("Value not found")?;
+// ✅ Or propagate error to caller
+int32:value = maybe_value?;
 ```
 
 ---
@@ -389,8 +389,8 @@ value: i32 = maybe_value.ok_or("Value not found")?;
 ### Fallback Values
 
 ```aria
-timeout: i32 = config.timeout.unwrap_or(30);
-retries: i32 = config.retries.unwrap_or(3);
+int32:timeout = config.timeout ? 30;
+int32:retries = config.retries ? 3;
 ```
 
 ### Retry with Backoff

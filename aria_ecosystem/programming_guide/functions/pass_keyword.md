@@ -27,41 +27,41 @@ If the function returns `ERR`, the current function immediately returns `ERR`.
 
 ## How It Works
 
-### Without `pass` (Manual Error Checking)
+### Without `pass` (Manual Result Handling)
 
 ```aria
-fn process_file(filename: string) -> tbb32 {
+func:process_file = result<int32>(string:filename) {
     // Manual error checking (tedious!)
-    file_Result: Result<File, Error> = open_file(filename);
+    result<File>:file_result = open_file(filename);
     
-    when file_result is Err then
-        return ERR;
+    if file_result.is_error then
+        fail(file_result.err);
     end
     
-    file: File = file_result.unwrap();
+    File:file = raw(file_result);
     
-    content_Result: Result<string, Error> = file.read();
+    result<string>:content_result = file.read();
     
-    when content_result is Err then
-        return ERR;
+    if content_result.is_error then
+        fail(content_result.err);
     end
     
-    content: string = content_result.unwrap();
+    string:content = raw(content_result);
     
     // Actually process content...
-    return content.len();
-}
+    pass(content.len());
+};
 ```
 
-### With `pass` (Clean and Simple)
+### With `pass` + `?` Propagation (Clean)
 
 ```aria
-fn process_file(filename: string) -> tbb32 {
-    file: File = pass open_file(filename);
-    content: string = pass file.read();
+func:process_file = result<int32>(string:filename) {
+    File:file = open_file(filename)?;      // ? propagates error to caller
+    string:content = file.read()?;
     
-    return content.len();  // Success value
-}
+    pass(content.len());  // Explicit success return
+};
 ```
 
 **Result**: If either `open_file` or `read` fails, the function immediately returns `ERR`. Otherwise, we get the success values.
