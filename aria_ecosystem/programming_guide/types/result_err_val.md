@@ -1,42 +1,32 @@
-# Result Err and Val
+# Result Values in Aria
 
 **Category**: Types → Result  
-**Purpose**: Ok and Err constructors
+**Purpose**: Creating and checking `result<T>` values
 
 ---
 
-## Ok Constructor
+## Overview
 
-```aria
-// Success with value
-Result: Result<i32> = Ok(42);
+`result<T>` is Aria’s type for operations that can either succeed with a value or fail with an error.
 
-// Success with void
-Result: Result<void> = Ok();
-```
+| Field | Type | Meaning |
+|-------|------|---------|
+| `.is_error` | `bool` | `true` if the operation failed |
+| `.err` | `string` | Error message (valid when `is_error == true`) |
 
----
-
-## Err Constructor
-
-```aria
-// Error with string message
-Result: Result<i32> = Err("Something went wrong");
-
-// Error with custom type
-Result: Result<i32, ErrorCode> = Err(ErrorCode.NotFound);
-```
+Use `raw()` to extract the underlying value (checks are your responsibility).
 
 ---
 
-## Pattern Matching
+## Producing Results from Functions
 
 ```aria
-when result is Ok(value) then
-    stdout << "Success: $value";
-elsif result is Err(error) then
-    stderr << "Error: $error";
-end
+func:divide = result<int32>(int32:a, int32:b) {
+    if (b == 0) {
+        fail("Division by zero");  // Returns error result
+    }
+    pass(a / b);  // Returns success result
+};
 ```
 
 ---
@@ -44,24 +34,79 @@ end
 ## Checking State
 
 ```aria
-// Check if Ok
-when result.is_ok() then
-    value: i32 = result.unwrap();
-end
+result<int32>:r = divide(10, 2);
 
-// Check if Err
-when result.is_err() then
-    msg: string = result.unwrap_err();
-end
+if (r.is_error) {
+    print(`Error: &{r.err}`);  // r.err is the error string
+} else {
+    int32:value = raw(r);      // raw() extracts the value after checking
+    print(`Result: &{value}`);
+}
+```
+
+---
+
+## Accessing the Error
+
+```aria
+result<string>:result = readFile("config.txt");
+
+if (result.is_error) {
+    // .err is the error message string
+    stderr.write(`File error: &{result.err}\n`);
+    fail(result.err);  // propagate it
+}
+```
+
+---
+
+## Propagating Success
+
+```aria
+func:loadConfig = result<Config>() {
+    string:content = readFile("config.txt") ? "{}";  // default on error
+    pass(parseJSON(content)?);  // propagate parse error upward
+};
+```
+
+---
+
+## Common Patterns
+
+### Default on error
+```aria
+string:config = readFile("config.txt") ? "default";
+```
+
+### Must succeed
+```aria
+Config:cfg = loadConfig()?!;  // triggers failsafe if it fails
+```
+
+### Check and use
+```aria
+result<string>:r = readFile("data.txt");
+if (!r.is_error) {
+    process(raw(r));
+}
+```
+
+### Propagate in a result-returning function
+```aria
+func:process = result<NIL>(string:path) {
+    string:content = readFile(path)?;  // propagate on failure
+    transform(content)?;
+    pass(NIL);
+};
 ```
 
 ---
 
 ## Related
 
-- [Result](result.md)
-- [Result Unwrap](result_unwrap.md)
+- [result<T>](result.md)
+- [Result Extraction](result_unwrap.md)
 
 ---
 
-**Remember**: `Ok` = success, `Err` = failure!
+**Remember**: `pass()` — success. `fail()` — error. Check `.is_error` before accessing `.err`.

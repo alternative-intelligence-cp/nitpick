@@ -1,7 +1,7 @@
 # The `readFile()` Function
 
 **Category**: Standard Library → I/O  
-**Syntax**: `Result[string]:readFile(string:path)`  
+**Syntax**: `result<string>:readFile(string:path)`  
 **Purpose**: Read entire file contents as string with error handling
 
 ---
@@ -10,7 +10,7 @@
 
 The `readFile()` function reads the entire contents of a file and returns it as a string. It:
 
-- Returns **`Result[string]`** type (success or error)
+- Returns **`result<string>`** type (success or error)
 - Reads **entire file** into memory
 - Handles **text files** (for binary, use streams)
 - Provides **automatic error handling**
@@ -22,17 +22,13 @@ The `readFile()` function reads the entire contents of a file and returns it as 
 ## Basic Syntax
 
 ```aria
-Result[string]:result = readFile("path/to/file.txt");
+result<string>:result = readFile("path/to/file.txt");
 
-result?
-    .onSuccess(NIL(string:content) {
-        print(`File content: &{content}`);
-        pass(NIL);
-    })
-    .onError(NIL(Error:err) {
-        print(`Error: &{err}`);
-        pass(NIL);
-    });
+if (!result.is_error) {
+    print(`File content: &{raw(result)}`);
+} else {
+    print(`Error: &{result.err}`);
+}
 ```
 
 ---
@@ -40,14 +36,13 @@ result?
 ## Example 1: Basic File Reading
 
 ```aria
-Result[string]:result = readFile("config.txt");
+result<string>:result = readFile("config.txt");
 
-if (result.isOk()) {
-    string:content = result.unwrap();
+if (!result.is_error) {
+    string:content = raw(result);
     print(content);
 } else {
-    string:error = result.err().unwrap();
-    print(`Failed to read file: &{error}`);
+    print(`Failed to read file: &{result.err}`);
 }
 ```
 
@@ -56,12 +51,16 @@ if (result.isOk()) {
 ## Example 2: Pipeline Style
 
 ```aria
-// Chain operations with pipeline
-readFile("data.txt")
-    .map(string(string:content) { pass(content.toUpperCase()); })
-    .map(string(string:upper) { pass(upper.replace("\n", " ")); })
-    .onSuccess(NIL(string:processed) { print(processed); pass(NIL); })
-    .onError(NIL(Error:err) { print(`Error: &{err}`); pass(NIL); });
+// Process file content step by step
+result<string>:raw_data = readFile("data.txt");
+
+if (raw_data.is_error) {
+    print(`Error: &{raw_data.err}`);
+} else {
+    string:upper = raw(raw_data).toUpperCase();
+    string:processed = upper.replace("\n", " ");
+    print(processed);
+}
 ```
 
 ---
@@ -69,19 +68,14 @@ readFile("data.txt")
 ## Example 3: Early Return on Error
 
 ```aria
-func:processConfigFile = Result[void](string:path) {
+func:processConfigFile = result<NIL>(string:path) {
     // Read file, propagate error if fails
-    Result[string]:result = readFile(path);
-    if (result.isErr()) {
-        pass(result.mapErr());  // Propagate error
-    }
-    
-    string:content = result.unwrap();
-    
+    string:content = readFile(path)?;
+
     // Process content
-    parseConfig(content);
-    
-    pass(Result.ok());
+    parseConfig(content)?;
+
+    pass(NIL);
 };
 ```
 
@@ -93,8 +87,7 @@ func:processConfigFile = Result[void](string:path) {
 
 ```aria
 // Use default if file doesn't exist
-string:config = readFile("config.txt")
-    .unwrapOr("default config");
+string:config = readFile("config.txt") ? "default config";
 
 print(config);
 ```
@@ -102,32 +95,29 @@ print(config);
 ### Pattern 2: Match on Result
 
 ```aria
-Result[string]:result = readFile("data.txt");
+result<string>:result = readFile("data.txt");
 
-pick(result.isOk()) {
-    case true:
-        string:data = result.unwrap();
-        processData(data);
-        
-    case false:
-        string:err = result.err().unwrap();
-        handleError(err);
+if (!result.is_error) {
+    string:data = raw(result);
+    processData(data);
+} else {
+    handleError(result.err);
 }
 ```
 
 ### Pattern 3: Early Exit
 
 ```aria
-func:loadAndProcess = Result[void]() {
-    // Early return on error
-    Result[string]:data = readFile("input.txt");
-    if (data.isErr()) {
-        fail(`Cannot read input: &{data.err().unwrap()}`);
+func:loadAndProcess = result<NIL>() {
+    // Read file, propagate error if fails
+    result<string>:data = readFile("input.txt");
+    if (data.is_error) {
+        fail(`Cannot read input: &{data.err}`);
     }
-    
+
     // Continue with valid data
-    process(data.unwrap());
-    pass(Result.ok());
+    process(raw(data));
+    pass(NIL);
 };
 ```
 
@@ -138,15 +128,15 @@ func:loadAndProcess = Result[void]() {
 ### Use Case 1: Configuration Files
 
 ```aria
-func:loadConfig = Config() {
-    Result[string]:content = readFile("app.config");
-    
-    if (content.isErr()) {
+func:loadConfig = result<Config>() {
+    result<string>:content = readFile("app.config");
+
+    if (content.is_error) {
         print("Using default config");
         pass(Config.default());
     }
-    
-    pass(parseConfig(content.unwrap()));
+
+    pass(parseConfig(raw(content))?);
 };
 ```
 
@@ -155,8 +145,8 @@ func:loadConfig = Config() {
 ```aria
 func:loadTemplate = string(string:name) {
     string:path = `templates/&{name}.html`;
-    
-    pass(readFile(path).unwrapOr("<html>Not Found</html>"));
+
+    pass(readFile(path) ? "<html>Not Found</html>");
 };
 
 string:homepage = loadTemplate("home");
@@ -165,15 +155,15 @@ string:homepage = loadTemplate("home");
 ### Use Case 3: Data Import
 
 ```aria
-func:importData = Result[int64[]]() {
-    Result[string]:raw = readFile("data.csv");
-    if (raw.isErr()) {
+func:importData = result<int64[]>() {
+    result<string>:raw = readFile("data.csv");
+    if (raw.is_error) {
         fail("Cannot read data file");
     }
-    
+
     // Parse CSV
-    int64[]:values = parseCSV(raw.unwrap());
-    pass(Result.ok(values));
+    int64[]:values = parseCSV(raw(raw));
+    pass(values);
 };
 ```
 
@@ -181,8 +171,8 @@ func:importData = Result[int64[]]() {
 
 ```aria
 func:fileExists = bool(string:path) {
-    Result[string]:result = readFile(path);
-    pass(result.isOk());
+    result<string>:result = readFile(path);
+    pass(!result.is_error);
 };
 
 if (fileExists("important.txt")) {
@@ -198,27 +188,27 @@ if (fileExists("important.txt")) {
 
 ```aria
 // OK for small files (< 1 MB)
-string:content = readFile("small.txt").unwrap();
+string:content = readFile("small.txt")?!;
 ```
 
 ### Large Files
 
 ```aria
 // For large files, use streaming
-func:processLargeFile = Result[void](string:path) {
-    Result[Stream]:stream = openFile(path, "r");
-    if (stream.isErr()) {
+func:processLargeFile = result<NIL>(string:path) {
+    result<Stream>:stream = openFile(path, "r");
+    if (stream.is_error) {
         fail("Cannot open file");
     }
-    
+
     // Read line by line
-    while (!stream.eof()) {
-        string:line = stream.readLine().unwrap();
+    while (!raw(stream).eof()) {
+        string:line = raw(stream).readLine()?!;
         processLine(line);
     }
-    
-    stream.close();
-    pass(Result.ok());
+
+    raw(stream).close();
+    pass(NIL);
 };
 ```
 
@@ -231,38 +221,34 @@ func:processLargeFile = Result[void](string:path) {
 ### File Not Found
 
 ```aria
-Result[string]:result = readFile("nonexistent.txt");
+result<string>:result = readFile("nonexistent.txt");
 
-result.onError(NIL(Error:err) {
+if (result.is_error) {
     // err = "File not found: nonexistent.txt"
-    print(`Error: &{err}`);
-    pass(NIL);
-});
+    print(`Error: &{result.err}`);
+}
 ```
 
 ### Permission Denied
 
 ```aria
-Result[string]:result = readFile("/root/secret.txt");
+result<string>:result = readFile("/root/secret.txt");
 
-result.onError(NIL(Error:err) {
+if (result.is_error) {
     // err = "Permission denied: /root/secret.txt"
-    print(`Error: &{err}`);
-    pass(NIL);
-});
+    print(`Error: &{result.err}`);
+}
 ```
 
 ### File Too Large
 
 ```aria
-// May run out of memory for very large files
-Result[string]:result = readFile("huge_file.bin");
+result<string>:result = readFile("huge_file.bin");
 
-result.onError(NIL(Error:err) {
+if (result.is_error) {
     // err = "Out of memory"
-    print(`Error: &{err}`);
-    pass(NIL);
-});
+    print(`Error: &{result.err}`);
+}
 ```
 
 ---
@@ -302,7 +288,7 @@ readFile("./data/../config.txt");
 
 ```aria
 // Assumes UTF-8 encoding
-Result[string]:text = readFile("utf8.txt");
+result<string>:text = readFile("utf8.txt");
 ```
 
 ### Other Encodings (Future)
@@ -312,8 +298,8 @@ Result[string]:text = readFile("utf8.txt");
 Possible future syntax:
 
 ```aria
-// Read with specific encoding (tentative)
-Result[string]:text = readFile("latin1.txt", encoding: "ISO-8859-1");
+// tentative
+result<string>:text = readFile("latin1.txt", encoding: "ISO-8859-1");
 ```
 
 ---
@@ -324,11 +310,11 @@ Result[string]:text = readFile("latin1.txt", encoding: "ISO-8859-1");
 
 ```aria
 // GOOD: Check for errors
-Result[string]:result = readFile("data.txt");
-if (result.isErr()) {
-    handleError(result.err().unwrap());
+result<string>:result = readFile("data.txt");
+if (result.is_error) {
+    handleError(result.err);
 } else {
-    process(result.unwrap());
+    process(raw(result));
 }
 ```
 
@@ -336,18 +322,17 @@ if (result.isErr()) {
 
 ```aria
 // GOOD: Graceful degradation
-string:theme = readFile("theme.css")
-    .unwrapOr("/* default theme */");
+string:theme = readFile("theme.css") ? "/* default theme */";
 ```
 
 ### ✅ Validate Content After Reading
 
 ```aria
 // GOOD: Validate after reading
-Result[string]:content = readFile("config.json");
-if (content.isOk()) {
-    if (isValidJSON(content.unwrap())) {
-        parseJSON(content.unwrap());
+result<string>:content = readFile("config.json");
+if (!content.is_error) {
+    if (isValidJSON(raw(content))) {
+        parseJSON(raw(content));
     } else {
         print("Invalid JSON in config file");
     }
@@ -358,25 +343,25 @@ if (content.isOk()) {
 
 ```aria
 // BAD: Ignoring potential errors
-string:data = readFile("file.txt").unwrap();
-// May panic if file doesn't exist!
+string:data = readFile("file.txt")?!;
+// Uses ?! which triggers failsafe - better than silently failing
 
 // GOOD: Handle errors explicitly
-Result[string]:result = readFile("file.txt");
-result.onError(NIL(Error:err) { print(`Error: &{err}`); pass(NIL); });
+result<string>:result = readFile("file.txt");
+if (result.is_error) { fail(`Error: &{result.err}`); }
 ```
 
 ### ❌ Don't Read Large Files Entirely
 
 ```aria
 // BAD: Reading 1GB file into memory
-string:huge = readFile("gigabyte.log").unwrap();
+string:huge = readFile("gigabyte.log")?!;
 // OOM (Out of Memory) error!
 
 // GOOD: Stream large files
-Stream:stream = openFile("gigabyte.log", "r").unwrap();
+Stream:stream = openFile("gigabyte.log", "r")?!;
 while (!stream.eof()) {
-    processLine(stream.readLine().unwrap());
+    processLine(stream.readLine()?!);
 }
 ```
 
@@ -387,8 +372,8 @@ while (!stream.eof()) {
 ### Aria
 
 ```aria
-Result[string]:content = readFile("file.txt");
-content.onError(NIL(Error:err) { print(err); pass(NIL); });
+result<string>:content = readFile("file.txt");
+if (content.is_error) { print(content.err); }
 ```
 
 ### Python
@@ -429,68 +414,65 @@ match fs::read_to_string("file.txt") {
 ### Example 1: Read Multiple Files
 
 ```aria
-func:readAll = Result[string[]](string[]:paths) {
+func:readAll = result<string[]>(string[]:paths) {
     string[]:contents = [];
-    
+
     till(paths.length - 1, 1) {
-        Result[string]:result = readFile(paths[$]);
-        
-        if (result.isErr()) {
+        result<string>:result = readFile(paths[$]);
+
+        if (result.is_error) {
             fail(`Failed to read &{paths[$]}`);
         }
-        
-        contents.append(result.unwrap());
+
+        contents.append(raw(result));
     }
-    
-    pass(Result.ok(contents));
+
+    pass(contents);
 };
 
 string[]:files = ["a.txt", "b.txt", "c.txt"];
-Result[string[]]:all = readAll(files);
+result<string[]>:all = readAll(files);
 ```
 
 ### Example 2: Conditional Processing
 
 ```aria
 func:processIfExists = void(string:path) {
-    readFile(path)
-        .onSuccess(NIL(string:content) {
-            // File exists, process it
-            string[]:lines = content.split("\n");
-            till(lines.length - 1, 1) {
-                processLine(lines[$]);
-            }
-            pass(NIL);
-        })
-        .onError(NIL(Error:err) {
-            // File doesn't exist, skip silently
-            print(`Skipping &{path}`);
-            pass(NIL);
-        });
+    result<string>:data = readFile(path);
+    if (data.is_error) {
+        // File doesn't exist, skip silently
+        print(`Skipping &{path}`);
+    } else {
+        // File exists, process it
+        string[]:lines = raw(data).split("\n");
+        till(lines.length - 1, 1) {
+            processLine(lines[$]);
+        }
+    }
 };
 ```
 
 ### Example 3: Retry on Failure
 
 ```aria
-func:readWithRetry = Result[string](string:path, int64:maxRetries) {
+func:readWithRetry = result<string>(string:path, int64:maxRetries) {
     int64:attempt = 0;
-    
+
     while (attempt < maxRetries) {
-        Result[string]:result = readFile(path);
-        
-        if (result.isOk()) {
-            pass(result);
+        result<string>:result = readFile(path);
+
+        if (!result.is_error) {
+            pass(raw(result));
         }
-        
+
         attempt++;
         sleep(1000);  // Wait 1 second
     }
-    
+
     fail(`Failed to read after &{maxRetries} attempts`);
 };
 
-Result[string]:content = readWithRetry("network-file.txt", 3);
+result<string>:content = readWithRetry("network-file.txt", 3);
 ```
 
 ### Example 4: Cached Reading
@@ -504,32 +486,32 @@ Result[string]:content = readWithRetry("network-file.txt", 3);
 
 gc FileCache[]:cache = [];
 
-func:readCached = Result[string](string:path) {
+func:readCached = result<string>(string:path) {
     // Check cache first
     till(cache.length - 1, 1) {
         if (cache[$].path == path) {
             int64:age = getCurrentTime() - cache[$].timestamp;
-            
+
             if (age < 60000) {  // Cache valid for 60 seconds
-                pass(Result.ok(cache[$].content));
+                pass(cache[$].content);
             }
         }
     }
-    
+
     // Not in cache, read from disk
-    Result[string]:result = readFile(path);
-    
-    if (result.isOk()) {
+    result<string>:result = readFile(path);
+
+    if (!result.is_error) {
         // Add to cache
         FileCache:entry = {
             path: path,
-            content: result.unwrap(),
+            content: raw(result),
             timestamp: getCurrentTime()
         };
         cache.append(entry);
     }
-    
-    pass(result);
+
+    pass(raw(result));
 };
 ```
 
@@ -539,7 +521,7 @@ func:readCached = Result[string](string:path) {
 
 - [writeFile()](writeFile.md) - Write files with Result handling
 - [openFile()](openFile.md) - Stream-based file I/O
-- [Result Type](../types/result.md) - Error handling with Result[T]
+- [Result Type](../types/result.md) - Error handling with `result<T>`
 - [String Type](../types/strings.md) - String operations
 - [readJSON()](readJSON.md) - Parse JSON files
 - [readCSV()](readCSV.md) - Parse CSV files

@@ -1,96 +1,97 @@
-# Result Unwrap
+# Result Extraction in Aria
 
 **Category**: Types → Result  
-**Purpose**: Extracting values from Result
+**Purpose**: Extracting values from `result<T>`
 
 ---
 
-## Basic Unwrap
+## Overview
 
-```aria
-// Unsafe - panics if Err
-Result: Result<i32> = Ok(42);
-value: i32 = result.unwrap();  // 42
+Aria provides four ways to handle a `result<T>` value:
 
-// Panics!
-error: Result<i32> = Err("fail");
-value: i32 = error.unwrap();  // ❌ Runtime panic!
-```
-
----
-
-## Unwrap with Default
-
-```aria
-// Safe - provides default on error
-Result: Result<i32> = Err("fail");
-value: i32 = result.unwrap_or(0);  // 0
-```
+| Operator | Behaviour |
+|----------|-----------|
+| `? default` | Use `default` if error |
+| `?!` | Trigger failsafe if error |
+| `?` (inside result-returning func) | Propagate error upward |
+| `raw()` | Extract value — TOS-acknowledged, no check performed |
 
 ---
 
-## Unwrap with Function
+## 1. Safe extraction with default (`? default`)
 
 ```aria
-Result: Result<i32> = Err("fail");
+// Returns value on success, default on error
+string:config = readFile("config.txt") ? "default config";
 
-value: i32 = result.unwrap_or_else(fn() -> i32 {
-    return calculate_fallback();
-});
+int64:count = getCount() ? 0;
+
+string:theme = readFile("theme.css") ? "/* default theme */";
 ```
 
 ---
 
-## Expect (With Message)
+## 2. Must-succeed (`?!`)
 
 ```aria
-// Like unwrap but with custom panic message
-value: i32 = result.expect("Failed to get value");
+// Returns value on success, triggers failsafe on error
+Config:cfg = loadConfig()?!;     // failsafe fires if load fails
+
+Key:key = readKeyFile()?!;       // cryptographic key MUST load
+
+string:data = readFile("required.txt")?!;
 ```
 
 ---
 
-## Unwrap Error
+## 3. Error propagation (`?`)
 
 ```aria
-// Get error value (panics if Ok)
-Result: Result<i32> = Err("failure");
-error: string = result.unwrap_err();  // "failure"
+// In a result-returning function, ? propagates error upward
+func:loadAndProcess = result<Config>(string:path) {
+    string:content = readFile(path)?;        // propagate if read fails
+    Config:cfg = parseConfig(content)?;      // propagate if parse fails
+    pass(cfg);
+};
 ```
 
 ---
 
-## Best Practices
-
-### ✅ DO: Use unwrap_or for Defaults
+## 4. Explicit check then extract (`raw()`)
 
 ```aria
-value: i32 = result.unwrap_or(DEFAULT_VALUE);
+result<string>:data = readFile("input.txt");
+
+if (data.is_error) {
+    fail(`Cannot read: &{data.err}`);
+}
+
+string:content = raw(data);  // safe — we checked above
+processContent(content);
 ```
 
-### ✅ DO: Use Pattern Matching
+---
+
+## Checking before extracting
 
 ```aria
-when result is Ok(v) then
-    process(v);
-elsif result is Err(e) then
-    handle_error(e);
-end
-```
+result<string>:result = readFile("config.txt");
 
-### ❌ DON'T: Unwrap Without Checking
-
-```aria
-value: i32 = result.unwrap();  // ❌ Might panic!
+if (!result.is_error) {
+    string:content = raw(result);
+    print(content);
+} else {
+    print(`Failed to read file: &{result.err}`);
+}
 ```
 
 ---
 
 ## Related
 
-- [Result](result.md)
+- [result<T>](result.md)
 - [Result Err/Val](result_err_val.md)
 
 ---
 
-**Remember**: `unwrap()` **panics on error** - use carefully!
+**Remember**: `?!` — failsafe on error. `? default` — safe fallback. `raw()` — I checked, extract it. `?` — propagate error.

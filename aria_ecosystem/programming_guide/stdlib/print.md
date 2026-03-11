@@ -452,12 +452,14 @@ print("This always works");
 ### File/Stream Writing Can Fail
 
 ```aria
-// Writing to files returns Result
-Result[void]:result = writeFile("output.txt", data);
+// Writing to files returns Result  
+result<NIL>:result = writeFile("output.txt", data);
 
-result?
-    .onError(NIL(Error:err) { print(`Failed to write: &{err}`); pass(NIL); })
-    .onSuccess(NIL(void:_) { print("File written successfully"); pass(NIL); });
+if (result.is_error) {
+    print(`Failed to write: &{result.err}`);
+} else {
+    print("File written successfully");
+}
 ```
 
 ---

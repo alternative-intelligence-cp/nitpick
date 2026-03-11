@@ -435,17 +435,15 @@ print("Done");
 
 ```aria
 when(attempts < maxAttempts) {
-    Result[Connection]:result = tryConnect();
+    result<Connection>:result = tryConnect();
     
-    result?
-        .onSuccess(conn => {
-            useConnection(conn);
-            break;  // Success
-        })
-        .onError(err => {
-            logError(err);
-            attempts++;
-        });
+    if (result.is_error) {
+        logError(result.err);
+        attempts++;
+    } else {
+        useConnection(raw(result));
+        break;  // Success
+    }
 }
 then {
     fail("Failed to connect after &{maxAttempts} attempts");
@@ -541,10 +539,10 @@ end {
 int64:backoff = 100;
 
 when(backoff < 10000) {
-    Result[Response]:result = httpGet(url);
+    result<Response>:result = httpGet(url);
     
-    if (result.isOk()) {
-        response = result.unwrap();
+    if (!result.is_error) {
+        response = raw(result);
         break;
     }
     
@@ -566,7 +564,7 @@ end {
 - [while Loop](while.md) - Basic conditional loop
 - [break Statement](break_continue.md#break) - Loop early exit
 - [continue Statement](break_continue.md#continue) - Skip iteration
-- [Result Type](../types/result.md) - Error handling with Result[T]
+- [Result Type](../types/result.md) - Error handling with result<T>
 - [loop Construct](loop.md) - Automatic iteration
 - [till Loop](till.md) - Count-based iteration
 

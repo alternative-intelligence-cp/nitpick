@@ -179,7 +179,7 @@ Person[]:people = [
 
 // Count by department
 map[string, int64]:deptCounts = reduce(people, {}, map[string, int64](map[string, int64]:counts, Person:p) {
-    int64:current = counts.get(p.department).unwrapOr(0);
+    int64:current = counts.get(p.department) ? 0;
     counts.set(p.department, current + 1);
     pass(counts);
 })?;
@@ -408,7 +408,7 @@ float64:average = stats.sum as float64 / stats.count as float64;
 int64[]:scores = [1, 2, 2, 3, 3, 3, 4, 4, 5];
 
 map[int64, int64]:histogram = reduce(scores, {}, map[int64, int64](map[int64, int64]:hist, int64:score) {
-    int64:count = hist.get(score).unwrapOr(0);
+    int64:count = hist.get(score) ? 0;
     hist.set(score, count + 1);
     pass(hist);
 })?;
@@ -470,15 +470,13 @@ int64:max = reduce(empty, INT64_MIN, int64(int64:acc, int64:n) {
 ### Use with Result Type
 
 ```aria
-Result[int64][]:results = [Result.ok(1), Result.ok(2), Result.err("oops")];
+result<int64>[]:results = [divide(10, 1), divide(10, 2), divide(10, 0)];
 
-Result[int64]:sumResult = reduce(results, Result.ok(0), Result[int64](Result[int64]:accRes, Result[int64]:r) {
-    if (accRes.isErr()) { pass(accRes); }
-    if (r.isErr()) { pass(r); }
-    
-    int64:sum = accRes.unwrap() + r.unwrap();
-    pass(Result.ok(sum));
-})?;
+result<int64>:sumResult = reduce(results, 0, result<int64>(result<int64>:acc, result<int64>:r) {
+    if (acc.is_error) { pass(acc); }          // propagate accumulated error
+    if (r.is_error) { pass(r); }              // propagate current error
+    pass(raw(acc) + raw(r));
+})?;;
 ```
 
 ---

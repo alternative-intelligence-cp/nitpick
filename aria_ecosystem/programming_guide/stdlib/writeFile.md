@@ -1,7 +1,7 @@
 # The `writeFile()` Function
 
 **Category**: Standard Library → I/O  
-**Syntax**: `Result[void]:writeFile(string:path, string:content)`  
+**Syntax**: `result<NIL>:writeFile(string:path, string:content)`  
 **Purpose**: Write string data to file with error handling
 
 ---
@@ -10,7 +10,7 @@
 
 The `writeFile()` function writes content to a file, creating it if it doesn't exist or overwriting it if it does. It:
 
-- Returns **`Result[void]`** type (success or error)
+- Returns **`result<NIL>`** type (success or error)
 - **Creates or overwrites** the target file
 - Writes **text data** as UTF-8 by default
 - Provides **automatic error handling**
@@ -22,11 +22,13 @@ The `writeFile()` function writes content to a file, creating it if it doesn't e
 ## Basic Syntax
 
 ```aria
-Result[void]:result = writeFile("output.txt", "Hello, World!");
+result<NIL>:result = writeFile("output.txt", "Hello, World!");
 
-result
-    .onSuccess(NIL(void:_) { print("File written successfully"); pass(NIL); })
-    .onError(NIL(Error:err) { print(`Error: &{err}`); pass(NIL); });
+if (!result.is_error) {
+    print("File written successfully");
+} else {
+    print(`Error: &{result.err}`);
+}
 ```
 
 ---
@@ -36,13 +38,12 @@ result
 ```aria
 string:data = "This is my file content\nWith multiple lines";
 
-Result[void]:result = writeFile("output.txt", data);
+result<NIL>:result = writeFile("output.txt", data);
 
-if (result.isOk()) {
+if (!result.is_error) {
     print("File saved!");
 } else {
-    string:error = result.err().unwrap();
-    print(`Failed to write: &{error}`);
+    print(`Failed to write: &{result.err}`);
 }
 ```
 
@@ -51,18 +52,14 @@ if (result.isOk()) {
 ## Example 2: Save Configuration
 
 ```aria
-func:saveConfig = Result[void](Config:cfg) {
+func:saveConfig = result<NIL>(Config:cfg) {
     string:json = cfg.toJSON();
-    
-    Result[void]:result = writeFile("app.config", json);
-    
-    pass(result);
+    pass(writeFile("app.config", json));
 };
 
 Config:config = { theme: "dark", fontSize: 12 };
-saveConfig(config)
-    .onSuccess(NIL(void:_) { print("Config saved"); pass(NIL); })
-    .onError(NIL(Error:err) { print(`Failed: &{err}`); pass(NIL); });
+result<NIL>:r = saveConfig(config);
+if (r.is_error) { print(`Failed: &{r.err}`); } else { print("Config saved"); }
 ```
 
 ---
@@ -70,7 +67,7 @@ saveConfig(config)
 ## Example 3: Generate Report
 
 ```aria
-func:generateReport = Result[void](int64[]:data) {
+func:generateReport = result<NIL>(int64[]:data) {
     string:report = "=== Report ===\n";
     
     till(data.length - 1, 1) {
@@ -94,53 +91,52 @@ generateReport(sales);
 ### Pattern 1: Early Return on Error
 
 ```aria
-func:saveData = Result[void](string:data) {
-    Result[void]:result = writeFile("data.txt", data);
-    
-    if (result.isErr()) {
-        fail(`Cannot save data: &{result.err().unwrap()}`);
+func:saveData = result<NIL>(string:data) {
+    result<NIL>:result = writeFile("data.txt", data);
+
+    if (result.is_error) {
+        fail(`Cannot save data: &{result.err}`);
     }
-    
+
     print("Data saved successfully");
-    pass(Result.ok());
+    pass(NIL);
 };
 ```
 
 ### Pattern 2: Retry on Failure
 
 ```aria
-func:writeWithRetry = Result[void](string:path, string:content, int64:maxRetries) {
+func:writeWithRetry = result<NIL>(string:path, string:content, int64:maxRetries) {
     int64:attempt = 0;
-    
+
     while (attempt < maxRetries) {
-        Result[void]:result = writeFile(path, content);
-        
-        if (result.isOk()) {
-            pass(result);
+        result<NIL>:result = writeFile(path, content);
+
+        if (!result.is_error) {
+            pass(NIL);
         }
-        
+
         attempt++;
         sleep(1000);  // Wait before retry
     }
-    
-    fail(`Failed to write after &{maxRetries} attempts`);
+
 };
 ```
 
 ### Pattern 3: Backup Before Overwrite
 
 ```aria
-func:safeWrite = Result[void](string:path, string:content) {
+func:safeWrite = result<NIL>(string:path, string:content) {
     // Check if file exists
     if (fileExists(path)) {
         // Create backup
-        Result[string]:backup = readFile(path);
-        
-        if (backup.isOk()) {
-            writeFile(`&{path}.backup`, backup.unwrap());
+        result<string>:backup = readFile(path);
+
+        if (!backup.is_error) {
+            writeFile(`&{path}.backup`, raw(backup));
         }
     }
-    
+
     // Write new content
     pass(writeFile(path, content));
 };
@@ -153,12 +149,12 @@ func:safeWrite = Result[void](string:path, string:content) {
 ### Use Case 1: Log File
 
 ```aria
-func:appendLog = Result[void](string:message) {
+func:appendLog = result<NIL>(string:message) {
     string:timestamp = getCurrentTime().toString();
     string:entry = `[&{timestamp}] &{message}\n`;
     
     // Read existing log
-    string:existing = readFile("app.log").unwrapOr("");
+    string:existing = readFile("app.log") ? "";
     
     // Append new entry
     pass(writeFile("app.log", existing + entry));
@@ -171,7 +167,7 @@ appendLog("Processing data");
 ### Use Case 2: Export Data
 
 ```aria
-func:exportCSV = Result[void](string[][]:data) {
+func:exportCSV = result<NIL>(string[][]:data) {
     string:csv = "";
     
     till(data.length - 1, 1) {
@@ -194,14 +190,14 @@ exportCSV(table);
 ### Use Case 3: Template Rendering
 
 ```aria
-func:renderTemplate = Result[void](string:template, string:output) {
-    Result[string]:tmpl = readFile(template);
+func:renderTemplate = result<void>(string:template, string:output) {
+    result<string>:tmpl = readFile(template);
     
-    if (tmpl.isErr()) {
+    if (tmpl.is_error) {
         fail("Template not found");
     }
     
-    string:rendered = tmpl.unwrap()
+    string:rendered = raw(tmpl)
         .replace("{{title}}", "My Page")
         .replace("{{content}}", "Hello, World!");
     
@@ -214,20 +210,20 @@ renderTemplate("template.html", "index.html");
 ### Use Case 4: Temporary Files
 
 ```aria
-func:createTempFile = Result[string]() {
+func:createTempFile = result<string>() {
     string:path = `/tmp/aria_&{getCurrentTime()}.tmp`;
-    
-    Result[void]:result = writeFile(path, "temporary data");
-    
-    if (result.isErr()) {
+
+    result<NIL>:result = writeFile(path, "temporary data");
+
+    if (result.is_error) {
         fail("Cannot create temp file");
     }
-    
-    pass(Result.ok(path));
+
+    pass(path);
 };
 
-Result[string]:tempPath = createTempFile();
-defer deleteFile(tempPath.unwrap());
+result<string>:tempPath = createTempFile();
+defer deleteFile(tempPath ? "/dev/null");
 ```
 
 ---
@@ -272,37 +268,34 @@ writeFile("script.sh", "#!/bin/bash\necho Hello", permissions: 0o755);
 ### Permission Denied
 
 ```aria
-Result[void]:result = writeFile("/root/protected.txt", "data");
+result<NIL>:result = writeFile("/root/protected.txt", "data");
 
-result.onError(NIL(Error:err) {
+if (result.is_error) {
     // err = "Permission denied: /root/protected.txt"
-    print(`Error: &{err}`);
-    pass(NIL);
-});
+    print(`Error: &{result.err}`);
+}
 ```
 
 ### Disk Full
 
 ```aria
-Result[void]:result = writeFile("huge.txt", veryLargeString);
+result<NIL>:result = writeFile("huge.txt", veryLargeString);
 
-result.onError(NIL(Error:err) {
+if (result.is_error) {
     // err = "No space left on device"
-    print(`Error: &{err}`);
-    pass(NIL);
-});
+    print(`Error: &{result.err}`);
+}
 ```
 
 ### Invalid Path
 
 ```aria
-Result[void]:result = writeFile("/invalid/path/file.txt", "data");
+result<NIL>:result = writeFile("/invalid/path/file.txt", "data");
 
-result.onError(NIL(Error:err) {
+if (result.is_error) {
     // err = "No such file or directory"
-    print(`Error: &{err}`);
-    pass(NIL);
-});
+    print(`Error: &{result.err}`);
+}
 ```
 
 ---
@@ -313,10 +306,10 @@ result.onError(NIL(Error:err) {
 
 ```aria
 // GOOD: Handle potential errors
-Result[void]:result = writeFile("important.txt", data);
+result<NIL>:result = writeFile("important.txt", data);
 
-if (result.isErr()) {
-    logError(result.err().unwrap());
+if (result.is_error) {
+    logError(result.err);
     handleFailure();
 }
 ```
@@ -325,17 +318,16 @@ if (result.isErr()) {
 
 ```aria
 // GOOD: Write to temp, then rename (atomic)
-func:atomicWrite = Result[void](string:path, string:content) {
+func:atomicWrite = result<NIL>(string:path, string:content) {
     string:temp = `&{path}.tmp`;
-    
-    Result[void]:writeResult = writeFile(temp, content);
-    if (writeResult.isErr()) {
+
+    result<NIL>:writeResult = writeFile(temp, content);
+    if (writeResult.is_error) {
         pass(writeResult);
     }
-    
+
     // Atomic rename
-    Result[void]:renameResult = renameFile(temp, path);
-    pass(renameResult);
+    pass(renameFile(temp, path));
 };
 ```
 
@@ -343,11 +335,11 @@ func:atomicWrite = Result[void](string:path, string:content) {
 
 ```aria
 // GOOD: Validate before writing
-func:saveJSON = Result[void](string:path, string:json) {
+func:saveJSON = result<NIL>(string:path, string:json) {
     if (!isValidJSON(json)) {
         fail("Invalid JSON format");
     }
-    
+
     pass(writeFile(path, json));
 };
 ```
@@ -357,11 +349,11 @@ func:saveJSON = Result[void](string:path, string:json) {
 ```aria
 // BAD: Ignoring result
 writeFile("log.txt", "data");
-// No error handling!
+// No error handling! Write failure silently discarded.
 
-// GOOD: Handle errors
-writeFile("log.txt", "data")
-    .onError(NIL(Error:err) { logError(err); pass(NIL); });
+// GOOD: Check errors
+result<NIL>:r = writeFile("log.txt", "data");
+if (r.is_error) { logError(r.err); }
 ```
 
 ### ❌ Don't Write Sensitive Data Without Protection
@@ -382,8 +374,8 @@ writeFile("passwords.enc", encrypted);
 ### Aria
 
 ```aria
-Result[void]:result = writeFile("file.txt", "Hello");
-result.onError(NIL(Error:err) { print(err); pass(NIL); });
+result<NIL>:result = writeFile("file.txt", "Hello");
+if (result.is_error) { print(result.err); }
 ```
 
 ### Python
@@ -420,48 +412,48 @@ match fs::write("file.txt", "Hello") {
 ### Example 1: Batch File Writing
 
 ```aria
-func:writeAll = Result[void](string@:path[], string[]:contents) {
+func:writeAll = result<NIL>(string@:path[], string[]:contents) {
     if (paths.length != contents.length) {
         fail("Mismatched arrays");
     }
-    
+
     till(paths.length - 1, 1) {
-        Result[void]:result = writeFile(paths[$], contents[$]);
-        
-        if (result.isErr()) {
+        result<NIL>:result = writeFile(paths[$], contents[$]);
+
+        if (result.is_error) {
             fail(`Failed to write &{paths[$]}`);
         }
     }
-    
-    pass(Result.ok());
+
+    pass(NIL);
 };
 ```
 
 ### Example 2: Transaction-like Writes
 
 ```aria
-func:writeTransaction = Result[void](string[]:paths, string[]:data) {
+func:writeTransaction = result<NIL>(string[]:paths, string[]:data) {
     string[]:tempPaths = [];
-    
+
     // Write to temp files first
     till(paths.length - 1, 1) {
         string:temp = `&{paths[$]}.tmp`;
         tempPaths.append(temp);
-        
-        Result[void]:result = writeFile(temp, data[$]);
-        if (result.isErr()) {
+
+        result<NIL>:result = writeFile(temp, data[$]);
+        if (result.is_error) {
             // Rollback
             cleanupTemps(tempPaths);
             fail("Transaction failed");
         }
     }
-    
+
     // All writes succeeded, rename atomically
     till(paths.length - 1, 1) {
         renameFile(tempPaths[$], paths[$]);
     }
-    
-    pass(Result.ok());
+
+    pass(NIL);
 };
 ```
 
@@ -474,10 +466,10 @@ func:writeTransaction = Result[void](string[]:paths, string[]:data) {
     string:message
 }
 
-func:writeLog = Result[void](LogEntry:entry) {
+func:writeLog = result<NIL>(LogEntry:entry) {
     string:line = `[&{entry.timestamp}] &{entry.level}: &{entry.message}\n`;
-    
-    string:existing = readFile("app.log").unwrapOr("");
+
+    string:existing = readFile("app.log") ? "";
     pass(writeFile("app.log", existing + line));
 };
 
@@ -488,12 +480,15 @@ writeLog(log);
 ### Example 4: Content Pipeline
 
 ```aria
-readFile("input.txt")
-    .map(string(string:content) { pass(content.toUpperCase()); })
-    .map(string(string:upper) { pass(upper.replace(" ", "_")); })
-    .andThen(Result[void](string:processed) { pass(writeFile("output.txt", processed)); })
-    .onSuccess(NIL(void:_) { print("Pipeline complete"); pass(NIL); })
-    .onError(NIL(Error:err) { print(`Pipeline failed: &{err}`); pass(NIL); });
+// Process input.txt, transform it, write output
+result<string>:raw = readFile("input.txt");
+if (raw.is_error) { fail(`Pipeline failed: &{raw.err}`); }
+
+string:upper = raw(raw).toUpperCase();
+string:processed = upper.replace(" ", "_");
+
+result<NIL>:out = writeFile("output.txt", processed);
+if (!out.is_error) { print("Pipeline complete"); } else { print(`Pipeline failed: &{out.err}`); }
 ```
 
 ---
@@ -502,7 +497,7 @@ readFile("input.txt")
 
 - [readFile()](readFile.md) - Read files with Result handling
 - [openFile()](openFile.md) - Stream-based file I/O
-- [Result Type](../types/result.md) - Error handling with Result[T]
+- [Result Type](../types/result.md) - Error handling with `result<T>`
 - [String Type](../types/strings.md) - String operations
 - [File Permissions](../io_system/permissions.md) - Unix file permissions
 - [Atomic Operations](../advanced/atomic_writes.md) - Safe file updates

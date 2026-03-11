@@ -450,18 +450,18 @@ UserData[]:userData = await transformAsync(userIds, fetchUserData);
 ### Transform with Result
 
 ```aria
-func:parseInt = Result[int64](string:s) {
+func:parseInt = result<int64>(string:s) {
     // Returns Result type
 };
 
 string[]:strings = ["10", "20", "abc", "30"];
 
-Result[int64][]:results = transform(strings, parseInt)?;
+result<int64>[]:results = transform(strings, parseInt)?;
 
 // Filter successful parses
 int64[]:numbers = results
-    |> filter(bool(Result[int64]:r) { pass(r.isOk()); })?
-    |> transform(int64(Result[int64]:r) { pass(r.unwrap()); })?;
+    |> filter(bool(result<int64>:r) { pass(!r.is_error); })?
+    |> transform(int64(result<int64>:r) { pass(raw(r)); })?;
 // [10, 20, 30]
 ```
 
