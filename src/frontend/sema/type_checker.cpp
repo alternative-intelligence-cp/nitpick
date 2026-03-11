@@ -3340,6 +3340,87 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("string");
         }
 
+        // String manipulation: string_pad_left(string, int64, int8) -> string
+        if (idExpr->name == "string_pad_left") {
+            if (expr->arguments.size() != 3) {
+                addError("string_pad_left() requires exactly three arguments (str, total_length, pad_char)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            Type* arg3Type = inferType(expr->arguments[2].get());
+            if (arg1Type->getKind() == TypeKind::ERROR ||
+                arg2Type->getKind() == TypeKind::ERROR ||
+                arg3Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // String manipulation: string_repeat(string, int64) -> string
+        if (idExpr->name == "string_repeat") {
+            if (expr->arguments.size() != 2) {
+                addError("string_repeat() requires exactly two arguments (str, count)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // String manipulation: string_trim_start(string) -> string
+        if (idExpr->name == "string_trim_start") {
+            if (expr->arguments.size() != 1) {
+                addError("string_trim_start() requires exactly one argument (str)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // String manipulation: string_trim_end(string) -> string
+        if (idExpr->name == "string_trim_end") {
+            if (expr->arguments.size() != 1) {
+                addError("string_trim_end() requires exactly one argument (str)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // String search: string_index_of(string, string) -> int64  (-1 if not found)
+        if (idExpr->name == "string_index_of") {
+            if (expr->arguments.size() != 2) {
+                addError("string_index_of() requires exactly two arguments (haystack, needle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* arg1Type = inferType(expr->arguments[0].get());
+            Type* arg2Type = inferType(expr->arguments[1].get());
+            if (arg1Type->getKind() == TypeKind::ERROR || arg2Type->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // Integer hex: string_from_int_hex(int64) -> string
+        if (idExpr->name == "string_from_int_hex") {
+            if (expr->arguments.size() != 1) {
+                addError("string_from_int_hex() requires exactly one argument (value)", expr);
+                return typeSystem->getErrorType();
+            }
+            inferType(expr->arguments[0].get());
+            return typeSystem->getPrimitiveType("string");
+        }
+
         // String conversion: string_format_float(float64, int32) -> string
         if (idExpr->name == "string_format_float") {
             if (expr->arguments.size() != 2) {
@@ -4697,6 +4778,37 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         // MEMORY MANAGEMENT BUILTINS
         // ====================================================================
         
+        // ====================================================================
+        // EXPLICIT SAFETY BYPASS
+        // ====================================================================
+
+        // raw(Result<T>) -> T  — Explicitly bypass "no checky no val"
+        // Purpose: Extract .value without checking .is_error first.
+        //          Use when you have already validated externally, or in
+        //          performance-critical paths where the check is elsewhere.
+        // This is the ONLY sanctioned way to skip the is_error check.
+        // Example: int8:val = raw(buffer_read(buf, idx));
+        if (idExpr->name == "raw") {
+            if (expr->arguments.size() != 1) {
+                addError("raw() requires exactly one argument (Result<T>)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->getKind() != TypeKind::RESULT) {
+                addError("raw() argument must be Result<T> — got '" + argType->toString() + "'.\n"
+                         "  raw() extracts .value without an is_error check.\n"
+                         "  If you have a plain value already, raw() is not needed.",
+                         expr);
+                return typeSystem->getErrorType();
+            }
+            // Bypass the KNOWN_SUCCESS gate — return inner T directly
+            ResultType* resType = static_cast<ResultType*>(argType);
+            return resType->getValueType();
+        }
+
         // drop(wild T@) -> void - Free wild pointer
         if (idExpr->name == "drop") {
             if (expr->arguments.size() != 1) {
@@ -5322,6 +5434,32 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("flt64");
         }
         
+        // Absolute value and float modulo - two libm functions not covered above
+        if (idExpr->name == "fabs") {
+            if (expr->arguments.size() != 1) {
+                addError("fabs() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("flt64");
+        }
+
+        if (idExpr->name == "fmod") {
+            if (expr->arguments.size() != 2) {
+                addError("fmod() requires exactly two arguments (x, y)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* xType = inferType(expr->arguments[0].get());
+            Type* yType = inferType(expr->arguments[1].get());
+            if (xType->getKind() == TypeKind::ERROR || yType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("flt64");
+        }
+
         // Mathematical constants - no arguments, return flt64
         if (idExpr->name == "PI" || idExpr->name == "E" || idExpr->name == "TAU") {
             if (expr->arguments.size() != 0) {
@@ -5454,8 +5592,19 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             // Check if argument type is assignable to parameter type
             // P1.5: Allow automatic void* ↔ wild T-> conversions at FFI boundaries
             bool ffiPointerConversion = canConvertFFIPointer(effectiveArgType, paramTypes[i]);
-            
-            if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion) {
+
+            // Allow implicit array-to-pointer decay: T[N] → T@ (like C array decay)
+            bool arrayToPointerCoercion = false;
+            if (effectiveArgType->getKind() == TypeKind::ARRAY &&
+                paramTypes[i]->getKind() == TypeKind::POINTER) {
+                ArrayType* arrType = static_cast<ArrayType*>(effectiveArgType);
+                PointerType* ptrType = static_cast<PointerType*>(paramTypes[i]);
+                if (arrType->getElementType()->isAssignableTo(ptrType->getPointeeType())) {
+                    arrayToPointerCoercion = true;
+                }
+            }
+
+            if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion && !arrayToPointerCoercion) {
                 addError("Argument " + std::to_string(i + 1) + " has type '" + 
                         argType->toString() + "', but function expects '" + 
                         paramTypes[i]->toString() + "'", expr->arguments[i].get());
@@ -6993,6 +7142,16 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
 // ============================================================================
 
 void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
+    // Prevent shadowing reserved builtin names
+    static const std::unordered_set<std::string> reservedBuiltins = {
+        "ok", "print", "println", "stdout_write", "stderr_write",
+        "to_string", "fail", "pass", "drop", "raw"
+    };
+    if (reservedBuiltins.count(stmt->varName)) {
+        addError("'" + stmt->varName + "' is a reserved builtin and cannot be used as a variable name", stmt);
+        return;
+    }
+
     Type* declaredType = nullptr;
     
     // Handle new typeNode or legacy typeName
@@ -8480,9 +8639,15 @@ void TypeChecker::checkReturnStmt(ReturnStmt* stmt) {
         }
         
         // Return statements should check against the VALUE type, not the Result<T> wrapper
-        // Functions internally return Result<T>, but the return statement provides the value
-        if (!returnType->isAssignableTo(currentFunctionValueType) && 
-            !canCoerce(returnType, currentFunctionValueType)) {
+        // Functions internally return Result<T>, but the return statement provides the value.
+        // Auto-unwrap Result<T> when the caller returns a direct call to another Aria function.
+        Type* effectiveReturnType = returnType;
+        if (returnType->getKind() == TypeKind::RESULT) {
+            ResultType* resultWrapper = static_cast<ResultType*>(returnType);
+            effectiveReturnType = resultWrapper->getValueType();
+        }
+        if (!effectiveReturnType->isAssignableTo(currentFunctionValueType) && 
+            !canCoerce(effectiveReturnType, currentFunctionValueType)) {
             addError("Return type '" + returnType->toString() + 
                     "' does not match function return type '" + 
                     currentFunctionValueType->toString() + "'", stmt);
@@ -8545,9 +8710,15 @@ void TypeChecker::checkPassStmt(PassStmt* stmt) {
         }
     }
     
+    // Auto-unwrap Result<T> when the caller passes a direct call to another Aria function.
+    Type* effectiveValueType = valueType;
+    if (valueType->getKind() == TypeKind::RESULT) {
+        ResultType* resultWrapper = static_cast<ResultType*>(valueType);
+        effectiveValueType = resultWrapper->getValueType();
+    }
     if (!exoticLiteralPass && !optionalIntLiteralPass && 
-        !valueType->isAssignableTo(currentFunctionValueType) && 
-        !canCoerce(valueType, currentFunctionValueType)) {
+        !effectiveValueType->isAssignableTo(currentFunctionValueType) && 
+        !canCoerce(effectiveValueType, currentFunctionValueType)) {
         addError("Pass value type '" + valueType->toString() + 
                 "' does not match function value type '" + 
                 currentFunctionValueType->toString() + "'", stmt);
@@ -9349,8 +9520,11 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
         }
     }
     
-    // Load the module using ModuleLoader
-    LoadedModule* module = moduleLoader->loadModule(logicalPath, currentModulePath);
+    // Load the module using the UseStmt overload so that isFilePath is preserved.
+    // The string-based overload re-derives isFilePath from the string content,
+    // which fails for "wave.aria" (no slash, no leading dot) — it would be treated
+    // as a logical dotted path instead of a file path.
+    LoadedModule* module = moduleLoader->loadModule(stmt, currentModulePath);
     if (!module) {
         addError("Failed to load module '" + logicalPath + "'", stmt);
         // Add detailed errors from module loader
@@ -9366,6 +9540,31 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
         // Check if we've already type-checked this module
         // (Simple check: if exports is empty, we haven't type-checked yet)
         if (module->moduleInfo->getExports().empty() && module->ast) {
+            // Temporarily redirect currentModulePath to the module being processed
+            // so that relative 'use' statements INSIDE that module (e.g. wavemech.aria
+            // doing 'use "wave.aria".*;') resolve relative to the module's own directory.
+            std::string savedModulePath = currentModulePath;
+            currentModulePath = module->canonicalPath;
+
+            // IMPORT PASS: Process any 'use' statements at the top of the module first
+            // so that symbols from dependencies are in scope during type-checking.
+            for (const auto& decl : module->ast->declarations) {
+                if (decl->type == ASTNode::NodeType::USE) {
+                    checkUseStmt(static_cast<UseStmt*>(decl.get()));
+                }
+            }
+
+            // STRUCT PRE-PASS: register non-generic struct types BEFORE function
+            // signatures so that struct names resolve correctly in param/return types.
+            for (const auto& decl : module->ast->declarations) {
+                if (decl->type == ASTNode::NodeType::STRUCT_DECL) {
+                    StructDeclStmt* sd = static_cast<StructDeclStmt*>(decl.get());
+                    if (sd->genericParams.empty() && !typeSystem->getStructType(sd->structName)) {
+                        checkStructDecl(sd);
+                    }
+                }
+            }
+
             // PRE-PASS: Register all global variable and constant declarations first.
             // This must happen before type-checking functions, because module-level
             // functions may reference global variables defined in the same module.
@@ -9496,6 +9695,9 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
             
             // Mark module as type-checked to avoid re-processing
             module->state = ModuleState::CHECKED;
+
+            // Restore the caller's module path
+            currentModulePath = savedModulePath;
         }
     }
     
@@ -9631,9 +9833,17 @@ void TypeChecker::importWildcardSymbols(LoadedModule* module, UseStmt* stmt) {
             continue;  // Skip non-public symbols
         }
         
-        // Check for name collision
+        // If a symbol with this name already exists (e.g. registered by the pre-pass
+        // with a stale type before structs were resolved), UPDATE it with the correct
+        // type from the export table. The MAIN PASS always produces authoritative types.
         if (symbolTable->isDefined(name)) {
-            addError("Symbol '" + name + "' already defined in current scope (wildcard import conflict)", stmt);
+            Symbol* existing = symbolTable->lookupSymbol(name);
+            if (existing) {
+                existing->type = exportEntry.symbol->type;
+                if (exportEntry.symbol->funcDecl) {
+                    existing->funcDecl = exportEntry.symbol->funcDecl;
+                }
+            }
             continue;
         }
         

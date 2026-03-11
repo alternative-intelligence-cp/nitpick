@@ -6728,6 +6728,36 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // MEMORY MANAGEMENT BUILTINS
     // ====================================================================
     
+    // ====================================================================
+    // EXPLICIT SAFETY BYPASS
+    // ====================================================================
+
+    // raw(Result<T>) -> T — Bypass "no checky no val", extract .value directly.
+    // Type checker has already confirmed the argument is Result<T>.
+    // We extract field 0 of the {T, ptr, i8} Result struct without any guard.
+    if (callee_ident->name == "raw") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("raw() requires exactly one argument");
+        }
+        llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!arg) {
+            throw std::runtime_error("Failed to generate code for raw() argument");
+        }
+        // arg is a Result<T> struct: { T value, ptr error, i8 is_error }
+        // Extract field 0 (value) unconditionally.
+        if (arg->getType()->isStructTy()) {
+            llvm::StructType* sty = llvm::cast<llvm::StructType>(arg->getType());
+            if (sty->getNumElements() == 3 &&
+                sty->getElementType(1)->isPointerTy() &&
+                sty->getElementType(2)->isIntegerTy(8)) {
+                return builder.CreateExtractValue(arg, 0, "raw.value");
+            }
+        }
+        // If for some reason it arrived already unwrapped (e.g. constant folding),
+        // pass it straight through.
+        return arg;
+    }
+
     // drop(T) -> void - Evaluate expression and discard result
     if (callee_ident->name == "drop") {
         if (expr->arguments.size() != 1) {
