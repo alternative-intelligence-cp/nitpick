@@ -8276,9 +8276,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 elem_type = gvType;
             } else if (auto* ptr_type = llvm::dyn_cast<llvm::PointerType>(array_ptr->getType())) {
                 (void)ptr_type;
-                // Modern LLVM uses opaque pointers, need to track element type separately
-                // For now, assume int64 (common case for literals)
-                elem_type = llvm::Type::getInt64Ty(context);
+                // Look up element type from var_aria_types, same as ExprCodegen::codegenIndex.
+                // For a wild T-> pointer, var_aria_types stores "T@"; strip "@" to get T.
+                // Without this lookup both systems used i64 regardless of declared element type,
+                // causing 8-byte stride reads from byte arrays (e.g. wild int8-> buffers).
+                elem_type = llvm::Type::getInt64Ty(context);  // fallback
+                if (indexExpr->array->type == ASTNode::NodeType::IDENTIFIER) {
+                    auto* ident = static_cast<IdentifierExpr*>(indexExpr->array.get());
+                    auto at = var_aria_types.find(ident->name);
+                    if (at != var_aria_types.end()) {
+                        std::string t = at->second;
+                        if (!t.empty() && t.back() == '@') t.pop_back();
+                        if      (t == "int8"  || t == "i8")  elem_type = builder.getInt8Ty();
+                        else if (t == "int16" || t == "i16") elem_type = builder.getInt16Ty();
+                        else if (t == "int32" || t == "i32") elem_type = builder.getInt32Ty();
+                        else if (t == "int64" || t == "i64") elem_type = builder.getInt64Ty();
+                        else if (t == "flt32" || t == "f32") elem_type = builder.getFloatTy();
+                        else if (t == "flt64" || t == "f64") elem_type = builder.getDoubleTy();
+                    }
+                }
             } else {
                 // Fallback to int32
                 elem_type = llvm::Type::getInt32Ty(context);

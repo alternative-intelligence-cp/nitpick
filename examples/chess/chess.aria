@@ -40,11 +40,6 @@ func:piece_char = int8(int8:p) {
     pass(63i8);   // '?' fallback
 };
 
-// ── id8 ──────────────────────────────────────────────────────────────────────
-// Identity function for int8. Workaround: passing b[idx] as an int8 argument
-// forces the compiler to use getelementptr i8 (correct stride) instead of
-// getelementptr i64 (wrong stride caused by index type inference bug).
-func:id8 = int8(int8:v) { pass(v); };
 
 // ── init_board ───────────────────────────────────────────────────────────────
 // Sets the board to the standard starting position.
@@ -189,7 +184,7 @@ func:try_add_move = int32(wild int8->:b, wild int8->:mvs, int32:count,
     if (nr > 7) { pass(count); }
 
     int64:nsq = @cast<int64>(nr * 8 + nf);
-    int32:t   = @cast<int32>(id8(b[nsq]) ? 0i8);
+    int32:t   = @cast<int32>(b[nsq]);
 
     // Can land on empty or enemy
     int32:can_land = 0;
@@ -219,7 +214,7 @@ func:add_ray = int32(wild int8->:b, wild int8->:mvs, int32:count,
 
     while (nf >= 0 && nf <= 7 && nr >= 0 && nr <= 7 && blocked == 0) {
         int64:nsq = @cast<int64>(nr * 8 + nf);
-        int32:t   = @cast<int32>(id8(b[nsq]) ? 0i8);
+        int32:t   = @cast<int32>(b[nsq]);
 
         // Stop ray after this square if a piece is here
         if (t != 0) { blocked += 1; }
@@ -253,7 +248,7 @@ func:gen_sq_pawn = int32(wild int8->:b, wild int8->:mvs, int32:count,
         // Forward 1
         if (rank < 7) {
             int64:fwd = @cast<int64>(sq32 + 8);
-            int32:wfv1 = @cast<int32>(id8(b[fwd]) ? 0i8); if (wfv1 == 0) {
+            int32:wfv1 = @cast<int32>(b[fwd]); if (wfv1 == 0) {
                 int64:mi = @cast<int64>(count) * 2i64;
                 mvs[mi]        = @cast<int8>(sq32);
                 mvs[mi + 1i64] = @cast<int8>(sq32 + 8);
@@ -261,7 +256,7 @@ func:gen_sq_pawn = int32(wild int8->:b, wild int8->:mvs, int32:count,
                 // Forward 2 from starting rank
                 if (rank == 1) {
                     int64:fwd2 = @cast<int64>(sq32 + 16);
-                    int32:wfv2_1 = @cast<int32>(id8(b[fwd2]) ? 0i8); if (wfv2_1 == 0) {
+                    int32:wfv2_1 = @cast<int32>(b[fwd2]); if (wfv2_1 == 0) {
                         int64:mi2 = @cast<int64>(count) * 2i64;
                         mvs[mi2]        = @cast<int8>(sq32);
                         mvs[mi2 + 1i64] = @cast<int8>(sq32 + 16);
@@ -273,7 +268,7 @@ func:gen_sq_pawn = int32(wild int8->:b, wild int8->:mvs, int32:count,
         // Capture left (file-1, rank+1) = sq+7
         if (file > 0 && rank < 7) {
             int64:tl = @cast<int64>(sq32 + 7);
-            int32:tl32 = @cast<int32>(id8(b[tl]) ? 0i8);
+            int32:tl32 = @cast<int32>(b[tl]);
             if (tl32 >= 7 && tl32 <= 12) {
                 int64:mi = @cast<int64>(count) * 2i64;
                 mvs[mi]        = @cast<int8>(sq32);
@@ -284,7 +279,7 @@ func:gen_sq_pawn = int32(wild int8->:b, wild int8->:mvs, int32:count,
         // Capture right (file+1, rank+1) = sq+9
         if (file < 7 && rank < 7) {
             int64:tr = @cast<int64>(sq32 + 9);
-            int32:tr32 = @cast<int32>(id8(b[tr]) ? 0i8);
+            int32:tr32 = @cast<int32>(b[tr]);
             if (tr32 >= 7 && tr32 <= 12) {
                 int64:mi = @cast<int64>(count) * 2i64;
                 mvs[mi]        = @cast<int8>(sq32);
@@ -297,7 +292,7 @@ func:gen_sq_pawn = int32(wild int8->:b, wild int8->:mvs, int32:count,
         // Forward 1
         if (rank > 0) {
             int64:fwd = @cast<int64>(sq32 - 8);
-            int32:wfv2 = @cast<int32>(id8(b[fwd]) ? 0i8); if (wfv2 == 0) {
+            int32:wfv2 = @cast<int32>(b[fwd]); if (wfv2 == 0) {
                 int64:mi = @cast<int64>(count) * 2i64;
                 mvs[mi]        = @cast<int8>(sq32);
                 mvs[mi + 1i64] = @cast<int8>(sq32 - 8);
@@ -305,7 +300,7 @@ func:gen_sq_pawn = int32(wild int8->:b, wild int8->:mvs, int32:count,
                 // Forward 2 from starting rank
                 if (rank == 6) {
                     int64:fwd2 = @cast<int64>(sq32 - 16);
-                    int32:wfv2_2 = @cast<int32>(id8(b[fwd2]) ? 0i8); if (wfv2_2 == 0) {
+                    int32:wfv2_2 = @cast<int32>(b[fwd2]); if (wfv2_2 == 0) {
                         int64:mi2 = @cast<int64>(count) * 2i64;
                         mvs[mi2]        = @cast<int8>(sq32);
                         mvs[mi2 + 1i64] = @cast<int8>(sq32 - 16);
@@ -317,7 +312,7 @@ func:gen_sq_pawn = int32(wild int8->:b, wild int8->:mvs, int32:count,
         // Capture left (file-1, rank-1) = sq-9
         if (file > 0 && rank > 0) {
             int64:tl = @cast<int64>(sq32 - 9);
-            int32:tl32 = @cast<int32>(id8(b[tl]) ? 0i8);
+            int32:tl32 = @cast<int32>(b[tl]);
             if (tl32 >= 1 && tl32 <= 6) {
                 int64:mi = @cast<int64>(count) * 2i64;
                 mvs[mi]        = @cast<int8>(sq32);
@@ -328,7 +323,7 @@ func:gen_sq_pawn = int32(wild int8->:b, wild int8->:mvs, int32:count,
         // Capture right (file+1, rank-1) = sq-7
         if (file < 7 && rank > 0) {
             int64:tr = @cast<int64>(sq32 - 7);
-            int32:tr32 = @cast<int32>(id8(b[tr]) ? 0i8);
+            int32:tr32 = @cast<int32>(b[tr]);
             if (tr32 >= 1 && tr32 <= 6) {
                 int64:mi = @cast<int64>(count) * 2i64;
                 mvs[mi]        = @cast<int8>(sq32);
@@ -349,7 +344,7 @@ func:gen_moves = int32(wild int8->:b, wild int8->:mvs, int32:white_turn) {
     int64:sq    = 0i64;
 
     while (sq < 64i64) {
-        int8:p   = id8(b[sq]) ? 0i8;
+        int8:p   = b[sq];
         int32:p32 = @cast<int32>(p);
         int32:sq32 = @cast<int32>(sq);
         int32:rank = sq32 / 8;
@@ -434,8 +429,8 @@ func:gen_moves = int32(wild int8->:b, wild int8->:mvs, int32:white_turn) {
 func:apply_move = int8(wild int8->:b, int8:from_sq, int8:to_sq) {
     int64:from = @cast<int64>(from_sq);
     int64:to   = @cast<int64>(to_sq);
-    int8:piece    = id8(b[from]) ? 0i8;
-    int8:captured = id8(b[to]) ? 0i8;
+    int8:piece    = b[from];
+    int8:captured = b[to];
     b[to]   = piece;
     b[from] = 0i8;
 
@@ -483,8 +478,8 @@ func:main = int32() {
             if (which < 0) { which = 0i32 - which; }   // abs in case rand() < 0
 
             int64:mi       = @cast<int64>(which) * 2i64;
-            int8:from_sq   = id8(moves[mi]) ? 0i8;
-            int8:to_sq     = id8(moves[mi + 1i64]) ? 0i8;
+            int8:from_sq   = moves[mi];
+            int8:to_sq     = moves[mi + 1i64];
 
             // Build "a1-a2\n" notation string
             int32:from32 = @cast<int32>(from_sq);
