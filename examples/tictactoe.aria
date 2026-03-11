@@ -57,9 +57,9 @@ func:cell_char = string(nit:c) {
 };
 
 func:print_row = int32(nit:a, nit:b, nit:c) {
-    string:ca  = cell_char(a);
-    string:cb  = cell_char(b);
-    string:cc  = cell_char(c);
+    string:ca  = raw(cell_char(a));
+    string:cb  = raw(cell_char(b));
+    string:cc  = raw(cell_char(c));
     string:sep = " | ";
     string:row = string_concat(ca, string_concat(sep, string_concat(cb, string_concat(sep, cc))));
     drop(println(row));
@@ -236,7 +236,7 @@ func:main = int32() {
     drop(println("Move 3 — X plays pos 2 (top-right):"));
     drop(print_board(board));
     // Intermediate check: no winner yet
-    int32:w3 = check_winner(board);
+    int32:w3 = raw(check_winner(board));
     if (w3 != 0i32) { pass(10i32); }  // unexpected early win = test failure
     drop(println("  (no winner yet)"));
     drop(println(""));
@@ -254,7 +254,7 @@ func:main = int32() {
     drop(println("         X threatens middle row [3,4,5] — can O stop it?"));
     drop(print_board(board));
     // Intermediate check: no winner yet
-    int32:w5 = check_winner(board);
+    int32:w5 = raw(check_winner(board));
     if (w5 != 0i32) { pass(11i32); }  // unexpected early win = test failure
     drop(println("  (no winner yet)"));
     drop(println(""));
@@ -275,7 +275,7 @@ func:main = int32() {
     drop(println(""));
 
     // ── Final result ──────────────────────────────────────────────────────
-    int32:winner = check_winner(board);
+    int32:winner = raw(check_winner(board));
 
     if (winner == 1i32) {
         drop(println("X WINS! Middle row complete: positions 3-4-5."));
