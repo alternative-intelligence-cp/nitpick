@@ -205,3 +205,49 @@ double aria_math_pi(void) {
 double aria_math_e(void) {
     return 2.718281828459045235360287471352662498;
 }
+
+// ============================================================================
+// Terminal / Display Helpers
+// (Used by demos, e.g. the spinning donut renderer — ANSI escapes can't be
+//  embedded in Aria string literals because the lexer only handles \n \t \r \\)
+// ============================================================================
+
+#include <time.h>   // nanosleep
+
+// Clear the terminal screen and move cursor to home position.
+extern "C" void aria_term_clear(void) {
+    // ESC[2J  = erase display,  ESC[H = cursor home
+    write(STDOUT_FILENO, "\033[2J\033[H", 7);
+}
+
+// Hide the terminal cursor (reduces flicker during animation).
+extern "C" void aria_term_hide_cursor(void) {
+    write(STDOUT_FILENO, "\033[?25l", 6);
+}
+
+// Restore the terminal cursor.
+extern "C" void aria_term_show_cursor(void) {
+    write(STDOUT_FILENO, "\033[?25h", 6);
+}
+
+// Write a raw byte buffer of `len` bytes to stdout.
+// Used to flush a full frame buffer in a single syscall.
+extern "C" void aria_write_bytes(const char* buf, int64_t len) {
+    if (!buf || len <= 0) return;
+    ssize_t written = write(STDOUT_FILENO, buf, (size_t)len);
+    (void)written;
+}
+
+// Flush stdout (for stdio-buffered output paths).
+extern "C" void aria_flush_stdout(void) {
+    fflush(stdout);
+}
+
+// Sleep for the given number of milliseconds.
+extern "C" void aria_sleep_ms(int64_t ms) {
+    if (ms <= 0) return;
+    struct timespec ts;
+    ts.tv_sec  = (time_t)(ms / 1000);
+    ts.tv_nsec = (long)((ms % 1000) * 1000000L);
+    nanosleep(&ts, NULL);
+}

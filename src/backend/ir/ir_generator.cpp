@@ -444,7 +444,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             std::vector<llvm::Type*> result_fields = {
                 value_type,                         // value (field 0)
                 llvm::PointerType::get(context, 0), // error (field 1) - void* pointer
-                builder.getInt1Ty()                 // is_error (field 2) - bool
+                builder.getInt8Ty()                 // is_error (field 2) - i8 (avoids x86-64 sret ABI issue with i1 in mixed SSE+INT structs)
             };
             
             llvm_type = llvm::StructType::get(context, result_fields);
@@ -1420,7 +1420,7 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
         return llvm::StructType::get(context, {
             valueType,                          // Field 0: value (T)
             llvm::PointerType::get(context, 0), // Field 1: error (void*)
-            builder.getInt1Ty()                 // Field 2: is_error (bool)
+            builder.getInt8Ty()                 // Field 2: is_error (i8)
         });
     }
     
@@ -1807,14 +1807,22 @@ llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
     }
     
     // Extract module base name from full path (e.g., "utils" from "tests/integration/utils.aria")
-    std::string module_name = module->getName().str();
-    size_t last_slash = module_name.find_last_of("/\\");
-    if (last_slash != std::string::npos) {
-        module_name = module_name.substr(last_slash + 1);
-    }
-    size_t last_dot = module_name.find_last_of('.');
-    if (last_dot != std::string::npos) {
-        module_name = module_name.substr(0, last_dot);
+    // Use the explicitly-set current module name (set per-import in main.cpp) when available.
+    // Falling back to the LLVM module name would always return the *main* input file's name,
+    // causing imported modules to incorrectly generate a "main" stub that shadows the real one.
+    std::string module_name;
+    if (!current_module_name.empty()) {
+        module_name = current_module_name;
+    } else {
+        module_name = module->getName().str();
+        size_t last_slash = module_name.find_last_of("/\\");
+        if (last_slash != std::string::npos) {
+            module_name = module_name.substr(last_slash + 1);
+        }
+        size_t last_dot = module_name.find_last_of('.');
+        if (last_dot != std::string::npos) {
+            module_name = module_name.substr(0, last_dot);
+        }
     }
     
     // Create a module init function (or main if module name suggests it's the main file)
@@ -1896,7 +1904,7 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
         std::vector<llvm::Type*> resultFields = {
             innerType,                                  // Field 0: value (T)
             llvm::PointerType::get(context, 0),        // Field 1: error* (generic ptr)
-            llvm::Type::getInt1Ty(context)             // Field 2: is_error (bool)
+            llvm::Type::getInt8Ty(context)             // Field 2: is_error (i8)
         };
         llvm::StructType* resultType = llvm::StructType::get(context, resultFields);
         
@@ -2006,7 +2014,7 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
                     errorResult = builder.CreateInsertValue(errorResult,
                         errorMsg, 1, "err.ptr");
                     errorResult = builder.CreateInsertValue(errorResult,
-                        builder.getInt1(true), 2, "err.is_error");
+                        builder.getInt8(1), 2, "err.is_error");
                     builder.CreateRet(errorResult);
                     
                     // Contract passed: continue to next check or body
@@ -2028,7 +2036,7 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
                 defaultResult = builder.CreateInsertValue(defaultResult,
                     llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)), 1, "default.err");
                 defaultResult = builder.CreateInsertValue(defaultResult,
-                    builder.getInt1(false), 2, "default.is_error");
+                    builder.getInt8(0), 2, "default.is_error");
                 builder.CreateRet(defaultResult);
             }
         } else {
@@ -2039,7 +2047,7 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
             defaultResult = builder.CreateInsertValue(defaultResult,
                 llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)), 1, "default.err");
             defaultResult = builder.CreateInsertValue(defaultResult,
-                builder.getInt1(false), 2, "default.is_error");
+                builder.getInt8(0), 2, "default.is_error");
             builder.CreateRet(defaultResult);
         }
         
@@ -2177,7 +2185,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 std::vector<llvm::Type*> rf = {
                     inner,
                     llvm::PointerType::get(context, 0),
-                    builder.getInt1Ty()
+                    builder.getInt8Ty()
                 };
                 pre_ret = llvm::StructType::get(context, rf);
             }
@@ -2485,7 +2493,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 std::vector<llvm::Type*> result_fields = {
                     value_type,                         // value (field 0)
                     llvm::PointerType::get(context, 0), // error (field 1) - void*
-                    builder.getInt1Ty()                 // is_error (field 2) - bool
+                    builder.getInt8Ty()                 // is_error (field 2) - i8
                 };
                 actual_return_type = llvm::StructType::get(context, result_fields);
             }
@@ -2829,7 +2837,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                             errorResult = builder.CreateInsertValue(errorResult,
                                 llvm::Constant::getNullValue(actual_return_type->getStructElementType(0)), 0);
                             errorResult = builder.CreateInsertValue(errorResult, errorMsg, 1);
-                            errorResult = builder.CreateInsertValue(errorResult, builder.getInt1(true), 2);
+                            errorResult = builder.CreateInsertValue(errorResult, builder.getInt8(1), 2);
                             builder.CreateRet(errorResult);
                         }
                         
@@ -3074,7 +3082,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         defaultResult = builder.CreateInsertValue(defaultResult,
                             llvm::Constant::getNullValue(llvm::PointerType::get(context, 0)), 1);
                         defaultResult = builder.CreateInsertValue(defaultResult,
-                            builder.getInt1(false), 2);
+                            builder.getInt8(0), 2);
                         builder.CreateRet(defaultResult);
                     } else {
                         builder.CreateRet(llvm::Constant::getNullValue(return_type));
@@ -3177,10 +3185,10 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                         if (returnType->isStructTy()) {
                             llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(returnType);
                             
-                            // Result types have exactly 3 fields: {T, ptr, i1}
+                            // Result types have exactly 3 fields: {T, ptr, i8}
                             if (resultStruct->getNumElements() == 3 &&
                                 resultStruct->getElementType(1)->isPointerTy() &&
-                                resultStruct->getElementType(2)->isIntegerTy(1)) {
+                                resultStruct->getElementType(2)->isIntegerTy(8)) {
                                 
                                 // This is a Result type - wrap the value
                                 // Build Result object: {value, NULL, false}
@@ -3207,7 +3215,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                 result = builder.CreateInsertValue(result, nullError, 1, "result.err");
                                 
                                 // Field 2: is_error = false
-                                llvm::Value* falseVal = builder.getInt1(false);
+                                llvm::Value* falseVal = builder.getInt8(0);
                                 result = builder.CreateInsertValue(result, falseVal, 2, "result.is_error");
                                 
                                 builder.CreateRet(result);
@@ -3523,18 +3531,31 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     } else {
                         // Non-optional type - cast initializer to match variable type if necessary
                         if (initVal->getType() != varType) {
-                            // P0: Auto-unwrap Optional<T> from FFI pointer returns
-                            // If initializer is Optional {i1, ptr} but variable is pointer, extract the pointer
-                            if (initVal->getType()->isStructTy() && varType->isPointerTy()) {
+                            // P0: Auto-unwrap Optional<T> or Result<T> from function returns.
+                            // Both Optional {i1, ptr} and Result {T, ptr, i8} are struct types —
+                            // merge them into ONE branch so the else-if chain doesn't skip Result<T>
+                            // when varType happens to be a pointer (e.g. string variables).
+                            if (initVal->getType()->isStructTy()) {
                                 llvm::StructType* initStructTy = llvm::cast<llvm::StructType>(initVal->getType());
-                                // Check if this is an Optional struct: {i1, ptr}
-                                if (initStructTy->getNumElements() == 2 &&
+                                // Check if this is an Optional struct: {i1, ptr} assigned to a ptr variable
+                                if (varType->isPointerTy() &&
+                                    initStructTy->getNumElements() == 2 &&
                                     initStructTy->getElementType(0)->isIntegerTy(1) &&
                                     initStructTy->getElementType(1)->isPointerTy()) {
                                     // Extract the pointer (field 1) from Optional
                                     initVal = builder.CreateExtractValue(initVal, 1, "unwrap_optional_ptr");
                                     std::cerr << "[DEBUG IR_GEN] Auto-unwrapped Optional<ptr> for variable '" 
                                               << varDecl->varName << "'" << std::endl;
+                                }
+                                // Auto-unwrap Result<T> from Aria function call returns.
+                                // When an Aria function returns {T, ptr, i8} (Result<T>) but the
+                                // variable is declared as plain T, extract field 0 (the value).
+                                // This applies whether T is a primitive, pointer (string), or struct (Wave9).
+                                else if (initStructTy->getNumElements() == 3 &&
+                                         initStructTy->getElementType(1)->isPointerTy() &&
+                                         initStructTy->getElementType(2)->isIntegerTy(8) &&
+                                         initStructTy->getElementType(0) == varType) {
+                                    initVal = builder.CreateExtractValue(initVal, 0, "unwrap_result_val");
                                 }
                             }
                             // Check if we're promoting a literal to an LBIM struct type
@@ -4359,7 +4380,7 @@ skip_comparison:
                                 errorResult = builder.CreateInsertValue(errorResult,
                                     errorMsg, 1, "err.ptr");
                                 errorResult = builder.CreateInsertValue(errorResult,
-                                    builder.getInt1(true), 2, "err.is_error");
+                                    builder.getInt8(1), 2, "err.is_error");
                                 builder.CreateRet(errorResult);
                             }
                             
@@ -4400,7 +4421,7 @@ skip_comparison:
                     result = builder.CreateInsertValue(result, nullError, 1, "result.err");
                     
                     // Field 2: is_error = false
-                    llvm::Value* falseVal = builder.getInt1(false);
+                    llvm::Value* falseVal = builder.getInt8(0);
                     result = builder.CreateInsertValue(result, falseVal, 2, "result.is_error");
                     
                     builder.CreateRet(result);
@@ -4464,7 +4485,7 @@ skip_comparison:
                     result = builder.CreateInsertValue(result, errorPtr, 1, "result.err");
                     
                     // Field 2: is_error = true
-                    llvm::Value* trueVal = builder.getInt1(true);
+                    llvm::Value* trueVal = builder.getInt8(1);
                     result = builder.CreateInsertValue(result, trueVal, 2, "result.is_error");
                     
                     builder.CreateRet(result);
@@ -4877,11 +4898,11 @@ skip_comparison:
             llvm::StructType*   inner_result_struct  = nullptr;
 
             if (!inner_raw_ret->isVoidTy()) {
-                // Regular Aria functions return Result<T> = {T, void*, i1}
+                // Regular Aria functions return Result<T> = {T, void*, i8}
                 std::vector<llvm::Type*> rf = {
                     inner_raw_ret,
                     llvm::PointerType::get(context, 0),   // error (void*)
-                    builder.getInt1Ty()                    // is_error (i1)
+                    builder.getInt8Ty()                   // is_error (i8)
                 };
                 inner_result_struct = llvm::StructType::get(context, rf);
                 inner_ret_type      = inner_result_struct;
@@ -4953,7 +4974,7 @@ skip_comparison:
                             llvm::cast<llvm::PointerType>(
                                 inner_result_struct->getElementType(1))),
                         1);
-                    def = builder.CreateInsertValue(def, builder.getInt1(false), 2);
+                    def = builder.CreateInsertValue(def, builder.getInt8(0), 2);
                     builder.CreateRet(def);
                 } else {
                     builder.CreateRet(llvm::Constant::getNullValue(inner_ret_type));
@@ -5462,10 +5483,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     return builder.CreateNeg(operand, "negtmp");
                 }
                 
-                case frontend::TokenType::TOKEN_BANG:
+                case frontend::TokenType::TOKEN_BANG: {
                     // Logical NOT
-                    operand = builder.CreateICmpNE(operand, llvm::ConstantInt::get(operand->getType(), 0), "tobool");
+                    // If operand is a Result/struct type (e.g. { i1, ptr, i8 } for bool),
+                    // extract the value field (index 0) before the boolean comparison.
+                    if (operand->getType()->isStructTy()) {
+                        operand = builder.CreateExtractValue(operand, {0}, "result_val");
+                    }
+                    if (operand->getType() != llvm::Type::getInt1Ty(context)) {
+                        operand = builder.CreateICmpNE(operand, llvm::ConstantInt::get(operand->getType(), 0), "tobool");
+                    }
                     return builder.CreateNot(operand, "nottmp");
+                }
                 
                 case frontend::TokenType::TOKEN_TILDE:
                     // Bitwise NOT
@@ -5572,6 +5601,63 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Array/Vector/SIMD element assignment: arr[i] = value, vec[i] = value, simd[i] = value
                     IndexExpr* indexExpr = static_cast<IndexExpr*>(binop->left.get());
                     
+                    // Multi-dimensional array assignment: matrix[i][j] = val
+                    // Walk the nested INDEX chain to the root identifier, collecting all indices.
+                    if (indexExpr->array->type == ASTNode::NodeType::INDEX) {
+                        std::vector<ASTNode*> all_indices;
+                        all_indices.push_back(indexExpr->index.get()); // outermost index
+                        ASTNode* nd_chain = indexExpr->array.get();
+                        while (nd_chain->type == ASTNode::NodeType::INDEX) {
+                            IndexExpr* inner_ix = static_cast<IndexExpr*>(nd_chain);
+                            all_indices.push_back(inner_ix->index.get());
+                            nd_chain = inner_ix->array.get();
+                        }
+                        if (nd_chain->type == ASTNode::NodeType::IDENTIFIER) {
+                            IdentifierExpr* root_ident = static_cast<IdentifierExpr*>(nd_chain);
+                            auto nd_it = named_values.find(root_ident->name);
+                            if (nd_it != named_values.end()) {
+                                auto* nd_alloca = llvm::dyn_cast<llvm::AllocaInst>(nd_it->second);
+                                if (nd_alloca) {
+                                    llvm::Type* nd_alloc_ty = nd_alloca->getAllocatedType();
+                                    if (nd_alloc_ty->isArrayTy()) {
+                                        // all_indices=[outerIdx,...] collected outermost first.
+                                        // GEP needs [0, outermost, ..., innermost] — iterate in reverse.
+                                        std::vector<llvm::Value*> gep_idx = {
+                                            llvm::ConstantInt::get(builder.getInt64Ty(), 0)
+                                        };
+                                        for (int k = (int)all_indices.size() - 1; k >= 0; --k) {
+                                            llvm::Value* idx_v = codegenExpression(all_indices[k]);
+                                            if (!idx_v) return nullptr;
+                                            if (!idx_v->getType()->isIntegerTy(64))
+                                                idx_v = builder.CreateSExtOrTrunc(
+                                                    idx_v, builder.getInt64Ty(), "idx.i64");
+                                            gep_idx.push_back(idx_v);
+                                        }
+                                        // Descend type hierarchy to find element type
+                                        llvm::Type* nd_elem_ty = nd_alloc_ty;
+                                        for (size_t k = 0; k < all_indices.size(); ++k) {
+                                            if (!nd_elem_ty->isArrayTy()) { nd_elem_ty = nullptr; break; }
+                                            nd_elem_ty = llvm::cast<llvm::ArrayType>(nd_elem_ty)->getElementType();
+                                        }
+                                        if (nd_elem_ty) {
+                                            llvm::Value* nd_rhs = codegenExpression(binop->right.get());
+                                            if (!nd_rhs) return nullptr;
+                                            if (nd_rhs->getType() != nd_elem_ty) {
+                                                if (nd_rhs->getType()->isIntegerTy() && nd_elem_ty->isIntegerTy())
+                                                    nd_rhs = builder.CreateIntCast(nd_rhs, nd_elem_ty, true, "rhs.cast");
+                                            }
+                                            llvm::Value* nd_ptr = builder.CreateInBoundsGEP(
+                                                nd_alloc_ty, nd_alloca, gep_idx, "arrnd.assign.ptr");
+                                            builder.CreateStore(nd_rhs, nd_ptr);
+                                            return nd_rhs;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return nullptr;
+                    }
+
                     // Only handle identifier base for now (not nested indexing)
                     if (indexExpr->array->type != ASTNode::NodeType::IDENTIFIER) {
                         return nullptr;
@@ -5683,9 +5769,30 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         array_ptr = var;
                     }
                     
-                    // Determine element type (legacy flat-pointer path)
-                    llvm::Type* elem_type = builder.getInt64Ty();  // Default assumption
-                    
+                    // Determine element type from the Aria type tracked in var_aria_types.
+                    // For a wild T-> pointer, var_aria_types stores "T@"; strip "@" to get T.
+                    llvm::Type* elem_type = builder.getInt64Ty();  // Default fallback
+                    {
+                        auto at_it = var_aria_types.find(baseIdent->name);
+                        if (at_it != var_aria_types.end()) {
+                            std::string ariaElem = at_it->second;
+                            if (!ariaElem.empty() && ariaElem.back() == '@')
+                                ariaElem.pop_back();
+                            if      (ariaElem == "int8"  || ariaElem == "i8")  elem_type = builder.getInt8Ty();
+                            else if (ariaElem == "int16" || ariaElem == "i16") elem_type = builder.getInt16Ty();
+                            else if (ariaElem == "int32" || ariaElem == "i32") elem_type = builder.getInt32Ty();
+                            else if (ariaElem == "int64" || ariaElem == "i64") elem_type = builder.getInt64Ty();
+                            else if (ariaElem == "flt32" || ariaElem == "f32") elem_type = builder.getFloatTy();
+                            else if (ariaElem == "flt64" || ariaElem == "f64") elem_type = builder.getDoubleTy();
+                        }
+                    }
+                    // Cast rhs to elem_type if needed
+                    if (rhs->getType() != elem_type) {
+                        if (rhs->getType()->isIntegerTy() && elem_type->isIntegerTy())
+                            rhs = builder.CreateIntCast(rhs, elem_type, true, "rhs.cast");
+                        else if (rhs->getType()->isFloatingPointTy() && elem_type->isFloatingPointTy())
+                            rhs = builder.CreateFPCast(rhs, elem_type, "rhs.fpcast");
+                    }
                     // Create GEP and store
                     llvm::Value* elem_ptr = builder.CreateGEP(elem_type, array_ptr, index_value, "arrayidx");
                     builder.CreateStore(rhs, elem_ptr);
@@ -5801,7 +5908,24 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 llvm::Value* var = it->second;
                 llvm::Value* result = nullptr;
-                
+
+                // If the target is a raw (non-pointer) function parameter value,
+                // promote it to a stack alloca so it can be written to.
+                // Primitive-type parameters (int32, flt64, etc.) are stored directly
+                // as LLVM Argument values; reassigning them requires addressable storage.
+                if (!var->getType()->isPointerTy()) {
+                    llvm::Function* fn = builder.GetInsertBlock()->getParent();
+                    auto savedIP = builder.saveIP();
+                    llvm::BasicBlock& entryBB = fn->getEntryBlock();
+                    builder.SetInsertPoint(&entryBB, entryBB.begin());
+                    llvm::AllocaInst* promoted = builder.CreateAlloca(
+                        var->getType(), nullptr, lhs->name + ".addr");
+                    builder.CreateStore(var, promoted);
+                    builder.restoreIP(savedIP);
+                    named_values[lhs->name] = promoted;
+                    var = promoted;
+                }
+
                 // For compound assignments, compute: var = var OP rhs
                 if (binop->op.type != frontend::TokenType::TOKEN_EQUAL) {
                     // Load current value - need to determine the type
@@ -8047,7 +8171,54 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                 }
             } else {
-                // For complex expressions, generate code normally
+                // For complex expressions, generate code normally.
+                // Special case: multi-dimensional array read: mat[i][j] or deeper.
+                // Walk the nested INDEX chain to find the root IDENTIFIER and collect all indices.
+                {
+                    std::vector<ASTNode*> nd_indices;
+                    nd_indices.push_back(indexExpr->index.get()); // outermost index of this pair
+                    ASTNode* nd_chain = indexExpr->array.get();
+                    while (nd_chain->type == ASTNode::NodeType::INDEX) {
+                        IndexExpr* inner_ix = static_cast<IndexExpr*>(nd_chain);
+                        nd_indices.push_back(inner_ix->index.get());
+                        nd_chain = inner_ix->array.get();
+                    }
+                    if (nd_chain->type == ASTNode::NodeType::IDENTIFIER) {
+                        IdentifierExpr* root_ident = static_cast<IdentifierExpr*>(nd_chain);
+                        auto nd_it = named_values.find(root_ident->name);
+                        if (nd_it != named_values.end()) {
+                            auto* nd_alloca = llvm::dyn_cast<llvm::AllocaInst>(nd_it->second);
+                            if (nd_alloca) {
+                                llvm::Type* nd_alloc_ty = nd_alloca->getAllocatedType();
+                                if (nd_alloc_ty->isArrayTy()) {
+                                    // nd_indices=[outerIdx,...innerIdx] (outermost pushed first).
+                                    // GEP needs [0, outermost..innermost] — iterate in reverse.
+                                    std::vector<llvm::Value*> gep_idx = {
+                                        llvm::ConstantInt::get(builder.getInt64Ty(), 0)
+                                    };
+                                    for (int k = (int)nd_indices.size() - 1; k >= 0; --k) {
+                                        llvm::Value* idx = codegenExpression(nd_indices[k]);
+                                        if (!idx) return nullptr;
+                                        if (!idx->getType()->isIntegerTy(64))
+                                            idx = builder.CreateSExtOrTrunc(idx, builder.getInt64Ty(), "idx.i64");
+                                        gep_idx.push_back(idx);
+                                    }
+                                    llvm::Type* nd_elem_ty = nd_alloc_ty;
+                                    bool nd_valid = true;
+                                    for (size_t k = 0; k < nd_indices.size(); ++k) {
+                                        if (!nd_elem_ty->isArrayTy()) { nd_valid = false; break; }
+                                        nd_elem_ty = llvm::cast<llvm::ArrayType>(nd_elem_ty)->getElementType();
+                                    }
+                                    if (nd_valid) {
+                                        llvm::Value* nd_ptr = builder.CreateInBoundsGEP(
+                                            nd_alloc_ty, nd_alloca, gep_idx, "arrnd.read.ptr");
+                                        return builder.CreateLoad(nd_elem_ty, nd_ptr, "arrnd.read.val");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 array_ptr = codegenExpression(indexExpr->array.get());
             }
             
@@ -8084,6 +8255,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 } else {
                     elem_type = alloc_ty;
                 }
+            } else if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(array_ptr)) {
+                // Global variable array: use the GlobalVariable's value type for proper element type
+                llvm::Type* gvType = gv->getValueType();
+                if (gvType->isArrayTy()) {
+                    auto* arrTy = llvm::cast<llvm::ArrayType>(gvType);
+                    elem_type = arrTy->getElementType();
+                    if (!index_value->getType()->isIntegerTy(64)) {
+                        index_value = builder.CreateSExtOrTrunc(index_value,
+                                          builder.getInt64Ty(), "idx.i64");
+                    }
+                    std::vector<llvm::Value*> gep_indices = {
+                        llvm::ConstantInt::get(builder.getInt64Ty(), 0),
+                        index_value
+                    };
+                    llvm::Value* elem_ptr = builder.CreateInBoundsGEP(
+                        gvType, array_ptr, gep_indices, "arrayidx");
+                    return builder.CreateLoad(elem_type, elem_ptr, "elem");
+                }
+                elem_type = gvType;
             } else if (auto* ptr_type = llvm::dyn_cast<llvm::PointerType>(array_ptr->getType())) {
                 (void)ptr_type;
                 // Modern LLVM uses opaque pointers, need to track element type separately

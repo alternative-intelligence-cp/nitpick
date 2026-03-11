@@ -3328,53 +3328,17 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("ok() requires exactly one argument");
         }
-        
-        // Generate code for the argument
+
+        // ok() is a pure pass-through: it strips the compile-time "unknown taint"
+        // and returns the value unchanged. The programmer is explicitly acknowledging
+        // that the value may be Unknown and choosing to propagate it anyway.
+        // Example: int32:y = ok(result_that_might_be_unknown);
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
         if (!arg) {
             throw std::runtime_error("Failed to generate code for ok() argument");
         }
-        
-        // Check if it's an integer type (Unknown only applies to integers currently)
-        llvm::Type* argType = arg->getType();
-        if (llvm::IntegerType* intType = llvm::dyn_cast<llvm::IntegerType>(argType)) {
-            unsigned bitWidth = intType->getBitWidth();
-            
-            // Unknown sentinel is signed maximum value
-            llvm::Value* unknownSentinel = llvm::ConstantInt::get(
-                context, llvm::APInt::getSignedMaxValue(bitWidth));
-            
-            // Compare: arg != Unknown
-            llvm::Value* isValid = builder.CreateICmpNE(arg, unknownSentinel, "ok.check");
-            
-            // Convert i1 to i32: true (valid) -> 1, false (Unknown) -> 0
-            llvm::Value* result = builder.CreateZExt(isValid, builder.getInt32Ty(), "ok.result");
-            
-            std::cerr << "[DEBUG] ok() checking for Unknown sentinel (INT_MAX)" << std::endl;
-            return result;
-        }
-        
-        // Check if it's a floating-point type (Unknown = NaN for floats)
-        if (argType->isFloatingPointTy()) {
-            // NaN detection: x != x iff x is NaN (IEEE 754 property)
-            // Use unordered comparison to catch NaN
-            llvm::Value* isNaN = builder.CreateFCmpUNO(arg, arg, "nan.check");
-            
-            // isNaN is true if arg is NaN, but ok() returns 1 for valid
-            // So we need to invert: ok() returns 0 if NaN, 1 if valid
-            llvm::Value* isValid = builder.CreateNot(isNaN, "ok.check");
-            
-            // Convert i1 to i32: true (valid) -> 1, false (NaN/Unknown) -> 0
-            llvm::Value* result = builder.CreateZExt(isValid, builder.getInt32Ty(), "ok.result");
-            
-            std::cerr << "[DEBUG] ok() checking for NaN (float Unknown)" << std::endl;
-            return result;
-        }
-        
-        // For non-integer/non-float types, assume valid for now (return 1)
-        // TODO: Handle string Unknown, etc.
-        std::cerr << "[DEBUG] ok() on non-numeric type, assuming valid" << std::endl;
-        return llvm::ConstantInt::get(builder.getInt32Ty(), 1);
+        std::cerr << "[DEBUG] ok() pass-through" << std::endl;
+        return arg;
     }
     
     // ====================================================================
@@ -3712,6 +3676,17 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("Failed to generate code for print argument");
         }
         
+        // Auto-unwrap Result<T> = { T, ptr, i8 } from user-defined function calls.
+        // All Aria user functions return a Result struct; extract field 0 (the value).
+        if (arg->getType()->isStructTy()) {
+            llvm::StructType* struct_type = llvm::cast<llvm::StructType>(arg->getType());
+            if (struct_type->getNumElements() == 3 &&
+                struct_type->getElementType(1)->isPointerTy() &&
+                struct_type->getElementType(2)->isIntegerTy(8)) {
+                arg = builder.CreateExtractValue(arg, {0}, "result_val");
+            }
+        }
+        
         llvm::Value* str_ptr = nullptr;
         
         // Check if argument is an AriaString struct (not a pointer, but the struct itself)
@@ -3764,9 +3739,14 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             llvm::Value* str_struct = builder.CreateLoad(ariaStringType, arg, "str_struct");
             str_ptr = builder.CreateExtractValue(str_struct, 0, "str_data");
         } else {
+            std::string type_str;
+            llvm::raw_string_ostream rso(type_str);
+            arg->getType()->print(rso);
+            rso.flush();
             throw std::runtime_error(
                 callee_ident->name + "() requires a string argument. "
                 "For other types, use to_string() from stdlib or printf via FFI."
+                " [got LLVM type: " + type_str + "]"
             );
         }
         
@@ -5291,6 +5271,130 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             pad_char = builder.CreateTrunc(pad_char, builder.getInt8Ty(), "pad_i8");
         }
         return builder.CreateCall(func, {str_ptr, total_len, pad_char}, "pad_right_result");
+    }
+
+    // string_pad_left(string, int64, int8) -> string
+    if (callee_ident->name == "string_pad_left") {
+        if (expr->arguments.size() != 3) {
+            throw std::runtime_error("string_pad_left() requires three arguments");
+        }
+
+        llvm::Function* func = module->getFunction("aria_string_pad_left_simple");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getInt64Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getPtrTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_pad_left_simple", module);
+        }
+
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* total_len = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* pad_char = codegenExpressionNode(expr->arguments[2].get(), this);
+        if (total_len->getType() != builder.getInt64Ty()) {
+            total_len = builder.CreateSExt(total_len, builder.getInt64Ty(), "len_i64");
+        }
+        if (pad_char->getType() != builder.getInt8Ty()) {
+            pad_char = builder.CreateTrunc(pad_char, builder.getInt8Ty(), "pad_i8");
+        }
+        return builder.CreateCall(func, {str_ptr, total_len, pad_char}, "pad_left_result");
+    }
+
+    // string_repeat(string, int64) -> string
+    if (callee_ident->name == "string_repeat") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("string_repeat() requires two arguments");
+        }
+
+        llvm::Function* func = module->getFunction("aria_string_repeat_simple");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getInt64Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getPtrTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_repeat_simple", module);
+        }
+
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* count = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (count->getType() != builder.getInt64Ty()) {
+            count = builder.CreateSExt(count, builder.getInt64Ty(), "count_i64");
+        }
+        return builder.CreateCall(func, {str_ptr, count}, "repeat_result");
+    }
+
+    // string_trim_start(string) -> string
+    if (callee_ident->name == "string_trim_start") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_trim_start() requires one argument");
+        }
+
+        llvm::Function* func = module->getFunction("aria_string_trim_start_simple");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getPtrTy()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getPtrTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_trim_start_simple", module);
+        }
+
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        return builder.CreateCall(func, {str_ptr}, "trim_start_result");
+    }
+
+    // string_trim_end(string) -> string
+    if (callee_ident->name == "string_trim_end") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_trim_end() requires one argument");
+        }
+
+        llvm::Function* func = module->getFunction("aria_string_trim_end_simple");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getPtrTy()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getPtrTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_trim_end_simple", module);
+        }
+
+        llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        return builder.CreateCall(func, {str_ptr}, "trim_end_result");
+    }
+
+    // string_index_of(string, string) -> int64  (-1 if not found)
+    if (callee_ident->name == "string_index_of") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("string_index_of() requires two arguments");
+        }
+
+        llvm::Function* func = module->getFunction("aria_string_index_of_simple");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getPtrTy()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getInt64Ty(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_index_of_simple", module);
+        }
+
+        llvm::Value* haystack_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* needle_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
+        return builder.CreateCall(func, {haystack_ptr, needle_ptr}, "index_of_result");
+    }
+
+    // string_from_int_hex(int64) -> string (lowercase hex digits, no prefix)
+    if (callee_ident->name == "string_from_int_hex") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("string_from_int_hex() requires one argument");
+        }
+
+        llvm::Function* func = module->getFunction("aria_string_from_int_hex_simple");
+        if (!func) {
+            std::vector<llvm::Type*> params = {builder.getInt64Ty()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(builder.getPtrTy(), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_from_int_hex_simple", module);
+        }
+
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (val->getType() != builder.getInt64Ty()) {
+            val = builder.CreateSExt(val, builder.getInt64Ty(), "hex_val_ext");
+        }
+        return builder.CreateCall(func, {val}, "from_int_hex_result");
     }
 
     // string_format_float(float64, int32) -> string
@@ -8053,7 +8157,37 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 // TODO: Add scalarization for int256, int512, int1024, int2048, int4096 if needed
                 // These would require platform-specific handling or rejection at semantic analysis
             }
-            
+
+            // Array-to-pointer decay: flt64[N] → flt64@ (like C implicit array decay)
+            // If the argument is an array type [N x T] but the parameter expects a pointer,
+            // store the array in a temp alloca and pass a pointer to its first element.
+            if (i < direct_func->getFunctionType()->getNumParams()) {
+                llvm::Type* param_type = direct_func->getFunctionType()->getParamType(i);
+                if (arg_value->getType()->isArrayTy() && param_type->isPointerTy()) {
+                    llvm::Type* arr_type = arg_value->getType();
+                    llvm::AllocaInst* arr_tmp = builder.CreateAlloca(arr_type, nullptr, "arr_decay_tmp");
+                    builder.CreateStore(arg_value, arr_tmp);
+                    arg_value = builder.CreateInBoundsGEP(
+                        arr_type, arr_tmp,
+                        {builder.getInt64(0), builder.getInt64(0)},
+                        "arr_decay_ptr"
+                    );
+                }
+                // Auto-unwrap Result<T> → T when passing a function-call result directly
+                // as an argument to a function expecting the raw type.
+                // Aria result structs are { T, ptr, i8 } (3-element, ptr at index 1, i8 at index 2).
+                if (arg_value->getType() != param_type &&
+                    arg_value->getType()->isStructTy()) {
+                    llvm::StructType* arg_struct = llvm::cast<llvm::StructType>(arg_value->getType());
+                    if (arg_struct->getNumElements() == 3 &&
+                        arg_struct->getElementType(1)->isPointerTy() &&
+                        arg_struct->getElementType(2)->isIntegerTy(8) &&
+                        arg_struct->getElementType(0) == param_type) {
+                        arg_value = builder.CreateExtractValue(arg_value, {0}, "arg_unwrap");
+                    }
+                }
+            }
+
             args.push_back(arg_value);
         }
         
@@ -8228,6 +8362,56 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
         }
     }
 
+    // Multi-dimensional array read: matrix[i][j] or deeper.
+    // Walk the nested INDEX chain to find the root IDENTIFIER and collect all
+    // dimension indices (outermost index last in the collection vector).
+    if (expr->array->type == ASTNode::NodeType::INDEX) {
+        std::vector<ASTNode*> all_indices;
+        all_indices.push_back(expr->index.get()); // outermost index of this pair
+        ASTNode* chain = expr->array.get();
+        while (chain->type == ASTNode::NodeType::INDEX) {
+            IndexExpr* inner = static_cast<IndexExpr*>(chain);
+            all_indices.push_back(inner->index.get());
+            chain = inner->array.get();
+        }
+        if (chain->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* root_ident = static_cast<IdentifierExpr*>(chain);
+            auto nd_it = named_values.find(root_ident->name);
+            if (nd_it != named_values.end()) {
+                if (auto* nd_alloca = llvm::dyn_cast<llvm::AllocaInst>(nd_it->second)) {
+                    llvm::Type* nd_alloc_ty = nd_alloca->getAllocatedType();
+                    if (nd_alloc_ty->isArrayTy()) {
+                        // all_indices = [outerIdx, ..., innerIdx] due to walk order.
+                        // Iterate in REVERSE so GEP receives indices outermost-first:
+                        // for matrix[i][j]: all_indices=[j,i], GEP needs [0, i, j].
+                        std::vector<llvm::Value*> gep_idx = {
+                            llvm::ConstantInt::get(builder.getInt64Ty(), 0)
+                        };
+                        for (int k = (int)all_indices.size() - 1; k >= 0; --k) {
+                            llvm::Value* idx = codegenExpressionNode(all_indices[k], this);
+                            if (!idx) throw std::runtime_error("Failed to codegen array index");
+                            if (!idx->getType()->isIntegerTy(64))
+                                idx = builder.CreateSExtOrTrunc(idx, builder.getInt64Ty(), "idx.i64");
+                            gep_idx.push_back(idx);
+                        }
+                        // Descend the LLVM type hierarchy (same reverse order) to find element type
+                        llvm::Type* elem_ty = nd_alloc_ty;
+                        bool valid = true;
+                        for (size_t k = 0; k < all_indices.size(); ++k) {
+                            if (!elem_ty->isArrayTy()) { valid = false; break; }
+                            elem_ty = llvm::cast<llvm::ArrayType>(elem_ty)->getElementType();
+                        }
+                        if (valid) {
+                            llvm::Value* ptr = builder.CreateInBoundsGEP(
+                                nd_alloc_ty, nd_alloca, gep_idx, "arrnd.ptr");
+                            return builder.CreateLoad(elem_ty, ptr, "arrnd.val");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // General path: generate code for the array/vector
     llvm::Value* arrayVal = codegenExpressionNode(expr->array.get(), this);
     if (!arrayVal) {
@@ -8245,16 +8429,30 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
     // Handle pointer-to-array (e.g., int64[], string[])
     if (arrayType->isPointerTy()) {
         // Array indexing: arr[i]
-        // arrayVal is a pointer to elements
-        // For opaque pointers, we need to know the element type from context
-        
-        // Assume i64 for now - in a full implementation, we'd track element types
-        // TODO: Implement proper type tracking for array elements
-        llvm::Type* elemType = llvm::Type::getInt64Ty(context);
-        
+        // Determine the element type from the Aria type tracked in var_aria_types.
+        // For a wild T-> pointer, var_aria_types stores "T@"; strip the "@" suffix
+        // to get T, then map to an LLVM type.  Fallback to i64 (old behaviour).
+        llvm::Type* elemType = llvm::Type::getInt64Ty(context);  // fallback
+
+        if (expr->array->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* ptr_ident = static_cast<IdentifierExpr*>(expr->array.get());
+            auto typeIt = var_aria_types.find(ptr_ident->name);
+            if (typeIt != var_aria_types.end()) {
+                std::string ariaElemType = typeIt->second;
+                // Strip trailing "@" (pointer indicator) to get the value type
+                if (!ariaElemType.empty() && ariaElemType.back() == '@') {
+                    ariaElemType.pop_back();
+                }
+                if (!ariaElemType.empty()) {
+                    llvm::Type* resolved = getLLVMTypeFromString(ariaElemType);
+                    if (resolved) elemType = resolved;
+                }
+            }
+        }
+
         // Create GEP to access arr[index]
         llvm::Value* elemPtr = builder.CreateGEP(elemType, arrayVal, indexVal, "array.index.ptr");
-        
+
         // Load the value from the pointer
         return builder.CreateLoad(elemType, elemPtr, "array.index.val");
     }

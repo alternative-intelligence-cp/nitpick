@@ -1,0 +1,170 @@
+// donut.aria — Spinning ASCII Torus ("Can Aria run a donut?" — Yes.)
+//
+// Classic ASCII donut (Andy Sloane's donut.c) translated to Aria.
+// Renders a rotating torus to the terminal using CPU math and a z-buffer.
+// This is the first step toward the Utah Teapot renderer.
+//
+// Algorithm:
+//   - Parametric torus: inner angle θ (tube), outer angle φ (ring)
+//   - Two rotation angles A (x-axis) and B (y-axis) animate each frame
+//   - For each (θ,φ) point: compute 3D coords, rotate, perspective-project
+//   - ASCII luminance char from surface normal · light direction
+//   - Write full frame buffer (with embedded newlines) in one syscall per frame
+//
+// Press Ctrl+C to exit.
+
+use "../../stdlib/string_convert.aria".*;
+use "../../stdlib/print_utils.aria".*;
+
+// ── Runtime helpers ──────────────────────────────────────────────────────────
+extern func:aria_math_sin         = flt64(flt64:x);
+extern func:aria_math_cos         = flt64(flt64:x);
+extern func:aria_math_pi          = flt64();
+extern func:aria_term_clear       = void();
+extern func:aria_term_hide_cursor = void();
+extern func:aria_term_show_cursor = void();
+extern func:aria_write_bytes      = void(wild int8*:buf, int64:len);
+extern func:aria_sleep_ms         = void(int64:ms);
+extern func:malloc                = wild int8*(int64:size);
+extern func:free                  = void(wild int8*:ptr);
+
+func:main = int32() {
+    flt64:pi  = aria_math_pi();
+    flt64:tau = pi * 2.0;
+
+    // Screen: 80 cols × 24 rows.
+    // Output buffer layout: each row is 80 chars + 1 newline = 81 bytes/row.
+    // Total output bytes: 24 × 81 = 1944.  Add 1 null terminator → 1945.
+    int64:W        = 80i64;
+    int64:H        = 24i64;
+    int64:ROW_STRIDE = 81i64;   // 80 chars + '\n'
+    int64:FB_SIZE  = 1945i64;   // 24*81 + 1
+
+    // Luminance palette (12 chars, brightest = '@')
+    int8[12]:lum;
+    lum[0]  = 46i8;   // '.'
+    lum[1]  = 44i8;   // ','
+    lum[2]  = 45i8;   // '-'
+    lum[3]  = 126i8;  // '~'
+    lum[4]  = 58i8;   // ':'
+    lum[5]  = 59i8;   // ';'
+    lum[6]  = 61i8;   // '='
+    lum[7]  = 33i8;   // '!'
+    lum[8]  = 42i8;   // '*'
+    lum[9]  = 35i8;   // '#'
+    lum[10] = 36i8;   // '$'
+    lum[11] = 64i8;   // '@'
+
+    // Allocate frame buffer
+    wild int8->:fb = malloc(FB_SIZE);
+
+    // Pre-populate newlines and null terminator (done once)
+    int64:r0 = 0i64;
+    while (r0 < H) {
+        int64:nl_pos = r0 * ROW_STRIDE + W;   // position of '\n' in row r0
+        fb[nl_pos] = 10i8;                     // '\n'
+        r0 += 1i64;
+    }
+    fb[1944i64] = 0i8;   // null terminator
+
+    // Rotation angles
+    flt64:A = 0.0;
+    flt64:B = 0.0;
+
+    aria_term_hide_cursor();
+
+    // Animation loop — runs ~100 000 frames (≈ 50 min at 30 ms/frame).
+    // Press Ctrl+C to stop.
+    int32:frame = 0;
+    while (frame < 100000) {
+
+        // ── 1. Clear char cells (spaces) ─────────────────────────────────────
+        int64:rr = 0i64;
+        while (rr < H) {
+            int64:cc = 0i64;
+            while (cc < W) {
+                int64:pos = rr * ROW_STRIDE + cc;
+                fb[pos] = 32i8;   // space
+                cc += 1i64;
+            }
+            rr += 1i64;
+        }
+
+        // ── 2. Precompute sin/cos for the two rotation angles ─────────────────
+        flt64:sinA = aria_math_sin(A);
+        flt64:cosA = aria_math_cos(A);
+        flt64:sinB = aria_math_sin(B);
+        flt64:cosB = aria_math_cos(B);
+
+        // ── 3. Rasterise torus surface ────────────────────────────────────────
+        // φ = outer ring angle, θ = tube angle
+        flt64:phi = 0.0;
+        while (phi < tau) {
+            flt64:sinP = aria_math_sin(phi);
+            flt64:cosP = aria_math_cos(phi);
+
+            flt64:theta = 0.0;
+            while (theta < tau) {
+                flt64:sinT = aria_math_sin(theta);
+                flt64:cosT = aria_math_cos(theta);
+
+                // h = 2 + cos(θ)  — perpendicular distance from torus axis
+                flt64:h = cosT + 2.0;
+
+                // Perspective depth  D = 1 / (sinφ·h·sinA + sinθ·cosA + 5)
+                flt64:D = 1.0 / (sinP * h * sinA + sinT * cosA + 5.0);
+
+                // Intermediate term for x/y
+                flt64:t = sinP * h * cosA - sinT * sinA;
+
+                // Screen coordinates
+                flt64:xf = 40.0 + 30.0 * D * (cosP * h * cosB - t * sinB);
+                flt64:yf = 12.0 + 15.0 * D * (cosP * h * sinB + t * cosB);
+                int64:xp = @cast<int64>(xf);
+                int64:yp = @cast<int64>(yf);
+
+                // Luminance (surface normal · light)
+                flt64:Lf = cosT * h * sinB
+                         + sinT * sinA * sinB
+                         - cosA * cosT * sinP
+                         - sinT * cosA * sinB
+                         + sinP * cosA * sinB
+                         - cosP * sinT * cosA;
+                int64:N = @cast<int64>(Lf * 8.0);
+
+                // Bounds check and paint
+                if (xp > 0i64 && xp < W && yp > 0i64 && yp < H) {
+                    int64:fb_pos = yp * ROW_STRIDE + xp;
+                    if (N > 0i64) {
+                        int64:li = N;
+                        if (li > 11i64) { li = 11i64; }
+                        fb[fb_pos] = lum[li];
+                    }
+                }
+
+                theta = theta + 0.02;
+            }
+            phi = phi + 0.07;
+        }
+
+        // ── 4. Emit frame ─────────────────────────────────────────────────────
+        aria_term_clear();
+        aria_write_bytes(fb, 1944i64);
+
+        // ── 5. Advance rotation ───────────────────────────────────────────────
+        A = A + 0.07;
+        B = B + 0.03;
+
+        aria_sleep_ms(30i64);
+        frame += 1i32;
+    }
+
+    aria_term_show_cursor();
+    free(fb);
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    aria_term_show_cursor();
+    drop(println("donut: failsafe triggered"));
+};
