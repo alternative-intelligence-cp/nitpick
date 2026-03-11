@@ -1,71 +1,92 @@
-# Till Loop Syntax Reference
+# For Loop Syntax Reference
 
 **Category**: Control Flow → Syntax  
-**Topic**: Complete till loop syntax
+**Topic**: Complete `for` loop syntax — both C-style and range-based forms
 
 ---
 
-## Basic Till Loop
+## C-Style For Loop
 
 ```aria
-till(end_index, step) {
-    // $ is the index variable
+for(type:var = init_expr; condition; update_expr) {
+    // body
 }
 ```
 
----
+| Clause | Required | Description |
+|---|---|---|
+| `type:var = init_expr` | No | Variable declaration with Aria type notation |
+| `condition` | No | Boolean expression; loop runs while true |
+| `update_expr` | No | Statement evaluated after each body execution |
 
-## With Index Access
+All three clauses are optional. Semicolons are required even when clauses are omitted.
+
+### Examples
 
 ```aria
-till(collection.length - 1, 1) {
-    // $ is the index (0, 1, 2, ...)
-    // collection[$] is the current item
+// Standard counter
+for(int32:i = 0i32; i < 10i32; i += 1i32) { }
+
+// No initializer (use existing variable)
+int32:n = 5i32;
+for(; n > 0i32; n = n - 1i32) { }
+
+// No update (manual update inside body)
+for(int32:i = 0i32; i < 10i32;) {
+    i += 2i32;
 }
 ```
 
+> **Note**: `i++` and `++i` are **not** supported. Use `i += 1i32` or `i = i + 1i32`.
+
 ---
 
-## Mutable Iteration
+## Range-Based For Loop
+
+### Without Type Annotation
 
 ```aria
-till(collection.length - 1, 1) {
-    // Modify elements directly
-    collection[$] = new_value;
+for (var in range_expr) {
+    // var is int64 by default
 }
 ```
 
----
-
-## With Item and Index
+### With Type Annotation
 
 ```aria
-till(collection.length - 1, 1) {
-    item: auto = collection[$];
-    index: i32 = $;
-    // Both available
+for (type:var in range_expr) {
+    // var is declared with explicit type
 }
 ```
 
----
+### Range Expressions
 
-## Range Iteration
+| Syntax | Meaning | Example | Iterates |
+|---|---|---|---|
+| `a..b` | Inclusive | `1..5` | 1, 2, 3, 4, 5 |
+| `a...b` | Exclusive (upper) | `1...5` | 1, 2, 3, 4 |
+
+Both `a` and `b` can be literals or `int64` variables.
+
+### Examples
 
 ```aria
-// 0 to 9
-till(9, 1) {
-    // $ is 0, 1, ..., 9
-}
+// Inclusive, untyped (i is int64)
+for (i in 0..9) { }
 
-// 0 to 10 (inclusive)
-till(10, 1) {
-    // $ is 0, 1, ..., 10
-}
+// Exclusive, untyped
+for (i in 0...10) { }
 
-// Reverse iteration
-till(collection.length - 1, -1) {
-    // $ goes from length-1 down to 0
-}
+// Variables as bounds
+int64:lo = 1;
+int64:hi = 100;
+for (i in lo..hi) { }
+
+// Explicit int64 type
+for (int64:i in 1..5) { }
+
+// Explicit int32 type (values narrowed)
+for (int32:j in 0...8) { }
 ```
 
 ---
@@ -73,63 +94,36 @@ till(collection.length - 1, -1) {
 ## Loop Control
 
 ```aria
-till(items.length - 1, 1) {
-    if condition {
-        break;     // Exit loop
-    }
-    
-    if other_condition {
-        continue;  // Skip to next iteration
-    }
+for(int32:i = 0i32; i < 10i32; i += 1i32) {
+    if (some_condition) { break; }    // exit loop immediately
+    if (other_condition) { continue; } // skip to next iteration
 }
 ```
 
+`break` and `continue` work identically in both C-style and range-based forms.
+
 ---
 
-## Using $ Directly
+## EBNF Summary
 
-```aria
-// Just need index
-till(items.length - 1, 1) {
-    stdout << "Index: " << $ << "\n";
-}
-
-// Need both index and value
-till(items.length - 1, 1) {
-    stdout << $ << ": " << items[$] << "\n";
-}
 ```
+for_stmt      ::= "for" "(" c_clauses ")" block
+               | "for" "(" range_clause ")" block
 
----
+c_clauses     ::= [init_clause] ";" [expr] ";" [expr]
+init_clause   ::= type_name ":" ident "=" expr
 
-## Examples
-
-```aria
-// Array iteration
-arr: []i32 = [1, 2, 3];
-till(arr.length - 1, 1) { }
-
-// String iteration
-str: string = "hello";
-till(str.length - 1, 1) { }
-
-// Range
-till(4, 1) { }  // 0 to 4
-
-// Mutable update
-till(items.length - 1, 1) {
-    items[$].update();
-}
+range_clause  ::= [type_name ":"] ident "in" range_expr
+range_expr    ::= expr (".." | "...") expr
 ```
 
 ---
 
 ## Related Topics
 
-- [For Loops](for.md) - For loop guide
-- [Iteration Variable](iteration_variable.md) - Loop variables
-- [Dollar Variable](dollar_variable.md) - Mutable iteration
-
----
-
-**Quick Reference**: `for var in collection { }` or `for $var, index in collection { }`
+- [For](for.md) — Full for loop guide with examples
+- [While](while.md) — Condition-based loops
+- [Loop](loop.md) — Counted loop with auto `$` index
+- [Till](till.md) — 0-based counted loop with auto `$` index
+- [Break](break.md) — Exit loops early
+- [Continue](continue.md) — Skip to next iteration
