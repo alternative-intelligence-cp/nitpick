@@ -1,0 +1,117 @@
+// examples/number_demo.aria
+// Demonstrates the Number type — flexible high-precision numeric arithmetic.
+//
+// Comparison to JS Number (flt64):
+//   JS: 2^53 = 9007199254740992 is the last exactly representable integer.
+//   Aria Number: backed by flt128 (113-bit mantissa) — exact up to 2^113.
+
+use "stdlib/number.aria".*;
+use "stdlib/print_utils.aria".*;
+
+func:failsafe = NIL(int32:err_code) {
+    drop(println("failsafe triggered"));
+};
+
+func:main = int32() {
+
+    // Basic integer construction and addition
+    Number:a = Number.from_int(5i64);
+    Number:b = Number.from_float(5.5);
+    Number:sum = a.add(b);
+    flt64:sum_f64 = sum.to_flt64();
+    drop(print("5 + 5.5 = "));
+    drop(println(string_format_float(sum_f64, 2)));  // expected: 10.50
+
+    // Mixed arithmetic chain
+    Number:x = Number.from_int(100i64);
+    Number:y = Number.from_float(3.14159);
+    Number:product = x.mul(y);
+    flt64:prod_f64 = product.to_flt64();
+    drop(print("100 * 3.14159 = "));
+    drop(println(string_format_float(prod_f64, 5)));  // expected: 314.15900
+
+    // Division — success path
+    Number:p = Number.from_int(22i64);
+    Number:q = Number.from_int(7i64);
+    Result<Number>:div_result = p.div(q);
+    if (div_result.is_error) {
+        drop(println("division error (unexpected)"));
+    } else {
+        Number:div_n = div_result.value;
+        flt64:div_f64 = div_n.to_flt64();
+        drop(print("22 / 7 = "));
+        drop(println(string_format_float(div_f64, 10)));  // expected: 3.1428571429
+    }
+
+    // Division by zero — error path
+    Number:zero_n = Number.from_int(0i64);
+    Result<Number>:bad_div = p.div(zero_n);
+    if (bad_div.is_error) {
+        drop(println("div by zero caught (expected)"));
+    } else {
+        drop(println("ERROR: expected division-by-zero error"));
+    }
+
+    // Negation
+    Number:pos = Number.from_float(42.5);
+    Number:neg_n = pos.neg();
+    flt64:neg_f64 = neg_n.to_flt64();
+    drop(print("neg(42.5) = "));
+    drop(println(string_format_float(neg_f64, 1)));  // expected: -42.5
+
+    // to_int32 — in-range value (99.9 truncates to 99)
+    Number:whole = Number.from_float(99.9);
+    Result<int32>:i32_result = whole.to_int32();
+    if (i32_result.is_error) {
+        drop(println("to_int32 error (unexpected)"));
+    } else {
+        int32:int_val = i32_result.value;
+        drop(print("int32(99.9) = "));
+        drop(println(string_from_int(int_val)));  // expected: 99
+    }
+
+    // to_int32 — out-of-range value
+    Number:huge = Number.from_float(9999999999.0);
+    Result<int32>:big_result = huge.to_int32();
+    if (big_result.is_error) {
+        drop(println("out-of-range int32 caught (expected)"));
+    } else {
+        drop(println("ERROR: expected out-of-range error"));
+    }
+
+    // Comparison — using .value to unwrap Result<bool>
+    Number:n1 = Number.from_int(10i64);
+    Number:n2 = Number.from_int(20i64);
+    Result<bool>:lt_check = n1.lt(n2);
+    if (!lt_check.is_error) {
+        if (lt_check.value) {
+            drop(println("10 < 20: true (expected)"));
+        } else {
+            drop(println("10 < 20: false (unexpected)"));
+        }
+    }
+
+    Result<bool>:eq_check = n1.eq(n1);
+    if (!eq_check.is_error) {
+        if (eq_check.value) {
+            drop(println("10 == 10: true (expected)"));
+        }
+    }
+
+    // Large integer — advantage over flt64
+    // 2^53 = 9007199254740992: last exactly representable integer in flt64 (JS)
+    // With Number (flt128, 113-bit mantissa), 2^53 + 1 remains exact.
+    Number:large = Number.from_int(9007199254740992i64);
+    Number:one_n = Number.from_int(1i64);
+    Number:large_p1 = large.add(one_n);
+    Result<int64>:i64_result = large_p1.to_int64();
+    if (i64_result.is_error) {
+        drop(println("to_int64 error (unexpected)"));
+    } else {
+        int64:big_val = i64_result.value;
+        drop(print("2^53 + 1 = "));
+        drop(println(string_from_int(big_val)));  // expected: 9007199254740993
+    }
+
+    pass(0i32);
+};

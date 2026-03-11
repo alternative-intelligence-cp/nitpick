@@ -9556,11 +9556,30 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
 
             // STRUCT PRE-PASS: register non-generic struct types BEFORE function
             // signatures so that struct names resolve correctly in param/return types.
+            // Also register Type:Name struct layouts early for the same reason.
             for (const auto& decl : module->ast->declarations) {
                 if (decl->type == ASTNode::NodeType::STRUCT_DECL) {
                     StructDeclStmt* sd = static_cast<StructDeclStmt*>(decl.get());
                     if (sd->genericParams.empty() && !typeSystem->getStructType(sd->structName)) {
                         checkStructDecl(sd);
+                    }
+                } else if (decl->type == ASTNode::NodeType::TYPE_DECL) {
+                    TypeDeclStmt* td = static_cast<TypeDeclStmt*>(decl.get());
+                    if (!typeSystem->getStructType(td->typeName)) {
+                        // Pre-register the merged struct layout so method parameter/return
+                        // types that reference TypeName (e.g. Number:self) can be resolved.
+                        std::vector<ASTNodePtr> preFields;
+                        if (td->internalStruct) {
+                            auto is = std::static_pointer_cast<StructDeclStmt>(td->internalStruct);
+                            for (const auto& f : is->fields) preFields.push_back(f);
+                        }
+                        if (td->interfaceStruct) {
+                            auto is = std::static_pointer_cast<StructDeclStmt>(td->interfaceStruct);
+                            for (const auto& f : is->fields) preFields.push_back(f);
+                        }
+                        auto preStruct = std::make_shared<StructDeclStmt>(
+                            td->typeName, preFields, td->line, td->column);
+                        checkStructDecl(preStruct.get());
                     }
                 }
             }
@@ -9690,6 +9709,49 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                     // Export the struct as PUBLIC (for now, export all structs)
                     // TODO: Add pub modifier to struct declarations
                     module->moduleInfo->exportSymbol(structDecl->structName, structSym, Visibility::PUBLIC);
+                }
+                else if (decl->type == ASTNode::NodeType::TYPE_DECL) {
+                    TypeDeclStmt* typeDecl = static_cast<TypeDeclStmt*>(decl.get());
+
+                    // The struct layout was pre-registered in the struct pre-pass above.
+                    // Here we rename and type-check each method function, then export
+                    // both the struct type and all mangled method names.
+                    //
+                    // We do NOT call checkTypeDecl() because it would re-register the
+                    // struct and error with "Type already defined".
+
+                    // Helper: rename func → TypeName_func, type-check, export
+                    auto processAndExport = [&](FuncDeclStmt* func) {
+                        std::string mangledName = typeDecl->typeName + "_" + func->funcName;
+                        func->funcName = mangledName;
+                        checkFuncDecl(func);
+                        Symbol* sym = symbolTable->lookupSymbol(mangledName);
+                        if (sym) {
+                            module->moduleInfo->exportSymbol(mangledName, sym, Visibility::PUBLIC);
+                        }
+                    };
+
+                    if (typeDecl->createFunc) {
+                        auto cf = std::static_pointer_cast<FuncDeclStmt>(typeDecl->createFunc);
+                        processAndExport(cf.get());
+                    }
+                    if (typeDecl->destroyFunc) {
+                        auto df = std::static_pointer_cast<FuncDeclStmt>(typeDecl->destroyFunc);
+                        processAndExport(df.get());
+                    }
+                    for (const auto& method : typeDecl->methods) {
+                        auto mf = std::static_pointer_cast<FuncDeclStmt>(method);
+                        processAndExport(mf.get());
+                    }
+
+                    // Export the struct type itself (e.g. "Number")
+                    Type* typeStructType = typeSystem->getStructType(typeDecl->typeName);
+                    if (typeStructType) {
+                        Symbol* typeSym = new Symbol(typeDecl->typeName, SymbolKind::TYPE,
+                                                     typeStructType, nullptr,
+                                                     typeDecl->line, typeDecl->column);
+                        module->moduleInfo->exportSymbol(typeDecl->typeName, typeSym, Visibility::PUBLIC);
+                    }
                 }
             }
             
