@@ -1038,11 +1038,12 @@ Safety Guarantees:
 ✓ Overflow/underflow detected at operation boundaries
 
 Example Usage:
-int1024:key = generate_rsa_4096_key();
-if (key == ERR) {
+result<int1024>:key_result = generate_rsa_4096_key();
+if (key_result.is_error) {
     stderr.write("Key generation failed\n");
     fail(-1);
 }
+int1024:key = raw(key_result);
 
 int1024:encrypted = modular_pow(plaintext, public_exp, key);
 int1024:decrypted = modular_pow(encrypted, private_exp, key);
@@ -4078,7 +4079,7 @@ func:timed_operation = Result<int32>() {
     };
     
     // Expensive operation...
-    int32:result = compute();
+    int32:result = compute()?;  // propagate error upward
     
     pass(result);
 };  // Timing printed here
@@ -4287,7 +4288,7 @@ DEFER BEST PRACTICES:
    defer aria.free(ptr);  // ✅ Right after allocation
 
 2. **Use defer for ALL cleanup** (files, locks, memory)
-   FileHandle:f = open(path);
+   FileHandle:f = open(path)?!;
    defer close(f);  // ✅ Always closes
 
 3. **Remember LIFO order** (last defer runs first)
@@ -5036,7 +5037,7 @@ Why three exclamation marks?
 
 Cryptographic key validation:
 func:load_encryption_key = void() {
-    Key:key = read_key_file();
+    Key:key = read_key_file()?!;  // failsafe if key file is missing/unreadable
     if (key.length != REQUIRED_KEY_LENGTH) {
         // Wrong key size - crypto would be broken
         !!!(ERR_INVALID_KEY_SIZE);
@@ -5216,7 +5217,7 @@ mod network;  // Declare module (looks for network.aria)
 use network.http_get;
 
 func:main = int32() {
-    string:response = http_get("https://example.com");
+    string:response = http_get("https://example.com")?!;
     pass(0);
 };
 
@@ -5285,8 +5286,8 @@ mod network {
 use network.http.{get, post};
 use network.tcp.connect;
 
-string:response = get("https://example.com");
-Connection:conn = connect("localhost", 8080);
+string:response = get("https://example.com")?!;
+Connection:conn = connect("localhost", 8080)?!;
 // network.internal.helper();  // ERROR (module not public)
 
 ---
