@@ -1,0 +1,193 @@
+/**
+ * Aria Standard Library - Number
+ *
+ * A flexible, high-precision numeric type for general-purpose math.
+ *
+ * Backed by flt128 (IEEE 754 quad-precision, 113-bit mantissa).
+ * This gives:
+ *   - Exact integer representation up to ±2^113 (~10^34)
+ *   - ~34 decimal digits of floating-point precision
+ *   - No "53-bit integer" issue of IEEE 754 double (flt64 / JS Number)
+ *
+ * NOT for: physics simulations, financial systems, safety-critical code.
+ *          Use specific types (fix256, tbb64, int64) for those.
+ * FOR:     scripting, prototyping, general-purpose math where convenience
+ *          matters more than type exactness.
+ *
+ * Usage:
+ *   Number:n = Number.from_int(5);
+ *   n = n.add(Number.from_float(5.5));    // n = 10.5
+ *   flt64:f = n.to_flt64();              // f = 10.5
+ *   Result<int32>:r = n.to_int32();      // r.val = 10 (truncated)
+ *
+ * Operator-style aliases (all return new Number):
+ *   n.add(other)   n.sub(other)   n.mul(other)
+ *   n.div(other) → Result<Number>   (errors on zero divisor)
+ *   n.neg()        (unary minus)
+ *
+ * Comparison:
+ *   n.eq(other)   n.lt(other)   n.gt(other)
+ *   n.le(other)   n.ge(other)
+ *
+ * Extraction to Aria primitive types:
+ *   n.to_flt32()   → flt32    (precision loss possible)
+ *   n.to_flt64()   → flt64    (precision loss for >53-bit values)
+ *   n.to_flt128()  → flt128   (lossless, same as backing type)
+ *   n.to_int32()   → Result<int32>   (error if out of range)
+ *   n.to_int64()   → Result<int64>   (error if out of range)
+ *
+ * Why flt128 and not int128+flt128 tagged union?
+ *   - flt128 is a native LLVM type; int128 is a LBIM struct in Aria
+ *   - flt128 unifies both integer and fractional math seamlessly
+ *   - 113-bit mantissa makes integers exact up to 2^113 — sufficient for all
+ *     practical "casual math" use cases (JS only gives 53 bits / 2^53)
+ *   - Simpler implementation, zero tag-switching overhead
+ */
+
+Type:Number = {
+
+    // =========================================================================
+    // Constructors
+    // =========================================================================
+
+    /// Primary constructor — called by instance<Number>(val).
+    /// Accepts a flt128 directly; use from_int / from_float for other types.
+    func:create = Number(flt128:v) {
+        pass(Number{ _val: v });
+    };
+
+    /// Construct from a 64-bit signed integer.
+    /// Integers whose absolute value fits in 53 bits (±9007199254740992) are
+    /// exactly representable; larger values up to ±2^113 remain exact.
+    func:from_int = Number(int64:v) {
+        flt128:f = v => flt128;
+        pass(Number{ _val: f });
+    };
+
+    /// Construct from a 64-bit float.
+    /// The value is widened to flt128 — no precision is lost during construction.
+    func:from_float = Number(flt64:v) {
+        flt128:f = v => flt128;
+        pass(Number{ _val: f });
+    };
+
+    // =========================================================================
+    // Arithmetic
+    // =========================================================================
+
+    /// Return self + other.
+    func:add = Number(Number:self, Number:other) {
+        flt128:r = self._val + other._val;
+        pass(Number{ _val: r });
+    };
+
+    /// Return self - other.
+    func:sub = Number(Number:self, Number:other) {
+        flt128:r = self._val - other._val;
+        pass(Number{ _val: r });
+    };
+
+    /// Return self * other.
+    func:mul = Number(Number:self, Number:other) {
+        flt128:r = self._val * other._val;
+        pass(Number{ _val: r });
+    };
+
+    /// Return self / other.  Returns error if divisor is zero.
+    func:div = Number(Number:self, Number:other) {
+        flt128:zero = 0 => flt128;
+        if (other._val == zero) {
+            fail(1);
+        }
+        flt128:r = self._val / other._val;
+        pass(Number{ _val: r });
+    };
+
+    /// Return -self.
+    func:neg = Number(Number:self) {
+        flt128:zero = 0 => flt128;
+        flt128:r = zero - self._val;
+        pass(Number{ _val: r });
+    };
+
+    // =========================================================================
+    // Comparison
+    // =========================================================================
+
+    func:eq = bool(Number:self, Number:other) {
+        pass(self._val == other._val);
+    };
+
+    func:lt = bool(Number:self, Number:other) {
+        pass(self._val < other._val);
+    };
+
+    func:gt = bool(Number:self, Number:other) {
+        pass(self._val > other._val);
+    };
+
+    func:le = bool(Number:self, Number:other) {
+        pass(self._val <= other._val);
+    };
+
+    func:ge = bool(Number:self, Number:other) {
+        pass(self._val >= other._val);
+    };
+
+    // =========================================================================
+    // Extraction — convert the stored value to an Aria primitive type
+    // =========================================================================
+
+    /// Extract as flt32.  May lose precision or range; always succeeds.
+    func:to_flt32 = flt32(Number:self) {
+        pass(self._val => flt32);
+    };
+
+    /// Extract as flt64 (double precision).
+    /// Values requiring more than 53 bits of mantissa will lose precision.
+    func:to_flt64 = flt64(Number:self) {
+        pass(self._val => flt64);
+    };
+
+    /// Extract as flt128.  Lossless — same as the backing store type.
+    func:to_flt128 = flt128(Number:self) {
+        pass(self._val);
+    };
+
+    /// Extract as int64.  Truncates the fractional part (rounds toward zero).
+    /// Returns error if the value is outside [-9223372036854775808, 9223372036854775807].
+    func:to_int64 = int64(Number:self) {
+        flt128:lo = -9223372036854775807 => flt128;
+        flt128:hi = 9223372036854775807 => flt128;
+        if (self._val < lo) {
+            fail(2);
+        }
+        if (self._val > hi) {
+            fail(3);
+        }
+        pass(self._val => int64);
+    };
+
+    /// Extract as int32.  Truncates the fractional part (rounds toward zero).
+    /// Returns error if the value is outside [-2147483648, 2147483647].
+    func:to_int32 = int32(Number:self) {
+        flt128:lo = -2147483648 => flt128;
+        flt128:hi = 2147483647 => flt128;
+        if (self._val < lo) {
+            fail(4);
+        }
+        if (self._val > hi) {
+            fail(5);
+        }
+        pass(self._val => int32);
+    };
+
+    // =========================================================================
+    // Data layout
+    // =========================================================================
+
+    struct:interface = {
+        flt128:_val;    // Single quad-precision backing store
+    };
+
+};
