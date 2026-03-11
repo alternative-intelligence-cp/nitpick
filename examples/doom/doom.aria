@@ -1,0 +1,282 @@
+// doom.aria — Terminal Raycaster ("Can Aria run DOOM?" — Close enough.)
+//
+// Wolf3D-style DDA raycaster rendered entirely in a terminal.
+// A 16×16 symmetric arena; camera orbits the central room automatically.
+//
+// Algorithm (Lode's Raycasting Tutorial, DDA variant):
+//   • For each screen column cast a ray from the player position.
+//   • DDA-march through the map grid until a wall tile is hit.
+//   • Compute perpendicular wall distance → derive wall strip height.
+//   • Shade wall glyphs by distance; X-face brighter than Y-face.
+//   • Write full 80×24 framebuffer in a single syscall per frame.
+//
+// Map layout (16×16):
+//   Border walls on all edges.
+//   Partial horizontal walls at rows 5 and 10 (gap cols 5–10).
+//   Partial vertical walls at cols 5 and 10 (gap rows 5–10).
+//   Creates a central arena + 4 corner rooms visible through the gaps.
+//
+// Features exercised: flt64 trig, wild-pointer heap buffer, 2-D int8 map,
+//   integer ÷/% arithmetic, nested loops, @cast, extern C/runtime bindings.
+//
+// Press Ctrl+C to exit.
+
+use "../../stdlib/print_utils.aria".*;
+
+// ── Runtime helpers ──────────────────────────────────────────────────────────
+extern func:aria_math_sin         = flt64(flt64:x);
+extern func:aria_math_cos         = flt64(flt64:x);
+extern func:aria_math_pi          = flt64();
+extern func:aria_term_clear       = void();
+extern func:aria_term_hide_cursor = void();
+extern func:aria_term_show_cursor = void();
+extern func:aria_write_bytes      = void(wild int8*:buf, int64:len);
+extern func:aria_sleep_ms         = void(int64:ms);
+extern func:malloc                = wild int8*(int64:size);
+extern func:free                  = void(wild int8*:ptr);
+
+func:main = int32() {
+    flt64:pi = aria_math_pi();
+
+    // ── Build 16×16 tile map ──────────────────────────────────────────────
+    // Stored row-major: index = row * 16 + col.
+
+    wild int8->:map = malloc(256i64);
+
+    // Zero all cells first
+    int32:i = 0i32;
+    while (i < 256i32) {
+        map[i] = 0i8;
+        i += 1i32;
+    }
+
+    // Border walls: row 0, row 15, col 0, col 15
+    int32:bi = 0i32;
+    while (bi < 16i32) {
+        map[0i32  * 16i32 + bi] = 1i8;
+        map[15i32 * 16i32 + bi] = 1i8;
+        map[bi * 16i32 + 0i32]  = 1i8;
+        map[bi * 16i32 + 15i32] = 1i8;
+        bi += 1i32;
+    }
+
+    // Horizontal partial walls: row 5 and row 10, cols 1–4 and 11–14
+    int32:ci = 0i32;
+    while (ci < 4i32) {
+        map[ 5i32 * 16i32 + (ci + 1i32)]  = 1i8;
+        map[ 5i32 * 16i32 + (ci + 11i32)] = 1i8;
+        map[10i32 * 16i32 + (ci + 1i32)]  = 1i8;
+        map[10i32 * 16i32 + (ci + 11i32)] = 1i8;
+        ci += 1i32;
+    }
+
+    // Vertical partial walls: col 5 and col 10, rows 1–4 and 11–14
+    int32:ri = 0i32;
+    while (ri < 4i32) {
+        map[(ri +  1i32) * 16i32 +  5i32] = 1i8;
+        map[(ri +  1i32) * 16i32 + 10i32] = 1i8;
+        map[(ri + 11i32) * 16i32 +  5i32] = 1i8;
+        map[(ri + 11i32) * 16i32 + 10i32] = 1i8;
+        ri += 1i32;
+    }
+
+    // ── Screen / framebuffer setup ────────────────────────────────────────
+    int64:W          = 80i64;
+    int64:H          = 24i64;
+    int64:ROW_STRIDE = 81i64;   // 80 chars + '\n'
+    int64:FB_BYTES   = 1944i64; // 24 × 81 (sans null terminator)
+
+    // Wall shade palette: index 0 = nearest, 7 = farthest.
+    int8[8]:shade;
+    shade[0] = 64i8;   // '@'
+    shade[1] = 35i8;   // '#'
+    shade[2] = 37i8;   // '%'
+    shade[3] = 42i8;   // '*'
+    shade[4] = 43i8;   // '+'
+    shade[5] = 45i8;   // '-'
+    shade[6] = 46i8;   // '.'
+    shade[7] = 32i8;   // ' '
+
+    wild int8->:fb = malloc(1945i64);   // 1944 + null terminator
+
+    // Pre-stamp newlines and null terminator (written once, never overwritten)
+    int64:rr = 0i64;
+    while (rr < H) {
+        fb[rr * ROW_STRIDE + W] = 10i8;   // '\n'
+        rr += 1i64;
+    }
+    fb[1944i64] = 0i8;
+
+    // ── Camera orbit parameters ───────────────────────────────────────────
+    // Player circles the clear central arena (rows/cols 5–10).
+    // Orbit radius 2.0 keeps the player safely away from all wall cells.
+    // Facing angle = orbit angle + 90° so the camera always looks forward.
+    flt64:cx  = 7.5;    // orbit centre X (map units)
+    flt64:cy  = 7.5;    // orbit centre Y
+    flt64:R   = 2.0;    // orbit radius
+    flt64:fov = 1.2;    // horizontal FOV in radians (~69°)
+
+    aria_term_hide_cursor();
+
+    // ── Main animation loop ───────────────────────────────────────────────
+    int32:frame = 0i32;
+    while (frame < 10000i32) {
+
+        // Camera position and facing angle for this frame
+        flt64:t  = @cast<flt64>(frame) * 0.012;
+        flt64:px = cx + R * aria_math_cos(t);
+        flt64:py = cy + R * aria_math_sin(t);
+        flt64:pa = t + pi * 0.5;   // tangent to orbit = forward direction
+
+        // ── Fill ceiling (space) and floor (',') ─────────────────────────
+        int64:half = H / 2i64;
+        int64:cfr  = 0i64;
+        while (cfr < H) {
+            int64:cfc = 0i64;
+            while (cfc < W) {
+                int64:pos = cfr * ROW_STRIDE + cfc;
+                if (cfr < half) {
+                    fb[pos] = 32i8;   // ceiling: space
+                } else {
+                    fb[pos] = 44i8;   // floor: ','
+                }
+                cfc += 1i64;
+            }
+            cfr += 1i64;
+        }
+
+        // ── Cast one ray per screen column ───────────────────────────────
+        int64:x = 0i64;
+        while (x < W) {
+
+            // Ray direction for this column
+            flt64:xf      = @cast<flt64>(x);
+            flt64:wf      = @cast<flt64>(W);
+            flt64:ray_ang = pa + fov * (xf / wf - 0.5);
+            flt64:rdx     = aria_math_cos(ray_ang);
+            flt64:rdy     = aria_math_sin(ray_ang);
+
+            // Map cell the player is currently standing in
+            int32:mx = @cast<int32>(px);
+            int32:my = @cast<int32>(py);
+
+            // Delta distances: length of ray to cross one cell boundary.
+            // Use 1e30 when the ray is axis-aligned (safe large number).
+            flt64:ddx = 1.0e30;
+            if (rdx < 0.0) { ddx = (0.0 - 1.0) / rdx; }
+            else if (rdx > 0.0) { ddx = 1.0 / rdx; }
+
+            flt64:ddy = 1.0e30;
+            if (rdy < 0.0) { ddy = (0.0 - 1.0) / rdy; }
+            else if (rdy > 0.0) { ddy = 1.0 / rdy; }
+
+            // Step direction and initial side distances
+            int32:stepX = 1i32;
+            flt64:sdx   = (@cast<flt64>(mx) + 1.0 - px) * ddx;
+            if (rdx < 0.0) {
+                stepX = 0i32 - 1i32;
+                sdx   = (px - @cast<flt64>(mx)) * ddx;
+            }
+
+            int32:stepY = 1i32;
+            flt64:sdy   = (@cast<flt64>(my) + 1.0 - py) * ddy;
+            if (rdy < 0.0) {
+                stepY = 0i32 - 1i32;
+                sdy   = (py - @cast<flt64>(my)) * ddy;
+            }
+
+            // DDA march: step until a wall is hit or we exceed 64 steps.
+            // (64 safely exceeds the diagonal of the 16×16 map.)
+            // Map access uses an intermediate int8 variable so we compare
+            // plain int8 == 0i8 rather than Result<int8> == 0i8.
+            int32:side  = 0i32;
+            int32:hit   = 0i32;
+            int32:steps = 0i32;
+            while (hit == 0i32 && steps < 64i32) {
+                if (sdx < sdy) {
+                    sdx  = sdx + ddx;
+                    mx   += stepX;
+                    side  = 0i32;
+                } else {
+                    sdy  = sdy + ddy;
+                    my   += stepY;
+                    side  = 1i32;
+                }
+                if (my < 0i32 || my > 15i32 || mx < 0i32 || mx > 15i32) {
+                    hit = 1i32;
+                } else {
+                    int32:midx = my * 16i32 + mx;
+                    int8:mcell = map[midx];
+                    if (mcell != 0i8) {
+                        hit = 1i32;
+                    }
+                }
+                steps += 1i32;
+            }
+
+            // Perpendicular wall distance (avoids fisheye distortion)
+            flt64:perp = 0.1;
+            if (side == 0i32) {
+                flt64:mxf = @cast<flt64>(mx);
+                flt64:sxf = @cast<flt64>(stepX);
+                flt64:p   = (mxf - px + (1.0 - sxf) * 0.5) / rdx;
+                if (p > 0.1) { perp = p; }
+            } else {
+                flt64:myf = @cast<flt64>(my);
+                flt64:syf = @cast<flt64>(stepY);
+                flt64:p   = (myf - py + (1.0 - syf) * 0.5) / rdy;
+                if (p > 0.1) { perp = p; }
+            }
+
+            // Wall strip height on screen (clamped to H)
+            flt64:hf = @cast<flt64>(H);
+            int64:lh = @cast<int64>(hf / perp);
+            if (lh > H) { lh = H; }
+
+            // Shade index: 0 = nearest, 7 = farthest
+            int64:si = 7i64;
+            if      (perp < 1.0) { si = 0i64; }
+            else if (perp < 2.0) { si = 1i64; }
+            else if (perp < 3.0) { si = 2i64; }
+            else if (perp < 4.0) { si = 3i64; }
+            else if (perp < 5.5) { si = 4i64; }
+            else if (perp < 7.0) { si = 5i64; }
+            else if (perp < 9.0) { si = 6i64; }
+
+            // Y-face walls are 1 step darker — classic Wolf3D depth cue
+            if (side == 1i32 && si < 7i64) { si += 1i64; }
+
+            int8:wc = shade[si];
+
+            // Paint wall strip centred vertically in the column
+            int64:top    = (H - lh) / 2i64;
+            int64:bottom = top + lh;
+            int64:wr     = top;
+            while (wr < bottom) {
+                if (wr >= 0i64 && wr < H) {
+                    fb[wr * ROW_STRIDE + x] = wc;
+                }
+                wr += 1i64;
+            }
+
+            x += 1i64;
+        }
+
+        // ── Emit frame (single syscall) ───────────────────────────────────
+        aria_term_clear();
+        aria_write_bytes(fb, FB_BYTES);
+        aria_sleep_ms(33i64);   // ~30 fps
+
+        frame += 1i32;
+    }
+
+    aria_term_show_cursor();
+    free(fb);
+    free(map);
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    aria_term_show_cursor();
+    drop(println("doom: failsafe triggered"));
+};
