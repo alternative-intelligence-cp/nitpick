@@ -1,0 +1,280 @@
+// lisp.aria — Minimal Lisp Interpreter (EXP-4)
+//
+// A recursive tree-walking interpreter for a tiny subset of Lisp.
+// Tests: Aria recursion, wild int64* heap allocation, tagged-cell dispatch,
+//        Result<T> propagation through recursive calls, env stack discipline.
+//
+// Hard-coded program evaluated:
+//   (define fact (lambda (n) (if (= n 0) 1 (* n (fact (- n 1))))))
+//   (fact 10) → 3628800
+//   (fact 5)  → 120
+//   (fact 0)  → 1
+//
+// ── Cell layout (3 int64 per cell, index i) ──────────────────────────────────
+//   cells[i*3+0] = tag
+//   cells[i*3+1] = car  (INT→value; SYM→id; BUILTIN→op_id; LAMBDA→params cell)
+//   cells[i*3+2] = cdr  (CONS→cdr cell; LAMBDA→body cell; others→0)
+//
+// Tag values:  0=NIL  1=INT  2=SYM  3=CONS  4=LAMBDA  5=BUILTIN
+//
+// ── Symbol IDs ────────────────────────────────────────────────────────────────
+//   1=lambda(kw)  2=if  3=n  4=fact  5=+  6=-  7=*  8==
+//
+// ── Builtin op IDs ───────────────────────────────────────────────────────────
+//   0=+  1=-  2=*  3==
+//
+// ── Environment layout (2 int64 per slot, index i) ───────────────────────────
+//   env[i*2+0] = symbol_id   env[i*2+1] = value_cell
+//   etopp[0]   = current top (# of slots in use)
+//
+// ── Pre-built cell assignments ────────────────────────────────────────────────
+//   0: NIL        1: INT(0)    2: INT(1)    3: INT(10)
+//   4: BUILTIN(+) 5: BUILTIN(-) 6: BUILTIN(*) 7: BUILTIN(=)
+//   8: SYM(if=2)  9: SYM(lam=1) 10: SYM(n=3) 11: SYM(fact=4)
+//  12: SYM(+=5)  13: SYM(-=6)  14: SYM(*=7) 15: SYM(==8)
+//  16-18: (= n 0)          19-21: (- n 1)
+//  22-23: (fact (- n 1))   24-26: (* n (fact (- n 1)))
+//  27-30: (if (= n 0) 1 (* n (fact (- n 1))))  = lambda body
+//  31: (n) = params list   32: LAMBDA cell for fact
+//  33-34: (fact 10)        35: INT(5)  36-37: (fact 5)
+//  38-39: (fact 0)
+
+use "../../stdlib/string_convert.aria".*;
+use "../../stdlib/print_utils.aria".*;
+
+extern func:malloc = wild int64*(int64:size);
+extern func:free   = void(wild int64*:ptr);
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// ── Cell allocation ───────────────────────────────────────────────────────────
+// Allocate one cell; writes tag/car/cdr; returns cell index.
+func:cell_new = int64(int64->:cells, int64->:cnext,
+                      int64:tag, int64:car, int64:cdr) {
+    int64:i = cnext[0i64];
+    cnext[0i64] = i + 1i64;
+    cells[i * 3i64 + 0i64] = tag;
+    cells[i * 3i64 + 1i64] = car;
+    cells[i * 3i64 + 2i64] = cdr;
+    pass(i);
+};
+
+// ── Cell field accessors ──────────────────────────────────────────────────────
+func:ctag = int64(int64->:cells, int64:i) { pass(cells[i * 3i64 + 0i64]); };
+func:ccar = int64(int64->:cells, int64:i) { pass(cells[i * 3i64 + 1i64]); };
+func:ccdr = int64(int64->:cells, int64:i) { pass(cells[i * 3i64 + 2i64]); };
+
+// ── Environment lookup ────────────────────────────────────────────────────────
+// Scan from top-1 down to 0; return val_cell for first match, or -1.
+func:env_lookup = int64(int64:sym, int64:etop, int64->:env) {
+    int64:i = etop - 1i64;
+    while (i >= 0i64) {
+        if (env[i * 2i64 + 0i64] == sym) {
+            pass(env[i * 2i64 + 1i64]);
+        }
+        i = i - 1i64;
+    }
+    pass(0i64 - 1i64);  // not found
+};
+
+// ── Recursive tree-walking evaluator ─────────────────────────────────────────
+// Returns result cell index.  etopp[0] is the live env stack top (mutable).
+func:eval = int64(int64:c, int64->:cells, int64->:cnext,
+                  int64->:env, int64->:etopp) {
+    int64:tag = raw(ctag(cells, c));
+
+    // NIL, INT, LAMBDA — self-evaluating
+    if (tag == 0i64) { pass(c); }
+    if (tag == 1i64) { pass(c); }
+    if (tag == 4i64) { pass(c); }
+
+    // SYMBOL — look up in environment
+    if (tag == 2i64) {
+        int64:sym = raw(ccar(cells, c));
+        int64:v = raw(env_lookup(sym, etopp[0i64], env));
+        pass(v);
+    }
+
+    // CONS — application or special form
+    int64:head_c = raw(ccar(cells, c));
+    int64:args_c = raw(ccdr(cells, c));
+
+    // SYM_IF special form: (if test then else)
+    int64:ht = raw(ctag(cells, head_c));
+    if (ht == 2i64) {
+        int64:hs = raw(ccar(cells, head_c));
+        if (hs == 2i64) {
+            int64:test_c = raw(ccar(cells, args_c));
+            int64:rest1  = raw(ccdr(cells, args_c));
+            int64:then_c = raw(ccar(cells, rest1));
+            int64:rest2  = raw(ccdr(cells, rest1));
+            int64:else_c = raw(ccar(cells, rest2));
+            int64:tr     = raw(eval(test_c, cells, cnext, env, etopp));
+            int64:tv     = raw(ccar(cells, tr));
+            if (tv != 0i64) { pass(raw(eval(then_c, cells, cnext, env, etopp))); }
+            pass(raw(eval(else_c, cells, cnext, env, etopp)));
+        }
+    }
+
+    // General application: evaluate head to get operator
+    int64:op     = raw(eval(head_c, cells, cnext, env, etopp));
+    int64:op_tag = raw(ctag(cells, op));
+
+    // BUILTIN application (binary)
+    if (op_tag == 5i64) {
+        int64:op_id = raw(ccar(cells, op));
+        int64:a1c   = raw(ccar(cells, args_c));
+        int64:rest  = raw(ccdr(cells, args_c));
+        int64:a2c   = raw(ccar(cells, rest));
+        int64:r1    = raw(eval(a1c, cells, cnext, env, etopp));
+        int64:r2    = raw(eval(a2c, cells, cnext, env, etopp));
+        int64:v1    = raw(ccar(cells, r1));
+        int64:v2    = raw(ccar(cells, r2));
+        if (op_id == 0i64) { pass(raw(cell_new(cells, cnext, 1i64, v1 + v2, 0i64))); }
+        if (op_id == 1i64) { pass(raw(cell_new(cells, cnext, 1i64, v1 - v2, 0i64))); }
+        if (op_id == 2i64) { pass(raw(cell_new(cells, cnext, 1i64, v1 * v2, 0i64))); }
+        if (op_id == 3i64) {
+            int64:eq = 0i64;
+            if (v1 == v2) { eq = 1i64; }
+            pass(raw(cell_new(cells, cnext, 1i64, eq, 0i64)));
+        }
+    }
+
+    // LAMBDA application: extend env, eval body, restore env
+    if (op_tag == 4i64) {
+        int64:lp_list = raw(ccar(cells, op));   // (n) params list
+        int64:lbody   = raw(ccdr(cells, op));   // body cell
+        int64:p_sym_c = raw(ccar(cells, lp_list)); // first param SYM cell
+        int64:p_sym   = raw(ccar(cells, p_sym_c)); // symbol id
+        int64:a_c     = raw(ccar(cells, args_c));  // arg expression
+        int64:a_val   = raw(eval(a_c, cells, cnext, env, etopp));
+        int64:sv      = etopp[0i64];   // save env top
+        env[sv * 2i64 + 0i64] = p_sym;
+        env[sv * 2i64 + 1i64] = a_val;
+        etopp[0i64] = sv + 1i64;
+        int64:res = raw(eval(lbody, cells, cnext, env, etopp));
+        etopp[0i64] = sv;              // restore env top
+        pass(res);
+    }
+
+    // Unreachable — return sentinel -1
+    pass(0i64 - 1i64);
+};
+
+// ── main ──────────────────────────────────────────────────────────────────────
+func:main = int32() {
+    // Allocate pools — cells: 200*3=600 int64s; env: 128*2=256 int64s
+    wild int64->:cells = malloc(600i64 * 8i64);
+    wild int64->:cnext = malloc(1i64 * 8i64);
+    wild int64->:env   = malloc(256i64 * 8i64);
+    wild int64->:etopp = malloc(1i64 * 8i64);
+
+    cnext[0i64] = 0i64;
+    etopp[0i64] = 0i64;
+
+    // ── Build primitive cells (0–15) ─────────────────────────────────────────
+    // tag=0:NIL  1:INT  2:SYM  3:CONS  4:LAMBDA  5:BUILTIN
+    // cell_new(cells, cnext, tag, car, cdr)
+    drop(raw(cell_new(cells, cnext, 0i64,  0i64,  0i64)));  // 0: NIL
+    drop(raw(cell_new(cells, cnext, 1i64,  0i64,  0i64)));  // 1: INT(0)
+    drop(raw(cell_new(cells, cnext, 1i64,  1i64,  0i64)));  // 2: INT(1)
+    drop(raw(cell_new(cells, cnext, 1i64, 10i64,  0i64)));  // 3: INT(10)
+    drop(raw(cell_new(cells, cnext, 5i64,  0i64,  0i64)));  // 4: BUILTIN(+)
+    drop(raw(cell_new(cells, cnext, 5i64,  1i64,  0i64)));  // 5: BUILTIN(-)
+    drop(raw(cell_new(cells, cnext, 5i64,  2i64,  0i64)));  // 6: BUILTIN(*)
+    drop(raw(cell_new(cells, cnext, 5i64,  3i64,  0i64)));  // 7: BUILTIN(=)
+    drop(raw(cell_new(cells, cnext, 2i64,  2i64,  0i64)));  // 8: SYM(if=2)
+    drop(raw(cell_new(cells, cnext, 2i64,  1i64,  0i64)));  // 9: SYM(lambda=1)
+    drop(raw(cell_new(cells, cnext, 2i64,  3i64,  0i64)));  // 10: SYM(n=3)
+    drop(raw(cell_new(cells, cnext, 2i64,  4i64,  0i64)));  // 11: SYM(fact=4)
+    drop(raw(cell_new(cells, cnext, 2i64,  5i64,  0i64)));  // 12: SYM(+=5)
+    drop(raw(cell_new(cells, cnext, 2i64,  6i64,  0i64)));  // 13: SYM(-=6)
+    drop(raw(cell_new(cells, cnext, 2i64,  7i64,  0i64)));  // 14: SYM(*=7)
+    drop(raw(cell_new(cells, cnext, 2i64,  8i64,  0i64)));  // 15: SYM(==8)
+
+    // ── Build program AST (cells 16–34) ──────────────────────────────────────
+    // (= n 0) → cells 16–18 (built bottom-up)
+    drop(raw(cell_new(cells, cnext, 3i64,  1i64,  0i64)));  // 16: CONS(INT0=1, NIL=0)
+    drop(raw(cell_new(cells, cnext, 3i64, 10i64, 16i64)));  // 17: CONS(SYM_N=10, 16)
+    drop(raw(cell_new(cells, cnext, 3i64, 15i64, 17i64)));  // 18: CONS(SYM_EQ=15, 17) = (= n 0)
+
+    // (- n 1) → cells 19–21
+    drop(raw(cell_new(cells, cnext, 3i64,  2i64,  0i64)));  // 19: CONS(INT1=2, NIL=0)
+    drop(raw(cell_new(cells, cnext, 3i64, 10i64, 19i64)));  // 20: CONS(SYM_N=10, 19)
+    drop(raw(cell_new(cells, cnext, 3i64, 13i64, 20i64)));  // 21: CONS(SYM_MINUS=13, 20) = (- n 1)
+
+    // (fact (- n 1)) → cells 22–23
+    drop(raw(cell_new(cells, cnext, 3i64, 21i64,  0i64)));  // 22: CONS((- n 1)=21, NIL=0)
+    drop(raw(cell_new(cells, cnext, 3i64, 11i64, 22i64)));  // 23: CONS(SYM_FACT=11, 22) = (fact (- n 1))
+
+    // (* n (fact (- n 1))) → cells 24–26
+    drop(raw(cell_new(cells, cnext, 3i64, 23i64,  0i64)));  // 24: CONS((fact ...=23, NIL=0)
+    drop(raw(cell_new(cells, cnext, 3i64, 10i64, 24i64)));  // 25: CONS(SYM_N=10, 24)
+    drop(raw(cell_new(cells, cnext, 3i64, 14i64, 25i64)));  // 26: CONS(SYM_STAR=14, 25) = (* n ...)
+
+    // (if (= n 0) 1 (* n (fact (- n 1)))) → cells 27–30
+    drop(raw(cell_new(cells, cnext, 3i64, 26i64,  0i64)));  // 27: CONS(else=26, NIL=0)
+    drop(raw(cell_new(cells, cnext, 3i64,  2i64, 27i64)));  // 28: CONS(then=INT1=2, 27)
+    drop(raw(cell_new(cells, cnext, 3i64, 18i64, 28i64)));  // 29: CONS(test=(= n 0)=18, 28)
+    drop(raw(cell_new(cells, cnext, 3i64,  8i64, 29i64)));  // 30: CONS(SYM_IF=8, 29) = lambda body
+
+    // Lambda: params (n) → cell 31; LAMBDA cell → cell 32
+    drop(raw(cell_new(cells, cnext, 3i64, 10i64,  0i64)));  // 31: CONS(SYM_N=10, NIL=0)
+    drop(raw(cell_new(cells, cnext, 4i64, 31i64, 30i64)));  // 32: LAMBDA(params=31, body=30)
+
+    // (fact 10) → cells 33–34
+    drop(raw(cell_new(cells, cnext, 3i64,  3i64,  0i64)));  // 33: CONS(INT10=3, NIL=0)
+    drop(raw(cell_new(cells, cnext, 3i64, 11i64, 33i64)));  // 34: CONS(SYM_FACT=11, 33) = (fact 10)
+
+    // (fact 5): INT(5) → 35, list → 36, call → 37
+    drop(raw(cell_new(cells, cnext, 1i64,  5i64,  0i64)));  // 35: INT(5)
+    drop(raw(cell_new(cells, cnext, 3i64, 35i64,  0i64)));  // 36: CONS(INT5=35, NIL=0)
+    drop(raw(cell_new(cells, cnext, 3i64, 11i64, 36i64)));  // 37: (fact 5)
+
+    // (fact 0): reuse INT(0) cell 1, list → 38, call → 39
+    drop(raw(cell_new(cells, cnext, 3i64,  1i64,  0i64)));  // 38: CONS(INT0=1, NIL=0)
+    drop(raw(cell_new(cells, cnext, 3i64, 11i64, 38i64)));  // 39: (fact 0)
+
+    // ── Populate environment ──────────────────────────────────────────────────
+    // Slot 0: + (sym_id=5) → BUILTIN_PLUS cell 4
+    env[0i64] = 5i64;   env[1i64] = 4i64;
+    // Slot 1: - (sym_id=6) → BUILTIN_MINUS cell 5
+    env[2i64] = 6i64;   env[3i64] = 5i64;
+    // Slot 2: * (sym_id=7) → BUILTIN_STAR cell 6
+    env[4i64] = 7i64;   env[5i64] = 6i64;
+    // Slot 3: = (sym_id=8) → BUILTIN_EQ cell 7
+    env[6i64] = 8i64;   env[7i64] = 7i64;
+    // Slot 4: fact (sym_id=4) → LAMBDA cell 32
+    env[8i64] = 4i64;   env[9i64] = 32i64;
+    etopp[0i64] = 5i64;  // 5 bindings active
+
+    // ── Test 1: (fact 10) = 3628800 ──────────────────────────────────────────
+    int64:r10  = raw(eval(34i64, cells, cnext, env, etopp));
+    int64:v10  = raw(ccar(cells, r10));
+    drop(print("(fact 10) = "));
+    drop(println(int32_toString(v10 => int32)));
+    if (v10 == 3628800i64) { drop(println("PASS")); }
+    if (v10 != 3628800i64) { drop(println("FAIL")); }
+
+    // ── Test 2: (fact 5) = 120 ───────────────────────────────────────────────
+    int64:r5   = raw(eval(37i64, cells, cnext, env, etopp));
+    int64:v5   = raw(ccar(cells, r5));
+    drop(print("(fact 5) = "));
+    drop(println(int32_toString(v5 => int32)));
+    if (v5 == 120i64) { drop(println("PASS")); }
+    if (v5 != 120i64) { drop(println("FAIL")); }
+
+    // ── Test 3: (fact 0) = 1 ─────────────────────────────────────────────────
+    int64:r0   = raw(eval(39i64, cells, cnext, env, etopp));
+    int64:v0   = raw(ccar(cells, r0));
+    drop(print("(fact 0) = "));
+    drop(println(int32_toString(v0 => int32)));
+    if (v0 == 1i64) { drop(println("PASS")); }
+    if (v0 != 1i64) { drop(println("FAIL")); }
+
+    free(cells);
+    free(cnext);
+    free(env);
+    free(etopp);
+    pass(0i32);
+};

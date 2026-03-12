@@ -1,0 +1,28 @@
+// probe_int64_heap.aria — Verify wild int64-> heap allocation
+// Tests: extern malloc → wild int64->, indexing, passing to function
+extern func:malloc = wild int64*(int64:size);
+extern func:free = void(wild int64*:ptr);
+
+func:sum_arr = int64(int64->:a, int64:n) {
+    int64:s = 0i64;
+    int64:i = 0i64;
+    while (i < n) {
+        s = s + a[i];
+        i = i + 1i64;
+    }
+    pass(s);
+};
+
+func:failsafe = NIL(int32:c) { pass(NIL); };
+
+func:main = int32() {
+    wild int64->:arr = malloc(8i64 * 8i64);  // 8 int64 values
+    arr[0i64] = 10i64;
+    arr[1i64] = 20i64;
+    arr[2i64] = 30i64;
+    arr[3i64] = 40i64;
+    int64:s4 = raw(sum_arr(arr, 4i64));
+    free(arr);
+    // 10+20+30+40 = 100; pass as exit code
+    pass(s4 => int32);
+};
