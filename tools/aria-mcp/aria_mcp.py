@@ -6,14 +6,22 @@ Transport : stdio (JSON-RPC 2.0, newline-delimited)
 Zero deps : pure Python 3.8+ stdlib only
 
 Tools:
-  aria_compile(source)  — compile Aria source via ariac, structured result
-  aria_check(source)    — run aria-safety audit, structured findings
-  aria_docs(query)      — section-level search over aria_ref.md
+  aria_compile(source)            — compile Aria source via ariac, structured result
+  aria_check(source)              — run aria-safety audit, structured findings
+  aria_docs(query)                — section-level search over aria_ref.md
+  aria_ask(question[, context])   — query the Aria specialist fine-tuned model
+                                    (optional; requires specialist server to be
+                                     available at SPECIALIST_SCRIPT / PATH)
 
 Binary discovery order (for ariac and aria-safety):
   1. Environment variable  ARIAC_BIN / ARIA_SAFETY_BIN
   2. <repo-root>/build/ariac   or   <repo-root>/tools/aria-safety/aria-safety
   3. $PATH
+
+Specialist server discovery:
+  1. SPECIALIST_SCRIPT env var (path to aria_specialist_server.py)
+  2. <repo-root>/tools/aria_specialist_server.py
+Set ARIA_ASK_DISABLED=1 to suppress the tool from the tools/list entirely.
 """
 
 import json
@@ -23,6 +31,8 @@ import subprocess
 import tempfile
 import re
 import shutil
+import threading
+import time
 from pathlib import Path
 
 # ── binary / path resolution ──────────────────────────────────────────────
@@ -51,6 +61,119 @@ SAFETY_BIN  = _find_bin("ARIA_SAFETY_BIN",
 
 ARIA_REF_MD = os.environ.get("ARIA_REF_MD",
                               str(REPO_ROOT / ".internal" / "aria_ref.md"))
+
+SPECIALIST_SCRIPT = (
+    os.environ.get("SPECIALIST_SCRIPT")
+    or str(REPO_ROOT / "tools" / "aria_specialist_server.py")
+)
+ARIA_ASK_DISABLED = os.environ.get("ARIA_ASK_DISABLED", "").strip() not in ("", "0")
+
+# ── aria_ask: specialist model proxy ────────────────────────────────────────
+
+READY_TIMEOUT = 240   # seconds; loading a 7B model can take a while
+
+
+class _SpecialistProxy:
+    """
+    Lazy-starting, long-lived proxy to aria_specialist_server.py.
+    Thread-safe (single-threaded server; only one generation at a time anyway).
+    The subprocess is started on the first aria_ask call and kept alive
+    for the lifetime of the MCP server process.
+    """
+
+    def __init__(self) -> None:
+        self._proc: subprocess.Popen | None = None
+        self._lock  = threading.Lock()
+        self._req_id = 0
+        self._ready  = False
+
+    def _start(self) -> str | None:
+        """Start the specialist subprocess.  Returns an error string on failure."""
+        if not os.path.isfile(SPECIALIST_SCRIPT):
+            return f"specialist server not found: {SPECIALIST_SCRIPT}"
+
+        try:
+            self._proc = subprocess.Popen(
+                [sys.executable, SPECIALIST_SCRIPT],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+        except OSError as exc:
+            return f"failed to start specialist server: {exc}"
+
+        # Wait for the {"ready":true} handshake line
+        deadline = time.monotonic() + READY_TIMEOUT
+        while time.monotonic() < deadline:
+            if self._proc.poll() is not None:
+                return "specialist server exited during startup"
+            try:
+                line = self._proc.stdout.readline()
+            except OSError:
+                return "specialist server stdout closed during startup"
+            if not line:
+                time.sleep(0.1)
+                continue
+            try:
+                msg = json.loads(line)
+                if msg.get("ready"):
+                    self._ready = True
+                    return None  # success
+            except json.JSONDecodeError:
+                pass  # skip non-JSON lines (diagnostics etc.)
+
+        self._proc.kill()
+        return f"specialist server did not become ready within {READY_TIMEOUT} s"
+
+    def ask(self, question: str, context: str = "",
+            max_tokens: int = 512, temperature: float = 0.2) -> dict:
+        with self._lock:
+            # Ensure the subprocess is alive
+            if self._proc is None or self._proc.poll() is not None:
+                self._ready = False
+                err = self._start()
+                if err:
+                    return {"ok": False, "error": err}
+
+            self._req_id += 1
+            req = json.dumps({
+                "id":          self._req_id,
+                "instruction": question,
+                "context":     context,
+                "max_tokens":  max_tokens,
+                "temperature": temperature,
+            })
+            try:
+                self._proc.stdin.write(req + "\n")
+                self._proc.stdin.flush()
+                line = self._proc.stdout.readline()
+            except OSError as exc:
+                self._proc = None
+                return {"ok": False, "error": f"specialist server I/O error: {exc}"}
+
+            if not line:
+                self._proc = None
+                return {"ok": False, "error": "specialist server closed connection"}
+
+            try:
+                resp = json.loads(line)
+                return resp  # { id, ok, response } or { id, ok, error }
+            except json.JSONDecodeError as exc:
+                return {"ok": False, "error": f"malformed response from specialist: {exc}"}
+
+
+_SPECIALIST = _SpecialistProxy()
+
+
+def aria_ask(question: str, context: str = "",
+             max_tokens: int = 512, temperature: float = 0.2) -> dict:
+    resp = _SPECIALIST.ask(question, context, max_tokens, temperature)
+    if not resp.get("ok"):
+        return {"answer": None, "error": resp.get("error", "unknown error")}
+    return {"answer": resp.get("response", "")}
+
 
 # ── aria_ref.md section index ─────────────────────────────────────────────
 
@@ -297,9 +420,44 @@ TOOL_DEFINITIONS = [
             "required": ["query"],
         },
     },
-]
+] + ([] if ARIA_ASK_DISABLED else [
+    {
+        "name": "aria_ask",
+        "description": (
+            "Ask the Aria language specialist fine-tuned model a question about "
+            "Aria syntax, idioms, or how to write specific code. "
+            "Returns the model's text response, which often contains Aria code. "
+            "Validate generated code with aria_compile and audit with aria_check. "
+            "The specialist server loads a ~7B parameter model on first use and "
+            "may take 1-3 minutes to warm up. Subsequent calls are fast. "
+            "Set ARIA_ASK_DISABLED=1 to hide this tool if the model is not available."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type":        "string",
+                    "description": "What to ask the Aria specialist — a task, question, or code request.",
+                },
+                "context": {
+                    "type":        "string",
+                    "description": "Optional: existing Aria code or context to provide alongside the question.",
+                },
+                "max_tokens": {
+                    "type":        "integer",
+                    "description": "Maximum tokens to generate (default 512).",
+                },
+                "temperature": {
+                    "type":        "number",
+                    "description": "Sampling temperature 0.0-1.0 (default 0.2 for consistent code).",
+                },
+            },
+            "required": ["question"],
+        },
+    },
+])
 
-SERVER_INFO  = {"name": "aria-mcp", "version": "0.1.0"}
+SERVER_INFO  = {"name": "aria-mcp", "version": "0.2.0"}
 CAPABILITIES = {"tools": {}}
 
 
@@ -355,6 +513,18 @@ def _handle(req: dict) -> dict | None:
             r = aria_docs(args.get("query", ""))
             return ok({"content": [{"type": "text", "text": r["excerpt"]}]})
 
+        if name == "aria_ask":
+            if ARIA_ASK_DISABLED:
+                return err(-32601, "aria_ask is disabled (ARIA_ASK_DISABLED=1)")
+            r    = aria_ask(
+                args.get("question", ""),
+                args.get("context", ""),
+                int(args.get("max_tokens", 512)),
+                float(args.get("temperature", 0.2)),
+            )
+            text = r.get("answer") or f"[error] {r.get('error', 'no response')}"
+            return ok({"content": [{"type": "text", "text": text}]})
+
         return err(-32601, f"Unknown tool: {name!r}")
 
     # ── fallback ───────────────────────────────────────────────
@@ -370,6 +540,7 @@ def main() -> None:
     log(f"ariac      = {ARIAC_BIN or '(not found)'}")
     log(f"aria-safety= {SAFETY_BIN or '(not found)'}")
     log(f"aria_ref   = {ARIA_REF_MD}")
+    log(f"aria_ask   = {'disabled' if ARIA_ASK_DISABLED else SPECIALIST_SCRIPT}")
     log("ready — waiting for JSON-RPC requests on stdin")
 
     for raw in sys.stdin:
