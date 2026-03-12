@@ -1,0 +1,213 @@
+// philosophers.aria — Dining Philosophers (EXP-6)
+//
+// Classic Dijkstra concurrency problem: 5 philosophers, 5 forks.
+// Forks are aria_atomic_int32 spinlocks (0=free, 1=held).
+// Deadlock prevention: resource ordering (lower-index fork first).
+//
+// Build / run:
+//   cd /home/randy/Workspace/REPOS/aria
+//   ./build/ariac examples/philosophers/philosophers.aria --emit-llvm
+//   clang -c examples/philosophers/phil_threads.c \
+//         -I./include -o /tmp/phil_threads.o
+//   clang++ -c examples/philosophers/philosophers.ll -o /tmp/philosophers.o
+//   clang++ /tmp/philosophers.o /tmp/phil_threads.o \
+//           build/libaria_runtime.a -latomic -lpthread \
+//           -o examples/philosophers/philosophers
+//   ./examples/philosophers/philosophers
+//
+// ARIA BUG LOG (EXP-6 discoveries):
+//   Bug  #1: `wild T*` only valid in extern blocks; regular code must use `wild T->`
+//   Bug  #2: `x => wild T->` cast NOT supported by the => operator
+//   Bug  #3: Aria fn refs wrap result in Result<T>; can't pass to extern `wild int8*` param
+//   Bug  #4: Workaround was `(int64)(int64):fn = my_fn` typed fn-ptr — but see Bug #12
+//   Bug  #5: `if (cond) { stmt }` — no trailing `;` after `}`
+//   Bug  #6: Module-level `wild int8->:g` globals → IR gen error "Unknown Aria type: int8@"
+//   Bug  #7: pthread_t must be stored as int64; addressed as wild int64* for pthread FFI
+//   Bug  #8: `raw(fn_returning_wild())` inline as extern arg → IR gen error
+//   Bug  #9: Global `wild int8->` passed to Aria fn `wild int8->` param → IR error
+//   Bug #10: Borrow checker: void(wild T*) fn name must end with _free/_destroy/_release/_close
+//   Bug #11: `_ = non_void_extern(...)` silently removes the entire call from IR
+//   Bug #12: `(T)(T):fn = named_func` — typed fn-ptr assignment never stores address in IR
+//
+// Bugs #11 and #12 make direct pthread FFI from Aria impossible in this compiler version.
+// Workaround: phil_threads.c provides aria_spawn_philosophers() and
+// aria_join_philosophers() as void() C helpers that do the actual threading.
+
+use "../../stdlib/string_convert.aria".*;
+use "../../stdlib/print_utils.aria".*;
+
+// ── Memory ordering constants ─────────────────────────────────────────────────
+func:RELAXED = int32() { pass(0); };
+func:SEQ_CST = int32() { pass(4); };
+
+// ── Atomic int32 FFI ──────────────────────────────────────────────────────────
+extern func:aria_atomic_int32_create  = wild int8*(int32:initial);
+extern func:aria_atomic_int32_destroy = void(wild int8*:ptr);
+extern func:aria_atomic_int32_load    = int32(wild int8*:ptr, int32:order);
+extern func:aria_atomic_int32_store   = void(wild int8*:ptr, int32:value, int32:order);
+
+// ── Wild pointer helpers ──────────────────────────────────────────────────────
+extern func:aria_wild_to_int64 = int64(wild int8*:ptr);
+extern func:aria_int64_to_wild = wild int8*(int64:addr);
+extern func:aria_wild_ptr_free = void(wild int8*:ptr);
+
+// ── Sleep / thread API ────────────────────────────────────────────────────────
+extern func:aria_thread_sleep_ns    = void(int64:nanoseconds);
+extern func:aria_spawn_philosophers = void();
+extern func:aria_join_philosophers  = void();
+
+// ── Configuration ─────────────────────────────────────────────────────────────
+func:N_PHIL = int32() { pass(5); };
+func:RUN_NS = int64() { pass(3000000000i64); };
+
+// ── Shared state — atomic handle addresses stored as int64 ───────────────────
+int64:g_fork_0 = 0i64;
+int64:g_fork_1 = 0i64;
+int64:g_fork_2 = 0i64;
+int64:g_fork_3 = 0i64;
+int64:g_fork_4 = 0i64;
+
+int64:g_eat_0 = 0i64;
+int64:g_eat_1 = 0i64;
+int64:g_eat_2 = 0i64;
+int64:g_eat_3 = 0i64;
+int64:g_eat_4 = 0i64;
+
+int64:g_running = 0i64;
+
+// ── Per-thread pthread_t storage (written by aria_spawn_philosophers) ────────
+int64:g_tid_0 = 0i64;
+int64:g_tid_1 = 0i64;
+int64:g_tid_2 = 0i64;
+int64:g_tid_3 = 0i64;
+int64:g_tid_4 = 0i64;
+
+// ── Read one eat counter (exercises the int64 → wild ptr → atomic load path) ─
+func:load_eat = int32(int32:phil_id) {
+    int64:addr = g_eat_0;
+    if (phil_id == 1) { addr = g_eat_1; }
+    if (phil_id == 2) { addr = g_eat_2; }
+    if (phil_id == 3) { addr = g_eat_3; }
+    if (phil_id == 4) { addr = g_eat_4; }
+    wild int8->:e = aria_int64_to_wild(addr);
+    int32:val = aria_atomic_int32_load(e, RELAXED());
+    aria_wild_ptr_free(e);
+    pass(val);
+};
+
+// ── Required error handler ────────────────────────────────────────────────────
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+func:main = int32() {
+    int32:N = raw(N_PHIL());
+
+    drop(printlnString("Dining Philosophers"));
+    drop(printString("  N = "));
+    drop(printlnInt32(N));
+    drop(printlnString("  Run = 3 seconds"));
+    drop(printlnString("---"));
+
+    // ── Initialise fork atomics ───────────────────────────────────────────────
+    wild int8->:f0 = aria_atomic_int32_create(0);
+    wild int8->:f1 = aria_atomic_int32_create(0);
+    wild int8->:f2 = aria_atomic_int32_create(0);
+    wild int8->:f3 = aria_atomic_int32_create(0);
+    wild int8->:f4 = aria_atomic_int32_create(0);
+    g_fork_0 = aria_wild_to_int64(f0);
+    g_fork_1 = aria_wild_to_int64(f1);
+    g_fork_2 = aria_wild_to_int64(f2);
+    g_fork_3 = aria_wild_to_int64(f3);
+    g_fork_4 = aria_wild_to_int64(f4);
+    aria_wild_ptr_free(f0);
+    aria_wild_ptr_free(f1);
+    aria_wild_ptr_free(f2);
+    aria_wild_ptr_free(f3);
+    aria_wild_ptr_free(f4);
+
+    // ── Initialise eat-count atomics ──────────────────────────────────────────
+    wild int8->:e0 = aria_atomic_int32_create(0);
+    wild int8->:e1 = aria_atomic_int32_create(0);
+    wild int8->:e2 = aria_atomic_int32_create(0);
+    wild int8->:e3 = aria_atomic_int32_create(0);
+    wild int8->:e4 = aria_atomic_int32_create(0);
+    g_eat_0 = aria_wild_to_int64(e0);
+    g_eat_1 = aria_wild_to_int64(e1);
+    g_eat_2 = aria_wild_to_int64(e2);
+    g_eat_3 = aria_wild_to_int64(e3);
+    g_eat_4 = aria_wild_to_int64(e4);
+    aria_wild_ptr_free(e0);
+    aria_wild_ptr_free(e1);
+    aria_wild_ptr_free(e2);
+    aria_wild_ptr_free(e3);
+    aria_wild_ptr_free(e4);
+
+    // ── Initialise running flag = 1 ───────────────────────────────────────────
+    wild int8->:ra = aria_atomic_int32_create(1);
+    g_running = aria_wild_to_int64(ra);
+    aria_wild_ptr_free(ra);
+
+    // ── Spawn philosopher threads via C helper (avoids Bug #11 and #12) ───────
+    aria_spawn_philosophers();
+
+    // ── Let philosophers run for RUN_NS then signal stop ─────────────────────
+    aria_thread_sleep_ns(RUN_NS());
+
+    wild int8->:r_stop = aria_int64_to_wild(g_running);
+    aria_atomic_int32_store(r_stop, 0, SEQ_CST());
+    aria_wild_ptr_free(r_stop);
+
+    // ── Join all threads via C helper ─────────────────────────────────────────
+    aria_join_philosophers();
+
+    // ── Report results ────────────────────────────────────────────────────────
+    bool:all_ate = true;
+    int32:i = 0;
+    while (i < N) {
+        int32:count = raw(load_eat(i));
+        drop(printString("  Philosopher "));
+        drop(printString(int32_toString(i)));
+        drop(printString(" ate "));
+        drop(printString(int32_toString(count)));
+        drop(printlnString(" times"));
+        if (count == 0) {
+            all_ate = false;
+        }
+        i = i + 1;
+    }
+
+    drop(printlnString("---"));
+    if (all_ate) {
+        drop(printlnString("PASS: all philosophers ate (no starvation/deadlock)"));
+    } else {
+        drop(printlnString("FAIL: at least one philosopher starved"));
+    }
+
+    // ── Cleanup ───────────────────────────────────────────────────────────────
+    wild int8->:df0 = aria_int64_to_wild(g_fork_0);
+    wild int8->:df1 = aria_int64_to_wild(g_fork_1);
+    wild int8->:df2 = aria_int64_to_wild(g_fork_2);
+    wild int8->:df3 = aria_int64_to_wild(g_fork_3);
+    wild int8->:df4 = aria_int64_to_wild(g_fork_4);
+    aria_atomic_int32_destroy(df0);
+    aria_atomic_int32_destroy(df1);
+    aria_atomic_int32_destroy(df2);
+    aria_atomic_int32_destroy(df3);
+    aria_atomic_int32_destroy(df4);
+
+    wild int8->:de0 = aria_int64_to_wild(g_eat_0);
+    wild int8->:de1 = aria_int64_to_wild(g_eat_1);
+    wild int8->:de2 = aria_int64_to_wild(g_eat_2);
+    wild int8->:de3 = aria_int64_to_wild(g_eat_3);
+    wild int8->:de4 = aria_int64_to_wild(g_eat_4);
+    aria_atomic_int32_destroy(de0);
+    aria_atomic_int32_destroy(de1);
+    aria_atomic_int32_destroy(de2);
+    aria_atomic_int32_destroy(de3);
+    aria_atomic_int32_destroy(de4);
+
+    wild int8->:dr = aria_int64_to_wild(g_running);
+    aria_atomic_int32_destroy(dr);
+
+    pass(0);
+};
