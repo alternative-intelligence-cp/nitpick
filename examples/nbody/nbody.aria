@@ -1,0 +1,198 @@
+// nbody.aria — N-Body Gravity Simulation (EXP-3)
+//
+// Simulates gravitational interaction between N bodies using a
+// symplectic Euler (leapfrog) integrator.
+//
+// Step sequence for symplectic Euler:
+//   1. Accumulate accelerations from all pairwise forces
+//   2. Update velocities: v += a * dt
+//   3. Update positions:  x += v * dt
+//
+// Correctness oracle: final energy (kinetic + potential) after 1000 steps
+// is compared against the Python reference implementation in nbody.py.
+//
+// Parameters (to match Python reference):
+//   N  = 10 bodies
+//   dt = 0.001
+//   G  = 1.0
+//   steps = 1000
+//
+// Bodies are initialised from a deterministic sequence (body i has
+// mass = 1.0 + i*0.1, position = (i, 0, 0), velocity = (0, i*0.001, 0));
+// this allows the Python reference to reproduce the same trajectory.
+//
+// Output: total energy after 1000 steps (6 decimal places via subtraction).
+// A difference of less than 1e-6 from the Python reference passes.
+
+use "../../stdlib/string_convert.aria".*;
+use "../../stdlib/print_utils.aria".*;
+
+extern "libm" {
+    func:sqrt = flt64(flt64:x);
+}
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// ── Body data stored in parallel arrays (avoids struct+array-index issues) ───
+// 10 bodies  ×  (x, y, z, vx, vy, vz, mass)
+
+int64:N_BODIES = 10i64;
+
+func:main = int32() {
+
+    // ── Initialise bodies ────────────────────────────────────────────────────
+    // Body i: mass = 1.0 + i*0.1, pos = (i, 0, 0), vel = (0, i*0.01, 0)
+    flt64[10]:px = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+    flt64[10]:py = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    flt64[10]:pz = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    flt64[10]:vx = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    flt64[10]:vy = [0.0, 0.001, 0.002, 0.003, 0.004,
+                    0.005, 0.006, 0.007, 0.008, 0.009];
+    flt64[10]:vz = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    flt64[10]:mass = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9];
+
+    flt64:G   = 1.0;
+    flt64:dt  = 0.001;
+    flt64:EPS2 = 0.01;  // softening eps=0.1, eps²=0.01
+
+    // ── Working variables (pre-declared before loops) ────────────────────────
+    flt64:dx = 0.0;
+    flt64:dy = 0.0;
+    flt64:dz = 0.0;
+    flt64:dist2 = 0.0;
+    flt64:dist  = 0.0;
+    flt64:force = 0.0;
+    flt64:ax = 0.0;
+    flt64:ay = 0.0;
+    flt64:az = 0.0;
+    flt64:fx = 0.0;
+    flt64:fy = 0.0;
+    flt64:fz = 0.0;
+    flt64[10]:accx = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    flt64[10]:accy = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    flt64[10]:accz = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    int64:step = 0i64;
+    int64:i = 0i64;
+    int64:j = 0i64;
+
+    // ── Integrate 1000 steps ─────────────────────────────────────────────────
+    step = 0i64;
+    while (step < 1000i64) {
+
+        // 1. Zero accelerations
+        i = 0i64;
+        while (i < 10i64) {
+            accx[i] = 0.0;
+            accy[i] = 0.0;
+            accz[i] = 0.0;
+            i = i + 1i64;
+        }
+
+        // 2. Pairwise forces — O(N^2)
+        i = 0i64;
+        while (i < 10i64) {
+            j = i + 1i64;
+            while (j < 10i64) {
+                dx = px[j] - px[i];
+                dy = py[j] - py[i];
+                dz = pz[j] - pz[i];
+                dist2 = dx*dx + dy*dy + dz*dz + EPS2;
+                dist  = sqrt(dist2);
+                force = G * mass[i] * mass[j] / (dist2 * dist);
+                fx = force * dx;
+                fy = force * dy;
+                fz = force * dz;
+                // body i accelerated toward j
+                accx[i] = accx[i] + fx / mass[i];
+                accy[i] = accy[i] + fy / mass[i];
+                accz[i] = accz[i] + fz / mass[i];
+                // body j accelerated toward i (Newton's 3rd law)
+                accx[j] = accx[j] - fx / mass[j];
+                accy[j] = accy[j] - fy / mass[j];
+                accz[j] = accz[j] - fz / mass[j];
+                j = j + 1i64;
+            }
+            i = i + 1i64;
+        }
+
+        // 3. Symplectic Euler: update velocities then positions
+        i = 0i64;
+        while (i < 10i64) {
+            vx[i] = vx[i] + accx[i] * dt;
+            vy[i] = vy[i] + accy[i] * dt;
+            vz[i] = vz[i] + accz[i] * dt;
+            px[i] = px[i] + vx[i] * dt;
+            py[i] = py[i] + vy[i] * dt;
+            pz[i] = pz[i] + vz[i] * dt;
+            i = i + 1i64;
+        }
+
+        step = step + 1i64;
+    }
+
+    // ── Compute total energy ─────────────────────────────────────────────────
+    // KE = 0.5 * sum_i(m_i * |v_i|^2)
+    // PE = -G * sum_{i<j} (m_i * m_j / r_ij)
+    flt64:KE = 0.0;
+    flt64:PE = 0.0;
+    flt64:v2 = 0.0;
+
+    i = 0i64;
+    while (i < 10i64) {
+        v2 = vx[i]*vx[i] + vy[i]*vy[i] + vz[i]*vz[i];
+        KE = KE + 0.5 * mass[i] * v2;
+        i = i + 1i64;
+    }
+
+    i = 0i64;
+    while (i < 10i64) {
+        j = i + 1i64;
+        while (j < 10i64) {
+            dx = px[j] - px[i];
+            dy = py[j] - py[i];
+            dz = pz[j] - pz[i];
+            dist = sqrt(dx*dx + dy*dy + dz*dz + EPS2);
+            PE = PE - G * mass[i] * mass[j] / dist;
+            j = j + 1i64;
+        }
+        i = i + 1i64;
+    }
+
+    flt64:E = KE + PE;
+
+    // ── Print result ─────────────────────────────────────────────────────────
+    // Print the integer part and first 6 decimal digits of energy.
+    // E will be a negative number (bound system).
+    // Strategy: print sign, then integer part, then fractional digits.
+
+    // Determine sign
+    flt64:Eabs = E;
+    int64:neg = 0i64;
+    if (E < 0.0) {
+        Eabs = 0.0 - E;
+        neg = 1i64;
+    }
+
+    // Extract integer part (cast to int64)
+    int64:Eint  = Eabs => int64;
+    // Fractional part × 1e6 → 6 decimal digits
+    flt64:Efrac = (Eabs - (Eint => flt64)) * 1000000.0;
+    int64:Efrac6 = Efrac => int64;
+
+    // Print: "E = -NNN.NNNNNN"
+    drop(print("E = "));
+    if (neg == 1i64) {
+        drop(print("-"));
+    }
+    drop(print(int32_toString(Eint => int32)));
+    drop(print("."));
+    // Zero-pad to 6 digits
+    if (Efrac6 < 100000i64) { drop(print("0")); }
+    if (Efrac6 <  10000i64) { drop(print("0")); }
+    if (Efrac6 <   1000i64) { drop(print("0")); }
+    if (Efrac6 <    100i64) { drop(print("0")); }
+    if (Efrac6 <     10i64) { drop(print("0")); }
+    drop(println(int32_toString(Efrac6 => int32)));
+
+    pass(0i32);
+};

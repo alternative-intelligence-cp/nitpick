@@ -1,0 +1,34 @@
+// probe_flt.aria: test flt64 comparison with negative numbers
+use "../../stdlib/string_convert.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    flt64:a = 0.0 - 5.0;   // -5.0
+    flt64:b = 3.14;
+
+    if (a < 0.0) { drop(println("a < 0: PASS")); }
+    if (a > 0.0) { drop(println("a > 0: FAIL")); }
+    if (b > 0.0) { drop(println("b > 0: PASS")); }
+
+    // Test sign flip
+    flt64:absA = 0.0 - a;
+    if (absA > 4.9 && absA < 5.1) { drop(println("absA ~ 5: PASS")); }
+
+    // Test int cast of flt64 (negative)
+    // a = -5.0, cast to int: should be -5 or 5 after abs?
+    flt64:c = 0.0 - 12.7;
+    flt64:cabs = 0.0 - c;   // 12.7
+    int64:ci = cabs => int64;
+    drop(print("floor(12.7) = "));
+    drop(println(int32_toString(ci => int32)));
+    // Expected: 12
+
+    flt64:frac = (cabs - (ci => flt64)) * 1000000.0;
+    int64:fracI = frac => int64;
+    drop(print("frac6 of 12.7 = "));
+    drop(println(int32_toString(fracI => int32)));
+    // Expected: 700000
+
+    pass(0i32);
+};
