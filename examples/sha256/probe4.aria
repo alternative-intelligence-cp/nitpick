@@ -1,0 +1,14 @@
+use "../../stdlib/string_convert.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    uint32[4]:arr = [0u32, 0u32, 0u32, 0u32];
+    arr[0i64] = 0xDEADBEEFu32;
+    arr[1i64] = 0xCAFEBABEu32;
+    uint32:v0 = arr[0i64];
+    uint32:v1 = arr[1i64];
+    drop(println(int32_toHex(v0 => int32)));
+    drop(println(int32_toHex(v1 => int32)));
+    pass(0i32);
+};

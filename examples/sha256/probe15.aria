@@ -1,0 +1,27 @@
+// probe15.aria: test uint64 type
+use "../../stdlib/string_convert.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    // Test if uint64 type exists and works
+    uint64:a = 0x80000000u64;
+    uint64:b = a + 1u64;
+    drop(print("0x80000000u64 + 1 = "));
+    drop(println(int32_toHex((b & 0xFFFFFFFFu64) => int32)));
+
+    // Test if uint64 right-shift is logical
+    uint64:c = 0x80000000u64;
+    uint64:d = c >> 4u64;
+    drop(print("0x80000000u64 >> 4 = "));
+    drop(println(int32_toHex(d => int32)));
+    // Expected: 0x08000000
+
+    // Test wrapping 32-bit add via uint64
+    uint64:e = (0x5be0cd19u64 + 0x3587272bu64) & 0xFFFFFFFFu64;
+    drop(print("uint64 masked add = "));
+    drop(println(int32_toHex(e => int32)));
+    // Expected: 0x9167f444 (wrapping)
+
+    pass(0i32);
+};

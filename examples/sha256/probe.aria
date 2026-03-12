@@ -1,0 +1,14 @@
+// probe: test uint32 overflow behavior
+
+use "../../stdlib/string_convert.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    uint32:max_val = 0xFFFFFFFFu32;
+    uint32:one = 1u32;
+    uint32:result = max_val + one;
+    int32:r32 = result => int32;
+    drop(println(int32_toString(r32)));
+    pass(0i32);
+};
