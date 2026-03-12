@@ -45,35 +45,23 @@ pub func:clamp_f64 = flt64(flt64:value, flt64:min_val, flt64:max_val) {
     pass(result);
 };
 
-// DISABLED: LLVM 20 instruction selection bug
-// Linear interpolation between two values
-// BUG: LLVM cannot select f64 arithmetic when all operands come from function parameters
-// Error: "Cannot select: f64 = add" in instruction selector
-// Workaround: Use inline math instead: result = a + (b - a) * t;
-// TODO: Re-enable when LLVM bug is fixed or workaround found
-/*
+/// Linear interpolation between two values.
+/// result = a + (b - a) * t, where t=0.0 gives a, t=1.0 gives b.
 pub func:lerp = flt64(flt64:a, flt64:b, flt64:t) {
     flt64:diff = b - a;
     flt64:offset = diff * t;
     flt64:result = a + offset;
     pass(result);
 };
-*/
 
-// DISABLED: LLVM 20 instruction selection bug (same as lerp)
-// Check if two floats are approximately equal (within epsilon)
-// BUG: First line "diff = a - b" triggers same LLVM f64 parameter arithmetic bug
-/*
+/// Check if two floats are approximately equal (within epsilon).
 pub func:approx_equal = bool(flt64:a, flt64:b, flt64:epsilon) {
     flt64:diff = a - b;
     bool:is_neg = (diff < 0.0);
     if (is_neg) {
         diff = 0.0 - diff;
-    } else {
-        diff = diff;
     }
     bool:result = (diff < epsilon);
     pass(result);
 };
-*/
 
