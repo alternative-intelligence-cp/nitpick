@@ -111,7 +111,7 @@ Checking for unknown:
 
 Propagating unknown explicitly:
     func:risky_calc = Result<int32>() {
-        int32:val = divide(10, maybe_zero);
+        int32:val = divide(10, maybe_zero) ? 0;
         if (ok(val) == 0) {
             // Explicitly acknowledge unknown and propagate
             pass(ok(val));  // ok() strips unknown taint
@@ -197,7 +197,7 @@ Scenario 1: Expected error (file not found)
     → Layer 1 handles it (Result<T> + ? operator)
 
 Scenario 2: Unexpected undefined state (division by zero)  
-    int32:result = divide(user_input, 0);
+    int32:result = divide(user_input, 0) ? 0;
     if (ok(result) == 0) {
         stderr.write("Division by zero\n");
         result = 0;
@@ -1045,8 +1045,8 @@ if (key_result.is_error) {
 }
 int1024:key = raw(key_result);
 
-int1024:encrypted = modular_pow(plaintext, public_exp, key);
-int1024:decrypted = modular_pow(encrypted, private_exp, key);
+int1024:encrypted = modular_pow(plaintext, public_exp, key)?!;
+int1024:decrypted = modular_pow(encrypted, private_exp, key)?!;
 
 ═════════════════════════════════════════════════════════════════════════════
 TYPE: int2048 / uint2048 (LBIM - 2048-bit Quantum-Resistant)
@@ -1130,11 +1130,8 @@ Performance Notes:
 - These are for CRYPTOGRAPHY, not general arithmetic
 
 Example - RSA-16384 Key Generation:
-int4096:p = generate_safe_prime_4096();
-int4096:q = generate_safe_prime_4096();
-if (p == ERR || q == ERR) {
-    fail(ERR_KEYGEN);
-}
+int4096:p = generate_safe_prime_4096()?!;  // failsafe() called if prime generation fails
+int4096:q = generate_safe_prime_4096()?!;
 int4096:n = p * q;  // 4096-bit modulus
 int4096:phi = (p - 1) * (q - 1);
 // ... remainder of RSA key generation
@@ -1255,23 +1252,13 @@ fix256:velocity = fix256(10); // 10 units/sec
 fix256:dt = fix256(1);        // 1 second timestep
 
 for (int32:i = 0; i < 1000; i++) {
-    fix256:delta = aria_fix256_mul(velocity, dt);
-    position = aria_fix256_add(position, delta);
-    if (position == ERR) {
-        stderr.write("Position calculation error - EMERGENCY STOP\n");
-        robot.emergency_stop();
-        fail(-1);
-    }
+    fix256:delta = aria_fix256_mul(velocity, dt)?!;
+    position = aria_fix256_add(position, delta)?!;  // failsafe() halts on physics corruption
 }
 
 // Physics simulation (consciousness substrate)
-fix256:force = calculate_force(particle_a, particle_b);
-fix256:acceleration = aria_fix256_div(force, mass);
-if (acceleration == ERR) {
-    stderr.write("Physics corruption detected - HALT SIMULATION\n");
-    // ERR prevents corrupted physics from propagating
-    halt_consciousness_substrate();
-}
+fix256:force = calculate_force(particle_a, particle_b)?!;
+fix256:acceleration = aria_fix256_div(force, mass)?!;  // failsafe() halts simulation on physics error
 
 Implementation Status (Phase 5.3 - February 2026):
 ✅ Signed multiplication with negative values (Phase 5.2 complete)
@@ -1655,7 +1642,7 @@ func:propagate_wave = result<wavefunction>(wavefunction:psi, fix256<Seconds>:dt)
     ensures result.energy() == psi.energy()  // Energy conserved (exact for deterministic fix256)
 {
     // Wave propagation using UFIE
-    wavefunction:evolved = ufie_step(psi, dt);
+    wavefunction:evolved = ufie_step(psi, dt)?!;
     pass(evolved);
 }
 
@@ -3110,8 +3097,8 @@ func<T>:add = *T(*T:a, *T:b) {
     pass(a + b);
 };
 
-int32:x = add(5, 10);
-flt64:y = add(3.14, 2.71);
+int32:x = add(5, 10) ? 0;
+flt64:y = add(3.14, 2.71) ? 0.0;
 
 Compiler generates (conceptually):
 func:add_int32 = int32(int32:a, int32:b) {
@@ -3201,7 +3188,7 @@ Zero runtime overhead:
 
 Example:
 func<T>:add = *T(*T:a, *T:b) { pass(a + b); };
-int32:x = add(5, 10);
+int32:x = add(5, 10) ? 0;
 
 Assembly (x86-64):
   mov eax, 5
@@ -3253,7 +3240,7 @@ func:common_logic = int64(void*:data, int64:size) {
 
 func<T>:process = *T(*T:value) {
     // 20 lines of type-specific code
-    int64:result = common_logic(@value, sizeof(*T));
+    int64:result = common_logic(@value, sizeof(*T)) ? 0;
     pass(value);
 };
 
@@ -3546,7 +3533,7 @@ CLOSURES AS FUNCTION PARAMETERS:
 Passing closures to higher-order functions:
 
 func:apply_twice = int32((int32)(int32):f, int32:x) {
-    int32:temp = f(x);
+    int32:temp = f(x) ? 0;
     pass(f(temp));
 };
 
@@ -3554,7 +3541,7 @@ func:apply_twice = int32((int32)(int32):f, int32:x) {
 int32:result = apply_twice(
     int32(int32:n) { pass(n * 2); },
     5
-);  // result = 20 (5 * 2 = 10, 10 * 2 = 20)
+) ? 0;  // result = 20 (5 * 2 = 10, 10 * 2 = 20)
 
 // Pass named function
 (int32)(int32):square = int32(int32:x) { pass(x * x); };
@@ -4071,9 +4058,9 @@ func:critical_operation = Result<NIL>() {
 
 Performance timing:
 func:timed_operation = Result<int32>() {
-    int64:start_time = get_time_usec();
+    int64:start_time = get_time_usec()?!;
     defer {
-        int64:end_time = get_time_usec();
+        int64:end_time = get_time_usec()?!;
         int64:duration = end_time - start_time;
         println(`Operation took &{duration} microseconds`);
     };
@@ -4462,21 +4449,21 @@ pick(c){
     }
 }
 
-result:r;
+result<int8>:r;
 int8:t;
 int8:closureTest = 2;
 func:test = int8(int8:a,int8:b){
     pass(a*b*closureTest);
 };
 r=test(3,4);
-t = is r.err == NULL : r.val : -1; //t should be 24 if closure worked
+t = !r.is_error ? raw(r) : -1i8; //t should be 24 if closure worked
 func:test2 = int8(func:tt,int8:a,int8:b){
-    result:res = tt(a,b);
-    pass(res.val);
+    int8:res = tt(a,b) ? -1i8;
+    pass(res);
 };
 r=test2(test,3,4);
-t = is r.err == NULL :r.val : -1; //t should be 24 if closure worked
-t = test2(test,3,5) ? -1; //use unwrap operator to avoid above
+t = !r.is_error ? raw(r) : -1i8; //t should be 24 if closure worked
+t = test2(test,3,5) ? -1i8; //use unwrap operator to avoid above
 
 dyn:d = "bob";
 d = 4; 
@@ -4856,7 +4843,7 @@ func:failsafe = void(int32:err_code) {
 Production (logging + cleanup):
 func:failsafe = void(int32:err_code) {
     // Log error
-    Logger:log = get_logger();
+    Logger:log = get_logger()?!;
     log.critical(`Failsafe triggered: code &{err_code}`);
     log.flush();
     
@@ -5062,7 +5049,7 @@ func:system_startup = void() {
 Nikola AGI consciousness validation:
 func:validate_consciousness_state = void() {
     // Quantum wavefunction must be normalized
-    fix256:norm = compute_wavefunction_norm();
+    fix256:norm = compute_wavefunction_norm()?!;
     fix256:expected = 1.0fix256;
     fix256:tolerance = 0.0001fix256;
     
@@ -5240,7 +5227,7 @@ Example:
 mod crypto {
     pub func:hash = string(string:input) {
         // Public - can be called from outside
-        string:hashed = internal_sha256(input);
+        string:hashed = internal_sha256(input)?!;
         pass(hashed);
     };
     
@@ -5317,9 +5304,9 @@ use crypto.hash;
 use utils.string.trim;
 
 func:main = int32() {
-    string:data = http_get("https://api.example.com");
-    string:trimmed = trim(data);
-    string:hashed = hash(trimmed);
+    string:data = http_get("https://api.example.com") ? "";
+    string:trimmed = trim(data) ? "";
+    string:hashed = hash(trimmed) ? "";
     pass(0);
 };
 
@@ -6016,7 +6003,7 @@ func:&{name} = &{returnType}(&{params}) {
 `);
 };
 
-string:code = generate_function("compute", "int32", "int32:x, int32:y");
+string:code = generate_function("compute", "int32", "int32:x, int32:y") ? "";
 
 ---
 
@@ -6276,15 +6263,15 @@ while(string:line = input.readLine() ?? NULL) {
 input.close();
 
 // WRITE OPERATIONS WITH ERROR CHECKING
-result:write_result = writeFile("output.txt", content);
-if (write_result.err != NULL) {
+Result<NIL>:write_result = writeFile("output.txt", content);
+if (write_result.is_error) {
     stderr.write(`Failed to write file: &{write_result.err}`);
 }
 
 // PROCESS MANAGEMENT WITH ERROR HANDLING (system integration critical)
-result:child = spawn("./worker", ["--input", "data.txt"]);
-if (child.err == NULL) {
-    process:proc = child.val;
+Result<process>:child = spawn("./worker", ["--input", "data.txt"]);
+if (!child.is_error) {
+    process:proc = raw(child);
     int:exit_code = proc.wait();
     print(`Worker finished with code: &{exit_code}`);
 } else {
@@ -6292,17 +6279,17 @@ if (child.err == NULL) {
 }
 
 // ASYNC PROCESS MANAGEMENT
-result:background = spawn("./server", ["--port", "8080"]);
-if (background.err == NULL) {
-    process:proc = background.val;
+Result<process>:background = spawn("./server", ["--port", "8080"]);
+if (!background.is_error) {
+    process:proc = raw(background);
     print(`Server PID: &{proc.pid}`);
     // Don't wait, let it run
 }
 
 // FORK WITH ERROR CHECKING
-result:fork_result = fork();
-if (fork_result.err == NULL) {
-    obj:fork_info = fork_result.val;
+Result<obj>:fork_result = fork();
+if (!fork_result.is_error) {
+    obj:fork_info = raw(fork_result);
     if (fork_info.is_child) {
         // Child process
         exec("./child_program", ["arg1"]);
@@ -6402,10 +6389,10 @@ gc array:managed_array = aria.gc_alloc_array<int32>(size);
 stack int64[1000]:stack_buffer; // Fixed-size stack allocation
 stack string[256]:temp_string;   // Stack string buffer
 
-// ADVANCED ERROR HANDLING (result type with err/val pattern)
-result:calculation = divide(10, 0);
-if (calculation.err == NULL) {
-    print(`Result: &{calculation.val}`);
+// ADVANCED ERROR HANDLING (result type with is_error pattern)
+Result<int32>:calculation = divide(10, 0);
+if (!calculation.is_error) {
+    print(`Result: &{raw(calculation)}`);
 } else {
     stderr.write(`Error: &{calculation.err}`);
     return -1;
@@ -6413,18 +6400,18 @@ if (calculation.err == NULL) {
 
 // ASYNC/AWAIT PATTERNS (essential for modern apps)
 async func:fetchData = obj(string:url) {
-    result:response = await httpGet(url);
-    if (response.err == NULL) {
-        pass(response.val.json());  // pass() for success
+    Result<obj>:response = await httpGet(url);
+    if (!response.is_error) {
+        pass(raw(response).json());  // pass() for success
     } else {
         fail(response.err);  // fail() for error
     }
 };
 
 async {
-    result:data = await fetchData("https://api.example.com/users");
-    if (data.err == NULL) {
-        print(`Got &{data.val.length} users`);
+    Result<obj>:data = await fetchData("https://api.example.com/users");
+    if (!data.is_error) {
+        print(`Got &{raw(data).length} users`);
     } else {
         stderr.write(`Fetch failed: &{data.err}`);
     }
@@ -6438,14 +6425,13 @@ async {
 //   func:name = returnType(type:arg, type:arg) { body };
 //
 // Anonymous with immediate execution (assigned to result-type variable):
-//   result:r = returnType(type:arg, type:arg) { body }(arg, arg);
+//   result<T>:r = returnType(type:arg, type:arg) { body }(arg, arg);
 //   // Immediate execution () is REQUIRED when assigning to non-func variable
 //   // Otherwise you'd assign the function itself (type mismatch)
 //
-// CRITICAL: ALL functions return result type {err, val}
-//   pass(value) → syntactic sugar for return {err: NULL, val: value}
-//   fail(code)  → syntactic sugar for return {err: code, val: NULL}
-//   return {err: ..., val: ...} → explicit result object (verbose form)
+// CRITICAL: ALL functions return result type {value: T, err: void*, is_error: bool}
+//   pass(value) → syntactic sugar for return result with value and is_error=false
+//   fail(code)  → syntactic sugar for return result with err and is_error=true
 //
 // Examples:
 //   func:add = int8(int8:a, int8:b) { pass(a + b); };          // Named function
@@ -6456,11 +6442,11 @@ async {
 // LAMBDAS AS ARGUMENTS (JS-style callbacks):
 //   // Function that takes a func parameter
 //   func:processValues = int8(func:operation, int8:a, int8:b) {
-//       result:r = operation(a, b);
-//       pass(r.val);  // Unwrap and re-pass
+//       int8:r = operation(a, b) ? -1i8;
+//       pass(r);  // Re-pass
 //   };
 //   // Call with inline anonymous lambda
-//   result:r = processValues(
+//   Result<int8>:r = processValues(
 //       int8(int8:x, int8:y) { pass(x * y); },  // Lambda passed as argument
 //       4, 5
 //   );
@@ -6469,7 +6455,7 @@ async {
 // LAMBDA + IMMEDIATE EXECUTION + UNWRAP (composable features):
 //   // Lambda returns result, executed immediately, unwrapped with ?
 //   func:test = int8(int8:a, int8:b) { pass(a+b); };
-//   result:r = test(
+//   Result<int8>:r = test(
 //       int8(int8:x, int8:y) { pass(x*y); }(4, 5) ? 0,  // Execute & unwrap = 20
 //       12
 //   );  // Passes unwrapped value 20 and 12 to test()
@@ -6594,12 +6580,11 @@ OPERATOR DETAILS:
    - Example: string:name = getUserName() ? "Guest";
 
 ?! (Emphatic Unwrap Operator):
-   - Syntax: optional_value ?! default
-            result_value ?! default
-   - Returns: value if present/success, default otherwise
+   - Syntax: result_value?!
+   - Returns: value on success; calls failsafe(err_code) on failure
    - Side effect: Calls failsafe(err_code) on failure
-   - Use case: Expected success, but need fallback + notification
-   - Example: config:cfg = loadConfig() ?! defaultConfig();
+   - Use case: Expected success — failure is unrecoverable, must call failsafe
+   - Example: Config:cfg = loadConfig()?!;  // failsafe fires if config load fails
    - Note: Origin story - agent misunderstood "unwrap with failsafe" as needing
            either failsafe() function OR ?! operator. User said "it turned out
            great. We did both." - happy accident of redundant safety!
@@ -6647,12 +6632,12 @@ OPERATOR DETAILS:
 
 RESULT vs OPTIONAL vs NIL vs NULL:
 
-Result<T>:   {err: int32*, val: T} - Function return type with error code
+Result<T>:   {value: T, err: void*, is_error: bool} - Function return type with error code
    - Purpose: Represent success or failure from operations
-   - Fields: err (NULL on success, error code on failure)
-             val (value on success, undefined on failure)
-   - Example: result:r = divide(10, 2);
-              if (r.err == NULL) { use r.val; }
+   - Fields: is_error (true on failure), err (error info on failure, NULL on success)
+             value accessed via raw() on success
+   - Example: result<int32>:r = divide(10, 2);
+              if (!r.is_error) { use raw(r); }
 
 Optional<T>:  T? - May or may not have a value
    - Purpose: Represent presence/absence of value (not an error)
@@ -6702,8 +6687,8 @@ ERROR HANDLING PHILOSOPHIES:
 3. Explicit Handling (use Result pattern):
    - For operations where error details matter
    - Example:
-       result:r = parseJSON(data);
-       if (r.err != NULL) {
+       result<obj>:r = parseJSON(data);
+       if (r.is_error) {
            stderr.write(`Parse error: &{r.err}`);
            return r.err;
        }
