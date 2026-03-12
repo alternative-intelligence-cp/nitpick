@@ -180,7 +180,7 @@ func:fetch_data = NIL(
     if result.is_error then
         on_error(result.err)?;
     else
-        on_success(result.val)?;
+        on_success(raw(result))?;
     end
     
     pass(NIL);

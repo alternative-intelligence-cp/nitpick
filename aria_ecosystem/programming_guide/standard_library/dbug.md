@@ -99,7 +99,7 @@ Check if a group is currently active.
 ```aria
 if (dbug_is_enabled("network")) {
     // Expensive debug computation only when needed
-    string:stats = calculate_network_stats();
+    string:stats = calculate_network_stats() ? "";
     dbug_print("network", stats);
 }
 ```
@@ -758,7 +758,7 @@ dbug_enable("stats");
 
 int32:i = 0;
 while (i < 50) {
-    bool:success = attempt_operation();
+    bool:success = attempt_operation() ? false;
     
     if (success) {
         dbug_count("stats", "successes");
@@ -782,7 +782,7 @@ dbug_count_show("stats", "total_attempts");
 dbug_enable("stats");
 
 while (process_events()) {
-    string:event_type = get_next_event_type();
+    string:event_type = get_next_event_type() ? "";
     
     if (event_type == "click") {
         dbug_count("stats", "clicks");
@@ -888,7 +888,7 @@ func:parse_expression = result<AST>(TokenStream:tokens) {
     dbug_check("parser", "AST root must exist", tree.root != NULL);
     
     dbug_print("parser", "Type checking");
-    bool:valid = type_check(tree);
+    bool:valid = type_check(tree) ? false;
     dbug_warn("parser", "Type check should succeed", valid);
     
     dbug_exit("parser", "parse_expression");
@@ -906,7 +906,7 @@ func:cache_lookup = result<string>(string:key) {
     dbug_print_labeled("cache", "Key", key);
     
     // Check for hit
-    bool:hit = check_cache(key);
+    bool:hit = check_cache(key) ? false;
     
     if (hit) {
         dbug_print("cache", "✓ Cache HIT");
@@ -947,7 +947,7 @@ func:batch_processor = void() {
     drop(println("Starting batch file processor..."));
     
     // Time the entire batch
-    int64:total_time = dbug_time_start("batch", "Batch processing");
+    int64:total_time = dbug_time_start("batch", "Batch processing") ? 0;
     
     // Process 100 files
     int32:i = 0;

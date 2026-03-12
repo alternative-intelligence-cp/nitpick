@@ -125,9 +125,9 @@ int64:value = data?.matrix?[0]?[1] ?? 0;
 obj?:service = getService();
 
 // Call method only if service exists
-Result:r = service?.connect("localhost", 8080);
+result<Connection>:r = service?.connect("localhost", 8080);
 
-if (r?.err == NULL) {
+if (!r?.is_error) {
     print("Connected!");
 }
 ```
@@ -380,13 +380,13 @@ value = step2?.f?.g ?? default;
 Result<obj>:r = fetchUser();
 
 // Check for error first
-if (r.err != NULL) {
+if (r.is_error) {
     stderr.write(`Error: &{r.err}`);
     fail(1);
 }
 
 // Then use safe navigation on success value
-string:name = r.val?.profile?.name ?? "Unknown";
+string:name = raw(r)?.profile?.name ?? "Unknown";
 ```
 
 ### Logging Failed Chains

@@ -2810,7 +2810,7 @@ Result<Config>:result = read_config("config.toml");
 if (result.is_error) {
     stderr.write(`Failed: &{result.err}\n`);
 } else {
-    use_config(result.val);
+    use_config(raw(result));
 }
 ```
 

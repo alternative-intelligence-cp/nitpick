@@ -106,7 +106,8 @@ string:str = identity<string>("test") ? ""; // str = "test"
 |--------|---------------|-------------------|
 | Purpose | Success return | Error return |
 | `result.err` | `NULL` | Error code |
-| `result.val` | Provided value | `NULL` |
+| `result.is_error` | `false` | `true` |
+| Value access | `raw(result)` | N/A (error state) |
 | Unwrap behavior | Returns value | Returns default or panics |
 
 ### Example Showing Both
@@ -141,9 +142,9 @@ func:getValue = Result<int8>() {
     pass(42);
 };
 
-Result:r = getValue();
-// r.err == NULL, r.val == 42
-int8:x = r ? 0;  // x = 42 (unwraps r.val)
+result<int8>:r = getValue();
+// r.is_error == false
+int8:x = r ? 0;  // x = 42 (unwraps raw(r))
 ```
 
 ---

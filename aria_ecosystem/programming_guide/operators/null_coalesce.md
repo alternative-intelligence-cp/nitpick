@@ -180,14 +180,14 @@ Combine with result unwrapping:
 
 ```aria
 // Get result value or default
-int64:value = computeValue() ? 0;  // Uses ?? internally
+int64:value = computeValue() ? 0;  // Unwrap with default
 
 // Explicitly
-Result<int64>:r = computeValue();
-int64:value = (r.err == NULL) is r.val : 0;
+result<int64>:r = computeValue();
+int64:value = !r.is_error ? raw(r) : 0;
 
-// With ??
-int64:value = r.val ?? 0;  // Simpler (if val is optional)
+// With ? operator (preferred)
+int64:value = r ? 0;  // Unwrap with default
 ```
 
 ---
@@ -371,14 +371,14 @@ if (r.err != NULL) {
 }
 
 // Use ?? on success value
-string:name = r.val?.name ?? "Unknown";
+string:name = raw(r)?.name ?? "Unknown";
 ```
 
 ### Providing Error Defaults
 
 ```aria
 // Get value or log error and use default
-obj:data = fetchData().val ?? {
+obj:data = fetchData() ? {
     stderr.write("Failed to fetch data, using default");
     pass(defaultData);
 };

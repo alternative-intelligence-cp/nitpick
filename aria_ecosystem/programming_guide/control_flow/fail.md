@@ -116,8 +116,8 @@ func:getValue = Result<int8>() {
     fail(404);
 };
 
-Result:r = getValue();
-// r.err == 404, r.val == NULL
+result<int8>:r = getValue();
+// r.is_error == true, r.err == 404
 int8:x = r ? 0;  // x = 0 (error occurred, uses default)
 ```
 
@@ -127,11 +127,11 @@ int8:x = r ? 0;  // x = 0 (error occurred, uses default)
 
 ### Explicit Error Checking
 ```aria
-Result:r = someFunction();
-if (r.err != NULL) {
+result<T>:r = someFunction();
+if (r.is_error) {
     stderr.write(`Error occurred: &{r.err}`);
 } else {
-    print(`Success: &{r.val}`);
+    print(`Success: &{raw(r)}`);
 }
 ```
 
@@ -139,7 +139,7 @@ if (r.err != NULL) {
 ```aria
 int8:value = someFunction() ? 0;
 // If error: value = 0 (default)
-// If success: value = r.val
+// If success: value = raw(r)
 ```
 
 ### Early Return Pattern
@@ -173,11 +173,11 @@ func:readAndParse = Result<obj>(string:filename) {
 Or propagate the exact error:
 ```aria
 func:wrapper = Result<string>(string:file) {
-    Result:r = readFile(file);
-    if (r.err != NULL) {
+    result<string>:r = readFile(file);
+    if (r.is_error) {
         fail(r.err);  // Propagate exact error code
     }
-    pass(r.val);
+    pass(raw(r));
 };
 ```
 
@@ -229,7 +229,8 @@ int8:value = maybeGet<int8>([1, 2, 3], 5) ? 0;  // value = 0 (error)
 |--------|-------------------|---------------|
 | Purpose | Error return | Success return |
 | `result.err` | Error code | `NULL` |
-| `result.val` | `NULL` | Provided value |
+| `result.is_error` | `true` | `false` |
+| Value access | N/A (error state) | `raw(result)` |
 | Unwrap behavior | Returns default or panics | Returns value |
 | When to use | Validation fails, operation impossible | Operation succeeded |
 
@@ -250,14 +251,14 @@ func:processData = Result<int8>(string:data) {
 ### 2. Try Multiple Approaches
 ```aria
 func:loadConfig = Result<string>() {
-    Result:primary = readFile("config.json");
-    if (primary.err == NULL) {
-        pass(primary.val);
+    result<string>:primary = readFile("config.json");
+    if (!primary.is_error) {
+        pass(raw(primary));
     }
     
-    Result:backup = readFile("config.default.json");
-    if (backup.err == NULL) {
-        pass(backup.val);
+    result<string>:backup = readFile("config.default.json");
+    if (!backup.is_error) {
+        pass(raw(backup));
     }
     
     fail(1);  // Both failed
@@ -269,8 +270,8 @@ func:loadConfig = Result<string>() {
 func:validateAll = Result<array>(array:items) {
     array:errors = [];
     for (int8:i = 0; i < items.length; i += 1) {
-        Result:r = validate(items[i]);
-        if (r.err != NULL) {
+        result<bool>:r = validate(items[i]);
+        if (r.is_error) {
             errors[errors.length] = r.err;
         }
     }
@@ -342,13 +343,13 @@ func:criticalOperation = Result<int8>(string:input) {
         fail(1);
     }
     
-    Result:r = dangerousOperation(input);
-    if (r.err != NULL) {
+    result<int8>:r = dangerousOperation(input);
+    if (r.is_error) {
         stderr.write(`ERROR: Operation failed with code &{r.err}`);
         fail(2);
     }
     
-    pass(r.val);
+    pass(raw(r));
 };
 ```
 

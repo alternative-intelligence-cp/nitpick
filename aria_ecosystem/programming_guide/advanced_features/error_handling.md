@@ -26,7 +26,7 @@ Result<Config, string>:result = read_config("config.toml");
 if result.err != NULL then
     stderr.write("Failed to load config: {}\n", result.err);
 else
-    use_config(result.val);
+    use_config(raw(result));
 end
 ```
 
@@ -76,19 +76,19 @@ func:load_user_data = Result<UserData, string>(int32:user_id) {
     if user_result.err != NULL then
         fail("Failed to fetch user " + string(user_id));
     end
-    User:user = user_result.val;
+    User:user = raw(user_result);
     
     Result<Profile, AppError>:profile_result = fetch_profile(user_id);
     if profile_result.err != NULL then
         fail("Failed to fetch profile for user " + string(user_id));
     end
-    Profile:profile = profile_result.val;
+    Profile:profile = raw(profile_result);
     
     Result<Post[], AppError>:posts_result = fetch_posts(user_id);
     if posts_result.err != NULL then
         fail("Failed to fetch posts for user " + string(user_id));
     end
-    Post[]:posts = posts_result.val;
+    Post[]:posts = raw(posts_result);
     
     pass(UserData{ user, profile, posts });
 };
@@ -132,17 +132,17 @@ func:validate_user = Result<nil, string>(User:user) {
 func:fetch_with_fallback = Result<Data, string>(string:url) {
     // Try primary source
     Result<Data, string>:primary = fetch_from_primary(url);
-    if primary.err == NULL then
-        pass(primary.val);
-    end
+    if (!primary.is_error) {
+        pass(raw(primary));
+    }
     
     stdout.write("Primary failed: {}, trying backup...\n", primary.err);
     
     // Try backup source
     Result<Data, string>:backup = fetch_from_backup(url);
-    if backup.err == NULL then
-        pass(backup.val);
-    end
+    if (!backup.is_error) {
+        pass(raw(backup));
+    }
     
     stderr.write("Backup also failed: {}\n", backup.err);
     
@@ -166,9 +166,9 @@ func:fetch_with_retry = Result<Data, string>(string:url, int32:max_retries) {
     
     loop
         Result<Data, string>:result = fetch(url);
-        if result.err == NULL then
-            pass(result.val);
-        end
+        if (!result.is_error) {
+            pass(raw(result));
+        }
         
         retries = retries + 1;
         
@@ -204,17 +204,17 @@ impl From<ParseError> for AppError {
 func:process = Result<Data, AppError>() {
     // Explicit error handling
     Result<string, IoError>:file_result = readFile("data.txt");
-    if file_result.err != NULL then
+    if (file_result.is_error) {
         fail(AppError.IO(file_result.err.to_string()));
-    end
-    string:content = file_result.val;
+    }
+    string:content = raw(file_result);
     
     Result<Data, ParseError>:parse_result = parse(content);
-    if parse_result.err != NULL then
+    if (parse_result.is_error) {
         fail(AppError.Parse(parse_result.err.to_string()));
-    end
+    }
     
-    pass(parse_result.val);
+    pass(raw(parse_result));
 };
 ```
 
@@ -226,17 +226,17 @@ func:process = Result<Data, AppError>() {
 // ✅ Use Result for expected errors
 func:read_user_input = Result<int32, string>() {
     Result<string, string>:line_result = stdin.read_line();
-    if line_result.err != NULL then
+    if (line_result.is_error) {
         fail(line_result.err);
-    end
-    string:input = line_result.val;
+    }
+    string:input = raw(line_result);
     
     Result<int32, string>:parse_result = input.parse();
-    if parse_result.err != NULL then
+    if (parse_result.is_error) {
         fail("Invalid number");
-    end
+    }
     
-    pass(parse_result.val);
+    pass(raw(parse_result));
 };
 
 // ✅ Use panic for programming errors
@@ -261,14 +261,14 @@ func:process_array = (int32[]:arr, int32:index) {
 ```aria
 func:process_with_logging = Result<nil, string>() {
     Result<string, string>:result = risky_operation();
-    if result.err == NULL then
-        log_info("Operation succeeded: " + result.val);
+    if (!result.is_error) {
+        log_info("Operation succeeded: " + raw(result));
         pass(nil);
-    else
+    } else {
         log_error("Operation failed: " + result.err);
         log_debug("Stack trace: " + result.err.backtrace);
         fail(result.err);
-    end
+    }
 };
 ```
 
@@ -314,10 +314,10 @@ func:validate_email = Result<nil, string>(string:email) {
 ```aria
 func:parse_number = Result<int32, string>(string:s) {
     Result<int32, string>:result = s.parse();
-    if result.err != NULL then
+    if (result.is_error) {
         fail("Invalid number format");
-    end
-    pass(result.val);
+    }
+    pass(raw(result));
 };
 ```
 
@@ -326,10 +326,10 @@ func:parse_number = Result<int32, string>(string:s) {
 ```aria
 func:load_data = Result<Data, string>(int32:id) {
     Result<Data, string>:result = fetch(id);
-    if result.err != NULL then
+    if (result.is_error) {
         fail("Failed to load data for ID " + string(id) + ": " + result.err);
-    end
-    pass(result.val);
+    }
+    pass(raw(result));
 };
 ```
 
@@ -344,11 +344,11 @@ func:read_file = Result<string, string>(string:path) {
 // High-level: handle
 func:main = int32() {
     Result<string, string>:file_result = read_file("config.toml");
-    if file_result.err != NULL then
+    if (file_result.is_error) {
         stderr.write("Fatal error: {}\n", file_result.err);
         exit(1);
-    end
-    process(file_result.val);
+    }
+    process(raw(file_result));
     pass(0);
 };
 ```
@@ -401,9 +401,9 @@ async func:resilient_fetch = Result<Data, string>(string:url) {
         int32:attempt = $ + 1;
         Result<Data, string>:result = await fetch(url);
         
-        if result.err == NULL then
-            pass(result.val);
-        end
+        if (!result.is_error) {
+            pass(raw(result));
+        }
         
         if attempt < 3 then
             await sleep(1000 * attempt);
@@ -430,16 +430,16 @@ impl CircuitBreaker {
         end
         
         Result<T, string>:result = f();
-        if result.err == NULL then
+        if (!result.is_error) {
             self.failures = 0;
-            pass(result.val);
-        else
+            pass(raw(result));
+        } else {
             self.failures = self.failures + 1;
-            if self.failures >= self.threshold then
+            if (self.failures >= self.threshold) {
                 self.open = true;
-            end
+            }
             fail(result.err);
-        end
+        }
     };
 }
 ```
@@ -465,7 +465,7 @@ Using them means **you accept responsibility** for correctness at that call site
 | `unsafe {}` | Block of raw pointer ops / weak memory orderings |
 | `ok(v)` | Acknowledge unknown value, strip taint, continue |
 | `drop(expr)` | Evaluate expr for side effects, discard Result without checking |
-| `raw(result)` | Extract `Result<T>.val` without `is_error` check |
+| `raw(result)` | Extract `Result<T>` value without `is_error` check |
 | `?` | Unwrap with default value (safe — provides fallback) |
 | `??` | Null-coalescing for NIL optionals (safe — provides fallback) |
 | `?!` | Emphatic unwrap — triggers `failsafe()` on error |
@@ -524,10 +524,10 @@ drop(println("debug: entering loop"));  // cosmetic output
 **Status**: ✅ Implemented (March 2026)
 
 ```aria
-T:x = raw(result_expr);  // extract .val without is_error check
+T:x = raw(result_expr);  // extract value without is_error check
 ```
 
-`raw()` extracts the `.val` field from a `Result<T>` unconditionally.
+`raw()` extracts the value from a `Result<T>` unconditionally.
 The `is_error` flag is **not** checked. If the Result is an error, you get back the
 ERR sentinel for that type (e.g. `0x80000000` for `tbb32`, undefined for `int32`).
 

@@ -129,7 +129,7 @@ extern "libc" {
 
 // Calling C void functions
 // (internally translated to result type with NIL)
-Result:r = exit(0);  // r.val is NIL, r.err is NULL
+result<NIL>:r = exit(0);  // r.is_error == false if successful
 
 // C-style pointers in extern blocks
 extern "mylib" {
@@ -273,7 +273,7 @@ extern "libc" {
 wild int64@:ptr = aria.alloc<int64>(100);
 if (ptr != NULL) {
     // Use ptr...
-    Result:r = free(ptr);  // r.val is NIL
+    result<NIL>:r = free(ptr);  // r is a NIL result
 }
 ```
 
@@ -329,7 +329,7 @@ extern "libc" {
 }
 
 // When calling C void functions, Aria internally returns result with NIL
-Result:r = exit(0);  // r.val is NIL, r.err is NULL (if no error)
+result<NIL>:r = exit(0);  // r.is_error == false if successful
 ```
 
 ---

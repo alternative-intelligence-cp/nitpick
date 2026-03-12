@@ -115,11 +115,11 @@ Combine for powerful optional handling:
 
 ```aria
 // Get value from result, or use ternary for default based on error
-Result<int64>:r = compute();
-int64:value = is r.err == NULL : r.val : is r.err == 1 : 0 : -1;
+result<int64>:r = compute();
+int64:value = !r.is_error ? raw(r) : (r.err == 1 ? 0 : -1);
 
-// Simpler with ??
-int64:value = r.val ?? 0;  // Often clearer for simple NIL checks
+// Simpler with ? operator
+int64:value = r ? 0;  // Unwrap with default
 ```
 
 ---
@@ -178,11 +178,11 @@ bool:toggled = !current;
 Result<int64>:r = compute();
 
 // Extract value or default based on error
-int64:value = is r.err == NULL : r.val : -1;
+int64:value = r ? -1;
 
-// More complex error handling
-string:message = is r.err == NULL :
-    `Success: &{r.val}` :
+// More complex error handling  
+string:message = !r.is_error ?
+    `Success: &{raw(r)}` :
     `Error &{r.err}: &{getErrorMessage(r.err)}`;
 ```
 
@@ -466,13 +466,12 @@ let value = if condition { trueVal } else { falseVal };
 ### With Unwrap (`?`)
 
 ```aria
-// Unwrap result with ternary fallback
-int64:value = is computeValue().err == NULL :
-    computeValue().val :
-    defaultValue;
-
-// Or using ? operator (simpler)
+// Unwrap result with ternary fallback — use ? operator instead
 int64:value = computeValue() ? defaultValue;
+
+// Or with explicit check:
+result<int64>:r = computeValue();
+int64:value = !r.is_error ? raw(r) : defaultValue;
 ```
 
 ### With Pipeline (`|>`)

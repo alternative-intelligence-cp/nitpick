@@ -8,28 +8,29 @@
 
 ## Overview
 
-The unwrap operator (`?`) is Aria's primary mechanism for concise error handling. It operates on the `result` type, which is returned by all functions and contains two fields:
-- `err` - Error code (NULL if successful)
-- `val` - Return value (NULL if error occurred)
+The unwrap operator (`?`) is Aria's primary mechanism for concise error handling. It operates on the `result` type, which is returned by all functions. To work with a `result`:
+- `r.is_error` - `true` if an error occurred, `false` on success
+- `r.err` - Error code (when `r.is_error` is true)
+- `raw(r)` - Extract the value (after verifying `!r.is_error`)
 
 The `?` operator provides two modes:
-1. **Panic mode**: `expr ?` - Extract value or panic if error exists
+1. **Propagation mode**: `expr ?` - Propagate error to caller (only valid inside result-returning functions)
 2. **Default mode**: `expr ? default` - Extract value or use default if error exists
 
 ---
 
 ## Syntax Forms
 
-### Basic Unwrap (Panic on Error)
+### Basic Unwrap (Propagation Mode)
 ```aria
-Result:r = someFunction();
-type:value = r ?;  // Panics if r.err != NULL
+result<T>:r = someFunction();
+type:value = r ?;  // Propagates error if r.is_error (inside result-returning functions)
 ```
 
 ### Unwrap with Default
 ```aria
-Result:r = someFunction();
-type:value = r ? defaultValue;  // Returns defaultValue if r.err != NULL
+result<T>:r = someFunction();
+type:value = r ? defaultValue;  // Returns defaultValue if r.is_error
 ```
 
 ### Inline Unwrap
@@ -43,21 +44,21 @@ string:text = readFile("config.txt") ? "default config";
 
 ## How It Works
 
-The unwrap operator checks the `err` field of a `result`:
+The unwrap operator checks the `is_error` field of a `result`:
 
 ```aria
 // Conceptually equivalent to:
-Result:r = someFunction();
-type:value = is r.err == NULL : r.val : defaultValue;
+result<T>:r = someFunction();
+type:value = r ? defaultValue;
 ```
 
 **With default value**:
-- If `r.err == NULL`: Returns `r.val` (success case)
-- If `r.err != NULL`: Returns the default value (error case)
+- If `!r.is_error`: Returns `raw(r)` (success case)
+- If `r.is_error`: Returns the default value (error case)
 
-**Without default value** (panic mode):
-- If `r.err == NULL`: Returns `r.val`
-- If `r.err != NULL`: Program panics with error information
+**Without default value** (propagation mode):
+- If `!r.is_error`: Returns `raw(r)`
+- If `r.is_error`: Propagates error to caller (must be inside a result-returning function)
 
 ---
 
@@ -117,7 +118,7 @@ string:str = identity<string>("test") ? ""; // str = "test"
 ```aria
 // Lambda returns result, execute immediately, unwrap result
 func:test = int8(int8:a, int8:b) { pass(a + b); };
-Result:r = test(
+result<int8>:r = test(
     int8(int8:x, int8:y) { pass(x * y); }(4, 5) ? 0,  // Execute & unwrap = 20
     12
 );
@@ -126,8 +127,8 @@ int8:final = r ? 0;  // final = 32
 
 ### Conditional Unwrap
 ```aria
-Result:file = readFile("optional.txt");
-string:content = is file.err == NULL : file.val : "File not found";
+result<string>:file = readFile("optional.txt");
+string:content = file ? "File not found";
 
 // Equivalent to:
 string:content = readFile("optional.txt") ? "File not found";
@@ -145,10 +146,10 @@ int8:x = getValue() ? 0;  // Compiler infers getValue returns Result<int8>
 
 **Verbose (explicit error checking)**:
 ```aria
-Result:r = readFile("config.txt");
+result<string>:r = readFile("config.txt");
 string:config;
-if (r.err == NULL) {
-    config = r.val;
+if (!r.is_error) {
+    config = raw(r);
 } else {
     config = "default config";
 }
@@ -185,21 +186,18 @@ func:processData = Result<int8>() {
 
 ---
 
-## Panic Mode (No Default)
+## Propagation Mode (No Default)
 
-Using `?` without a default value will panic if an error occurs:
+Using `?` without a default value propagates the error to the caller. This is only valid inside a `result`-returning function:
 
 ```aria
-// This will panic if divide returns an error
-int8:value = divide(10, 0) ?;  // PANIC: division by zero
+// Propagates error to caller if divide returns an error
+int8:value = divide(10, 0) ?;  // propagates error up the call stack
 ```
 
-**Use sparingly**: Panic mode is appropriate when:
-- The error should never happen (programming bug if it does)
-- Recovery is impossible
-- You want to fail-fast during development
+**Use when**: The calling function also returns `result` and you want to bubble errors up automatically.
 
-**Prefer default values** for production code to handle errors gracefully.
+**Prefer default values** when you can recover from errors gracefully.
 
 ---
 
@@ -208,7 +206,7 @@ int8:value = divide(10, 0) ?;  // PANIC: division by zero
 The unwrap operator is type-safe:
 
 ```aria
-Result:r = someFunction();  // Returns Result<int8>
+result<int8>:r = someFunction();  // Returns result<int8>
 int8:value = r ? 0;          // ✅ Correct: default matches type
 string:text = r ? "error";   // ❌ ERROR: Type mismatch
 ```
@@ -239,8 +237,8 @@ string:value = getString() ? "";
 
 ### 2. Forgetting Unwrap
 ```aria
-Result:r = getValue();
-int8:x = r;  // ❌ WRONG: r is Result<int8>, not int8
+result<int8>:r = getValue();
+int8:x = r;  // ❌ WRONG: r is result<int8>, not int8
 
 // ✅ CORRECT: Must unwrap
 int8:x = r ? 0;
@@ -252,12 +250,12 @@ int8:x = r ? 0;
 int8:value = criticalOperation() ? 0;
 
 // ✅ BETTER: Log or handle errors explicitly when critical
-Result:r = criticalOperation();
-if (r.err != NULL) {
+result<int8>:r = criticalOperation();
+if (r.is_error) {
     stderr.write("Critical error: &{r.err}");
     fail(1);
 }
-int8:value = r.val;
+int8:value = raw(r);
 ```
 
 ---
@@ -276,9 +274,9 @@ int8:value = r.val;
 
 ### File I/O with Defaults
 ```aria
-Result:file_result = readFile("config.txt");
-string:content = is file_result.err == NULL : file_result.val : "";
-if (file_result.err != NULL) {
+result<string>:file_result = readFile("config.txt");
+string:content = file_result ? "";
+if (file_result.is_error) {
     stderr.write("Could not read config file");
 }
 
@@ -295,10 +293,10 @@ array:data = readCSV("data.csv") ? [];
 
 ### Process Management
 ```aria
-Result:child = spawn("./worker", ["--input", "data.txt"]);
-if (child.err == NULL) {
-    int32:pid = child.val;
-    Result:exit = wait(pid);
+result<process>:child = spawn("./worker", ["--input", "data.txt"]);
+if (!child.is_error) {
+    int32:pid = raw(child);
+    result<int8>:exit = wait(pid);
     int8:exit_code = exit ? -1;
     print(`Worker finished with code: &{exit_code}`);
 } else {

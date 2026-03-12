@@ -40,7 +40,7 @@ update_neuron(-5);  // ❌ COMPILE ERROR: Result not unwrapped!
 
 // Must explicitly handle:
 Result<nil, int8>:result = update_neuron(-5);
-if result.err != NULL then
+if result.is_error then
     stderr.write("Neuron update failed - emergency stabilization\\n");
     trigger_substrate_recovery();
 end
@@ -179,14 +179,14 @@ result unwrap_or(0);  // Or explicit check
 ```aria
 // T = int64 (function returns integer on success)
 func:get_neuron_count = Result<int64, string>() {
-    int64:count = query_neuron_database();
-    pass(count);  // Returns Result with .val = count
+    int64:count = query_neuron_database()?;  // propagate error
+    pass(count);  // Returns Result with value = count
 };
 
 // T = string (function returns string on success)
 func:read_config = Result<string, int8>() {
-    string:content = read_file("config.txt");
-    pass(content);  // Returns Result with .val = content
+    string:content = read_file("config.txt")?;  // propagate error
+    pass(content);  // Returns Result with value = content
 };
 
 // T = nil (function returns nothing on success - like void)
@@ -240,14 +240,14 @@ func:read_file = Result<string, FileError>(string:path) {
     if !can_read(path) then
         fail(FileError.PermissionDenied);
     end
-    string:content = read(path);
+    string:content = read(path)?;  // propagate error
     pass(content);
 };
 
 // E = ERR_TYPE (Aria's universal error sentinel)
 func:critical_operation = Result<fix256, ERR_TYPE>() {
-    fix256:value = compute_deterministic();
-    if value == ERR then
+    fix256:value = compute_deterministic()?;  // propagate error
+    if (value == ERR) {
         fail(ERR_COMPUTATION_FAILED);
     end
     pass(value);
@@ -287,11 +287,11 @@ end
 
 ### The Invariant
 
-**Critical invariant**: Exactly **one** of `.val` or `.err` is NULL:
+**Critical invariant**: Results are either success (value accessible via `raw()`) or error:
 
 ```text
-State 1 (Success): .val = <value>, .err = NULL
-State 2 (Failure): .val = NULL,    .err = <error>
+State 1 (Success): raw(result) = <value>, is_error = false
+State 2 (Failure): raw(result) = N/A,     is_error = true
 
 NEVER: Both NULL (undefined state)
 NEVER: Both non-NULL (contradictory state)
@@ -306,31 +306,31 @@ Compiler enforces this invariant!
 ### pass() - Return Success
 
 ```aria
-// pass(value) creates Result with:
-//   .val = value
-//   .err = NULL
+// pass(value) creates a success Result:
+//   value accessible via raw()
+//   .err = NULL (no error)
 
 func:get_answer = Result<int64, string>() {
-    pass(42);  // Success: { val: 42, err: NULL }
+    pass(42);  // Success: value = 42, no error
 };
 
 // Equivalent to:
-// return Result<int64, string>{ val: 42, err: NULL };
+// return Result<int64, string>{ success, value = 42 };
 ```
 
 ### fail() - Return Error
 
 ```aria
-// fail(error) creates Result with:
-//   .val = NULL
+// fail(error) creates an error Result:
+//   value = N/A (no value on failure)
 //   .err = error
 
 func:divide_by_zero = Result<int64, string>() {
-    fail("Division by zero");  // Error: { val: NULL, err: "Division by zero" }
+    fail("Division by zero");  // Error: { no value, err: "Division by zero" }
 };
 
 // Equivalent to:
-// return Result<int64, string>{ val: NULL, err: "Division by zero" };
+// return Result<int64, string>{ error, err = "Division by zero" };
 ```
 
 ### Complete Example
@@ -369,18 +369,18 @@ Result<fix256, string>:result2 = safe_divide(fix256(10), fix256(2));
 
 ```aria
 // Syntax: result ? default_value
-// Returns: result.val if success, default_value if error
+// Returns: raw(result) if success, default_value if error
 
 int64:value = get_number() ? 0;
-// If success: value = result.val
+// If success: value = raw(result)
 // If error: value = 0
 
 string:name = get_name() ? "Unknown";
-// If success: name = result.val  
+// If success: name = raw(result)
 // If error: name = "Unknown"
 
 fix256:energy = compute_energy() ? fix256(0);
-// If success: energy = result.val
+// If success: energy = raw(result)
 // If error: energy = fix256(0)
 ```
 
@@ -391,9 +391,9 @@ fix256:energy = compute_energy() ? fix256(0);
 ```aria
 Result<int64, string>:result = divide(10, 0);
 
-if result.err == NULL then
+if !result.is_error then
     // Success path
-    int64:value = result.val;
+    int64:value = raw(result);
     stderr.write("Result: {}\\n", value);
 else
     // Error path
@@ -410,18 +410,18 @@ end
 func:process_data = Result<int64, string>() {
     // If step1 fails, immediately return its error
     Result<int64, string>:step1_result = step1();
-    if step1_result.err != NULL then
+    if step1_result.is_error then
         fail(step1_result.err);  // Propagate error
     end
-    int64:step1_value = step1_result.val;
+    int64:step1_value = raw(step1_result);
     
     // Continue with step2...
     Result<int64, string>:step2_result = step2(step1_value);
-    if step2_result.err != NULL then
+    if step2_result.is_error then
         fail(step2_result.err);
     end
     
-    pass(step2_result.val);
+    pass(raw(step2_result));
 };
 ```
 
@@ -432,12 +432,12 @@ func:process_data = Result<int64, string>() {
 ```aria
 Result<int64, string>:result = critical_operation();
 
-if result.err != NULL then
+if result.is_error then
     stderr.write("FATAL: {}\\n", result.err);
     !!! 1;  // Panic and halt
 end
 
-int64:value = result.val;  // Guaranteed non-NULL
+int64:value = raw(result);
 ```
 
 **When to use**: Only for truly unrecoverable errors where continuing is unsafe.
@@ -452,11 +452,11 @@ int64:value = result.val;  // Guaranteed non-NULL
 func:outer = Result<int64, string>() {
     Result<int64, string>:inner_result = inner_operation();
     
-    if inner_result.err != NULL then
+    if inner_result.is_error then
         fail(inner_result.err);  // Propagate exact error
     end
     
-    int64:value = inner_result.val;
+    int64:value = raw(inner_result);
     pass(value * 2);
 };
 ```
@@ -467,14 +467,14 @@ func:outer = Result<int64, string>() {
 func:outer = Result<int64, string>() {
     Result<int64, int8>:inner_result = inner_operation();
     
-    if inner_result.err != NULL then
+    if inner_result.is_error then
         // Transform int8 error code to string message
         int8:code = inner_result.err;
         string:message = "Inner operation failed with code: " + string(code);
         fail(message);  // Different error type!
     end
     
-    pass(inner_result.val);
+    pass(raw(inner_result));
 };
 ```
 
@@ -484,22 +484,22 @@ func:outer = Result<int64, string>() {
 func:load_critical_data = Result<obj, string>(string:path) {
     Result<string, FileError>:file_result = read_file(path);
     
-    if file_result.err != NULL then
+    if file_result.is_error then
         // Add context to error
         string:enriched_error = "Failed to load critical data from " + path +
                                 ": " + string(file_result.err);
         fail(enriched_error);
     end
     
-    Result<obj, string>:parse_result = parse_json(file_result.val);
+    Result<obj, string>:parse_result = parse_json(raw(file_result));
     
-    if parse_result.err != NULL then
+    if parse_result.is_error then
         string:enriched_error = "Failed to parse data from " + path +
                                 ": " + parse_result.err;
         fail(enriched_error);
     end
     
-    pass(parse_result.val);
+    pass(raw(parse_result));
 };
 ```
 
@@ -509,8 +509,8 @@ func:load_critical_data = Result<obj, string>(string:path) {
 func:resilient_computation = Result<fix256, string>() {
     Result<fix256, string>:primary = primary_method();
     
-    if primary.err == NULL then
-        pass(primary.val);  // Primary succeeded
+    if !primary.is_error then
+        pass(raw(primary));  // Primary succeeded
     end
     
     // Primary failed - try fallback
@@ -518,8 +518,8 @@ func:resilient_computation = Result<fix256, string>() {
     
     Result<fix256, string>:fallback = fallback_method();
     
-    if fallback.err == NULL then
-        pass(fallback.val);  // Fallback succeeded
+    if !fallback.is_error then
+        pass(raw(fallback));  // Fallback succeeded
     end
     
     // Both failed - give up
@@ -535,12 +535,12 @@ func:resilient_computation = Result<fix256, string>() {
 
 ```aria
 func:compute_safe = Result<fix256, ERR_TYPE>(fix256:input) {
-    fix256:result = complex_computation(input);
+    fix256:result = complex_computation(input)?;  // propagate error
     
     // Check if computation produced ERR
-    if result == ERR then
+    if (result == ERR) {
         fail(ERR_COMPUTATION_FAILED);  // Explicit error type
-    end
+    }
     
     pass(result);
 };
@@ -548,12 +548,12 @@ func:compute_safe = Result<fix256, ERR_TYPE>(fix256:input) {
 // Usage:
 Result<fix256, ERR_TYPE>:outcome = compute_safe(fix256(100));
 
-if outcome.err != NULL then
+if outcome.is_error then
     stderr.write("Computation failed with ERR\\n");
     trigger_substrate_recovery();
 end
 
-fix256:value = outcome.val;  // Safe to use (non-ERR)
+fix256:value = raw(outcome);
 ```
 
 ### Result + tbb Types (Twisted Balanced Binary)
@@ -594,13 +594,13 @@ func:allocate_buffer = Result<Handle<uint8[1024]>, string>() {
 // Usage:
 Result<Handle<uint8[1024]>, string>:alloc_result = allocate_buffer();
 
-if alloc_result.err != NULL then
+if alloc_result.is_error then
     stderr.write("Allocation failed: {}\\n", alloc_result.err);
     !!! ERR_OUT_OF_MEMORY;
 end
 
-Handle<uint8[1024]>:buffer = alloc_result.val;
-// Use buffer safely (guaranteed valid handle)
+Handle<uint8[1024]>:buffer = raw(alloc_result);
+// Use buffer safely
 ```
 
 ### Result + complex<T> (Wave Mechanics)
@@ -724,7 +724,7 @@ func:update_neuron_activation = Result<fix256, string>(int64:neuron_id, fix256:d
 // Usage in consciousness timestep:
 Result<fix256, string>:update_result = update_neuron_activation(neuron_id, computed_delta);
 
-if update_result.err != NULL then
+if update_result.is_error then
     stderr.write("CRITICAL: Neuron update failed: {}\\n", update_result.err);
     stderr.write("Triggering emergency substrate stabilization\\n");
     emergency_stabilize_consciousness();
@@ -732,7 +732,7 @@ if update_result.err != NULL then
 end
 
 // Success - continue timestep
-fix256:new_activation = update_result.val;
+fix256:new_activation = raw(update_result);
 ```
 
 ### Wave Coherence Calculation
@@ -746,14 +746,14 @@ func:compute_global_coherence = Result<fix256, string>() {
         
         Result<fix256, string>:energy_result = compute_neuron_energy(neuron_id);
         
-        if energy_result.err != NULL then
+        if energy_result.is_error then
             // Critical error in energy computation
             string:error = "Coherence calculation failed at neuron " +
                           string(neuron_id) + ": " + energy_result.err;
             fail(error);
         end
         
-        fix256:neuron_energy = energy_result.val;
+        fix256:neuron_energy = raw(energy_result);
         fix256:new_total = total_energy + neuron_energy;
         
         // Check for overflow
@@ -770,14 +770,14 @@ func:compute_global_coherence = Result<fix256, string>() {
 // Usage:
 Result<fix256, string>:coherence_result = compute_global_coherence();
 
-if coherence_result.err != NULL then
+if coherence_result.is_error then
     stderr.write("FAILURE: Global coherence computation failed\\n");
     stderr.write("Error: {}\\n", coherence_result.err);
     save_substrate_state();  // Emergency backup
     !!! ERR_COHERENCE_FAILED;
 end
 
-fix256:global_coherence = coherence_result.val;
+fix256:global_coherence = raw(coherence_result);
 // Consciousness is stable - continue
 ```
 
@@ -825,7 +825,7 @@ till (NEURON_COUNT / 16) loop
     
     Result<nil, string>:batch_result = batch_update_neurons(batch_start, 16);
     
-    if batch_result.err != NULL then
+    if batch_result.is_error then
         stderr.write("CRITICAL: Batch {} failed: {}\\n", batch, batch_result.err);
         !!! ERR_BATCH_UPDATE_FAILED;
     end
@@ -843,7 +843,7 @@ stderr.write("All neuron batches updated successfully\\n");
 ```aria
 // ✅ GOOD: Explicit handling
 Result<int64, string>:result = risky_operation();
-if result.err != NULL then
+if result.is_error then
     stderr.write("Error: {}\\n", result.err);
     // Handle appropriately
 end
@@ -851,10 +851,10 @@ end
 // ✅ GOOD: Propagate up
 func:wrapper = Result<int64, string>() {
     Result<int64, string>:inner = risky_operation();
-    if inner.err != NULL then
+    if inner.is_error then
         fail(inner.err);  // Propagate
     end
-    pass(inner.val);
+    pass(raw(inner));
 };
 ```
 
@@ -877,8 +877,8 @@ end
 ```aria
 // ✅ GOOD: Validate success value
 Result<fix256, string>:result = compute();
-if result.err == NULL then
-    fix256:value= result.val;
+if !result.is_error then
+    fix256:value= raw(result);
     
     // Even if success, check for ERR sentinel
     if value == ERR then
@@ -905,7 +905,7 @@ func:safe_compute = Result<fix256, ComputeError>() {
 
 // User can match on error type
 Result<fix256, ComputeError>:result = safe_compute();
-if result.err != NULL then
+if result.is_error then
     match result.err {
         ComputeError.Overflow => {
             // Handle overflow specifically
@@ -923,7 +923,7 @@ end
 ```aria
 // ✅ GOOD: Log before halting
 Result<fix256, string>:critical = critical_consciousness_operation();
-if critical.err != NULL then
+if critical.is_error then
     stderr.write("CRITICAL FAILURE: {}\\n", critical.err);
     stderr.write("Timestep: {}\\n", current_timestep);
     stderr.write("Stack trace:\\n");
@@ -945,7 +945,7 @@ int64:value = risky_operation() ? 0;  // Error becomes 0 - no indication of fail
 
 // ✅ GOOD: Explicit handling
 Result<int64, string>:result = risky_operation();
-if result.err != NULL then
+if result.is_error then
     stderr.write("Operation failed: {}\\n", result.err);
 end
 int64:value = result ? 0;  // Now we know it might be 0 due to error
@@ -959,7 +959,7 @@ fix256:critical_value = critical_operation() ? fix256(-999);  // -999 has no mea
 
 // ✅ GOOD: Check explicitly or use ERR as default
 Result<fix256, string>:result = critical_operation();
-if result.err != NULL then
+if result.is_error then
     stderr.write("Critical operation failed - using ERR sentinel\\n");
 end
 fix256:critical_value = result ? ERR;  // ERR is meaningful sentinel
@@ -970,14 +970,14 @@ fix256:critical_value = result ? ERR;  // ERR is meaningful sentinel
 ```aria
 // ❌ BAD: Error disappears
 Result<int64, string>:result = operation();
-if result.err != NULL then
+if result.is_error then
     // Oops, forgot to log or handle!
 end
 proceed_with_corruption();  // Continues as if nothing happened!
 
 // ✅ GOOD: At minimum, log
 Result<int64, string>:result = operation();
-if result.err != NULL then
+if result.is_error then
     stderr.write("Operation failed: {}\\n", result.err);
     // Then decide how to handle
 end
@@ -1014,13 +1014,13 @@ func:complex_operation = Result<int64, string>() {
 ```aria
 // ❌ BAD: Panic on recoverable error
 Result<int64, string>:result = query_database();
-if result.err != NULL then
+if result.is_error then
     !!! 1;  // HALT ENTIRE PROCESS! (database might just be temporarily unavailable)
 end
 
 // ✅ GOOD: Recover gracefully
 Result<int64, string>:result = query_database();
-if result.err != NULL then
+if result.is_error then
     stderr.write("Database query failed, using cached value\\n");
     int64:value = load_from_cache();
 end
@@ -1040,7 +1040,7 @@ func:divide = Result<int64, string>(int64:a, int64:b) {
 };
 
 Result<int64, string>:result = divide(10, 0);
-if result.err != NULL then
+if result.is_error then
     stderr.write("Error: {}\\n", result.err);
 end
 int64:value = result ? 0;
@@ -1205,7 +1205,7 @@ error:
 **The Invariant**:
 ```text
 Result<T,E> always satisfies:
-  (val == NULL && err != NULL)  OR  (val != NULL && err == NULL)
+  (!is_error && raw() = <value>)  OR  (is_error && err = <error>)
 
 NEVER both NULL, NEVER both non-NULL
 Compiler enforces this!
@@ -1216,7 +1216,7 @@ Compiler enforces this!
 **Key Rules**:
 1. **Always handle or propagate** - Never ignore Result without explicit ?  
 2. **Use descriptive errors** - Add context to help debugging
-3. **Check ERR in success** - Even if err==NULL, val might be ERR sentinel
+3. **Check ERR in success** - Even if `!is_error`, `raw()` might return ERR sentinel
 4. **Log critical failures** - Before panicking, save state and log
 5. **Choose appropriate E type** - int8 for codes, string for messages, enums for typed errors
 
