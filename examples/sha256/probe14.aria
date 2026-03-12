@@ -1,0 +1,61 @@
+// probe14.aria: test int64 for wrapping 32-bit arithmetic
+// If int64 has proper semantics, use int64 + mask to simulate uint32
+use "../../stdlib/string_convert.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    // Test 1: int64 addition — does it wrap or saturate?
+    // 0x7FFFFFFF (as int64, positive) + 1 should give 0x80000000
+    int64:a = 0x7FFFFFFFi64;
+    int64:b = a + 1i64;
+    drop(print("(int64) 0x7fffffff + 1 = "));
+    drop(println(int32_toHex((b & 0xFFFFFFFFi64) => int32)));
+    // Expected: 0x80000000 (sign-extended as 0xffffffff80000000)
+
+    // Test 2: wrapping addition via int64 + mask
+    // (0x5be0cd19 + 0x3587272b) & 0xFFFFFFFF should give 0x9167f444
+    int64:c = (0x5be0cd19i64 + 0x3587272bi64) & 0xFFFFFFFFi64;
+    drop(print("0x5be0cd19 + 0x3587272b (int64 masked) = "));
+    drop(println(int32_toHex(c => int32)));
+    // Expected: 0x9167f444
+
+    // Test 3: int64 bitwise AND/XOR/OR
+    int64:d = 0xF0F0F0F0i64 & 0x0F0F0F0Fi64;
+    drop(print("AND test = "));
+    drop(println(int32_toHex(d => int32)));
+    // Expected: 0x00000000
+
+    int64:ee = 0xF0F0F0F0i64 | 0x0F0F0F0Fi64;
+    drop(print("OR test = "));
+    drop(println(int32_toHex(ee => int32)));
+    // Expected: 0xffffffff (= -1, sign-extended)
+
+    // Test 4: int64 right shift — logical or arithmetic?
+    // 0x80000000 as int64 is POSITIVE (2147483648). >> 4 should give 0x08000000.
+    int64:f = 0x80000000i64;
+    int64:g = f >> 4i64;
+    drop(print("0x80000000i64 >> 4 = "));
+    drop(println(int32_toHex(g => int32)));
+    // Expected: 0x08000000
+
+    // Test 5: rotation using int64 — ROTR4(0xF0000000) should give 0x0F000000
+    int64:h = 0xF0000000i64;
+    int64:i = ((h >> 4i64) | (h << 28i64)) & 0xFFFFFFFFi64;
+    drop(print("ROTR4(0xF0000000) via int64 = "));
+    drop(println(int32_toHex(i => int32)));
+    // Expected: 0x0f000000
+
+    // Test 6: SHA-256 T1 round 0 computed in int64
+    int64:hh = 0x5be0cd19i64;
+    int64:S1 = 0x3587272bi64;
+    int64:ch = 0x1f85c98ci64;
+    int64:KK = 0x428a2f98i64;
+    int64:WW = 0x80000000i64;
+    int64:T1 = (hh + S1 + ch + KK + WW) & 0xFFFFFFFFi64;
+    drop(print("T1 round 0 (int64) = "));
+    drop(println(int32_toHex(T1 => int32)));
+    // Expected: 0x7377ed68 (based on manual calculation)
+
+    pass(0i32);
+};

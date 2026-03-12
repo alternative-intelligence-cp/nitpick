@@ -1,0 +1,20 @@
+use "../../stdlib/string_convert.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:rotr32 = uint32(uint32:x, uint32:n) {
+    uint32:r = (x >> n) | (x << (32u32 - n));
+    pass(r);
+};
+
+func:main = int32() {
+    uint32:x = 0xABCDEF12u32;
+    uint32:a = 0u32;
+    uint32:b = 0u32;
+    uint32:c = 0u32;
+    a = rotr32(x, 7u32);
+    b = rotr32(x, 18u32);
+    c = a ^ b;
+    drop(println(int32_toHex(c => int32)));
+    pass(0i32);
+};

@@ -1,0 +1,52 @@
+// probe12.aria: step-by-step addition chain debug
+use "../../stdlib/string_convert.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    // Diagnose T1 addition chain for SHA-256("") round 0
+    // T1 = hh + S1e + ch + K[0] + W[0]
+    // = 0x5be0cd19 + 0x3587272b + 0x1f85c98c + 0x428a2f98 + 0x80000000
+
+    uint32:hh = 0x5be0cd19u32;
+    uint32:S1 = 0x3587272bu32;
+    uint32:ch = 0x1f85c98cu32;
+    uint32:KK = 0x428a2f98u32;
+    uint32:WW = 0x80000000u32;
+
+    uint32:s1 = hh + S1;
+    drop(print("step1 hh+S1 = "));
+    drop(println(int32_toHex(s1 => int32)));
+    // Expected: 0x9167f444
+
+    uint32:s2 = s1 + ch;
+    drop(print("step2 +ch  = "));
+    drop(println(int32_toHex(s2 => int32)));
+    // Expected: 0xb0edbdd0
+
+    uint32:s3 = s2 + KK;
+    drop(print("step3 +K   = "));
+    drop(println(int32_toHex(s3 => int32)));
+    // Expected: 0xf377ed68
+
+    uint32:s4 = s3 + WW;
+    drop(print("step4 +W   = "));
+    drop(println(int32_toHex(s4 => int32)));
+    // Expected: 0x7377ed68
+
+    // Now test the one-liner chained addition
+    uint32:T1 = hh + S1 + ch + KK + WW;
+    drop(print("T1 chained = "));
+    drop(println(int32_toHex(T1 => int32)));
+    // Expected: should match s4 = 0x7377ed68
+
+    // Also test: does adding two "large" uint32 values wrap correctly?
+    uint32:big1 = 0x80000000u32;
+    uint32:big2 = 0x80000001u32;
+    uint32:bigsum = big1 + big2;
+    drop(print("0x80000000+0x80000001 = "));
+    drop(println(int32_toHex(bigsum => int32)));
+    // Expected: 0x00000001 (wraps mod 2^32)
+
+    pass(0i32);
+};
