@@ -1,10 +1,13 @@
-// hello.aria - Simple hello world program
+// hello.aria - Simple standalone binary
+// Tests: basic ariac binary compilation through aria_make
 
-func:failsafe = void(int32:err_code) {
-    // Error handling
-};
+func:failsafe = NIL(int32:code) { pass(NIL); };
 
 func:main = int32() {
-    // Print hello world
-    return 0;
+    // Compute something so the binary isn't trivially empty
+    int64:x = 6i64;
+    int64:y = 7i64;
+    int64:z = x * y;  // 42
+    if (z == 42i64) { pass(0i32); }
+    pass(1i32);
 };
