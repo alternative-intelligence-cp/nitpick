@@ -1,0 +1,98 @@
+use "../src/aria_bits.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // T01: bit_test — bit 1 of 10 (0b1010) = 1
+    uint64:r01 = bit_test(10u64, 1u64);
+    uint64:f01 = 0u64; if (r01 == 1u64) { f01 = 1u64; }
+    if (f01 == 1u64) { drop(println("[PASS] T01 bit_test(10,1)=1")); }
+    if (f01 == 0u64) { drop(println("[FAIL] T01 bit_test(10,1)=1")); }
+
+    // T02: bit_test — bit 0 of 10 (0b1010) = 0
+    uint64:r02 = bit_test(10u64, 0u64);
+    uint64:f02 = 0u64; if (r02 == 0u64) { f02 = 1u64; }
+    if (f02 == 1u64) { drop(println("[PASS] T02 bit_test(10,0)=0")); }
+    if (f02 == 0u64) { drop(println("[FAIL] T02 bit_test(10,0)=0")); }
+
+    // T03: bit_test — bit 3 of 10 (0b1010) = 1
+    uint64:r03 = bit_test(10u64, 3u64);
+    uint64:f03 = 0u64; if (r03 == 1u64) { f03 = 1u64; }
+    if (f03 == 1u64) { drop(println("[PASS] T03 bit_test(10,3)=1")); }
+    if (f03 == 0u64) { drop(println("[FAIL] T03 bit_test(10,3)=1")); }
+
+    // T04: bit_set — set bit 0 of 10 (0b1010) = 11 (0b1011)
+    uint64:r04 = bit_set(10u64, 0u64);
+    uint64:f04 = 0u64; if (r04 == 11u64) { f04 = 1u64; }
+    if (f04 == 1u64) { drop(println("[PASS] T04 bit_set(10,0)=11")); }
+    if (f04 == 0u64) { drop(println("[FAIL] T04 bit_set(10,0)=11")); }
+
+    // T05: bit_set — set bit 2 of 10 (0b1010) = 14 (0b1110)
+    uint64:r05 = bit_set(10u64, 2u64);
+    uint64:f05 = 0u64; if (r05 == 14u64) { f05 = 1u64; }
+    if (f05 == 1u64) { drop(println("[PASS] T05 bit_set(10,2)=14")); }
+    if (f05 == 0u64) { drop(println("[FAIL] T05 bit_set(10,2)=14")); }
+
+    // T06: bit_clear — clear bit 1 of 10 (0b1010) = 8 (0b1000)
+    uint64:r06 = bit_clear(10u64, 1u64);
+    uint64:f06 = 0u64; if (r06 == 8u64) { f06 = 1u64; }
+    if (f06 == 1u64) { drop(println("[PASS] T06 bit_clear(10,1)=8")); }
+    if (f06 == 0u64) { drop(println("[FAIL] T06 bit_clear(10,1)=8")); }
+
+    // T07: bit_clear — clear already-0 bit 2 of 10 = 10 (no change)
+    uint64:r07 = bit_clear(10u64, 2u64);
+    uint64:f07 = 0u64; if (r07 == 10u64) { f07 = 1u64; }
+    if (f07 == 1u64) { drop(println("[PASS] T07 bit_clear(10,2)=10")); }
+    if (f07 == 0u64) { drop(println("[FAIL] T07 bit_clear(10,2)=10")); }
+
+    // T08: bit_flip — flip bit 3 of 10 (0b1010) = 2 (0b0010)
+    uint64:r08 = bit_flip(10u64, 3u64);
+    uint64:f08 = 0u64; if (r08 == 2u64) { f08 = 1u64; }
+    if (f08 == 1u64) { drop(println("[PASS] T08 bit_flip(10,3)=2")); }
+    if (f08 == 0u64) { drop(println("[FAIL] T08 bit_flip(10,3)=2")); }
+
+    // T09: bit_flip — flip bit 0 of 10 (0b1010) = 11 (0b1011)
+    uint64:r09 = bit_flip(10u64, 0u64);
+    uint64:f09 = 0u64; if (r09 == 11u64) { f09 = 1u64; }
+    if (f09 == 1u64) { drop(println("[PASS] T09 bit_flip(10,0)=11")); }
+    if (f09 == 0u64) { drop(println("[FAIL] T09 bit_flip(10,0)=11")); }
+
+    // T10: nibble_lo — 0xAB = 171, low nibble = 0xB = 11
+    uint64:r10 = nibble_lo(171u64);
+    uint64:f10 = 0u64; if (r10 == 11u64) { f10 = 1u64; }
+    if (f10 == 1u64) { drop(println("[PASS] T10 nibble_lo(0xAB)=11")); }
+    if (f10 == 0u64) { drop(println("[FAIL] T10 nibble_lo(0xAB)=11")); }
+
+    // T11: nibble_lo — 0x30 = 48, low nibble = 0
+    uint64:r11 = nibble_lo(48u64);
+    uint64:f11 = 0u64; if (r11 == 0u64) { f11 = 1u64; }
+    if (f11 == 1u64) { drop(println("[PASS] T11 nibble_lo(0x30)=0")); }
+    if (f11 == 0u64) { drop(println("[FAIL] T11 nibble_lo(0x30)=0")); }
+
+    // T12: nibble_hi4 — 0xAB = 171, hi nibble = 0xA = 10
+    uint64:r12 = nibble_hi4(171u64);
+    uint64:f12 = 0u64; if (r12 == 10u64) { f12 = 1u64; }
+    if (f12 == 1u64) { drop(println("[PASS] T12 nibble_hi4(0xAB)=10")); }
+    if (f12 == 0u64) { drop(println("[FAIL] T12 nibble_hi4(0xAB)=10")); }
+
+    // T13: byte_popcount — 0 -> 0 bits set
+    uint64:r13 = byte_popcount(0u64);
+    uint64:f13 = 0u64; if (r13 == 0u64) { f13 = 1u64; }
+    if (f13 == 1u64) { drop(println("[PASS] T13 byte_popcount(0)=0")); }
+    if (f13 == 0u64) { drop(println("[FAIL] T13 byte_popcount(0)=0")); }
+
+    // T14: byte_popcount — 255 (0xFF) -> 8 bits set
+    uint64:r14 = byte_popcount(255u64);
+    uint64:f14 = 0u64; if (r14 == 8u64) { f14 = 1u64; }
+    if (f14 == 1u64) { drop(println("[PASS] T14 byte_popcount(255)=8")); }
+    if (f14 == 0u64) { drop(println("[FAIL] T14 byte_popcount(255)=8")); }
+
+    // T15: byte_popcount — 0b10110100 = 180 -> 4 bits set
+    uint64:r15 = byte_popcount(180u64);
+    uint64:f15 = 0u64; if (r15 == 4u64) { f15 = 1u64; }
+    if (f15 == 1u64) { drop(println("[PASS] T15 byte_popcount(180)=4")); }
+    if (f15 == 0u64) { drop(println("[FAIL] T15 byte_popcount(180)=4")); }
+
+    pass(0i32);
+};
