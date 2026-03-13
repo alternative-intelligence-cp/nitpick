@@ -1,0 +1,145 @@
+// sieve.aria — EXP-7 Sieve of Eratosthenes
+//
+// Exercises (new patterns not seen in EXP-1..6):
+//   - Nested while loops with inner step > 1  (j = j + prime)
+//   - int64 accumulator for counting (prime count)
+//   - Loop from p*p upward (non-trivial inner start index)
+//   - Specific spot-check lookups into the sieve array
+//   - sqrt approximation via integer step (outer loop up to ~32)
+//
+// Algorithm (sieve of Eratosthenes, limit=1000):
+//   1. Allocate composite[0..1000] = all 0
+//   2. For p = 2..31: if composite[p]==0, mark p*p, p*p+p, ... as composite
+//   3. Count i in 2..1000 where composite[i]==0  → expect 168
+//
+// Spot-check primes: 2, 3, 5, 7, 11, 13, 997
+// Spot-check composites: 4, 9, 25, 100, 1000
+
+use "../../stdlib/string_convert.aria".*;
+use "../../stdlib/print_utils.aria".*;
+
+extern func:malloc = wild int64*(int64:size);
+extern func:free   = void(wild int64*:ptr);
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// ── Sieve ─────────────────────────────────────────────────────────────────────
+// Returns count of primes in [2, limit].
+// composite[i] == 0 means i is prime; 1 means composite.
+// Uses one int64 per slot (proven array pattern).
+func:run_sieve = int64(int64:limit, int64->:composite) {
+    // Initialise: everything not-composite
+    int64:i = 0i64;
+    while (i <= limit) {
+        composite[i] = 0i64;
+        i = i + 1i64;
+    }
+
+    // Mark multiples: outer loop p = 2 .. sqrt(limit)
+    // sqrt(1000) < 32, so stopping at 32 is safe
+    int64:p = 2i64;
+    while (p <= 32i64) {
+        if (composite[p] == 0i64) {
+            // p is prime — mark all multiples starting at p*p
+            int64:j = p * p;
+            while (j <= limit) {
+                composite[j] = 1i64;
+                j = j + p;
+            }
+        }
+        p = p + 1i64;
+    }
+
+    // Count primes
+    int64:count = 0i64;
+    int64:n = 2i64;
+    while (n <= limit) {
+        if (composite[n] == 0i64) {
+            count = count + 1i64;
+        }
+        n = n + 1i64;
+    }
+    pass(count);
+};
+
+// ── Test runner ───────────────────────────────────────────────────────────────
+func:main = int32() {
+    int64:LIMIT = 1000i64;
+    wild int64->:composite = malloc((LIMIT + 1i64) * 8i64);
+
+    int64:pass_count = 0i64;
+    int64:fail_count = 0i64;
+
+    drop(printlnString("Sieve of Eratosthenes -- EXP-7"));
+    drop(printlnString("================================"));
+
+    int64:count = raw(run_sieve(LIMIT, composite));
+
+    // ── Test 1: prime count in [2, 1000] must be 168 ──
+    if (count == 168i64) {
+        drop(printlnString("[PASS] Test 1: prime count in [2,1000] = 168"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printString("[FAIL] Test 1: expected 168, got "));
+        drop(printlnInt64(count));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Test 2: spot-check known primes (composite[n] == 0) ──
+    bool:primes_ok = true;
+    if (composite[2i64]   != 0i64) { primes_ok = false; }
+    if (composite[3i64]   != 0i64) { primes_ok = false; }
+    if (composite[5i64]   != 0i64) { primes_ok = false; }
+    if (composite[7i64]   != 0i64) { primes_ok = false; }
+    if (composite[11i64]  != 0i64) { primes_ok = false; }
+    if (composite[13i64]  != 0i64) { primes_ok = false; }
+    if (composite[997i64] != 0i64) { primes_ok = false; }
+    if (primes_ok) {
+        drop(printlnString("[PASS] Test 2: spot-check primes (2,3,5,7,11,13,997)"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printlnString("[FAIL] Test 2: a known prime was marked composite"));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Test 3: spot-check known composites (composite[n] == 1) ──
+    bool:comps_ok = true;
+    if (composite[4i64]    != 1i64) { comps_ok = false; }
+    if (composite[9i64]    != 1i64) { comps_ok = false; }
+    if (composite[25i64]   != 1i64) { comps_ok = false; }
+    if (composite[100i64]  != 1i64) { comps_ok = false; }
+    if (composite[1000i64] != 1i64) { comps_ok = false; }
+    if (comps_ok) {
+        drop(printlnString("[PASS] Test 3: spot-check composites (4,9,25,100,1000)"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printlnString("[FAIL] Test 3: a known composite was not marked"));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Test 4: re-run with limit=10 — primes are 2,3,5,7 → count=4 ──
+    int64:count10 = raw(run_sieve(10i64, composite));
+    if (count10 == 4i64) {
+        drop(printlnString("[PASS] Test 4: prime count in [2,10] = 4"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printString("[FAIL] Test 4: expected 4, got "));
+        drop(printlnInt64(count10));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Summary ──
+    drop(printlnString("---"));
+    drop(printString("Passed: "));
+    drop(printlnInt64(pass_count));
+    drop(printString("Failed: "));
+    drop(printlnInt64(fail_count));
+    if (fail_count == 0i64) {
+        drop(printlnString("PASS: all sieve tests passed"));
+    } else {
+        drop(printlnString("FAIL: some sieve tests failed"));
+    }
+
+    free(composite);
+    pass(0i32);
+};
