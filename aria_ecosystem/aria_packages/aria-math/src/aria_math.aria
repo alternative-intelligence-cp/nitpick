@@ -1,0 +1,54 @@
+// aria-math v0.1.0 — libm bridge for Aria
+//
+// Thin named wrappers around C's standard math library (libm).
+// Users link their binaries with -lm (or link_libraries = ["m"] in build.abc).
+//
+// Provided functions (all operate on float64):
+//   Trig:        math_sin, math_cos, math_tan
+//                math_asin, math_acos, math_atan, math_atan2
+//   Exponential: math_sqrt, math_pow, math_exp
+//   Logarithm:   math_log (natural), math_log2, math_log10
+//   Rounding:    math_floor, math_ceil, math_round
+//   Misc:        math_abs, math_fmod
+
+// ── C libm extern declarations ───────────────────────────────────────────────
+
+extern func:sin   = float64(float64:x);
+extern func:cos   = float64(float64:x);
+extern func:tan   = float64(float64:x);
+extern func:asin  = float64(float64:x);
+extern func:acos  = float64(float64:x);
+extern func:atan  = float64(float64:x);
+extern func:atan2 = float64(float64:y, float64:x);
+extern func:sqrt  = float64(float64:x);
+extern func:pow   = float64(float64:b, float64:e);
+extern func:log   = float64(float64:x);
+extern func:log2  = float64(float64:x);
+extern func:log10 = float64(float64:x);
+extern func:exp   = float64(float64:x);
+extern func:fabs  = float64(float64:x);
+extern func:floor = float64(float64:x);
+extern func:ceil  = float64(float64:x);
+extern func:round = float64(float64:x);
+extern func:fmod  = float64(float64:x, float64:y);
+
+// ── Public wrappers ───────────────────────────────────────────────────────────
+
+pub func:math_sin   = float64(float64:x) { pass(sin(x)); };
+pub func:math_cos   = float64(float64:x) { pass(cos(x)); };
+pub func:math_tan   = float64(float64:x) { pass(tan(x)); };
+pub func:math_asin  = float64(float64:x) { pass(asin(x)); };
+pub func:math_acos  = float64(float64:x) { pass(acos(x)); };
+pub func:math_atan  = float64(float64:x) { pass(atan(x)); };
+pub func:math_atan2 = float64(float64:y, float64:x) { pass(atan2(y, x)); };
+pub func:math_sqrt  = float64(float64:x) { pass(sqrt(x)); };
+pub func:math_pow   = float64(float64:b, float64:e) { pass(pow(b, e)); };
+pub func:math_log   = float64(float64:x) { pass(log(x)); };
+pub func:math_log2  = float64(float64:x) { pass(log2(x)); };
+pub func:math_log10 = float64(float64:x) { pass(log10(x)); };
+pub func:math_exp   = float64(float64:x) { pass(exp(x)); };
+pub func:math_abs   = float64(float64:x) { pass(fabs(x)); };
+pub func:math_floor = float64(float64:x) { pass(floor(x)); };
+pub func:math_ceil  = float64(float64:x) { pass(ceil(x)); };
+pub func:math_round = float64(float64:x) { pass(round(x)); };
+pub func:math_fmod  = float64(float64:x, float64:y) { pass(fmod(x, y)); };

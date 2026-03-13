@@ -1,0 +1,27 @@
+# build.abc — aria-math package
+#
+# Targets:
+#   aria-math       — compiled library (ariac -c → .o → .a)
+#                     for downstream packages that want a prebuilt .a
+#   test-aria-math  — test binary; inlines src via `use`, links -lm directly
+
+[project]
+name = "aria-math"
+version = "0.1.0"
+compiler = "/home/randy/Workspace/REPOS/aria/build/ariac"
+
+# Precompiled library target (for downstream consumers)
+[target.aria-math]
+type = "library"
+sources = ["src/aria_math.aria"]
+deps = []
+flags = []
+
+# Test binary — uses `use "../src/aria_math.aria".*;` to include source inline
+# so it only needs -lm at link time, not -laria-math
+[target.test-aria-math]
+type = "binary"
+sources = ["tests/test_aria_math.aria"]
+deps = []
+flags = []
+link_libraries = ["m"]
