@@ -1,0 +1,113 @@
+use "../src/aria_buf.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // T01: pack_le4(0xAA,0xBB,0xCC,0xDD) = 0xDDCCBBAA = 3721182122
+    uint64:w1 = buf_pack_le4(170u64, 187u64, 204u64, 221u64);
+    uint64:f01 = 0u64;
+    if (w1 == 3721182122u64) { f01 = 1u64; }
+    if (f01 == 1u64) { drop(println("[PASS] T01 pack_le4(AA,BB,CC,DD)=3721182122")); }
+    if (f01 == 0u64) { drop(println("[FAIL] T01 pack_le4(AA,BB,CC,DD)=3721182122")); }
+
+    // T02: buf_byte0(0xDDCCBBAA) = 0xAA = 170
+    uint64:r02 = buf_byte0(3721182122u64);
+    uint64:f02 = 0u64;
+    if (r02 == 170u64) { f02 = 1u64; }
+    if (f02 == 1u64) { drop(println("[PASS] T02 byte0(3721182122)=170")); }
+    if (f02 == 0u64) { drop(println("[FAIL] T02 byte0(3721182122)=170")); }
+
+    // T03: buf_byte1(0xDDCCBBAA) = 0xBB = 187
+    uint64:r03 = buf_byte1(3721182122u64);
+    uint64:f03 = 0u64;
+    if (r03 == 187u64) { f03 = 1u64; }
+    if (f03 == 1u64) { drop(println("[PASS] T03 byte1(3721182122)=187")); }
+    if (f03 == 0u64) { drop(println("[FAIL] T03 byte1(3721182122)=187")); }
+
+    // T04: buf_byte2(0xDDCCBBAA) = 0xCC = 204
+    uint64:r04 = buf_byte2(3721182122u64);
+    uint64:f04 = 0u64;
+    if (r04 == 204u64) { f04 = 1u64; }
+    if (f04 == 1u64) { drop(println("[PASS] T04 byte2(3721182122)=204")); }
+    if (f04 == 0u64) { drop(println("[FAIL] T04 byte2(3721182122)=204")); }
+
+    // T05: buf_byte3(0xDDCCBBAA) = 0xDD = 221
+    uint64:r05 = buf_byte3(3721182122u64);
+    uint64:f05 = 0u64;
+    if (r05 == 221u64) { f05 = 1u64; }
+    if (f05 == 1u64) { drop(println("[PASS] T05 byte3(3721182122)=221")); }
+    if (f05 == 0u64) { drop(println("[FAIL] T05 byte3(3721182122)=221")); }
+
+    // T06: buf_lo32(3721182122) = 3721182122 (already < 2^32)
+    uint64:r06 = buf_lo32(3721182122u64);
+    uint64:f06 = 0u64;
+    if (r06 == 3721182122u64) { f06 = 1u64; }
+    if (f06 == 1u64) { drop(println("[PASS] T06 lo32(3721182122)=3721182122")); }
+    if (f06 == 0u64) { drop(println("[FAIL] T06 lo32(3721182122)=3721182122")); }
+
+    // T07: buf_hi32(3721182122) = 0 (no upper bits set)
+    uint64:r07 = buf_hi32(3721182122u64);
+    uint64:f07 = 0u64;
+    if (r07 == 0u64) { f07 = 1u64; }
+    if (f07 == 1u64) { drop(println("[PASS] T07 hi32(3721182122)=0")); }
+    if (f07 == 0u64) { drop(println("[FAIL] T07 hi32(3721182122)=0")); }
+
+    // T08: buf_pack32(100,200) = 100 + 200*2^32 = 858993459300
+    uint64:w2 = buf_pack32(100u64, 200u64);
+    uint64:f08 = 0u64;
+    if (w2 == 858993459300u64) { f08 = 1u64; }
+    if (f08 == 1u64) { drop(println("[PASS] T08 pack32(100,200)=858993459300")); }
+    if (f08 == 0u64) { drop(println("[FAIL] T08 pack32(100,200)=858993459300")); }
+
+    // T09: buf_lo32(858993459300) = 100
+    uint64:r09 = buf_lo32(858993459300u64);
+    uint64:f09 = 0u64;
+    if (r09 == 100u64) { f09 = 1u64; }
+    if (f09 == 1u64) { drop(println("[PASS] T09 lo32(858993459300)=100")); }
+    if (f09 == 0u64) { drop(println("[FAIL] T09 lo32(858993459300)=100")); }
+
+    // T10: buf_hi32(858993459300) = 200
+    uint64:r10 = buf_hi32(858993459300u64);
+    uint64:f10 = 0u64;
+    if (r10 == 200u64) { f10 = 1u64; }
+    if (f10 == 1u64) { drop(println("[PASS] T10 hi32(858993459300)=200")); }
+    if (f10 == 0u64) { drop(println("[FAIL] T10 hi32(858993459300)=200")); }
+
+    // T11: pack_le4(1,0,0,0) = 1
+    uint64:r11 = buf_pack_le4(1u64, 0u64, 0u64, 0u64);
+    uint64:f11 = 0u64;
+    if (r11 == 1u64) { f11 = 1u64; }
+    if (f11 == 1u64) { drop(println("[PASS] T11 pack_le4(1,0,0,0)=1")); }
+    if (f11 == 0u64) { drop(println("[FAIL] T11 pack_le4(1,0,0,0)=1")); }
+
+    // T12: pack_le4(0,1,0,0) = 256
+    uint64:r12 = buf_pack_le4(0u64, 1u64, 0u64, 0u64);
+    uint64:f12 = 0u64;
+    if (r12 == 256u64) { f12 = 1u64; }
+    if (f12 == 1u64) { drop(println("[PASS] T12 pack_le4(0,1,0,0)=256")); }
+    if (f12 == 0u64) { drop(println("[FAIL] T12 pack_le4(0,1,0,0)=256")); }
+
+    // T13: byte0(256) = 0 (byte 0 of 0x0100 is 0x00)
+    uint64:r13 = buf_byte0(256u64);
+    uint64:f13 = 0u64;
+    if (r13 == 0u64) { f13 = 1u64; }
+    if (f13 == 1u64) { drop(println("[PASS] T13 byte0(256)=0")); }
+    if (f13 == 0u64) { drop(println("[FAIL] T13 byte0(256)=0")); }
+
+    // T14: byte1(256) = 1 (byte 1 of 0x0100 is 0x01)
+    uint64:r14 = buf_byte1(256u64);
+    uint64:f14 = 0u64;
+    if (r14 == 1u64) { f14 = 1u64; }
+    if (f14 == 1u64) { drop(println("[PASS] T14 byte1(256)=1")); }
+    if (f14 == 0u64) { drop(println("[FAIL] T14 byte1(256)=1")); }
+
+    // T15: pack_le4(0,0,0,1) = 0x01000000 = 16777216
+    uint64:r15 = buf_pack_le4(0u64, 0u64, 0u64, 1u64);
+    uint64:f15 = 0u64;
+    if (r15 == 16777216u64) { f15 = 1u64; }
+    if (f15 == 1u64) { drop(println("[PASS] T15 pack_le4(0,0,0,1)=16777216")); }
+    if (f15 == 0u64) { drop(println("[FAIL] T15 pack_le4(0,0,0,1)=16777216")); }
+
+    pass(0i32);
+};
