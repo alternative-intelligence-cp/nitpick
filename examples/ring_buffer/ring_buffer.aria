@@ -1,0 +1,210 @@
+// ring_buffer.aria — EXP-9 Circular Ring Buffer
+//
+// Exercises (new patterns not seen in EXP-1..8):
+//   - Integer modulo operator (%) — first use in any experiment
+//   - Index wrap-around: tail = (tail + 1) % capacity
+//   - Capacity-full detection (count == capacity) and empty detection (count == 0)
+//   - Enqueue/dequeue discipline verified against expected output order
+//   - Overwrite/discard policy test (enqueue to full buffer)
+//
+// Ring buffer layout (capacity = 8):
+//   buf[0..7] = int64 values
+//   head = index of next slot to read (dequeue)
+//   tail = index of next slot to write (enqueue)
+//   count = number of elements currently held
+//
+// Operations:
+//   enqueue(val): if full → error (pass -1 without writing); else write at tail,
+//                 advance tail = (tail+1)%CAP, count++
+//   dequeue():    if empty → pass -2; else read from head,
+//                 advance head = (head+1)%CAP, count--, pass value
+//
+// State is passed as a small int64 array:
+//   state[0] = head
+//   state[1] = tail
+//   state[2] = count
+//   state[3] = capacity
+
+use "../../stdlib/string_convert.aria".*;
+use "../../stdlib/print_utils.aria".*;
+
+extern func:malloc = wild int64*(int64:size);
+extern func:free   = void(wild int64*:ptr);
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+int64:RB_FULL  = 0i64 - 1i64;   // sentinel: enqueue on full buffer → -1
+int64:RB_EMPTY = 0i64 - 2i64;   // sentinel: dequeue on empty buffer → -2
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+func:rb_init = NIL(int64->:state, int64:capacity) {
+    state[0i64] = 0i64;          // head
+    state[1i64] = 0i64;          // tail
+    state[2i64] = 0i64;          // count
+    state[3i64] = capacity;      // capacity
+    pass(NIL);
+};
+
+// ── Enqueue ───────────────────────────────────────────────────────────────────
+// Returns 0 on success, RB_FULL if buffer is full.
+func:rb_enqueue = int64(int64->:state, int64->:buf, int64:val) {
+    int64:cap   = state[3i64];
+    int64:count = state[2i64];
+    if (count >= cap) { pass(RB_FULL); }
+    int64:tail    = state[1i64];
+    buf[tail]     = val;
+    state[1i64]   = (tail + 1i64) % cap;
+    state[2i64]   = count + 1i64;
+    pass(0i64);
+};
+
+// ── Dequeue ───────────────────────────────────────────────────────────────────
+// Returns the dequeued value, or RB_EMPTY if buffer is empty.
+func:rb_dequeue = int64(int64->:state, int64->:buf) {
+    int64:count = state[2i64];
+    if (count <= 0i64) { pass(RB_EMPTY); }
+    int64:head  = state[0i64];
+    int64:val   = buf[head];
+    int64:cap   = state[3i64];
+    state[0i64] = (head + 1i64) % cap;
+    state[2i64] = count - 1i64;
+    pass(val);
+};
+
+// ── Test runner ───────────────────────────────────────────────────────────────
+func:main = int32() {
+    int64:CAP = 8i64;
+    wild int64->:buf   = malloc(CAP * 8i64);
+    wild int64->:state = malloc(4i64 * 8i64);
+
+    int64:pass_count = 0i64;
+    int64:fail_count = 0i64;
+
+    drop(printlnString("Ring Buffer -- EXP-9"));
+    drop(printlnString("===================="));
+
+    // ── Test 1: enqueue 3 items, dequeue 3 — FIFO order ──
+    drop(rb_init(state, CAP));
+    drop(rb_enqueue(state, buf, 10i64));
+    drop(rb_enqueue(state, buf, 20i64));
+    drop(rb_enqueue(state, buf, 30i64));
+    int64:v1 = raw(rb_dequeue(state, buf));
+    int64:v2 = raw(rb_dequeue(state, buf));
+    int64:v3 = raw(rb_dequeue(state, buf));
+    bool:t1_ok = v1 == 10i64 && v2 == 20i64 && v3 == 30i64;
+    if (t1_ok) {
+        drop(printlnString("[PASS] Test 1: FIFO order (10,20,30)"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printString("[FAIL] Test 1: got "));
+        drop(printString(int64_toString(v1)));
+        drop(printString(","));
+        drop(printString(int64_toString(v2)));
+        drop(printString(","));
+        drop(printlnString(int64_toString(v3)));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Test 2: dequeue from empty buffer → RB_EMPTY ──
+    int64:empty_val = raw(rb_dequeue(state, buf));
+    if (empty_val == RB_EMPTY) {
+        drop(printlnString("[PASS] Test 2: dequeue from empty → RB_EMPTY"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printString("[FAIL] Test 2: expected RB_EMPTY, got "));
+        drop(printlnInt64(empty_val));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Test 3: fill to capacity, enqueue one more → RB_FULL ──
+    drop(rb_init(state, CAP));
+    int64:fi = 0i64;
+    while (fi < CAP) {
+        drop(rb_enqueue(state, buf, fi));
+        fi = fi + 1i64;
+    }
+    int64:full_result = raw(rb_enqueue(state, buf, 99i64));
+    if (full_result == RB_FULL) {
+        drop(printlnString("[PASS] Test 3: enqueue to full buffer → RB_FULL"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printString("[FAIL] Test 3: expected RB_FULL, got "));
+        drop(printlnInt64(full_result));
+        fail_count = fail_count + 1i64;
+    }
+    // count should still be CAP
+    if (state[2i64] == CAP) {
+        drop(printlnString("[PASS] Test 3b: count unchanged after failed enqueue"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printlnString("[FAIL] Test 3b: count changed on failed enqueue"));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Test 4: wrap-around — dequeue 5, enqueue 5 more, verify order ──
+    drop(rb_init(state, CAP));
+    // Fill with 1..8
+    int64:wi = 1i64;
+    while (wi <= CAP) {
+        drop(rb_enqueue(state, buf, wi));
+        wi = wi + 1i64;
+    }
+    // Dequeue 5 (1..5)
+    int64:di = 0i64;
+    while (di < 5i64) {
+        drop(rb_dequeue(state, buf));
+        di = di + 1i64;
+    }
+    // Enqueue 5 more (100..104)
+    int64:ni = 100i64;
+    while (ni <= 104i64) {
+        drop(rb_enqueue(state, buf, ni));
+        ni = ni + 1i64;
+    }
+    // Now head has wrapped; dequeue remaining 8 items: expect 6,7,8,100,101,102,103,104
+    int64:w1 = raw(rb_dequeue(state, buf));
+    int64:w2 = raw(rb_dequeue(state, buf));
+    int64:w3 = raw(rb_dequeue(state, buf));
+    int64:w4 = raw(rb_dequeue(state, buf));
+    int64:w5 = raw(rb_dequeue(state, buf));
+    int64:w6 = raw(rb_dequeue(state, buf));
+    int64:w7 = raw(rb_dequeue(state, buf));
+    int64:w8 = raw(rb_dequeue(state, buf));
+    bool:t4_ok = true;
+    if (w1 != 6i64)   { t4_ok = false; }
+    if (w2 != 7i64)   { t4_ok = false; }
+    if (w3 != 8i64)   { t4_ok = false; }
+    if (w4 != 100i64) { t4_ok = false; }
+    if (w5 != 101i64) { t4_ok = false; }
+    if (w6 != 102i64) { t4_ok = false; }
+    if (w7 != 103i64) { t4_ok = false; }
+    if (w8 != 104i64) { t4_ok = false; }
+    if (t4_ok) {
+        drop(printlnString("[PASS] Test 4: wrap-around dequeue order correct"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printString("[FAIL] Test 4: wrap-around wrong: "));
+        drop(printString(int64_toString(w1)));
+        drop(printString(" "));
+        drop(printString(int64_toString(w2)));
+        drop(printString(" "));
+        drop(printlnString(int64_toString(w3)));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Summary ──
+    drop(printlnString("---"));
+    drop(printString("Passed: "));
+    drop(printlnInt64(pass_count));
+    drop(printString("Failed: "));
+    drop(printlnInt64(fail_count));
+    if (fail_count == 0i64) {
+        drop(printlnString("PASS: all ring buffer tests passed"));
+    } else {
+        drop(printlnString("FAIL: some ring buffer tests failed"));
+    }
+
+    free(state);
+    free(buf);
+    pass(0i32);
+};
