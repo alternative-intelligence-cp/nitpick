@@ -1,0 +1,98 @@
+use "../src/aria_ascii.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // T01: ascii_is_upper — 'A' = 65 -> 1
+    uint64:r01 = ascii_is_upper(65u64);
+    uint64:f01 = 0u64; if (r01 == 1u64) { f01 = 1u64; }
+    if (f01 == 1u64) { drop(println("[PASS] T01 is_upper('A')=1")); }
+    if (f01 == 0u64) { drop(println("[FAIL] T01 is_upper('A')=1")); }
+
+    // T02: ascii_is_upper — 'a' = 97 -> 0
+    uint64:r02 = ascii_is_upper(97u64);
+    uint64:f02 = 0u64; if (r02 == 0u64) { f02 = 1u64; }
+    if (f02 == 1u64) { drop(println("[PASS] T02 is_upper('a')=0")); }
+    if (f02 == 0u64) { drop(println("[FAIL] T02 is_upper('a')=0")); }
+
+    // T03: ascii_is_lower — 'z' = 122 -> 1
+    uint64:r03 = ascii_is_lower(122u64);
+    uint64:f03 = 0u64; if (r03 == 1u64) { f03 = 1u64; }
+    if (f03 == 1u64) { drop(println("[PASS] T03 is_lower('z')=1")); }
+    if (f03 == 0u64) { drop(println("[FAIL] T03 is_lower('z')=1")); }
+
+    // T04: ascii_is_lower — 'Z' = 90 -> 0
+    uint64:r04 = ascii_is_lower(90u64);
+    uint64:f04 = 0u64; if (r04 == 0u64) { f04 = 1u64; }
+    if (f04 == 1u64) { drop(println("[PASS] T04 is_lower('Z')=0")); }
+    if (f04 == 0u64) { drop(println("[FAIL] T04 is_lower('Z')=0")); }
+
+    // T05: ascii_is_digit — '5' = 53 -> 1
+    uint64:r05 = ascii_is_digit(53u64);
+    uint64:f05 = 0u64; if (r05 == 1u64) { f05 = 1u64; }
+    if (f05 == 1u64) { drop(println("[PASS] T05 is_digit('5')=1")); }
+    if (f05 == 0u64) { drop(println("[FAIL] T05 is_digit('5')=1")); }
+
+    // T06: ascii_is_digit — 'A' = 65 -> 0
+    uint64:r06 = ascii_is_digit(65u64);
+    uint64:f06 = 0u64; if (r06 == 0u64) { f06 = 1u64; }
+    if (f06 == 1u64) { drop(println("[PASS] T06 is_digit('A')=0")); }
+    if (f06 == 0u64) { drop(println("[FAIL] T06 is_digit('A')=0")); }
+
+    // T07: ascii_is_hex — 'F' = 70 -> 1
+    uint64:r07 = ascii_is_hex(70u64);
+    uint64:f07 = 0u64; if (r07 == 1u64) { f07 = 1u64; }
+    if (f07 == 1u64) { drop(println("[PASS] T07 is_hex('F')=1")); }
+    if (f07 == 0u64) { drop(println("[FAIL] T07 is_hex('F')=1")); }
+
+    // T08: ascii_is_hex — 'g' = 103 -> 0
+    uint64:r08 = ascii_is_hex(103u64);
+    uint64:f08 = 0u64; if (r08 == 0u64) { f08 = 1u64; }
+    if (f08 == 1u64) { drop(println("[PASS] T08 is_hex('g')=0")); }
+    if (f08 == 0u64) { drop(println("[FAIL] T08 is_hex('g')=0")); }
+
+    // T09: ascii_to_lower — 'B' = 66 -> 'b' = 98
+    uint64:r09 = ascii_to_lower(66u64);
+    uint64:f09 = 0u64; if (r09 == 98u64) { f09 = 1u64; }
+    if (f09 == 1u64) { drop(println("[PASS] T09 to_lower('B')='b'")); }
+    if (f09 == 0u64) { drop(println("[FAIL] T09 to_lower('B')='b'")); }
+
+    // T10: ascii_to_lower — '3' = 51 -> 51 (no-op, not a letter)
+    uint64:r10 = ascii_to_lower(51u64);
+    uint64:f10 = 0u64; if (r10 == 51u64) { f10 = 1u64; }
+    if (f10 == 1u64) { drop(println("[PASS] T10 to_lower('3')='3' no-op")); }
+    if (f10 == 0u64) { drop(println("[FAIL] T10 to_lower('3')='3' no-op")); }
+
+    // T11: ascii_to_upper — 'm' = 109 -> 'M' = 77
+    uint64:r11 = ascii_to_upper(109u64);
+    uint64:f11 = 0u64; if (r11 == 77u64) { f11 = 1u64; }
+    if (f11 == 1u64) { drop(println("[PASS] T11 to_upper('m')='M'")); }
+    if (f11 == 0u64) { drop(println("[FAIL] T11 to_upper('m')='M'")); }
+
+    // T12: ascii_to_upper — 'M' = 77 -> 77 (no-op already upper)
+    uint64:r12 = ascii_to_upper(77u64);
+    uint64:f12 = 0u64; if (r12 == 77u64) { f12 = 1u64; }
+    if (f12 == 1u64) { drop(println("[PASS] T12 to_upper('M')='M' no-op")); }
+    if (f12 == 0u64) { drop(println("[FAIL] T12 to_upper('M')='M' no-op")); }
+
+    // T13: ascii_digit_val — '7' = 55 -> 7
+    uint64:r13 = ascii_digit_val(55u64);
+    uint64:f13 = 0u64; if (r13 == 7u64) { f13 = 1u64; }
+    if (f13 == 1u64) { drop(println("[PASS] T13 digit_val('7')=7")); }
+    if (f13 == 0u64) { drop(println("[FAIL] T13 digit_val('7')=7")); }
+
+    // T14: ascii_hex_val — 'C' = 67 -> 12 (C - 55 = 12)
+    uint64:r14 = ascii_hex_val(67u64);
+    uint64:f14 = 0u64; if (r14 == 12u64) { f14 = 1u64; }
+    if (f14 == 1u64) { drop(println("[PASS] T14 hex_val('C')=12")); }
+    if (f14 == 0u64) { drop(println("[FAIL] T14 hex_val('C')=12")); }
+
+    // T15: ascii_hex_val — 'e' = 101 -> 14 (e - 87 = 14)
+    uint64:r15 = ascii_hex_val(101u64);
+    uint64:f15 = 0u64; if (r15 == 14u64) { f15 = 1u64; }
+    if (f15 == 1u64) { drop(println("[PASS] T15 hex_val('e')=14")); }
+    if (f15 == 0u64) { drop(println("[FAIL] T15 hex_val('e')=14")); }
+
+    pass(0i32);
+};

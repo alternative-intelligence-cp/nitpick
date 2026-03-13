@@ -1,0 +1,99 @@
+// aria-ascii — ASCII character classification and conversion utilities
+// All inputs treated as uint64 codepoints; safe for ASCII range 0-127.
+
+// Returns 1 if c is an ASCII uppercase letter (A-Z = 65-90)
+pub func:ascii_is_upper = uint64(uint64:c) {
+    uint64:result = 0u64;
+    if (c >= 65u64) {
+        if (c <= 90u64) {
+            result = 1u64;
+        }
+    }
+    pass(result);
+};
+
+// Returns 1 if c is an ASCII lowercase letter (a-z = 97-122)
+pub func:ascii_is_lower = uint64(uint64:c) {
+    uint64:result = 0u64;
+    if (c >= 97u64) {
+        if (c <= 122u64) {
+            result = 1u64;
+        }
+    }
+    pass(result);
+};
+
+// Returns 1 if c is an ASCII decimal digit (0-9 = 48-57)
+pub func:ascii_is_digit = uint64(uint64:c) {
+    uint64:result = 0u64;
+    if (c >= 48u64) {
+        if (c <= 57u64) {
+            result = 1u64;
+        }
+    }
+    pass(result);
+};
+
+// Returns 1 if c is a hex digit (0-9, A-F, a-f)
+pub func:ascii_is_hex = uint64(uint64:c) {
+    uint64:result = 0u64;
+    if (c >= 48u64) {
+        if (c <= 57u64) {
+            result = 1u64;
+        }
+    }
+    if (c >= 65u64) {
+        if (c <= 70u64) {
+            result = 1u64;
+        }
+    }
+    if (c >= 97u64) {
+        if (c <= 102u64) {
+            result = 1u64;
+        }
+    }
+    pass(result);
+};
+
+// Convert uppercase letter to lowercase — no-op if not A-Z
+pub func:ascii_to_lower = uint64(uint64:c) {
+    uint64:result = c;
+    if (c >= 65u64) {
+        if (c <= 90u64) {
+            result = c | 32u64;
+        }
+    }
+    pass(result);
+};
+
+// Convert lowercase letter to uppercase — no-op if not a-z
+pub func:ascii_to_upper = uint64(uint64:c) {
+    uint64:result = c;
+    if (c >= 97u64) {
+        if (c <= 122u64) {
+            result = c - 32u64;
+        }
+    }
+    pass(result);
+};
+
+// Numeric value of ASCII digit '0'-'9' — undefined for non-digits
+pub func:ascii_digit_val = uint64(uint64:c) {
+    pass(c - 48u64);
+};
+
+// Numeric value of ASCII hex digit 0-15 — undefined for non-hex chars
+pub func:ascii_hex_val = uint64(uint64:c) {
+    uint64:result = c - 48u64;
+    if (c >= 65u64) {
+        if (c <= 70u64) {
+            result = c - 55u64;
+        }
+    }
+    if (c >= 97u64) {
+        if (c <= 102u64) {
+            result = c - 87u64;
+        }
+    }
+    pass(result);
+};
