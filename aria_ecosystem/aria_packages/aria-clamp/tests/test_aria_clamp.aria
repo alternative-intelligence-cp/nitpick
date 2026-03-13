@@ -1,0 +1,107 @@
+use "../src/aria_clamp.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // T01: min_u64(3,5) = 3
+    uint64:r01 = min_u64(3u64, 5u64);
+    uint64:f01 = 0u64; if (r01 == 3u64) { f01 = 1u64; }
+    if (f01 == 1u64) { drop(println("[PASS] T01 min_u64(3,5)=3")); }
+    if (f01 == 0u64) { drop(println("[FAIL] T01 min_u64(3,5)=3")); }
+
+    // T02: min_u64(7,2) = 2
+    uint64:r02 = min_u64(7u64, 2u64);
+    uint64:f02 = 0u64; if (r02 == 2u64) { f02 = 1u64; }
+    if (f02 == 1u64) { drop(println("[PASS] T02 min_u64(7,2)=2")); }
+    if (f02 == 0u64) { drop(println("[FAIL] T02 min_u64(7,2)=2")); }
+
+    // T03: min_u64(4,4) = 4 (equal)
+    uint64:r03 = min_u64(4u64, 4u64);
+    uint64:f03 = 0u64; if (r03 == 4u64) { f03 = 1u64; }
+    if (f03 == 1u64) { drop(println("[PASS] T03 min_u64(4,4)=4")); }
+    if (f03 == 0u64) { drop(println("[FAIL] T03 min_u64(4,4)=4")); }
+
+    // T04: max_u64(3,5) = 5
+    uint64:r04 = max_u64(3u64, 5u64);
+    uint64:f04 = 0u64; if (r04 == 5u64) { f04 = 1u64; }
+    if (f04 == 1u64) { drop(println("[PASS] T04 max_u64(3,5)=5")); }
+    if (f04 == 0u64) { drop(println("[FAIL] T04 max_u64(3,5)=5")); }
+
+    // T05: max_u64(7,2) = 7
+    uint64:r05 = max_u64(7u64, 2u64);
+    uint64:f05 = 0u64; if (r05 == 7u64) { f05 = 1u64; }
+    if (f05 == 1u64) { drop(println("[PASS] T05 max_u64(7,2)=7")); }
+    if (f05 == 0u64) { drop(println("[FAIL] T05 max_u64(7,2)=7")); }
+
+    // T06: clamp_u64(5,2,8) = 5 (in range)
+    uint64:r06 = clamp_u64(5u64, 2u64, 8u64);
+    uint64:f06 = 0u64; if (r06 == 5u64) { f06 = 1u64; }
+    if (f06 == 1u64) { drop(println("[PASS] T06 clamp_u64(5,2,8)=5")); }
+    if (f06 == 0u64) { drop(println("[FAIL] T06 clamp_u64(5,2,8)=5")); }
+
+    // T07: clamp_u64(1,2,8) = 2 (below lo)
+    uint64:r07 = clamp_u64(1u64, 2u64, 8u64);
+    uint64:f07 = 0u64; if (r07 == 2u64) { f07 = 1u64; }
+    if (f07 == 1u64) { drop(println("[PASS] T07 clamp_u64(1,2,8)=2")); }
+    if (f07 == 0u64) { drop(println("[FAIL] T07 clamp_u64(1,2,8)=2")); }
+
+    // T08: clamp_u64(10,2,8) = 8 (above hi)
+    uint64:r08 = clamp_u64(10u64, 2u64, 8u64);
+    uint64:f08 = 0u64; if (r08 == 8u64) { f08 = 1u64; }
+    if (f08 == 1u64) { drop(println("[PASS] T08 clamp_u64(10,2,8)=8")); }
+    if (f08 == 0u64) { drop(println("[FAIL] T08 clamp_u64(10,2,8)=8")); }
+
+    // T09: min_i64(3,5) = 3
+    int64:r09 = min_i64(3i64, 5i64);
+    int64:f09 = 0i64; if (r09 == 3i64) { f09 = 1i64; }
+    if (f09 == 1i64) { drop(println("[PASS] T09 min_i64(3,5)=3")); }
+    if (f09 == 0i64) { drop(println("[FAIL] T09 min_i64(3,5)=3")); }
+
+    // T10: min_i64 with negative: min(neg3, 5) = -3
+    int64:neg3 = 0i64 - 3i64;
+    int64:r10 = min_i64(neg3, 5i64);
+    int64:f10 = 0i64; if (r10 == neg3) { f10 = 1i64; }
+    if (f10 == 1i64) { drop(println("[PASS] T10 min_i64(-3,5)=-3")); }
+    if (f10 == 0i64) { drop(println("[FAIL] T10 min_i64(-3,5)=-3")); }
+
+    // T11: max_i64 with negative: max(neg3, 5) = 5
+    int64:r11 = max_i64(neg3, 5i64);
+    int64:f11 = 0i64; if (r11 == 5i64) { f11 = 1i64; }
+    if (f11 == 1i64) { drop(println("[PASS] T11 max_i64(-3,5)=5")); }
+    if (f11 == 0i64) { drop(println("[FAIL] T11 max_i64(-3,5)=5")); }
+
+    // T12: clamp_i64(10,1,7) = 7
+    int64:r12 = clamp_i64(10i64, 1i64, 7i64);
+    int64:f12 = 0i64; if (r12 == 7i64) { f12 = 1i64; }
+    if (f12 == 1i64) { drop(println("[PASS] T12 clamp_i64(10,1,7)=7")); }
+    if (f12 == 0i64) { drop(println("[FAIL] T12 clamp_i64(10,1,7)=7")); }
+
+    // T13: abs_i64(-5) = 5
+    int64:neg5 = 0i64 - 5i64;
+    int64:r13 = abs_i64(neg5);
+    int64:f13 = 0i64; if (r13 == 5i64) { f13 = 1i64; }
+    if (f13 == 1i64) { drop(println("[PASS] T13 abs_i64(-5)=5")); }
+    if (f13 == 0i64) { drop(println("[FAIL] T13 abs_i64(-5)=5")); }
+
+    // T14: abs_i64(9) = 9
+    int64:r14 = abs_i64(9i64);
+    int64:f14 = 0i64; if (r14 == 9i64) { f14 = 1i64; }
+    if (f14 == 1i64) { drop(println("[PASS] T14 abs_i64(9)=9")); }
+    if (f14 == 0i64) { drop(println("[FAIL] T14 abs_i64(9)=9")); }
+
+    // T15: sign_i64: positive=1, negative=-1, zero=0
+    int64:neg7 = 0i64 - 7i64;
+    int64:s1 = sign_i64(6i64);
+    int64:s2 = sign_i64(neg7);
+    int64:s3 = sign_i64(0i64);
+    int64:negone = 0i64 - 1i64;
+    int64:f15 = 0i64;
+    if (s1 == 1i64) { f15 = f15 + 1i64; }
+    if (s2 == negone) { f15 = f15 + 1i64; }
+    if (s3 == 0i64) { f15 = f15 + 1i64; }
+    if (f15 == 3i64) { drop(println("[PASS] T15 sign_i64 pos/neg/zero")); }
+    if (f15 == 0i64) { drop(println("[FAIL] T15 sign_i64 pos/neg/zero")); }
+
+    pass(0i32);
+};
