@@ -1,176 +1,305 @@
-// ============================================================================
-// JSON Tokenizer - Working Implementation v1
-// ============================================================================
-// Simple tokenizer for JSON that handles:
-// - Structural characters: { } [ ] : ,  
-// - String literals (basic, no escapes yet)
-// - Numbers (integers and floats)
-// - Keywords: true, false, null
-// ============================================================================
+// json_tokenizer.aria — EXP-1 JSON Tokenizer
+//
+// Exercises:
+//   - C extern with string parameter (aria_string_byte_at)
+//   - wild int64* heap arrays (malloc/free, lisp.aria pattern)
+//   - passing string values to Aria functions
+//   - while loops, multi-condition logic, early-pass via raw()
+//   - result-propagation with drop() for NIL-returning functions
+//
+// ── Bug found ────────────────────────────────────────────────────────────────
+// Bug #13: extern func taking `string` parameter — Aria passes AriaString*
+//   (pointer to struct), NOT AriaString by value.
+//   Root cause: ariac stores string locals as ptr (pointer to constant
+//     %struct.AriaString), and passes that pointer directly.
+//   IR shows: declare i64 @aria_string_byte_at(ptr, i64)
+//             call i64 @aria_string_byte_at(ptr %s2, i64 0)
+//   Fix: declare C function with `const AriaString*` first param, not value.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Hard-coded token type codes (stored as int64):
+//   0=EOF  1={  2=}  3=[  4=]  5=:  6=,  7=STRING  8=NUMBER  9=TRUE  10=FALSE  11=NULL
+//
+// ASCII reference (used in comments throughout):
+//   '{':123  '}':125  '[':91  ']':93  ':':58  ',':44
+//   '"':34   '-':45   '.':46  ' ':32  '\t':9  '\n':10  '\r':13
+//   '0':48   '9':57   't':116  'f':102  'n':110
 
-// Token types
-enum:TokenType = {
-    TOK_EOF = 0,
-    TOK_LBRACE = 1,           // {
-    TOK_RBRACE = 2,           // }
-    TOK_LBRACKET = 3,         // [
-    TOK_RBRACKET = 4,         // ]
-    TOK_COLON = 5,            // :
-    TOK_COMMA = 6,            // ,
-    TOK_STRING = 7,           // "string"
-    TOK_NUMBER = 8,           // 123 or 45.67
-    TOK_TRUE = 9,             // true
-    TOK_FALSE = 10,           // false
-    TOK_NULL = 11,            // null
-    TOK_ERROR = 12            // Error
+use "../../stdlib/string_convert.aria".*;
+use "../../stdlib/print_utils.aria".*;
+
+extern func:malloc = wild int64*(int64:size);
+extern func:free   = void(wild int64*:ptr);
+
+// aria_string_byte_at — returns byte at index i in string s as int64.
+// Returns -1 when out of bounds.  Defined in src/runtime/strings/byte_at.c.
+extern func:aria_string_byte_at = int64(string:s, int64:i);
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// ── Classifiers ──────────────────────────────────────────────────────────────
+
+func:is_ws = bool(int64:c) {
+    pass(c == 32i64 || c == 9i64 || c == 10i64 || c == 13i64);
 };
 
-// Token structure
-struct:Token = {
-    int32:type;
-    int32:line;
-    int32:column;
+func:is_digit = bool(int64:c) {
+    pass(c >= 48i64 && c <= 57i64);
 };
 
-// Tokenizer state
-struct:Tokenizer = {
-    int8->:input;             // Pointer to input string
-    int32:pos;                // Current position
-    int32:line;               // Current line (1-indexed)
-    int32:column;             // Current column (1-indexed)
-};
+// ── Tokenizer ────────────────────────────────────────────────────────────────
+//
+// state layout (4 elements):
+//   state[0] = current byte position in input
+//   state[1] = byte length of input
+//   state[2] = number of tokens emitted so far
+//   state[3] = (unused / reserved)
+//
+// next_tok reads one token starting at state[0], appends its type to
+// ttypes[state[2]], then increments state[2].  Returns the token type.
+//
+// Token types (int64):
+//   0=EOF  1={  2=}  3=[  4=]  5=:  6=,  7=STRING  8=NUMBER  9=TRUE  10=FALSE  11=NULL
 
-// ============================================================================
-// Character classification helpers
-// ============================================================================
-
-func:is_whitespace = int8(int8:ch) {
-    int8:result = 0i8;
-    if (ch == 32i8) { result = 1i8; } // space
-    if (ch == 9i8) { result = 1i8; }  // tab
-    if (ch == 10i8) { result = 1i8; } // newline
-    if (ch == 13i8) { result = 1i8; } // carriage return
-    pass(result);
-};
-
-func:is_digit = bool(int8:ch) {
-    pass((ch >= 48i8) && (ch <= 57i8));
-};
-
-// ============================================================================
-// Tokenizer initialization
-// ============================================================================
-
-pub func:tokenizer_init = Tokenizer(int8->:input_str) {
-    Tokenizer:tok = Tokenizer {
-        input: input_str,
-        pos: 0,
-        line: 1,
-        column: 1
-    };
-    pass(tok);
-};
-
-// ============================================================================
-// Tokenizer helpers
-// ============================================================================
-
-func:peek = int8(Tokenizer->:tok) {
-    pass((<-tok).input[(<-tok).pos]);
-};
-
-func:advance = int8(Tokenizer->:tok) {
-    int8:ch = (<-tok).input[(<-tok).pos];
-    
-    if (ch == 0i8) {
-        pass(0i8);  // EOF
-    } else {
-        (<-tok).pos = (<-tok).pos + 1;
-        
-        // Update line/column tracking
-        if (ch == 10i8) {  // newline
-            (<-tok).line = (<-tok).line + 1;
-            (<-tok).column = 1;
+func:next_tok = int64(int64->:state, string:input, int64->:ttypes) {
+    // skip leading whitespace
+    bool:ws_loop = true;
+    while (ws_loop) {
+        if (state[0i64] >= state[1i64]) {
+            ws_loop = false;
         } else {
-            (<-tok).column = (<-tok).column + 1;
-        }
-        
-        pass(ch);
-    }
-};
-
-func:skip_whitespace = NIL(Tokenizer->:tok) {
-    int8:ch = peek(tok) ? 0i8;
-    int8:is_ws = is_whitespace(ch) ? 0i8;
-    while (is_ws != 0i8) {
-        advance(tok) ? 0i8;
-        ch = peek(tok) ? 0i8;
-        is_ws = is_whitespace(ch) ? 0i8;
-    }
-    pass(NIL);
-};
-
-// ============================================================================
-// Get next token
-// ============================================================================
-
-pub func:next_token = Token(Tokenizer->:tok) {
-    skip_whitespace(tok) ? NIL;
-    
-    // Save position for token
-    int32:tok_line = (<-tok).line;
-    int32:tok_col = (<-tok).column;
-    
-    int8:ch = peek(tok) ? 0i8;
-    
-    // EOF
-    if (ch == 0i8) {
-        Token:t = Token { type: 0, line: tok_line, column: tok_col };  // TOK_EOF
-        pass(t);
-    } else {
-        // Structural characters
-        if (ch == 123i8) {  // {
-            advance(tok) ? 0i8;
-            Token:t = Token { type: 1, line: tok_line, column: tok_col };  // TOK_LBRACE
-            pass(t);
-        } else {
-            if (ch == 125i8) {  // }
-                advance(tok) ? 0i8;
-                Token:t = Token { type: 2, line: tok_line, column: tok_col };  // TOK_RBRACE
-                pass(t);
+            int64:wc = aria_string_byte_at(input, state[0i64]);
+            bool:is_space = raw(is_ws(wc));
+            if (is_space) {
+                state[0i64] = state[0i64] + 1i64;
             } else {
-                if (ch == 91i8) {  // [
-                    advance(tok) ? 0i8;
-                    Token:t = Token { type: 3, line: tok_line, column: tok_col };  // TOK_LBRACKET
-                    pass(t);
+                ws_loop = false;
+            }
+        }
+    }
+
+    int64:pos = state[0i64];
+    int64:len = state[1i64];
+    int64:tc  = state[2i64];
+
+    // EOF
+    if (pos >= len) {
+        ttypes[tc] = 0i64;
+        state[2i64] = tc + 1i64;
+        pass(0i64);
+    }
+
+    int64:ch = aria_string_byte_at(input, pos);
+    int64:tok = 0i64 - 99i64;   // sentinel "unset"
+
+    // ── Single-character tokens ──
+    if (ch == 123i64) { tok = 1i64; state[0i64] = pos + 1i64; }  // {
+    if (ch == 125i64) { tok = 2i64; state[0i64] = pos + 1i64; }  // }
+    if (ch == 91i64)  { tok = 3i64; state[0i64] = pos + 1i64; }  // [
+    if (ch == 93i64)  { tok = 4i64; state[0i64] = pos + 1i64; }  // ]
+    if (ch == 58i64)  { tok = 5i64; state[0i64] = pos + 1i64; }  // :
+    if (ch == 44i64)  { tok = 6i64; state[0i64] = pos + 1i64; }  // ,
+
+    // ── String literal (34 = '"') ──
+    if (ch == 34i64) {
+        tok = 7i64;
+        int64:sp = pos + 1i64;
+        bool:str_loop = true;
+        while (str_loop) {
+            if (sp >= len) {
+                str_loop = false;   // unterminated — treat as end
+            } else {
+                int64:sc = aria_string_byte_at(input, sp);
+                sp = sp + 1i64;
+                if (sc == 34i64) { str_loop = false; }  // closing "
+            }
+        }
+        state[0i64] = sp;
+    }
+
+    // ── Number: starts with '-' (45) or a digit (48-57) ──
+    bool:is_num_start = raw(is_digit(ch));
+    if (ch == 45i64) { is_num_start = true; }
+    if (is_num_start) {
+        tok = 8i64;
+        int64:np = pos + 1i64;
+        bool:num_loop = true;
+        while (num_loop) {
+            if (np >= len) {
+                num_loop = false;
+            } else {
+                int64:nc = aria_string_byte_at(input, np);
+                bool:nc_digit = raw(is_digit(nc));
+                if (nc_digit) {
+                    np = np + 1i64;
                 } else {
-                    if (ch == 93i8) {  // ]
-                        advance(tok) ? 0i8;
-                        Token:t = Token { type: 4, line: tok_line, column: tok_col };  // TOK_RBRACKET
-                        pass(t);
+                    if (nc == 46i64) {     // '.' — decimal point
+                        np = np + 1i64;
                     } else {
-                        if (ch == 58i8) {  // :
-                            advance(tok) ? 0i8;
-                            Token:t = Token { type: 5, line: tok_line, column: tok_col };  // TOK_COLON
-                            pass(t);
-                        } else {
-                            if (ch == 44i8) {  // ,
-                                advance(tok) ? 0i8;
-                                Token:t = Token { type: 6, line: tok_line, column: tok_col };  // TOK_COMMA
-                                pass(t);
-                            } else {
-                                // For now, return error for any other character
-                                Token:t = Token { type: 12, line: tok_line, column: tok_col };  // TOK_ERROR
-                                pass(t);
-                            }
-                        }
+                        num_loop = false;
                     }
                 }
             }
         }
+        state[0i64] = np;
     }
+
+    // ── Keyword tokens ──
+    if (ch == 116i64) { tok = 9i64;  state[0i64] = pos + 4i64; }  // true
+    if (ch == 102i64) { tok = 10i64; state[0i64] = pos + 5i64; }  // false
+    if (ch == 110i64) { tok = 11i64; state[0i64] = pos + 4i64; }  // null
+
+    ttypes[tc] = tok;
+    state[2i64] = tc + 1i64;
+    pass(tok);
 };
 
-func:failsafe = NIL(int32:err_code) {
-    pass(NIL);
+// Tokenize entire input into ttypes[].  Stops after emitting EOF.
+// Returns total token count (including the EOF token).
+func:tokenize = int64(string:input, int64->:state, int64->:ttypes) {
+    state[0i64] = 0i64;
+    state[1i64] = string_length(input);
+    state[2i64] = 0i64;
+    state[3i64] = 0i64;
+
+    bool:tok_loop = true;
+    while (tok_loop) {
+        int64:t = raw(next_tok(state, input, ttypes));
+        if (t == 0i64) { tok_loop = false; }   // EOF reached
+    }
+    pass(state[2i64]);
+};
+
+// Compare ttypes[0..count-1] against expected[0..count-1].
+func:seq_matches = bool(int64->:ttypes, int64:count, int64->:expected) {
+    bool:all_match = true;
+    int64:i = 0i64;
+    while (i < count) {
+        if (ttypes[i] != expected[i]) { all_match = false; }
+        i = i + 1i64;
+    }
+    pass(all_match);
+};
+
+// ── Test runner ──────────────────────────────────────────────────────────────
+
+func:main = int32() {
+    // shared buffers (re-used across tests)
+    wild int64->:state  = malloc(4i64 * 8i64);   // 4 x int64
+    wild int64->:ttypes = malloc(64i64 * 8i64);  // up to 64 tokens per test case
+    wild int64->:exp    = malloc(64i64 * 8i64);
+
+    int64:pass_count = 0i64;
+    int64:fail_count = 0i64;
+
+    drop(printlnString("JSON Tokenizer -- EXP-1"));
+    drop(printlnString("======================="));
+
+    // ── Test 1: bare braces  {} ──
+    string:t1 = "{}";
+    int64:t1_count = raw(tokenize(t1, state, ttypes));
+    //  expected : LBRACE RBRACE EOF
+    exp[0i64] = 1i64;  exp[1i64] = 2i64;  exp[2i64] = 0i64;
+    bool:t1_ok = raw(seq_matches(ttypes, 3i64, exp));
+    if (t1_ok) {
+        drop(printlnString("[PASS] Test 1: {}"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printlnString("[FAIL] Test 1: {}"));
+        drop(printString("  token count = "));
+        drop(printlnInt64(t1_count));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Test 2: key-value string pair  {"key":"val"} ──
+    string:t2 = "{\"key\":\"val\"}";
+    int64:t2_count = raw(tokenize(t2, state, ttypes));
+    //  expected : { STRING : STRING } EOF
+    exp[0i64] = 1i64;  exp[1i64] = 7i64;  exp[2i64] = 5i64;
+    exp[3i64] = 7i64;  exp[4i64] = 2i64;  exp[5i64] = 0i64;
+    bool:t2_ok = raw(seq_matches(ttypes, 6i64, exp));
+    if (t2_ok) {
+        drop(printlnString("[PASS] Test 2: {key:val}"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printlnString("[FAIL] Test 2: {key:val}"));
+        drop(printString("  token count = "));
+        drop(printlnInt64(t2_count));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Test 3: integer array  [1, 2, 3] ──
+    string:t3 = "[1, 2, 3]";
+    int64:t3_count = raw(tokenize(t3, state, ttypes));
+    //  expected : [ NUMBER , NUMBER , NUMBER ] EOF
+    exp[0i64] = 3i64;  exp[1i64] = 8i64;  exp[2i64] = 6i64;
+    exp[3i64] = 8i64;  exp[4i64] = 6i64;  exp[5i64] = 8i64;
+    exp[6i64] = 4i64;  exp[7i64] = 0i64;
+    bool:t3_ok = raw(seq_matches(ttypes, 8i64, exp));
+    if (t3_ok) {
+        drop(printlnString("[PASS] Test 3: [1, 2, 3]"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printlnString("[FAIL] Test 3: [1, 2, 3]"));
+        drop(printString("  token count = "));
+        drop(printlnInt64(t3_count));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Test 4: keywords  {"a":true,"b":false,"c":null} ──
+    string:t4 = "{\"a\":true,\"b\":false,\"c\":null}";
+    int64:t4_count = raw(tokenize(t4, state, ttypes));
+    //  expected : { STRING : TRUE , STRING : FALSE , STRING : NULL } EOF
+    exp[0i64]  = 1i64;   exp[1i64]  = 7i64;   exp[2i64]  = 5i64;
+    exp[3i64]  = 9i64;   exp[4i64]  = 6i64;   exp[5i64]  = 7i64;
+    exp[6i64]  = 5i64;   exp[7i64]  = 10i64;  exp[8i64]  = 6i64;
+    exp[9i64]  = 7i64;   exp[10i64] = 5i64;   exp[11i64] = 11i64;
+    exp[12i64] = 2i64;   exp[13i64] = 0i64;
+    bool:t4_ok = raw(seq_matches(ttypes, 14i64, exp));
+    if (t4_ok) {
+        drop(printlnString("[PASS] Test 4: keywords (true/false/null)"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printlnString("[FAIL] Test 4: keywords (true/false/null)"));
+        drop(printString("  token count = "));
+        drop(printlnInt64(t4_count));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Test 5: negative float  {"x":-3.14} ──
+    string:t5 = "{\"x\":-3.14}";
+    int64:t5_count = raw(tokenize(t5, state, ttypes));
+    //  expected : { STRING : NUMBER } EOF
+    exp[0i64] = 1i64;  exp[1i64] = 7i64;  exp[2i64] = 5i64;
+    exp[3i64] = 8i64;  exp[4i64] = 2i64;  exp[5i64] = 0i64;
+    bool:t5_ok = raw(seq_matches(ttypes, 6i64, exp));
+    if (t5_ok) {
+        drop(printlnString("[PASS] Test 5: negative float"));
+        pass_count = pass_count + 1i64;
+    } else {
+        drop(printlnString("[FAIL] Test 5: negative float"));
+        drop(printString("  token count = "));
+        drop(printlnInt64(t5_count));
+        fail_count = fail_count + 1i64;
+    }
+
+    // ── Summary ──
+    drop(printlnString("---"));
+    drop(printString("Passed: "));
+    drop(printlnInt64(pass_count));
+    drop(printString("Failed: "));
+    drop(printlnInt64(fail_count));
+
+    if (fail_count == 0i64) {
+        drop(printlnString("PASS: all JSON tokenizer tests passed"));
+    } else {
+        drop(printlnString("FAIL: some JSON tokenizer tests failed"));
+    }
+
+    // Cleanup
+    free(exp);
+    free(ttypes);
+    free(state);
+
+    pass(0i32);
 };
