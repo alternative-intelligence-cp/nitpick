@@ -1,0 +1,182 @@
+// http_server.aria — EXP-5 HTTP Server with Self-Test
+//
+// Exercises:
+//   - extern func returning `string` type (AriaString* ABI — Bug #13 follow-up)
+//   - string_concat, string_starts_with, string_contains, string_equals builtins
+//   - string_from_char(int8) for CRLF construction (avoids \r\n escape question)
+//   - string_from_int for integer→string in response headers
+//   - pass() early-return from user-defined string-returning functions
+//   - multi-level if routing (method dispatch + path routing)
+//   - int32 while loop counter, server accept loop
+//
+// ── Bug found ────────────────────────────────────────────────────────────────
+// Bug #13 (confirmed again): extern func returning `string` works correctly —
+//   Aria stores the returned AriaString* in a local ptr slot, identical to how
+//   it stores string literals. So C functions returning AriaString* are fully
+//   usable as Aria `string` values.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Test design:
+//   C helper spawns a loopback client thread sending 3 sequential requests.
+//   Aria handles each, building responses via string_concat, verifying results.
+//
+// Routes under test:
+//   GET /         → 200 "Hello from Aria!"
+//   GET /ping     → 200 "pong"
+//   GET /missing  → 404 (any non-registered path)
+
+use "../../stdlib/string_convert.aria".*;
+use "../../stdlib/print_utils.aria".*;
+
+// ── Network I/O externs (all implemented in http_helpers.c) ─────────────────
+extern func:aria_http_start             = int32(int32:port);
+extern func:aria_http_accept            = int32(int32:server_fd);
+extern func:aria_http_fill_request      = void(int32:client_fd);
+extern func:aria_http_get_method        = string();
+extern func:aria_http_get_path          = string();
+extern func:aria_http_send              = void(int32:client_fd, string:response);
+extern func:aria_http_close             = void(int32:fd);
+extern func:aria_http_start_test_client = void(int32:port);
+
+// ── CRLF via string_from_char — avoids reliance on \r\n escape support ───────
+func:crlf = string() {
+    pass(string_concat(string_from_char(13i8), string_from_char(10i8)));
+};
+
+// ── Build a minimal HTTP/1.0 response ────────────────────────────────────────
+// Format: "HTTP/1.0 <status> <text>\r\nContent-Length: <n>\r\n\r\n<body>"
+func:make_response = string(int32:status, string:status_text, string:body) {
+    string:nl   = raw(crlf());
+    string:resp = string_concat("HTTP/1.0 ", string_from_int(status => int64));
+    resp = string_concat(resp, " ");
+    resp = string_concat(resp, status_text);
+    resp = string_concat(resp, nl);
+    resp = string_concat(resp, "Content-Length: ");
+    resp = string_concat(resp, string_from_int(string_length(body)));
+    resp = string_concat(resp, nl);
+    resp = string_concat(resp, nl);
+    resp = string_concat(resp, body);
+    pass(resp);
+};
+
+// ── HTTP router ───────────────────────────────────────────────────────────────
+func:route = string(string:method, string:path) {
+    bool:is_get = string_equals(method, "GET");
+    if (is_get) {
+        bool:is_root = string_equals(path, "/");
+        if (is_root) {
+            pass(raw(make_response(200, "OK", "Hello from Aria!")));
+        }
+        bool:is_ping = string_equals(path, "/ping");
+        if (is_ping) {
+            pass(raw(make_response(200, "OK", "pong")));
+        }
+        pass(raw(make_response(404, "Not Found", "")));
+    }
+    pass(raw(make_response(405, "Method Not Allowed", "")));
+};
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// ── Self-test main ────────────────────────────────────────────────────────────
+func:main = int32() {
+    int32:port         = 8481;
+    int32:num_requests = 3;
+
+    drop(printlnString("HTTP Server -- EXP-5"));
+    drop(printlnString("===================="));
+    drop(printString("Listening on port "));
+    drop(printlnInt32(port));
+
+    // Start server socket, then launch loopback client thread
+    int32:server_fd = aria_http_start(port);
+    aria_http_start_test_client(port);
+
+    int64:pass_count = 0i64;
+    int64:fail_count = 0i64;
+
+    int32:i = 0;
+    while (i < num_requests) {
+        int32:client_fd = aria_http_accept(server_fd);
+        aria_http_fill_request(client_fd);
+        string:method = aria_http_get_method();
+        string:path   = aria_http_get_path();
+        string:resp   = raw(route(method, path));
+        aria_http_send(client_fd, resp);
+        aria_http_close(client_fd);
+
+        // ── Print what we saw and verify the response ──
+        drop(printString("  ["));
+        drop(printString(int32_toString(i + 1)));
+        drop(printString("] "));
+        drop(printString(method));
+        drop(printString(" "));
+        drop(printlnString(path));
+
+        // Test 0: GET / → 200 + body contains "Hello from Aria"
+        if (i == 0) {
+            bool:s_ok = string_starts_with(resp, "HTTP/1.0 200");
+            bool:b_ok = string_contains(resp, "Hello from Aria");
+            if (s_ok) {
+                if (b_ok) {
+                    drop(printlnString("      [PASS] 200 Hello from Aria!"));
+                    pass_count = pass_count + 1i64;
+                } else {
+                    drop(printlnString("      [FAIL] body missing 'Hello from Aria'"));
+                    fail_count = fail_count + 1i64;
+                }
+            } else {
+                drop(printlnString("      [FAIL] expected 200"));
+                fail_count = fail_count + 1i64;
+            }
+        }
+
+        // Test 1: GET /ping → 200 + body contains "pong"
+        if (i == 1) {
+            bool:s_ok = string_starts_with(resp, "HTTP/1.0 200");
+            bool:b_ok = string_contains(resp, "pong");
+            if (s_ok) {
+                if (b_ok) {
+                    drop(printlnString("      [PASS] 200 pong"));
+                    pass_count = pass_count + 1i64;
+                } else {
+                    drop(printlnString("      [FAIL] body missing 'pong'"));
+                    fail_count = fail_count + 1i64;
+                }
+            } else {
+                drop(printlnString("      [FAIL] expected 200"));
+                fail_count = fail_count + 1i64;
+            }
+        }
+
+        // Test 2: GET /missing → 404
+        if (i == 2) {
+            bool:s_ok = string_starts_with(resp, "HTTP/1.0 404");
+            if (s_ok) {
+                drop(printlnString("      [PASS] 404 Not Found"));
+                pass_count = pass_count + 1i64;
+            } else {
+                drop(printlnString("      [FAIL] expected 404"));
+                fail_count = fail_count + 1i64;
+            }
+        }
+
+        i = i + 1;
+    }
+
+    aria_http_close(server_fd);
+
+    drop(printlnString("---"));
+    drop(printString("Passed: "));
+    drop(printlnInt64(pass_count));
+    drop(printString("Failed: "));
+    drop(printlnInt64(fail_count));
+
+    if (fail_count == 0i64) {
+        drop(printlnString("PASS: all HTTP routing tests passed"));
+    } else {
+        drop(printlnString("FAIL: some HTTP routing tests failed"));
+    }
+
+    pass(0i32);
+};
