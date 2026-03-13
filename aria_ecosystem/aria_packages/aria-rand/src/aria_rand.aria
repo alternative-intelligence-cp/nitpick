@@ -1,0 +1,33 @@
+// aria-rand v0.1.0 — xorshift64 pseudo-random number generator
+//
+// All operations use uint64 — ariac requires unsigned types for bitwise ops.
+// Note: seed 0 is a degenerate fixed point (rand_next(0) == 0).
+//       Use any non-zero seed for meaningful sequences.
+//
+// Provided functions (all operate on uint64):
+//   rand_next(state)       — advance PRNG state via xorshift64; return next value
+//   rand_bounded(state, n) — return next value in [0, n)  (n must be > 0)
+//   rand_bool(state)       — return 1u64 if next value is odd, 0u64 if even
+
+// ── Core: xorshift64 ─────────────────────────────────────────────────────────
+
+pub func:rand_next = uint64(uint64:s) {
+    uint64:a = s ^ (s << 13u64);
+    uint64:b = a ^ (a >> 7u64);
+    uint64:c = b ^ (b << 17u64);
+    pass(c);
+};
+
+// ── Derived: bounded in [0, n) ───────────────────────────────────────────────
+
+pub func:rand_bounded = uint64(uint64:s, uint64:n) {
+    uint64:next = raw(rand_next(s));
+    pass(next % n);
+};
+
+// ── Derived: bool (0 or 1) ───────────────────────────────────────────────────
+
+pub func:rand_bool = uint64(uint64:s) {
+    uint64:next = raw(rand_next(s));
+    pass(next & 1u64);
+};

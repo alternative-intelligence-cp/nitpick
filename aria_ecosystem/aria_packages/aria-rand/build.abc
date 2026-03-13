@@ -1,0 +1,25 @@
+# build.abc — aria-rand package
+#
+# Targets:
+#   aria-rand       — compiled library (.o → .a) for downstream packages
+#   test-aria-rand  — test binary; imports src via `use "../src/aria_rand.aria".*;`
+
+[project]
+name = "aria-rand"
+version = "0.1.0"
+compiler = "/home/randy/Workspace/REPOS/aria/build/ariac"
+
+# Precompiled library target (for downstream consumers)
+[target.aria-rand]
+type = "library"
+sources = ["src/aria_rand.aria"]
+deps = []
+flags = []
+
+# Test binary — test file uses `use "../src/aria_rand.aria".*;` to include
+# library source inline; no extra link libraries needed (pure Aria, no C deps)
+[target.test-aria-rand]
+type = "binary"
+sources = ["tests/test_aria_rand.aria"]
+deps = []
+flags = []
