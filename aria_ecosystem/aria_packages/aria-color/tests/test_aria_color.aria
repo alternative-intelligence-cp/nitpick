@@ -1,0 +1,148 @@
+// test_aria_color.aria — LIB-3 test suite (13 tests, all 7 color functions)
+//
+// Build: aria_make from aria-color/ package root, then run
+//        .aria_make/build/test-aria-color
+//
+// Testing strategy: call each function with literal constant arguments.
+// All RGBA packed values are <= 0xFFFFFFFF = 4294967295 < 2^63, so
+// Bug #20 (ashr for uint64) and Bug #21 (u64 literals >= 2^63 → 0) are safe.
+//
+// Reference values (Python: (r<<24)|(g<<16)|(b<<8)|a):
+//   color_pack(255, 0, 0, 255)        = 4278190335  (opaque red)
+//   color_pack(0, 255, 0, 128)        = 16711808    (green, half-alpha)
+//   color_pack(0, 0, 200, 255)        = 51455       (blue-ish, full alpha)
+//   color_r(4278190335)               = 255
+//   color_g(16711808)                 = 255
+//   color_b(51455)                    = 200
+//   color_a(4278190335)               = 255
+//   color_invert(4278190335)          = 16777215    (cyan, full alpha)
+//   color_invert(16711808)            = 4278255488  (magenta, alpha=128)
+//   color_gray(1014543560)            = 2021161160  (60,120,180,200 → 120,120,120,200)
+//   color_pack(100, 150, 200, 50)     = 1687603250
+//   color_r(1687603250)               = 100
+//   color_a(1687603250)               = 50
+
+use "../src/aria_color.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    int64:passed = 0i64;
+    int64:failed = 0i64;
+
+    drop(println("aria-color -- LIB-3"));
+    drop(println("==================="));
+
+    // ── color_pack ───────────────────────────────────────────────────────────
+
+    // test 01: color_pack(255, 0, 0, 255) = 4278190335  (opaque red)
+    uint64:r01 = color_pack(255u64, 0u64, 0u64, 255u64);
+    int64:c01 = 0i64;
+    if (r01 == 4278190335u64) { c01 = 1i64; }
+    if (c01 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_pack(255,0,0,255) = 4278190335")); }
+    if (c01 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_pack(255,0,0,255) = 4278190335")); }
+
+    // test 02: color_pack(0, 255, 0, 128) = 16711808  (green, half-alpha)
+    uint64:r02 = color_pack(0u64, 255u64, 0u64, 128u64);
+    int64:c02 = 0i64;
+    if (r02 == 16711808u64) { c02 = 1i64; }
+    if (c02 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_pack(0,255,0,128) = 16711808")); }
+    if (c02 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_pack(0,255,0,128) = 16711808")); }
+
+    // test 03: color_pack(0, 0, 200, 255) = 51455
+    uint64:r03 = color_pack(0u64, 0u64, 200u64, 255u64);
+    int64:c03 = 0i64;
+    if (r03 == 51455u64) { c03 = 1i64; }
+    if (c03 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_pack(0,0,200,255) = 51455")); }
+    if (c03 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_pack(0,0,200,255) = 51455")); }
+
+    // ── channel extraction ───────────────────────────────────────────────────
+
+    // test 04: color_r(4278190335) = 255
+    uint64:r04 = color_r(4278190335u64);
+    int64:c04 = 0i64;
+    if (r04 == 255u64) { c04 = 1i64; }
+    if (c04 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_r(opaque_red) = 255")); }
+    if (c04 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_r(opaque_red) = 255")); }
+
+    // test 05: color_g(16711808) = 255
+    uint64:r05 = color_g(16711808u64);
+    int64:c05 = 0i64;
+    if (r05 == 255u64) { c05 = 1i64; }
+    if (c05 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_g(green_128a) = 255")); }
+    if (c05 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_g(green_128a) = 255")); }
+
+    // test 06: color_b(51455) = 200
+    uint64:r06 = color_b(51455u64);
+    int64:c06 = 0i64;
+    if (r06 == 200u64) { c06 = 1i64; }
+    if (c06 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_b(blue_200) = 200")); }
+    if (c06 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_b(blue_200) = 200")); }
+
+    // test 07: color_a(4278190335) = 255
+    uint64:r07 = color_a(4278190335u64);
+    int64:c07 = 0i64;
+    if (r07 == 255u64) { c07 = 1i64; }
+    if (c07 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_a(opaque_red) = 255")); }
+    if (c07 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_a(opaque_red) = 255")); }
+
+    // ── color_invert ─────────────────────────────────────────────────────────
+
+    // test 08: color_invert(4278190335) = 16777215  (red → cyan, alpha preserved)
+    uint64:r08 = color_invert(4278190335u64);
+    int64:c08 = 0i64;
+    if (r08 == 16777215u64) { c08 = 1i64; }
+    if (c08 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_invert(red) = cyan")); }
+    if (c08 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_invert(red) = cyan")); }
+
+    // test 09: color_invert(16711808) = 4278255488  (green half-alpha → magenta half-alpha)
+    uint64:r09 = color_invert(16711808u64);
+    int64:c09 = 0i64;
+    if (r09 == 4278255488u64) { c09 = 1i64; }
+    if (c09 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_invert(green) = magenta")); }
+    if (c09 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_invert(green) = magenta")); }
+
+    // ── color_gray ───────────────────────────────────────────────────────────
+
+    // test 10: color_gray(1014543560) = 2021161160
+    // color_pack(60,120,180,200) = 1014543560 → avg=(60+120+180)/3=120
+    // → color_pack(120,120,120,200) = 2021161160
+    uint64:r10 = color_gray(1014543560u64);
+    int64:c10 = 0i64;
+    if (r10 == 2021161160u64) { c10 = 1i64; }
+    if (c10 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_gray(60,120,180,200) = 120,120,120,200")); }
+    if (c10 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_gray(60,120,180,200) = 120,120,120,200")); }
+
+    // ── round-trip ───────────────────────────────────────────────────────────
+
+    // test 11: color_pack(100, 150, 200, 50) = 1687603250
+    uint64:r11 = color_pack(100u64, 150u64, 200u64, 50u64);
+    int64:c11 = 0i64;
+    if (r11 == 1687603250u64) { c11 = 1i64; }
+    if (c11 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_pack(100,150,200,50) = 1687603250")); }
+    if (c11 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_pack(100,150,200,50) = 1687603250")); }
+
+    // test 12: color_r(1687603250) = 100
+    uint64:r12 = color_r(1687603250u64);
+    int64:c12 = 0i64;
+    if (r12 == 100u64) { c12 = 1i64; }
+    if (c12 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_r(1687603250) = 100")); }
+    if (c12 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_r(1687603250) = 100")); }
+
+    // test 13: color_a(1687603250) = 50
+    uint64:r13 = color_a(1687603250u64);
+    int64:c13 = 0i64;
+    if (r13 == 50u64) { c13 = 1i64; }
+    if (c13 == 1i64) { passed = passed + 1i64; drop(println("[PASS] color_a(1687603250) = 50")); }
+    if (c13 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] color_a(1687603250) = 50")); }
+
+    // ── summary ──────────────────────────────────────────────────────────────
+
+    drop(println("---"));
+    if (failed == 0i64) {
+        drop(println("PASS: all 13 aria-color tests passed"));
+        pass(0i32);
+    }
+    drop(println("FAIL: some aria-color tests failed"));
+    pass(1i32);
+};

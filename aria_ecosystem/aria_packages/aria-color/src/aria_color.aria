@@ -1,0 +1,68 @@
+// aria-color v0.1.0 — RGBA color packing/unpacking utilities
+//
+// Colors are stored as a single uint64 with the layout:
+//   bits 31-24: R (red,   0-255)
+//   bits 23-16: G (green, 0-255)
+//   bits 15-8:  B (blue,  0-255)
+//   bits  7-0:  A (alpha, 0-255)
+//
+// All packed values are <= 0xFFFFFFFF = 4294967295 < 2^63, so
+// Bug #20 (ashr) and Bug #21 (large u64 literals) are not triggered.
+//
+// Provided functions:
+//   Packing:      color_pack(r, g, b, a)    — assemble RGBA into uint64
+//   Unpacking:    color_r / color_g / color_b / color_a  — extract channel
+//   Transforms:   color_invert(packed)      — invert RGB channels, keep A
+//                 color_gray(packed)         — average RGB to gray, keep A
+
+// ── Packing ──────────────────────────────────────────────────────────────────
+
+pub func:color_pack = uint64(uint64:r, uint64:g, uint64:b, uint64:a) {
+    uint64:p1 = r << 24u64;
+    uint64:p2 = g << 16u64;
+    uint64:p3 = b << 8u64;
+    uint64:packed = p1 | p2 | p3 | a;
+    pass(packed);
+};
+
+// ── Channel extraction ────────────────────────────────────────────────────────
+
+pub func:color_r = uint64(uint64:packed) {
+    pass((packed >> 24u64) & 255u64);
+};
+
+pub func:color_g = uint64(uint64:packed) {
+    pass((packed >> 16u64) & 255u64);
+};
+
+pub func:color_b = uint64(uint64:packed) {
+    pass((packed >> 8u64) & 255u64);
+};
+
+pub func:color_a = uint64(uint64:packed) {
+    pass(packed & 255u64);
+};
+
+// ── Transforms ───────────────────────────────────────────────────────────────
+
+// color_invert: invert R, G, B channels (255 - ch); alpha is preserved.
+pub func:color_invert = uint64(uint64:packed) {
+    uint64:r = raw(color_r(packed));
+    uint64:g = raw(color_g(packed));
+    uint64:b = raw(color_b(packed));
+    uint64:a = raw(color_a(packed));
+    uint64:ir = 255u64 - r;
+    uint64:ig = 255u64 - g;
+    uint64:ib = 255u64 - b;
+    pass(raw(color_pack(ir, ig, ib, a)));
+};
+
+// color_gray: convert to grayscale via simple average (R+G+B)/3; alpha preserved.
+pub func:color_gray = uint64(uint64:packed) {
+    uint64:r = raw(color_r(packed));
+    uint64:g = raw(color_g(packed));
+    uint64:b = raw(color_b(packed));
+    uint64:a = raw(color_a(packed));
+    uint64:avg = (r + g + b) / 3u64;
+    pass(raw(color_pack(avg, avg, avg, a)));
+};
