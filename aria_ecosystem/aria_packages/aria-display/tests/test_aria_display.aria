@@ -1,0 +1,213 @@
+// Tests for aria-display package (LIB-17).
+//
+// NOTE: Aria's 'use' statement does not currently export extern block
+// declarations from imported modules.  This test file is therefore
+// self-contained: it declares the extern block and the functions it
+// needs inline, following the ttt_ffi.aria precedent.
+//
+// aria_display.aria remains the authoritative source + compilation check.
+// When the compiler is extended to export extern symbols via 'use', callers
+// will simply do:  use "../src/aria_display.aria".*;
+//
+// Run:
+//   cc -O2 -shared -fPIC -o shim/libaria_display.so shim/aria_display_shim.c
+//   ariac tests/test_aria_display.aria -o /tmp/test_disp \
+//       -L./shim -laria_display -Wl,-rpath,'$ORIGIN/../../shim'
+//   /tmp/test_disp 2>/dev/null | grep -E '^\[PASS\]|^\[FAIL\]'
+
+extern "aria_display" {
+    func:aria_display_enter_raw   = int32();
+    func:aria_display_exit_raw    = int32();
+    func:aria_display_is_raw      = int32();
+    func:aria_display_move        = int32(int32:col, int32:row);
+    func:aria_display_home        = int32();
+    func:aria_display_hide_cursor = int32();
+    func:aria_display_show_cursor = int32();
+    func:aria_display_clear       = int32();
+    func:aria_display_clear_eol   = int32();
+    func:aria_display_clear_eos   = int32();
+    func:aria_display_set_fg      = int32(int32:color);
+    func:aria_display_set_bg      = int32(int32:color);
+    func:aria_display_reset_attr  = int32();
+    func:aria_display_set_bold    = int32(int32:on);
+    func:aria_display_set_reverse = int32(int32:on);
+    func:aria_display_hline       = int32(int32:col, int32:row, int32:fg, int32:bg, int32:ch, int32:w);
+    func:aria_display_vline       = int32(int32:col, int32:row, int32:fg, int32:bg, int32:ch, int32:h);
+    func:aria_display_box         = int32(int32:col, int32:row, int32:fg, int32:bg, int32:w, int32:h);
+    func:aria_display_get_size    = int64();
+    func:aria_display_flush       = int32();
+}
+
+// Pure-Aria pack/unpack helpers (same logic as aria_display.aria)
+func:disp_cols = int32(int64:packed) {
+    uint64:upacked = @cast<uint64>(packed);
+    uint64:shifted = upacked >> 32u64;
+    int32:cols = @cast<int32>(shifted);
+    pass(cols);
+};
+
+func:disp_rows = int32(int64:packed) {
+    uint64:upacked = @cast<uint64>(packed);
+    uint64:mask = 4294967295u64;
+    uint64:low = upacked & mask;
+    int32:rows = @cast<int32>(low);
+    pass(rows);
+};
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // T01: disp_cols unpacks correctly (80<<32 | 24 => cols=80)
+    int64:p01 = 80i64 * 4294967296i64 + 24i64;
+    int32:c01 = raw(disp_cols(p01));
+    if (c01 == 80i32) {
+        print("[PASS] T01 disp_cols(80<<32|24)==80\n");
+    } else {
+        print("[FAIL] T01 disp_cols(80<<32|24)==80\n");
+    }
+
+    // T02: disp_rows unpacks correctly from same packed value
+    int32:r02 = raw(disp_rows(p01));
+    if (r02 == 24i32) {
+        print("[PASS] T02 disp_rows(80<<32|24)==24\n");
+    } else {
+        print("[FAIL] T02 disp_rows(80<<32|24)==24\n");
+    }
+
+    // T03: disp_cols with 132-column terminal
+    int64:p03 = 132i64 * 4294967296i64 + 43i64;
+    int32:c03 = raw(disp_cols(p03));
+    if (c03 == 132i32) {
+        print("[PASS] T03 disp_cols(132<<32|43)==132\n");
+    } else {
+        print("[FAIL] T03 disp_cols(132<<32|43)==132\n");
+    }
+
+    // T04: disp_rows with 43 rows
+    int32:r04 = raw(disp_rows(p03));
+    if (r04 == 43i32) {
+        print("[PASS] T04 disp_rows(132<<32|43)==43\n");
+    } else {
+        print("[FAIL] T04 disp_rows(132<<32|43)==43\n");
+    }
+
+    // T05: packed=0 => cols=0, rows=0
+    int64:p05 = 0i64;
+    int32:c05 = raw(disp_cols(p05));
+    int32:r05 = raw(disp_rows(p05));
+    if (c05 == 0i32) {
+        if (r05 == 0i32) {
+            print("[PASS] T05 disp_cols/rows(0)==0,0\n");
+        } else {
+            print("[FAIL] T05 disp_rows(0)!=0\n");
+        }
+    } else {
+        print("[FAIL] T05 disp_cols(0)!=0\n");
+    }
+
+    // T06: aria_display_get_size() returns cols>=1 and rows>=1
+    int64:sz06 = aria_display_get_size();
+    int32:sc06 = raw(disp_cols(sz06));
+    int32:sr06 = raw(disp_rows(sz06));
+    if (sc06 >= 1i32) {
+        if (sr06 >= 1i32) {
+            print("[PASS] T06 get_size cols>=1 rows>=1\n");
+        } else {
+            print("[FAIL] T06 get_size rows<1\n");
+        }
+    } else {
+        print("[FAIL] T06 get_size cols<1\n");
+    }
+
+    // T07: not in raw mode before enter
+    int32:raw07 = aria_display_is_raw();
+    if (raw07 == 0i32) {
+        print("[PASS] T07 not-raw before enter\n");
+    } else {
+        print("[FAIL] T07 already raw before enter\n");
+    }
+
+    // T08: enter_raw returns 0
+    int32:re08 = aria_display_enter_raw();
+    if (re08 == 0i32) {
+        print("[PASS] T08 enter_raw()==0\n");
+    } else {
+        print("[FAIL] T08 enter_raw() failed\n");
+    }
+
+    // T09: is_raw returns 1 after enter
+    int32:raw09 = aria_display_is_raw();
+    if (raw09 == 1i32) {
+        print("[PASS] T09 is_raw==1 after enter\n");
+    } else {
+        print("[FAIL] T09 is_raw!=1 after enter\n");
+    }
+
+    // T10: double enter_raw is idempotent
+    int32:re10 = aria_display_enter_raw();
+    if (re10 == 0i32) {
+        print("[PASS] T10 double enter_raw idempotent\n");
+    } else {
+        print("[FAIL] T10 double enter_raw non-zero\n");
+    }
+
+    // T11: exit_raw returns 0
+    int32:rx11 = aria_display_exit_raw();
+    if (rx11 == 0i32) {
+        print("[PASS] T11 exit_raw()==0\n");
+    } else {
+        print("[FAIL] T11 exit_raw() failed\n");
+    }
+
+    // T12: is_raw returns 0 after exit
+    int32:raw12 = aria_display_is_raw();
+    if (raw12 == 0i32) {
+        print("[PASS] T12 is_raw==0 after exit\n");
+    } else {
+        print("[FAIL] T12 is_raw!=0 after exit\n");
+    }
+
+    // T13: double exit_raw is idempotent
+    int32:rx13 = aria_display_exit_raw();
+    if (rx13 == 0i32) {
+        print("[PASS] T13 double exit_raw idempotent\n");
+    } else {
+        print("[FAIL] T13 double exit_raw non-zero\n");
+    }
+
+    // T14: drawing functions smoke test (no crash, ANSI output discarded)
+    drop(aria_display_clear());
+    drop(aria_display_home());
+    drop(aria_display_move(1i32, 1i32));
+    drop(aria_display_set_fg(7i32));
+    drop(aria_display_set_bg(0i32));
+    drop(aria_display_reset_attr());
+    drop(aria_display_set_bold(1i32));
+    drop(aria_display_set_reverse(0i32));
+    drop(aria_display_hline(1i32, 1i32, 7i32, 0i32 - 1i32, 45i32, 10i32));
+    drop(aria_display_vline(1i32, 1i32, 7i32, 0i32 - 1i32, 124i32, 5i32));
+    drop(aria_display_box(1i32, 1i32, 7i32, 0i32 - 1i32, 10i32, 5i32));
+    drop(aria_display_hide_cursor());
+    drop(aria_display_show_cursor());
+    drop(aria_display_clear_eol());
+    drop(aria_display_clear_eos());
+    drop(aria_display_flush());
+    print("\n[PASS] T14 drawing smoke test (no crash)\n");
+
+    // T15: pack 1x1 terminal and unpack
+    int64:p15 = 1i64 * 4294967296i64 + 1i64;
+    int32:c15 = raw(disp_cols(p15));
+    int32:r15 = raw(disp_rows(p15));
+    if (c15 == 1i32) {
+        if (r15 == 1i32) {
+            print("[PASS] T15 disp_cols/rows(1<<32|1)==1,1\n");
+        } else {
+            print("[FAIL] T15 disp_rows(1<<32|1)!=1\n");
+        }
+    } else {
+        print("[FAIL] T15 disp_cols(1<<32|1)!=1\n");
+    }
+
+    pass(0i32);
+};

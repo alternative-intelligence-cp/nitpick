@@ -1,0 +1,225 @@
+// aria-display: Cross-platform terminal display library for the Aria virtual console.
+//
+// Provides ANSI/termios-backed TUI primitives:
+//   - Raw mode control (enter/exit/query)
+//   - Cursor positioning and visibility
+//   - Screen and line clearing
+//   - 16-color foreground/background attributes + bold/reverse
+//   - Drawing primitives: hline, vline, box
+//   - Text-at-position (pure Aria: move + color + print)
+//   - Terminal size query
+//   - Frame flush
+//
+// Color constants (pass as int32 to set_fg / set_bg):
+//   0=black  1=red  2=green  3=yellow  4=blue  5=magenta  6=cyan  7=white
+//   8-15=bright variants   (0-1)=reset to default
+//
+// Backend: POSIX termios + ANSI escape codes via shim/aria_display_shim.c
+// Future backends (X11, Win32, Cocoa) expose the same function names.
+//
+// Link with: -L<shim_dir> -laria_display -Wl,-rpath,'$ORIGIN/../shim'
+
+extern "aria_display" {
+    func:aria_display_enter_raw    = int32();
+    func:aria_display_exit_raw     = int32();
+    func:aria_display_is_raw       = int32();
+    func:aria_display_move         = int32(int32:col, int32:row);
+    func:aria_display_home         = int32();
+    func:aria_display_hide_cursor  = int32();
+    func:aria_display_show_cursor  = int32();
+    func:aria_display_clear        = int32();
+    func:aria_display_clear_eol    = int32();
+    func:aria_display_clear_eos    = int32();
+    func:aria_display_set_fg       = int32(int32:color);
+    func:aria_display_set_bg       = int32(int32:color);
+    func:aria_display_reset_attr   = int32();
+    func:aria_display_set_bold     = int32(int32:on);
+    func:aria_display_set_reverse  = int32(int32:on);
+    func:aria_display_hline        = int32(int32:col, int32:row, int32:fg, int32:bg, int32:ch, int32:w);
+    func:aria_display_vline        = int32(int32:col, int32:row, int32:fg, int32:bg, int32:ch, int32:h);
+    func:aria_display_box          = int32(int32:col, int32:row, int32:fg, int32:bg, int32:w, int32:h);
+    func:aria_display_get_size     = int64();
+    func:aria_display_flush        = int32();
+}
+
+// ---------------------------------------------------------------------------
+// Raw mode
+// ---------------------------------------------------------------------------
+
+// Enter raw mode (disable echo + line buffering).
+// Returns 0 on success, -1 on error.
+pub func:disp_raw_enter = int32() {
+    int32:r = aria_display_enter_raw();
+    pass(r);
+};
+
+// Restore terminal to cooked mode.
+// Returns 0 on success, -1 on error.
+pub func:disp_raw_exit = int32() {
+    int32:r = aria_display_exit_raw();
+    pass(r);
+};
+
+// Returns 1 if raw mode is active, 0 otherwise.
+pub func:disp_is_raw = int32() {
+    int32:r = aria_display_is_raw();
+    pass(r);
+};
+
+// ---------------------------------------------------------------------------
+// Cursor control
+// ---------------------------------------------------------------------------
+
+// Move cursor to (col, row), 1-based.
+pub func:disp_move = NIL(int32:col, int32:row) {
+    drop(aria_display_move(col, row));
+    pass(NIL);
+};
+
+// Move cursor to top-left (1, 1).
+pub func:disp_home = NIL() {
+    drop(aria_display_home());
+    pass(NIL);
+};
+
+// Hide the cursor.
+pub func:disp_hide_cursor = NIL() {
+    drop(aria_display_hide_cursor());
+    pass(NIL);
+};
+
+// Show the cursor.
+pub func:disp_show_cursor = NIL() {
+    drop(aria_display_show_cursor());
+    pass(NIL);
+};
+
+// ---------------------------------------------------------------------------
+// Screen clearing
+// ---------------------------------------------------------------------------
+
+// Clear entire screen and home cursor.
+pub func:disp_clear = NIL() {
+    drop(aria_display_clear());
+    pass(NIL);
+};
+
+// Clear from cursor to end of current line.
+pub func:disp_clear_eol = NIL() {
+    drop(aria_display_clear_eol());
+    pass(NIL);
+};
+
+// Clear from cursor to end of screen.
+pub func:disp_clear_eos = NIL() {
+    drop(aria_display_clear_eos());
+    pass(NIL);
+};
+
+// ---------------------------------------------------------------------------
+// Color and attributes
+// ---------------------------------------------------------------------------
+
+// Set foreground color (0-15, or -1 to reset).
+pub func:disp_set_fg = NIL(int32:color) {
+    drop(aria_display_set_fg(color));
+    pass(NIL);
+};
+
+// Set background color (0-15, or -1 to reset).
+pub func:disp_set_bg = NIL(int32:color) {
+    drop(aria_display_set_bg(color));
+    pass(NIL);
+};
+
+// Reset all text attributes to default.
+pub func:disp_reset_attr = NIL() {
+    drop(aria_display_reset_attr());
+    pass(NIL);
+};
+
+// Set bold: 1=on, 0=off.
+pub func:disp_set_bold = NIL(int32:on) {
+    drop(aria_display_set_bold(on));
+    pass(NIL);
+};
+
+// Set reverse video: 1=on, 0=off.
+pub func:disp_set_reverse = NIL(int32:on) {
+    drop(aria_display_set_reverse(on));
+    pass(NIL);
+};
+
+// ---------------------------------------------------------------------------
+// Drawing primitives
+// ---------------------------------------------------------------------------
+
+// Draw a horizontal line of character ch, width cells long, starting at (col, row).
+// fg/bg: color index (-1 = unchanged).
+pub func:disp_hline = NIL(int32:col, int32:row, int32:fg, int32:bg, int32:ch, int32:w) {
+    drop(aria_display_hline(col, row, fg, bg, ch, w));
+    pass(NIL);
+};
+
+// Draw a vertical line of character ch, height cells tall, starting at (col, row).
+pub func:disp_vline = NIL(int32:col, int32:row, int32:fg, int32:bg, int32:ch, int32:h) {
+    drop(aria_display_vline(col, row, fg, bg, ch, h));
+    pass(NIL);
+};
+
+// Draw an ASCII box (border only) at (col, row) with dimensions w x h.
+pub func:disp_box = NIL(int32:col, int32:row, int32:fg, int32:bg, int32:w, int32:h) {
+    drop(aria_display_box(col, row, fg, bg, w, h));
+    pass(NIL);
+};
+
+// ---------------------------------------------------------------------------
+// Text at position (pure Aria: no string crossing FFI boundary)
+// ---------------------------------------------------------------------------
+
+// Move to (col, row), set fg/bg, then print text using Aria built-in print().
+pub func:disp_print_at = NIL(int32:col, int32:row, int32:fg, int32:bg, string:text) {
+    drop(aria_display_move(col, row));
+    drop(aria_display_set_fg(fg));
+    drop(aria_display_set_bg(bg));
+    print(text);
+    pass(NIL);
+};
+
+// ---------------------------------------------------------------------------
+// Terminal size
+// ---------------------------------------------------------------------------
+
+// Query terminal size. Returns packed int64: cols in high 32 bits, rows in low 32 bits.
+// Use disp_cols() and disp_rows() to unpack.
+pub func:disp_size = int64() {
+    int64:packed = aria_display_get_size();
+    pass(packed);
+};
+
+// Extract column count from a packed size value returned by disp_size().
+pub func:disp_cols = int32(int64:packed) {
+    uint64:upacked = @cast<uint64>(packed);
+    uint64:shifted = upacked >> 32u64;
+    int32:cols = @cast<int32>(shifted);
+    pass(cols);
+};
+
+// Extract row count from a packed size value returned by disp_size().
+pub func:disp_rows = int32(int64:packed) {
+    uint64:upacked = @cast<uint64>(packed);
+    uint64:mask = 4294967295u64;
+    uint64:low = upacked & mask;
+    int32:rows = @cast<int32>(low);
+    pass(rows);
+};
+
+// ---------------------------------------------------------------------------
+// Flush
+// ---------------------------------------------------------------------------
+
+// Flush stdout. Call once per frame after all drawing is complete.
+pub func:disp_flush = NIL() {
+    drop(aria_display_flush());
+    pass(NIL);
+};
