@@ -1,0 +1,111 @@
+// test_aria_conv.aria — LIB-12 test suite (15 tests)
+// Tests saturating narrowing (signed + unsigned) and float/int conversion.
+
+use "../src/aria_conv.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // T01: conv_sat_i64_i8(50) = 50 (within [-128, 127])
+    int64:r01 = conv_sat_i64_i8(50i64);
+    int64:f01 = 0i64; if (r01 == 50i64) { f01 = 1i64; }
+    if (f01 == 1i64) { drop(println("[PASS] T01 sat_i64_i8(50)=50")); }
+    if (f01 == 0i64) { drop(println("[FAIL] T01 sat_i64_i8(50)=50")); }
+
+    // T02: conv_sat_i64_i8(200) = 127 (clamp to max)
+    int64:r02 = conv_sat_i64_i8(200i64);
+    int64:f02 = 0i64; if (r02 == 127i64) { f02 = 1i64; }
+    if (f02 == 1i64) { drop(println("[PASS] T02 sat_i64_i8(200)=127")); }
+    if (f02 == 0i64) { drop(println("[FAIL] T02 sat_i64_i8(200)=127")); }
+
+    // T03: conv_sat_i64_i8(-200) = -128 (clamp to min)
+    int64:neg200 = 0i64 - 200i64;
+    int64:r03 = conv_sat_i64_i8(neg200);
+    int64:neg128 = 0i64 - 128i64;
+    int64:f03 = 0i64; if (r03 == neg128) { f03 = 1i64; }
+    if (f03 == 1i64) { drop(println("[PASS] T03 sat_i64_i8(-200)=-128")); }
+    if (f03 == 0i64) { drop(println("[FAIL] T03 sat_i64_i8(-200)=-128")); }
+
+    // T04: conv_sat_i64_i16(40000) = 32767 (clamp to max)
+    int64:r04 = conv_sat_i64_i16(40000i64);
+    int64:f04 = 0i64; if (r04 == 32767i64) { f04 = 1i64; }
+    if (f04 == 1i64) { drop(println("[PASS] T04 sat_i64_i16(40000)=32767")); }
+    if (f04 == 0i64) { drop(println("[FAIL] T04 sat_i64_i16(40000)=32767")); }
+
+    // T05: conv_sat_i64_i16(-40000) = -32768 (clamp to min)
+    int64:neg40000 = 0i64 - 40000i64;
+    int64:r05 = conv_sat_i64_i16(neg40000);
+    int64:neg32768 = 0i64 - 32768i64;
+    int64:f05 = 0i64; if (r05 == neg32768) { f05 = 1i64; }
+    if (f05 == 1i64) { drop(println("[PASS] T05 sat_i64_i16(-40000)=-32768")); }
+    if (f05 == 0i64) { drop(println("[FAIL] T05 sat_i64_i16(-40000)=-32768")); }
+
+    // T06: conv_sat_i64_i32(3000000000) = 2147483647 (clamp to max)
+    int64:r06 = conv_sat_i64_i32(3000000000i64);
+    int64:f06 = 0i64; if (r06 == 2147483647i64) { f06 = 1i64; }
+    if (f06 == 1i64) { drop(println("[PASS] T06 sat_i64_i32(3e9)=2147483647")); }
+    if (f06 == 0i64) { drop(println("[FAIL] T06 sat_i64_i32(3e9)=2147483647")); }
+
+    // T07: conv_sat_i64_i32(-100) = -100 (within range, negative passthrough)
+    int64:neg100 = 0i64 - 100i64;
+    int64:r07 = conv_sat_i64_i32(neg100);
+    int64:f07 = 0i64; if (r07 == neg100) { f07 = 1i64; }
+    if (f07 == 1i64) { drop(println("[PASS] T07 sat_i64_i32(-100)=-100")); }
+    if (f07 == 0i64) { drop(println("[FAIL] T07 sat_i64_i32(-100)=-100")); }
+
+    // T08: conv_sat_u64_u8(200) = 200 (within [0, 255])
+    uint64:r08 = conv_sat_u64_u8(200u64);
+    uint64:f08 = 0u64; if (r08 == 200u64) { f08 = 1u64; }
+    if (f08 == 1u64) { drop(println("[PASS] T08 sat_u64_u8(200)=200")); }
+    if (f08 == 0u64) { drop(println("[FAIL] T08 sat_u64_u8(200)=200")); }
+
+    // T09: conv_sat_u64_u8(300) = 255 (clamp to max)
+    uint64:r09 = conv_sat_u64_u8(300u64);
+    uint64:f09 = 0u64; if (r09 == 255u64) { f09 = 1u64; }
+    if (f09 == 1u64) { drop(println("[PASS] T09 sat_u64_u8(300)=255")); }
+    if (f09 == 0u64) { drop(println("[FAIL] T09 sat_u64_u8(300)=255")); }
+
+    // T10: conv_sat_u64_u16(70000) = 65535 (clamp to max)
+    uint64:r10 = conv_sat_u64_u16(70000u64);
+    uint64:f10 = 0u64; if (r10 == 65535u64) { f10 = 1u64; }
+    if (f10 == 1u64) { drop(println("[PASS] T10 sat_u64_u16(70000)=65535")); }
+    if (f10 == 0u64) { drop(println("[FAIL] T10 sat_u64_u16(70000)=65535")); }
+
+    // T11: conv_sat_u64_u16(1000) = 1000 (within range)
+    uint64:r11 = conv_sat_u64_u16(1000u64);
+    uint64:f11 = 0u64; if (r11 == 1000u64) { f11 = 1u64; }
+    if (f11 == 1u64) { drop(println("[PASS] T11 sat_u64_u16(1000)=1000")); }
+    if (f11 == 0u64) { drop(println("[FAIL] T11 sat_u64_u16(1000)=1000")); }
+
+    // T12: conv_sat_u64_u32(5000000000) = 4294967295 (clamp to max)
+    uint64:r12 = conv_sat_u64_u32(5000000000u64);
+    uint64:f12 = 0u64; if (r12 == 4294967295u64) { f12 = 1u64; }
+    if (f12 == 1u64) { drop(println("[PASS] T12 sat_u64_u32(5e9)=4294967295")); }
+    if (f12 == 0u64) { drop(println("[FAIL] T12 sat_u64_u32(5e9)=4294967295")); }
+
+    // T13: conv_i64_to_f64(1000) = 1000.0 (exact — within 2^53)
+    float64:r13 = conv_i64_to_f64(1000i64);
+    float64:eps = 0.000001;
+    float64:d13a = r13 - 1000.0;
+    float64:d13b = 1000.0 - r13;
+    int64:f13 = 1i64;
+    if (eps < d13a) { f13 = 0i64; }
+    if (eps < d13b) { f13 = 0i64; }
+    if (f13 == 1i64) { drop(println("[PASS] T13 i64_to_f64(1000)=1000.0")); }
+    if (f13 == 0i64) { drop(println("[FAIL] T13 i64_to_f64(1000)=1000.0")); }
+
+    // T14: conv_f64_to_i64(3.7) = 3 (truncate toward zero)
+    int64:r14 = conv_f64_to_i64(3.7);
+    int64:f14 = 0i64; if (r14 == 3i64) { f14 = 1i64; }
+    if (f14 == 1i64) { drop(println("[PASS] T14 f64_to_i64(3.7)=3")); }
+    if (f14 == 0i64) { drop(println("[FAIL] T14 f64_to_i64(3.7)=3")); }
+
+    // T15: conv_f64_to_i64(99.9) = 99 (truncate toward zero)
+    int64:r15 = conv_f64_to_i64(99.9);
+    int64:f15 = 0i64; if (r15 == 99i64) { f15 = 1i64; }
+    if (f15 == 1i64) { drop(println("[PASS] T15 f64_to_i64(99.9)=99")); }
+    if (f15 == 0i64) { drop(println("[FAIL] T15 f64_to_i64(99.9)=99")); }
+
+    pass(0i32);
+};

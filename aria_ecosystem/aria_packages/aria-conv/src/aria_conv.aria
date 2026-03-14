@@ -1,0 +1,99 @@
+// aria-conv — Saturating numeric type conversion utilities
+//
+// These functions convert between numeric types with saturation semantics:
+// values outside the target range are clamped to the boundary rather than
+// truncating or overflowing.  All pub funcs use int64, uint64, or float64
+// in their signatures; the caller applies @cast<> after saturation if a
+// smaller concrete type is required.
+//
+// Saturating (signed int64 → narrower range):
+//   conv_sat_i64_i32  clamp to [-2147483648, 2147483647]
+//   conv_sat_i64_i16  clamp to [-32768, 32767]
+//   conv_sat_i64_i8   clamp to [-128, 127]
+//
+// Saturating (uint64 → narrower range):
+//   conv_sat_u64_u32  clamp to [0, 4294967295]
+//   conv_sat_u64_u16  clamp to [0, 65535]
+//   conv_sat_u64_u8   clamp to [0, 255]
+//
+// Float ↔ integer:
+//   conv_i64_to_f64   int64  → float64 (exact for |n| ≤ 2^53)
+//   conv_f64_to_i64   float64 → int64  (truncates toward zero)
+
+// ── Signed saturating narrowing ───────────────────────────────────────────────
+
+// Saturate int64 to int32 range [-2147483648, 2147483647].
+// Returns clamped value as int64; caller may then @cast<int32>(result).
+pub func:conv_sat_i64_i32 = int64(int64:n) {
+    int64:hi = 2147483647i64;
+    int64:lo = 0i64 - 2147483648i64;
+    int64:r = n;
+    if (n > hi) { r = hi; }
+    if (n < lo) { r = lo; }
+    pass(r);
+};
+
+// Saturate int64 to int16 range [-32768, 32767].
+// Returns clamped value as int64; caller may then @cast<int16>(result).
+pub func:conv_sat_i64_i16 = int64(int64:n) {
+    int64:hi = 32767i64;
+    int64:lo = 0i64 - 32768i64;
+    int64:r = n;
+    if (n > hi) { r = hi; }
+    if (n < lo) { r = lo; }
+    pass(r);
+};
+
+// Saturate int64 to int8 range [-128, 127].
+// Returns clamped value as int64; caller may then @cast<int8>(result).
+pub func:conv_sat_i64_i8 = int64(int64:n) {
+    int64:hi = 127i64;
+    int64:lo = 0i64 - 128i64;
+    int64:r = n;
+    if (n > hi) { r = hi; }
+    if (n < lo) { r = lo; }
+    pass(r);
+};
+
+// ── Unsigned saturating narrowing ─────────────────────────────────────────────
+
+// Saturate uint64 to uint32 range [0, 4294967295].
+// Returns clamped value as uint64; caller may then @cast<uint32>(result).
+pub func:conv_sat_u64_u32 = uint64(uint64:n) {
+    uint64:hi = 4294967295u64;
+    uint64:r = n;
+    if (n > hi) { r = hi; }
+    pass(r);
+};
+
+// Saturate uint64 to uint16 range [0, 65535].
+// Returns clamped value as uint64; caller may then @cast<uint16>(result).
+pub func:conv_sat_u64_u16 = uint64(uint64:n) {
+    uint64:hi = 65535u64;
+    uint64:r = n;
+    if (n > hi) { r = hi; }
+    pass(r);
+};
+
+// Saturate uint64 to uint8 range [0, 255].
+// Returns clamped value as uint64; caller may then @cast<uint8>(result).
+pub func:conv_sat_u64_u8 = uint64(uint64:n) {
+    uint64:hi = 255u64;
+    uint64:r = n;
+    if (n > hi) { r = hi; }
+    pass(r);
+};
+
+// ── Float ↔ integer ───────────────────────────────────────────────────────────
+
+// Convert int64 to float64.
+// Exact for |n| ≤ 2^53 (53-bit mantissa); larger values round to nearest.
+pub func:conv_i64_to_f64 = float64(int64:n) {
+    pass(@cast<float64>(n));
+};
+
+// Convert float64 to int64, truncating toward zero.
+// Caller must ensure the value is in [-2^63, 2^63-1]; no range check is done.
+pub func:conv_f64_to_i64 = int64(float64:f) {
+    pass(@cast<int64>(f));
+};
