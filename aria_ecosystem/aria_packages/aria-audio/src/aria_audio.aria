@@ -1,0 +1,129 @@
+// aria_audio.aria — software audio synthesis for Aria virtual console (LIB-19)
+//
+// NOTE: Aria's `use` statement does NOT export `extern` block declarations.
+// Test files must redeclare the extern block inline (see tests/).
+//
+// C shim: shim/aria_audio_shim.c → shim/libaria_audio.so
+// Link:   -L./shim -laria_audio -Wl,-rpath,<path-to-shim>
+//
+// Waveform codes:
+//   0 = square    1 = triangle    2 = sawtooth    3 = noise (LFSR)
+//
+// 4 channels (0-3). Volume range: 0 (silent) - 15 (max).
+// Default mode: dry (silent). Call audio_init(0) to enable output.
+
+extern "aria_audio" {
+    func:aria_audio_init          = int32(int32:dry_mode);
+    func:aria_audio_shutdown      = int32();
+    func:aria_audio_is_init       = int32();
+    func:aria_audio_is_dry        = int32();
+    func:aria_audio_sample_rate   = int32();
+    func:aria_audio_samples_for_ms = int32(int32:ms);
+    func:aria_audio_note_freq     = int32(int32:midi_note);
+    func:aria_audio_play_tone     = int32(int32:channel, int32:freq_hz, int32:waveform, int32:duration_ms);
+    func:aria_audio_stop_channel  = int32(int32:channel);
+    func:aria_audio_stop_all      = int32();
+    func:aria_audio_set_volume    = int32(int32:channel, int32:vol);
+    func:aria_audio_is_playing    = int32(int32:channel);
+    func:aria_audio_get_volume    = int32(int32:channel);
+    func:aria_audio_square_sample = int32(int32:phase_sample, int32:freq_hz);
+    func:aria_audio_lfsr_step     = int32(int32:state);
+}
+
+// ── Waveform constants ────────────────────────────────────────────────────────
+
+pub func:WF_SQUARE   = int32() { pass(0i32); };
+pub func:WF_TRIANGLE = int32() { pass(1i32); };
+pub func:WF_SAWTOOTH = int32() { pass(2i32); };
+pub func:WF_NOISE    = int32() { pass(3i32); };
+
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
+
+// Initialize audio.  dry=1 -> silent test mode; dry=0 -> hardware output.
+pub func:audio_init = int32(int32:dry) {
+    int32:r = aria_audio_init(dry);
+    pass(r);
+};
+
+pub func:audio_shutdown = int32() {
+    int32:r = aria_audio_shutdown();
+    pass(r);
+};
+
+pub func:audio_is_init = int32() {
+    int32:r = aria_audio_is_init();
+    pass(r);
+};
+
+pub func:audio_is_dry = int32() {
+    int32:r = aria_audio_is_dry();
+    pass(r);
+};
+
+// ── Playback ──────────────────────────────────────────────────────────────────
+
+// Play a tone on channel (0-3).
+//   freq_hz    : 1-20000
+//   waveform   : WF_* constant
+//   duration_ms: 0 = sustain; >0 = stop after N ms
+pub func:audio_play_tone = int32(int32:channel, int32:freq_hz, int32:waveform, int32:duration_ms) {
+    int32:r = aria_audio_play_tone(channel, freq_hz, waveform, duration_ms);
+    pass(r);
+};
+
+pub func:audio_stop_channel = int32(int32:channel) {
+    int32:r = aria_audio_stop_channel(channel);
+    pass(r);
+};
+
+pub func:audio_stop_all = int32() {
+    int32:r = aria_audio_stop_all();
+    pass(r);
+};
+
+pub func:audio_set_volume = int32(int32:channel, int32:vol) {
+    int32:r = aria_audio_set_volume(channel, vol);
+    pass(r);
+};
+
+pub func:audio_is_playing = int32(int32:channel) {
+    int32:r = aria_audio_is_playing(channel);
+    pass(r);
+};
+
+pub func:audio_get_volume = int32(int32:channel) {
+    int32:r = aria_audio_get_volume(channel);
+    pass(r);
+};
+
+// ── Math helpers ──────────────────────────────────────────────────────────────
+
+// Return sample rate (always 44100).
+pub func:audio_sample_rate = int32() {
+    int32:r = aria_audio_sample_rate();
+    pass(r);
+};
+
+// Convert milliseconds to sample count at 44100 Hz.
+pub func:audio_samples_for_ms = int32(int32:ms) {
+    int32:r = aria_audio_samples_for_ms(ms);
+    pass(r);
+};
+
+// Convert MIDI note (0-127) to frequency in Hz. Returns -1 if out of range.
+pub func:audio_note_freq = int32(int32:midi_note) {
+    int32:r = aria_audio_note_freq(midi_note);
+    pass(r);
+};
+
+// Get one square wave sample value (+1 or -1) at a given sample index.
+pub func:audio_square_sample = int32(int32:phase_sample, int32:freq_hz) {
+    int32:r = aria_audio_square_sample(phase_sample, freq_hz);
+    pass(r);
+};
+
+// Advance a Galois LFSR state by one step; returns next state.
+pub func:audio_lfsr_step = int32(int32:state) {
+    int32:r = aria_audio_lfsr_step(state);
+    pass(r);
+};

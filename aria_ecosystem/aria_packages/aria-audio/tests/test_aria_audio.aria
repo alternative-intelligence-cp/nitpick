@@ -1,0 +1,175 @@
+// test_aria_audio.aria — 15-test suite for LIB-19 aria-audio
+//
+// Self-contained: extern block redeclared inline.
+// All tests run in dry mode (no audio hardware required).
+//
+// T01-T04  sample_rate and samples_for_ms math
+// T05-T07  MIDI note frequency table spot-checks
+// T08      square wave sample polarity
+// T09      LFSR step produces non-zero state
+// T10      init in dry mode
+// T11      play_tone on all 4 channels
+// T12      is_playing / stop_channel state
+// T13      set_volume / get_volume roundtrip
+// T14      bad args return -1
+// T15      stop_all + shutdown
+
+extern "aria_audio" {
+    func:aria_audio_init           = int32(int32:dry_mode);
+    func:aria_audio_shutdown       = int32();
+    func:aria_audio_is_init        = int32();
+    func:aria_audio_is_dry         = int32();
+    func:aria_audio_sample_rate    = int32();
+    func:aria_audio_samples_for_ms = int32(int32:ms);
+    func:aria_audio_note_freq      = int32(int32:midi_note);
+    func:aria_audio_play_tone      = int32(int32:channel, int32:freq_hz, int32:waveform, int32:duration_ms);
+    func:aria_audio_stop_channel   = int32(int32:channel);
+    func:aria_audio_stop_all       = int32();
+    func:aria_audio_set_volume     = int32(int32:channel, int32:vol);
+    func:aria_audio_is_playing     = int32(int32:channel);
+    func:aria_audio_get_volume     = int32(int32:channel);
+    func:aria_audio_square_sample  = int32(int32:phase_sample, int32:freq_hz);
+    func:aria_audio_lfsr_step      = int32(int32:state);
+}
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    // ── T01: sample_rate returns 44100 ─────────────────────────────────────
+    int32:sr = aria_audio_sample_rate();
+    if (sr == 44100i32) {
+        print("[PASS] T01 sample_rate==44100\n");
+    } else {
+        print("[FAIL] T01 sample_rate expected 44100\n");
+    }
+
+    // ── T02: samples_for_ms(1000) == 44100 ─────────────────────────────────
+    int32:s1000 = aria_audio_samples_for_ms(1000i32);
+    if (s1000 == 44100i32) {
+        print("[PASS] T02 samples_for_ms(1000)==44100\n");
+    } else {
+        print("[FAIL] T02 samples_for_ms(1000) expected 44100\n");
+    }
+
+    // ── T03: samples_for_ms(0) == 0 ────────────────────────────────────────
+    int32:s0 = aria_audio_samples_for_ms(0i32);
+    if (s0 == 0i32) {
+        print("[PASS] T03 samples_for_ms(0)==0\n");
+    } else {
+        print("[FAIL] T03 samples_for_ms(0) expected 0\n");
+    }
+
+    // ── T04: samples_for_ms(250) == 11025 ──────────────────────────────────
+    int32:s250 = aria_audio_samples_for_ms(250i32);
+    if (s250 == 11025i32) {
+        print("[PASS] T04 samples_for_ms(250)==11025\n");
+    } else {
+        print("[FAIL] T04 samples_for_ms(250) expected 11025\n");
+    }
+
+    // ── T05: note_freq(69) == 440  (A4) ────────────────────────────────────
+    int32:fa4 = aria_audio_note_freq(69i32);
+    if (fa4 == 440i32) {
+        print("[PASS] T05 note_freq(69)==440 (A4)\n");
+    } else {
+        print("[FAIL] T05 note_freq(69) expected 440\n");
+    }
+
+    // ── T06: note_freq(57) == 220  (A3 = half of A4) ───────────────────────
+    int32:fa3 = aria_audio_note_freq(57i32);
+    if (fa3 == 220i32) {
+        print("[PASS] T06 note_freq(57)==220 (A3)\n");
+    } else {
+        print("[FAIL] T06 note_freq(57) expected 220\n");
+    }
+
+    // ── T07: note_freq out-of-range returns -1 ─────────────────────────────
+    int32:fbad = aria_audio_note_freq(128i32);
+    if (fbad == 0i32 - 1i32) {
+        print("[PASS] T07 note_freq(128)==-1 (out of range)\n");
+    } else {
+        print("[FAIL] T07 note_freq(128) expected -1\n");
+    }
+
+    // ── T08: square_sample at phase 0 returns 1 (first half of period) ─────
+    // At 440 Hz, period = 44100/440 = 100.2... samples. Phase 0 -> first half -> +1
+    int32:sq0 = aria_audio_square_sample(0i32, 440i32);
+    if (sq0 == 1i32) {
+        print("[PASS] T08 square_sample(0, 440)==1\n");
+    } else {
+        print("[FAIL] T08 square_sample(0,440) expected 1\n");
+    }
+
+    // ── T09: LFSR step produces a different non-zero state ─────────────────
+    int32:lf0 = 44269i32; // non-zero seed
+    int32:lf1 = aria_audio_lfsr_step(lf0);
+    if (lf1 != 0i32 && lf1 != lf0) {
+        print("[PASS] T09 lfsr_step changes state\n");
+    } else {
+        print("[FAIL] T09 lfsr_step should change state\n");
+    }
+
+    // ── T10: init in dry mode ───────────────────────────────────────────────
+    int32:ir = aria_audio_init(1i32);
+    int32:is_init = aria_audio_is_init();
+    int32:is_dry  = aria_audio_is_dry();
+    if (ir == 0i32 && is_init == 1i32 && is_dry == 1i32) {
+        print("[PASS] T10 init(dry=1) ok, is_init=1, is_dry=1\n");
+    } else {
+        print("[FAIL] T10 init(dry) state wrong\n");
+    }
+
+    // ── T11: play_tone on all 4 channels ───────────────────────────────────
+    int32:p0 = aria_audio_play_tone(0i32, 440i32, 0i32, 250i32);
+    int32:p1 = aria_audio_play_tone(1i32, 880i32, 1i32, 250i32);
+    int32:p2 = aria_audio_play_tone(2i32, 220i32, 2i32, 250i32);
+    int32:p3 = aria_audio_play_tone(3i32, 110i32, 3i32, 250i32);
+    if (p0 == 0i32 && p1 == 0i32 && p2 == 0i32 && p3 == 0i32) {
+        print("[PASS] T11 play_tone on 4 channels all return 0\n");
+    } else {
+        print("[FAIL] T11 play_tone on channels failed\n");
+    }
+
+    // ── T12: is_playing + stop_channel ─────────────────────────────────────
+    int32:play0 = aria_audio_is_playing(0i32);
+    drop(aria_audio_stop_channel(0i32));
+    int32:play0_after = aria_audio_is_playing(0i32);
+    if (play0 == 1i32 && play0_after == 0i32) {
+        print("[PASS] T12 is_playing then stop_channel\n");
+    } else {
+        print("[FAIL] T12 is_playing/stop_channel state wrong\n");
+    }
+
+    // ── T13: set_volume / get_volume roundtrip ──────────────────────────────
+    drop(aria_audio_set_volume(1i32, 7i32));
+    int32:vol1 = aria_audio_get_volume(1i32);
+    if (vol1 == 7i32) {
+        print("[PASS] T13 set_volume(1,7) get_volume==7\n");
+    } else {
+        print("[FAIL] T13 volume roundtrip failed\n");
+    }
+
+    // ── T14: bad args return -1 ─────────────────────────────────────────────
+    int32:bad_ch   = aria_audio_play_tone(9i32, 440i32, 0i32, 0i32);
+    int32:bad_freq = aria_audio_play_tone(0i32, 0i32, 0i32, 0i32);
+    int32:bad_wf   = aria_audio_play_tone(0i32, 440i32, 9i32, 0i32);
+    int32:bad_vol  = aria_audio_set_volume(0i32, 16i32);
+    if (bad_ch == 0i32 - 1i32 && bad_freq == 0i32 - 1i32 && bad_wf == 0i32 - 1i32 && bad_vol == 0i32 - 1i32) {
+        print("[PASS] T14 bad args all return -1\n");
+    } else {
+        print("[FAIL] T14 bad arg validation wrong\n");
+    }
+
+    // ── T15: stop_all + shutdown ─────────────────────────────────────────────
+    int32:sa = aria_audio_stop_all();
+    int32:play1_after = aria_audio_is_playing(1i32);
+    int32:sd = aria_audio_shutdown();
+    int32:is_init2 = aria_audio_is_init();
+    if (sa == 0i32 && play1_after == 0i32 && sd == 0i32 && is_init2 == 0i32) {
+        print("[PASS] T15 stop_all + shutdown ok\n");
+    } else {
+        print("[FAIL] T15 stop_all/shutdown state wrong\n");
+    }
+
+    pass(0i32);
+};
