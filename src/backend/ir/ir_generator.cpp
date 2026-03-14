@@ -6552,7 +6552,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Signed arithmetic is identical bit-for-bit, but ordered relational ops differ.
             bool isUnsigned = false;
             auto isUnsignedName = [](const std::string& n) {
-                return n == "uint8" || n == "uint16" || n == "uint32" || n == "uint64";
+                return n == "uint8" || n == "uint16" || n == "uint32" || n == "uint64"
+                    || n == "u8" || n == "u16" || n == "u32" || n == "u64";
             };
             if (leftType && leftType->isPrimitive())
                 if (isUnsignedName(static_cast<PrimitiveType*>(leftType)->getName())) isUnsigned = true;
@@ -6811,6 +6812,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Float multiplication: use FMul for floating-point types
                     if (L->getType()->isFloatingPointTy()) {
                         return builder.CreateFMul(L, R, "fmultmp");
+                    }
+                    // Unsigned integer types (uint8/16/32/64): use plain wrapping mul.
+                    // Wrapping is the correct semantic for unsigned modular arithmetic.
+                    // Do NOT use generateSafeMul (signed saturation) for unsigned types.
+                    if (isUnsigned) {
+                        return builder.CreateMul(L, R, "multmp");
                     }
                     // Layer 1 Safety: Safe multiplication returns Unknown on overflow
                     return generateSafeMul(L, R, "multmp");
