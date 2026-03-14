@@ -1,0 +1,403 @@
+// aria-jrpg-demo — 8-bit style JRPG battle scene
+//
+// Uses:
+//   aria-display  (extern block, ANSI terminal rendering)
+//   aria-input    (extern block, raw keyboard input)
+//   aria-audio    (extern block, software synthesis SFX)
+//   aria-console  (use import, address map + frame timing)
+//   aria-rand     (use import, xorshift64 PRNG for damage rolls)
+//
+// Build:
+//   ariac main.aria -o jrpg_demo \
+//     -L../aria-display/shim -laria_display \
+//     -L../aria-input/shim   -laria_input   \
+//     -L../aria-audio/shim   -laria_audio   \
+//     -Wl,-rpath,../aria-display/shim       \
+//     -Wl,-rpath,../aria-input/shim         \
+//     -Wl,-rpath,../aria-audio/shim
+//
+// Controls:
+//   W / Up    — move menu cursor up
+//   S / Down  — move menu cursor down
+//   J / Enter — confirm (select action)
+//   Q         — quit demo
+
+use "/home/randy/Workspace/REPOS/aria/aria_ecosystem/aria_packages/aria-console/src/aria_console.aria".*;
+use "/home/randy/Workspace/REPOS/aria/aria_ecosystem/aria_packages/aria-rand/src/aria_rand.aria".*;
+
+extern "aria_display" {
+    func:aria_display_enter_raw   = int32();
+    func:aria_display_exit_raw    = int32();
+    func:aria_display_move        = int32(int32:col, int32:row);
+    func:aria_display_home        = int32();
+    func:aria_display_clear       = int32();
+    func:aria_display_clear_eol   = int32();
+    func:aria_display_hide_cursor = int32();
+    func:aria_display_show_cursor = int32();
+    func:aria_display_set_fg      = int32(int32:color);
+    func:aria_display_set_bg      = int32(int32:color);
+    func:aria_display_reset_attr  = int32();
+    func:aria_display_set_bold    = int32(int32:on);
+    func:aria_display_hline       = int32(int32:col, int32:row, int32:fg, int32:bg, int32:ch, int32:w);
+    func:aria_display_box         = int32(int32:col, int32:row, int32:fg, int32:bg, int32:w, int32:h);
+    func:aria_display_flush       = int32();
+}
+
+extern "aria_input" {
+    func:aria_input_enter_raw     = int32();
+    func:aria_input_exit_raw      = int32();
+    func:aria_input_read_key      = int32();
+    func:aria_input_key_to_buttons = int32(int32:vk);
+}
+
+extern "aria_audio" {
+    func:aria_audio_init          = int32(int32:dry_mode);
+    func:aria_audio_play_tone     = int32(int32:ch, int32:freq, int32:wf, int32:dur);
+    func:aria_audio_shutdown      = int32();
+}
+
+// ── ANSI color codes (3-bit palette) ─────────────────────────────────────────
+// 0=black 1=red 2=green 3=yellow 4=blue 5=magenta 6=cyan 7=white
+
+// ── Layout constants ──────────────────────────────────────────────────────────
+// Terminal: 80×24 assumed
+
+// ── Draw a horizontal HP/MP bar ───────────────────────────────────────────────
+// col, row: top-left; current, max: values; width: total bar width in chars
+// Returns 0.
+func:draw_bar = int32(int32:col, int32:row, int32:fg, int32:current, int32:max_val, int32:width) {
+    int32:filled = 0i32;
+    if (max_val > 0i32) {
+        filled = (current * width) / max_val;
+    }
+    if (filled > width) { filled = width; }
+    if (filled < 0i32)  { filled = 0i32; }
+    drop(aria_display_move(col, row));
+    drop(aria_display_set_fg(fg));
+    drop(aria_display_set_bold(1i32));
+    // Draw filled portion with '#'
+    loop(0i32, filled, 1i32) {
+        print("#");
+    }
+    drop(aria_display_set_bold(0i32));
+    drop(aria_display_set_fg(7i32));
+    // Draw empty portion with '.'
+    loop(filled, width, 1i32) {
+        print(".");
+    }
+    drop(aria_display_reset_attr());
+    pass(0i32);
+};
+
+
+
+// ── Draw the full battle screen ───────────────────────────────────────────────
+func:draw_screen = int32(int32:e_hp, int32:e_mp, int32:h_hp, int32:h_mp, int32:menu_sel, int32:msg_id) {
+    drop(aria_display_clear());
+    drop(aria_display_home());
+
+    // ── Header ────────────────────────────────────────────────────────────
+    drop(aria_display_set_fg(3i32));  // yellow
+    drop(aria_display_set_bold(1i32));
+    drop(aria_display_move(1i32, 1i32));
+    print("+================================================+");
+    drop(aria_display_move(1i32, 2i32));
+    print("|       * ARIA QUEST  --  BATTLE  SCENE *       |");
+    drop(aria_display_move(1i32, 3i32));
+    print("+================================================+");
+    drop(aria_display_reset_attr());
+
+    // ── Enemy panel ───────────────────────────────────────────────────────
+    drop(aria_display_move(1i32, 4i32));
+    drop(aria_display_set_fg(1i32));  // red
+    drop(aria_display_set_bold(1i32));
+    print("| SLIME KING");
+    drop(aria_display_reset_attr());
+    drop(aria_display_move(1i32, 5i32));
+    drop(aria_display_set_fg(2i32));  // green
+    print("|    ~(.~.)~    HP: [");
+    drop(raw(draw_bar(21i32, 5i32, 1i32, e_hp, 100i32, 10i32)));
+    drop(aria_display_move(32i32, 5i32));
+    print("]");
+    drop(aria_display_reset_attr());
+    drop(aria_display_move(1i32, 6i32));
+    drop(aria_display_set_fg(2i32));
+    print("|    >(O.O)<    MP: [");
+    drop(raw(draw_bar(21i32, 6i32, 4i32, e_mp, 50i32, 10i32)));
+    drop(aria_display_move(32i32, 6i32));
+    print("]");
+    drop(aria_display_reset_attr());
+    drop(aria_display_move(1i32, 7i32));
+    print("|    ~(_)_)~");
+    drop(aria_display_move(1i32, 8i32));
+    print("+================================================+");
+
+    // ── Hero panel ────────────────────────────────────────────────────────
+    drop(aria_display_move(1i32, 9i32));
+    drop(aria_display_set_fg(6i32));  // cyan
+    drop(aria_display_set_bold(1i32));
+    print("| ARIA (HERO)");
+    drop(aria_display_reset_attr());
+    drop(aria_display_move(1i32, 10i32));
+    drop(aria_display_set_fg(6i32));
+    print("|    (^_^)/    HP: [");
+    drop(raw(draw_bar(20i32, 10i32, 2i32, h_hp, 100i32, 10i32)));
+    drop(aria_display_move(31i32, 10i32));
+    print("]");
+    drop(aria_display_reset_attr());
+    drop(aria_display_move(1i32, 11i32));
+    drop(aria_display_set_fg(6i32));
+    print("|     /||    MP: [");
+    drop(raw(draw_bar(18i32, 11i32, 5i32, h_mp, 50i32, 10i32)));
+    drop(aria_display_move(29i32, 11i32));
+    print("]");
+    drop(aria_display_reset_attr());
+    drop(aria_display_move(1i32, 12i32));
+    print("|    / \\");
+    drop(aria_display_move(1i32, 13i32));
+    print("+================================================+");
+
+    // ── Battle menu ────────────────────────────────────────────────────────
+    // 4 options: ATTACK(0) MAGIC(1) ITEM(2) RUN(3)
+    drop(aria_display_move(1i32, 14i32));
+    print("|  ");
+    if (menu_sel == 0i32) {
+        drop(aria_display_set_fg(3i32));
+        drop(aria_display_set_bold(1i32));
+        print("> ATTACK");
+        drop(aria_display_reset_attr());
+    } else {
+        print("  ATTACK");
+    }
+    print("  ");
+    if (menu_sel == 1i32) {
+        drop(aria_display_set_fg(3i32));
+        drop(aria_display_set_bold(1i32));
+        print("> MAGIC");
+        drop(aria_display_reset_attr());
+    } else {
+        print("  MAGIC");
+    }
+    print("  ");
+    if (menu_sel == 2i32) {
+        drop(aria_display_set_fg(3i32));
+        drop(aria_display_set_bold(1i32));
+        print("> ITEM");
+        drop(aria_display_reset_attr());
+    } else {
+        print("  ITEM");
+    }
+    print("  ");
+    if (menu_sel == 3i32) {
+        drop(aria_display_set_fg(3i32));
+        drop(aria_display_set_bold(1i32));
+        print("> RUN");
+        drop(aria_display_reset_attr());
+    } else {
+        print("  RUN");
+    }
+    drop(aria_display_move(1i32, 15i32));
+    print("+================================================+");
+
+    // ── Status message ────────────────────────────────────────────────────
+    drop(aria_display_move(1i32, 16i32));
+    drop(aria_display_set_fg(7i32));
+    if (msg_id == 0i32) {
+        print("| Choose your action. [W/S=SELECT  J/ENTER=OK  Q=QUIT]");
+    }
+    if (msg_id == 1i32) {
+        drop(aria_display_set_fg(2i32));
+        print("| You attack! The SLIME KING recoils in agony!");
+    }
+    if (msg_id == 2i32) {
+        drop(aria_display_set_fg(4i32));
+        print("| You cast FLARE! The SLIME KING shrieks!");
+    }
+    if (msg_id == 3i32) {
+        drop(aria_display_set_fg(6i32));
+        print("| You use an ELIXIR. HP restored!");
+    }
+    if (msg_id == 4i32) {
+        drop(aria_display_set_fg(1i32));
+        print("| The SLIME KING counter-attacks!");
+    }
+    if (msg_id == 5i32) {
+        drop(aria_display_set_fg(3i32));
+        drop(aria_display_set_bold(1i32));
+        print("| VICTORY! The SLIME KING is defeated!");
+    }
+    if (msg_id == 6i32) {
+        drop(aria_display_set_fg(1i32));
+        drop(aria_display_set_bold(1i32));
+        print("| DEFEAT! You have been slain...");
+    }
+    if (msg_id == 7i32) {
+        drop(aria_display_set_fg(5i32));
+        print("| You fled from battle! Press Q to exit.");
+    }
+    if (msg_id == 8i32) {
+        drop(aria_display_set_fg(7i32));
+        print("| Not enough MP for magic!");
+    }
+    drop(aria_display_reset_attr());
+    drop(aria_display_move(1i32, 17i32));
+    print("+================================================+");
+
+    // ── Zone info from aria-console (showcase CON_ZONE constants) ────────
+    drop(aria_display_move(1i32, 18i32));
+    drop(aria_display_set_fg(4i32));  // blue (system info)
+    print("| MEMMAP: VRAM@0x4000 ROM@0x8000 FPS=16ms/frame");
+    drop(aria_display_reset_attr());
+    drop(aria_display_move(1i32, 19i32));
+    print("+================================================+");
+
+    drop(aria_display_flush());
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    // ── Initialize subsystems ────────────────────────────────────────────
+    drop(aria_display_enter_raw());
+    drop(aria_input_enter_raw());
+    drop(aria_audio_init(1i32));       // dry mode (no hardware output required)
+    drop(aria_display_hide_cursor());
+
+    // ── Battle state ─────────────────────────────────────────────────────
+    int32:e_hp   = 80i32;
+    int32:e_mp   = 40i32;
+    int32:h_hp   = 100i32;
+    int32:h_mp   = 50i32;
+    int32:menu   = 0i32;    // selected menu item 0-3
+    int32:msg    = 0i32;    // current status message
+    int32:done   = 0i32;    // 1 = exit
+    uint64:rng   = 44269u64; // PRNG seed
+
+    // Initial render
+    drop(raw(draw_screen(e_hp, e_mp, h_hp, h_mp, menu, msg)));
+
+    while (done == 0i32) {
+        // ── Read input ───────────────────────────────────────────────────
+        int32:vk = aria_input_read_key();
+        int32:btn = aria_input_key_to_buttons(vk);
+
+        // Raw 'q'=113 -> quit
+        if (vk == 113i32) {
+            done = 1i32;
+        }
+
+        // W(119) or Up(200) -> move cursor up
+        if (done == 0i32 && (vk == 119i32 || vk == 200i32)) {
+            if (menu > 0i32) {
+                menu = menu - 1i32;
+            }
+            drop(raw(draw_screen(e_hp, e_mp, h_hp, h_mp, menu, msg)));
+        }
+
+        // S(115) or Down(201) -> move cursor down
+        if (done == 0i32 && (vk == 115i32 || vk == 201i32)) {
+            if (menu < 3i32) {
+                menu = menu + 1i32;
+            }
+            drop(raw(draw_screen(e_hp, e_mp, h_hp, h_mp, menu, msg)));
+        }
+
+        // J(106) or Enter(13) -> confirm
+        if (done == 0i32 && (vk == 106i32 || vk == 13i32)) {
+            // ── Player action ────────────────────────────────────────────
+            if (menu == 3i32) {
+                // RUN
+                msg = 7i32;
+                drop(aria_audio_play_tone(0i32, 110i32, 0i32, 200i32));
+                drop(raw(draw_screen(e_hp, e_mp, h_hp, h_mp, menu, msg)));
+                done = 1i32;
+            }
+
+            int32:hero_acted = 0i32;
+
+            if (done == 0i32 && menu == 0i32) {
+                // ATTACK: 15-25 damage
+                rng = rand_next(rng);
+                uint64:dmg_raw = rand_bounded(rng, 11u64);
+                int32:dmg = @cast<int32>(dmg_raw) + 15i32;
+                e_hp = e_hp - dmg;
+                if (e_hp < 0i32) { e_hp = 0i32; }
+                msg = 1i32;
+                drop(aria_audio_play_tone(0i32, 440i32, 0i32, 150i32));
+                hero_acted = 1i32;
+            }
+
+            if (done == 0i32 && menu == 1i32) {
+                // MAGIC: 20-30 damage, costs 10 MP
+                if (h_mp < 10i32) {
+                    msg = 8i32;
+                } else {
+                    rng = rand_next(rng);
+                    uint64:mdmg_raw = rand_bounded(rng, 11u64);
+                    int32:mdmg = @cast<int32>(mdmg_raw) + 20i32;
+                    e_hp = e_hp - mdmg;
+                    if (e_hp < 0i32) { e_hp = 0i32; }
+                    h_mp = h_mp - 10i32;
+                    msg = 2i32;
+                    drop(aria_audio_play_tone(0i32, 880i32, 1i32, 200i32));
+                    hero_acted = 1i32;
+                }
+            }
+
+            if (done == 0i32 && menu == 2i32) {
+                // ITEM: heal 30 HP
+                h_hp = h_hp + 30i32;
+                if (h_hp > 100i32) { h_hp = 100i32; }
+                msg = 3i32;
+                drop(aria_audio_play_tone(0i32, 220i32, 1i32, 200i32));
+                hero_acted = 1i32;
+            }
+
+            // Check victory
+            if (done == 0i32 && e_hp <= 0i32) {
+                msg = 5i32;
+                drop(raw(draw_screen(e_hp, e_mp, h_hp, h_mp, menu, msg)));
+                done = 1i32;
+            }
+
+            // ── Enemy counterattack ───────────────────────────────────────
+            if (done == 0i32 && hero_acted == 1i32) {
+                drop(raw(draw_screen(e_hp, e_mp, h_hp, h_mp, menu, msg)));
+                // brief "pause" — busy wait ~500000 iterations
+                loop(0i32, 500000i32, 1i32) { }
+
+                rng = rand_next(rng);
+                uint64:edmg_raw = rand_bounded(rng, 11u64);
+                int32:edmg = @cast<int32>(edmg_raw) + 10i32;
+                h_hp = h_hp - edmg;
+                if (h_hp < 0i32) { h_hp = 0i32; }
+                msg = 4i32;
+                drop(aria_audio_play_tone(1i32, 165i32, 0i32, 150i32));
+
+                // Check defeat
+                if (h_hp <= 0i32) {
+                    msg = 6i32;
+                    drop(raw(draw_screen(e_hp, e_mp, h_hp, h_mp, menu, msg)));
+                    done = 1i32;
+                }
+            }
+
+            if (done == 0i32) {
+                drop(raw(draw_screen(e_hp, e_mp, h_hp, h_mp, menu, msg)));
+            }
+        }
+    }
+
+    // ── Cleanup ──────────────────────────────────────────────────────────
+    drop(aria_display_show_cursor());
+    drop(aria_display_reset_attr());
+    drop(aria_input_exit_raw());
+    drop(aria_display_exit_raw());
+    drop(aria_audio_shutdown());
+
+    // Print final newlines to restore clean terminal
+    print("\n\nDemo ended. Thanks for playing ARIA QUEST!\n\n");
+
+    pass(0i32);
+};
