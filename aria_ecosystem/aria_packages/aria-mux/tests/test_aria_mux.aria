@@ -1,0 +1,107 @@
+use "../src/aria_mux.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // T01: bit_mux sel=1 -> returns b
+    uint64:r01 = bit_mux(10u64, 20u64, 1u64);
+    uint64:f01 = 0u64; if (r01 == 20u64) { f01 = 1u64; }
+    if (f01 == 1u64) { drop(println("[PASS] T01 bit_mux sel=1->b")); }
+    if (f01 == 0u64) { drop(println("[FAIL] T01 bit_mux sel=1->b")); }
+
+    // T02: bit_mux sel=0 -> returns a
+    uint64:r02 = bit_mux(10u64, 20u64, 0u64);
+    uint64:f02 = 0u64; if (r02 == 10u64) { f02 = 1u64; }
+    if (f02 == 1u64) { drop(println("[PASS] T02 bit_mux sel=0->a")); }
+    if (f02 == 0u64) { drop(println("[FAIL] T02 bit_mux sel=0->a")); }
+
+    // T03: field_get — extract bits 4:1 (width=4, pos=1) from 0b11110 = 30
+    // (30 >> 1) & 0xF = 15 & 0xF = 15
+    uint64:r03 = field_get(30u64, 1u64, 4u64);
+    uint64:f03 = 0u64; if (r03 == 15u64) { f03 = 1u64; }
+    if (f03 == 1u64) { drop(println("[PASS] T03 field_get bits4:1 of 30")); }
+    if (f03 == 0u64) { drop(println("[FAIL] T03 field_get bits4:1 of 30")); }
+
+    // T04: field_get — extract bits 7:4 (width=4, pos=4) from 0xAB = 171
+    // (171 >> 4) & 0xF = 10 & 0xF = 10
+    uint64:r04 = field_get(171u64, 4u64, 4u64);
+    uint64:f04 = 0u64; if (r04 == 10u64) { f04 = 1u64; }
+    if (f04 == 1u64) { drop(println("[PASS] T04 field_get hi-nibble of 0xAB")); }
+    if (f04 == 0u64) { drop(println("[FAIL] T04 field_get hi-nibble of 0xAB")); }
+
+    // T05: field_set — insert value 5 (0b0101) at pos=4, width=4 into 0
+    // result = 0b01010000 = 80
+    uint64:r05 = field_set(0u64, 5u64, 4u64, 4u64);
+    uint64:f05 = 0u64; if (r05 == 80u64) { f05 = 1u64; }
+    if (f05 == 1u64) { drop(println("[PASS] T05 field_set 5 at pos4")); }
+    if (f05 == 0u64) { drop(println("[FAIL] T05 field_set 5 at pos4")); }
+
+    // T06: field_set — overwrite field: insert 3 (0b0011) at pos=0, width=4 into 0xFF
+    // clears bits 3:0, sets them to 3: 0b11110011 = 243
+    uint64:r06 = field_set(255u64, 3u64, 0u64, 4u64);
+    uint64:f06 = 0u64; if (r06 == 243u64) { f06 = 1u64; }
+    if (f06 == 1u64) { drop(println("[PASS] T06 field_set overwrite in 0xFF")); }
+    if (f06 == 0u64) { drop(println("[FAIL] T06 field_set overwrite in 0xFF")); }
+
+    // T07: byte_sel — byte 0 of 0xABCD = byte 0 = 0xCD = 205
+    uint64:r07 = byte_sel(43981u64, 0u64);
+    uint64:f07 = 0u64; if (r07 == 205u64) { f07 = 1u64; }
+    if (f07 == 1u64) { drop(println("[PASS] T07 byte_sel byte0 of 0xABCD")); }
+    if (f07 == 0u64) { drop(println("[FAIL] T07 byte_sel byte0 of 0xABCD")); }
+
+    // T08: byte_sel — byte 1 of 0xABCD = 0xAB = 171
+    uint64:r08 = byte_sel(43981u64, 1u64);
+    uint64:f08 = 0u64; if (r08 == 171u64) { f08 = 1u64; }
+    if (f08 == 1u64) { drop(println("[PASS] T08 byte_sel byte1 of 0xABCD")); }
+    if (f08 == 0u64) { drop(println("[FAIL] T08 byte_sel byte1 of 0xABCD")); }
+
+    // T09: mask_keep — keep bits 3:0 of 0b11001101 = 205 -> 0b1101 = 13
+    uint64:r09 = mask_keep(205u64, 15u64);
+    uint64:f09 = 0u64; if (r09 == 13u64) { f09 = 1u64; }
+    if (f09 == 1u64) { drop(println("[PASS] T09 mask_keep low nibble")); }
+    if (f09 == 0u64) { drop(println("[FAIL] T09 mask_keep low nibble")); }
+
+    // T10: mask_clear — clear bits 3:0 of 0b11001101 = 205 -> 0b11000000 = 192
+    uint64:r10 = mask_clear(205u64, 15u64);
+    uint64:f10 = 0u64; if (r10 == 192u64) { f10 = 1u64; }
+    if (f10 == 1u64) { drop(println("[PASS] T10 mask_clear low nibble")); }
+    if (f10 == 0u64) { drop(println("[FAIL] T10 mask_clear low nibble")); }
+
+    // T11: ones_mask(4) = 0b1111 = 15
+    uint64:r11 = ones_mask(4u64);
+    uint64:f11 = 0u64; if (r11 == 15u64) { f11 = 1u64; }
+    if (f11 == 1u64) { drop(println("[PASS] T11 ones_mask(4)=15")); }
+    if (f11 == 0u64) { drop(println("[FAIL] T11 ones_mask(4)=15")); }
+
+    // T12: ones_mask(8) = 255
+    uint64:r12 = ones_mask(8u64);
+    uint64:f12 = 0u64; if (r12 == 255u64) { f12 = 1u64; }
+    if (f12 == 1u64) { drop(println("[PASS] T12 ones_mask(8)=255")); }
+    if (f12 == 0u64) { drop(println("[FAIL] T12 ones_mask(8)=255")); }
+
+    // T13: blend — merge 0b11001100 (204) and 0b10110011 (179) under mask 0b11110000 (240)
+    // from_b (where mask=1): 0b10110000 = 176
+    // from_a (where mask=0): 0b00001100 = 12
+    // result: 176 | 12 = 188 = 0b10111100
+    uint64:r13 = blend(204u64, 179u64, 240u64);
+    uint64:f13 = 0u64; if (r13 == 188u64) { f13 = 1u64; }
+    if (f13 == 1u64) { drop(println("[PASS] T13 blend(204,179,mask240)")); }
+    if (f13 == 0u64) { drop(println("[FAIL] T13 blend(204,179,mask240)")); }
+
+    // T14: blend with all-0 mask -> result = a
+    uint64:r14 = blend(42u64, 99u64, 0u64);
+    uint64:f14 = 0u64; if (r14 == 42u64) { f14 = 1u64; }
+    if (f14 == 1u64) { drop(println("[PASS] T14 blend all-0 mask->a")); }
+    if (f14 == 0u64) { drop(println("[FAIL] T14 blend all-0 mask->a")); }
+
+    // T15: field roundtrip — set then get
+    uint64:word = 0u64;
+    uint64:inserted = field_set(word, 13u64, 8u64, 4u64);
+    uint64:extracted = field_get(inserted, 8u64, 4u64);
+    uint64:f15 = 0u64; if (extracted == 13u64) { f15 = 1u64; }
+    if (f15 == 1u64) { drop(println("[PASS] T15 field roundtrip set/get 13")); }
+    if (f15 == 0u64) { drop(println("[FAIL] T15 field roundtrip set/get 13")); }
+
+    pass(0i32);
+};

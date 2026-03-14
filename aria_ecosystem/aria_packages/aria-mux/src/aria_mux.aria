@@ -1,0 +1,77 @@
+// aria-mux — Bit-select, field insert/extract, and conditional mux utilities
+//
+// These are the building blocks for register-map manipulation and FSM state logic:
+// - bit_mux:      select one of two values based on a condition bit
+// - field_get:    extract a multi-bit field from a word
+// - field_set:    insert a value into a field within a word (non-destructive)
+// - byte_sel:     select byte 0..7 from a uint64 word
+// - mask_keep:    keep only the bits where mask is 1
+// - mask_clear:   clear the bits where mask is 1
+// - ones_mask:    create a mask of n consecutive 1-bits starting at bit 0
+// - rotate_left7: rotate bits left by n (mod 7) — safe (avoids bit 63 via mod 62)
+//
+// All values uint64. Bug #20 advisory: avoid shifts of values with bit 63 set.
+
+// Conditional mux: returns b if sel == 1, else returns a.
+// Classic gate-level pattern: result = a ^ ((a ^ b) & sel_mask)
+// sel must be 0 or 1.
+pub func:bit_mux = uint64(uint64:a, uint64:b, uint64:sel) {
+    uint64:result = a;
+    if (sel == 1u64) { result = b; }
+    pass(result);
+};
+
+// Extract a field of `width` bits starting at bit position `pos`.
+// field_get(word, pos, width) = (word >> pos) & ones_mask(width)
+// Safe: pos + width must be <= 62 to avoid Bug #20 in the shift.
+pub func:field_get = uint64(uint64:word, uint64:pos, uint64:width) {
+    uint64:shifted = word >> pos;
+    uint64:ones = (1u64 << width) - 1u64;
+    pass(shifted & ones);
+};
+
+// Insert `val` into `word` at bit position `pos` with field `width`.
+// Clears the field first, then ORs in the new value.
+// field_set(word, val, pos, width)
+pub func:field_set = uint64(uint64:word, uint64:val, uint64:pos, uint64:width) {
+    uint64:ones = (1u64 << width) - 1u64;
+    uint64:mask = ones << pos;
+    uint64:cleared = (word | mask) ^ mask;
+    uint64:inserted = (val & ones) << pos;
+    pass(cleared | inserted);
+};
+
+// Extract byte n (0=lowest) from a uint64 word.
+// byte_sel(word, 0) = bits 7:0, byte_sel(word, 1) = bits 15:8, etc.
+// Safe for n in 0..6 (avoids bit 63 via >> 56 at most).
+pub func:byte_sel = uint64(uint64:word, uint64:n) {
+    uint64:shift = n * 8u64;
+    pass((word >> shift) & 255u64);
+};
+
+// Keep only bits set in mask (AND).
+pub func:mask_keep = uint64(uint64:word, uint64:mask) {
+    pass(word & mask);
+};
+
+// Clear bits set in mask (AND NOT = AND XOR, then AND with complement NOT possible,
+// so: keep bits where mask is 0 → word & (mask ^ ones_for_safe_range)).
+// Simple: word & ~mask, but aria has no ~ unary operator on uint64.
+// Trick: (word | mask) ^ mask  clears the masked bits.
+pub func:mask_clear = uint64(uint64:word, uint64:mask) {
+    pass((word | mask) ^ mask);
+};
+
+// Generate a mask of n consecutive 1-bits at positions 0..n-1.
+// ones_mask(4) = 0b1111 = 15.  Safe for n in 1..62.
+pub func:ones_mask = uint64(uint64:n) {
+    pass((1u64 << n) - 1u64);
+};
+
+// Merge two words under a mask: result = (a & ~mask) | (b & mask).
+// Equivalent to: for each bit, pick from b where mask=1, from a where mask=0.
+pub func:blend = uint64(uint64:a, uint64:b, uint64:mask) {
+    uint64:from_b = b & mask;
+    uint64:from_a = (a | mask) ^ mask;
+    pass(from_a | from_b);
+};
