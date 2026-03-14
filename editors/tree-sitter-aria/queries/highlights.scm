@@ -1,7 +1,7 @@
 ; Highlighting queries for Aria
 ; Used by nvim-treesitter and other Tree-sitter editors
 
-; Keywords
+; Keywords — declarations
 [
   "func"
   "struct"
@@ -9,10 +9,18 @@
   "trait"
   "impl"
   "mod"
-  "import"
-  "export"
-  "var"
+  "type"
   "const"
+] @keyword
+
+; Keywords — module system (use/extern are Aria's import mechanism)
+[
+  "use"
+  "extern"
+] @keyword.import
+
+; Keywords — control flow
+[
   "if"
   "else"
   "when"
@@ -21,20 +29,38 @@
   "pick"
   "case"
   "default"
-  "return"
+  "while"
+  "till"
+  "loop"
+  "for"
+  "in"
   "break"
   "continue"
+  "fall"
   "defer"
   "await"
   "async"
-  "for"
-] @keyword
+] @keyword.conditional
+
+; Keywords — return mechanism (pass = success return, fail = error return)
+[
+  "pass"
+  "fail"
+] @keyword.return
 
 ; Visibility
 [
   "pub"
   "priv"
 ] @keyword.modifier
+
+; Memory allocation modes
+[
+  "wild"
+  "wildx"
+  "gc"
+  "stack"
+] @keyword.storage
 
 ; Types - TBB types
 (tbb_type) @type.builtin
@@ -99,7 +125,29 @@
   "<<"
   ">>"
   "->"
+  "|>"
+  "<|"
+  ".."
+  "..."
+  "<=>"
+  "=>"
 ] @operator
+
+; Result/TOS operators — visually distinct for bug hunting
+[
+  "?"
+  "??"
+  "?!"
+  "!!!"
+] @operator.special
+
+; Blueprint pointer operators
+[
+  "<-"
+  "@"
+  "#"
+  "$"
+] @operator.special
 
 ; Punctuation
 [
@@ -121,11 +169,28 @@
 ; Literals
 (integer_literal) @number
 (float_literal) @number.float
+(typed_integer_literal) @number
+(typed_float_literal) @number.float
+(ternary_literal) @number.special
+(nonary_literal) @number.special
 (string_literal) @string
 (char_literal) @character
 (boolean_literal) @boolean
 (null_literal) @constant.builtin
 (error_literal) @constant.builtin
+
+; Language constants
+[
+  "NIL"
+  "NULL"
+  "ERR"
+  "unknown"
+] @constant.builtin
+
+; TOS (Type OK System) builtin bypass functions
+; These are explicit intent markers, not oversight
+((identifier) @function.builtin
+  (#any-of? @function.builtin "drop" "raw" "ok"))
 
 ; Template strings
 (template_string) @string
