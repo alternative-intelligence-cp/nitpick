@@ -1,0 +1,179 @@
+// aria_hash.aria — LIB-13: Non-cryptographic hash functions
+//
+// All functions operate on uint64 and return uint64.
+// These are deterministic, bit-mixing hash utilities suitable for
+// hash tables, checksums, data fingerprinting, and RNG seeding.
+//
+// Pub funcs (8):
+//   fnv1a32(key)          — FNV-1a 32-bit of a uint64 word (result in low 32 bits)
+//   fnv1a64(key)          — FNV-1a 64-bit of a uint64 word
+//   djb2(key)             — DJB2 hash of a uint64 word
+//   sdbm(key)             — SDBM hash of a uint64 word
+//   mix64(key)            — Murmur3-style 64-bit finalizer (avalanche mixer)
+//   hash_combine(h1, h2)  — Combine two hash values (Boost style)
+//   splitmix(key)         — SplitMix64 hash step (fast, high quality)
+//   wang64(key)           — Wang hash for 64-bit integers
+
+// FNV-1a 32-bit finalization on a uint64 word.
+// Processes each byte of the 64-bit input word through the FNV-1a algorithm.
+// Result is in the low 32 bits.
+// FNV prime: 16777619 (0x01000193)   FNV offset basis: 2166136261 (0x811c9dc5)
+pub func:fnv1a32 = uint64(uint64:key) {
+    uint64:h = 2166136261u64;
+    uint64:prime = 16777619u64;
+    uint64:mask8 = 255u64;
+
+    // byte 0 (bits 0-7)
+    uint64:b0 = key & mask8;
+    h = (h ^ b0) * prime;
+
+    // byte 1 (bits 8-15)
+    uint64:b1 = (key >> 8u64) & mask8;
+    h = (h ^ b1) * prime;
+
+    // byte 2 (bits 16-23)
+    uint64:b2 = (key >> 16u64) & mask8;
+    h = (h ^ b2) * prime;
+
+    // byte 3 (bits 24-31)
+    uint64:b3 = (key >> 24u64) & mask8;
+    h = (h ^ b3) * prime;
+
+    // byte 4 (bits 32-39)
+    uint64:b4 = (key >> 32u64) & mask8;
+    h = (h ^ b4) * prime;
+
+    // byte 5 (bits 40-47)
+    uint64:b5 = (key >> 40u64) & mask8;
+    h = (h ^ b5) * prime;
+
+    // byte 6 (bits 48-55)
+    uint64:b6 = (key >> 48u64) & mask8;
+    h = (h ^ b6) * prime;
+
+    // byte 7 (bits 56-63)
+    uint64:b7 = (key >> 56u64) & mask8;
+    h = (h ^ b7) * prime;
+
+    // Return low 32 bits
+    uint64:mask32 = 4294967295u64;
+    pass(h & mask32);
+};
+
+// FNV-1a 64-bit of a uint64 word.
+// FNV prime: 1099511628211  FNV offset basis: 14695981039346656037
+pub func:fnv1a64 = uint64(uint64:key) {
+    uint64:h = 14695981039346656037u64;
+    uint64:prime = 1099511628211u64;
+    uint64:mask8 = 255u64;
+
+    uint64:c0 = key & mask8;
+    h = (h ^ c0) * prime;
+    uint64:c1 = (key >> 8u64) & mask8;
+    h = (h ^ c1) * prime;
+    uint64:c2 = (key >> 16u64) & mask8;
+    h = (h ^ c2) * prime;
+    uint64:c3 = (key >> 24u64) & mask8;
+    h = (h ^ c3) * prime;
+    uint64:c4 = (key >> 32u64) & mask8;
+    h = (h ^ c4) * prime;
+    uint64:c5 = (key >> 40u64) & mask8;
+    h = (h ^ c5) * prime;
+    uint64:c6 = (key >> 48u64) & mask8;
+    h = (h ^ c6) * prime;
+    uint64:c7 = (key >> 56u64) & mask8;
+    h = (h ^ c7) * prime;
+
+    pass(h);
+};
+
+// DJB2: classic Bernstein hash adapted for a uint64 word.
+// Treats the 64-bit input as 8 bytes, combining them with: h = h * 33 ^ byte
+pub func:djb2 = uint64(uint64:key) {
+    uint64:h = 5381u64;
+    uint64:mask8 = 255u64;
+
+    uint64:d0 = key & mask8;
+    h = h * 33u64 ^ d0;
+    uint64:d1 = (key >> 8u64) & mask8;
+    h = h * 33u64 ^ d1;
+    uint64:d2 = (key >> 16u64) & mask8;
+    h = h * 33u64 ^ d2;
+    uint64:d3 = (key >> 24u64) & mask8;
+    h = h * 33u64 ^ d3;
+    uint64:d4 = (key >> 32u64) & mask8;
+    h = h * 33u64 ^ d4;
+    uint64:d5 = (key >> 40u64) & mask8;
+    h = h * 33u64 ^ d5;
+    uint64:d6 = (key >> 48u64) & mask8;
+    h = h * 33u64 ^ d6;
+    uint64:d7 = (key >> 56u64) & mask8;
+    h = h * 33u64 ^ d7;
+
+    pass(h);
+};
+
+// SDBM: hash = byte + (h << 6) + (h << 16) - h  (applied per byte)
+pub func:sdbm = uint64(uint64:key) {
+    uint64:h = 0u64;
+    uint64:mask8 = 255u64;
+
+    uint64:s0 = key & mask8;
+    h = s0 + (h << 6u64) + (h << 16u64) - h;
+    uint64:s1 = (key >> 8u64) & mask8;
+    h = s1 + (h << 6u64) + (h << 16u64) - h;
+    uint64:s2 = (key >> 16u64) & mask8;
+    h = s2 + (h << 6u64) + (h << 16u64) - h;
+    uint64:s3 = (key >> 24u64) & mask8;
+    h = s3 + (h << 6u64) + (h << 16u64) - h;
+    uint64:s4 = (key >> 32u64) & mask8;
+    h = s4 + (h << 6u64) + (h << 16u64) - h;
+    uint64:s5 = (key >> 40u64) & mask8;
+    h = s5 + (h << 6u64) + (h << 16u64) - h;
+    uint64:s6 = (key >> 48u64) & mask8;
+    h = s6 + (h << 6u64) + (h << 16u64) - h;
+    uint64:s7 = (key >> 56u64) & mask8;
+    h = s7 + (h << 6u64) + (h << 16u64) - h;
+
+    pass(h);
+};
+
+// mix64: Murmur3-style 64-bit finalizer / avalanche mixer.
+// High-quality bit mixing — every input bit affects every output bit.
+pub func:mix64 = uint64(uint64:key) {
+    uint64:h = key;
+    h = h ^ (h >> 33u64);
+    h = h * 18397679294719823053u64;
+    h = h ^ (h >> 33u64);
+    h = h * 14181476777654086739u64;
+    h = h ^ (h >> 33u64);
+    pass(h);
+};
+
+// hash_combine: combine two hash values (Boost/absl style).
+// h2 is mixed with a golden-ratio constant and folded into h1.
+pub func:hash_combine = uint64(uint64:h1, uint64:h2) {
+    uint64:mixed = h1 ^ (h2 + 11400714819323198485u64 + (h1 << 6u64) + (h1 >> 2u64));
+    pass(mixed);
+};
+
+// splitmix: SplitMix64 hash — extremely fast, passes BigCrush.
+// Ideal for seeding RNGs.
+pub func:splitmix = uint64(uint64:key) {
+    uint64:h = key + 11400714819323198485u64;
+    h = (h ^ (h >> 30u64)) * 13787848793156543929u64;
+    h = (h ^ (h >> 27u64)) * 10723151780598845931u64;
+    pass(h ^ (h >> 31u64));
+};
+
+// wang64: Thomas Wang's 64-bit integer hash.
+// Classic, well-tested, good avalanche properties.
+pub func:wang64 = uint64(uint64:key) {
+    uint64:h = key;
+    h = (h ^ 61u64) ^ (h >> 16u64);
+    h = h + (h << 3u64);
+    h = h ^ (h >> 4u64);
+    h = h * 668265261u64;
+    h = h ^ (h >> 15u64);
+    pass(h);
+};
