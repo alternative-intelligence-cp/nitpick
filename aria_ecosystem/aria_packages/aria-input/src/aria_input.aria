@@ -1,0 +1,139 @@
+// aria_input.aria — keyboard input for Aria virtual console (LIB-18)
+//
+// NOTE: Aria's `use` statement does NOT export `extern` block declarations
+// from imported modules. Test files and consumer files must redeclare the
+// extern block when they need FFI access. This file compiles cleanly with
+// `-c` and serves as documentation + source-of-truth for the API.
+//
+// C shim: shim/aria_input_shim.c → shim/libaria_input.so
+// Link:   -L./shim -laria_input -Wl,-rpath,<path-to-shim>
+//
+// Button bitmask layout (SNES-style, 12 buttons):
+//   bit 0  RIGHT    bit 1  LEFT     bit 2  DOWN    bit 3  UP
+//   bit 4  A        bit 5  B        bit 6  X       bit 7  Y
+//   bit 8  L        bit 9  R        bit 10 START   bit 11 SELECT
+//
+// Virtual key codes returned by inp_read_key():
+//   0-127   = ASCII value
+//   200     = UP arrow     201 = DOWN arrow
+//   202     = LEFT arrow   203 = RIGHT arrow
+//   -1      = no key ready (non-blocking)
+//   -2      = unrecognized escape sequence
+
+extern "aria_input" {
+    func:aria_input_enter_raw    = int32();
+    func:aria_input_exit_raw     = int32();
+    func:aria_input_is_raw       = int32();
+    func:aria_input_read_raw_byte = int32();
+    func:aria_input_read_key     = int32();
+    func:aria_input_key_to_buttons = int32(int32:vk);
+    func:aria_input_map_byte     = int32(int32:byte_val);
+    func:aria_input_map_key      = int32(int32:ascii_byte, int32:button_mask);
+    func:aria_input_poll         = int32();
+    func:aria_input_flush_pending = int32();
+}
+
+// ── Button bit constants ──────────────────────────────────────────────────────
+
+pub func:BTN_RIGHT  = int32() { pass(1i32); };
+pub func:BTN_LEFT   = int32() { pass(2i32); };
+pub func:BTN_DOWN   = int32() { pass(4i32); };
+pub func:BTN_UP     = int32() { pass(8i32); };
+pub func:BTN_A      = int32() { pass(16i32); };
+pub func:BTN_B      = int32() { pass(32i32); };
+pub func:BTN_X      = int32() { pass(64i32); };
+pub func:BTN_Y      = int32() { pass(128i32); };
+pub func:BTN_L      = int32() { pass(256i32); };
+pub func:BTN_R      = int32() { pass(512i32); };
+pub func:BTN_START  = int32() { pass(1024i32); };
+pub func:BTN_SELECT = int32() { pass(2048i32); };
+
+// ── Raw mode control ─────────────────────────────────────────────────────────
+
+pub func:inp_enter_raw = int32() {
+    int32:r = aria_input_enter_raw();
+    pass(r);
+};
+
+pub func:inp_exit_raw = int32() {
+    int32:r = aria_input_exit_raw();
+    pass(r);
+};
+
+pub func:inp_is_raw = int32() {
+    int32:r = aria_input_is_raw();
+    pass(r);
+};
+
+// ── Key reading ───────────────────────────────────────────────────────────────
+
+// Read a raw byte (0-255) or -1 if no data.
+pub func:inp_read_byte = int32() {
+    int32:r = aria_input_read_raw_byte();
+    pass(r);
+};
+
+// Read a virtual keycode (handles escape sequences for arrow keys).
+// Returns -1 if no key ready.
+pub func:inp_read_key = int32() {
+    int32:r = aria_input_read_key();
+    pass(r);
+};
+
+// Check if stdin has data without reading.
+// Returns 1 if data available, 0 if not, -1 on error.
+pub func:inp_poll = int32() {
+    int32:r = aria_input_poll();
+    pass(r);
+};
+
+// Discard any pending input bytes.
+pub func:inp_flush = int32() {
+    int32:r = aria_input_flush_pending();
+    pass(r);
+};
+
+// ── Button mapping ────────────────────────────────────────────────────────────
+
+// Convert a virtual keycode to a button bitmask (0 if unmapped).
+pub func:inp_key_to_buttons = int32(int32:vk) {
+    int32:r = aria_input_key_to_buttons(vk);
+    pass(r);
+};
+
+// Convert a raw ASCII byte to a button bitmask (0 if unmapped).
+pub func:inp_byte_to_buttons = int32(int32:b) {
+    int32:r = aria_input_map_byte(b);
+    pass(r);
+};
+
+// Override key binding: map ascii_byte to button_mask (0 clears).
+// Returns 0 on success, -1 if ascii_byte out of range.
+pub func:inp_bind = int32(int32:ascii_byte, int32:button_mask) {
+    int32:r = aria_input_map_key(ascii_byte, button_mask);
+    pass(r);
+};
+
+// ── Convenience: read + map in one call ──────────────────────────────────────
+
+// Non-blocking: read one key and return its button bitmask (0 if unmapped / no key).
+pub func:inp_buttons = int32() {
+    int32:k = aria_input_read_key();
+    if (k < 0i32) {
+        pass(0i32);
+    }
+    int32:b = aria_input_key_to_buttons(k);
+    pass(b);
+};
+
+// Check if a particular button is pressed in a bitmask.
+// Returns 1 if set, 0 if not.
+pub func:inp_has_button = int32(int32:bitmask, int32:btn) {
+    uint32:ubm  = @cast<uint32>(bitmask);
+    uint32:ubtn = @cast<uint32>(btn);
+    uint32:r    = ubm & ubtn;
+    if (r != 0u32) {
+        pass(1i32);
+    }
+    pass(0i32);
+};

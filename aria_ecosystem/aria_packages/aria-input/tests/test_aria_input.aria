@@ -1,0 +1,170 @@
+// test_aria_input.aria — 15-test suite for LIB-18 aria-input
+//
+// Self-contained: must redeclare extern block (Aria `use` does not export externs).
+// Tests cover:
+//   T01-T05  Button bitmask constants and inp_has_button logic (pure math, no FFI)
+//   T06-T07  Key-to-button mapping for ASCII bytes (shim keymap)
+//   T08-T14  Raw mode state machine: is_raw, enter, idempotent, exit, idempotent
+//   T15      inp_poll + inp_flush (observable side-effects, smoke test)
+
+extern "aria_input" {
+    func:aria_input_enter_raw       = int32();
+    func:aria_input_exit_raw        = int32();
+    func:aria_input_is_raw          = int32();
+    func:aria_input_read_raw_byte   = int32();
+    func:aria_input_read_key        = int32();
+    func:aria_input_key_to_buttons  = int32(int32:vk);
+    func:aria_input_map_byte        = int32(int32:byte_val);
+    func:aria_input_map_key         = int32(int32:ascii_byte, int32:button_mask);
+    func:aria_input_poll            = int32();
+    func:aria_input_flush_pending   = int32();
+}
+
+// Local helper: test bitmask membership (same logic as inp_has_button in source)
+func:has_button = int32(int32:bitmask, int32:btn) {
+    uint32:ubm  = @cast<uint32>(bitmask);
+    uint32:ubtn = @cast<uint32>(btn);
+    uint32:r    = ubm & ubtn;
+    if (r != 0u32) {
+        pass(1i32);
+    }
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    // ── T01: BTN_RIGHT bit (1) present in bitmask 0b0001 ───────────────────
+    int32:t01 = raw(has_button(1i32, 1i32));
+    if (t01 == 1i32) {
+        print("[PASS] T01 has_button(1,BTN_RIGHT)==1\n");
+    } else {
+        print("[FAIL] T01 has_button(1,BTN_RIGHT) expected 1\n");
+    }
+
+    // ── T02: BTN_LEFT bit (2) NOT in bitmask 0b0001 ────────────────────────
+    int32:t02 = raw(has_button(1i32, 2i32));
+    if (t02 == 0i32) {
+        print("[PASS] T02 has_button(1,BTN_LEFT)==0\n");
+    } else {
+        print("[FAIL] T02 has_button(1,BTN_LEFT) expected 0\n");
+    }
+
+    // ── T03: Full 12-button mask has all bits set ───────────────────────────
+    int32:allbtns = 4095i32; // 0xFFF
+    int32:t03_a = raw(has_button(allbtns, 1i32));    // RIGHT
+    int32:t03_b = raw(has_button(allbtns, 2048i32)); // SELECT
+    if (t03_a == 1i32 && t03_b == 1i32) {
+        print("[PASS] T03 full mask has RIGHT and SELECT\n");
+    } else {
+        print("[FAIL] T03 full mask check failed\n");
+    }
+
+    // ── T04: Zero mask has no buttons ──────────────────────────────────────
+    int32:t04 = raw(has_button(0i32, 1024i32)); // START
+    if (t04 == 0i32) {
+        print("[PASS] T04 has_button(0,BTN_START)==0\n");
+    } else {
+        print("[FAIL] T04 zero mask should have no buttons\n");
+    }
+
+    // ── T05: Combined d-pad: UP+DOWN == bits 8+4 == 12 ─────────────────────
+    int32:ud = 8i32 + 4i32; // UP=8 DOWN=4
+    int32:t05_u = raw(has_button(ud, 8i32)); // has UP
+    int32:t05_d = raw(has_button(ud, 4i32)); // has DOWN
+    int32:t05_r = raw(has_button(ud, 1i32)); // does NOT have RIGHT
+    if (t05_u == 1i32 && t05_d == 1i32 && t05_r == 0i32) {
+        print("[PASS] T05 UP+DOWN mask correct\n");
+    } else {
+        print("[FAIL] T05 UP+DOWN mask wrong\n");
+    }
+
+    // ── T06: Default keymap: 'w' (119) -> UP (8) ───────────────────────────
+    int32:t06 = aria_input_map_byte(119i32); // 'w' = 119
+    if (t06 == 8i32) {
+        print("[PASS] T06 'w'->UP(8) default mapping\n");
+    } else {
+        print("[FAIL] T06 'w'->UP expected 8, got something else\n");
+    }
+
+    // ── T07: Default keymap: Enter (13) -> START (1024) ────────────────────
+    int32:t07 = aria_input_map_byte(13i32); // '\r' = 13
+    if (t07 == 1024i32) {
+        print("[PASS] T07 Enter->START(1024) default mapping\n");
+    } else {
+        print("[FAIL] T07 Enter->START expected 1024\n");
+    }
+
+    // ── T08: is_raw == 0 before entering raw mode ──────────────────────────
+    int32:t08 = aria_input_is_raw();
+    if (t08 == 0i32) {
+        print("[PASS] T08 is_raw==0 before enter\n");
+    } else {
+        print("[FAIL] T08 is_raw should be 0 initially\n");
+    }
+
+    // ── T09: enter_raw returns 0 ────────────────────────────────────────────
+    int32:t09 = aria_input_enter_raw();
+    if (t09 == 0i32) {
+        print("[PASS] T09 enter_raw()==0\n");
+    } else {
+        print("[FAIL] T09 enter_raw() non-zero\n");
+    }
+
+    // ── T10: is_raw == 1 after entering ────────────────────────────────────
+    int32:t10 = aria_input_is_raw();
+    if (t10 == 1i32) {
+        print("[PASS] T10 is_raw==1 after enter\n");
+    } else {
+        print("[FAIL] T10 is_raw should be 1 after enter\n");
+    }
+
+    // ── T11: double enter_raw is idempotent ─────────────────────────────────
+    int32:t11 = aria_input_enter_raw();
+    int32:t11b = aria_input_is_raw();
+    if (t11 == 0i32 && t11b == 1i32) {
+        print("[PASS] T11 double enter_raw idempotent\n");
+    } else {
+        print("[FAIL] T11 double enter_raw not idempotent\n");
+    }
+
+    // ── T12: exit_raw returns 0 ─────────────────────────────────────────────
+    int32:t12 = aria_input_exit_raw();
+    if (t12 == 0i32) {
+        print("[PASS] T12 exit_raw()==0\n");
+    } else {
+        print("[FAIL] T12 exit_raw() non-zero\n");
+    }
+
+    // ── T13: is_raw == 0 after exit ─────────────────────────────────────────
+    int32:t13 = aria_input_is_raw();
+    if (t13 == 0i32) {
+        print("[PASS] T13 is_raw==0 after exit\n");
+    } else {
+        print("[FAIL] T13 is_raw should be 0 after exit\n");
+    }
+
+    // ── T14: double exit_raw is idempotent ──────────────────────────────────
+    int32:t14 = aria_input_exit_raw();
+    int32:t14b = aria_input_is_raw();
+    if (t14 == 0i32 && t14b == 0i32) {
+        print("[PASS] T14 double exit_raw idempotent\n");
+    } else {
+        print("[FAIL] T14 double exit_raw not idempotent\n");
+    }
+
+    // ── T15: poll+flush smoke test ──────────────────────────────────────────
+    // Re-enter raw briefly to test poll/flush paths
+    drop(aria_input_enter_raw());
+    int32:poll_r = aria_input_poll();
+    drop(aria_input_flush_pending());
+    drop(aria_input_exit_raw());
+    // poll_r is 0 or 1 depending on whether stdin has data; either is fine
+    if (poll_r >= 0i32) {
+        print("[PASS] T15 poll+flush smoke test (no crash)\n");
+    } else {
+        print("[FAIL] T15 poll returned error\n");
+    }
+
+    pass(0i32);
+};
