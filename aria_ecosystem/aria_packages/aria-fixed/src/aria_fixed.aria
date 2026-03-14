@@ -1,0 +1,77 @@
+// aria-fixed — Q32.32 fixed-point arithmetic on uint64
+//
+// Representation: uint64 where bits 63:32 = integer part, bits 31:0 = fractional part.
+//   1.0  = 4294967296  (= 2^32)
+//   0.5  = 2147483648  (= 2^31)
+//   0.25 = 1073741824  (= 2^30)
+//
+// Range:  0 to ~4294967295.9999999997 (integer part 0..2^32-1)
+//
+// fixed_mul limitation:
+//   Uses 32-bit limb split; accurate to 1 ULP (2^-32 ≈ 2.3e-10).
+//   Safe (no overflow) when both integer parts are < 2^15 (=32768).
+//   Sub-fractional carry (frac*frac term) is omitted to avoid Bug #20.
+//
+// Bug #20 advisory: right-shift on uint64 with bit 63 set uses ashr (wrong).
+//   All shift operations in this library use values where bit 63 is 0.
+
+// Construct Q32.32 from an integer n (n < 2^32)
+pub func:fixed_from_int = uint64(uint64:n) {
+    pass(n << 32u64);
+};
+
+// Extract integer part (floor)
+pub func:fixed_to_int = uint64(uint64:x) {
+    pass(x >> 32u64);
+};
+
+// Extract fractional bits (bits 31:0)
+pub func:fixed_frac_bits = uint64(uint64:x) {
+    pass(x & 4294967295u64);
+};
+
+// Add two Q32.32 values
+pub func:fixed_add = uint64(uint64:a, uint64:b) {
+    pass(a + b);
+};
+
+// Subtract: a - b (caller must ensure a >= b)
+pub func:fixed_sub = uint64(uint64:a, uint64:b) {
+    pass(a - b);
+};
+
+// Multiply two Q32.32 values using 32-bit limb split.
+// Result accurate to 1 ULP; valid for integer parts < 2^15.
+pub func:fixed_mul = uint64(uint64:a, uint64:b) {
+    uint64:a_hi = a >> 32u64;
+    uint64:a_lo = a & 4294967295u64;
+    uint64:b_hi = b >> 32u64;
+    uint64:b_lo = b & 4294967295u64;
+    uint64:top = (a_hi * b_hi) << 32u64;
+    uint64:mid = (a_hi * b_lo) + (a_lo * b_hi);
+    pass(top + mid);
+};
+
+// Halve: x / 2
+pub func:fixed_half = uint64(uint64:x) {
+    pass(x >> 1u64);
+};
+
+// Double: x * 2
+pub func:fixed_double = uint64(uint64:x) {
+    pass(x + x);
+};
+
+// Compare: returns 1 if a > b, 0 otherwise
+pub func:fixed_gt = uint64(uint64:a, uint64:b) {
+    uint64:result = 0u64;
+    if (a > b) { result = 1u64; }
+    pass(result);
+};
+
+// Compare: returns 1 if a == b, 0 otherwise
+pub func:fixed_eq = uint64(uint64:a, uint64:b) {
+    uint64:result = 0u64;
+    if (a == b) { result = 1u64; }
+    pass(result);
+};

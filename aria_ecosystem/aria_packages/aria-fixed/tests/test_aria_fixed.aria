@@ -1,0 +1,105 @@
+use "../src/aria_fixed.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // Q32.32 constants: multiply the real value by 2^32 = 4294967296
+    // 1.0 = 4294967296, 2.0 = 8589934592, 3.0 = 12884901888
+    // 0.5 = 2147483648, 1.5 = 6442450944, 4.0 = 17179869184
+    // 9.0 = 38654705664, 10.0 = 42949672960
+
+    // T01: fixed_from_int(3) = 3 * 2^32 = 12884901888
+    uint64:r01 = fixed_from_int(3u64);
+    uint64:f01 = 0u64; if (r01 == 12884901888u64) { f01 = 1u64; }
+    if (f01 == 1u64) { drop(println("[PASS] T01 fixed_from_int(3)")); }
+    if (f01 == 0u64) { drop(println("[FAIL] T01 fixed_from_int(3)")); }
+
+    // T02: fixed_to_int(6442450944) = 1 (integer part of 1.5)
+    uint64:r02 = fixed_to_int(6442450944u64);
+    uint64:f02 = 0u64; if (r02 == 1u64) { f02 = 1u64; }
+    if (f02 == 1u64) { drop(println("[PASS] T02 fixed_to_int(1.5)=1")); }
+    if (f02 == 0u64) { drop(println("[FAIL] T02 fixed_to_int(1.5)=1")); }
+
+    // T03: fixed_frac_bits(6442450944) = 2147483648 (= 0.5 * 2^32)
+    uint64:r03 = fixed_frac_bits(6442450944u64);
+    uint64:f03 = 0u64; if (r03 == 2147483648u64) { f03 = 1u64; }
+    if (f03 == 1u64) { drop(println("[PASS] T03 fixed_frac_bits(1.5)=0.5")); }
+    if (f03 == 0u64) { drop(println("[FAIL] T03 fixed_frac_bits(1.5)=0.5")); }
+
+    // T04: fixed_add: 1.5 + 2.0 = 3.5 = 15032385536
+    uint64:r04 = fixed_add(6442450944u64, 8589934592u64);
+    uint64:f04 = 0u64; if (r04 == 15032385536u64) { f04 = 1u64; }
+    if (f04 == 1u64) { drop(println("[PASS] T04 fixed_add 1.5+2.0=3.5")); }
+    if (f04 == 0u64) { drop(println("[FAIL] T04 fixed_add 1.5+2.0=3.5")); }
+
+    // T05: fixed_sub: 3.0 - 1.5 = 1.5
+    uint64:r05 = fixed_sub(12884901888u64, 6442450944u64);
+    uint64:f05 = 0u64; if (r05 == 6442450944u64) { f05 = 1u64; }
+    if (f05 == 1u64) { drop(println("[PASS] T05 fixed_sub 3.0-1.5=1.5")); }
+    if (f05 == 0u64) { drop(println("[FAIL] T05 fixed_sub 3.0-1.5=1.5")); }
+
+    // T06: fixed_mul: 1.5 * 2.0 = 3.0
+    uint64:r06 = fixed_mul(6442450944u64, 8589934592u64);
+    uint64:f06 = 0u64; if (r06 == 12884901888u64) { f06 = 1u64; }
+    if (f06 == 1u64) { drop(println("[PASS] T06 fixed_mul 1.5*2.0=3.0")); }
+    if (f06 == 0u64) { drop(println("[FAIL] T06 fixed_mul 1.5*2.0=3.0")); }
+
+    // T07: fixed_mul: 3.0 * 3.0 = 9.0
+    uint64:r07 = fixed_mul(12884901888u64, 12884901888u64);
+    uint64:f07 = 0u64; if (r07 == 38654705664u64) { f07 = 1u64; }
+    if (f07 == 1u64) { drop(println("[PASS] T07 fixed_mul 3.0*3.0=9.0")); }
+    if (f07 == 0u64) { drop(println("[FAIL] T07 fixed_mul 3.0*3.0=9.0")); }
+
+    // T08: fixed_mul: 2.5 * 4.0 = 10.0
+    // 2.5 = 10737418240, 4.0 = 17179869184, 10.0 = 42949672960
+    uint64:r08 = fixed_mul(10737418240u64, 17179869184u64);
+    uint64:f08 = 0u64; if (r08 == 42949672960u64) { f08 = 1u64; }
+    if (f08 == 1u64) { drop(println("[PASS] T08 fixed_mul 2.5*4.0=10.0")); }
+    if (f08 == 0u64) { drop(println("[FAIL] T08 fixed_mul 2.5*4.0=10.0")); }
+
+    // T09: fixed_half: 3.0 / 2 = 1.5
+    uint64:r09 = fixed_half(12884901888u64);
+    uint64:f09 = 0u64; if (r09 == 6442450944u64) { f09 = 1u64; }
+    if (f09 == 1u64) { drop(println("[PASS] T09 fixed_half 3.0->1.5")); }
+    if (f09 == 0u64) { drop(println("[FAIL] T09 fixed_half 3.0->1.5")); }
+
+    // T10: fixed_double: 1.5 * 2 = 3.0
+    uint64:r10 = fixed_double(6442450944u64);
+    uint64:f10 = 0u64; if (r10 == 12884901888u64) { f10 = 1u64; }
+    if (f10 == 1u64) { drop(println("[PASS] T10 fixed_double 1.5->3.0")); }
+    if (f10 == 0u64) { drop(println("[FAIL] T10 fixed_double 1.5->3.0")); }
+
+    // T11: fixed_gt: 3.0 > 1.5 = 1
+    uint64:r11 = fixed_gt(12884901888u64, 6442450944u64);
+    uint64:f11 = 0u64; if (r11 == 1u64) { f11 = 1u64; }
+    if (f11 == 1u64) { drop(println("[PASS] T11 fixed_gt 3.0>1.5=1")); }
+    if (f11 == 0u64) { drop(println("[FAIL] T11 fixed_gt 3.0>1.5=1")); }
+
+    // T12: fixed_gt: 1.5 > 3.0 = 0
+    uint64:r12 = fixed_gt(6442450944u64, 12884901888u64);
+    uint64:f12 = 0u64; if (r12 == 0u64) { f12 = 1u64; }
+    if (f12 == 1u64) { drop(println("[PASS] T12 fixed_gt 1.5>3.0=0")); }
+    if (f12 == 0u64) { drop(println("[FAIL] T12 fixed_gt 1.5>3.0=0")); }
+
+    // T13: fixed_eq: 3.0 == 3.0 = 1
+    uint64:r13 = fixed_eq(12884901888u64, 12884901888u64);
+    uint64:f13 = 0u64; if (r13 == 1u64) { f13 = 1u64; }
+    if (f13 == 1u64) { drop(println("[PASS] T13 fixed_eq 3.0==3.0=1")); }
+    if (f13 == 0u64) { drop(println("[FAIL] T13 fixed_eq 3.0==3.0=1")); }
+
+    // T14: fixed_eq: 3.0 == 1.5 = 0
+    uint64:r14 = fixed_eq(12884901888u64, 6442450944u64);
+    uint64:f14 = 0u64; if (r14 == 0u64) { f14 = 1u64; }
+    if (f14 == 1u64) { drop(println("[PASS] T14 fixed_eq 3.0==1.5=0")); }
+    if (f14 == 0u64) { drop(println("[FAIL] T14 fixed_eq 3.0==1.5=0")); }
+
+    // T15: roundtrip: from_int then to_int
+    uint64:r15a = fixed_from_int(7u64);
+    uint64:r15 = fixed_to_int(r15a);
+    uint64:f15 = 0u64; if (r15 == 7u64) { f15 = 1u64; }
+    if (f15 == 1u64) { drop(println("[PASS] T15 roundtrip from_int/to_int 7")); }
+    if (f15 == 0u64) { drop(println("[FAIL] T15 roundtrip from_int/to_int 7")); }
+
+    pass(0i32);
+};
