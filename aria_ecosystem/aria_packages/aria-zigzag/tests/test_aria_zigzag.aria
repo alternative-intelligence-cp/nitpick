@@ -1,0 +1,137 @@
+use "../src/aria_zigzag.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // T01: encode(0) == 0
+    uint64:e0 = zz_encode(0i64);
+    if (e0 == 0u64) {
+        print("[PASS] T01 zz_encode(0)==0\n");
+    } else {
+        print("[FAIL] T01 zz_encode(0)==0\n");
+    }
+
+    // T02: encode(-1) == 1
+    uint64:em1 = zz_encode(0i64 - 1i64);
+    if (em1 == 1u64) {
+        print("[PASS] T02 zz_encode(-1)==1\n");
+    } else {
+        print("[FAIL] T02 zz_encode(-1)==1\n");
+    }
+
+    // T03: encode(1) == 2
+    uint64:e1 = zz_encode(1i64);
+    if (e1 == 2u64) {
+        print("[PASS] T03 zz_encode(1)==2\n");
+    } else {
+        print("[FAIL] T03 zz_encode(1)==2\n");
+    }
+
+    // T04: encode(-2) == 3
+    uint64:em2 = zz_encode(0i64 - 2i64);
+    if (em2 == 3u64) {
+        print("[PASS] T04 zz_encode(-2)==3\n");
+    } else {
+        print("[FAIL] T04 zz_encode(-2)==3\n");
+    }
+
+    // T05: decode(0) == 0
+    int64:d0 = zz_decode(0u64);
+    if (d0 == 0i64) {
+        print("[PASS] T05 zz_decode(0)==0\n");
+    } else {
+        print("[FAIL] T05 zz_decode(0)==0\n");
+    }
+
+    // T06: decode(1) == -1
+    int64:d1 = zz_decode(1u64);
+    int64:neg1 = 0i64 - 1i64;
+    if (d1 == neg1) {
+        print("[PASS] T06 zz_decode(1)==-1\n");
+    } else {
+        print("[FAIL] T06 zz_decode(1)==-1\n");
+    }
+
+    // T07: decode(2) == 1
+    int64:d2 = zz_decode(2u64);
+    if (d2 == 1i64) {
+        print("[PASS] T07 zz_decode(2)==1\n");
+    } else {
+        print("[FAIL] T07 zz_decode(2)==1\n");
+    }
+
+    // T08: decode(3) == -2
+    int64:d3 = zz_decode(3u64);
+    int64:neg2 = 0i64 - 2i64;
+    if (d3 == neg2) {
+        print("[PASS] T08 zz_decode(3)==-2\n");
+    } else {
+        print("[FAIL] T08 zz_decode(3)==-2\n");
+    }
+
+    // T09: roundtrip(42) == 42
+    int64:rt42 = zz_roundtrip(42i64);
+    if (rt42 == 42i64) {
+        print("[PASS] T09 zz_roundtrip(42)==42\n");
+    } else {
+        print("[FAIL] T09 zz_roundtrip(42)==42\n");
+    }
+
+    // T10: roundtrip(-99) == -99
+    int64:rtneg99 = zz_roundtrip(0i64 - 99i64);
+    int64:neg99 = 0i64 - 99i64;
+    if (rtneg99 == neg99) {
+        print("[PASS] T10 zz_roundtrip(-99)==-99\n");
+    } else {
+        print("[FAIL] T10 zz_roundtrip(-99)==-99\n");
+    }
+
+    // T11: abs(5) == 5
+    int64:abs5 = zz_abs(5i64);
+    if (abs5 == 5i64) {
+        print("[PASS] T11 zz_abs(5)==5\n");
+    } else {
+        print("[FAIL] T11 zz_abs(5)==5\n");
+    }
+
+    // T12: abs(-7) == 7
+    int64:absn7 = zz_abs(0i64 - 7i64);
+    if (absn7 == 7i64) {
+        print("[PASS] T12 zz_abs(-7)==7\n");
+    } else {
+        print("[FAIL] T12 zz_abs(-7)==7\n");
+    }
+
+    // T13: signum(-3) == -1
+    int64:sign_n3 = zz_signum(0i64 - 3i64);
+    int64:neg1b = 0i64 - 1i64;
+    if (sign_n3 == neg1b) {
+        print("[PASS] T13 zz_signum(-3)==-1\n");
+    } else {
+        print("[FAIL] T13 zz_signum(-3)==-1\n");
+    }
+
+    // T14: delta_encode(10, 13) == encode(3) == 6
+    uint64:de = zz_delta_encode(10i64, 13i64);
+    if (de == 6u64) {
+        print("[PASS] T14 zz_delta_encode(10,13)==6\n");
+    } else {
+        print("[FAIL] T14 zz_delta_encode(10,13)==6\n");
+    }
+
+    // T15: clamp(50, 0, 100) == 50; clamp(-5, 0, 100) == 0
+    int64:c1 = zz_clamp(50i64, 0i64, 100i64);
+    int64:c2 = zz_clamp(0i64 - 5i64, 0i64, 100i64);
+    if (c1 == 50i64) {
+        if (c2 == 0i64) {
+            print("[PASS] T15 zz_clamp\n");
+        } else {
+            print("[FAIL] T15 zz_clamp (c2 wrong)\n");
+        }
+    } else {
+        print("[FAIL] T15 zz_clamp (c1 wrong)\n");
+    }
+
+    pass(0i32);
+};
