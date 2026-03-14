@@ -1003,13 +1003,29 @@ void Lexer::scanNumber() {
         double float_value = std::stod(cleaned_text);
         addToken(tokenType, float_value, cleaned_text);
     } else {
-        // Try to convert integer, store raw string if overflow
-        try {
-            int64_t value = std::stoll(cleaned_text);
-            addToken(tokenType, value);
-        } catch (std::out_of_range&) {
-            // Value exceeds int64 range, store as raw string for high-precision handling
-            addToken(tokenType, (int64_t)0, cleaned_text);
+        // Bug #21 fix: unsigned types (u8..u4096) use stoull to handle full uint64 range.
+        // Values >= 2^63 are valid unsigned but overflow stoll, causing silent store-as-zero.
+        // We bit-reinterpret the uint64 result as int64 so the token's int_value field
+        // carries the correct bit pattern; codegenLiteral's hasExplicitType() path then
+        // constructs the LLVM APInt with is_signed=false, recovering the correct constant.
+        bool isUnsignedToken = (tokenType >= TokenType::TOKEN_INTEGER_U8 &&
+                                tokenType <= TokenType::TOKEN_INTEGER_U4096);
+        if (isUnsignedToken) {
+            try {
+                uint64_t uvalue = std::stoull(cleaned_text);
+                addToken(tokenType, static_cast<int64_t>(uvalue));
+            } catch (std::out_of_range&) {
+                // Exceeds 64-bit range (u128/u256/etc.) — fall back to raw string
+                addToken(tokenType, (int64_t)0, cleaned_text);
+            }
+        } else {
+            try {
+                int64_t value = std::stoll(cleaned_text);
+                addToken(tokenType, value);
+            } catch (std::out_of_range&) {
+                // Value exceeds int64 range, store as raw string for high-precision handling
+                addToken(tokenType, (int64_t)0, cleaned_text);
+            }
         }
     }
 }

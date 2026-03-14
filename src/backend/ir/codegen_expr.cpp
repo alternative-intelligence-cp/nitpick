@@ -2744,8 +2744,10 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     if (op == TokenType::TOKEN_SHIFT_RIGHT) {
-        // Arithmetic right shift (sign extension)
-        return builder.CreateAShr(left, right, "shrtmp");
+        // Bug #20 fix: always use logical shift right for >>.
+        // The type checker rejects >> on signed types ("bitwise requires unsigned types"),
+        // so any >> that reaches codegen has unsigned operands and must fill with 0s.
+        return builder.CreateLShr(left, right, "shrtmp");
     }
     
     // SAFE NAVIGATION OPERATOR (?.)

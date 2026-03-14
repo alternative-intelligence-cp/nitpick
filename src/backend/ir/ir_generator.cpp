@@ -7501,7 +7501,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 case frontend::TokenType::TOKEN_SHIFT_LEFT:
                     return builder.CreateShl(L, R, "shltmp");
                 case frontend::TokenType::TOKEN_SHIFT_RIGHT:
-                    return builder.CreateAShr(L, R, "ashrtmp");
+                    // Bug #20 fix: use logical shift right (lshr).
+                    // The type checker rejects >> on signed types, so any >>
+                    // that reaches codegen has unsigned operands; fill with 0s.
+                    return builder.CreateLShr(L, R, "lshrtmp");
                 
                 default:
                     return nullptr;
