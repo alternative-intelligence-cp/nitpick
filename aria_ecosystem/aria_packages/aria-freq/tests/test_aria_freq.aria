@@ -1,0 +1,100 @@
+use "../src/aria_freq.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // T01: hz_to_ns — 1 Hz -> 1_000_000_000 ns
+    uint64:r01 = hz_to_ns(1u64);
+    uint64:f01 = 0u64; if (r01 == 1000000000u64) { f01 = 1u64; }
+    if (f01 == 1u64) { drop(println("[PASS] T01 hz_to_ns(1Hz)=1e9ns")); }
+    if (f01 == 0u64) { drop(println("[FAIL] T01 hz_to_ns(1Hz)=1e9ns")); }
+
+    // T02: hz_to_ns — 1000 Hz -> 1_000_000 ns
+    uint64:r02 = hz_to_ns(1000u64);
+    uint64:f02 = 0u64; if (r02 == 1000000u64) { f02 = 1u64; }
+    if (f02 == 1u64) { drop(println("[PASS] T02 hz_to_ns(1kHz)=1ms")); }
+    if (f02 == 0u64) { drop(println("[FAIL] T02 hz_to_ns(1kHz)=1ms")); }
+
+    // T03: hz_to_ns — 0 Hz -> 0 (safe divide-by-zero guard)
+    uint64:r03 = hz_to_ns(0u64);
+    uint64:f03 = 0u64; if (r03 == 0u64) { f03 = 1u64; }
+    if (f03 == 1u64) { drop(println("[PASS] T03 hz_to_ns(0)=0")); }
+    if (f03 == 0u64) { drop(println("[FAIL] T03 hz_to_ns(0)=0")); }
+
+    // T04: ns_to_hz — 1_000_000_000 ns -> 1 Hz
+    uint64:r04 = ns_to_hz(1000000000u64);
+    uint64:f04 = 0u64; if (r04 == 1u64) { f04 = 1u64; }
+    if (f04 == 1u64) { drop(println("[PASS] T04 ns_to_hz(1e9ns)=1Hz")); }
+    if (f04 == 0u64) { drop(println("[FAIL] T04 ns_to_hz(1e9ns)=1Hz")); }
+
+    // T05: ns_to_hz — 1_000 ns -> 1_000_000 Hz (1 MHz)
+    uint64:r05 = ns_to_hz(1000u64);
+    uint64:f05 = 0u64; if (r05 == 1000000u64) { f05 = 1u64; }
+    if (f05 == 1u64) { drop(println("[PASS] T05 ns_to_hz(1000ns)=1MHz")); }
+    if (f05 == 0u64) { drop(println("[FAIL] T05 ns_to_hz(1000ns)=1MHz")); }
+
+    // T06: mhz_to_hz — 100 MHz -> 100_000_000 Hz
+    uint64:r06 = mhz_to_hz(100u64);
+    uint64:f06 = 0u64; if (r06 == 100000000u64) { f06 = 1u64; }
+    if (f06 == 1u64) { drop(println("[PASS] T06 mhz_to_hz(100MHz)")); }
+    if (f06 == 0u64) { drop(println("[FAIL] T06 mhz_to_hz(100MHz)")); }
+
+    // T07: hz_to_mhz — 3_600_000_000 Hz (3.6 GHz) -> 3600 MHz
+    uint64:r07 = hz_to_mhz(3600000000u64);
+    uint64:f07 = 0u64; if (r07 == 3600u64) { f07 = 1u64; }
+    if (f07 == 1u64) { drop(println("[PASS] T07 hz_to_mhz(3.6GHz)=3600")); }
+    if (f07 == 0u64) { drop(println("[FAIL] T07 hz_to_mhz(3.6GHz)=3600")); }
+
+    // T08: cycles_in — 1 GHz CPU, 1 second = 1_000_000_000 cycles
+    uint64:r08 = cycles_in(1000000000u64, 1000000000u64);
+    uint64:f08 = 0u64; if (r08 == 1000000000u64) { f08 = 1u64; }
+    if (f08 == 1u64) { drop(println("[PASS] T08 cycles_in(1GHz,1s)=1e9")); }
+    if (f08 == 0u64) { drop(println("[FAIL] T08 cycles_in(1GHz,1s)=1e9")); }
+
+    // T09: cycles_in — 500 MHz CPU, 2 seconds = 1_000_000_000 cycles
+    uint64:r09 = cycles_in(500000000u64, 2000000000u64);
+    uint64:f09 = 0u64; if (r09 == 1000000000u64) { f09 = 1u64; }
+    if (f09 == 1u64) { drop(println("[PASS] T09 cycles_in(500MHz,2s)")); }
+    if (f09 == 0u64) { drop(println("[FAIL] T09 cycles_in(500MHz,2s)")); }
+
+    // T10: baud_to_bit_ns — 9600 baud -> 104166 ns per bit (integer)
+    uint64:r10 = baud_to_bit_ns(9600u64);
+    uint64:f10 = 0u64; if (r10 == 104166u64) { f10 = 1u64; }
+    if (f10 == 1u64) { drop(println("[PASS] T10 baud_to_bit_ns(9600)")); }
+    if (f10 == 0u64) { drop(println("[FAIL] T10 baud_to_bit_ns(9600)")); }
+
+    // T11: baud_to_byte_ns — 9600 baud -> 104166 * 8 = 833328 ns per byte
+    uint64:r11 = baud_to_byte_ns(9600u64);
+    uint64:f11 = 0u64; if (r11 == 833328u64) { f11 = 1u64; }
+    if (f11 == 1u64) { drop(println("[PASS] T11 baud_to_byte_ns(9600)")); }
+    if (f11 == 0u64) { drop(println("[FAIL] T11 baud_to_byte_ns(9600)")); }
+
+    // T12: baud_to_bit_ns — 0 baud -> 0 (safe guard)
+    uint64:r12 = baud_to_bit_ns(0u64);
+    uint64:f12 = 0u64; if (r12 == 0u64) { f12 = 1u64; }
+    if (f12 == 1u64) { drop(println("[PASS] T12 baud_to_bit_ns(0)=0")); }
+    if (f12 == 0u64) { drop(println("[FAIL] T12 baud_to_bit_ns(0)=0")); }
+
+    // T13: ns_to_ms — 5_000_000 ns -> 5 ms
+    uint64:r13 = ns_to_ms(5000000u64);
+    uint64:f13 = 0u64; if (r13 == 5u64) { f13 = 1u64; }
+    if (f13 == 1u64) { drop(println("[PASS] T13 ns_to_ms(5000000)=5")); }
+    if (f13 == 0u64) { drop(println("[FAIL] T13 ns_to_ms(5000000)=5")); }
+
+    // T14: ms_to_ns — 250 ms -> 250_000_000 ns
+    uint64:r14 = ms_to_ns(250u64);
+    uint64:f14 = 0u64; if (r14 == 250000000u64) { f14 = 1u64; }
+    if (f14 == 1u64) { drop(println("[PASS] T14 ms_to_ns(250ms)")); }
+    if (f14 == 0u64) { drop(println("[FAIL] T14 ms_to_ns(250ms)")); }
+
+    // T15: roundtrip hz -> ns -> hz (1 MHz)
+    uint64:orig = 1000000u64;
+    uint64:ns_val = hz_to_ns(orig);
+    uint64:back = ns_to_hz(ns_val);
+    uint64:f15 = 0u64; if (back == orig) { f15 = 1u64; }
+    if (f15 == 1u64) { drop(println("[PASS] T15 roundtrip 1MHz->ns->Hz")); }
+    if (f15 == 0u64) { drop(println("[FAIL] T15 roundtrip 1MHz->ns->Hz")); }
+
+    pass(0i32);
+};

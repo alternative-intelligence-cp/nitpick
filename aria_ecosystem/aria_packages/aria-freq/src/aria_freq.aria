@@ -1,0 +1,69 @@
+// aria-freq — Frequency / period integer arithmetic utilities
+//
+// All values are in base units:
+//   frequency: hertz (Hz) as uint64
+//   period:    nanoseconds (ns) as uint64
+//   baud:      bits per second as uint64
+//
+// 1 second = 1_000_000_000 ns
+// Safe range: frequencies up to ~9 GHz, periods down to ~1 ns
+// All math stays well below 2^63 for sane inputs.
+
+// Convert Hz to period in nanoseconds: period_ns = 1_000_000_000 / hz
+// Returns 0 for hz = 0 to avoid division by zero.
+pub func:hz_to_ns = uint64(uint64:hz) {
+    uint64:result = 0u64;
+    if (hz > 0u64) { result = 1000000000u64 / hz; }
+    pass(result);
+};
+
+// Convert period in nanoseconds to Hz: hz = 1_000_000_000 / ns
+// Returns 0 for ns = 0.
+pub func:ns_to_hz = uint64(uint64:ns) {
+    uint64:result = 0u64;
+    if (ns > 0u64) { result = 1000000000u64 / ns; }
+    pass(result);
+};
+
+// Clock cycles per second at a given MHz: cycles = mhz * 1_000_000
+pub func:mhz_to_hz = uint64(uint64:mhz) {
+    pass(mhz * 1000000u64);
+};
+
+// Hz to MHz (integer division): mhz = hz / 1_000_000
+pub func:hz_to_mhz = uint64(uint64:hz) {
+    pass(hz / 1000000u64);
+};
+
+// Cycles elapsed in a given duration:
+//   cycles = hz * duration_ns / 1_000_000_000
+//   To avoid overflow, divides first then multiplies.
+//   Safe when hz * (duration_ns / 1e9) < 2^63.
+pub func:cycles_in = uint64(uint64:hz, uint64:duration_ns) {
+    pass(hz * (duration_ns / 1000000000u64));
+};
+
+// Bit period in ns for a baud rate: bit_ns = 1_000_000_000 / baud
+// (same as hz_to_ns but named for serial protocol context)
+pub func:baud_to_bit_ns = uint64(uint64:baud) {
+    uint64:result = 0u64;
+    if (baud > 0u64) { result = 1000000000u64 / baud; }
+    pass(result);
+};
+
+// Byte period in ns (8 data bits, no framing): byte_ns = bit_ns * 8
+pub func:baud_to_byte_ns = uint64(uint64:baud) {
+    uint64:result = 0u64;
+    if (baud > 0u64) { result = (1000000000u64 / baud) * 8u64; }
+    pass(result);
+};
+
+// How many whole milliseconds in a period of n nanoseconds: ms = ns / 1_000_000
+pub func:ns_to_ms = uint64(uint64:ns) {
+    pass(ns / 1000000u64);
+};
+
+// Milliseconds to nanoseconds: ns = ms * 1_000_000
+pub func:ms_to_ns = uint64(uint64:ms) {
+    pass(ms * 1000000u64);
+};
