@@ -1,0 +1,161 @@
+// aria_endian.aria — LIB-14: Byte-swap and rotation utilities
+//
+// All functions take/return uint64. Byte-swap functions treat the value
+// as having bytes in memory order (little-endian on x86). Rotation
+// functions perform circular bit shifts. Endian-conversion functions
+// assume a LITTLE-ENDIAN host (x86/AMD64).
+//
+// Pub funcs (13):
+//   rev16(v)     — reverse byte order of the low 16 bits of v
+//   rev32(v)     — reverse byte order of the low 32 bits of v
+//   rev64(v)     — reverse byte order of all 8 bytes of v
+//   rol32(v, n)  — rotate-left 32-bit value by n bits (mod 32)
+//   ror32(v, n)  — rotate-right 32-bit value by n bits (mod 32)
+//   rol64(v, n)  — rotate-left 64-bit value by n bits (mod 64)
+//   ror64(v, n)  — rotate-right 64-bit value by n bits (mod 64)
+//   le16(v)      — little-endian 16-bit: identity on x86 (v & 0xFFFF)
+//   be16(v)      — big-endian 16-bit: bswap16 on x86
+//   le32(v)      — little-endian 32-bit: identity on x86 (v & 0xFFFFFFFF)
+//   be32(v)      — big-endian 32-bit: bswap32 on x86
+//   le64(v)      — little-endian 64-bit: identity on x86
+//   be64(v)      — big-endian 64-bit: bswap64 on x86
+
+// rev16: reverse the byte order of the low 16 bits.
+// b0 is the least-significant byte, b1 is the next.
+// Result: b1 | (b0 << 8)
+pub func:rev16 = uint64(uint64:v) {
+    uint64:mask8 = 255u64;
+    uint64:b0 = v & mask8;
+    uint64:b1 = (v >> 8u64) & mask8;
+    uint64:r = b1 | (b0 << 8u64);
+    pass(r);
+};
+
+// rev32: reverse the byte order of the low 32 bits.
+// Result: b3 | (b2<<8) | (b1<<16) | (b0<<24)
+pub func:rev32 = uint64(uint64:v) {
+    uint64:mask8 = 255u64;
+    uint64:b0 = v & mask8;
+    uint64:b1 = (v >> 8u64) & mask8;
+    uint64:b2 = (v >> 16u64) & mask8;
+    uint64:b3 = (v >> 24u64) & mask8;
+    uint64:r = b3 | (b2 << 8u64) | (b1 << 16u64) | (b0 << 24u64);
+    pass(r);
+};
+
+// rev64: reverse the byte order of all 8 bytes.
+// Result: b7 | (b6<<8) | ... | (b0<<56)
+pub func:rev64 = uint64(uint64:v) {
+    uint64:mask8 = 255u64;
+    uint64:b0 = v & mask8;
+    uint64:b1 = (v >> 8u64) & mask8;
+    uint64:b2 = (v >> 16u64) & mask8;
+    uint64:b3 = (v >> 24u64) & mask8;
+    uint64:b4 = (v >> 32u64) & mask8;
+    uint64:b5 = (v >> 40u64) & mask8;
+    uint64:b6 = (v >> 48u64) & mask8;
+    uint64:b7 = (v >> 56u64) & mask8;
+    uint64:lo = b7 | (b6 << 8u64) | (b5 << 16u64) | (b4 << 24u64);
+    uint64:hi = (b3 << 32u64) | (b2 << 40u64) | (b1 << 48u64) | (b0 << 56u64);
+    pass(lo | hi);
+};
+
+// rol32: rotate-left a 32-bit value (stored in low 32 bits) by n bits.
+// Uses the identity: rol(v, n) = (v << n) | (v >> (32-n)), masked to 32 bits.
+// n is taken mod 32; result is masked to low 32 bits.
+pub func:rol32 = uint64(uint64:v, uint64:n) {
+    uint64:mask32 = 4294967295u64;
+    uint64:v32 = v & mask32;
+    uint64:n31 = n & 31u64;
+    uint64:m31 = (32u64 - n31) & 31u64;
+    uint64:result = ((v32 << n31) | (v32 >> m31)) & mask32;
+    pass(result);
+};
+
+// ror32: rotate-right a 32-bit value (stored in low 32 bits) by n bits.
+// n is taken mod 32; result is masked to low 32 bits.
+pub func:ror32 = uint64(uint64:v, uint64:n) {
+    uint64:mask32 = 4294967295u64;
+    uint64:v32 = v & mask32;
+    uint64:n31 = n & 31u64;
+    uint64:m31 = (32u64 - n31) & 31u64;
+    uint64:result = ((v32 >> n31) | (v32 << m31)) & mask32;
+    pass(result);
+};
+
+// rol64: rotate-left a 64-bit value by n bits.
+// Uses the identity: rol(v, n) = (v << n) | (v >> (64-n)), with n taken mod 64.
+pub func:rol64 = uint64(uint64:v, uint64:n) {
+    uint64:n63 = n & 63u64;
+    uint64:m63 = (64u64 - n63) & 63u64;
+    uint64:result = (v << n63) | (v >> m63);
+    pass(result);
+};
+
+// ror64: rotate-right a 64-bit value by n bits.
+// n is taken mod 64.
+pub func:ror64 = uint64(uint64:v, uint64:n) {
+    uint64:n63 = n & 63u64;
+    uint64:m63 = (64u64 - n63) & 63u64;
+    uint64:result = (v >> n63) | (v << m63);
+    pass(result);
+};
+
+// le16: little-endian 16-bit conversion.
+// On a little-endian host (x86), this is an identity — just mask to 16 bits.
+pub func:le16 = uint64(uint64:v) {
+    uint64:mask16 = 65535u64;
+    pass(v & mask16);
+};
+
+// be16: big-endian 16-bit conversion.
+// On a little-endian host, this reverses the byte order (= bswap16).
+pub func:be16 = uint64(uint64:v) {
+    uint64:mask8 = 255u64;
+    uint64:b0 = v & mask8;
+    uint64:b1 = (v >> 8u64) & mask8;
+    uint64:r = b1 | (b0 << 8u64);
+    pass(r);
+};
+
+// le32: little-endian 32-bit conversion.
+// On a little-endian host, this is an identity — just mask to 32 bits.
+pub func:le32 = uint64(uint64:v) {
+    uint64:mask32 = 4294967295u64;
+    pass(v & mask32);
+};
+
+// be32: big-endian 32-bit conversion.
+// On a little-endian host, this reverses the byte order (= bswap32).
+pub func:be32 = uint64(uint64:v) {
+    uint64:mask8 = 255u64;
+    uint64:b0 = v & mask8;
+    uint64:b1 = (v >> 8u64) & mask8;
+    uint64:b2 = (v >> 16u64) & mask8;
+    uint64:b3 = (v >> 24u64) & mask8;
+    uint64:r = b3 | (b2 << 8u64) | (b1 << 16u64) | (b0 << 24u64);
+    pass(r);
+};
+
+// le64: little-endian 64-bit conversion.
+// On a little-endian host, this is an identity.
+pub func:le64 = uint64(uint64:v) {
+    pass(v);
+};
+
+// be64: big-endian 64-bit conversion.
+// On a little-endian host, this reverses the byte order (= bswap64).
+pub func:be64 = uint64(uint64:v) {
+    uint64:mask8 = 255u64;
+    uint64:b0 = v & mask8;
+    uint64:b1 = (v >> 8u64) & mask8;
+    uint64:b2 = (v >> 16u64) & mask8;
+    uint64:b3 = (v >> 24u64) & mask8;
+    uint64:b4 = (v >> 32u64) & mask8;
+    uint64:b5 = (v >> 40u64) & mask8;
+    uint64:b6 = (v >> 48u64) & mask8;
+    uint64:b7 = (v >> 56u64) & mask8;
+    uint64:lo = b7 | (b6 << 8u64) | (b5 << 16u64) | (b4 << 24u64);
+    uint64:hi = (b3 << 32u64) | (b2 << 40u64) | (b1 << 48u64) | (b0 << 56u64);
+    pass(lo | hi);
+};

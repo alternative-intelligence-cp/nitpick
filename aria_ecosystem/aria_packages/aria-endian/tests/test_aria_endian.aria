@@ -1,0 +1,98 @@
+use "../src/aria_endian.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // T01: rev16(0x0102=258) == 0x0201=513
+    uint64:r01 = rev16(258u64);
+    uint64:f01 = 0u64; if (r01 == 513u64) { f01 = 1u64; }
+    if (f01 == 1u64) { drop(println("[PASS] T01 rev16(0x0102)==0x0201")); }
+    if (f01 == 0u64) { drop(println("[FAIL] T01 rev16(0x0102)==0x0201")); }
+
+    // T02: rev16(0) == 0
+    uint64:r02 = rev16(0u64);
+    uint64:f02 = 0u64; if (r02 == 0u64) { f02 = 1u64; }
+    if (f02 == 1u64) { drop(println("[PASS] T02 rev16(0)==0")); }
+    if (f02 == 0u64) { drop(println("[FAIL] T02 rev16(0)==0")); }
+
+    // T03: rev32(0x01020304=16909060) == 0x04030201=67305985
+    uint64:r03 = rev32(16909060u64);
+    uint64:f03 = 0u64; if (r03 == 67305985u64) { f03 = 1u64; }
+    if (f03 == 1u64) { drop(println("[PASS] T03 rev32(0x01020304)==0x04030201")); }
+    if (f03 == 0u64) { drop(println("[FAIL] T03 rev32(0x01020304)==0x04030201")); }
+
+    // T04: rev32(0) == 0
+    uint64:r04 = rev32(0u64);
+    uint64:f04 = 0u64; if (r04 == 0u64) { f04 = 1u64; }
+    if (f04 == 1u64) { drop(println("[PASS] T04 rev32(0)==0")); }
+    if (f04 == 0u64) { drop(println("[FAIL] T04 rev32(0)==0")); }
+
+    // T05: rev64(0x0102030405060708=72623859790382856) == 0x0807060504030201=578437695752307201
+    uint64:r05 = rev64(72623859790382856u64);
+    uint64:f05 = 0u64; if (r05 == 578437695752307201u64) { f05 = 1u64; }
+    if (f05 == 1u64) { drop(println("[PASS] T05 rev64 reverses all 8 bytes")); }
+    if (f05 == 0u64) { drop(println("[FAIL] T05 rev64 reverses all 8 bytes")); }
+
+    // T06: rol32(1, 1) == 2
+    uint64:r06 = rol32(1u64, 1u64);
+    uint64:f06 = 0u64; if (r06 == 2u64) { f06 = 1u64; }
+    if (f06 == 1u64) { drop(println("[PASS] T06 rol32(1,1)==2")); }
+    if (f06 == 0u64) { drop(println("[FAIL] T06 rol32(1,1)==2")); }
+
+    // T07: ror32(2, 1) == 1
+    uint64:r07 = ror32(2u64, 1u64);
+    uint64:f07 = 0u64; if (r07 == 1u64) { f07 = 1u64; }
+    if (f07 == 1u64) { drop(println("[PASS] T07 ror32(2,1)==1")); }
+    if (f07 == 0u64) { drop(println("[FAIL] T07 ror32(2,1)==1")); }
+
+    // T08: rol32(0x80000000=2147483648, 1) == 1 (high bit wraps to bit 0)
+    uint64:r08 = rol32(2147483648u64, 1u64);
+    uint64:f08 = 0u64; if (r08 == 1u64) { f08 = 1u64; }
+    if (f08 == 1u64) { drop(println("[PASS] T08 rol32(0x80000000,1)==1")); }
+    if (f08 == 0u64) { drop(println("[FAIL] T08 rol32(0x80000000,1)==1")); }
+
+    // T09: rol64(1, 1) == 2
+    uint64:r09 = rol64(1u64, 1u64);
+    uint64:f09 = 0u64; if (r09 == 2u64) { f09 = 1u64; }
+    if (f09 == 1u64) { drop(println("[PASS] T09 rol64(1,1)==2")); }
+    if (f09 == 0u64) { drop(println("[FAIL] T09 rol64(1,1)==2")); }
+
+    // T10: ror64(2, 1) == 1
+    uint64:r10 = ror64(2u64, 1u64);
+    uint64:f10 = 0u64; if (r10 == 1u64) { f10 = 1u64; }
+    if (f10 == 1u64) { drop(println("[PASS] T10 ror64(2,1)==1")); }
+    if (f10 == 0u64) { drop(println("[FAIL] T10 ror64(2,1)==1")); }
+
+    // T11: ror64(0x8000000000000000=9223372036854775808, 1) == 0x4000000000000000=4611686018427387904
+    uint64:r11 = ror64(9223372036854775808u64, 1u64);
+    uint64:f11 = 0u64; if (r11 == 4611686018427387904u64) { f11 = 1u64; }
+    if (f11 == 1u64) { drop(println("[PASS] T11 ror64(highbit,1)==0x4000...")); }
+    if (f11 == 0u64) { drop(println("[FAIL] T11 ror64(highbit,1)==0x4000...")); }
+
+    // T12: le64(value) == value (identity on little-endian host)
+    uint64:r12 = le64(72623859790382856u64);
+    uint64:f12 = 0u64; if (r12 == 72623859790382856u64) { f12 = 1u64; }
+    if (f12 == 1u64) { drop(println("[PASS] T12 le64 is identity")); }
+    if (f12 == 0u64) { drop(println("[FAIL] T12 le64 is identity")); }
+
+    // T13: be64(0x0102030405060708=72623859790382856) == 578437695752307201
+    uint64:r13 = be64(72623859790382856u64);
+    uint64:f13 = 0u64; if (r13 == 578437695752307201u64) { f13 = 1u64; }
+    if (f13 == 1u64) { drop(println("[PASS] T13 be64 reverses bytes")); }
+    if (f13 == 0u64) { drop(println("[FAIL] T13 be64 reverses bytes")); }
+
+    // T14: be32(0x01020304=16909060) == 0x04030201=67305985
+    uint64:r14 = be32(16909060u64);
+    uint64:f14 = 0u64; if (r14 == 67305985u64) { f14 = 1u64; }
+    if (f14 == 1u64) { drop(println("[PASS] T14 be32 reverses bytes")); }
+    if (f14 == 0u64) { drop(println("[FAIL] T14 be32 reverses bytes")); }
+
+    // T15: be16(0x0102=258) == 0x0201=513
+    uint64:r15 = be16(258u64);
+    uint64:f15 = 0u64; if (r15 == 513u64) { f15 = 1u64; }
+    if (f15 == 1u64) { drop(println("[PASS] T15 be16 reverses bytes")); }
+    if (f15 == 0u64) { drop(println("[FAIL] T15 be16 reverses bytes")); }
+
+    pass(0i32);
+};
