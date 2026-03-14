@@ -10,17 +10,18 @@
 
 ---
 
-## Current Status (March 10, 2026)
+## Current Status (March 14, 2026)
 
 **v0.1.0-pre — Final stretch before first official release**
 
 We are in the final phase before v0.1.0. The compiler is solid and actively used. Development focus is on:
 
-- **Language specialist model training** — Fine-tuning Qwen 7B (LoRA) on the Aria spec, stdlib, and test corpus. The model will serve as a knowledgeable AI assistant for Aria development without requiring the full spec in context. Training is active; latest checkpoint is step 1016 / epoch 2.
+- **`aria_packages` library ecosystem** — A growing set of tested, pure-Aria and FFI-backed utility packages that serve as real-world integration tests for the compiler. 20 packages (LIB-1 through LIB-20) are committed with 15 tests each (300 package tests total, all passing). Packages cover math, PRNG, graphics primitives, data encoding, and — most recently — a full virtual console stack (display, input, audio, address map). See the [Packages](#aria_packages-library-ecosystem) section below.
+- **Virtual console stack** — LIB-17 through LIB-20 implement a POSIX terminal virtual console: `aria-display` (ANSI/termios rendering), `aria-input` (raw keyboard + SNES button mapping), `aria-audio` (software synthesis, MIDI note table), and `aria-console` (16-bit memory-mapped address space + 60fps frame scheduler). A JRPG battle scene demo (`aria-jrpg-demo`) exercises all four together.
+- **Language specialist model training** — Fine-tuning Qwen 7B (LoRA) on the Aria spec, stdlib, and test corpus. Training is active; latest checkpoint is step 1016 / epoch 2.
 - **Fuzzing campaigns** — Continuous fuzzing via Fuzzer V2. The fuzzer runs 24-hour stress campaigns against the compiler and runtime, archiving crashes and regression-testing fixes. Results feed directly back into the test corpus.
-- **Spec audits** — Systematic cross-checking of the language spec (`/.internal/aria_specs.txt`) against what the compiler actually implements. Recent audits found the `for` loop documentation was accidentally documenting `till` — the for loop itself was always fully implemented. Spec audits catch these divergences before release.
-- **Semantic database / educational content** — Building a cross-language comparison suite (C, Python, Rust, Aria) and algorithm modules in the educational repo. This serves dual purpose: real-world testing of Aria's capabilities and honest documentation of trade-offs.
-- **Bug fixing** — Ongoing; recent fixes include Result<T> auto-unwrap in print(), string_index_of returning -1 for not-found, and documentation for known runtime limitations (string arena exhaustion after heavy allocation loops, missing uint32_toString).
+- **Spec audits** — Systematic cross-checking of the language spec (`/.internal/aria_specs.txt`) against what the compiler actually implements. Recent audits found the `for` loop documentation was accidentally documenting `till` — the for loop itself was always fully implemented.
+- **Bug fixing** — Ongoing; recent fixes include Result<T> auto-unwrap in print(), string_index_of returning -1 for not-found, i128 literal overflow in codegen, and corrections to LBIM comparison with flat-int operands (Bug #23, #24).
 - **No fixed ETA** — Correctness and safety come before dates, given the safety-critical use cases this language is built for.
 
 ---
@@ -37,6 +38,7 @@ We are in the final phase before v0.1.0. The compiler is solid and actively used
 | Fuzzer V2 | ✅ Active | 24-hour stress campaigns |
 | Specialist model | 🔧 Training | Qwen 7B LoRA, step 1016/epoch 2 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
+| `aria_packages` | ✅ Active | 20 packages, 300 tests, all passing |
 
 ---
 
@@ -70,6 +72,41 @@ We are in the final phase before v0.1.0. The compiler is solid and actively used
 - **`uint32_toString`** — Missing from stdlib; workaround: `int64_toString(@cast<int64>(val))`
 - **Arrays in structs** — Under investigation
 - **NIL ↔ void bridge** — `void` and `*` are mostly in `extern` blocks; bridge semantics being worked out
+
+---
+
+## `aria_packages` Library Ecosystem
+
+A collection of tested, versioned utility libraries built alongside the compiler. Each package has a `src/` module, a `tests/` file with 15 tests, and where FFI is needed, a C `shim/`. Every package passes its full test suite before being committed — they serve simultaneously as integration tests for the compiler and as real utilities.
+
+**Current packages (20 total, 300 tests, all passing):**
+
+| # | Package | Description |
+|---|---------|-------------|
+| 1 | `aria-math` | Trig, exp, log, rounding via C libm |
+| 2 | `aria-rand` | xorshift64 pseudo-random number generator |
+| 3 | `aria-color` | RGBA packing/unpacking and pixel transforms |
+| 4 | `aria-vec` | 2D/3D float64 vector math (dot, cross, length) |
+| 5 | `aria-buf` | Byte/word packing for uint64 buffers (little-endian) |
+| 6 | `aria-clamp` | min, max, clamp, abs, sign for int64/uint64 |
+| 7 | `aria-bits` | Bit test/set/clear/flip, nibble extraction, byte popcount |
+| 8 | `aria-ascii` | ASCII character classification and conversion |
+| 9 | `aria-fixed` | Q32.32 fixed-point arithmetic on uint64 |
+| 10 | `aria-freq` | Frequency/period/baud integer arithmetic |
+| 11 | `aria-mux` | Bit-select, field insert/extract, mask ops, blend |
+| 12 | `aria-conv` | Saturating narrowing and float/int conversion |
+| 13 | `aria-hash` | FNV-1a and djb2 string hashing |
+| 14 | `aria-endian` | Big/little-endian byte-swap for 16/32/64-bit values |
+| 15 | `aria-uuid` | UUID v4 generation and formatting |
+| 16 | `aria-zigzag` | Zigzag encode/decode for signed integer interleaving |
+| 17 | `aria-display` | ANSI/termios terminal rendering (virtual console display) |
+| 18 | `aria-input` | Raw keyboard input with SNES-style button mapping |
+| 19 | `aria-audio` | Software synthesis, MIDI note table, 4 channels (dry mode) |
+| 20 | `aria-console` | 16-bit memory-mapped address space + 60fps frame scheduler |
+
+**Demo:** `aria_ecosystem/demos/aria-jrpg-demo/` — an interactive JRPG battle scene using all four virtual console libraries (LIB-17-20) plus aria-rand. Demonstrates the full stack: ANSI rendering, raw input, audio SFX, and the console memory map.
+
+Packages live in `aria_ecosystem/aria_packages/`. FFI-backed packages (aria-math, aria-display, aria-input, aria-audio) include pre-built shim `.so` files. Pure-Aria packages (aria-rand, aria-clamp, aria-bits, aria-ascii, etc.) can be `use`d directly.
 
 ---
 
@@ -282,6 +319,29 @@ aria/
 │   ├── aria_patch_corpus.py # Training data preparation
 │   └── semantic_db/         # Semantic test archive
 ├── aria_ecosystem/           # Ecosystem tools
+│   ├── aria_packages/       # Library ecosystem (20 packages, each with src/ + tests/)
+│   │   ├── aria-math/       # LIB-1: trig/exp/log via C libm
+│   │   ├── aria-rand/       # LIB-2: xorshift64 PRNG
+│   │   ├── aria-color/      # LIB-3: RGBA pixel ops
+│   │   ├── aria-vec/        # LIB-4: 2D/3D float64 vectors
+│   │   ├── aria-buf/        # LIB-5: uint64 byte packing
+│   │   ├── aria-clamp/      # LIB-6: min/max/clamp/abs/sign
+│   │   ├── aria-bits/       # LIB-7: bit manipulation
+│   │   ├── aria-ascii/      # LIB-8: ASCII utils
+│   │   ├── aria-fixed/      # LIB-9: Q32.32 fixed-point
+│   │   ├── aria-freq/       # LIB-10: frequency/baud arithmetic
+│   │   ├── aria-mux/        # LIB-11: bit-select/field/mask
+│   │   ├── aria-conv/       # LIB-12: saturating conversions
+│   │   ├── aria-hash/       # LIB-13: FNV-1a / djb2 hashing
+│   │   ├── aria-endian/     # LIB-14: byte-swap utilities
+│   │   ├── aria-uuid/       # LIB-15: UUID v4 generation
+│   │   ├── aria-zigzag/     # LIB-16: zigzag encode/decode
+│   │   ├── aria-display/    # LIB-17: ANSI/termios virtual console display
+│   │   ├── aria-input/      # LIB-18: raw keyboard + SNES button mapping
+│   │   ├── aria-audio/      # LIB-19: software synthesis (MIDI, 4 channels)
+│   │   └── aria-console/    # LIB-20: 16-bit memory map + frame scheduler
+│   ├── demos/               # Demo programs
+│   │   └── aria-jrpg-demo/  # JRPG battle scene using LIB-17/18/19/20
 │   ├── programming_guide/   # Source for web/man docs
 │   ├── man_pages/           # Man page builder
 │   ├── aria_make/           # Build system
@@ -333,7 +393,9 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ Borrow checker (compile-time memory analysis)
 - ✅ SIMD and atomic types
 - ✅ Dimensional algebra
-- ✅ 515+ tests, Fuzzer V2
+- ✅ 515+ compiler tests, Fuzzer V2
+- ✅ 20 `aria_packages` libraries with 300 package tests (all passing)
+- ✅ Virtual console stack: display, input, audio, memory map + JRPG demo
 - ✅ Full documentation (web, man pages, programming guide)
 - ✅ Language specialist model training underway
 
