@@ -105,6 +105,37 @@ llvm::Value* IRGenerator::promoteToLBIMStruct(llvm::Value* literal, llvm::Type* 
         builder.CreateStore(zero, limbPtr);
     }
     
+    // For inputs wider than i64 (e.g. i128, i256), extract each 64-bit limb via shift+trunc.
+    // This correctly handles large values that don't fit in a single i64.
+    if (literal->getType()->getIntegerBitWidth() > 64) {
+        unsigned inBits = literal->getType()->getIntegerBitWidth();
+        for (unsigned i = 0; i < (unsigned)numLimbs; ++i) {
+            llvm::Value* limbVal;
+            if (i * 64 < inBits) {
+                if (i == 0) {
+                    limbVal = builder.CreateTrunc(literal, i64Type, "wide_lo");
+                } else {
+                    llvm::Value* shifted = builder.CreateLShr(
+                        literal,
+                        llvm::ConstantInt::get(literal->getType(), (uint64_t)i * 64),
+                        "wide_shift");
+                    limbVal = builder.CreateTrunc(shifted, i64Type, "wide_limb");
+                }
+            } else {
+                limbVal = llvm::ConstantInt::get(i64Type, 0);
+            }
+            std::vector<llvm::Value*> wIndices = {
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), i)
+            };
+            llvm::Value* wLimbPtr = builder.CreateGEP(targetType, structAlloca, wIndices, "wide_limb_ptr");
+            builder.CreateStore(limbVal, wLimbPtr);
+        }
+        llvm::Value* result = builder.CreateLoad(targetType, structAlloca, "lbim_promoted_val");
+        return result;
+    }
+
     // Convert literal to i64 (sign-extend if necessary)
     llvm::Value* literalI64 = literal;
     if (literal->getType() != i64Type) {
@@ -737,7 +768,14 @@ llvm::Value* IRGenerator::generateLBIMEQ(llvm::Value* L, llvm::Value* R, unsigne
     // Inline equality comparison for LBIM types
     // Compare all limbs and AND the results together
     // This is deterministic and avoids external function calls
-    
+
+    // Bug #23: if one operand is a flat integer (e.g. a literal), promote it to
+    // the LBIM struct type so both ExtractValue calls below succeed.
+    if (L->getType()->isStructTy() && !R->getType()->isStructTy())
+        R = promoteToLBIMStruct(R, L->getType());
+    else if (!L->getType()->isStructTy() && R->getType()->isStructTy())
+        L = promoteToLBIMStruct(L, R->getType());
+
     llvm::Value* result = builder.getInt1(true);  // Start with true
     
     for (unsigned i = 0; i < numLimbs; ++i) {
@@ -761,6 +799,12 @@ llvm::Value* IRGenerator::generateLBIMULT(llvm::Value* L, llvm::Value* R, unsign
     // If L[i] > R[i], return false
     // If L[i] == R[i], continue to next limb
     // If all equal, return false
+
+    // Bug #23: normalize flat-integer operands to LBIM struct before comparison
+    if (L->getType()->isStructTy() && !R->getType()->isStructTy())
+        R = promoteToLBIMStruct(R, L->getType());
+    else if (!L->getType()->isStructTy() && R->getType()->isStructTy())
+        L = promoteToLBIMStruct(L, R->getType());
 
     llvm::Function* func = builder.GetInsertBlock()->getParent();
     llvm::BasicBlock* resultBlock = llvm::BasicBlock::Create(context, "cmp.result", func);
@@ -806,7 +850,13 @@ llvm::Value* IRGenerator::generateLBIMULT(llvm::Value* L, llvm::Value* R, unsign
 llvm::Value* IRGenerator::generateLBIMSLT(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
     // Signed less than
     // For large structs (>16 limbs), use runtime scmp function for ABI compatibility
-    
+
+    // Bug #23: normalize flat-integer operands to LBIM struct before comparison
+    if (L->getType()->isStructTy() && !R->getType()->isStructTy())
+        R = promoteToLBIMStruct(R, L->getType());
+    else if (!L->getType()->isStructTy() && R->getType()->isStructTy())
+        L = promoteToLBIMStruct(L, R->getType());
+
     if (numLimbs > 16) {
         // Use runtime function: int32_t aria_lbim_scmpN(const aria_intN_t* a, const aria_intN_t* b)
         llvm::Type* structType = L->getType();
