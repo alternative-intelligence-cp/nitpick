@@ -9427,7 +9427,8 @@ bool TypeChecker::literalFitsInType(int64_t value, Type* type) const {
     } else if (typeName == "uint32") {
         return value >= 0 && value <= 4294967295LL;
     } else if (typeName == "uint64") {
-        return value >= 0;  // uint64 can hold any non-negative int64_t value
+        return true;  // Any int64_t bit pattern is a valid uint64 value.
+                      // Values >= 2^63 are stored as negative int64_t (bit-reinterp from stoull).
     }
     
     return false;  // Unknown type
@@ -9513,11 +9514,10 @@ bool TypeChecker::canLiteralFitInIntType(int64_t value, Type* type, ASTNode* nod
         minVal = 0;
         maxVal = 4294967295LL;
     } else if (typeName == "uint64") {
-        if (value < 0) {
-            addError("Cannot assign negative value " + std::to_string(value) + " to unsigned type " + typeName, node);
-            return false;
-        }
-        // uint64 can hold any non-negative int64_t value
+        // Any int64_t bit pattern is a valid uint64 value.
+        // Values >= 2^63 are stored as negative int64_t after stoull bit-reinterpretation
+        // in the lexer (Bug #21 fix). Rejecting negative stored values here would wrongly
+        // block legal uint64 literals like 9223372036854775808u64.
         return true;
     } else if (typeName == "uint128" || typeName == "uint256" || 
                typeName == "uint512" || typeName == "uint1024" ||
