@@ -1,0 +1,116 @@
+use "../src/aria_uuid.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+
+    // Declare all uint128 constants upfront via VarDecl (safe path through ir_generator).
+    // This avoids passing u128 literals inline to pub func calls or using them in
+    // direct comparisons, both of which crash due to LBIM type mismatch.
+    uint128:n0      = 0u128;
+    uint128:n1      = 1u128;
+    uint128:n2      = 2u128;
+    uint128:n3      = 3u128;
+    uint128:n5      = 5u128;
+    uint128:n7      = 7u128;
+    uint128:n8      = 8u128;
+    uint128:n10     = 10u128;
+    uint128:n21     = 21u128;
+    uint128:n42a    = 42u128;
+    uint128:n42b    = 42u128;
+    uint128:n99     = 99u128;
+    uint128:n100    = 100u128;
+    uint128:n2e64p2 = 18446744073709551618u128;
+
+    // T01: uuid_nil() == 0
+    uint128:r01 = uuid_nil();
+    uint64:f01 = uuid_eq(r01, n0);
+    if (f01 == 1u64) { drop(println("[PASS] T01 uuid_nil()==0")); }
+    if (f01 == 0u64) { drop(println("[FAIL] T01 uuid_nil()==0")); }
+
+    // T02: uuid_one() == 1
+    uint128:r02 = uuid_one();
+    uint64:f02 = uuid_eq(r02, n1);
+    if (f02 == 1u64) { drop(println("[PASS] T02 uuid_one()==1")); }
+    if (f02 == 0u64) { drop(println("[FAIL] T02 uuid_one()==1")); }
+
+    // T03: uuid_step(0) == 1
+    uint128:r03 = uuid_step(n0);
+    uint64:f03 = uuid_eq(r03, n1);
+    if (f03 == 1u64) { drop(println("[PASS] T03 uuid_step(0)==1")); }
+    if (f03 == 0u64) { drop(println("[FAIL] T03 uuid_step(0)==1")); }
+
+    // T04: uuid_step(99) == 100
+    uint128:r04 = uuid_step(n99);
+    uint64:f04 = uuid_eq(r04, n100);
+    if (f04 == 1u64) { drop(println("[PASS] T04 uuid_step(99)==100")); }
+    if (f04 == 0u64) { drop(println("[FAIL] T04 uuid_step(99)==100")); }
+
+    // T05: uuid_double(5) == 10
+    uint128:r05 = uuid_double(n5);
+    uint64:f05 = uuid_eq(r05, n10);
+    if (f05 == 1u64) { drop(println("[PASS] T05 uuid_double(5)==10")); }
+    if (f05 == 0u64) { drop(println("[FAIL] T05 uuid_double(5)==10")); }
+
+    // T06: uuid_sum(3, 5) == 8
+    uint128:r06 = uuid_sum(n3, n5);
+    uint64:f06 = uuid_eq(r06, n8);
+    if (f06 == 1u64) { drop(println("[PASS] T06 uuid_sum(3,5)==8")); }
+    if (f06 == 0u64) { drop(println("[FAIL] T06 uuid_sum(3,5)==8")); }
+
+    // T07: uuid_pack(1, 2) == 2^64 + 2
+    uint128:r07 = uuid_pack(n1, n2);
+    uint64:f07 = uuid_eq(r07, n2e64p2);
+    if (f07 == 1u64) { drop(println("[PASS] T07 uuid_pack(1,2)==2^64+2")); }
+    if (f07 == 0u64) { drop(println("[FAIL] T07 uuid_pack(1,2)==2^64+2")); }
+
+    // T08: uuid_unpack_hi(2^64+2) == 1
+    uint128:r08 = uuid_unpack_hi(n2e64p2);
+    uint64:f08 = uuid_eq(r08, n1);
+    if (f08 == 1u64) { drop(println("[PASS] T08 uuid_unpack_hi==1")); }
+    if (f08 == 0u64) { drop(println("[FAIL] T08 uuid_unpack_hi==1")); }
+
+    // T09: uuid_unpack_lo(2^64+2) == 2
+    uint128:r09 = uuid_unpack_lo(n2e64p2);
+    uint64:f09 = uuid_eq(r09, n2);
+    if (f09 == 1u64) { drop(println("[PASS] T09 uuid_unpack_lo==2")); }
+    if (f09 == 0u64) { drop(println("[FAIL] T09 uuid_unpack_lo==2")); }
+
+    // T10: uuid_gt(5, 3) == 1 (5 > 3)
+    uint64:r10 = uuid_gt(n5, n3);
+    uint64:f10 = 0u64; if (r10 == 1u64) { f10 = 1u64; }
+    if (f10 == 1u64) { drop(println("[PASS] T10 uuid_gt(5,3)==1")); }
+    if (f10 == 0u64) { drop(println("[FAIL] T10 uuid_gt(5,3)==1")); }
+
+    // T11: uuid_lt(3, 5) == 1 (3 < 5)
+    uint64:r11 = uuid_lt(n3, n5);
+    uint64:f11 = 0u64; if (r11 == 1u64) { f11 = 1u64; }
+    if (f11 == 1u64) { drop(println("[PASS] T11 uuid_lt(3,5)==1")); }
+    if (f11 == 0u64) { drop(println("[FAIL] T11 uuid_lt(3,5)==1")); }
+
+    // T12: uuid_eq(42, 42) == 1
+    uint64:r12 = uuid_eq(n42a, n42b);
+    uint64:f12 = 0u64; if (r12 == 1u64) { f12 = 1u64; }
+    if (f12 == 1u64) { drop(println("[PASS] T12 uuid_eq(42,42)==1")); }
+    if (f12 == 0u64) { drop(println("[FAIL] T12 uuid_eq(42,42)==1")); }
+
+    // T13: uuid_gt(3, 5) == 0 (3 NOT > 5)
+    uint64:r13 = uuid_gt(n3, n5);
+    uint64:f13 = 0u64; if (r13 == 0u64) { f13 = 1u64; }
+    if (f13 == 1u64) { drop(println("[PASS] T13 uuid_gt(3,5)==0")); }
+    if (f13 == 0u64) { drop(println("[FAIL] T13 uuid_gt(3,5)==0")); }
+
+    // T14: uuid_eq(3, 5) == 0 (3 != 5)
+    uint64:r14 = uuid_eq(n3, n5);
+    uint64:f14 = 0u64; if (r14 == 0u64) { f14 = 1u64; }
+    if (f14 == 1u64) { drop(println("[PASS] T14 uuid_eq(3,5)==0")); }
+    if (f14 == 0u64) { drop(println("[FAIL] T14 uuid_eq(3,5)==0")); }
+
+    // T15: uuid_product(3, 7) == 21
+    uint128:r15 = uuid_product(n3, n7);
+    uint64:f15 = uuid_eq(r15, n21);
+    if (f15 == 1u64) { drop(println("[PASS] T15 uuid_product(3,7)==21")); }
+    if (f15 == 0u64) { drop(println("[FAIL] T15 uuid_product(3,7)==21")); }
+
+    pass(0i32);
+};

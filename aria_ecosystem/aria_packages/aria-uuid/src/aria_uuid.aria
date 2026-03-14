@@ -1,0 +1,92 @@
+// aria_uuid.aria — LIB-15: 128-bit identifier (UUID) arithmetic utilities
+//
+// All functions operate on uint128 values, which can represent UUIDs as
+// 128-bit integers. The pack/unpack functions use 2^64 arithmetic to
+// combine or split a 128-bit value into two 64-bit halves.
+//
+// This library exercises uint128 return types and comparisons (Bug #23).
+//
+// Pub funcs (12):
+//   uuid_nil()              — return the nil UUID: 0u128
+//   uuid_one()              — return 1u128
+//   uuid_step(x)            — x + 1u128
+//   uuid_double(x)          — x * 2u128
+//   uuid_sum(a, b)          — a + b
+//   uuid_product(a, b)      — a * b
+//   uuid_pack(hi, lo)       — hi * 2^64 + lo (combine two halves)
+//   uuid_unpack_hi(id)      — id / 2^64  (extract high 64-bit half)
+//   uuid_unpack_lo(id)      — id mod 2^64 (extract low 64-bit half)
+//   uuid_gt(a, b)           — 1u64 if a > b, else 0u64
+//   uuid_lt(a, b)           — 1u64 if a < b, else 0u64
+//   uuid_eq(a, b)           — 1u64 if a == b, else 0u64
+
+// uuid_nil: return the nil UUID (all zeros).
+pub func:uuid_nil = uint128() {
+    pass(0u128);
+};
+
+// uuid_one: return 1u128 (unit value for arithmetic operations).
+pub func:uuid_one = uint128() {
+    pass(1u128);
+};
+
+// uuid_step: return the next UUID in sequence (x + 1).
+pub func:uuid_step = uint128(uint128:x) {
+    pass(x + 1u128);
+};
+
+// uuid_double: return x * 2 (double the value).
+pub func:uuid_double = uint128(uint128:x) {
+    pass(x * 2u128);
+};
+
+// uuid_sum: add two UUID values.
+pub func:uuid_sum = uint128(uint128:a, uint128:b) {
+    pass(a + b);
+};
+
+// uuid_product: multiply two UUID values.
+pub func:uuid_product = uint128(uint128:a, uint128:b) {
+    pass(a * b);
+};
+
+// uuid_pack: combine high and low 64-bit halves into a 128-bit UUID.
+// Uses arithmetic: result = hi * 2^64 + lo
+// 2^64 = 18446744073709551616
+pub func:uuid_pack = uint128(uint128:hi, uint128:lo) {
+    uint128:power64 = 18446744073709551616u128;
+    pass(hi * power64 + lo);
+};
+
+// uuid_unpack_hi: extract the high 64-bit half of a 128-bit UUID.
+// result = id / 2^64
+pub func:uuid_unpack_hi = uint128(uint128:id) {
+    uint128:power64 = 18446744073709551616u128;
+    pass(id / power64);
+};
+
+// uuid_unpack_lo: extract the low 64-bit half of a 128-bit UUID.
+// result = id - (id / 2^64) * 2^64
+pub func:uuid_unpack_lo = uint128(uint128:id) {
+    uint128:power64 = 18446744073709551616u128;
+    uint128:hi = id / power64;
+    pass(id - hi * power64);
+};
+
+// uuid_gt: return 1u64 if a > b, else 0u64.
+pub func:uuid_gt = uint64(uint128:a, uint128:b) {
+    if (a > b) { pass(1u64); }
+    pass(0u64);
+};
+
+// uuid_lt: return 1u64 if a < b, else 0u64.
+pub func:uuid_lt = uint64(uint128:a, uint128:b) {
+    if (a < b) { pass(1u64); }
+    pass(0u64);
+};
+
+// uuid_eq: return 1u64 if a == b, else 0u64.
+pub func:uuid_eq = uint64(uint128:a, uint128:b) {
+    if (a == b) { pass(1u64); }
+    pass(0u64);
+};

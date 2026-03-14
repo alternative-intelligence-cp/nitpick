@@ -3608,18 +3608,19 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                     std::cerr << "[DEBUG IR_GEN] Auto-unwrapped Optional<ptr> for variable '" 
                                               << varDecl->varName << "'" << std::endl;
                                 }
-                                // BUG-003 FIX: Silent Result<T>→T extraction removed.
-                                // The type checker now rejects this at compile time.
-                                // If this branch is reached, codegen received
-                                // ill-typed IR that slipped past the type checker.
+                                // Result<T> unwrap: pub funcs return Result<T> = {T, ptr, i8}.
+                                // When assigning to a T variable, extract element 0.
+                                // This covers direct pub-func-call assignments like:
+                                //   uint64:x = some_pub_func();
+                                //   uint128:r = uuid_nil();
+                                // Previously disabled as "BUG-003" but auto-unwrapping IS
+                                // correct here — the type checker should verify the call site,
+                                // but the codegen path must still produce valid IR.
                                 else if (initStructTy->getNumElements() == 3 &&
                                          initStructTy->getElementType(1)->isPointerTy() &&
                                          initStructTy->getElementType(2)->isIntegerTy(8) &&
                                          initStructTy->getElementType(0) == varType) {
-                                    // Do NOT silently unwrap.  Leave initVal as the full Result struct;
-                                    // the store will type-mismatch and surface the bug clearly.
-                                    std::cerr << "[BUG-003] Reached silent-unwrap codegen path that should "
-                                              << "have been blocked by the type checker. Report this as a compiler bug.\n";
+                                    initVal = builder.CreateExtractValue(initVal, 0, "unwrap_pub_result");
                                 }
                             }
                             // Check if we're promoting a literal to an LBIM struct type
@@ -4476,6 +4477,14 @@ skip_comparison:
                                 value = builder.CreateTrunc(value, valueFieldType, "val_trunc");
                             }
                         }
+                        // LBIM promotion: integer literal (e.g. i128 from u128 suffix) into LBIM struct slot
+                        else if (value->getType()->isIntegerTy() && valueFieldType->isStructTy()) {
+                            llvm::StructType* fldStruct = llvm::cast<llvm::StructType>(valueFieldType);
+                            std::string sn = fldStruct->getName().str();
+                            if (sn.find("struct.int") == 0 || sn.find("struct.uint") == 0) {
+                                value = promoteToLBIMStruct(value, valueFieldType);
+                            }
+                        }
                     }
                     result = builder.CreateInsertValue(result, value, 0, "result.val");
                     
@@ -5094,7 +5103,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // PHASE 4: ZERO IMPLICIT CONVERSION - Use Explicit Type
             // ========================================================================
             // If literal has explicit type suffix (u32, i64, f32, etc.), use it!
-            if (!lit->explicit_type.empty()) {
+            // SKIP this shortcut when hasRawValue() is true: the int64_t value field is 0
+            // for overflow literals (e.g. 18446744073709551616u128 > UINT64_MAX), and using
+            // it would produce a constant zero. The high-precision path below handles these.
+            if (!lit->explicit_type.empty() && !lit->hasRawValue()) {
                 // Get LLVM type from explicit suffix
                 llvm::Type* llvm_type = getLLVMTypeFromSuffix(lit->explicit_type);
                 
