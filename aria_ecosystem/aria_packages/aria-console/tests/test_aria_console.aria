@@ -1,0 +1,143 @@
+// test_aria_console.aria — 15-test suite for LIB-20 aria-console
+//
+// Pure Aria module — no FFI. Can safely `use` the source file.
+
+use "/home/randy/Workspace/REPOS/aria/aria_ecosystem/aria_packages/aria-console/src/aria_console.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    // ── T01: bus_zone(0) == CON_ZONE_RAM (0) ───────────────────────────────
+    int32:z01 = bus_zone(0i32);
+    if (z01 == 0i32) {
+        print("[PASS] T01 bus_zone(0)==CON_ZONE_RAM\n");
+    } else {
+        print("[FAIL] T01 bus_zone(0) expected 0 (RAM)\n");
+    }
+
+    // ── T02: bus_zone(8192) == CON_ZONE_DISP (1) ──────────────────────────
+    int32:z02 = bus_zone(8192i32);
+    if (z02 == 1i32) {
+        print("[PASS] T02 bus_zone(8192)==CON_ZONE_DISP\n");
+    } else {
+        print("[FAIL] T02 bus_zone(8192) expected 1 (DISP)\n");
+    }
+
+    // ── T03: bus_zone(32768) == CON_ZONE_ROM (6) ───────────────────────────
+    int32:z03 = bus_zone(32768i32);
+    if (z03 == 6i32) {
+        print("[PASS] T03 bus_zone(32768)==CON_ZONE_ROM\n");
+    } else {
+        print("[FAIL] T03 bus_zone(32768) expected 6 (ROM)\n");
+    }
+
+    // ── T04: bus_zone(65535) == CON_ZONE_ROM (6) ───────────────────────────
+    int32:z04 = bus_zone(65535i32);
+    if (z04 == 6i32) {
+        print("[PASS] T04 bus_zone(65535)==CON_ZONE_ROM top\n");
+    } else {
+        print("[FAIL] T04 bus_zone(65535) expected 6 (ROM top)\n");
+    }
+
+    // ── T05: bus_zone(-1) == -1 (invalid) ─────────────────────────────────
+    int32:z05 = bus_zone(0i32 - 1i32);
+    if (z05 == 0i32 - 1i32) {
+        print("[PASS] T05 bus_zone(-1)==-1 (invalid)\n");
+    } else {
+        print("[FAIL] T05 bus_zone(-1) expected -1\n");
+    }
+
+    // ── T06: disp_reg_addr(0) == CON_DISP_BASE (8192) ─────────────────────
+    int32:da0 = disp_reg_addr(0i32);
+    if (da0 == 8192i32) {
+        print("[PASS] T06 disp_reg_addr(0)==8192\n");
+    } else {
+        print("[FAIL] T06 disp_reg_addr(0) expected 8192\n");
+    }
+
+    // ── T07: inp_reg_addr(5) == 10240+5 == 10245 ──────────────────────────
+    int32:ia5 = inp_reg_addr(5i32);
+    if (ia5 == 10245i32) {
+        print("[PASS] T07 inp_reg_addr(5)==10245\n");
+    } else {
+        print("[FAIL] T07 inp_reg_addr(5) expected 10245\n");
+    }
+
+    // ── T08: snd_reg_addr out-of-range returns -1 ─────────────────────────
+    int32:sr_bad = snd_reg_addr(512i32);
+    if (sr_bad == 0i32 - 1i32) {
+        print("[PASS] T08 snd_reg_addr(512)==-1 (out of range)\n");
+    } else {
+        print("[FAIL] T08 snd_reg_addr(512) expected -1\n");
+    }
+
+    // ── T09: con_ms_to_frame(0) == 0, con_ms_to_frame(32) == 2 ───────────
+    int32:f0  = con_ms_to_frame(0i32);
+    int32:f32 = con_ms_to_frame(32i32);
+    if (f0 == 0i32 && f32 == 2i32) {
+        print("[PASS] T09 con_ms_to_frame(0,32)==(0,2)\n");
+    } else {
+        print("[FAIL] T09 con_ms_to_frame wrong\n");
+    }
+
+    // ── T10: con_is_vblank on frame boundaries ─────────────────────────────
+    int32:vb0  = con_is_vblank(0i32);
+    int32:vb16 = con_is_vblank(16i32);
+    int32:vb1  = con_is_vblank(1i32);
+    if (vb0 == 1i32 && vb16 == 1i32 && vb1 == 0i32) {
+        print("[PASS] T10 con_is_vblank correct on boundaries\n");
+    } else {
+        print("[FAIL] T10 con_is_vblank wrong\n");
+    }
+
+    // ── T11: con_state_pack/unpack frame counter ───────────────────────────
+    uint64:st11 = con_state_pack(42i32, 0i32, 0i32, 0i32);
+    int32:f11   = con_state_frame(st11);
+    if (f11 == 42i32) {
+        print("[PASS] T11 con_state frame pack/unpack\n");
+    } else {
+        print("[FAIL] T11 con_state frame roundtrip failed\n");
+    }
+
+    // ── T12: con_state_pack/unpack joypad ─────────────────────────────────
+    uint64:st12 = con_state_pack(0i32, 12i32, 0i32, 0i32); // joypad=12 (UP+DOWN)
+    int32:j12   = con_state_joypad(st12);
+    if (j12 == 12i32) {
+        print("[PASS] T12 con_state joypad pack/unpack\n");
+    } else {
+        print("[FAIL] T12 con_state joypad roundtrip failed\n");
+    }
+
+    // ── T13: con_state_pack/unpack all fields at once ─────────────────────
+    uint64:st13 = con_state_pack(100i32, 3i32, 1i32, 0x1234i32);
+    int32:f13   = con_state_frame(st13);
+    int32:j13   = con_state_joypad(st13);
+    int32:fl13  = con_state_flags(st13);
+    int32:pc13  = con_state_pc(st13);
+    if (f13 == 100i32 && j13 == 3i32 && fl13 == 1i32 && pc13 == 4660i32) {
+        print("[PASS] T13 con_state all fields roundtrip\n");
+    } else {
+        print("[FAIL] T13 con_state all-fields roundtrip failed\n");
+    }
+
+    // ── T14: bus_is_valid boundaries ──────────────────────────────────────
+    int32:v0     = bus_is_valid(0i32);
+    int32:v65535 = bus_is_valid(65535i32);
+    int32:vbad   = bus_is_valid(65536i32);
+    if (v0 == 1i32 && v65535 == 1i32 && vbad == 0i32) {
+        print("[PASS] T14 bus_is_valid boundaries\n");
+    } else {
+        print("[FAIL] T14 bus_is_valid wrong\n");
+    }
+
+    // ── T15: CON_SAMPLES_PER_FRAME == 735 and CON_FRAME_MS == 16 ──────────
+    int32:spf = CON_SAMPLES_PER_FRAME();
+    int32:fms = CON_FRAME_MS();
+    if (spf == 735i32 && fms == 16i32) {
+        print("[PASS] T15 CON_SAMPLES_PER_FRAME==735 CON_FRAME_MS==16\n");
+    } else {
+        print("[FAIL] T15 frame constants wrong\n");
+    }
+
+    pass(0i32);
+};
