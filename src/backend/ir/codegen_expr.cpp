@@ -192,6 +192,11 @@ llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
     if (typeName == "int32" || typeName == "i32") return llvm::Type::getInt32Ty(context);
     if (typeName == "int64" || typeName == "i64") return llvm::Type::getInt64Ty(context);
 
+    // Short-form LBIM type names: return plain i128/i256 scalar for literal promotion.
+    // These are used by the lexer for type suffixes (u128, i128); variable storage still
+    // uses the LBIM struct, but literal generation uses the scalar form.
+    if (typeName == "i128" || typeName == "u128") return llvm::Type::getInt128Ty(context);
+
     // ARIA-024: Large integers use Limb-Based Integral Model (LBIM)
     // Stored as structs of i64 limbs to bypass LLVM IPSCCP/ConstraintElimination bugs
     // See: github.com/llvm/llvm-project/issues/68751, #56351
@@ -1030,7 +1035,38 @@ llvm::Value* ExprCodegen::promoteLiteralToLBIM(llvm::Value* literal, llvm::Type*
     }
     
     std::cerr << "[LBIM_PROMOTE] Promoting literal to " << structName << " (" << numLimbs << " limbs)" << std::endl;
-    
+
+    // Wide-path: for i128+ inputs, split into 64-bit limbs via shift+trunc
+    if (literal->getType()->getIntegerBitWidth() > 64) {
+        llvm::Value* wideAlloca = builder.CreateAlloca(targetType, nullptr, "lbim_wide");
+        llvm::Type* i64TypeW = llvm::Type::getInt64Ty(context);
+        unsigned inBits = literal->getType()->getIntegerBitWidth();
+        for (int i = 0; i < numLimbs; i++) {
+            llvm::Value* limbVal;
+            if ((unsigned)i * 64 < inBits) {
+                if (i == 0) {
+                    limbVal = builder.CreateTrunc(literal, i64TypeW, "wide_lo");
+                } else {
+                    llvm::Value* shifted = builder.CreateLShr(
+                        literal,
+                        llvm::ConstantInt::get(literal->getType(), (uint64_t)i * 64),
+                        "wide_shift");
+                    limbVal = builder.CreateTrunc(shifted, i64TypeW, "wide_limb");
+                }
+            } else {
+                limbVal = llvm::ConstantInt::get(i64TypeW, 0);
+            }
+            std::vector<llvm::Value*> wideIdx = {
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), i)
+            };
+            llvm::Value* limbPtr = builder.CreateGEP(targetType, wideAlloca, wideIdx, "wide_limb_ptr");
+            builder.CreateStore(limbVal, limbPtr);
+        }
+        return builder.CreateLoad(targetType, wideAlloca, "lbim_wide_val");
+    }
+
     // Create a zero-initialized struct on the stack
     llvm::Value* structAlloca = builder.CreateAlloca(targetType, nullptr, "lbim_promoted");
     
