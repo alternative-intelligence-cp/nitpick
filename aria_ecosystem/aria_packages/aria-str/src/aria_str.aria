@@ -1,0 +1,346 @@
+// ============================================================================
+// aria-str  LIB-23  —  High-level string manipulation
+// ============================================================================
+//
+// Provides string operations that go beyond the built-in intrinsics:
+// extraction, splitting (before/after), replacement, counting,
+// character access, and structural queries.
+//
+// All functions are pure Aria (no extern dependencies) and rely only on
+// the compiler string intrinsics:
+//   string_length, string_concat, string_substring, string_index_of,
+//   string_contains, string_starts_with, string_ends_with,
+//   string_is_empty, string_equals, string_from_char, string_from_int,
+//   string_to_upper, string_to_lower, string_trim,
+//   string_pad_left, string_pad_right, string_repeat
+//
+// ── Extraction ──────────────────────────────────────────────────────────────
+//   str_char_at(s, i)               → string   (1-char string at index i, or "")
+//   str_slice(s, start)             → string   (from start to end of string)
+//   str_before(s, delim)            → string   (part before first delimiter)
+//   str_after(s, delim)             → string   (part after first delimiter)
+//   str_before_last(s, delim)       → string   (part before LAST delimiter)
+//   str_after_last(s, delim)        → string   (part after LAST delimiter)
+//   str_between(s, open_, close_)   → string   (text between first open/close pair)
+//
+// ── Modification ────────────────────────────────────────────────────────────
+//   str_replace(s, old_, new_)      → string   (replace first occurrence)
+//   str_replace_all(s, old_, new_)  → string   (replace all occurrences, max 256)
+//   str_remove_prefix(s, prefix)    → string   (strip prefix if present)
+//   str_remove_suffix(s, suffix)    → string   (strip suffix if present)
+//
+// ── Counting / querying ──────────────────────────────────────────────────────
+//   str_count(s, sub)               → int64    (occurrences of sub in s)
+//   str_line_count(s)               → int64    (number of newline-separated lines)
+//   str_is_blank(s)                 → bool     (empty or all whitespace)
+//
+// ── Splitting helpers (first/last token) ────────────────────────────────────
+//   str_token(s, delim, n)          → string   (Nth 0-based delim-split token)
+//   str_token_count(s, delim)       → int64    (number of delim-split tokens)
+// ============================================================================
+
+// ── Extraction ───────────────────────────────────────────────────────────────
+
+/// Return the character at position i as a 1-char string.
+/// Returns "" when i is out of range.
+pub func:str_char_at = string(string:s, int64:i) {
+    int64:len = string_length(s);
+    if (i < 0i64) {
+        pass("");
+    } else {
+        if (i >= len) {
+            pass("");
+        } else {
+            int64:end_pos = i + 1i64;
+            pass(string_substring(s, i, end_pos));
+        }
+    }
+};
+
+/// Return the substring from start to the end of s.
+/// Equivalent to string_substring(s, start, string_length(s)).
+/// Returns "" when start >= length.
+pub func:str_slice = string(string:s, int64:start) {
+    int64:len = string_length(s);
+    if (start >= len) {
+        pass("");
+    } else {
+        if (start < 0i64) {
+            pass(s);
+        } else {
+            pass(string_substring(s, start, len));
+        }
+    }
+};
+
+/// Return the part of s before the first occurrence of delim.
+/// Returns the whole string if delim is not found.
+pub func:str_before = string(string:s, string:delim) {
+    int64:idx = string_index_of(s, delim);
+    if (idx < 0i64) {
+        pass(s);
+    } else {
+        pass(string_substring(s, 0i64, idx));
+    }
+};
+
+/// Return the part of s after the first occurrence of delim.
+/// Returns "" if delim is not found.
+pub func:str_after = string(string:s, string:delim) {
+    int64:idx = string_index_of(s, delim);
+    if (idx < 0i64) {
+        pass("");
+    } else {
+        int64:dlen = string_length(delim);
+        int64:slen = string_length(s);
+        int64:start = idx + dlen;
+        pass(string_substring(s, start, slen));
+    }
+};
+
+/// Return the part of s before the LAST occurrence of delim.
+/// Returns the whole string if delim is not found.
+pub func:str_before_last = string(string:s, string:delim) {
+    // Scan forward, tracking last occurrence
+    int64:last = 0i64 - 1i64;
+    int64:dlen = string_length(delim);
+    int64:slen = string_length(s);
+    int64:pos = 0i64;
+    till(4096, 1) {
+        int64:rest_len = slen - pos;
+        if (rest_len > 0i64) {
+            string:rest = string_substring(s, pos, slen);
+            int64:rel = string_index_of(rest, delim);
+            if (rel >= 0i64) {
+                last = pos + rel;
+                pos = last + dlen;
+            } else {
+                pos = slen; // break condition: rest_len will be 0 next iter
+            }
+        } else {
+            pos = slen + 1i64; // keep rest_len <= 0 to stop
+        }
+    }
+    if (last < 0i64) {
+        pass(s);
+    } else {
+        pass(string_substring(s, 0i64, last));
+    }
+};
+
+/// Return the part of s after the LAST occurrence of delim.
+/// Returns "" if delim is not found.
+pub func:str_after_last = string(string:s, string:delim) {
+    int64:last = 0i64 - 1i64;
+    int64:dlen = string_length(delim);
+    int64:slen = string_length(s);
+    int64:pos = 0i64;
+    till(4096, 1) {
+        int64:rest_len = slen - pos;
+        if (rest_len > 0i64) {
+            string:rest = string_substring(s, pos, slen);
+            int64:rel = string_index_of(rest, delim);
+            if (rel >= 0i64) {
+                last = pos + rel;
+                pos = last + dlen;
+            } else {
+                pos = slen;
+            }
+        } else {
+            pos = slen + 1i64;
+        }
+    }
+    if (last < 0i64) {
+        pass("");
+    } else {
+        int64:start = last + dlen;
+        pass(string_substring(s, start, slen));
+    }
+};
+
+/// Return the text between the first occurrence of open_ and the first
+/// subsequent occurrence of close_.
+/// Returns "" if either delimiter is missing or close_ precedes open_.
+pub func:str_between = string(string:s, string:open_, string:close_) {
+    int64:oi = string_index_of(s, open_);
+    if (oi < 0i64) {
+        pass("");
+    } else {
+        int64:olen = string_length(open_);
+        int64:slen = string_length(s);
+        int64:inner_start = oi + olen;
+        string:rest = string_substring(s, inner_start, slen);
+        int64:ci = string_index_of(rest, close_);
+        if (ci < 0i64) {
+            pass("");
+        } else {
+            pass(string_substring(rest, 0i64, ci));
+        }
+    }
+};
+
+// ── Modification ─────────────────────────────────────────────────────────────
+
+/// Replace the first occurrence of old_ in s with new_.
+/// Returns s unchanged if old_ is not found.
+pub func:str_replace = string(string:s, string:old_, string:new_) {
+    int64:idx = string_index_of(s, old_);
+    if (idx < 0i64) {
+        pass(s);
+    } else {
+        int64:olen = string_length(old_);
+        int64:slen = string_length(s);
+        string:before = string_substring(s, 0i64, idx);
+        int64:after_start = idx + olen;
+        string:after = string_substring(s, after_start, slen);
+        pass(string_concat(string_concat(before, new_), after));
+    }
+};
+
+/// Replace every occurrence of old_ in s with new_ (up to 256 occurrences).
+/// Returns s unchanged if old_ is not found.
+pub func:str_replace_all = string(string:s, string:old_, string:new_) {
+    string:result = s;
+    int64:old_len = string_length(old_);
+    till(256, 1) {
+        int64:idx = string_index_of(result, old_);
+        if (idx >= 0i64) {
+            int64:slen = string_length(result);
+            string:before = string_substring(result, 0i64, idx);
+            int64:after_start = idx + old_len;
+            string:after = string_substring(result, after_start, slen);
+            result = string_concat(string_concat(before, new_), after);
+        } else {
+            // no more occurrences — run loop to completion doing nothing
+        }
+    }
+    pass(result);
+};
+
+/// Remove prefix from s if present; otherwise return s unchanged.
+pub func:str_remove_prefix = string(string:s, string:prefix) {
+    if (string_starts_with(s, prefix)) {
+        int64:plen = string_length(prefix);
+        int64:slen = string_length(s);
+        pass(string_substring(s, plen, slen));
+    } else {
+        pass(s);
+    }
+};
+
+/// Remove suffix from s if present; otherwise return s unchanged.
+pub func:str_remove_suffix = string(string:s, string:suffix) {
+    if (string_ends_with(s, suffix)) {
+        int64:slen = string_length(s);
+        int64:sufflen = string_length(suffix);
+        int64:end_pos = slen - sufflen;
+        pass(string_substring(s, 0i64, end_pos));
+    } else {
+        pass(s);
+    }
+};
+
+// ── Counting / querying ───────────────────────────────────────────────────────
+
+/// Count how many times sub appears in s (non-overlapping).
+/// Returns 0 if sub is empty or not found.
+pub func:str_count = int64(string:s, string:sub) {
+    int64:count = 0i64;
+    int64:sublen = string_length(sub);
+    if (sublen <= 0i64) {
+        pass(0i64);
+    } else {
+        int64:slen = string_length(s);
+        int64:pos = 0i64;
+        till(4096, 1) {
+            int64:rest_len = slen - pos;
+            if (rest_len >= sublen) {
+                string:rest = string_substring(s, pos, slen);
+                int64:rel = string_index_of(rest, sub);
+                if (rel >= 0i64) {
+                    count = count + 1i64;
+                    pos = pos + rel + sublen;
+                } else {
+                    pos = slen; // stop scanning
+                }
+            } else {
+                pos = slen + 1i64; // ensure rest_len < sublen next pass
+            }
+        }
+        pass(count);
+    }
+};
+
+/// Count the number of lines in s (= number of '\n' characters + 1).
+/// An empty string is considered 1 line.
+pub func:str_line_count = int64(string:s) {
+    if (string_is_empty(s)) {
+        pass(1i64);
+    } else {
+        int64:n = raw(str_count(s, "\n"));
+        pass(n + 1i64);
+    }
+};
+
+/// Return true if s is empty or contains only ASCII whitespace (space, tab,
+/// \r, \n).  Uses: trim → empty check.
+pub func:str_is_blank = bool(string:s) {
+    string:trimmed = string_trim(s);
+    pass(string_is_empty(trimmed));
+};
+
+// ── Splitting helpers ─────────────────────────────────────────────────────────
+//
+// Without dynamic arrays, full split is returned as a 0-based indexed accessor.
+// str_token_count gives the number of tokens; str_token retrieves each one.
+// Both work with any single- or multi-char delimiter.
+
+/// Count how many delim-separated tokens are in s.
+/// "a:b:c" with delim ":" → 3
+/// "hello" with delim ":" → 1
+pub func:str_token_count = int64(string:s, string:delim) {
+    if (string_is_empty(s)) {
+        pass(0i64);
+    } else {
+        int64:n = raw(str_count(s, delim));
+        pass(n + 1i64);
+    }
+};
+
+/// Return the Nth (0-based) token of s split by delim.
+/// Returns "" when n is out of range.
+pub func:str_token = string(string:s, string:delim, int64:n) {
+    string:rest = s;
+    int64:i = 0i64;
+    int64:found = 0i64; // 1 once we've reached token n
+    string:result = "";
+    till(4096, 1) {
+        if (found == 0i64) {
+            if (i == n) {
+                // this token IS what we want
+                result = raw(str_before(rest, delim));
+                found = 1i64;
+            } else {
+                // advance past next delimiter
+                int64:idx = string_index_of(rest, delim);
+                if (idx < 0i64) {
+                    // ran out of tokens
+                    found = 2i64; // signal "out of range"
+                } else {
+                    int64:dlen = string_length(delim);
+                    int64:rlen = string_length(rest);
+                    int64:next_start = idx + dlen;
+                    rest = string_substring(rest, next_start, rlen);
+                    i = i + 1i64;
+                }
+            }
+        } else {
+            // already found — keep looping to completion
+        }
+    }
+    if (found == 2i64) {
+        pass("");
+    } else {
+        pass(result);
+    }
+};

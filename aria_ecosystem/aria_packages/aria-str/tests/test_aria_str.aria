@@ -1,0 +1,408 @@
+// ============================================================================
+// test_aria_str.aria  —  LIB-23 test suite
+// ============================================================================
+// All tests are deterministic (no file I/O, no system calls).
+// Runs as a standalone binary; prints [PASS]/[FAIL] for each test.
+// ============================================================================
+
+use "../src/aria_str.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    int64:passed = 0i64;
+    int64:total  = 0i64;
+
+    // ── str_char_at ─────────────────────────────────────────────────────────
+
+    // 01 str_char_at: first character
+    total = total + 1i64;
+    string:r01 = str_char_at("hello", 0i64);
+    if (string_equals(r01, "h")) {
+        print("[PASS] 01 str_char_at: index 0 → h\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 01 str_char_at: index 0 → h\n");
+    }
+
+    // 02 str_char_at: last character
+    total = total + 1i64;
+    string:r02 = str_char_at("hello", 4i64);
+    if (string_equals(r02, "o")) {
+        print("[PASS] 02 str_char_at: index 4 → o\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 02 str_char_at: index 4 → o\n");
+    }
+
+    // 03 str_char_at: out of range → empty string
+    total = total + 1i64;
+    string:r03 = str_char_at("hello", 10i64);
+    if (string_equals(r03, "")) {
+        print("[PASS] 03 str_char_at: out-of-range → empty\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 03 str_char_at: out-of-range → empty\n");
+    }
+
+    // ── str_slice ───────────────────────────────────────────────────────────
+
+    // 04 str_slice: from index 6 to end
+    total = total + 1i64;
+    string:r04 = str_slice("hello world", 6i64);
+    if (string_equals(r04, "world")) {
+        print("[PASS] 04 str_slice: 6 → world\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 04 str_slice: 6 → world\n");
+    }
+
+    // 05 str_slice: index 0 → whole string
+    total = total + 1i64;
+    string:r05 = str_slice("abc", 0i64);
+    if (string_equals(r05, "abc")) {
+        print("[PASS] 05 str_slice: index 0 → whole string\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 05 str_slice: index 0 → whole string\n");
+    }
+
+    // 06 str_slice: index >= length → empty
+    total = total + 1i64;
+    string:r06 = str_slice("abc", 5i64);
+    if (string_equals(r06, "")) {
+        print("[PASS] 06 str_slice: past end → empty\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 06 str_slice: past end → empty\n");
+    }
+
+    // ── str_before / str_after ──────────────────────────────────────────────
+
+    // 07 str_before: part before ":"
+    total = total + 1i64;
+    string:r07 = str_before("foo:bar:baz", ":");
+    if (string_equals(r07, "foo")) {
+        print("[PASS] 07 str_before: foo:bar:baz → foo\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 07 str_before: foo:bar:baz → foo\n");
+    }
+
+    // 08 str_before: delim not found → whole string
+    total = total + 1i64;
+    string:r08 = str_before("hello", ":");
+    if (string_equals(r08, "hello")) {
+        print("[PASS] 08 str_before: delim absent → whole string\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 08 str_before: delim absent → whole string\n");
+    }
+
+    // 09 str_after: part after first "/"
+    total = total + 1i64;
+    string:r09 = str_after("usr/local/bin", "/");
+    if (string_equals(r09, "local/bin")) {
+        print("[PASS] 09 str_after: usr/local/bin → local/bin\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 09 str_after: usr/local/bin → local/bin\n");
+    }
+
+    // 10 str_after: delim not found → empty
+    total = total + 1i64;
+    string:r10 = str_after("hello", "/");
+    if (string_equals(r10, "")) {
+        print("[PASS] 10 str_after: delim absent → empty\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 10 str_after: delim absent → empty\n");
+    }
+
+    // ── str_before_last / str_after_last ────────────────────────────────────
+
+    // 11 str_before_last
+    total = total + 1i64;
+    string:r11 = str_before_last("usr/local/bin", "/");
+    if (string_equals(r11, "usr/local")) {
+        print("[PASS] 11 str_before_last: usr/local/bin → usr/local\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 11 str_before_last: got ");
+        print(r11); print("\n");
+    }
+
+    // 12 str_after_last
+    total = total + 1i64;
+    string:r12 = str_after_last("usr/local/bin", "/");
+    if (string_equals(r12, "bin")) {
+        print("[PASS] 12 str_after_last: usr/local/bin → bin\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 12 str_after_last: got ");
+        print(r12); print("\n");
+    }
+
+    // ── str_between ─────────────────────────────────────────────────────────
+
+    // 13 str_between: extract between < >
+    total = total + 1i64;
+    string:r13 = str_between("<hello>", "<", ">");
+    if (string_equals(r13, "hello")) {
+        print("[PASS] 13 str_between: <hello> → hello\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 13 str_between: <hello> → hello\n");
+    }
+
+    // 14 str_between: missing close → empty
+    total = total + 1i64;
+    string:r14 = str_between("<hello", "<", ">");
+    if (string_equals(r14, "")) {
+        print("[PASS] 14 str_between: missing close → empty\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 14 str_between: missing close → empty\n");
+    }
+
+    // ── str_replace ─────────────────────────────────────────────────────────
+
+    // 15 str_replace: replace first "aa" with "X"
+    total = total + 1i64;
+    string:r15 = str_replace("aabbaa", "aa", "X");
+    if (string_equals(r15, "Xbbaa")) {
+        print("[PASS] 15 str_replace: first aa → X\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 15 str_replace: first aa → X\n");
+    }
+
+    // 16 str_replace: not found → unchanged
+    total = total + 1i64;
+    string:r16 = str_replace("hello", "xyz", "Z");
+    if (string_equals(r16, "hello")) {
+        print("[PASS] 16 str_replace: not found → unchanged\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 16 str_replace: not found → unchanged\n");
+    }
+
+    // ── str_replace_all ─────────────────────────────────────────────────────
+
+    // 17 str_replace_all: replace all "aa"
+    total = total + 1i64;
+    string:r17 = str_replace_all("aabbccaabbccaa", "aa", "X");
+    if (string_equals(r17, "XbbccXbbccX")) {
+        print("[PASS] 17 str_replace_all: all aa → X\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 17 str_replace_all: all aa → X\n");
+    }
+
+    // 18 str_replace_all: not found → unchanged
+    total = total + 1i64;
+    string:r18 = str_replace_all("no match here", "xyz", "Z");
+    if (string_equals(r18, "no match here")) {
+        print("[PASS] 18 str_replace_all: not found → unchanged\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 18 str_replace_all: not found → unchanged\n");
+    }
+
+    // ── str_remove_prefix / str_remove_suffix ────────────────────────────────
+
+    // 19 str_remove_prefix: present
+    total = total + 1i64;
+    string:r19 = str_remove_prefix("--verbose", "--");
+    if (string_equals(r19, "verbose")) {
+        print("[PASS] 19 str_remove_prefix: --verbose → verbose\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 19 str_remove_prefix: --verbose → verbose\n");
+    }
+
+    // 20 str_remove_prefix: absent → unchanged
+    total = total + 1i64;
+    string:r20 = str_remove_prefix("verbose", "--");
+    if (string_equals(r20, "verbose")) {
+        print("[PASS] 20 str_remove_prefix: absent → unchanged\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 20 str_remove_prefix: absent → unchanged\n");
+    }
+
+    // 21 str_remove_suffix: .txt
+    total = total + 1i64;
+    string:r21 = str_remove_suffix("readme.txt", ".txt");
+    if (string_equals(r21, "readme")) {
+        print("[PASS] 21 str_remove_suffix: readme.txt → readme\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 21 str_remove_suffix: readme.txt → readme\n");
+    }
+
+    // 22 str_remove_suffix: absent → unchanged
+    total = total + 1i64;
+    string:r22 = str_remove_suffix("readme", ".txt");
+    if (string_equals(r22, "readme")) {
+        print("[PASS] 22 str_remove_suffix: absent → unchanged\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 22 str_remove_suffix: absent → unchanged\n");
+    }
+
+    // ── str_count ───────────────────────────────────────────────────────────
+
+    // 23 str_count: count "a" in "banana"
+    total = total + 1i64;
+    int64:r23 = str_count("banana", "a");
+    if (r23 == 3i64) {
+        print("[PASS] 23 str_count: banana has 3 'a'\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 23 str_count: banana has 3 'a'\n");
+    }
+
+    // 24 str_count: not found → 0
+    total = total + 1i64;
+    int64:r24 = str_count("hello", "xyz");
+    if (r24 == 0i64) {
+        print("[PASS] 24 str_count: not found → 0\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 24 str_count: not found → 0\n");
+    }
+
+    // 25 str_count: multi-char sub
+    total = total + 1i64;
+    int64:r25 = str_count("abcabcabc", "abc");
+    if (r25 == 3i64) {
+        print("[PASS] 25 str_count: 3 x 'abc'\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 25 str_count: 3 x 'abc'\n");
+    }
+
+    // ── str_line_count ──────────────────────────────────────────────────────
+
+    // 26 str_line_count: 3 lines
+    total = total + 1i64;
+    int64:r26 = str_line_count("line1\nline2\nline3");
+    if (r26 == 3i64) {
+        print("[PASS] 26 str_line_count: 3 lines\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 26 str_line_count: 3 lines\n");
+    }
+
+    // 27 str_line_count: single line (no newline)
+    total = total + 1i64;
+    int64:r27 = str_line_count("hello");
+    if (r27 == 1i64) {
+        print("[PASS] 27 str_line_count: no newline → 1\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 27 str_line_count: no newline → 1\n");
+    }
+
+    // ── str_is_blank ────────────────────────────────────────────────────────
+
+    // 28 str_is_blank: all spaces
+    total = total + 1i64;
+    bool:r28 = str_is_blank("   ");
+    if (r28) {
+        print("[PASS] 28 str_is_blank: all spaces → true\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 28 str_is_blank: all spaces → true\n");
+    }
+
+    // 29 str_is_blank: non-empty non-blank
+    total = total + 1i64;
+    bool:r29 = str_is_blank("hello");
+    if (r29 == false) {
+        print("[PASS] 29 str_is_blank: hello → false\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 29 str_is_blank: hello → false\n");
+    }
+
+    // ── str_token / str_token_count ──────────────────────────────────────────
+
+    // 30 str_token_count: 3 colon-separated tokens
+    total = total + 1i64;
+    int64:r30 = str_token_count("a:b:c", ":");
+    if (r30 == 3i64) {
+        print("[PASS] 30 str_token_count: a:b:c → 3\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 30 str_token_count: a:b:c → 3\n");
+    }
+
+    // 31 str_token_count: no delimiter → 1
+    total = total + 1i64;
+    int64:r31 = str_token_count("hello", ":");
+    if (r31 == 1i64) {
+        print("[PASS] 31 str_token_count: no delim → 1\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 31 str_token_count: no delim → 1\n");
+    }
+
+    // 32 str_token: token 0
+    total = total + 1i64;
+    string:r32 = str_token("foo:bar:baz", ":", 0i64);
+    if (string_equals(r32, "foo")) {
+        print("[PASS] 32 str_token: token 0 → foo\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 32 str_token: token 0 → foo\n");
+    }
+
+    // 33 str_token: token 1
+    total = total + 1i64;
+    string:r33 = str_token("foo:bar:baz", ":", 1i64);
+    if (string_equals(r33, "bar")) {
+        print("[PASS] 33 str_token: token 1 → bar\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 33 str_token: token 1 → bar\n");
+    }
+
+    // 34 str_token: token 2 (last)
+    total = total + 1i64;
+    string:r34 = str_token("foo:bar:baz", ":", 2i64);
+    if (string_equals(r34, "baz")) {
+        print("[PASS] 34 str_token: token 2 → baz\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 34 str_token: token 2 → baz\n");
+    }
+
+    // 35 str_token: out of range → empty
+    total = total + 1i64;
+    string:r35 = str_token("foo:bar:baz", ":", 5i64);
+    if (string_equals(r35, "")) {
+        print("[PASS] 35 str_token: out-of-range → empty\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 35 str_token: out-of-range → empty\n");
+    }
+
+    // ── Summary ─────────────────────────────────────────────────────────────
+
+    print("---\n");
+    if (passed == total) {
+        print("PASS: all ");
+        print(string_from_int(total));
+        print(" aria-str tests passed\n");
+        pass(0i32);
+    } else {
+        print("FAIL: ");
+        print(string_from_int(passed));
+        print("/");
+        print(string_from_int(total));
+        print(" passed\n");
+        pass(1i32);
+    }
+};
