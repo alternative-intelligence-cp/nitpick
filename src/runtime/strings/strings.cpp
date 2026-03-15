@@ -211,33 +211,23 @@ AriaResultI64 aria_string_index_of(AriaString haystack, AriaString needle) {
     
     if (needle.length > haystack.length) {
         // Needle longer than haystack, cannot match
-        AriaError* error = aria_error_new(
-            ARIA_ERR_NOT_FOUND,
-            "Substring not found",
-            __FILE__, __LINE__
-        );
-        return aria_result_err_i64(error);
+        return aria_result_ok_i64(-1);
     }
     
     // Simple string search (could be optimized with Boyer-Moore or similar)
-    for (int64_t i = 0; i <= haystack.length - needle.length; i++) {
+    for (int64_t i = 0; i <= (int64_t)(haystack.length - needle.length); i++) {
         if (memcmp(haystack.data + i, needle.data, needle.length) == 0) {
             return aria_result_ok_i64(i);
         }
     }
     
     // Not found
-    AriaError* error = aria_error_new(
-        ARIA_ERR_NOT_FOUND,
-        "Substring not found",
-        __FILE__, __LINE__
-    );
-    return aria_result_err_i64(error);
+    return aria_result_ok_i64(-1);
 }
 
 bool aria_string_contains(AriaString haystack, AriaString needle) {
     AriaResultI64 result = aria_string_index_of(haystack, needle);
-    return result.error == NULL;
+    return result.value >= 0;
 }
 
 bool aria_string_starts_with(AriaString str, AriaString prefix) {
@@ -897,4 +887,94 @@ AriaString* aria_string_concat_simple(AriaString* a, AriaString* b) {
     AriaResultPtr result = aria_string_concat(*a, *b);
     if (result.is_error) { std::abort(); }
     return (AriaString*)result.value;
+}
+
+// ── New _simple wrappers ─────────────────────────────────────────────────────
+
+AriaString* aria_string_repeat_simple(AriaString* str, int64_t count) {
+    AriaResultPtr result = aria_string_repeat(*str, count);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+AriaString* aria_string_trim_start_simple(AriaString* str) {
+    AriaResultPtr result = aria_string_trim_start(*str);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+AriaString* aria_string_trim_end_simple(AriaString* str) {
+    AriaResultPtr result = aria_string_trim_end(*str);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+int64_t aria_string_index_of_simple(AriaString* haystack, AriaString* needle) {
+    AriaResultI64 result = aria_string_index_of(*haystack, *needle);
+    if (result.error != NULL) { std::abort(); }
+    return result.value;
+}
+
+AriaString* aria_string_substring_simple(AriaString* str, int64_t start, int64_t end) {
+    AriaResultPtr result = aria_string_substring(*str, start, end);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+// pad_left: prepend pad_char until string reaches total_length
+AriaResultPtr aria_string_pad_left(AriaString str, int64_t total_length, uint8_t pad_char) {
+    if (str.length >= (size_t)total_length) {
+        // Already at or over target length — return as-is
+        return aria_string_from_bytes(str.data, str.length);
+    }
+    int64_t pad_count = total_length - (int64_t)str.length;
+    int64_t full_len = total_length;
+    char* buf = (char*)aria_gc_alloc(full_len + 1, 0);
+    if (!buf) {
+        return aria_result_err_ptr(aria_error_new(
+            ARIA_ERR_OUT_OF_MEMORY, "pad_left: alloc failed", __FILE__, __LINE__));
+    }
+    memset(buf, (char)pad_char, pad_count);
+    memcpy(buf + pad_count, str.data, str.length);
+    buf[full_len] = '\0';
+    AriaString result = {buf, full_len};
+    AriaString* heap_str = (AriaString*)aria_gc_alloc(sizeof(AriaString), 0);
+    if (!heap_str) {
+        return aria_result_err_ptr(aria_error_new(
+            ARIA_ERR_OUT_OF_MEMORY, "pad_left: alloc string failed", __FILE__, __LINE__));
+    }
+    *heap_str = result;
+    return aria_result_ok_ptr(heap_str);
+}
+
+AriaString* aria_string_pad_left_simple(AriaString* str, int64_t total_length, uint8_t pad_char) {
+    AriaResultPtr result = aria_string_pad_left(*str, total_length, pad_char);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+// Format an int64 value as lowercase hexadecimal string (no prefix).
+// Example: 255 → "ff",  0 → "0"
+AriaString* aria_string_from_int_hex_simple(int64_t value) {
+    // 16 hex digits + sign + null terminator
+    char buf[32];
+    int len;
+    if (value < 0) {
+        // Represent as unsigned 64-bit hex for negative values
+        len = snprintf(buf, sizeof(buf), "%llx", (unsigned long long)(uint64_t)value);
+    } else {
+        len = snprintf(buf, sizeof(buf), "%llx", (unsigned long long)value);
+    }
+    if (len <= 0) {
+        buf[0] = '0'; len = 1;
+    }
+    char* data = (char*)aria_gc_alloc(len + 1, 0);
+    if (!data) std::abort();
+    memcpy(data, buf, len);
+    data[len] = '\0';
+    AriaString* result = (AriaString*)aria_gc_alloc(sizeof(AriaString), 0);
+    if (!result) std::abort();
+    result->data = data;
+    result->length = len;
+    return result;
 }

@@ -341,6 +341,16 @@ AriaString* aria_string_from_cstr_simple(const char* cstr);
 AriaString* aria_string_concat_simple(AriaString* a, AriaString* b);
 AriaString* aria_string_concat_n_simple(AriaString* strings, int64_t count);
 
+// New simple wrappers (added for string_pad_left, string_repeat, trim variants, string_index_of)
+AriaResultPtr aria_string_pad_left(AriaString str, int64_t total_length, uint8_t pad_char);
+AriaString* aria_string_pad_left_simple(AriaString* str, int64_t total_length, uint8_t pad_char);
+AriaString* aria_string_repeat_simple(AriaString* str, int64_t count);
+AriaString* aria_string_trim_start_simple(AriaString* str);
+AriaString* aria_string_trim_end_simple(AriaString* str);
+int64_t aria_string_index_of_simple(AriaString* haystack, AriaString* needle);
+AriaString* aria_string_substring_simple(AriaString* str, int64_t start, int64_t end);
+AriaString* aria_string_from_int_hex_simple(int64_t value);
+
 #ifdef __cplusplus
 }
 #endif

@@ -5084,20 +5084,25 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("string_substring() requires three arguments");
         }
         
-        llvm::Function* func = module->getFunction("aria_string_substring");
+        llvm::Function* func = module->getFunction("aria_string_substring_simple");
         if (!func) {
-            std::vector<llvm::Type*> params = {getAriaStringType(), builder.getInt64Ty(), builder.getInt64Ty()};
+            // aria_string_substring_simple(AriaString*, i64, i64) -> AriaString*
+            // aborts on out-of-bounds (matches the _simple wrapper convention)
+            std::vector<llvm::Type*> params = {
+                llvm::PointerType::get(getAriaStringType(), 0),  // str
+                builder.getInt64Ty(),                            // start
+                builder.getInt64Ty()                             // end
+            };
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 llvm::PointerType::get(getAriaStringType(), 0), params, false);
             func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
-                "aria_string_substring", module);
+                "aria_string_substring_simple", module);
         }
         
         llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
         llvm::Value* start = codegenExpressionNode(expr->arguments[1].get(), this);
         llvm::Value* end = codegenExpressionNode(expr->arguments[2].get(), this);
-        llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
-        return builder.CreateCall(func, {str, start, end}, "substr_result");
+        return builder.CreateCall(func, {str_ptr, start, end}, "substr_result");
     }
     
     // string_contains(string, string) -> bool
@@ -8225,6 +8230,45 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 }
                 // TODO: Add scalarization for int256, int512, int1024, int2048, int4096 if needed
                 // These would require platform-specific handling or rejection at semantic analysis
+            }
+            
+            // CRITICAL FIX 2: AriaString* pointer → char* for FFI (opaque pointer mode)
+            // In LLVM opaque pointer mode, AriaString* has type 'ptr' — can't detect by type alone.
+            // Detect via two sources:
+            //   a) String LITERALS: arg_value is a GlobalVariable pointing to struct.AriaString
+            //   b) String VARIABLES: identifier is in var_aria_types with type "string"
+            if (is_extern && arg_type->isPointerTy()) {
+                bool needs_data_extraction = false;
+                
+                // Case (a): String literal → GlobalVariable of type struct.AriaString
+                if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(arg_value)) {
+                    llvm::Type* val_type = gv->getValueType();
+                    if (val_type->isStructTy()) {
+                        llvm::StructType* st = llvm::cast<llvm::StructType>(val_type);
+                        if (st->hasName() && st->getName() == "struct.AriaString") {
+                            needs_data_extraction = true;
+                        }
+                    }
+                }
+                
+                // Case (b): String variable → identifier with var_aria_types["name"] == "string"
+                if (!needs_data_extraction && i < expr->arguments.size()) {
+                    ASTNode* arg_node = expr->arguments[i].get();
+                    if (arg_node->type == aria::ASTNode::NodeType::IDENTIFIER) {
+                        IdentifierExpr* ident = static_cast<IdentifierExpr*>(arg_node);
+                        auto type_it = var_aria_types.find(ident->name);
+                        if (type_it != var_aria_types.end() && type_it->second == "string") {
+                            needs_data_extraction = true;
+                        }
+                    }
+                }
+                
+                if (needs_data_extraction) {
+                    // Load AriaString struct from the AriaString* pointer, then extract .data
+                    llvm::StructType* aria_string_type = getAriaStringType();
+                    llvm::Value* str_struct = builder.CreateLoad(aria_string_type, arg_value, "str_struct_ffi");
+                    arg_value = builder.CreateExtractValue(str_struct, 0, "str_data_ffi");
+                }
             }
 
             // Array-to-pointer decay: flt64[N] → flt64@ (like C implicit array decay)
