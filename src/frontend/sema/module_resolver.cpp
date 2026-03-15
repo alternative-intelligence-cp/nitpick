@@ -20,12 +20,6 @@ ModuleResolver::ModuleResolver(const std::string& rootPath)
         searchPaths.push_back(stdlibPath.string());
     }
     
-    // Also add lib/std/ for legacy compatibility
-    fs::path libStdPath = fs::path(this->rootPath) / "lib" / "std";
-    if (fs::exists(libStdPath) && fs::is_directory(libStdPath)) {
-        searchPaths.push_back(libStdPath.string());
-    }
-    
     // Add standard library paths
     // /usr/lib/aria is the default system-wide installation
     #ifdef __linux__
@@ -100,12 +94,23 @@ std::string ModuleResolver::resolveModulePath(const std::vector<std::string>& pa
     if (isFilePath) {
         std::string filePath = path[0]; // File paths are stored as single string in path[0]
         
-        // Relative to current module
+        // 1. First try relative to current module (standard file-include semantics)
         std::string currentDir = getDirectory(currentModulePath);
         std::string resolved = normalizePath(filePath, currentDir);
         
         if (isValidAriaFile(resolved)) {
             return resolved;
+        }
+        
+        // 2. Fall back: try each search path (mirrors C -I include path behavior)
+        //    This lets tests in subdirs use "stdlib/wave.aria" even when they are
+        //    not at the project root.
+        for (const auto& searchPath : getSearchPaths()) {
+            fs::path candidate = fs::path(searchPath) / filePath;
+            std::string candidateStr = candidate.lexically_normal().string();
+            if (isValidAriaFile(candidateStr)) {
+                return candidateStr;
+            }
         }
         
         addError("File path '" + filePath + "' does not exist or is not a .aria file");
