@@ -996,3 +996,13 @@ AriaString* aria_string_from_int_hex_simple(int64_t value) {
     result->length = len;
     return result;
 }
+
+// ── Byte-level accessor ───────────────────────────────────────────────────────
+// Used by JSON parser and other byte-scanning code.
+// Extern declaration in Aria: extern func:aria_string_byte_at = int64(string:s, int64:i);
+// Note: Aria codegen passes a `string` extern arg as char* (extracts .data field).
+// So the first param must be const char*, NOT AriaString* or AriaString by value.
+int64_t aria_string_byte_at(const char* data, int64_t idx) {
+    if (!data || idx < 0) return -1;
+    return (int64_t)(unsigned char)data[idx];
+}

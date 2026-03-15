@@ -354,6 +354,9 @@ int64_t aria_string_index_of_simple(AriaString* haystack, AriaString* needle);
 AriaString* aria_string_substring_simple(AriaString* str, int64_t start, int64_t end);
 AriaString* aria_string_from_int_hex_simple(int64_t value);
 
+// Byte-level accessor (used by JSON parser / byte-scanning extern declarations)
+int64_t aria_string_byte_at(const char* data, int64_t idx);
+
 #ifdef __cplusplus
 }
 #endif
