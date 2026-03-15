@@ -1,0 +1,250 @@
+// aria_resource_mem.aria — Consumable Expiring Memory Cells  (LIB-23)
+//
+// A memory cell with configurable constraints on how many times it can be
+// read, written, and how long it lives (in CPU ticks via POSIX clock()).
+// When any constraint is exhausted the cell expires and all further access
+// returns an error result — errors are values, not exceptions.
+//
+// This is the Aria port of the ResourceMemory Python POC
+// (educational/memory-systems/resource-memory/python/resource_memory.py).
+//
+// ── Cell layout (wild int64->:cell, 9 elements) ───────────────────────────────
+//   cell[0]  value
+//   cell[1]  max_reads        (0i64-1i64 = unlimited; 0+ = constrained)
+//   cell[2]  max_writes       (0i64-1i64 = unlimited; 0+ = constrained)
+//   cell[3]  ttl_ticks        (0i64-1i64 = no TTL;    0+ = POSIX clock() ticks
+//                              until expiry from creation / last write)
+//   cell[4]  reads_used
+//   cell[5]  writes_used
+//   cell[6]  ttl_start        (clock() value at creation, or at last write)
+//   cell[7]  ttl_reset_on_write  (0 = no; 1 = refresh TTL clock on each write)
+//   cell[8]  expired_status   (0=live; 2=EXPIRED_READS; 3=EXPIRED_WRITES;
+//                              4=EXPIRED_TTL — set once, never cleared)
+//
+// ── Result layout (wild int64->:result, 6 elements) ──────────────────────────
+//   result[0]  ok          (1 = operation succeeded; 0 = cell expired)
+//   result[1]  value       (the cell's value; 0 on error results)
+//   result[2]  status      (RM_LIVE=0 | RM_WRITE_OK=1 | RM_EXP_READS=2
+//                           RM_EXP_WRITES=3 | RM_EXP_TTL=4)
+//   result[3]  reads_left  (0i64-1i64 = unlimited; 0+ = remaining reads)
+//   result[4]  writes_left (0i64-1i64 = unlimited; 0+ = remaining writes)
+//   result[5]  ttl_left    (0i64-1i64 = no TTL; 0+ = ticks remaining)
+//
+// ── Sentinel ─────────────────────────────────────────────────────────────────
+//   0i64 - 1i64  =  -1  =  "no constraint / unlimited" sentinel for any field.
+//
+// ── TTL note ─────────────────────────────────────────────────────────────────
+//   clock() measures CPU time consumed by the process (CLOCKS_PER_SEC = 1000000
+//   on Linux).  ttl_ticks = 1000000 ≈ 1 CPU-second of process time.
+//   In tests, set ttl_ticks large enough to survive the test run, or use
+//   rm_create_unlimited() / rm_create_reads_only() for constraint-only cells.
+//
+// ── Expiry priority ───────────────────────────────────────────────────────────
+//   TTL is checked first (time is always advancing), then reads, then writes.
+//   Once expired in any way, the cell stays expired permanently.
+//
+// ── Notes ────────────────────────────────────────────────────────────────────
+//   cell allocation:   caller must malloc(9i64 * 8i64)  (9 int64 slots)
+//   result allocation: caller must malloc(6i64 * 8i64)  (6 int64 slots)
+//   rm_create does NOT count as a write.
+
+extern func:malloc = wild int64*(int64:size);
+extern func:free   = void(wild int64*:ptr);
+extern func:clock  = int64();
+
+// ── Status constants ──────────────────────────────────────────────────────────
+pub func:rm_live        = int64() { pass(0i64); };
+pub func:rm_write_ok    = int64() { pass(1i64); };
+pub func:rm_exp_reads   = int64() { pass(2i64); };
+pub func:rm_exp_writes  = int64() { pass(3i64); };
+pub func:rm_exp_ttl     = int64() { pass(4i64); };
+
+// ── Unlimited sentinel ────────────────────────────────────────────────────────
+// Used for max_reads, max_writes, and ttl_ticks when there is no constraint.
+pub func:rm_no_limit    = int64() { pass(0i64 - 1i64); };
+
+// ── rm_create ─────────────────────────────────────────────────────────────────
+// Initialise a cell.  Caller provides a malloc'd 9-element int64 array.
+//
+//   max_reads          Pass rm_no_limit() for unlimited reads.
+//   max_writes         Pass rm_no_limit() for unlimited writes.
+//   ttl_ticks          Pass rm_no_limit() for no TTL.
+//   ttl_reset_on_write Pass 1i64 to refresh TTL clock on each successful write.
+//
+// The initial value set here does NOT count as a write.
+pub func:rm_create = NIL(
+    wild int64->:cell,
+    int64:value,
+    int64:max_reads,
+    int64:max_writes,
+    int64:ttl_ticks,
+    int64:ttl_reset_on_write) {
+    cell[0i64] = value;               // value
+    cell[1i64] = max_reads;           // max_reads        (rm_no_limit() = unlimited)
+    cell[2i64] = max_writes;          // max_writes       (rm_no_limit() = unlimited)
+    cell[3i64] = ttl_ticks;           // ttl_ticks        (rm_no_limit() = no TTL)
+    cell[4i64] = 0i64;                // reads_used
+    cell[5i64] = 0i64;                // writes_used
+    cell[6i64] = clock();             // ttl_start        (set on creation)
+    cell[7i64] = ttl_reset_on_write;  // ttl_reset_on_write  (1 = refresh on write)
+    cell[8i64] = 0i64;                // expired_status   (0 = live)
+    pass(NIL);
+};
+
+// ── rm_reads_left ─────────────────────────────────────────────────────────────
+// Returns remaining reads: rm_no_limit() if unlimited, else max - used (≥ 0).
+pub func:rm_reads_left = int64(wild int64->:cell) {
+    int64:max_r = cell[1i64];
+    if (max_r < 0i64) { pass(0i64 - 1i64); }   // unlimited sentinel
+    int64:left = max_r - cell[4i64];
+    if (left < 0i64) { left = 0i64; }
+    pass(left);
+};
+
+// ── rm_writes_left ────────────────────────────────────────────────────────────
+pub func:rm_writes_left = int64(wild int64->:cell) {
+    int64:max_w = cell[2i64];
+    if (max_w < 0i64) { pass(0i64 - 1i64); }   // unlimited sentinel
+    int64:left = max_w - cell[5i64];
+    if (left < 0i64) { left = 0i64; }
+    pass(left);
+};
+
+// ── rm_ttl_left ───────────────────────────────────────────────────────────────
+// Returns ticks remaining: rm_no_limit() if no TTL, else ticks left (≥ 0).
+pub func:rm_ttl_left = int64(wild int64->:cell) {
+    int64:ttl = cell[3i64];
+    if (ttl < 0i64) { pass(0i64 - 1i64); }     // no TTL sentinel
+    int64:elapsed = clock() - cell[6i64];
+    int64:left = ttl - elapsed;
+    if (left < 0i64) { left = 0i64; }
+    pass(left);
+};
+
+// ── rm_check_expiry ───────────────────────────────────────────────────────────
+// Return the expiry status code (2/3/4) if the cell is expired, else 0.
+// Does NOT write cell[8] (use rm_lock_expiry for that).
+// Expiry order: TTL first, reads second, writes third.
+pub func:rm_check_expiry = int64(wild int64->:cell) {
+    // Fast-path: already locked in as expired.
+    if (cell[8i64] != 0i64) { pass(cell[8i64]); }
+
+    // TTL check (time is always running).
+    int64:ttl = cell[3i64];
+    if (ttl >= 0i64) {
+        int64:elapsed = clock() - cell[6i64];
+        if (elapsed >= ttl) { pass(4i64); }     // rm_exp_ttl
+    }
+
+    // Reads check.
+    int64:max_r = cell[1i64];
+    if (max_r >= 0i64) {
+        if (cell[4i64] >= max_r) { pass(2i64); }   // rm_exp_reads
+    }
+
+    // Writes check.
+    int64:max_w = cell[2i64];
+    if (max_w >= 0i64) {
+        if (cell[5i64] >= max_w) { pass(3i64); }   // rm_exp_writes
+    }
+
+    pass(0i64);  // live
+};
+
+// ── rm_fill_ok ────────────────────────────────────────────────────────────────
+// Populate result as a success (ok=1) with the cell's current value.
+pub func:rm_fill_ok = NIL(wild int64->:result, wild int64->:cell, int64:status_code) {
+    result[0i64] = 1i64;
+    result[1i64] = cell[0i64];
+    result[2i64] = status_code;
+    result[3i64] = raw(rm_reads_left(cell));
+    result[4i64] = raw(rm_writes_left(cell));
+    result[5i64] = raw(rm_ttl_left(cell));
+    pass(NIL);
+};
+
+// ── rm_fill_err ───────────────────────────────────────────────────────────────
+// Populate result as an error (ok=0, value=0).
+pub func:rm_fill_err = NIL(wild int64->:result, wild int64->:cell, int64:status_code) {
+    result[0i64] = 0i64;
+    result[1i64] = 0i64;
+    result[2i64] = status_code;
+    result[3i64] = raw(rm_reads_left(cell));
+    result[4i64] = raw(rm_writes_left(cell));
+    result[5i64] = raw(rm_ttl_left(cell));
+    pass(NIL);
+};
+
+// ── rm_read ───────────────────────────────────────────────────────────────────
+// Read the cell's value.  Consumes one read count if max_reads is set.
+//
+//   result[0] = 1, result[1] = value  — if live
+//   result[0] = 0                     — if expired
+pub func:rm_read = NIL(wild int64->:cell, wild int64->:result) {
+    int64:expired = raw(rm_check_expiry(cell));
+    if (expired != 0i64) {
+        cell[8i64] = expired;
+        drop(rm_fill_err(result, cell, expired));
+        pass(NIL);
+    }
+    cell[4i64] = cell[4i64] + 1i64;
+    drop(rm_fill_ok(result, cell, 0i64));   // status = rm_live
+    pass(NIL);
+};
+
+// ── rm_write ──────────────────────────────────────────────────────────────────
+// Write a new value.  Consumes one write count if max_writes is set.
+// Resets TTL clock if ttl_reset_on_write == 1 and TTL is configured.
+//
+//   result[0] = 1, result[2] = rm_write_ok (1)  — if live
+//   result[0] = 0                                — if expired
+pub func:rm_write = NIL(wild int64->:cell, int64:value, wild int64->:result) {
+    int64:expired = raw(rm_check_expiry(cell));
+    if (expired != 0i64) {
+        cell[8i64] = expired;
+        drop(rm_fill_err(result, cell, expired));
+        pass(NIL);
+    }
+    cell[0i64] = value;
+    cell[5i64] = cell[5i64] + 1i64;
+    if (cell[7i64] == 1i64) {           // ttl_reset_on_write?
+        if (cell[3i64] >= 0i64) {       // TTL configured?
+            cell[6i64] = clock();       // refresh ttl_start
+        }
+    }
+    drop(rm_fill_ok(result, cell, 1i64));   // status = rm_write_ok
+    pass(NIL);
+};
+
+// ── rm_peek ───────────────────────────────────────────────────────────────────
+// Read the value without consuming a read count.
+// Useful for status checks before committing to a read.
+//
+//   result[0] = 1, result[1] = value  — if live
+//   result[0] = 0                     — if expired
+pub func:rm_peek = NIL(wild int64->:cell, wild int64->:result) {
+    int64:expired = raw(rm_check_expiry(cell));
+    if (expired != 0i64) {
+        cell[8i64] = expired;
+        drop(rm_fill_err(result, cell, expired));
+        pass(NIL);
+    }
+    drop(rm_fill_ok(result, cell, 0i64));   // status = rm_live
+    pass(NIL);
+};
+
+// ── rm_is_live ────────────────────────────────────────────────────────────────
+// True if the cell has not expired.
+pub func:rm_is_live = bool(wild int64->:cell) {
+    int64:expired = raw(rm_check_expiry(cell));
+    pass(expired == 0i64);
+};
+
+// ── rm_status ─────────────────────────────────────────────────────────────────
+// Return the current status code without consuming any resource.
+// Returns rm_live (0) if not expired, or the expiry code (2/3/4).
+pub func:rm_status = int64(wild int64->:cell) {
+    int64:expired = raw(rm_check_expiry(cell));
+    if (expired != 0i64) { pass(expired); }
+    pass(0i64);   // rm_live
+};

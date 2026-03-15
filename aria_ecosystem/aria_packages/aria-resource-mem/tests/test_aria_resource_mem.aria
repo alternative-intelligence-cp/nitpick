@@ -1,0 +1,275 @@
+// test_aria_resource_mem.aria — LIB-24  test suite  (aria-resource-mem)
+//
+// 20 deterministic tests covering read/write constraints, expiry semantics,
+// peek, is_live, status, and resource-left accounting.
+//
+// Status code reference (stored in result[2]):
+//   0 = RM_LIVE      1 = RM_WRITE_OK   2 = RM_EXP_READS
+//   3 = RM_EXP_WRITES  4 = RM_EXP_TTL
+//   result[0]: 1 = ok,  0 = error
+//   Unlimited sentinel: 0i64 - 1i64 = -1
+
+use "../src/aria_resource_mem.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    // One cell buffer (9 int64 slots) + one result buffer (6 int64 slots).
+    wild int64->:cell   = malloc(9i64 * 8i64);
+    wild int64->:result = malloc(6i64 * 8i64);
+
+    // Unlimited sentinel: -1 (0i64 - 1i64)
+    int64:UNLIMITED = 0i64 - 1i64;
+
+    int64:passed = 0i64;
+    int64:total  = 0i64;
+
+    print("aria-resource-mem LIB-24 test suite\n");
+    print("=====================================\n");
+
+    // ── 01: unlimited — read returns ok=1, value=42, status=0 (LIVE) ─────────
+    total = total + 1i64;
+    drop(rm_create(cell, 42i64, UNLIMITED, UNLIMITED, UNLIMITED, 0i64));
+    drop(rm_read(cell, result));
+    if (result[0i64] == 1i64 && result[1i64] == 42i64 && result[2i64] == 0i64) {
+        print("[PASS] 01: unlimited read ok=1, value=42, status=LIVE\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 01: unlimited read ok=1, value=42, status=LIVE\n");
+    }
+
+    // ── 02: unlimited — reads_left = -1 after read ───────────────────────────
+    total = total + 1i64;
+    if (result[3i64] == UNLIMITED) {
+        print("[PASS] 02: unlimited reads_left = -1 after read\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 02: unlimited reads_left = -1 after read\n");
+    }
+
+    // ── 03: unlimited — writes_left = -1 after read ──────────────────────────
+    total = total + 1i64;
+    if (result[4i64] == UNLIMITED) {
+        print("[PASS] 03: unlimited writes_left = -1 after read\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 03: unlimited writes_left = -1 after read\n");
+    }
+
+    // ── 04: no TTL — ttl_left = -1 ───────────────────────────────────────────
+    total = total + 1i64;
+    if (result[5i64] == UNLIMITED) {
+        print("[PASS] 04: no TTL → ttl_left = -1\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 04: no TTL → ttl_left = -1\n");
+    }
+
+    // ── 05: rm_is_live = true for fresh unlimited cell ────────────────────────
+    total = total + 1i64;
+    drop(rm_create(cell, 7i64, UNLIMITED, UNLIMITED, UNLIMITED, 0i64));
+    bool:live05 = rm_is_live(cell);
+    if (live05) {
+        print("[PASS] 05: rm_is_live = true for fresh unlimited cell\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 05: rm_is_live = true for fresh unlimited cell\n");
+    }
+
+    // ── 06: rm_status = 0 (LIVE) for fresh unlimited cell ────────────────────
+    total = total + 1i64;
+    int64:st06 = rm_status(cell);
+    if (st06 == 0i64) {
+        print("[PASS] 06: rm_status = 0 (LIVE) for fresh cell\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 06: rm_status = 0 (LIVE) for fresh cell\n");
+    }
+
+    // ── 07: read-once OTP — first read ok=1, value=99 ────────────────────────
+    total = total + 1i64;
+    drop(rm_create(cell, 99i64, 1i64, UNLIMITED, UNLIMITED, 0i64));
+    drop(rm_read(cell, result));
+    if (result[0i64] == 1i64 && result[1i64] == 99i64) {
+        print("[PASS] 07: read-once OTP — first read ok=1, value=99\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 07: read-once OTP — first read ok=1, value=99\n");
+    }
+
+    // ── 08: read-once OTP — reads_left = 0 after first read ─────────────────
+    total = total + 1i64;
+    if (result[3i64] == 0i64) {
+        print("[PASS] 08: read-once OTP — reads_left = 0 after first read\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 08: read-once OTP — reads_left = 0 after first read\n");
+    }
+
+    // ── 09: read-once OTP — second read fails (ok=0, status=2 EXP_READS) ─────
+    total = total + 1i64;
+    drop(rm_read(cell, result));
+    if (result[0i64] == 0i64 && result[2i64] == 2i64) {
+        print("[PASS] 09: read-once OTP — second read ok=0, status=EXP_READS\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 09: read-once OTP — second read ok=0, status=EXP_READS\n");
+    }
+
+    // ── 10: rm_is_live = false after read exhaustion ──────────────────────────
+    total = total + 1i64;
+    bool:live10 = rm_is_live(cell);
+    if (!live10) {
+        print("[PASS] 10: rm_is_live = false after read exhaustion\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 10: rm_is_live = false after read exhaustion\n");
+    }
+
+    // ── 11: rm_status = 2 (EXP_READS) after read exhaustion ─────────────────
+    total = total + 1i64;
+    int64:st11 = rm_status(cell);
+    if (st11 == 2i64) {
+        print("[PASS] 11: rm_status = 2 (EXP_READS) after exhaustion\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 11: rm_status = 2 (EXP_READS) after exhaustion\n");
+    }
+
+    // ── 12: rm_peek doesn't consume read count ────────────────────────────────
+    // Cell has max_reads=2; peek twice then read twice — all four ops succeed.
+    total = total + 1i64;
+    drop(rm_create(cell, 55i64, 2i64, UNLIMITED, UNLIMITED, 0i64));
+    drop(rm_peek(cell, result));
+    bool:p1 = (result[0i64] == 1i64);
+    drop(rm_peek(cell, result));
+    bool:p2 = (result[0i64] == 1i64);
+    drop(rm_read(cell, result));
+    bool:r1 = (result[0i64] == 1i64);
+    drop(rm_read(cell, result));
+    bool:r2 = (result[0i64] == 1i64);
+    if (p1 && p2 && r1 && r2) {
+        print("[PASS] 12: rm_peek doesn't consume read count\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 12: rm_peek doesn't consume read count\n");
+    }
+
+    // ── 13: rm_peek on expired cell → ok=0 ───────────────────────────────────
+    // Cell is now expired (2 reads consumed by reads in test 12).
+    total = total + 1i64;
+    drop(rm_peek(cell, result));
+    if (result[0i64] == 0i64) {
+        print("[PASS] 13: rm_peek on expired cell → ok=0\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 13: rm_peek on expired cell → ok=0\n");
+    }
+
+    // ── 14: rm_write updates value — subsequent read returns new value ────────
+    total = total + 1i64;
+    drop(rm_create(cell, 10i64, UNLIMITED, UNLIMITED, UNLIMITED, 0i64));
+    drop(rm_write(cell, 20i64, result));
+    bool:write_ok14 = (result[0i64] == 1i64);
+    drop(rm_read(cell, result));
+    if (write_ok14 && result[1i64] == 20i64) {
+        print("[PASS] 14: rm_write updates value, read returns 20\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 14: rm_write updates value, read returns 20\n");
+    }
+
+    // ── 15: rm_write result status = 1 (WRITE_OK) ────────────────────────────
+    total = total + 1i64;
+    drop(rm_create(cell, 0i64, UNLIMITED, UNLIMITED, UNLIMITED, 0i64));
+    drop(rm_write(cell, 5i64, result));
+    if (result[0i64] == 1i64 && result[2i64] == 1i64) {
+        print("[PASS] 15: rm_write result status = 1 (WRITE_OK)\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 15: rm_write result status = 1 (WRITE_OK)\n");
+    }
+
+    // ── 16: write-limited: first write ok, second write fails ────────────────
+    total = total + 1i64;
+    drop(rm_create(cell, 0i64, UNLIMITED, 1i64, UNLIMITED, 0i64));
+    drop(rm_write(cell, 100i64, result));
+    bool:w1_ok16 = (result[0i64] == 1i64);
+    drop(rm_write(cell, 200i64, result));
+    if (w1_ok16 && result[0i64] == 0i64 && result[2i64] == 3i64) {
+        print("[PASS] 16: write-limited: second write ok=0, status=EXP_WRITES\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 16: write-limited: second write ok=0, status=EXP_WRITES\n");
+    }
+
+    // ── 17: rm_status = 3 (EXP_WRITES) after write exhaustion ───────────────
+    total = total + 1i64;
+    int64:st17 = rm_status(cell);
+    if (st17 == 3i64) {
+        print("[PASS] 17: rm_status = 3 (EXP_WRITES) after write exhaustion\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 17: rm_status = 3 (EXP_WRITES) after write exhaustion\n");
+    }
+
+    // ── 18: writes_left decrements: 2 → 1 after first write ─────────────────
+    total = total + 1i64;
+    drop(rm_create(cell, 0i64, UNLIMITED, 2i64, UNLIMITED, 0i64));
+    drop(rm_write(cell, 1i64, result));
+    if (result[4i64] == 1i64) {
+        print("[PASS] 18: writes_left 2→1 after first write\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 18: writes_left 2→1 after first write\n");
+    }
+
+    // ── 19: reads_left decrements: 3 → 2 → 1 → 0 ────────────────────────────
+    total = total + 1i64;
+    drop(rm_create(cell, 9i64, 3i64, UNLIMITED, UNLIMITED, 0i64));
+    drop(rm_read(cell, result));
+    int64:la = result[3i64];    // should be 2
+    drop(rm_read(cell, result));
+    int64:lb = result[3i64];    // should be 1
+    drop(rm_read(cell, result));
+    int64:lc = result[3i64];    // should be 0
+    if (la == 2i64 && lb == 1i64 && lc == 0i64) {
+        print("[PASS] 19: reads_left 3→2→1→0 across three reads\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 19: reads_left 3→2→1→0 across three reads\n");
+    }
+
+    // ── 20: write-expiry locks in — subsequent reads also fail ───────────────
+    total = total + 1i64;
+    drop(rm_create(cell, 77i64, UNLIMITED, 1i64, UNLIMITED, 0i64));
+    drop(rm_write(cell, 88i64, result));   // one write allowed → expires
+    drop(rm_write(cell, 99i64, result));   // second write → fail
+    bool:ew20 = (result[0i64] == 0i64 && result[2i64] == 3i64);
+    drop(rm_read(cell, result));           // read on write-expired cell → fail
+    bool:er20 = (result[0i64] == 0i64);
+    if (ew20 && er20) {
+        print("[PASS] 20: all ops fail once write-expiry locks in\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 20: all ops fail once write-expiry locks in\n");
+    }
+
+    // ── summary ──────────────────────────────────────────────────────────────
+    print("---\n");
+    if (passed == total) {
+        print("PASS: all ");
+        print(string_from_int(total));
+        print(" aria-resource-mem tests passed\n");
+    } else {
+        print("FAIL: ");
+        print(string_from_int(passed));
+        print("/");
+        print(string_from_int(total));
+        print(" passed\n");
+    }
+
+    free(result);
+    free(cell);
+    pass(0i32);
+};
