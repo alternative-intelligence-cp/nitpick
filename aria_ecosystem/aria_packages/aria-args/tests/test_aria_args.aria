@@ -1,0 +1,246 @@
+// test_aria_args.aria — aria-args LIB-21 test suite (20 tests)
+//
+// Build: aria_make run from aria-args/ package root, then:
+//   .aria_make/build/test-aria-args
+//
+// Testing strategy:
+//   Tests 01-18: use args_make* to build deterministic packed strings; all
+//                expected values are string/bool/int32 constants.
+//   Test 19:     smoke-test args_load() — verify it returns a non-empty string.
+//   Test 20:     verify args_load() includes the test binary name.
+//
+// Test coverage:
+//   args_has     — tests 01, 02, 03
+//   args_get     — tests 04, 05, 06, 07
+//   args_get_or  — tests 08, 09
+//   args_at      — tests 10, 11, 12, 13
+//   args_count   — tests 14, 15
+//   args_program — test 16
+//   args_make1/3 — tests 17, 18
+//   args_load    — tests 19, 20
+
+// args_load uses fopen/fgetc/fclose from libc.  Consumers must declare these
+// extern symbols before using the library (extern blocks are file-scoped in Aria).
+extern "libc" {
+    func:fopen  = int64(string:path, string:mode);
+    func:fgetc  = int32(int64:fp);
+    func:fclose = int32(int64:fp);
+}
+
+use "../src/aria_args.aria".*;
+
+// args_load: read /proc/self/cmdline and return packed args string "|prog|a1|...|"
+// This is a consumer-implemented function (extern symbols are file-scoped in Aria).
+// Copy this pattern into your own binary to get CLI argument loading.
+func:args_load = string() {
+    int64:fp = fopen("/proc/self/cmdline", "r");
+    if (fp == 0i64) { pass("|"); }
+    string:result  = "|";
+    string:current = "";
+    int32:c = fgetc(fp);
+    while (c >= 0i32) {
+        if (c == 0i32) {
+            if (string_length(current) > 0i64) {
+                result  = string_concat(result, string_concat(current, "|"));
+                current = "";
+            }
+        }
+        if (c > 0i32) {
+            current = string_concat(current, string_from_char(@cast<int8>(c)));
+        }
+        c = fgetc(fp);
+    }
+    if (string_length(current) > 0i64) {
+        result = string_concat(result, string_concat(current, "|"));
+    }
+    drop(fclose(fp));
+    pass(result);
+};
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    int64:passed = 0i64;
+    int64:failed = 0i64;
+
+    drop(println("aria-args -- LIB-21"));
+    drop(println("==================="));
+
+    // ── Build test fixtures ───────────────────────────────────────────────────
+    // "|myapp|--verbose|--output|file.txt|--count|5|"   (6 tokens, 5 user args)
+    string:args6 = args_make6("myapp", "--verbose", "--output", "file.txt", "--count", "5");
+    // "|myapp|"                                          (1 token,  0 user args)
+    string:args1 = args_make1("myapp");
+    // "|myapp|--flag|"                                   (2 tokens, 1 user arg)
+    string:args2 = args_make2("myapp", "--flag");
+    // "|myapp|--verbose|--output|file.txt|"              (4 tokens, 3 user args)
+    string:args4 = args_make4("myapp", "--verbose", "--output", "file.txt");
+
+    // ── args_has ─────────────────────────────────────────────────────────────
+
+    // test 01: flag that IS present → true
+    bool:r01 = args_has(args6, "--verbose");
+    int64:c01 = 0i64;
+    if (r01) { c01 = 1i64; }
+    if (c01 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 01 args_has: present flag → true")); }
+    if (c01 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 01 args_has: present flag → true")); }
+
+    // test 02: flag that is NOT present → false
+    bool:r02 = args_has(args6, "--debug");
+    int64:c02 = 0i64;
+    if (r02 == false) { c02 = 1i64; }
+    if (c02 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 02 args_has: absent flag → false")); }
+    if (c02 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 02 args_has: absent flag → false")); }
+
+    // test 03: prefix of a present flag does NOT match ("--v" ≠ "--verbose")
+    bool:r03 = args_has(args6, "--v");
+    int64:c03 = 0i64;
+    if (r03 == false) { c03 = 1i64; }
+    if (c03 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 03 args_has: prefix no false-positive")); }
+    if (c03 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 03 args_has: prefix no false-positive")); }
+
+    // ── args_get ─────────────────────────────────────────────────────────────
+
+    // test 04: retrieve value after --output → "file.txt"
+    string:r04 = args_get(args6, "--output");
+    int64:c04 = 0i64;
+    if (r04 == "file.txt") { c04 = 1i64; }
+    if (c04 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 04 args_get: --output → file.txt")); }
+    if (c04 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 04 args_get: --output → file.txt")); }
+
+    // test 05: retrieve numeric value after --count → "5"
+    string:r05 = args_get(args6, "--count");
+    int64:c05 = 0i64;
+    if (r05 == "5") { c05 = 1i64; }
+    if (c05 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 05 args_get: --count → 5")); }
+    if (c05 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 05 args_get: --count → 5")); }
+
+    // test 06: key NOT present → ""
+    string:r06 = args_get(args6, "--missing");
+    int64:c06 = 0i64;
+    if (r06 == "") { c06 = 1i64; }
+    if (c06 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 06 args_get: absent key → empty string")); }
+    if (c06 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 06 args_get: absent key → empty string")); }
+
+    // test 07: key is the LAST token (no value after it) → ""
+    // args2 = "|myapp|--flag|" — "--flag" has nothing after the closing "|"
+    string:r07 = args_get(args2, "--flag");
+    int64:c07 = 0i64;
+    if (r07 == "") { c07 = 1i64; }
+    if (c07 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 07 args_get: trailing key → empty string")); }
+    if (c07 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 07 args_get: trailing key → empty string")); }
+
+    // ── args_get_or ──────────────────────────────────────────────────────────
+
+    // test 08: key present → returns actual value, not default
+    string:r08 = args_get_or(args6, "--output", "default.txt");
+    int64:c08 = 0i64;
+    if (r08 == "file.txt") { c08 = 1i64; }
+    if (c08 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 08 args_get_or: present → actual value")); }
+    if (c08 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 08 args_get_or: present → actual value")); }
+
+    // test 09: key absent → returns default
+    string:r09 = args_get_or(args6, "--missing", "fallback");
+    int64:c09 = 0i64;
+    if (r09 == "fallback") { c09 = 1i64; }
+    if (c09 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 09 args_get_or: absent → default")); }
+    if (c09 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 09 args_get_or: absent → default")); }
+
+    // ── args_at ──────────────────────────────────────────────────────────────
+
+    // test 10: n=0 → program name
+    string:r10 = args_at(args6, 0i32);
+    int64:c10 = 0i64;
+    if (r10 == "myapp") { c10 = 1i64; }
+    if (c10 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 10 args_at(0) → program name")); }
+    if (c10 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 10 args_at(0) → program name")); }
+
+    // test 11: n=1 → first user arg
+    string:r11 = args_at(args6, 1i32);
+    int64:c11 = 0i64;
+    if (r11 == "--verbose") { c11 = 1i64; }
+    if (c11 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 11 args_at(1) → --verbose")); }
+    if (c11 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 11 args_at(1) → --verbose")); }
+
+    // test 12: n=3 → fourth token (file.txt)
+    string:r12 = args_at(args6, 3i32);
+    int64:c12 = 0i64;
+    if (r12 == "file.txt") { c12 = 1i64; }
+    if (c12 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 12 args_at(3) → file.txt")); }
+    if (c12 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 12 args_at(3) → file.txt")); }
+
+    // test 13: n out of range → ""
+    string:r13 = args_at(args6, 100i32);
+    int64:c13 = 0i64;
+    if (r13 == "") { c13 = 1i64; }
+    if (c13 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 13 args_at(100) → empty string")); }
+    if (c13 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 13 args_at(100) → empty string")); }
+
+    // ── args_count ───────────────────────────────────────────────────────────
+
+    // test 14: only program name, no user args → 0
+    int32:r14 = args_count(args1);
+    int64:c14 = 0i64;
+    if (r14 == 0i32) { c14 = 1i64; }
+    if (c14 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 14 args_count: only prog → 0")); }
+    if (c14 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 14 args_count: only prog → 0")); }
+
+    // test 15: args6 has 5 user args after program name → 5
+    int32:r15 = args_count(args6);
+    int64:c15 = 0i64;
+    if (r15 == 5i32) { c15 = 1i64; }
+    if (c15 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 15 args_count: 5-arg string → 5")); }
+    if (c15 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 15 args_count: 5-arg string → 5")); }
+
+    // ── args_program ─────────────────────────────────────────────────────────
+
+    // test 16: extract program name (argv[0])
+    string:r16 = args_program(args4);
+    int64:c16 = 0i64;
+    if (r16 == "myapp") { c16 = 1i64; }
+    if (c16 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 16 args_program → myapp")); }
+    if (c16 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 16 args_program → myapp")); }
+
+    // ── args_make builder format checks ──────────────────────────────────────
+
+    // test 17: args_make1 produces correct format
+    string:r17 = args_make1("prog");
+    int64:c17 = 0i64;
+    if (r17 == "|prog|") { c17 = 1i64; }
+    if (c17 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 17 args_make1 format: |prog|")); }
+    if (c17 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 17 args_make1 format: |prog|")); }
+
+    // test 18: args_make3 produces correct format
+    string:r18 = args_make3("prog", "--a", "--b");
+    int64:c18 = 0i64;
+    if (r18 == "|prog|--a|--b|") { c18 = 1i64; }
+    if (c18 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 18 args_make3 format: |prog|--a|--b|")); }
+    if (c18 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 18 args_make3 format: |prog|--a|--b|")); }
+
+    // ── args_load smoke tests (reads /proc/self/cmdline at runtime) ───────────
+
+    // test 19: args_load returns non-empty string (at minimum contains "|")
+    string:r19 = raw(args_load());
+    int64:c19 = 0i64;
+    if (string_length(r19) > 1i64) { c19 = 1i64; }
+    if (c19 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 19 args_load: non-empty result")); }
+    if (c19 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 19 args_load: non-empty result")); }
+
+    // test 20: args_load result contains the test binary name
+    // The binary is named "test-aria-args" by build.abc.
+    string:r20 = raw(args_load());
+    int64:c20 = 0i64;
+    if (string_contains(r20, "test-aria-args")) { c20 = 1i64; }
+    if (c20 == 1i64) { passed = passed + 1i64; drop(println("[PASS] 20 args_load: contains binary name")); }
+    if (c20 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] 20 args_load: contains binary name")); }
+
+    // ── summary ──────────────────────────────────────────────────────────────
+
+    drop(println("---"));
+    if (failed == 0i64) {
+        drop(println("PASS: all 20 aria-args tests passed"));
+        pass(0i32);
+    }
+    drop(println("FAIL: some aria-args tests failed"));
+    pass(1i32);
+};

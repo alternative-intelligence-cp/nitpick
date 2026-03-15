@@ -1,0 +1,25 @@
+# build.abc — aria-args package (LIB-21)
+#
+# Targets:
+#   aria-args       — compiled library for downstream packages
+#   test-aria-args  — test binary; imports src via `use "../src/aria_args.aria".*;`
+#
+# Note: extern "libc" in aria_args.aria uses fopen/fgetc/fclose.
+# libc is always linked by the C runtime so no explicit deps are needed.
+
+[project]
+name = "aria-args"
+version = "0.1.0"
+compiler = "/home/randy/Workspace/REPOS/aria/build/ariac"
+
+[target.aria-args]
+type = "library"
+sources = ["src/aria_args.aria"]
+deps = []
+flags = []
+
+[target.test-aria-args]
+type = "binary"
+sources = ["tests/test_aria_args.aria"]
+deps = []
+flags = []

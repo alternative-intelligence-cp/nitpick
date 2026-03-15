@@ -1,0 +1,176 @@
+// aria-args v0.1.0 — CLI argument parsing for Aria (LIB-21)
+//
+// Strategy: encode argv as a pipe-separated Aria string "|prog|arg1|arg2|...|"
+// This lets the full built-in string intrinsic set do all the heavy lifting:
+//   string_contains  — O(n) flag search with no false-positive prefix matches
+//   string_index_of  — find key position for value extraction
+//   string_substring — extract individual arg values
+//   string_equals    — exact match in args_count loop
+//
+// Argument loading uses /proc/self/cmdline (Linux), read via fopen/fgetc/fclose.
+// Consumers that call args_load() MUST declare these extern symbols (extern
+// blocks are file-scoped in Aria, not exported by use imports):
+//
+//   extern "libc" {
+//       func:fopen  = int64(string:path, string:mode);
+//       func:fgetc  = int32(int64:fp);
+//       func:fclose = int32(int64:fp);
+//   }
+//
+// Public API (9 functions — args_load is consumer-implemented; see below):
+//   args_has(args, flag)              → bool    "--flag" present?
+//   args_get(args, key)               → string  value after "--key", "" if absent
+//   args_get_or(args, key, default)   → string  value or fallback default
+//   args_at(args, n)                  → string  nth arg (0 = program name)
+//   args_count(args)                  → int32   arg count excluding program name
+//   args_program(args)                → string  argv[0]
+//   args_make1..args_make8            → string  build args string (for testing)
+//
+// args_load pattern (implement in your binary):
+//   Read /proc/self/cmdline (Linux) to get the packed args string.
+//   Declare these extern symbols in your binary, then copy the implementation
+//   from README.md or tests/test_aria_args.aria.
+//
+//   extern "libc" {
+//       func:fopen  = int64(string:path, string:mode);
+//       func:fgetc  = int32(int64:fp);
+//       func:fclose = int32(int64:fp);
+//   }
+//   // args_load reads /proc/self/cmdline and returns a packed args string.
+//   func:args_load = string() { ... }  // copy from README.md
+//
+// Format contract: every args string has a leading and trailing "|".
+//   "|prog|--verbose|--output|file.txt|"
+//   args_at(args, 0) = "prog"   args_at(args, 2) = "--output"
+
+// ── Internal helper ───────────────────────────────────────────────────────────
+
+// Extract the Nth pipe-delimited token from "|a0|a1|a2|...|" (0-indexed).
+// n=0 → first token (program name).  Returns "" if n is out of range.
+func:_args_token = string(string:args, int32:n) {
+    int64:len = string_length(args);
+    if (len < 2i64) { pass(""); }      // degenerate: no content between pipes
+
+    int64:start = 1i64;                // skip the leading "|"
+    int32:remaining = n;
+
+    while (remaining >= 0i32) {
+        string:rest = string_substring(args, start, len);
+        int64:sep = string_index_of(rest, "|");
+        if (sep < 0i64) { pass(""); } // no more tokens
+        if (remaining == 0i32) {
+            pass(string_substring(rest, 0i64, sep));
+        }
+        remaining = remaining - 1i32;
+        start = start + sep + 1i64;
+    }
+    pass("");
+};
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+// Check whether a flag is present in the packed args string.
+// Uses "|flag|" needle so "--v" never matches "--verbose".
+// args_has("|prog|--verbose|", "--verbose") → true
+// args_has("|prog|--verbose|", "--v")       → false
+pub func:args_has = bool(string:args, string:flag) {
+    string:needle = string_concat("|", string_concat(flag, "|"));
+    pass(string_contains(args, needle));
+};
+
+// Return the value of an option that takes a following argument.
+// args_get("|prog|--output|file.txt|", "--output") → "file.txt"
+// Returns "" when the key is absent or is the last argument (no value follows).
+pub func:args_get = string(string:args, string:key) {
+    string:needle = string_concat("|", string_concat(key, "|"));
+    int64:pos = string_index_of(args, needle);
+    if (pos < 0i64) { pass(""); }
+
+    int64:value_start = pos + string_length(needle);
+    int64:len = string_length(args);
+    if (value_start >= len) { pass(""); }  // key was last token; no value
+
+    string:rest = string_substring(args, value_start, len);
+    int64:sep = string_index_of(rest, "|");
+    if (sep <= 0i64) { pass(""); }        // empty or missing closing pipe
+    pass(string_substring(rest, 0i64, sep));
+};
+
+// Return the value of an option, or default_val when the option is absent.
+// args_get_or(args, "--jobs", "4") → "4" when --jobs is not provided
+pub func:args_get_or = string(string:args, string:key, string:default_val) {
+    string:result = raw(args_get(args, key));
+    if (string_length(result) == 0i64) { pass(default_val); }
+    pass(result);
+};
+
+// Return the Nth argument (0-indexed; 0 = program name, 1 = first user arg).
+// Returns "" when n is out of range.
+// args_at("|prog|--flag|value|", 2) → "value"
+pub func:args_at = string(string:args, int32:n) {
+    pass(raw(_args_token(args, n)));
+};
+
+// Return argv[0] — the program name (or path) as invoked.
+pub func:args_program = string(string:args) {
+    pass(raw(_args_token(args, 0i32)));
+};
+
+// Return the number of arguments EXCLUDING the program name.
+// args_count("|prog|")                       → 0
+// args_count("|prog|--verbose|--output|f|") → 3
+pub func:args_count = int32(string:args) {
+    int64:len   = string_length(args);
+    int64:pipes = 0i64;
+    int64:i     = 0i64;
+    while (i < len) {
+        string:ch = string_substring(args, i, i + 1i64);
+        if (string_equals(ch, "|")) {
+            pipes = pipes + 1i64;
+        }
+        i = i + 1i64;
+    }
+    // Format "|a0|a1|...|aN|" has (N+2) pipes total.
+    // User args N = pipes - 2.  Guard against malformed strings.
+    int64:count = pipes - 2i64;
+    if (count < 0i64) { pass(0i32); }
+    pass(@cast<int32>(count));
+};
+
+// ── Builder helpers (build a packed args string from literal values) ──────────
+// Primarily for unit tests, but also useful when hardcoding default arg sets.
+
+pub func:args_make1 = string(string:a0) {
+    pass(string_concat("|", string_concat(a0, "|")));
+};
+
+pub func:args_make2 = string(string:a0, string:a1) {
+    string:base = raw(args_make1(a0));
+    pass(string_concat(base, string_concat(a1, "|")));
+};
+
+pub func:args_make3 = string(string:a0, string:a1, string:a2) {
+    string:base = raw(args_make2(a0, a1));
+    pass(string_concat(base, string_concat(a2, "|")));
+};
+
+pub func:args_make4 = string(string:a0, string:a1, string:a2, string:a3) {
+    string:base = raw(args_make3(a0, a1, a2));
+    pass(string_concat(base, string_concat(a3, "|")));
+};
+
+pub func:args_make5 = string(string:a0, string:a1, string:a2, string:a3, string:a4) {
+    string:base = raw(args_make4(a0, a1, a2, a3));
+    pass(string_concat(base, string_concat(a4, "|")));
+};
+
+pub func:args_make6 = string(string:a0, string:a1, string:a2, string:a3, string:a4, string:a5) {
+    string:base = raw(args_make5(a0, a1, a2, a3, a4));
+    pass(string_concat(base, string_concat(a5, "|")));
+};
+
+pub func:args_make8 = string(string:a0, string:a1, string:a2, string:a3, string:a4, string:a5, string:a6, string:a7) {
+    string:base = raw(args_make6(a0, a1, a2, a3, a4, a5));
+    string:tail = string_concat(a6, string_concat("|", string_concat(a7, "|")));
+    pass(string_concat(base, tail));
+};
