@@ -1,0 +1,239 @@
+// test_aria_json.aria — LIB-22  test suite
+//
+// 20 deterministic tests covering all token types and edge cases.
+//
+// Token type reference:
+//   0=EOF  1={  2=}  3=[  4=]  5=:  6=,  7=STRING  8=NUMBER  9=TRUE  10=FALSE  11=NULL
+
+use "../src/aria_json.aria".*;
+use "stdlib/print_utils.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    // shared buffers
+    wild int64->:state  = malloc(4i64  * 8i64);
+    wild int64->:ttypes = malloc(128i64 * 8i64);
+    wild int64->:exp    = malloc(128i64 * 8i64);
+
+    int64:pass_count = 0i64;
+    int64:fail_count = 0i64;
+
+    drop(printlnString("aria-json LIB-22 test suite"));
+    drop(printlnString("==========================="));
+
+    // ── 01: empty object {} ─────────────────────────────────────────────────
+    //  expected: { } EOF  (3 tokens)
+    string:s01 = "{}";
+    int64:c01 = tokenize(s01, state, ttypes);
+    exp[0i64] = 1i64;  exp[1i64] = 2i64;  exp[2i64] = 0i64;
+    bool:ok01 = seq_matches(ttypes, 3i64, exp);
+    if (ok01) { drop(printlnString("[PASS] 01: empty object {}")); pass_count = pass_count + 1i64; }
+    if (!ok01) { drop(printlnString("[FAIL] 01: empty object {}")); fail_count = fail_count + 1i64; }
+
+    // ── 02: empty array [] ───────────────────────────────────────────────────
+    //  expected: [ ] EOF  (3 tokens)
+    string:s02 = "[]";
+    int64:c02 = tokenize(s02, state, ttypes);
+    exp[0i64] = 3i64;  exp[1i64] = 4i64;  exp[2i64] = 0i64;
+    bool:ok02 = seq_matches(ttypes, 3i64, exp);
+    if (ok02) { drop(printlnString("[PASS] 02: empty array []")); pass_count = pass_count + 1i64; }
+    if (!ok02) { drop(printlnString("[FAIL] 02: empty array []")); fail_count = fail_count + 1i64; }
+
+    // ── 03: string pair {"key":"val"} ────────────────────────────────────────
+    //  expected: { STRING : STRING } EOF  (6 tokens)
+    string:s03 = "{\"key\":\"val\"}";
+    int64:c03 = tokenize(s03, state, ttypes);
+    exp[0i64] = 1i64;  exp[1i64] = 7i64;  exp[2i64] = 5i64;
+    exp[3i64] = 7i64;  exp[4i64] = 2i64;  exp[5i64] = 0i64;
+    bool:ok03 = seq_matches(ttypes, 6i64, exp);
+    if (ok03) { drop(printlnString("[PASS] 03: string pair {\"key\":\"val\"}")); pass_count = pass_count + 1i64; }
+    if (!ok03) { drop(printlnString("[FAIL] 03: string pair {\"key\":\"val\"}")); fail_count = fail_count + 1i64; }
+
+    // ── 04: integer array [1, 2, 3] ──────────────────────────────────────────
+    //  expected: [ NUMBER , NUMBER , NUMBER ] EOF  (8 tokens)
+    string:s04 = "[1, 2, 3]";
+    int64:c04 = tokenize(s04, state, ttypes);
+    exp[0i64] = 3i64;  exp[1i64] = 8i64;  exp[2i64] = 6i64;
+    exp[3i64] = 8i64;  exp[4i64] = 6i64;  exp[5i64] = 8i64;
+    exp[6i64] = 4i64;  exp[7i64] = 0i64;
+    bool:ok04 = seq_matches(ttypes, 8i64, exp);
+    if (ok04) { drop(printlnString("[PASS] 04: integer array [1, 2, 3]")); pass_count = pass_count + 1i64; }
+    if (!ok04) { drop(printlnString("[FAIL] 04: integer array [1, 2, 3]")); fail_count = fail_count + 1i64; }
+
+    // ── 05: keywords true / false / null ─────────────────────────────────────
+    //  expected: { STRING:TRUE , STRING:FALSE , STRING:NULL } EOF  (14 tokens)
+    string:s05 = "{\"a\":true,\"b\":false,\"c\":null}";
+    int64:c05 = tokenize(s05, state, ttypes);
+    exp[0i64]  = 1i64;   exp[1i64]  = 7i64;   exp[2i64]  = 5i64;
+    exp[3i64]  = 9i64;   exp[4i64]  = 6i64;   exp[5i64]  = 7i64;
+    exp[6i64]  = 5i64;   exp[7i64]  = 10i64;  exp[8i64]  = 6i64;
+    exp[9i64]  = 7i64;   exp[10i64] = 5i64;   exp[11i64] = 11i64;
+    exp[12i64] = 2i64;   exp[13i64] = 0i64;
+    bool:ok05 = seq_matches(ttypes, 14i64, exp);
+    if (ok05) { drop(printlnString("[PASS] 05: keywords true/false/null")); pass_count = pass_count + 1i64; }
+    if (!ok05) { drop(printlnString("[FAIL] 05: keywords true/false/null")); fail_count = fail_count + 1i64; }
+
+    // ── 06: negative float {"x":-3.14} ───────────────────────────────────────
+    //  expected: { STRING : NUMBER } EOF  (6 tokens)
+    string:s06 = "{\"x\":-3.14}";
+    int64:c06 = tokenize(s06, state, ttypes);
+    exp[0i64] = 1i64;  exp[1i64] = 7i64;  exp[2i64] = 5i64;
+    exp[3i64] = 8i64;  exp[4i64] = 2i64;  exp[5i64] = 0i64;
+    bool:ok06 = seq_matches(ttypes, 6i64, exp);
+    if (ok06) { drop(printlnString("[PASS] 06: negative float {x:-3.14}")); pass_count = pass_count + 1i64; }
+    if (!ok06) { drop(printlnString("[FAIL] 06: negative float {x:-3.14}")); fail_count = fail_count + 1i64; }
+
+    // ── 07: whitespace-padded tokens  {  }  ──────────────────────────────────
+    //  expected: { } EOF  (3 tokens)
+    string:s07 = "  {  }  ";
+    int64:c07 = tokenize(s07, state, ttypes);
+    exp[0i64] = 1i64;  exp[1i64] = 2i64;  exp[2i64] = 0i64;
+    bool:ok07 = seq_matches(ttypes, 3i64, exp);
+    if (ok07) { drop(printlnString("[PASS] 07: whitespace-padded {}")); pass_count = pass_count + 1i64; }
+    if (!ok07) { drop(printlnString("[FAIL] 07: whitespace-padded {}")); fail_count = fail_count + 1i64; }
+
+    // ── 08: whitespace-padded array  [ 1 , 2 ]  ──────────────────────────────
+    //  expected: [ NUMBER , NUMBER ] EOF  (6 tokens)
+    string:s08 = " [ 1 , 2 ] ";
+    int64:c08 = tokenize(s08, state, ttypes);
+    exp[0i64] = 3i64;  exp[1i64] = 8i64;  exp[2i64] = 6i64;
+    exp[3i64] = 8i64;  exp[4i64] = 4i64;  exp[5i64] = 0i64;
+    bool:ok08 = seq_matches(ttypes, 6i64, exp);
+    if (ok08) { drop(printlnString("[PASS] 08: whitespace-padded [1,2]")); pass_count = pass_count + 1i64; }
+    if (!ok08) { drop(printlnString("[FAIL] 08: whitespace-padded [1,2]")); fail_count = fail_count + 1i64; }
+
+    // ── 09: single integer  42 ───────────────────────────────────────────────
+    //  expected: NUMBER EOF  (2 tokens)
+    string:s09 = "42";
+    int64:c09 = tokenize(s09, state, ttypes);
+    exp[0i64] = 8i64;  exp[1i64] = 0i64;
+    bool:ok09 = seq_matches(ttypes, 2i64, exp);
+    if (ok09) { drop(printlnString("[PASS] 09: single integer 42")); pass_count = pass_count + 1i64; }
+    if (!ok09) { drop(printlnString("[FAIL] 09: single integer 42")); fail_count = fail_count + 1i64; }
+
+    // ── 10: single float  3.14 ───────────────────────────────────────────────
+    //  expected: NUMBER EOF  (2 tokens)
+    string:s10 = "3.14";
+    int64:c10 = tokenize(s10, state, ttypes);
+    exp[0i64] = 8i64;  exp[1i64] = 0i64;
+    bool:ok10 = seq_matches(ttypes, 2i64, exp);
+    if (ok10) { drop(printlnString("[PASS] 10: single float 3.14")); pass_count = pass_count + 1i64; }
+    if (!ok10) { drop(printlnString("[FAIL] 10: single float 3.14")); fail_count = fail_count + 1i64; }
+
+    // ── 11: bare true ────────────────────────────────────────────────────────
+    //  expected: TRUE EOF  (2 tokens)
+    string:s11 = "true";
+    int64:c11 = tokenize(s11, state, ttypes);
+    exp[0i64] = 9i64;  exp[1i64] = 0i64;
+    bool:ok11 = seq_matches(ttypes, 2i64, exp);
+    if (ok11) { drop(printlnString("[PASS] 11: bare true")); pass_count = pass_count + 1i64; }
+    if (!ok11) { drop(printlnString("[FAIL] 11: bare true")); fail_count = fail_count + 1i64; }
+
+    // ── 12: bare false ───────────────────────────────────────────────────────
+    //  expected: FALSE EOF  (2 tokens)
+    string:s12 = "false";
+    int64:c12 = tokenize(s12, state, ttypes);
+    exp[0i64] = 10i64;  exp[1i64] = 0i64;
+    bool:ok12 = seq_matches(ttypes, 2i64, exp);
+    if (ok12) { drop(printlnString("[PASS] 12: bare false")); pass_count = pass_count + 1i64; }
+    if (!ok12) { drop(printlnString("[FAIL] 12: bare false")); fail_count = fail_count + 1i64; }
+
+    // ── 13: bare null ────────────────────────────────────────────────────────
+    //  expected: NULL EOF  (2 tokens)
+    string:s13 = "null";
+    int64:c13 = tokenize(s13, state, ttypes);
+    exp[0i64] = 11i64;  exp[1i64] = 0i64;
+    bool:ok13 = seq_matches(ttypes, 2i64, exp);
+    if (ok13) { drop(printlnString("[PASS] 13: bare null")); pass_count = pass_count + 1i64; }
+    if (!ok13) { drop(printlnString("[FAIL] 13: bare null")); fail_count = fail_count + 1i64; }
+
+    // ── 14: empty string value {"k":""} ──────────────────────────────────────
+    //  expected: { STRING : STRING } EOF  (6 tokens)
+    string:s14 = "{\"k\":\"\"}";
+    int64:c14 = tokenize(s14, state, ttypes);
+    exp[0i64] = 1i64;  exp[1i64] = 7i64;  exp[2i64] = 5i64;
+    exp[3i64] = 7i64;  exp[4i64] = 2i64;  exp[5i64] = 0i64;
+    bool:ok14 = seq_matches(ttypes, 6i64, exp);
+    if (ok14) { drop(printlnString("[PASS] 14: empty string value")); pass_count = pass_count + 1i64; }
+    if (!ok14) { drop(printlnString("[FAIL] 14: empty string value")); fail_count = fail_count + 1i64; }
+
+    // ── 15: nested object {"a":{"b":1}} ──────────────────────────────────────
+    //  expected: { STRING : { STRING : NUMBER } } EOF  (10 tokens)
+    string:s15 = "{\"a\":{\"b\":1}}";
+    int64:c15 = tokenize(s15, state, ttypes);
+    exp[0i64] = 1i64;  exp[1i64] = 7i64;  exp[2i64] = 5i64;
+    exp[3i64] = 1i64;  exp[4i64] = 7i64;  exp[5i64] = 5i64;
+    exp[6i64] = 8i64;  exp[7i64] = 2i64;  exp[8i64] = 2i64;
+    exp[9i64] = 0i64;
+    bool:ok15 = seq_matches(ttypes, 10i64, exp);
+    if (ok15) { drop(printlnString("[PASS] 15: nested object")); pass_count = pass_count + 1i64; }
+    if (!ok15) { drop(printlnString("[FAIL] 15: nested object")); fail_count = fail_count + 1i64; }
+
+    // ── 16: array of objects [{"x":1},{"x":2}] ───────────────────────────────
+    //  expected: [ { STRING:NUMBER } , { STRING:NUMBER } ] EOF  (14 tokens)
+    string:s16 = "[{\"x\":1},{\"x\":2}]";
+    int64:c16 = tokenize(s16, state, ttypes);
+    exp[0i64]  = 3i64;  exp[1i64]  = 1i64;  exp[2i64]  = 7i64;
+    exp[3i64]  = 5i64;  exp[4i64]  = 8i64;  exp[5i64]  = 2i64;
+    exp[6i64]  = 6i64;  exp[7i64]  = 1i64;  exp[8i64]  = 7i64;
+    exp[9i64]  = 5i64;  exp[10i64] = 8i64;  exp[11i64] = 2i64;
+    exp[12i64] = 4i64;  exp[13i64] = 0i64;
+    bool:ok16 = seq_matches(ttypes, 14i64, exp);
+    if (ok16) { drop(printlnString("[PASS] 16: array of objects")); pass_count = pass_count + 1i64; }
+    if (!ok16) { drop(printlnString("[FAIL] 16: array of objects")); fail_count = fail_count + 1i64; }
+
+    // ── 17: token count matches for {} ───────────────────────────────────────
+    //  tokenize returns 3 for "{}": LBRACE RBRACE EOF
+    string:s17 = "{}";
+    int64:c17 = tokenize(s17, state, ttypes);
+    bool:ok17 = c17 == 3i64;
+    if (ok17) { drop(printlnString("[PASS] 17: token count {} == 3")); pass_count = pass_count + 1i64; }
+    if (!ok17) { drop(printlnString("[FAIL] 17: token count {} == 3")); fail_count = fail_count + 1i64; }
+
+    // ── 18: token count for [1,2,3] ──────────────────────────────────────────
+    //  [ NUM , NUM , NUM ] EOF = 8 tokens
+    string:s18 = "[1,2,3]";
+    int64:c18 = tokenize(s18, state, ttypes);
+    bool:ok18 = c18 == 8i64;
+    if (ok18) { drop(printlnString("[PASS] 18: token count [1,2,3] == 8")); pass_count = pass_count + 1i64; }
+    if (!ok18) { drop(printlnString("[FAIL] 18: token count [1,2,3] == 8")); fail_count = fail_count + 1i64; }
+
+    // ── 19: tabbed/newline whitespace ────────────────────────────────────────
+    //  expected: { STRING : NUMBER } EOF  (6 tokens)
+    string:s19 = "{\n\t\"n\"\t:\t99\n}";
+    int64:c19 = tokenize(s19, state, ttypes);
+    exp[0i64] = 1i64;  exp[1i64] = 7i64;  exp[2i64] = 5i64;
+    exp[3i64] = 8i64;  exp[4i64] = 2i64;  exp[5i64] = 0i64;
+    bool:ok19 = seq_matches(ttypes, 6i64, exp);
+    if (ok19) { drop(printlnString("[PASS] 19: tab+newline whitespace")); pass_count = pass_count + 1i64; }
+    if (!ok19) { drop(printlnString("[FAIL] 19: tab+newline whitespace")); fail_count = fail_count + 1i64; }
+
+    // ── 20: zero value {"z":0} ───────────────────────────────────────────────
+    //  expected: { STRING : NUMBER } EOF  (6 tokens)
+    string:s20 = "{\"z\":0}";
+    int64:c20 = tokenize(s20, state, ttypes);
+    exp[0i64] = 1i64;  exp[1i64] = 7i64;  exp[2i64] = 5i64;
+    exp[3i64] = 8i64;  exp[4i64] = 2i64;  exp[5i64] = 0i64;
+    bool:ok20 = seq_matches(ttypes, 6i64, exp);
+    if (ok20) { drop(printlnString("[PASS] 20: zero value {z:0}")); pass_count = pass_count + 1i64; }
+    if (!ok20) { drop(printlnString("[FAIL] 20: zero value {z:0}")); fail_count = fail_count + 1i64; }
+
+    // ── summary ──────────────────────────────────────────────────────────────
+    drop(printlnString("---"));
+    drop(printString("Passed: "));
+    drop(printlnInt64(pass_count));
+    drop(printString("Failed: "));
+    drop(printlnInt64(fail_count));
+
+    if (fail_count == 0i64) {
+        drop(printlnString("PASS: all aria-json tests passed"));
+    } else {
+        drop(printlnString("FAIL: some aria-json tests failed"));
+    }
+
+    free(exp);
+    free(ttypes);
+    free(state);
+    pass(0i32);
+};

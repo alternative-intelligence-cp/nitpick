@@ -1,0 +1,180 @@
+// aria_json.aria — LIB-22  JSON Tokenizer (library entry)
+//
+// Provides a minimal, dependency-free JSON tokeniser for Aria programs.
+// All parsing is done at the byte level using aria_string_byte_at so the
+// library only depends on libc (malloc/free) and the built-in string
+// intrinsics (string_length).
+//
+// ── Token type codes (int64) ────────────────────────────────────────────────
+//   0 = EOF
+//   1 = {       2 = }
+//   3 = [       4 = ]
+//   5 = :       6 = ,
+//   7 = STRING  8 = NUMBER
+//   9 = TRUE   10 = FALSE  11 = NULL
+//
+// ── State array layout ──────────────────────────────────────────────────────
+// Callers pass a 4-element wild int64* array ("state") and a token-type
+// array ("ttypes") sized to the expected maximum token count:
+//   state[0]  current byte position in input
+//   state[1]  total byte length of input
+//   state[2]  number of tokens emitted so far
+//   state[3]  (reserved)
+//
+// ── Typical usage ───────────────────────────────────────────────────────────
+//   wild int64->:state  = malloc(4i64  * 8i64);
+//   wild int64->:ttypes = malloc(64i64 * 8i64);
+//   int64:count = raw(tokenize(input, state, ttypes));
+//   // ttypes[0..count-1] now contains token types
+//   free(ttypes);
+//   free(state);
+//
+// ── Notes ────────────────────────────────────────────────────────────────────
+// aria_string_byte_at is an Aria extern whose C implementation receives
+// the string data pointer (char*), NOT an AriaString* struct.  See
+// src/runtime/strings/strings.cpp for the correct C signature.
+
+extern func:malloc = wild int64*(int64:size);
+extern func:free   = void(wild int64*:ptr);
+
+// Returns the byte at index i in string s (-1 when out of bounds).
+// C signature: int64_t aria_string_byte_at(const char* data, int64_t idx)
+extern func:aria_string_byte_at = int64(string:s, int64:i);
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+pub func:json_is_ws = bool(int64:c) {
+    pass(c == 32i64 || c == 9i64 || c == 10i64 || c == 13i64);
+};
+
+pub func:json_is_digit = bool(int64:c) {
+    pass(c >= 48i64 && c <= 57i64);
+};
+
+// ── next_tok ─────────────────────────────────────────────────────────────────
+// Read the next token from `input` starting at state[0].
+// Appends the token type to ttypes[state[2]] and increments state[2].
+// Returns the token type.
+pub func:next_tok = int64(int64->:state, string:input, int64->:ttypes) {
+    // skip leading whitespace
+    bool:ws_loop = true;
+    while (ws_loop) {
+        if (state[0i64] >= state[1i64]) {
+            ws_loop = false;
+        } else {
+            int64:wc = aria_string_byte_at(input, state[0i64]);
+            bool:is_space = raw(json_is_ws(wc));
+            if (is_space) {
+                state[0i64] = state[0i64] + 1i64;
+            } else {
+                ws_loop = false;
+            }
+        }
+    }
+
+    int64:pos = state[0i64];
+    int64:len = state[1i64];
+    int64:tc  = state[2i64];
+
+    // EOF
+    if (pos >= len) {
+        ttypes[tc] = 0i64;
+        state[2i64] = tc + 1i64;
+        pass(0i64);
+    }
+
+    int64:ch = aria_string_byte_at(input, pos);
+    int64:tok = 0i64 - 99i64;   // sentinel "unset"
+
+    // ── Single-character tokens ──────────────────────────────────────────────
+    if (ch == 123i64) { tok = 1i64; state[0i64] = pos + 1i64; }  // {
+    if (ch == 125i64) { tok = 2i64; state[0i64] = pos + 1i64; }  // }
+    if (ch == 91i64)  { tok = 3i64; state[0i64] = pos + 1i64; }  // [
+    if (ch == 93i64)  { tok = 4i64; state[0i64] = pos + 1i64; }  // ]
+    if (ch == 58i64)  { tok = 5i64; state[0i64] = pos + 1i64; }  // :
+    if (ch == 44i64)  { tok = 6i64; state[0i64] = pos + 1i64; }  // ,
+
+    // ── String literal (34 = '"') ────────────────────────────────────────────
+    if (ch == 34i64) {
+        tok = 7i64;
+        int64:sp = pos + 1i64;
+        bool:str_loop = true;
+        while (str_loop) {
+            if (sp >= len) {
+                str_loop = false;   // unterminated — treat as end
+            } else {
+                int64:sc = aria_string_byte_at(input, sp);
+                sp = sp + 1i64;
+                if (sc == 34i64) { str_loop = false; }  // closing "
+            }
+        }
+        state[0i64] = sp;
+    }
+
+    // ── Number: '-' (45) or digit (48-57) ────────────────────────────────────
+    bool:is_num_start = raw(json_is_digit(ch));
+    if (ch == 45i64) { is_num_start = true; }
+    if (is_num_start) {
+        tok = 8i64;
+        int64:np = pos + 1i64;
+        bool:num_loop = true;
+        while (num_loop) {
+            if (np >= len) {
+                num_loop = false;
+            } else {
+                int64:nc = aria_string_byte_at(input, np);
+                bool:nc_digit = raw(json_is_digit(nc));
+                if (nc_digit) {
+                    np = np + 1i64;
+                } else {
+                    if (nc == 46i64) {   // '.' — decimal point
+                        np = np + 1i64;
+                    } else {
+                        num_loop = false;
+                    }
+                }
+            }
+        }
+        state[0i64] = np;
+    }
+
+    // ── Keyword tokens ───────────────────────────────────────────────────────
+    if (ch == 116i64) { tok = 9i64;  state[0i64] = pos + 4i64; }  // true
+    if (ch == 102i64) { tok = 10i64; state[0i64] = pos + 5i64; }  // false
+    if (ch == 110i64) { tok = 11i64; state[0i64] = pos + 4i64; }  // null
+
+    ttypes[tc] = tok;
+    state[2i64] = tc + 1i64;
+    pass(tok);
+};
+
+// ── tokenize ─────────────────────────────────────────────────────────────────
+// Tokenise entire `input` into ttypes[].  Stops after emitting EOF.
+// Returns total token count (including the EOF token).
+// Resets state before scanning.
+pub func:tokenize = int64(string:input, int64->:state, int64->:ttypes) {
+    state[0i64] = 0i64;
+    state[1i64] = string_length(input);
+    state[2i64] = 0i64;
+    state[3i64] = 0i64;
+
+    bool:tok_loop = true;
+    while (tok_loop) {
+        int64:t = raw(next_tok(state, input, ttypes));
+        if (t == 0i64) { tok_loop = false; }
+    }
+    pass(state[2i64]);
+};
+
+// ── seq_matches ──────────────────────────────────────────────────────────────
+// Return true iff ttypes[0..count-1] equals expected[0..count-1].
+// Useful in tests to verify a full token sequence.
+pub func:seq_matches = bool(int64->:ttypes, int64:count, int64->:expected) {
+    bool:all_match = true;
+    int64:i = 0i64;
+    while (i < count) {
+        if (ttypes[i] != expected[i]) { all_match = false; }
+        i = i + 1i64;
+    }
+    pass(all_match);
+};
