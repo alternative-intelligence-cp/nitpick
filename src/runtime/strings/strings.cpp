@@ -909,6 +909,24 @@ AriaString* aria_string_trim_end_simple(AriaString* str) {
     return (AriaString*)result.value;
 }
 
+AriaString* aria_string_trim_simple(AriaString* str) {
+    AriaResultPtr result = aria_string_trim(*str);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+AriaString* aria_string_to_upper_simple(AriaString* str) {
+    AriaResultPtr result = aria_string_to_upper(*str);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
+AriaString* aria_string_to_lower_simple(AriaString* str) {
+    AriaResultPtr result = aria_string_to_lower(*str);
+    if (result.is_error) { std::abort(); }
+    return (AriaString*)result.value;
+}
+
 int64_t aria_string_index_of_simple(AriaString* haystack, AriaString* needle) {
     AriaResultI64 result = aria_string_index_of(*haystack, *needle);
     if (result.error != NULL) { std::abort(); }

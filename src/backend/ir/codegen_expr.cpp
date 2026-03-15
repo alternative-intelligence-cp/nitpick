@@ -5177,18 +5177,19 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("string_trim() requires one argument");
         }
         
-        llvm::Function* func = module->getFunction("aria_string_trim");
+        llvm::Function* func = module->getFunction("aria_string_trim_simple");
         if (!func) {
-            std::vector<llvm::Type*> params = {getAriaStringType()};
+            std::vector<llvm::Type*> params = {
+                llvm::PointerType::get(getAriaStringType(), 0)  // str (ptr)
+            };
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 llvm::PointerType::get(getAriaStringType(), 0), params, false);
             func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
-                "aria_string_trim", module);
+                "aria_string_trim_simple", module);
         }
         
         llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
-        return builder.CreateCall(func, {str}, "trim_result");
+        return builder.CreateCall(func, {str_ptr}, "trim_result");
     }
     
     // string_to_upper(string) -> string
@@ -5197,18 +5198,19 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("string_to_upper() requires one argument");
         }
         
-        llvm::Function* func = module->getFunction("aria_string_to_upper");
+        llvm::Function* func = module->getFunction("aria_string_to_upper_simple");
         if (!func) {
-            std::vector<llvm::Type*> params = {getAriaStringType()};
+            std::vector<llvm::Type*> params = {
+                llvm::PointerType::get(getAriaStringType(), 0)  // str (ptr)
+            };
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 llvm::PointerType::get(getAriaStringType(), 0), params, false);
             func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
-                "aria_string_to_upper", module);
+                "aria_string_to_upper_simple", module);
         }
         
         llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
-        return builder.CreateCall(func, {str}, "upper_result");
+        return builder.CreateCall(func, {str_ptr}, "upper_result");
     }
     
     // string_to_lower(string) -> string
@@ -5217,18 +5219,19 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("string_to_lower() requires one argument");
         }
 
-        llvm::Function* func = module->getFunction("aria_string_to_lower");
+        llvm::Function* func = module->getFunction("aria_string_to_lower_simple");
         if (!func) {
-            std::vector<llvm::Type*> params = {getAriaStringType()};
+            std::vector<llvm::Type*> params = {
+                llvm::PointerType::get(getAriaStringType(), 0)  // str (ptr)
+            };
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 llvm::PointerType::get(getAriaStringType(), 0), params, false);
             func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
-                "aria_string_to_lower", module);
+                "aria_string_to_lower_simple", module);
         }
 
         llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Value* str = builder.CreateLoad(getAriaStringType(), str_ptr, "str");
-        return builder.CreateCall(func, {str}, "lower_result");
+        return builder.CreateCall(func, {str_ptr}, "lower_result");
     }
 
     // string_from_int(int64) -> string
