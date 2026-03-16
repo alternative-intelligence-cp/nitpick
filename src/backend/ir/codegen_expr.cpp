@@ -279,8 +279,8 @@ llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
     if (typeName == "tbb64") return llvm::Type::getInt64Ty(context);
     
     // Floating point types
-    if (typeName == "flt32"  || typeName == "f32") return llvm::Type::getFloatTy(context);
-    if (typeName == "flt64"  || typeName == "f64") return llvm::Type::getDoubleTy(context);
+    if (typeName == "flt32"  || typeName == "f32" || typeName == "float32") return llvm::Type::getFloatTy(context);
+    if (typeName == "flt64"  || typeName == "f64" || typeName == "float64") return llvm::Type::getDoubleTy(context);
     if (typeName == "flt128" || typeName == "f128") return llvm::Type::getFP128Ty(context);
     // ARIA-017: Extended precision floats (library-based, stored as limb arrays)
     if (typeName == "flt256") {
