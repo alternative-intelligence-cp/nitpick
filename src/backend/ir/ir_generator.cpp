@@ -5945,8 +5945,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             else if (ariaElem == "int16" || ariaElem == "i16") elem_type = builder.getInt16Ty();
                             else if (ariaElem == "int32" || ariaElem == "i32") elem_type = builder.getInt32Ty();
                             else if (ariaElem == "int64" || ariaElem == "i64") elem_type = builder.getInt64Ty();
-                            else if (ariaElem == "flt32" || ariaElem == "f32") elem_type = builder.getFloatTy();
-                            else if (ariaElem == "flt64" || ariaElem == "f64") elem_type = builder.getDoubleTy();
+                            else if (ariaElem == "flt32" || ariaElem == "f32" || ariaElem == "float32") elem_type = builder.getFloatTy();
+                            else if (ariaElem == "flt64" || ariaElem == "f64" || ariaElem == "float64") elem_type = builder.getDoubleTy();
                         }
                     }
                     // Cast rhs to elem_type if needed
@@ -8554,8 +8554,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         else if (t == "int16" || t == "i16") elem_type = builder.getInt16Ty();
                         else if (t == "int32" || t == "i32") elem_type = builder.getInt32Ty();
                         else if (t == "int64" || t == "i64") elem_type = builder.getInt64Ty();
-                        else if (t == "flt32" || t == "f32") elem_type = builder.getFloatTy();
-                        else if (t == "flt64" || t == "f64") elem_type = builder.getDoubleTy();
+                        else if (t == "flt32" || t == "f32" || t == "float32") elem_type = builder.getFloatTy();
+                        else if (t == "flt64" || t == "f64" || t == "float64") elem_type = builder.getDoubleTy();
                     }
                 }
             } else {

@@ -1,0 +1,321 @@
+// test_aria_decision_t.aria — LIB-25 test suite (aria-decision-t)
+//
+// 20 deterministic tests covering:
+//   DG math (opt_a, opt_b, decision_code), lean/tilt mutations,
+//   DGT snapshot creation, mutation tracking, ring-buffer history,
+//   dgt_get_snap, find_decision_changes, find_triggers,
+//   peak_confidence, stability_report, dgt_observe.
+
+use "../src/aria_decision_t.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    // Allocate shared buffers (reused across tests)
+    wild float64->:dg    = aria_alloc(5i64 * 8i64);
+    wild int64->:meta    = malloc(5i64 * 8i64);
+    wild float64->:snaps = aria_alloc(64i64 * 8i64 * 8i64);  // 64 snapshots
+    wild float64->:snap  = aria_alloc(8i64 * 8i64);           // single-snap read buffer
+    wild float64->:pr    = aria_alloc(2i64 * 8i64);           // peak-result buffer
+    wild int64->:idx_out = malloc(32i64 * 8i64);              // index output
+    wild int64->:counts  = malloc(5i64 * 8i64);               // stability counts
+
+    int64:passed = 0i64;
+    int64:total  = 0i64;
+
+    print("aria-decision-t LIB-25 test suite\n");
+    print("====================================\n");
+
+    // ── 01: dg_opt_a at center — pbc=50 pbm=0 factor=0.5 hw=0.125 → a=0.25 ──
+    total = total + 1i64;
+    float64:a01 = dg_opt_a(50.0, 0.0, 100.0);
+    float64:diff01 = a01 - 0.25; if (diff01 < 0.0) { diff01 = 0.0 - diff01; }
+    if (diff01 < 0.01) {
+        print("[PASS] 01: dg_opt_a center pbm=0 -> ~0.25\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 01: dg_opt_a center pbm=0 -> ~0.25\n");
+    }
+
+    // ── 02: dg_opt_b at center — pbc=50 pbm=0 → b=0.25 ─────────────────────
+    total = total + 1i64;
+    float64:b02 = dg_opt_b(50.0, 0.0, 100.0);
+    float64:diff02 = b02 - 0.25; if (diff02 < 0.0) { diff02 = 0.0 - diff02; }
+    if (diff02 < 0.01) {
+        print("[PASS] 02: dg_opt_b center pbm=0 -> ~0.25\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 02: dg_opt_b center pbm=0 -> ~0.25\n");
+    }
+
+    // ── 03: dg_opt_a leaned to A side — lean pbc to 25.0 ────────────────────
+    // pbc=25.0, pbm=0.0 → factor=0.5, hw=0.5*0.5/2=0.125 → lo=0.125 hi=0.375
+    // overlap of [0.125,0.375] with [0,0.5] = 0.25 → a = 0.25/0.5 = 0.5
+    total = total + 1i64;
+    float64:a03 = dg_opt_a(25.0, 0.0, 100.0);
+    float64:diff03 = a03 - 0.5;
+    if (diff03 < 0.0) { diff03 = 0.0 - diff03; }
+    if (diff03 < 0.01) {
+        print("[PASS] 03: dg_opt_a pbc=25 pbm=0 -> 0.5\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 03: dg_opt_a pbc=25 pbm=0 -> expected 0.5\n");
+    }
+
+    // ── 04: dg_decision_code — leaned to A ───────────────────────────────────
+    // pbc=25 pbm=0: a=0.5 (>0.25) b=0 (<0.25) → DECISION=A=2
+    total = total + 1i64;
+    int64:dec04 = dg_decision_code(25.0, 0.0, 100.0);
+    if (dec04 == 2i64) {
+        print("[PASS] 04: dg_decision_code pbc=25 -> A=2\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 04: dg_decision_code pbc=25 -> expected A=2\n");
+    }
+
+    // ── 05: dg_decision_code — leaned to B ───────────────────────────────────
+    // pbc=75 pbm=0: a=0 b=0.5 → B=3
+    total = total + 1i64;
+    int64:dec05 = dg_decision_code(75.0, 0.0, 100.0);
+    if (dec05 == 3i64) {
+        print("[PASS] 05: dg_decision_code pbc=75 -> B=3\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 05: dg_decision_code pbc=75 -> expected B=3\n");
+    }
+
+    // ── 06: dg_decision_code — BOTH (high tilt) ──────────────────────────────
+    // pbc=50 pbm=1.0: factor=1.5(1+0.5+0.5), hw=0.5*1.5/2=0.375 → lo=-0.125 hi=0.625
+    // overlap_a = min(0.5,0.625)-max(0,−0.125) = 0.5−0=0.5 → a=1.0
+    // overlap_b = min(1.0,0.625)-max(0.5,-0.125) = 0.625−0.5=0.125 → b=0.25
+    // a>0.25 b>0.25 → BOTH=4
+    total = total + 1i64;
+    int64:dec06 = dg_decision_code(50.0, 1.0, 100.0);
+    if (dec06 == 4i64) {
+        print("[PASS] 06: dg_decision_code pbc=50 pbm=1 -> BOTH=4\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 06: dg_decision_code pbc=50 pbm=1 -> expected BOTH=4\n");
+    }
+
+    // ── 07: dg_create initialises cell correctly ──────────────────────────────
+    total = total + 1i64;
+    drop(dg_create(dg, 100.0));
+    float64:pbc07 = dg[0i64];
+    float64:pbm07 = dg[1i64];
+    float64:w07   = dg[2i64];
+    float64:diff_pbc = pbc07 - 50.0;
+    if (diff_pbc < 0.0) { diff_pbc = 0.0 - diff_pbc; }
+    if (diff_pbc < 0.01 && pbm07 < 0.001 && w07 > 99.9) {
+        print("[PASS] 07: dg_create sets pbc=50 pbm=0 width=100\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 07: dg_create initial state wrong\n");
+    }
+
+    // ── 08: dg_lean_a moves pbc left ─────────────────────────────────────────
+    total = total + 1i64;
+    drop(dg_create(dg, 100.0));
+    drop(dg_lean_a(dg, 10.0));
+    float64:pbc08 = dg[0i64];
+    float64:diff08 = pbc08 - 40.0;
+    if (diff08 < 0.0) { diff08 = 0.0 - diff08; }
+    if (diff08 < 0.01) {
+        print("[PASS] 08: dg_lean_a 10.0 -> pbc=40\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 08: dg_lean_a 10.0 -> expected pbc=40\n");
+    }
+
+    // ── 09: dg_lean_b moves pbc right ────────────────────────────────────────
+    total = total + 1i64;
+    drop(dg_create(dg, 100.0));
+    drop(dg_lean_b(dg, 10.0));
+    float64:pbc09 = dg[0i64];
+    float64:diff09 = pbc09 - 60.0;
+    if (diff09 < 0.0) { diff09 = 0.0 - diff09; }
+    if (diff09 < 0.01) {
+        print("[PASS] 09: dg_lean_b 10.0 -> pbc=60\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 09: dg_lean_b 10.0 -> expected pbc=60\n");
+    }
+
+    // ── 10: lean clamping at lo_lim=25 ───────────────────────────────────────
+    total = total + 1i64;
+    drop(dg_create(dg, 100.0));
+    drop(dg_lean_a(dg, 100.0));   // big lean — should clamp to 25.0
+    float64:pbc10 = dg[0i64];
+    float64:diff10 = pbc10 - 25.0;
+    if (diff10 < 0.0) { diff10 = 0.0 - diff10; }
+    if (diff10 < 0.01) {
+        print("[PASS] 10: dg_lean_a clamps at lo_lim=25\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 10: dg_lean_a clamp failed, got unexpected pbc\n");
+    }
+
+    // ── 11: dg_tilt_both increases pbm ───────────────────────────────────────
+    total = total + 1i64;
+    drop(dg_create(dg, 100.0));
+    drop(dg_tilt_both(dg, 25.0));   // step = 25/50 = 0.5 → pbm=0.5
+    float64:pbm11 = dg[1i64];
+    float64:diff11 = pbm11 - 0.5;
+    if (diff11 < 0.0) { diff11 = 0.0 - diff11; }
+    if (diff11 < 0.01) {
+        print("[PASS] 11: dg_tilt_both 25.0 -> pbm=0.5\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 11: dg_tilt_both 25.0 -> expected pbm=0.5\n");
+    }
+
+    // ── 12: dgt_create stores init snapshot ──────────────────────────────────
+    total = total + 1i64;
+    drop(dgt_create(dg, meta, snaps, 100.0, 64i64));
+    int64:snap_count12 = dgt_snap_count(meta);
+    int64:step_count12 = dgt_step_count(meta);
+    if (snap_count12 == 1i64 && step_count12 == 1i64) {
+        print("[PASS] 12: dgt_create stores 1 init snapshot\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 12: dgt_create snapshot count wrong\n");
+    }
+
+    // ── 13: dgt_lean_a adds snapshot ─────────────────────────────────────────
+    total = total + 1i64;
+    drop(dgt_lean_a(dg, meta, snaps, 10.0));
+    int64:snap_count13 = dgt_snap_count(meta);
+    if (snap_count13 == 2i64) {
+        print("[PASS] 13: dgt_lean_a adds snapshot -> count=2\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 13: dgt_lean_a snapshot count wrong\n");
+    }
+
+    // ── 14: dgt_get_snap reads slot 0 (init snapshot) ────────────────────────
+    total = total + 1i64;
+    drop(dgt_create(dg, meta, snaps, 100.0, 64i64));
+    int64:ok14 = dgt_get_snap(snaps, meta, 0i64, snap);
+    float64:dec14 = snap[6i64];
+    int64:dec14i = dec14 => int64;
+    // init: pbc=50, pbm=0 → UNKNOWN=1 (a=b=0.25, a is not >0.25 but >=0.125)
+    if (ok14 == 1i64 && dec14i == 1i64) {
+        print("[PASS] 14: dgt_get_snap slot 0 = UNKNOWN decision\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 14: dgt_get_snap slot 0 wrong\n");
+    }
+
+    // ── 15: dgt_lean_a two steps → decision change NONE→A ────────────────────
+    total = total + 1i64;
+    drop(dgt_create(dg, meta, snaps, 100.0, 64i64));
+    // push lean: from pbc=50 to pbc=26 (under 25 threshold for decision A)
+    drop(dgt_lean_a(dg, meta, snaps, 24.0));   // pbc=26
+    wild int64->:chg15 = malloc(8i64 * 8i64);
+    int64:changes15 = dgt_find_decision_changes(snaps, meta, chg15, 8i64);
+    free(chg15);
+    if (changes15 == 1i64) {
+        print("[PASS] 15: lean_a causes 1 decision change NONE->A\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 15: expected 1 decision change\n");
+    }
+
+    // ── 16: dgt_tilt_both followed by tilt_none → trigger detected ───────────
+    total = total + 1i64;
+    drop(dgt_create(dg, meta, snaps, 100.0, 64i64));
+    drop(dgt_tilt_both(dg, meta, snaps, 25.0));   // pbm goes to 0.5
+    drop(dgt_tilt_none(dg, meta, snaps, 25.0));   // pbm back to 0.0
+    // Axis A metric changes as pbm changes
+    wild int64->:trig16 = malloc(8i64 * 8i64);
+    int64:trigs16 = dgt_find_triggers(snaps, meta, 0i64, 0.05, trig16, 8i64);
+    free(trig16);
+    if (trigs16 > 0i64) {
+        print("[PASS] 16: tilt cycle produces triggers on axis A\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 16: no triggers found on axis A after tilt cycle\n");
+    }
+
+    // ── 17: dgt_peak_confidence on axis A ────────────────────────────────────
+    total = total + 1i64;
+    drop(dgt_create(dg, meta, snaps, 100.0, 64i64));
+    drop(dgt_lean_a(dg, meta, snaps, 24.0));    // pbc=26 → a grows
+    drop(dgt_lean_a(dg, meta, snaps, 1.0));     // pbc=25 → a at max for pbm=0
+    drop(dgt_peak_confidence(snaps, meta, 0i64, pr));
+    float64:peak_val17 = pr[1i64];
+    if (peak_val17 > 0.4) {
+        print("[PASS] 17: peak confidence axis A > 0.4\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 17: peak confidence axis A too low\n");
+    }
+
+    // ── 18: dgt_stability_report counts decision zones ───────────────────────
+    total = total + 1i64;
+    drop(dgt_create(dg, meta, snaps, 100.0, 64i64));
+    drop(dgt_lean_a(dg, meta, snaps, 24.0));   // -> A
+    drop(dgt_lean_b(dg, meta, snaps, 48.0));   // -> back to center and B side
+    drop(dgt_stability_report(snaps, meta, counts));
+    int64:total18 = counts[0i64] + counts[1i64] + counts[2i64] + counts[3i64] + counts[4i64];
+    int64:snap_count18 = dgt_snap_count(meta);
+    if (total18 == snap_count18) {
+        print("[PASS] 18: stability_report sums to total snapshot count\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 18: stability_report sum != snapshot count\n");
+    }
+
+    // ── 19: dgt_observe compound lean+tilt adds one snapshot ─────────────────
+    total = total + 1i64;
+    drop(dgt_create(dg, meta, snaps, 100.0, 64i64));
+    int64:before19 = dgt_snap_count(meta);
+    drop(dgt_observe(dg, meta, snaps, 10.0, 10.0, 8i64, 0i64));
+    int64:after19 = dgt_snap_count(meta);
+    if (after19 == before19 + 1i64) {
+        print("[PASS] 19: dgt_observe adds exactly one snapshot\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 19: dgt_observe snapshot count wrong\n");
+    }
+
+    // ── 20: ring buffer wraps correctly at capacity ───────────────────────────
+    total = total + 1i64;
+    wild float64->:small_snaps = aria_alloc(4i64 * 8i64 * 8i64);  // capacity=4
+    wild int64->:small_meta    = malloc(5i64 * 8i64);
+    drop(dgt_create(dg, small_meta, small_snaps, 100.0, 4i64));
+    // add 6 more snapshots — total attempted = 7, but capacity=4 → count=4
+    drop(dgt_lean_a(dg, small_meta, small_snaps, 5.0));
+    drop(dgt_lean_a(dg, small_meta, small_snaps, 5.0));
+    drop(dgt_lean_a(dg, small_meta, small_snaps, 2.0));
+    drop(dgt_lean_b(dg, small_meta, small_snaps, 1.0));
+    drop(dgt_lean_b(dg, small_meta, small_snaps, 1.0));
+    drop(dgt_lean_b(dg, small_meta, small_snaps, 1.0));
+    int64:count20 = dgt_snap_count(small_meta);
+    int64:step20  = dgt_step_count(small_meta);
+    free(small_meta);
+    aria_free(small_snaps);
+    if (count20 == 4i64 && step20 == 7i64) {
+        print("[PASS] 20: ring buffer wraps: count=4, step=7\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 20: ring buffer wrap failed\n");
+    }
+
+    // ── Summary ───────────────────────────────────────────────────────────────
+    free(idx_out);
+    free(counts);
+    aria_free(pr);
+    aria_free(snap);
+    aria_free(snaps);
+    aria_free(dg);
+    free(meta);
+
+    print("\n");
+    print(string_from_int(passed));
+    print("/");
+    print(string_from_int(total));
+    print(" tests passed\n");
+
+    pass(0i32);
+};

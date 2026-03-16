@@ -1,0 +1,417 @@
+// aria_decision_t.aria — DecisionGradientT  (LIB-25)
+//
+// Two-axis gradient decision construct with time-axis snapshot history.
+// Port of decision_gradient.py / decision_gradient_t.py Python POCs.
+//
+// ── DG cell layout (wild float64->:dg, 5 elements) ───────────────────────────
+//   dg[0]  pbc      pbc (lean axis position)  in [width*0.25, width*0.75]
+//   dg[1]  pbm      pbm (tilt axis position)  in [0.0, 1.0]
+//   dg[2]  width    total span (immutable after dg_create)
+//   dg[3]  pbw      half-span = width * 0.5 (immutable)
+//   dg[4]  (spare)
+//
+// ── Snapshot layout (wild float64->:snaps, 8 floats per snapshot) ────────────
+//   snap[i*8+0]  step_f      step counter (as float64)
+//   snap[i*8+1]  trigger_f   trigger code (as float64)
+//   snap[i*8+2]  pbc
+//   snap[i*8+3]  pbm
+//   snap[i*8+4]  a           opt_a confidence at snapshot time
+//   snap[i*8+5]  b           opt_b confidence at snapshot time
+//   snap[i*8+6]  decision_f  decision code (as float64)
+//   snap[i*8+7]  (spare)
+//
+// ── DGT metadata layout (wild int64->:meta, 5 elements) ─────────────────────
+//   meta[0]  step_count  total snapshots taken (ever)
+//   meta[1]  capacity    max snapshot slots in snaps buffer
+//   meta[2]  head        ring-buffer index of oldest slot
+//   meta[3]  count       snapshots currently stored (capacity)
+//   meta[4]  depth       history_depth (default = capacity)
+//
+// ── Decision codes: 0=NONE 1=UNKNOWN 2=A 3=B 4=BOTH ─────────────────────────
+// ── Trigger codes: 0=manual 1=init 2=lean_a 3=lean_unkn 4=lean_b ─────────────
+//                  5=tilt_both 6=tilt_unkn 7=tilt_none 8=observe ───────────────
+// ── Axis codes: 0=A (slot 4) 1=B (slot 5) ───────────────────────────────────
+// ── Calling conventions: raw(f64/i64 funcs) drop(NIL funcs) ─────────────────
+
+extern func:aria_alloc = wild float64*(int64:size);
+extern func:aria_free  = void(wild float64*:ptr);
+extern func:malloc     = wild int64*(int64:size);
+extern func:free       = void(wild int64*:ptr);
+
+pub func:dt_none    = int64() { pass(0i64); };
+pub func:dt_unknown = int64() { pass(1i64); };
+pub func:dt_a       = int64() { pass(2i64); };
+pub func:dt_b       = int64() { pass(3i64); };
+pub func:dt_both    = int64() { pass(4i64); };
+
+pub func:dt_trig_manual    = int64() { pass(0i64); };
+pub func:dt_trig_init      = int64() { pass(1i64); };
+pub func:dt_trig_lean_a    = int64() { pass(2i64); };
+pub func:dt_trig_lean_unkn = int64() { pass(3i64); };
+pub func:dt_trig_lean_b    = int64() { pass(4i64); };
+pub func:dt_trig_tilt_both = int64() { pass(5i64); };
+pub func:dt_trig_tilt_unkn = int64() { pass(6i64); };
+pub func:dt_trig_tilt_none = int64() { pass(7i64); };
+pub func:dt_trig_observe   = int64() { pass(8i64); };
+
+pub func:dt_axis_a = int64() { pass(0i64); };
+pub func:dt_axis_b = int64() { pass(1i64); };
+
+func:_dg_factor = float64(float64:m) {
+    pass(m * m + 0.5 * m + 0.5);
+};
+
+func:_dg_clamp = float64(float64:v, float64:lo, float64:hi) {
+    if (v < lo) { pass(lo); }
+    if (v > hi) { pass(hi); }
+    pass(v);
+};
+
+func:_dg_fmax = float64(float64:a, float64:b) {
+    if (a > b) { pass(a); }
+    pass(b);
+};
+
+func:_dg_fmin = float64(float64:a, float64:b) {
+    if (a < b) { pass(a); }
+    pass(b);
+};
+
+pub func:dg_opt_a = float64(float64:pbc, float64:pbm, float64:width) {
+    float64:factor   = raw(_dg_factor(pbm));
+    float64:c        = pbc / width;
+    float64:hw       = 0.5 * factor / 2.0;
+    float64:lo       = c - hw;
+    float64:hi       = c + hw;
+    float64:chi      = raw(_dg_fmin(0.5, hi));
+    float64:clo      = raw(_dg_fmax(0.0, lo));
+    float64:overlap  = raw(_dg_fmax(0.0, chi - clo));
+    float64:result   = raw(_dg_fmin(1.0, overlap / 0.5));
+    pass(result);
+};
+
+pub func:dg_opt_b = float64(float64:pbc, float64:pbm, float64:width) {
+    float64:factor   = raw(_dg_factor(pbm));
+    float64:c        = pbc / width;
+    float64:hw       = 0.5 * factor / 2.0;
+    float64:lo       = c - hw;
+    float64:hi       = c + hw;
+    float64:chi      = raw(_dg_fmin(1.0, hi));
+    float64:clo      = raw(_dg_fmax(0.5, lo));
+    float64:overlap  = raw(_dg_fmax(0.0, chi - clo));
+    float64:result   = raw(_dg_fmin(1.0, overlap / 0.5));
+    pass(result);
+};
+
+pub func:dg_decision_code = int64(float64:pbc, float64:pbm, float64:width) {
+    float64:a = raw(dg_opt_a(pbc, pbm, width));
+    float64:b = raw(dg_opt_b(pbc, pbm, width));
+    if (a > 0.25) {
+        if (b > 0.25) { pass(4i64); }
+        pass(2i64);
+    }
+    if (b > 0.25) { pass(3i64); }
+    if (a >= 0.125) { pass(1i64); }
+    if (b >= 0.125) { pass(1i64); }
+    pass(0i64);
+};
+
+pub func:dg_create = NIL(wild float64->:dg, float64:width) {
+    dg[0i64] = width * 0.5;
+    dg[1i64] = 0.0;
+    dg[2i64] = width;
+    dg[3i64] = width * 0.5;
+    dg[4i64] = 0.0;
+    pass(NIL);
+};
+
+pub func:dg_lean_a = NIL(wild float64->:dg, float64:amount) {
+    float64:pbc_cur = dg[0i64];
+    float64:width   = dg[2i64];
+    float64:lo_lim  = width * 0.25;
+    float64:hi_lim  = width * 0.75;
+    dg[0i64] = raw(_dg_clamp(pbc_cur - amount, lo_lim, hi_lim));
+    pass(NIL);
+};
+
+pub func:dg_lean_unkn = NIL(wild float64->:dg, float64:amount) {
+    float64:pbc_cur = dg[0i64];
+    float64:width   = dg[2i64];
+    float64:lo_lim  = width * 0.25;
+    float64:hi_lim  = width * 0.75;
+    float64:center  = width * 0.5;
+    float64:pbc_new = pbc_cur;
+    if (pbc_cur < center) {
+        pbc_new = raw(_dg_clamp(pbc_cur + amount, lo_lim, hi_lim));
+    }
+    if (pbc_cur >= center) {
+        pbc_new = raw(_dg_clamp(pbc_cur - amount, lo_lim, hi_lim));
+    }
+    dg[0i64] = pbc_new;
+    pass(NIL);
+};
+
+pub func:dg_lean_b = NIL(wild float64->:dg, float64:amount) {
+    float64:pbc_cur = dg[0i64];
+    float64:width   = dg[2i64];
+    float64:lo_lim  = width * 0.25;
+    float64:hi_lim  = width * 0.75;
+    dg[0i64] = raw(_dg_clamp(pbc_cur + amount, lo_lim, hi_lim));
+    pass(NIL);
+};
+
+pub func:dg_tilt_both = NIL(wild float64->:dg, float64:amount) {
+    float64:pbm_cur = dg[1i64];
+    float64:pbw     = dg[3i64];
+    dg[1i64] = raw(_dg_clamp(pbm_cur + amount / pbw, 0.0, 1.0));
+    pass(NIL);
+};
+
+pub func:dg_tilt_unkn = NIL(wild float64->:dg, float64:amount) {
+    float64:pbm_cur = dg[1i64];
+    float64:pbw     = dg[3i64];
+    float64:step    = amount / pbw;
+    float64:pbm_new = pbm_cur;
+    if (pbm_cur < 0.5) {
+        pbm_new = raw(_dg_clamp(pbm_cur + step, 0.0, 1.0));
+    }
+    if (pbm_cur >= 0.5) {
+        pbm_new = raw(_dg_clamp(pbm_cur - step, 0.0, 1.0));
+    }
+    dg[1i64] = pbm_new;
+    pass(NIL);
+};
+
+pub func:dg_tilt_none = NIL(wild float64->:dg, float64:amount) {
+    float64:pbm_cur = dg[1i64];
+    float64:pbw     = dg[3i64];
+    dg[1i64] = raw(_dg_clamp(pbm_cur - amount / pbw, 0.0, 1.0));
+    pass(NIL);
+};
+
+pub func:dg_pbc   = float64(wild float64->:dg) { pass(dg[0i64]); };
+pub func:dg_pbm   = float64(wild float64->:dg) { pass(dg[1i64]); };
+pub func:dg_width = float64(wild float64->:dg) { pass(dg[2i64]); };
+
+pub func:dgt_snapshot = NIL(wild float64->:dg, wild int64->:meta, wild float64->:snaps, int64:trigger_code) {
+    int64:step_count = meta[0i64];
+    int64:capacity   = meta[1i64];
+    int64:head       = meta[2i64];
+    int64:count      = meta[3i64];
+    float64:pbc      = dg[0i64];
+    float64:pbm      = dg[1i64];
+    float64:width    = dg[2i64];
+    float64:a        = raw(dg_opt_a(pbc, pbm, width));
+    float64:b        = raw(dg_opt_b(pbc, pbm, width));
+    int64:dec_code   = raw(dg_decision_code(pbc, pbm, width));
+
+    int64:slot = count;
+    if (count >= capacity) {
+        slot = head;
+        head = head + 1i64;
+        if (head >= capacity) { head = 0i64; }
+    }
+
+    int64:base     = slot * 8i64;
+    snaps[base + 0i64] = step_count => flt64;
+    snaps[base + 1i64] = trigger_code => flt64;
+    snaps[base + 2i64] = pbc;
+    snaps[base + 3i64] = pbm;
+    snaps[base + 4i64] = a;
+    snaps[base + 5i64] = b;
+    snaps[base + 6i64] = dec_code => flt64;
+    snaps[base + 7i64] = 0.0;
+
+    step_count = step_count + 1i64;
+    if (count < capacity) { count = count + 1i64; }
+    meta[0i64] = step_count;
+    meta[2i64] = head;
+    meta[3i64] = count;
+    pass(NIL);
+};
+
+pub func:dgt_create = NIL(wild float64->:dg, wild int64->:meta, wild float64->:snaps, float64:width, int64:capacity) {
+    drop(dg_create(dg, width));
+    meta[0i64] = 0i64;
+    meta[1i64] = capacity;
+    meta[2i64] = 0i64;
+    meta[3i64] = 0i64;
+    meta[4i64] = capacity;
+    drop(dgt_snapshot(dg, meta, snaps, 1i64));
+    pass(NIL);
+};
+
+pub func:dgt_lean_a = NIL(wild float64->:dg, wild int64->:meta, wild float64->:snaps, float64:amount) {
+    drop(dg_lean_a(dg, amount));
+    drop(dgt_snapshot(dg, meta, snaps, 2i64));
+    pass(NIL);
+};
+
+pub func:dgt_lean_unkn = NIL(wild float64->:dg, wild int64->:meta, wild float64->:snaps, float64:amount) {
+    drop(dg_lean_unkn(dg, amount));
+    drop(dgt_snapshot(dg, meta, snaps, 3i64));
+    pass(NIL);
+};
+
+pub func:dgt_lean_b = NIL(wild float64->:dg, wild int64->:meta, wild float64->:snaps, float64:amount) {
+    drop(dg_lean_b(dg, amount));
+    drop(dgt_snapshot(dg, meta, snaps, 4i64));
+    pass(NIL);
+};
+
+pub func:dgt_tilt_both = NIL(wild float64->:dg, wild int64->:meta, wild float64->:snaps, float64:amount) {
+    drop(dg_tilt_both(dg, amount));
+    drop(dgt_snapshot(dg, meta, snaps, 5i64));
+    pass(NIL);
+};
+
+pub func:dgt_tilt_unkn = NIL(wild float64->:dg, wild int64->:meta, wild float64->:snaps, float64:amount) {
+    drop(dg_tilt_unkn(dg, amount));
+    drop(dgt_snapshot(dg, meta, snaps, 6i64));
+    pass(NIL);
+};
+
+pub func:dgt_tilt_none = NIL(wild float64->:dg, wild int64->:meta, wild float64->:snaps, float64:amount) {
+    drop(dg_tilt_none(dg, amount));
+    drop(dgt_snapshot(dg, meta, snaps, 7i64));
+    pass(NIL);
+};
+
+// observe: compound lean + tilt, single snapshot. dir_code: 0=lean_a 1=lean_unkn 2=lean_b
+pub func:dgt_observe = NIL(wild float64->:dg, wild int64->:meta, wild float64->:snaps, float64:lean_amount, float64:tilt_amount, int64:trigger_code, int64:dir_code) {
+    if (dir_code == 0i64) { drop(dg_lean_a(dg, lean_amount)); }
+    if (dir_code == 1i64) { drop(dg_lean_unkn(dg, lean_amount)); }
+    if (dir_code == 2i64) { drop(dg_lean_b(dg, lean_amount)); }
+    drop(dg_tilt_both(dg, tilt_amount));
+    drop(dgt_snapshot(dg, meta, snaps, trigger_code));
+    pass(NIL);
+};
+
+// Read snapshot at logical index (0=oldest) into 8-slot out_snap. Returns 1=ok 0=oob.
+pub func:dgt_get_snap = int64(wild float64->:snaps, wild int64->:meta, int64:idx, wild float64->:out_snap) {
+    int64:count    = meta[3i64];
+    int64:capacity = meta[1i64];
+    int64:head     = meta[2i64];
+    if (idx < 0i64)   { pass(0i64); }
+    if (idx >= count) { pass(0i64); }
+    int64:phys = (head + idx) % capacity;
+    int64:base = phys * 8i64;
+    out_snap[0i64] = snaps[base + 0i64];
+    out_snap[1i64] = snaps[base + 1i64];
+    out_snap[2i64] = snaps[base + 2i64];
+    out_snap[3i64] = snaps[base + 3i64];
+    out_snap[4i64] = snaps[base + 4i64];
+    out_snap[5i64] = snaps[base + 5i64];
+    out_snap[6i64] = snaps[base + 6i64];
+    out_snap[7i64] = snaps[base + 7i64];
+    pass(1i64);
+};
+
+// Count decision transitions. Writes logical indices into out_indices (up to max_out). Returns count.
+pub func:dgt_find_decision_changes = int64(wild float64->:snaps, wild int64->:meta, wild int64->:out_indices, int64:max_out) {
+    int64:count    = meta[3i64];
+    int64:capacity = meta[1i64];
+    int64:head     = meta[2i64];
+    int64:found    = 0i64;
+    int64:prev_dec = -1i64;
+    int64:i        = 0i64;
+    while (i < count) {
+        int64:phys  = (head + i) % capacity;
+        int64:base  = phys * 8i64;
+        int64:dec_i = snaps[base + 6i64] => int64;
+        if (prev_dec != -1i64) {
+            if (dec_i != prev_dec) {
+                if (found < max_out) {
+                    out_indices[found] = i;
+                    found = found + 1i64;
+                }
+            }
+        }
+        prev_dec = dec_i;
+        i = i + 1i64;
+    }
+    pass(found);
+};
+
+// Snapshots where axis metric changed > threshold. Returns count, writes indices.
+pub func:dgt_find_triggers = int64(wild float64->:snaps, wild int64->:meta, int64:axis_code, float64:threshold, wild int64->:out_indices, int64:max_out) {
+    int64:count    = meta[3i64];
+    int64:capacity = meta[1i64];
+    int64:head     = meta[2i64];
+    int64:found    = 0i64;
+    int64:i        = 0i64;
+    int64:slot_off = 5i64;
+    if (axis_code == 0i64) { slot_off = 4i64; }
+    float64:prev_val = 0.0 - 999.0;
+    while (i < count) {
+        int64:phys  = (head + i) % capacity;
+        int64:base  = phys * 8i64;
+        float64:val = snaps[base + slot_off];
+        if (prev_val > 0.0 - 998.0) {
+            float64:diff = val - prev_val;
+            if (diff < 0.0) { diff = 0.0 - diff; }
+            if (diff > threshold) {
+                if (found < max_out) {
+                    out_indices[found] = i;
+                    found = found + 1i64;
+                }
+            }
+        }
+        prev_val = val;
+        i = i + 1i64;
+    }
+    pass(found);
+};
+
+// Peak confidence on given axis. Fills out_result[0]=step_f, out_result[1]=peak_val.
+pub func:dgt_peak_confidence = NIL(wild float64->:snaps, wild int64->:meta, int64:axis_code, wild float64->:out_result) {
+    int64:count    = meta[3i64];
+    int64:capacity = meta[1i64];
+    int64:head     = meta[2i64];
+    int64:i        = 0i64;
+    int64:slot_off = 5i64;
+    if (axis_code == 0i64) { slot_off = 4i64; }
+    float64:best_val  = 0.0 - 1.0;
+    float64:best_step = 0.0;
+    while (i < count) {
+        int64:phys  = (head + i) % capacity;
+        int64:base  = phys * 8i64;
+        float64:val = snaps[base + slot_off];
+        if (val > best_val) {
+            best_val  = val;
+            best_step = snaps[base + 0i64];
+        }
+        i = i + 1i64;
+    }
+    out_result[0i64] = best_step;
+    out_result[1i64] = best_val;
+    pass(NIL);
+};
+
+// Stability report: count snapshots per decision zone (0..4).
+pub func:dgt_stability_report = NIL(wild float64->:snaps, wild int64->:meta, wild int64->:out_counts) {
+    out_counts[0i64] = 0i64;
+    out_counts[1i64] = 0i64;
+    out_counts[2i64] = 0i64;
+    out_counts[3i64] = 0i64;
+    out_counts[4i64] = 0i64;
+    int64:count    = meta[3i64];
+    int64:capacity = meta[1i64];
+    int64:head     = meta[2i64];
+    int64:i        = 0i64;
+    while (i < count) {
+        int64:phys = (head + i) % capacity;
+        int64:base = phys * 8i64;
+        int64:dec  = snaps[base + 6i64] => int64;
+        if (dec >= 0i64) {
+            if (dec <= 4i64) {
+                out_counts[dec] = out_counts[dec] + 1i64;
+            }
+        }
+        i = i + 1i64;
+    }
+    pass(NIL);
+};
+
+pub func:dgt_step_count = int64(wild int64->:meta) { pass(meta[0i64]); };
+pub func:dgt_snap_count = int64(wild int64->:meta) { pass(meta[3i64]); };
