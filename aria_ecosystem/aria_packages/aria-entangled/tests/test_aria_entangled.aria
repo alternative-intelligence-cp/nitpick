@@ -1,0 +1,358 @@
+// test_aria_entangled.aria — EntangledPair LIB-26 test suite
+//
+// Tests: 20 cases covering ep_create, lean mutations (alpha/beta),
+// tilt mutations (alpha/beta/pair), coupling propagation, anti-coupling,
+// crystallization, observe_alpha/beta, ep_get_snap readback,
+// sync_count, crystallization_count, propagation_count, ring buffer.
+//
+// Memory:
+//   ep       — 12 float64 (EP cell)
+//   meta     — 5  int64   (ring buffer metadata)
+//   snaps    — capacity * 16 float64 (PairSnapshot ring buffer)
+//   snap     — 16 float64 (scratch for ep_get_snap)
+
+use "../src/aria_entangled.aria".*;
+
+extern func:aria_alloc = wild float64*(int64:size);
+extern func:aria_free  = void(wild float64*:ptr);
+extern func:malloc     = wild int64*(int64:size);
+extern func:free       = void(wild int64*:ptr);
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    int64:passed = 0i64;
+    int64:total  = 0i64;
+
+    print("aria-entangled LIB-26 test suite\n");
+    print("====================================\n");
+
+    // Allocate shared buffers
+    wild float64->:ep    = aria_alloc(12i64 * 8i64);
+    wild int64->:meta    = malloc(5i64 * 8i64);
+    wild float64->:snaps = aria_alloc(64i64 * 16i64 * 8i64);
+    wild float64->:snap  = aria_alloc(16i64 * 8i64);
+
+    // ── 01: ep_create initialises both DGs symmetrically ─────────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    float64:a_pbc01 = ep[0i64];
+    float64:b_pbc01 = ep[5i64];
+    float64:d01a = a_pbc01 - 50.0;
+    if (d01a < 0.0) { d01a = 0.0 - d01a; }
+    float64:d01b = b_pbc01 - 50.0;
+    if (d01b < 0.0) { d01b = 0.0 - d01b; }
+    if (d01a < 0.01 && d01b < 0.01) {
+        print("[PASS] 01: ep_create symmetric pbc=50\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 01: ep_create pbc wrong\n");
+    }
+
+    // ── 02: ep_create records 1 initial snapshot ──────────────────────────────
+    total = total + 1i64;
+    int64:cnt02 = ep_snap_count(meta);
+    if (cnt02 == 1i64) {
+        print("[PASS] 02: ep_create stores 1 snapshot\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 02: snap count wrong\n");
+    }
+
+    // ── 03: ep_lean_alpha_a moves alpha pbc toward A, beta unchanged ──────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    drop(ep_lean_alpha_a(ep, meta, snaps, 10.0));
+    float64:a_pbc03 = ep[0i64];
+    float64:b_pbc03 = ep[5i64];
+    float64:d03a = a_pbc03 - 40.0;
+    if (d03a < 0.0) { d03a = 0.0 - d03a; }
+    float64:d03b = b_pbc03 - 50.0;
+    if (d03b < 0.0) { d03b = 0.0 - d03b; }
+    if (d03a < 0.01 && d03b < 0.01) {
+        print("[PASS] 03: lean_alpha_a -> alpha=40 beta=50\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 03: lean_alpha_a wrong\n");
+    }
+
+    // ── 04: ep_lean_beta_b moves beta pbc toward B, alpha unchanged ───────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    drop(ep_lean_beta_b(ep, meta, snaps, 10.0));
+    float64:a_pbc04 = ep[0i64];
+    float64:b_pbc04 = ep[5i64];
+    float64:d04a = a_pbc04 - 50.0;
+    if (d04a < 0.0) { d04a = 0.0 - d04a; }
+    float64:d04b = b_pbc04 - 60.0;
+    if (d04b < 0.0) { d04b = 0.0 - d04b; }
+    if (d04a < 0.01 && d04b < 0.01) {
+        print("[PASS] 04: lean_beta_b -> alpha=50 beta=60\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 04: lean_beta_b wrong\n");
+    }
+
+    // ── 05: lean clamps at lo_lim=25 ──────────────────────────────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    drop(ep_lean_alpha_a(ep, meta, snaps, 100.0));
+    float64:a_pbc05 = ep[0i64];
+    float64:d05 = a_pbc05 - 25.0;
+    if (d05 < 0.0) { d05 = 0.0 - d05; }
+    if (d05 < 0.01) {
+        print("[PASS] 05: lean_alpha_a clamps at 25\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 05: lean clamp wrong\n");
+    }
+
+    // ── 06: ep_tilt_alpha propagates to beta (coupling=1.0) ───────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    // tilt alpha toward_both (0): amount=25.0, pbw=50 → step=0.5
+    // alpha pbm = 0.5, beta pbm = 0.5 (mirrored)
+    drop(ep_tilt_alpha(ep, meta, snaps, 25.0, 0i64));
+    float64:a_pbm06 = ep[1i64];
+    float64:b_pbm06 = ep[6i64];
+    float64:d06a = a_pbm06 - 0.5;
+    if (d06a < 0.0) { d06a = 0.0 - d06a; }
+    float64:d06b = b_pbm06 - 0.5;
+    if (d06b < 0.0) { d06b = 0.0 - d06b; }
+    if (d06a < 0.01 && d06b < 0.01) {
+        print("[PASS] 06: tilt_alpha propagates to beta pbm=0.5\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 06: tilt propagation wrong\n");
+    }
+
+    // ── 07: tilt_beta propagates to alpha (coupling=1.0) ──────────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    drop(ep_tilt_beta(ep, meta, snaps, 25.0, 0i64));
+    float64:a_pbm07 = ep[1i64];
+    float64:b_pbm07 = ep[6i64];
+    float64:d07a = a_pbm07 - 0.5;
+    if (d07a < 0.0) { d07a = 0.0 - d07a; }
+    float64:d07b = b_pbm07 - 0.5;
+    if (d07b < 0.0) { d07b = 0.0 - d07b; }
+    if (d07a < 0.01 && d07b < 0.01) {
+        print("[PASS] 07: tilt_beta propagates to alpha pbm=0.5\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 07: tilt_beta propagation wrong\n");
+    }
+
+    // ── 08: coupling=0.0 → no propagation ────────────────────────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 0.0, 0.8, 64i64));
+    drop(ep_tilt_alpha(ep, meta, snaps, 25.0, 0i64));
+    float64:a_pbm08 = ep[1i64];
+    float64:b_pbm08 = ep[6i64];
+    float64:d08a = a_pbm08 - 0.5;
+    if (d08a < 0.0) { d08a = 0.0 - d08a; }
+    float64:d08b = b_pbm08 - 0.0;
+    if (d08b < 0.0) { d08b = 0.0 - d08b; }
+    if (d08a < 0.01 && d08b < 0.01) {
+        print("[PASS] 08: coupling=0 no propagation\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 08: coupling=0 propagation wrong\n");
+    }
+
+    // ── 09: coupling=-1.0 → anti-coupling (both→none) ────────────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 0.0 - 1.0, 0.8, 64i64));
+    // tilt alpha toward_both (0) → beta gets toward_none (1)
+    // alpha pbm → 0.5, beta pbm → -0.5 clamped to 0.0
+    drop(ep_tilt_alpha(ep, meta, snaps, 25.0, 0i64));
+    float64:a_pbm09 = ep[1i64];
+    float64:b_pbm09 = ep[6i64];
+    float64:d09a = a_pbm09 - 0.5;
+    if (d09a < 0.0) { d09a = 0.0 - d09a; }
+    // beta was 0, tilt_none reduces: 0 - 0.5 = -0.5 → clamped to 0
+    float64:d09b = b_pbm09 - 0.0;
+    if (d09b < 0.0) { d09b = 0.0 - d09b; }
+    if (d09a < 0.01 && d09b < 0.01) {
+        print("[PASS] 09: anti-coupling alpha_both -> beta_none clamped at 0\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 09: anti-coupling wrong\n");
+    }
+
+    // ── 10: ep_tilt_pair tilts both equally, no propagation asymmetry ─────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    drop(ep_tilt_pair(ep, meta, snaps, 25.0, 0i64));
+    float64:a_pbm10 = ep[1i64];
+    float64:b_pbm10 = ep[6i64];
+    float64:d10a = a_pbm10 - 0.5;
+    if (d10a < 0.0) { d10a = 0.0 - d10a; }
+    float64:d10b = b_pbm10 - 0.5;
+    if (d10b < 0.0) { d10b = 0.0 - d10b; }
+    if (d10a < 0.01 && d10b < 0.01) {
+        print("[PASS] 10: tilt_pair both members pbm=0.5\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 10: tilt_pair wrong\n");
+    }
+
+    // ── 11: is_crystallized fires when both pbm >= threshold ─────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    // Before crystal: both pbm=0
+    int64:crys11_before = ep_is_crystallized(ep);
+    // tilt_pair to raise both pbm → 0.8 threshold: step = 0.8/(pbw=50) * 50 = 40
+    drop(ep_tilt_pair(ep, meta, snaps, 40.0, 0i64));
+    int64:crys11_after  = ep_is_crystallized(ep);
+    if (crys11_before == 0i64 && crys11_after == 1i64) {
+        print("[PASS] 11: is_crystallized fires after threshold\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 11: crystallization wrong\n");
+    }
+
+    // ── 12: crystallization_count detects rising edge ─────────────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    drop(ep_tilt_pair(ep, meta, snaps, 40.0, 0i64));
+    drop(ep_snapshot_now(ep, meta, snaps));  // still crystallized, not a new edge
+    int64:crys12 = ep_crystallization_count(snaps, meta);
+    if (crys12 == 1i64) {
+        print("[PASS] 12: crystallization_count = 1 rising edge\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 12: crystallization_count wrong\n");
+    }
+
+    // ── 13: propagation_count counts tilt snapshots ───────────────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));  // 1 snap (manual, prop=0)
+    drop(ep_lean_alpha_a(ep, meta, snaps, 5.0));                 // lean, prop=0
+    drop(ep_tilt_alpha(ep, meta, snaps, 5.0, 0i64));             // tilt, prop=1
+    drop(ep_tilt_beta(ep, meta, snaps, 5.0, 0i64));              // tilt, prop=1
+    int64:props13 = ep_propagation_count(snaps, meta);
+    if (props13 == 2i64) {
+        print("[PASS] 13: propagation_count = 2\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 13: propagation_count wrong\n");
+    }
+
+    // ── 14: tilt_delta = |alpha_pbm - beta_pbm| ───────────────────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 0.0, 0.8, 64i64));
+    // coupling=0: tilt_alpha 0.5 only moves alpha
+    drop(ep_tilt_alpha(ep, meta, snaps, 25.0, 0i64));
+    float64:delta14 = ep_tilt_delta(ep);
+    float64:d14 = delta14 - 0.5;
+    if (d14 < 0.0) { d14 = 0.0 - d14; }
+    if (d14 < 0.01) {
+        print("[PASS] 14: tilt_delta = 0.5\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 14: tilt_delta wrong\n");
+    }
+
+    // ── 15: tilt_correlation = 1 - delta ──────────────────────────────────────
+    total = total + 1i64;
+    float64:corr15 = ep_tilt_correlation(ep);
+    float64:d15 = corr15 - 0.5;
+    if (d15 < 0.0) { d15 = 0.0 - d15; }
+    if (d15 < 0.01) {
+        print("[PASS] 15: tilt_correlation = 0.5\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 15: tilt_correlation wrong\n");
+    }
+
+    // ── 16: ep_get_snap reads back init snapshot fields ───────────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    int64:ok16 = ep_get_snap(snaps, meta, 0i64, snap);
+    // snap[13] = propagated_f should be 0 (init is source=pair, propagated=0)
+    int64:prop16 = snap[13i64] => int64;
+    if (ok16 == 1i64 && prop16 == 0i64) {
+        print("[PASS] 16: ep_get_snap init snap propagated=0\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 16: ep_get_snap wrong\n");
+    }
+
+    // ── 17: ep_get_snap out-of-range returns 0 ────────────────────────────────
+    total = total + 1i64;
+    int64:ok17 = ep_get_snap(snaps, meta, 99i64, snap);
+    if (ok17 == 0i64) {
+        print("[PASS] 17: ep_get_snap out-of-range = 0\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 17: ep_get_snap bounds wrong\n");
+    }
+
+    // ── 18: ep_observe_alpha: lean + tilt in one step ─────────────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    // observe_alpha direction=0 (a): lean_a + tilt_none
+    drop(ep_observe_alpha(ep, meta, snaps, 10.0, 0.0, 0i64));
+    float64:a_pbc18 = ep[0i64];
+    float64:d18 = a_pbc18 - 40.0;
+    if (d18 < 0.0) { d18 = 0.0 - d18; }
+    if (d18 < 0.01) {
+        print("[PASS] 18: observe_alpha lean_a -> pbc=40\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 18: observe_alpha wrong\n");
+    }
+
+    // ── 19: ep_sync_count counts matching alpha/beta decisions ────────────────
+    total = total + 1i64;
+    drop(ep_create(ep, meta, snaps, 100.0, 1.0, 0.8, 64i64));
+    // init: both decision=UNKNOWN → synced
+    // lean_alpha_a to pbc=26 → alpha decision=A, beta still UNKNOWN → not synced
+    drop(ep_lean_alpha_a(ep, meta, snaps, 24.0));
+    int64:sync19 = ep_sync_count(snaps, meta);
+    // snap 0 = init (both UNKNOWN, synced), snap 1 = after lean (A vs UNKNOWN, not)
+    if (sync19 == 1i64) {
+        print("[PASS] 19: sync_count = 1\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 19: sync_count wrong\n");
+    }
+
+    // ── 20: ring buffer wraps correctly ───────────────────────────────────────
+    total = total + 1i64;
+    // Use capacity=4 to force wraps
+    wild float64->:snaps_s = aria_alloc(4i64 * 16i64 * 8i64);
+    wild int64->:meta_s    = malloc(5i64 * 8i64);
+    drop(ep_create(ep, meta_s, snaps_s, 100.0, 1.0, 0.8, 4i64));   // step 0
+    drop(ep_lean_alpha_a(ep, meta_s, snaps_s, 5.0));                 // step 1
+    drop(ep_lean_alpha_a(ep, meta_s, snaps_s, 5.0));                 // step 2
+    drop(ep_lean_alpha_a(ep, meta_s, snaps_s, 5.0));                 // step 3 (ring full)
+    drop(ep_lean_alpha_a(ep, meta_s, snaps_s, 5.0));                 // step 4 (overwrites)
+    drop(ep_lean_alpha_a(ep, meta_s, snaps_s, 5.0));                 // step 5
+    int64:cnt20   = ep_snap_count(meta_s);
+    int64:step20  = ep_step_count(meta_s);
+    // count should be capped at 4, step_count=6
+    if (cnt20 == 4i64 && step20 == 6i64) {
+        print("[PASS] 20: ring buffer wraps: count=4 step=6\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 20: ring buffer wrong\n");
+    }
+    aria_free(snaps_s);
+    free(meta_s);
+
+    // ── Summary ───────────────────────────────────────────────────────────────
+    print("\n");
+    if (passed == 20i64) {
+        print("20/20 tests passed\n");
+    } else {
+        print("tests passed\n");
+    }
+
+    aria_free(snap);
+    aria_free(snaps);
+    aria_free(ep);
+    free(meta);
+    pass(0i32);
+};
