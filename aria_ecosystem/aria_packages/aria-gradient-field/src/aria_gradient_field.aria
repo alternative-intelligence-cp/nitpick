@@ -1,0 +1,356 @@
+// aria_gradient_field.aria — GradientField  (LIB-27)
+//
+// A spatial decision field driven by a single DecisionGradientT emitter.
+// N FieldNodes each carry a weight vector (lean_w, tilt_w) describing
+// how the emitter signal reaches them.  On each projection the emitter's
+// current state is normalised into lean_signal ∈ [-1,+1] and
+// tilt_signal ∈ [-0.5,+0.5] then applied to every node after reset to neutral.
+//
+// Port of gradient_field.py Python POC.
+// Author: Randy Hoggard  Date: March 2026
+//
+// ── nodes (wild float64->, n_nodes * 5 elements) ─────────────────────────────
+//   nodes[i*5+0]  pbc     position bias centre    (mutable on project)
+//   nodes[i*5+1]  pbm     position bias magnitude (mutable on project)
+//   nodes[i*5+2]  lean_w  lean sensitivity  [-1.0 .. +1.0]
+//   nodes[i*5+3]  tilt_w  tilt sensitivity  [-1.0 .. +1.0]
+//   nodes[i*5+4]  width   DG span
+//
+// ── gf_meta (wild int64->, 6 elements) ───────────────────────────────────────
+//   gf_meta[0]  n_nodes
+//   gf_meta[1]  capacity       max FieldPatterns retained
+//   gf_meta[2]  head           ring-buffer head index
+//   gf_meta[3]  count          current pattern count
+//   gf_meta[4]  proj_count     total projections performed
+//   gf_meta[5]  slot_sz        = 4 + n_nodes*3
+//
+// ── gf_conf (wild float64->, 2 elements) ──────────────────────────────────────
+//   gf_conf[0]  base_lean
+//   gf_conf[1]  base_tilt
+//
+// ── patterns (wild float64->, capacity * slot_sz elements) ───────────────────
+//   slot[0]           emitter step count at projection  (stored as float64)
+//   slot[1]           emitter lean signal [-1..+1]
+//   slot[2]           emitter tilt signal [-0.5..+0.5]
+//   slot[3]           emitter decision code             (stored as float64)
+//   slot[4 + i*3]     node[i] decision code             (stored as float64)
+//   slot[5 + i*3]     node[i] opt_a
+//   slot[6 + i*3]     node[i] opt_b
+//
+// ── Emitter buffers (caller-owned, passed to gf_drive/gf_project) ────────────
+//   em_dg    wild float64->  5 elements            (DG cell: pbc,pbm,width,pbw,spare)
+//   em_meta  wild int64->    5 elements            (DGT meta: step_count,cap,head,count,depth)
+//   em_snaps wild float64->  emitter_cap * 8 elems (DGT snapshot ring)
+//
+// ── Direction codes for gf_drive ─────────────────────────────────────────────
+//   gf_dir_a    = 0   lean toward option A
+//   gf_dir_unkn = 1   lean toward UNKNOWN (centre)
+//   gf_dir_b    = 2   lean toward option B
+// ─────────────────────────────────────────────────────────────────────────────
+
+use "../../aria-decision-t/src/aria_decision_t.aria".*;
+
+// Private clamp helper (mirrors _dg_clamp in aria_decision_t)
+func:_gf_clamp = float64(float64:v, float64:lo, float64:hi) {
+    if (v < lo) { pass(lo); }
+    if (v > hi) { pass(hi); }
+    pass(v);
+};
+
+// ── Direction constants ───────────────────────────────────────────────────────
+
+pub func:gf_dir_a    = int64() { pass(0i64); };
+pub func:gf_dir_unkn = int64() { pass(1i64); };
+pub func:gf_dir_b    = int64() { pass(2i64); };
+
+// ── Initialisation ────────────────────────────────────────────────────────────
+
+// gf_create: initialise all GF buffers.
+//   All nodes start at neutral: pbc=node_width*0.5, pbm=0.5, lean_w=1, tilt_w=1, width=node_width.
+//   Emitter buffers are NOT touched — caller creates/owns the emitter.
+pub func:gf_create = NIL(wild float64->:nodes, wild int64->:gf_meta,
+                          wild float64->:gf_conf, wild float64->:patterns,
+                          int64:n_nodes, float64:node_width,
+                          float64:base_lean, float64:base_tilt, int64:capacity) {
+    int64:slot_sz = 4i64 + n_nodes * 3i64;
+    gf_meta[0i64] = n_nodes;
+    gf_meta[1i64] = capacity;
+    gf_meta[2i64] = 0i64;
+    gf_meta[3i64] = 0i64;
+    gf_meta[4i64] = 0i64;
+    gf_meta[5i64] = slot_sz;
+    gf_conf[0i64] = base_lean;
+    gf_conf[1i64] = base_tilt;
+    // Initialise all nodes to neutral
+    int64:i = 0i64;
+    while (i < n_nodes) {
+        nodes[i * 5i64 + 0i64] = node_width * 0.5;
+        nodes[i * 5i64 + 1i64] = 0.5;
+        nodes[i * 5i64 + 2i64] = 1.0;
+        nodes[i * 5i64 + 3i64] = 1.0;
+        nodes[i * 5i64 + 4i64] = node_width;
+        i = i + 1i64;
+    }
+    pass(NIL);
+};
+
+// ── Node setup ────────────────────────────────────────────────────────────────
+
+// gf_set_node: update node i's weight vector (lean_w, tilt_w) and width.
+pub func:gf_set_node = NIL(wild float64->:nodes, int64:i,
+                            float64:lean_w, float64:tilt_w, float64:width) {
+    nodes[i * 5i64 + 2i64] = lean_w;
+    nodes[i * 5i64 + 3i64] = tilt_w;
+    nodes[i * 5i64 + 4i64] = width;
+    pass(NIL);
+};
+
+// ── Node accessors ────────────────────────────────────────────────────────────
+
+pub func:gf_node_pbc    = float64(wild float64->:nodes, int64:i) { pass(nodes[i * 5i64 + 0i64]); };
+pub func:gf_node_pbm    = float64(wild float64->:nodes, int64:i) { pass(nodes[i * 5i64 + 1i64]); };
+pub func:gf_node_lean_w = float64(wild float64->:nodes, int64:i) { pass(nodes[i * 5i64 + 2i64]); };
+pub func:gf_node_tilt_w = float64(wild float64->:nodes, int64:i) { pass(nodes[i * 5i64 + 3i64]); };
+pub func:gf_node_width  = float64(wild float64->:nodes, int64:i) { pass(nodes[i * 5i64 + 4i64]); };
+
+pub func:gf_node_dec = int64(wild float64->:nodes, int64:i) {
+    float64:pbc = nodes[i * 5i64 + 0i64];
+    float64:pbm = nodes[i * 5i64 + 1i64];
+    float64:w   = nodes[i * 5i64 + 4i64];
+    int64:dc    = dg_decision_code(pbc, pbm, w);
+    pass(dc);
+};
+
+pub func:gf_node_opt_a = float64(wild float64->:nodes, int64:i) {
+    float64:pbc = nodes[i * 5i64 + 0i64];
+    float64:pbm = nodes[i * 5i64 + 1i64];
+    float64:w   = nodes[i * 5i64 + 4i64];
+    pass(dg_opt_a(pbc, pbm, w));
+};
+
+pub func:gf_node_opt_b = float64(wild float64->:nodes, int64:i) {
+    float64:pbc = nodes[i * 5i64 + 0i64];
+    float64:pbm = nodes[i * 5i64 + 1i64];
+    float64:w   = nodes[i * 5i64 + 4i64];
+    pass(dg_opt_b(pbc, pbm, w));
+};
+
+// Internal: write one node's decision + opt_a + opt_b into the patterns ring buffer.
+// Called inside gf_project's per-node loop to prevent LLVM vectorizing across loop body.
+func:_gf_write_node_to_slot = NIL(wild float64->:nodes, wild float64->:patterns,
+                                   int64:base, int64:j) {
+    float64:npbc = nodes[j * 5i64 + 0i64];
+    float64:npbm = nodes[j * 5i64 + 1i64];
+    float64:nw   = nodes[j * 5i64 + 4i64];
+    int64:nd = dg_decision_code(npbc, npbm, nw);
+    patterns[base + 4i64 + j * 3i64] = nd => flt64;
+    patterns[base + 5i64 + j * 3i64] = dg_opt_a(npbc, npbm, nw);
+    patterns[base + 6i64 + j * 3i64] = dg_opt_b(npbc, npbm, nw);
+    pass(NIL);
+};
+
+// ── Projection ────────────────────────────────────────────────────────────────
+
+// gf_project: project emitter's current state onto all nodes, record FieldPattern.
+//   Signal extraction:
+//     lean_signal = (emitter_pbc - center) / quarter   [-1..+1]
+//     tilt_signal = emitter_pbm - 0.5                  [-0.5..+0.5]
+//   Each node is reset to (pbc=center, pbm=0.5) then:
+//     pbc   = clamp(center + lean_w * lean_signal * base_lean,  lo, hi)
+//     pbm   = clamp(0.5   + tilt_w * tilt_signal * base_tilt / (width*0.5), 0, 1)
+pub func:gf_project = NIL(wild float64->:nodes, wild int64->:gf_meta,
+                           wild float64->:gf_conf, wild float64->:patterns,
+                           wild float64->:em_dg, wild int64->:em_meta) {
+    // Extract emitter signals
+    float64:e_pbc   = em_dg[0i64];
+    float64:e_pbm   = em_dg[1i64];
+    float64:e_width = em_dg[2i64];
+    float64:center  = e_width * 0.5;
+    float64:quarter = e_width * 0.25;
+    float64:lean_sig = 0.0;
+    if (quarter > 0.0001) {
+        lean_sig = (e_pbc - center) / quarter;
+    }
+    float64:tilt_sig = e_pbm - 0.5;
+
+    float64:base_lean = gf_conf[0i64];
+    float64:base_tilt = gf_conf[1i64];
+
+    int64:n_nodes    = gf_meta[0i64];
+    int64:capacity   = gf_meta[1i64];
+    int64:head       = gf_meta[2i64];
+    int64:count      = gf_meta[3i64];
+    int64:proj_count = gf_meta[4i64];
+    int64:slot_sz    = gf_meta[5i64];
+    int64:em_step    = em_meta[0i64];
+
+    // Project onto each node: combined reset + apply lean and tilt
+    int64:i = 0i64;
+    while (i < n_nodes) {
+        float64:w      = nodes[i * 5i64 + 4i64];
+        float64:nd_ctr = w * 0.5;
+        float64:lo     = w * 0.25;
+        float64:hi     = w * 0.75;
+        float64:pbw    = nd_ctr;
+        float64:lw     = nodes[i * 5i64 + 2i64];
+        float64:tw     = nodes[i * 5i64 + 3i64];
+        float64:lean_d = lw * lean_sig * base_lean;
+        float64:tilt_d = tw * tilt_sig * base_tilt;
+        // Reset pbc to center and apply lean delta
+        nodes[i * 5i64 + 0i64] = raw(_gf_clamp(nd_ctr + lean_d, lo, hi));
+        // Reset pbm to 0.5 and apply tilt delta
+        if (pbw > 0.0001) {
+            nodes[i * 5i64 + 1i64] = raw(_gf_clamp(0.5 + tilt_d / pbw, 0.0, 1.0));
+        }
+        if (pbw <= 0.0001) {
+            nodes[i * 5i64 + 1i64] = 0.5;
+        }
+        i = i + 1i64;
+    }
+
+    // Write FieldPattern to ring buffer.
+    // Use proj_count % capacity for the physical slot — guaranteed in [0,capacity-1].
+    // This avoids any if-block variable mutation that the Aria compiler may mishandle.
+    int64:phys_slot = proj_count % capacity;
+    int64:base = phys_slot * slot_sz;
+
+    patterns[base + 0i64] = em_step => flt64;
+    patterns[base + 1i64] = lean_sig;
+    patterns[base + 2i64] = tilt_sig;
+    int64:e_dec = dg_decision_code(e_pbc, e_pbm, e_width);
+    patterns[base + 3i64] = e_dec => flt64;
+
+    // Per-node decision and confidence (use fresh variable j to avoid SSA reuse of i)
+    int64:j = 0i64;
+    while (j < n_nodes) {
+        drop(_gf_write_node_to_slot(nodes, patterns, base, j));
+        j = j + 1i64;
+    }
+
+    proj_count = proj_count + 1i64;
+    if (count < capacity) { count = count + 1i64; }
+    // head = oldest readable slot = next write position when ring is full
+    if (count >= capacity) { head = proj_count % capacity; }
+    gf_meta[2i64] = head;
+    gf_meta[3i64] = count;
+    gf_meta[4i64] = proj_count;
+    pass(NIL);
+};
+
+// gf_drive: mutate emitter (via dgt_observe) then project onto all nodes.
+//   dir_code: 0=lean_a  1=lean_unkn  2=lean_b
+pub func:gf_drive = NIL(wild float64->:nodes, wild int64->:gf_meta,
+                         wild float64->:gf_conf, wild float64->:patterns,
+                         wild float64->:em_dg, wild int64->:em_meta,
+                         wild float64->:em_snaps,
+                         float64:lean, float64:tilt, int64:dir_code) {
+    drop(dgt_observe(em_dg, em_meta, em_snaps, lean, tilt, 8i64, dir_code));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    pass(NIL);
+};
+
+// ── Meta accessors ────────────────────────────────────────────────────────────
+
+pub func:gf_n_nodes       = int64(wild int64->:gf_meta)   { pass(gf_meta[0i64]); };
+pub func:gf_pattern_count = int64(wild int64->:gf_meta)   { pass(gf_meta[3i64]); };
+pub func:gf_proj_count    = int64(wild int64->:gf_meta)   { pass(gf_meta[4i64]); };
+pub func:gf_base_lean     = float64(wild float64->:gf_conf) { pass(gf_conf[0i64]); };
+pub func:gf_base_tilt     = float64(wild float64->:gf_conf) { pass(gf_conf[1i64]); };
+
+// ── Pattern retrieval ─────────────────────────────────────────────────────────
+
+// gf_get_pattern: copy logical pattern at idx into out_pattern.
+// Logical 0 = oldest, logical count-1 = newest.
+// out_pattern must hold at least slot_sz float64 (= 4 + n_nodes*3).
+// Returns 1 on success, 0 if out-of-range.
+pub func:gf_get_pattern = int64(wild float64->:patterns, wild int64->:gf_meta,
+                                 int64:idx, wild float64->:out_pattern) {
+    int64:count    = gf_meta[3i64];
+    int64:capacity = gf_meta[1i64];
+    int64:head     = gf_meta[2i64];
+    int64:slot_sz  = gf_meta[5i64];
+    if (idx < 0i64)     { pass(0i64); }
+    if (idx >= count)   { pass(0i64); }
+    int64:phys = (head + idx) % capacity;
+    int64:base = phys * slot_sz;
+    int64:j = 0i64;
+    while (j < slot_sz) {
+        out_pattern[j] = patterns[base + j];
+        j = j + 1i64;
+    }
+    pass(1i64);
+};
+
+// Pattern slot accessors (operate on an out_pattern buffer from gf_get_pattern)
+pub func:gf_pat_emitter_step = float64(wild float64->:out) { pass(out[0i64]); };
+pub func:gf_pat_emitter_lean = float64(wild float64->:out) { pass(out[1i64]); };
+pub func:gf_pat_emitter_tilt = float64(wild float64->:out) { pass(out[2i64]); };
+pub func:gf_pat_emitter_dec  = float64(wild float64->:out) { pass(out[3i64]); };
+
+pub func:gf_pat_node_dec = int64(wild float64->:out, int64:i) {
+    pass(out[4i64 + i * 3i64] => int64);
+};
+pub func:gf_pat_node_a = float64(wild float64->:out, int64:i) {
+    pass(out[5i64 + i * 3i64]);
+};
+pub func:gf_pat_node_b = float64(wild float64->:out, int64:i) {
+    pass(out[6i64 + i * 3i64]);
+};
+
+// ── Analysis ──────────────────────────────────────────────────────────────────
+
+// gf_consensus_count: count live nodes whose current decision equals dec_code.
+pub func:gf_consensus_count = int64(wild float64->:nodes, wild int64->:gf_meta, int64:dec_code) {
+    int64:n_nodes = gf_meta[0i64];
+    int64:cnt = 0i64;
+    int64:i = 0i64;
+    while (i < n_nodes) {
+        float64:pbc = nodes[i * 5i64 + 0i64];
+        float64:pbm = nodes[i * 5i64 + 1i64];
+        float64:w   = nodes[i * 5i64 + 4i64];
+        int64:dc    = dg_decision_code(pbc, pbm, w);
+        if (dc == dec_code) { cnt = cnt + 1i64; }
+        i = i + 1i64;
+    }
+    pass(cnt);
+};
+
+// gf_pattern_shifts: count consecutive pattern pairs in history that differ.
+// A shift occurs when at least one node's decision code changes.
+pub func:gf_pattern_shifts = int64(wild float64->:patterns, wild int64->:gf_meta) {
+    int64:count    = gf_meta[3i64];
+    int64:capacity = gf_meta[1i64];
+    int64:head     = gf_meta[2i64];
+    int64:slot_sz  = gf_meta[5i64];
+    int64:n_nodes  = gf_meta[0i64];
+    if (count < 2i64) { pass(0i64); }
+    int64:shifts = 0i64;
+    int64:i = 1i64;
+    while (i < count) {
+        int64:prev_phys = (head + i - 1i64) % capacity;
+        int64:curr_phys = (head + i) % capacity;
+        int64:prev_base = prev_phys * slot_sz;
+        int64:curr_base = curr_phys * slot_sz;
+        int64:changed = 0i64;
+        int64:j = 0i64;
+        while (j < n_nodes) {
+            int64:pd = patterns[prev_base + 4i64 + j * 3i64] => int64;
+            int64:cd = patterns[curr_base + 4i64 + j * 3i64] => int64;
+            if (pd != cd) { changed = 1i64; }
+            j = j + 1i64;
+        }
+        if (changed == 1i64) { shifts = shifts + 1i64; }
+        i = i + 1i64;
+    }
+    pass(shifts);
+};
+
+// gf_is_nodal: return 1 if node i is nodal (both |lean_w| and |tilt_w| <= threshold).
+pub func:gf_is_nodal = int64(wild float64->:nodes, int64:i, float64:threshold) {
+    float64:lw = nodes[i * 5i64 + 2i64];
+    float64:tw = nodes[i * 5i64 + 3i64];
+    if (lw < 0.0) { lw = 0.0 - lw; }
+    if (tw < 0.0) { tw = 0.0 - tw; }
+    if (lw <= threshold && tw <= threshold) { pass(1i64); }
+    pass(0i64);
+};

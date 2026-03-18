@@ -1,0 +1,465 @@
+// test_aria_gradient_field.aria — GradientField LIB-27 test suite
+//
+// Tests: 20 cases covering gf_create, gf_set_node, gf_project (neutral/lean/tilt),
+// gf_node_dec, gf_drive, gf_get_pattern, gf_consensus_count,
+// gf_pattern_shifts, gf_is_nodal, ring buffer wrap, and accessors.
+//
+// Buffers (shared, re-inited each test):
+//   nodes       — 15 float64  (3 nodes * 5)
+//   gf_meta     — 6  int64    (GF ring buffer metadata)
+//   gf_conf     — 2  float64  (base_lean, base_tilt)
+//   patterns    — 52 float64  (capacity=4, slot_sz=13)
+//   out_pattern — 16 float64  (scratch for gf_get_pattern)
+//   em_dg       — 5  float64  (emitter DG cell)
+//   em_meta     — 5  int64    (emitter DGT meta)
+//   em_snaps    — 64 float64  (emitter DGT ring: cap=8 * 8 floats/snap)
+//
+// Node setup (after gf_create + gf_set_node):
+//   Node 0: lean_w=+1.0  tilt_w=+1.0   full tracker
+//   Node 1: lean_w=-1.0  tilt_w=+0.5   anti-lean, half-tilt
+//   Node 2: lean_w= 0.0  tilt_w= 0.0   nodal (never moves)
+//
+// Key calculated values (width=100, base_lean=20, base_tilt=20):
+//   Neutral emitter (pbc=50, pbm=0): lean_sig=0, tilt_sig=-0.5
+//     All nodes → pbc=50, pbm=clamp(0.5 + -0.5*20/50)=clamp(0.3)=0.3 → BOTH(4)
+//   Lean-only (emitter to pbm=0.5 via tilt_both(25), pbc=75 via lean_b(25)):
+//     lean_sig=1.0, tilt_sig=0
+//     Node 0: pbc=clamp(50+20,25,75)=70, pbm=0.5 → B(3)
+//     Node 1: pbc=clamp(50-20,25,75)=30, pbm=0.5 → A(2)
+//     Node 2: pbc=50, pbm=0.5 → BOTH(4)
+//   Tilt-only (emitter to pbm=1.0 via tilt_both(50), pbc=50):
+//     lean_sig=0, tilt_sig=0.5
+//     Node 0: tilt_d=1.0*0.5*20=10, step=10/50=0.2, pbm=0.5+0.2=0.7
+//     Node 1: tilt_d=0.5*0.5*20=5,  step=5/50=0.1,  pbm=0.5+0.1=0.6
+//     Node 2: tilt_d=0                               pbm=0.5
+
+use "../src/aria_gradient_field.aria".*;
+
+extern func:aria_alloc = wild float64*(int64:size);
+extern func:aria_free  = void(wild float64*:ptr);
+extern func:malloc     = wild int64*(int64:size);
+extern func:free       = void(wild int64*:ptr);
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    int64:passed = 0i64;
+    int64:total  = 0i64;
+
+    print("aria-gradient-field LIB-27 test suite\n");
+    print("=======================================\n");
+
+    // Allocate shared buffers (re-used across tests)
+    wild float64->:nodes       = aria_alloc(15i64 * 8i64);
+    wild int64->:gf_meta       = malloc(6i64 * 8i64);
+    wild float64->:gf_conf     = aria_alloc(2i64 * 8i64);
+    wild float64->:patterns    = aria_alloc(448i64);  // 56 float64s (52 data + 4 write-overhead padding)
+    wild float64->:out_pattern = aria_alloc(16i64 * 8i64);
+    wild float64->:em_dg       = aria_alloc(5i64 * 8i64);
+    wild int64->:em_meta       = malloc(5i64 * 8i64);
+    wild float64->:em_snaps    = aria_alloc(64i64 * 8i64);
+
+    // Helper: reinit everything for a fresh test
+    // (called inline per test using gf_create + dgt_create + gf_set_node)
+
+    // ── 01: gf_create sets meta correctly ─────────────────────────────────
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    if (gf_meta[0i64] == 3i64 && gf_meta[1i64] == 4i64 &&
+        gf_meta[3i64] == 0i64 && gf_meta[4i64] == 0i64 &&
+        gf_meta[5i64] == 13i64) {
+        print("[PASS] 01: gf_create meta (n_nodes=3 cap=4 count=0 proj=0 slot_sz=13)\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 01: gf_create meta wrong\n");
+    }
+
+    // ── 02: gf_create initialises all node defaults ────────────────────────
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    float64:p02 = gf_node_pbc(nodes, 0i64);
+    float64:b02 = gf_node_pbm(nodes, 0i64);
+    float64:lw02 = gf_node_lean_w(nodes, 0i64);
+    float64:d02p = p02 - 50.0;
+    if (d02p < 0.0) { d02p = 0.0 - d02p; }
+    float64:d02b = b02 - 0.5;
+    if (d02b < 0.0) { d02b = 0.0 - d02b; }
+    float64:d02l = lw02 - 1.0;
+    if (d02l < 0.0) { d02l = 0.0 - d02l; }
+    if (d02p < 0.001 && d02b < 0.001 && d02l < 0.001) {
+        print("[PASS] 02: default node 0: pbc=50 pbm=0.5 lean_w=1\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 02: default node wrong\n");
+    }
+
+    // ── 03: gf_set_node updates weights ────────────────────────────────────
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    float64:lw03 = gf_node_lean_w(nodes, 1i64);
+    float64:tw03 = gf_node_tilt_w(nodes, 1i64);
+    float64:lw03n = gf_node_lean_w(nodes, 2i64);
+    float64:d03l = lw03 - (-1.0);
+    if (d03l < 0.0) { d03l = 0.0 - d03l; }
+    float64:d03t = tw03 - 0.5;
+    if (d03t < 0.0) { d03t = 0.0 - d03t; }
+    float64:d03n = lw03n - 0.0;
+    if (d03n < 0.0) { d03n = 0.0 - d03n; }
+    if (d03l < 0.001 && d03t < 0.001 && d03n < 0.001) {
+        print("[PASS] 03: gf_set_node lean_w=-1 tilt_w=0.5 for node1; nodal node2\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 03: gf_set_node wrong\n");
+    }
+
+    // ── 04: gf_project with neutral emitter — nodes stay at pbc=50 ─────────
+    // Neutral emitter: pbc=50, pbm=0 → lean_sig=0, tilt_sig=-0.5
+    // Node 0 (lean_w=1, tilt_w=1): lean_d=0, tilt_d=-0.5*20=-10 → pbc=50, pbm=clamp(0.3)=0.3
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    float64:p04 = gf_node_pbc(nodes, 0i64);
+    float64:p04n = gf_node_pbc(nodes, 2i64);
+    float64:d04 = p04 - 50.0;
+    if (d04 < 0.0) { d04 = 0.0 - d04; }
+    float64:d04n = p04n - 50.0;
+    if (d04n < 0.0) { d04n = 0.0 - d04n; }
+    if (d04 < 0.001 && d04n < 0.001) {
+        print("[PASS] 04: neutral emitter project -> all nodes pbc=50\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 04: neutral project pbc wrong\n");
+    }
+
+    // ── 05: lean-only emitter (pbm=0.5, pbc=75) — pbc tracking ────────────
+    // Node 0 lean_w=+1 → pbc=clamp(50+20)=70
+    // Node 1 lean_w=-1 → pbc=clamp(50-20)=30
+    // Node 2 lean_w=0  → pbc=50
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(dgt_tilt_both(em_dg, em_meta, em_snaps, 25.0));
+    drop(dgt_lean_b(em_dg, em_meta, em_snaps, 25.0));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    float64:p05_0 = gf_node_pbc(nodes, 0i64);
+    float64:p05_1 = gf_node_pbc(nodes, 1i64);
+    float64:p05_2 = gf_node_pbc(nodes, 2i64);
+    float64:d05_0 = p05_0 - 70.0;
+    if (d05_0 < 0.0) { d05_0 = 0.0 - d05_0; }
+    float64:d05_1 = p05_1 - 30.0;
+    if (d05_1 < 0.0) { d05_1 = 0.0 - d05_1; }
+    float64:d05_2 = p05_2 - 50.0;
+    if (d05_2 < 0.0) { d05_2 = 0.0 - d05_2; }
+    if (d05_0 < 0.01 && d05_1 < 0.01 && d05_2 < 0.01) {
+        print("[PASS] 05: lean_b emitter: node0=70 node1=30 nodal=50\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 05: lean pbc tracking wrong\n");
+    }
+
+    // ── 06: tilt emitter (pbm=1.0) — pbm tracking ─────────────────────────
+    // lean_sig=0, tilt_sig=0.5
+    // Node 0 tilt_w=1.0: tilt_d=10, step=0.2, pbm=0.7
+    // Node 1 tilt_w=0.5: tilt_d=5,  step=0.1, pbm=0.6
+    // Node 2 tilt_w=0.0: tilt_d=0,             pbm=0.5
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(dgt_tilt_both(em_dg, em_meta, em_snaps, 50.0));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    float64:m06_0 = gf_node_pbm(nodes, 0i64);
+    float64:m06_1 = gf_node_pbm(nodes, 1i64);
+    float64:m06_2 = gf_node_pbm(nodes, 2i64);
+    float64:d06_0 = m06_0 - 0.7;
+    if (d06_0 < 0.0) { d06_0 = 0.0 - d06_0; }
+    float64:d06_1 = m06_1 - 0.6;
+    if (d06_1 < 0.0) { d06_1 = 0.0 - d06_1; }
+    float64:d06_2 = m06_2 - 0.5;
+    if (d06_2 < 0.0) { d06_2 = 0.0 - d06_2; }
+    if (d06_0 < 0.001 && d06_1 < 0.001 && d06_2 < 0.001) {
+        print("[PASS] 06: tilt emitter: node0=0.7 node1=0.6 nodal=0.5\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 06: tilt pbm tracking wrong\n");
+    }
+
+    // ── 07: gf_node_dec after lean — node0=B(3) node1=A(2) ────────────────
+    // Lean-only: pbc=50, pbm=0 → tilt_sig=-0.5 still (tilt not neutralised here)
+    // Using same lean-only setup as T05 (pbm=0.5, pbc=75) gives tilt_sig=0 cleanly
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(dgt_tilt_both(em_dg, em_meta, em_snaps, 25.0));
+    drop(dgt_lean_b(em_dg, em_meta, em_snaps, 25.0));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    int64:dc07_0 = gf_node_dec(nodes, 0i64);
+    int64:dc07_1 = gf_node_dec(nodes, 1i64);
+    if (dc07_0 == 3i64 && dc07_1 == 2i64) {
+        print("[PASS] 07: node_dec after lean_b: node0=B(3) node1=A(2)\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 07: node_dec after lean wrong\n");
+    }
+
+    // ── 08: gf_project records pattern in ring buffer ──────────────────────
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    int64:cnt08 = gf_pattern_count(gf_meta);
+    int64:prj08 = gf_proj_count(gf_meta);
+    if (cnt08 == 1i64 && prj08 == 1i64) {
+        print("[PASS] 08: gf_project records 1 pattern; proj_count=1\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 08: pattern_count or proj_count wrong\n");
+    }
+
+    // ── 09: gf_get_pattern returns correct emitter lean signal ─────────────
+    // After lean-only drive (pbm=0.5, pbc=75): lean_signal = 1.0
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(dgt_tilt_both(em_dg, em_meta, em_snaps, 25.0));
+    drop(dgt_lean_b(em_dg, em_meta, em_snaps, 25.0));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    int64:ok09 = gf_get_pattern(patterns, gf_meta, 0i64, out_pattern);
+    float64:lean09 = gf_pat_emitter_lean(out_pattern);
+    float64:d09 = lean09 - 1.0;
+    if (d09 < 0.0) { d09 = 0.0 - d09; }
+    if (ok09 == 1i64 && d09 < 0.001) {
+        print("[PASS] 09: gf_get_pattern emitter lean_signal = 1.0\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 09: emitter lean_signal wrong\n");
+    }
+
+    // ── 10: gf_get_pattern returns correct node 0 decision ─────────────────
+    // Same lean setup: node 0 → B(3)
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(dgt_tilt_both(em_dg, em_meta, em_snaps, 25.0));
+    drop(dgt_lean_b(em_dg, em_meta, em_snaps, 25.0));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    drop(gf_get_pattern(patterns, gf_meta, 0i64, out_pattern));
+    int64:nd10 = gf_pat_node_dec(out_pattern, 0i64);
+    if (nd10 == 3i64) {
+        print("[PASS] 10: gf_get_pattern node0 decision = B(3)\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 10: pattern node0 decision wrong\n");
+    }
+
+    // ── 11: gf_get_pattern out-of-range returns 0 ─────────────────────────
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    int64:r11a = gf_get_pattern(patterns, gf_meta, 5i64, out_pattern);
+    int64:r11b = gf_get_pattern(patterns, gf_meta, -1i64, out_pattern);
+    if (r11a == 0i64 && r11b == 0i64) {
+        print("[PASS] 11: gf_get_pattern out-of-range = 0\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 11: out-of-range should return 0\n");
+    }
+
+    // ── 12: gf_drive = emitter mutation + project in one call ─────────────
+    // After 2 gf_drive calls: proj_count=2, pattern_count=2
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(gf_drive(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta, em_snaps, 10.0, 0.0, 2i64));
+    drop(gf_drive(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta, em_snaps, 10.0, 0.0, 2i64));
+    int64:pc12 = gf_proj_count(gf_meta);
+    int64:cc12 = gf_pattern_count(gf_meta);
+    if (pc12 == 2i64 && cc12 == 2i64) {
+        print("[PASS] 12: gf_drive: proj_count=2 pattern_count=2\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 12: gf_drive proj/count wrong\n");
+    }
+
+    // ── 13: gf_consensus_count after neutral project — all BOTH(4) ─────────
+    // Neutral emitter: pbc=50,pbm=0 → lean_sig=0,tilt_sig=-0.5
+    // All nodes: pbc=50, pbm=0.3 → BOTH(4)  (even nodal node with tilt_w=0 stays 0.5→BOTH)
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    int64:cs13 = gf_consensus_count(nodes, gf_meta, 4i64);
+    if (cs13 == 3i64) {
+        print("[PASS] 13: consensus BOTH(4) after neutral = 3\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 13: consensus count wrong\n");
+    }
+
+    // ── 14: gf_consensus_count B(3) after lean_b — 1 node ─────────────────
+    // Lean setup (pbm=0.5, pbc=75): node0=B(3), node1=A(2), node2=BOTH(4)
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(dgt_tilt_both(em_dg, em_meta, em_snaps, 25.0));
+    drop(dgt_lean_b(em_dg, em_meta, em_snaps, 25.0));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    int64:cs14 = gf_consensus_count(nodes, gf_meta, 3i64);
+    if (cs14 == 1i64) {
+        print("[PASS] 14: consensus B(3) after lean_b = 1\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 14: consensus B count wrong\n");
+    }
+
+    // ── 15: gf_pattern_shifts = 0 after two identical projections ─────────
+    // Both neutral: same decisions → 0 shifts
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    int64:sh15 = gf_pattern_shifts(patterns, gf_meta);
+    if (sh15 == 0i64) {
+        print("[PASS] 15: pattern_shifts = 0 for two identical projections\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 15: pattern_shifts should be 0\n");
+    }
+
+    // ── 16: gf_pattern_shifts = 1 after pattern changes ───────────────────
+    // First project neutral → BOTH all; then drive lean_b → node0 changes to B
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    drop(dgt_tilt_both(em_dg, em_meta, em_snaps, 25.0));
+    drop(dgt_lean_b(em_dg, em_meta, em_snaps, 25.0));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    int64:sh16 = gf_pattern_shifts(patterns, gf_meta);
+    if (sh16 == 1i64) {
+        print("[PASS] 16: pattern_shifts = 1 after emitter change\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 16: pattern_shifts should be 1\n");
+    }
+
+    // ── 17: ring buffer wraps — capacity=4, 6 projections → count=4 proj=6 ─
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    int64:cnt17 = gf_pattern_count(gf_meta);
+    int64:prj17 = gf_proj_count(gf_meta);
+    if (cnt17 == 4i64 && prj17 == 6i64) {
+        print("[PASS] 17: ring buffer wraps: count=4 proj_count=6\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 17: ring buffer wrap wrong\n");
+    }
+
+    // ── 18: gf_is_nodal — node2 (0/0 weights) is nodal; node0 is not ──────
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64,  0.0, 0.0, 100.0));
+    int64:nod18_0 = gf_is_nodal(nodes, 0i64, 0.1);
+    int64:nod18_2 = gf_is_nodal(nodes, 2i64, 0.1);
+    if (nod18_0 == 0i64 && nod18_2 == 1i64) {
+        print("[PASS] 18: gf_is_nodal: node0=no node2=yes\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 18: gf_is_nodal wrong\n");
+    }
+
+    // ── 19: gf_node_opt_a/opt_b after lean_b ──────────────────────────────
+    // node0 after lean_b: pbc=70, pbm=0.5 → opt_a<0.15, opt_b>0.5
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    drop(gf_set_node(nodes, 1i64, -1.0, 0.5, 100.0));
+    drop(gf_set_node(nodes, 2i64, 0.0, 0.0, 100.0));
+    drop(dgt_create(em_dg, em_meta, em_snaps, 100.0, 8i64));
+    drop(dgt_tilt_both(em_dg, em_meta, em_snaps, 25.0));
+    drop(dgt_lean_b(em_dg, em_meta, em_snaps, 25.0));
+    drop(gf_project(nodes, gf_meta, gf_conf, patterns, em_dg, em_meta));
+    drop(gf_get_pattern(patterns, gf_meta, 0i64, out_pattern));
+    float64:oa19 = gf_pat_node_a(out_pattern, 0i64);
+    float64:ob19 = gf_pat_node_b(out_pattern, 0i64);
+    if (oa19 < 0.15 && ob19 > 0.5) {
+        print("[PASS] 19: node0 opt_a<0.15 opt_b>0.5 after lean_b\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 19: node0 opt_a/opt_b wrong\n");
+    }
+
+    // ── 20: meta accessors gf_n_nodes, gf_base_lean, gf_base_tilt ──────────
+    total = total + 1i64;
+    drop(gf_create(nodes, gf_meta, gf_conf, patterns, 3i64, 100.0, 20.0, 20.0, 4i64));
+    int64:nn20 = gf_n_nodes(gf_meta);
+    float64:bl20 = gf_base_lean(gf_conf);
+    float64:bt20 = gf_base_tilt(gf_conf);
+    float64:d20l = bl20 - 20.0;
+    if (d20l < 0.0) { d20l = 0.0 - d20l; }
+    float64:d20t = bt20 - 20.0;
+    if (d20t < 0.0) { d20t = 0.0 - d20t; }
+    if (nn20 == 3i64 && d20l < 0.001 && d20t < 0.001) {
+        print("[PASS] 20: n_nodes=3 base_lean=20 base_tilt=20\n");
+        passed = passed + 1i64;
+    } else {
+        print("[FAIL] 20: meta accessors wrong\n");
+    }
+
+    // ── Summary ────────────────────────────────────────────────────────────
+    print("\n");
+    if (passed == total) {
+        if (total == 20i64) {
+            print("20/20 tests passed\n");
+        }
+    }
+    if (passed != total) {
+        print("SOME TESTS FAILED\n");
+    }
+
+    aria_free(nodes);
+    free(gf_meta);
+    aria_free(gf_conf);
+    aria_free(patterns);
+    aria_free(out_pattern);
+    aria_free(em_dg);
+    free(em_meta);
+    aria_free(em_snaps);
+
+    pass(0i32);
+};
