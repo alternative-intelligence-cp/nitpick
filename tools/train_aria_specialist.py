@@ -193,10 +193,13 @@ class AriaSpecialistTrainer:
         print(f"✓ Prepared {len(self.train_dataset)} training examples")
         print(f"✓ Prepared {len(self.eval_dataset)} evaluation examples")
     
-    def train(self):
+    def train(self, resume_from_checkpoint: Optional[str] = None):
         """Execute fine-tuning."""
         print("\n" + "="*60)
-        print("Starting LoRA fine-tuning on Aria corpus")
+        if resume_from_checkpoint:
+            print(f"Resuming LoRA fine-tuning from checkpoint: {resume_from_checkpoint}")
+        else:
+            print("Starting LoRA fine-tuning on Aria corpus")
         print("="*60 + "\n")
         
         # Training arguments
@@ -240,7 +243,7 @@ class AriaSpecialistTrainer:
         
         # Train!
         print("Starting training...")
-        trainer.train()
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         
         # Save final model
         print("\nSaving final model...")
@@ -281,6 +284,11 @@ def main():
     parser.add_argument('--output', default='./aria_specialist_model', help='Output directory')
     parser.add_argument('--epochs', type=int, default=3, help='Number of training epochs')
     parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')
+    parser.add_argument('--resume', metavar='CHECKPOINT_DIR',
+                        help='Resume training from a saved checkpoint directory')
+    parser.add_argument('--model', default=None,
+                        help='Override base model (e.g. Qwen/Qwen2.5-7B-Instruct). '
+                             'Default: mistralai/Mistral-7B-v0.3')
     parser.add_argument('--test', action='store_true', help='Run test inference after training')
     
     args = parser.parse_args()
@@ -291,6 +299,9 @@ def main():
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size
     )
+    if args.model:
+        config.base_model = args.model
+        print(f"Using override base model: {config.base_model}")
     
     # Initialize trainer
     trainer = AriaSpecialistTrainer(config)
@@ -300,7 +311,7 @@ def main():
     trainer.prepare_datasets(args.data, args.eval_data)
     
     # Train
-    trainer.train()
+    trainer.train(resume_from_checkpoint=args.resume)
     
     # Optional test
     if args.test:

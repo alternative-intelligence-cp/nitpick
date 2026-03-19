@@ -138,6 +138,7 @@ LoadedModule* ModuleLoader::loadModuleFile(const std::string& canonicalPath) {
     
     // Step 8: Mark as fully loaded
     modulePtr->state = ModuleState::FULLY_LOADED;
+    loadOrder.push_back(canonicalPath);  // Add AFTER deps loaded — ensures topological order for IR gen
     loadingStack.pop_back();
     
     return modulePtr;

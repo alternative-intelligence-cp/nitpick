@@ -57,6 +57,18 @@
 // FFI: nyte packing intrinsics (from backend/runtime/ternary_ops.h)
 extern func:aria_pack_nyte   = nyte(nit:n0, nit:n1, nit:n2, nit:n3, nit:n4);
 extern func:aria_nyte_get_nit = nit(nyte:packed, int32:index);
+// Per-component lerp: returns a single nit to avoid 9-byte struct return ABI
+// mismatch between LLVM-20 (sret) and clang-18 (register return).
+extern func:aria_lerp_component = nit(int32:a, int32:b, int32:t);
+extern func:aria_wave_lerp_dims = Wave9(
+    int32:ar,  int32:as_,  int32:at_,
+    int32:au,  int32:av,   int32:aw,
+    int32:ax,  int32:ay,   int32:az,
+    int32:br,  int32:bs,   int32:bt,
+    int32:bu,  int32:bv,   int32:bw,
+    int32:bx,  int32:by_,  int32:bz,
+    int32:t_factor
+);
 
 struct:Wave9 = {
     nit:r;  // State dimension 1: Neuromodulation axis 1
@@ -303,9 +315,10 @@ pub func:wave_from_nyte = Wave9(nyte:encoded) {
     nit:n2 = aria_nyte_get_nit(encoded, 2);  // z (spatial Z)
     nit:n3 = aria_nyte_get_nit(encoded, 3);  // u (quantum U)
     nit:n4 = aria_nyte_get_nit(encoded, 4);  // r (state R)
+    nit:zero = 0;
     pass(Wave9 {
-        r: n4, s: 0, t: 0,
-        u: n3, v: 0, w: 0,
+        r: n4, s: zero, t: zero,
+        u: n3, v: zero, w: zero,
         x: n0, y: n1, z: n2
     });
 };
@@ -366,16 +379,172 @@ pub func:wave_spatial_z = nit(Wave9:w) {
  * @return Wave9 with only quantum components
  */
 pub func:wave_from_quantum = Wave9(nit:u, nit:v, nit:w) {
+    nit:zero = 0;
     pass(Wave9 {
-        r: 0, s: 0, t: 0,
+        r: zero, s: zero, t: zero,
         u: u, v: v, w: w,
-        x: 0, y: 0, z: 0
+        x: zero, y: zero, z: zero
     });
 };
 
-// TODO: Additional operations for future implementation
-// - wave_distance: Compute 9D Euclidean distance between waves
-// - wave_dot: Inner product in 9D space
+/**
+ * Create Wave9 from all 9 dimensions (full constructor)
+ */
+pub func:wave_from_full = Wave9(nit:r, nit:s, nit:t, nit:u, nit:v, nit:w, nit:x, nit:y, nit:z) {
+    pass(Wave9 {
+        r: r, s: s, t: t,
+        u: u, v: v, w: w,
+        x: x, y: y, z: z
+    });
+};
+
+/**
+ * Create Wave9 from state dimensions only (r, s)
+ *
+ * Utility for neuromodulation states (dopamine, serotonin axes).
+ * All other dimensions are set to 0.
+ */
+pub func:wave_from_state = Wave9(nit:r, nit:s) {
+    nit:zero = 0;
+    pass(Wave9 {
+        r: r, s: s, t: zero,
+        u: zero, v: zero, w: zero,
+        x: zero, y: zero, z: zero
+    });
+};
+
+/**
+ * Wave Dot Product: Inner product in 9D space
+ *
+ * Measures correlation/similarity between two wave states.
+ * Positive = same direction, negative = opposite, 0 = orthogonal.
+ *
+ * Range: [-144, +144] (each nit ∈ [-4,4], 9 terms, max per term = 16)
+ *
+ * @param a First wave state
+ * @param b Second wave state
+ * @return Dot product (int32)
+ */
+pub func:wave_dot = int32(Wave9:a, Wave9:b) {
+    int32:r1 = @cast<int32>(a.r);  int32:r2 = @cast<int32>(b.r);
+    int32:s1 = @cast<int32>(a.s);  int32:s2 = @cast<int32>(b.s);
+    int32:t1 = @cast<int32>(a.t);  int32:t2 = @cast<int32>(b.t);
+    int32:u1 = @cast<int32>(a.u);  int32:u2 = @cast<int32>(b.u);
+    int32:v1 = @cast<int32>(a.v);  int32:v2 = @cast<int32>(b.v);
+    int32:w1 = @cast<int32>(a.w);  int32:w2 = @cast<int32>(b.w);
+    int32:x1 = @cast<int32>(a.x);  int32:x2 = @cast<int32>(b.x);
+    int32:y1 = @cast<int32>(a.y);  int32:y2 = @cast<int32>(b.y);
+    int32:z1 = @cast<int32>(a.z);  int32:z2 = @cast<int32>(b.z);
+    pass(r1*r2 + s1*s2 + t1*t2 + u1*u2 + v1*v2 + w1*w2 + x1*x2 + y1*y2 + z1*z2);
+};
+
+/**
+ * Wave Distance Squared: Squared Euclidean distance in 9D space
+ *
+ * Returns |a - b|² without computing sqrt. Use for proximity comparisons
+ * (compare against threshold² to avoid expensive sqrt).
+ *
+ * Range: [0, 576] (max delta per dim = 8, 8²=64, 9 dims: 9×64=576)
+ *
+ * @param a First wave state
+ * @param b Second wave state
+ * @return Squared distance (int32)
+ */
+pub func:wave_distance_squared = int32(Wave9:a, Wave9:b) {
+    int32:dr = @cast<int32>(a.r - b.r);
+    int32:ds = @cast<int32>(a.s - b.s);
+    int32:dt = @cast<int32>(a.t - b.t);
+    int32:du = @cast<int32>(a.u - b.u);
+    int32:dv = @cast<int32>(a.v - b.v);
+    int32:dw = @cast<int32>(a.w - b.w);
+    int32:dx = @cast<int32>(a.x - b.x);
+    int32:dy = @cast<int32>(a.y - b.y);
+    int32:dz = @cast<int32>(a.z - b.z);
+    pass(dr*dr + ds*ds + dt*dt + du*du + dv*dv + dw*dw + dx*dx + dy*dy + dz*dz);
+};
+
+/**
+ * Wave Linear Interpolation: Smooth transition between two wave states
+ *
+ * Computes: result = a + (b - a) * t/100
+ * All arithmetic done in int32 to avoid nit overflow, then clamped back to nit.
+ *
+ * @param a  Start wave state (t=0)
+ * @param b  End wave state   (t=100)
+ * @param t  Interpolation factor 0–100 (0 = pure a, 100 = pure b)
+ * @return   Interpolated wave state
+ */
+pub func:wave_lerp = Wave9(Wave9:a, Wave9:b, int32:t) {
+    // Use per-component lerp to avoid 9-byte struct return ABI mismatch
+    // between LLVM-20 (uses sret hidden pointer) and clang-18 (uses rax+rdx).
+    nit:lr = aria_lerp_component(@cast<int32>(a.r), @cast<int32>(b.r), t);
+    nit:ls = aria_lerp_component(@cast<int32>(a.s), @cast<int32>(b.s), t);
+    nit:lt = aria_lerp_component(@cast<int32>(a.t), @cast<int32>(b.t), t);
+    nit:lu = aria_lerp_component(@cast<int32>(a.u), @cast<int32>(b.u), t);
+    nit:lv = aria_lerp_component(@cast<int32>(a.v), @cast<int32>(b.v), t);
+    nit:lw = aria_lerp_component(@cast<int32>(a.w), @cast<int32>(b.w), t);
+    nit:lx = aria_lerp_component(@cast<int32>(a.x), @cast<int32>(b.x), t);
+    nit:ly = aria_lerp_component(@cast<int32>(a.y), @cast<int32>(b.y), t);
+    nit:lz = aria_lerp_component(@cast<int32>(a.z), @cast<int32>(b.z), t);
+    pass(Wave9 { r: lr, s: ls, t: lt, u: lu, v: lv, w: lw, x: lx, y: ly, z: lz });
+};
+
+/**
+ * Format nyte as debug string: "N5(n0,n1,n2,n3,n4)"
+ *
+ * @param encoded Compressed nyte value
+ * @return Human-readable string
+ */
+pub func:nyte_toString = string(nyte:encoded) {
+    nit:n0 = aria_nyte_get_nit(encoded, 0);
+    nit:n1 = aria_nyte_get_nit(encoded, 1);
+    nit:n2 = aria_nyte_get_nit(encoded, 2);
+    nit:n3 = aria_nyte_get_nit(encoded, 3);
+    nit:n4 = aria_nyte_get_nit(encoded, 4);
+    string:result = "N5(";
+    result = string_concat(result, string_from_int(@cast<int32>(n0)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(n1)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(n2)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(n3)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(n4)));
+    result = string_concat(result, ")");
+    pass(result);
+};
+
+/**
+ * Format Wave9 as debug string: "W9(r,s,t,u,v,w,x,y,z)"
+ *
+ * @param w Wave to format
+ * @return Human-readable string
+ */
+pub func:wave9_toString = string(Wave9:w) {
+    string:result = "W9(";
+    result = string_concat(result, string_from_int(@cast<int32>(w.r)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(w.s)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(w.t)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(w.u)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(w.v)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(w.w)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(w.x)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(w.y)));
+    result = string_concat(result, ",");
+    result = string_concat(result, string_from_int(@cast<int32>(w.z)));
+    result = string_concat(result, ")");
+    pass(result);
+};
+
+// TODO (lower priority):
 // - wave_reflect: Mirror wave across dimensional hyperplane
 // - wave_rotate: Rotation in 9D space (requires rotation matrix)
 // - wave_fft_encode: Frequency domain encoding for resonance analysis

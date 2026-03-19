@@ -347,7 +347,7 @@ class AriaCorpusBuilder:
         
         # Process stdlib
         print("Processing stdlib...")
-        stdlib_path = self.repo_root / "lib" / "std"
+        stdlib_path = self.repo_root / "stdlib"
         if stdlib_path.exists():
             for aria_file in stdlib_path.rglob("*.aria"):
                 self.process_aria_file(aria_file, weight=2.0)
@@ -375,6 +375,17 @@ class AriaCorpusBuilder:
         if spec_path.exists():
             self.process_spec_file(spec_path)
         
+        # Process ecosystem packages
+        print("Processing ecosystem packages...")
+        pkg_path = self.repo_root / "aria_ecosystem" / "aria_packages"
+        if pkg_path.exists():
+            for aria_file in pkg_path.rglob("*.aria"):
+                # Package src → high weight, tests → moderate
+                if 'tests' in str(aria_file):
+                    self.process_aria_file(aria_file, weight=1.0)
+                else:
+                    self.process_aria_file(aria_file, weight=1.8)
+
         # Generate synthetic Q&A
         print("Generating synthetic Q&A pairs...")
         self.generate_synthetic_qa()

@@ -1,0 +1,105 @@
+// float64_in_if_condition.aria — Edge case: float64 pub func return used in if()
+//
+// Validates that a float64-returning pub func can be called and its result
+// compared inside an if() condition without ICmpInst assertion failures.
+// This was a pattern that triggered Bug #17 (ICmpInst with flt64 + if+pass).
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+pub func:compute_ratio = float64(float64:a, float64:b) {
+    float64:r = a / b;
+    pass(r);
+};
+
+pub func:scale = float64(float64:x, float64:factor) {
+    pass(x * factor);
+};
+
+pub func:classify = int64(float64:v) {
+    if (v < 0.0) { pass(0i64); }
+    if (v < 1.0) { pass(1i64); }
+    pass(2i64);
+};
+
+func:main = int32() {
+    int64:passed = 0i64;
+    int64:failed = 0i64;
+
+    drop(println("edge_cases/float64_in_if_condition"));
+    drop(println("==================================="));
+
+    // T01: float64 pub func result compared in if()
+    float64:r1 = raw(compute_ratio(10.0, 2.0));
+    float64:d1 = r1 - 5.0;
+    if (d1 < 0.0) { d1 = 0.0 - d1; }
+    if (d1 < 0.001) {
+        drop(println("[PASS] T01 compute_ratio(10,2) = 5.0"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T01 compute_ratio(10,2) != 5.0"));
+        failed = failed + 1i64;
+    }
+
+    // T02: chained float64 pub func calls
+    float64:r2 = raw(scale(raw(compute_ratio(9.0, 3.0)), 4.0));
+    float64:d2 = r2 - 12.0;
+    if (d2 < 0.0) { d2 = 0.0 - d2; }
+    if (d2 < 0.001) {
+        drop(println("[PASS] T02 scale(ratio(9,3), 4) = 12.0"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T02 scale(ratio(9,3), 4) != 12.0"));
+        failed = failed + 1i64;
+    }
+
+    // T03: int64-returning classify via float64 input (multi if+pass)
+    int64:c3 = raw(classify(0.0 - 5.0));
+    if (c3 == 0i64) {
+        drop(println("[PASS] T03 classify(-5) = 0 (negative)"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T03 classify(-5) != 0"));
+        failed = failed + 1i64;
+    }
+
+    // T04: classify returns middle branch
+    int64:c4 = raw(classify(0.5));
+    if (c4 == 1i64) {
+        drop(println("[PASS] T04 classify(0.5) = 1 (0..1)"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T04 classify(0.5) != 1"));
+        failed = failed + 1i64;
+    }
+
+    // T05: classify returns final branch (fallthrough)
+    int64:c5 = raw(classify(100.0));
+    if (c5 == 2i64) {
+        drop(println("[PASS] T05 classify(100) = 2 (>=1)"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T05 classify(100) != 2"));
+        failed = failed + 1i64;
+    }
+
+    // T06: float64 arithmetic after pub func return
+    float64:r6a = raw(compute_ratio(100.0, 4.0));
+    float64:r6b = r6a + 5.0;
+    float64:d6 = r6b - 30.0;
+    if (d6 < 0.0) { d6 = 0.0 - d6; }
+    if (d6 < 0.001) {
+        drop(println("[PASS] T06 ratio(100,4)+5 = 30.0"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T06 ratio(100,4)+5 != 30.0"));
+        failed = failed + 1i64;
+    }
+
+    drop(println("---"));
+    if (failed == 0i64) {
+        drop(println("PASS: all 6 float64_in_if_condition tests passed"));
+        pass(0i32);
+    }
+    drop(println("FAIL: some float64_in_if_condition tests failed"));
+    pass(1i32);
+};

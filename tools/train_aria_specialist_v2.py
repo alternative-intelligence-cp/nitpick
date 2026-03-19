@@ -54,6 +54,7 @@ from transformers import (
 from datasets import load_dataset
 from peft import (
     LoraConfig,
+    PeftModel,
     get_peft_model,
     TaskType,
     prepare_model_for_kbit_training,
@@ -119,6 +120,7 @@ class AriaSpecialistTrainerV2:
         grad_accum: Optional[int] = None,
         max_length: Optional[int] = None,
         learning_rate: float = 2e-4,
+        resume_from: Optional[str] = None,
     ):
         self.model_name = model_name
         self.output_dir = output_dir
@@ -134,6 +136,7 @@ class AriaSpecialistTrainerV2:
         self.max_length = max_length or profile["max_len"]
         self.lora_targets = get_lora_targets(model_name)
 
+        self.resume_from = resume_from
         self.model = None
         self.tokenizer = None
         self.train_dataset = None
@@ -179,17 +182,23 @@ class AriaSpecialistTrainerV2:
 
         self.model = prepare_model_for_kbit_training(self.model)
 
-        print(f"Configuring LoRA (r={self.lora_r}, alpha={self.lora_alpha})...")
-        lora_cfg = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            r=self.lora_r,
-            lora_alpha=self.lora_alpha,
-            lora_dropout=self.lora_dropout,
-            target_modules=self.lora_targets,
-            bias="none",
-            inference_mode=False,
-        )
-        self.model = get_peft_model(self.model, lora_cfg)
+        if self.resume_from:
+            print(f"Loading existing LoRA adapter from {self.resume_from} for continued training...")
+            self.model = PeftModel.from_pretrained(
+                self.model, self.resume_from, is_trainable=True
+            )
+        else:
+            print(f"Configuring LoRA (r={self.lora_r}, alpha={self.lora_alpha})...")
+            lora_cfg = LoraConfig(
+                task_type=TaskType.CAUSAL_LM,
+                r=self.lora_r,
+                lora_alpha=self.lora_alpha,
+                lora_dropout=self.lora_dropout,
+                target_modules=self.lora_targets,
+                bias="none",
+                inference_mode=False,
+            )
+            self.model = get_peft_model(self.model, lora_cfg)
         self.model.print_trainable_parameters()
         print(f"✓ Model ready\n")
 
@@ -339,6 +348,11 @@ def main():
     parser.add_argument("--lora-rank",  type=int, default=None, help="Override LoRA rank")
     parser.add_argument("--lr",      type=float, default=2e-4)
     parser.add_argument(
+        "--resume-from",
+        default=None,
+        help="Path to existing LoRA adapter dir to continue training from (e.g. tools/aria_specialist_qwen7b)"
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Print config and exit without training (for sanity-checking VRAM estimates)"
     )
@@ -351,6 +365,7 @@ def main():
         num_epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.lr,
+        resume_from=args.resume_from,
     )
 
     if args.dry_run:

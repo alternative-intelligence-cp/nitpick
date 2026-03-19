@@ -626,20 +626,25 @@ uint16_t aria_bin_to_nyte(int32_t value) {
 
 int32_t aria_nyte_to_bin(uint16_t nyte) {
     if (nyte == NYTE_DIRECT_ERR) return INT32_MIN;
-    return static_cast<int32_t>(static_cast<int16_t>(nyte));
+    // Remove the NYTE_BIAS offset to recover the signed balanced-nonary integer.
+    return static_cast<int32_t>(nyte) - NYTE_BIAS;
 }
 
 int8_t aria_nyte_get_nit(uint16_t nyte, uint8_t index) {
     if (nyte == NYTE_DIRECT_ERR || index > 4) return INT8_MIN;
-    int32_t value = aria_nyte_to_bin(nyte);
-    if (value == INT32_MIN) return INT8_MIN;
-    // Extract nit at index using division/modulo
-    for (uint8_t i = 0; i < index; ++i) value /= 9;
-    int rem = value % 9;
-    // Adjust for balanced nonary [-4, 4]
-    if (rem > 4) rem -= 9;
-    else if (rem < -4) rem += 9;
-    return static_cast<int8_t>(rem);
+    int32_t value = static_cast<int32_t>(nyte) - NYTE_BIAS;
+    // Balanced nonary digit extraction: use floor_mod (non-negative remainder
+    // for a positive divisor) so that the digit is always extracted correctly
+    // even when value is negative. C's % for negative values truncates toward
+    // zero, which would give the wrong digit for negative values.
+    for (uint8_t i = 0; i <= index; ++i) {
+        int rem = value % 9;
+        if (rem < 0) rem += 9;                      // floor_mod for divisor=9
+        int balanced = (rem > 4) ? rem - 9 : rem;   // map to balanced [-4, 4]
+        if (i == index) return static_cast<int8_t>(balanced);
+        value = (value - balanced) / 9;              // exact division, no remainder
+    }
+    return 0; // unreachable
 }
 // ==============================================================================
 // TBB (Ternary/Binary/Boolean) Type Conversion Functions
@@ -744,16 +749,13 @@ extern "C" void aria_unpack_nyte(uint16_t packed, int8_t* n0, int8_t* n1, int8_t
     // Remove bias to get signed value
     int32_t value = static_cast<int32_t>(packed) - NYTE_BIAS;
     
-    // Extract each nit using division and modulo
+    // Extract each nit using balanced nonary (floor_mod, not C truncation mod).
     for (int i = 0; i < 5; ++i) {
-        int quotient = value / POW9[i];
-        int rem = quotient % 9;
+        int rem = value % 9;
+        if (rem < 0) rem += 9;                     // floor_mod for divisor=9
+        int balanced = (rem > 4) ? rem - 9 : rem;  // map to balanced [-4, 4]
         
-        // Adjust remainder to balanced range [-4, 4]
-        if (rem > 4) rem -= 9;
-        else if (rem < -4) rem += 9;
-        
-        int8_t nit = static_cast<int8_t>(rem);
+        int8_t nit = static_cast<int8_t>(balanced);
         
         // Store in output parameter
         switch (i) {
@@ -763,5 +765,58 @@ extern "C" void aria_unpack_nyte(uint16_t packed, int8_t* n0, int8_t* n1, int8_t
             case 3: *n3 = nit; break;
             case 4: *n4 = nit; break;
         }
+        
+        value = (value - balanced) / 9;  // exact division
     }
+}
+
+// =============================================================================
+// Wave9 Interpolation (wave_lerp)
+// =============================================================================
+
+/**
+ * @brief Linear interpolation between two Wave9 states.
+ *
+ * Accepts all 9 dimensions of both wave states as individual int32 values,
+ * performs integer lerp in int32 space, then packs back to nit (int8) range.
+ * Implemented in C to avoid LLVM register-allocation conflicts that arise
+ * when Aria emits multiple @cast<nit>(int32) results simultaneously live
+ * while returning a 9-byte struct.
+ *
+ * @param ar..az  Dimensions of wave A (int32, valid nit range [-4, 4])
+ * @param br..bz  Dimensions of wave B (int32, valid nit range [-4, 4])
+ * @param t       Interpolation factor 0–100 (0=pure A, 100=pure B)
+ * @return        Interpolated Wave9 (fields clamped to int8)
+ */
+extern "C" AriaWave9 aria_wave_lerp_dims(
+    int32_t ar, int32_t as_, int32_t at_,
+    int32_t au, int32_t av, int32_t aw,
+    int32_t ax, int32_t ay, int32_t az,
+    int32_t br, int32_t bs,  int32_t bt,
+    int32_t bu, int32_t bv,  int32_t bw,
+    int32_t bx, int32_t by,  int32_t bz,
+    int32_t t
+) {
+    int32_t inv_t = 100 - t;
+    AriaWave9 result;
+    result.r = (int8_t)((ar  * inv_t + br * t) / 100);
+    result.s = (int8_t)((as_ * inv_t + bs * t) / 100);
+    result.t = (int8_t)((at_ * inv_t + bt * t) / 100);
+    result.u = (int8_t)((au  * inv_t + bu * t) / 100);
+    result.v = (int8_t)((av  * inv_t + bv * t) / 100);
+    result.w = (int8_t)((aw  * inv_t + bw * t) / 100);
+    result.x = (int8_t)((ax  * inv_t + bx * t) / 100);
+    result.y = (int8_t)((ay  * inv_t + by * t) / 100);
+    result.z = (int8_t)((az  * inv_t + bz * t) / 100);
+    return result;
+}
+
+/**
+ * Lerp a single Wave9 component: (a * (100-t) + b * t) / 100
+ * Returns int8_t — avoids the 9-byte struct return ABI mismatch between
+ * clang-18 (register return) and LLVM-20 (sret hidden pointer).
+ * wave.aria calls this 9 times (once per dimension) to build the result Wave9.
+ */
+extern "C" int8_t aria_lerp_component(int32_t a, int32_t b, int32_t t) {
+    return (int8_t)((a * (100 - t) + b * t) / 100);
 }

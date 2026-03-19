@@ -688,6 +688,20 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
             }
         }
         
+        // Unwrap Result<T> → T when storing to a T-typed alloca.
+        // Function calls return { T, ptr, i8 } (value, error_ptr, error_code).
+        // Storing the full struct to a T alloca causes a stack buffer overflow:
+        // the ptr and i8 fields (16+ bytes) overflow into adjacent stack slots.
+        if (init_value->getType()->isStructTy() && init_value->getType() != var_type) {
+            llvm::StructType* result_struct = llvm::cast<llvm::StructType>(init_value->getType());
+            if (result_struct->getNumElements() == 3 &&
+                result_struct->getElementType(1)->isPointerTy() &&
+                result_struct->getElementType(2)->isIntegerTy(8) &&
+                result_struct->getElementType(0) == var_type) {
+                init_value = builder.CreateExtractValue(init_value, {0}, "unwrap_result_val");
+            }
+        }
+        
         // Store the initial value in the allocated memory
         builder.CreateStore(init_value, var_ptr);
     }
@@ -1120,9 +1134,12 @@ void StmtCodegen::codegenIf(IfStmt* stmt) {
     // Convert condition to boolean (i1) if needed
     // LLVM expects i1 for branch instructions
     if (cond_value->getType() != llvm::Type::getInt1Ty(context)) {
-        std::cerr << "[DEBUG] codegenIf: Converting condition to i1..." << std::endl;
+        // Unwrap Result/struct types (e.g. { i1, ptr, i8 } for bool) by extracting index 0
+        if (cond_value->getType()->isStructTy()) {
+            cond_value = builder.CreateExtractValue(cond_value, {0}, "result_val");
+        }
         // Compare against zero for integer types
-        if (cond_value->getType()->isIntegerTy()) {
+        if (cond_value->getType() != llvm::Type::getInt1Ty(context) && cond_value->getType()->isIntegerTy()) {
             std::cerr << "[DEBUG] codegenIf: Using ICmpNE for integer" << std::endl;
             cond_value = builder.CreateICmpNE(
                 cond_value,
@@ -1137,7 +1154,7 @@ void StmtCodegen::codegenIf(IfStmt* stmt) {
                 llvm::ConstantFP::get(cond_value->getType(), 0.0),
                 "tobool"
             );
-        } else {
+        } else if (cond_value->getType() != llvm::Type::getInt1Ty(context)) {
             throw std::runtime_error("Cannot convert condition value to boolean");
         }
     }
@@ -1261,7 +1278,10 @@ void StmtCodegen::codegenWhile(WhileStmt* stmt) {
     
     // Convert non-boolean conditions to boolean
     if (cond_value->getType() != llvm::Type::getInt1Ty(context)) {
-        if (cond_value->getType()->isIntegerTy()) {
+        if (cond_value->getType()->isStructTy()) {
+            cond_value = builder.CreateExtractValue(cond_value, {0}, "result_val");
+        }
+        if (cond_value->getType() != llvm::Type::getInt1Ty(context) && cond_value->getType()->isIntegerTy()) {
             // Integer: non-zero is true
             cond_value = builder.CreateICmpNE(cond_value,
                 llvm::ConstantInt::get(cond_value->getType(), 0), "tobool");
@@ -1462,7 +1482,10 @@ void StmtCodegen::codegenFor(ForStmt* stmt) {
         
         // Convert non-boolean conditions to boolean
         if (cond_value->getType() != llvm::Type::getInt1Ty(context)) {
-            if (cond_value->getType()->isIntegerTy()) {
+            if (cond_value->getType()->isStructTy()) {
+                cond_value = builder.CreateExtractValue(cond_value, {0}, "result_val");
+            }
+            if (cond_value->getType() != llvm::Type::getInt1Ty(context) && cond_value->getType()->isIntegerTy()) {
                 cond_value = builder.CreateICmpNE(cond_value,
                     llvm::ConstantInt::get(cond_value->getType(), 0), "tobool");
             } else if (cond_value->getType()->isFloatingPointTy()) {

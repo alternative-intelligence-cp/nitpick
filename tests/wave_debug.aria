@@ -1,0 +1,30 @@
+use "stdlib/wave.aria".*;
+
+func:failsafe = NIL(int32:err_code) { println("FAILSAFE CALLED"); pass(NIL); };
+
+func:main = int32() {
+    println("step1");
+    nit:n0 = 0;
+    nit:n1 = 1;
+    nit:n2 = 2;
+
+    // Test wave_from_state
+    Wave9:state = wave_from_state(n1, n0);
+    string:sstate = wave9_toString(state);
+    println(sstate);
+
+    // Test wave_from_spatial
+    Wave9:spat = wave_from_spatial(n1, n2, n0);
+    string:sspat = wave9_toString(spat);
+    println(sspat);
+
+    // Test wave_from_full
+    Wave9:full = wave_from_full(n1, n0, n2, n0, n0, n0, n0, n0, n0);
+    string:sfull = wave9_toString(full);
+    println(sfull);
+
+    println("done");
+    pass(0);
+};
+
+

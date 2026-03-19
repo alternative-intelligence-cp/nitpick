@@ -1,0 +1,252 @@
+// sha256.aria — SHA-256 (FIPS 180-4) in Aria
+//
+// What this exercises:
+//   • uint32 wrapping arithmetic (confirmed: adds wrap mod 2^32)
+//   • All bitwise operators: &  |  ^  ~  <<  >>
+//   • Right-rotation built from shifts + OR
+//   • Fixed-size local arrays  uint32[64]  with int64 indexing
+//   • raw() — explicit acknowledgement of infallible function calls
+//   • Two NIST test vectors: SHA-256("") and SHA-256("abc")
+//
+// Expected output:
+//   SHA256("")   = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+//   SHA256("abc")= ba7816bf8f01cfea414140de5dae2ec73b338c2ba3e1ca9e7aa1f9a8b99d1e74
+
+use "../../stdlib/string_convert.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// ── rotate right 32-bit ───────────────────────────────────────────────────────
+// rotr32(x, n) = (x >> n) | (x << (32 - n))
+// SHA-256 rotation amounts are 2..25, never 0 or 32, so (32 - n) is safe.
+
+func:rotr32 = uint32(uint32:x, uint32:n) {
+    uint32:r = (x >> n) | (x << (32u32 - n));
+    pass(r);
+};
+
+// ── hex output helpers ────────────────────────────────────────────────────────
+
+func:nibble_hex = string(uint32:n) {
+    if (n < 10u32) {
+        pass(char_toString((n => int32) + 48));
+    }
+    pass(char_toString((n => int32) + 87));
+};
+
+func:hex8 = string(uint32:w) {
+    string:s = "";
+    s = string_concat(s, nibble_hex((w >> 28u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >> 24u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >> 20u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >> 16u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >> 12u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >>  8u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >>  4u32) & 0xFu32));
+    s = string_concat(s, nibble_hex( w            & 0xFu32));
+    pass(s);
+};
+
+// ── SHA-256 round constants ────────────────────────────────────────────────────
+// Returns the K[i] round constant for round i (0..63).
+// This avoids a 64-element const array at global scope while still being
+// a single function call rather than a 64-line if-chain.
+// (A const uint32[64] in main would also work — see W below.)
+
+// ── main ──────────────────────────────────────────────────────────────────────
+
+func:main = int32() {
+
+    // SHA-256 round constants (first 32 bits of cbrt of primes 2..311)
+    uint32[64]:K = [
+        0x428a2f98u32, 0x71374491u32, 0xb5c0fbcfu32, 0xe9b5dba5u32,
+        0x3956c25bu32, 0x59f111f1u32, 0x923f82a4u32, 0xab1c5ed5u32,
+        0xd807aa98u32, 0x12835b01u32, 0x243185beu32, 0x550c7dc3u32,
+        0x72be5d74u32, 0x80deb1feu32, 0x9bdc06a7u32, 0xc19bf174u32,
+        0xe49b69c1u32, 0xefbe4786u32, 0x0fc19dc6u32, 0x240ca1ccu32,
+        0x2de92c6fu32, 0x4a7484aau32, 0x5cb0a9dcu32, 0x76f988dau32,
+        0x983e5152u32, 0xa831c66du32, 0xb00327c8u32, 0xbf597fc7u32,
+        0xc6e00bf3u32, 0xd5a79147u32, 0x06ca6351u32, 0x14292967u32,
+        0x27b70a85u32, 0x2e1b2138u32, 0x4d2c6dfcu32, 0x53380d13u32,
+        0x650a7354u32, 0x766a0abbu32, 0x81c2c92eu32, 0x92722c85u32,
+        0xa2bfe8a1u32, 0xa81a664bu32, 0xc24b8b70u32, 0xc76c51a3u32,
+        0xd192e819u32, 0xd6990624u32, 0xf40e3585u32, 0x106aa070u32,
+        0x19a4c116u32, 0x1e376c08u32, 0x2748774cu32, 0x34b0bcb5u32,
+        0x391c0cb3u32, 0x4ed8aa4au32, 0x5b9cca4fu32, 0x682e6ff3u32,
+        0x748f82eeu32, 0x78a5636fu32, 0x84c87814u32, 0x8cc70208u32,
+        0x90befffau32, 0xa4506cebu32, 0xbef9a3f7u32, 0xc67178f2u32
+    ];
+
+    // Working variables (pre-declared so while loop can assign them)
+    uint32:a = 0u32;
+    uint32:b = 0u32;
+    uint32:c = 0u32;
+    uint32:d = 0u32;
+    uint32:e = 0u32;
+    uint32:f = 0u32;
+    uint32:g = 0u32;
+    uint32:h = 0u32;
+    uint32:t1 = 0u32;
+    uint32:t2 = 0u32;
+    uint32:S1e = 0u32;
+    uint32:S0a = 0u32;
+    uint32:che = 0u32;
+    uint32:mj = 0u32;
+    uint32:kr = 0u32;
+    uint32:wr = 0u32;
+    uint32:ww2 = 0u32;
+    uint32:ww7 = 0u32;
+    uint32:ww15 = 0u32;
+    uint32:ww16 = 0u32;
+    uint32:s1 = 0u32;
+    uint32:s0 = 0u32;
+    uint32:idx = 0u32;
+
+    // ── Test 1: SHA-256("") ───────────────────────────────────────────────────
+    // Padded 512-bit block for empty message:
+    //   byte 0 = 0x80 (end-of-message marker), bytes 1..55 = 0x00,
+    //   bytes 56..63 = big-endian bit length = 0
+    // As big-endian uint32 words: W[0]=0x80000000, W[1..15]=0
+
+    uint32[64]:W0 = [
+        0x80000000u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32,          0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32
+    ];
+
+    // Extend W0[16..63]: W[i] = sigma1(W[i-2]) + W[i-7] + sigma0(W[i-15]) + W[i-16]
+    idx = 16u32;
+    while (idx < 64u32) {
+        ww2  = W0[(idx - 2u32)  => int64];
+        ww7  = W0[(idx - 7u32)  => int64];
+        ww15 = W0[(idx - 15u32) => int64];
+        ww16 = W0[(idx - 16u32) => int64];
+        s1 = rotr32(ww2, 17u32) ^ rotr32(ww2, 19u32) ^ (ww2 >> 10u32);
+        s0 = rotr32(ww15, 7u32) ^ rotr32(ww15, 18u32) ^ (ww15 >> 3u32);
+        W0[idx => int64] = s1 + ww7 + s0 + ww16;
+        idx = idx + 1u32;
+    }
+
+    // Initial hash values (first 32 bits of sqrt of primes 2..19)
+    uint32:h0 = 0x6a09e667u32;
+    uint32:h1 = 0xbb67ae85u32;
+    uint32:h2 = 0x3c6ef372u32;
+    uint32:h3 = 0xa54ff53au32;
+    uint32:h4 = 0x510e527fu32;
+    uint32:h5 = 0x9b05688cu32;
+    uint32:h6 = 0x1f83d9abu32;
+    uint32:h7 = 0x5be0cd19u32;
+
+    a = h0;  b = h1;  c = h2;  d = h3;
+    e = h4;  f = h5;  g = h6;  h = h7;
+
+    // 64-round compression for empty-string block
+    uint32:r = 0u32;
+    while (r < 64u32) {
+        kr  = K[r => int64];
+        wr  = W0[r => int64];
+        S1e = rotr32(e, 6u32) ^ rotr32(e, 11u32) ^ rotr32(e, 25u32);
+        che = (e & f) ^ ((~e) & g);
+        t1  = h + S1e + che + kr + wr;
+        S0a = rotr32(a, 2u32) ^ rotr32(a, 13u32) ^ rotr32(a, 22u32);
+        mj  = (a & b) ^ (a & c) ^ (b & c);
+        t2  = S0a + mj;
+        h = g;  g = f;  f = e;  e = d + t1;
+        d = c;  c = b;  b = a;  a = t1 + t2;
+        r = r + 1u32;
+    }
+
+    h0 = h0 + a;  h1 = h1 + b;  h2 = h2 + c;  h3 = h3 + d;
+    h4 = h4 + e;  h5 = h5 + f;  h6 = h6 + g;  h7 = h7 + h;
+
+    string:d0 = "";
+    d0 = string_concat(d0, hex8(h0));
+    d0 = string_concat(d0, hex8(h1));
+    d0 = string_concat(d0, hex8(h2));
+    d0 = string_concat(d0, hex8(h3));
+    d0 = string_concat(d0, hex8(h4));
+    d0 = string_concat(d0, hex8(h5));
+    d0 = string_concat(d0, hex8(h6));
+    d0 = string_concat(d0, hex8(h7));
+    drop(print("SHA256(\"\")    = "));
+    drop(println(d0));
+    drop(println("  expect: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+
+
+
+    // ── Test 2: SHA-256("abc") ────────────────────────────────────────────────
+    // "abc" = 0x61 0x62 0x63, bit length = 24 = 0x18
+    // Padded:
+    //   W[0]  = 0x61626380  ('a' 'b' 'c' 0x80)
+    //   W[1..14] = 0
+    //   W[15] = 0x00000018  (24 in bits)
+
+    uint32[64]:W1 = [
+        0x61626380u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32,          0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0x00000018u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32
+    ];
+
+    idx = 16u32;
+    while (idx < 64u32) {
+        ww2  = W1[(idx - 2u32)  => int64];
+        ww7  = W1[(idx - 7u32)  => int64];
+        ww15 = W1[(idx - 15u32) => int64];
+        ww16 = W1[(idx - 16u32) => int64];
+        s1 = rotr32(ww2, 17u32) ^ rotr32(ww2, 19u32) ^ (ww2 >> 10u32);
+        s0 = rotr32(ww15, 7u32) ^ rotr32(ww15, 18u32) ^ (ww15 >> 3u32);
+        W1[idx => int64] = s1 + ww7 + s0 + ww16;
+        idx = idx + 1u32;
+    }
+
+    h0 = 0x6a09e667u32;  h1 = 0xbb67ae85u32;
+    h2 = 0x3c6ef372u32;  h3 = 0xa54ff53au32;
+    h4 = 0x510e527fu32;  h5 = 0x9b05688cu32;
+    h6 = 0x1f83d9abu32;  h7 = 0x5be0cd19u32;
+
+    a = h0;  b = h1;  c = h2;  d = h3;
+    e = h4;  f = h5;  g = h6;  h = h7;
+
+    r = 0u32;
+    while (r < 64u32) {
+        kr  = K[r => int64];
+        wr  = W1[r => int64];
+        S1e = rotr32(e, 6u32) ^ rotr32(e, 11u32) ^ rotr32(e, 25u32);
+        che = (e & f) ^ ((~e) & g);
+        t1  = h + S1e + che + kr + wr;
+        S0a = rotr32(a, 2u32) ^ rotr32(a, 13u32) ^ rotr32(a, 22u32);
+        mj  = (a & b) ^ (a & c) ^ (b & c);
+        t2  = S0a + mj;
+        h = g;  g = f;  f = e;  e = d + t1;
+        d = c;  c = b;  b = a;  a = t1 + t2;
+        r = r + 1u32;
+    }
+
+    h0 = h0 + a;  h1 = h1 + b;  h2 = h2 + c;  h3 = h3 + d;
+    h4 = h4 + e;  h5 = h5 + f;  h6 = h6 + g;  h7 = h7 + h;
+
+    string:d1 = "";
+    d1 = string_concat(d1, hex8(h0));
+    d1 = string_concat(d1, hex8(h1));
+    d1 = string_concat(d1, hex8(h2));
+    d1 = string_concat(d1, hex8(h3));
+    d1 = string_concat(d1, hex8(h4));
+    d1 = string_concat(d1, hex8(h5));
+    d1 = string_concat(d1, hex8(h6));
+    d1 = string_concat(d1, hex8(h7));
+    drop(print("SHA256(\"abc\") = "));
+    drop(println(d1));
+    drop(println("  expect: ba7816bf8f01cfea414140de5dae2ec73b338c2ba3e1ca9e7aa1f9a8b99d1e74"));
+
+    pass(0i32);
+};

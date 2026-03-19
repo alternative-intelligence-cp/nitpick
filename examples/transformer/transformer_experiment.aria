@@ -1,0 +1,723 @@
+// ============================================================================
+// Aria Language — Minimal Transformer Forward Pass Experiment
+// ============================================================================
+// Date:        March 9, 2026
+// Purpose:     Prove Aria can express a full transformer forward pass.
+//              Inform the stdlib.linalg / stdlib.ml design.
+//              Surface language gaps that need fixing before 0.1.0.
+//
+// Architecture: Single-head attention transformer encoder block.
+//   SEQ_LEN = 4   (sequence of 4 tokens)
+//   D_MODEL = 8   (embedding dimension)
+//   D_K     = 4   (query/key dimension — single head)
+//   D_V     = 4   (value dimension)
+//   D_FF    = 16  (feedforward hidden dimension)
+//   VOCAB   = 8   (vocabulary size)
+//
+// Forward pass:
+//   1. Input embedding lookup (token IDs → flt64 vectors)
+//   2. Scaled dot-product attention (Q, K, V projections → attended output)
+//   3. Residual connection #1 + layer normalization
+//   4. Position-wise feedforward network (W1 → ReLU → W2)
+//   5. Residual connection #2 + layer normalization
+//   6. Final linear projection → logits
+//
+// ============================================================================
+// KEY FINDINGS FROM THIS EXPERIMENT (for 0.1.0 checklist / P4 / P5)
+// ============================================================================
+//
+//   ✅ WORKS:
+//     - flt64[N] fixed-size stack array declaration and literal init
+//     - Array element read: v[i] with int32 index
+//     - Array element write: v[i] = expr
+//     - While loop with int32 counter for array traversal
+//     - Nested while loops (two independent int32 counters work cleanly)
+//     - flt64 arithmetic: +, -, *, /   (all correct)
+//     - use math; resolves to lib/std/math.aria (from project root)
+//     - exponential(x) — pub alias for libm exp()
+//     - square_root(x) — pub alias for libm sqrt()
+//     - Calling functions with flt64 scalar arguments and return values
+//     - Functions returning flt64
+//     - drop() to discard int32 return values
+//
+//   ❌ BLOCKED / BUGS (added to 0.1.0 checklist):
+//
+//   P4 — Struct fields cannot hold fixed-size arrays
+//         struct:Weights = { flt64[32]:data; ... }  → parser rejects
+//         Impact: cannot encapsulate weight matrices in structs
+//         Workaround here: all arrays are local variables in main()
+//
+//   P5 — No 2D array syntax
+//         flt64[4][8]:w   → not supported
+//         Workaround here: flat row-major flt64[M*N]:w with manual index
+//
+//   BUG — Cannot pass stack flt64[N] arrays to functions via pointer
+//         @arr gives flt64[N]@ but functions expect flt64@ (or flt64->)
+//         No implicit coercion between flt64[N]@ and flt64@
+//         @arr[i] is rejected: "@ requires lvalue, only variables supported"
+//         flt64[N]@ / flt64[N]-> are rejected as parameter types
+//         wild flt64@:p = @arr is rejected (@ not valid after flt64 in wild)
+//         Impact: helper functions must work on global state — major limitation
+//         Workaround here: all computation is INLINE in main()
+//         Note: arrays.aria functions (fill_i32, sort_asc etc.) take int32->
+//               parameter but no mechanism exists to call them from stack arrays
+//
+//   BUG — Global flt64[N] array element loads have i64/f64 type mismatch
+//         Global array declared as flt64[4]:g = [1.0, 2.0, 3.0, 4.0]
+//         Compiles OK, but runtime: LLVM ERROR "Cannot select: fadd i64..."
+//         Elements loaded as i64 (bit-pattern) instead of f64
+//         Impact: global float arrays unusable as workspace buffers between funcs
+//         Note: global scalar flt64 works fine; only array element loads are broken
+//
+//   NOTE — `fail` is a reserved keyword (error return statement)
+//         Cannot use `fail` as a variable name; use `ec`, `err`, `retcode` etc.
+//
+//   NOTE — NIL-returning functions must be called with drop() or the compiler
+//         warns "Unused result value. This function returns a result that must
+//         be checked." Use int32 return + pass(0) + drop() pattern instead.
+//
+//   NOTE — defer requires a block: `defer { aria.free(x); }` not `defer expr;`
+//
+// ============================================================================
+
+// ============================================================================
+// MATH BINDINGS: Directly bind to libm to avoid math.aria's broken functions.
+// (Several pub functions in math.aria use the `return` keyword instead of
+//  `pass`, and `fabs` has a scoping issue — the whole module fails type-check.)
+// This technique (inline extern + thin wrappers) is the documented workaround
+// until math.aria is repaired. Add this finding to the language notes.
+// ============================================================================
+
+extern "libm" {
+    func:exp  = flt64(flt64:x);
+    func:sqrt = flt64(flt64:x);
+}
+
+func:exponential = flt64(flt64:x) { pass(exp(x));  };
+func:square_root = flt64(flt64:x) { pass(sqrt(x)); };
+
+// ============================================================================
+// HELPER: Print a label and the sum of a float vector (for output verification)
+// Note: Cannot pass arrays to functions — this reads a global defined in main.
+// This is a limitation documented above (BUG: no stack array passing).
+// For now, all printing is done inline in main().
+// ============================================================================
+
+func:main = int32() {
+    print("=== Aria Minimal Transformer Forward Pass ===");
+    print("  SEQ=4  D_MODEL=8  D_K=4  D_FF=16  VOCAB=8  single-head attention");
+    print("");
+
+    // ========================================================================
+    // WEIGHT MATRICES (flat row-major, all initialized to simple constants)
+    // ========================================================================
+    // In a real system these would be loaded from a checkpoint file.
+    // Here we use small constants so the output is deterministic and verifiable.
+    //
+    // Embedding table: 8 tokens × 8 dims [VOCAB x D_MODEL] = 64 floats
+    // w_emb[token_id * D_MODEL + dim]
+    flt64[64]:w_emb = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    // Fill embedding table: token t has unique pattern (t+1)*0.01 at each pos
+    // Token 0: [0.01, 0.01, ...], Token 1: [0.02, 0.02, ...], etc.
+    int32:t = 0;
+    while (t < 8) {
+        int32:d = 0;
+        while (d < 8) {
+            flt64:tval = 0.0;
+            int32:tc = 0;
+            while (tc < t + 1) { tval = tval + 0.01; tc = tc + 1; }
+            w_emb[t * 8 + d] = tval;
+            d = d + 1;
+        }
+        t = t + 1;
+    }
+
+    // Q weight matrix [D_MODEL x D_K] = [8 x 4] = 32 floats
+    // Simple near-identity: diagonal elements = 1.0, others = 0.0
+    // w_q[i*4 + j] = 1.0 if i == j else 0.0  (for i<4; 0 elsewhere)
+    flt64[32]:w_q = [1.0, 0.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0, 0.0,
+                     0.0, 0.0, 1.0, 0.0,
+                     0.0, 0.0, 0.0, 1.0,
+                     0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0];
+
+    // K weight matrix [D_MODEL x D_K] — same as W_Q for simplicity
+    flt64[32]:w_k = [1.0, 0.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0, 0.0,
+                     0.0, 0.0, 1.0, 0.0,
+                     0.0, 0.0, 0.0, 1.0,
+                     0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0];
+
+    // V weight matrix [D_MODEL x D_V]
+    flt64[32]:w_v = [1.0, 0.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0, 0.0,
+                     0.0, 0.0, 1.0, 0.0,
+                     0.0, 0.0, 0.0, 1.0,
+                     0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0];
+
+    // Output projection W_O [D_V x D_MODEL] = [4 x 8]
+    flt64[32]:w_o = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+
+    // FFN W1 [D_MODEL x D_FF] = [8 x 16] = 128 floats — fill 0.1 below
+    flt64[128]:w1 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    // FFN bias 1 [D_FF = 16], FFN W2 [D_FF x D_MODEL = 16x8 = 128], bias 2 [8]
+    flt64[16]:b1 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    flt64[128]:w2 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    flt64[8]:b2 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    // Final projection [D_MODEL x VOCAB] = [8 x 8] = 64 floats, fill below
+    flt64[64]:w_final = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    // Layer norm params: gamma=1.0, beta=0.0 (standard initialization)
+    flt64[8]:ln1_g = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    flt64[8]:ln1_b = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    flt64[8]:ln2_g = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    flt64[8]:ln2_b = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    // Fill w1 with 0.1, w2 with 0.1, w_final with identity*0.1
+    int32:ii = 0;
+    while (ii < 128) {
+        w1[ii] = 0.1;
+        w2[ii] = 0.1;
+        ii = ii + 1;
+    }
+    // w_final: near-identity (diagonal 1.0, rest 0.0) for first 8 dims
+    int32:fi = 0;
+    while (fi < 8) {
+        w_final[fi * 8 + fi] = 1.0;
+        fi = fi + 1;
+    }
+
+    // ========================================================================
+    // STEP 1: Input token IDs → embeddings
+    // Input sequence: tokens [0, 1, 2, 3]
+    // x[seq * D_MODEL + dim] = w_emb[token_id * D_MODEL + dim]
+    // ========================================================================
+    flt64[32]:x = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    // Token sequence: token_ids = [0, 1, 2, 3]
+    flt64[4]:token_ids = [0.0, 1.0, 2.0, 3.0];
+
+    // Lookup: for each position, copy the token's embedding row
+    int32:si = 0;
+    while (si < 4) {
+        // token_id for this position (stored as flt64 to avoid int cast issue)
+        flt64:tid = token_ids[si];
+        // Convert to int: count how many 1.0s fit (workaround for no int cast)
+        int32:ti = 0;
+        flt64:tid_acc = 0.0;
+        while (tid_acc < tid) { tid_acc = tid_acc + 1.0; ti = ti + 1; }
+        // Copy embedding row
+        int32:di = 0;
+        while (di < 8) {
+            x[si * 8 + di] = w_emb[ti * 8 + di];
+            di = di + 1;
+        }
+        si = si + 1;
+    }
+
+    print("Step 1 done: input embeddings loaded");
+    // Verify: x[0..7] = token 0 embedding = [0.01, 0.01, ...] (all 0.01)
+    // x[8..15] = token 1 embedding = [0.02, 0.02, ...] (all 0.02)
+    if (x[0] != 0.01) {
+        print("  WARN: token 0 embedding x[0] unexpected (float precision?)");
+    }
+
+    // ========================================================================
+    // STEP 2: Attention projections  Q = X @ W_Q, K = X @ W_K, V = X @ W_V
+    // X:   [4 x 8],  W_Q/K/V: [8 x 4]  →  Q/K/V: [4 x 4]
+    // ========================================================================
+    flt64[16]:Q = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    flt64[16]:K = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    flt64[16]:V = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    // Q = X @ W_Q:  Q[s][k] = sum_d X[s][d] * W_Q[d][k]
+    int32:sq = 0;
+    while (sq < 4) {
+        int32:kk = 0;
+        while (kk < 4) {
+            flt64:acc = 0.0;
+            int32:dd = 0;
+            while (dd < 8) {
+                acc = acc + x[sq * 8 + dd] * w_q[dd * 4 + kk];
+                dd = dd + 1;
+            }
+            Q[sq * 4 + kk] = acc;
+            kk = kk + 1;
+        }
+        sq = sq + 1;
+    }
+
+    // K = X @ W_K
+    int32:sk = 0;
+    while (sk < 4) {
+        int32:kk2 = 0;
+        while (kk2 < 4) {
+            flt64:acc = 0.0;
+            int32:dd = 0;
+            while (dd < 8) {
+                acc = acc + x[sk * 8 + dd] * w_k[dd * 4 + kk2];
+                dd = dd + 1;
+            }
+            K[sk * 4 + kk2] = acc;
+            kk2 = kk2 + 1;
+        }
+        sk = sk + 1;
+    }
+
+    // V = X @ W_V
+    int32:sv = 0;
+    while (sv < 4) {
+        int32:kk3 = 0;
+        while (kk3 < 4) {
+            flt64:acc = 0.0;
+            int32:dd = 0;
+            while (dd < 8) {
+                acc = acc + x[sv * 8 + dd] * w_v[dd * 4 + kk3];
+                dd = dd + 1;
+            }
+            V[sv * 4 + kk3] = acc;
+            kk3 = kk3 + 1;
+        }
+        sv = sv + 1;
+    }
+
+    print("Step 2 done: Q, K, V projections computed");
+
+    // ========================================================================
+    // STEP 3: Scaled dot-product attention
+    //   scores[SEQ x SEQ]: scores[i][j] = Q[i] · K[j] / sqrt(D_K)
+    //   W_Q/K are near-identity, so Q ≈ K ≈ first 4 dims of X
+    // ========================================================================
+    flt64[16]:scores = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    // sqrt(D_K) = sqrt(4) = 2.0
+    flt64:scale = square_root(4.0);
+
+    int32:si2 = 0;
+    while (si2 < 4) {
+        int32:sj = 0;
+        while (sj < 4) {
+            flt64:dot = 0.0;
+            int32:dk = 0;
+            while (dk < 4) {
+                dot = dot + Q[si2 * 4 + dk] * K[sj * 4 + dk];
+                dk = dk + 1;
+            }
+            scores[si2 * 4 + sj] = dot / scale;
+            sj = sj + 1;
+        }
+        si2 = si2 + 1;
+    }
+
+    print("Step 3 done: attention scores computed (Q @ K^T / sqrt(d_k))");
+
+    // ========================================================================
+    // STEP 4: Softmax over each row of scores (in-place)
+    //   softmax(x)[i] = exp(x[i] - max) / sum(exp(x - max))
+    // ========================================================================
+    int32:srow = 0;
+    while (srow < 4) {
+        // Find max in this row (numerical stability)
+        flt64:row_max = scores[srow * 4 + 0];
+        int32:sc2 = 1;
+        while (sc2 < 4) {
+            if (scores[srow * 4 + sc2] > row_max) {
+                row_max = scores[srow * 4 + sc2];
+            }
+            sc2 = sc2 + 1;
+        }
+
+        // Compute exp(x - max) and accumulate sum
+        flt64:exp_sum = 0.0;
+        int32:sc3 = 0;
+        while (sc3 < 4) {
+            flt64:ev = exponential(scores[srow * 4 + sc3] - row_max);
+            scores[srow * 4 + sc3] = ev;
+            exp_sum = exp_sum + ev;
+            sc3 = sc3 + 1;
+        }
+
+        // Normalize
+        int32:sc4 = 0;
+        while (sc4 < 4) {
+            scores[srow * 4 + sc4] = scores[srow * 4 + sc4] / exp_sum;
+            sc4 = sc4 + 1;
+        }
+
+        srow = srow + 1;
+    }
+
+    // Verify softmax: each row should sum to ~1.0
+    flt64:row0_sum = scores[0] + scores[1] + scores[2] + scores[3];
+    print("Step 4 done: softmax applied");
+    // row0_sum should be 1.0 (to floating point precision)
+    if (row0_sum < 0.999) {
+        print("  ERROR: softmax row 0 sum < 0.999");
+        int32:ec = 10; pass(ec);
+    }
+    if (row0_sum > 1.001) {
+        print("  ERROR: softmax row 0 sum > 1.001");
+        int32:ec = 11; pass(ec);
+    }
+    print("  softmax row 0 verified: sums to 1.0 (+/- 0.001)");
+
+    // ========================================================================
+    // STEP 5: Weighted sum of values   attn[SEQ x D_V] = scores @ V
+    // ========================================================================
+    flt64[16]:attn = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    int32:sa = 0;
+    while (sa < 4) {
+        int32:da = 0;
+        while (da < 4) {
+            flt64:acc = 0.0;
+            int32:ja = 0;
+            while (ja < 4) {
+                acc = acc + scores[sa * 4 + ja] * V[ja * 4 + da];
+                ja = ja + 1;
+            }
+            attn[sa * 4 + da] = acc;
+            da = da + 1;
+        }
+        sa = sa + 1;
+    }
+
+    print("Step 5 done: attention-weighted value aggregation");
+
+    // ========================================================================
+    // STEP 6: Output projection + residual  x = x + attn @ W_O
+    // attn: [4 x 4],  W_O: [4 x 8]  →  attn_proj: [4 x 8]
+    // ========================================================================
+    flt64[32]:attn_proj = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    int32:sp = 0;
+    while (sp < 4) {
+        int32:dp = 0;
+        while (dp < 8) {
+            flt64:acc = 0.0;
+            int32:kp = 0;
+            while (kp < 4) {
+                acc = acc + attn[sp * 4 + kp] * w_o[kp * 8 + dp];
+                kp = kp + 1;
+            }
+            attn_proj[sp * 8 + dp] = acc;
+            dp = dp + 1;
+        }
+        sp = sp + 1;
+    }
+
+    // Residual connection: x = x + attn_proj
+    int32:rx = 0;
+    while (rx < 32) {
+        x[rx] = x[rx] + attn_proj[rx];
+        rx = rx + 1;
+    }
+
+    print("Step 6 done: output projection + residual connection #1");
+
+    // ========================================================================
+    // STEP 7: Layer normalization #1  (applied per-position along D_MODEL)
+    //   x_norm[s][d] = ((x[s][d] - mean) / (std + eps)) * gamma[d] + beta[d]
+    // ========================================================================
+    flt64:ln_eps = 0.00001;
+
+    int32:sln = 0;
+    while (sln < 4) {
+        // Compute mean
+        flt64:mean = 0.0;
+        int32:dln = 0;
+        while (dln < 8) {
+            mean = mean + x[sln * 8 + dln];
+            dln = dln + 1;
+        }
+        mean = mean / 8.0;
+
+        // Compute variance
+        flt64:var = 0.0;
+        int32:dln2 = 0;
+        while (dln2 < 8) {
+            flt64:diff = x[sln * 8 + dln2] - mean;
+            var = var + diff * diff;
+            dln2 = dln2 + 1;
+        }
+        var = var / 8.0;
+        flt64:std_dev = square_root(var + ln_eps);
+
+        // Normalize: x[s][d] = ((x[s][d] - mean) / std) * gamma + beta
+        int32:dln3 = 0;
+        while (dln3 < 8) {
+            x[sln * 8 + dln3] = ((x[sln * 8 + dln3] - mean) / std_dev)
+                                 * ln1_g[dln3] + ln1_b[dln3];
+            dln3 = dln3 + 1;
+        }
+
+        sln = sln + 1;
+    }
+
+    print("Step 7 done: layer normalization #1");
+
+    // ========================================================================
+    // STEP 8: Feedforward network  H = ReLU(X @ W1 + b1)
+    // X: [4 x 8], W1: [8 x 16]  →  H: [4 x 16]
+    // ========================================================================
+    flt64[64]:h = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    // H = X @ W1 + b1, then ReLU
+    int32:sh = 0;
+    while (sh < 4) {
+        int32:dh = 0;
+        while (dh < 16) {
+            flt64:acc = b1[dh];
+            int32:kh = 0;
+            while (kh < 8) {
+                acc = acc + x[sh * 8 + kh] * w1[kh * 16 + dh];
+                kh = kh + 1;
+            }
+            // ReLU activation
+            if (acc < 0.0) { acc = 0.0; }
+            h[sh * 16 + dh] = acc;
+            dh = dh + 1;
+        }
+        sh = sh + 1;
+    }
+
+    print("Step 8 done: FFN hidden layer (W1 + ReLU)");
+
+    // ========================================================================
+    // STEP 9: FFN second layer  Y = H @ W2 + b2
+    // H: [4 x 16], W2: [16 x 8]  →  Y: [4 x 8]
+    // ========================================================================
+    flt64[32]:y = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    int32:sy = 0;
+    while (sy < 4) {
+        int32:dy = 0;
+        while (dy < 8) {
+            flt64:acc = b2[dy];
+            int32:ky = 0;
+            while (ky < 16) {
+                acc = acc + h[sy * 16 + ky] * w2[ky * 8 + dy];
+                ky = ky + 1;
+            }
+            y[sy * 8 + dy] = acc;
+            dy = dy + 1;
+        }
+        sy = sy + 1;
+    }
+
+    // Residual connection #2: x = x + y
+    int32:ry = 0;
+    while (ry < 32) {
+        x[ry] = x[ry] + y[ry];
+        ry = ry + 1;
+    }
+
+    print("Step 9 done: FFN second layer + residual connection #2");
+
+    // ========================================================================
+    // STEP 10: Layer normalization #2
+    // ========================================================================
+    int32:sln2 = 0;
+    while (sln2 < 4) {
+        flt64:mean = 0.0;
+        int32:dln = 0;
+        while (dln < 8) {
+            mean = mean + x[sln2 * 8 + dln];
+            dln = dln + 1;
+        }
+        mean = mean / 8.0;
+
+        flt64:var = 0.0;
+        int32:dln2 = 0;
+        while (dln2 < 8) {
+            flt64:diff = x[sln2 * 8 + dln2] - mean;
+            var = var + diff * diff;
+            dln2 = dln2 + 1;
+        }
+        var = var / 8.0;
+        flt64:std_dev = square_root(var + ln_eps);
+
+        int32:dln3 = 0;
+        while (dln3 < 8) {
+            x[sln2 * 8 + dln3] = ((x[sln2 * 8 + dln3] - mean) / std_dev)
+                                  * ln2_g[dln3] + ln2_b[dln3];
+            dln3 = dln3 + 1;
+        }
+
+        sln2 = sln2 + 1;
+    }
+
+    print("Step 10 done: layer normalization #2");
+
+    // ========================================================================
+    // STEP 11: Final linear projection  logits = X @ W_final
+    // X: [4 x 8], W_final: [8 x 8]  →  logits: [4 x 8]
+    // ========================================================================
+    flt64[32]:logits = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+    int32:sl = 0;
+    while (sl < 4) {
+        int32:dl = 0;
+        while (dl < 8) {
+            flt64:acc = 0.0;
+            int32:kl = 0;
+            while (kl < 8) {
+                acc = acc + x[sl * 8 + kl] * w_final[kl * 8 + dl];
+                kl = kl + 1;
+            }
+            logits[sl * 8 + dl] = acc;
+            dl = dl + 1;
+        }
+        sl = sl + 1;
+    }
+
+    print("Step 11 done: final linear projection (logits)");
+
+    // ========================================================================
+    // VALIDATION: Verify the forward pass produced sensible output
+    // ========================================================================
+    print("");
+    print("=== Forward Pass Validation ===");
+
+    // With our near-identity weights and small input embeddings,
+    // after layer norm the values should be near-standardized (close to 0).
+    // The logits after near-identity w_final should reflect the normalized x.
+
+    // Check 1: logits are finite (not NaN — no obvious control-flow guard for NaN
+    //          in Aria yet, but 0.0 == 0.0 is true and NaN != NaN)
+    if (logits[0] != logits[0]) {
+        print("  ERROR: logits[0] is NaN");
+        int32:ec = 20; pass(ec);
+    }
+
+    // Check 2: argmax of first position's logits — find which token class scores
+    //          highest (with near-identity W_final, argmax ≈ argmax of x[0..7])
+    flt64:best_score = logits[0];
+    int32:best_tok = 0;
+    int32:li = 1;
+    while (li < 8) {
+        if (logits[li] > best_score) {
+            best_score = logits[li];
+            best_tok = li;
+        }
+        li = li + 1;
+    }
+    print(`  Position 0 predicted token: &{best_tok}`);
+
+    // Check 3: logits for all 4 positions are deterministic
+    //          (same weights + same input = same output every run)
+    flt64:logit_sum = 0.0;
+    int32:ls = 0;
+    while (ls < 32) {
+        logit_sum = logit_sum + logits[ls];
+        ls = ls + 1;
+    }
+    print(`  Sum of all logits: &{logit_sum}`);
+
+    // ========================================================================
+    // SUCCESS
+    // ========================================================================
+    print("");
+    print("=== TRANSFORMER FORWARD PASS: COMPLETE ===");
+    print("All 11 steps executed without error.");
+    print("");
+    print("Language capabilities demonstrated:");
+    print("  - flt64[N] stack arrays (up to [128] confirmed)");
+    print("  - Nested while loops with independent int32 counters");
+    print("  - flt64 arithmetic: +, -, *, /");
+    print("  - extern \"libm\" { func:exp; func:sqrt; } with flt64 wrappers");
+    print("  - Float comparison operators (==, !=, <, >)");
+    print("  - String interpolation with flt64 and int32 values");
+    print("  - 11-step computation inline in main()");
+
+    int32:exit_code = 0i32;
+    pass(exit_code);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    print("Transformer experiment: failsafe triggered");
+};

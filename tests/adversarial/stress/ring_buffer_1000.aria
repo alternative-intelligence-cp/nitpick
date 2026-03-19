@@ -1,0 +1,47 @@
+// Stress test: 1000 iterations of ring buffer fill/drain (inline)
+// Verifies: modulo indexing, boundary writes, no memory corruption over many cycles
+
+func:main = int32() {
+    wild int64[8]:buf;
+    int64:head = 0i64;
+    int64:capacity = 8i64;
+    int64:cycle = 0i64;
+    int64:errors = 0i64;
+
+    while (cycle < 1000i64) {
+        // Fill phase: write 8 values
+        int64:fi = 0i64;
+        while (fi < capacity) {
+            int64:idx = (head + fi) % capacity;
+            buf[idx] = cycle * 100i64 + fi;
+            fi = fi + 1i64;
+        }
+
+        // Verify phase: check all 8 values
+        int64:vi = 0i64;
+        while (vi < capacity) {
+            int64:ridx = (head + vi) % capacity;
+            int64:expected = cycle * 100i64 + vi;
+            if (buf[ridx] != expected) {
+                errors = errors + 1i64;
+            }
+            vi = vi + 1i64;
+        }
+
+        // Advance head (drain all)
+        head = (head + capacity) % capacity;
+        cycle = cycle + 1i64;
+    }
+
+    if (errors > 0i64) {
+        pass(1i32);
+    }
+
+    if (cycle != 1000i64) {
+        pass(2i32);
+    }
+
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) { };

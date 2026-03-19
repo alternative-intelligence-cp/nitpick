@@ -1,0 +1,270 @@
+// sha256.aria — SHA-256 (FIPS 180-4) in Aria
+//
+// Tests:
+//   SHA-256("") =
+//     e3b0c44298fc1c149afb f4c8996fb924 27ae41e4649b934ca495991b7852b855
+//   SHA-256("abc") =
+//     ba7816bf8f01cfea414140de5dae2ec7 3b338c2ba3e1ca9e7aa1f9a8b99d1e
+//     (split for readability: ba7816bf 8f01cfea 414140de 5dae2ec7
+//                              3b338c2b a3e1ca9e 7aa1f9a8 b99d1e74 — NOTE last byte 74)
+//     Correct: ba7816bf8f01cfea414140de5dae2ec73b338c2ba3e1ca9e7aa1f9a8b99d1e74
+//   SHA-256("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") =
+//     248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1
+//
+// Demonstrates: uint32 wrapping arithmetic, bitwise ops (AND/OR/XOR/NOT/SHIFT),
+//   fixed-size arrays, helper functions, big-endian byte packing.
+
+use "../../stdlib/string_convert.aria".*;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// ── rotate right (mod 32) ────────────────────────────────────────────────────
+
+func:rotr32 = uint32(uint32:x, uint32:n) {
+    pass((x >> n) | (x << (32u32 - n)));
+};
+
+// ── SHA-256 mixing functions ──────────────────────────────────────────────────
+
+func:ch = uint32(uint32:e, uint32:f, uint32:g) {
+    pass((e & f) ^ ((~e) & g));
+};
+
+func:maj = uint32(uint32:a, uint32:b, uint32:c) {
+    pass((a & b) ^ (a & c) ^ (b & c));
+};
+
+// Capital Sigma functions (used on working variables a and e)
+func:Sigma0 = uint32(uint32:x) {
+    pass(rotr32(x, 2u32) ^ rotr32(x, 13u32) ^ rotr32(x, 22u32));
+};
+
+func:Sigma1 = uint32(uint32:x) {
+    pass(rotr32(x, 6u32) ^ rotr32(x, 11u32) ^ rotr32(x, 25u32));
+};
+
+// Lowercase sigma functions (used for message schedule expansion)
+func:sigma0 = uint32(uint32:x) {
+    pass(rotr32(x, 7u32) ^ rotr32(x, 18u32) ^ (x >> 3u32));
+};
+
+func:sigma1 = uint32(uint32:x) {
+    pass(rotr32(x, 17u32) ^ rotr32(x, 19u32) ^ (x >> 10u32));
+};
+
+// ── hex output helpers ────────────────────────────────────────────────────────
+
+// Convert a 4-bit nibble to a hex character
+func:nibble_hex = string(uint32:n) {
+    if (n < 10u32) {
+        pass(char_toString((n => int32) + 48));   // '0'=48
+    }
+    pass(char_toString((n => int32) + 87));       // 'a'=97, 97-10=87
+};
+
+// Convert a uint32 to an 8-character lowercase hex string
+func:hex8 = string(uint32:w) {
+    string:s = "";
+    s = string_concat(s, nibble_hex((w >> 28u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >> 24u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >> 20u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >> 16u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >> 12u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >>  8u32) & 0xFu32));
+    s = string_concat(s, nibble_hex((w >>  4u32) & 0xFu32));
+    s = string_concat(s, nibble_hex( w            & 0xFu32));
+    pass(s);
+};
+
+// ── SHA-256 single-block compression ─────────────────────────────────────────
+//
+// Process exactly one 512-bit block stored in W[0..15] (big-endian words).
+// On entry:  W[0..15] must be filled; h0..h7 are the current hash state.
+// On return: h0..h7 updated in place (returned as an 8-element array).
+//
+// NOTE: W is 64 elements; W[16..63] are computed inside this function.
+
+func:compress = NIL(
+    uint32[64]:W,
+    uint32:h0, uint32:h1, uint32:h2, uint32:h3,
+    uint32:h4, uint32:h5, uint32:h6, uint32:h7,
+    uint32[8]:out
+) {
+    // Round constants (SHA-256 first 32 bits of cbrt of primes 2..311)
+    uint32[64]:K = [
+        0x428a2f98u32, 0x71374491u32, 0xb5c0fbcfu32, 0xe9b5dba5u32,
+        0x3956c25bu32, 0x59f111f1u32, 0x923f82a4u32, 0xab1c5ed5u32,
+        0xd807aa98u32, 0x12835b01u32, 0x243185beu32, 0x550c7dc3u32,
+        0x72be5d74u32, 0x80deb1feu32, 0x9bdc06a7u32, 0xc19bf174u32,
+        0xe49b69c1u32, 0xefbe4786u32, 0x0fc19dc6u32, 0x240ca1ccu32,
+        0x2de92c6fu32, 0x4a7484aau32, 0x5cb0a9dcu32, 0x76f988dau32,
+        0x983e5152u32, 0xa831c66du32, 0xb00327c8u32, 0xbf597fc7u32,
+        0xc6e00bf3u32, 0xd5a79147u32, 0x06ca6351u32, 0x14292967u32,
+        0x27b70a85u32, 0x2e1b2138u32, 0x4d2c6dfcu32, 0x53380d13u32,
+        0x650a7354u32, 0x766a0abbu32, 0x81c2c92eu32, 0x92722c85u32,
+        0xa2bfe8a1u32, 0xa81a664bu32, 0xc24b8b70u32, 0xc76c51a3u32,
+        0xd192e819u32, 0xd6990624u32, 0xf40e3585u32, 0x106aa070u32,
+        0x19a4c116u32, 0x1e376c08u32, 0x2748774cu32, 0x34b0bcb5u32,
+        0x391c0cb3u32, 0x4ed8aa4au32, 0x5b9cca4fu32, 0x682e6ff3u32,
+        0x748f82eeu32, 0x78a5636fu32, 0x84c87814u32, 0x8cc70208u32,
+        0x90befffau32, 0xa4506cebu32, 0xbef9a3f7u32, 0xc67178f2u32
+    ];
+
+    // Extend W[16..63]
+    uint32:i = 16u32;
+    while (i < 64u32) {
+        int64:idx = i => int64;
+        uint32:w2  = W[(i - 2u32)  => int64];
+        uint32:w7  = W[(i - 7u32)  => int64];
+        uint32:w15 = W[(i - 15u32) => int64];
+        uint32:w16 = W[(i - 16u32) => int64];
+        W[idx] = sigma1(w2) + w7 + sigma0(w15) + w16;
+        i = i + 1u32;
+    }
+
+    // Initialize working variables
+    uint32:a = h0;
+    uint32:b = h1;
+    uint32:c = h2;
+    uint32:d = h3;
+    uint32:e = h4;
+    uint32:f = h5;
+    uint32:g = h6;
+    uint32:h = h7;
+
+    // 64 rounds
+    uint32:r = 0u32;
+    while (r < 64u32) {
+        uint32:t1 = h + Sigma1(e) + ch(e, f, g) + K[r => int64] + W[r => int64];
+        uint32:t2 = Sigma0(a) + maj(a, b, c);
+        h = g;
+        g = f;
+        f = e;
+        e = d + t1;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2;
+        r = r + 1u32;
+    }
+
+    // Add compressed chunk to current hash value
+    out[0i64] = h0 + a;
+    out[1i64] = h1 + b;
+    out[2i64] = h2 + c;
+    out[3i64] = h3 + d;
+    out[4i64] = h4 + e;
+    out[5i64] = h5 + f;
+    out[6i64] = h6 + g;
+    out[7i64] = h7 + h;
+
+    pass(NIL);
+};
+
+// ── sha256 of a byte buffer (up to 55 bytes — single block, no length chunk) ─
+//
+// Limitation: handles messages that fit in a single 512-bit block after padding.
+// That means messages up to 55 bytes long (56..64 bytes require two blocks).
+// For our test vectors ("", "abc") this is sufficient.
+//
+// For the 448-bit test case we'd need two-block support, added separately.
+
+func:sha256_short = NIL(uint32[64]:W_buf, int32:msg_len, uint32[8]:out_hash) {
+    // Initial hash values (SHA-256 first 32 bits of sqrt of primes 2..19)
+    uint32:h0 = 0x6a09e667u32;
+    uint32:h1 = 0xbb67ae85u32;
+    uint32:h2 = 0x3c6ef372u32;
+    uint32:h3 = 0xa54ff53au32;
+    uint32:h4 = 0x510e527fu32;
+    uint32:h5 = 0x9b05688cu32;
+    uint32:h6 = 0x1f83d9abu32;
+    uint32:h7 = 0x5be0cd19u32;
+
+    // W_buf[0..15] already populated by caller with the padded message.
+    // W_buf[16..63] will be computed in compress().
+    uint32[8]:result = [0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
+    compress(W_buf, h0, h1, h2, h3, h4, h5, h6, h7, result);
+
+    out_hash[0i64] = result[0i64];
+    out_hash[1i64] = result[1i64];
+    out_hash[2i64] = result[2i64];
+    out_hash[3i64] = result[3i64];
+    out_hash[4i64] = result[4i64];
+    out_hash[5i64] = result[5i64];
+    out_hash[6i64] = result[6i64];
+    out_hash[7i64] = result[7i64];
+
+    pass(NIL);
+};
+
+// ── print hash ────────────────────────────────────────────────────────────────
+
+func:print_hash = NIL(string:label, uint32[8]:h) {
+    string:digest = "";
+    digest = string_concat(digest, hex8(h[0i64]));
+    digest = string_concat(digest, hex8(h[1i64]));
+    digest = string_concat(digest, hex8(h[2i64]));
+    digest = string_concat(digest, hex8(h[3i64]));
+    digest = string_concat(digest, hex8(h[4i64]));
+    digest = string_concat(digest, hex8(h[5i64]));
+    digest = string_concat(digest, hex8(h[6i64]));
+    digest = string_concat(digest, hex8(h[7i64]));
+    drop(print(label));
+    drop(println(digest));
+    pass(NIL);
+};
+
+// ── pack 4 bytes (big-endian) into a uint32 ───────────────────────────────────
+
+func:pack_be = uint32(uint32:b0, uint32:b1, uint32:b2, uint32:b3) {
+    pass((b0 << 24u32) | (b1 << 16u32) | (b2 << 8u32) | b3);
+};
+
+// ── main ──────────────────────────────────────────────────────────────────────
+
+func:main = int32() {
+
+    // ── Test 1: SHA-256("") ───────────────────────────────────────────────────
+    // Padded block: 0x80 followed by zeros, then 64-bit length = 0
+    // W[0] = 0x80000000, W[1..14] = 0, W[15] = 0
+
+    uint32[64]:W0 = [
+        0x80000000u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32,          0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        // W[16..63] placeholders (filled by compress)
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32
+    ];
+    uint32[8]:h_empty = [0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
+    sha256_short(W0, 0i32, h_empty);
+    print_hash("SHA-256(\"\")   = ", h_empty);
+    drop(println("  expect: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+
+    // ── Test 2: SHA-256("abc") ────────────────────────────────────────────────
+    // "abc" = 0x61 0x62 0x63, length = 24 bits = 0x18
+    // Padded:
+    //   W[0]  = 0x61626380  (a, b, c, 0x80)
+    //   W[1..14] = 0
+    //   W[15] = 0x00000018  (bit length = 24)
+
+    uint32[64]:Wabc = [
+        0x61626380u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32,          0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0x00000018u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32
+    ];
+    uint32[8]:h_abc = [0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
+    sha256_short(Wabc, 3i32, h_abc);
+    print_hash("SHA-256(\"abc\") = ", h_abc);
+    drop(println("  expect: ba7816bf8f01cfea414140de5dae2ec73b338c2ba3e1ca9e7aa1f9a8b99d1e74"));
+
+    pass(0i32);
+};

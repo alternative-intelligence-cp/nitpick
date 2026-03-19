@@ -654,7 +654,8 @@ llvm::Module* compile_to_module(
             }
         }
         module_loader.getResolver().addSearchPath(compiler_dir);
-        // Add /lib subdirectory for stdlib
+        // Add stdlib/ and lib/ subdirectories relative to project root
+        module_loader.getResolver().addSearchPath(compiler_dir + "/stdlib");
         module_loader.getResolver().addSearchPath(compiler_dir + "/lib");
     } catch (...) {
         // Fallback: current working directory
@@ -778,7 +779,12 @@ llvm::Module* compile_to_module(
     }
     
     // Generate IR for loaded modules (needed for cross-module function calls)
-    for (const auto& [path, loaded_module] : loaded_modules) {
+    // Use load order so dependencies are compiled before the modules that use them
+    const auto& load_order = module_loader.getLoadOrder();
+    for (const auto& path : load_order) {
+        auto it = loaded_modules.find(path);
+        if (it == loaded_modules.end() || !it->second || !it->second->ast) continue;
+        const auto& loaded_module = it->second;
         if (loaded_module && loaded_module->ast) {
             if (opts.verbose) {
                 std::cout << "  Generating IR for module: " << path << "\n";

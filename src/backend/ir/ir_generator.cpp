@@ -61,9 +61,25 @@ llvm::Value* IRGenerator::promoteToLBIMStruct(llvm::Value* literal, llvm::Type* 
     llvm::StructType* structType = llvm::cast<llvm::StructType>(targetType);
     std::string structName = structType->getName().str();
     
-    // Check if this is an LBIM struct (int128, int256, etc.)
-    if (structName.find("struct.int") != 0 && structName.find("struct.uint") != 0) {
+    // Check if this is an LBIM struct (int128, uint128, flt256, flt512, etc.)
+    bool isIntLBIM = (structName.find("struct.int") == 0 || structName.find("struct.uint") == 0);
+    bool isFltLBIM = (structName == "struct.flt256" || structName == "struct.flt512");
+    if (!isIntLBIM && !isFltLBIM) {
         return literal;  // Not an LBIM type
+    }
+    
+    // For float LBIM types, convert float literal to its bitwise i64 representation
+    if (isFltLBIM && literal->getType()->isFloatingPointTy()) {
+        // Bitcast the float to an integer of same width, then extend to i64
+        llvm::Type* i64Type = llvm::Type::getInt64Ty(context);
+        unsigned floatBits = literal->getType()->getScalarSizeInBits();
+        llvm::Type* intEquivType = llvm::Type::getIntNTy(context, floatBits);
+        llvm::Value* asInt = builder.CreateBitCast(literal, intEquivType, "flt_to_bits");
+        if (floatBits < 64) {
+            asInt = builder.CreateZExt(asInt, i64Type, "flt_bits_i64");
+        }
+        // Now treat as integer promotion: store bits in limb 0, zero the rest
+        literal = asInt;
     }
     
     // Extract the literal value as int64
@@ -158,8 +174,8 @@ llvm::Value* IRGenerator::promoteToLBIMStruct(llvm::Value* literal, llvm::Type* 
     builder.CreateStore(literalI64, limb0Ptr);
     
     // If the literal is negative (signed), sign-extend by filling high limbs with all 1s
-    if (structName.find("uint") == 0) {
-        // Unsigned type - already zero-extended, done
+    if (structName.find("uint") != std::string::npos || isFltLBIM) {
+        // Unsigned type or float LBIM - already zero-extended, done
         llvm::Value* result = builder.CreateLoad(targetType, structAlloca, "lbim_promoted_val");
         return result;
     }
@@ -599,6 +615,14 @@ unsigned IRGenerator::isLBIMType(llvm::Type* type) {
     if (name == "struct.int4096" || name == "struct.uint4096") {
         std::cerr << "[DEBUG] isLBIMType: MATCHED int4096/uint4096, returning 64" << std::endl;
         return 64;  // 64 x i64 limbs
+    }
+    if (name == "struct.flt256") {
+        std::cerr << "[DEBUG] isLBIMType: MATCHED flt256, returning 4" << std::endl;
+        return 4;  // 4 x i64 limbs
+    }
+    if (name == "struct.flt512") {
+        std::cerr << "[DEBUG] isLBIMType: MATCHED flt512, returning 8" << std::endl;
+        return 8;  // 8 x i64 limbs
     }
 
     std::cerr << "[DEBUG] isLBIMType: no match, returning 0" << std::endl;
@@ -1126,10 +1150,21 @@ llvm::Value* IRGenerator::generateLBIMMul(llvm::Value* L, llvm::Value* R, unsign
 llvm::Value* IRGenerator::generateLBIMDiv(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
     // LBIM signed division by calling runtime intrinsic
     // Uses aria_lbim_sdivN where N is the bit width (128/256/512/1024/2048/4096)
-    // For large structs (>16 limbs), pass by pointer for ABI compatibility
+    //
+    // BUG-027 FIX: Match the C ABI for each runtime function:
+    //   int128-int1024 (lbim.cpp): takes structs by value → use sret + byval
+    //   int2048-int4096 (lbim_extended.cpp): takes const ptr → use sret + ptr
 
-    llvm::Type* structType = L->getType();
-    bool usePointers = (numLimbs > 16);  // int2048, int4096 use pointers
+    // Promote scalar operands to LBIM struct type (e.g., int4096:x / 3)
+    llvm::Type* structType = L->getType()->isStructTy() ? L->getType() : R->getType();
+    if (!L->getType()->isStructTy() && R->getType()->isStructTy())
+        L = promoteToLBIMStruct(L, structType);
+    else if (L->getType()->isStructTy() && !R->getType()->isStructTy())
+        R = promoteToLBIMStruct(R, structType);
+
+    llvm::Type* ptrType = llvm::PointerType::getUnqual(structType);
+    llvm::Type* voidType = builder.getVoidTy();
+    bool usePointers = (numLimbs > 16);  // int2048, int4096 C functions take const ptr
 
     // Determine the runtime function name based on number of limbs
     std::string funcName;
@@ -1137,7 +1172,7 @@ llvm::Value* IRGenerator::generateLBIMDiv(llvm::Value* L, llvm::Value* R, unsign
         case 2: funcName = "aria_lbim_sdiv128"; break;
         case 4: funcName = "aria_lbim_sdiv256"; break;
         case 8: funcName = "aria_lbim_sdiv512"; break;
-        case 16: funcName = "aria_lbim_sdiv1024"; break;  // ARIA-025: Post-quantum
+        case 16: funcName = "aria_lbim_sdiv1024"; break;
         case 32: funcName = "aria_lbim_sdiv2048"; break;
         case 64: funcName = "aria_lbim_sdiv4096"; break;
         default:
@@ -1145,57 +1180,66 @@ llvm::Value* IRGenerator::generateLBIMDiv(llvm::Value* L, llvm::Value* R, unsign
             return llvm::UndefValue::get(structType);
     }
 
-    if (usePointers) {
-        // For large structs, pass by pointer and return by pointer
-        // Signature: aria_intN_t aria_lbim_sdivN(const aria_intN_t* a, const aria_intN_t* b)
-        // But we still return the struct by value in LLVM (runtime handles conversion)
-        llvm::Type* ptrType = llvm::PointerType::get(structType, 0);
-        llvm::FunctionType* funcType = llvm::FunctionType::get(
-            structType, {ptrType, ptrType}, false);
-        
-        llvm::Function* divFunc = module->getFunction(funcName);
-        if (!divFunc) {
-            divFunc = llvm::Function::Create(
-                funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+    // All variants use: void func(ptr sret, ptr, ptr)
+    // The difference is byval attribute on params 1,2 for by-value C functions
+    llvm::FunctionType* funcType = llvm::FunctionType::get(
+        voidType, {ptrType, ptrType, ptrType}, false);
+
+    llvm::Function* divFunc = module->getFunction(funcName);
+    if (!divFunc) {
+        divFunc = llvm::Function::Create(
+            funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+        divFunc->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, structType));
+        divFunc->addParamAttr(0, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+        if (!usePointers) {
+            // By-value C functions: byval copies struct to stack (matches C ABI MEMORY class)
+            divFunc->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+            divFunc->addParamAttr(1, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+            divFunc->addParamAttr(2, llvm::Attribute::getWithByValType(context, structType));
+            divFunc->addParamAttr(2, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
         }
-        
-        // Create allocas and store the struct values
-        llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "div_arg_l");
-        llvm::Value* allocaR = builder.CreateAlloca(structType, nullptr, "div_arg_r");
-        builder.CreateStore(L, allocaL);
-        builder.CreateStore(R, allocaR);
-        
-        return builder.CreateCall(divFunc, {allocaL, allocaR}, "lbim.div");
-    } else {
-        // For small structs, pass by value
-        llvm::FunctionType* funcType = llvm::FunctionType::get(
-            structType, {structType, structType}, false);
-        
-        llvm::Function* divFunc = module->getFunction(funcName);
-        if (!divFunc) {
-            divFunc = llvm::Function::Create(
-                funcType, llvm::Function::ExternalLinkage, funcName, module.get());
-        }
-        
-        return builder.CreateCall(divFunc, {L, R}, "lbim.div");
     }
+
+    // Create allocas for result and arguments
+    llvm::Value* resultAlloca = builder.CreateAlloca(structType, nullptr, "div_result");
+    llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "div_arg_l");
+    llvm::Value* allocaR = builder.CreateAlloca(structType, nullptr, "div_arg_r");
+    builder.CreateStore(L, allocaL);
+    builder.CreateStore(R, allocaR);
+
+    llvm::CallInst* call = builder.CreateCall(divFunc, {resultAlloca, allocaL, allocaR});
+    call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, structType));
+    call->addParamAttr(0, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+    if (!usePointers) {
+        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+        call->addParamAttr(1, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+        call->addParamAttr(2, llvm::Attribute::getWithByValType(context, structType));
+        call->addParamAttr(2, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+    }
+
+    return builder.CreateLoad(structType, resultAlloca, "lbim.div");
 }
 
 llvm::Value* IRGenerator::generateLBIMMod(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
-    // LBIM signed modulo by calling runtime intrinsic
-    // Uses aria_lbim_smodN where N is the bit width (128/256/512/1024/2048/4096)
-    // For large structs (>16 limbs), pass by pointer for ABI compatibility
+    // LBIM signed modulo — same dual-ABI approach as generateLBIMDiv.
 
-    llvm::Type* structType = L->getType();
-    bool usePointers = (numLimbs > 16);  // int2048, int4096 use pointers
+    // Promote scalar operands to LBIM struct type
+    llvm::Type* structType = L->getType()->isStructTy() ? L->getType() : R->getType();
+    if (!L->getType()->isStructTy() && R->getType()->isStructTy())
+        L = promoteToLBIMStruct(L, structType);
+    else if (L->getType()->isStructTy() && !R->getType()->isStructTy())
+        R = promoteToLBIMStruct(R, structType);
 
-    // Determine the runtime function name based on number of limbs
+    llvm::Type* ptrType = llvm::PointerType::getUnqual(structType);
+    llvm::Type* voidType = builder.getVoidTy();
+    bool usePointers = (numLimbs > 16);
+
     std::string funcName;
     switch (numLimbs) {
         case 2: funcName = "aria_lbim_smod128"; break;
         case 4: funcName = "aria_lbim_smod256"; break;
         case 8: funcName = "aria_lbim_smod512"; break;
-        case 16: funcName = "aria_lbim_smod1024"; break;  // ARIA-025: Post-quantum
+        case 16: funcName = "aria_lbim_smod1024"; break;
         case 32: funcName = "aria_lbim_smod2048"; break;
         case 64: funcName = "aria_lbim_smod4096"; break;
         default:
@@ -1203,38 +1247,40 @@ llvm::Value* IRGenerator::generateLBIMMod(llvm::Value* L, llvm::Value* R, unsign
             return llvm::UndefValue::get(structType);
     }
 
-    if (usePointers) {
-        // For large structs, pass by pointer
-        llvm::Type* ptrType = llvm::PointerType::get(structType, 0);
-        llvm::FunctionType* funcType = llvm::FunctionType::get(
-            structType, {ptrType, ptrType}, false);
-        
-        llvm::Function* modFunc = module->getFunction(funcName);
-        if (!modFunc) {
-            modFunc = llvm::Function::Create(
-                funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+    llvm::FunctionType* funcType = llvm::FunctionType::get(
+        voidType, {ptrType, ptrType, ptrType}, false);
+
+    llvm::Function* modFunc = module->getFunction(funcName);
+    if (!modFunc) {
+        modFunc = llvm::Function::Create(
+            funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+        modFunc->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, structType));
+        modFunc->addParamAttr(0, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+        if (!usePointers) {
+            modFunc->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+            modFunc->addParamAttr(1, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+            modFunc->addParamAttr(2, llvm::Attribute::getWithByValType(context, structType));
+            modFunc->addParamAttr(2, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
         }
-        
-        // Create allocas and store the struct values
-        llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "mod_arg_l");
-        llvm::Value* allocaR = builder.CreateAlloca(structType, nullptr, "mod_arg_r");
-        builder.CreateStore(L, allocaL);
-        builder.CreateStore(R, allocaR);
-        
-        return builder.CreateCall(modFunc, {allocaL, allocaR}, "lbim.mod");
-    } else {
-        // For small structs, pass by value
-        llvm::FunctionType* funcType = llvm::FunctionType::get(
-            structType, {structType, structType}, false);
-        
-        llvm::Function* modFunc = module->getFunction(funcName);
-        if (!modFunc) {
-            modFunc = llvm::Function::Create(
-                funcType, llvm::Function::ExternalLinkage, funcName, module.get());
-        }
-        
-        return builder.CreateCall(modFunc, {L, R}, "lbim.mod");
     }
+
+    llvm::Value* resultAlloca = builder.CreateAlloca(structType, nullptr, "mod_result");
+    llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "mod_arg_l");
+    llvm::Value* allocaR = builder.CreateAlloca(structType, nullptr, "mod_arg_r");
+    builder.CreateStore(L, allocaL);
+    builder.CreateStore(R, allocaR);
+
+    llvm::CallInst* call = builder.CreateCall(modFunc, {resultAlloca, allocaL, allocaR});
+    call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, structType));
+    call->addParamAttr(0, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+    if (!usePointers) {
+        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+        call->addParamAttr(1, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+        call->addParamAttr(2, llvm::Attribute::getWithByValType(context, structType));
+        call->addParamAttr(2, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+    }
+
+    return builder.CreateLoad(structType, resultAlloca, "lbim.mod");
 }
 
 llvm::Value* IRGenerator::generateLBIMAnd(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
@@ -1532,12 +1578,20 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     // flt256: 4 x i64 limbs (256 bits), 32-byte aligned
     // flt512: 8 x i64 limbs (512 bits), 64-byte aligned
     if (type_name == "flt256") {
-        llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 4);
-        return llvm::StructType::get(context, {limbArray}, false);
+        llvm::StructType* flt256Struct = llvm::StructType::getTypeByName(context, "struct.flt256");
+        if (!flt256Struct) {
+            llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 4);
+            flt256Struct = llvm::StructType::create(context, {limbArray}, "struct.flt256");
+        }
+        return flt256Struct;
     }
     if (type_name == "flt512") {
-        llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 8);
-        return llvm::StructType::get(context, {limbArray}, false);
+        llvm::StructType* flt512Struct = llvm::StructType::getTypeByName(context, "struct.flt512");
+        if (!flt512Struct) {
+            llvm::Type* limbArray = llvm::ArrayType::get(builder.getInt64Ty(), 8);
+            flt512Struct = llvm::StructType::create(context, {limbArray}, "struct.flt512");
+        }
+        return flt512Struct;
     }
     
     // Integer types - signed
@@ -3624,12 +3678,13 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                 }
                             }
                             // Check if we're promoting a literal to an LBIM struct type
-                            else if (varType->isStructTy() && initVal->getType()->isIntegerTy()) {
+                            else if (varType->isStructTy() && (initVal->getType()->isIntegerTy() || initVal->getType()->isFloatingPointTy())) {
                                 llvm::StructType* struct_type = llvm::cast<llvm::StructType>(varType);
                                 std::string struct_name = struct_type->getName().str();
                                 
                                 // If target is LBIM type, promote the literal
-                                if (struct_name.find("struct.int") == 0 || struct_name.find("struct.uint") == 0) {
+                                if (struct_name.find("struct.int") == 0 || struct_name.find("struct.uint") == 0 ||
+                                    struct_name == "struct.flt256" || struct_name == "struct.flt512") {
                                     std::cerr << "[DEBUG IR_GEN] Promoting literal to LBIM type " << struct_name << std::endl;
                                     initVal = promoteToLBIMStruct(initVal, varType);
                                 }
@@ -5718,6 +5773,16 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                         if (nd_elem_ty) {
                                             llvm::Value* nd_rhs = codegenExpression(binop->right.get());
                                             if (!nd_rhs) return nullptr;
+                                            // Unwrap Result<T> → T for array element stores
+                                            if (nd_rhs->getType()->isStructTy() && nd_rhs->getType() != nd_elem_ty) {
+                                                llvm::StructType* rs = llvm::cast<llvm::StructType>(nd_rhs->getType());
+                                                if (rs->getNumElements() == 3 &&
+                                                    rs->getElementType(1)->isPointerTy() &&
+                                                    rs->getElementType(2)->isIntegerTy(8) &&
+                                                    rs->getElementType(0) == nd_elem_ty) {
+                                                    nd_rhs = builder.CreateExtractValue(nd_rhs, {0}, "unwrap_result_arr");
+                                                }
+                                            }
                                             if (nd_rhs->getType() != nd_elem_ty) {
                                                 if (nd_rhs->getType()->isIntegerTy() && nd_elem_ty->isIntegerTy())
                                                     nd_rhs = builder.CreateIntCast(nd_rhs, nd_elem_ty, true, "rhs.cast");
@@ -5915,6 +5980,16 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             };
                             llvm::Value* elem_ptr = builder.CreateInBoundsGEP(
                                 allocated_type, var, gep_indices, "arrayidx");
+                            // Unwrap Result<T> → T for array element stores
+                            if (rhs->getType()->isStructTy() && rhs->getType() != elemType) {
+                                llvm::StructType* rs = llvm::cast<llvm::StructType>(rhs->getType());
+                                if (rs->getNumElements() == 3 &&
+                                    rs->getElementType(1)->isPointerTy() &&
+                                    rs->getElementType(2)->isIntegerTy(8) &&
+                                    rs->getElementType(0) == elemType) {
+                                    rhs = builder.CreateExtractValue(rhs, {0}, "unwrap_result_arr");
+                                }
+                            }
                             // Cast rhs to element type if needed
                             if (rhs->getType() != elemType) {
                                 if (rhs->getType()->isIntegerTy() && elemType->isIntegerTy()) {
@@ -5947,6 +6022,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             else if (ariaElem == "int64" || ariaElem == "i64") elem_type = builder.getInt64Ty();
                             else if (ariaElem == "flt32" || ariaElem == "f32" || ariaElem == "float32") elem_type = builder.getFloatTy();
                             else if (ariaElem == "flt64" || ariaElem == "f64" || ariaElem == "float64") elem_type = builder.getDoubleTy();
+                        }
+                    }
+                    // Unwrap Result<T> → T when assigning to an array element.
+                    // pub func calls return { T, ptr, i8 }; storing the full
+                    // struct to a T-sized slot overwrites adjacent memory.
+                    if (rhs->getType()->isStructTy() && rhs->getType() != elem_type) {
+                        llvm::StructType* rs = llvm::cast<llvm::StructType>(rhs->getType());
+                        if (rs->getNumElements() == 3 &&
+                            rs->getElementType(1)->isPointerTy() &&
+                            rs->getElementType(2)->isIntegerTy(8) &&
+                            rs->getElementType(0) == elem_type) {
+                            rhs = builder.CreateExtractValue(rhs, {0}, "unwrap_result_arr");
                         }
                     }
                     // Cast rhs to elem_type if needed
@@ -6172,6 +6259,45 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (!result) return nullptr;
                 }
                 
+                // BUG-026 FIX: Ensure the stored value type matches the alloca type.
+                // Integer literals default to i64, but the target variable may be
+                // i32/i8/etc.  Without this conversion the store is type-mismatched
+                // (e.g. "store i64 5, ptr %x" into an i32 alloca), which LLVM treats
+                // as undefined behaviour and may optimise away entirely.
+                if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
+                    llvm::Type* targetType = allocaInst->getAllocatedType();
+                    if (result->getType() != targetType) {
+                        if (result->getType()->isIntegerTy() && targetType->isIntegerTy()) {
+                            unsigned srcBits = result->getType()->getIntegerBitWidth();
+                            unsigned dstBits = targetType->getIntegerBitWidth();
+                            if (srcBits > dstBits) {
+                                result = builder.CreateTrunc(result, targetType, "assign_trunc");
+                            } else if (srcBits < dstBits) {
+                                result = builder.CreateSExt(result, targetType, "assign_sext");
+                            }
+                        } else if (result->getType()->isFloatingPointTy() && targetType->isFloatingPointTy()) {
+                            unsigned srcBits = result->getType()->getScalarSizeInBits();
+                            unsigned dstBits = targetType->getScalarSizeInBits();
+                            if (srcBits > dstBits) {
+                                result = builder.CreateFPTrunc(result, targetType, "assign_fptrunc");
+                            } else if (srcBits < dstBits) {
+                                result = builder.CreateFPExt(result, targetType, "assign_fpext");
+                            }
+                        } else if (result->getType()->isIntegerTy() && targetType->isFloatingPointTy()) {
+                            result = builder.CreateSIToFP(result, targetType, "assign_itof");
+                        } else if (result->getType()->isFloatingPointTy() && targetType->isIntegerTy()) {
+                            result = builder.CreateFPToSI(result, targetType, "assign_ftoi");
+                        } else if (result->getType()->isIntegerTy() && targetType->isStructTy()) {
+                            // LBIM promotion: integer literal into LBIM struct slot
+                            llvm::StructType* st = llvm::cast<llvm::StructType>(targetType);
+                            std::string sn = st->getName().str();
+                            if (sn.find("struct.int") == 0 || sn.find("struct.uint") == 0) {
+                                result = promoteToLBIMStruct(result, targetType);
+                            }
+                        }
+                    }
+                }
+
                 // Store the result
                 builder.CreateStore(result, var);
                 
@@ -7524,6 +7650,19 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // SPACESHIP OPERATOR (<=>)
                 // Three-way comparison: returns -1 if left < right, 0 if equal, 1 if left > right
                 case frontend::TokenType::TOKEN_SPACESHIP: {
+                    // LBIM dispatch: use limb-by-limb comparison for large types
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        // spaceship = (L < R) ? -1 : ((L == R) ? 0 : 1)
+                        llvm::Value* eq = generateLBIMEQ(L, R, numLimbs);
+                        llvm::Value* lt = generateLBIMSLT(L, R, numLimbs);
+                        llvm::Value* negOne = llvm::ConstantInt::getSigned(llvm::Type::getInt64Ty(context), -1);
+                        llvm::Value* zero = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 0);
+                        llvm::Value* one = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 1);
+                        llvm::Value* eqSel = builder.CreateSelect(eq, zero, one, "spaceship.eq_sel");
+                        llvm::Value* result = builder.CreateSelect(lt, negOne, eqSel, "spaceship.result");
+                        return result;
+                    }
+
                     // Ensure operands have same type
                     if (L->getType() != R->getType()) {
                         if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy()) {
@@ -7828,8 +7967,36 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 llvm::Value* field_ptr = builder.CreateStructGEP(struct_type, struct_alloca, i, 
                                                                 field.name + ".ptr");
                 
-                // Store the value
-                builder.CreateStore(field_value, field_ptr);
+                // Get the LLVM type of this struct field
+                llvm::StructType* st = llvm::cast<llvm::StructType>(struct_type);
+                llvm::Type* field_llvm_type = st->getElementType(i);
+                
+                // If the field is an array type but the value is a pointer (from ARRAY_LITERAL),
+                // we need to copy the array contents element-by-element instead of storing a pointer.
+                if (field_llvm_type->isArrayTy() && field_value->getType()->isPointerTy()) {
+                    auto* arr_ty = llvm::cast<llvm::ArrayType>(field_llvm_type);
+                    llvm::Type* elem_ty = arr_ty->getElementType();
+                    uint64_t num_elems = arr_ty->getNumElements();
+                    for (uint64_t ei = 0; ei < num_elems; ++ei) {
+                        llvm::Value* src_ptr = builder.CreateGEP(
+                            elem_ty, field_value,
+                            llvm::ConstantInt::get(builder.getInt64Ty(), ei),
+                            field.name + ".src." + std::to_string(ei));
+                        llvm::Value* elem_val = builder.CreateLoad(elem_ty, src_ptr,
+                            field.name + ".elem." + std::to_string(ei));
+                        std::vector<llvm::Value*> gep_idx = {
+                            llvm::ConstantInt::get(builder.getInt64Ty(), 0),
+                            llvm::ConstantInt::get(builder.getInt64Ty(), ei)
+                        };
+                        llvm::Value* dst_ptr = builder.CreateInBoundsGEP(
+                            field_llvm_type, field_ptr, gep_idx,
+                            field.name + ".dst." + std::to_string(ei));
+                        builder.CreateStore(elem_val, dst_ptr);
+                    }
+                } else {
+                    // Store the value directly (scalars, nested structs, etc.)
+                    builder.CreateStore(field_value, field_ptr);
+                }
             }
             
             // Load and return the complete struct value

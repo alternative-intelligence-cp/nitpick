@@ -2027,6 +2027,19 @@ ASTNodePtr Parser::parseStatement() {
             if (check(TokenType::TOKEN_RIGHT_BRACKET)) {
                 advance(); // consume ']'
                 
+                // Consume any additional array dimensions [M][K]... before the colon check
+                // This handles multi-dimensional array declarations: flt64[3][4]:matrix
+                while (check(TokenType::TOKEN_LEFT_BRACKET)) {
+                    advance(); // consume '['
+                    int innerDepth = 1;
+                    while (innerDepth > 0 && !isAtEnd()) {
+                        if (check(TokenType::TOKEN_LEFT_BRACKET)) innerDepth++;
+                        if (check(TokenType::TOKEN_RIGHT_BRACKET)) innerDepth--;
+                        if (innerDepth > 0) advance();
+                    }
+                    if (check(TokenType::TOKEN_RIGHT_BRACKET)) advance(); // consume ']'
+                }
+                
                 // Now check for colon after array type
                 if (check(TokenType::TOKEN_COLON)) {
                     // It's an array type annotation: type[]:name or type[size]:name
@@ -3229,19 +3242,25 @@ ASTNodePtr Parser::parseType() {
         baseType = std::make_shared<OptionalTypeNode>(baseType, typeToken.line, typeToken.column);
     }
     
-    // Check for array suffix: type[] or type[size]
-    if (match(TokenType::TOKEN_LEFT_BRACKET)) {
-        ASTNodePtr sizeExpr = nullptr;
-        
-        // Check if it's a sized array: int8[100]
-        if (!check(TokenType::TOKEN_RIGHT_BRACKET)) {
-            // Parse the size expression (could be literal or identifier)
-            sizeExpr = parseExpression();
+    // Check for array suffix(es): type[], type[size], type[M][N] (multi-dimensional).
+    // Collect all dimension sizes, then build type from innermost to outermost so that
+    // flt64[3][4] produces ArrayType(ArrayType(flt64,4),3) → LLVM [3 x [4 x double]]
+    // (C-style semantics: first bracket = outermost/row dimension).
+    {
+        std::vector<ASTNodePtr> dims;
+        while (match(TokenType::TOKEN_LEFT_BRACKET)) {
+            ASTNodePtr sizeExpr = nullptr;
+            if (!check(TokenType::TOKEN_RIGHT_BRACKET)) {
+                sizeExpr = parseExpression();
+            }
+            consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after array type");
+            dims.push_back(std::move(sizeExpr));
         }
-        
-        consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after array type");
-        
-        baseType = std::make_shared<ArrayType>(baseType, sizeExpr, typeToken.line, typeToken.column);
+        // Build from innermost to outermost:
+        // for flt64[3][4] dims=[3,4] → first wrap flt64 with [4], then wrap with [3]
+        for (int i = (int)dims.size() - 1; i >= 0; --i) {
+            baseType = std::make_shared<ArrayType>(baseType, dims[i], typeToken.line, typeToken.column);
+        }
     }
 
     // Apply prefix pointer if we saw '*' at the beginning (for generic type references)
