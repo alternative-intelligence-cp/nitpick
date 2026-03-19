@@ -541,7 +541,8 @@ std::string ExprCodegen::getExprLBIMTypeName(ASTNode* expr) {
                 typeName == "int256" || typeName == "uint256" ||
                 typeName == "int512" || typeName == "uint512" ||
                 typeName == "int1024" || typeName == "uint1024" ||
-                typeName == "fix256") {
+                typeName == "fix256" ||
+                typeName == "flt256" || typeName == "flt512") {
                 return typeName;
             }
         }
@@ -877,7 +878,8 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
     } else if (op == frontend::TokenType::TOKEN_LESS ||
                op == frontend::TokenType::TOKEN_LESS_EQUAL ||
                op == frontend::TokenType::TOKEN_GREATER ||
-               op == frontend::TokenType::TOKEN_GREATER_EQUAL) {
+               op == frontend::TokenType::TOKEN_GREATER_EQUAL ||
+               op == frontend::TokenType::TOKEN_SPACESHIP) {
         opSuffix = "_cmp";  // Comparison returns -1/0/1
         isComparison = true;
     } else {
@@ -927,6 +929,18 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
             funcName = "aria_lbim_eq" + bitWidth;
         } else {
             funcName = "aria_lbim" + opSuffix + bitWidth;
+        }
+    }
+    // LBIM float types: flt256/flt512 (software-emulated extended precision)
+    else if (lbimType == "flt256" || lbimType == "flt512") {
+        std::string bitWidth = lbimType.substr(3);  // "256" or "512"
+
+        if (opSuffix == "_cmp") {
+            funcName = "aria_lbim_fcmp" + bitWidth;
+        } else if (opSuffix == "_eq") {
+            funcName = "aria_lbim_feq" + bitWidth;
+        } else {
+            funcName = "aria_lbim_f" + opSuffix.substr(1) + bitWidth;  // e.g. aria_lbim_fadd256
         }
     }
     else {
@@ -992,6 +1006,9 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
             // >= : cmp_result >= 0
             llvm::Value* zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
             result = builder.CreateICmpSGE(result, zero, "ge_result");
+        } else if (op == frontend::TokenType::TOKEN_SPACESHIP) {
+            // <=> : return raw cmp_result as i64 (-1/0/1)
+            result = builder.CreateSExt(result, llvm::Type::getInt64Ty(context), "spaceship_result");
         }
         // TOKEN_EQUAL_EQUAL returns the bool directly
     }
@@ -2347,6 +2364,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
             op == TokenType::TOKEN_EQUAL_EQUAL || op == TokenType::TOKEN_BANG_EQUAL ||
             op == TokenType::TOKEN_LESS || op == TokenType::TOKEN_LESS_EQUAL ||
             op == TokenType::TOKEN_GREATER || op == TokenType::TOKEN_GREATER_EQUAL ||
+            op == TokenType::TOKEN_SPACESHIP ||
             op == TokenType::TOKEN_AMPERSAND ||
             op == TokenType::TOKEN_PIPE ||
             op == TokenType::TOKEN_CARET) {

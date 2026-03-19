@@ -1,0 +1,181 @@
+// ============================================================================
+// IEEE 754 COMPLIANCE TEST SUITE — Safety-Critical for Nikola AGI
+// ============================================================================
+// Purpose: Verify Aria's flt64 implementation correctly handles IEEE 754
+// edge cases that WILL occur in Nikola's UFIE physics engine.
+//
+// Failure here means: Wavefunction Ψ could silently corrupt, leading to
+// "Epileptic Resonance" (field → ∞) or "Amnesia" (information loss).
+//
+// All tests return 0 on success, non-zero on failure.
+// ============================================================================
+
+func:main = int32() {
+    int32:failures = 0;
+
+    // ========================================================================
+    // TEST 1: Negative zero equality
+    // IEEE 754: -0.0 == +0.0 must be TRUE
+    // Risk: Phase comparison in wavefunction uses zero crossings
+    // ========================================================================
+    flt64:pos_zero = 0.0;
+    flt64:neg_zero = -0.0;
+    if (pos_zero != neg_zero) {
+        print("FAIL: -0.0 != +0.0 (IEEE 754 violation)\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 2: Signed zero arithmetic
+    // IEEE 754: 1.0 / +0.0 = +Inf, 1.0 / -0.0 = -Inf (distinct!)
+    // Risk: Division near zero in damping coefficient α(1-r̂)
+    // ========================================================================
+    flt64:one = 1.0;
+    flt64:neg_one = -1.0;
+    flt64:pos_inf = one / pos_zero;
+    flt64:neg_inf = neg_one / pos_zero;
+    // +Inf > any finite number
+    flt64:large = 1.0e300;
+    if (pos_inf < large) {
+        print("FAIL: +Inf < 1e300 (infinity handling broken)\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 3: Infinity arithmetic
+    // IEEE 754: Inf + finite = Inf, Inf * 0 = NaN, Inf - Inf = NaN
+    // Risk: Unbounded field growth in Epileptic Resonance failure mode
+    // ========================================================================
+    flt64:inf_plus_one = pos_inf + one;
+    if (inf_plus_one < large) {
+        print("FAIL: Inf + 1 is not Inf\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 4: Very small number preservation (denormalized)
+    // IEEE 754: Smallest subnormal = 5e-324
+    // Risk: Wavefunction damping can drive amplitudes near zero.
+    //        Must not flush to zero prematurely.
+    // ========================================================================
+    flt64:tiny = 2.2250738585072014e-308;  // Smallest normal
+    flt64:half = 0.5;
+    flt64:subnormal = tiny * half;  // Should become subnormal, not 0
+    if (subnormal == pos_zero) {
+        print("FAIL: Subnormal flushed to zero (denorm not preserved)\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 5: Precision at unit boundary
+    // IEEE 754: 1.0 + epsilon/2 == 1.0 (round-ties-to-even)
+    // Risk: Small energy corrections in Hamiltonian must be applied correctly
+    // ========================================================================
+    flt64:epsilon = 2.220446049250313e-16;  // Machine epsilon for flt64
+    flt64:one_plus_eps = one + epsilon;
+    if (one_plus_eps == one) {
+        print("FAIL: 1.0 + machine_epsilon == 1.0 (precision loss)\n");
+        failures = failures + 1;
+    }
+    // But half epsilon should round away
+    flt64:half_eps = epsilon * half;
+    flt64:one_plus_half_eps = one + half_eps;
+    if (one_plus_half_eps != one) {
+        print("FAIL: 1.0 + eps/2 != 1.0 (rounding mode wrong)\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 6: Large number precision
+    // Risk: Accumulating energy over many timesteps (10,000+)
+    // ========================================================================
+    flt64:big = 1.0e15;
+    flt64:small_add = 1.0;
+    flt64:big_plus_small = big + small_add;
+    flt64:recovered = big_plus_small - big;
+    if (recovered != small_add) {
+        print("FAIL: 1e15 + 1 - 1e15 != 1 (precision at scale)\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 7: Multiplication commutativity
+    // IEEE 754: a * b == b * a (always, even for special values)
+    // Risk: Order-dependent results in physics integration
+    // ========================================================================
+    flt64:a = 1.23456789012345;
+    flt64:b = 9.87654321098765;
+    flt64:ab = a * b;
+    flt64:ba = b * a;
+    if (ab != ba) {
+        print("FAIL: a*b != b*a (commutativity violation)\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 8: Sterbenz lemma (exact subtraction)
+    // If a/2 <= b <= 2a, then a-b is computed exactly
+    // Risk: Energy difference calculations in Störmer-Verlet integrator
+    // ========================================================================
+    flt64:sa = 1.0000000000000002;  // 1 + eps
+    flt64:sb = 1.0;
+    flt64:exact_diff = sa - sb;
+    // exact_diff should be exactly epsilon
+    if (exact_diff != epsilon) {
+        print("FAIL: Sterbenz exact subtraction violated\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 9: Reciprocal consistency
+    // 1.0 / (1.0 / x) should be very close to x for normal values
+    // Risk: Metric tensor inversion in 9D Riemannian geometry
+    // ========================================================================
+    flt64:x = 3.141592653589793;
+    flt64:inv_x = one / x;
+    flt64:roundtrip = one / inv_x;
+    flt64:diff = roundtrip - x;
+    // Allow 1 ULP error
+    if (diff > epsilon) {
+        print("FAIL: 1/(1/x) too far from x (reciprocal instability)\n");
+        failures = failures + 1;
+    }
+    if (diff < neg_one * epsilon) {
+        print("FAIL: 1/(1/x) too far from x (reciprocal instability, neg)\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 10: Associativity awareness
+    // IEEE 754: (a+b)+c != a+(b+c) in general
+    // This test DOCUMENTS the expected behavior, not a bug.
+    // Risk: Knowing WHERE precision is lost in multi-step integration
+    // ========================================================================
+    flt64:aa = 1.0e16;
+    flt64:bb = -1.0e16;
+    flt64:cc = 1.0;
+    // (a + b) + c = 0 + 1 = 1 (exact)
+    flt64:left = (aa + bb) + cc;
+    // a + (b + c) = 1e16 + (-1e16 + 1) = 1e16 + (-1e16) = 0 (c lost)
+    flt64:bc = bb + cc;
+    flt64:right = aa + bc;
+    // Either they happen to agree or they don't — just verify computation
+    // completes without crash
+    if (left != 1.0) {
+        print("FAIL: (1e16 + -1e16) + 1 != 1\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // RESULT
+    // ========================================================================
+    if (failures == 0) {
+        print("IEEE 754 COMPLIANCE: ALL TESTS PASSED\n");
+        pass(0);
+    }
+    pass(1);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    print("FAILSAFE triggered in IEEE 754 tests\n");
+};

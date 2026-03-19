@@ -1,0 +1,85 @@
+// Stress test: Deep call stacks with float64 parameters
+// Verifies: float64 pub func returns, chained calls, stack depth
+
+pub func:add_f64 = flt64(flt64:a, flt64:b) {
+    pass(a + b);
+};
+
+pub func:mul_f64 = flt64(flt64:a, flt64:b) {
+    pass(a * b);
+};
+
+pub func:chain1 = flt64(flt64:x) {
+    flt64:r = raw(add_f64(x, 1.0));
+    pass(r);
+};
+
+pub func:chain2 = flt64(flt64:x) {
+    flt64:r = raw(chain1(x));
+    flt64:r2 = raw(mul_f64(r, 2.0));
+    pass(r2);
+};
+
+pub func:chain3 = flt64(flt64:x) {
+    flt64:r = raw(chain2(x));
+    flt64:r2 = raw(add_f64(r, 0.5));
+    pass(r2);
+};
+
+pub func:chain4 = flt64(flt64:x) {
+    flt64:r = raw(chain3(x));
+    flt64:r2 = raw(chain3(r));
+    pass(r2);
+};
+
+func:main = int32() {
+    // Test 1: chain1(10) = 10+1 = 11
+    flt64:r1 = raw(chain1(10.0));
+    if (r1 < 10.9 || r1 > 11.1) {
+        pass(1i32);
+    }
+
+    // Test 2: chain2(5) = (5+1)*2 = 12
+    flt64:r2 = raw(chain2(5.0));
+    if (r2 < 11.9 || r2 > 12.1) {
+        pass(2i32);
+    }
+
+    // Test 3: chain3(5) = chain2(5)+0.5 = 12.5
+    flt64:r3 = raw(chain3(5.0));
+    if (r3 < 12.4 || r3 > 12.6) {
+        pass(3i32);
+    }
+
+    // Test 4: chain4(5) = chain3(chain3(5)) = chain3(12.5) = (12.5+1)*2+0.5 = 27.5
+    flt64:r4 = raw(chain4(5.0));
+    if (r4 < 27.4 || r4 > 27.6) {
+        pass(4i32);
+    }
+
+    // Test 5: 100 iterations of chained add calls
+    int64:i = 0i64;
+    flt64:accum = 0.0;
+    while (i < 100i64) {
+        accum = raw(add_f64(accum, 0.1));
+        i = i + 1i64;
+    }
+    if (accum < 9.9 || accum > 10.1) {
+        pass(5i32);
+    }
+
+    // Test 6: 50 iterations of mul(x, 1.0) — identity
+    int64:j = 0i64;
+    flt64:product = 1.0;
+    while (j < 50i64) {
+        product = raw(mul_f64(product, 1.0));
+        j = j + 1i64;
+    }
+    if (product < 0.99 || product > 1.01) {
+        pass(6i32);
+    }
+
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) { };

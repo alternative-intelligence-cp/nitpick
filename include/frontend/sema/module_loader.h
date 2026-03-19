@@ -119,6 +119,15 @@ public:
     }
     
     /**
+     * Get module canonical paths in load order (first-loaded first).
+     * Using this order for IR generation ensures dependencies are compiled
+     * before the modules that depend on them.
+     */
+    const std::vector<std::string>& getLoadOrder() const {
+        return loadOrder;
+    }
+    
+    /**
      * Get the module resolver
      * @return Reference to the resolver
      */
@@ -198,6 +207,7 @@ private:
     ModuleResolver resolver;                                // Path resolution
     std::unordered_map<std::string, std::unique_ptr<LoadedModule>> moduleCache;  // Path -> Module
     std::vector<std::string> loadingStack;                  // For cycle detection
+    std::vector<std::string> loadOrder;                     // Insertion order (first-loaded first)
     std::vector<std::string> errors;                        // Error messages
     std::string rootPath;                                   // Project root
 };

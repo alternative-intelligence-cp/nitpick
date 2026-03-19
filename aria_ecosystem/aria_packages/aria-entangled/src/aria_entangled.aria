@@ -93,12 +93,12 @@ func:_ep_tilt = NIL(wild float64->:ep, int64:offset, float64:amount, int64:towar
     float64:step   = amount / pbw;
     if (toward == 0i64) {
         // tilt_both: increase pbm
-        float64:nv = raw(_ep_clamp(pbm + step, 0.0, 1.0));
+        float64:nv = raw(_dg_clamp(pbm + step, 0.0, 1.0));
         ep[offset + 1i64] = nv;
     }
     if (toward == 1i64) {
         // tilt_none: decrease pbm
-        float64:nv = raw(_ep_clamp(pbm - step, 0.0, 1.0));
+        float64:nv = raw(_dg_clamp(pbm - step, 0.0, 1.0));
         ep[offset + 1i64] = nv;
     }
     if (toward == 2i64) {
@@ -106,10 +106,10 @@ func:_ep_tilt = NIL(wild float64->:ep, int64:offset, float64:amount, int64:towar
         float64:center = 0.5;
         float64:pbm_new = pbm;
         if (pbm < center) {
-            pbm_new = raw(_ep_clamp(pbm + step, 0.0, 1.0));
+            pbm_new = raw(_dg_clamp(pbm + step, 0.0, 1.0));
         }
         if (pbm >= center) {
-            pbm_new = raw(_ep_clamp(pbm - step, 0.0, 1.0));
+            pbm_new = raw(_dg_clamp(pbm - step, 0.0, 1.0));
         }
         ep[offset + 1i64] = pbm_new;
     }
@@ -137,17 +137,17 @@ func:_ep_snap = NIL(wild float64->:ep, wild int64->:meta, wild float64->:snaps,
     float64:a_pbc   = ep[0i64];
     float64:a_pbm   = ep[1i64];
     float64:a_width = ep[2i64];
-    float64:a_a     = raw(dg_opt_a(a_pbc, a_pbm, a_width));
-    float64:a_b     = raw(dg_opt_b(a_pbc, a_pbm, a_width));
-    int64:a_dec     = raw(dg_decision_code(a_pbc, a_pbm, a_width));
+    float64:a_a     = dg_opt_a(a_pbc, a_pbm, a_width);
+    float64:a_b     = dg_opt_b(a_pbc, a_pbm, a_width);
+    int64:a_dec     = dg_decision_code(a_pbc, a_pbm, a_width);
 
     // Beta side (offset 5)
     float64:b_pbc   = ep[5i64];
     float64:b_pbm   = ep[6i64];
     float64:b_width = ep[7i64];
-    float64:b_a     = raw(dg_opt_a(b_pbc, b_pbm, b_width));
-    float64:b_b     = raw(dg_opt_b(b_pbc, b_pbm, b_width));
-    int64:b_dec     = raw(dg_decision_code(b_pbc, b_pbm, b_width));
+    float64:b_a     = dg_opt_a(b_pbc, b_pbm, b_width);
+    float64:b_b     = dg_opt_b(b_pbc, b_pbm, b_width);
+    int64:b_dec     = dg_decision_code(b_pbc, b_pbm, b_width);
 
     // Crystallized: both pbm >= crystal_threshold
     float64:thresh    = ep[11i64];
@@ -237,7 +237,7 @@ pub func:ep_lean_alpha_a = NIL(wild float64->:ep, wild int64->:meta, wild float6
     float64:width  = ep[2i64];
     float64:lo_lim = width * 0.25;
     float64:hi_lim = width * 0.75;
-    ep[0i64] = raw(_ep_clamp(pbc - amount, lo_lim, hi_lim));
+    ep[0i64] = raw(_dg_clamp(pbc - amount, lo_lim, hi_lim));
     drop(_ep_snap(ep, meta, snaps, 1i64, 0i64, 0i64));
     pass(NIL);
 };
@@ -248,7 +248,7 @@ pub func:ep_lean_alpha_b = NIL(wild float64->:ep, wild int64->:meta, wild float6
     float64:width  = ep[2i64];
     float64:lo_lim = width * 0.25;
     float64:hi_lim = width * 0.75;
-    ep[0i64] = raw(_ep_clamp(pbc + amount, lo_lim, hi_lim));
+    ep[0i64] = raw(_dg_clamp(pbc + amount, lo_lim, hi_lim));
     drop(_ep_snap(ep, meta, snaps, 2i64, 0i64, 0i64));
     pass(NIL);
 };
@@ -262,10 +262,10 @@ pub func:ep_lean_alpha_unkn = NIL(wild float64->:ep, wild int64->:meta, wild flo
     float64:center = width * 0.5;
     float64:pbc_new = pbc;
     if (pbc < center) {
-        pbc_new = raw(_ep_clamp(pbc + amount, lo_lim, hi_lim));
+        pbc_new = raw(_dg_clamp(pbc + amount, lo_lim, hi_lim));
     }
     if (pbc >= center) {
-        pbc_new = raw(_ep_clamp(pbc - amount, lo_lim, hi_lim));
+        pbc_new = raw(_dg_clamp(pbc - amount, lo_lim, hi_lim));
     }
     ep[0i64] = pbc_new;
     drop(_ep_snap(ep, meta, snaps, 3i64, 0i64, 0i64));
@@ -278,7 +278,7 @@ pub func:ep_lean_beta_a = NIL(wild float64->:ep, wild int64->:meta, wild float64
     float64:width  = ep[7i64];
     float64:lo_lim = width * 0.25;
     float64:hi_lim = width * 0.75;
-    ep[5i64] = raw(_ep_clamp(pbc - amount, lo_lim, hi_lim));
+    ep[5i64] = raw(_dg_clamp(pbc - amount, lo_lim, hi_lim));
     drop(_ep_snap(ep, meta, snaps, 4i64, 1i64, 0i64));
     pass(NIL);
 };
@@ -289,7 +289,7 @@ pub func:ep_lean_beta_b = NIL(wild float64->:ep, wild int64->:meta, wild float64
     float64:width  = ep[7i64];
     float64:lo_lim = width * 0.25;
     float64:hi_lim = width * 0.75;
-    ep[5i64] = raw(_ep_clamp(pbc + amount, lo_lim, hi_lim));
+    ep[5i64] = raw(_dg_clamp(pbc + amount, lo_lim, hi_lim));
     drop(_ep_snap(ep, meta, snaps, 5i64, 1i64, 0i64));
     pass(NIL);
 };
@@ -303,10 +303,10 @@ pub func:ep_lean_beta_unkn = NIL(wild float64->:ep, wild int64->:meta, wild floa
     float64:center = width * 0.5;
     float64:pbc_new = pbc;
     if (pbc < center) {
-        pbc_new = raw(_ep_clamp(pbc + amount, lo_lim, hi_lim));
+        pbc_new = raw(_dg_clamp(pbc + amount, lo_lim, hi_lim));
     }
     if (pbc >= center) {
-        pbc_new = raw(_ep_clamp(pbc - amount, lo_lim, hi_lim));
+        pbc_new = raw(_dg_clamp(pbc - amount, lo_lim, hi_lim));
     }
     ep[5i64] = pbc_new;
     drop(_ep_snap(ep, meta, snaps, 6i64, 1i64, 0i64));
@@ -377,10 +377,10 @@ pub func:ep_observe_alpha = NIL(wild float64->:ep, wild int64->:meta, wild float
         float64:lo_lim = width * 0.25;
         float64:hi_lim = width * 0.75;
         if (direction == 0i64) {
-            ep[0i64] = raw(_ep_clamp(pbc - lean, lo_lim, hi_lim));
+            ep[0i64] = raw(_dg_clamp(pbc - lean, lo_lim, hi_lim));
         }
         if (direction == 1i64) {
-            ep[0i64] = raw(_ep_clamp(pbc + lean, lo_lim, hi_lim));
+            ep[0i64] = raw(_dg_clamp(pbc + lean, lo_lim, hi_lim));
         }
     }
     int64:propagated = 0i64;
@@ -413,10 +413,10 @@ pub func:ep_observe_beta = NIL(wild float64->:ep, wild int64->:meta, wild float6
         float64:lo_lim = width * 0.25;
         float64:hi_lim = width * 0.75;
         if (direction == 0i64) {
-            ep[5i64] = raw(_ep_clamp(pbc - lean, lo_lim, hi_lim));
+            ep[5i64] = raw(_dg_clamp(pbc - lean, lo_lim, hi_lim));
         }
         if (direction == 1i64) {
-            ep[5i64] = raw(_ep_clamp(pbc + lean, lo_lim, hi_lim));
+            ep[5i64] = raw(_dg_clamp(pbc + lean, lo_lim, hi_lim));
         }
     }
     int64:propagated = 0i64;

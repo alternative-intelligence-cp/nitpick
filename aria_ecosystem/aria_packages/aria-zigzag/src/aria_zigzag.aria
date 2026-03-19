@@ -10,9 +10,8 @@
 //   decode(n)  = (n >> 1) ^ -(n & 1)    for uint64
 //
 // NOTE: Aria disallows bitwise ops on signed integers. We work in uint64
-// space via @cast<uint64> reinterpretation. The arithmetic right-shift
-// n >> 63 (which equals 0 for n>=0 or -1 for n<0) is computed with a
-// conditional: sign_mask = UINT64_MAX if n < 0, else 0.
+// space via @cast<uint64> reinterpretation. The sign extension mask
+// (0 for n>=0, UINT64_MAX for n<0) is computed with a conditional.
 
 // Encode int64 -> uint64 (positive values first via early pass)
 pub func:zz_encode = uint64(int64:n) {

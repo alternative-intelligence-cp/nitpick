@@ -1,0 +1,13 @@
+// seed_struct_array_field.aria — struct with array field (array-in-struct bug)
+func:failsafe = NIL(int32:code) { pass(NIL); };
+struct:Container = {
+    int64[3]:values;
+    int64:count;
+};
+func:main = int32() {
+    Container:c = { { 10i64, 20i64, 30i64 }, 3i64 };
+    int64:v0 = c.values[0i64];
+    int64:v1 = c.values[1i64];
+    int64:v2 = c.values[2i64];
+    pass(0i32);
+};

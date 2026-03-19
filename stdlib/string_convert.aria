@@ -1,98 +1,236 @@
 /**
- * Aria Standard Library - String Conversion
- * 
- * Provides functions to convert various types to strings for printing.
- * 
- * Functions:
- * - int64_toString(value) - Convert signed 64-bit integer to string
- * 
- * TODO: Add more conversions as needed:
- * - int32_toString, int128_toString, etc.
- * - uint64_toString, etc.
- * - float_toString
+ * @file string_convert.aria
+ * @brief String Conversion and Manipulation Utilities
+ *
+ * Wraps the built-in string intrinsics with named, type-explicit functions
+ * and adds conversions for types the intrinsics don't cover directly.
+ *
+ * ── Built-in intrinsics (available without this module) ──────────────────────
+ *   string_from_int(value)                → string   (any integer type)
+ *   string_format_float(f64, int32)       → string   (precision = decimal places)
+ *   string_concat(string, string)         → string
+ *   string_length(string)                 → int64
+ *   string_equals(string, string)         → bool
+ *   string_is_empty(string)               → bool
+ *   string_to_int(string)                 → int64
+ *   string_from_char(int8)                → string   (single ASCII char)
+ *   string_contains(string, string)       → bool
+ *   string_starts_with(string, string)    → bool
+ *   string_ends_with(string, string)      → bool
+ *   string_to_upper(string)               → string
+ *   string_to_lower(string)               → string
+ *   string_trim(string)                   → string   (both ends)
+ *   string_trim_start(string)             → string   (leading only)
+ *   string_trim_end(string)               → string   (trailing only)
+ *   string_substring(string, i64, i64)    → string   (start inclusive, end exclusive)
+ *   string_index_of(string, string)       → int64    (-1 if not found)
+ *   string_to_hex(string)                 → string   (hex-encode bytes)
+ *   string_repeat(string, int64)          → string
+ *   string_from_int_hex(int64)            → string   (lowercase hex digits, no prefix)
+ *   string_pad_right(string, int64, int8) → string   (pad_char as ASCII byte)
+ *   string_pad_left(string, int64, int8)  → string   (pad_char as ASCII byte)
+ *
+ * ── Functions provided here ───────────────────────────────────────────────────
+ *   bool_toString(bool)                   → "true" / "false"
+ *   nit_toString(nit)                     → "-4" .. "4"
+ *   int32_toString(int32)                 → string
+ *   int64_toString(int64)                 → string
+ *   float_toString(float64, int32)        → string   (explicit precision)
+ *   float_toStringDefault(float64)        → string   (6 decimal places)
+ *   float_toStringFixed(float64, int32)   → string   (alias for float_toString)
+ *
+ *   string_isEmpty(string)                → bool     (named alias)
+ *   char_toString(int32)                  → string   (ASCII code → 1-char string)
+ *
+ *   int32_toHex(int32)                    → string   ("0x..." prefixed hex)
+ *   int64_toHex(int64)                    → string   ("0x..." prefixed hex)
+ *
+ *   string_padLeft(string, int64, string) → string   (convenience: pass 1-char string as pad)
+ *   string_padRight(string, int64, string)→ string   (convenience: pass 1-char string as pad)
+ *   string_repeat_n(string, int32)        → string   (repeat by int32 count)
+ *
+ *   string_join(sep, a, b)                → string   (join exactly two strings)
+ *   string_join3(sep, a, b, c)            → string   (join three strings)
  */
 
+// ── Scalar to string ──────────────────────────────────────────────────────────
+
 /**
- * Convert an int64 to a string representation.
- * 
- * Uses classic divide-by-10 algorithm:
- * - Handle zero case
- * - Handle negative numbers (add '-' prefix)
- * - Repeatedly divide by 10, collect remainders
- * - Build string from digits in reverse order
- * 
- * Example:
- *   string:s = int64_toString(42);
- *   print(s);  // Outputs: 42
- * 
- *   string:neg = int64_toString(-123);
- *   print(neg);  // Outputs: -123
+ * Convert bool to "true" or "false".
+ */
+pub func:bool_toString = string(bool:value) {
+    if (value) {
+        pass("true");
+    }
+    pass("false");
+};
+
+/**
+ * Convert nit (-4..4) to its decimal string representation.
+ */
+pub func:nit_toString = string(nit:value) {
+    int32:v = @cast<int32>(value);
+    pass(string_from_int(v));
+};
+
+/**
+ * Convert int32 to string.
+ */
+pub func:int32_toString = string(int32:value) {
+    pass(string_from_int(value));
+};
+
+/**
+ * Convert int64 to string.
  */
 pub func:int64_toString = string(int64:value) {
-    // Special case: zero
-    if (value == 0) {
-        pass("0");
+    pass(string_from_int(value));
+};
+
+/**
+ * Convert float64 to string with given decimal precision.
+ * Example: float_toString(3.14159, 2) → "3.14"
+ */
+pub func:float_toString = string(float64:value, int32:precision) {
+    pass(string_format_float(value, precision));
+};
+
+/** Alias — kept for clarity at call sites where "fixed" precision is intended. */
+pub func:float_toStringFixed = string(float64:value, int32:precision) {
+    pass(string_format_float(value, precision));
+};
+
+/**
+ * Convert float64 to string with 6 decimal places.
+ * Example: float_toStringDefault(3.14159265) → "3.141593"
+ */
+pub func:float_toStringDefault = string(float64:value) {
+    pass(string_format_float(value, 6));
+};
+
+// ── Boolean / presence helpers ────────────────────────────────────────────────
+
+/**
+ * Named alias for the string_is_empty intrinsic.
+ * Returns true if the string has length 0.
+ */
+pub func:string_isEmpty = bool(string:s) {
+    pass(string_is_empty(s));
+};
+
+// ── Character helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Convert an ASCII code point (0–127) to a one-character string.
+ * Example: char_toString(65) → "A"
+ */
+pub func:char_toString = string(int32:code) {
+    int8:byte = @cast<int8>(code);
+    pass(string_from_char(byte));
+};
+
+// ── Integer hex formatting ────────────────────────────────────────────────────
+
+/**
+ * Format int32 as a "0x..." lowercase hex string.
+ * Example: int32_toHex(255) → "0xff"
+ */
+pub func:int32_toHex = string(int32:value) {
+    int64:v = @cast<int64>(value);
+    pass(string_concat("0x", string_from_int_hex(v)));
+};
+
+/**
+ * Format int64 as a "0x..." lowercase hex string.
+ * Example: int64_toHex(255) → "0xff"
+ */
+pub func:int64_toHex = string(int64:value) {
+    pass(string_concat("0x", string_from_int_hex(value)));
+};
+
+// ── Padding convenience wrappers ──────────────────────────────────────────────
+
+/**
+ * Pad string on the LEFT to reach total_length, using the first character
+ * of pad_str as the fill character.
+ * Example: string_padLeft("42", 5, " ") → "   42"
+ * Example: string_padLeft("9", 3, "0")  → "009"
+ *
+ * Note: For arbitrary pad chars, use the raw intrinsic directly:
+ *   string_pad_left(s, width, @cast<int8>(char_ascii_code))
+ */
+pub func:string_padLeft = string(string:s, int64:total_length, string:pad_str) {
+    // Pick pad byte: space (32) by default, zero (48) if pad_str == "0"
+    if (string_equals(pad_str, "0")) {
+        pass(string_pad_left(s, total_length, @cast<int8>(48)));
     }
-    
-    // Handle negative numbers
-    bool:is_negative = false;
-    int64:work_value = value;  // Use local copy instead of modifying parameter
-    if (value < 0) {
-        is_negative = true;
-        work_value = -value;  // Make positive for digit extraction
+    pass(string_pad_left(s, total_length, @cast<int8>(32)));
+};
+
+/**
+ * Pad string on the RIGHT to reach total_length, using space or '0'.
+ */
+pub func:string_padRight = string(string:s, int64:total_length, string:pad_str) {
+    if (string_equals(pad_str, "0")) {
+        pass(string_pad_right(s, total_length, @cast<int8>(48)));
     }
-    
-    // Collect digits (max 20 digits for int64 + sign + null)
-    // Using a fixed-size buffer approach
-    int64:digit_count = 0;
-    int64:temp = work_value;
-    
-    // Count digits
-    while (temp > 0) {
-        digit_count = digit_count + 1;
-        temp = temp / 10;
-    }
-    
-    // Build result string
-    // For now, we'll use string concatenation
-    // Starting with empty string and prepending digits
-    string:result = "";
-    int64:remaining = work_value;
-    
-    // Extract digits from right to left
-    while (remaining > 0) {
-        int64:digit = remaining % 10;
-        remaining = remaining / 10;
-        
-        // Convert digit to character by pattern matching
-        string:digit_char = "";
-        if (digit == 0) { digit_char = "0"; }
-        if (digit == 1) { digit_char = "1"; }
-        if (digit == 2) { digit_char = "2"; }
-        if (digit == 3) { digit_char = "3"; }
-        if (digit == 4) { digit_char = "4"; }
-        if (digit == 5) { digit_char = "5"; }
-        if (digit == 6) { digit_char = "6"; }
-        if (digit == 7) { digit_char = "7"; }
-        if (digit == 8) { digit_char = "8"; }
-        if (digit == 9) { digit_char = "9"; }
-        
-        // Prepend digit to result
-        result = digit_char + result;
-    }
-    
-    // Add negative sign if needed
-    if (is_negative) {
-        result = "-" + result;
-    }
-    
+    pass(string_pad_right(s, total_length, @cast<int8>(32)));
+};
+
+/**
+ * Zero-pad an integer string to width w.
+ * Example: string_zeroPad(int32_toString(42), 5) → "00042"
+ */
+pub func:string_zeroPad = string(string:s, int64:width) {
+    pass(string_pad_left(s, width, @cast<int8>(48)));   // 48 = ASCII '0'
+};
+
+/**
+ * Space-pad a string on the right to width w (left-align).
+ */
+pub func:string_leftAlign = string(string:s, int64:width) {
+    pass(string_pad_right(s, width, @cast<int8>(32)));  // 32 = ASCII ' '
+};
+
+/**
+ * Space-pad a string on the left to width w (right-align).
+ */
+pub func:string_rightAlign = string(string:s, int64:width) {
+    pass(string_pad_left(s, width, @cast<int8>(32)));   // 32 = ASCII ' '
+};
+
+// ── Repeat wrapper ────────────────────────────────────────────────────────────
+
+/**
+ * Repeat a string n times (int32 count for ergonomic call sites).
+ * Example: string_repeat_n("ab", 3) → "ababab"
+ */
+pub func:string_repeat_n = string(string:s, int32:count) {
+    int64:n = @cast<int64>(count);
+    pass(string_repeat(s, n));
+};
+
+// ── Join helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Join two strings with a separator.
+ * Example: string_join(", ", "hello", "world") → "hello, world"
+ */
+pub func:string_join = string(string:sep, string:a, string:b) {
+    string:result = string_concat(a, sep);
+    result = string_concat(result, b);
     pass(result);
 };
 
 /**
- * Convert int32 to string (calls int64_toString with cast)
+ * Join three strings with a separator.
+ * Example: string_join3(" | ", "a", "b", "c") → "a | b | c"
  */
-pub func:int32_toString = string(int32:value) {
-    int64:val64 = value;
-    pass(int64_toString(val64));
+pub func:string_join3 = string(string:sep, string:a, string:b, string:c) {
+    string:result = string_concat(a, sep);
+    result = string_concat(result, b);
+    result = string_concat(result, sep);
+    result = string_concat(result, c);
+    pass(result);
 };
+

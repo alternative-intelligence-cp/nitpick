@@ -1,0 +1,73 @@
+/**
+ * Test suite for new string intrinsics and stdlib utilities.
+ */
+use "stdlib/string_convert.aria".*;
+use "stdlib/print_utils.aria".*;
+
+func:failsafe = NIL(int32:err_code) { pass(NIL); };
+
+func:main = int32() {
+
+    // ── string_repeat ────────────────────────────────────────────────────────
+    string:rep = string_repeat("ab", 3i64);
+    drop(println(rep));       // ababab
+
+    // ── string_trim_start / string_trim_end ──────────────────────────────────
+    string:ts = string_trim_start("   hello");
+    drop(println(ts));        // hello
+
+    string:te = string_trim_end("world   ");
+    drop(println(te));        // world
+
+    // ── string_index_of ──────────────────────────────────────────────────────
+    int64:idx = string_index_of("hello world", "world");
+    drop(println(int64_toString(idx)));   // 6
+
+    int64:not_found = string_index_of("hello", "xyz");
+    drop(println(int64_toString(not_found)));   // -1
+
+    // ── string_pad_left ──────────────────────────────────────────────────────
+    string:pl = string_pad_left("42", 5i64, @cast<int8>(32));
+    drop(println(pl));        //    42
+
+    // ── string_zeroPad ───────────────────────────────────────────────────────
+    string:zp = string_zeroPad(int32_toString(7), 3i64);
+    drop(println(zp));        // 007
+
+    // ── string_rightAlign / string_leftAlign ─────────────────────────────────
+    string:ra = string_rightAlign("hi", 6i64);
+    drop(println(ra));        //     hi
+
+    string:la = string_leftAlign("hi", 6i64);
+    drop(println(la));        // hi    
+
+    // ── string_repeat_n (int32 count) ────────────────────────────────────────
+    string:rn = string_repeat_n("*", 5);
+    drop(println(rn));        // *****
+
+    // ── string_join / string_join3 ───────────────────────────────────────────
+    string:j2 = string_join(", ", "alpha", "beta");
+    drop(println(j2));        // alpha, beta
+
+    string:j3 = string_join3(" | ", "x", "y", "z");
+    drop(println(j3));        // x | y | z
+
+    // ── int32_toHex / int64_toHex ────────────────────────────────────────────
+    drop(println(int32_toHex(255)));           // 0xff
+    drop(println(int64_toHex(65535i64)));      // 0xffff
+
+    // ── print_utils additions ────────────────────────────────────────────────
+    printSeparator(20);
+    printlnString("print_utils OK");
+    printStringLabeled("hex255", int32_toHex(255));
+    printlnInt32Hex(255);
+    printlnInt64Hex(65535i64);
+    printInt32HexLabeled("addr", 4096);
+    printlnFloatPrecision(3.14159, 2);
+    printFloatPrecisionLabeled("pi", 3.14159, 4);
+    printSeparatorChar(10, "=");
+    printNewline();
+    printSeparatorChar(10, "-");
+
+    pass(0);
+};

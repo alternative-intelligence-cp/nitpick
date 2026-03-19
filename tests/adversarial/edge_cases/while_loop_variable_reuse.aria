@@ -1,0 +1,145 @@
+// while_loop_variable_reuse.aria — Edge case: variable reuse across while loops
+//
+// Validates SSA phi-node correctness when variables are reassigned inside
+// while loops and then used after loop exit. Tests that the post-loop
+// value is correct (final iteration's assignment, not the initial value).
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+pub func:sum_to_n = int64(int64:n) {
+    int64:acc = 0i64;
+    int64:i = 1i64;
+    while (i <= n) {
+        acc = acc + i;
+        i = i + 1i64;
+    }
+    pass(acc);
+};
+
+pub func:countdown = int64(int64:start) {
+    int64:v = start;
+    while (v > 0i64) {
+        v = v - 1i64;
+    }
+    pass(v);
+};
+
+pub func:double_loop = int64(int64:n) {
+    // Two sequential while loops reusing the same counter variable
+    int64:total = 0i64;
+    int64:i = 0i64;
+    while (i < n) {
+        total = total + 1i64;
+        i = i + 1i64;
+    }
+    // Reuse i — it should be n after first loop
+    int64:saved = i;
+    i = 0i64;
+    while (i < n) {
+        total = total + 2i64;
+        i = i + 1i64;
+    }
+    // total should be n*1 + n*2 = 3*n, saved should be n
+    pass(total + saved);
+};
+
+func:main = int32() {
+    int64:passed = 0i64;
+    int64:failed = 0i64;
+
+    drop(println("edge_cases/while_loop_variable_reuse"));
+    drop(println("====================================="));
+
+    // T01: simple accumulator loop
+    int64:s1 = raw(sum_to_n(10i64));
+    if (s1 == 55i64) {
+        drop(println("[PASS] T01 sum_to_n(10) = 55"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T01 sum_to_n(10) != 55"));
+        failed = failed + 1i64;
+    }
+
+    // T02: loop to zero
+    int64:s2 = raw(countdown(100i64));
+    if (s2 == 0i64) {
+        drop(println("[PASS] T02 countdown(100) = 0"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T02 countdown(100) != 0"));
+        failed = failed + 1i64;
+    }
+
+    // T03: double loop with counter reuse
+    int64:s3 = raw(double_loop(5i64));
+    // total = 5*1 + 5*2 = 15, saved = 5, result = 20
+    if (s3 == 20i64) {
+        drop(println("[PASS] T03 double_loop(5) = 20"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T03 double_loop(5) != 20"));
+        failed = failed + 1i64;
+    }
+
+    // T04: variable assigned in loop, used after exit
+    int64:last_val = 0i64;
+    int64:k = 0i64;
+    while (k < 7i64) {
+        last_val = k * k;
+        k = k + 1i64;
+    }
+    // last_val should be 6*6 = 36 (last iteration k=6)
+    if (last_val == 36i64) {
+        drop(println("[PASS] T04 k*k after loop (k=0..6) = 36"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T04 k*k after loop != 36"));
+        failed = failed + 1i64;
+    }
+
+    // T05: nested while loops
+    int64:outer = 0i64;
+    int64:total5 = 0i64;
+    while (outer < 3i64) {
+        int64:inner = 0i64;
+        while (inner < 4i64) {
+            total5 = total5 + 1i64;
+            inner = inner + 1i64;
+        }
+        outer = outer + 1i64;
+    }
+    // 3 * 4 = 12
+    if (total5 == 12i64) {
+        drop(println("[PASS] T05 nested 3x4 loops = 12"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T05 nested 3x4 loops != 12"));
+        failed = failed + 1i64;
+    }
+
+    // T06: float64 accumulation in loop
+    float64:fsum = 0.0;
+    int64:fi = 0i64;
+    while (fi < 5i64) {
+        fsum = fsum + 1.5;
+        fi = fi + 1i64;
+    }
+    // 5 * 1.5 = 7.5
+    float64:fd6 = fsum - 7.5;
+    if (fd6 < 0.0) { fd6 = 0.0 - fd6; }
+    if (fd6 < 0.001) {
+        drop(println("[PASS] T06 float64 sum in loop = 7.5"));
+        passed = passed + 1i64;
+    } else {
+        drop(println("[FAIL] T06 float64 sum in loop != 7.5"));
+        failed = failed + 1i64;
+    }
+
+    drop(println("---"));
+    if (failed == 0i64) {
+        drop(println("PASS: all 6 while_loop_variable_reuse tests passed"));
+        pass(0i32);
+    }
+    drop(println("FAIL: some while_loop_variable_reuse tests failed"));
+    pass(1i32);
+};

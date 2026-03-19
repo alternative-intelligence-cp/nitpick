@@ -10,10 +10,10 @@
 // fixed_mul limitation:
 //   Uses 32-bit limb split; accurate to 1 ULP (2^-32 ≈ 2.3e-10).
 //   Safe (no overflow) when both integer parts are < 2^15 (=32768).
-//   Sub-fractional carry (frac*frac term) is omitted to avoid Bug #20.
+//   Sub-fractional carry (frac*frac term) is omitted for simplicity.
 //
-// Bug #20 advisory: right-shift on uint64 with bit 63 set uses ashr (wrong).
-//   All shift operations in this library use values where bit 63 is 0.
+// Bug #20 (ashr for uint64 >>) — RESOLVED: compiler now uses lshr correctly.
+//   All shift operations are safe across the full uint64 range.
 
 // Construct Q32.32 from an integer n (n < 2^32)
 pub func:fixed_from_int = uint64(uint64:n) {

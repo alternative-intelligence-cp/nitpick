@@ -1,5 +1,5 @@
 // aria-bits — bit manipulation utilities for uint64
-// All operations safe for values where bit 63 is not set (Bug #20 advisory).
+// All operations safe across the full uint64 range (Bug #20 resolved).
 // byte_popcount: input clamped to 8 bits — fully safe.
 
 // Test if bit n is set — returns 1 or 0
@@ -35,7 +35,7 @@ pub func:nibble_hi4 = uint64(uint64:word) {
 };
 
 // Popcount of low 8 bits (Hamming weight of a byte)
-// Uses the parallel-prefix algorithm — all intermediate values <= 255, Bug #20-safe
+// Uses the parallel-prefix algorithm — all intermediate values <= 255
 pub func:byte_popcount = uint64(uint64:byte) {
     uint64:x = byte & 255u64;
     uint64:a = x - ((x >> 1u64) & 85u64);

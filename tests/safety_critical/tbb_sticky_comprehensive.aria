@@ -1,0 +1,225 @@
+// ============================================================================
+// TBB STICKY ERROR COMPREHENSIVE TEST — Safety-Critical for Nikola AGI
+// ============================================================================
+// Purpose: Exhaustively verify that TBB (Trapped Balanced Bitfield) sentinel
+// values NEVER "heal" — i.e., an ERR value can NEVER become a valid number
+// through any arithmetic operation.
+//
+// In Nikola: TBB8/16/32/64 are used for discrete control signals and
+// neurochemistry thresholds. If an ERR sentinel (overflow/underflow/div-zero)
+// silently becomes a valid number, the system could:
+//   - Apply wrong dopamine modulation → unstable learning
+//   - Misread ATP budget → cognitive seizure bypass
+//   - Corrupt serotonin level → emotional instability in child interaction
+//
+// ERR sentinels:
+//   tbb8:  -128
+//   tbb16: -32768
+//   tbb32: -2147483648
+//   tbb64: -9223372036854775808
+// ============================================================================
+
+func:main = int32() {
+    int32:failures = 0;
+
+    // ========================================================================
+    // PHASE 1: TBB8 — All arithmetic operations with ERR
+    // ========================================================================
+    tbb8:err8 = -128;  // ERR sentinel
+    tbb8:one8 = 1;
+    tbb8:zero8 = 0;
+    tbb8:neg8 = -1;
+    tbb8:max8 = 127;
+
+    // ERR + normal = ERR
+    tbb8:r1 = err8 + one8;
+    if (r1 != err8) {
+        print("FAIL: tbb8 ERR + 1 != ERR\n");
+        failures = failures + 1;
+    }
+
+    // normal + ERR = ERR
+    tbb8:r2 = one8 + err8;
+    if (r2 != err8) {
+        print("FAIL: tbb8 1 + ERR != ERR\n");
+        failures = failures + 1;
+    }
+
+    // ERR - normal = ERR
+    tbb8:r3 = err8 - one8;
+    if (r3 != err8) {
+        print("FAIL: tbb8 ERR - 1 != ERR\n");
+        failures = failures + 1;
+    }
+
+    // normal - ERR = ERR
+    tbb8:r4 = one8 - err8;
+    if (r4 != err8) {
+        print("FAIL: tbb8 1 - ERR != ERR\n");
+        failures = failures + 1;
+    }
+
+    // ERR * normal = ERR
+    tbb8:r5 = err8 * one8;
+    if (r5 != err8) {
+        print("FAIL: tbb8 ERR * 1 != ERR\n");
+        failures = failures + 1;
+    }
+
+    // ERR * zero = ERR (NOT zero! ERR is sticky!)
+    tbb8:r6 = err8 * zero8;
+    if (r6 != err8) {
+        print("FAIL: tbb8 ERR * 0 != ERR (CRITICAL: error healed!)\n");
+        failures = failures + 1;
+    }
+
+    // ERR + ERR = ERR
+    tbb8:r7 = err8 + err8;
+    if (r7 != err8) {
+        print("FAIL: tbb8 ERR + ERR != ERR\n");
+        failures = failures + 1;
+    }
+
+    // ERR - ERR = ERR (NOT zero! ERR is sticky!)
+    tbb8:r8 = err8 - err8;
+    if (r8 != err8) {
+        print("FAIL: tbb8 ERR - ERR != ERR (CRITICAL: error healed!)\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // PHASE 2: Overflow generates ERR
+    // ========================================================================
+    // 127 + 1 = overflow → ERR
+    tbb8:overflow1 = max8 + one8;
+    if (overflow1 != err8) {
+        print("FAIL: tbb8 127 + 1 should overflow to ERR\n");
+        failures = failures + 1;
+    }
+
+    // -127 - 2 = underflow → ERR
+    tbb8:min_safe = -127;
+    tbb8:two8 = 2;
+    tbb8:underflow1 = min_safe - two8;
+    if (underflow1 != err8) {
+        print("FAIL: tbb8 -127 - 2 should underflow to ERR\n");
+        failures = failures + 1;
+    }
+
+    // 64 * 2 = 128 > 127 → ERR
+    tbb8:big8 = 64;
+    tbb8:mul_over = big8 * two8;
+    if (mul_over != err8) {
+        print("FAIL: tbb8 64 * 2 should overflow to ERR\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // PHASE 3: Division by zero → ERR
+    // ========================================================================
+    tbb8:div_zero = one8 / zero8;
+    if (div_zero != err8) {
+        print("FAIL: tbb8 1 / 0 should be ERR\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // PHASE 4: ERR propagation through chain
+    // If A overflows and result is used in B, then C, all must be ERR
+    // Risk: Multi-step neurochemistry calculation pipeline
+    // ========================================================================
+    tbb8:chain_start = max8 + one8;  // ERR
+    tbb8:chain_step1 = chain_start + one8;  // ERR + 1 = ERR
+    tbb8:chain_step2 = chain_step1 * two8;  // ERR * 2 = ERR
+    tbb8:chain_step3 = chain_step2 - big8;  // ERR - 64 = ERR
+    if (chain_step3 != err8) {
+        print("FAIL: tbb8 ERR chain propagation broken\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // PHASE 5: TBB16 — Verify same guarantees at wider width
+    // ========================================================================
+    tbb16:err16 = -32768;
+    tbb16:one16 = 1;
+    tbb16:zero16 = 0;
+    tbb16:max16 = 32767;
+
+    // Sticky operations
+    tbb16:r16_1 = err16 + one16;
+    if (r16_1 != err16) {
+        print("FAIL: tbb16 ERR + 1 != ERR\n");
+        failures = failures + 1;
+    }
+
+    tbb16:r16_2 = err16 * zero16;
+    if (r16_2 != err16) {
+        print("FAIL: tbb16 ERR * 0 != ERR (CRITICAL: error healed!)\n");
+        failures = failures + 1;
+    }
+
+    tbb16:r16_3 = err16 - err16;
+    if (r16_3 != err16) {
+        print("FAIL: tbb16 ERR - ERR != ERR (CRITICAL: error healed!)\n");
+        failures = failures + 1;
+    }
+
+    // Overflow → ERR
+    tbb16:overflow16 = max16 + one16;
+    if (overflow16 != err16) {
+        print("FAIL: tbb16 32767 + 1 should overflow to ERR\n");
+        failures = failures + 1;
+    }
+
+    // Division by zero → ERR
+    tbb16:divz16 = one16 / zero16;
+    if (divz16 != err16) {
+        print("FAIL: tbb16 1 / 0 should be ERR\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // PHASE 6: TBB32 — Verify at 32-bit width
+    // ========================================================================
+    tbb32:err32 = -2147483648;
+    tbb32:one32 = 1;
+    tbb32:zero32 = 0;
+    tbb32:max32 = 2147483647;
+
+    tbb32:r32_1 = err32 + one32;
+    if (r32_1 != err32) {
+        print("FAIL: tbb32 ERR + 1 != ERR\n");
+        failures = failures + 1;
+    }
+
+    tbb32:r32_2 = err32 * zero32;
+    if (r32_2 != err32) {
+        print("FAIL: tbb32 ERR * 0 != ERR (CRITICAL: error healed!)\n");
+        failures = failures + 1;
+    }
+
+    tbb32:overflow32 = max32 + one32;
+    if (overflow32 != err32) {
+        print("FAIL: tbb32 MAX + 1 should overflow to ERR\n");
+        failures = failures + 1;
+    }
+
+    tbb32:divz32 = one32 / zero32;
+    if (divz32 != err32) {
+        print("FAIL: tbb32 1 / 0 should be ERR\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // RESULT
+    // ========================================================================
+    if (failures == 0) {
+        print("TBB STICKY ERROR: ALL TESTS PASSED\n");
+        pass(0);
+    }
+    pass(1);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    print("FAILSAFE triggered in TBB sticky error tests\n");
+};

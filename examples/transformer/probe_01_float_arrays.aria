@@ -1,0 +1,136 @@
+// ============================================================================
+// Probe 01: Float Arrays + While Loop Indexing
+// ============================================================================
+// Tests:
+//   - flt64[N] fixed-size stack array literal initialization
+//   - while loop with int32 counter indexing into flt64 array
+//   - flt64 arithmetic (multiply and accumulate)
+//   - wild flt64* heap-allocated arrays (no @ needed, already a pointer)
+//   - Passing flt64* to functions
+//
+// FINDINGS (compile-time):
+//   - @arr on flt64[N] gives flt64[N]@ (array address), NOT flt64@
+//   - @arr[i] is rejected: "@ requires lvalue - only variables supported"
+//   - For passing stack arrays to functions, use wild flt64* allocation instead
+//   - int32 counter works fine for array indexing (stk[top] pattern confirmed)
+//   - Uninitialized flt64[N] arrays require explicit initializer
+
+func:dot = flt64(flt64*:a, flt64*:b, int32:n) {
+    flt64:sum = 0.0;
+    int32:i = 0;
+    while (i < n) {
+        sum = sum + a[i] * b[i];
+        i = i + 1;
+    }
+    pass(sum);
+};
+
+func:main = int32() {
+    // --- STACK ARRAY TESTS ---
+
+    // Test 1: basic float array init and indexing
+    flt64[4]:a = [1.0, 2.0, 3.0, 4.0];
+    flt64:a0 = a[0];
+    flt64:a3 = a[3];
+    if (a0 != 1.0) { int32:ec = 1; pass(ec); }
+    if (a3 != 4.0) { int32:ec = 2; pass(ec); }
+
+    // Test 2: while loop accumulation over stack array
+    flt64:sum = 0.0;
+    int32:i = 0;
+    while (i < 4) {
+        sum = sum + a[i];
+        i = i + 1;
+    }
+    // 1+2+3+4 = 10
+    if (sum != 10.0) { int32:ec = 3; pass(ec); }
+
+    // Test 3: stack array mutation via while loop
+    flt64[4]:c = [0.0, 0.0, 0.0, 0.0];
+    int32:j = 0;
+    while (j < 4) {
+        c[j] = 0.5;
+        j = j + 1;
+    }
+    flt64:csum = 0.0;
+    int32:k = 0;
+    while (k < 4) {
+        csum = csum + c[k];
+        k = k + 1;
+    }
+    // 4 * 0.5 = 2.0
+    if (csum != 2.0) { int32:ec = 5; pass(ec); }
+
+    // --- HEAP ARRAY TESTS (wild flt64* — already a pointer, no @ needed) ---
+
+    // Test 4: heap array alloc + fill + pass to function
+    wild flt64*:ha = aria.alloc<flt64>(4);
+    wild flt64*:hb = aria.alloc<flt64>(4);
+    defer aria.free(ha);
+    defer aria.free(hb);
+
+    ha[0] = 1.0; ha[1] = 2.0; ha[2] = 3.0; ha[3] = 4.0;
+    hb[0] = 4.0; hb[1] = 3.0; hb[2] = 2.0; hb[3] = 1.0;
+
+    // Pass wild flt64* directly — already a pointer, no @ required
+    flt64:dp = dot(ha, hb, 4);
+    // 1*4 + 2*3 + 3*2 + 4*1 = 4+6+6+4 = 20
+    if (dp != 20.0) { int32:ec = 6; pass(ec); }
+
+    print("probe_01: PASS");
+    int32:ok = 0;
+    pass(ok);
+};
+
+func:failsafe = NIL(int32:err_code) {};
+
+
+func:main = int32() {
+    // Test 1: basic float array init and indexing
+    flt64[4]:a = [1.0, 2.0, 3.0, 4.0];
+    flt64[4]:b = [4.0, 3.0, 2.0, 1.0];
+
+    // Access individual elements
+    flt64:a0 = a[0];
+    flt64:a3 = a[3];
+    if (a0 != 1.0) { int32:ec = 1; pass(ec); }
+    if (a3 != 4.0) { int32:ec = 2; pass(ec); }
+
+    // Test 2: while loop accumulation
+    flt64:sum = 0.0;
+    int32:i = 0;
+    while (i < 4) {
+        sum = sum + a[i];
+        i = i + 1;
+    }
+    // sum should be 1+2+3+4 = 10
+    if (sum != 10.0) { int32:ec = 3; pass(ec); }
+
+    // Test 3: dot product via function pointer param
+    // @a gives flt64[4]@ (array address); @a[0] gives flt64@ (first element ptr)
+    flt64:dp = dot(@a[0], @b[0], 4);
+    // 1*4 + 2*3 + 3*2 + 4*1 = 4 + 6 + 6 + 4 = 20
+    if (dp != 20.0) { int32:ec = 4; pass(ec); }
+
+    // Test 4: zero-initialized array, manual fill + read
+    flt64[4]:c = [0.0, 0.0, 0.0, 0.0];
+    int32:j = 0;
+    while (j < 4) {
+        c[j] = 0.5;
+        j = j + 1;
+    }
+    flt64:csum = 0.0;
+    int32:k = 0;
+    while (k < 4) {
+        csum = csum + c[k];
+        k = k + 1;
+    }
+    // 4 * 0.5 = 2.0
+    if (csum != 2.0) { int32:ec = 5; pass(ec); }
+
+    print("probe_01: PASS");
+    int32:ok = 0;
+    pass(ok);
+};
+
+func:failsafe = NIL(int32:err_code) {};

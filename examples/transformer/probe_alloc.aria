@@ -1,0 +1,19 @@
+// Quick probe: wild flt64-> allocation and indexing
+func:main = int32() {
+    wild flt64->:arr = alloc(32);  // 4 * 8 bytes
+    arr[0] = 1.5;
+    arr[1] = 2.5;
+    arr[2] = 3.5;
+    arr[3] = 4.5;
+    flt64:sum = arr[0] + arr[1] + arr[2] + arr[3];
+    free(arr);
+    // 1.5+2.5+3.5+4.5 = 12.0
+    if (sum == 12.0) {
+        print("wild flt64-> alloc: PASS");
+        int32:ok = 0;
+        pass(ok);
+    }
+    int32:ec = 1;
+    pass(ec);
+};
+func:failsafe = NIL(int32:err_code) {};

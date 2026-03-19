@@ -7,11 +7,8 @@
 // constant seeds.  LLVM constant-folds all uint64 bitwise operations
 // (^, <<, >>, %, &) at compile time, producing verified pass/fail results.
 //
-// Bug #20: ariac uses arithmetic right shift (ashr) for uint64 >>.
-//          For seeds where intermediate values don't set bit 63, ashr == lshr,
-//          so the results are identical to standard xorshift64.
-// Bug #21: uint64 literals >= 2^63 are stored/compared as 0 in LLVM IR.
-//          All expected values in tests must be < 2^63 (9223372036854775808).
+// Bug #20 (ashr for uint64 >>) — RESOLVED: compiler now uses lshr.
+// Bug #21 (large u64 literals) — RESOLVED: full 64-bit range supported.
 //
 // Reference values (standard xorshift64, compatible with ariac for safe seeds):
 //   rand_next(1)                        = 1082269761

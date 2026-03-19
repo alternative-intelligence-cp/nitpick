@@ -366,6 +366,36 @@ uint16_t aria_pack_nyte(int8_t n0, int8_t n1, int8_t n2, int8_t n3, int8_t n4);
  */
 void aria_unpack_nyte(uint16_t packed, int8_t* n0, int8_t* n1, int8_t* n2, int8_t* n3, int8_t* n4);
 
+// =============================================================================
+// Wave9 Interpolation
+// =============================================================================
+
+/**
+ * @brief Interpolation struct matching Aria's Wave9 layout (9 × int8_t, no padding).
+ */
+typedef struct { int8_t r, s, t, u, v, w, x, y, z; } AriaWave9;
+
+/**
+ * @brief Linear interpolation between two Wave9 states.
+ * @param ar..az  Dimensions of wave A as int32
+ * @param br..bz  Dimensions of wave B as int32
+ * @param t       Interpolation factor 0–100 (0=pure A, 100=pure B)
+ * @return        Interpolated Wave9
+ */
+AriaWave9 aria_wave_lerp_dims(
+    int32_t ar, int32_t as_, int32_t at_,
+    int32_t au, int32_t av, int32_t aw,
+    int32_t ax, int32_t ay, int32_t az,
+    int32_t br, int32_t bs,  int32_t bt,
+    int32_t bu, int32_t bv,  int32_t bw,
+    int32_t bx, int32_t by,  int32_t bz,
+    int32_t t
+);
+
+/** Single-component lerp: (a * (100-t) + b * t) / 100
+ *  Returns int8_t — no struct-return ABI mismatch. */
+int8_t aria_lerp_component(int32_t a, int32_t b, int32_t t);
+
 // ==============================================================================
 /**
  * @brief Initialize lookup tables for ternary arithmetic

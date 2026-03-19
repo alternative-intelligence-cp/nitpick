@@ -1,0 +1,99 @@
+// =============================================================================
+// Bug #26 Reproducer: pass(variable) / return variable uses stale SSA value
+// =============================================================================
+// CRITICAL: This bug means any function returning a mutated variable
+// silently returns the INITIAL value, not the current value.
+//
+// For Nikola: A physics function computing ΔE and returning it would
+// return 0.0 instead of the computed drift — masking energy violations.
+//
+// STATUS: OPEN — workaround in place (use conditional pass)
+// =============================================================================
+
+func:main = int32() {
+    int32:failures = 0;
+
+    // TEST 1: Simple reassignment — pass should see new value
+    int32:x = 0;
+    x = 42;
+    // BUG: pass(x) would return 0 here, not 42
+    // Verify via comparison (comparisons DO correctly reload)
+    if (x != 42) {
+        print("FAIL: x should be 42 after reassignment\n");
+        failures = failures + 1;
+    }
+
+    // TEST 2: Increment counter — common pattern in accumulation
+    int32:counter = 0;
+    counter = counter + 1;
+    counter = counter + 1;
+    counter = counter + 1;
+    // BUG: pass(counter) would return 0, not 3
+    if (counter != 3) {
+        print("FAIL: counter should be 3 after 3 increments\n");
+        failures = failures + 1;
+    }
+
+    // TEST 3: Conditional mutation
+    int32:flag = 0;
+    if (1 == 1) {
+        flag = 1;
+    }
+    // BUG: pass(flag) would return 0, not 1
+    if (flag != 1) {
+        print("FAIL: flag should be 1 after conditional set\n");
+        failures = failures + 1;
+    }
+
+    // TEST 4: Loop accumulation (Nikola energy summation pattern)
+    int32:acc = 0;
+    till(10, 1) {
+        acc = acc + 1;
+    }
+    // BUG: pass(acc) would return 0, not 10
+    if (acc != 10) {
+        print("FAIL: acc should be 10 after 10 loop iterations\n");
+        failures = failures + 1;
+    }
+
+    // TEST 5: Multiple variables — verify independence
+    int32:a = 100;
+    int32:b = 200;
+    a = a + b;  // a = 300
+    b = b - 100; // b = 100
+    if (a != 300) {
+        print("FAIL: a should be 300\n");
+        failures = failures + 1;
+    }
+    if (b != 100) {
+        print("FAIL: b should be 100\n");
+        failures = failures + 1;
+    }
+
+    // TEST 6: Float reassignment (Nikola wavefunction update pattern)
+    flt64:psi = 0.0;
+    psi = 3.14159265358979;
+    flt64:diff = psi - 3.14159265358979;
+    if (diff > 1.0e-15) {
+        print("FAIL: psi should be pi after reassignment\n");
+        failures = failures + 1;
+    }
+    if (diff < -1.0e-15) {
+        print("FAIL: psi should be pi after reassignment (neg)\n");
+        failures = failures + 1;
+    }
+
+    // REPORT
+    if (failures == 0) {
+        print("BUG26 REPRODUCER: All comparisons see correct values\n");
+        print("NOTE: pass(variable)/return(variable) still returns initial value\n");
+        print("      This test uses comparison workaround to verify mutations work\n");
+        pass(0);
+    }
+    print("BUG26 REPRODUCER: FAILURES DETECTED\n");
+    pass(1);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    print("FAILSAFE triggered in Bug #26 reproducer\n");
+};

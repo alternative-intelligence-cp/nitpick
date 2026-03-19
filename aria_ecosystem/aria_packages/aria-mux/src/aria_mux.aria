@@ -10,7 +10,7 @@
 // - ones_mask:    create a mask of n consecutive 1-bits starting at bit 0
 // - rotate_left7: rotate bits left by n (mod 7) — safe (avoids bit 63 via mod 62)
 //
-// All values uint64. Bug #20 advisory: avoid shifts of values with bit 63 set.
+// All values uint64. Bug #20 (ashr for uint64 >>) resolved — full range safe.
 
 // Conditional mux: returns b if sel == 1, else returns a.
 // Classic gate-level pattern: result = a ^ ((a ^ b) & sel_mask)
@@ -23,7 +23,7 @@ pub func:bit_mux = uint64(uint64:a, uint64:b, uint64:sel) {
 
 // Extract a field of `width` bits starting at bit position `pos`.
 // field_get(word, pos, width) = (word >> pos) & ones_mask(width)
-// Safe: pos + width must be <= 62 to avoid Bug #20 in the shift.
+// pos + width must be <= 64 (natural bit boundary).
 pub func:field_get = uint64(uint64:word, uint64:pos, uint64:width) {
     uint64:shifted = word >> pos;
     uint64:ones = (1u64 << width) - 1u64;

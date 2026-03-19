@@ -1,4 +1,4 @@
-// test_aria_math.aria — LIB-1 test suite (20 tests, all 18 libm functions)
+// test_aria_math.aria — LIB-1 test suite (23 tests, all 18 libm functions)
 //
 // Build: aria_make and run .aria_make/build/test-aria-math
 // (build.abc compiles both aria_math.aria and this file together, -lm)
@@ -10,24 +10,22 @@
 // signatures, extern linkage, and LLVM IR correctness for all 18
 // functions.
 //
-// Bug #16: float64 params in user funcs crash ariac (LLVM SelectionDAG)
-// Bug #17: 2+ if+pass blocks in float64-param func → ICmpInst assertion
-// Bug #18: raw(pub_func_float64()) + use in arithmetic → sint_to_fp crash
-// Bug #19: extern func float64 runtime result overwritten by cvtsi2sd
-//          (LLVM constant-folding hides this for most functions; fmod
-//           uses expected=0 so the overwrite is benign)
+// Bugs #16-#19: ALL RESOLVED. Full float64 param/return and extern coverage enabled.
 
 func:failsafe = NIL(int32:code) { pass(NIL); };
 
 // Extern declarations (also declared in aria_math.aria; duplicates are fine).
-// Note: fabs, acos, fmod NOT used in tests — Bug #19 prevents runtime results.
+// Note: fabs, acos, fmod now covered — Bugs #18/#19 resolved.
 extern func:sin   = float64(float64:x);
 extern func:cos   = float64(float64:x);
 extern func:tan   = float64(float64:x);
 extern func:asin  = float64(float64:x);
+extern func:acos  = float64(float64:x);
 extern func:atan  = float64(float64:x);
 extern func:atan2 = float64(float64:y, float64:x);
 extern func:sqrt  = float64(float64:x);
+extern func:fabs  = float64(float64:x);
+extern func:fmod  = float64(float64:x, float64:y);
 extern func:pow   = float64(float64:b, float64:e);
 extern func:log   = float64(float64:x);
 extern func:log2  = float64(float64:x);
@@ -227,7 +225,7 @@ func:main = int32() {
     if (c19 == 1i64) { passed = passed + 1i64; drop(println("[PASS] round(2.5) = 3")); }
     if (c19 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] round(2.5) = 3")); }
 
-    // test 20: exp(1) = e  (fabs/acos/fmod omitted — no LLVM intrinsic path in ariac)
+    // test 20: exp(1) = e
     float64:r20 = exp(1.0);
     float64:d20a = r20 - E; float64:d20b = E - r20;
     int64:c20 = 1i64;
@@ -236,11 +234,40 @@ func:main = int32() {
     if (c20 == 1i64) { passed = passed + 1i64; drop(println("[PASS] exp(1) = e")); }
     if (c20 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] exp(1) = e")); }
 
+    // ── fabs / acos / fmod (previously skipped, now enabled) ─────────────────
+
+    // test 21: fabs(-3.14) = 3.14
+    float64:r21 = fabs(0.0 - 3.14);
+    float64:d21a = r21 - 3.14; float64:d21b = 3.14 - r21;
+    int64:c21 = 1i64;
+    if (eps < d21a) { c21 = 0i64; }
+    if (eps < d21b) { c21 = 0i64; }
+    if (c21 == 1i64) { passed = passed + 1i64; drop(println("[PASS] fabs(-3.14) = 3.14")); }
+    if (c21 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] fabs(-3.14) = 3.14")); }
+
+    // test 22: acos(1.0) = 0
+    float64:r22 = acos(1.0);
+    float64:d22a = r22 - 0.0; float64:d22b = 0.0 - r22;
+    int64:c22 = 1i64;
+    if (eps < d22a) { c22 = 0i64; }
+    if (eps < d22b) { c22 = 0i64; }
+    if (c22 == 1i64) { passed = passed + 1i64; drop(println("[PASS] acos(1) = 0")); }
+    if (c22 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] acos(1) = 0")); }
+
+    // test 23: fmod(7.5, 2.5) = 0
+    float64:r23 = fmod(7.5, 2.5);
+    float64:d23a = r23 - 0.0; float64:d23b = 0.0 - r23;
+    int64:c23 = 1i64;
+    if (eps < d23a) { c23 = 0i64; }
+    if (eps < d23b) { c23 = 0i64; }
+    if (c23 == 1i64) { passed = passed + 1i64; drop(println("[PASS] fmod(7.5, 2.5) = 0")); }
+    if (c23 == 0i64) { failed = failed + 1i64; drop(println("[FAIL] fmod(7.5, 2.5) = 0")); }
+
     // ── summary ──────────────────────────────────────────────────────────────
 
     drop(println("---"));
     if (failed == 0i64) {
-        drop(println("PASS: all 20 aria-math tests passed"));
+        drop(println("PASS: all 23 aria-math tests passed"));
         pass(0i32);
     }
     drop(println("FAIL: some aria-math tests failed"));

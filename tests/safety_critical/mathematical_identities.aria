@@ -1,0 +1,230 @@
+// ============================================================================
+// MATHEMATICAL IDENTITY PROPERTY TEST — Safety-Critical for Nikola AGI
+// ============================================================================
+// Purpose: Verify that fundamental mathematical identities hold under
+// Aria's arithmetic implementation.
+//
+// If a + 0 != a, or a * 1 != a, or a - a != 0 in the compiled code,
+// then Nikola's physics equations are FUNDAMENTALLY BROKEN because they
+// rely on these algebraic identities being exact.
+//
+// These are the axioms of a field. If they fail, no physics is correct.
+// ============================================================================
+
+func:main = int32() {
+    int32:failures = 0;
+
+    // ========================================================================
+    // ADDITIVE IDENTITY: a + 0 == a
+    // ========================================================================
+    // Integer
+    int64:a_int = 42;
+    int64:zero_int = 0;
+    if (a_int + zero_int != a_int) {
+        print("FAIL: int64 a + 0 != a\n");
+        failures = failures + 1;
+    }
+
+    // Float
+    flt64:a_flt = 3.141592653589793;
+    flt64:zero_flt = 0.0;
+    if (a_flt + zero_flt != a_flt) {
+        print("FAIL: flt64 a + 0.0 != a\n");
+        failures = failures + 1;
+    }
+
+    // Negative
+    flt64:neg_a = -2.718281828459045;
+    if (neg_a + zero_flt != neg_a) {
+        print("FAIL: flt64 (-a) + 0.0 != -a\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // MULTIPLICATIVE IDENTITY: a * 1 == a
+    // ========================================================================
+    int64:one_int = 1;
+    if (a_int * one_int != a_int) {
+        print("FAIL: int64 a * 1 != a\n");
+        failures = failures + 1;
+    }
+
+    flt64:one_flt = 1.0;
+    if (a_flt * one_flt != a_flt) {
+        print("FAIL: flt64 a * 1.0 != a\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // ADDITIVE INVERSE: a + (-a) == 0, a - a == 0
+    // ========================================================================
+    int64:neg_a_int = -42;
+    int64:sum_inv = a_int + neg_a_int;
+    if (sum_inv != zero_int) {
+        print("FAIL: int64 a + (-a) != 0\n");
+        failures = failures + 1;
+    }
+
+    int64:self_sub = a_int - a_int;
+    if (self_sub != zero_int) {
+        print("FAIL: int64 a - a != 0\n");
+        failures = failures + 1;
+    }
+
+    flt64:flt_neg_a = -3.141592653589793;
+    flt64:flt_sum_inv = a_flt + flt_neg_a;
+    if (flt_sum_inv != zero_flt) {
+        print("FAIL: flt64 a + (-a) != 0.0\n");
+        failures = failures + 1;
+    }
+
+    flt64:flt_self_sub = a_flt - a_flt;
+    if (flt_self_sub != zero_flt) {
+        print("FAIL: flt64 a - a != 0.0\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // MULTIPLICATIVE INVERSE: a * (1/a) ≈ 1 (for float, allow 1 ULP)
+    // ========================================================================
+    flt64:val = 7.0;
+    flt64:inv = one_flt / val;
+    flt64:product = val * inv;
+    flt64:eps = 2.220446049250313e-16;
+    flt64:prod_err = product - one_flt;
+    if (prod_err < zero_flt) { prod_err = zero_flt - prod_err; }
+    if (prod_err > eps) {
+        print("FAIL: flt64 a * (1/a) too far from 1.0\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // MULTIPLICATIVE ZERO: a * 0 == 0
+    // ========================================================================
+    int64:mul_zero = a_int * zero_int;
+    if (mul_zero != zero_int) {
+        print("FAIL: int64 a * 0 != 0\n");
+        failures = failures + 1;
+    }
+
+    flt64:flt_mul_zero = a_flt * zero_flt;
+    if (flt_mul_zero != zero_flt) {
+        print("FAIL: flt64 a * 0.0 != 0.0\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // COMMUTATIVITY: a + b == b + a, a * b == b * a
+    // ========================================================================
+    flt64:b_flt = 2.718281828459045;
+    flt64:ab_add = a_flt + b_flt;
+    flt64:ba_add = b_flt + a_flt;
+    if (ab_add != ba_add) {
+        print("FAIL: flt64 a + b != b + a\n");
+        failures = failures + 1;
+    }
+
+    flt64:ab_mul = a_flt * b_flt;
+    flt64:ba_mul = b_flt * a_flt;
+    if (ab_mul != ba_mul) {
+        print("FAIL: flt64 a * b != b * a\n");
+        failures = failures + 1;
+    }
+
+    int64:b_int = 99;
+    int64:ab_int_add = a_int + b_int;
+    int64:ba_int_add = b_int + a_int;
+    if (ab_int_add != ba_int_add) {
+        print("FAIL: int64 a + b != b + a\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // DISTRIBUTIVITY: a * (b + c) == a*b + a*c (exact for int, ~near for float)
+    // ========================================================================
+    int64:c_int = 13;
+    int64:left_dist = a_int * (b_int + c_int);
+    int64:right_dist = a_int * b_int + a_int * c_int;
+    if (left_dist != right_dist) {
+        print("FAIL: int64 distributivity violated\n");
+        failures = failures + 1;
+    }
+
+    // Float distributivity: may not be EXACT but should be very close
+    flt64:c_flt = 1.4142135623730951;
+    flt64:left_dist_f = a_flt * (b_flt + c_flt);
+    flt64:right_dist_f = a_flt * b_flt + a_flt * c_flt;
+    flt64:dist_err = left_dist_f - right_dist_f;
+    if (dist_err < zero_flt) { dist_err = zero_flt - dist_err; }
+    // Allow several ULPs for float
+    flt64:dist_tol = 1.0e-14;
+    if (dist_err > dist_tol) {
+        print("FAIL: flt64 distributivity error too large\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // NEGATION: -(-a) == a
+    // ========================================================================
+    int64:double_neg = 0 - (0 - a_int);
+    if (double_neg != a_int) {
+        print("FAIL: int64 -(-a) != a\n");
+        failures = failures + 1;
+    }
+
+    flt64:flt_double_neg = zero_flt - (zero_flt - a_flt);
+    if (flt_double_neg != a_flt) {
+        print("FAIL: flt64 -(-a) != a\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // POWER OF TWO MULTIPLICATION (exact in IEEE 754)
+    // a * 2 == a + a
+    // ========================================================================
+    flt64:two = 2.0;
+    flt64:times_two = a_flt * two;
+    flt64:plus_self = a_flt + a_flt;
+    if (times_two != plus_self) {
+        print("FAIL: flt64 a * 2 != a + a\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // DIVISION IDENTITY: a / a == 1 (for non-zero a)
+    // ========================================================================
+    flt64:self_div = a_flt / a_flt;
+    if (self_div != one_flt) {
+        print("FAIL: flt64 a / a != 1.0\n");
+        failures = failures + 1;
+    }
+
+    int64:int_self_div = a_int / a_int;
+    if (int_self_div != one_int) {
+        print("FAIL: int64 a / a != 1\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // SUBTRACTION CONSISTENCY: a - b == a + (-b)
+    // ========================================================================
+    flt64:sub_result = a_flt - b_flt;
+    flt64:add_neg_result = a_flt + (zero_flt - b_flt);
+    if (sub_result != add_neg_result) {
+        print("FAIL: flt64 a - b != a + (-b)\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // RESULT
+    // ========================================================================
+    if (failures == 0) {
+        print("MATHEMATICAL IDENTITIES: ALL TESTS PASSED\n");
+        pass(0);
+    }
+    pass(1);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    print("FAILSAFE triggered in identity tests\n");
+};
