@@ -80,10 +80,10 @@ EVAL_CASES: List[EvalCase] = [
     EvalCase(
         level=1,
         category="string output",
-        instruction='Write an Aria program that prints "Hello, Aria!" to stdout.',
-        check_contains=["stdout", "Hello, Aria"],
-        check_not_contains=["print(", "println!(", "printf(", "console.log"],
-        note="Aria uses stdout << value"
+        instruction='Write an Aria program that prints "Hello, Aria!".',
+        check_contains=["Hello, Aria"],
+        check_not_contains=["println!(", "printf(", "console.log", "cout", "stdout <<"],
+        note="Aria uses print() or println() for output"
     ),
 
     # ── Level 2: Structs and enums ──────────────────────────────────────────
@@ -155,8 +155,8 @@ EVAL_CASES: List[EvalCase] = [
             "Write Aria code that calls a function returning Result<string>, "
             "checks if it succeeded using .is_error, and prints an appropriate message."
         ),
-        check_contains=["Result<string>", ".is_error", "stdout"],
-        check_not_contains=["try {", "catch", ".is_ok()", "if err !="],
+        check_contains=["Result<string>", ".is_error", "print"],
+        check_not_contains=["try {", "catch", ".is_ok()", "if err !=", "stdout <<"],
         note="Aria uses .is_error field, not .is_ok() method"
     ),
 
@@ -191,8 +191,8 @@ EVAL_CASES: List[EvalCase] = [
             "Write an Aria program that creates an int64 array of 10 elements, "
             "fills it with values 0 through 9 using a loop, and then prints each value."
         ),
-        check_contains=["int64", "loop(", "stdout"],
-        check_not_contains=["int32:i = $", "int[10]", "new int"],
+        check_contains=["int64", "loop(", "print"],
+        check_not_contains=["int32:i = $", "int[10]", "new int", "stdout <<"],
         note="Tests array declaration + loop + $ in combination"
     ),
 
@@ -282,8 +282,11 @@ def score_output(raw: str, case: EvalCase) -> dict:
     else:
         response = raw.strip()
 
-    hits = [s for s in case.check_contains if s in response]
-    misses = [s for s in case.check_contains if s not in response]
+    # Normalize: flt64 and float64 are both valid Aria types
+    normalized = response.replace("flt64:", "float64:").replace("flt64 ", "float64 ")
+
+    hits = [s for s in case.check_contains if s in response or s in normalized]
+    misses = [s for s in case.check_contains if s not in response and s not in normalized]
     bad_hits = [s for s in case.check_not_contains if s in response]
 
     precision = len(hits) / len(case.check_contains) if case.check_contains else 1.0

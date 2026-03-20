@@ -1,0 +1,181 @@
+// stdlib/math.aria
+// Extended Mathematics Module
+//
+// Higher-level math functions built on top of compiler builtins.
+// No import needed for: sin, cos, tan, asin, acos, atan, atan2,
+//   sqrt, cbrt, pow, exp, log, ln, log2, log10, abs, floor, ceil,
+//   round, trunc, min, max, PI(), E(), TAU()
+//
+// This module adds: fmod, hypot, copysign, sign, clamp, lerp,
+//   inverse_lerp, map_range, smoothstep, smootherstep, deg_to_rad,
+//   rad_to_deg, is_nan, is_inf, is_finite, wrap, gcd, lcm, factorial
+
+// ── External libm functions not available as builtins ────────────────────────
+extern func:fmod = flt64(flt64:x, flt64:y);
+extern func:hypot = flt64(flt64:x, flt64:y);
+extern func:copysign = flt64(flt64:magnitude, flt64:sign_val);
+extern func:fma = flt64(flt64:x, flt64:y, flt64:z);
+
+// ── C runtime float classification (Aria's fcmp one can't detect NaN) ────────
+extern func:aria_math_is_nan = bool(flt64:x);
+extern func:aria_math_is_inf = bool(flt64:x);
+extern func:aria_math_is_finite = bool(flt64:x);
+
+// ── Type:Math — static math utilities ────────────────────────────────────────
+Type:Math = {
+
+    // ── Floating-point classification ────────────────────────────────────
+
+    // is_nan(x) — true if x is NaN
+    // Uses C runtime because Aria's != uses fcmp one, which returns
+    // false for NaN operands (can't detect NaN via self-comparison)
+    func:is_nan = bool(flt64:x) {
+        pass(aria_math_is_nan(x));
+    };
+
+    // is_inf(x) — true if x is +/- infinity
+    func:is_inf = bool(flt64:x) {
+        pass(aria_math_is_inf(x));
+    };
+
+    // is_finite(x) — true if x is neither NaN nor infinity
+    func:is_finite = bool(flt64:x) {
+        pass(aria_math_is_finite(x));
+    };
+
+    // ── Value manipulation ───────────────────────────────────────────────
+
+    // sign(x) — returns -1.0, 0.0, or 1.0
+    func:sign = flt64(flt64:x) {
+        if (x > 0.0) { pass(1.0); }
+        if (x < 0.0) { pass(-1.0); }
+        pass(0.0);
+    };
+
+    // clamp(value, lo, hi) — restrict value to [lo, hi]
+    func:clamp = flt64(flt64:value, flt64:lo, flt64:hi) {
+        if (value < lo) { pass(lo); }
+        if (value > hi) { pass(hi); }
+        pass(value);
+    };
+
+    // clamp_i64(value, lo, hi) — integer clamp
+    func:clamp_i64 = int64(int64:value, int64:lo, int64:hi) {
+        if (value < lo) { pass(lo); }
+        if (value > hi) { pass(hi); }
+        pass(value);
+    };
+
+    // ── Interpolation ────────────────────────────────────────────────────
+
+    // lerp(a, b, t) — linear interpolation: a + t*(b-a)
+    func:lerp = flt64(flt64:a, flt64:b, flt64:t) {
+        pass(a + t * (b - a));
+    };
+
+    // inverse_lerp(a, b, value) — find t such that lerp(a,b,t) == value
+    func:inverse_lerp = flt64(flt64:a, flt64:b, flt64:value) {
+        flt64:range = b - a;
+        if (range == 0.0) { pass(0.0); }
+        pass((value - a) / range);
+    };
+
+    // map_range(value, in_min, in_max, out_min, out_max) — remap value
+    func:map_range = flt64(flt64:value, flt64:in_min, flt64:in_max,
+                           flt64:out_min, flt64:out_max) {
+        flt64:t = raw(Math.inverse_lerp(in_min, in_max, value));
+        pass(out_min + t * (out_max - out_min));
+    };
+
+    // smoothstep(edge0, edge1, x) — Hermite interpolation [0,1]
+    func:smoothstep = flt64(flt64:edge0, flt64:edge1, flt64:x) {
+        flt64:t = raw(Math.clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0));
+        pass(t * t * (3.0 - 2.0 * t));
+    };
+
+    // smootherstep(edge0, edge1, x) — Ken Perlin's smoother variant
+    func:smootherstep = flt64(flt64:edge0, flt64:edge1, flt64:x) {
+        flt64:t = raw(Math.clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0));
+        pass(t * t * t * (t * (t * 6.0 - 15.0) + 10.0));
+    };
+
+    // ── Angle conversion ─────────────────────────────────────────────────
+
+    // deg_to_rad(degrees)
+    func:deg_to_rad = flt64(flt64:degrees) {
+        pass(degrees * PI() / 180.0);
+    };
+
+    // rad_to_deg(radians)
+    func:rad_to_deg = flt64(flt64:radians) {
+        pass(radians * 180.0 / PI());
+    };
+
+    // ── Modular / wrapping ───────────────────────────────────────────────
+
+    // wrap(value, max_val) — wrap value into [0, max_val)
+    func:wrap = flt64(flt64:value, flt64:max_val) {
+        flt64:result = fmod(value, max_val);
+        if (result < 0.0) { pass(result + max_val); }
+        pass(result);
+    };
+
+    // ── Integer math ─────────────────────────────────────────────────────
+
+    // gcd(a, b) — greatest common divisor (Euclidean algorithm)
+    func:gcd = int64(int64:a, int64:b) {
+        int64:x = abs(a);
+        int64:y = abs(b);
+        while (y != 0i64) {
+            int64:temp = y;
+            y = x - (x / y) * y;
+            x = temp;
+        }
+        pass(x);
+    };
+
+    // lcm(a, b) — least common multiple
+    func:lcm = int64(int64:a, int64:b) {
+        if (a == 0i64) { pass(0i64); }
+        if (b == 0i64) { pass(0i64); }
+        int64:g = raw(Math.gcd(a, b));
+        pass(abs(a) / g * abs(b));
+    };
+
+    // factorial(n) — n! for n in [0..20]
+    func:factorial = int64(int64:n) {
+        if (n < 0i64) { pass(0i64); }
+        if (n <= 1i64) { pass(1i64); }
+        int64:result = 1i64;
+        int64:i = 2i64;
+        while (i <= n) {
+            result = result * i;
+            i = i + 1i64;
+        }
+        pass(result);
+    };
+
+    // ── libm wrappers (expose extern functions via Type) ─────────────────
+
+    // fmod(x, y) — floating-point remainder
+    func:fmod_f64 = flt64(flt64:x, flt64:y) {
+        pass(fmod(x, y));
+    };
+
+    // hypot(x, y) — sqrt(x*x + y*y) without overflow
+    func:hypot_f64 = flt64(flt64:x, flt64:y) {
+        pass(hypot(x, y));
+    };
+
+    // copysign(magnitude, sign) — magnitude with sign's sign bit
+    func:copysign_f64 = flt64(flt64:magnitude, flt64:sign_val) {
+        pass(copysign(magnitude, sign_val));
+    };
+
+    // fma(x, y, z) — fused multiply-add: x*y + z (single rounding)
+    func:fma_f64 = flt64(flt64:x, flt64:y, flt64:z) {
+        pass(fma(x, y, z));
+    };
+
+    struct:interface = {};
+};

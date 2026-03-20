@@ -4,17 +4,13 @@ project(atest VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Library
-add_library(atest STATIC test_framework.cpp)
+# Header-only library
+add_library(atest INTERFACE)
 
 target_include_directories(atest
-    PUBLIC
+    INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<INSTALL_INTERFACE:include>
-)
-
-target_compile_options(atest PRIVATE
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic>
 )
 
 # -----------------------------------------------------------------------------
@@ -22,7 +18,7 @@ target_compile_options(atest PRIVATE
 # -----------------------------------------------------------------------------
 option(BUILD_CLI "Build atest command-line utility" ON)
 if(BUILD_CLI)
-    add_executable(atest_bin atest_cli.cpp)
+    add_executable(atest_bin atest_cli.cpp test_framework.cpp)
     target_link_libraries(atest_bin PRIVATE atest)
     set_target_properties(atest_bin PROPERTIES OUTPUT_NAME atest_util)
     install(TARGETS atest_bin RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

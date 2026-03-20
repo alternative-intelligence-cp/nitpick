@@ -148,6 +148,7 @@ private:
     llvm::Function* fn_nit_add = nullptr;
     llvm::Function* fn_nit_sub = nullptr;
     llvm::Function* fn_nit_mul = nullptr;
+    llvm::Function* fn_nit_neg = nullptr;
 
     // Kleene logic runtime function pointers
     llvm::Function* fn_trit_and = nullptr;

@@ -209,14 +209,17 @@ aria-pkg remove my-package
     - Community feedback period
     - Merge when approved
 
-## Example: math-utils Package
+## Available Packages
 
-See the first package in the repository:
+The registry currently tracks 27 first-party packages. Browse them:
 ```bash
 cd aria_package_repository
-cat packages/math-utils/1.0.0/metadata.json
-tar -tzf packages/math-utils/1.0.0/math-utils-1.0.0.aria-pkg
+cat registry.json | python3 -m json.tool
 ```
+
+All 27 source packages live in `aria_ecosystem/aria_packages/` with full
+test suites (543+ assertions, 0 failures). Categories include math,
+graphics, audio, AI/decision-making, algorithms, parsing, and utilities.
 
 ## Getting Help
 

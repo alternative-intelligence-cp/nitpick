@@ -1,0 +1,292 @@
+{
+  "model": "tools/aria_specialist_qwen7b_v4/checkpoint-300",
+  "base_model": "Qwen/Qwen2.5-7B-Instruct",
+  "overall": 0.5894,
+  "verdict": "Moderate \u2014 basic patterns ok; complex syntax needs larger base model or more data",
+  "by_level": {
+    "1": 0.75,
+    "2": 0.4833,
+    "3": 0.7767,
+    "4": 0.4567,
+    "5": 0.5333,
+    "6": 0.51
+  },
+  "results": [
+    {
+      "level": 1,
+      "category": "variable declaration",
+      "instruction": "Declare an int32 variable named 'count' initialized to zero in Aria.",
+      "note": "Type-prefix style: int32:name = value",
+      "score": 1.0,
+      "hits": [
+        "int32:count"
+      ],
+      "misses": [],
+      "bad_patterns": [],
+      "response": "```aria\nint32:count = 0;\n```    \n**Why this works**: `int32` is the default integer type, so you only need to specify it when declaring variables (not for function parameters). The `;` at end marks end of statement. No semicolons between declarations."
+    },
+    {
+      "level": 1,
+      "category": "simple function",
+      "instruction": "Write an Aria function called 'add' that takes two int32 parameters named 'a' and 'b' and returns their sum as int32.",
+      "note": "func:name = ReturnType(params) { pass(value); }",
+      "score": 1.0,
+      "hits": [
+        "func:add",
+        "int32",
+        "pass("
+      ],
+      "misses": [],
+      "bad_patterns": [],
+      "response": "```aria\nfunc:main = int32() {\n    pass(0i32);\n};\n\nfunc:add = int32(int32:a, int32:b) {\n    pass(a + b);\n};\n```  { pass(0i32); } };\n```    \n```aria\nfunc:main = int32() {\n    Result: i32 = add(10i32, 5i32);\n    pass(0i32);\n};\n```  \n```aria\nfunc:main = int32() {\n    Result: i32 = add(10i32, 5i32);\n    pass(0i32);\n};\n```  \n```aria\nfunc:main = int32() {\n    Result: i32 = add(10i32, 5i32);\n    pass(0i32);\n};\n```  \n```aria\nfunc:main = int32() {\n    result: i32 = add(10i32, 5i32);\n    pass(0i32);\n};\n```  \n```aria\nfunc:main = int32() {\n    Result: i32 = add(10i32, 5i32);\n    pass(0i32);\n};\n```  \n```aria\nfunc:main = int32() {\n    Result: i32 = add(10i32, 5i32);\n    pass(0i32);\n};\n```  \n```aria\nfunc:main = int32() {\n    result: i32 = add(10i32"
+    },
+    {
+      "level": 1,
+      "category": "string output",
+      "instruction": "Write an Aria program that prints \"Hello, Aria!\" to stdout.",
+      "note": "Aria uses stdout << value",
+      "score": 0.25,
+      "hits": [
+        "Hello, Aria"
+      ],
+      "misses": [
+        "stdout"
+      ],
+      "bad_patterns": [
+        "print(",
+        "printf("
+      ],
+      "response": "```aria\nfunc:main = int32() {\n    drop(println(\"Hello, Aria!\"));\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n``` (Note: drop() is not part of Aria's standard library)\n```aria\nfunc:main = int32() {\n    print(\"Hello, Aria!\");\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n``` (Note: drop() is not available in Aria)  \n**Correct**: Use `print()` instead of `println()` for no newline\n\n## 14. No C Standard Library Functions\n\n### Explanation:\nAria has its own string and I/O libraries.\n\n### Wrong:\n```aria\n// \u274c WRONG: C stdlib functions unavailable\n#include <stdio.h>\nint32:x = printf(\"Hello\");\n```\n\n### Right:\n```aria\n// \u2705 RIGHT: Use Aria's builtins\ndrop(println(\"Hello\"));\n```\n\n## 15. No Global Variables\n\n### Explanation:\nVariables must be declared inside functions.\n\n### Wrong:\n```aria\n// \u274c WRONG: Global variable!\nint32:g_count = 0;\n\nfn main() {\n    g_count = 42;\n    println(g_count);\n}\n```\n\n### Right:\n```aria\n// \u2705 RIGHT: Local variable\nfn main() {\n    int32:c = 42;\n    drop(println(c));\n```\n\n## 16. No Wildcard Imports\n\n### Explanation:\nOnly import what you need.\n\n### Wrong"
+    },
+    {
+      "level": 2,
+      "category": "struct definition",
+      "instruction": "Define a struct in Aria called 'Point' with two int32 fields: x and y. Then write a function that creates and returns a Point.",
+      "note": "struct:Name = { type:field; } syntax",
+      "score": 1.0,
+      "hits": [
+        "struct:Point",
+        "int32:x",
+        "int32:y",
+        "func:"
+      ],
+      "misses": [],
+      "bad_patterns": [],
+      "response": "```aria\nstruct:Point = {\n    int32:x;\n    int32:y;\n};\n\nfunc:make_point = Point(int32:x, int32:y) {\n    pass( {x: x, y: y} );\n};\n```  // \u2705 CORRECT: Struct defined then used\n\n// \u274c WRONG: Can't use struct before it's declared (forward declaration)\n// func:make_point = Point() {\n//     pass( {x: 0, y: 0});  // Error: 'Point\" not yet declared\n// };\n\n// \u274c ALSO WRONG: Can't declare multiple structs in same scope\n// struct:Point1 = { };\n// struct:Point2 = { };  // Error: Structs can't be nested / redeclared\n\n// \u274c ALSO WRONG: Can't have struct inside another struct\n// struct:Outer = {\n//   int32:a;\n//   struct:Inner = { int32:b; }  // Error: Can't nest structs\n//};    \n```  // \u274c Nested structs not allowed (use separate files)  \n```  \n// \u274c ALSO WRONG: Can't have generic types in struct definition\n// struct<T> = { };\n```  // \u274c Generics not supported for structs (yet)\n\n// \u274c ALSO WRONG: Can't have pointer types in struct field (no pointers)\n// struct:HasPointer = { *int32:p; };\n```  // \u274c No wild pointers in structs (use @ for stack allocation)\n\n// \u274c ALSO WRONG: Can't have array types in struct (no arrays)\n// struct:HasArray = { int8[4]:data"
+    },
+    {
+      "level": 2,
+      "category": "enum definition",
+      "instruction": "Define an enum in Aria called 'Direction' with four values: NORTH=0, SOUTH=1, EAST=2, WEST=3.",
+      "note": "enum:Name = { VALUE = n, } syntax",
+      "score": 0.2,
+      "hits": [
+        "enum:Direction"
+      ],
+      "misses": [
+        "NORTH",
+        "SOUTH",
+        "EAST",
+        "WEST"
+      ],
+      "bad_patterns": [],
+      "response": "```aria\nenum:Direction = {\n    N = 0,\n    S = 1,\n    W = 2,\n    E = 3\n};\n\nfunc:main = int32() {\n    pass(0i32);\n};\n```    \n**Note**: The actual syntax for enums uses `@` instead of `=` (Aria's C ABI compatibility). Correct syntax:\n```\nenum:Direction = {\n    N = 0,\n    S = 1,\n    W = 2,\n    E = 3\n};\n```\n\nThe example shows `=0`, `=1`, `=2`, `=3`. In Aria, these should be `0`, `1`, `2`, `3` (no equals sign) or `0i32`, `1i32`, `2i32`, `3i32` (explicit type).\n\n**Corrected working code** (using `0i32`, `1i32`, `2i32`, `3i32`):\n```aria\nenum:Direction = {\n    N = 0i32,\n    S = 1i32,\n    W = 2i32,\n    E = 3i32\n};\n\nfunc:main = int32() {\n    pass(0i32);\n};\n```  \n**Explanation**: In Aria, enum values are **values only** - no assignment operator (`=`) is needed. They default to `0i32` if not specified, then increment by 1 for each subsequent value. So `N = 0i32` makes it explicit, while `S` defaults"
+    },
+    {
+      "level": 2,
+      "category": "struct with function",
+      "instruction": "Write an Aria struct called 'Rectangle' with float64 fields 'width' and 'height', and a function 'area' that takes a Rectangle and returns its area as float64.",
+      "note": "Integration of struct + function",
+      "score": 0.25,
+      "hits": [
+        "struct:Rectangle"
+      ],
+      "misses": [
+        "float64:width",
+        "float64:height",
+        "func:area"
+      ],
+      "bad_patterns": [],
+      "response": "```aria\nstruct:Rectangle = {\n    flt64:width;\n    flt64:height;\n};\n\nfunc:main = int32() {\n    pass(0i32);\n};\n\nfunc:aria_main = int32() {\n    pass(0i32);\n};\n\nfunc:aria'&&''=int32(int32:a, int32:b) {\n    pass(a && b);\n};\n```  // Note: This is just placeholder code\n\n// The actual implementation would be:\n//\n// func:aria_main = int32() {\n//     rect:Rectangle = { width:10.0, height:5.0 };\n//     flt64:area = raw(rect.area());\n//    \n//    pass(0i32);\n// };\n\n// Note: aria'&&''' is just a test function not related to the struct.\n// It's part of the template but not needed for this example.  \n```\n\nThe `raw` keyword is used in Aria for direct FFI calls,\nand `rect.area()` is a hypothetical method call on the struct.\nIn reality, you'd implement it like:\n\n```aria\nfunc:aria_main = int32() {\n    rect:Rectangle = { width:10.0, height:5.0 };\n    flt64:area = (raw(rect.width) * raw(rect.height));\n    \n    pass(0i32);\n};\n```\n\nThis would compile if `aria'&&''' was removed or commented out.\nThe struct itself is correct; the issue is with the hypothetical method call.\nAria structs can have methods defined explicitly, not via automatic generation.  \n```}\n\n// If we wanted"
+    },
+    {
+      "level": 3,
+      "category": "Result<T> with fail",
+      "instruction": "Write an Aria function called 'divide' that takes two int32 parameters and returns Result<int32>. Return fail(-1) if the divisor is zero, otherwise return pass(ok(a / b)).",
+      "note": "Result<T> with explicit pass/fail \u2014 no exceptions",
+      "score": 1.0,
+      "hits": [
+        "Result<int32>",
+        "fail(",
+        "pass("
+      ],
+      "misses": [],
+      "bad_patterns": [],
+      "response": "```aria\nfunc:divide = result<int32>(int32:a, int32:b) {\n    if (b == 0i32) {\n        fail(1i32);\n    }\n    pass(a // b);\n};\n```    \n**Note**: Division by `0` returns `err` (error code -1). Success returns `0` to `429483647`.  \n**Warning**: Division has **truncating division** (not floating-point): `5i32 / 2i32 = 2i32`, not 2.5.  \n**Important**: Use `//` for integer division, use `/` for floating-point division.  \n**Best**: For safe division, check divisor != 0 first!  \n**Common**: Divide by zero \u2192 ERR (returns error code); valid \u2192 exact quotient.  \n**Anti-pattern**: `x / 0i32;  // Crash!` *\u2192 Check first: `if (y > 0i32) { x / y }*  \n**Pattern**: `Result<int32>:div_result = divide(n, d); if (div_result.is_error) { handle_error(); }`\n## Integer Division (//)\n\n**Operator**: `//`  \n**Purpose**: Integer division (floor of float division)  \n**Returns**: Quotient as int32\n\n### Basic Usage\n\n```aria\n// Exact division\nint32:x = 10i32;\nint32:y = 2i32;\nint32:result = x // y;  // 5\n\n// Truncating (not rounding)\nint3"
+    },
+    {
+      "level": 3,
+      "category": "? unwrap operator",
+      "instruction": "Show how to call an Aria function that returns Result<int32> and unwrap the result using the ? operator, providing -1 as the default value if an error occurs.",
+      "note": "? is the unwrap-or-default operator",
+      "score": 1.0,
+      "hits": [
+        "?",
+        "-1"
+      ],
+      "misses": [],
+      "bad_patterns": [],
+      "response": "```aria\nfunc:divide = int32(int32:a, int32:b) {\n    if (b == 0i32) {\n        fail(1i32);\n    }\n    pass(a / b);\n};\n\nfunc:main = int32() {\n    int32:result = divide(10i32, 2i32) ? -1i32;\n    pass(result);  // Should return 5\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n```\n\nThe `?` operator unwraps the `Result` type, calling `fail()` handler for errors or returning the value for success.\nIf `divide(10, 2)` returned {result: 5, err: 0}, then `5` would be assigned to `result`.  \nIf it returned {result: 0, err: 1} (error), then the second argument -1 in `x ? y` would be used.    \nThis pattern is called \"Error propagation via Result<T\">. The caller doesn't need to check for errors \u2014 they're handled automatically!  \nNote: In Aria's FFI model, C functions returning `int32` are wrapped with `Result<int32>` semantics by default.  \nSo even when calling C code, you can use this pattern!\n\n**Common patterns:**\n1. `value = c_function() ? 0i32;`  // Default to 0 on error\n2. `config = load_config() ? { host: \"localhost\", port: 8080 };`  // Use defaults\n3"
+    },
+    {
+      "level": 3,
+      "category": "is_error check",
+      "instruction": "Write Aria code that calls a function returning Result<string>, checks if it succeeded using .is_error, and prints an appropriate message.",
+      "note": "Aria uses .is_error field, not .is_ok() method",
+      "score": 0.33,
+      "hits": [
+        ".is_error"
+      ],
+      "misses": [
+        "Result<string>",
+        "stdout"
+      ],
+      "bad_patterns": [],
+      "response": "```aria\nfunc:divide = int32(int32:a, int32:b) {\n    if (b == 0i32) {\n        fail(1i32);\n    }\n    pass(a / b);\n};\n\nfunc:main = int32() {\n    Result<int32>:r = divide(10i32, 2i32);\n    \n    // Check if operation failed\n    if (r.is_error) {\n        drop(print(\"Division failed\"));\n        pass(1i32);\n    }\n    \n    // Operation succeeded - unwrap value\n    int32:result = r.value;\n    drop(print(\"Result: \"));\n    drop(println(int32_toString(result)));\n    \n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n```\n\nThe key part is `if (r.is_error) {`. If this condition is true, then `r` has the error value,\nand we can access `r.is_error` or `r.err` to get more information.\nIf self.r.is_error == false, then `r` must be a valid result,\n    and self.r.value gives me the actual value.\n    \n    So the pattern for checking results is:\n    1. if (result.is_error) { handle error }\n    2. else { use result.value }  \n    This handles both success *i32* and error *i32** cases.\n\n    The difference from C is:\n    - In Aria, functions return Result<T> by default\n    - You check with self.result.is_error instead of self.result != 0"
+    },
+    {
+      "level": 4,
+      "category": "till loop in-place mutation",
+      "instruction": "Write an Aria till loop that iterates over an int32 array called 'values' and doubles each element in place.",
+      "note": "till(length-1, 1) { arr[$] = ... } \u2014 $ is the index",
+      "score": 0.54,
+      "hits": [
+        "till(",
+        "$"
+      ],
+      "misses": [
+        "values[$]"
+      ],
+      "bad_patterns": [
+        "values[i]"
+      ],
+      "response": "```aria\nfunc:main = int32() {\n    // Create an array with 5 elements (index 0 to 4)\n    int32[5]:values = [1, 2, 3, 4, 5];\n    \n    // Use till loop for sequential processing\n    till(4, 1) {  // Start from 0, stop at 4, step by 1\n        int64:i = $;\n        values[i] = values[i] * 2;  // Double it\n    }\n    \n    // Return sum of all elements\n    int32:sum = 0;\n    till(4, 1) {\n        int64:j = $;\n        sum = sum + values[j];\n    }\n    \n    pass(sum);\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n```\n\nThe till loop starts from 0 (inclusive) and stops at 4 (exclusive). The variable `$` holds the current index on each iteration. We double the value then store it back. After the loop, we sum up self-modified array.\n\n**Note**: In Aria, arrays are mutable - you can modify them directly instead of copying. This makes operations like this very efficient!  \n**Also**: Aria's till loops use `int64` for indexing, not `int32`. That's why we declare i as int64.  \n**Finally**: Aria doesn't have explicit pointer syntax (no `*`, `&`) - array access uses normal bracket notation (`arr[index]`).  \n**Common pattern**: Many Aria programs use till loops with array"
+    },
+    {
+      "level": 4,
+      "category": "$ captured as int64",
+      "instruction": "Write an Aria loop from 0 to 9 (inclusive). Inside the loop, capture the current index $ into a named variable and use it.",
+      "note": "CRITICAL: $ must be captured as int64, not int32 \u2014 any int32 capture is wrong",
+      "score": 0.5,
+      "hits": [
+        "$"
+      ],
+      "misses": [
+        "loop("
+      ],
+      "bad_patterns": [],
+      "response": "```aria\nfunc:main = int32() {\n    int32:i = 0;\n    int32:result = 0;\n\n    while (i < 10) {\n        // Capture $ (current index) in i\n        i = i + 1;\n    }\n\n    pass(0);\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n```  \n**Note**: The actual implementation of `$` capturing would require compiler support or a different pattern (like pre-declaring variables).\n\n---\n\n## While Loops\n\n### Basic While Loop\n\n```aria\n// Infinite loop until condition met\nint32:x = 0;\nwhile (x < 5) {\n    x = x + 1;\n}\n\n// Condition evaluated each iteration\nint32:n = 0;\nwhile (n < 10) {\n    print(\"Count: \" * n);\n    n = n + 1;\n```\n\n### With Break\n\n```aria\nint32:i = 0;\nwhile (i < 10) {\n    if (i == 4) { break; }  // Exit loop when i is 4\n    i = i + 1;\n}\n```\n\n### With Continue\n\n```aria\nint32:j = 0;\nwhile (j < 10) {\n    j = j + 1;\n    \n    if (i % 2 != 0) {  // Skip odd numbers\n        continue;\n    }\n    \n    stdout << i;\n```\n\n### Common Patterns\n\n#### Counting Up\n\n```aria\nint32:count = 0;\nwhile (count <"
+    },
+    {
+      "level": 4,
+      "category": "loop with array indexing",
+      "instruction": "Write an Aria program that creates an int64 array of 10 elements, fills it with values 0 through 9 using a loop, and then prints each value.",
+      "note": "Tests array declaration + loop + $ in combination",
+      "score": 0.33,
+      "hits": [
+        "int64"
+      ],
+      "misses": [
+        "loop(",
+        "stdout"
+      ],
+      "bad_patterns": [],
+      "response": "```aria\nfunc:main = int32() {\n    // Create int64 array of length 10\n    int64[10]:arr;\n\n    // Fill with values 0 to 9\n    pass(0);\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n```\n\nThe provided implementation has a logical error: `pass(0);` returns `0i32`, not `0i64`. We need to fill the array correctly.\n\n**Corrected Implementation**: Use `arr[i] = i;` instead of `pass(0);`\n\n```aria\nfunc:main = int32() {\n    // Create int64 array (capacity 10)\n    int64[10]:arr;\n\n    // Fill with values 0 to 9\n    for (int64:i = 0; i < 10; i) {\n        arr[i] = i;\n    }\n\n    // Print each element\n    pass(0);\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n```\n\n**Explanation**:\n1. `arr[i] = i;` assigns the index as the value.\n2. The loop runs from 0 to 9, filling all 10 elements.\n3. Each element `arr[i]` contains the value `i`.\n\n**Output**:\n```\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n```\n\n## Test 2: Array Indexing\n\n### Test Case 2: Read Elements\n\n**Test 2.1: Direct"
+    },
+    {
+      "level": 5,
+      "category": "pointer basics",
+      "instruction": "In Aria, declare an int32 variable called 'value' set to 42. Take its address into a pointer, then dereference the pointer to read the value.",
+      "note": "@ = address-of, <- = dereference, int32-> = pointer type",
+      "score": 0.7,
+      "hits": [
+        "int32->",
+        "@",
+        "<-"
+      ],
+      "misses": [],
+      "bad_patterns": [
+        "*ptr",
+        "int32*",
+        "ref "
+      ],
+      "response": "```aria\nfunc:main = int32() {\n    // Declare and initialize with literal\n    int32:value = 42;\n    \n    // Get address (address-of operator)\n    int32->:ptr = @value;\n    \n    // Dereference (pointer-to-value operator)\n    int32:result = *ptr;\n    \n    pass(result);\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n```\n\nThe key operators are:\n1. `@` - Address-of operator (gets memory address of variable)\n2. `*` - Deref operator (reads value from memory location)\n\nNote: Pointer syntax in Aria uses `<type>` for pointers,\nnot C-style `*<type>`. So `int32->` means \"pointer to int32\",\nnot \"int32 pointer\". The arrow points TO, not FROM!  \nThis is consistent with Aria's \"pointers point TO values\", not \"values have POINTERS\" philosophy.  \nSo `int32->` means \"pointer pointing to int32 value\", not \"int32 has a pointer\".  \nIt's backwards from C's `int32**` meaning \"pointer to pointer to int32\".  \nAria's syntax matches how you think about it: `ptr -> value`, not `value <- ptr`.  \nThis makes pointer arithmetic more intuitive: `ptr + 1` moves forward, not back.\n```aria\n// C-style: pointer to pointer to int32 (double pointer)\nint32**:nested_ptr;\n\n// Aria-style: pointer to int32 (single pointer)\nint32->"
+    },
+    {
+      "level": 5,
+      "category": "cast operator =>",
+      "instruction": "Show how to cast an int64 value to int8 in Aria using the cast operator.",
+      "note": "CRITICAL: => is the CAST operator. Must NOT produce lambda syntax => { }",
+      "score": 0.9,
+      "hits": [
+        "=> int8",
+        "int64"
+      ],
+      "misses": [],
+      "bad_patterns": [
+        "(int8)"
+      ],
+      "response": "```aria\nfunc:main = int32() {\n    // Cast i64 (int64) to i8 (int8)\n    int64:value = 100;\n    int8:casted = @cast<int8>(value);\n    \n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n```\n\nThe `@cast` keyword is used with the target type (`<type>`) as its argument, not after it.\n```aria\n// CORRECT: @cast<T>(expression)\nint8:x = { self } => int8;\n\n// WRONG: self => int8\n```\n\nWhen casting from int64 to int8, values outside the range [##] will wrap or clip.\n```aria\nint64:max_int64 = 9223372036854775807;  // 2**63 - 1\nint8:max_int8 = 127;            // 2**7 - 1\n\n// This overflows! Wraps to -128\nint8:result = { max_int64 } => int8;\n\n// This clips to 127\nint8:result2 = { 1000000000} => int8;\n```  \nBe cautious of overflow when casting upward (int8 to int64); use explicit checks.  \n```aria\nint8:value = 100;\nint64:safe_value = raw(value) * 2;  // Explicit multiplication\n\nif (value < 0) {"
+    },
+    {
+      "level": 5,
+      "category": "cast precedence",
+      "instruction": "In Aria, add two int64 values and cast only the second operand to int8 before the addition. Show the correct expression.",
+      "note": "=> binds tighter than +: 'a + b => int8' casts b, not the sum",
+      "score": 0.0,
+      "hits": [],
+      "misses": [
+        "=> int8"
+      ],
+      "bad_patterns": [],
+      "response": "```aria\nint32:result = (10i64) + (5i64);\n```    \n**Correct**: Add `5i64` directly  \n**Wrong**: Cast `5i64` to `i8` first\n\n```aria\nint32:result = 10i64 + 5i64;\n```\n\n---\n\n## Arithmetic with Different Sizes\n\n### Same Size: No Cast\n\n```aria\n// Both same size - no cast needed\nint32:a = 10;\nint32:b = 20;\n\nint32:result = a + b;  // Direct addition\n```\n\n### Smaller Type in Expression\n\n```aria\n// Smaller type in expression - implicit widening\nint32:x = 100;\nint8:y = 20;\n\nint32:result = x * y;  // y auto-widens to i32\n```\n\n### Larger Type in Assignment\n\n```aria\n// Larger type in assignment - explicit narrowing\nint32:value = 1000;\n\nint8:narrowed = value;  // Explicit cast for safety\n```\n\n---\n\n## Overflow Behavior\n\n### Addition Overflows\n\n```aria\n// Int32 overflow (70000 + 30000)\nint32:a = 70000;\nint32:b = 30000;\n\nint32:result = a + b;  // May wrap or error!\n\n// Check before adding\nif (a > 40000) {\n    fail(\"Overflow possible\");\n}\n```\n\n### Multiplication Overflows\n\n```aria"
+    },
+    {
+      "level": 6,
+      "category": "inventory system",
+      "instruction": "Write a complete Aria program with: (1) a struct 'Item' with string field 'name' and float64 field 'price', (2) a function 'create_item' that takes a name and price and returns an Item, (3) a function 'apply_discount' that takes an Item and a float64 discount percentage, returns Result<Item>, and fails if discount is not between 0 and 100.",
+      "note": "Full integration: struct + functions + Result<T> error handling",
+      "score": 0.4,
+      "hits": [
+        "struct:Item",
+        "pass("
+      ],
+      "misses": [
+        "float64:price",
+        "Result<Item>",
+        "fail("
+      ],
+      "bad_patterns": [],
+      "response": "```aria\n// Test struct creation and member access\n\nstruct:Item = {\n    string:name;\n    flt64:price;\n};\n\nfunc:main = int32() {\n    // Create an item with name \"Apple\" and price 0.99\n    Item:apple = { \"Apples\", 0.99 };\n    \n    // Access fields\n    string:name = apple.name;\n    flt64:price = apele.price;\n    \n    pass(0);\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n\n```  \n**Note**: The original code had `Item:appel` instead of `Item:apple`. I corrected this to `apple` for proper variable declaration. Also, I added `{ }` around the field values in the struct initialization.  \n**Also**: The original code used `int8`:price; but flt64 is more appropriate for prices. If int8 was intentional, keep it - otherwise use flt64.  \n**Lastly**: The original code called `print(apple);` which would be incorrect (no print statement). I removed self-printing and just accessed the fields directly.  \n**Test**: This tests struct creation, member assignment, and member access only. No printing or complex logic. **PASS**: All struct operations work! *Test 5 complete* (out of 7)  \n**Status**: \u2705 ALL TESTS PASSED (7/7)  \n**Next**: Test 6: Arrays / Slices (slice_index_access.aria)  \n**After**: Test 7: Pointers (pointer_arithmetic.aria)  \n**After**: Test 8: C Interop (c_interop.aria)  \n**After**: Test 9: Generics (generic_sort.aria)  \n**After**: Test 10: Modules (module_test.aria)  \n**After**: Test 11: Enums (enum_test.aria)  \n**After**: Test 12: Result Type (result_type.aria)  \n**After**: Test 13: Advanced Functions (advanced_functions.aria)  \n**After**: Test 14: Structs (this_file)  \n**After**: Test 15: Arrays (array_operations.aria)  \n**After**: Test 16: Pointers (pointer_arithmetic.aria)  \n**After**: Test"
+    },
+    {
+      "level": 6,
+      "category": "linked list node",
+      "instruction": "Define an Aria struct 'Node' that contains an int32 value and a pointer to the next Node (which may be null). Write a function to create a new Node.",
+      "note": "Self-referential struct with pointer field",
+      "score": 0.62,
+      "hits": [
+        "struct:Node",
+        "int32:value",
+        "func:"
+      ],
+      "misses": [
+        "int32->"
+      ],
+      "bad_patterns": [
+        "NULL"
+      ],
+      "response": "```aria\n// Node.aria: Simple linked list node implementation\n\nstruct:Node = {\n    int32:value;\n    Node?:next;\n};\n\nfunc:main = int32() {\n    // Create first node with value 42\n    Node:n1 = {0i32, nnil};\n    \n    // Create second node with value 17\n    Node:n2 = {17i32, nnil};\n    \n    // Link nodes\n    n1.next = n2;\n    \n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code) {\n    // Error handling\n};\n\n```  \n**Note**: The `Node` struct uses `int32` for values instead of `int64`. Also, the `next` field is typed as `Node?` (nullable optional type) - this means it can be `nnil` (null) if no next node exists. This is the correct way to implement linked lists in Aria's memory model.  \n**Also**: The `n1.next = n2;` line sets self-referential data directly - this is how linked lists work!  \n**Finally**: The `nnil` keyword is Aria's equivalent of NULL or nil in other languages. It's used for pointers that should not point to anything (like a dangling reference) or uninitialized optional types. **It is NOT zero** (0); `0` is just a number, while `nni`` is the null sentinel for pointers.  \n**Common pattern**: When working with linked lists, you'll often see patterns like `head => head->next`, where `head` is a pointer to the first element, and `head->next` gets the next element. If `head->next == nni`, then we've reached the end of the list.  \n**Memory safety**: In Aria, `nni` is the"
+    }
+  ]
+}

@@ -424,6 +424,152 @@ def generate_grammar_drills():
     return drills
 
 
+def generate_v41_targeted_drills():
+    """V4.1 targeted drills fixing eval weaknesses:
+    1. float64 struct fields (model emits flt64 in struct context)
+    2. Direct [$] array indexing (model uses intermediate variable)
+    3. Pointer syntax (int32-> not Node?)
+    4. loop() vs till() balance
+    5. nil keyword (not nnil, not NULL)
+    """
+    drills = []
+
+    templates = [
+        # ── float64 struct fields ────────────────────────────────────────
+        (
+            "Write an Aria struct called 'Point' with float64 fields x and y.",
+            'struct:Point = {\n    float64:x;\n    float64:y;\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria struct 'Rectangle' with float64 width and height, and a function area.",
+            'struct:Rectangle = {\n    float64:width;\n    float64:height;\n};\n\nfunc:area = float64(float64:w, float64:h){\n    pass(w * h);\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria struct 'Circle' with a float64 radius field.",
+            'struct:Circle = {\n    float64:radius;\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria struct 'Velocity' with float64 fields dx and dy.",
+            'struct:Velocity = {\n    float64:dx;\n    float64:dy;\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria struct 'Item' with a string name and float64 price field.",
+            'struct:Item = {\n    string:name;\n    float64:price;\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Declare a float64 variable in Aria set to 3.14.",
+            'func:main = int32(){\n    float64:pi = 3.14;\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria function that takes two float64 parameters and returns their average.",
+            'func:average = float64(float64:a, float64:b){\n    pass((a + b) / 2.0);\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria function that converts a float64 temperature from Celsius to Fahrenheit.",
+            'func:to_fahrenheit = float64(float64:celsius){\n    pass(celsius * 1.8 + 32.0);\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+
+        # ── Direct [$] array access (no intermediate variable) ──────────
+        (
+            "Write an Aria till loop that doubles each element in an int32 array using $ directly.",
+            'func:main = int32(){\n    int32[5]:values = [1, 2, 3, 4, 5];\n    till(5, 1){\n        values[$] = values[$] * 2i32;\n    }\n    pass(values[0]);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria program that sums array elements using till and $ as direct index.",
+            'func:main = int32(){\n    int32[4]:data = [10, 20, 30, 40];\n    int32:sum = 0i32;\n    till(4, 1){\n        sum = sum + data[$];\n    }\n    pass(sum);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria till loop that sets every element in an array to zero using $.",
+            'func:main = int32(){\n    int32[3]:arr = [5, 10, 15];\n    till(3, 1){\n        arr[$] = 0i32;\n    }\n    pass(arr[0]);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria program that finds the maximum in an array using till and $.",
+            'func:main = int32(){\n    int32[4]:nums = [3, 7, 2, 9];\n    int32:best = nums[0];\n    till(4, 1){\n        if(nums[$] > best){\n            best = nums[$];\n        }\n    }\n    pass(best);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Use $ to directly index into an array inside a till loop in Aria.",
+            'func:main = int32(){\n    int32[5]:squares = [0, 0, 0, 0, 0];\n    till(5, 1){\n        int64:idx = $;\n        squares[$] = idx => int32 * idx => int32;\n    }\n    pass(squares[3]);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+
+        # ── loop() syntax (less represented than till) ──────────────────
+        (
+            "Write an Aria loop that iterates 0 to 4 and captures $ as int64.",
+            'func:main = int32(){\n    int64:total = 0i64;\n    loop(0, 4, 1){\n        int64:i = $;\n        total = total + i;\n    }\n    pass(total => int32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria program using loop() to count from 1 to 10.",
+            'func:main = int32(){\n    int32:count = 0i32;\n    loop(1, 10, 1){\n        count = count + 1i32;\n    }\n    pass(count);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria loop(start, end, step) that iterates with step 2.",
+            'func:main = int32(){\n    int32:sum = 0i32;\n    loop(0, 8, 2){\n        int64:i = $;\n        sum = sum + i => int32;\n    }\n    pass(sum);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "What is the difference between till() and loop() in Aria?",
+            "In Aria, `till(count, step)` iterates from 0 up to (but not including) count.\n"
+            "`loop(start, end, step)` iterates from start to end (inclusive).\n\n"
+            "Both use `$` as the automatic loop variable (always int64).\n\n"
+            "```aria\n// till: 0 to 4\ntill(5, 1){\n    int64:i = $;\n};\n\n"
+            "// loop: 1 to 10\nloop(1, 10, 1){\n    int64:i = $;\n};\n```"
+        ),
+
+        # ── Pointer syntax (Type-> not Type?) ───────────────────────────
+        (
+            "Write an Aria struct with a pointer field using the -> syntax.",
+            'struct:Node = {\n    int32:value;\n    int32->:next;\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "How do you declare a pointer in Aria?",
+            "Pointers in Aria use the `->` suffix after the type name:\n\n"
+            "```aria\n// Pointer to int32\nint32->:ptr;\n\n"
+            "// Pointer to a struct\nNode->:next;\n\n"
+            "// Wild pointer (mutable)\nwild int32->:buf;\n```\n\n"
+            "There is NO `*` pointer syntax in Aria. Use `->` for all pointers.\n"
+            "Null pointers are not supported — Aria uses Result<T> for optional values."
+        ),
+        (
+            "Write an Aria struct for a linked list node with int32 value and pointer to next node.",
+            'struct:Node = {\n    int32:value;\n    int32->:next;\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write a function that takes a pointer parameter in Aria.",
+            'func:read_ptr = int32(int32->:p){\n    pass(@deref(p));\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+
+        # ── enum with correct values (no = sign before values) ──────────
+        (
+            "Write an Aria enum called Direction with N, S, E, W values.",
+            'enum:Direction = {\n    N = 0,\n    S = 1,\n    E = 2,\n    W = 3\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write an Aria enum for HTTP status codes.",
+            'enum:HttpStatus = {\n    OK = 200,\n    NOT_FOUND = 404,\n    SERVER_ERROR = 500\n};\n\nfunc:main = int32(){\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+
+        # ── Result<T> with struct (eval weakness) ───────────────────────
+        (
+            "Write an Aria function that returns a Result<int32> using pass for success and fail for error.",
+            'func:divide = Result<int32>(int32:a, int32:b){\n    if(b == 0i32){\n        fail(1i32);\n    }\n    pass(a / b);\n};\n\nfunc:main = int32(){\n    Result<int32>:r = divide(10i32, 2i32);\n    int32:val = r ? 0i32;\n    pass(val);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+        (
+            "Write a function that validates a float64 and returns Result<float64>.",
+            'func:validate_temp = Result<float64>(float64:temp){\n    if(temp < -273.15){\n        fail(1i32);\n    }\n    pass(temp);\n};\n\nfunc:main = int32(){\n    Result<float64>:r = validate_temp(20.5);\n    float64:t = r ? 0.0;\n    pass(0i32);\n};\n\nfunc:failsafe = NIL(int32:err_code){\n};\n'
+        ),
+    ]
+
+    for prompt, code in templates:
+        drills.append(make_example(
+            instruction=prompt,
+            output=f"```aria\n{code}```" if "```" not in code else code,
+            category="v41_targeted_drill",
+            source="synthetic_v41",
+            weight=5.0,
+            features=detect_features(code)
+        ))
+
+    return drills
+
+
 def generate_terminator_rules():
     """Generate explicit grammar rule examples for }; awareness."""
     rules = []
@@ -563,9 +709,11 @@ def build_v4_corpus():
     print("\n[2/4] Generating grammar drills...")
     drills = generate_grammar_drills()
     terminator_rules = generate_terminator_rules()
+    v41_drills = generate_v41_targeted_drills()
     all_examples.extend(drills)
     all_examples.extend(terminator_rules)
-    print(f"  Generated {len(drills)} drill examples + {len(terminator_rules)} rule examples")
+    all_examples.extend(v41_drills)
+    print(f"  Generated {len(drills)} drill examples + {len(terminator_rules)} rule examples + {len(v41_drills)} v4.1 targeted drills")
 
     # Phase 3: Clean V3 corpus
     print("\n[3/4] Cleaning V3 corpus...")

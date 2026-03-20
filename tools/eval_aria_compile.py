@@ -131,10 +131,10 @@ EVAL_CASES: List[EvalCase] = [
     EvalCase(
         level=1,
         category="string output",
-        instruction='Write an Aria program that prints "Hello, Aria!" to stdout.',
+        instruction='Write an Aria program that prints "Hello, Aria!".',
         check_contains=["Hello, Aria"],
-        check_not_contains=["println!(", "printf(", "console.log"],
-        note="Aria uses stdout << value or print()",
+        check_not_contains=["println!(", "printf(", "console.log", "stdout <<"],
+        note="Aria uses print() or println() for output",
     ),
 
     # ── Level 2 ─────────────────────────────────────────────────────────────

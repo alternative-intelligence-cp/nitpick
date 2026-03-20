@@ -1,0 +1,175 @@
+// stdlib/linalg.aria
+// Linear Algebra Module
+//
+// Higher-level vector operations for Aria's builtin vec3 SIMD type.
+// vec3 has component-wise +, -, *, / and .x, .y, .z accessors as builtins.
+//
+// This module adds: dot, cross, length, length_sq, normalize, distance,
+//   negate, lerp, reflect, project, reject, angle, scale, min/max/abs
+
+// ── Type:Vec3 — vec3 linear algebra operations ──────────────────────────────
+Type:Vec3 = {
+
+    // ── Construction helpers ─────────────────────────────────────────────
+
+    // zero() — origin / null vector
+    func:zero = vec3() {
+        pass(vec3(0.0, 0.0, 0.0));
+    };
+
+    // one() — unit vector (1,1,1)
+    func:one = vec3() {
+        pass(vec3(1.0, 1.0, 1.0));
+    };
+
+    // up() — Y-up convention
+    func:up = vec3() {
+        pass(vec3(0.0, 1.0, 0.0));
+    };
+
+    // right() — X-right convention
+    func:right = vec3() {
+        pass(vec3(1.0, 0.0, 0.0));
+    };
+
+    // forward() — Z-forward convention
+    func:forward = vec3() {
+        pass(vec3(0.0, 0.0, 1.0));
+    };
+
+    // fill(s) — all components set to s
+    func:fill = vec3(flt64:s) {
+        pass(vec3(s, s, s));
+    };
+
+    // ── Core operations ─────────────────────────────────────────────────
+
+    // dot(a, b) — scalar dot product
+    func:dot = flt64(vec3:a, vec3:b) {
+        pass(a.x * b.x + a.y * b.y + a.z * b.z);
+    };
+
+    // cross(a, b) — vector cross product
+    func:cross = vec3(vec3:a, vec3:b) {
+        pass(vec3(
+            a.y * b.z - a.z * b.y,
+            a.z * b.x - a.x * b.z,
+            a.x * b.y - a.y * b.x
+        ));
+    };
+
+    // length_sq(v) — squared magnitude (avoids sqrt)
+    func:length_sq = flt64(vec3:v) {
+        pass(v.x * v.x + v.y * v.y + v.z * v.z);
+    };
+
+    // length(v) — magnitude / Euclidean norm
+    func:length = flt64(vec3:v) {
+        pass(sqrt(v.x * v.x + v.y * v.y + v.z * v.z));
+    };
+
+    // normalize(v) — unit vector in the same direction
+    func:normalize = vec3(vec3:v) {
+        flt64:len = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        if (len == 0.0) { pass(vec3(0.0, 0.0, 0.0)); }
+        pass(vec3(v.x / len, v.y / len, v.z / len));
+    };
+
+    // negate(v) — flip direction
+    func:negate = vec3(vec3:v) {
+        pass(vec3(0.0 - v.x, 0.0 - v.y, 0.0 - v.z));
+    };
+
+    // ── Distance / angle ─────────────────────────────────────────────────
+
+    // distance(a, b)
+    func:distance = flt64(vec3:a, vec3:b) {
+        flt64:dx = a.x - b.x;
+        flt64:dy = a.y - b.y;
+        flt64:dz = a.z - b.z;
+        pass(sqrt(dx * dx + dy * dy + dz * dz));
+    };
+
+    // distance_sq(a, b)
+    func:distance_sq = flt64(vec3:a, vec3:b) {
+        flt64:dx = a.x - b.x;
+        flt64:dy = a.y - b.y;
+        flt64:dz = a.z - b.z;
+        pass(dx * dx + dy * dy + dz * dz);
+    };
+
+    // angle(a, b) — angle in radians
+    func:angle = flt64(vec3:a, vec3:b) {
+        flt64:dot_val = a.x * b.x + a.y * b.y + a.z * b.z;
+        flt64:len_a = sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+        flt64:len_b = sqrt(b.x * b.x + b.y * b.y + b.z * b.z);
+        flt64:denom = len_a * len_b;
+        if (denom == 0.0) { pass(0.0); }
+        flt64:cos_val = dot_val / denom;
+        if (cos_val > 1.0) { cos_val = 1.0; }
+        if (cos_val < -1.0) { cos_val = -1.0; }
+        pass(acos(cos_val));
+    };
+
+    // ── Interpolation ────────────────────────────────────────────────────
+
+    // lerp(a, b, t) — component-wise linear interpolation
+    func:lerp = vec3(vec3:a, vec3:b, flt64:t) {
+        pass(vec3(
+            a.x + t * (b.x - a.x),
+            a.y + t * (b.y - a.y),
+            a.z + t * (b.z - a.z)
+        ));
+    };
+
+    // ── Projection / reflection ──────────────────────────────────────────
+
+    // project(v, onto) — project v onto 'onto'
+    func:project = vec3(vec3:v, vec3:onto) {
+        flt64:d = onto.x * onto.x + onto.y * onto.y + onto.z * onto.z;
+        if (d == 0.0) { pass(vec3(0.0, 0.0, 0.0)); }
+        flt64:s = (v.x * onto.x + v.y * onto.y + v.z * onto.z) / d;
+        pass(vec3(onto.x * s, onto.y * s, onto.z * s));
+    };
+
+    // reject(v, from) — component perpendicular to 'from'
+    func:reject = vec3(vec3:v, vec3:from) {
+        flt64:d = from.x * from.x + from.y * from.y + from.z * from.z;
+        if (d == 0.0) { pass(vec3(v.x, v.y, v.z)); }
+        flt64:s = (v.x * from.x + v.y * from.y + v.z * from.z) / d;
+        pass(vec3(v.x - from.x * s, v.y - from.y * s, v.z - from.z * s));
+    };
+
+    // reflect(v, n) — reflect v across normal n
+    func:reflect = vec3(vec3:v, vec3:n) {
+        flt64:d = 2.0 * (v.x * n.x + v.y * n.y + v.z * n.z);
+        pass(vec3(
+            v.x - d * n.x,
+            v.y - d * n.y,
+            v.z - d * n.z
+        ));
+    };
+
+    // ── Component-wise operations ────────────────────────────────────────
+
+    // scale(v, s) — uniform scalar multiply
+    func:scale = vec3(vec3:v, flt64:s) {
+        pass(vec3(v.x * s, v.y * s, v.z * s));
+    };
+
+    // min_components(a, b)
+    func:min_components = vec3(vec3:a, vec3:b) {
+        pass(vec3(min(a.x, b.x), min(a.y, b.y), min(a.z, b.z)));
+    };
+
+    // max_components(a, b)
+    func:max_components = vec3(vec3:a, vec3:b) {
+        pass(vec3(max(a.x, b.x), max(a.y, b.y), max(a.z, b.z)));
+    };
+
+    // abs_components(v)
+    func:abs_components = vec3(vec3:v) {
+        pass(vec3(abs(v.x), abs(v.y), abs(v.z)));
+    };
+
+};

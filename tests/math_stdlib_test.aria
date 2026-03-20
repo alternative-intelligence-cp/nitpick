@@ -1,0 +1,323 @@
+/**
+ * math_stdlib_test.aria — Comprehensive test for stdlib/math.aria
+ *
+ * Tests all Type:Math methods:
+ *   T01: sign()
+ *   T02: clamp() / clamp_i64()
+ *   T03: lerp()
+ *   T04: inverse_lerp()
+ *   T05: map_range()
+ *   T06: smoothstep()
+ *   T07: smootherstep()
+ *   T08: deg_to_rad() / rad_to_deg()
+ *   T09: wrap()
+ *   T10: gcd()
+ *   T11: lcm()
+ *   T12: factorial()
+ *   T13: fmod_f64()
+ *   T14: hypot_f64()
+ *   T15: copysign_f64()
+ *   T16: fma_f64()
+ *   T17: is_nan()
+ *   T18: is_inf()
+ *   T19: is_finite()
+ */
+
+use "stdlib/math.aria".*;
+
+func:approx_eq = bool(flt64:a, flt64:b, flt64:eps) {
+    flt64:diff = a - b;
+    if (diff < 0.0) { diff = 0.0 - diff; }
+    if (diff < eps) { pass(true); }
+    pass(false);
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    flt64:eps = 0.0000001;
+
+    println("=== stdlib/math.aria Test Suite ===");
+
+    // ── T01: sign ────────────────────────────────────────────────────────
+    flt64:s1 = raw(Math.sign(42.0));
+    flt64:s2 = raw(Math.sign(-7.5));
+    flt64:s3 = raw(Math.sign(0.0));
+    bool:t01 = raw(approx_eq(s1, 1.0, eps));
+    bool:t01b = raw(approx_eq(s2, -1.0, eps));
+    bool:t01c = raw(approx_eq(s3, 0.0, eps));
+    if (t01) {
+        if (t01b) {
+            if (t01c) {
+                println("[PASS] T01 sign(+,-,0)");
+                passed = passed + 1i32;
+            } else {
+                println("[FAIL] T01 sign(0) != 0");
+                failed = failed + 1i32;
+            }
+        } else {
+            println("[FAIL] T01 sign(-) != -1");
+            failed = failed + 1i32;
+        }
+    } else {
+        println("[FAIL] T01 sign(+) != 1");
+        failed = failed + 1i32;
+    }
+
+    // ── T02: clamp / clamp_i64 ──────────────────────────────────────────
+    flt64:c1 = raw(Math.clamp(5.0, 0.0, 10.0));
+    flt64:c2 = raw(Math.clamp(-3.0, 0.0, 10.0));
+    flt64:c3 = raw(Math.clamp(15.0, 0.0, 10.0));
+    int64:ci = raw(Math.clamp_i64(50i64, 0i64, 100i64));
+    int64:ci2 = raw(Math.clamp_i64(-5i64, 0i64, 100i64));
+    int64:ci3 = raw(Math.clamp_i64(200i64, 0i64, 100i64));
+    bool:t02a = raw(approx_eq(c1, 5.0, eps));
+    bool:t02b = raw(approx_eq(c2, 0.0, eps));
+    bool:t02c = raw(approx_eq(c3, 10.0, eps));
+    if (t02a) {
+        if (t02b) {
+            if (t02c) {
+                if (ci == 50i64) {
+                    if (ci2 == 0i64) {
+                        if (ci3 == 100i64) {
+                            println("[PASS] T02 clamp / clamp_i64");
+                            passed = passed + 1i32;
+                        } else { println("[FAIL] T02 clamp_i64 hi"); failed = failed + 1i32; }
+                    } else { println("[FAIL] T02 clamp_i64 lo"); failed = failed + 1i32; }
+                } else { println("[FAIL] T02 clamp_i64 mid"); failed = failed + 1i32; }
+            } else { println("[FAIL] T02 clamp hi"); failed = failed + 1i32; }
+        } else { println("[FAIL] T02 clamp lo"); failed = failed + 1i32; }
+    } else { println("[FAIL] T02 clamp mid"); failed = failed + 1i32; }
+
+    // ── T03: lerp ────────────────────────────────────────────────────────
+    flt64:lp0 = raw(Math.lerp(0.0, 10.0, 0.0));
+    flt64:lp5 = raw(Math.lerp(0.0, 10.0, 0.5));
+    flt64:lp1 = raw(Math.lerp(0.0, 10.0, 1.0));
+    bool:t03a = raw(approx_eq(lp0, 0.0, eps));
+    bool:t03b = raw(approx_eq(lp5, 5.0, eps));
+    bool:t03c = raw(approx_eq(lp1, 10.0, eps));
+    if (t03a) {
+        if (t03b) {
+            if (t03c) {
+                println("[PASS] T03 lerp");
+                passed = passed + 1i32;
+            } else { println("[FAIL] T03 lerp(t=1)"); failed = failed + 1i32; }
+        } else { println("[FAIL] T03 lerp(t=0.5)"); failed = failed + 1i32; }
+    } else { println("[FAIL] T03 lerp(t=0)"); failed = failed + 1i32; }
+
+    // ── T04: inverse_lerp ────────────────────────────────────────────────
+    flt64:il1 = raw(Math.inverse_lerp(0.0, 10.0, 5.0));
+    flt64:il2 = raw(Math.inverse_lerp(0.0, 10.0, 0.0));
+    flt64:il3 = raw(Math.inverse_lerp(0.0, 10.0, 10.0));
+    bool:t04a = raw(approx_eq(il1, 0.5, eps));
+    bool:t04b = raw(approx_eq(il2, 0.0, eps));
+    bool:t04c = raw(approx_eq(il3, 1.0, eps));
+    if (t04a) {
+        if (t04b) {
+            if (t04c) {
+                println("[PASS] T04 inverse_lerp");
+                passed = passed + 1i32;
+            } else { println("[FAIL] T04 inverse_lerp(10)"); failed = failed + 1i32; }
+        } else { println("[FAIL] T04 inverse_lerp(0)"); failed = failed + 1i32; }
+    } else { println("[FAIL] T04 inverse_lerp(5)"); failed = failed + 1i32; }
+
+    // ── T05: map_range ───────────────────────────────────────────────────
+    flt64:mr = raw(Math.map_range(5.0, 0.0, 10.0, 0.0, 100.0));
+    bool:t05 = raw(approx_eq(mr, 50.0, eps));
+    if (t05) {
+        println("[PASS] T05 map_range");
+        passed = passed + 1i32;
+    } else { println("[FAIL] T05 map_range"); failed = failed + 1i32; }
+
+    // ── T06: smoothstep ──────────────────────────────────────────────────
+    flt64:ss0 = raw(Math.smoothstep(0.0, 1.0, 0.0));
+    flt64:ss1 = raw(Math.smoothstep(0.0, 1.0, 1.0));
+    flt64:ss5 = raw(Math.smoothstep(0.0, 1.0, 0.5));
+    bool:t06a = raw(approx_eq(ss0, 0.0, eps));
+    bool:t06b = raw(approx_eq(ss1, 1.0, eps));
+    bool:t06c = raw(approx_eq(ss5, 0.5, eps));
+    if (t06a) {
+        if (t06b) {
+            if (t06c) {
+                println("[PASS] T06 smoothstep");
+                passed = passed + 1i32;
+            } else { println("[FAIL] T06 smoothstep(0.5)"); failed = failed + 1i32; }
+        } else { println("[FAIL] T06 smoothstep(1)"); failed = failed + 1i32; }
+    } else { println("[FAIL] T06 smoothstep(0)"); failed = failed + 1i32; }
+
+    // ── T07: smootherstep ────────────────────────────────────────────────
+    flt64:se0 = raw(Math.smootherstep(0.0, 1.0, 0.0));
+    flt64:se1 = raw(Math.smootherstep(0.0, 1.0, 1.0));
+    flt64:se5 = raw(Math.smootherstep(0.0, 1.0, 0.5));
+    bool:t07a = raw(approx_eq(se0, 0.0, eps));
+    bool:t07b = raw(approx_eq(se1, 1.0, eps));
+    bool:t07c = raw(approx_eq(se5, 0.5, eps));
+    if (t07a) {
+        if (t07b) {
+            if (t07c) {
+                println("[PASS] T07 smootherstep");
+                passed = passed + 1i32;
+            } else { println("[FAIL] T07 smootherstep(0.5)"); failed = failed + 1i32; }
+        } else { println("[FAIL] T07 smootherstep(1)"); failed = failed + 1i32; }
+    } else { println("[FAIL] T07 smootherstep(0)"); failed = failed + 1i32; }
+
+    // ── T08: deg_to_rad / rad_to_deg ─────────────────────────────────────
+    flt64:rad90 = raw(Math.deg_to_rad(90.0));
+    flt64:deg180 = raw(Math.rad_to_deg(PI()));
+    bool:t08a = raw(approx_eq(rad90, PI() / 2.0, eps));
+    bool:t08b = raw(approx_eq(deg180, 180.0, eps));
+    if (t08a) {
+        if (t08b) {
+            println("[PASS] T08 deg_to_rad / rad_to_deg");
+            passed = passed + 1i32;
+        } else { println("[FAIL] T08 rad_to_deg(PI)"); failed = failed + 1i32; }
+    } else { println("[FAIL] T08 deg_to_rad(90)"); failed = failed + 1i32; }
+
+    // ── T09: wrap ────────────────────────────────────────────────────────
+    flt64:w1 = raw(Math.wrap(5.0, 3.0));
+    flt64:w2 = raw(Math.wrap(-1.0, 3.0));
+    flt64:w3 = raw(Math.wrap(3.0, 3.0));
+    bool:t09a = raw(approx_eq(w1, 2.0, eps));
+    bool:t09b = raw(approx_eq(w2, 2.0, eps));
+    bool:t09c = raw(approx_eq(w3, 0.0, eps));
+    if (t09a) {
+        if (t09b) {
+            if (t09c) {
+                println("[PASS] T09 wrap");
+                passed = passed + 1i32;
+            } else { println("[FAIL] T09 wrap(3,3)"); failed = failed + 1i32; }
+        } else { println("[FAIL] T09 wrap(-1,3)"); failed = failed + 1i32; }
+    } else { println("[FAIL] T09 wrap(5,3)"); failed = failed + 1i32; }
+
+    // ── T10: gcd ─────────────────────────────────────────────────────────
+    int64:g1 = raw(Math.gcd(12i64, 8i64));
+    int64:g2 = raw(Math.gcd(7i64, 13i64));
+    int64:g3 = raw(Math.gcd(100i64, 75i64));
+    if (g1 == 4i64) {
+        if (g2 == 1i64) {
+            if (g3 == 25i64) {
+                println("[PASS] T10 gcd");
+                passed = passed + 1i32;
+            } else { println("[FAIL] T10 gcd(100,75)"); failed = failed + 1i32; }
+        } else { println("[FAIL] T10 gcd(7,13)"); failed = failed + 1i32; }
+    } else { println("[FAIL] T10 gcd(12,8)"); failed = failed + 1i32; }
+
+    // ── T11: lcm ─────────────────────────────────────────────────────────
+    int64:lc1 = raw(Math.lcm(4i64, 6i64));
+    int64:lc2 = raw(Math.lcm(7i64, 3i64));
+    int64:lc3 = raw(Math.lcm(0i64, 5i64));
+    if (lc1 == 12i64) {
+        if (lc2 == 21i64) {
+            if (lc3 == 0i64) {
+                println("[PASS] T11 lcm");
+                passed = passed + 1i32;
+            } else { println("[FAIL] T11 lcm(0,5)"); failed = failed + 1i32; }
+        } else { println("[FAIL] T11 lcm(7,3)"); failed = failed + 1i32; }
+    } else { println("[FAIL] T11 lcm(4,6)"); failed = failed + 1i32; }
+
+    // ── T12: factorial ───────────────────────────────────────────────────
+    int64:f0 = raw(Math.factorial(0i64));
+    int64:f1 = raw(Math.factorial(1i64));
+    int64:f5 = raw(Math.factorial(5i64));
+    int64:f10 = raw(Math.factorial(10i64));
+    if (f0 == 1i64) {
+        if (f1 == 1i64) {
+            if (f5 == 120i64) {
+                if (f10 == 3628800i64) {
+                    println("[PASS] T12 factorial");
+                    passed = passed + 1i32;
+                } else { println("[FAIL] T12 factorial(10)"); failed = failed + 1i32; }
+            } else { println("[FAIL] T12 factorial(5)"); failed = failed + 1i32; }
+        } else { println("[FAIL] T12 factorial(1)"); failed = failed + 1i32; }
+    } else { println("[FAIL] T12 factorial(0)"); failed = failed + 1i32; }
+
+    // ── T13: fmod_f64 ────────────────────────────────────────────────────
+    flt64:fm1 = raw(Math.fmod_f64(5.3, 2.0));
+    bool:t13 = raw(approx_eq(fm1, 1.3, 0.0001));
+    if (t13) {
+        println("[PASS] T13 fmod_f64");
+        passed = passed + 1i32;
+    } else { println("[FAIL] T13 fmod_f64(5.3, 2.0)"); failed = failed + 1i32; }
+
+    // ── T14: hypot_f64 ───────────────────────────────────────────────────
+    flt64:h1 = raw(Math.hypot_f64(3.0, 4.0));
+    bool:t14 = raw(approx_eq(h1, 5.0, eps));
+    if (t14) {
+        println("[PASS] T14 hypot_f64");
+        passed = passed + 1i32;
+    } else { println("[FAIL] T14 hypot_f64(3,4)"); failed = failed + 1i32; }
+
+    // ── T15: copysign_f64 ────────────────────────────────────────────────
+    flt64:cs1 = raw(Math.copysign_f64(5.0, -1.0));
+    flt64:cs2 = raw(Math.copysign_f64(-3.0, 1.0));
+    bool:t15a = raw(approx_eq(cs1, -5.0, eps));
+    bool:t15b = raw(approx_eq(cs2, 3.0, eps));
+    if (t15a) {
+        if (t15b) {
+            println("[PASS] T15 copysign_f64");
+            passed = passed + 1i32;
+        } else { println("[FAIL] T15 copysign_f64(-3,1)"); failed = failed + 1i32; }
+    } else { println("[FAIL] T15 copysign_f64(5,-1)"); failed = failed + 1i32; }
+
+    // ── T16: fma_f64 ─────────────────────────────────────────────────────
+    flt64:fma1 = raw(Math.fma_f64(2.0, 3.0, 4.0));
+    bool:t16 = raw(approx_eq(fma1, 10.0, eps));
+    if (t16) {
+        println("[PASS] T16 fma_f64");
+        passed = passed + 1i32;
+    } else { println("[FAIL] T16 fma_f64(2,3,4)"); failed = failed + 1i32; }
+
+    // ── T17: is_nan ──────────────────────────────────────────────────────
+    flt64:nan_val = 0.0 / 0.0;
+    bool:t17a = raw(Math.is_nan(nan_val));
+    bool:t17b = raw(Math.is_nan(1.0));
+    if (t17a) {
+        if (!t17b) {
+            println("[PASS] T17 is_nan");
+            passed = passed + 1i32;
+        } else { println("[FAIL] T17 is_nan(1.0) should be false"); failed = failed + 1i32; }
+    } else { println("[FAIL] T17 is_nan(NaN) should be true"); failed = failed + 1i32; }
+
+    // ── T18: is_inf ──────────────────────────────────────────────────────
+    flt64:inf_val = 1.0 / 0.0;
+    bool:t18a = raw(Math.is_inf(inf_val));
+    bool:t18b = raw(Math.is_inf(1.0));
+    bool:t18c = raw(Math.is_inf(nan_val));
+    if (t18a) {
+        if (!t18b) {
+            if (!t18c) {
+                println("[PASS] T18 is_inf");
+                passed = passed + 1i32;
+            } else { println("[FAIL] T18 is_inf(NaN) should be false"); failed = failed + 1i32; }
+        } else { println("[FAIL] T18 is_inf(1.0) should be false"); failed = failed + 1i32; }
+    } else { println("[FAIL] T18 is_inf(inf) should be true"); failed = failed + 1i32; }
+
+    // ── T19: is_finite ───────────────────────────────────────────────────
+    bool:t19a = raw(Math.is_finite(42.0));
+    bool:t19b = raw(Math.is_finite(inf_val));
+    bool:t19c = raw(Math.is_finite(nan_val));
+    if (t19a) {
+        if (!t19b) {
+            if (!t19c) {
+                println("[PASS] T19 is_finite");
+                passed = passed + 1i32;
+            } else { println("[FAIL] T19 is_finite(NaN) should be false"); failed = failed + 1i32; }
+        } else { println("[FAIL] T19 is_finite(inf) should be false"); failed = failed + 1i32; }
+    } else { println("[FAIL] T19 is_finite(42) should be true"); failed = failed + 1i32; }
+
+    // ── Summary ──────────────────────────────────────────────────────────
+    println("");
+    println("=== Math Test Results ===");
+
+    if (failed == 0i32) {
+        println("All 19 tests PASSED");
+        pass(0i32);
+    } else {
+        println("Some tests FAILED");
+        pass(1i32);
+    }
+};
+
+func:failsafe = NIL(int32:err_code) {
+    println("FAILSAFE triggered");
+};

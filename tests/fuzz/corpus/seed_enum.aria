@@ -1,0 +1,22 @@
+// seed_enum.aria — enum declaration and pick dispatch
+func:failsafe = NIL(int32:err_code) { };
+
+enum:Direction = {
+    NORTH = 0,
+    SOUTH = 1,
+    EAST = 2,
+    WEST = 3
+};
+
+func:main = int32() {
+    int32:dir = 2i32;
+    int32:result = 0i32;
+    pick (dir) {
+        (0i32) { result = 10i32; },
+        (1i32) { result = 20i32; },
+        (2i32) { result = 30i32; },
+        (3i32) { result = 40i32; },
+        (*) { result = 99i32; }
+    }
+    pass(result);
+};

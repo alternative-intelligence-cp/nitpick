@@ -418,10 +418,10 @@ llvm::Value* TernaryCodegen::generateNeg(llvm::Value* operand, Type* type) {
         }
         negFn = fn_trit_not;
     } else if (typeName == "nit") {
-        // For nit, negation uses standard negation (symmetric range -4 to 4)
-        // There's no separate aria_nit_neg, so we use inline operation
-        llvm::Value* result = builder.CreateNeg(operand, "neg_tmp");
-        return clampToRange(result, type);
+        if (!fn_nit_neg) {
+            fn_nit_neg = getOrDeclareIntrinsic("aria_nit_neg", false);
+        }
+        negFn = fn_nit_neg;
     }
 
     if (negFn) {

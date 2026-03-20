@@ -6177,6 +6177,16 @@ Type* TypeChecker::inferMoveExpr(MoveExpr* expr) {
 Type* TypeChecker::inferObjectLiteral(ObjectLiteralExpr* expr) {
     // If type_name is set, this is a struct constructor
     if (!expr->type_name.empty()) {
+        // Result{val:..., err:..., is_error:...} — explicit Result construction (ToS operator)
+        // Infer type from the enclosing function's return type
+        if (expr->type_name == "Result") {
+            if (currentFunctionReturnType) {
+                return currentFunctionReturnType;
+            }
+            addError("Result{...} literal used outside of a function context", expr);
+            return typeSystem->getErrorType();
+        }
+        
         // Lookup struct type
         Type* structType = typeSystem->getStructType(expr->type_name);
         

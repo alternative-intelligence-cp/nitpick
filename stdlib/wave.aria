@@ -115,16 +115,19 @@ pub func:wave_zero = Wave9() {
  * @return Interfered wave (superposition of a and b)
  */
 pub func:wave_interfere = Wave9(Wave9:a, Wave9:b) {
+    nit:i_r = a.r + b.r;
+    nit:i_s = a.s + b.s;
+    nit:i_t = a.t + b.t;
+    nit:i_u = a.u + b.u;
+    nit:i_v = a.v + b.v;
+    nit:i_w = a.w + b.w;
+    nit:i_x = a.x + b.x;
+    nit:i_y = a.y + b.y;
+    nit:i_z = a.z + b.z;
     pass(Wave9 {
-        r: a.r + b.r,
-        s: a.s + b.s,
-        t: a.t + b.t,
-        u: a.u + b.u,
-        v: a.v + b.v,
-        w: a.w + b.w,
-        x: a.x + b.x,
-        y: a.y + b.y,
-        z: a.z + b.z
+        r: i_r, s: i_s, t: i_t,
+        u: i_u, v: i_v, w: i_w,
+        x: i_x, y: i_y, z: i_z
     });
 };
 
@@ -141,17 +144,20 @@ pub func:wave_interfere = Wave9(Wave9:a, Wave9:b) {
  * @param w Wave to negate
  * @return Negated wave (phase-inverted)
  */
-pub func:wave_negate = Wave9(Wave9:w) {
+pub func:wave_negate = Wave9(Wave9:wv) {
+    nit:nr = -wv.r;
+    nit:ns = -wv.s;
+    nit:nt = -wv.t;
+    nit:nu = -wv.u;
+    nit:nv = -wv.v;
+    nit:nw = -wv.w;
+    nit:nx = -wv.x;
+    nit:ny = -wv.y;
+    nit:nz = -wv.z;
     pass(Wave9 {
-        r: -w.r,
-        s: -w.s,
-        t: -w.t,
-        u: -w.u,
-        v: -w.v,
-        w: -w.w,
-        x: -w.x,
-        y: -w.y,
-        z: -w.z
+        r: nr, s: ns, t: nt,
+        u: nu, v: nv, w: nw,
+        x: nx, y: ny, z: nz
     });
 };
 
@@ -167,17 +173,20 @@ pub func:wave_negate = Wave9(Wave9:w) {
  * @param factor Scaling factor (nit: -4 to +4)
  * @return Scaled wave
  */
-pub func:wave_scale = Wave9(Wave9:w, nit:factor) {
+pub func:wave_scale = Wave9(Wave9:wv, nit:factor) {
+    nit:sr = wv.r * factor;
+    nit:ss = wv.s * factor;
+    nit:st = wv.t * factor;
+    nit:su = wv.u * factor;
+    nit:sv = wv.v * factor;
+    nit:sw = wv.w * factor;
+    nit:sx = wv.x * factor;
+    nit:sy = wv.y * factor;
+    nit:sz = wv.z * factor;
     pass(Wave9 {
-        r: w.r * factor,
-        s: w.s * factor,
-        t: w.t * factor,
-        u: w.u * factor,
-        v: w.v * factor,
-        w: w.w * factor,
-        x: w.x * factor,
-        y: w.y * factor,
-        z: w.z * factor
+        r: sr, s: ss, t: st,
+        u: su, v: sv, w: sw,
+        x: sx, y: sy, z: sz
     });
 };
 
@@ -451,15 +460,15 @@ pub func:wave_dot = int32(Wave9:a, Wave9:b) {
  * @return Squared distance (int32)
  */
 pub func:wave_distance_squared = int32(Wave9:a, Wave9:b) {
-    int32:dr = @cast<int32>(a.r - b.r);
-    int32:ds = @cast<int32>(a.s - b.s);
-    int32:dt = @cast<int32>(a.t - b.t);
-    int32:du = @cast<int32>(a.u - b.u);
-    int32:dv = @cast<int32>(a.v - b.v);
-    int32:dw = @cast<int32>(a.w - b.w);
-    int32:dx = @cast<int32>(a.x - b.x);
-    int32:dy = @cast<int32>(a.y - b.y);
-    int32:dz = @cast<int32>(a.z - b.z);
+    int32:dr = @cast<int32>(a.r) - @cast<int32>(b.r);
+    int32:ds = @cast<int32>(a.s) - @cast<int32>(b.s);
+    int32:dt = @cast<int32>(a.t) - @cast<int32>(b.t);
+    int32:du = @cast<int32>(a.u) - @cast<int32>(b.u);
+    int32:dv = @cast<int32>(a.v) - @cast<int32>(b.v);
+    int32:dw = @cast<int32>(a.w) - @cast<int32>(b.w);
+    int32:dx = @cast<int32>(a.x) - @cast<int32>(b.x);
+    int32:dy = @cast<int32>(a.y) - @cast<int32>(b.y);
+    int32:dz = @cast<int32>(a.z) - @cast<int32>(b.z);
     pass(dr*dr + ds*ds + dt*dt + du*du + dv*dv + dw*dw + dx*dx + dy*dy + dz*dz);
 };
 

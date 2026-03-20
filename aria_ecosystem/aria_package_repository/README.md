@@ -10,17 +10,15 @@ This repository serves as the central registry for Aria language packages. Each 
 
 ```
 aria_package_repository/
-├── packages/              # Package metadata and .aria-pkg files
-│   ├── math-utils/
-│   │   ├── 1.0.0/
-│   │   │   ├── math-utils-1.0.0.aria-pkg
-│   │   │   └── metadata.json
-│   │   └── versions.json
-│   └── ...
-├── registry.json          # Master package index
-├── categories.json        # Package categories
-└── verified_publishers/   # Trusted package publishers
+├── registry.json          # Master package index (27 packages)
+├── QUICKSTART.md          # User and author quick-start guide
+├── CONTRIBUTING.md        # Submission and review process
+└── LICENSE
 ```
+
+Package source code and tests live in the companion directory
+`aria_ecosystem/aria_packages/`, each with `aria-package.toml`,
+`src/`, and `tests/` directories.
 
 ## Package Structure
 
