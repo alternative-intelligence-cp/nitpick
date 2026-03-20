@@ -123,6 +123,17 @@ class AriaFuzzer:
                     'minimal', 'type_test', 'control_flow',
                     'functions', 'edge_case',
                     'pick', 'when', 'defer', 'result', 'cast', 'pipeline',
+                    'struct', 'enum', 'array', 'pointer', 'loop_range',
+                    'optional_type',
+                    'combo',
+                    'negative',
+                    'type_coercion',
+                    'large_type',
+                    'recursive',
+                    'tbb_sticky',
+                    'string_interp',
+                    'multi_struct',
+                    'runtime_check',
                 ])
                 program = self.generator.generate_program(strategy)
                 

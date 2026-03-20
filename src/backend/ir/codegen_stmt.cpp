@@ -2460,20 +2460,65 @@ void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
     if (stmt->value) {
         std::cerr << "[DEBUG RETURN] Return statement has a value expression\n";
         
-        // Check if it's a CallExpr
-        CallExpr* callExpr = dynamic_cast<CallExpr*>(stmt->value.get());
-        if (callExpr) {
-            std::cerr << "[DEBUG RETURN] Expression is a CallExpr\n";
-            IdentifierExpr* idExpr = dynamic_cast<IdentifierExpr*>(callExpr->callee.get());
-            if (idExpr) {
-                std::cerr << "[DEBUG RETURN] CallExpr callee: " << idExpr->name << "\n";
-            }
-        } else {
-            std::cerr << "[DEBUG RETURN] Expression is NOT a CallExpr\n";
-        }
-        
         if (!expr_codegen) {
             throw std::runtime_error("ExprCodegen not set in StmtCodegen");
+        }
+        
+        // Check for Result{val:..., err:..., is_error:...} literal syntax
+        // This is an explicit Result construction — a ToS operator.
+        ObjectLiteralExpr* objLit = dynamic_cast<ObjectLiteralExpr*>(stmt->value.get());
+        if (objLit && objLit->type_name == "Result") {
+            llvm::Function* current_func = builder.GetInsertBlock()->getParent();
+            llvm::Type* expected_return_type = current_func->getReturnType();
+            
+            if (expected_return_type->isStructTy()) {
+                llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(expected_return_type);
+                
+                if (resultStruct->getNumElements() == 3 &&
+                    resultStruct->getElementType(1)->isPointerTy() &&
+                    resultStruct->getElementType(2)->isIntegerTy(8)) {
+                    
+                    llvm::Value* result = llvm::UndefValue::get(resultStruct);
+                    
+                    for (const auto& field : objLit->fields) {
+                        llvm::Value* fieldVal = expr_codegen->codegenExpressionNode(field.value.get(), expr_codegen);
+                        if (!fieldVal) continue;
+                        
+                        if (field.name == "val") {
+                            llvm::Type* valType = resultStruct->getElementType(0);
+                            if (fieldVal->getType() != valType) {
+                                if (fieldVal->getType()->isIntegerTy() && valType->isIntegerTy()) {
+                                    fieldVal = builder.CreateIntCast(fieldVal, valType, true, "result.val.cast");
+                                }
+                            }
+                            result = builder.CreateInsertValue(result, fieldVal, 0, "result.val");
+                        } else if (field.name == "err") {
+                            llvm::Type* errType = resultStruct->getElementType(1);
+                            if (fieldVal->getType() != errType) {
+                                if (fieldVal->getType()->isIntegerTy()) {
+                                    fieldVal = builder.CreateIntToPtr(fieldVal, errType, "result.err.cast");
+                                }
+                            }
+                            result = builder.CreateInsertValue(result, fieldVal, 1, "result.err");
+                        } else if (field.name == "is_error") {
+                            llvm::Type* flagType = resultStruct->getElementType(2);
+                            if (fieldVal->getType() != flagType) {
+                                if (fieldVal->getType()->isIntegerTy()) {
+                                    fieldVal = builder.CreateIntCast(fieldVal, flagType, false, "result.flag.cast");
+                                }
+                            }
+                            result = builder.CreateInsertValue(result, fieldVal, 2, "result.is_error");
+                        }
+                    }
+                    
+                    builder.CreateRet(result);
+                    return;
+                }
+            }
+            
+            throw std::runtime_error(
+                "Line " + std::to_string(stmt->line) + ", Column " + std::to_string(stmt->column) +
+                ": Result{...} literal used but function does not return a Result type.");
         }
         
         // Generate code for return value expression
@@ -2489,6 +2534,30 @@ void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
         llvm::Function* current_func = builder.GetInsertBlock()->getParent();
         llvm::Type* expected_return_type = current_func->getReturnType();
         
+        // Check if this is a Result-returning function (Aria function, not extern)
+        if (expected_return_type->isStructTy()) {
+            llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(expected_return_type);
+            if (resultStruct->getNumElements() == 3 &&
+                resultStruct->getElementType(1)->isPointerTy() &&
+                resultStruct->getElementType(2)->isIntegerTy(8)) {
+                
+                // This is a Result return type
+                if (ret_value->getType() == expected_return_type) {
+                    // Already a Result struct — pass through
+                    builder.CreateRet(ret_value);
+                    return;
+                }
+                
+                // Bare value in a Result-returning function — error
+                throw std::runtime_error(
+                    "Line " + std::to_string(stmt->line) + ", Column " + std::to_string(stmt->column) +
+                    ": 'return' cannot return a bare value in an Aria function. "
+                    "Use pass(value) for success, fail(error) for errors, "
+                    "or Result{val:..., err:..., is_error:...} for explicit construction.");
+            }
+        }
+        
+        // Non-Result return type (extern/C ABI functions) — allow raw return with coercion
         // Cast/coerce the return value to match the function's return type if needed
         if (ret_value->getType() != expected_return_type) {
             // Integer type coercion

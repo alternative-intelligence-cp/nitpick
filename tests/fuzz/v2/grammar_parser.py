@@ -283,6 +283,16 @@ class GrammarParser:
             ['Function+']
         ])
         
+        # Struct declaration
+        self.rules['StructDecl'] = GrammarRule('StructDecl', [
+            ['struct', ':', 'Identifier', '=', '{', 'FieldList+', '}', ';']
+        ])
+        
+        # Enum declaration
+        self.rules['EnumDecl'] = GrammarRule('EnumDecl', [
+            ['enum', ':', 'Identifier', '=', '{', 'EnumValueList+', '}', ';']
+        ])
+        
         # Functions
         self.rules['Function'] = GrammarRule('Function', [
             ['func', ':', 'Identifier', '=', 'Type', '(', 'ParamList?', ')', 'Block', ';']
@@ -340,9 +350,10 @@ class GrammarParser:
             ['till', '(', 'Expr', ',', 'Expr', ')', 'Block']
         ])
         
-        # loop + break
+        # loop + break  OR  loop(start, end, step) { $ }
         self.rules['LoopStmt'] = GrammarRule('LoopStmt', [
-            ['loop', 'Block']
+            ['loop', 'Block'],
+            ['loop', '(', 'Expr', ',', 'Expr', ',', 'Expr', ')', 'Block']
         ])
         
         # pass/fail (not return)
@@ -351,6 +362,7 @@ class GrammarParser:
         ])
         
         # pick statement
+        # pick statement: pick (expr) { (val) { ... }, (*) { ... } }
         self.rules['PickStmt'] = GrammarRule('PickStmt', [
             ['pick', '(', 'Expr', ')', '{', 'PickCase+', '}']
         ])

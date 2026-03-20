@@ -409,6 +409,23 @@ static bool isExoticTypeName(const std::string& typeName) {
     return typeName == "tryte" || typeName == "nyte" || typeName == "trit" || typeName == "nit";
 }
 
+// Helper: Resolve the Aria type name of a struct field from a MEMBER_ACCESS expression.
+// Returns empty string if the field type cannot be determined.
+std::string ExprCodegen::getMemberAccessFieldTypeName(ASTNode* expr) {
+    if (!expr || expr->type != ASTNode::NodeType::MEMBER_ACCESS) return "";
+    MemberAccessExpr* memberExpr = static_cast<MemberAccessExpr*>(expr);
+    if (memberExpr->object->type != ASTNode::NodeType::IDENTIFIER) return "";
+    IdentifierExpr* objIdent = static_cast<IdentifierExpr*>(memberExpr->object.get());
+    auto it = var_aria_types.find(objIdent->name);
+    if (it == var_aria_types.end()) return "";
+    if (!type_system) return "";
+    auto* structTy = type_system->getStructType(it->second);
+    if (!structTy) return "";
+    auto* field = structTy->getField(memberExpr->member);
+    if (!field || !field->type) return "";
+    return field->type->toString();
+}
+
 // Helper: Get TBB type name from an expression (returns empty string if not TBB)
 std::string ExprCodegen::getExprTBBTypeName(ASTNode* expr) {
     if (!expr) return "";
@@ -433,6 +450,13 @@ std::string ExprCodegen::getExprTBBTypeName(ASTNode* expr) {
         if (!leftType.empty() && leftType == rightType) {
             return leftType;
         }
+    }
+
+    // For member access (e.g., a.x), resolve the field's type
+    if (expr->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        std::string fieldType = getMemberAccessFieldTypeName(expr);
+        if (isTBBTypeName(fieldType)) return fieldType;
+        return "";
     }
 
     // For unary operations on TBB types, result is same TBB type
@@ -480,6 +504,13 @@ std::string ExprCodegen::getExprExoticTypeName(ASTNode* expr) {
         }
     }
 
+    // For member access (e.g., a.x), resolve the field's type
+    if (expr->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        std::string fieldType = getMemberAccessFieldTypeName(expr);
+        if (isExoticTypeName(fieldType)) return fieldType;
+        return "";
+    }
+
     // For unary operations on exotic types, result is same exotic type
     if (expr->type == ASTNode::NodeType::UNARY_OP) {
         UnaryExpr* unaryExpr = static_cast<UnaryExpr*>(expr);
@@ -515,6 +546,16 @@ std::string ExprCodegen::getExprNumericTypeName(ASTNode* expr) {
         if (!leftType.empty() && leftType == rightType) {
             return leftType;
         }
+    }
+
+    // For member access (e.g., a.x), resolve the field's type
+    if (expr->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        std::string fieldType = getMemberAccessFieldTypeName(expr);
+        if (fieldType.find("frac") == 0 || fieldType.find("tfp") == 0 ||
+            fieldType == "vec9" || fieldType == "dvec9") {
+            return fieldType;
+        }
+        return "";
     }
 
     // For unary operations on numeric types, result is same numeric type
@@ -556,6 +597,20 @@ std::string ExprCodegen::getExprLBIMTypeName(ASTNode* expr) {
         if (!leftType.empty() && leftType == rightType) {
             return leftType;
         }
+    }
+
+    // For member access (e.g., a.x), resolve the field's type
+    if (expr->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        std::string fieldType = getMemberAccessFieldTypeName(expr);
+        if (fieldType == "int128" || fieldType == "uint128" ||
+            fieldType == "int256" || fieldType == "uint256" ||
+            fieldType == "int512" || fieldType == "uint512" ||
+            fieldType == "int1024" || fieldType == "uint1024" ||
+            fieldType == "fix256" ||
+            fieldType == "flt256" || fieldType == "flt512") {
+            return fieldType;
+        }
+        return "";
     }
 
     // For unary operations on LBIM types, result is same LBIM type

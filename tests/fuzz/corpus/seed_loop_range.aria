@@ -1,0 +1,20 @@
+// seed_loop_range.aria — loop(start, end, step) with $ variable
+func:failsafe = NIL(int32:err_code) { };
+
+func:main = int32() {
+    int64:total = 0i64;
+    loop(1, 10, 1) {
+        int64:i = $;
+        total = total + i;
+    }
+    // total should be 55 (1+2+...+10)
+
+    int64:evens = 0i64;
+    loop(0, 8, 2) {
+        int64:j = $;
+        evens = evens + j;
+    }
+    // evens should be 0+2+4+6+8 = 20
+
+    pass(total => int32);
+};

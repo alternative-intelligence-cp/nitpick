@@ -10,19 +10,20 @@
 
 ---
 
-## Current Status (March 14, 2026)
+## Current Status (March 19, 2026)
 
-**v0.1.0-pre — Final stretch before first official release**
+**v0.1.0-rc1 — Release candidate, all known bugs resolved**
 
-We are in the final phase before v0.1.0. The compiler is solid and actively used. Development focus is on:
+The compiler has reached release-candidate status. All 27 catalogued compiler bugs have been found and fixed, all workarounds removed, safety-critical validation is complete, and the full test suite passes clean.
 
-- **`aria_packages` library ecosystem** — A growing set of tested, pure-Aria and FFI-backed utility packages that serve as real-world integration tests for the compiler. 20 packages (LIB-1 through LIB-20) are committed with 15 tests each (300 package tests total, all passing). Packages cover math, PRNG, graphics primitives, data encoding, and — most recently — a full virtual console stack (display, input, audio, address map). See the [Packages](#aria_packages-library-ecosystem) section below.
-- **Virtual console stack** — LIB-17 through LIB-20 implement a POSIX terminal virtual console: `aria-display` (ANSI/termios rendering), `aria-input` (raw keyboard + SNES button mapping), `aria-audio` (software synthesis, MIDI note table), and `aria-console` (16-bit memory-mapped address space + 60fps frame scheduler). A JRPG battle scene demo (`aria-jrpg-demo`) exercises all four together.
-- **Language specialist model training** — Fine-tuning Qwen 7B (LoRA) on the Aria spec, stdlib, and test corpus. Training is active; latest checkpoint is step 1016 / epoch 2.
-- **Fuzzing campaigns** — Continuous fuzzing via Fuzzer V2. The fuzzer runs 24-hour stress campaigns against the compiler and runtime, archiving crashes and regression-testing fixes. Results feed directly back into the test corpus.
-- **Spec audits** — Systematic cross-checking of the language spec (`/.internal/aria_specs.txt`) against what the compiler actually implements. Recent audits found the `for` loop documentation was accidentally documenting `till` — the for loop itself was always fully implemented.
-- **Bug fixing** — Ongoing; recent fixes include Result<T> auto-unwrap in print(), string_index_of returning -1 for not-found, i128 literal overflow in codegen, and corrections to LBIM comparison with flat-int operands (Bug #23, #24).
-- **No fixed ETA** — Correctness and safety come before dates, given the safety-critical use cases this language is built for.
+- **All compiler bugs resolved** — Bugs #1–#27 have been systematically identified, fixed, and verified. This includes the final two safety-critical bugs: #26 (assignment type mismatch causing stale SSA values) and #27 (LBIM div/mod ABI mismatch). See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for the full catalogue.
+- **Safety-critical validation** — 10 dedicated safety test files in `tests/safety_critical/` verify IEEE 754 compliance, overflow/underflow boundaries, catastrophic cancellation detection, determinism, energy conservation, and TBB sticky error propagation. All pass.
+- **`aria_packages` library ecosystem** — 27 packages (LIB-1 through LIB-27) with 543+ assertions, all passing. Packages cover math, PRNG, graphics, data encoding, string manipulation, JSON, CLI args, a virtual console stack, and AI-focused libraries (decision trees, quantum entanglement, gradient fields, resource memory). See the [Packages](#aria_packages-library-ecosystem) section below.
+- **652 test files** — Comprehensive test suite covering compiler features, safety-critical validation, fuzzer corpus, and ecosystem integration.
+- **Language specialist model** — V3 training complete (Qwen 7B LoRA, 71% pattern match). V4 training in progress with a higher-quality corpus (2,484 examples, 100% drill compilation rate, proper `Result<T>` + `?` patterns, `NIL`/`void` correctness).
+- **Fuzzing** — Continuous fuzzing via Fuzzer V2. 24-hour stress campaigns, crashes archived and regression-tested. Valgrind-clean runtime.
+- **External tester onboarded** — Getting Started guide created for first external tester (non-programmer, Linux Mint, building crypto data tools).
+- **No fixed ETA for final release** — Correctness and safety come before dates, given the safety-critical use cases this language is built for.
 
 ---
 
@@ -36,9 +37,9 @@ We are in the final phase before v0.1.0. The compiler is solid and actively used
 | `aria-doc` | ✅ Available | Documentation generator |
 | `aria-pkg` | ✅ Available | Package manager |
 | Fuzzer V2 | ✅ Active | 24-hour stress campaigns |
-| Specialist model | 🔧 Training | Qwen 7B LoRA, step 1016/epoch 2 |
+| Specialist model | 🔧 V4 Training | Qwen 7B LoRA, V3 complete (71% match), V4 in progress |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 20 packages, 300 tests, all passing |
+| `aria_packages` | ✅ Active | 27 packages, 543+ assertions, all passing |
 
 ---
 
@@ -79,7 +80,7 @@ We are in the final phase before v0.1.0. The compiler is solid and actively used
 
 A collection of tested, versioned utility libraries built alongside the compiler. Each package has a `src/` module, a `tests/` file with 15 tests, and where FFI is needed, a C `shim/`. Every package passes its full test suite before being committed — they serve simultaneously as integration tests for the compiler and as real utilities.
 
-**Current packages (20 total, 300 tests, all passing):**
+**Current packages (27 total, 543+ assertions, all passing):**
 
 | # | Package | Description |
 |---|---------|-------------|
@@ -103,6 +104,13 @@ A collection of tested, versioned utility libraries built alongside the compiler
 | 18 | `aria-input` | Raw keyboard input with SNES-style button mapping |
 | 19 | `aria-audio` | Software synthesis, MIDI note table, 4 channels (dry mode) |
 | 20 | `aria-console` | 16-bit memory-mapped address space + 60fps frame scheduler |
+| 21 | `aria-str` | String utilities (pad, trim, repeat, contains, split) |
+| 22 | `aria-json` | Lightweight JSON encoding for basic types |
+| 23 | `aria-args` | CLI argument parser (flags, key-value, positional) |
+| 24 | `aria-decision-t` | Decision tree classifier (entropy, information gain) |
+| 25 | `aria-entangled` | Quantum-inspired entangled variable pairs |
+| 26 | `aria-resource-mem` | RAII-style resource lifecycle management |
+| 27 | `aria-gradient-field` | 3D gradient field computation for continuous optimization |
 
 **Demo:** `aria_ecosystem/demos/aria-jrpg-demo/` — an interactive JRPG battle scene using all four virtual console libraries (LIB-17-20) plus aria-rand. Demonstrates the full stack: ANSI rendering, raw input, audio SFX, and the console memory map.
 
@@ -305,7 +313,7 @@ aria/
 │   ├── quantum.aria         # Quantum types
 │   ├── lib_hashmap_*.aria   # HashMap implementations
 │   └── lib_vec_int32.aria   # Vec<int32>
-├── tests/                    # Test suite (515+ tests and growing)
+├── tests/                    # Test suite (652 tests and growing)
 │   ├── fuzz/                # Fuzzer V2 and corpus
 │   ├── gpu/                 # GPU/CUDA tests and PTX
 │   └── *.aria               # Feature test files
@@ -339,8 +347,13 @@ aria/
 │   │   ├── aria-display/    # LIB-17: ANSI/termios virtual console display
 │   │   ├── aria-input/      # LIB-18: raw keyboard + SNES button mapping
 │   │   ├── aria-audio/      # LIB-19: software synthesis (MIDI, 4 channels)
-│   │   └── aria-console/    # LIB-20: 16-bit memory map + frame scheduler
-│   ├── demos/               # Demo programs
+│   │   └── aria-console/    # LIB-20: 16-bit memory map + frame scheduler│   ├── aria-str/        # LIB-21: String utilities
+│   ├── aria-json/       # LIB-22: JSON encoding
+│   ├── aria-args/       # LIB-23: CLI argument parser
+│   ├── aria-decision-t/ # LIB-24: Decision tree classifier
+│   ├── aria-entangled/  # LIB-25: Quantum entangled pairs
+│   ├── aria-resource-mem/ # LIB-26: RAII resource management
+│   └── aria-gradient-field/ # LIB-27: 3D gradient fields│   ├── demos/               # Demo programs
 │   │   └── aria-jrpg-demo/  # JRPG battle scene using LIB-17/18/19/20
 │   ├── programming_guide/   # Source for web/man docs
 │   ├── man_pages/           # Man page builder
@@ -393,11 +406,14 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ Borrow checker (compile-time memory analysis)
 - ✅ SIMD and atomic types
 - ✅ Dimensional algebra
-- ✅ 515+ compiler tests, Fuzzer V2
-- ✅ 20 `aria_packages` libraries with 300 package tests (all passing)
+- ✅ 652 compiler tests, Fuzzer V2, Valgrind-clean runtime
+- ✅ 27 `aria_packages` libraries with 543+ assertions (all passing)
 - ✅ Virtual console stack: display, input, audio, memory map + JRPG demo
-- ✅ Full documentation (web, man pages, programming guide)
-- ✅ Language specialist model training underway
+- ✅ AI-focused libraries: decision trees, entangled variables, gradient fields, resource memory
+- ✅ Safety-critical validation suite (10 tests: IEEE 754, overflow, determinism, TBB)
+- ✅ All 27 compiler bugs found, fixed, verified — zero known bugs
+- ✅ Full documentation (web, man pages, programming guide, Getting Started)
+- ✅ Language specialist model V3 complete (71% pattern match), V4 training in progress
 
 **In Progress:**
 - 🔧 Balanced ternary/nonary runtime operations (trit/tryte arithmetic)

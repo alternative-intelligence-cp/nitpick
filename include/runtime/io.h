@@ -624,6 +624,16 @@ AriaString* aria_path_dirname_string(const char* path);
 AriaString* aria_path_basename_string(const char* path);
 AriaString* aria_path_join_string(const char* dir, const char* name);
 
+/**
+ * Simplified stream read_line for Aria - returns AriaString*
+ * Reads a line from the stream, converting the raw char* to AriaString.
+ * Returns empty AriaString on EOF/error (never NULL).
+ *
+ * @param stream Stream handle
+ * @return AriaString with line content (empty on EOF)
+ */
+AriaString* aria_stream_read_line_string(AriaStream* stream);
+
 // ============================================================================
 // UFCS-Compatible File Aliases (for File.open(), stream.read(), etc.)
 // ============================================================================

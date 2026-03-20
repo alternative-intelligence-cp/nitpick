@@ -96,6 +96,9 @@ private:
     // Helper: Check if type is TBB type
     bool isTBBType(sema::Type* type);
 
+    // Helper: Resolve the Aria type name of a struct field from a MEMBER_ACCESS expression
+    std::string getMemberAccessFieldTypeName(ASTNode* expr);
+
     // Helper: Get TBB type name from an expression (returns empty string if not TBB)
     std::string getExprTBBTypeName(ASTNode* expr);
 

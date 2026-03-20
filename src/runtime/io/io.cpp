@@ -924,6 +924,38 @@ AriaString* aria_path_join_string(const char* dir, const char* name) {
     return aria_str;
 }
 
+/**
+ * Simplified stream read_line for Aria - returns AriaString*
+ * Converts the raw char* from aria_stream_read_line to AriaString.
+ * Returns empty AriaString on EOF/error (never NULL).
+ */
+AriaString* aria_stream_read_line_string(AriaStream* stream) {
+    char* cstr = aria_stream_read_line(stream);
+    if (!cstr) {
+        AriaString* empty = (AriaString*)malloc(sizeof(AriaString));
+        if (empty) {
+            empty->data = strdup("");
+            empty->length = 0;
+        }
+        return empty;
+    }
+
+    AriaString* aria_str = (AriaString*)malloc(sizeof(AriaString));
+    if (!aria_str) {
+        free(cstr);
+        AriaString* empty = (AriaString*)malloc(sizeof(AriaString));
+        if (empty) {
+            empty->data = strdup("");
+            empty->length = 0;
+        }
+        return empty;
+    }
+
+    aria_str->data = cstr;  // take ownership of the malloc'd string
+    aria_str->length = strlen(cstr);
+    return aria_str;
+}
+
 // ============================================================================
 // Result-Based File I/O Functions (Phase 4.2 - Proper Implementation)
 // ============================================================================

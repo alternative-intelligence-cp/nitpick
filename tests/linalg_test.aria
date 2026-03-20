@@ -1,0 +1,250 @@
+/**
+ * linalg_test.aria — Comprehensive test for stdlib/linalg.aria
+ *
+ * Tests all Type:Vec3 methods:
+ *   T01: zero(), one(), up(), right(), forward(), fill()
+ *   T02: dot()
+ *   T03: cross()
+ *   T04: length_sq()
+ *   T05: length()
+ *   T06: normalize()
+ *   T07: negate()
+ *   T08: distance()
+ *   T09: distance_sq()
+ *   T10: angle()
+ *   T11: lerp()
+ *   T12: project()
+ *   T13: reject()
+ *   T14: reflect()
+ *   T15: scale()
+ *   T16: min_components() / max_components()
+ *   T17: abs_components()
+ *   T18: cross product properties (anti-commutativity, orthogonality)
+ *   T19: normalize zero vector safety
+ */
+
+use "stdlib/linalg.aria".*;
+
+func:approx_eq = bool(flt64:a, flt64:b, flt64:eps) {
+    flt64:diff = a - b;
+    if (diff < 0.0) { diff = 0.0 - diff; }
+    if (diff < eps) { pass(true); }
+    pass(false);
+};
+
+func:vec3_approx_eq = bool(vec3:a, vec3:b, flt64:eps) {
+    bool:xeq = raw(approx_eq(a.x, b.x, eps));
+    bool:yeq = raw(approx_eq(a.y, b.y, eps));
+    bool:zeq = raw(approx_eq(a.z, b.z, eps));
+    if (xeq) { if (yeq) { if (zeq) { pass(true); } } }
+    pass(false);
+};
+
+func:failsafe = NIL(int32:code) {
+    println("[FAILSAFE] triggered");
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    flt64:eps = 0.0000001;
+
+    println("=== stdlib/linalg.aria Test Suite ===");
+
+    // ── T01: Construction helpers ────────────────────────────────────────
+    vec3:z = raw(Vec3.zero());
+    vec3:o = raw(Vec3.one());
+    vec3:u = raw(Vec3.up());
+    vec3:r = raw(Vec3.right());
+    vec3:f = raw(Vec3.forward());
+    vec3:filled = raw(Vec3.fill(5.0));
+    bool:t01a = raw(vec3_approx_eq(z, vec3(0.0, 0.0, 0.0), eps));
+    bool:t01b = raw(vec3_approx_eq(o, vec3(1.0, 1.0, 1.0), eps));
+    bool:t01c = raw(vec3_approx_eq(u, vec3(0.0, 1.0, 0.0), eps));
+    bool:t01d = raw(vec3_approx_eq(r, vec3(1.0, 0.0, 0.0), eps));
+    bool:t01e = raw(vec3_approx_eq(f, vec3(0.0, 0.0, 1.0), eps));
+    bool:t01f = raw(vec3_approx_eq(filled, vec3(5.0, 5.0, 5.0), eps));
+    if (t01a) { if (t01b) { if (t01c) { if (t01d) { if (t01e) { if (t01f) {
+        println("[PASS] T01 construction helpers");
+        passed = passed + 1i32;
+    } } } } } }
+    if (t01a == false) { println("[FAIL] T01 zero()"); failed = failed + 1i32; }
+    if (t01b == false) { println("[FAIL] T01 one()"); failed = failed + 1i32; }
+    if (t01c == false) { println("[FAIL] T01 up()"); failed = failed + 1i32; }
+    if (t01d == false) { println("[FAIL] T01 right()"); failed = failed + 1i32; }
+    if (t01e == false) { println("[FAIL] T01 forward()"); failed = failed + 1i32; }
+    if (t01f == false) { println("[FAIL] T01 fill()"); failed = failed + 1i32; }
+
+    // ── T02: dot product ─────────────────────────────────────────────────
+    vec3:a2 = vec3(1.0, 2.0, 3.0);
+    vec3:b2 = vec3(4.0, 5.0, 6.0);
+    flt64:d2 = raw(Vec3.dot(a2, b2));
+    // 1*4 + 2*5 + 3*6 = 32
+    bool:t02 = raw(approx_eq(d2, 32.0, eps));
+    if (t02) { println("[PASS] T02 dot product"); passed = passed + 1i32; }
+    if (t02 == false) { println("[FAIL] T02 dot product"); failed = failed + 1i32; }
+
+    // ── T03: cross product ───────────────────────────────────────────────
+    vec3:a3 = vec3(1.0, 0.0, 0.0);
+    vec3:b3 = vec3(0.0, 1.0, 0.0);
+    vec3:c3 = raw(Vec3.cross(a3, b3));
+    // i x j = k → (0, 0, 1)
+    bool:t03 = raw(vec3_approx_eq(c3, vec3(0.0, 0.0, 1.0), eps));
+    if (t03) { println("[PASS] T03 cross product"); passed = passed + 1i32; }
+    if (t03 == false) { println("[FAIL] T03 cross product"); failed = failed + 1i32; }
+
+    // ── T04: length_sq ───────────────────────────────────────────────────
+    vec3:v4 = vec3(3.0, 4.0, 0.0);
+    flt64:lsq4 = raw(Vec3.length_sq(v4));
+    // 9 + 16 + 0 = 25
+    bool:t04 = raw(approx_eq(lsq4, 25.0, eps));
+    if (t04) { println("[PASS] T04 length_sq"); passed = passed + 1i32; }
+    if (t04 == false) { println("[FAIL] T04 length_sq"); failed = failed + 1i32; }
+
+    // ── T05: length ──────────────────────────────────────────────────────
+    flt64:len5 = raw(Vec3.length(v4));
+    // sqrt(25) = 5
+    bool:t05 = raw(approx_eq(len5, 5.0, eps));
+    if (t05) { println("[PASS] T05 length"); passed = passed + 1i32; }
+    if (t05 == false) { println("[FAIL] T05 length"); failed = failed + 1i32; }
+
+    // ── T06: normalize ───────────────────────────────────────────────────
+    vec3:v6 = vec3(0.0, 0.0, 5.0);
+    vec3:n6 = raw(Vec3.normalize(v6));
+    bool:t06 = raw(vec3_approx_eq(n6, vec3(0.0, 0.0, 1.0), eps));
+    if (t06) { println("[PASS] T06 normalize"); passed = passed + 1i32; }
+    if (t06 == false) { println("[FAIL] T06 normalize"); failed = failed + 1i32; }
+
+    // ── T07: negate ──────────────────────────────────────────────────────
+    vec3:v7 = vec3(1.0, -2.0, 3.0);
+    vec3:n7 = raw(Vec3.negate(v7));
+    bool:t07 = raw(vec3_approx_eq(n7, vec3(-1.0, 2.0, -3.0), eps));
+    if (t07) { println("[PASS] T07 negate"); passed = passed + 1i32; }
+    if (t07 == false) { println("[FAIL] T07 negate"); failed = failed + 1i32; }
+
+    // ── T08: distance ────────────────────────────────────────────────────
+    vec3:p8a = vec3(1.0, 0.0, 0.0);
+    vec3:p8b = vec3(4.0, 0.0, 0.0);
+    flt64:dist8 = raw(Vec3.distance(p8a, p8b));
+    bool:t08 = raw(approx_eq(dist8, 3.0, eps));
+    if (t08) { println("[PASS] T08 distance"); passed = passed + 1i32; }
+    if (t08 == false) { println("[FAIL] T08 distance"); failed = failed + 1i32; }
+
+    // ── T09: distance_sq ─────────────────────────────────────────────────
+    flt64:dsq9 = raw(Vec3.distance_sq(p8a, p8b));
+    bool:t09 = raw(approx_eq(dsq9, 9.0, eps));
+    if (t09) { println("[PASS] T09 distance_sq"); passed = passed + 1i32; }
+    if (t09 == false) { println("[FAIL] T09 distance_sq"); failed = failed + 1i32; }
+
+    // ── T10: angle ───────────────────────────────────────────────────────
+    vec3:x_axis = vec3(1.0, 0.0, 0.0);
+    vec3:y_axis = vec3(0.0, 1.0, 0.0);
+    flt64:ang10 = raw(Vec3.angle(x_axis, y_axis));
+    // 90 degrees = PI/2
+    flt64:half_pi = PI() / 2.0;
+    bool:t10 = raw(approx_eq(ang10, half_pi, 0.000001));
+    if (t10) { println("[PASS] T10 angle"); passed = passed + 1i32; }
+    if (t10 == false) { println("[FAIL] T10 angle"); failed = failed + 1i32; }
+
+    // ── T11: lerp ────────────────────────────────────────────────────────
+    vec3:la = vec3(0.0, 0.0, 0.0);
+    vec3:lb = vec3(10.0, 20.0, 30.0);
+    vec3:lmid = raw(Vec3.lerp(la, lb, 0.5));
+    bool:t11 = raw(vec3_approx_eq(lmid, vec3(5.0, 10.0, 15.0), eps));
+    if (t11) { println("[PASS] T11 lerp"); passed = passed + 1i32; }
+    if (t11 == false) { println("[FAIL] T11 lerp"); failed = failed + 1i32; }
+
+    // ── T12: project ─────────────────────────────────────────────────────
+    vec3:v12 = vec3(3.0, 4.0, 0.0);
+    vec3:onto12 = vec3(1.0, 0.0, 0.0);
+    vec3:proj12 = raw(Vec3.project(v12, onto12));
+    // Projection of (3,4,0) onto X axis = (3,0,0)
+    bool:t12 = raw(vec3_approx_eq(proj12, vec3(3.0, 0.0, 0.0), eps));
+    if (t12) { println("[PASS] T12 project"); passed = passed + 1i32; }
+    if (t12 == false) { println("[FAIL] T12 project"); failed = failed + 1i32; }
+
+    // ── T13: reject ──────────────────────────────────────────────────────
+    vec3:rej13 = raw(Vec3.reject(v12, onto12));
+    // Rejection of (3,4,0) from X axis = (0,4,0)
+    bool:t13 = raw(vec3_approx_eq(rej13, vec3(0.0, 4.0, 0.0), eps));
+    if (t13) { println("[PASS] T13 reject"); passed = passed + 1i32; }
+    if (t13 == false) { println("[FAIL] T13 reject"); failed = failed + 1i32; }
+
+    // ── T14: reflect ─────────────────────────────────────────────────────
+    vec3:inc14 = vec3(1.0, -1.0, 0.0);
+    vec3:norm14 = vec3(0.0, 1.0, 0.0);
+    vec3:refl14 = raw(Vec3.reflect(inc14, norm14));
+    // v - 2*(v·n)*n: v·n = -1, result = (1,-1,0) - 2*(-1)*(0,1,0) = (1,1,0)
+    bool:t14 = raw(vec3_approx_eq(refl14, vec3(1.0, 1.0, 0.0), eps));
+    if (t14) { println("[PASS] T14 reflect"); passed = passed + 1i32; }
+    if (t14 == false) { println("[FAIL] T14 reflect"); failed = failed + 1i32; }
+
+    // ── T15: scale ───────────────────────────────────────────────────────
+    vec3:v15 = vec3(2.0, 3.0, 4.0);
+    vec3:s15 = raw(Vec3.scale(v15, 3.0));
+    bool:t15 = raw(vec3_approx_eq(s15, vec3(6.0, 9.0, 12.0), eps));
+    if (t15) { println("[PASS] T15 scale"); passed = passed + 1i32; }
+    if (t15 == false) { println("[FAIL] T15 scale"); failed = failed + 1i32; }
+
+    // ── T16: min_components / max_components ─────────────────────────────
+    vec3:a16 = vec3(1.0, 5.0, 3.0);
+    vec3:b16 = vec3(4.0, 2.0, 6.0);
+    vec3:mn16 = raw(Vec3.min_components(a16, b16));
+    vec3:mx16 = raw(Vec3.max_components(a16, b16));
+    bool:t16a = raw(vec3_approx_eq(mn16, vec3(1.0, 2.0, 3.0), eps));
+    bool:t16b = raw(vec3_approx_eq(mx16, vec3(4.0, 5.0, 6.0), eps));
+    if (t16a) { if (t16b) {
+        println("[PASS] T16 min/max_components");
+        passed = passed + 1i32;
+    } }
+    if (t16a == false) { println("[FAIL] T16 min_components"); failed = failed + 1i32; }
+    if (t16b == false) { println("[FAIL] T16 max_components"); failed = failed + 1i32; }
+
+    // ── T17: abs_components ──────────────────────────────────────────────
+    vec3:v17 = vec3(-3.0, 4.0, -5.0);
+    vec3:abs17 = raw(Vec3.abs_components(v17));
+    bool:t17 = raw(vec3_approx_eq(abs17, vec3(3.0, 4.0, 5.0), eps));
+    if (t17) { println("[PASS] T17 abs_components"); passed = passed + 1i32; }
+    if (t17 == false) { println("[FAIL] T17 abs_components"); failed = failed + 1i32; }
+
+    // ── T18: cross product properties ────────────────────────────────────
+    // Anti-commutativity: a×b = -(b×a)
+    vec3:a18 = vec3(1.0, 2.0, 3.0);
+    vec3:b18 = vec3(4.0, 5.0, 6.0);
+    vec3:axb = raw(Vec3.cross(a18, b18));
+    vec3:bxa = raw(Vec3.cross(b18, a18));
+    vec3:neg_bxa = raw(Vec3.negate(bxa));
+    bool:t18a = raw(vec3_approx_eq(axb, neg_bxa, eps));
+    // Orthogonality: (a×b)·a = 0 and (a×b)·b = 0
+    flt64:orth_a = raw(Vec3.dot(axb, a18));
+    flt64:orth_b = raw(Vec3.dot(axb, b18));
+    bool:t18b = raw(approx_eq(orth_a, 0.0, eps));
+    bool:t18c = raw(approx_eq(orth_b, 0.0, eps));
+    if (t18a) { if (t18b) { if (t18c) {
+        println("[PASS] T18 cross product properties");
+        passed = passed + 1i32;
+    } } }
+    if (t18a == false) { println("[FAIL] T18 cross anti-commutativity"); failed = failed + 1i32; }
+    if (t18b == false) { println("[FAIL] T18 cross orthogonality (a)"); failed = failed + 1i32; }
+    if (t18c == false) { println("[FAIL] T18 cross orthogonality (b)"); failed = failed + 1i32; }
+
+    // ── T19: normalize zero vector safety ────────────────────────────────
+    vec3:zero_v = raw(Vec3.zero());
+    vec3:nzv = raw(Vec3.normalize(zero_v));
+    // Should return zero vector, not crash with div-by-zero
+    bool:t19 = raw(vec3_approx_eq(nzv, vec3(0.0, 0.0, 0.0), eps));
+    if (t19) { println("[PASS] T19 normalize zero vector safety"); passed = passed + 1i32; }
+    if (t19 == false) { println("[FAIL] T19 normalize zero vector safety"); failed = failed + 1i32; }
+
+    // ── Summary ──────────────────────────────────────────────────────────
+    println("");
+    println("=== Linear Algebra Test Results ===");
+
+    if (failed == 0i32) {
+        println("All 19 tests PASSED");
+        pass(0i32);
+    } else {
+        println("SOME TESTS FAILED");
+        pass(failed);
+    }
+};

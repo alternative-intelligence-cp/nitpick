@@ -2067,9 +2067,9 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
                 ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[idx].get());
                 arg.setName(param->paramName);
 
-                // For array-type parameters: store into a local alloca so that element
-                // access via codegenIndex (which dyn_cast<AllocaInst>s) works correctly.
-                if (arg.getType()->isArrayTy()) {
+                // For array-type and vector-type parameters: store into a local alloca so that element
+                // access via codegenIndex (which dyn_cast<AllocaInst>s) and extractelement work correctly.
+                if (arg.getType()->isArrayTy() || arg.getType()->isVectorTy()) {
                     llvm::AllocaInst* param_alloca = builder.CreateAlloca(
                         arg.getType(), nullptr, param->paramName + "_arr_alloca");
                     builder.CreateStore(&arg, param_alloca);
@@ -2085,12 +2085,33 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
                     
                     // CRITICAL FIX: Register parameter type in value_types map
                     // This enables member access on struct parameters (e.g., self.field)
-                    Type* paramType = type_system->getStructType(typeStr);
+                    Type* paramType = nullptr;
+                    
+                    // Check for vector types FIRST (before primitives, since getPrimitiveType creates entries!)
+                    if (typeStr.find("vec") != std::string::npos) {
+                        Type* componentType = type_system->getPrimitiveType("flt64");
+                        int dimension = 2;
+                        if (typeStr.find("vec2") != std::string::npos) dimension = 2;
+                        else if (typeStr.find("vec3") != std::string::npos) dimension = 3;
+                        else if (typeStr.find("vec9") != std::string::npos) dimension = 9;
+                        if (typeStr[0] == 'd') componentType = type_system->getPrimitiveType("flt64");
+                        else if (typeStr[0] == 'f') componentType = type_system->getPrimitiveType("flt32");
+                        else if (typeStr[0] == 'i') componentType = type_system->getPrimitiveType("int32");
+                        else if (typeStr[0] == 'v') componentType = type_system->getPrimitiveType("flt64");
+                        paramType = type_system->getVectorType(componentType, dimension);
+                    }
+                    if (!paramType) {
+                        paramType = type_system->getStructType(typeStr);
+                    }
                     if (!paramType) {
                         paramType = type_system->getPrimitiveType(typeStr);
                     }
                     if (paramType) {
                         value_types[&arg] = paramType;
+                        // Also register the alloca if we created one
+                        if (named_values[param->paramName] != &arg) {
+                            value_types[named_values[param->paramName]] = paramType;
+                        }
                     }
                 }
             }
@@ -2820,11 +2841,12 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     // To ensure consistent access semantics, we copy all struct params to stack allocas.
                     // This matches Clang's behavior and ensures member access works correctly.
                     llvm::Value* param_storage = nullptr;
-                    if (arg.getType()->isStructTy() || arg.getType()->isArrayTy()) {
-                        // Struct and array parameters must be copied to a local alloca.
+                    if (arg.getType()->isStructTy() || arg.getType()->isArrayTy() || arg.getType()->isVectorTy()) {
+                        // Struct, array, and vector parameters must be copied to a local alloca.
                         // Structs: LLVM ABI may pass in registers or via hidden pointer.
                         // Arrays: cannot be GEP'd as values — need an addressable alloca
                         //         so that element access (arr[i]) can use two-index inbounds GEP.
+                        // Vectors: extractelement needs an addressable alloca, not a raw register arg.
                         if (arg.getType()->isArrayTy()) {
                             std::cerr << "[DEBUG_ARRAY_PARAM] Creating alloca for array parameter: " << param->paramName << std::endl;
                         } else {
@@ -2869,6 +2891,19 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         // PHASE 4 FIX: Try to resolve as aria::sema::Type first
                         aria::sema::Type* paramType = nullptr;
                         
+                        // Check for vector types FIRST (before primitives, since getPrimitiveType creates entries!)
+                        if (typeStr.find("vec") != std::string::npos) {
+                            aria::sema::Type* componentType = type_system->getPrimitiveType("flt64");
+                            int dimension = 2;
+                            if (typeStr.find("vec2") != std::string::npos) dimension = 2;
+                            else if (typeStr.find("vec3") != std::string::npos) dimension = 3;
+                            else if (typeStr.find("vec9") != std::string::npos) dimension = 9;
+                            if (typeStr[0] == 'd') componentType = type_system->getPrimitiveType("flt64");
+                            else if (typeStr[0] == 'f') componentType = type_system->getPrimitiveType("flt32");
+                            else if (typeStr[0] == 'i') componentType = type_system->getPrimitiveType("int32");
+                            else if (typeStr[0] == 'v') componentType = type_system->getPrimitiveType("flt64");
+                            paramType = type_system->getVectorType(componentType, dimension);
+                        }
                         // PHASE 4 CRITICAL FIX: Check for Result<T> BEFORE primitive type!
                         // getPrimitiveType() accepts any string and creates a PrimitiveType,
                         // so "Result<int32>" would wrongly become PRIMITIVE instead of RESULT
@@ -3291,6 +3326,67 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             } else {
                 // Normal synchronous return
                 if (ret->value) {
+                    // Check for Result{val:..., err:..., is_error:...} literal syntax
+                    // This is an explicit Result construction — a ToS operator.
+                    // The programmer takes responsibility for building the Result manually.
+                    ObjectLiteralExpr* objLit = dynamic_cast<ObjectLiteralExpr*>(ret->value.get());
+                    if (objLit && objLit->type_name == "Result") {
+                        llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                        llvm::Type* returnType = currentFunc->getReturnType();
+                        
+                        if (returnType->isStructTy()) {
+                            llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(returnType);
+                            
+                            if (resultStruct->getNumElements() == 3 &&
+                                resultStruct->getElementType(1)->isPointerTy() &&
+                                resultStruct->getElementType(2)->isIntegerTy(8)) {
+                                
+                                // Build Result struct from named fields
+                                llvm::Value* result = llvm::UndefValue::get(resultStruct);
+                                
+                                for (const auto& field : objLit->fields) {
+                                    llvm::Value* fieldVal = codegenExpression(field.value.get());
+                                    if (!fieldVal) continue;
+                                    
+                                    if (field.name == "val") {
+                                        llvm::Type* valType = resultStruct->getElementType(0);
+                                        if (fieldVal->getType() != valType) {
+                                            if (fieldVal->getType()->isIntegerTy() && valType->isIntegerTy()) {
+                                                fieldVal = builder.CreateIntCast(fieldVal, valType, true, "result.val.cast");
+                                            }
+                                        }
+                                        result = builder.CreateInsertValue(result, fieldVal, 0, "result.val");
+                                    } else if (field.name == "err") {
+                                        llvm::Type* errType = resultStruct->getElementType(1);
+                                        if (fieldVal->getType() != errType) {
+                                            if (fieldVal->getType()->isIntegerTy()) {
+                                                fieldVal = builder.CreateIntToPtr(fieldVal, errType, "result.err.cast");
+                                            } else if (fieldVal->getType()->isPointerTy()) {
+                                                // Already a pointer — compatible
+                                            }
+                                        }
+                                        result = builder.CreateInsertValue(result, fieldVal, 1, "result.err");
+                                    } else if (field.name == "is_error") {
+                                        llvm::Type* flagType = resultStruct->getElementType(2);
+                                        if (fieldVal->getType() != flagType) {
+                                            if (fieldVal->getType()->isIntegerTy()) {
+                                                fieldVal = builder.CreateIntCast(fieldVal, flagType, false, "result.flag.cast");
+                                            }
+                                        }
+                                        result = builder.CreateInsertValue(result, fieldVal, 2, "result.is_error");
+                                    }
+                                }
+                                
+                                builder.CreateRet(result);
+                                return nullptr;
+                            }
+                        }
+                        
+                        throw std::runtime_error(
+                            "Line " + std::to_string(ret->line) + ", Column " + std::to_string(ret->column) +
+                            ": Result{...} literal used but function does not return a Result type.");
+                    }
+                    
                     llvm::Value* retVal = codegenExpression(ret->value.get());
                     if (retVal) {
                         llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
@@ -3305,35 +3401,25 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                 resultStruct->getElementType(1)->isPointerTy() &&
                                 resultStruct->getElementType(2)->isIntegerTy(8)) {
                                 
-                                // This is a Result type - wrap the value
-                                // Build Result object: {value, NULL, false}
-                                llvm::Value* result = llvm::UndefValue::get(resultStruct);
-                                
-                                // Field 0: value (may need type conversion)
-                                llvm::Type* valueFieldType = resultStruct->getElementType(0);
-                                if (retVal->getType() != valueFieldType) {
-                                    if (retVal->getType()->isIntegerTy() && valueFieldType->isIntegerTy()) {
-                                        llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(retVal->getType());
-                                        llvm::IntegerType* fldIntTy = llvm::cast<llvm::IntegerType>(valueFieldType);
-                                        if (valIntTy->getBitWidth() < fldIntTy->getBitWidth()) {
-                                            retVal = builder.CreateSExt(retVal, valueFieldType, "val_sext");
-                                        } else if (valIntTy->getBitWidth() > fldIntTy->getBitWidth()) {
-                                            retVal = builder.CreateTrunc(retVal, valueFieldType, "val_trunc");
-                                        }
-                                    }
+                                // This is a Result return type.
+                                // 'return' only accepts a value that is already a Result struct.
+                                // For bare values, use pass(value) or fail(error) instead.
+                                if (retVal->getType() == returnType) {
+                                    // Value is already a Result struct - pass through directly
+                                    builder.CreateRet(retVal);
+                                    return nullptr;
                                 }
-                                result = builder.CreateInsertValue(result, retVal, 0, "result.val");
                                 
-                                // Field 1: error = NULL
-                                llvm::Value* nullError = llvm::ConstantPointerNull::get(
-                                    llvm::cast<llvm::PointerType>(resultStruct->getElementType(1)));
-                                result = builder.CreateInsertValue(result, nullError, 1, "result.err");
-                                
-                                // Field 2: is_error = false
-                                llvm::Value* falseVal = builder.getInt8(0);
-                                result = builder.CreateInsertValue(result, falseVal, 2, "result.is_error");
-                                
-                                builder.CreateRet(result);
+                                // Bare value returned in a Result-returning function - ERROR
+                                // Users must use pass(value) for success or fail(error) for errors.
+                                int line = ret->line;
+                                int col = ret->column;
+                                throw std::runtime_error(
+                                    "Line " + std::to_string(line) + ", Column " + std::to_string(col) + 
+                                    ": 'return' cannot return a bare value in an Aria function. "
+                                    "Use pass(value) for success or fail(error) for errors. "
+                                    "'return' is only valid with an already-constructed Result object "
+                                    "or a Result{val:..., err:..., is_error:...} literal.");
                                 return nullptr;
                             }
                         }
@@ -3807,8 +3893,15 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             }
             std::cerr << "[DEBUG IF] Condition generated successfully"  << std::endl;
             
+            // Auto-unwrap Result<T> struct {T, ptr, i8} when used as if-condition
+            if (condVal->getType()->isStructTy()) {
+                condVal = builder.CreateExtractValue(condVal, {0}, "unwrap_result_cond");
+            }
+            
             // Convert condition to bool by comparing to zero
-            condVal = builder.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0), "ifcond");
+            if (condVal->getType()->isIntegerTy()) {
+                condVal = builder.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0), "ifcond");
+            }
             
             llvm::Function* function = builder.GetInsertBlock()->getParent();
             
@@ -3869,7 +3962,13 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             builder.SetInsertPoint(condBB);
             llvm::Value* condVal = codegenExpression(whileStmt->condition.get());
             if (!condVal) return nullptr;
-            condVal = builder.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0), "whilecond");
+            // Auto-unwrap Result<T> struct {T, ptr, i8} when used as while-condition
+            if (condVal->getType()->isStructTy()) {
+                condVal = builder.CreateExtractValue(condVal, {0}, "unwrap_result_cond");
+            }
+            if (condVal->getType()->isIntegerTy()) {
+                condVal = builder.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0), "whilecond");
+            }
             builder.CreateCondBr(condVal, bodyBB, afterBB);
             
             // Generate body
@@ -8296,6 +8395,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // object_ptr is an SSA value (the struct itself, e.g., function parameter)
                 // Use ExtractValue to get the field directly
                 field_value = builder.CreateExtractValue(object_ptr, field_index, member->member);
+            }
+            
+            // Register the field value's type so binary ops can detect
+            // exotic/ternary/TBB types and route to the correct intrinsics
+            if (field_type && field_value) {
+                value_types[field_value] = field_type;
             }
             
             return field_value;
