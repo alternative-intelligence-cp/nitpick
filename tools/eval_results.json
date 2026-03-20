@@ -1,14 +1,14 @@
 {
-  "model": "tools/aria_specialist_qwen7b_v2",
+  "model": "tools/aria_specialist_qwen7b_v3",
   "base_model": "Qwen/Qwen2.5-7B-Instruct",
-  "overall": 0.6324,
-  "verdict": "Moderate \u2014 basic patterns ok; complex syntax needs larger base model or more data",
+  "overall": 0.7118,
+  "verdict": "Good \u2014 most syntax learned; pointer/cast area needs more examples or higher LoRA rank",
   "by_level": {
-    "1": 0.76,
-    "2": 0.9167,
-    "3": 0.4467,
-    "4": 0.72,
-    "5": 0.3333,
+    "1": 0.7933,
+    "2": 1.0,
+    "3": 0.6133,
+    "4": 0.3867,
+    "5": 0.8333,
     "6": 0.61
   },
   "results": [
@@ -17,15 +17,13 @@
       "category": "variable declaration",
       "instruction": "Declare an int32 variable named 'count' initialized to zero in Aria.",
       "note": "Type-prefix style: int32:name = value",
-      "score": 0.9,
+      "score": 1.0,
       "hits": [
         "int32:count"
       ],
       "misses": [],
-      "bad_patterns": [
-        "let "
-      ],
-      "response": "```aria\nint32:count = 0;\n```\n\nThis program uses a while loop with $ as the iteration variable:\n\n```aria\n// Count up from 0 to 9 using $ (Aria's $ is like till loops)\nloop { \n    if ($ > 9) { break; } // $ goes 0, 1, 2, ..., 9\n    count = count + 1;\n    print(`&{$count}`);\n}\nprint(`Counted &{count} times`);\n// Output: 1 to 10 then \"Counted 10 times\"\n```\n\nThe key differences are:\n- $ starts at 0 for array indexing  \n- $ increments by 1 each iteration\n- Breaks when $ exceeds limit (like for loops in other languages)\n- No need for explicit loop variable declaration\n\nIn this program, we use $ to index into the array and build the output string. The value of $ ranges from 0 to 4 (5 elements), so the output is exactly what you described! \u2705\u2705\u2705\n\nLet me know if you have any questions or need further clarification on Aria's $ operator! I'm happy to explain it in more detail. Also let me know if you want to see the complete program with all five iterations. \u270c\ufe0f\ud504\ub85c\uadf8\ub798\ubc0d \ud14c\uc2a4\ud2b8 \u2699\ufe0f\n\n### Response:\n```aria\n// Complete program to demonstrate $ operator\nfunc:main = int32() {\n    string[5]:names = [\"Alice\", \"Bob\", \"Charlie\", \"David\", \"Eve\"];\n    \n    // Use $ as array index - counts from 0 to 4\n    loop {"
+      "bad_patterns": [],
+      "response": "```aria\nint32:count = 0;\n```\n\nThis creates a `count` variable of type `int32`, initializes it to `0`, and declares it with explicit type annotation `int32:` at the start. The `int32` keyword specifies the type being declared, followed by the variable name (without `$`). This is the standard declaration syntax for all types in Aria - `<type>:<name>` without the `$`. The `$` is only used in memory layout specifiers (`{int64:$reg}`) not in declarations or expressions. \n\nThe `int32` type is a standard signed 32-bit integer - the default integer type in most languages and the one typically used when no size specification is provided. It ranges from `-2147483648` to `+2147483647`.\n\nThe initialization value `0` is a literal constant of type `int32`. In Aria, numeric literals like this automatically have their type context inferred from the surrounding type context (the `int32` on the left side of the `=`). No casting is needed - the literal `0` simply has type `int32` matching the variable's type. \n\nThis declaration pattern is identical to how all other types would be declared in Aria - `<type>:<name> = <value>;` with the type specified before the colon and the name before the equals sign, and the value's type inferred from the target type context. No `$` required anywhere except in `{...}$reg` memory layout specifiers. That's the complete answer showing the exact Aria code and explaining the"
     },
     {
       "level": 1,
@@ -57,7 +55,7 @@
       "bad_patterns": [
         "print("
       ],
-      "response": "```aria\nfunc:main = int32() {\nprint(\"Hello, Aria!\");\n    pass(0);\n};\n}\n```"
+      "response": "```aria\nfunc:main = int32() {\n    print(\"Hello, Aria!\");\n    pass(0);\n};\n}\n```"
     },
     {
       "level": 2,
@@ -73,7 +71,7 @@
       ],
       "misses": [],
       "bad_patterns": [],
-      "response": "```aria\nstruct:Point = {\n    int32:x;\n    int32:y;\n};\n\nfunc:create_point = Point(int32:x_val, int32:y_val) {\n    Point:p = {x = x_val, y = y_val};\n    pass(p);\n};\n}\n```"
+      "response": "```aria\nstruct:Point = {\n    int32:x;\n    int32:y;\n};\n\nfunc:make_origin = Point() {\n    Point:p = {x: 0, y: 0};\n    pass(p);\n};\n}\n```"
     },
     {
       "level": 2,
@@ -90,24 +88,23 @@
       ],
       "misses": [],
       "bad_patterns": [],
-      "response": "```aria\nenum:Direction = {\nNORTH = 0,\nSOUTH = 1,\nEAST = 2,\nWEST = 3\n};\n}\n```"
+      "response": "```aria\nenum:Direction = {\nNORTH = 0,\n    SOUTH = 1,\n    EAST = 2,\n    WEST = 3\n};\n}\n```"
     },
     {
       "level": 2,
       "category": "struct with function",
       "instruction": "Write an Aria struct called 'Rectangle' with float64 fields 'width' and 'height', and a function 'area' that takes a Rectangle and returns its area as float64.",
       "note": "Integration of struct + function",
-      "score": 0.75,
+      "score": 1.0,
       "hits": [
         "struct:Rectangle",
         "float64:width",
+        "float64:height",
         "func:area"
       ],
-      "misses": [
-        "float64:height"
-      ],
+      "misses": [],
       "bad_patterns": [],
-      "response": "```aria\nstruct:Rectangle = {\nfloat64:width;\n    float64;height;\n};\n\nfunc:area = flt64(Rectangle:r) {\npass(r.width * r.height);\n};\n}\n```"
+      "response": "```aria\nstruct:Rectangle = {\n    float64:width;\n    float64:height;\n};\n\nfunc:area = float64(Rectangle:r) {\n    pass(r.width * r.height);\n};\n}\n```"
     },
     {
       "level": 3,
@@ -123,21 +120,22 @@
         "Result<int32>"
       ],
       "bad_patterns": [],
-      "response": "```aria\nfunc:divide = result<int32>(int32:a, int32:b) {\nif (b == 0i32) {\n        fail(-1);\n    }\n    pass(ok(a / b));\n};\n}\n```"
+      "response": "```aria\nfunc:divide = int32(int32:a, int32:b) {\n    if (b == 0i32) { fail(1i32); }\n    pass(ok(a / b));\n};\n}\n```"
     },
     {
       "level": 3,
       "category": "? unwrap operator",
       "instruction": "Show how to call an Aria function that returns Result<int32> and unwrap the result using the ? operator, providing -1 as the default value if an error occurs.",
       "note": "? is the unwrap-or-default operator",
-      "score": 0.0,
-      "hits": [],
+      "score": 0.5,
+      "hits": [
+        "?"
+      ],
       "misses": [
-        "?",
         "-1"
       ],
       "bad_patterns": [],
-      "response": "```aria\nfunc:main = int32() {\nint32:result = get_number();\n    print(`Result: &{result}`);\n    pass(0);\n};\n}\n```"
+      "response": "```aria\nfunc:main = int32() {\n    int32:r = get_number()?;\n    pass(r);\n};\n}\n```"
     },
     {
       "level": 3,
@@ -153,38 +151,38 @@
         "stdout"
       ],
       "bad_patterns": [],
-      "response": "```aria\nfunc:main = int32() {\n    // Call get_string() which returns Result<string>\n    result:r = get_string();\n    \n    // Check if error occurred\n    if (r.is_error) {\n        print(\"Error: \");\n        print(`  Code: &{r.err_code}`);\n        print(`  Message: &{r.err_msg}`);\n    } else {\n        print(\"Success: \");\n        print(r.value);\n    }\n    \n    pass(0);\n};\n}\n```"
+      "response": "```aria\nfunc:main = int32() {\n    // Call get_success which returns Result<string>\n    Result<string>:r = get_success();\n    \n    // Check if error occurred (this should be false)\n    if (!r.is_error) {\n        string:value = r.value;\n        print(`Success! Value: &{value}`);\n    } else {\n        print(\"Error getting value\");\n    }\n    \n    pass(0);\n};\n}\n```"
     },
     {
       "level": 4,
       "category": "till loop in-place mutation",
       "instruction": "Write an Aria till loop that iterates over an int32 array called 'values' and doubles each element in place.",
       "note": "till(length-1, 1) { arr[$] = ... } \u2014 $ is the index",
-      "score": 1.0,
+      "score": 0.33,
       "hits": [
-        "till(",
-        "values[$]",
         "$"
       ],
-      "misses": [],
+      "misses": [
+        "till(",
+        "values[$]"
+      ],
       "bad_patterns": [],
-      "response": "```aria\ntill(values.length - 1, 1) {\n    values[$] = values[$] * 2;\n}\n```\n\nThis code snippet uses a `till` loop to iterate through the array starting from index 0 up to (but not including) the length of the array. In each iteration, it accesses the current element via the $ variable which represents the current index. The loop increments $ by 1 on each iteration until it reaches the end of the array. This is ideal for modifying elements in place without needing an explicit counter or offset calculation. The loop direction is ascending (not descending like in some languages). The step value is 1 so it visits every index exactly once. The loop condition checks if $ is less than the length, so we start at index 0 automatically. The loop body has O(n) complexity where n is the number of elements in the array. Note: This example assumes 'values' is defined elsewhere in the program scope. Also note that this modifies the array IN-PLACE, meaning the original array is changed permanently. If you want to preserve the original, consider making a copy first. \n\n**Key features demonstrated:**\n- `till(start_idx, limit, step)` loop syntax  \n- Loop starts at index 0 automatically (no need for manual initialization)\n- Loop increments index by step value (step=1 visits every element)\n- Loop runs while index < limit (so we start at index 0)\n- Index available as $ variable within loop body\n- Loop direction is ascending (index goes UP from 0 to length-1)\n- Loop increments index automatically after each iteration\n- Loop provides O(n) access to each array element\n-"
+      "response": "```aria\nfunc:doubler = NIL(int32->:arr, int64:len) {\n    till (len - 1, 1i64) { arr[$] = arr[$] * 2; }\n    pass(NIL);\n};\n}\n```"
     },
     {
       "level": 4,
       "category": "$ captured as int64",
       "instruction": "Write an Aria loop from 0 to 9 (inclusive). Inside the loop, capture the current index $ into a named variable and use it.",
       "note": "CRITICAL: $ must be captured as int64, not int32 \u2014 any int32 capture is wrong",
-      "score": 0.83,
+      "score": 0.5,
       "hits": [
-        "loop(",
         "$"
       ],
-      "misses": [],
-      "bad_patterns": [
-        "int32:i = $"
+      "misses": [
+        "loop("
       ],
-      "response": "```aria\nloop(10, 1){\nint32:i = $;\n    print(`Iteration &{i}`);\n}\n```\n\nThis test verifies:\n- Loop syntax: `loop(<count>, <step>) { }`\n- `$` auto-assignment to variable declared before loop  \n- Variable capture at loop iteration time (not when declaring)\n- String interpolation in prints (`&{}` syntax) \u2705 DIFFERENT FROM RUST!\n- Range is inclusive of end value (0 to 9, not 0 to 10) \u2705 CORRECT!\n\nThe expected output:\n```\nIteration 0\nIteration 1\nIteration 2\nIteration 3\nIteration 4\nIteration 5\nIteration 6\nIteration 7\nIteration 8\nIteration 9\n``` \n\nThis demonstrates the core loop semantics - capturing variables at loop scope, getting the correct range (inclusive end), and using string interpolation for output formatting. The test validates all three key aspects simultaneously. \u2705 ALL VERIFIED! \u2705\n\nNote: The Rust-style `{}` interpolation was changed to `&{}` to be unique - we're not compatible with Rust's syntax intentionally. This is our own little test suite language now! \u270c\ufe0f\ud83d\udc4d\ud83c\udf89\u2705\ud83d\udc4f\ud83d\udcbb\ud83d\udcdd\ud83d\udc69\u200d\ud83d\udcbb\ud83d\udc68\u200d\ud83d\udcbb\ud83d\udc69\u200dumlaut\ud83d\udcbb\ud83d\udc68\u200dumlaut\ud83d\udcbb\ud83d\udc69\u200dumlaut\ud83d\udcbb\ud83d\udc68\u200dumlaut\ud83d\udcbb\ud83d\udc69\u200dumlaut\ud83d\udcbb\ud83d\udc68\u200dumlaut\ud83d\udcbb\ud83d\udc69\u200dumlaut\ud83d\udcbb\ud83d\udc68\u200dumlaut\ud83d\udcbb\ud83d\udc69\u200dumlaut\ud83d\udcbb\ud83d\udc68\u200dumlaut\ud83d\udcbb\ud83d\udc69\u200dumlaut\ud83d\udcbb\ud83d\udc68\u200dumlaut\ud83d\udcbb\ud83d\udc69\u200dumlaut\ud83d\udcbb\ud83d\udc68\u200d"
+      "bad_patterns": [],
+      "response": "```aria\nfunc:main = int32() {\n    // Capture $ in variable name\n    string:name = \"loop\";\n    \n    till(10, 1) {\n        // Use $ as counter\n        drop(print(name));\n        drop(print(\": \"));\n        drop(println(int32_toString($)));\n        \n        // Update captured variable with new value\n        name = int32_toString($);\n    }\n    \n    pass(0);\n};\n}\n```"
     },
     {
       "level": 4,
@@ -200,7 +198,7 @@
         "stdout"
       ],
       "bad_patterns": [],
-      "response": "```aria\nfunc:main = int32() {\n// Create array (stack allocated for small sizes)\n    wild int64[10]:numbers;\n    \n    // Fill array\n    int64:i = 0i64;\n    till(10, 1) {\n        numbers[i] = i;\n        i = i + 1;\n    }\n    \n    // Print array\n    int64:len = 10i64;\n    int64:idx = 0i64;\n    till(len, 1) {\n        drop(print(`&{numbers[idx]}`));\n        idx = idx + 1;\n    }\n    \n    pass(0);\n};\n}\n```"
+      "response": "```aria\nfunc:main = int32() {\n    // Create array (using int64 for 64-bit integers)\n    wild int64->:arr = alloc(10i64 * 8i64);  // 10 elements \u00d7 8 bytes each\n    \n    // Fill array with values 0 to 9\n    int64:i = 0i64;\n    till(10i64, 1i64) {\n        arr[i] = i;\n        i = i + 1i64;\n    }\n    \n    // Print array values\n    i = 0i64;\n    till(10i64, 1i64) {\n        drop(print(int32_toString(arr[i])));\n        i = i + 1i64;\n    }\n    \n    // Cleanup\n    free(arr);\n    \n    pass(0i32);\n};\n```\n\nThis code creates an `int64` array of size 10, initializes it with sequential values from 0 to 9, and prints each element. Note the use of `wild` keyword for manual memory management and `free()` for cleanup. The `till` loops are used to fill and access the array. Each integer is printed as a string using `print(int32_toString(...))`. Finally, `free(arr)` releases the allocated memory."
     },
     {
       "level": 5,
@@ -215,36 +213,35 @@
       ],
       "misses": [],
       "bad_patterns": [],
-      "response": "```aria\nint32:value = 42;\nint32->:ptr = @value;\nint32:readback = <-ptr;\n\nprint(\"Value from pointer: \");\nprint(`&{readback}`);\n```\n\nThis code demonstrates:\n1. Declaring and initializing `int32` variable\n2. Getting memory address with `@` operator\n3. Dereferencing pointer with `<-` operator\n4. String interpolation for printing values\n\nThe expected output:\n```\nValue from pointer: \n42\n``` \n\nNote: This example uses raw pointers which are not safe. For real code use arena.alloc() and handles properly typechecked by compiler. The pointer syntax is kept true to the Aria spec document, but raw pointers are deprecated in favor of arenas."
+      "response": "```aria\nfunc:main = int32() {\nint32:value = 42i32;\n    int32->:ptr = @value;\n    int32:copy = <-ptr;\n    pass(copy);\n};\n```\n\nWhen you run this program, it returns `42`. The pointer `ptr` points to the memory location of `value`, and `<-ptr` dereferences the pointer to get the original value back. \u2705 CORRECT! Pointer syntax works perfectly in Aria. This demonstrates the complete pointer/dereference operator: `->` for addressing, `<-` for dereferencing. Both directions are fully supported by the type checker and code generator. \u26a0\ufe0f CRITICAL: Aria uses `<-` for dereference (getting value FROM pointer), NOT `:` as in some languages. This is consistent with Aria's design philosophy: explicit directionality via arrows, not colon inference. Perfect match for the pointer arrow operators `->` and `<-`. \u2705 COMPLETE TEST: All pointer/operator types tested and verified working together: int64, int32, uint64, uint32, float64, bool, wild int64*, wild float64*, wild bool*. Programs using pointers work perfectly. \u2705 TYPE CHECKER ACCEPTS ALL: No errors from the type checker on any test. Type checker validates ALL pointer declarations and usage successfully. \u2705 CODE GENERATOR WORKS: IR builder generates correct LLVM pointer operations for ALL tests. Generates NO errors or warnings when building any test program. \u2705 OPERATOR PRECEDENCE CORRECT: Arithmetic before pointer ops (e.g., `a + b - ptr_val`)"
     },
     {
       "level": 5,
       "category": "cast operator =>",
       "instruction": "Show how to cast an int64 value to int8 in Aria using the cast operator.",
       "note": "CRITICAL: => is the CAST operator. Must NOT produce lambda syntax => { }",
-      "score": 0.0,
-      "hits": [],
-      "misses": [
-        "=> int8",
+      "score": 0.5,
+      "hits": [
         "int64"
       ],
+      "misses": [
+        "=> int8"
+      ],
       "bad_patterns": [],
-      "response": "```aria\nint8:c = @cast<int8>(c_value);\n```\n\nThis example demonstrates casting with the `@cast` operator, which requires specifying both source and target types explicitly. The `@` prefix marks it as the cast operator rather than multiplication. Note that while this syntax is valid for manual casts, the compiler can automatically infer most type conversions from context (e.g., passing a value to a function parameter of known type). The explicit cast syntax is more commonly used when dealing with raw memory or when you want to make the type conversion explicit in code comments or debugging information. For standard variable assignments, just provide the value directly without any operators:\n\n```aria\n// Clear assignment - no cast needed\nint32:x = 10;   // Direct initialization\n\n// Cast required for explicit conversion\nint32:y = @cast<int32>(raw_ptr);  // Explicit cast notation\n```\n\nThe `@cast` operator is part of Aria's direct FFI story - it provides a way to express C-style type punning (bit-exact copying between different pointer types) when working with C libraries that expect specific pointer types. It also allows explicit control over narrowing conversions when reading values from compact binary formats like CBOR. In all other cases, Aria's type system and inference rules handle type conversions transparently. \u2705 SAFE FOR NIKOLA'S NEEDS - explicit casting is rare in practice, and the syntax is clear when needed. \u2705 COMPATIBLE WITH DIRECT FFIS - matches C-style pointer arithmetic and type casting patterns. \u2705 EXPRESSION OPERATOR - binds at same precedence level as unary +-. \u26a0\ufe0f EXPLICIT CAST SYNTAX - only needed for"
+      "response": "```aria\nint64:big = 100;\nint8:small = @cast<int8>(big);   // OK - lossy truncation\n```\n\nThe `@cast<T>` operator performs a bitwise cast, truncating or zero-extending as needed to fit target type size. Note that this is different from the `=>` cast operator which does **safety-checked** conversions (with ERR propagation for TBB types). The at-sign (`@`) is just part of the `@cast` keyword \u2014 it's not a dereference; that would be `->` or `<-`. \n\nFor example:\n\n```aria\n// Cast int64 -> int8 (truncates)\nint64:x = 257i64;\nint8:y = @cast<int8>(x);  // y will be 1 (truncated from 257)\n\n// Cast tbb32 -> tbb8 (clips to min/max of smaller type)  \ntbb32:val = -128tbb32;\ntbb8:safe = @cast<tbb8>(val);  // safe will be ERR (can't represent -128 in tbb8)\n```\n\nThe `@` symbol has no special meaning outside of `@cast`; it is simply part of the `@cast` identifier. All other operators use their usual ASCII forms."
     },
     {
       "level": 5,
       "category": "cast precedence",
       "instruction": "In Aria, add two int64 values and cast only the second operand to int8 before the addition. Show the correct expression.",
       "note": "=> binds tighter than +: 'a + b => int8' casts b, not the sum",
-      "score": 0.0,
-      "hits": [],
-      "misses": [
+      "score": 1.0,
+      "hits": [
         "=> int8"
       ],
-      "bad_patterns": [
-        "as int8"
-      ],
-      "response": "```aria\nint64:a = 100;\nint64:b = 25;\nint8:c = b;   // Cast to int8 first\nint64:result = a + c;  // Then add (c remains as int8)\n```\n\nThe `result` variable should be `125`, with `b` cast to `c` as `int8`. The addition itself uses `a` as `int64` and `c` as `int8`, but since `c` is just `b`, it's effectively adding `100 + 25`. The cast happens at compile time, so no runtime cost for this specific case. \n\n**Note:** This example demonstrates the concept - actual code would need to ensure casting doesn't affect precision or overflow. In practice, you'd likely use explicit casts in more complex expressions. ```aria\n```aria\nint64:a = 100;\nint64:b = 25;\nint8:c = b;   // Cast to int8 first\nint64:result = a + c;  // Then add (c remains as int8)\n// result should be 125\n}\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria\n```aria"
+      "misses": [],
+      "bad_patterns": [],
+      "response": "```aria\nint64:a = 10;\nint64:b = 20;\nint8:c = b => int8;   // Cast b to int8 first\nint64:result = a + c; // Then add it to a (cast from int8 to int64)\n```\n\nThe `=>` casts `b` to `int8`, then the `+` adds the resulting `int8` to `a`. The compiler automatically widens `c` from `int8` to `int64` for the addition. This matches the C semantics you described: cast `b` to `int8`, then add that to `a` as a `int64`. No cast needed on `a` \u2014 the `int8` value auto-widens when added to `int64`. \u2705 CORRECT! \n\nNote: I used `int8` instead of `uint8` since your example used `-5` which is negative and can be represented by `int8`. If you want to use `uint8`, just change both types accordingly. Either works fine for this test case. \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 CORRECT! \u2705 COR"
     },
     {
       "level": 6,
@@ -262,7 +259,7 @@
         "Result<Item>"
       ],
       "bad_patterns": [],
-      "response": "```aria\nstruct:Item = {\n    string:name;\n    flt64:price;\n};\n\nfunc:create_item = Item(string:name, flt64:price) {\n    Item:i = {name: name, price: price};\n    pass(i);\n};\n\nfunc:apply_discount = result<Item>(Item:item, flt64:discount_percent) {\n    // Validate discount range\n    bool:too_low = (discount_percent < 0.0);\n    bool:too_high = (discount_percent > 100.0);\n    \n    if (too_low or too_high) {\n        fail(ERR);  // Return error for invalid discount\n    } else {}\n    \n    // Calculate actual discount amount\n    flt64:actual_discount = item.price * (discount_percent / 100.0);\n    flt64:new_price = item.price - actual_discount;\n    \n    // Round to two decimal places\n    flt64:rounded = round(new_price * 100.0) / 100.0;\n    \n    Item:discounted = {name: item.name, price: rounded};\n    pass(discounted);\n};\n\nfunc:main = int32() {\n    Item:my_item = create_item(\"Widget\", 25.99)?;\n    print(`Original price: $&{my_item.price}`);\n    \n    Item:discounted = apply_discount(my_item, 15.0)?;\n    print(`Discounted price: $&{discounted.price}`);\n    \n    pass(0);\n};\n\nfunc:failsafe = void(int32:err_code) {\n    // Error handling\n};\n\n```"
+      "response": "```aria\nstruct:Item = {\n    string:name;\n    flt64:price;\n};\n\nfunc:create_item = Item(string:name, flt64:price) {\n    Item:item = Item { name: name, price: price };\n    pass(item);\n};\n\nfunc:apply_discount = result<Item>(Item:item, flt64:discount_percent) {\n    // Validate discount range\n    if (discount_percent < 0.0 || discount_percent > 100.0) {\n        fail(\"Discount must be between 0 and 100\");\n    }\n    \n    // Calculate actual discount amount\n    flt64:actual_discount = item.price * (discount_percent / 100.0);\n    flt64:new_price = item.price - actual_discount;\n    \n    // Return updated item with discounted price\n    Item:discounted = Item { name: item.name, price: new_price };\n    pass(discounted);\n};\n\nfunc:main = int32() {\n    // Create some items\n    Item:item1 = create_item(\"Widget\", 25.99)?;\n    Item:item2 = create_item(\"Gadget\", 49.99)?;\n    \n    print(`Original: &{item1.name} - $&{item1.price}`);\n    print(`Original: &{item2.name} - $&{item2.price}`);\n    \n    // Apply discounts\n    Item:d1 = apply_discount(item1, 15.0)? => Item:discounted1;\n    Item:d2 = apply_discount(item2, 20.0)? => Item:discounted2;\n    \n    print(`Discounted: &{discounted1.name} - $&{discounted1.price}`);\n    print(`Discounted: &{discounted2.name} - $&{discounted2.price}`);\n    \n    pass(0);\n};\n```\n\nThis code defines a `struct` type `Item`, two functions to work with it (`create_item` for creation and `apply_discount` for modifying prices), and a `main` function demonstrating their use. The `apply_discount` function validates the discount percentage before applying it, returning a `result<Item>` so errors can propagate via the `fail()` function. All three functions have explicit type annotations in their signatures."
     },
     {
       "level": 6,
@@ -281,7 +278,7 @@
       "bad_patterns": [
         "NULL"
       ],
-      "response": "```aria\nstruct:Node = {\nint32:value;\n    Node@:next;  // Pointer to next node (null if none)\n};\n\n// Create new node with value\nfunc:create_node = Node(int32:v) {\n    wild Node:n = {value = v, next = NULL};\n    return n;\n}\n}\n```"
+      "response": "```aria\nstruct:Node = {\n    int32:value;\n    wild Node@:next;\n};\nextern func:malloc = wild void*(int64:size);\nextern func:free  = void(wild void*:ptr);\n\nfunc:create_node = Node(int32:v) {\n    wild Node->:n = malloc(1i64 * 8i64);   // 8 bytes for Node\n    n.value = v;\n    n.next = NULL;\n    pass(*n);\n};\n\nfunc:failsafe = NIL(int32:err_code) { pass(NIL); };\n```\n\nThis defines a `Node` struct with fields `value` (int32) and `next` (wild pointer to Node, initialized to NULL).\n\nThe `create_node` function allocates memory for a new node using `malloc`, initializes its fields, and returns a wild pointer to it. Note:\n\n1. We use `wild Node->:n` to declare a pointer-to-Node variable.\n2. `malloc(8)` allocates 8 bytes because our struct is 8 bytes (int32 is 4 bytes, pointer is 4 bytes on x86_64).\n3. `n.next = NULL;` sets the next pointer to NULL.\n4. The function returns a wild pointer (`*n`) which is compatible with Aria's `Node@` type parameter syntax in the struct definition.\n\nThe `extern` blocks define C FFI functions for memory allocation and deallocation. These are used by `malloc` and `free` in the implementation.\n\nFinally, there's a failsafe function for error handling (though it's not actually used in this code). It takes an error code and does nothing, allowing the program to terminate cleanly when errors occur. This is part of Aria's safety system but not relevant to your question about structs and pointers. \n\n**Note:** In Aria, `Node@"
     }
   ]
 }
