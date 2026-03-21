@@ -1,0 +1,219 @@
+// tests/collections_test.aria
+// Comprehensive tests for stdlib/collections.aria
+// Tests Vec (dynamic array) and Map (hash map)
+
+use "stdlib/collections.aria".*;
+
+func:failsafe = NIL(int32:code) { };
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Test runner
+// ═════════════════════════════════════════════════════════════════════════════
+
+func:check = NIL(bool:cond, string:msg) {
+    if (cond) {
+        print("  [PASS] ");
+        println(msg);
+    }
+    if (cond == false) {
+        print("  [FAIL] ");
+        println(msg);
+    }
+};
+
+func:main = int32() {
+
+    // ─── Vec tests ───────────────────────────────────────────────────────
+    println("=== Vec (int64) Tests ===");
+
+    // Test 1: Create and check empty
+    wild int8->:v = raw(Vec.new());
+    bool:empty1 = raw(Vec.is_empty(v));
+    drop(check(empty1, "T01 vec empty on create"));
+
+    // Test 2: Push and check length
+    drop(Vec.push(v, 10i64));
+    drop(Vec.push(v, 20i64));
+    drop(Vec.push(v, 30i64));
+    int64:vlen = raw(Vec.len(v));
+    drop(check(vlen == 3i64, "T02 vec length after push"));
+
+    // Test 3: Get by index
+    int64:g0 = raw(Vec.get(v, 0i64));
+    drop(check(g0 == 10i64, "T03 vec get index 0"));
+
+    // Test 4: Get last element
+    int64:g2 = raw(Vec.get(v, 2i64));
+    drop(check(g2 == 30i64, "T04 vec get last"));
+
+    // Test 5: Set value at index
+    drop(Vec.set(v, 1i64, 999i64));
+    int64:s1 = raw(Vec.get(v, 1i64));
+    drop(check(s1 == 999i64, "T05 vec set index"));
+
+    // Test 6: Pop returns last element
+    int64:p1 = raw(Vec.pop(v));
+    drop(check(p1 == 30i64, "T06 vec pop returns last"));
+
+    // Test 7: Length after pop
+    int64:vlen2 = raw(Vec.len(v));
+    drop(check(vlen2 == 2i64, "T07 vec length after pop"));
+
+    // Test 8: Not empty after elements
+    bool:empty2 = raw(Vec.is_empty(v));
+    drop(check(empty2 == false, "T08 vec not empty"));
+
+    // Test 9: Contains existing value
+    bool:has10 = raw(Vec.contains(v, 10i64));
+    drop(check(has10, "T09 vec contains existing"));
+
+    // Test 10: Contains missing value
+    bool:has777 = raw(Vec.contains(v, 777i64));
+    drop(check(has777 == false, "T10 vec contains missing"));
+
+    // Test 11: Sum of elements (10 + 999 = 1009)
+    int64:total = raw(Vec.sum(v));
+    drop(check(total == 1009i64, "T11 vec sum"));
+
+    // Test 12: Push many elements
+    drop(Vec.push(v, 40i64));
+    drop(Vec.push(v, 50i64));
+    drop(Vec.push(v, 60i64));
+    drop(Vec.push(v, 70i64));
+    drop(Vec.push(v, 80i64));
+    int64:vlen3 = raw(Vec.len(v));
+    drop(check(vlen3 == 7i64, "T12 vec push many"));
+
+    // Test 13: Free doesn't crash
+    drop(Vec.free(v));
+    drop(check(true, "T13 vec free"));
+
+    // ─── VecI32 tests ────────────────────────────────────────────────────
+    println("=== VecI32 Tests ===");
+
+    // Test 14: VecI32 basic push/get
+    wild int8->:vi = raw(VecI32.new());
+    drop(VecI32.push(vi, 100i32));
+    drop(VecI32.push(vi, 200i32));
+    int32:vi0 = raw(VecI32.get(vi, 0i64));
+    drop(check(vi0 == 100i32, "T14 vec_i32 push/get"));
+
+    // Test 15: VecI32 pop
+    int32:vip = raw(VecI32.pop(vi));
+    drop(check(vip == 200i32, "T15 vec_i32 pop"));
+
+    // Test 16: VecI32 length
+    int64:vilen = raw(VecI32.len(vi));
+    drop(check(vilen == 1i64, "T16 vec_i32 length"));
+
+    // Test 17: VecI32 set
+    drop(VecI32.set(vi, 0i64, 42i32));
+    int32:vis = raw(VecI32.get(vi, 0i64));
+    drop(check(vis == 42i32, "T17 vec_i32 set"));
+
+    drop(VecI32.free(vi));
+
+    // ─── VecF64 tests ────────────────────────────────────────────────────
+    println("=== VecF64 Tests ===");
+
+    // Test 18: VecF64 push and get
+    wild int8->:vf = raw(VecF64.new());
+    drop(VecF64.push(vf, 3.14));
+    drop(VecF64.push(vf, 2.718));
+    flt64:vf0 = raw(VecF64.get(vf, 0i64));
+    flt64:diff1 = vf0 - 3.14;
+    if (diff1 < 0.0) { diff1 = 0.0 - diff1; }
+    drop(check(diff1 < 0.001, "T18 vec_f64 push/get"));
+
+    // Test 19: VecF64 pop
+    flt64:vfp = raw(VecF64.pop(vf));
+    flt64:diff2 = vfp - 2.718;
+    if (diff2 < 0.0) { diff2 = 0.0 - diff2; }
+    drop(check(diff2 < 0.001, "T19 vec_f64 pop"));
+
+    // Test 20: VecF64 length after pop
+    int64:vflen = raw(VecF64.len(vf));
+    drop(check(vflen == 1i64, "T20 vec_f64 length"));
+
+    drop(VecF64.free(vf));
+
+    // ─── Map tests ───────────────────────────────────────────────────────
+    println("=== Map (int64->int64) Tests ===");
+
+    // Test 21: Create empty map
+    wild int8->:m = raw(Map.new());
+    bool:mempty1 = raw(Map.is_empty(m));
+    drop(check(mempty1, "T21 map empty on create"));
+
+    // Test 22: Insert and check length
+    drop(Map.insert(m, 1i64, 100i64));
+    drop(Map.insert(m, 2i64, 200i64));
+    drop(Map.insert(m, 3i64, 300i64));
+    int64:mlen = raw(Map.len(m));
+    drop(check(mlen == 3i64, "T22 map length after insert"));
+
+    // Test 23: Has existing key
+    bool:has1 = raw(Map.has(m, 1i64));
+    drop(check(has1, "T23 map has existing key"));
+
+    // Test 24: Has missing key
+    bool:has99 = raw(Map.has(m, 99i64));
+    drop(check(has99 == false, "T24 map has missing key"));
+
+    // Test 25: Get value
+    int64:mv = raw(Map.get(m, 2i64));
+    drop(check(mv == 200i64, "T25 map get value"));
+
+    // Test 26: Update existing key
+    drop(Map.insert(m, 2i64, 222i64));
+    int64:mv2 = raw(Map.get(m, 2i64));
+    drop(check(mv2 == 222i64, "T26 map update value"));
+
+    // Test 27: Length unchanged after update
+    int64:mlen2 = raw(Map.len(m));
+    drop(check(mlen2 == 3i64, "T27 map length unchanged"));
+
+    // Test 28: Remove key
+    drop(Map.remove(m, 2i64));
+    int64:mlen3 = raw(Map.len(m));
+    drop(check(mlen3 == 2i64, "T28 map remove key"));
+
+    // Test 29: Has returns false after remove
+    bool:has2 = raw(Map.has(m, 2i64));
+    drop(check(has2 == false, "T29 map has after remove"));
+
+    // Test 30: Clear all entries
+    drop(Map.clear(m));
+    int64:mlen4 = raw(Map.len(m));
+    drop(check(mlen4 == 0i64, "T30 map clear"));
+
+    // Test 31: Is empty after clear
+    bool:mempty2 = raw(Map.is_empty(m));
+    drop(check(mempty2, "T31 map empty after clear"));
+
+    // Test 32: Re-insert after clear
+    drop(Map.insert(m, 42i64, 1000i64));
+    bool:has42 = raw(Map.has(m, 42i64));
+    drop(check(has42, "T32 map re-insert"));
+
+    // Test 33: Get re-inserted value
+    int64:mv3 = raw(Map.get(m, 42i64));
+    drop(check(mv3 == 1000i64, "T33 map get re-inserted"));
+
+    // Test 34: Large key values
+    drop(Map.insert(m, 1000000i64, 9999999i64));
+    int64:mv4 = raw(Map.get(m, 1000000i64));
+    drop(check(mv4 == 9999999i64, "T34 map large key"));
+
+    // Test 35: Negative key values
+    drop(Map.insert(m, -5i64, -500i64));
+    int64:mv5 = raw(Map.get(m, -5i64));
+    drop(check(mv5 == -500i64, "T35 map negative key"));
+
+    // Test 36: Free doesn't crash
+    drop(Map.free(m));
+    drop(check(true, "T36 map free"));
+
+    println("=== All collections tests complete ===");
+    pass(0i32);
+};
