@@ -19,7 +19,7 @@ The compiler has reached release-candidate status. All 27 catalogued compiler bu
 - **All compiler bugs resolved** — Bugs #1–#27 have been systematically identified, fixed, and verified. This includes the final two safety-critical bugs: #26 (assignment type mismatch causing stale SSA values) and #27 (LBIM div/mod ABI mismatch). See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for the full catalogue.
 - **Safety-critical validation** — 10 dedicated safety test files in `tests/safety_critical/` verify IEEE 754 compliance, overflow/underflow boundaries, catastrophic cancellation detection, determinism, energy conservation, and TBB sticky error propagation. All pass.
 - **`aria_packages` library ecosystem** — 27 packages (LIB-1 through LIB-27) with 543+ assertions, all passing. Packages cover math, PRNG, graphics, data encoding, string manipulation, JSON, CLI args, a virtual console stack, and AI-focused libraries (decision trees, quantum entanglement, gradient fields, resource memory). See the [Packages](#aria_packages-library-ecosystem) section below.
-- **678 test files** — Comprehensive test suite covering compiler features, safety-critical validation, fuzzer corpus, and ecosystem integration.
+- **681 test files** — Comprehensive test suite covering compiler features, safety-critical validation, fuzzer corpus, and ecosystem integration.
 - **Language specialist model** — V3 training complete (Qwen 7B LoRA, 71% pattern match). V4 training in progress with a higher-quality corpus (2,484 examples, 100% drill compilation rate, proper `Result<T>` + `?` patterns, `NIL`/`void` correctness).
 - **Fuzzing** — Continuous fuzzing via Fuzzer V2. 24-hour stress campaigns, crashes archived and regression-tested. Valgrind-clean runtime.
 - **External tester onboarded** — Getting Started guide created for first external tester (non-programmer, Linux Mint, building crypto data tools).
@@ -63,7 +63,7 @@ The compiler has reached release-candidate status. All 27 catalogued compiler bu
 - **Dimensional algebra** — Unit-typed arithmetic
 - **Operators** — Full suite including `@` (address), `#` (pin), `->` (arrow), `..`/`...` (ranges)
 - **Template literals** — `` `&{variable}` `` string interpolation
-- **Standard library** — string_convert, string (manipulation), string_builder, print_utils, wave/wavemech, complex, dbug, quantum, atomic, io (file streams), math (transcendentals), linalg (linear algebra), collections (Vec, Map, Set, Graph)
+- **Standard library** — string_convert, string (manipulation), string_builder, print_utils, wave/wavemech, complex, dbug, quantum, atomic, io (file streams), math (transcendentals), linalg (linear algebra), collections (Vec, Map, Set, Graph), json, toml, binary, net (TCP sockets)
 
 ### In Progress / Specified
 - **Balanced Ternary/Nonary runtime** — Literal parsing ✅; trit/tryte/nit/nyte arithmetic 🔧 (high priority — Nikola core requirement)
@@ -320,7 +320,7 @@ aria/
 │   ├── quantum.aria         # Quantum types
 │   ├── lib_hashmap_*.aria   # HashMap implementations
 │   └── lib_vec_int32.aria   # Vec<int32>
-├── tests/                    # Test suite (678 tests and growing)
+├── tests/                    # Test suite (681 tests and growing)
 │   ├── fuzz/                # Fuzzer V2 and corpus
 │   ├── gpu/                 # GPU/CUDA tests and PTX
 │   └── *.aria               # Feature test files
@@ -438,10 +438,12 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ stdlib.linalg — Linear algebra (Vec2, Vec3, Mat2x2, Mat3x3, dot, cross, determinant, inverse) with 19 passing tests
 - ✅ stdlib.collections — Vec<int64>, VecI32, VecF64, Map<int64,int64>, Set<int64>, Graph<int64> with 70 passing tests
 - ✅ stdlib.string — String manipulation (replace, split, join, reverse, count, char_at, to_int) with 45 passing tests
+- ✅ stdlib.json — Full JSON builder, parser, encoder (objects, arrays, nesting, round-trips) with 48 passing tests
+- ✅ stdlib.toml — TOML builder, parser, encoder (tables, arrays, dotted keys, inline values) with 40 passing tests
+- ✅ stdlib.binary — Buffer-based binary serialization (int8/16/32/64, float32/64, strings, file I/O) with 25 passing tests
+- ✅ stdlib.net — TCP networking (client connect/send/recv, server listen/accept, timeouts) with 15 passing tests
 
 **Remaining:**
-- Serialization (JSON, TOML, binary)
-- Network I/O
 - AriaX Linux official release
 - Advanced async patterns (channels, actors)
 - Package ecosystem

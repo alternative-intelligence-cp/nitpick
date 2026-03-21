@@ -1519,10 +1519,14 @@ bool BorrowChecker::isDeallocator(const std::string& funcName) const {
     }
 
     // Check for common patterns in function names
-    // Functions ending with "_free", "_destroy", "_release", "_close"
+    // Functions ending with "_free", "_close", "_destroy", "_release"
     if (funcName.length() > 5) {
         std::string suffix = funcName.substr(funcName.length() - 5);
-        if (suffix == "_free" || suffix == "_close") return true;
+        if (suffix == "_free") return true;
+    }
+    if (funcName.length() > 6) {
+        std::string suffix = funcName.substr(funcName.length() - 6);
+        if (suffix == "_close") return true;
     }
     if (funcName.length() > 8) {
         std::string suffix = funcName.substr(funcName.length() - 8);
