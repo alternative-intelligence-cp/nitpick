@@ -2481,6 +2481,36 @@ src/runtime/collections/collections.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/collections.cpp.s
 .PHONY : src/runtime/collections/collections.cpp.s
 
+src/runtime/collections/collections_typed.o: src/runtime/collections/collections_typed.cpp.o
+.PHONY : src/runtime/collections/collections_typed.o
+
+# target to build an object file
+src/runtime/collections/collections_typed.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collections_typed.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections_typed.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/collections_typed.cpp.o
+.PHONY : src/runtime/collections/collections_typed.cpp.o
+
+src/runtime/collections/collections_typed.i: src/runtime/collections/collections_typed.cpp.i
+.PHONY : src/runtime/collections/collections_typed.i
+
+# target to preprocess a source file
+src/runtime/collections/collections_typed.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collections_typed.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections_typed.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/collections_typed.cpp.i
+.PHONY : src/runtime/collections/collections_typed.cpp.i
+
+src/runtime/collections/collections_typed.s: src/runtime/collections/collections_typed.cpp.s
+.PHONY : src/runtime/collections/collections_typed.s
+
+# target to generate assembly for a file
+src/runtime/collections/collections_typed.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collections_typed.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections_typed.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/collections_typed.cpp.s
+.PHONY : src/runtime/collections/collections_typed.cpp.s
+
 src/runtime/collections/map.o: src/runtime/collections/map.cpp.o
 .PHONY : src/runtime/collections/map.o
 
@@ -3068,6 +3098,36 @@ src/runtime/strings/strings.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/strings/strings.cpp.s
 .PHONY : src/runtime/strings/strings.cpp.s
+
+src/runtime/strings/strings_typed.o: src/runtime/strings/strings_typed.cpp.o
+.PHONY : src/runtime/strings/strings_typed.o
+
+# target to build an object file
+src/runtime/strings/strings_typed.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/strings_typed.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings_typed.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/strings/strings_typed.cpp.o
+.PHONY : src/runtime/strings/strings_typed.cpp.o
+
+src/runtime/strings/strings_typed.i: src/runtime/strings/strings_typed.cpp.i
+.PHONY : src/runtime/strings/strings_typed.i
+
+# target to preprocess a source file
+src/runtime/strings/strings_typed.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/strings_typed.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings_typed.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/strings/strings_typed.cpp.i
+.PHONY : src/runtime/strings/strings_typed.cpp.i
+
+src/runtime/strings/strings_typed.s: src/runtime/strings/strings_typed.cpp.s
+.PHONY : src/runtime/strings/strings_typed.s
+
+# target to generate assembly for a file
+src/runtime/strings/strings_typed.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/strings_typed.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings_typed.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/strings/strings_typed.cpp.s
+.PHONY : src/runtime/strings/strings_typed.cpp.s
 
 src/runtime/tbb/tbb.o: src/runtime/tbb/tbb.cpp.o
 .PHONY : src/runtime/tbb/tbb.o
@@ -3808,6 +3868,9 @@ help:
 	@echo "... src/runtime/collections/collections.o"
 	@echo "... src/runtime/collections/collections.i"
 	@echo "... src/runtime/collections/collections.s"
+	@echo "... src/runtime/collections/collections_typed.o"
+	@echo "... src/runtime/collections/collections_typed.i"
+	@echo "... src/runtime/collections/collections_typed.s"
 	@echo "... src/runtime/collections/map.o"
 	@echo "... src/runtime/collections/map.i"
 	@echo "... src/runtime/collections/map.s"
@@ -3868,6 +3931,9 @@ help:
 	@echo "... src/runtime/strings/strings.o"
 	@echo "... src/runtime/strings/strings.i"
 	@echo "... src/runtime/strings/strings.s"
+	@echo "... src/runtime/strings/strings_typed.o"
+	@echo "... src/runtime/strings/strings_typed.i"
+	@echo "... src/runtime/strings/strings_typed.s"
 	@echo "... src/runtime/tbb/tbb.o"
 	@echo "... src/runtime/tbb/tbb.i"
 	@echo "... src/runtime/tbb/tbb.s"

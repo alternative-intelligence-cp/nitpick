@@ -1,0 +1,40 @@
+// stdlib/string.aria
+// String Manipulation Module
+//
+// Provides string operations not available as built-in intrinsics.
+// Import with: use "stdlib/string.aria".*;
+//
+// Built-in intrinsics (available WITHOUT import):
+//   string_length, string_is_empty, string_equals, string_concat,
+//   string_contains, string_starts_with, string_ends_with, string_index_of,
+//   string_substring, string_repeat, string_trim, string_trim_start,
+//   string_trim_end, string_to_upper, string_to_lower, string_pad_left,
+//   string_pad_right, string_from_int, string_from_char
+//
+// This module adds:
+//   str_replace(s, old, new)           → string   replace all occurrences
+//   str_replace_first(s, old, new)     → string   replace first occurrence
+//   str_count(s, sub)                  → int64    count occurrences
+//   str_byte_at(s, idx)               → int64    byte value at index (-1 OOB)
+//   str_char_at(s, idx)               → string   single-char at index
+//   str_reverse(s)                    → string   reverse bytes (ASCII)
+//   str_to_int(s)                     → int64    parse to int64
+//   str_split(s, delim)               → handle   split by delimiter
+//   str_split_count(h)                → int64    number of parts
+//   str_split_get(h, i)               → string   get i-th part
+//   str_split_free(h)                 → void     free split handle
+//   str_join(h, delim)                → string   join parts with delimiter
+
+// ── Extern declarations for runtime string functions ─────────────────────────
+extern func:str_replace = string(string:src, string:old_s, string:new_s);
+extern func:str_replace_first = string(string:src, string:old_s, string:new_s);
+extern func:str_count = int64(string:haystack, string:needle);
+extern func:str_byte_at = int64(string:s, int64:idx);
+extern func:str_char_at = string(string:s, int64:idx);
+extern func:str_reverse = string(string:s);
+extern func:str_to_int = int64(string:s);
+extern func:str_split = wild int8*(string:s, string:delim);
+extern func:str_split_count = int64(wild int8*:handle);
+extern func:str_split_get = string(wild int8*:handle, int64:idx);
+extern func:str_split_free = void(wild int8*:handle);
+extern func:str_join = string(wild int8*:handle, string:delim);

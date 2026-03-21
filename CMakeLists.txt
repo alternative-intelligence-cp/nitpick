@@ -267,6 +267,7 @@ set(STDLIB_SOURCES
     src/runtime/collections/map.cpp
     src/runtime/collections/collections_typed.cpp
     src/runtime/strings/strings.cpp
+    src/runtime/strings/strings_typed.cpp
     src/runtime/math/math.cpp
     src/runtime/math/lbim.cpp
     src/runtime/math/lbim_extended.cpp
