@@ -8381,7 +8381,13 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         
         // Generate the call instruction
-        llvm::Value* call_result = builder.CreateCall(direct_func, args, "calltmp");
+        // Void-returning functions cannot have a named result in LLVM IR
+        llvm::Value* call_result;
+        if (direct_func->getReturnType()->isVoidTy()) {
+            call_result = builder.CreateCall(direct_func, args);
+        } else {
+            call_result = builder.CreateCall(direct_func, args, "calltmp");
+        }
         
         // BUG-09-001 FIX: Auto-wrap FFI pointer returns in Optional
         // Check if this is an extern function returning a pointer
