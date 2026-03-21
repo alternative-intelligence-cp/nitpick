@@ -270,7 +270,7 @@ set(STDLIB_SOURCES
     src/runtime/strings/strings_typed.cpp
     src/runtime/json/json.cpp
     src/runtime/toml/toml.cpp
-    src/runtime/binary/binary.cpp
+    src/runtime/binary/binary_helpers.cpp
     src/runtime/net/net.cpp
     src/runtime/math/math.cpp
     src/runtime/math/lbim.cpp
