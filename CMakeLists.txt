@@ -271,6 +271,7 @@ set(STDLIB_SOURCES
     src/runtime/json/json_helpers.cpp
     src/runtime/toml/toml_helpers.cpp
     src/runtime/binary/binary_helpers.cpp
+    src/runtime/lex/lex_helpers.cpp
     src/runtime/net/net.cpp
     src/runtime/math/math.cpp
     src/runtime/math/lbim.cpp
