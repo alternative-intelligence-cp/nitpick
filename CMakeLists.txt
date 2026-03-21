@@ -268,6 +268,7 @@ set(STDLIB_SOURCES
     src/runtime/collections/collections_typed.cpp
     src/runtime/strings/strings.cpp
     src/runtime/strings/strings_typed.cpp
+    src/runtime/json/json.cpp
     src/runtime/math/math.cpp
     src/runtime/math/lbim.cpp
     src/runtime/math/lbim_extended.cpp
