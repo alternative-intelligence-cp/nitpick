@@ -268,8 +268,8 @@ set(STDLIB_SOURCES
     src/runtime/collections/collection_helpers.cpp
     src/runtime/strings/strings.cpp
     src/runtime/strings/string_helpers.cpp
-    src/runtime/json/json.cpp
-    src/runtime/toml/toml.cpp
+    src/runtime/json/json_helpers.cpp
+    src/runtime/toml/toml_helpers.cpp
     src/runtime/binary/binary_helpers.cpp
     src/runtime/net/net.cpp
     src/runtime/math/math.cpp

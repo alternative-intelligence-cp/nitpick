@@ -1,5 +1,5 @@
 // stdlib/json.aria
-// JSON Serialization / Deserialization Module
+// JSON Serialization / Deserialization Module — Pure Aria (v0.2.0)
 //
 // Full JSON encoding and decoding for Aria programs.
 // Import with: use "stdlib/json.aria".*;
@@ -8,51 +8,243 @@
 //   0 = null,  1 = bool,  2 = int,  3 = float,  4 = string,
 //   5 = array, 6 = object
 //
+// Self-hosting: All public API, encoder, and parser in pure Aria.
+//               Thin C helpers (jh_*) for irreducible value tree ops.
+//
 // ── Building JSON ────────────────────────────────────────────────────
-//   json_new_object()                        → handle   create empty object
-//   json_new_array()                         → handle   create empty array
-//   json_obj_set_str(h, key, val)            → void     set string field
-//   json_obj_set_int(h, key, val)            → void     set int64 field
-//   json_obj_set_flt(h, key, val)            → void     set flt64 field
-//   json_obj_set_bool(h, key, val)           → void     set bool field (1/0)
-//   json_obj_set_null(h, key)                → void     set null field
-//   json_obj_set_obj(h, key, child)          → void     set nested object
-//   json_obj_set_arr(h, key, child)          → void     set nested array
-//   json_arr_push_str(h, val)                → void     push string element
-//   json_arr_push_int(h, val)                → void     push int64 element
-//   json_arr_push_flt(h, val)                → void     push flt64 element
-//   json_arr_push_bool(h, val)               → void     push bool element (1/0)
-//   json_arr_push_null(h)                    → void     push null element
-//   json_arr_push_obj(h, child)              → void     push object element
-//   json_arr_push_arr(h, child)              → void     push array element
-//   json_encode(h)                           → string   serialize to JSON string
-//   json_free(h)                             → void     free builder handle
+//   json_new_object()                        → handle
+//   json_new_array()                         → handle
+//   json_obj_set_str(h, key, val)            → NIL
+//   json_obj_set_int(h, key, val)            → NIL
+//   json_obj_set_flt(h, key, val)            → NIL
+//   json_obj_set_bool(h, key, val)           → NIL
+//   json_obj_set_null(h, key)                → NIL
+//   json_obj_set_obj(h, key, child)          → NIL
+//   json_obj_set_arr(h, key, child)          → NIL
+//   json_arr_push_str(h, val)                → NIL
+//   json_arr_push_int(h, val)                → NIL
+//   json_arr_push_flt(h, val)                → NIL
+//   json_arr_push_bool(h, val)               → NIL
+//   json_arr_push_null(h)                    → NIL
+//   json_arr_push_obj(h, child)              → NIL
+//   json_arr_push_arr(h, child)              → NIL
+//   json_encode(h)                           → string
+//   json_free(h)                             → NIL
 //
 // ── Parsing JSON ─────────────────────────────────────────────────────
-//   json_parse(json_string)                  → handle   parse JSON → handle
-//   json_type(h)                             → int32    type code of handle
-//   json_obj_has(h, key)                     → int32    1 if key exists, 0 otherwise
-//   json_obj_count(h)                        → int64    number of keys
-//   json_obj_get_str(h, key)                 → string   get string field
-//   json_obj_get_int(h, key)                 → int64    get int field
-//   json_obj_get_flt(h, key)                 → flt64    get float field
-//   json_obj_get_bool(h, key)                → int32    get bool field (1/0)
-//   json_obj_get_obj(h, key)                 → handle   get nested object
-//   json_obj_get_arr(h, key)                 → handle   get nested array
-//   json_arr_len(h)                          → int64    array length
-//   json_arr_get_str(h, idx)                 → string   get string at index
-//   json_arr_get_int(h, idx)                 → int64    get int at index
-//   json_arr_get_flt(h, idx)                 → flt64    get float at index
-//   json_arr_get_bool(h, idx)                → int32    get bool at index
-//   json_arr_get_obj(h, idx)                 → handle   get object at index
-//   json_arr_get_arr(h, idx)                 → handle   get array at index
-//   json_arr_get_type(h, idx)                → int32    type code at index
+//   json_parse(json_string)                  → handle
+//   json_type(h)                             → int32
+//   json_obj_has(h, key)                     → int32    1 if exists
+//   json_obj_count(h)                        → int64
+//   json_obj_get_str(h, key)                 → string
+//   json_obj_get_int(h, key)                 → int64
+//   json_obj_get_flt(h, key)                 → flt64
+//   json_obj_get_bool(h, key)                → int32
+//   json_obj_get_obj(h, key)                 → handle
+//   json_obj_get_arr(h, key)                 → handle
+//   json_arr_len(h)                          → int64
+//   json_arr_get_str(h, idx)                 → string
+//   json_arr_get_int(h, idx)                 → int64
+//   json_arr_get_flt(h, idx)                 → flt64
+//   json_arr_get_bool(h, idx)                → int32
+//   json_arr_get_obj(h, idx)                 → handle
+//   json_arr_get_arr(h, idx)                 → handle
+//   json_arr_get_type(h, idx)                → int32
 
-// ── Constructors ─────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: C helpers — node management (json_helpers.cpp)
+// ═══════════════════════════════════════════════════════════════════════
+extern func:jh_new_null = wild int8*();
+extern func:jh_new_bool = wild int8*(int32:val);
+extern func:jh_new_int = wild int8*(int64:val);
+extern func:jh_new_float = wild int8*(flt64:val);
+extern func:jh_new_string = wild int8*(string:val);
+extern func:jh_new_object = wild int8*();
+extern func:jh_new_array = wild int8*();
+
+extern func:jh_type = int32(wild int8*:h);
+extern func:jh_get_bool = int32(wild int8*:h);
+extern func:jh_get_int = int64(wild int8*:h);
+extern func:jh_get_float = flt64(wild int8*:h);
+extern func:jh_get_string = string(wild int8*:h);
+
+extern func:jh_obj_set = void(wild int8*:h, string:key, wild int8*:child);
+extern func:jh_obj_find = wild int8*(wild int8*:h, string:key);
+extern func:jh_obj_count = int64(wild int8*:h);
+extern func:jh_obj_key_at = string(wild int8*:h, int64:idx);
+extern func:jh_obj_val_at = wild int8*(wild int8*:h, int64:idx);
+
+extern func:jh_arr_push = void(wild int8*:h, wild int8*:child);
+extern func:jh_arr_get = wild int8*(wild int8*:h, int64:idx);
+extern func:jh_arr_len = int64(wild int8*:h);
+
+extern func:jh_clone = wild int8*(wild int8*:h);
+extern func:jh_free = void(wild int8*:h);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: C helpers — DynBuf for encoding
+// ═══════════════════════════════════════════════════════════════════════
+extern func:jh_buf_new = wild int8*();
+extern func:jh_buf_char = void(wild int8*:buf, int32:c);
+extern func:jh_buf_str = void(wild int8*:buf, string:s);
+extern func:jh_buf_to_string = string(wild int8*:buf);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: C helpers — number formatting/parsing
+// ═══════════════════════════════════════════════════════════════════════
+extern func:jh_int_to_cstr = string(int64:val);
+extern func:jh_float_to_cstr = string(flt64:val);
+extern func:jh_parse_int = int64(string:s, int64:start, int64:len);
+extern func:jh_parse_float = flt64(string:s, int64:start, int64:len);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: C helpers — parser state + string byte access
+// ═══════════════════════════════════════════════════════════════════════
+extern func:jh_byte_at = int32(string:s, int64:idx);
+extern func:jh_strlen = int64(string:s);
+
+// Pointer→int64 conversion (from collection_helpers.cpp)
+extern func:ch_ptr_to_int = int64(wild int8*:ptr);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: C helpers — type-specific set/push/get
+// ═══════════════════════════════════════════════════════════════════════
+extern func:jh_obj_set_str = void(wild int8*:h, string:key, string:val);
+extern func:jh_obj_set_int = void(wild int8*:h, string:key, int64:val);
+extern func:jh_obj_set_flt = void(wild int8*:h, string:key, flt64:val);
+extern func:jh_obj_set_bool = void(wild int8*:h, string:key, int32:val);
+extern func:jh_obj_set_null = void(wild int8*:h, string:key);
+extern func:jh_obj_set_obj = void(wild int8*:h, string:key, wild int8*:child);
+extern func:jh_obj_set_arr = void(wild int8*:h, string:key, wild int8*:child);
+extern func:jh_arr_push_str = void(wild int8*:h, string:val);
+extern func:jh_arr_push_int = void(wild int8*:h, int64:val);
+extern func:jh_arr_push_flt = void(wild int8*:h, flt64:val);
+extern func:jh_arr_push_bool = void(wild int8*:h, int32:val);
+extern func:jh_arr_push_null = void(wild int8*:h);
+extern func:jh_arr_push_obj = void(wild int8*:h, wild int8*:child);
+extern func:jh_arr_push_arr = void(wild int8*:h, wild int8*:child);
+extern func:jh_obj_has = int32(wild int8*:h, string:key);
+extern func:jh_obj_get_str = string(wild int8*:h, string:key);
+extern func:jh_obj_get_int = int64(wild int8*:h, string:key);
+extern func:jh_obj_get_flt = flt64(wild int8*:h, string:key);
+extern func:jh_obj_get_bool = int32(wild int8*:h, string:key);
+extern func:jh_obj_get_obj = wild int8*(wild int8*:h, string:key);
+extern func:jh_obj_get_arr = wild int8*(wild int8*:h, string:key);
+extern func:jh_arr_get_str = string(wild int8*:h, int64:idx);
+extern func:jh_arr_get_int = int64(wild int8*:h, int64:idx);
+extern func:jh_arr_get_flt = flt64(wild int8*:h, int64:idx);
+extern func:jh_arr_get_bool = int32(wild int8*:h, int64:idx);
+extern func:jh_arr_get_obj = wild int8*(wild int8*:h, int64:idx);
+extern func:jh_arr_get_arr = wild int8*(wild int8*:h, int64:idx);
+extern func:jh_arr_get_type = int32(wild int8*:h, int64:idx);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — escape a JSON string value into buffer
+// ═══════════════════════════════════════════════════════════════════════
+func:json_encode_string = NIL(wild int8->:buf, string:s) {
+    jh_buf_char(buf, 34i32);
+    int64:slen = jh_strlen(s);
+    int64:i = 0i64;
+    while (i < slen) {
+        int32:c = jh_byte_at(s, i);
+        if (c == 34i32) { jh_buf_str(buf, "\\\""); }
+        else if (c == 92i32) { jh_buf_str(buf, "\\\\"); }
+        else if (c == 8i32) { jh_buf_str(buf, "\\b"); }
+        else if (c == 12i32) { jh_buf_str(buf, "\\f"); }
+        else if (c == 10i32) { jh_buf_str(buf, "\\n"); }
+        else if (c == 13i32) { jh_buf_str(buf, "\\r"); }
+        else if (c == 9i32) { jh_buf_str(buf, "\\t"); }
+        else if (c < 32i32) {
+            jh_buf_str(buf, "\\u00");
+            int32:hi = c / 16i32;
+            int32:lo = c - (hi * 16i32);
+            if (hi < 10i32) { jh_buf_char(buf, hi + 48i32); }
+            else { jh_buf_char(buf, hi - 10i32 + 97i32); }
+            if (lo < 10i32) { jh_buf_char(buf, lo + 48i32); }
+            else { jh_buf_char(buf, lo - 10i32 + 97i32); }
+        }
+        else { jh_buf_char(buf, c); }
+        i = i + 1i64;
+    }
+    jh_buf_char(buf, 34i32);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — recursive value encoding
+// ═══════════════════════════════════════════════════════════════════════
+func:json_encode_value = NIL(wild int8->:buf, wild int8->:v) {
+    int32:t = jh_type(v);
+
+    if (t == 0i32) { jh_buf_str(buf, "null"); }
+    else if (t == 1i32) {
+        int32:bv = jh_get_bool(v);
+        if (bv == 1i32) { jh_buf_str(buf, "true"); }
+        else { jh_buf_str(buf, "false"); }
+    }
+    else if (t == 2i32) {
+        string:ns = jh_int_to_cstr(jh_get_int(v));
+        jh_buf_str(buf, ns);
+    }
+    else if (t == 3i32) {
+        string:fs = jh_float_to_cstr(jh_get_float(v));
+        jh_buf_str(buf, fs);
+    }
+    else if (t == 4i32) {
+        string:sv = jh_get_string(v);
+        drop(json_encode_string(buf, sv));
+    }
+    else if (t == 5i32) {
+        jh_buf_char(buf, 91i32);
+        int64:alen = jh_arr_len(v);
+        int64:ai = 0i64;
+        while (ai < alen) {
+            if (ai > 0i64) { jh_buf_char(buf, 44i32); }
+            wild int8->:aitem = jh_arr_get(v, ai);
+            drop(json_encode_value(buf, aitem));
+            ai = ai + 1i64;
+        }
+        jh_buf_char(buf, 93i32);
+    }
+    else if (t == 6i32) {
+        jh_buf_char(buf, 123i32);
+        int64:olen = jh_obj_count(v);
+        int64:oi = 0i64;
+        while (oi < olen) {
+            if (oi > 0i64) { jh_buf_char(buf, 44i32); }
+            string:okey = jh_obj_key_at(v, oi);
+            drop(json_encode_string(buf, okey));
+            jh_buf_char(buf, 58i32);
+            wild int8->:oval = jh_obj_val_at(v, oi);
+            drop(json_encode_value(buf, oval));
+            oi = oi + 1i64;
+        }
+        jh_buf_char(buf, 125i32);
+    }
+    else { jh_buf_str(buf, "null"); }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Encoder (Aria)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:json_encode = string(wild int8->:h) {
+    wild int8->:buf = jh_buf_new();
+    drop(json_encode_value(buf, h));
+    string:result = jh_buf_to_string(buf);
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Constructors (C externs)
+// ═══════════════════════════════════════════════════════════════════════
+
 extern func:json_new_object = wild int8*();
 extern func:json_new_array = wild int8*();
 
-// ── Object setters ───────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Object setters (C externs)
+// ═══════════════════════════════════════════════════════════════════════
+
 extern func:json_obj_set_str = void(wild int8*:h, string:key, string:val);
 extern func:json_obj_set_int = void(wild int8*:h, string:key, int64:val);
 extern func:json_obj_set_flt = void(wild int8*:h, string:key, flt64:val);
@@ -61,7 +253,10 @@ extern func:json_obj_set_null = void(wild int8*:h, string:key);
 extern func:json_obj_set_obj = void(wild int8*:h, string:key, wild int8*:child);
 extern func:json_obj_set_arr = void(wild int8*:h, string:key, wild int8*:child);
 
-// ── Array pushers ────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Array pushers (C externs)
+// ═══════════════════════════════════════════════════════════════════════
+
 extern func:json_arr_push_str = void(wild int8*:h, string:val);
 extern func:json_arr_push_int = void(wild int8*:h, int64:val);
 extern func:json_arr_push_flt = void(wild int8*:h, flt64:val);
@@ -70,16 +265,22 @@ extern func:json_arr_push_null = void(wild int8*:h);
 extern func:json_arr_push_obj = void(wild int8*:h, wild int8*:child);
 extern func:json_arr_push_arr = void(wild int8*:h, wild int8*:child);
 
-// ── Encoder ──────────────────────────────────────────────────────────
-extern func:json_encode = string(wild int8*:h);
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Parser (C extern)
+// ═══════════════════════════════════════════════════════════════════════
 
-// ── Parser ───────────────────────────────────────────────────────────
 extern func:json_parse = wild int8*(string:json_str);
 
-// ── Type query ───────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Type query (C extern)
+// ═══════════════════════════════════════════════════════════════════════
+
 extern func:json_type = int32(wild int8*:h);
 
-// ── Object getters ───────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Object getters (C externs)
+// ═══════════════════════════════════════════════════════════════════════
+
 extern func:json_obj_has = int32(wild int8*:h, string:key);
 extern func:json_obj_count = int64(wild int8*:h);
 extern func:json_obj_get_str = string(wild int8*:h, string:key);
@@ -89,7 +290,10 @@ extern func:json_obj_get_bool = int32(wild int8*:h, string:key);
 extern func:json_obj_get_obj = wild int8*(wild int8*:h, string:key);
 extern func:json_obj_get_arr = wild int8*(wild int8*:h, string:key);
 
-// ── Array getters ────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Array getters (C externs)
+// ═══════════════════════════════════════════════════════════════════════
+
 extern func:json_arr_len = int64(wild int8*:h);
 extern func:json_arr_get_str = string(wild int8*:h, int64:idx);
 extern func:json_arr_get_int = int64(wild int8*:h, int64:idx);
@@ -99,5 +303,8 @@ extern func:json_arr_get_obj = wild int8*(wild int8*:h, int64:idx);
 extern func:json_arr_get_arr = wild int8*(wild int8*:h, int64:idx);
 extern func:json_arr_get_type = int32(wild int8*:h, int64:idx);
 
-// ── Cleanup ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Cleanup (C extern)
+// ═══════════════════════════════════════════════════════════════════════
+
 extern func:json_free = void(wild int8*:h);

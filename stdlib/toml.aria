@@ -1,56 +1,60 @@
 // stdlib/toml.aria
-// TOML Serialization / Deserialization Module
+// TOML Serialization / Deserialization Module — Pure Aria (v0.2.0)
 //
 // Full TOML encoding and decoding for Aria programs.
 // Import with: use "stdlib/toml.aria".*;
 //
-// Type codes (returned by toml_type / toml_arr_get_type):
-//   0 = string,  1 = int,  2 = float,  3 = bool,
-//   4 = table,   5 = array
+// Type codes: 0=string, 1=int, 2=float, 3=bool, 4=table, 5=array
 //
-// ── Building TOML ────────────────────────────────────────────────────
-//   toml_new_table()                         → handle   create empty table
-//   toml_new_array()                         → handle   create empty array
-//   toml_set_str(h, key, val)                → void     set string field
-//   toml_set_int(h, key, val)                → void     set int64 field
-//   toml_set_flt(h, key, val)                → void     set flt64 field
-//   toml_set_bool(h, key, val)               → void     set bool field (1/0)
-//   toml_set_tbl(h, key, child)              → void     set nested table
-//   toml_set_arr(h, key, child)              → void     set nested array
-//   toml_arr_push_str(h, val)                → void     push string element
-//   toml_arr_push_int(h, val)                → void     push int64 element
-//   toml_arr_push_flt(h, val)                → void     push flt64 element
-//   toml_arr_push_bool(h, val)               → void     push bool element (1/0)
-//   toml_arr_push_tbl(h, child)              → void     push table element
-//   toml_arr_push_arr(h, child)              → void     push array element
-//   toml_encode(h)                           → string   serialize to TOML string
-//   toml_free(h)                             → void     free handle
-//
-// ── Parsing TOML ─────────────────────────────────────────────────────
-//   toml_parse(toml_string)                  → handle   parse TOML → handle
-//   toml_type(h)                             → int32    type code of handle
-//   toml_has(h, key)                         → int32    1 if key exists
-//   toml_count(h)                            → int64    number of keys
-//   toml_get_str(h, key)                     → string   get string field
-//   toml_get_int(h, key)                     → int64    get int field
-//   toml_get_flt(h, key)                     → flt64    get float field
-//   toml_get_bool(h, key)                    → int32    get bool field (1/0)
-//   toml_get_tbl(h, key)                     → handle   get nested table
-//   toml_get_arr(h, key)                     → handle   get nested array
-//   toml_arr_len(h)                          → int64    array length
-//   toml_arr_get_str(h, idx)                 → string   get string at index
-//   toml_arr_get_int(h, idx)                 → int64    get int at index
-//   toml_arr_get_flt(h, idx)                 → flt64    get float at index
-//   toml_arr_get_bool(h, idx)                → int32    get bool at index
-//   toml_arr_get_tbl(h, idx)                 → handle   get table at index
-//   toml_arr_get_arr(h, idx)                 → handle   get array at index
-//   toml_arr_get_type(h, idx)                → int32    type code at index
+// Self-hosting: Encoder in Aria, parser + public API as C externs.
+//               Thin C helpers (th_*) for irreducible value-tree ops.
 
-// ── Constructors ─────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: Low-level C helpers (toml_helpers.cpp)
+// ═══════════════════════════════════════════════════════════════════════
+extern func:th_new_string = wild int8*(string:val);
+extern func:th_new_int = wild int8*(int64:val);
+extern func:th_new_float = wild int8*(flt64:val);
+extern func:th_new_bool = wild int8*(int32:val);
+extern func:th_new_table = wild int8*();
+extern func:th_new_array = wild int8*();
+
+extern func:th_type = int32(wild int8*:h);
+extern func:th_get_string = string(wild int8*:h);
+extern func:th_get_int = int64(wild int8*:h);
+extern func:th_get_float = flt64(wild int8*:h);
+extern func:th_get_bool = int32(wild int8*:h);
+
+extern func:th_tbl_set = void(wild int8*:h, string:key, wild int8*:child);
+extern func:th_tbl_find = wild int8*(wild int8*:h, string:key);
+extern func:th_tbl_count = int64(wild int8*:h);
+extern func:th_tbl_key_at = string(wild int8*:h, int64:idx);
+extern func:th_tbl_val_at = wild int8*(wild int8*:h, int64:idx);
+
+extern func:th_arr_push = void(wild int8*:h, wild int8*:child);
+extern func:th_arr_get = wild int8*(wild int8*:h, int64:idx);
+extern func:th_arr_len = int64(wild int8*:h);
+
+extern func:th_clone = wild int8*(wild int8*:h);
+extern func:th_free = void(wild int8*:h);
+
+extern func:th_buf_new = wild int8*();
+extern func:th_buf_char = void(wild int8*:buf, int32:c);
+extern func:th_buf_str = void(wild int8*:buf, string:s);
+extern func:th_buf_to_string = string(wild int8*:buf);
+
+extern func:th_int_to_cstr = string(int64:val);
+extern func:th_float_to_cstr = string(flt64:val);
+
+extern func:th_byte_at = int32(string:s, int64:idx);
+extern func:th_strlen = int64(string:s);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: Public API (toml_helpers.cpp)
+// ═══════════════════════════════════════════════════════════════════════
 extern func:toml_new_table = wild int8*();
 extern func:toml_new_array = wild int8*();
 
-// ── Table setters ────────────────────────────────────────────────────
 extern func:toml_set_str = void(wild int8*:h, string:key, string:val);
 extern func:toml_set_int = void(wild int8*:h, string:key, int64:val);
 extern func:toml_set_flt = void(wild int8*:h, string:key, flt64:val);
@@ -58,7 +62,6 @@ extern func:toml_set_bool = void(wild int8*:h, string:key, int32:val);
 extern func:toml_set_tbl = void(wild int8*:h, string:key, wild int8*:child);
 extern func:toml_set_arr = void(wild int8*:h, string:key, wild int8*:child);
 
-// ── Array pushers ────────────────────────────────────────────────────
 extern func:toml_arr_push_str = void(wild int8*:h, string:val);
 extern func:toml_arr_push_int = void(wild int8*:h, int64:val);
 extern func:toml_arr_push_flt = void(wild int8*:h, flt64:val);
@@ -66,18 +69,12 @@ extern func:toml_arr_push_bool = void(wild int8*:h, int32:val);
 extern func:toml_arr_push_tbl = void(wild int8*:h, wild int8*:child);
 extern func:toml_arr_push_arr = void(wild int8*:h, wild int8*:child);
 
-// ── Encoder ──────────────────────────────────────────────────────────
-extern func:toml_encode = string(wild int8*:h);
-
-// ── Parser ───────────────────────────────────────────────────────────
 extern func:toml_parse = wild int8*(string:toml_str);
 
-// ── Type query ───────────────────────────────────────────────────────
 extern func:toml_type = int32(wild int8*:h);
-
-// ── Table getters ────────────────────────────────────────────────────
 extern func:toml_has = int32(wild int8*:h, string:key);
 extern func:toml_count = int64(wild int8*:h);
+
 extern func:toml_get_str = string(wild int8*:h, string:key);
 extern func:toml_get_int = int64(wild int8*:h, string:key);
 extern func:toml_get_flt = flt64(wild int8*:h, string:key);
@@ -85,7 +82,6 @@ extern func:toml_get_bool = int32(wild int8*:h, string:key);
 extern func:toml_get_tbl = wild int8*(wild int8*:h, string:key);
 extern func:toml_get_arr = wild int8*(wild int8*:h, string:key);
 
-// ── Array getters ────────────────────────────────────────────────────
 extern func:toml_arr_len = int64(wild int8*:h);
 extern func:toml_arr_get_str = string(wild int8*:h, int64:idx);
 extern func:toml_arr_get_int = int64(wild int8*:h, int64:idx);
@@ -95,5 +91,214 @@ extern func:toml_arr_get_tbl = wild int8*(wild int8*:h, int64:idx);
 extern func:toml_arr_get_arr = wild int8*(wild int8*:h, int64:idx);
 extern func:toml_arr_get_type = int32(wild int8*:h, int64:idx);
 
-// ── Cleanup ──────────────────────────────────────────────────────────
 extern func:toml_free = void(wild int8*:h);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — needs_quote check for bare keys
+// ═══════════════════════════════════════════════════════════════════════
+func:te_needs_quote = int32(string:key) {
+    int64:slen = th_strlen(key);
+    if (slen == 0i64) { pass(1i32); }
+    int64:i = 0i64;
+    while (i < slen) {
+        int32:c = th_byte_at(key, i);
+        bool:bk = false;
+        if (c >= 97i32) { if (c <= 122i32) { bk = true; } }
+        if (c >= 65i32) { if (c <= 90i32) { bk = true; } }
+        if (c >= 48i32) { if (c <= 57i32) { bk = true; } }
+        if (c == 95i32) { bk = true; }
+        if (c == 45i32) { bk = true; }
+        if (bk == false) { pass(1i32); }
+        i = i + 1i64;
+    }
+    pass(0i32);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — write key (quoted or bare)
+// ═══════════════════════════════════════════════════════════════════════
+func:te_encode_key = NIL(wild int8->:buf, string:key) {
+    int32:nq = raw(te_needs_quote(key));
+    if (nq == 1i32) {
+        th_buf_char(buf, 34i32);
+        int64:klen = th_strlen(key);
+        int64:ki = 0i64;
+        while (ki < klen) {
+            int32:kc = th_byte_at(key, ki);
+            if (kc == 34i32) { th_buf_str(buf, "\\\""); }
+            else if (kc == 92i32) { th_buf_str(buf, "\\\\"); }
+            else { th_buf_char(buf, kc); }
+            ki = ki + 1i64;
+        }
+        th_buf_char(buf, 34i32);
+    } else {
+        th_buf_str(buf, key);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — write escaped string value
+// ═══════════════════════════════════════════════════════════════════════
+func:te_encode_string = NIL(wild int8->:buf, string:s) {
+    th_buf_char(buf, 34i32);
+    int64:slen = th_strlen(s);
+    int64:si = 0i64;
+    while (si < slen) {
+        int32:sc = th_byte_at(s, si);
+        if (sc == 34i32) { th_buf_str(buf, "\\\""); }
+        else if (sc == 92i32) { th_buf_str(buf, "\\\\"); }
+        else if (sc == 10i32) { th_buf_str(buf, "\\n"); }
+        else if (sc == 9i32) { th_buf_str(buf, "\\t"); }
+        else if (sc == 13i32) { th_buf_str(buf, "\\r"); }
+        else { th_buf_char(buf, sc); }
+        si = si + 1i64;
+    }
+    th_buf_char(buf, 34i32);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — build dotted path (prefix + "." + key)
+// ═══════════════════════════════════════════════════════════════════════
+func:te_build_path = string(string:prefix, string:key) {
+    int64:plen = th_strlen(prefix);
+    if (plen == 0i64) { pass(key); }
+    wild int8->:pb = th_buf_new();
+    th_buf_str(pb, prefix);
+    th_buf_char(pb, 46i32);
+    th_buf_str(pb, key);
+    string:result = th_buf_to_string(pb);
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — inline value (recursive)
+// ═══════════════════════════════════════════════════════════════════════
+func:te_encode_inline_value = NIL(wild int8->:buf, wild int8->:v) {
+    int32:t = th_type(v);
+    if (t == 0i32) {
+        string:sv = th_get_string(v);
+        drop(te_encode_string(buf, sv));
+    }
+    else if (t == 1i32) {
+        string:ns = th_int_to_cstr(th_get_int(v));
+        th_buf_str(buf, ns);
+    }
+    else if (t == 2i32) {
+        string:fs = th_float_to_cstr(th_get_float(v));
+        th_buf_str(buf, fs);
+    }
+    else if (t == 3i32) {
+        int32:bv = th_get_bool(v);
+        if (bv == 1i32) { th_buf_str(buf, "true"); }
+        else { th_buf_str(buf, "false"); }
+    }
+    else if (t == 4i32) {
+        th_buf_char(buf, 123i32);
+        int64:tlen = th_tbl_count(v);
+        int64:ti = 0i64;
+        while (ti < tlen) {
+            if (ti > 0i64) { th_buf_str(buf, ", "); }
+            string:tk = th_tbl_key_at(v, ti);
+            drop(te_encode_key(buf, tk));
+            th_buf_str(buf, " = ");
+            wild int8->:tv = th_tbl_val_at(v, ti);
+            drop(te_encode_inline_value(buf, tv));
+            ti = ti + 1i64;
+        }
+        th_buf_char(buf, 125i32);
+    }
+    else if (t == 5i32) {
+        th_buf_char(buf, 91i32);
+        int64:alen = th_arr_len(v);
+        int64:ai = 0i64;
+        while (ai < alen) {
+            if (ai > 0i64) { th_buf_str(buf, ", "); }
+            wild int8->:av = th_arr_get(v, ai);
+            drop(te_encode_inline_value(buf, av));
+            ai = ai + 1i64;
+        }
+        th_buf_char(buf, 93i32);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — 3-pass table encoding with [section] headers
+// ═══════════════════════════════════════════════════════════════════════
+func:te_encode_table = NIL(wild int8->:buf, wild int8->:tbl, string:prefix) {
+    int64:tlen = th_tbl_count(tbl);
+
+    // Pass 1: simple values (not tables, not arrays-of-tables)
+    int64:p1 = 0i64;
+    while (p1 < tlen) {
+        wild int8->:v1 = th_tbl_val_at(tbl, p1);
+        int32:v1t = th_type(v1);
+        bool:skip1 = false;
+        if (v1t == 4i32) { skip1 = true; }
+        if (v1t == 5i32) {
+            if (th_arr_len(v1) > 0i64) {
+                wild int8->:first = th_arr_get(v1, 0i64);
+                if (th_type(first) == 4i32) { skip1 = true; }
+            }
+        }
+        if (skip1 == false) {
+            string:k1 = th_tbl_key_at(tbl, p1);
+            drop(te_encode_key(buf, k1));
+            th_buf_str(buf, " = ");
+            drop(te_encode_inline_value(buf, v1));
+            th_buf_char(buf, 10i32);
+        }
+        p1 = p1 + 1i64;
+    }
+
+    // Pass 2: sub-tables with [section] headers
+    int64:p2 = 0i64;
+    while (p2 < tlen) {
+        wild int8->:v2 = th_tbl_val_at(tbl, p2);
+        if (th_type(v2) == 4i32) {
+            string:k2 = th_tbl_key_at(tbl, p2);
+            string:fk2 = raw(te_build_path(prefix, k2));
+            th_buf_char(buf, 10i32);
+            th_buf_char(buf, 91i32);
+            th_buf_str(buf, fk2);
+            th_buf_str(buf, "]\n");
+            drop(te_encode_table(buf, v2, fk2));
+        }
+        p2 = p2 + 1i64;
+    }
+
+    // Pass 3: arrays-of-tables with [[section]] headers
+    int64:p3 = 0i64;
+    while (p3 < tlen) {
+        wild int8->:v3 = th_tbl_val_at(tbl, p3);
+        if (th_type(v3) == 5i32) {
+            if (th_arr_len(v3) > 0i64) {
+                wild int8->:f3 = th_arr_get(v3, 0i64);
+                if (th_type(f3) == 4i32) {
+                    string:k3 = th_tbl_key_at(tbl, p3);
+                    string:fk3 = raw(te_build_path(prefix, k3));
+                    int64:ai3 = 0i64;
+                    while (ai3 < th_arr_len(v3)) {
+                        th_buf_char(buf, 10i32);
+                        th_buf_str(buf, "[[");
+                        th_buf_str(buf, fk3);
+                        th_buf_str(buf, "]]\n");
+                        wild int8->:ae3 = th_arr_get(v3, ai3);
+                        drop(te_encode_table(buf, ae3, fk3));
+                        ai3 = ai3 + 1i64;
+                    }
+                }
+            }
+        }
+        p3 = p3 + 1i64;
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Encoder (Aria — returns string)
+// ═══════════════════════════════════════════════════════════════════════
+func:toml_encode = string(wild int8->:h) {
+    wild int8->:buf = th_buf_new();
+    drop(te_encode_table(buf, h, ""));
+    string:result = th_buf_to_string(buf);
+    pass(result);
+};
