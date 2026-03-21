@@ -1,8 +1,7 @@
 # Aria Programming Language v0.1.0
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Commercial License Available](https://img.shields.io/badge/Commercial-License_Available-green.svg)](LICENSE.md)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 **The Alternative Intelligence Liberation Platform presents: A systems programming language built for safety, determinism, and AI-native applications**
 
@@ -459,12 +458,9 @@ See the [engineering plan](https://github.com/alternative-intelligence-cp/nikola
 
 ## License
 
-Aria is **dual-licensed**:
+Aria is licensed under the **Apache License, Version 2.0**. See [LICENSE.md](LICENSE.md) for the full text.
 
-- **AGPL-3.0** — individuals, students, researchers, open-source projects (FREE)
-- **Commercial License** — proprietary use (contact us)
-
-See [LICENSE.md](LICENSE.md) for full terms. Commercial inquiries: development@ai-liberation-platform.org
+Programs compiled with Aria are yours — the runtime library includes a **Runtime Library Exception** so your compiled binaries can be distributed under any license you choose.
 
 ---
 
