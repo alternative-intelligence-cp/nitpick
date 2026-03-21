@@ -2799,6 +2799,36 @@ src/runtime/io/zero_copy_bridge.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/io/zero_copy_bridge.cpp.s
 .PHONY : src/runtime/io/zero_copy_bridge.cpp.s
 
+src/runtime/json/json.o: src/runtime/json/json.cpp.o
+.PHONY : src/runtime/json/json.o
+
+# target to build an object file
+src/runtime/json/json.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/json/json.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/json/json.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/json/json.cpp.o
+.PHONY : src/runtime/json/json.cpp.o
+
+src/runtime/json/json.i: src/runtime/json/json.cpp.i
+.PHONY : src/runtime/json/json.i
+
+# target to preprocess a source file
+src/runtime/json/json.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/json/json.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/json/json.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/json/json.cpp.i
+.PHONY : src/runtime/json/json.cpp.i
+
+src/runtime/json/json.s: src/runtime/json/json.cpp.s
+.PHONY : src/runtime/json/json.s
+
+# target to generate assembly for a file
+src/runtime/json/json.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/json/json.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/json/json.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/json/json.cpp.s
+.PHONY : src/runtime/json/json.cpp.s
+
 src/runtime/math/fix256.o: src/runtime/math/fix256.cpp.o
 .PHONY : src/runtime/math/fix256.o
 
@@ -3901,6 +3931,9 @@ help:
 	@echo "... src/runtime/io/zero_copy_bridge.o"
 	@echo "... src/runtime/io/zero_copy_bridge.i"
 	@echo "... src/runtime/io/zero_copy_bridge.s"
+	@echo "... src/runtime/json/json.o"
+	@echo "... src/runtime/json/json.i"
+	@echo "... src/runtime/json/json.s"
 	@echo "... src/runtime/math/fix256.o"
 	@echo "... src/runtime/math/fix256.i"
 	@echo "... src/runtime/math/fix256.s"
