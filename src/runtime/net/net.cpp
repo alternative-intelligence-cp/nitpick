@@ -224,6 +224,10 @@ int32_t net_is_connected(void* h) {
     return ((NetSocket*)h)->connected;
 }
 
+int32_t net_valid(void* h) {
+    return h ? 1 : 0;
+}
+
 // ── Utility ──────────────────────────────────────────────────────────
 
 // Non-blocking recv with timeout (milliseconds)
