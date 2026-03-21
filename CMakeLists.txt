@@ -267,7 +267,7 @@ set(STDLIB_SOURCES
     src/runtime/collections/map.cpp
     src/runtime/collections/collections_typed.cpp
     src/runtime/strings/strings.cpp
-    src/runtime/strings/strings_typed.cpp
+    src/runtime/strings/string_helpers.cpp
     src/runtime/json/json.cpp
     src/runtime/toml/toml.cpp
     src/runtime/binary/binary_helpers.cpp
