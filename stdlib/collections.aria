@@ -1,0 +1,253 @@
+// stdlib/collections.aria
+// Collections Module
+//
+// Dynamic collections backed by the Aria runtime.
+// Provides Vec (dynamic array) and Map (hash map) for int64 values.
+//
+// Vec operations: new, push, pop, get, set, length, free
+// Map operations: new, insert, get, has, remove, length, clear, free
+
+// ── Typed runtime externs (Vec<int64>) ───────────────────────────────────────
+extern func:vec_i64_new = wild int8*();
+extern func:vec_i64_push = void(wild int8*:arr, int64:val);
+extern func:vec_i64_pop = int64(wild int8*:arr);
+extern func:vec_i64_get = int64(wild int8*:arr, int64:index);
+extern func:vec_i64_set = void(wild int8*:arr, int64:index, int64:val);
+extern func:vec_i64_length = int64(wild int8*:arr);
+extern func:vec_i64_free = void(wild int8*:arr);
+
+// ── Typed runtime externs (Vec<int32>) ───────────────────────────────────────
+extern func:vec_i32_new = wild int8*();
+extern func:vec_i32_push = void(wild int8*:arr, int32:val);
+extern func:vec_i32_pop = int32(wild int8*:arr);
+extern func:vec_i32_get = int32(wild int8*:arr, int64:index);
+extern func:vec_i32_set = void(wild int8*:arr, int64:index, int32:val);
+extern func:vec_i32_length = int64(wild int8*:arr);
+extern func:vec_i32_free = void(wild int8*:arr);
+
+// ── Typed runtime externs (Vec<flt64>) ───────────────────────────────────────
+extern func:vec_f64_new = wild int8*();
+extern func:vec_f64_push = void(wild int8*:arr, flt64:val);
+extern func:vec_f64_pop = flt64(wild int8*:arr);
+extern func:vec_f64_get = flt64(wild int8*:arr, int64:index);
+extern func:vec_f64_set = void(wild int8*:arr, int64:index, flt64:val);
+extern func:vec_f64_length = int64(wild int8*:arr);
+extern func:vec_f64_free = void(wild int8*:arr);
+
+// ── Typed runtime externs (Map<int64, int64>) ────────────────────────────────
+extern func:map_i64_new = wild int8*();
+extern func:map_i64_insert = void(wild int8*:map, int64:key, int64:val);
+extern func:map_i64_get = int64(wild int8*:map, int64:key);
+extern func:map_i64_has = int32(wild int8*:map, int64:key);
+extern func:map_i64_remove = void(wild int8*:map, int64:key);
+extern func:map_i64_length = int64(wild int8*:map);
+extern func:map_i64_clear = void(wild int8*:map);
+extern func:map_i64_free = void(wild int8*:map);
+
+// ── Raw array externs (for int8 Vec) ─────────────────────────────────────────
+extern func:aria_array_new_simple = wild int8*(int64:element_size, int32:type_id);
+extern func:aria_array_push_simple = void(wild int8*:arr, wild int8*:val);
+extern func:aria_array_pop_simple = void(wild int8*:arr, wild int8*:out_val);
+extern func:aria_array_length = int64(wild int8*:arr);
+extern func:aria_array_free = void(wild int8*:arr);
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Type:Vec — Dynamic array of int64 values
+// ═════════════════════════════════════════════════════════════════════════════
+Type:Vec = {
+
+    // new() — create an empty Vec<int64>
+    // Returns an opaque handle (wild int8->). Must be freed with Vec.free().
+    func:new = wild int8->() {
+        wild int8->:handle = vec_i64_new();
+        pass(handle);
+    };
+
+    // push(v, val) — append a value to the end
+    func:push = NIL(wild int8->:v, int64:val) {
+        vec_i64_push(v, val);
+    };
+
+    // pop(v) — remove and return the last element (aborts if empty)
+    func:pop = int64(wild int8->:v) {
+        pass(vec_i64_pop(v));
+    };
+
+    // get(v, i) — read value at index i (aborts if out of bounds)
+    func:get = int64(wild int8->:v, int64:i) {
+        pass(vec_i64_get(v, i));
+    };
+
+    // set(v, i, val) — write value at index i (aborts if out of bounds)
+    func:set = NIL(wild int8->:v, int64:i, int64:val) {
+        vec_i64_set(v, i, val);
+    };
+
+    // len(v) — current number of elements
+    func:len = int64(wild int8->:v) {
+        pass(vec_i64_length(v));
+    };
+
+    // free(v) — release all memory
+    func:free = NIL(wild int8->:v) {
+        vec_i64_free(v);
+    };
+
+    // contains(v, target) — linear search for a value
+    func:contains = bool(wild int8->:v, int64:target) {
+        int64:n = vec_i64_length(v);
+        int64:idx = 0i64;
+        while (idx < n) {
+            int64:elem = vec_i64_get(v, idx);
+            if (elem == target) { pass(true); }
+            idx = idx + 1i64;
+        }
+        pass(false);
+    };
+
+    // sum(v) — sum all elements
+    func:sum = int64(wild int8->:v) {
+        int64:n = vec_i64_length(v);
+        int64:total = 0i64;
+        int64:idx = 0i64;
+        while (idx < n) {
+            total = total + vec_i64_get(v, idx);
+            idx = idx + 1i64;
+        }
+        pass(total);
+    };
+
+    // is_empty(v) — true if length is 0
+    func:is_empty = bool(wild int8->:v) {
+        int64:n = vec_i64_length(v);
+        if (n == 0i64) { pass(true); }
+        pass(false);
+    };
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Type:VecI32 — Dynamic array of int32 values
+// ═════════════════════════════════════════════════════════════════════════════
+Type:VecI32 = {
+
+    func:new = wild int8->() {
+        wild int8->:handle = vec_i32_new();
+        pass(handle);
+    };
+
+    func:push = NIL(wild int8->:v, int32:val) {
+        vec_i32_push(v, val);
+    };
+
+    func:pop = int32(wild int8->:v) {
+        pass(vec_i32_pop(v));
+    };
+
+    func:get = int32(wild int8->:v, int64:i) {
+        pass(vec_i32_get(v, i));
+    };
+
+    func:set = NIL(wild int8->:v, int64:i, int32:val) {
+        vec_i32_set(v, i, val);
+    };
+
+    func:len = int64(wild int8->:v) {
+        pass(vec_i32_length(v));
+    };
+
+    func:free = NIL(wild int8->:v) {
+        vec_i32_free(v);
+    };
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Type:VecF64 — Dynamic array of flt64 values
+// ═════════════════════════════════════════════════════════════════════════════
+Type:VecF64 = {
+
+    func:new = wild int8->() {
+        wild int8->:handle = vec_f64_new();
+        pass(handle);
+    };
+
+    func:push = NIL(wild int8->:v, flt64:val) {
+        vec_f64_push(v, val);
+    };
+
+    func:pop = flt64(wild int8->:v) {
+        pass(vec_f64_pop(v));
+    };
+
+    func:get = flt64(wild int8->:v, int64:i) {
+        pass(vec_f64_get(v, i));
+    };
+
+    func:set = NIL(wild int8->:v, int64:i, flt64:val) {
+        vec_f64_set(v, i, val);
+    };
+
+    func:len = int64(wild int8->:v) {
+        pass(vec_f64_length(v));
+    };
+
+    func:free = NIL(wild int8->:v) {
+        vec_f64_free(v);
+    };
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Type:Map — Hash map with int64 keys and int64 values
+// ═════════════════════════════════════════════════════════════════════════════
+Type:Map = {
+
+    // new() — create an empty Map<int64, int64>
+    // Returns an opaque handle. Must be freed with Map.free().
+    func:new = wild int8->() {
+        wild int8->:handle = map_i64_new();
+        pass(handle);
+    };
+
+    // insert(m, key, val) — insert or update a key-value pair
+    func:insert = NIL(wild int8->:m, int64:key, int64:val) {
+        map_i64_insert(m, key, val);
+    };
+
+    // get(m, key) — retrieve value for key (aborts if key not found)
+    func:get = int64(wild int8->:m, int64:key) {
+        pass(map_i64_get(m, key));
+    };
+
+    // has(m, key) — check if key exists
+    func:has = bool(wild int8->:m, int64:key) {
+        int32:result = map_i64_has(m, key);
+        if (result == 1i32) { pass(true); }
+        pass(false);
+    };
+
+    // remove(m, key) — remove a key-value pair
+    func:remove = NIL(wild int8->:m, int64:key) {
+        map_i64_remove(m, key);
+    };
+
+    // len(m) — number of entries
+    func:len = int64(wild int8->:m) {
+        pass(map_i64_length(m));
+    };
+
+    // clear(m) — remove all entries (keeps allocation)
+    func:clear = NIL(wild int8->:m) {
+        map_i64_clear(m);
+    };
+
+    // free(m) — release all memory
+    func:free = NIL(wild int8->:m) {
+        map_i64_free(m);
+    };
+
+    // is_empty(m) — true if length is 0
+    func:is_empty = bool(wild int8->:m) {
+        int64:n = map_i64_length(m);
+        if (n == 0i64) { pass(true); }
+        pass(false);
+    };
+};
