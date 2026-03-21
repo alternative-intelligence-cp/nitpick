@@ -182,4 +182,183 @@ void map_i64_free(void* map) {
     aria_map_free(map);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Set<int64> typed wrappers (thin wrapper over Map<int64, int64>)
+// ═══════════════════════════════════════════════════════════════════════
+
+void* set_i64_new(void) {
+    return aria_map_new_simple(8, 8);
+}
+
+void set_i64_add(void* set, int64_t val) {
+    int64_t dummy = 1;
+    aria_map_insert_simple(set, &val, &dummy);
+}
+
+int32_t set_i64_has(void* set, int64_t val) {
+    return aria_map_has(set, &val);
+}
+
+void set_i64_remove(void* set, int64_t val) {
+    aria_map_remove(set, &val);
+}
+
+int64_t set_i64_length(void* set) {
+    return aria_map_length(set);
+}
+
+void set_i64_clear(void* set) {
+    aria_map_clear(set);
+}
+
+void set_i64_free(void* set) {
+    aria_map_free(set);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Graph (directed, int64 node IDs) — adjacency list via Map + Vec
+// ═══════════════════════════════════════════════════════════════════════
+
+struct AriaGraph {
+    void* adj_map;       // Map<int64, int64> where values are Vec handles cast to int64
+    void* node_list;     // Vec<int64> of all node IDs (for iteration during free)
+    int64_t edge_count;
+};
+
+void* graph_new(void) {
+    AriaGraph* g = new AriaGraph();
+    g->adj_map = aria_map_new_simple(8, 8);
+    g->node_list = aria_array_new_simple(8, 1);
+    g->edge_count = 0;
+    return g;
+}
+
+void graph_add_node(void* graph, int64_t node_id) {
+    AriaGraph* g = static_cast<AriaGraph*>(graph);
+    // Only add if node doesn't exist
+    if (!aria_map_has(g->adj_map, &node_id)) {
+        void* neighbors = aria_array_new_simple(8, 1);
+        int64_t handle = reinterpret_cast<int64_t>(neighbors);
+        aria_map_insert_simple(g->adj_map, &node_id, &handle);
+        aria_array_push_simple(g->node_list, &node_id);
+    }
+}
+
+int32_t graph_has_node(void* graph, int64_t node_id) {
+    AriaGraph* g = static_cast<AriaGraph*>(graph);
+    return aria_map_has(g->adj_map, &node_id);
+}
+
+void graph_add_edge(void* graph, int64_t from, int64_t to) {
+    AriaGraph* g = static_cast<AriaGraph*>(graph);
+    // Auto-add nodes if they don't exist
+    graph_add_node(graph, from);
+    graph_add_node(graph, to);
+    // Get the neighbors Vec for 'from'
+    void* handle_ptr = aria_map_get_simple(g->adj_map, &from);
+    int64_t handle_val;
+    memcpy(&handle_val, handle_ptr, sizeof(int64_t));
+    void* neighbors = reinterpret_cast<void*>(handle_val);
+    aria_array_push_simple(neighbors, &to);
+    g->edge_count++;
+}
+
+int32_t graph_has_edge(void* graph, int64_t from, int64_t to) {
+    AriaGraph* g = static_cast<AriaGraph*>(graph);
+    if (!aria_map_has(g->adj_map, &from)) return 0;
+    void* handle_ptr = aria_map_get_simple(g->adj_map, &from);
+    int64_t handle_val;
+    memcpy(&handle_val, handle_ptr, sizeof(int64_t));
+    void* neighbors = reinterpret_cast<void*>(handle_val);
+    int64_t len = static_cast<int64_t>(aria_array_length(neighbors));
+    for (int64_t i = 0; i < len; i++) {
+        void* elem_ptr = aria_array_get_simple(neighbors, i);
+        int64_t elem;
+        memcpy(&elem, elem_ptr, sizeof(int64_t));
+        if (elem == to) return 1;
+    }
+    return 0;
+}
+
+int64_t graph_degree(void* graph, int64_t node_id) {
+    AriaGraph* g = static_cast<AriaGraph*>(graph);
+    if (!aria_map_has(g->adj_map, &node_id)) return 0;
+    void* handle_ptr = aria_map_get_simple(g->adj_map, &node_id);
+    int64_t handle_val;
+    memcpy(&handle_val, handle_ptr, sizeof(int64_t));
+    void* neighbors = reinterpret_cast<void*>(handle_val);
+    return static_cast<int64_t>(aria_array_length(neighbors));
+}
+
+int64_t graph_neighbor_at(void* graph, int64_t node_id, int64_t index) {
+    AriaGraph* g = static_cast<AriaGraph*>(graph);
+    void* handle_ptr = aria_map_get_simple(g->adj_map, &node_id);
+    int64_t handle_val;
+    memcpy(&handle_val, handle_ptr, sizeof(int64_t));
+    void* neighbors = reinterpret_cast<void*>(handle_val);
+    void* elem_ptr = aria_array_get_simple(neighbors, index);
+    int64_t elem;
+    memcpy(&elem, elem_ptr, sizeof(int64_t));
+    return elem;
+}
+
+int64_t graph_node_count(void* graph) {
+    AriaGraph* g = static_cast<AriaGraph*>(graph);
+    return aria_map_length(g->adj_map);
+}
+
+int64_t graph_edge_count(void* graph) {
+    AriaGraph* g = static_cast<AriaGraph*>(graph);
+    return g->edge_count;
+}
+
+void graph_remove_edge(void* graph, int64_t from, int64_t to) {
+    AriaGraph* g = static_cast<AriaGraph*>(graph);
+    if (!aria_map_has(g->adj_map, &from)) return;
+    void* handle_ptr = aria_map_get_simple(g->adj_map, &from);
+    int64_t handle_val;
+    memcpy(&handle_val, handle_ptr, sizeof(int64_t));
+    void* neighbors = reinterpret_cast<void*>(handle_val);
+    int64_t len = static_cast<int64_t>(aria_array_length(neighbors));
+    for (int64_t i = 0; i < len; i++) {
+        void* elem_ptr = aria_array_get_simple(neighbors, i);
+        int64_t elem;
+        memcpy(&elem, elem_ptr, sizeof(int64_t));
+        if (elem == to) {
+            // Swap with last and pop
+            if (i < len - 1) {
+                void* last_ptr = aria_array_get_simple(neighbors, len - 1);
+                int64_t last_val;
+                memcpy(&last_val, last_ptr, sizeof(int64_t));
+                aria_array_set_simple(neighbors, i, &last_val);
+            }
+            int64_t dummy;
+            aria_array_pop_simple(neighbors, &dummy);
+            g->edge_count--;
+            return;
+        }
+    }
+}
+
+void graph_free(void* graph) {
+    AriaGraph* g = static_cast<AriaGraph*>(graph);
+    // Free all neighbor Vecs by iterating the node list
+    size_t n = aria_array_length(g->node_list);
+    for (size_t i = 0; i < n; i++) {
+        void* nid_ptr = aria_array_get_simple(g->node_list, i);
+        int64_t nid;
+        memcpy(&nid, nid_ptr, sizeof(int64_t));
+        if (aria_map_has(g->adj_map, &nid)) {
+            void* handle_ptr = aria_map_get_simple(g->adj_map, &nid);
+            int64_t handle_val;
+            memcpy(&handle_val, handle_ptr, sizeof(int64_t));
+            void* neighbors = reinterpret_cast<void*>(handle_val);
+            aria_array_free(neighbors);
+        }
+    }
+    aria_array_free(g->node_list);
+    aria_map_free(g->adj_map);
+    delete g;
+}
+
 }  // extern "C"

@@ -1,6 +1,6 @@
 // tests/collections_test.aria
 // Comprehensive tests for stdlib/collections.aria
-// Tests Vec (dynamic array) and Map (hash map)
+// Tests Vec (dynamic array), Map (hash map), Set (hash set), and Graph (directed graph)
 
 use "stdlib/collections.aria".*;
 
@@ -213,6 +213,167 @@ func:main = int32() {
     // Test 36: Free doesn't crash
     drop(Map.free(m));
     drop(check(true, "T36 map free"));
+
+    // ─── Set tests ───────────────────────────────────────────────────────
+    println("=== Set (int64) Tests ===");
+
+    // Test 37: Create empty set
+    wild int8->:s = raw(Set.new());
+    bool:sempty = raw(Set.is_empty(s));
+    drop(check(sempty, "T37 set empty"));
+
+    // Test 38: Add element
+    drop(Set.add(s, 10i64));
+    bool:has10 = raw(Set.has(s, 10i64));
+    drop(check(has10, "T38 set add + has"));
+
+    // Test 39: Length after add
+    int64:slen1 = raw(Set.len(s));
+    drop(check(slen1 == 1i64, "T39 set length 1"));
+
+    // Test 40: Add more elements
+    drop(Set.add(s, 20i64));
+    drop(Set.add(s, 30i64));
+    int64:slen3 = raw(Set.len(s));
+    drop(check(slen3 == 3i64, "T40 set length 3"));
+
+    // Test 41: Has returns false for missing
+    bool:has99 = raw(Set.has(s, 99i64));
+    drop(check(has99 == false, "T41 set has missing"));
+
+    // Test 42: Duplicate add doesn't increase length
+    drop(Set.add(s, 10i64));
+    int64:slen_dup = raw(Set.len(s));
+    drop(check(slen_dup == 3i64, "T42 set duplicate add"));
+
+    // Test 43: Remove element
+    drop(Set.remove(s, 20i64));
+    bool:has20 = raw(Set.has(s, 20i64));
+    drop(check(has20 == false, "T43 set remove"));
+
+    // Test 44: Length after remove
+    int64:slen_rm = raw(Set.len(s));
+    drop(check(slen_rm == 2i64, "T44 set length after remove"));
+
+    // Test 45: Clear
+    drop(Set.clear(s));
+    bool:sempty2 = raw(Set.is_empty(s));
+    drop(check(sempty2, "T45 set clear"));
+
+    // Test 46: Add after clear
+    drop(Set.add(s, 100i64));
+    bool:has100 = raw(Set.has(s, 100i64));
+    drop(check(has100, "T46 set add after clear"));
+
+    // Test 47: Negative values
+    drop(Set.add(s, -42i64));
+    bool:has_neg = raw(Set.has(s, -42i64));
+    drop(check(has_neg, "T47 set negative value"));
+
+    // Test 48: Large values
+    drop(Set.add(s, 999999999i64));
+    bool:has_big = raw(Set.has(s, 999999999i64));
+    drop(check(has_big, "T48 set large value"));
+
+    // Test 49: Free doesn't crash
+    drop(Set.free(s));
+    drop(check(true, "T49 set free"));
+
+    // ─── Graph tests ─────────────────────────────────────────────────────
+    println("=== Graph (directed) Tests ===");
+
+    // Test 50: Create empty graph
+    wild int8->:g = raw(Graph.new());
+    int64:gnc0 = raw(Graph.node_count(g));
+    drop(check(gnc0 == 0i64, "T50 graph empty"));
+
+    // Test 51: Add node
+    drop(Graph.add_node(g, 1i64));
+    int64:gnc1 = raw(Graph.node_count(g));
+    drop(check(gnc1 == 1i64, "T51 graph add node"));
+
+    // Test 52: Has node
+    bool:ghn1 = raw(Graph.has_node(g, 1i64));
+    drop(check(ghn1, "T52 graph has node"));
+
+    // Test 53: Has node false for missing
+    bool:ghn99 = raw(Graph.has_node(g, 99i64));
+    drop(check(ghn99 == false, "T53 graph has node missing"));
+
+    // Test 54: Add edge (auto-creates nodes)
+    drop(Graph.add_edge(g, 1i64, 2i64));
+    int64:gnc2 = raw(Graph.node_count(g));
+    drop(check(gnc2 == 2i64, "T54 graph add edge auto-node"));
+
+    // Test 55: Has edge
+    bool:ghe12 = raw(Graph.has_edge(g, 1i64, 2i64));
+    drop(check(ghe12, "T55 graph has edge"));
+
+    // Test 56: Edge is directed (reverse doesn't exist)
+    bool:ghe21 = raw(Graph.has_edge(g, 2i64, 1i64));
+    drop(check(ghe21 == false, "T56 graph directed edge"));
+
+    // Test 57: Edge count
+    int64:gec1 = raw(Graph.edge_count(g));
+    drop(check(gec1 == 1i64, "T57 graph edge count 1"));
+
+    // Test 58: Add more edges
+    drop(Graph.add_edge(g, 1i64, 3i64));
+    drop(Graph.add_edge(g, 2i64, 3i64));
+    int64:gec3 = raw(Graph.edge_count(g));
+    drop(check(gec3 == 3i64, "T58 graph edge count 3"));
+
+    // Test 59: Node count after edges
+    int64:gnc3 = raw(Graph.node_count(g));
+    drop(check(gnc3 == 3i64, "T59 graph node count 3"));
+
+    // Test 60: Degree (out-degree)
+    int64:deg1 = raw(Graph.degree(g, 1i64));
+    drop(check(deg1 == 2i64, "T60 graph degree node 1"));
+
+    // Test 61: Degree of leaf node
+    int64:deg3 = raw(Graph.degree(g, 3i64));
+    drop(check(deg3 == 0i64, "T61 graph degree leaf node"));
+
+    // Test 62: Neighbor at
+    int64:n1_0 = raw(Graph.neighbor_at(g, 1i64, 0i64));
+    drop(check(n1_0 == 2i64, "T62 graph neighbor_at 0"));
+
+    // Test 63: Neighbor at second
+    int64:n1_1 = raw(Graph.neighbor_at(g, 1i64, 1i64));
+    drop(check(n1_1 == 3i64, "T63 graph neighbor_at 1"));
+
+    // Test 64: Remove edge
+    drop(Graph.remove_edge(g, 1i64, 2i64));
+    bool:ghe12b = raw(Graph.has_edge(g, 1i64, 2i64));
+    drop(check(ghe12b == false, "T64 graph remove edge"));
+
+    // Test 65: Edge count after remove
+    int64:gec_rm = raw(Graph.edge_count(g));
+    drop(check(gec_rm == 2i64, "T65 graph edge count after remove"));
+
+    // Test 66: Degree after remove
+    int64:deg1b = raw(Graph.degree(g, 1i64));
+    drop(check(deg1b == 1i64, "T66 graph degree after remove"));
+
+    // Test 67: Remove nonexistent edge (no-op)
+    drop(Graph.remove_edge(g, 99i64, 100i64));
+    int64:gec_nop = raw(Graph.edge_count(g));
+    drop(check(gec_nop == 2i64, "T67 graph remove nonexistent"));
+
+    // Test 68: Self loop
+    drop(Graph.add_edge(g, 5i64, 5i64));
+    bool:ghe55 = raw(Graph.has_edge(g, 5i64, 5i64));
+    drop(check(ghe55, "T68 graph self loop"));
+
+    // Test 69: Negative node IDs
+    drop(Graph.add_edge(g, -1i64, -2i64));
+    bool:ghe_neg = raw(Graph.has_edge(g, -1i64, -2i64));
+    drop(check(ghe_neg, "T69 graph negative node IDs"));
+
+    // Test 70: Free doesn't crash
+    drop(Graph.free(g));
+    drop(check(true, "T70 graph free"));
 
     println("=== All collections tests complete ===");
     pass(0i32);

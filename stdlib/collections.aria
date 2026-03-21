@@ -2,10 +2,14 @@
 // Collections Module
 //
 // Dynamic collections backed by the Aria runtime.
-// Provides Vec (dynamic array) and Map (hash map) for int64 values.
+// Provides Vec (dynamic array), Map (hash map), Set (hash set),
+// and Graph (directed graph) for int64 values.
 //
 // Vec operations: new, push, pop, get, set, length, free
 // Map operations: new, insert, get, has, remove, length, clear, free
+// Set operations: new, add, has, remove, length, clear, free
+// Graph operations: new, add_node, add_edge, has_node, has_edge, degree,
+//                   neighbor_at, node_count, edge_count, remove_edge, free
 
 // ── Typed runtime externs (Vec<int64>) ───────────────────────────────────────
 extern func:vec_i64_new = wild int8*();
@@ -249,5 +253,144 @@ Type:Map = {
         int64:n = map_i64_length(m);
         if (n == 0i64) { pass(true); }
         pass(false);
+    };
+};
+
+// ── Typed runtime externs (Set<int64>) ───────────────────────────────────────
+extern func:set_i64_new = wild int8*();
+extern func:set_i64_add = void(wild int8*:s, int64:val);
+extern func:set_i64_has = int32(wild int8*:s, int64:val);
+extern func:set_i64_remove = void(wild int8*:s, int64:val);
+extern func:set_i64_length = int64(wild int8*:s);
+extern func:set_i64_clear = void(wild int8*:s);
+extern func:set_i64_free = void(wild int8*:s);
+
+// ── Typed runtime externs (Graph) ────────────────────────────────────────────
+extern func:graph_new = wild int8*();
+extern func:graph_add_node = void(wild int8*:g, int64:node_id);
+extern func:graph_has_node = int32(wild int8*:g, int64:node_id);
+extern func:graph_add_edge = void(wild int8*:g, int64:from, int64:to);
+extern func:graph_has_edge = int32(wild int8*:g, int64:from, int64:to);
+extern func:graph_degree = int64(wild int8*:g, int64:node_id);
+extern func:graph_neighbor_at = int64(wild int8*:g, int64:node_id, int64:index);
+extern func:graph_node_count = int64(wild int8*:g);
+extern func:graph_edge_count = int64(wild int8*:g);
+extern func:graph_remove_edge = void(wild int8*:g, int64:from, int64:to);
+extern func:graph_free = void(wild int8*:g);
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Type:Set — Hash set of int64 values
+// ═════════════════════════════════════════════════════════════════════════════
+Type:Set = {
+
+    // new() — create an empty Set<int64>
+    func:new = wild int8->() {
+        wild int8->:handle = set_i64_new();
+        pass(handle);
+    };
+
+    // add(s, val) — insert a value (duplicates ignored)
+    func:add = NIL(wild int8->:s, int64:val) {
+        set_i64_add(s, val);
+    };
+
+    // has(s, val) — check if value exists
+    func:has = bool(wild int8->:s, int64:val) {
+        int32:result = set_i64_has(s, val);
+        if (result == 1i32) { pass(true); }
+        pass(false);
+    };
+
+    // remove(s, val) — remove a value
+    func:remove = NIL(wild int8->:s, int64:val) {
+        set_i64_remove(s, val);
+    };
+
+    // len(s) — number of elements
+    func:len = int64(wild int8->:s) {
+        pass(set_i64_length(s));
+    };
+
+    // clear(s) — remove all elements
+    func:clear = NIL(wild int8->:s) {
+        set_i64_clear(s);
+    };
+
+    // free(s) — release all memory
+    func:free = NIL(wild int8->:s) {
+        set_i64_free(s);
+    };
+
+    // is_empty(s) — true if length is 0
+    func:is_empty = bool(wild int8->:s) {
+        int64:n = set_i64_length(s);
+        if (n == 0i64) { pass(true); }
+        pass(false);
+    };
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Type:Graph — Directed graph with int64 node IDs
+// ═════════════════════════════════════════════════════════════════════════════
+Type:Graph = {
+
+    // new() — create an empty directed graph
+    func:new = wild int8->() {
+        wild int8->:handle = graph_new();
+        pass(handle);
+    };
+
+    // add_node(g, id) — add a node (no-op if exists)
+    func:add_node = NIL(wild int8->:g, int64:id) {
+        graph_add_node(g, id);
+    };
+
+    // has_node(g, id) — check if a node exists
+    func:has_node = bool(wild int8->:g, int64:id) {
+        int32:result = graph_has_node(g, id);
+        if (result == 1i32) { pass(true); }
+        pass(false);
+    };
+
+    // add_edge(g, from, to) — add a directed edge (auto-creates nodes)
+    func:add_edge = NIL(wild int8->:g, int64:from, int64:to) {
+        graph_add_edge(g, from, to);
+    };
+
+    // has_edge(g, from, to) — check if a directed edge exists
+    func:has_edge = bool(wild int8->:g, int64:from, int64:to) {
+        int32:result = graph_has_edge(g, from, to);
+        if (result == 1i32) { pass(true); }
+        pass(false);
+    };
+
+    // degree(g, id) — out-degree of a node (number of outgoing edges)
+    func:degree = int64(wild int8->:g, int64:id) {
+        pass(graph_degree(g, id));
+    };
+
+    // neighbor_at(g, id, i) — get the i-th neighbor of a node
+    func:neighbor_at = int64(wild int8->:g, int64:id, int64:i) {
+        pass(graph_neighbor_at(g, id, i));
+    };
+
+    // node_count(g) — total number of nodes
+    func:node_count = int64(wild int8->:g) {
+        pass(graph_node_count(g));
+    };
+
+    // edge_count(g) — total number of edges
+    func:edge_count = int64(wild int8->:g) {
+        pass(graph_edge_count(g));
+    };
+
+    // remove_edge(g, from, to) — remove a directed edge
+    func:remove_edge = NIL(wild int8->:g, int64:from, int64:to) {
+        graph_remove_edge(g, from, to);
+    };
+
+    // free(g) — release all memory (graph + all internal structures)
+    func:free = NIL(wild int8->:g) {
+        graph_free(g);
     };
 };
