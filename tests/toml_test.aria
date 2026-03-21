@@ -1,0 +1,589 @@
+// tests/toml_test.aria
+// Comprehensive tests for stdlib/toml.aria — TOML serialization/deserialization
+use "stdlib/toml.aria".*;
+use "stdlib/string_convert.aria".*;
+
+func:failsafe = NIL(int32:code) { };
+
+func:check = NIL(bool:cond, string:msg) {
+    if (cond) {
+        print("  [PASS] ");
+        println(msg);
+    }
+    if (cond == false) {
+        print("  [FAIL] ");
+        println(msg);
+    }
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+
+    println("=== stdlib/toml.aria Test Suite ===");
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Section 1: Table Construction + Encoding
+    // ═════════════════════════════════════════════════════════════════════
+
+    println("");
+    println("── Table Construction + Encoding ──────────────────────");
+
+    // T01: Empty table
+    wild int8->:t1 = toml_new_table();
+    string:enc1 = toml_encode(t1);
+    if (string_equals(enc1, "")) { drop(check(true, "T01 empty table encodes to empty string")); passed = passed + 1i32;
+    } else { drop(check(false, "T01 empty table")); failed = failed + 1i32; }
+    toml_free(t1);
+
+    // T02: Table with string field
+    wild int8->:t2 = toml_new_table();
+    toml_set_str(t2, "name", "Aria");
+    string:enc2 = toml_encode(t2);
+    if (string_contains(enc2, "name")) {
+        if (string_contains(enc2, "\"Aria\"")) { drop(check(true, "T02 set_str name=Aria")); passed = passed + 1i32;
+        } else { drop(check(false, "T02 set_str val")); failed = failed + 1i32; }
+    } else { drop(check(false, "T02 set_str key")); failed = failed + 1i32; }
+    toml_free(t2);
+
+    // T03: Table with int field
+    wild int8->:t3 = toml_new_table();
+    toml_set_int(t3, "version", 42i64);
+    string:enc3 = toml_encode(t3);
+    if (string_contains(enc3, "version")) {
+        if (string_contains(enc3, "42")) { drop(check(true, "T03 set_int version=42")); passed = passed + 1i32;
+        } else { drop(check(false, "T03 set_int val")); failed = failed + 1i32; }
+    } else { drop(check(false, "T03 set_int key")); failed = failed + 1i32; }
+    toml_free(t3);
+
+    // T04: Table with float field
+    wild int8->:t4 = toml_new_table();
+    toml_set_flt(t4, "pi", 3.14);
+    string:enc4 = toml_encode(t4);
+    if (string_contains(enc4, "3.14")) { drop(check(true, "T04 set_flt pi=3.14")); passed = passed + 1i32;
+    } else { drop(check(false, "T04 set_flt")); failed = failed + 1i32; }
+    toml_free(t4);
+
+    // T05: Table with bool fields
+    wild int8->:t5 = toml_new_table();
+    toml_set_bool(t5, "active", 1i32);
+    toml_set_bool(t5, "deleted", 0i32);
+    string:enc5 = toml_encode(t5);
+    if (string_contains(enc5, "true")) {
+        if (string_contains(enc5, "false")) { drop(check(true, "T05 set_bool true+false")); passed = passed + 1i32;
+        } else { drop(check(false, "T05 set_bool false")); failed = failed + 1i32; }
+    } else { drop(check(false, "T05 set_bool true")); failed = failed + 1i32; }
+    toml_free(t5);
+
+    // T06: Multiple fields
+    wild int8->:t6 = toml_new_table();
+    toml_set_str(t6, "title", "Config");
+    toml_set_int(t6, "port", 8080i64);
+    toml_set_bool(t6, "debug", 1i32);
+    string:enc6 = toml_encode(t6);
+    if (string_contains(enc6, "title")) {
+        if (string_contains(enc6, "port")) {
+            if (string_contains(enc6, "debug")) { drop(check(true, "T06 multiple fields")); passed = passed + 1i32;
+            } else { drop(check(false, "T06 multi field")); failed = failed + 1i32; }
+        } else { drop(check(false, "T06 multi field")); failed = failed + 1i32; }
+    } else { drop(check(false, "T06 multi field")); failed = failed + 1i32; }
+    toml_free(t6);
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Section 2: Nested Tables
+    // ═════════════════════════════════════════════════════════════════════
+
+    println("");
+    println("── Nested Tables ───────────────────────────────────────");
+
+    // T07: Nested table
+    wild int8->:t7 = toml_new_table();
+    wild int8->:t7sub = toml_new_table();
+    toml_set_str(t7sub, "host", "localhost");
+    toml_set_int(t7sub, "port", 5432i64);
+    toml_set_tbl(t7, "database", t7sub);
+    string:enc7 = toml_encode(t7);
+    if (string_contains(enc7, "[database]")) {
+        if (string_contains(enc7, "host")) { drop(check(true, "T07 nested table [database]")); passed = passed + 1i32;
+        } else { drop(check(false, "T07 nested table content")); failed = failed + 1i32; }
+    } else { drop(check(false, "T07 nested table header")); failed = failed + 1i32; }
+    toml_free(t7sub);
+    toml_free(t7);
+
+    // T08: Deeply nested table
+    wild int8->:t8 = toml_new_table();
+    wild int8->:t8a = toml_new_table();
+    wild int8->:t8b = toml_new_table();
+    toml_set_str(t8b, "key", "deep");
+    toml_set_tbl(t8a, "inner", t8b);
+    toml_set_tbl(t8, "outer", t8a);
+    string:enc8 = toml_encode(t8);
+    if (string_contains(enc8, "[outer]")) {
+        if (string_contains(enc8, "[outer.inner]")) { drop(check(true, "T08 deep nesting outer.inner")); passed = passed + 1i32;
+        } else { drop(check(false, "T08 deep nesting")); failed = failed + 1i32; }
+    } else { drop(check(false, "T08 outer section")); failed = failed + 1i32; }
+    toml_free(t8b);
+    toml_free(t8a);
+    toml_free(t8);
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Section 3: Array Construction
+    // ═════════════════════════════════════════════════════════════════════
+
+    println("");
+    println("── Array Construction ──────────────────────────────────");
+
+    // T09: Array of strings
+    wild int8->:t9 = toml_new_table();
+    wild int8->:a9 = toml_new_array();
+    toml_arr_push_str(a9, "red");
+    toml_arr_push_str(a9, "green");
+    toml_arr_push_str(a9, "blue");
+    toml_set_arr(t9, "colors", a9);
+    string:enc9 = toml_encode(t9);
+    if (string_contains(enc9, "colors")) {
+        if (string_contains(enc9, "\"red\"")) { drop(check(true, "T09 array of strings")); passed = passed + 1i32;
+        } else { drop(check(false, "T09 arr strings val")); failed = failed + 1i32; }
+    } else { drop(check(false, "T09 arr strings key")); failed = failed + 1i32; }
+    toml_free(a9);
+    toml_free(t9);
+
+    // T10: Array of ints
+    wild int8->:t10 = toml_new_table();
+    wild int8->:a10 = toml_new_array();
+    toml_arr_push_int(a10, 1i64);
+    toml_arr_push_int(a10, 2i64);
+    toml_arr_push_int(a10, 3i64);
+    toml_set_arr(t10, "ports", a10);
+    string:enc10 = toml_encode(t10);
+    if (string_contains(enc10, "ports")) {
+        if (string_contains(enc10, "1")) { drop(check(true, "T10 array of ints")); passed = passed + 1i32;
+        } else { drop(check(false, "T10 arr ints val")); failed = failed + 1i32; }
+    } else { drop(check(false, "T10 arr ints key")); failed = failed + 1i32; }
+    toml_free(a10);
+    toml_free(t10);
+
+    // T11: Array of floats
+    wild int8->:t11 = toml_new_table();
+    wild int8->:a11 = toml_new_array();
+    toml_arr_push_flt(a11, 1.1);
+    toml_arr_push_flt(a11, 2.2);
+    toml_set_arr(t11, "vals", a11);
+    string:enc11 = toml_encode(t11);
+    if (string_contains(enc11, "1.1")) {
+        if (string_contains(enc11, "2.2")) { drop(check(true, "T11 array of floats")); passed = passed + 1i32;
+        } else { drop(check(false, "T11 arr flt")); failed = failed + 1i32; }
+    } else { drop(check(false, "T11 arr flt")); failed = failed + 1i32; }
+    toml_free(a11);
+    toml_free(t11);
+
+    // T12: Array of bools
+    wild int8->:t12 = toml_new_table();
+    wild int8->:a12 = toml_new_array();
+    toml_arr_push_bool(a12, 1i32);
+    toml_arr_push_bool(a12, 0i32);
+    toml_set_arr(t12, "flags", a12);
+    string:enc12 = toml_encode(t12);
+    if (string_contains(enc12, "true")) {
+        if (string_contains(enc12, "false")) { drop(check(true, "T12 array of bools")); passed = passed + 1i32;
+        } else { drop(check(false, "T12 arr bool")); failed = failed + 1i32; }
+    } else { drop(check(false, "T12 arr bool")); failed = failed + 1i32; }
+    toml_free(a12);
+    toml_free(t12);
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Section 4: Parsing + Getters
+    // ═════════════════════════════════════════════════════════════════════
+
+    println("");
+    println("── Parsing + Getters ───────────────────────────────────");
+
+    // T13: Parse simple key-value
+    wild int8->:p13 = toml_parse("name = \"Aria\"\nversion = 1\n");
+    string:v13 = toml_get_str(p13, "name");
+    if (string_equals(v13, "Aria")) { drop(check(true, "T13 parse string name=Aria")); passed = passed + 1i32;
+    } else { drop(check(false, "T13 parse string")); failed = failed + 1i32; }
+    toml_free(p13);
+
+    // T14: Parse integer
+    wild int8->:p14 = toml_parse("port = 8080\n");
+    int64:v14 = toml_get_int(p14, "port");
+    if (v14 == 8080i64) { drop(check(true, "T14 parse int port=8080")); passed = passed + 1i32;
+    } else { drop(check(false, "T14 parse int")); failed = failed + 1i32; }
+    toml_free(p14);
+
+    // T15: Parse float
+    wild int8->:p15 = toml_parse("pi = 3.14159\n");
+    flt64:v15 = toml_get_flt(p15, "pi");
+    if (v15 > 3.14) {
+        if (v15 < 3.15) { drop(check(true, "T15 parse float pi=3.14159")); passed = passed + 1i32;
+        } else { drop(check(false, "T15 parse float hi")); failed = failed + 1i32; }
+    } else { drop(check(false, "T15 parse float lo")); failed = failed + 1i32; }
+    toml_free(p15);
+
+    // T16: Parse boolean true
+    wild int8->:p16 = toml_parse("debug = true\n");
+    int32:v16 = toml_get_bool(p16, "debug");
+    if (v16 == 1i32) { drop(check(true, "T16 parse bool debug=true")); passed = passed + 1i32;
+    } else { drop(check(false, "T16 parse bool")); failed = failed + 1i32; }
+    toml_free(p16);
+
+    // T17: Parse boolean false
+    wild int8->:p17 = toml_parse("verbose = false\n");
+    int32:v17 = toml_get_bool(p17, "verbose");
+    if (v17 == 0i32) { drop(check(true, "T17 parse bool verbose=false")); passed = passed + 1i32;
+    } else { drop(check(false, "T17 parse bool")); failed = failed + 1i32; }
+    toml_free(p17);
+
+    // T18: Parse table section
+    wild int8->:p18 = toml_parse("[server]\nhost = \"127.0.0.1\"\nport = 9090\n");
+    wild int8->:p18sub = toml_get_tbl(p18, "server");
+    string:v18h = toml_get_str(p18sub, "host");
+    int64:v18p = toml_get_int(p18sub, "port");
+    if (string_equals(v18h, "127.0.0.1")) {
+        if (v18p == 9090i64) { drop(check(true, "T18 parse [server] host+port")); passed = passed + 1i32;
+        } else { drop(check(false, "T18 parse port")); failed = failed + 1i32; }
+    } else { drop(check(false, "T18 parse host")); failed = failed + 1i32; }
+    toml_free(p18sub);
+    toml_free(p18);
+
+    // T19: Parse inline array
+    wild int8->:p19 = toml_parse("ports = [80, 443, 8080]\n");
+    wild int8->:a19 = toml_get_arr(p19, "ports");
+    int64:a19len = toml_arr_len(a19);
+    if (a19len == 3i64) {
+        int64:a19v0 = toml_arr_get_int(a19, 0i64);
+        int64:a19v2 = toml_arr_get_int(a19, 2i64);
+        if (a19v0 == 80i64) {
+            if (a19v2 == 8080i64) { drop(check(true, "T19 parse array [80,443,8080]")); passed = passed + 1i32;
+            } else { drop(check(false, "T19 arr val 2")); failed = failed + 1i32; }
+        } else { drop(check(false, "T19 arr val 0")); failed = failed + 1i32; }
+    } else { drop(check(false, "T19 arr len")); failed = failed + 1i32; }
+    toml_free(a19);
+    toml_free(p19);
+
+    // T20: Parse string array
+    wild int8->:p20 = toml_parse("colors = [\"red\", \"green\", \"blue\"]\n");
+    wild int8->:a20 = toml_get_arr(p20, "colors");
+    int64:a20len = toml_arr_len(a20);
+    if (a20len == 3i64) {
+        string:a20v0 = toml_arr_get_str(a20, 0i64);
+        string:a20v1 = toml_arr_get_str(a20, 1i64);
+        if (string_equals(a20v0, "red")) {
+            if (string_equals(a20v1, "green")) { drop(check(true, "T20 parse string array")); passed = passed + 1i32;
+            } else { drop(check(false, "T20 arr str 1")); failed = failed + 1i32; }
+        } else { drop(check(false, "T20 arr str 0")); failed = failed + 1i32; }
+    } else { drop(check(false, "T20 arr len")); failed = failed + 1i32; }
+    toml_free(a20);
+    toml_free(p20);
+
+    // T21: has / count
+    wild int8->:p21 = toml_parse("a = 1\nb = 2\nc = 3\n");
+    int32:h21a = toml_has(p21, "a");
+    int32:h21x = toml_has(p21, "x");
+    int64:c21 = toml_count(p21);
+    if (h21a == 1i32) {
+        if (h21x == 0i32) {
+            if (c21 == 3i64) { drop(check(true, "T21 has/count: has a=1, x=0, count=3")); passed = passed + 1i32;
+            } else { drop(check(false, "T21 count")); failed = failed + 1i32; }
+        } else { drop(check(false, "T21 has x")); failed = failed + 1i32; }
+    } else { drop(check(false, "T21 has a")); failed = failed + 1i32; }
+    toml_free(p21);
+
+    // T22: Parse nested table sections
+    wild int8->:p22 = toml_parse("[database]\nhost = \"db.local\"\n[database.pool]\nmax = 10\n");
+    wild int8->:p22db = toml_get_tbl(p22, "database");
+    string:p22h = toml_get_str(p22db, "host");
+    wild int8->:p22pool = toml_get_tbl(p22db, "pool");
+    int64:p22max = toml_get_int(p22pool, "max");
+    if (string_equals(p22h, "db.local")) {
+        if (p22max == 10i64) { drop(check(true, "T22 nested [database.pool]")); passed = passed + 1i32;
+        } else { drop(check(false, "T22 pool max")); failed = failed + 1i32; }
+    } else { drop(check(false, "T22 db host")); failed = failed + 1i32; }
+    toml_free(p22pool);
+    toml_free(p22db);
+    toml_free(p22);
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Section 5: Round-trips (build → encode → parse → read)
+    // ═════════════════════════════════════════════════════════════════════
+
+    println("");
+    println("── Round-trips ─────────────────────────────────────────");
+
+    // T23: String round-trip
+    wild int8->:rt23 = toml_new_table();
+    toml_set_str(rt23, "msg", "Hello World");
+    string:rt23e = toml_encode(rt23);
+    wild int8->:rt23p = toml_parse(rt23e);
+    string:rt23v = toml_get_str(rt23p, "msg");
+    if (string_equals(rt23v, "Hello World")) { drop(check(true, "T23 string round-trip")); passed = passed + 1i32;
+    } else { drop(check(false, "T23 string rt")); failed = failed + 1i32; }
+    toml_free(rt23);
+    toml_free(rt23p);
+
+    // T24: Int round-trip
+    wild int8->:rt24 = toml_new_table();
+    toml_set_int(rt24, "n", 99999i64);
+    string:rt24e = toml_encode(rt24);
+    wild int8->:rt24p = toml_parse(rt24e);
+    int64:rt24v = toml_get_int(rt24p, "n");
+    if (rt24v == 99999i64) { drop(check(true, "T24 int round-trip n=99999")); passed = passed + 1i32;
+    } else { drop(check(false, "T24 int rt")); failed = failed + 1i32; }
+    toml_free(rt24);
+    toml_free(rt24p);
+
+    // T25: Float round-trip
+    wild int8->:rt25 = toml_new_table();
+    toml_set_flt(rt25, "e", 2.71828);
+    string:rt25e = toml_encode(rt25);
+    wild int8->:rt25p = toml_parse(rt25e);
+    flt64:rt25v = toml_get_flt(rt25p, "e");
+    if (rt25v > 2.71) {
+        if (rt25v < 2.72) { drop(check(true, "T25 float round-trip e≈2.718")); passed = passed + 1i32;
+        } else { drop(check(false, "T25 float rt hi")); failed = failed + 1i32; }
+    } else { drop(check(false, "T25 float rt lo")); failed = failed + 1i32; }
+    toml_free(rt25);
+    toml_free(rt25p);
+
+    // T26: Bool round-trip
+    wild int8->:rt26 = toml_new_table();
+    toml_set_bool(rt26, "flag", 1i32);
+    string:rt26e = toml_encode(rt26);
+    wild int8->:rt26p = toml_parse(rt26e);
+    int32:rt26v = toml_get_bool(rt26p, "flag");
+    if (rt26v == 1i32) { drop(check(true, "T26 bool round-trip flag=true")); passed = passed + 1i32;
+    } else { drop(check(false, "T26 bool rt")); failed = failed + 1i32; }
+    toml_free(rt26);
+    toml_free(rt26p);
+
+    // T27: Array round-trip
+    wild int8->:rt27 = toml_new_table();
+    wild int8->:rt27a = toml_new_array();
+    toml_arr_push_int(rt27a, 10i64);
+    toml_arr_push_int(rt27a, 20i64);
+    toml_arr_push_int(rt27a, 30i64);
+    toml_set_arr(rt27, "nums", rt27a);
+    string:rt27e = toml_encode(rt27);
+    wild int8->:rt27p = toml_parse(rt27e);
+    wild int8->:rt27ra = toml_get_arr(rt27p, "nums");
+    int64:rt27len = toml_arr_len(rt27ra);
+    if (rt27len == 3i64) {
+        int64:rt27v1 = toml_arr_get_int(rt27ra, 1i64);
+        if (rt27v1 == 20i64) { drop(check(true, "T27 array round-trip [10,20,30]")); passed = passed + 1i32;
+        } else { drop(check(false, "T27 arr rt val")); failed = failed + 1i32; }
+    } else { drop(check(false, "T27 arr rt len")); failed = failed + 1i32; }
+    toml_free(rt27a);
+    toml_free(rt27ra);
+    toml_free(rt27);
+    toml_free(rt27p);
+
+    // T28: Nested table round-trip
+    wild int8->:rt28 = toml_new_table();
+    toml_set_str(rt28, "title", "MyApp");
+    wild int8->:rt28db = toml_new_table();
+    toml_set_str(rt28db, "url", "postgres://localhost");
+    toml_set_int(rt28db, "max_conn", 25i64);
+    toml_set_tbl(rt28, "database", rt28db);
+    string:rt28e = toml_encode(rt28);
+    wild int8->:rt28p = toml_parse(rt28e);
+    string:rt28title = toml_get_str(rt28p, "title");
+    wild int8->:rt28pdb = toml_get_tbl(rt28p, "database");
+    string:rt28url = toml_get_str(rt28pdb, "url");
+    int64:rt28mc = toml_get_int(rt28pdb, "max_conn");
+    if (string_equals(rt28title, "MyApp")) {
+        if (string_equals(rt28url, "postgres://localhost")) {
+            if (rt28mc == 25i64) { drop(check(true, "T28 nested table round-trip")); passed = passed + 1i32;
+            } else { drop(check(false, "T28 nested rt max_conn")); failed = failed + 1i32; }
+        } else { drop(check(false, "T28 nested rt url")); failed = failed + 1i32; }
+    } else { drop(check(false, "T28 nested rt title")); failed = failed + 1i32; }
+    toml_free(rt28db);
+    toml_free(rt28pdb);
+    toml_free(rt28);
+    toml_free(rt28p);
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Section 6: Edge Cases
+    // ═════════════════════════════════════════════════════════════════════
+
+    println("");
+    println("── Edge Cases ──────────────────────────────────────────");
+
+    // T29: Overwrite key
+    wild int8->:t29 = toml_new_table();
+    toml_set_str(t29, "key", "old");
+    toml_set_str(t29, "key", "new");
+    string:v29 = toml_get_str(t29, "key");
+    if (string_equals(v29, "new")) { drop(check(true, "T29 overwrite key→new")); passed = passed + 1i32;
+    } else { drop(check(false, "T29 overwrite")); failed = failed + 1i32; }
+    toml_free(t29);
+
+    // T30: Missing key returns default
+    wild int8->:t30 = toml_new_table();
+    toml_set_str(t30, "exists", "yes");
+    string:v30 = toml_get_str(t30, "missing");
+    int64:v30i = toml_get_int(t30, "missing");
+    if (string_equals(v30, "")) {
+        if (v30i == 0i64) { drop(check(true, "T30 missing key → defaults")); passed = passed + 1i32;
+        } else { drop(check(false, "T30 missing int")); failed = failed + 1i32; }
+    } else { drop(check(false, "T30 missing str")); failed = failed + 1i32; }
+    toml_free(t30);
+
+    // T31: Comments in TOML
+    wild int8->:t31 = toml_parse("# This is a comment\nname = \"test\" # inline comment\n");
+    string:v31 = toml_get_str(t31, "name");
+    if (string_equals(v31, "test")) { drop(check(true, "T31 comments ignored")); passed = passed + 1i32;
+    } else { drop(check(false, "T31 comments")); failed = failed + 1i32; }
+    toml_free(t31);
+
+    // T32: String with escape sequences
+    wild int8->:t32 = toml_new_table();
+    toml_set_str(t32, "msg", "line1\nline2");
+    string:e32 = toml_encode(t32);
+    wild int8->:t32p = toml_parse(e32);
+    string:v32 = toml_get_str(t32p, "msg");
+    if (string_contains(v32, "line1")) {
+        if (string_contains(v32, "line2")) { drop(check(true, "T32 escape sequences round-trip")); passed = passed + 1i32;
+        } else { drop(check(false, "T32 escape")); failed = failed + 1i32; }
+    } else { drop(check(false, "T32 escape")); failed = failed + 1i32; }
+    toml_free(t32);
+    toml_free(t32p);
+
+    // T33: Type query
+    wild int8->:t33 = toml_new_table();
+    int32:ty33 = toml_type(t33);
+    if (ty33 == 4i32) { drop(check(true, "T33 type(table)=4")); passed = passed + 1i32;
+    } else { drop(check(false, "T33 type query")); failed = failed + 1i32; }
+    toml_free(t33);
+
+    // T34: Array type at index
+    wild int8->:a34 = toml_new_array();
+    toml_arr_push_str(a34, "hello");
+    toml_arr_push_int(a34, 42i64);
+    toml_arr_push_bool(a34, 1i32);
+    int32:ty34a = toml_arr_get_type(a34, 0i64);
+    int32:ty34b = toml_arr_get_type(a34, 1i64);
+    int32:ty34c = toml_arr_get_type(a34, 2i64);
+    if (ty34a == 0i32) {
+        if (ty34b == 1i32) {
+            if (ty34c == 3i32) { drop(check(true, "T34 arr_get_type str=0 int=1 bool=3")); passed = passed + 1i32;
+            } else { drop(check(false, "T34 type bool")); failed = failed + 1i32; }
+        } else { drop(check(false, "T34 type int")); failed = failed + 1i32; }
+    } else { drop(check(false, "T34 type str")); failed = failed + 1i32; }
+    toml_free(a34);
+
+    // T35: Negative integer
+    wild int8->:t35 = toml_parse("val = -42\n");
+    int64:v35 = toml_get_int(t35, "val");
+    if (v35 == -42i64) { drop(check(true, "T35 negative int -42")); passed = passed + 1i32;
+    } else { drop(check(false, "T35 neg int")); failed = failed + 1i32; }
+    toml_free(t35);
+
+    // T36: Negative float
+    wild int8->:t36 = toml_parse("val = -1.5\n");
+    flt64:v36 = toml_get_flt(t36, "val");
+    if (v36 < -1.4) {
+        if (v36 > -1.6) { drop(check(true, "T36 negative float -1.5")); passed = passed + 1i32;
+        } else { drop(check(false, "T36 neg float")); failed = failed + 1i32; }
+    } else { drop(check(false, "T36 neg float")); failed = failed + 1i32; }
+    toml_free(t36);
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Section 7: Practical Example
+    // ═════════════════════════════════════════════════════════════════════
+
+    println("");
+    println("── Practical: Cargo.toml-style Config ─────────────────");
+
+    // T37: Build Cargo.toml-style config
+    wild int8->:cargo = toml_new_table();
+    wild int8->:pkg = toml_new_table();
+    toml_set_str(pkg, "name", "my-project");
+    toml_set_str(pkg, "version", "0.1.0");
+    toml_set_str(pkg, "edition", "2021");
+    toml_set_tbl(cargo, "package", pkg);
+
+    wild int8->:deps = toml_new_table();
+    toml_set_str(deps, "serde", "1.0");
+    toml_set_str(deps, "tokio", "1.28");
+    toml_set_tbl(cargo, "dependencies", deps);
+
+    string:cargo_enc = toml_encode(cargo);
+    if (string_contains(cargo_enc, "[package]")) {
+        if (string_contains(cargo_enc, "my-project")) {
+            if (string_contains(cargo_enc, "[dependencies]")) { drop(check(true, "T37 Cargo.toml-style build")); passed = passed + 1i32;
+            } else { drop(check(false, "T37 cargo deps")); failed = failed + 1i32; }
+        } else { drop(check(false, "T37 cargo name")); failed = failed + 1i32; }
+    } else { drop(check(false, "T37 cargo pkg")); failed = failed + 1i32; }
+
+    // T38: Re-parse and verify
+    wild int8->:cargo_p = toml_parse(cargo_enc);
+    wild int8->:cargo_pkg = toml_get_tbl(cargo_p, "package");
+    string:pkg_name = toml_get_str(cargo_pkg, "name");
+    string:pkg_ver = toml_get_str(cargo_pkg, "version");
+    wild int8->:cargo_deps = toml_get_tbl(cargo_p, "dependencies");
+    string:serde_ver = toml_get_str(cargo_deps, "serde");
+    if (string_equals(pkg_name, "my-project")) {
+        if (string_equals(pkg_ver, "0.1.0")) {
+            if (string_equals(serde_ver, "1.0")) { drop(check(true, "T38 Cargo.toml re-parsed correctly")); passed = passed + 1i32;
+            } else { drop(check(false, "T38 cargo re-parse serde")); failed = failed + 1i32; }
+        } else { drop(check(false, "T38 cargo re-parse ver")); failed = failed + 1i32; }
+    } else { drop(check(false, "T38 cargo re-parse name")); failed = failed + 1i32; }
+
+    toml_free(pkg);
+    toml_free(deps);
+    toml_free(cargo);
+    toml_free(cargo_pkg);
+    toml_free(cargo_deps);
+    toml_free(cargo_p);
+
+    // T39: Mixed types in table
+    wild int8->:t39 = toml_new_table();
+    toml_set_str(t39, "name", "test");
+    toml_set_int(t39, "count", 5i64);
+    toml_set_flt(t39, "ratio", 0.75);
+    toml_set_bool(t39, "active", 1i32);
+    string:e39 = toml_encode(t39);
+    wild int8->:t39p = toml_parse(e39);
+    string:t39n = toml_get_str(t39p, "name");
+    int64:t39c = toml_get_int(t39p, "count");
+    flt64:t39r = toml_get_flt(t39p, "ratio");
+    int32:t39a = toml_get_bool(t39p, "active");
+    if (string_equals(t39n, "test")) {
+        if (t39c == 5i64) {
+            if (t39r > 0.74) {
+                if (t39a == 1i32) { drop(check(true, "T39 mixed types round-trip")); passed = passed + 1i32;
+                } else { drop(check(false, "T39 mixed bool")); failed = failed + 1i32; }
+            } else { drop(check(false, "T39 mixed flt")); failed = failed + 1i32; }
+        } else { drop(check(false, "T39 mixed int")); failed = failed + 1i32; }
+    } else { drop(check(false, "T39 mixed str")); failed = failed + 1i32; }
+    toml_free(t39);
+    toml_free(t39p);
+
+    // T40: Inline table parse
+    wild int8->:t40 = toml_parse("point = {x = 1, y = 2}\n");
+    wild int8->:t40pt = toml_get_tbl(t40, "point");
+    int64:t40x = toml_get_int(t40pt, "x");
+    int64:t40y = toml_get_int(t40pt, "y");
+    if (t40x == 1i64) {
+        if (t40y == 2i64) { drop(check(true, "T40 inline table {x=1, y=2}")); passed = passed + 1i32;
+        } else { drop(check(false, "T40 inline y")); failed = failed + 1i32; }
+    } else { drop(check(false, "T40 inline x")); failed = failed + 1i32; }
+    toml_free(t40pt);
+    toml_free(t40);
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Summary
+    // ═════════════════════════════════════════════════════════════════════
+
+    println("");
+    println("═════════════════════════════════════════════════════════");
+    print("  TOTAL: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("═════════════════════════════════════════════════════════");
+
+    pass(0i32);
+};

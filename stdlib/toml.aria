@@ -1,0 +1,99 @@
+// stdlib/toml.aria
+// TOML Serialization / Deserialization Module
+//
+// Full TOML encoding and decoding for Aria programs.
+// Import with: use "stdlib/toml.aria".*;
+//
+// Type codes (returned by toml_type / toml_arr_get_type):
+//   0 = string,  1 = int,  2 = float,  3 = bool,
+//   4 = table,   5 = array
+//
+// ── Building TOML ────────────────────────────────────────────────────
+//   toml_new_table()                         → handle   create empty table
+//   toml_new_array()                         → handle   create empty array
+//   toml_set_str(h, key, val)                → void     set string field
+//   toml_set_int(h, key, val)                → void     set int64 field
+//   toml_set_flt(h, key, val)                → void     set flt64 field
+//   toml_set_bool(h, key, val)               → void     set bool field (1/0)
+//   toml_set_tbl(h, key, child)              → void     set nested table
+//   toml_set_arr(h, key, child)              → void     set nested array
+//   toml_arr_push_str(h, val)                → void     push string element
+//   toml_arr_push_int(h, val)                → void     push int64 element
+//   toml_arr_push_flt(h, val)                → void     push flt64 element
+//   toml_arr_push_bool(h, val)               → void     push bool element (1/0)
+//   toml_arr_push_tbl(h, child)              → void     push table element
+//   toml_arr_push_arr(h, child)              → void     push array element
+//   toml_encode(h)                           → string   serialize to TOML string
+//   toml_free(h)                             → void     free handle
+//
+// ── Parsing TOML ─────────────────────────────────────────────────────
+//   toml_parse(toml_string)                  → handle   parse TOML → handle
+//   toml_type(h)                             → int32    type code of handle
+//   toml_has(h, key)                         → int32    1 if key exists
+//   toml_count(h)                            → int64    number of keys
+//   toml_get_str(h, key)                     → string   get string field
+//   toml_get_int(h, key)                     → int64    get int field
+//   toml_get_flt(h, key)                     → flt64    get float field
+//   toml_get_bool(h, key)                    → int32    get bool field (1/0)
+//   toml_get_tbl(h, key)                     → handle   get nested table
+//   toml_get_arr(h, key)                     → handle   get nested array
+//   toml_arr_len(h)                          → int64    array length
+//   toml_arr_get_str(h, idx)                 → string   get string at index
+//   toml_arr_get_int(h, idx)                 → int64    get int at index
+//   toml_arr_get_flt(h, idx)                 → flt64    get float at index
+//   toml_arr_get_bool(h, idx)                → int32    get bool at index
+//   toml_arr_get_tbl(h, idx)                 → handle   get table at index
+//   toml_arr_get_arr(h, idx)                 → handle   get array at index
+//   toml_arr_get_type(h, idx)                → int32    type code at index
+
+// ── Constructors ─────────────────────────────────────────────────────
+extern func:toml_new_table = wild int8*();
+extern func:toml_new_array = wild int8*();
+
+// ── Table setters ────────────────────────────────────────────────────
+extern func:toml_set_str = void(wild int8*:h, string:key, string:val);
+extern func:toml_set_int = void(wild int8*:h, string:key, int64:val);
+extern func:toml_set_flt = void(wild int8*:h, string:key, flt64:val);
+extern func:toml_set_bool = void(wild int8*:h, string:key, int32:val);
+extern func:toml_set_tbl = void(wild int8*:h, string:key, wild int8*:child);
+extern func:toml_set_arr = void(wild int8*:h, string:key, wild int8*:child);
+
+// ── Array pushers ────────────────────────────────────────────────────
+extern func:toml_arr_push_str = void(wild int8*:h, string:val);
+extern func:toml_arr_push_int = void(wild int8*:h, int64:val);
+extern func:toml_arr_push_flt = void(wild int8*:h, flt64:val);
+extern func:toml_arr_push_bool = void(wild int8*:h, int32:val);
+extern func:toml_arr_push_tbl = void(wild int8*:h, wild int8*:child);
+extern func:toml_arr_push_arr = void(wild int8*:h, wild int8*:child);
+
+// ── Encoder ──────────────────────────────────────────────────────────
+extern func:toml_encode = string(wild int8*:h);
+
+// ── Parser ───────────────────────────────────────────────────────────
+extern func:toml_parse = wild int8*(string:toml_str);
+
+// ── Type query ───────────────────────────────────────────────────────
+extern func:toml_type = int32(wild int8*:h);
+
+// ── Table getters ────────────────────────────────────────────────────
+extern func:toml_has = int32(wild int8*:h, string:key);
+extern func:toml_count = int64(wild int8*:h);
+extern func:toml_get_str = string(wild int8*:h, string:key);
+extern func:toml_get_int = int64(wild int8*:h, string:key);
+extern func:toml_get_flt = flt64(wild int8*:h, string:key);
+extern func:toml_get_bool = int32(wild int8*:h, string:key);
+extern func:toml_get_tbl = wild int8*(wild int8*:h, string:key);
+extern func:toml_get_arr = wild int8*(wild int8*:h, string:key);
+
+// ── Array getters ────────────────────────────────────────────────────
+extern func:toml_arr_len = int64(wild int8*:h);
+extern func:toml_arr_get_str = string(wild int8*:h, int64:idx);
+extern func:toml_arr_get_int = int64(wild int8*:h, int64:idx);
+extern func:toml_arr_get_flt = flt64(wild int8*:h, int64:idx);
+extern func:toml_arr_get_bool = int32(wild int8*:h, int64:idx);
+extern func:toml_arr_get_tbl = wild int8*(wild int8*:h, int64:idx);
+extern func:toml_arr_get_arr = wild int8*(wild int8*:h, int64:idx);
+extern func:toml_arr_get_type = int32(wild int8*:h, int64:idx);
+
+// ── Cleanup ──────────────────────────────────────────────────────────
+extern func:toml_free = void(wild int8*:h);

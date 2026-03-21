@@ -2451,6 +2451,36 @@ src/runtime/atomic/atomic.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/atomic/atomic.cpp.s
 .PHONY : src/runtime/atomic/atomic.cpp.s
 
+src/runtime/binary/binary.o: src/runtime/binary/binary.cpp.o
+.PHONY : src/runtime/binary/binary.o
+
+# target to build an object file
+src/runtime/binary/binary.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/binary/binary.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/binary/binary.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/binary/binary.cpp.o
+.PHONY : src/runtime/binary/binary.cpp.o
+
+src/runtime/binary/binary.i: src/runtime/binary/binary.cpp.i
+.PHONY : src/runtime/binary/binary.i
+
+# target to preprocess a source file
+src/runtime/binary/binary.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/binary/binary.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/binary/binary.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/binary/binary.cpp.i
+.PHONY : src/runtime/binary/binary.cpp.i
+
+src/runtime/binary/binary.s: src/runtime/binary/binary.cpp.s
+.PHONY : src/runtime/binary/binary.s
+
+# target to generate assembly for a file
+src/runtime/binary/binary.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/binary/binary.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/binary/binary.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/binary/binary.cpp.s
+.PHONY : src/runtime/binary/binary.cpp.s
+
 src/runtime/collections/collections.o: src/runtime/collections/collections.cpp.o
 .PHONY : src/runtime/collections/collections.o
 
@@ -2949,6 +2979,36 @@ src/runtime/math/math.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/math/math.cpp.s
 .PHONY : src/runtime/math/math.cpp.s
 
+src/runtime/net/net.o: src/runtime/net/net.cpp.o
+.PHONY : src/runtime/net/net.o
+
+# target to build an object file
+src/runtime/net/net.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/net/net.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/net/net.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/net/net.cpp.o
+.PHONY : src/runtime/net/net.cpp.o
+
+src/runtime/net/net.i: src/runtime/net/net.cpp.i
+.PHONY : src/runtime/net/net.i
+
+# target to preprocess a source file
+src/runtime/net/net.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/net/net.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/net/net.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/net/net.cpp.i
+.PHONY : src/runtime/net/net.cpp.i
+
+src/runtime/net/net.s: src/runtime/net/net.cpp.s
+.PHONY : src/runtime/net/net.s
+
+# target to generate assembly for a file
+src/runtime/net/net.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/net/net.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/net/net.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/net/net.cpp.s
+.PHONY : src/runtime/net/net.cpp.s
+
 src/runtime/panic/panic_handler.o: src/runtime/panic/panic_handler.cpp.o
 .PHONY : src/runtime/panic/panic_handler.o
 
@@ -3278,6 +3338,36 @@ src/runtime/timer/timer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/timer/timer.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/timer/timer.cpp.s
 .PHONY : src/runtime/timer/timer.cpp.s
+
+src/runtime/toml/toml.o: src/runtime/toml/toml.cpp.o
+.PHONY : src/runtime/toml/toml.o
+
+# target to build an object file
+src/runtime/toml/toml.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/toml/toml.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/toml/toml.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/toml/toml.cpp.o
+.PHONY : src/runtime/toml/toml.cpp.o
+
+src/runtime/toml/toml.i: src/runtime/toml/toml.cpp.i
+.PHONY : src/runtime/toml/toml.i
+
+# target to preprocess a source file
+src/runtime/toml/toml.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/toml/toml.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/toml/toml.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/toml/toml.cpp.i
+.PHONY : src/runtime/toml/toml.cpp.i
+
+src/runtime/toml/toml.s: src/runtime/toml/toml.cpp.s
+.PHONY : src/runtime/toml/toml.s
+
+# target to generate assembly for a file
+src/runtime/toml/toml.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/toml/toml.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/toml/toml.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/toml/toml.cpp.s
+.PHONY : src/runtime/toml/toml.cpp.s
 
 src/semantic/literal_converter.o: src/semantic/literal_converter.cpp.o
 .PHONY : src/semantic/literal_converter.o
@@ -3895,6 +3985,9 @@ help:
 	@echo "... src/runtime/atomic/atomic.o"
 	@echo "... src/runtime/atomic/atomic.i"
 	@echo "... src/runtime/atomic/atomic.s"
+	@echo "... src/runtime/binary/binary.o"
+	@echo "... src/runtime/binary/binary.i"
+	@echo "... src/runtime/binary/binary.s"
 	@echo "... src/runtime/collections/collections.o"
 	@echo "... src/runtime/collections/collections.i"
 	@echo "... src/runtime/collections/collections.s"
@@ -3946,6 +4039,9 @@ help:
 	@echo "... src/runtime/math/math.o"
 	@echo "... src/runtime/math/math.i"
 	@echo "... src/runtime/math/math.s"
+	@echo "... src/runtime/net/net.o"
+	@echo "... src/runtime/net/net.i"
+	@echo "... src/runtime/net/net.s"
 	@echo "... src/runtime/panic/panic_handler.o"
 	@echo "... src/runtime/panic/panic_handler.i"
 	@echo "... src/runtime/panic/panic_handler.s"
@@ -3979,6 +4075,9 @@ help:
 	@echo "... src/runtime/timer/timer.o"
 	@echo "... src/runtime/timer/timer.i"
 	@echo "... src/runtime/timer/timer.s"
+	@echo "... src/runtime/toml/toml.o"
+	@echo "... src/runtime/toml/toml.i"
+	@echo "... src/runtime/toml/toml.s"
 	@echo "... src/semantic/literal_converter.o"
 	@echo "... src/semantic/literal_converter.i"
 	@echo "... src/semantic/literal_converter.s"

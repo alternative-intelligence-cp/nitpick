@@ -1,0 +1,41 @@
+// stdlib/net.aria
+// Network I/O Module — TCP Client/Server
+//
+// Provides TCP socket operations for Aria programs.
+// Import with: use "stdlib/net.aria".*;
+//
+// ── TCP Client ───────────────────────────────────────────────────────
+//   net_connect(host, port)              → handle   connect to host:port
+//   net_send(h, data)                    → int64    send string, returns bytes
+//   net_recv(h, max_bytes)               → string   receive up to N bytes
+//   net_recv_timeout(h, max, timeout_ms) → string   recv with timeout
+//   net_close(h)                         → void     close socket
+//
+// ── TCP Server ───────────────────────────────────────────────────────
+//   net_listen(port, backlog)            → handle   bind + listen
+//   net_accept(h)                        → handle   accept connection
+//   net_server_close(h)                  → void     close server socket
+//
+// ── Info ─────────────────────────────────────────────────────────────
+//   net_peer_addr(h)                     → string   remote IP address
+//   net_peer_port(h)                     → int32    remote port
+//   net_is_connected(h)                  → int32    1 if connected
+//   net_set_nonblocking(h)               → void     set non-blocking mode
+
+// ── TCP Client ───────────────────────────────────────────────────────
+extern func:net_connect = wild int8*(string:host, int32:port);
+extern func:net_send = int64(wild int8*:h, string:data);
+extern func:net_recv = string(wild int8*:h, int64:max_bytes);
+extern func:net_recv_timeout = string(wild int8*:h, int64:max_bytes, int32:timeout_ms);
+extern func:net_close = void(wild int8*:h);
+
+// ── TCP Server ───────────────────────────────────────────────────────
+extern func:net_listen = wild int8*(int32:port, int32:backlog);
+extern func:net_accept = wild int8*(wild int8*:h);
+extern func:net_server_close = void(wild int8*:h);
+
+// ── Info ─────────────────────────────────────────────────────────────
+extern func:net_peer_addr = string(wild int8*:h);
+extern func:net_peer_port = int32(wild int8*:h);
+extern func:net_is_connected = int32(wild int8*:h);
+extern func:net_set_nonblocking = void(wild int8*:h);

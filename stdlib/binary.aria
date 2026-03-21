@@ -1,0 +1,68 @@
+// stdlib/binary.aria
+// Binary Serialization Module
+//
+// Buffer-based binary encoder/decoder for structured binary data.
+// Import with: use "stdlib/binary.aria".*;
+//
+// All integer writes use native (little-endian on x86) byte order.
+// Strings are stored as int64 length prefix + raw bytes.
+//
+// ── Buffer management ────────────────────────────────────────────────
+//   bin_new()                                → handle   create empty buffer
+//   bin_from_file(path)                      → handle   load from file
+//   bin_to_file(h, path)                     → int32    save to file (1=ok)
+//   bin_size(h)                              → int64    total bytes written
+//   bin_pos(h)                               → int64    current read cursor
+//   bin_seek(h, pos)                         → void     set cursor position
+//   bin_remaining(h)                         → int64    bytes left to read
+//   bin_free(h)                              → void     release buffer
+//
+// ── Writers ──────────────────────────────────────────────────────────
+//   bin_write_int8(h, val)                   → void     write 1 byte
+//   bin_write_int16(h, val)                  → void     write 2 bytes
+//   bin_write_int32(h, val)                  → void     write 4 bytes
+//   bin_write_int64(h, val)                  → void     write 8 bytes
+//   bin_write_flt32(h, val)                  → void     write 4-byte float
+//   bin_write_flt64(h, val)                  → void     write 8-byte double
+//   bin_write_str(h, val)                    → void     write length+string
+//   bin_write_bool(h, val)                   → void     write 1-byte bool
+//
+// ── Readers ──────────────────────────────────────────────────────────
+//   bin_read_int8(h)                         → int32    read 1 byte
+//   bin_read_int16(h)                        → int32    read 2 bytes
+//   bin_read_int32(h)                        → int32    read 4 bytes
+//   bin_read_int64(h)                        → int64    read 8 bytes
+//   bin_read_flt32(h)                        → flt64    read 4-byte float
+//   bin_read_flt64(h)                        → flt64    read 8-byte double
+//   bin_read_str(h)                          → string   read length+string
+//   bin_read_bool(h)                         → int32    read 1-byte bool
+
+// ── Buffer management ────────────────────────────────────────────────
+extern func:bin_new = wild int8*();
+extern func:bin_from_file = wild int8*(string:path);
+extern func:bin_to_file = int32(wild int8*:h, string:path);
+extern func:bin_size = int64(wild int8*:h);
+extern func:bin_pos = int64(wild int8*:h);
+extern func:bin_seek = void(wild int8*:h, int64:pos);
+extern func:bin_remaining = int64(wild int8*:h);
+extern func:bin_free = void(wild int8*:h);
+
+// ── Writers ──────────────────────────────────────────────────────────
+extern func:bin_write_int8 = void(wild int8*:h, int32:val);
+extern func:bin_write_int16 = void(wild int8*:h, int32:val);
+extern func:bin_write_int32 = void(wild int8*:h, int32:val);
+extern func:bin_write_int64 = void(wild int8*:h, int64:val);
+extern func:bin_write_flt32 = void(wild int8*:h, flt64:val);
+extern func:bin_write_flt64 = void(wild int8*:h, flt64:val);
+extern func:bin_write_str = void(wild int8*:h, string:val);
+extern func:bin_write_bool = void(wild int8*:h, int32:val);
+
+// ── Readers ──────────────────────────────────────────────────────────
+extern func:bin_read_int8 = int32(wild int8*:h);
+extern func:bin_read_int16 = int32(wild int8*:h);
+extern func:bin_read_int32 = int32(wild int8*:h);
+extern func:bin_read_int64 = int64(wild int8*:h);
+extern func:bin_read_flt32 = flt64(wild int8*:h);
+extern func:bin_read_flt64 = flt64(wild int8*:h);
+extern func:bin_read_str = string(wild int8*:h);
+extern func:bin_read_bool = int32(wild int8*:h);
