@@ -476,11 +476,5 @@ See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
 
 ---
 
-## Support
-
-If Aria is useful to you, consider supporting development. See [DONATIONS.md](DONATIONS.md) for cryptocurrency addresses.
-
----
-
 **Alternative Intelligence Liberation Platform (AILP)**  
 *Building tools for collaboration, not exploitation.*
