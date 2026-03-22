@@ -31,10 +31,13 @@ The compiler has reached its self-hosting milestone. The entire compiler fronten
 | Tool | Status | Description |
 |---|---|---|
 | `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
-| `aria-lsp` | ✅ Available | Language Server Protocol |
-| `aria-dap` | ✅ Available | Debug Adapter Protocol |
-| `aria-doc` | ✅ Available | Documentation generator |
-| `aria-pkg` | ✅ Available | Package manager |
+| `aria-ls` | ✅ Wired | Language Server — hover (type signatures), goto-definition, completion |
+| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 27/27 packages verified |
+| `aria-doc` | ✅ Fixed | Documentation generator — 435 unique HTML pages from ecosystem |
+| `aria-mcp` | ✅ Working | MCP server — compile, safety audit, docs search, specialist model |
+| `aria-safety` | ✅ Working | Static safety auditor (wild, raw, drop, ok, CAS, relaxed, failsafe) |
+| `aria-dap` | 🔧 Stub | Debug Adapter Protocol (requires LLDB) |
+| `install.sh` | ✅ New | One-command build + install with prerequisite checking |
 | Fuzzer V2 | ✅ Active | 24-hour stress campaigns |
 | Specialist model | 🔧 V4 Training | Qwen 7B LoRA, V3 complete (71% match), V4 in progress |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
@@ -238,17 +241,34 @@ int64:neg_four = 0nD;     // -4
 
 ## Quick Start
 
+### One-Command Install
+
 ```bash
 git clone https://github.com/alternative-intelligence-cp/aria.git
 cd aria
+./install.sh              # build + install to /usr/local
+```
+
+The install script checks prerequisites, builds all tools, and installs binaries, stdlib, and man pages. Options:
+
+```bash
+./install.sh --build-only          # build without system install
+./install.sh --prefix=$HOME/.local # install to custom prefix
+./install.sh --uninstall           # remove installed files
+```
+
+### Manual Build
+
+```bash
 mkdir -p build && cd build
 cmake ..
 cmake --build . -j$(nproc)
 cd ..
 ```
 
+### Hello World
+
 ```bash
-# hello.aria
 cat > hello.aria << 'EOF'
 func:main = int32() {
     drop(println("Hello from Aria!"));
@@ -268,7 +288,7 @@ EOF
 ./build/ariac program.aria -O2 -o program      # optimized
 ```
 
-**Prerequisites:** LLVM 20.1+, CMake 3.20+, C++17 compiler, Linux/macOS/WSL2
+**Prerequisites:** LLVM 20.1+, CMake 3.20+, C++17 compiler, Python 3.8+, Linux/macOS/WSL2
 
 ---
 
@@ -425,9 +445,18 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **License changed to Apache 2.0**
 - ✅ **Language specialist model** V3 complete (71% pattern match), V4 in progress
 
-### v0.2.1+ — Planned
+### v0.2.1 — In Progress
 
-- Developer tooling improvements (benchmarks, package manager enhancements)
+- ✅ **aria-pkg fixed** — Registry loading, metadata parsing, tarball extraction; added search/pack/directory-install. 27/27 packages verified.
+- ✅ **aria-doc fixed** — Parser rewritten for Aria colon syntax. Generates 435 unique HTML pages, zero `unknown.html` collisions.
+- ✅ **aria-ls wired** — AST-based hover (type signatures + builtin descriptions), goto-definition, completion (37 keywords + 15 types + file symbols).
+- ✅ **install.sh** — One-command build and install with prerequisite checking, `--prefix`, `--uninstall` support.
+- ✅ **aria-mcp verified** — compile, docs, safety, ask endpoints all functional.
+- 🔧 Language comparison benchmarks (Aria vs C/C++/Rust/Zig)
+- 🔧 VS Code extension update for new LSP features
+
+### v0.3.0+ — Planned
+
 - Advanced async patterns (channels, actors)
 - AriaX Linux distribution packaging
 - Nikola integration

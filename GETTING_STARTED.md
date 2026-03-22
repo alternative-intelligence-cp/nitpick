@@ -117,7 +117,21 @@ You should see files like `CMakeLists.txt`, `scripts/`, `examples/`, `tests/`, e
 
 ## 4. Build the Compiler
 
-There's a build script that does everything for you:
+### Quick Method (recommended)
+
+The install script handles everything — prerequisite checking, building, and optional system-wide installation:
+
+```bash
+./install.sh --build-only
+```
+
+This will check prerequisites, then build `ariac`, `aria-ls`, `aria-pkg`, `aria-doc`, and `aria-safety`. To also install them to `/usr/local/bin`:
+
+```bash
+sudo ./install.sh
+```
+
+### Alternative: Build script
 
 ```bash
 ./scripts/build.sh
