@@ -1,0 +1,41 @@
+// Benchmark 2: Collatz Conjecture
+// Tests: integer arithmetic, branching, deep loops, function calls
+// Computes total stopping time for all numbers 1..N
+
+func:collatz_steps = int64(int64:n) {
+    int64:steps = 0i64;
+    int64:val = n;
+    while (val != 1i64) {
+        if (val % 2i64 == 0i64) {
+            val = val / 2i64;
+        } else {
+            val = val * 3i64 + 1i64;
+        }
+        steps = steps + 1i64;
+    }
+    pass(steps);
+};
+
+func:main = int32() {
+    int64:total_steps = 0i64;
+    int64:max_steps = 0i64;
+    int64:i = 1i64;
+    while (i <= 1000000i64) {
+        Result<int64>:s = collatz_steps(i);
+        int64:steps = s ? 0i64;
+        total_steps = total_steps + steps;
+        if (steps > max_steps) {
+            max_steps = steps;
+        }
+        i = i + 1i64;
+    }
+
+    // Expected: total_steps = 131434424, max_steps = 524
+    if (total_steps != 131434424i64) { pass(1i32); }
+    if (max_steps != 524i64) { pass(2i32); }
+
+    drop(println("PASS"));
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {};
