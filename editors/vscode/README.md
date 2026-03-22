@@ -79,6 +79,10 @@ defer {
 
 ## Release Notes
 
+### 0.2.0 (March 2026)
+
+- Updated to match Aria compiler v0.2.0
+
 ### 0.1.0 (December 2025)
 
 Initial release:
@@ -100,13 +104,13 @@ npm run compile
 
 ```bash
 npm run package
-# Produces: aria-lang-0.1.0.vsix
+# Produces: aria-lang-0.2.0.vsix
 ```
 
 ### Installing Locally
 
 ```bash
-code --install-extension aria-lang-0.1.0.vsix
+code --install-extension aria-lang-0.2.0.vsix
 ```
 
 ## Contributing

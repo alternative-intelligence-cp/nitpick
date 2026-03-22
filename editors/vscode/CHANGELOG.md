@@ -2,6 +2,12 @@
 
 All notable changes to the "aria-lang" extension will be documented in this file.
 
+## [0.2.0] - 2026-03
+
+### Changed
+- Updated to match Aria compiler v0.2.0
+- Version bumps across all components
+
 ## [0.1.0] - 2025-12-18
 
 ### Added

@@ -1,4 +1,4 @@
-# Aria 0.1.0 — Known Issues & Limitations
+# Aria 0.2.0 — Known Issues & Limitations
 
 Last updated: March 2026
 

@@ -1037,6 +1037,7 @@ src/frontend/ast/ast_node.o: src/frontend/ast/ast_node.cpp.o
 
 # target to build an object file
 src/frontend/ast/ast_node.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/ast_node.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/ast_node.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/ast_node.cpp.o
@@ -1047,6 +1048,7 @@ src/frontend/ast/ast_node.i: src/frontend/ast/ast_node.cpp.i
 
 # target to preprocess a source file
 src/frontend/ast/ast_node.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/ast_node.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/ast_node.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/ast_node.cpp.i
@@ -1057,6 +1059,7 @@ src/frontend/ast/ast_node.s: src/frontend/ast/ast_node.cpp.s
 
 # target to generate assembly for a file
 src/frontend/ast/ast_node.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/ast_node.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/ast_node.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/ast_node.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/ast_node.cpp.s
@@ -1067,6 +1070,7 @@ src/frontend/ast/expr.o: src/frontend/ast/expr.cpp.o
 
 # target to build an object file
 src/frontend/ast/expr.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/expr.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/expr.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/expr.cpp.o
@@ -1077,6 +1081,7 @@ src/frontend/ast/expr.i: src/frontend/ast/expr.cpp.i
 
 # target to preprocess a source file
 src/frontend/ast/expr.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/expr.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/expr.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/expr.cpp.i
@@ -1087,6 +1092,7 @@ src/frontend/ast/expr.s: src/frontend/ast/expr.cpp.s
 
 # target to generate assembly for a file
 src/frontend/ast/expr.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/expr.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/expr.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/expr.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/expr.cpp.s
@@ -1097,6 +1103,7 @@ src/frontend/ast/stmt.o: src/frontend/ast/stmt.cpp.o
 
 # target to build an object file
 src/frontend/ast/stmt.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/stmt.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/stmt.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/stmt.cpp.o
@@ -1107,6 +1114,7 @@ src/frontend/ast/stmt.i: src/frontend/ast/stmt.cpp.i
 
 # target to preprocess a source file
 src/frontend/ast/stmt.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/stmt.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/stmt.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/stmt.cpp.i
@@ -1117,6 +1125,7 @@ src/frontend/ast/stmt.s: src/frontend/ast/stmt.cpp.s
 
 # target to generate assembly for a file
 src/frontend/ast/stmt.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/stmt.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/stmt.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/stmt.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/stmt.cpp.s
@@ -1127,6 +1136,7 @@ src/frontend/ast/type.o: src/frontend/ast/type.cpp.o
 
 # target to build an object file
 src/frontend/ast/type.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/type.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/type.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/type.cpp.o
@@ -1137,6 +1147,7 @@ src/frontend/ast/type.i: src/frontend/ast/type.cpp.i
 
 # target to preprocess a source file
 src/frontend/ast/type.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/type.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/type.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/type.cpp.i
@@ -1147,6 +1158,7 @@ src/frontend/ast/type.s: src/frontend/ast/type.cpp.s
 
 # target to generate assembly for a file
 src/frontend/ast/type.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/ast/type.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/ast/type.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/ast/type.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/ast/type.cpp.s
@@ -1187,6 +1199,7 @@ src/frontend/lexer/lexer.o: src/frontend/lexer/lexer.cpp.o
 
 # target to build an object file
 src/frontend/lexer/lexer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/lexer/lexer.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/lexer/lexer.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/lexer.cpp.o
@@ -1197,6 +1210,7 @@ src/frontend/lexer/lexer.i: src/frontend/lexer/lexer.cpp.i
 
 # target to preprocess a source file
 src/frontend/lexer/lexer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/lexer/lexer.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/lexer/lexer.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/lexer.cpp.i
@@ -1207,6 +1221,7 @@ src/frontend/lexer/lexer.s: src/frontend/lexer/lexer.cpp.s
 
 # target to generate assembly for a file
 src/frontend/lexer/lexer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/lexer/lexer.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/lexer.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/lexer/lexer.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/lexer.cpp.s
@@ -1217,6 +1232,7 @@ src/frontend/lexer/token.o: src/frontend/lexer/token.cpp.o
 
 # target to build an object file
 src/frontend/lexer/token.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/lexer/token.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/lexer/token.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/token.cpp.o
@@ -1227,6 +1243,7 @@ src/frontend/lexer/token.i: src/frontend/lexer/token.cpp.i
 
 # target to preprocess a source file
 src/frontend/lexer/token.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/lexer/token.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/lexer/token.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/token.cpp.i
@@ -1237,6 +1254,7 @@ src/frontend/lexer/token.s: src/frontend/lexer/token.cpp.s
 
 # target to generate assembly for a file
 src/frontend/lexer/token.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/lexer/token.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/lexer/token.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/lexer/token.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/lexer/token.cpp.s
@@ -1247,6 +1265,7 @@ src/frontend/parser/parser.o: src/frontend/parser/parser.cpp.o
 
 # target to build an object file
 src/frontend/parser/parser.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/parser/parser.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/parser/parser.cpp.o
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/parser/parser.cpp.o
@@ -1257,6 +1276,7 @@ src/frontend/parser/parser.i: src/frontend/parser/parser.cpp.i
 
 # target to preprocess a source file
 src/frontend/parser/parser.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/parser/parser.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/parser/parser.cpp.i
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/parser/parser.cpp.i
@@ -1267,6 +1287,7 @@ src/frontend/parser/parser.s: src/frontend/parser/parser.cpp.s
 
 # target to generate assembly for a file
 src/frontend/parser/parser.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/frontend/parser/parser.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/frontend/parser/parser.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/frontend/parser/parser.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-ls.dir/build.make CMakeFiles/aria-ls.dir/src/frontend/parser/parser.cpp.s
@@ -2091,6 +2112,36 @@ src/runtime/assembler/llvm_jit.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/assembler/llvm_jit.cpp.s
 .PHONY : src/runtime/assembler/llvm_jit.cpp.s
 
+src/runtime/ast/ast_helpers.o: src/runtime/ast/ast_helpers.cpp.o
+.PHONY : src/runtime/ast/ast_helpers.o
+
+# target to build an object file
+src/runtime/ast/ast_helpers.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/ast/ast_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/ast/ast_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/ast/ast_helpers.cpp.o
+.PHONY : src/runtime/ast/ast_helpers.cpp.o
+
+src/runtime/ast/ast_helpers.i: src/runtime/ast/ast_helpers.cpp.i
+.PHONY : src/runtime/ast/ast_helpers.i
+
+# target to preprocess a source file
+src/runtime/ast/ast_helpers.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/ast/ast_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/ast/ast_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/ast/ast_helpers.cpp.i
+.PHONY : src/runtime/ast/ast_helpers.cpp.i
+
+src/runtime/ast/ast_helpers.s: src/runtime/ast/ast_helpers.cpp.s
+.PHONY : src/runtime/ast/ast_helpers.s
+
+# target to generate assembly for a file
+src/runtime/ast/ast_helpers.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/ast/ast_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/ast/ast_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/ast/ast_helpers.cpp.s
+.PHONY : src/runtime/ast/ast_helpers.cpp.s
+
 src/runtime/async/async_io.o: src/runtime/async/async_io.cpp.o
 .PHONY : src/runtime/async/async_io.o
 
@@ -2451,35 +2502,65 @@ src/runtime/atomic/atomic.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/atomic/atomic.cpp.s
 .PHONY : src/runtime/atomic/atomic.cpp.s
 
-src/runtime/binary/binary.o: src/runtime/binary/binary.cpp.o
-.PHONY : src/runtime/binary/binary.o
+src/runtime/binary/binary_helpers.o: src/runtime/binary/binary_helpers.cpp.o
+.PHONY : src/runtime/binary/binary_helpers.o
 
 # target to build an object file
-src/runtime/binary/binary.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/binary/binary.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/binary/binary.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/binary/binary.cpp.o
-.PHONY : src/runtime/binary/binary.cpp.o
+src/runtime/binary/binary_helpers.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/binary/binary_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/binary/binary_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/binary/binary_helpers.cpp.o
+.PHONY : src/runtime/binary/binary_helpers.cpp.o
 
-src/runtime/binary/binary.i: src/runtime/binary/binary.cpp.i
-.PHONY : src/runtime/binary/binary.i
+src/runtime/binary/binary_helpers.i: src/runtime/binary/binary_helpers.cpp.i
+.PHONY : src/runtime/binary/binary_helpers.i
 
 # target to preprocess a source file
-src/runtime/binary/binary.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/binary/binary.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/binary/binary.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/binary/binary.cpp.i
-.PHONY : src/runtime/binary/binary.cpp.i
+src/runtime/binary/binary_helpers.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/binary/binary_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/binary/binary_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/binary/binary_helpers.cpp.i
+.PHONY : src/runtime/binary/binary_helpers.cpp.i
 
-src/runtime/binary/binary.s: src/runtime/binary/binary.cpp.s
-.PHONY : src/runtime/binary/binary.s
+src/runtime/binary/binary_helpers.s: src/runtime/binary/binary_helpers.cpp.s
+.PHONY : src/runtime/binary/binary_helpers.s
 
 # target to generate assembly for a file
-src/runtime/binary/binary.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/binary/binary.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/binary/binary.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/binary/binary.cpp.s
-.PHONY : src/runtime/binary/binary.cpp.s
+src/runtime/binary/binary_helpers.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/binary/binary_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/binary/binary_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/binary/binary_helpers.cpp.s
+.PHONY : src/runtime/binary/binary_helpers.cpp.s
+
+src/runtime/collections/collection_helpers.o: src/runtime/collections/collection_helpers.cpp.o
+.PHONY : src/runtime/collections/collection_helpers.o
+
+# target to build an object file
+src/runtime/collections/collection_helpers.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collection_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collection_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/collection_helpers.cpp.o
+.PHONY : src/runtime/collections/collection_helpers.cpp.o
+
+src/runtime/collections/collection_helpers.i: src/runtime/collections/collection_helpers.cpp.i
+.PHONY : src/runtime/collections/collection_helpers.i
+
+# target to preprocess a source file
+src/runtime/collections/collection_helpers.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collection_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collection_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/collection_helpers.cpp.i
+.PHONY : src/runtime/collections/collection_helpers.cpp.i
+
+src/runtime/collections/collection_helpers.s: src/runtime/collections/collection_helpers.cpp.s
+.PHONY : src/runtime/collections/collection_helpers.s
+
+# target to generate assembly for a file
+src/runtime/collections/collection_helpers.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collection_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collection_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/collection_helpers.cpp.s
+.PHONY : src/runtime/collections/collection_helpers.cpp.s
 
 src/runtime/collections/collections.o: src/runtime/collections/collections.cpp.o
 .PHONY : src/runtime/collections/collections.o
@@ -2510,36 +2591,6 @@ src/runtime/collections/collections.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/collections.cpp.s
 .PHONY : src/runtime/collections/collections.cpp.s
-
-src/runtime/collections/collections_typed.o: src/runtime/collections/collections_typed.cpp.o
-.PHONY : src/runtime/collections/collections_typed.o
-
-# target to build an object file
-src/runtime/collections/collections_typed.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collections_typed.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections_typed.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/collections_typed.cpp.o
-.PHONY : src/runtime/collections/collections_typed.cpp.o
-
-src/runtime/collections/collections_typed.i: src/runtime/collections/collections_typed.cpp.i
-.PHONY : src/runtime/collections/collections_typed.i
-
-# target to preprocess a source file
-src/runtime/collections/collections_typed.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collections_typed.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections_typed.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/collections_typed.cpp.i
-.PHONY : src/runtime/collections/collections_typed.cpp.i
-
-src/runtime/collections/collections_typed.s: src/runtime/collections/collections_typed.cpp.s
-.PHONY : src/runtime/collections/collections_typed.s
-
-# target to generate assembly for a file
-src/runtime/collections/collections_typed.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/collections/collections_typed.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/collections/collections_typed.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/collections_typed.cpp.s
-.PHONY : src/runtime/collections/collections_typed.cpp.s
 
 src/runtime/collections/map.o: src/runtime/collections/map.cpp.o
 .PHONY : src/runtime/collections/map.o
@@ -2829,35 +2880,65 @@ src/runtime/io/zero_copy_bridge.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/io/zero_copy_bridge.cpp.s
 .PHONY : src/runtime/io/zero_copy_bridge.cpp.s
 
-src/runtime/json/json.o: src/runtime/json/json.cpp.o
-.PHONY : src/runtime/json/json.o
+src/runtime/json/json_helpers.o: src/runtime/json/json_helpers.cpp.o
+.PHONY : src/runtime/json/json_helpers.o
 
 # target to build an object file
-src/runtime/json/json.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/json/json.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/json/json.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/json/json.cpp.o
-.PHONY : src/runtime/json/json.cpp.o
+src/runtime/json/json_helpers.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/json/json_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/json/json_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/json/json_helpers.cpp.o
+.PHONY : src/runtime/json/json_helpers.cpp.o
 
-src/runtime/json/json.i: src/runtime/json/json.cpp.i
-.PHONY : src/runtime/json/json.i
+src/runtime/json/json_helpers.i: src/runtime/json/json_helpers.cpp.i
+.PHONY : src/runtime/json/json_helpers.i
 
 # target to preprocess a source file
-src/runtime/json/json.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/json/json.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/json/json.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/json/json.cpp.i
-.PHONY : src/runtime/json/json.cpp.i
+src/runtime/json/json_helpers.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/json/json_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/json/json_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/json/json_helpers.cpp.i
+.PHONY : src/runtime/json/json_helpers.cpp.i
 
-src/runtime/json/json.s: src/runtime/json/json.cpp.s
-.PHONY : src/runtime/json/json.s
+src/runtime/json/json_helpers.s: src/runtime/json/json_helpers.cpp.s
+.PHONY : src/runtime/json/json_helpers.s
 
 # target to generate assembly for a file
-src/runtime/json/json.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/json/json.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/json/json.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/json/json.cpp.s
-.PHONY : src/runtime/json/json.cpp.s
+src/runtime/json/json_helpers.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/json/json_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/json/json_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/json/json_helpers.cpp.s
+.PHONY : src/runtime/json/json_helpers.cpp.s
+
+src/runtime/lex/lex_helpers.o: src/runtime/lex/lex_helpers.cpp.o
+.PHONY : src/runtime/lex/lex_helpers.o
+
+# target to build an object file
+src/runtime/lex/lex_helpers.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/lex/lex_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/lex/lex_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/lex/lex_helpers.cpp.o
+.PHONY : src/runtime/lex/lex_helpers.cpp.o
+
+src/runtime/lex/lex_helpers.i: src/runtime/lex/lex_helpers.cpp.i
+.PHONY : src/runtime/lex/lex_helpers.i
+
+# target to preprocess a source file
+src/runtime/lex/lex_helpers.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/lex/lex_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/lex/lex_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/lex/lex_helpers.cpp.i
+.PHONY : src/runtime/lex/lex_helpers.cpp.i
+
+src/runtime/lex/lex_helpers.s: src/runtime/lex/lex_helpers.cpp.s
+.PHONY : src/runtime/lex/lex_helpers.s
+
+# target to generate assembly for a file
+src/runtime/lex/lex_helpers.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/lex/lex_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/lex/lex_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/lex/lex_helpers.cpp.s
+.PHONY : src/runtime/lex/lex_helpers.cpp.s
 
 src/runtime/math/fix256.o: src/runtime/math/fix256.cpp.o
 .PHONY : src/runtime/math/fix256.o
@@ -3039,6 +3120,30 @@ src/runtime/panic/panic_handler.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/panic/panic_handler.cpp.s
 .PHONY : src/runtime/panic/panic_handler.cpp.s
 
+src/runtime/pipeline/pipeline_helpers.o: src/runtime/pipeline/pipeline_helpers.cpp.o
+.PHONY : src/runtime/pipeline/pipeline_helpers.o
+
+# target to build an object file
+src/runtime/pipeline/pipeline_helpers.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/pipeline/pipeline_helpers.cpp.o
+.PHONY : src/runtime/pipeline/pipeline_helpers.cpp.o
+
+src/runtime/pipeline/pipeline_helpers.i: src/runtime/pipeline/pipeline_helpers.cpp.i
+.PHONY : src/runtime/pipeline/pipeline_helpers.i
+
+# target to preprocess a source file
+src/runtime/pipeline/pipeline_helpers.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/pipeline/pipeline_helpers.cpp.i
+.PHONY : src/runtime/pipeline/pipeline_helpers.cpp.i
+
+src/runtime/pipeline/pipeline_helpers.s: src/runtime/pipeline/pipeline_helpers.cpp.s
+.PHONY : src/runtime/pipeline/pipeline_helpers.s
+
+# target to generate assembly for a file
+src/runtime/pipeline/pipeline_helpers.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/pipeline/pipeline_helpers.cpp.s
+.PHONY : src/runtime/pipeline/pipeline_helpers.cpp.s
+
 src/runtime/process/process.o: src/runtime/process/process.cpp.o
 .PHONY : src/runtime/process/process.o
 
@@ -3098,6 +3203,66 @@ src/runtime/result/result.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/result/result.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/result/result.cpp.s
 .PHONY : src/runtime/result/result.cpp.s
+
+src/runtime/sema/pass_helpers.o: src/runtime/sema/pass_helpers.cpp.o
+.PHONY : src/runtime/sema/pass_helpers.o
+
+# target to build an object file
+src/runtime/sema/pass_helpers.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/sema/pass_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/sema/pass_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/sema/pass_helpers.cpp.o
+.PHONY : src/runtime/sema/pass_helpers.cpp.o
+
+src/runtime/sema/pass_helpers.i: src/runtime/sema/pass_helpers.cpp.i
+.PHONY : src/runtime/sema/pass_helpers.i
+
+# target to preprocess a source file
+src/runtime/sema/pass_helpers.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/sema/pass_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/sema/pass_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/sema/pass_helpers.cpp.i
+.PHONY : src/runtime/sema/pass_helpers.cpp.i
+
+src/runtime/sema/pass_helpers.s: src/runtime/sema/pass_helpers.cpp.s
+.PHONY : src/runtime/sema/pass_helpers.s
+
+# target to generate assembly for a file
+src/runtime/sema/pass_helpers.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/sema/pass_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/sema/pass_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/sema/pass_helpers.cpp.s
+.PHONY : src/runtime/sema/pass_helpers.cpp.s
+
+src/runtime/sema/sema_helpers.o: src/runtime/sema/sema_helpers.cpp.o
+.PHONY : src/runtime/sema/sema_helpers.o
+
+# target to build an object file
+src/runtime/sema/sema_helpers.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/sema/sema_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/sema/sema_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/sema/sema_helpers.cpp.o
+.PHONY : src/runtime/sema/sema_helpers.cpp.o
+
+src/runtime/sema/sema_helpers.i: src/runtime/sema/sema_helpers.cpp.i
+.PHONY : src/runtime/sema/sema_helpers.i
+
+# target to preprocess a source file
+src/runtime/sema/sema_helpers.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/sema/sema_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/sema/sema_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/sema/sema_helpers.cpp.i
+.PHONY : src/runtime/sema/sema_helpers.cpp.i
+
+src/runtime/sema/sema_helpers.s: src/runtime/sema/sema_helpers.cpp.s
+.PHONY : src/runtime/sema/sema_helpers.s
+
+# target to generate assembly for a file
+src/runtime/sema/sema_helpers.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/sema/sema_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/sema/sema_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/sema/sema_helpers.cpp.s
+.PHONY : src/runtime/sema/sema_helpers.cpp.s
 
 src/runtime/stdlib/stdlib.o: src/runtime/stdlib/stdlib.cpp.o
 .PHONY : src/runtime/stdlib/stdlib.o
@@ -3159,6 +3324,36 @@ src/runtime/streams/streams.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/streams/streams.cpp.s
 .PHONY : src/runtime/streams/streams.cpp.s
 
+src/runtime/strings/string_helpers.o: src/runtime/strings/string_helpers.cpp.o
+.PHONY : src/runtime/strings/string_helpers.o
+
+# target to build an object file
+src/runtime/strings/string_helpers.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/string_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/string_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/strings/string_helpers.cpp.o
+.PHONY : src/runtime/strings/string_helpers.cpp.o
+
+src/runtime/strings/string_helpers.i: src/runtime/strings/string_helpers.cpp.i
+.PHONY : src/runtime/strings/string_helpers.i
+
+# target to preprocess a source file
+src/runtime/strings/string_helpers.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/string_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/string_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/strings/string_helpers.cpp.i
+.PHONY : src/runtime/strings/string_helpers.cpp.i
+
+src/runtime/strings/string_helpers.s: src/runtime/strings/string_helpers.cpp.s
+.PHONY : src/runtime/strings/string_helpers.s
+
+# target to generate assembly for a file
+src/runtime/strings/string_helpers.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/string_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/string_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/strings/string_helpers.cpp.s
+.PHONY : src/runtime/strings/string_helpers.cpp.s
+
 src/runtime/strings/strings.o: src/runtime/strings/strings.cpp.o
 .PHONY : src/runtime/strings/strings.o
 
@@ -3188,36 +3383,6 @@ src/runtime/strings/strings.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/strings/strings.cpp.s
 .PHONY : src/runtime/strings/strings.cpp.s
-
-src/runtime/strings/strings_typed.o: src/runtime/strings/strings_typed.cpp.o
-.PHONY : src/runtime/strings/strings_typed.o
-
-# target to build an object file
-src/runtime/strings/strings_typed.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/strings_typed.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings_typed.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/strings/strings_typed.cpp.o
-.PHONY : src/runtime/strings/strings_typed.cpp.o
-
-src/runtime/strings/strings_typed.i: src/runtime/strings/strings_typed.cpp.i
-.PHONY : src/runtime/strings/strings_typed.i
-
-# target to preprocess a source file
-src/runtime/strings/strings_typed.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/strings_typed.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings_typed.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/strings/strings_typed.cpp.i
-.PHONY : src/runtime/strings/strings_typed.cpp.i
-
-src/runtime/strings/strings_typed.s: src/runtime/strings/strings_typed.cpp.s
-.PHONY : src/runtime/strings/strings_typed.s
-
-# target to generate assembly for a file
-src/runtime/strings/strings_typed.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/strings/strings_typed.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/strings/strings_typed.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/strings/strings_typed.cpp.s
-.PHONY : src/runtime/strings/strings_typed.cpp.s
 
 src/runtime/tbb/tbb.o: src/runtime/tbb/tbb.cpp.o
 .PHONY : src/runtime/tbb/tbb.o
@@ -3339,35 +3504,35 @@ src/runtime/timer/timer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/timer/timer.cpp.s
 .PHONY : src/runtime/timer/timer.cpp.s
 
-src/runtime/toml/toml.o: src/runtime/toml/toml.cpp.o
-.PHONY : src/runtime/toml/toml.o
+src/runtime/toml/toml_helpers.o: src/runtime/toml/toml_helpers.cpp.o
+.PHONY : src/runtime/toml/toml_helpers.o
 
 # target to build an object file
-src/runtime/toml/toml.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/toml/toml.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/toml/toml.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/toml/toml.cpp.o
-.PHONY : src/runtime/toml/toml.cpp.o
+src/runtime/toml/toml_helpers.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/toml/toml_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/toml/toml_helpers.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/toml/toml_helpers.cpp.o
+.PHONY : src/runtime/toml/toml_helpers.cpp.o
 
-src/runtime/toml/toml.i: src/runtime/toml/toml.cpp.i
-.PHONY : src/runtime/toml/toml.i
+src/runtime/toml/toml_helpers.i: src/runtime/toml/toml_helpers.cpp.i
+.PHONY : src/runtime/toml/toml_helpers.i
 
 # target to preprocess a source file
-src/runtime/toml/toml.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/toml/toml.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/toml/toml.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/toml/toml.cpp.i
-.PHONY : src/runtime/toml/toml.cpp.i
+src/runtime/toml/toml_helpers.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/toml/toml_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/toml/toml_helpers.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/toml/toml_helpers.cpp.i
+.PHONY : src/runtime/toml/toml_helpers.cpp.i
 
-src/runtime/toml/toml.s: src/runtime/toml/toml.cpp.s
-.PHONY : src/runtime/toml/toml.s
+src/runtime/toml/toml_helpers.s: src/runtime/toml/toml_helpers.cpp.s
+.PHONY : src/runtime/toml/toml_helpers.s
 
 # target to generate assembly for a file
-src/runtime/toml/toml.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/toml/toml.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/toml/toml.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/toml/toml.cpp.s
-.PHONY : src/runtime/toml/toml.cpp.s
+src/runtime/toml/toml_helpers.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/toml/toml_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/toml/toml_helpers.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/toml/toml_helpers.cpp.s
+.PHONY : src/runtime/toml/toml_helpers.cpp.s
 
 src/semantic/literal_converter.o: src/semantic/literal_converter.cpp.o
 .PHONY : src/semantic/literal_converter.o
@@ -3949,6 +4114,9 @@ help:
 	@echo "... src/runtime/assembler/llvm_jit.o"
 	@echo "... src/runtime/assembler/llvm_jit.i"
 	@echo "... src/runtime/assembler/llvm_jit.s"
+	@echo "... src/runtime/ast/ast_helpers.o"
+	@echo "... src/runtime/ast/ast_helpers.i"
+	@echo "... src/runtime/ast/ast_helpers.s"
 	@echo "... src/runtime/async/async_io.o"
 	@echo "... src/runtime/async/async_io.i"
 	@echo "... src/runtime/async/async_io.s"
@@ -3985,15 +4153,15 @@ help:
 	@echo "... src/runtime/atomic/atomic.o"
 	@echo "... src/runtime/atomic/atomic.i"
 	@echo "... src/runtime/atomic/atomic.s"
-	@echo "... src/runtime/binary/binary.o"
-	@echo "... src/runtime/binary/binary.i"
-	@echo "... src/runtime/binary/binary.s"
+	@echo "... src/runtime/binary/binary_helpers.o"
+	@echo "... src/runtime/binary/binary_helpers.i"
+	@echo "... src/runtime/binary/binary_helpers.s"
+	@echo "... src/runtime/collections/collection_helpers.o"
+	@echo "... src/runtime/collections/collection_helpers.i"
+	@echo "... src/runtime/collections/collection_helpers.s"
 	@echo "... src/runtime/collections/collections.o"
 	@echo "... src/runtime/collections/collections.i"
 	@echo "... src/runtime/collections/collections.s"
-	@echo "... src/runtime/collections/collections_typed.o"
-	@echo "... src/runtime/collections/collections_typed.i"
-	@echo "... src/runtime/collections/collections_typed.s"
 	@echo "... src/runtime/collections/map.o"
 	@echo "... src/runtime/collections/map.i"
 	@echo "... src/runtime/collections/map.s"
@@ -4024,9 +4192,12 @@ help:
 	@echo "... src/runtime/io/zero_copy_bridge.o"
 	@echo "... src/runtime/io/zero_copy_bridge.i"
 	@echo "... src/runtime/io/zero_copy_bridge.s"
-	@echo "... src/runtime/json/json.o"
-	@echo "... src/runtime/json/json.i"
-	@echo "... src/runtime/json/json.s"
+	@echo "... src/runtime/json/json_helpers.o"
+	@echo "... src/runtime/json/json_helpers.i"
+	@echo "... src/runtime/json/json_helpers.s"
+	@echo "... src/runtime/lex/lex_helpers.o"
+	@echo "... src/runtime/lex/lex_helpers.i"
+	@echo "... src/runtime/lex/lex_helpers.s"
 	@echo "... src/runtime/math/fix256.o"
 	@echo "... src/runtime/math/fix256.i"
 	@echo "... src/runtime/math/fix256.s"
@@ -4045,24 +4216,33 @@ help:
 	@echo "... src/runtime/panic/panic_handler.o"
 	@echo "... src/runtime/panic/panic_handler.i"
 	@echo "... src/runtime/panic/panic_handler.s"
+	@echo "... src/runtime/pipeline/pipeline_helpers.o"
+	@echo "... src/runtime/pipeline/pipeline_helpers.i"
+	@echo "... src/runtime/pipeline/pipeline_helpers.s"
 	@echo "... src/runtime/process/process.o"
 	@echo "... src/runtime/process/process.i"
 	@echo "... src/runtime/process/process.s"
 	@echo "... src/runtime/result/result.o"
 	@echo "... src/runtime/result/result.i"
 	@echo "... src/runtime/result/result.s"
+	@echo "... src/runtime/sema/pass_helpers.o"
+	@echo "... src/runtime/sema/pass_helpers.i"
+	@echo "... src/runtime/sema/pass_helpers.s"
+	@echo "... src/runtime/sema/sema_helpers.o"
+	@echo "... src/runtime/sema/sema_helpers.i"
+	@echo "... src/runtime/sema/sema_helpers.s"
 	@echo "... src/runtime/stdlib/stdlib.o"
 	@echo "... src/runtime/stdlib/stdlib.i"
 	@echo "... src/runtime/stdlib/stdlib.s"
 	@echo "... src/runtime/streams/streams.o"
 	@echo "... src/runtime/streams/streams.i"
 	@echo "... src/runtime/streams/streams.s"
+	@echo "... src/runtime/strings/string_helpers.o"
+	@echo "... src/runtime/strings/string_helpers.i"
+	@echo "... src/runtime/strings/string_helpers.s"
 	@echo "... src/runtime/strings/strings.o"
 	@echo "... src/runtime/strings/strings.i"
 	@echo "... src/runtime/strings/strings.s"
-	@echo "... src/runtime/strings/strings_typed.o"
-	@echo "... src/runtime/strings/strings_typed.i"
-	@echo "... src/runtime/strings/strings_typed.s"
 	@echo "... src/runtime/tbb/tbb.o"
 	@echo "... src/runtime/tbb/tbb.i"
 	@echo "... src/runtime/tbb/tbb.s"
@@ -4075,9 +4255,9 @@ help:
 	@echo "... src/runtime/timer/timer.o"
 	@echo "... src/runtime/timer/timer.i"
 	@echo "... src/runtime/timer/timer.s"
-	@echo "... src/runtime/toml/toml.o"
-	@echo "... src/runtime/toml/toml.i"
-	@echo "... src/runtime/toml/toml.s"
+	@echo "... src/runtime/toml/toml_helpers.o"
+	@echo "... src/runtime/toml/toml_helpers.i"
+	@echo "... src/runtime/toml/toml_helpers.s"
 	@echo "... src/semantic/literal_converter.o"
 	@echo "... src/semantic/literal_converter.i"
 	@echo "... src/semantic/literal_converter.s"

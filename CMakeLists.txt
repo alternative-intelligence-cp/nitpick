@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(aria VERSION 0.1.0 LANGUAGES CXX)
+project(aria VERSION 0.2.0 LANGUAGES CXX)
 
 # C++17 standard required
 set(CMAKE_CXX_STANDARD 17)

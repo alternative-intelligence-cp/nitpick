@@ -1,4 +1,4 @@
-# Aria Programming Language v0.1.0
+# Aria Programming Language v0.2.0
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -9,20 +9,20 @@
 
 ---
 
-## Current Status (March 20, 2026)
+## Current Status (March 2026)
 
-**v0.1.0-rc1 — Release candidate, all known bugs resolved**
+**v0.2.0 — Self-hosting compiler frontend, stdlib expansion, all known bugs resolved**
 
-The compiler has reached release-candidate status. All 27 catalogued compiler bugs have been found and fixed, all workarounds removed, safety-critical validation is complete, and the full test suite passes clean.
+The compiler has reached its self-hosting milestone. The entire compiler frontend (lexer, parser, type checker, borrow checker, safety checker, exhaustiveness checker, const evaluator) has been ported to Aria and passes 220 tests. All 27 catalogued compiler bugs plus 7 additional critical codegen bugs have been fixed.
 
-- **All compiler bugs resolved** — Bugs #1–#27 have been systematically identified, fixed, and verified. This includes the final two safety-critical bugs: #26 (assignment type mismatch causing stale SSA values) and #27 (LBIM div/mod ABI mismatch). See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for the full catalogue.
+- **Self-hosting phases 1–5.5 complete** — The compiler frontend is now written in Aria itself. 220 tests across 5 modules (lexer, parser, type_checker, pipeline, supporting_passes) verify correct operation. The LLVM backend remains in C++ by design.
+- **All compiler bugs resolved** — Bugs #1–#27 catalogued and fixed, plus 7 additional codegen bugs discovered during self-hosting (inline return comparison, string concatenation, pass() unwrapping, pointer reassignment, NIL comparison). See [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
+- **Improved compiler diagnostics** — "Did you mean?" suggestions for undefined identifiers and unknown types using Levenshtein distance. All operator type errors now report accurate source locations.
 - **Safety-critical validation** — 10 dedicated safety test files in `tests/safety_critical/` verify IEEE 754 compliance, overflow/underflow boundaries, catastrophic cancellation detection, determinism, energy conservation, and TBB sticky error propagation. All pass.
 - **`aria_packages` library ecosystem** — 27 packages (LIB-1 through LIB-27) with 543+ assertions, all passing. Packages cover math, PRNG, graphics, data encoding, string manipulation, JSON, CLI args, a virtual console stack, and AI-focused libraries (decision trees, quantum entanglement, gradient fields, resource memory). See the [Packages](#aria_packages-library-ecosystem) section below.
-- **681 test files** — Comprehensive test suite covering compiler features, safety-critical validation, fuzzer corpus, and ecosystem integration.
+- **677+ test files** — Comprehensive test suite covering compiler features, self-hosting, safety-critical validation, fuzzer corpus, and ecosystem integration.
 - **Language specialist model** — V3 training complete (Qwen 7B LoRA, 71% pattern match). V4 training in progress with a higher-quality corpus (2,484 examples, 100% drill compilation rate, proper `Result<T>` + `?` patterns, `NIL`/`void` correctness).
 - **Fuzzing** — Continuous fuzzing via Fuzzer V2. 24-hour stress campaigns, crashes archived and regression-tested. Valgrind-clean runtime.
-- **External tester onboarded** — Getting Started guide created for first external tester (non-programmer, Linux Mint, building crypto data tools).
-- **No fixed ETA for final release** — Correctness and safety come before dates, given the safety-critical use cases this language is built for.
 
 ---
 
@@ -400,9 +400,8 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 
 ## Development Roadmap
 
-### v0.1.0 — In Progress (No ETA)
+### v0.1.0 — Released
 
-**Completed:**
 - ✅ Full compiler toolchain (ariac, aria-lsp, aria-dap, aria-doc, aria-pkg)
 - ✅ Layered safety system (?!, !!!, unknown/ok(), failsafe)
 - ✅ Quantum types (superpose/collapse)
@@ -414,39 +413,24 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ Dimensional algebra
 - ✅ 678 compiler tests, Fuzzer V2, Valgrind-clean runtime
 - ✅ 27 `aria_packages` libraries with 543+ assertions (all passing)
-- ✅ Virtual console stack: display, input, audio, memory map + JRPG demo
-- ✅ AI-focused libraries: decision trees, entangled variables, gradient fields, resource memory
-- ✅ Safety-critical validation suite (10 tests: IEEE 754, overflow, determinism, TBB)
-- ✅ All 27 compiler bugs found, fixed, verified — zero known bugs
+- ✅ All 27 compiler bugs found, fixed, verified
 - ✅ Full documentation (web, man pages, programming guide, Getting Started)
-- ✅ Language specialist model V3 complete (71% pattern match), V4 training in progress
 
-**In Progress:**
-- 🔧 Balanced ternary/nonary runtime operations (trit/tryte arithmetic)
-- 🔧 Six-stream I/O implementation
-- 🔧 Async/await execution model
-- 🔧 Arrays in structs
-- 🔧 NIL ↔ void bridge (extern interop)
-- 🔧 AriaX Linux distribution packaging
+### v0.2.0 — Released
 
-### v0.2.0 — In Progress
+- ✅ **Self-hosting compiler frontend** — Lexer, parser, type checker, borrow checker, safety checker, exhaustiveness checker, and const evaluator ported to Aria (220 tests across 5 modules)
+- ✅ **stdlib expansion** — 9 modules (io, math, linalg, collections, string, json, toml, binary, net) with 290+ passing tests
+- ✅ **7 additional codegen bugs fixed** — Inline return comparison, string concatenation, pass() unwrapping, pointer reassignment, NIL comparison, cross-module pointer corruption
+- ✅ **Improved compiler diagnostics** — "Did you mean?" suggestions, accurate source locations for all type errors
+- ✅ **License changed to Apache 2.0**
+- ✅ **Language specialist model** V3 complete (71% pattern match), V4 in progress
 
-**Completed (stdlib expansion):**
-- ✅ stdlib.io — File I/O streams (open, read, write, close, seek) with 9 passing tests
-- ✅ stdlib.math — Transcendental math functions (sqrt, sin, cos, tan, exp, log, pow, etc.) with 19 passing tests
-- ✅ stdlib.linalg — Linear algebra (Vec2, Vec3, Mat2x2, Mat3x3, dot, cross, determinant, inverse) with 19 passing tests
-- ✅ stdlib.collections — Vec<int64>, VecI32, VecF64, Map<int64,int64>, Set<int64>, Graph<int64> with 70 passing tests
-- ✅ stdlib.string — String manipulation (replace, split, join, reverse, count, char_at, to_int) with 45 passing tests
-- ✅ stdlib.json — Full JSON builder, parser, encoder (objects, arrays, nesting, round-trips) with 48 passing tests
-- ✅ stdlib.toml — TOML builder, parser, encoder (tables, arrays, dotted keys, inline values) with 40 passing tests
-- ✅ stdlib.binary — Buffer-based binary serialization (int8/16/32/64, float32/64, strings, file I/O) with 25 passing tests
-- ✅ stdlib.net — TCP networking (client connect/send/recv, server listen/accept, timeouts) with 15 passing tests
+### v0.2.1+ — Planned
 
-**Remaining:**
-- AriaX Linux official release
+- Developer tooling improvements (benchmarks, package manager enhancements)
 - Advanced async patterns (channels, actors)
-- Package ecosystem
-- Nikola integration (depends on v0.1.0 stability)
+- AriaX Linux distribution packaging
+- Nikola integration
 
 ### Long Term
 

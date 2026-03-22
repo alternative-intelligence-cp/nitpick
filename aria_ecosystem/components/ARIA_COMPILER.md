@@ -4,8 +4,8 @@
 **Language**: C++20  
 **Backend**: LLVM 20  
 **Repository**: `/home/randy/._____RANDY_____/REPOS/aria`  
-**Version**: v0.1.0-dev  
-**Status**: Active Development (70 commits ahead of last tag)
+**Version**: v0.2.0
+**Status**: Released
 
 ---
 
