@@ -289,6 +289,21 @@ set(HIGHPREC_SOURCES
     src/runtime/highprec_simd.cpp
 )
 
+# Phase 5.4: Integration Pipeline — AST converter + validation
+# These frontend sources are LLVM-free and needed by pipeline_helpers.cpp
+# to convert self-hosted ASTNodeCompat trees to native C++ AST nodes.
+# Added ONLY to aria_runtime (ariac already has them via ARIA_SOURCES).
+set(PIPELINE_SOURCES
+    src/frontend/ast/ast_node.cpp
+    src/frontend/ast/expr.cpp
+    src/frontend/ast/stmt.cpp
+    src/frontend/ast/type.cpp
+    src/frontend/lexer/token.cpp
+    src/frontend/lexer/lexer.cpp
+    src/frontend/parser/parser.cpp
+    src/runtime/pipeline/pipeline_helpers.cpp
+)
+
 # Phase 7: Tooling
 set(TOOLS_SOURCES
     src/tools/project_config.cpp
@@ -344,6 +359,7 @@ add_library(aria_runtime STATIC
     ${RUNTIME_SOURCES}
     ${STDLIB_SOURCES}
     ${HIGHPREC_SOURCES}
+    ${PIPELINE_SOURCES}
 )
 
 # ARIA-017: Enable AVX-512 and ADX intrinsics for high-precision floating-point
