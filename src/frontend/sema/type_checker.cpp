@@ -6,6 +6,7 @@
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/type.h"  // For ArrayType, SimpleType, etc.
 #include "semantic/literal_converter.h"
+#include <algorithm>
 #include <sstream>
 #include <variant>
 #include <iostream>
@@ -195,6 +196,53 @@ static std::string getAvailableMethods(const std::string& typeName) {
         result += methods[i];
     }
     return result;
+}
+
+// Find similar type name for "Did you mean?" suggestions on unknown types
+static std::string findSimilarType(const std::string& typeName) {
+    static const std::vector<std::string> knownTypes = {
+        // Signed integers
+        "int1", "int2", "int4", "int8", "int16", "int32", "int64", "int128", "int256", "int512",
+        // Unsigned integers
+        "uint1", "uint2", "uint4", "uint8", "uint16", "uint32", "uint64", "uint128", "uint256", "uint512",
+        // TBB types
+        "tbb8", "tbb16", "tbb32", "tbb64",
+        // Floating point
+        "flt32", "flt64", "flt128", "flt256",
+        // Other primitives
+        "bool", "string", "void", "NIL", "obj", "dyn",
+        // Collections
+        "array", "map", "Result", "option",
+        // Vector types
+        "vec2", "vec3", "vec9", "dvec2", "dvec3", "dvec9",
+        "fvec2", "fvec3", "fvec9", "ivec2", "ivec3", "ivec9"
+    };
+
+    std::string bestMatch;
+    size_t bestDistance = SIZE_MAX;
+    size_t maxDistance = std::max(size_t(3), typeName.length() * 2 / 5);
+
+    // First check for case-insensitive exact match (most common mistake)
+    std::string lowerInput = typeName;
+    std::transform(lowerInput.begin(), lowerInput.end(), lowerInput.begin(), ::tolower);
+    for (const std::string& known : knownTypes) {
+        std::string lowerKnown = known;
+        std::transform(lowerKnown.begin(), lowerKnown.end(), lowerKnown.begin(), ::tolower);
+        if (lowerInput == lowerKnown && typeName != known) {
+            return known;  // Exact case-insensitive match — highest confidence
+        }
+    }
+
+    // Fall back to Levenshtein distance
+    for (const std::string& known : knownTypes) {
+        size_t dist = levenshteinDistance(typeName, known);
+        if (dist < bestDistance && dist <= maxDistance) {
+            bestDistance = dist;
+            bestMatch = known;
+        }
+    }
+
+    return bestMatch;
 }
 
 // Helper to check if a string is a type keyword (for UFCS disambiguation)
@@ -563,7 +611,12 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
         
         // Validate type exists
         if (!explicit_type || explicit_type == typeSystem->getErrorType()) {
-            addError("Unknown type '" + expr->explicit_type + "' in literal", expr);
+            std::string errorMsg = "Unknown type '" + expr->explicit_type + "' in literal";
+            std::string suggestion = findSimilarType(expr->explicit_type);
+            if (!suggestion.empty()) {
+                errorMsg += ". Did you mean '" + suggestion + "'?";
+            }
+            addError(errorMsg, expr);
             return typeSystem->getErrorType();
         }
         
@@ -722,8 +775,31 @@ Type* TypeChecker::inferIdentifier(IdentifierExpr* expr) {
             }
         }
 
-        // Standard undefined identifier error
-        addError("Undefined identifier: '" + expr->name + "'", expr);
+        // Standard undefined identifier error — try to find similar names in scope
+        std::string errorMsg = "Undefined identifier: '" + expr->name + "'";
+
+        // Walk scope chain to find the closest matching symbol name
+        std::string bestMatch;
+        size_t bestDistance = SIZE_MAX;
+        size_t maxDistance = std::max(size_t(3), expr->name.length() * 2 / 5);
+
+        Scope* scope = symbolTable->getCurrentScope();
+        while (scope) {
+            for (const auto& [symName, sym] : scope->getSymbols()) {
+                size_t dist = levenshteinDistance(expr->name, symName);
+                if (dist < bestDistance && dist <= maxDistance && dist > 0) {
+                    bestDistance = dist;
+                    bestMatch = symName;
+                }
+            }
+            scope = scope->getParent();
+        }
+
+        if (!bestMatch.empty()) {
+            errorMsg += ". Did you mean '" + bestMatch + "'?";
+        }
+
+        addError(errorMsg, expr);
         return typeSystem->getErrorType();
     }
 
@@ -891,14 +967,15 @@ Type* TypeChecker::inferBinaryOp(BinaryExpr* expr) {
     }
     
     // Check operator validity for given types
-    return checkBinaryOperator(expr->op.type, leftType, rightType);
+    return checkBinaryOperator(expr->op.type, leftType, rightType, expr);
 }
 
 // ============================================================================
 // Binary Operator Type Checking
 // ============================================================================
 
-Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, Type* rightType) {
+Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, Type* rightType,
+                                        ASTNode* sourceNode) {
     using frontend::TokenType;
     
     // ========================================================================
@@ -952,7 +1029,7 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
                     msg << "Cannot " << (op == TokenType::TOKEN_PLUS ? "add" : "subtract")
                         << " values with different dimensions: "
                         << leftDim->toString() << " and " << rightDim->toString();
-                    addError(msg.str(), 0, 0);
+                    addError(msg.str(), sourceNode);
                     return typeSystem->getErrorType();
                 }
                 // Same dimension, result has that dimension
@@ -961,7 +1038,7 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
             
             // Modulo not meaningful for dimensional types
             if (op == TokenType::TOKEN_PERCENT) {
-                addError("Modulo operator not supported for dimensional types", 0, 0);
+                addError("Modulo operator not supported for dimensional types", sourceNode);
                 return typeSystem->getErrorType();
             }
         }
@@ -993,13 +1070,13 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
                 msg << "Cannot " << (op == TokenType::TOKEN_PLUS ? "add" : "subtract")
                     << " dimensional type and scalar: "
                     << leftType->toString() << " and " << rightType->toString();
-                addError(msg.str(), 0, 0);
+                addError(msg.str(), sourceNode);
                 return typeSystem->getErrorType();
             }
             
             // Modulo not allowed
             if (op == TokenType::TOKEN_PERCENT) {
-                addError("Modulo operator not supported for dimensional types", 0, 0);
+                addError("Modulo operator not supported for dimensional types", sourceNode);
                 return typeSystem->getErrorType();
             }
         }
@@ -1113,12 +1190,12 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         // SIMD types should have been handled above - if we get here with SIMD, it's already returned
         // So this check is only for primitives and LBIM
         if (!leftPrim && !leftIsLBIM && !leftIsSIMD) {
-            addError("Arithmetic operators require numeric types, got '" + leftType->toString() + "'", 0, 0);
+            addError("Arithmetic operators require numeric types, got '" + leftType->toString() + "'", sourceNode);
             return typeSystem->getErrorType();
         }
         
         if (!rightPrim && !rightIsLBIM && !rightIsSIMD) {
-            addError("Arithmetic operators require numeric types, got '" + rightType->toString() + "'", 0, 0);
+            addError("Arithmetic operators require numeric types, got '" + rightType->toString() + "'", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1143,7 +1220,7 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         
         if (!leftIsNumeric || !rightIsNumeric) {
             addError("Arithmetic operators require numeric types, got '" + 
-                    leftName + "' and '" + rightName + "'", 0, 0);
+                    leftName + "' and '" + rightName + "'", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1168,7 +1245,7 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         PrimitiveType* rightPrim = dynamic_cast<PrimitiveType*>(rightType);
         
         if (!leftPrim || !rightPrim) {
-            addError("Bitwise operators require unsigned integer types", 0, 0);
+            addError("Bitwise operators require unsigned integer types", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1178,13 +1255,13 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         // Check for unsigned prefix
         if (leftName.find("uint") != 0 || rightName.find("uint") != 0) {
             addError("Bitwise operators require unsigned types. Got '" + 
-                    leftName + "' and '" + rightName + "'. Cast to unsigned (uint*) to perform bit manipulation.", 0, 0);
+                    leftName + "' and '" + rightName + "'. Cast to unsigned (uint*) to perform bit manipulation.", sourceNode);
             return typeSystem->getErrorType();
         }
         
         // Result type is the common type (both must be same unsigned type)
         if (!leftType->equals(rightType)) {
-            addError("Bitwise operators require same unsigned type on both sides", 0, 0);
+            addError("Bitwise operators require same unsigned type on both sides", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1299,7 +1376,7 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
                 msg = "Cannot compare incompatible types: '" +
                       leftType->toString() + "' and '" + rightType->toString() + "'";
             }
-            addError(msg, 0, 0);
+            addError(msg, sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1390,7 +1467,7 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         // Check that right side is assignable to left side
         if (!rightType->isAssignableTo(leftType)) {
             addError("Cannot assign '" + rightType->toString() + 
-                    "' to '" + leftType->toString() + "'", 0, 0);
+                    "' to '" + leftType->toString() + "'", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1399,7 +1476,7 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
     }
     
     // Unknown operator
-    addError("Unknown binary operator", 0, 0);
+    addError("Unknown binary operator", sourceNode);
     return typeSystem->getErrorType();
 }
 
@@ -1427,14 +1504,15 @@ Type* TypeChecker::inferUnaryOp(UnaryExpr* expr) {
     }
     
     // Check operator validity
-    return checkUnaryOperator(expr->op.type, operandType);
+    return checkUnaryOperator(expr->op.type, operandType, expr);
 }
 
 // ============================================================================
 // Unary Operator Type Checking
 // ============================================================================
 
-Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType) {
+Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType,
+                                       ASTNode* sourceNode) {
     using frontend::TokenType;
     
     PrimitiveType* primType = dynamic_cast<PrimitiveType*>(operandType);
@@ -1446,7 +1524,7 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
         // Require numeric type
         if (!primType) {
             addError("Unary minus requires numeric type, got '" + 
-                    operandType->toString() + "'", 0, 0);
+                    operandType->toString() + "'", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1457,7 +1535,7 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
                          name == "vec9" || name == "dvec9");
         
         if (!isNumeric) {
-            addError("Unary minus requires numeric type, got '" + name + "'", 0, 0);
+            addError("Unary minus requires numeric type, got '" + name + "'", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1472,7 +1550,7 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
         // Strict bool requirement (no truthiness)
         if (!primType || primType->getName() != "bool") {
             addError("Logical NOT requires 'bool' type, got '" + 
-                    operandType->toString() + "'. Use explicit comparison (e.g., x == 0) instead of truthiness.", 0, 0);
+                    operandType->toString() + "'. Use explicit comparison (e.g., x == 0) instead of truthiness.", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1487,7 +1565,7 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
         // Require unsigned type
         if (!primType || primType->getName().find("uint") != 0) {
             addError("Bitwise NOT requires unsigned type, got '" + 
-                    operandType->toString() + "'. Cast to unsigned (uint*) to perform bit manipulation.", 0, 0);
+                    operandType->toString() + "'. Cast to unsigned (uint*) to perform bit manipulation.", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1532,7 +1610,7 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
         // <-ptr where ptr: int32-> → result type: int32
         // The arrow shows data flow: value FROM pointer
         if (!operandType->isPointer()) {
-            addError("Dereference operator (<-) requires pointer type", 0, 0);
+            addError("Dereference operator (<-) requires pointer type", sourceNode);
             return typeSystem->getErrorType();
         }
         // Return the pointed-to type
@@ -1545,12 +1623,12 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType)
     if (op == TokenType::TOKEN_QUESTION) {
         // Unwrap result type
         // TODO: Check that operand is result<T> type, return T
-        addError("Unwrap operator (?) not yet implemented in type system", 0, 0);
+        addError("Unwrap operator (?) not yet implemented in type system", sourceNode);
         return typeSystem->getErrorType();
     }
     
     // Unknown operator
-    addError("Unknown unary operator", 0, 0);
+    addError("Unknown unary operator", sourceNode);
     return typeSystem->getErrorType();
 }
 
@@ -6712,7 +6790,20 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 return type;
             }
             
-            addError("Unknown type: '" + simpleType->typeName + "'", typeNode);
+            {
+                std::string errorMsg = "Unknown type: '" + simpleType->typeName + "'";
+                std::string suggestion = findSimilarType(simpleType->typeName);
+                if (!suggestion.empty()) {
+                    errorMsg += ". Did you mean '" + suggestion + "'?";
+                    // Add extra hint for common casing mistakes
+                    std::string lower = simpleType->typeName;
+                    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                    if (lower == suggestion || lower == "nil") {
+                        errorMsg += " (Aria types are lowercase)";
+                    }
+                }
+                addError(errorMsg, typeNode);
+            }
             return typeSystem->getErrorType();
         }
         
@@ -7242,7 +7333,17 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             declaredType = typeSystem->getPrimitiveType(stmt->typeName);
             
             if (!declaredType || declaredType->getKind() == TypeKind::ERROR) {
-                addError("Unknown type: '" + stmt->typeName + "'", stmt);
+                std::string errorMsg = "Unknown type: '" + stmt->typeName + "'";
+                std::string suggestion = findSimilarType(stmt->typeName);
+                if (!suggestion.empty()) {
+                    errorMsg += ". Did you mean '" + suggestion + "'?";
+                    std::string lower = stmt->typeName;
+                    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                    if (lower == suggestion || lower == "nil") {
+                        errorMsg += " (Aria types are lowercase)";
+                    }
+                }
+                addError(errorMsg, stmt);
                 return;
             }
         }
@@ -8675,13 +8776,13 @@ void TypeChecker::checkReturnStmt(ReturnStmt* stmt) {
     
     // Case 1: void function with return value
     if (isVoidFunction && stmt->value) {
-        addError("void function cannot return a value", stmt);
+        addError("NIL function cannot return a value. Use 'return;' or omit the return statement", stmt);
         return;
     }
     
     // Case 2: non-void function without return value
     if (!isVoidFunction && !stmt->value) {
-        addError("Non-void function must return a value of type '" + 
+        addError("Function must return a value of type '" + 
                 currentFunctionReturnType->toString() + "'", stmt);
         return;
     }
