@@ -1,6 +1,37 @@
 # Aria Language Changelog
 
-## [Unreleased] - February 2026
+## [0.2.0] - March 2026
+
+### Added
+- **Self-hosting compiler frontend** — Complete port of lexer, parser, type checker, borrow checker, safety checker, exhaustiveness checker, and const evaluator to Aria
+  - 220 tests across 5 modules (lexer, parser, type_checker, pipeline, supporting_passes)
+  - LLVM backend remains in C++ by design (ir_generator, codegen_expr, codegen_stmt)
+  - Opaque C handle pattern for tokens, AST nodes, and symbol tables
+
+- **"Did you mean?" compiler suggestions** — Levenshtein distance-based suggestions for:
+  - Undefined identifiers (walks entire scope chain for closest match)
+  - Unknown type names with case-insensitive matching (e.g., `Int32` → `int32`)
+
+- **Accurate source locations for type errors** — ~15 operator type errors (arithmetic, bitwise, comparison, unary, assignment) now report actual line/column instead of `Line 0, Column 0`
+
+### Changed
+- **License changed from AGPL v3 to Apache 2.0**
+- **"void function" errors use Aria terminology** — Now says "NIL function cannot return a value" with actionable guidance
+- **Removed donation pages** from aria, educational, and nikola repositories
+
+### Fixed
+- **7 critical codegen bugs** discovered during self-hosting:
+  - Inline function return comparison — Added Result<T> auto-unwrapping before binary operators
+  - String concatenation codegen — Added string type detection in TOKEN_PLUS
+  - `pass(extern_ptr_func())` — Added Optional/Result unwrapping in pass() codegen
+  - Functions with >8 pass/return exits — Works with 21+ exits after Result unwrapping fixes
+  - Extern wild int8* re-assignment corruption — Added Optional/Result unwrapping in variable re-assignment path
+  - Cross-module extern pointer return corruption — Resolved by pass() unwrapping + assignment unwrapping fixes
+  - Wild ptr NIL comparison + extern call crash — Added pointer-NIL (null) and integer-NIL (0) coercion
+
+---
+
+## [0.1.0] - February 2026
 
 ### Added
 - **Balanced Literal Syntax** - Ternary and nonary number literals

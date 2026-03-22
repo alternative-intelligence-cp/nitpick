@@ -412,16 +412,21 @@ func:main = int8() {
 
 ## Future Directions
 
-### v0.1.0 Goals
+### v0.1.0 (Released February 2026)
 - Complete core language features
 - Stable ABI
 - Basic standard library
 - Documentation generator
 
-### v0.2.0+ Goals
+### v0.2.0 (Released March 2026)
+- Self-hosting compiler (5 modules, 220 tests)
+- Improved error diagnostics with suggestions
+- License change to Apache 2.0
+- 7 critical codegen bug fixes
+
+### v0.2.1+ Goals
 - Full async/await runtime
 - Incremental compilation
-- Language server protocol (LSP)
 - Debugger integration (LLDB)
 - Cross-compilation support
 
