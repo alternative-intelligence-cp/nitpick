@@ -1,0 +1,37 @@
+// Benchmark 3: GCD Chain
+// Tests: modulo arithmetic, tight loops, function call overhead
+// Computes sum of GCD(i, j) for all 1 <= i < j <= 2000
+
+func:gcd = int64(int64:a, int64:b) {
+    int64:x = a;
+    int64:y = b;
+    while (y != 0i64) {
+        int64:t = y;
+        y = x % y;
+        x = t;
+    }
+    pass(x);
+};
+
+func:main = int32() {
+    int64:total = 0i64;
+    int64:i = 1i64;
+    while (i <= 2000i64) {
+        int64:j = i + 1i64;
+        while (j <= 2000i64) {
+            Result<int64>:g = gcd(i, j);
+            int64:val = g ? 1i64;
+            total = total + val;
+            j = j + 1i64;
+        }
+        i = i + 1i64;
+    }
+
+    // Verify with known result
+    if (total != 8734164i64) { pass(1i32); }
+
+    drop(println("PASS"));
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {};

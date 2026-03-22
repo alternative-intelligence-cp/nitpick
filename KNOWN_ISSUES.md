@@ -120,7 +120,7 @@ int32:y = x + 1;
 
 ### 5. Tooling
 
-- **aria-doc**: The API documentation generator (`build/aria-doc`) generates HTML output but has a known issue: individual item pages all write to `unknown.html` (overwriting each other), and the index page does not list discovered items. API docs are generated but incomplete until this is fixed.
+- **aria-doc**: The API documentation generator (`build/aria-doc`) generates HTML output. Supports single-file and multi-file (package/directory) documentation generation. Generates unique pages for all functions, structs, enums, traits, type aliases, and constants. Index page lists all discovered items grouped by kind with signatures and links.
 - **aria_make**: The build tool works correctly for ecosystem packages but must be run from the package directory.
 - **Debugger**: No source-level debugger integration. Use `dbug` module for printf-style debugging.
 

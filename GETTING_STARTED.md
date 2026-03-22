@@ -26,7 +26,7 @@ Welcome! This guide will walk you through everything you need to set up the Aria
 
 Aria is a compiled systems programming language. Think of it like C or Rust, but with its own unique syntax. You write `.aria` files, compile them with the `ariac` compiler, and get a native executable you can run directly. It compiles down to machine code via LLVM — so the programs are fast.
 
-Aria is brand new (version 0.2.0), so **you will probably find bugs**. That's exactly what we need your help with! When something doesn't work the way you'd expect, that's valuable information.
+Aria is brand new (version 0.2.1), so **you will probably find bugs**. That's exactly what we need your help with! When something doesn't work the way you'd expect, that's valuable information.
 
 ---
 
@@ -117,7 +117,21 @@ You should see files like `CMakeLists.txt`, `scripts/`, `examples/`, `tests/`, e
 
 ## 4. Build the Compiler
 
-There's a build script that does everything for you:
+### Quick Method (recommended)
+
+The install script handles everything — prerequisite checking, building, and optional system-wide installation:
+
+```bash
+./install.sh --build-only
+```
+
+This will check prerequisites, then build `ariac`, `aria-ls`, `aria-pkg`, `aria-doc`, and `aria-safety`. To also install them to `/usr/local/bin`:
+
+```bash
+sudo ./install.sh
+```
+
+### Alternative: Build script
 
 ```bash
 ./scripts/build.sh

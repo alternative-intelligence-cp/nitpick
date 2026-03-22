@@ -7,8 +7,10 @@
 #include "frontend/diagnostics.h"
 #include "frontend/lexer/lexer.h"
 #include "frontend/parser/parser.h"
+#include "frontend/ast/stmt.h"
 #include <string>
 #include <atomic>
+#include <unordered_map>
 
 namespace aria {
 namespace lsp {
@@ -63,7 +65,7 @@ struct ServerCapabilities {
             {"definitionProvider", definitionProvider},
             {"documentSymbolProvider", documentSymbolProvider},
             {"workspaceSymbolProvider", workspaceSymbolProvider},
-            {"completionProvider", completionProvider},
+            {"completionProvider", completionProvider ? json{{"triggerCharacters", json::array({":", "."})}} : json(false)},
             {"diagnosticProvider", diagnosticProvider}
         };
     }
@@ -134,6 +136,21 @@ private:
     // Navigation handlers (executed by worker threads)
     json handle_hover(const json& params);
     json handle_definition(const json& params);
+    json handle_completion(const json& params);
+    
+    // AST-based analysis helpers
+    struct DeclInfo {
+        std::string name;
+        std::string kind;       // "function", "struct", "enum", etc.
+        std::string signature;  // Human-readable signature
+        int line;               // 1-based
+        int column;             // 1-based
+    };
+    
+    std::vector<DeclInfo> collect_declarations(const ASTNodePtr& ast);
+    void collect_decls_recursive(const ASTNodePtr& node, std::vector<DeclInfo>& decls);
+    std::string format_func_signature(const std::shared_ptr<FuncDeclStmt>& func);
+    std::string format_param(const std::shared_ptr<ParameterNode>& param);
     
     // Message dispatcher (I/O thread)
     void dispatch_message(const JsonRpcMessage& msg);

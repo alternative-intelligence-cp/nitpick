@@ -1,5 +1,29 @@
 # Aria Language Changelog
 
+## [0.2.1] - March 2026 (In Progress)
+
+### Added
+- **`install.sh`** — One-command toolchain installer with prerequisite checking, `--build-only`, `--uninstall`, `--prefix` options. Builds and installs ariac, aria-ls, aria-pkg, aria-doc, aria-safety, aria-mcp, stdlib, and man pages.
+- **aria-ls completion** — Keyword completion (37 Aria keywords with descriptions), built-in type completion (15 types), and file-scoped symbol completion with correct CompletionItemKind values. Trigger characters: `:` and `.`
+- **aria-pkg search** — Search the package registry by name/description
+- **aria-pkg pack** — Create distributable package tarballs
+- **aria-pkg directory install** — Install packages from local directories
+
+### Fixed
+- **aria-doc unknown.html bug** — Parser used Rust syntax (`fn`, `struct`) instead of Aria's colon syntax (`func:`, `struct:`). All items fell through to ItemKind::VARIABLE with name `unknown`, overwriting a single `unknown.html`. Parser rewritten for Aria syntax; brace-depth tracking added for multi-line declarations. Now generates 435 unique HTML pages across all 27 ecosystem packages.
+- **aria-ls hover** — Was a stub showing only the token name. Rewritten with AST-based analysis: shows full type signatures for declared symbols (functions, structs, enums, traits, constants, variables) in markdown code blocks. Falls back to builtin type descriptions for Aria keywords.
+- **aria-ls goto-definition** — Was a stub doing naive first-occurrence text search. Rewritten with AST-based declaration lookup: finds actual declaration location by name match across the parsed AST.
+- **aria-pkg registry loading** — `loadRegistry()` was a stub returning false. Fixed to parse `registry.json`.
+- **aria-pkg metadata parsing** — Strict field requirements caused valid packages to fail. Made `authors` and `license` optional; handle both array and string dependency formats.
+- **aria-pkg tarball extraction** — Fixed tar command arguments for proper package extraction.
+
+### Verified
+- **aria-mcp** — compile, docs, safety audit, and specialist ask endpoints all functional
+- **aria-safety** — Static safety auditor binary working correctly
+- **27/27 ecosystem packages** — All install successfully via aria-pkg
+
+---
+
 ## [0.2.0] - March 2026
 
 ### Added
