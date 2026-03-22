@@ -22,6 +22,7 @@ Server::Server(size_t worker_count)
     capabilities_.diagnosticProvider = true; // We can provide diagnostics!
     capabilities_.hoverProvider = true; // Show type info on hover
     capabilities_.definitionProvider = true; // Go to definition
+    capabilities_.completionProvider = true; // Code completion
     
     // Set result callback for thread pool
     thread_pool_.set_result_callback([this](const json& id, const json& result) {
@@ -133,6 +134,9 @@ void Server::handle_request(const json& id, const std::string& method, const jso
             }
             else if (method == "textDocument/definition") {
                 return handle_definition(params);
+            }
+            else if (method == "textDocument/completion") {
+                return handle_completion(params);
             }
             else {
                 // Method not found
@@ -526,124 +530,461 @@ json Server::convert_diagnostic_to_lsp(const aria::Diagnostic& diag) {
 }
 
 json Server::handle_hover(const json& params) {
-    // Extract position from params
     std::string uri = params["textDocument"]["uri"];
-    int line = params["position"]["line"];  // 0-based
-    int character = params["position"]["character"];  // 0-based
+    int line = params["position"]["line"];       // 0-based
+    int character = params["position"]["character"]; // 0-based
     
-    std::cerr << "Hover request at " << uri << ":" << line << ":" << character << std::endl;
-    
-    // Get file content
     auto content = vfs_.get_content(uri);
-    if (!content) {
-        return nullptr;  // null means no hover info
-    }
+    if (!content) return nullptr;
     
-    // For Phase 7.3.5, we'll return basic hover info
-    // TODO Phase 7.3.6+: Full semantic analysis with SymbolTable
-    // For now, just show that hover is working with a placeholder
-    
-    // Parse to find token at position
+    // Lex to find token at cursor position
     aria::frontend::Lexer lexer(*content);
     std::vector<aria::frontend::Token> tokens = lexer.tokenize();
     
-    // Find token at cursor position (convert to 1-based for Aria)
     int aria_line = line + 1;
     int aria_col = character + 1;
     
+    // Find token under cursor
+    std::string hovered_lexeme;
+    aria::frontend::TokenType hovered_type{};
+    int tok_col = 0;
+    int tok_len = 0;
+    
     for (const auto& token : tokens) {
-        if (token.line == aria_line && 
-            token.column <= aria_col && 
+        if (token.line == aria_line &&
+            token.column <= aria_col &&
             aria_col < token.column + static_cast<int>(token.lexeme.length())) {
-            
-            // Found token under cursor
-            std::string hover_text = "**Token:** `" + token.lexeme + "`";
-            
-            // Build hover response
-            json result = {
-                {"contents", {
-                    {"kind", "markdown"},
-                    {"value", hover_text}
-                }},
-                {"range", {
-                    {"start", {{"line", line}, {"character", token.column - 1}}},
-                    {"end", {{"line", line}, {"character", token.column - 1 + static_cast<int>(token.lexeme.length())}}}
-                }}
-            };
-            
-            return result;
+            hovered_lexeme = token.lexeme;
+            hovered_type = token.type;
+            tok_col = token.column;
+            tok_len = static_cast<int>(token.lexeme.length());
+            break;
         }
     }
     
-    // No token at position
-    return nullptr;
+    if (hovered_lexeme.empty()) return nullptr;
+    
+    // Parse to get AST and build declaration index
+    aria::Parser parser(tokens);
+    ASTNodePtr ast;
+    try { ast = parser.parse(); } catch (...) { /* fall through to token-only hover */ }
+    
+    std::string hover_text;
+    
+    if (ast) {
+        auto decls = collect_declarations(ast);
+        
+        // Look for matching declaration
+        for (const auto& decl : decls) {
+            if (decl.name == hovered_lexeme) {
+                hover_text = "**" + decl.kind + "** `" + decl.name + "`\n\n";
+                hover_text += "```aria\n" + decl.signature + "\n```";
+                break;
+            }
+        }
+    }
+    
+    // Fallback: show token info for keywords, types, etc.
+    if (hover_text.empty()) {
+        // Check for builtin type keywords
+        static const std::unordered_map<std::string, std::string> builtins = {
+            {"int8", "Signed 8-bit integer (-128 to 127)"},
+            {"int16", "Signed 16-bit integer"},
+            {"int32", "Signed 32-bit integer"},
+            {"int64", "Signed 64-bit integer (default integer type)"},
+            {"uint8", "Unsigned 8-bit integer (0 to 255)"},
+            {"uint16", "Unsigned 16-bit integer"},
+            {"uint32", "Unsigned 32-bit integer"},
+            {"uint64", "Unsigned 64-bit integer"},
+            {"float32", "32-bit IEEE 754 floating point"},
+            {"float64", "64-bit IEEE 754 floating point (default float type)"},
+            {"flt32", "Alias for float32"},
+            {"flt64", "Alias for float64"},
+            {"bool", "Boolean type (true or false)"},
+            {"string", "UTF-8 string type"},
+            {"void", "No return value"},
+            {"NIL", "Null/absent value — safe null via optional types"},
+            {"ERR", "Error sentinel — use with pass/fail for result types"},
+            {"unknown", "Indeterminate value — must be wrapped in ok() to propagate"},
+            {"pass", "Return success result — pass(value)"},
+            {"fail", "Return error result — fail(code)"},
+            {"wild", "Opt-out of garbage collection (manual memory management)"},
+            {"defer", "Deferred cleanup — runs when scope exits (RAII)"},
+            {"pick", "Pattern matching expression"},
+        };
+        
+        auto it = builtins.find(hovered_lexeme);
+        if (it != builtins.end()) {
+            hover_text = "**" + it->first + "**\n\n" + it->second;
+        } else {
+            hover_text = "**Token:** `" + hovered_lexeme + "`";
+        }
+    }
+    
+    return json{
+        {"contents", {{"kind", "markdown"}, {"value", hover_text}}},
+        {"range", {
+            {"start", {{"line", line}, {"character", tok_col - 1}}},
+            {"end", {{"line", line}, {"character", tok_col - 1 + tok_len}}}
+        }}
+    };
 }
 
 json Server::handle_definition(const json& params) {
-    // Extract position from params
     std::string uri = params["textDocument"]["uri"];
-    int line = params["position"]["line"];  // 0-based
-    int character = params["position"]["character"];  // 0-based
+    int line = params["position"]["line"];       // 0-based
+    int character = params["position"]["character"]; // 0-based
     
-    std::cerr << "Go-to-definition request at " << uri << ":" << line << ":" << character << std::endl;
-    
-    // Get file content
     auto content = vfs_.get_content(uri);
-    if (!content) {
-        return nullptr;  // null means no definition found
-    }
+    if (!content) return nullptr;
     
-    // For Phase 7.3.5, we'll return basic placeholder functionality
-    // TODO Phase 7.3.6+: Full semantic analysis with SymbolTable
-    // For now, we'll just demonstrate the protocol works
-    
-    // Parse to find identifier at position
+    // Lex to find identifier at cursor
     aria::frontend::Lexer lexer(*content);
     std::vector<aria::frontend::Token> tokens = lexer.tokenize();
     
-    // Find token at cursor position (convert to 1-based for Aria)
     int aria_line = line + 1;
     int aria_col = character + 1;
     
-    for (size_t i = 0; i < tokens.size(); i++) {
-        const auto& token = tokens[i];
+    std::string target_name;
+    for (const auto& token : tokens) {
         if (token.type == aria::frontend::TokenType::TOKEN_IDENTIFIER &&
-            token.line == aria_line && 
-            token.column <= aria_col && 
+            token.line == aria_line &&
+            token.column <= aria_col &&
             aria_col < token.column + static_cast<int>(token.lexeme.length())) {
-            
-            // Found identifier under cursor
-            // For Phase 7.3.5, just demonstrate the protocol works
-            // TODO Phase 7.3.6+: Use SymbolTable to find actual declarations
-            // For now, search for first occurrence of this identifier
-            std::string target_name = token.lexeme;
-            
-            for (size_t j = 0; j < tokens.size(); j++) {
-                if (tokens[j].type == aria::frontend::TokenType::TOKEN_IDENTIFIER &&
-                    tokens[j].lexeme == target_name &&
-                    j != i) {  // Not the same token
-                    
-                    // Found another occurrence - assume it's the declaration
-                    const auto& decl_token = tokens[j];
-                    json location = {
-                        {"uri", uri},
-                        {"range", {
-                            {"start", {{"line", decl_token.line - 1}, {"character", decl_token.column - 1}}},
-                            {"end", {{"line", decl_token.line - 1}, {"character", decl_token.column - 1 + static_cast<int>(decl_token.lexeme.length())}}}
-                        }}
-                    };
-                    
-                    return location;
-                }
-            }
-            
-            // No other occurrence found - return null
-            return nullptr;
+            target_name = token.lexeme;
+            break;
         }
     }
     
-    // No identifier at position
+    if (target_name.empty()) return nullptr;
+    
+    // Parse to get AST and find declaration
+    aria::Parser parser(tokens);
+    ASTNodePtr ast;
+    try { ast = parser.parse(); } catch (...) { return nullptr; }
+    if (!ast) return nullptr;
+    
+    auto decls = collect_declarations(ast);
+    
+    for (const auto& decl : decls) {
+        if (decl.name == target_name) {
+            return json{
+                {"uri", uri},
+                {"range", {
+                    {"start", {{"line", decl.line - 1}, {"character", decl.column - 1}}},
+                    {"end", {{"line", decl.line - 1}, {"character", decl.column - 1 + static_cast<int>(decl.name.length())}}}
+                }}
+            };
+        }
+    }
+    
     return nullptr;
+}
+
+json Server::handle_completion(const json& params) {
+    std::string uri = params["textDocument"]["uri"];
+    
+    auto content = vfs_.get_content(uri);
+    if (!content) return json::array();
+    
+    json items = json::array();
+    
+    // Aria keywords
+    static const std::vector<std::pair<std::string, std::string>> keywords = {
+        {"func", "Function declaration"},
+        {"struct", "Struct declaration"},
+        {"enum", "Enum declaration"},
+        {"trait", "Trait declaration"},
+        {"impl", "Trait implementation"},
+        {"Type", "Type (composable unit) declaration"},
+        {"const", "Constant declaration"},
+        {"pub", "Public visibility modifier"},
+        {"extern", "External/FFI declaration"},
+        {"use", "Import module"},
+        {"if", "Conditional branch"},
+        {"else", "Alternative branch"},
+        {"while", "While loop"},
+        {"for", "For loop"},
+        {"loop", "Counted loop: loop(start, limit, step)"},
+        {"till", "Count-up loop: till(limit, step)"},
+        {"when", "When/then/end loop"},
+        {"pick", "Pattern matching"},
+        {"pass", "Return success: pass(value)"},
+        {"fail", "Return error: fail(code)"},
+        {"defer", "Deferred cleanup (RAII)"},
+        {"return", "Return from function"},
+        {"break", "Exit loop"},
+        {"continue", "Next loop iteration"},
+        {"wild", "Manual memory management (opt-out GC)"},
+        {"stack", "Stack allocation qualifier"},
+        {"fixed", "Runtime immutability qualifier"},
+        {"drop", "Discard return value"},
+        {"ok", "Wrap value for safe propagation"},
+        {"async", "Asynchronous function"},
+        {"await", "Await async result"},
+        {"move", "Transfer ownership"},
+        {"NIL", "Null/absent value"},
+        {"ERR", "Error sentinel"},
+        {"unknown", "Indeterminate value"},
+        {"true", "Boolean true"},
+        {"false", "Boolean false"},
+    };
+    
+    for (const auto& [kw, desc] : keywords) {
+        items.push_back({
+            {"label", kw},
+            {"kind", 14},  // CompletionItemKind::Keyword
+            {"detail", desc}
+        });
+    }
+    
+    // Type keywords
+    static const std::vector<std::string> types = {
+        "int8", "int16", "int32", "int64",
+        "uint8", "uint16", "uint32", "uint64",
+        "float32", "float64", "flt32", "flt64",
+        "bool", "string", "void",
+    };
+    
+    for (const auto& t : types) {
+        items.push_back({
+            {"label", t},
+            {"kind", 25},  // CompletionItemKind::TypeParameter
+            {"detail", "Built-in type"}
+        });
+    }
+    
+    // Add declared symbols from the file
+    aria::frontend::Lexer lexer(*content);
+    auto tokens = lexer.tokenize();
+    aria::Parser parser(tokens);
+    
+    try {
+        auto ast = parser.parse();
+        if (ast) {
+            auto decls = collect_declarations(ast);
+            for (const auto& decl : decls) {
+                int kind = 6; // Variable
+                if (decl.kind == "function") kind = 3;       // Function
+                else if (decl.kind == "struct") kind = 22;   // Struct  
+                else if (decl.kind == "enum") kind = 13;     // Enum
+                else if (decl.kind == "trait") kind = 8;     // Interface
+                else if (decl.kind == "type") kind = 7;      // Class
+                else if (decl.kind == "constant") kind = 21; // Constant
+                
+                items.push_back({
+                    {"label", decl.name},
+                    {"kind", kind},
+                    {"detail", decl.signature}
+                });
+            }
+        }
+    } catch (...) {}
+    
+    return items;
+}
+
+// ============================================================================
+// AST Analysis Helpers
+// ============================================================================
+
+std::string Server::format_param(const std::shared_ptr<ParameterNode>& param) {
+    std::string result;
+    if (param->typeNode) {
+        result = param->typeNode->toString();
+    }
+    result += ":" + param->paramName;
+    return result;
+}
+
+std::string Server::format_func_signature(const std::shared_ptr<FuncDeclStmt>& func) {
+    std::string sig;
+    if (func->isPublic) sig += "pub ";
+    if (func->isExtern) sig += "extern ";
+    if (func->isAsync) sig += "async ";
+    sig += "func:" + func->funcName + " = ";
+    
+    // Return type
+    if (func->returnType) {
+        sig += func->returnType->toString();
+    } else {
+        sig += "void";
+    }
+    
+    sig += "(";
+    for (size_t i = 0; i < func->parameters.size(); ++i) {
+        if (i > 0) sig += ", ";
+        auto param = std::static_pointer_cast<ParameterNode>(func->parameters[i]);
+        sig += format_param(param);
+    }
+    sig += ")";
+    
+    return sig;
+}
+
+std::vector<Server::DeclInfo> Server::collect_declarations(const ASTNodePtr& ast) {
+    std::vector<DeclInfo> decls;
+    collect_decls_recursive(ast, decls);
+    return decls;
+}
+
+void Server::collect_decls_recursive(const ASTNodePtr& node, std::vector<DeclInfo>& decls) {
+    if (!node) return;
+    
+    using NT = ASTNode::NodeType;
+    
+    switch (node->type) {
+        case NT::PROGRAM: {
+            auto prog = std::static_pointer_cast<ProgramNode>(node);
+            for (const auto& stmt : prog->declarations) {
+                collect_decls_recursive(stmt, decls);
+            }
+            break;
+        }
+        
+        case NT::FUNC_DECL: {
+            auto func = std::static_pointer_cast<FuncDeclStmt>(node);
+            DeclInfo info;
+            info.name = func->funcName;
+            info.kind = "function";
+            info.signature = format_func_signature(func);
+            info.line = func->line;
+            info.column = func->column;
+            decls.push_back(info);
+            
+            // Also index parameters as local declarations
+            for (const auto& p : func->parameters) {
+                auto param = std::static_pointer_cast<ParameterNode>(p);
+                DeclInfo pinfo;
+                pinfo.name = param->paramName;
+                pinfo.kind = "parameter";
+                pinfo.signature = format_param(param);
+                pinfo.line = param->line;
+                pinfo.column = param->column;
+                decls.push_back(pinfo);
+            }
+            
+            // Walk body for local declarations
+            if (func->body) {
+                collect_decls_recursive(func->body, decls);
+            }
+            break;
+        }
+        
+        case NT::STRUCT_DECL: {
+            auto s = std::static_pointer_cast<StructDeclStmt>(node);
+            DeclInfo info;
+            info.name = s->structName;
+            info.kind = "struct";
+            info.signature = "struct:" + s->structName + " = { ";
+            for (size_t i = 0; i < s->fields.size(); ++i) {
+                if (i > 0) info.signature += "; ";
+                auto field = std::static_pointer_cast<VarDeclStmt>(s->fields[i]);
+                info.signature += field->typeName + ":" + field->varName;
+            }
+            info.signature += " }";
+            info.line = s->line;
+            info.column = s->column;
+            decls.push_back(info);
+            break;
+        }
+        
+        case NT::ENUM_DECL: {
+            auto e = std::static_pointer_cast<EnumDeclStmt>(node);
+            DeclInfo info;
+            info.name = e->enumName;
+            info.kind = "enum";
+            info.signature = "enum:" + e->enumName + " = { ";
+            bool first = true;
+            for (const auto& [vname, vval] : e->variants) {
+                if (!first) info.signature += ", ";
+                info.signature += vname + " = " + std::to_string(vval);
+                first = false;
+            }
+            info.signature += " }";
+            info.line = e->line;
+            info.column = e->column;
+            decls.push_back(info);
+            break;
+        }
+        
+        case NT::TRAIT_DECL: {
+            auto t = std::static_pointer_cast<TraitDeclStmt>(node);
+            DeclInfo info;
+            info.name = t->traitName;
+            info.kind = "trait";
+            info.signature = "trait:" + t->traitName + " = { ";
+            for (size_t i = 0; i < t->methods.size(); ++i) {
+                if (i > 0) info.signature += "; ";
+                info.signature += "func:" + t->methods[i].name;
+            }
+            info.signature += " }";
+            info.line = t->line;
+            info.column = t->column;
+            decls.push_back(info);
+            break;
+        }
+        
+        case NT::TYPE_DECL: {
+            auto td = std::static_pointer_cast<TypeDeclStmt>(node);
+            DeclInfo info;
+            info.name = td->typeName;
+            info.kind = "type";
+            info.signature = "Type:" + td->typeName;
+            info.line = td->line;
+            info.column = td->column;
+            decls.push_back(info);
+            
+            // Walk methods inside the type
+            for (const auto& m : td->methods) {
+                collect_decls_recursive(m, decls);
+            }
+            if (td->createFunc) collect_decls_recursive(td->createFunc, decls);
+            if (td->destroyFunc) collect_decls_recursive(td->destroyFunc, decls);
+            break;
+        }
+        
+        case NT::IMPL_DECL: {
+            auto imp = std::static_pointer_cast<ImplDeclStmt>(node);
+            // Walk impl methods
+            for (const auto& m : imp->methods) {
+                collect_decls_recursive(m, decls);
+            }
+            break;
+        }
+        
+        case NT::VAR_DECL: {
+            auto v = std::static_pointer_cast<VarDeclStmt>(node);
+            DeclInfo info;
+            info.name = v->varName;
+            info.kind = v->isConst ? "constant" : "variable";
+            info.signature = v->typeName + ":" + v->varName;
+            if (v->isConst) info.signature = "const " + info.signature;
+            info.line = v->line;
+            info.column = v->column;
+            decls.push_back(info);
+            break;
+        }
+        
+        case NT::EXTERN: {
+            auto ext = std::static_pointer_cast<ExternStmt>(node);
+            for (const auto& d : ext->declarations) {
+                collect_decls_recursive(d, decls);
+            }
+            break;
+        }
+        
+        case NT::BLOCK: {
+            auto block = std::static_pointer_cast<BlockStmt>(node);
+            for (const auto& stmt : block->statements) {
+                collect_decls_recursive(stmt, decls);
+            }
+            break;
+        }
+        
+        default:
+            break;
+    }
 }
 
 void Server::send_response(const json& id, const json& result) {
