@@ -18,6 +18,8 @@ struct PackageMetadata {
     std::vector<std::string> authors;
     std::string license;
     std::string description;
+    std::vector<std::string> keywords;
+    std::vector<std::string> categories;
     
     struct Dependency {
         std::string name;
@@ -48,6 +50,17 @@ struct InstalledPackage {
 };
 
 /**
+ * Registry entry from the remote/repo-level registry.json
+ */
+struct RegistryEntry {
+    std::string name;
+    std::string latest_version;
+    std::string description;
+    std::vector<std::string> categories;
+    int downloads;
+};
+
+/**
  * PackageInstaller handles extraction, validation, and installation
  * of .aria-pkg packages to ~/.aria/packages/
  */
@@ -58,119 +71,73 @@ public:
     
     /**
      * Install a package from a local .aria-pkg file
-     * @param pkg_path Path to the .aria-pkg file
-     * @return true if installation succeeded
      */
     bool installPackage(const std::string& pkg_path);
     
     /**
      * Remove an installed package
-     * @param name Package name
-     * @param version Specific version (or empty for all versions)
-     * @return true if removal succeeded
      */
     bool removePackage(const std::string& name, const std::string& version = "");
     
     /**
      * List all installed packages
-     * @return Vector of installed package info
      */
     std::vector<InstalledPackage> listInstalledPackages();
     
     /**
      * Get information about an installed package
-     * @param name Package name
-     * @return Package info if found
      */
     std::optional<InstalledPackage> getPackageInfo(const std::string& name);
     
     /**
      * Initialize ~/.aria/packages/ directory structure
-     * @return true if initialization succeeded
      */
     bool initializePackageDirectory();
     
     /**
      * Get the packages root directory
-     * @return Path to ~/.aria/packages/
      */
     std::string getPackagesRoot() const;
+    
+    /**
+     * Search the package repository registry for packages matching a query.
+     * Searches name, description, keywords, and categories.
+     * @param query Search string (empty = list all)
+     * @param registry_path Path to registry.json
+     * @return Matching registry entries
+     */
+    std::vector<RegistryEntry> searchRegistry(const std::string& query,
+                                               const std::string& registry_path);
+    
+    /**
+     * Create a .aria-pkg tarball from a package directory.
+     * The directory must contain an aria-package.toml.
+     * @param pkg_dir Path to the package source directory
+     * @param output_dir Directory to write the .aria-pkg file (default: current dir)
+     * @return true if packing succeeded
+     */
+    bool packPackage(const std::string& pkg_dir, const std::string& output_dir = ".");
+    
+    /**
+     * Install a package from a source directory (without packing first).
+     * Reads aria-package.toml, validates, and copies to install dir.
+     * @param pkg_dir Path to the package source directory
+     * @return true if installation succeeded
+     */
+    bool installFromDirectory(const std::string& pkg_dir);
     
 private:
     std::string m_packages_root;
     
-    /**
-     * Extract a .aria-pkg tarball to a temporary directory
-     * @param pkg_path Path to .aria-pkg file
-     * @param temp_dir Output: path to temporary extraction directory
-     * @return true if extraction succeeded
-     */
     bool extractPackage(const std::string& pkg_path, std::string& temp_dir);
-    
-    /**
-     * Parse aria-package.toml metadata
-     * @param toml_path Path to aria-package.toml file
-     * @param metadata Output: parsed metadata
-     * @return true if parsing succeeded
-     */
     bool parseMetadata(const std::string& toml_path, PackageMetadata& metadata);
-    
-    /**
-     * Validate package metadata
-     * @param metadata Package metadata to validate
-     * @return true if metadata is valid
-     */
     bool validateMetadata(const PackageMetadata& metadata);
-    
-    /**
-     * Check if package version conflicts with existing installation
-     * @param name Package name
-     * @param version Package version
-     * @return true if no conflicts
-     */
     bool checkConflicts(const std::string& name, const std::string& version);
-    
-    /**
-     * Copy extracted package to installation directory
-     * @param temp_dir Temporary extraction directory
-     * @param metadata Package metadata
-     * @return true if copy succeeded
-     */
     bool copyToInstallDir(const std::string& temp_dir, const PackageMetadata& metadata);
-    
-    /**
-     * Create symlinks for package binaries in ~/.aria/packages/bin/
-     * @param metadata Package metadata
-     * @param install_path Package installation path
-     * @return true if symlinks created successfully
-     */
     bool createBinaryLinks(const PackageMetadata& metadata, const std::string& install_path);
-    
-    /**
-     * Update registry index with newly installed package
-     * @param metadata Package metadata
-     * @param install_path Package installation path
-     * @return true if registry updated successfully
-     */
     bool updateRegistry(const PackageMetadata& metadata, const std::string& install_path);
-    
-    /**
-     * Load registry index from JSON
-     * @return Vector of installed packages
-     */
     std::vector<InstalledPackage> loadRegistry();
-    
-    /**
-     * Save registry index to JSON
-     * @param packages Vector of installed packages
-     * @return true if save succeeded
-     */
     bool saveRegistry(const std::vector<InstalledPackage>& packages);
-    
-    /**
-     * Clean up temporary directory
-     * @param temp_dir Path to temporary directory
-     */
     void cleanupTempDir(const std::string& temp_dir);
 };
 
