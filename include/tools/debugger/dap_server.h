@@ -48,13 +48,14 @@ enum class DAPMessageType {
 struct DAPMessage {
     DAPMessageType type;
     int seq;                    // Sequence number
+    int request_seq;            // For responses: seq of the request being replied to
     std::string command;        // For requests
     bool success;               // For responses
     std::string message;        // For errors
     nlohmann::json* body;       // Message body (owned by caller)
     std::string event;          // For events
     
-    DAPMessage() : type(DAPMessageType::REQUEST), seq(0), success(true), body(nullptr) {}
+    DAPMessage() : type(DAPMessageType::REQUEST), seq(0), request_seq(0), success(true), body(nullptr) {}
     ~DAPMessage();
 };
 
@@ -154,6 +155,7 @@ private:
     // Threading
     std::unique_ptr<std::thread> m_event_thread;
     std::mutex m_mutex;
+    std::mutex m_write_mutex;  // Protects stdout writes and m_next_seq
     std::condition_variable m_cv;
     
     // Request handlers

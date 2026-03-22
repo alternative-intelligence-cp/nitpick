@@ -1,6 +1,24 @@
 # Aria Language Changelog
 
-## [0.2.1] - March 2026 (In Progress)
+## [0.2.1.1] - June 2026
+
+### Added
+- **aria-dap debugger** — Full Debug Adapter Protocol server using LLDB 20 backend. Supports breakpoints, stepping (next/stepIn/stepOut), stack traces, variable inspection, thread listing, and process control.
+- **`-g` compiler flag** — Emit DWARF debug info. Adds `DW_TAG_compile_unit`, `DW_TAG_subprogram`, `DW_TAG_variable`, and `DW_TAG_formal_parameter` entries with correct source locations.
+- **O0 for debug builds** — When `-g` is used, LLVM optimization is set to O0 and clang++ linking uses `-O0` to preserve variable locations and line table entries.
+- **VS Code debugger integration** — Debug Adapter factory, configuration provider with auto-compile support (`compileFirst`), launch.json snippets, and `aria.debugger.path`/`aria.compiler.path` settings.
+- **LLDB server auto-detection** — aria-dap automatically finds `lldb-server` across common LLVM installation paths.
+
+### Fixed
+- **DWARF path doubling** — When input filename was absolute, `comp_dir` was incorrectly set to `cwd + "/" + absolute_path`. Now correctly uses the directory from the absolute path.
+- **DAP protocol compliance** — Fixed `initialized` event ordering (after response), request_seq tracking, Content-Length header parsing, and response serialization.
+- **Thread safety** — Added mutex protection for DAP stdout writes and sequence number generation.
+- **Null safety** — Fixed `GetCString()`, `GetFilename()`, `GetFunctionName()` null dereference crashes in DAP server.
+- **Process I/O isolation** — Debuggee stdout/stderr redirected to `/dev/null` to prevent DAP protocol corruption.
+
+---
+
+## [0.2.1] - March 2026
 
 ### Added
 - **`install.sh`** — One-command toolchain installer with prerequisite checking, `--build-only`, `--uninstall`, `--prefix` options. Builds and installs ariac, aria-ls, aria-pkg, aria-doc, aria-safety, aria-mcp, stdlib, and man pages.
