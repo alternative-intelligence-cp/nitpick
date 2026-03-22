@@ -8,7 +8,7 @@
 using namespace aria::pkg;
 
 void printUsage(const char* program_name) {
-    std::cout << "Aria Package Manager v0.2.0\n\n";
+    std::cout << "Aria Package Manager v0.2.1\n\n";
     std::cout << "Usage: " << program_name << " <command> [options]\n\n";
     std::cout << "Commands:\n";
     std::cout << "  install <path>       Install a package from a .aria-pkg file or directory\n";
