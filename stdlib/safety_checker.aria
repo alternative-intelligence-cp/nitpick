@@ -1,0 +1,40 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Safety Checker — Self-hosted Aria implementation
+// Phase 5.5: Supporting Passes
+//
+// Performs AST walk to detect unsafe operations:
+// - wild memory allocations
+// - async functions
+// - extern/FFI calls
+// - pointer operations
+//
+// NOTE: Aria wrapper functions removed due to compiler codegen bug
+// (wild int8-> NIL comparison + extern call crashes LLVM).
+// Use extern functions directly from test/calling code.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Safety operation type constants
+const int32:OP_WILD_MEMORY = 0i32;
+const int32:OP_ASYNC = 1i32;
+const int32:OP_POINTER = 2i32;
+const int32:OP_FFI_EXTERN = 3i32;
+const int32:OP_WILDX = 4i32;
+const int32:OP_POINTER_CAST = 5i32;
+const int32:OP_POINTER_ARITH = 6i32;
+
+// Safety level constants
+const int32:LEVEL_PERMISSIVE = 0i32;
+const int32:LEVEL_STRICT = 1i32;
+const int32:LEVEL_PARANOID = 2i32;
+
+// ─── C Helper Externs ─────────────────────────────────────────────────
+
+extern func:safety_new = wild int8*(int32:level);
+extern func:safety_free = void(wild int8*:state);
+extern func:safety_add_issue = void(wild int8*:state, int32:operation, string:message, string:suggestion, int32:line, int32:col);
+extern func:safety_issue_count = int32(wild int8*:state);
+extern func:safety_has_errors = int32(wild int8*:state);
+extern func:safety_get_issue_message = string(wild int8*:state, int32:index);
+extern func:safety_get_issue_op = int32(wild int8*:state, int32:index);
+extern func:safety_op_name = string(int32:op);
+extern func:safety_help_text = string(int32:op);

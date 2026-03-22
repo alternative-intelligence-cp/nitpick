@@ -1,0 +1,45 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Borrow Checker — Self-hosted Aria implementation
+// Phase 5.5: Supporting Passes
+//
+// Data-flow analysis for memory safety:
+// - Scope-based lifetime tracking
+// - Borrow rules: one mutable XOR many immutable
+// - Wild memory state machine: UNINIT → ALLOC → FREED/MOVED
+// - Use-after-free / use-after-move detection
+// - Leak detection (unfreed wild allocations at scope exit)
+//
+// NOTE: Aria wrapper functions removed due to compiler codegen bug
+// (wild int8-> NIL comparison + extern call crashes LLVM).
+// Use extern functions directly from test/calling code.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Wild state constants
+const int32:WILD_UNINIT = 0i32;
+const int32:WILD_ALLOC = 1i32;
+const int32:WILD_FREED = 2i32;
+const int32:WILD_MOVED = 3i32;
+const int32:WILD_MAY_FREED = 4i32;
+const int32:WILD_UNKNOWN = 5i32;
+
+// ─── C Helper Externs ─────────────────────────────────────────────────
+
+extern func:borrow_new = wild int8*();
+extern func:borrow_free = void(wild int8*:state);
+extern func:borrow_enter_scope = void(wild int8*:state);
+extern func:borrow_exit_scope = void(wild int8*:state);
+extern func:borrow_register_var = void(wild int8*:state, string:name, int32:is_wild);
+extern func:borrow_mark_allocated = void(wild int8*:state, string:name);
+extern func:borrow_mark_freed = void(wild int8*:state, string:name);
+extern func:borrow_mark_moved = void(wild int8*:state, string:name);
+extern func:borrow_record_borrow = int32(wild int8*:state, string:borrower, string:host, int32:is_mutable, int32:line, int32:col);
+extern func:borrow_record_pin = int32(wild int8*:state, string:pinner, string:host, int32:line, int32:col);
+extern func:borrow_is_borrowed = int32(wild int8*:state, string:name);
+extern func:borrow_is_pinned = int32(wild int8*:state, string:name);
+extern func:borrow_is_moved = int32(wild int8*:state, string:name);
+extern func:borrow_wild_state = int32(wild int8*:state, string:name);
+extern func:borrow_check_use = int32(wild int8*:state, string:name, int32:line, int32:col);
+extern func:borrow_error_count = int32(wild int8*:state);
+extern func:borrow_get_error = string(wild int8*:state, int32:index);
+extern func:borrow_pending_free_count = int32(wild int8*:state);
+extern func:borrow_add_error = void(wild int8*:state, string:msg);
