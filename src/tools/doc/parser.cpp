@@ -155,6 +155,7 @@ DocParser::extract_comments_and_code(const std::string& source, const std::strin
     int doc_start_line = 0;
     bool in_multiline_doc = false;
     std::vector<std::string> code_lines;
+    int brace_depth = 0;
     
     for (size_t i = 0; i < lines.size(); ++i) {
         std::string line = lines[i];
@@ -243,16 +244,28 @@ DocParser::extract_comments_and_code(const std::string& source, const std::strin
             
             // Skip empty lines and regular comments
             if (trimmed.empty() || trimmed.rfind("//", 0) == 0) {
+                // If we have a pending doc comment but no code has started,
+                // an empty line between doc comment and code is OK — keep going.
+                // But if we have accumulated code lines and hit an empty line at depth 0,
+                // that's just whitespace inside the file.
                 continue;
             }
             
             code_lines.push_back(line);
             
-            // Check if this line ends a declaration (simplified)
-            if (!trimmed.empty() && (trimmed[trimmed.size() - 1] == '}' || trimmed[trimmed.size() - 1] == ';')) {
+            // Track brace depth for proper block handling
+            for (char c : trimmed) {
+                if (c == '{') brace_depth++;
+                else if (c == '}') brace_depth--;
+            }
+            
+            // Only emit a code block when we're back at top level (depth 0)
+            if (brace_depth <= 0 && !trimmed.empty() && 
+                (trimmed.back() == '}' || trimmed.back() == ';')) {
                 result.push_back({current_doc, join(code_lines, "\n")});
                 code_lines.clear();
                 current_doc = std::nullopt;
+                brace_depth = 0;
             }
         }
     }
@@ -393,6 +406,11 @@ std::shared_ptr<DocumentedItem> DocParser::parse_item_declaration(
     // Determine item kind
     item->kind = determine_item_kind(code);
     
+    // Skip VARIABLE items — they're interior code, not documentable declarations
+    if (item->kind == ItemKind::VARIABLE) {
+        return nullptr;
+    }
+    
     // Extract visibility
     item->visibility = extract_visibility(code);
     
@@ -416,17 +434,19 @@ std::shared_ptr<DocumentedItem> DocParser::parse_item_declaration(
 ItemKind DocParser::determine_item_kind(const std::string& code) {
     std::string trimmed = trim(code);
     
-    if (trimmed.find("fn ") != std::string::npos) {
+    // Check for Aria declaration syntax (colon-based: func:name, struct:Name, etc.)
+    // Also check for visibility prefix (pub) and extern
+    if (trimmed.find("func:") != std::string::npos) {
         return ItemKind::FUNCTION;
-    } else if (trimmed.find("struct ") != std::string::npos) {
+    } else if (trimmed.find("struct:") != std::string::npos) {
         return ItemKind::STRUCT;
-    } else if (trimmed.find("enum ") != std::string::npos) {
+    } else if (trimmed.find("enum:") != std::string::npos) {
         return ItemKind::ENUM;
-    } else if (trimmed.find("trait ") != std::string::npos) {
-        return ItemKind::TRAIT;
-    } else if (trimmed.find("impl ") != std::string::npos) {
+    } else if (trimmed.find("impl:") != std::string::npos) {
         return ItemKind::IMPL;
-    } else if (trimmed.find("type ") != std::string::npos) {
+    } else if (trimmed.find("trait:") != std::string::npos) {
+        return ItemKind::TRAIT;
+    } else if (trimmed.find("type:") != std::string::npos) {
         return ItemKind::TYPE_ALIAS;
     } else if (trimmed.find("const ") != std::string::npos) {
         return ItemKind::CONST;
@@ -440,16 +460,36 @@ std::string DocParser::extract_item_name(const std::string& code, ItemKind kind)
     
     switch (kind) {
         case ItemKind::FUNCTION:
-            name_regex = std::regex(R"(fn\s+([a-zA-Z_][a-zA-Z0-9_]*))");
+            // Aria syntax: func:name or pub func:name or extern func:name
+            name_regex = std::regex(R"(func:([a-zA-Z_][a-zA-Z0-9_]*))");
             break;
         case ItemKind::STRUCT:
-            name_regex = std::regex(R"(struct\s+([a-zA-Z_][a-zA-Z0-9_]*))");
+            // Aria syntax: struct:Name or pub struct:Name
+            name_regex = std::regex(R"(struct:([a-zA-Z_][a-zA-Z0-9_]*))");
             break;
         case ItemKind::ENUM:
-            name_regex = std::regex(R"(enum\s+([a-zA-Z_][a-zA-Z0-9_]*))");
+            // Aria syntax: enum:Name or pub enum:Name
+            name_regex = std::regex(R"(enum:([a-zA-Z_][a-zA-Z0-9_]*))");
             break;
         case ItemKind::TRAIT:
-            name_regex = std::regex(R"(trait\s+([a-zA-Z_][a-zA-Z0-9_]*))");
+            // Aria syntax: trait:Name or pub trait:Name
+            name_regex = std::regex(R"(trait:([a-zA-Z_][a-zA-Z0-9_]*))");
+            break;
+        case ItemKind::TYPE_ALIAS:
+            // Aria syntax: type:Name or pub type:Name
+            name_regex = std::regex(R"(type:([a-zA-Z_][a-zA-Z0-9_]*))");
+            break;
+        case ItemKind::CONST:
+            // Aria syntax: const Type:name
+            name_regex = std::regex(R"(const\s+\w+:([a-zA-Z_][a-zA-Z0-9_]*))");
+            break;
+        case ItemKind::IMPL:
+            // Aria syntax: impl:Trait:for:Type — capture the type name (after :for:)
+            name_regex = std::regex(R"(impl:\w+:for:([a-zA-Z_][a-zA-Z0-9_]*))");
+            break;
+        case ItemKind::VARIABLE:
+            // Aria syntax: Type:name = value
+            name_regex = std::regex(R"(\w+:([a-zA-Z_][a-zA-Z0-9_]*)\s*=)");
             break;
         default:
             return "unknown";
@@ -464,10 +504,12 @@ std::string DocParser::extract_item_name(const std::string& code, ItemKind kind)
 }
 
 std::string DocParser::extract_function_signature(const std::string& code) {
-    // Extract from 'fn' to closing ')'
-    size_t fn_pos = code.find("fn ");
+    // Extract from 'func:' to end of parameter list and return type
+    // Aria syntax: func:name = ReturnType(Params) { body };
+    size_t fn_pos = code.find("func:");
     if (fn_pos == std::string::npos) return code;
     
+    // Find the opening '(' of the parameter list
     size_t paren_count = 0;
     size_t end_pos = fn_pos;
     bool found_open = false;

@@ -48,8 +48,29 @@ bool DocGenerator::generate(const std::shared_ptr<Module>& module, const std::st
             continue;
         }
         
+        // Skip IMPL items from standalone pages — their content belongs with their type
+        if (item->kind == ItemKind::IMPL) {
+            continue;
+        }
+        
         if (!generate_item_page(item, output_dir)) {
             std::cerr << "Warning: failed to generate page for " << item->name << std::endl;
+        }
+    }
+    
+    // Recurse into submodules
+    for (const auto& submodule : module->submodules) {
+        // Generate submodule's items using the same output directory
+        for (const auto& item : submodule->items) {
+            if (!m_document_private && item->visibility == Visibility::PRIVATE) {
+                continue;
+            }
+            if (item->kind == ItemKind::IMPL) {
+                continue;
+            }
+            if (!generate_item_page(item, output_dir)) {
+                std::cerr << "Warning: failed to generate page for " << item->name << std::endl;
+            }
         }
     }
     
@@ -85,11 +106,25 @@ bool DocGenerator::generate_module_index(const std::shared_ptr<Module>& module,
     
     // Group items by kind
     std::map<ItemKind, std::vector<std::shared_ptr<DocumentedItem>>> grouped;
+    
+    // Collect items from the module itself
     for (const auto& item : module->items) {
         if (!m_document_private && item->visibility == Visibility::PRIVATE) {
             continue;
         }
+        if (item->kind == ItemKind::IMPL) continue;
         grouped[item->kind].push_back(item);
+    }
+    
+    // Also collect items from submodules
+    for (const auto& submodule : module->submodules) {
+        for (const auto& item : submodule->items) {
+            if (!m_document_private && item->visibility == Visibility::PRIVATE) {
+                continue;
+            }
+            if (item->kind == ItemKind::IMPL) continue;
+            grouped[item->kind].push_back(item);
+        }
     }
     
     // Generate sections for each kind
