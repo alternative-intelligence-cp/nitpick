@@ -1,0 +1,56 @@
+// Benchmark 1: Fibonacci + Prime Counting
+// Tests: integer arithmetic, loops, function calls, Result<T> unwrapping
+// Expected: fib(78) = 8944394323791464, primes below 100000 = 9592
+
+func:fib = int64(int64:n) {
+    int64:a = 0i64;
+    int64:b = 1i64;
+    int64:i = 0i64;
+    while (i < n) {
+        int64:next = a + b;
+        a = b;
+        b = next;
+        i = i + 1i64;
+    }
+    pass(a);
+};
+
+func:is_prime = bool(int64:n) {
+    if (n < 2i64) { pass(false); }
+    if (n == 2i64) { pass(true); }
+    if (n % 2i64 == 0i64) { pass(false); }
+    int64:i = 3i64;
+    while (i * i <= n) {
+        if (n % i == 0i64) { pass(false); }
+        i = i + 2i64;
+    }
+    pass(true);
+};
+
+func:count_primes = int64(int64:limit) {
+    int64:count = 0i64;
+    int64:i = 2i64;
+    while (i <= limit) {
+        Result<bool>:r = is_prime(i);
+        bool:p = r ? false;
+        if (p) { count = count + 1i64; }
+        i = i + 1i64;
+    }
+    pass(count);
+};
+
+func:main = int32() {
+    Result<int64>:f = fib(78i64);
+    int64:fib_val = f ? 0i64;
+
+    Result<int64>:p = count_primes(100000i64);
+    int64:prime_count = p ? 0i64;
+
+    if (fib_val != 8944394323791464i64) { pass(1i32); }
+    if (prime_count != 9592i64) { pass(2i32); }
+
+    drop(println("PASS"));
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {};
