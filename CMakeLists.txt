@@ -274,6 +274,7 @@ set(STDLIB_SOURCES
     src/runtime/lex/lex_helpers.cpp
     src/runtime/ast/ast_helpers.cpp
     src/runtime/sema/sema_helpers.cpp
+    src/runtime/sema/pass_helpers.cpp
     src/runtime/net/net.cpp
     src/runtime/math/math.cpp
     src/runtime/math/lbim.cpp
