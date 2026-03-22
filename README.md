@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.0
+# Aria Programming Language v0.2.1
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -11,7 +11,7 @@
 
 ## Current Status (March 2026)
 
-**v0.2.0 — Self-hosting compiler frontend, stdlib expansion, all known bugs resolved**
+**v0.2.1 — Developer experience & tooling — all tools fixed, benchmarks, one-command install**
 
 The compiler has reached its self-hosting milestone. The entire compiler frontend (lexer, parser, type checker, borrow checker, safety checker, exhaustiveness checker, const evaluator) has been ported to Aria and passes 220 tests. All 27 catalogued compiler bugs plus 7 additional critical codegen bugs have been fixed.
 
@@ -445,15 +445,16 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **License changed to Apache 2.0**
 - ✅ **Language specialist model** V3 complete (71% pattern match), V4 in progress
 
-### v0.2.1 — In Progress
+### v0.2.1 — Released
 
 - ✅ **aria-pkg fixed** — Registry loading, metadata parsing, tarball extraction; added search/pack/directory-install. 27/27 packages verified.
 - ✅ **aria-doc fixed** — Parser rewritten for Aria colon syntax. Generates 435 unique HTML pages, zero `unknown.html` collisions.
 - ✅ **aria-ls wired** — AST-based hover (type signatures + builtin descriptions), goto-definition, completion (37 keywords + 15 types + file symbols).
-- ✅ **install.sh** — One-command build and install with prerequisite checking, `--prefix`, `--uninstall` support.
+- ✅ **install.sh** — One-command build and install with prerequisite checking, `--prefix`, `--uninstall`. Tested on clean Linux Mint 22.3 VM.
 - ✅ **aria-mcp verified** — compile, docs, safety, ask endpoints all functional.
-- 🔧 Language comparison benchmarks (Aria vs C/C++/Rust/Zig)
-- 🔧 VS Code extension update for new LSP features
+- ✅ **VS Code extension** — v0.2.1 with updated bundled aria-ls binary.
+- ✅ **Benchmark suite** — 3 benchmarks (primes, collatz, gcd) in Aria and C with runner script. Aria matches or beats gcc -O2 on 2/3 benchmarks.
+- ✅ **Clean-machine build verified** — CMake and install.sh fixes for fresh Linux installs.
 
 ### v0.3.0+ — Planned
 
