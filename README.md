@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.1
+# Aria Programming Language v0.2.1.1
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -11,7 +11,7 @@
 
 ## Current Status (March 2026)
 
-**v0.2.1 — Developer experience & tooling — all tools fixed, benchmarks, one-command install**
+**v0.2.1.1 — Debugger support — aria-dap with LLDB backend, DWARF debug info, VS Code integration**
 
 The compiler has reached its self-hosting milestone. The entire compiler frontend (lexer, parser, type checker, borrow checker, safety checker, exhaustiveness checker, const evaluator) has been ported to Aria and passes 220 tests. All 27 catalogued compiler bugs plus 7 additional critical codegen bugs have been fixed.
 
@@ -444,6 +444,13 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Improved compiler diagnostics** — "Did you mean?" suggestions, accurate source locations for all type errors
 - ✅ **License changed to Apache 2.0**
 - ✅ **Language specialist model** V3 complete (71% pattern match), V4 in progress
+
+### v0.2.1.1 — Released
+
+- ✅ **aria-dap debugger** — Full DAP server with LLDB 20 backend. Breakpoints, stepping, stack traces, variable inspection.
+- ✅ **`-g` flag** — DWARF debug info generation with proper source paths, variable locations, and subprogram entries.
+- ✅ **VS Code debugging** — Debug configuration provider, auto-compile, launch.json snippets, `aria.debugger.path` setting.
+- ✅ **O0 for debug** — Automatically disables LLVM optimization when `-g` is set to preserve variable visibility.
 
 ### v0.2.1 — Released
 
