@@ -73,11 +73,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo
 echo "Build Debian package:"
 echo "  $ dpkg-buildpackage -us -uc"
-echo "  $ sudo dpkg -i ../aria-man-pages_0.1.0-1_all.deb"
+echo "  $ sudo dpkg -i ../aria-man-pages_0.2.0-1_all.deb"
 echo
 echo "Package info:"
 echo "  Name: aria-man-pages"
-echo "  Version: 0.1.0-1"
+echo "  Version: 0.2.0-1"
 echo "  Section: doc"
 echo "  Architecture: all"
 echo

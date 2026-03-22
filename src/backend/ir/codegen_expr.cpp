@@ -2482,6 +2482,25 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
                 std::cerr << "[DEBUG] Replaced right NIL with OptionalNone for comparison" << std::endl;
             }
         }
+
+        // Handle pointer-NIL comparison: NIL generates as empty struct {},
+        // but when compared to a pointer we need null pointer instead
+        if (leftIsNIL && right->getType()->isPointerTy()) {
+            left = llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+            std::cerr << "[DEBUG] Replaced left NIL with null pointer for pointer comparison" << std::endl;
+        } else if (rightIsNIL && left->getType()->isPointerTy()) {
+            right = llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+            std::cerr << "[DEBUG] Replaced right NIL with null pointer for pointer comparison" << std::endl;
+        }
+
+        // Handle integer-NIL comparison: NIL sentinel for integers is 0
+        if (leftIsNIL && right->getType()->isIntegerTy()) {
+            left = llvm::ConstantInt::get(right->getType(), 0);
+            std::cerr << "[DEBUG] Replaced left NIL with 0 for integer comparison" << std::endl;
+        } else if (rightIsNIL && left->getType()->isIntegerTy()) {
+            right = llvm::ConstantInt::get(left->getType(), 0);
+            std::cerr << "[DEBUG] Replaced right NIL with 0 for integer comparison" << std::endl;
+        }
     }
 
     // Check if operands are vectors
@@ -2521,6 +2540,24 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         std::cerr << "[BROADCAST] Broadcast complete" << std::endl;
     }
     
+    // Auto-unwrap Result<T> structs in binary expressions.
+    // Aria functions return { T, ptr, i8 } but binary ops need raw T.
+    auto isResultStruct = [](llvm::Type* ty) -> bool {
+        if (!ty->isStructTy()) return false;
+        llvm::StructType* st = llvm::cast<llvm::StructType>(ty);
+        return st->getNumElements() == 3 &&
+               st->getElementType(1)->isPointerTy() &&
+               st->getElementType(2)->isIntegerTy(8);
+    };
+    if (isResultStruct(left->getType()) && !isResultStruct(right->getType())) {
+        left = builder.CreateExtractValue(left, {0}, "unwrap_result_lhs");
+        std::cerr << "[DEBUG] Auto-unwrapped Result<T> on left operand (codegen_expr)" << std::endl;
+    }
+    if (isResultStruct(right->getType()) && !isResultStruct(left->getType())) {
+        right = builder.CreateExtractValue(right, {0}, "unwrap_result_rhs");
+        std::cerr << "[DEBUG] Auto-unwrapped Result<T> on right operand (codegen_expr)" << std::endl;
+    }
+
     // Check if operands are floating point (check AFTER broadcast)
     bool isFloat = false;
     if (leftIsVector) {
@@ -2543,6 +2580,28 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     
     // ARITHMETIC OPERATORS
     if (op == TokenType::TOKEN_PLUS) {
+        // Check for string concatenation: if either side is a pointer (AriaString*),
+        // call aria_string_concat instead of integer add
+        if (left->getType()->isPointerTy() || right->getType()->isPointerTy()) {
+            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+            if (!ariaStrType) {
+                ariaStrType = llvm::StructType::create(context,
+                    {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                     llvm::Type::getInt64Ty(context)},
+                    "struct.AriaString");
+            }
+            llvm::FunctionType* concatFT = llvm::FunctionType::get(
+                llvm::PointerType::get(context, 0),
+                {ariaStrType, ariaStrType}, false);
+            llvm::FunctionCallee concatFn = module->getOrInsertFunction("aria_string_concat", concatFT);
+            llvm::Value* lStr = left->getType()->isPointerTy()
+                ? builder.CreateLoad(ariaStrType, left, "str.lhs")
+                : left;
+            llvm::Value* rStr = right->getType()->isPointerTy()
+                ? builder.CreateLoad(ariaStrType, right, "str.rhs")
+                : right;
+            return builder.CreateCall(concatFn, {lStr, rStr}, "str.concat");
+        }
         if (isFloat) {
             return builder.CreateFAdd(left, right, "addtmp");
         } else {
@@ -8381,7 +8440,13 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         
         // Generate the call instruction
-        llvm::Value* call_result = builder.CreateCall(direct_func, args, "calltmp");
+        // Void-returning functions cannot have a named result in LLVM IR
+        llvm::Value* call_result;
+        if (direct_func->getReturnType()->isVoidTy()) {
+            call_result = builder.CreateCall(direct_func, args);
+        } else {
+            call_result = builder.CreateCall(direct_func, args, "calltmp");
+        }
         
         // BUG-09-001 FIX: Auto-wrap FFI pointer returns in Optional
         // Check if this is an extern function returning a pointer

@@ -1,0 +1,1206 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Aria Self-Hosted Lexer — Phase 5.1
+// ═══════════════════════════════════════════════════════════════════════
+// Token type constants match C++ TokenType enum ordering exactly.
+// Scanning logic ported from src/frontend/lexer/lexer.cpp.
+// State management via opaque C handle (lex_helpers.cpp).
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Token Type Constants (int32, match C++ enum order)
+// ═══════════════════════════════════════════════════════════════════════
+
+// Memory qualifiers
+const int32:TK_KW_WILD     = 0i32;
+const int32:TK_KW_WILDX    = 1i32;
+const int32:TK_KW_STACK    = 2i32;
+const int32:TK_KW_GC       = 3i32;
+const int32:TK_KW_DEFER    = 4i32;
+const int32:TK_KW_MOVE     = 5i32;
+
+// Memory ordering
+const int32:TK_KW_RELAXED  = 6i32;
+const int32:TK_KW_ACQUIRE  = 7i32;
+const int32:TK_KW_RELEASE  = 8i32;
+const int32:TK_KW_ACQ_REL  = 9i32;
+const int32:TK_KW_SEQ_CST  = 10i32;
+
+// Control flow
+const int32:TK_KW_IF       = 11i32;
+const int32:TK_KW_ELSE     = 12i32;
+const int32:TK_KW_WHILE    = 13i32;
+const int32:TK_KW_FOR      = 14i32;
+const int32:TK_KW_LOOP     = 15i32;
+const int32:TK_KW_TILL     = 16i32;
+const int32:TK_KW_WHEN     = 17i32;
+const int32:TK_KW_THEN     = 18i32;
+const int32:TK_KW_END      = 19i32;
+const int32:TK_KW_PICK     = 20i32;
+const int32:TK_KW_FALL     = 21i32;
+const int32:TK_KW_BREAK    = 22i32;
+const int32:TK_KW_CONTINUE = 23i32;
+const int32:TK_KW_RETURN   = 24i32;
+const int32:TK_KW_PASS     = 25i32;
+const int32:TK_KW_FAIL     = 26i32;
+
+// Async
+const int32:TK_KW_ASYNC    = 27i32;
+const int32:TK_KW_AWAIT    = 28i32;
+const int32:TK_KW_CATCH    = 29i32;
+const int32:TK_KW_IN       = 30i32;
+
+// Declarations
+const int32:TK_KW_FUNC     = 31i32;
+const int32:TK_KW_STRUCT   = 32i32;
+const int32:TK_KW_ENUM     = 33i32;
+const int32:TK_KW_TYPE     = 34i32;
+const int32:TK_KW_OPAQUE   = 35i32;
+const int32:TK_KW_TRAIT    = 36i32;
+const int32:TK_KW_IMPL     = 37i32;
+const int32:TK_KW_USE      = 38i32;
+const int32:TK_KW_MOD      = 39i32;
+const int32:TK_KW_PUB      = 40i32;
+const int32:TK_KW_EXTERN   = 41i32;
+const int32:TK_KW_CONST    = 42i32;
+const int32:TK_KW_FIXED    = 43i32;
+const int32:TK_KW_CFG      = 44i32;
+const int32:TK_KW_AS       = 45i32;
+
+// Design by Contract
+const int32:TK_KW_REQUIRES  = 46i32;
+const int32:TK_KW_ENSURES   = 47i32;
+const int32:TK_KW_INVARIANT = 48i32;
+
+// Signed integers
+const int32:TK_KW_INT1     = 49i32;
+const int32:TK_KW_INT2     = 50i32;
+const int32:TK_KW_INT4     = 51i32;
+const int32:TK_KW_INT8     = 52i32;
+const int32:TK_KW_INT16    = 53i32;
+const int32:TK_KW_INT32    = 54i32;
+const int32:TK_KW_INT64    = 55i32;
+const int32:TK_KW_INT128   = 56i32;
+const int32:TK_KW_INT256   = 57i32;
+const int32:TK_KW_INT512   = 58i32;
+const int32:TK_KW_INT1024  = 59i32;
+const int32:TK_KW_INT2048  = 60i32;
+const int32:TK_KW_INT4096  = 61i32;
+
+// Unsigned integers
+const int32:TK_KW_UINT1    = 62i32;
+const int32:TK_KW_UINT2    = 63i32;
+const int32:TK_KW_UINT4    = 64i32;
+const int32:TK_KW_UINT8    = 65i32;
+const int32:TK_KW_UINT16   = 66i32;
+const int32:TK_KW_UINT32   = 67i32;
+const int32:TK_KW_UINT64   = 68i32;
+const int32:TK_KW_UINT128  = 69i32;
+const int32:TK_KW_UINT256  = 70i32;
+const int32:TK_KW_UINT512  = 71i32;
+const int32:TK_KW_UINT1024 = 72i32;
+const int32:TK_KW_UINT2048 = 73i32;
+const int32:TK_KW_UINT4096 = 74i32;
+
+// TBB
+const int32:TK_KW_TBB8     = 75i32;
+const int32:TK_KW_TBB16    = 76i32;
+const int32:TK_KW_TBB32    = 77i32;
+const int32:TK_KW_TBB64    = 78i32;
+
+// Fractions
+const int32:TK_KW_FRAC8    = 79i32;
+const int32:TK_KW_FRAC16   = 80i32;
+const int32:TK_KW_FRAC32   = 81i32;
+const int32:TK_KW_FRAC64   = 82i32;
+
+// Twisted Floating Point
+const int32:TK_KW_TFP32    = 83i32;
+const int32:TK_KW_TFP64    = 84i32;
+
+// Floats
+const int32:TK_KW_FLT32    = 85i32;
+const int32:TK_KW_FLT64    = 86i32;
+const int32:TK_KW_FLT128   = 87i32;
+const int32:TK_KW_FLT256   = 88i32;
+const int32:TK_KW_FLT512   = 89i32;
+
+// Fixed point
+const int32:TK_KW_FIX256   = 90i32;
+
+// Special types
+const int32:TK_KW_BOOL     = 91i32;
+const int32:TK_KW_STRING   = 92i32;
+const int32:TK_KW_DYN      = 93i32;
+const int32:TK_KW_OBJ      = 94i32;
+const int32:TK_KW_RESULT   = 95i32;
+const int32:TK_KW_ARRAY    = 96i32;
+
+// Balanced ternary/nonary
+const int32:TK_KW_TRIT     = 97i32;
+const int32:TK_KW_TRYTE    = 98i32;
+const int32:TK_KW_NIT      = 99i32;
+const int32:TK_KW_NYTE     = 100i32;
+
+// Mathematical
+const int32:TK_KW_VEC2     = 101i32;
+const int32:TK_KW_VEC3     = 102i32;
+const int32:TK_KW_VEC9     = 103i32;
+const int32:TK_KW_MATRIX   = 104i32;
+const int32:TK_KW_TMATRIX  = 105i32;
+const int32:TK_KW_TENSOR   = 106i32;
+const int32:TK_KW_TTENSOR  = 107i32;
+
+// I/O and system
+const int32:TK_KW_BINARY   = 108i32;
+const int32:TK_KW_BUFFER   = 109i32;
+const int32:TK_KW_STREAM   = 110i32;
+const int32:TK_KW_PROCESS  = 111i32;
+const int32:TK_KW_PIPE     = 112i32;
+const int32:TK_KW_DEBUG    = 113i32;
+const int32:TK_KW_LOG      = 114i32;
+
+// Special keywords
+const int32:TK_KW_IS       = 115i32;
+const int32:TK_KW_NULL     = 116i32;
+const int32:TK_KW_NIL      = 117i32;
+const int32:TK_KW_TRUE     = 118i32;
+const int32:TK_KW_FALSE    = 119i32;
+const int32:TK_KW_ERR      = 120i32;
+const int32:TK_KW_UNKNOWN  = 121i32;
+
+// Type casting
+const int32:TK_KW_CAST           = 122i32;
+const int32:TK_KW_CAST_UNCHECKED = 123i32;
+
+// Arithmetic operators
+const int32:TK_PLUS         = 124i32;
+const int32:TK_MINUS        = 125i32;
+const int32:TK_STAR         = 126i32;
+const int32:TK_SLASH        = 127i32;
+const int32:TK_PERCENT      = 128i32;
+const int32:TK_PLUS_PLUS    = 129i32;
+const int32:TK_MINUS_MINUS  = 130i32;
+
+// Assignment operators
+const int32:TK_EQUAL         = 131i32;
+const int32:TK_PLUS_EQUAL    = 132i32;
+const int32:TK_MINUS_EQUAL   = 133i32;
+const int32:TK_STAR_EQUAL    = 134i32;
+const int32:TK_SLASH_EQUAL   = 135i32;
+const int32:TK_PERCENT_EQUAL = 136i32;
+
+// Comparison operators
+const int32:TK_EQUAL_EQUAL   = 137i32;
+const int32:TK_BANG_EQUAL    = 138i32;
+const int32:TK_LESS          = 139i32;
+const int32:TK_LESS_EQUAL    = 140i32;
+const int32:TK_GREATER       = 141i32;
+const int32:TK_GREATER_EQUAL = 142i32;
+const int32:TK_SPACESHIP     = 143i32;
+
+// Logical operators
+const int32:TK_AND_AND       = 144i32;
+const int32:TK_OR_OR         = 145i32;
+const int32:TK_BANG          = 146i32;
+const int32:TK_QUESTION_BANG = 147i32;
+const int32:TK_BANG_BANG_BANG = 148i32;
+
+// Bitwise operators
+const int32:TK_AMPERSAND    = 149i32;
+const int32:TK_PIPE         = 150i32;
+const int32:TK_CARET        = 151i32;
+const int32:TK_TILDE        = 152i32;
+const int32:TK_SHIFT_LEFT   = 153i32;
+const int32:TK_SHIFT_RIGHT  = 154i32;
+
+// Special operators
+const int32:TK_AT            = 155i32;
+const int32:TK_DOLLAR        = 156i32;
+const int32:TK_HASH          = 157i32;
+const int32:TK_ARROW         = 158i32;
+const int32:TK_LEFT_ARROW    = 159i32;
+const int32:TK_FAT_ARROW     = 160i32;
+const int32:TK_SAFE_NAV      = 161i32;
+const int32:TK_NULL_COALESCE = 162i32;
+const int32:TK_QUESTION      = 163i32;
+const int32:TK_PIPE_RIGHT    = 164i32;
+const int32:TK_PIPE_LEFT     = 165i32;
+const int32:TK_DOT_DOT       = 166i32;
+const int32:TK_DOT_DOT_DOT   = 167i32;
+
+// Template literals
+const int32:TK_BACKTICK       = 168i32;
+const int32:TK_TEMPLATE_START = 169i32;
+const int32:TK_TEMPLATE_PART  = 170i32;
+const int32:TK_INTERP_START   = 171i32;
+const int32:TK_INTERP_END     = 172i32;
+const int32:TK_TEMPLATE_END   = 173i32;
+
+// Punctuation
+const int32:TK_DOT           = 174i32;
+const int32:TK_COMMA         = 175i32;
+const int32:TK_COLON         = 176i32;
+const int32:TK_SEMICOLON     = 177i32;
+const int32:TK_LEFT_PAREN    = 178i32;
+const int32:TK_RIGHT_PAREN   = 179i32;
+const int32:TK_LEFT_BRACE    = 180i32;
+const int32:TK_RIGHT_BRACE   = 181i32;
+const int32:TK_LEFT_BRACKET  = 182i32;
+const int32:TK_RIGHT_BRACKET = 183i32;
+
+// Literals
+const int32:TK_INTEGER       = 184i32;
+const int32:TK_FLOAT         = 185i32;
+
+// Typed integer literals
+const int32:TK_INTEGER_U8    = 186i32;
+const int32:TK_INTEGER_U16   = 187i32;
+const int32:TK_INTEGER_U32   = 188i32;
+const int32:TK_INTEGER_U64   = 189i32;
+const int32:TK_INTEGER_U128  = 190i32;
+const int32:TK_INTEGER_U256  = 191i32;
+const int32:TK_INTEGER_U512  = 192i32;
+const int32:TK_INTEGER_U1024 = 193i32;
+const int32:TK_INTEGER_U2048 = 194i32;
+const int32:TK_INTEGER_U4096 = 195i32;
+const int32:TK_INTEGER_I8    = 196i32;
+const int32:TK_INTEGER_I16   = 197i32;
+const int32:TK_INTEGER_I32   = 198i32;
+const int32:TK_INTEGER_I64   = 199i32;
+const int32:TK_INTEGER_I128  = 200i32;
+const int32:TK_INTEGER_I256  = 201i32;
+const int32:TK_INTEGER_I512  = 202i32;
+const int32:TK_INTEGER_I1024 = 203i32;
+const int32:TK_INTEGER_I2048 = 204i32;
+const int32:TK_INTEGER_I4096 = 205i32;
+const int32:TK_INTEGER_TBB8  = 206i32;
+const int32:TK_INTEGER_TBB16 = 207i32;
+const int32:TK_INTEGER_TBB32 = 208i32;
+const int32:TK_INTEGER_TBB64 = 209i32;
+
+// Typed float literals
+const int32:TK_FLOAT_F32     = 210i32;
+const int32:TK_FLOAT_F64     = 211i32;
+const int32:TK_FLOAT_F128    = 212i32;
+const int32:TK_FLOAT_F256    = 213i32;
+const int32:TK_FLOAT_F512    = 214i32;
+const int32:TK_FLOAT_FIX256  = 215i32;
+
+// Other literals
+const int32:TK_LIT_STRING    = 216i32;
+const int32:TK_CHAR          = 217i32;
+const int32:TK_TERNARY       = 218i32;
+const int32:TK_NONARY        = 219i32;
+
+// Special tokens
+const int32:TK_IDENTIFIER    = 220i32;
+const int32:TK_EOF           = 221i32;
+const int32:TK_ERROR         = 222i32;
+const int32:TK_COMMENT       = 223i32;
+const int32:TK_WHITESPACE    = 224i32;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Extern C helper declarations
+// ═══════════════════════════════════════════════════════════════════════
+
+// State management
+extern func:lex_new = wild int8*(string:source);
+extern func:lex_free = void(wild int8*:state);
+
+// Character navigation
+extern func:lex_advance = int32(wild int8*:state);
+extern func:lex_peek = int32(wild int8*:state);
+extern func:lex_peek_next = int32(wild int8*:state);
+extern func:lex_peek_n = int32(wild int8*:state, int32:n);
+extern func:lex_at_end = int32(wild int8*:state);
+extern func:lex_match = int32(wild int8*:state, int32:expected);
+
+// Position tracking
+extern func:lex_start_token = void(wild int8*:state);
+extern func:lex_get_line = int32(wild int8*:state);
+extern func:lex_get_col = int32(wild int8*:state);
+extern func:lex_get_start_line = int32(wild int8*:state);
+extern func:lex_get_start_col = int32(wild int8*:state);
+extern func:lex_source_char = int32(wild int8*:state, int64:pos);
+extern func:lex_get_start = int64(wild int8*:state);
+extern func:lex_get_current = int64(wild int8*:state);
+
+// Lexeme extraction
+extern func:lex_get_lexeme = string(wild int8*:state);
+extern func:lex_get_substr = string(wild int8*:state, int64:from, int64:len);
+
+// Token creation
+extern func:lex_add_token = void(wild int8*:state, int32:typ);
+extern func:lex_add_token_int = void(wild int8*:state, int32:typ, int64:val);
+extern func:lex_add_token_float = void(wild int8*:state, int32:typ, flt64:val);
+extern func:lex_add_token_str = void(wild int8*:state, int32:typ, string:val);
+extern func:lex_add_token_int_raw = void(wild int8*:state, int32:typ, int64:val, string:raw);
+extern func:lex_add_token_float_raw = void(wild int8*:state, int32:typ, flt64:val, string:raw);
+extern func:lex_push_token = void(wild int8*:state, int32:typ, string:lexeme, int32:line, int32:col);
+extern func:lex_push_token_str = void(wild int8*:state, int32:typ, string:lexeme, int32:line, int32:col, string:str_val);
+
+// Token list access
+extern func:lex_token_count = int64(wild int8*:state);
+extern func:lex_token_type = int32(wild int8*:state, int64:idx);
+extern func:lex_token_lexeme = string(wild int8*:state, int64:idx);
+extern func:lex_token_line = int32(wild int8*:state, int64:idx);
+extern func:lex_token_col = int32(wild int8*:state, int64:idx);
+extern func:lex_token_int_val = int64(wild int8*:state, int64:idx);
+extern func:lex_token_float_val = flt64(wild int8*:state, int64:idx);
+extern func:lex_token_str_val = string(wild int8*:state, int64:idx);
+extern func:lex_token_raw_val = string(wild int8*:state, int64:idx);
+
+// Error management
+extern func:lex_error = void(wild int8*:state, string:msg);
+extern func:lex_error_count = int64(wild int8*:state);
+extern func:lex_get_error = string(wild int8*:state, int64:idx);
+
+// Keyword lookup
+extern func:kw_lookup = int32(string:word);
+
+// Type suffix mapping
+extern func:suffix_to_int_type = int32(string:suffix);
+extern func:suffix_to_float_type = int32(string:suffix);
+
+// Number parsing
+extern func:lex_parse_int = int64(string:text, int32:base);
+extern func:lex_parse_uint = int64(string:text, int32:base);
+extern func:lex_parse_float = flt64(string:text);
+extern func:lex_strip_underscores = string(string:text);
+
+// Debug
+extern func:lex_type_name = string(int32:typ);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Character classification helpers (extern C — avoids struct-return ABI issue)
+// ═══════════════════════════════════════════════════════════════════════
+
+extern func:lex_is_alpha = int32(int32:c);
+extern func:lex_is_digit = int32(int32:c);
+extern func:lex_is_alnum = int32(int32:c);
+extern func:lex_is_hex = int32(int32:c);
+extern func:lex_is_bin = int32(int32:c);
+extern func:lex_is_oct = int32(int32:c);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Whitespace and comment skipping
+// ═══════════════════════════════════════════════════════════════════════
+
+func:skip_line_comment = void(wild int8->:st) {
+    lex_advance(st);
+    lex_advance(st);
+    while (lex_at_end(st) == 0i32 && lex_peek(st) != 10i32) {
+        lex_advance(st);
+    }
+};
+
+func:skip_block_comment = void(wild int8->:st) {
+    lex_advance(st);
+    lex_advance(st);
+    while (lex_at_end(st) == 0i32) {
+        if (lex_peek(st) == 42i32 && lex_peek_next(st) == 47i32) {
+            lex_advance(st);
+            lex_advance(st);
+            return;
+        }
+        lex_advance(st);
+    }
+    lex_error(st, "Unterminated block comment");
+};
+
+func:skip_whitespace = void(wild int8->:st) {
+    while (lex_at_end(st) == 0i32) {
+        int32:c = lex_peek(st);
+        if (c == 32i32 || c == 13i32 || c == 9i32 || c == 10i32) {
+            lex_advance(st);
+        } else if (c == 47i32) {
+            int32:nx = lex_peek_next(st);
+            if (nx == 47i32) {
+                skip_line_comment(st);
+            } else if (nx == 42i32) {
+                skip_block_comment(st);
+            } else {
+                return;
+            }
+        } else {
+            return;
+        }
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Identifier and keyword scanning
+// ═══════════════════════════════════════════════════════════════════════
+
+func:scan_identifier = void(wild int8->:st) {
+    while (lex_is_alnum(lex_peek(st)) == 1i32) {
+        lex_advance(st);
+    }
+    string:text = lex_get_lexeme(st);
+    int32:kw = kw_lookup(text);
+    if (kw >= 0i32) {
+        lex_add_token(st, kw);
+    } else {
+        lex_add_token(st, TK_IDENTIFIER);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// String literal scanning
+// ═══════════════════════════════════════════════════════════════════════
+
+func:scan_string = void(wild int8->:st) {
+    // Just scan the token span — skip building string value to avoid codegen bugs
+    while (lex_at_end(st) == 0i32 && lex_peek(st) != 34i32) {
+        if (lex_peek(st) == 92i32) {
+            lex_advance(st);
+            if (lex_at_end(st) == 0i32) {
+                lex_advance(st);
+            }
+        } else {
+            lex_advance(st);
+        }
+    }
+    if (lex_at_end(st) == 1i32) {
+        lex_error(st, "Unterminated string literal");
+        return;
+    }
+    lex_advance(st);
+    lex_add_token(st, TK_LIT_STRING);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Character literal scanning
+// ═══════════════════════════════════════════════════════════════════════
+
+func:scan_char = void(wild int8->:st) {
+    if (lex_at_end(st) == 1i32 || lex_peek(st) == 39i32) {
+        lex_error(st, "Empty character literal");
+        return;
+    }
+    // Scan the character span (handle escape sequences)
+    if (lex_peek(st) == 92i32) {
+        lex_advance(st);
+        if (lex_at_end(st) == 0i32) {
+            lex_advance(st);
+        }
+    } else {
+        lex_advance(st);
+    }
+    if (lex_at_end(st) == 1i32 || lex_peek(st) != 39i32) {
+        lex_error(st, "Unterminated character literal");
+        return;
+    }
+    lex_advance(st);
+    lex_add_token(st, TK_CHAR);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Type suffix scanning (for numeric literals)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:scan_type_suffix = string(wild int8->:st) {
+    if (lex_is_alpha(lex_peek(st)) == 0i32) {
+        pass("");
+    }
+    int64:suf_start = lex_get_current(st);
+    while (lex_is_alnum(lex_peek(st)) == 1i32) {
+        lex_advance(st);
+    }
+    int64:suf_end = lex_get_current(st);
+    int64:suf_len = suf_end - suf_start;
+    string:suf_text = lex_get_substr(st, suf_start, suf_len);
+    pass(suf_text);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Numeric literal scanning
+// ═══════════════════════════════════════════════════════════════════════
+
+func:scan_hex = void(wild int8->:st) {
+    lex_advance(st);
+    if (lex_is_hex(lex_peek(st)) == 0i32) {
+        lex_error(st, "Expected hexadecimal digits after '0x'");
+        return;
+    }
+    while (lex_is_hex(lex_peek(st)) == 1i32 || lex_peek(st) == 95i32) {
+        lex_advance(st);
+    }
+    string:text = lex_get_lexeme(st);
+    // Remove 0x prefix — get substr after first 2 chars
+    int64:start_pos = lex_get_start(st);
+    int64:cur_pos = lex_get_current(st);
+    int64:digit_len = cur_pos - start_pos - 2i64;
+    string:digits = lex_get_substr(st, start_pos + 2i64, digit_len);
+    string:cleaned = lex_strip_underscores(digits);
+    string:suffix = scan_type_suffix(st);
+    if (suffix == "") {
+        int64:val = lex_parse_int(cleaned, 16i32);
+        lex_add_token_int(st, TK_INTEGER, val);
+    } else {
+        int32:tt = suffix_to_int_type(suffix);
+        if (tt < 0i32) {
+            lex_error(st, "Invalid type suffix for hex literal");
+            lex_add_token(st, TK_ERROR);
+        } else {
+            // Check if unsigned type for proper parsing
+            if (tt >= TK_INTEGER_U8 && tt <= TK_INTEGER_U4096) {
+                int64:val = lex_parse_uint(cleaned, 16i32);
+                lex_add_token_int(st, tt, val);
+            } else {
+                int64:val = lex_parse_int(cleaned, 16i32);
+                lex_add_token_int(st, tt, val);
+            }
+        }
+    }
+};
+
+func:scan_binary = void(wild int8->:st) {
+    lex_advance(st);
+    if (lex_is_bin(lex_peek(st)) == 0i32) {
+        lex_error(st, "Expected binary digits after '0b'");
+        return;
+    }
+    while (lex_is_bin(lex_peek(st)) == 1i32 || lex_peek(st) == 95i32) {
+        lex_advance(st);
+    }
+    int64:start_pos = lex_get_start(st);
+    int64:cur_pos = lex_get_current(st);
+    int64:digit_len = cur_pos - start_pos - 2i64;
+    string:digits = lex_get_substr(st, start_pos + 2i64, digit_len);
+    string:cleaned = lex_strip_underscores(digits);
+    string:suffix = scan_type_suffix(st);
+    if (suffix == "") {
+        int64:val = lex_parse_int(cleaned, 2i32);
+        lex_add_token_int(st, TK_INTEGER, val);
+    } else {
+        int32:tt = suffix_to_int_type(suffix);
+        if (tt < 0i32) {
+            lex_error(st, "Invalid type suffix for binary literal");
+            lex_add_token(st, TK_ERROR);
+        } else {
+            int64:val = lex_parse_int(cleaned, 2i32);
+            lex_add_token_int(st, tt, val);
+        }
+    }
+};
+
+func:scan_octal = void(wild int8->:st) {
+    lex_advance(st);
+    if (lex_is_oct(lex_peek(st)) == 0i32) {
+        lex_error(st, "Expected octal digits after '0o'");
+        return;
+    }
+    while (lex_is_oct(lex_peek(st)) == 1i32 || lex_peek(st) == 95i32) {
+        lex_advance(st);
+    }
+    int64:start_pos = lex_get_start(st);
+    int64:cur_pos = lex_get_current(st);
+    int64:digit_len = cur_pos - start_pos - 2i64;
+    string:digits = lex_get_substr(st, start_pos + 2i64, digit_len);
+    string:cleaned = lex_strip_underscores(digits);
+    string:suffix = scan_type_suffix(st);
+    if (suffix == "") {
+        int64:val = lex_parse_int(cleaned, 8i32);
+        lex_add_token_int(st, TK_INTEGER, val);
+    } else {
+        int32:tt = suffix_to_int_type(suffix);
+        if (tt < 0i32) {
+            lex_error(st, "Invalid type suffix for octal literal");
+            lex_add_token(st, TK_ERROR);
+        } else {
+            int64:val = lex_parse_int(cleaned, 8i32);
+            lex_add_token_int(st, tt, val);
+        }
+    }
+};
+
+func:scan_ternary_lit = void(wild int8->:st) {
+    lex_advance(st);
+    int32:fc = lex_peek(st);
+    if (fc != 48i32 && fc != 49i32 && fc != 84i32 && fc != 116i32) {
+        lex_error(st, "Expected ternary digits (0, 1, T) after '0t'");
+        return;
+    }
+    while (lex_at_end(st) == 0i32) {
+        int32:c = lex_peek(st);
+        if (c == 48i32 || c == 49i32 || c == 84i32 || c == 116i32 || c == 95i32) {
+            lex_advance(st);
+        } else {
+            break;
+        }
+    }
+    int64:start_pos = lex_get_start(st);
+    int64:cur_pos = lex_get_current(st);
+    int64:digit_len = cur_pos - start_pos - 2i64;
+    string:digits = lex_get_substr(st, start_pos + 2i64, digit_len);
+    string:cleaned = lex_strip_underscores(digits);
+    // Convert balanced ternary to int64
+    int64:value = 0i64;
+    int64:power = 1i64;
+    int64:i = @cast<int64>(string_length(cleaned)) - 1i64;
+    while (i >= 0i64) {
+        int32:d = @cast<int32>(cleaned[i]);
+        int64:tv = 0i64;
+        if (d == 48i32) {
+            tv = 0i64;
+        } else if (d == 49i32) {
+            tv = 1i64;
+        } else if (d == 84i32 || d == 116i32) {
+            tv = -1i64;
+        }
+        value = value + tv * power;
+        power = power * 3i64;
+        i = i - 1i64;
+    }
+    lex_add_token_int(st, TK_TERNARY, value);
+};
+
+func:scan_nonary_lit = void(wild int8->:st) {
+    lex_advance(st);
+    int32:fc = lex_peek(st);
+    int32:valid = 0i32;
+    if (fc >= 48i32 && fc <= 52i32) { valid = 1i32; }
+    if (fc >= 65i32 && fc <= 68i32) { valid = 1i32; }
+    if (fc >= 97i32 && fc <= 100i32) { valid = 1i32; }
+    if (valid == 0i32) {
+        lex_error(st, "Expected nonary digits (0-4, A-D) after '0n'");
+        return;
+    }
+    while (lex_at_end(st) == 0i32) {
+        int32:c = lex_peek(st);
+        int32:bk2 = 0i32;
+        if (c >= 48i32 && c <= 52i32) { bk2 = 1i32; }
+        if (c >= 65i32 && c <= 68i32) { bk2 = 1i32; }
+        if (c >= 97i32 && c <= 100i32) { bk2 = 1i32; }
+        if (c == 95i32) { bk2 = 1i32; }
+        if (bk2 == 1i32) {
+            lex_advance(st);
+        } else {
+            break;
+        }
+    }
+    int64:start_pos = lex_get_start(st);
+    int64:cur_pos = lex_get_current(st);
+    int64:digit_len = cur_pos - start_pos - 2i64;
+    string:digits = lex_get_substr(st, start_pos + 2i64, digit_len);
+    string:cleaned = lex_strip_underscores(digits);
+    // Convert balanced nonary to int64
+    int64:value = 0i64;
+    int64:power = 1i64;
+    int64:i = @cast<int64>(string_length(cleaned)) - 1i64;
+    while (i >= 0i64) {
+        int32:d = @cast<int32>(cleaned[i]);
+        int64:nit_val = 0i64;
+        if (d >= 48i32 && d <= 52i32) {
+            nit_val = @cast<int64>(d) - 48i64;
+        } else if (d == 65i32 || d == 97i32) {
+            nit_val = -1i64;
+        } else if (d == 66i32 || d == 98i32) {
+            nit_val = -2i64;
+        } else if (d == 67i32 || d == 99i32) {
+            nit_val = -3i64;
+        } else if (d == 68i32 || d == 100i32) {
+            nit_val = -4i64;
+        }
+        value = value + nit_val * power;
+        power = power * 9i64;
+        i = i - 1i64;
+    }
+    lex_add_token_int(st, TK_NONARY, value);
+};
+
+// Dispatch special number bases (0x, 0b, 0o, 0t, 0n). Returns 1 if handled.
+func:dispatch_number_base = int32(wild int8->:st, int32:first) {
+    if (first != 48i32 || lex_at_end(st) == 1i32) { pass(0i32); }
+    int32:nx = lex_peek(st);
+    if (nx == 120i32 || nx == 88i32) { scan_hex(st); }
+    else if (nx == 98i32 || nx == 66i32) { scan_binary(st); }
+    else if (nx == 111i32 || nx == 79i32) { scan_octal(st); }
+    else if (nx == 116i32 || nx == 84i32) { scan_ternary_lit(st); }
+    else if (nx == 110i32 || nx == 78i32) { scan_nonary_lit(st); }
+    else { pass(0i32); }
+    pass(1i32);
+};
+
+func:scan_number = void(wild int8->:st) {
+    // Check for special bases (first digit already consumed = source[start])
+    int32:first = lex_source_char(st, lex_get_start(st));
+    int32:base_r = dispatch_number_base(st, first);
+    if (base_r == 1i32) { return; }
+
+    // Decimal number
+    while (lex_is_digit(lex_peek(st)) == 1i32 || lex_peek(st) == 95i32) {
+        lex_advance(st);
+    }
+
+    int32:is_flt = 0i32;
+    // Check for decimal point
+    if (lex_peek(st) == 46i32 && lex_is_digit(lex_peek_next(st)) == 1i32) {
+        is_flt = 1i32;
+        lex_advance(st);
+        while (lex_is_digit(lex_peek(st)) == 1i32 || lex_peek(st) == 95i32) {
+            lex_advance(st);
+        }
+    }
+
+    // Check for scientific notation
+    int32:ep = lex_peek(st);
+    if (ep == 101i32 || ep == 69i32) {
+        is_flt = 1i32;
+        lex_advance(st);
+        int32:sign = lex_peek(st);
+        if (sign == 43i32 || sign == 45i32) {
+            lex_advance(st);
+        }
+        if (lex_is_digit(lex_peek(st)) == 0i32) {
+            lex_error(st, "Expected digits in exponent");
+            return;
+        }
+        while (lex_is_digit(lex_peek(st)) == 1i32 || lex_peek(st) == 95i32) {
+            lex_advance(st);
+        }
+    }
+
+    // Get cleaned text
+    int64:start_pos = lex_get_start(st);
+    int64:cur_pos = lex_get_current(st);
+    int64:num_len = cur_pos - start_pos;
+    string:raw = lex_get_substr(st, start_pos, num_len);
+    string:cleaned = lex_strip_underscores(raw);
+
+    // Scan type suffix
+    string:suffix = scan_type_suffix(st);
+
+    if (suffix == "") {
+        if (is_flt == 1i32) {
+            flt64:fval = lex_parse_float(cleaned);
+            lex_add_token_float(st, TK_FLOAT, fval);
+        } else {
+            int64:ival = lex_parse_int(cleaned, 10i32);
+            lex_add_token_int(st, TK_INTEGER, ival);
+        }
+        return;
+    }
+
+    // Typed literal
+    if (is_flt == 1i32) {
+        int32:tt = suffix_to_float_type(suffix);
+        if (tt < 0i32) {
+            lex_error(st, "Invalid type suffix for float literal");
+            lex_add_token(st, TK_ERROR);
+        } else {
+            flt64:fval = lex_parse_float(cleaned);
+            lex_add_token_float_raw(st, tt, fval, cleaned);
+        }
+    } else {
+        int32:tt = suffix_to_int_type(suffix);
+        if (tt < 0i32) {
+            lex_error(st, "Invalid type suffix for integer literal");
+            lex_add_token(st, TK_ERROR);
+        } else {
+            if (tt >= TK_INTEGER_U8 && tt <= TK_INTEGER_U4096) {
+                int64:uval = lex_parse_uint(cleaned, 10i32);
+                lex_add_token_int(st, tt, uval);
+            } else {
+                int64:ival = lex_parse_int(cleaned, 10i32);
+                lex_add_token_int(st, tt, ival);
+            }
+        }
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Template literal scanning
+// ═══════════════════════════════════════════════════════════════════════
+
+// Forward declaration needed for recursive call from template scanning
+func:scan_one_token = void(wild int8->:st);
+
+func:scan_template_literal = void(wild int8->:st) {
+    int32:start_ln = lex_get_start_line(st);
+    int32:start_cl = lex_get_start_col(st);
+    lex_push_token(st, TK_TEMPLATE_START, "`", start_ln, start_cl);
+
+    int64:part_start = lex_get_current(st);
+    int32:part_ln = lex_get_line(st);
+    int32:part_cl = lex_get_col(st);
+
+    while (lex_at_end(st) == 0i32) {
+        // Check for interpolation: &{
+        if (lex_peek(st) == 38i32 && lex_peek_next(st) == 123i32) {
+            int64:part_end = lex_get_current(st);
+            int64:part_len = part_end - part_start;
+            string:part_text = lex_get_substr(st, part_start, part_len);
+            lex_push_token_str(st, TK_TEMPLATE_PART, part_text, part_ln, part_cl, part_text);
+            int32:interp_ln = lex_get_line(st);
+            int32:interp_cl = lex_get_col(st);
+            lex_advance(st);
+            lex_advance(st);
+            lex_push_token(st, TK_INTERP_START, "&{", interp_ln, interp_cl);
+
+            // Tokenize interpolation expression until matching }
+            int32:depth = 1i32;
+            while (lex_at_end(st) == 0i32 && depth > 0i32) {
+                // Skip whitespace inside interpolation
+                while (lex_at_end(st) == 0i32) {
+                    int32:wc = lex_peek(st);
+                    if (wc == 32i32 || wc == 9i32 || wc == 13i32) {
+                        lex_advance(st);
+                    } else if (wc == 10i32) {
+                        lex_advance(st);
+                    } else {
+                        break;
+                    }
+                }
+                if (lex_at_end(st) == 1i32) { break; }
+                int32:ic = lex_peek(st);
+                if (ic == 123i32) {
+                    depth = depth + 1i32;
+                    scan_one_token(st);
+                } else if (ic == 125i32) {
+                    depth = depth - 1i32;
+                    if (depth == 0i32) {
+                        break;
+                    } else {
+                        scan_one_token(st);
+                    }
+                } else {
+                    scan_one_token(st);
+                }
+            }
+
+            if (depth > 0i32) {
+                lex_error(st, "Unterminated interpolation in template literal");
+                return;
+            }
+
+            int32:end_ln = lex_get_line(st);
+            int32:end_cl = lex_get_col(st);
+            lex_advance(st);
+            lex_push_token(st, TK_INTERP_END, "}", end_ln, end_cl);
+
+            part_start = lex_get_current(st);
+            part_ln = lex_get_line(st);
+            part_cl = lex_get_col(st);
+            continue;
+        }
+
+        // Check for template end: `
+        if (lex_peek(st) == 96i32) {
+            int64:part_end = lex_get_current(st);
+            int64:part_len = part_end - part_start;
+            string:part_text = lex_get_substr(st, part_start, part_len);
+            lex_push_token_str(st, TK_TEMPLATE_PART, part_text, part_ln, part_cl, part_text);
+            int32:end_ln = lex_get_line(st);
+            int32:end_cl = lex_get_col(st);
+            lex_advance(st);
+            lex_push_token(st, TK_TEMPLATE_END, "`", end_ln, end_cl);
+            return;
+        }
+
+        // Escape sequences — just skip past (raw text preserved in lexeme)
+        if (lex_peek(st) == 92i32) {
+            lex_advance(st);
+            if (lex_at_end(st) == 1i32) {
+                lex_error(st, "Unterminated template literal");
+                return;
+            }
+            lex_advance(st);
+            continue;
+        }
+
+        // Regular character
+        lex_advance(st);
+    }
+
+    lex_error(st, "Unterminated template literal");
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// @cast keyword scanning
+// ═══════════════════════════════════════════════════════════════════════
+
+func:is_at_cast = int32(wild int8->:st) {
+    // Check if we're looking at "cast" or "cast_unchecked" after @
+    if (lex_peek(st) != 99i32 || lex_peek_n(st, 1i32) != 97i32 || lex_peek_n(st, 2i32) != 115i32 || lex_peek_n(st, 3i32) != 116i32) {
+        pass(0i32);
+    }
+    // Got "cast" — check if rest is _unchecked or end of identifier
+    int32:after = lex_peek_n(st, 4i32);
+    int32:result = 0i32;
+    if (after == 95i32 && lex_peek_n(st, 5i32) == 117i32 && lex_peek_n(st, 6i32) == 110i32) {
+        int32:after14 = lex_peek_n(st, 14i32);
+        if (lex_is_alnum(after14) == 0i32) {
+            result = 2i32;
+        }
+    }
+    else if (lex_is_alnum(after) == 0i32 || after == 0i32) {
+        result = 1i32;
+    }
+    pass(result);
+};
+
+func:scan_cast_keyword = void(wild int8->:st) {
+    // @ already consumed. Consume "cast"
+    lex_advance(st);
+    lex_advance(st);
+    lex_advance(st);
+    lex_advance(st);
+    // Check for _unchecked
+    if (lex_peek(st) == 95i32 && lex_peek_n(st, 1i32) == 117i32) {
+        // Consume "_unchecked" (10 chars)
+        int32:j = 0i32;
+        while (j < 10i32) {
+            lex_advance(st);
+            j = j + 1i32;
+        }
+        lex_add_token(st, TK_KW_CAST_UNCHECKED);
+    } else {
+        lex_add_token(st, TK_KW_CAST);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Operator scanning helpers (split to avoid too many pass() exits)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:scan_plus = void(wild int8->:st) {
+    if (lex_match(st, 43i32) == 1i32) {
+        lex_add_token(st, TK_PLUS_PLUS);
+    } else if (lex_match(st, 61i32) == 1i32) {
+        lex_add_token(st, TK_PLUS_EQUAL);
+    } else {
+        lex_add_token(st, TK_PLUS);
+    }
+};
+
+func:scan_minus = void(wild int8->:st) {
+    if (lex_match(st, 45i32) == 1i32) {
+        lex_add_token(st, TK_MINUS_MINUS);
+    } else if (lex_match(st, 61i32) == 1i32) {
+        lex_add_token(st, TK_MINUS_EQUAL);
+    } else if (lex_match(st, 62i32) == 1i32) {
+        lex_add_token(st, TK_ARROW);
+    } else {
+        lex_add_token(st, TK_MINUS);
+    }
+};
+
+func:scan_star = void(wild int8->:st) {
+    if (lex_match(st, 61i32) == 1i32) {
+        lex_add_token(st, TK_STAR_EQUAL);
+    } else {
+        lex_add_token(st, TK_STAR);
+    }
+};
+
+func:scan_fslash = void(wild int8->:st) {
+    if (lex_match(st, 61i32) == 1i32) {
+        lex_add_token(st, TK_SLASH_EQUAL);
+    } else {
+        lex_add_token(st, TK_SLASH);
+    }
+};
+
+func:scan_pct = void(wild int8->:st) {
+    if (lex_match(st, 61i32) == 1i32) {
+        lex_add_token(st, TK_PERCENT_EQUAL);
+    } else {
+        lex_add_token(st, TK_PERCENT);
+    }
+};
+
+func:scan_eq = void(wild int8->:st) {
+    if (lex_match(st, 61i32) == 1i32) {
+        lex_add_token(st, TK_EQUAL_EQUAL);
+    } else if (lex_match(st, 62i32) == 1i32) {
+        lex_add_token(st, TK_FAT_ARROW);
+    } else {
+        lex_add_token(st, TK_EQUAL);
+    }
+};
+
+func:scan_bang = void(wild int8->:st) {
+    if (lex_match(st, 33i32) == 1i32) {
+        if (lex_match(st, 33i32) == 1i32) {
+            lex_add_token(st, TK_BANG_BANG_BANG);
+        } else {
+            lex_error(st, "Unexpected '!!' - did you mean '!!!' for failsafe call?");
+            lex_add_token(st, TK_BANG);
+            lex_add_token(st, TK_BANG);
+        }
+    } else if (lex_match(st, 61i32) == 1i32) {
+        lex_add_token(st, TK_BANG_EQUAL);
+    } else {
+        lex_add_token(st, TK_BANG);
+    }
+};
+
+func:scan_less = void(wild int8->:st) {
+    if (lex_match(st, 61i32) == 1i32) {
+        if (lex_match(st, 62i32) == 1i32) {
+            lex_add_token(st, TK_SPACESHIP);
+        } else {
+            lex_add_token(st, TK_LESS_EQUAL);
+        }
+    } else if (lex_match(st, 60i32) == 1i32) {
+        lex_add_token(st, TK_SHIFT_LEFT);
+    } else if (lex_match(st, 45i32) == 1i32) {
+        lex_add_token(st, TK_LEFT_ARROW);
+    } else if (lex_match(st, 124i32) == 1i32) {
+        lex_add_token(st, TK_PIPE_LEFT);
+    } else {
+        lex_add_token(st, TK_LESS);
+    }
+};
+
+func:scan_greater = void(wild int8->:st) {
+    if (lex_match(st, 61i32) == 1i32) {
+        lex_add_token(st, TK_GREATER_EQUAL);
+    } else if (lex_match(st, 62i32) == 1i32) {
+        lex_add_token(st, TK_SHIFT_RIGHT);
+    } else {
+        lex_add_token(st, TK_GREATER);
+    }
+};
+
+func:scan_amp = void(wild int8->:st) {
+    if (lex_match(st, 38i32) == 1i32) {
+        lex_add_token(st, TK_AND_AND);
+    } else {
+        lex_add_token(st, TK_AMPERSAND);
+    }
+};
+
+func:scan_bar = void(wild int8->:st) {
+    if (lex_match(st, 124i32) == 1i32) {
+        lex_add_token(st, TK_OR_OR);
+    } else if (lex_match(st, 62i32) == 1i32) {
+        lex_add_token(st, TK_PIPE_RIGHT);
+    } else {
+        lex_add_token(st, TK_PIPE);
+    }
+};
+
+func:scan_question = void(wild int8->:st) {
+    if (lex_match(st, 46i32) == 1i32) {
+        lex_add_token(st, TK_SAFE_NAV);
+    } else if (lex_match(st, 63i32) == 1i32) {
+        lex_add_token(st, TK_NULL_COALESCE);
+    } else if (lex_match(st, 33i32) == 1i32) {
+        lex_add_token(st, TK_QUESTION_BANG);
+    } else {
+        lex_add_token(st, TK_QUESTION);
+    }
+};
+
+func:scan_dot = void(wild int8->:st) {
+    if (lex_match(st, 46i32) == 1i32) {
+        if (lex_match(st, 46i32) == 1i32) {
+            lex_add_token(st, TK_DOT_DOT_DOT);
+        } else {
+            lex_add_token(st, TK_DOT_DOT);
+        }
+    } else {
+        lex_add_token(st, TK_DOT);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Main token scanning dispatch (split to avoid ISel crash)
+// ═══════════════════════════════════════════════════════════════════════
+
+// Dispatch: single-char punctuation tokens
+func:dispatch_punct = int32(wild int8->:st, int32:c) {
+    if (c == 40i32) { lex_add_token(st, TK_LEFT_PAREN); }
+    else if (c == 41i32) { lex_add_token(st, TK_RIGHT_PAREN); }
+    else if (c == 123i32) { lex_add_token(st, TK_LEFT_BRACE); }
+    else if (c == 125i32) { lex_add_token(st, TK_RIGHT_BRACE); }
+    else if (c == 91i32) { lex_add_token(st, TK_LEFT_BRACKET); }
+    else if (c == 93i32) { lex_add_token(st, TK_RIGHT_BRACKET); }
+    else if (c == 59i32) { lex_add_token(st, TK_SEMICOLON); }
+    else if (c == 44i32) { lex_add_token(st, TK_COMMA); }
+    else if (c == 126i32) { lex_add_token(st, TK_TILDE); }
+    else if (c == 94i32) { lex_add_token(st, TK_CARET); }
+    else if (c == 58i32) { lex_add_token(st, TK_COLON); }
+    else { pass(0i32); }
+    pass(1i32);
+};
+
+// Dispatch: special starters (@cast, $, #, backtick, string, char)
+func:dispatch_special = int32(wild int8->:st, int32:c) {
+    if (c == 64i32) {
+        int32:cast_r = is_at_cast(st);
+        if (cast_r > 0i32) {
+            scan_cast_keyword(st);
+        } else {
+            lex_add_token(st, TK_AT);
+        }
+    }
+    else if (c == 36i32) { lex_add_token(st, TK_DOLLAR); }
+    else if (c == 35i32) { lex_add_token(st, TK_HASH); }
+    else if (c == 96i32) { scan_template_literal(st); }
+    else if (c == 34i32) { scan_string(st); }
+    else if (c == 39i32) { scan_char(st); }
+    else { pass(0i32); }
+    pass(1i32);
+};
+
+// Dispatch: multi-char operators
+func:dispatch_ops = int32(wild int8->:st, int32:c) {
+    if (c == 43i32) { scan_plus(st); }
+    else if (c == 45i32) { scan_minus(st); }
+    else if (c == 42i32) { scan_star(st); }
+    else if (c == 47i32) { scan_fslash(st); }
+    else if (c == 37i32) { scan_pct(st); }
+    else if (c == 61i32) { scan_eq(st); }
+    else if (c == 33i32) { scan_bang(st); }
+    else if (c == 60i32) { scan_less(st); }
+    else if (c == 62i32) { scan_greater(st); }
+    else if (c == 38i32) { scan_amp(st); }
+    else if (c == 124i32) { scan_bar(st); }
+    else if (c == 63i32) { scan_question(st); }
+    else if (c == 46i32) { scan_dot(st); }
+    else { pass(0i32); }
+    pass(1i32);
+};
+
+func:scan_one_token = void(wild int8->:st) {
+    skip_whitespace(st);
+    if (lex_at_end(st) == 1i32) { return; }
+
+    lex_start_token(st);
+    int32:c = lex_advance(st);
+
+    int32:r1 = dispatch_punct(st, c);
+    if (r1 == 1i32) { return; }
+    int32:r2 = dispatch_special(st, c);
+    if (r2 == 1i32) { return; }
+    int32:r3 = dispatch_ops(st, c);
+    if (r3 == 1i32) { return; }
+
+    // Identifiers and keywords
+    if (lex_is_alpha(c) == 1i32) { scan_identifier(st); return; }
+
+    // Numbers
+    if (lex_is_digit(c) == 1i32) { scan_number(st); return; }
+
+    // Unknown character
+    lex_error(st, "Unexpected character");
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Main tokenize function
+// ═══════════════════════════════════════════════════════════════════════
+
+pub func:tokenize = wild int8->(string:source) {
+    wild int8->:st = lex_new(source);
+    while (lex_at_end(st) == 0i32) {
+        scan_one_token(st);
+    }
+    // Add EOF token
+    lex_start_token(st);
+    lex_add_token(st, TK_EOF);
+    pass(st);
+};

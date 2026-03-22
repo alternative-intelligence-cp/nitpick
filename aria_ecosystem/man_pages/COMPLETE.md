@@ -43,7 +43,7 @@ Successfully built a **production-ready man page system** for the Aria programmi
 
 #### 5. **Debian Packaging** (`debian/`)
    - Package: `aria-man-pages`
-   - Version: 0.1.0-1
+   - Version: 0.2.0-1
    - Architecture: all
    - Section: doc
    - Ready for ariax distro
@@ -124,7 +124,7 @@ sudo ./install.sh
 dpkg-buildpackage -us -uc
 
 # Install package
-sudo dpkg -i ../aria-man-pages_0.1.0-1_all.deb
+sudo dpkg -i ../aria-man-pages_0.2.0-1_all.deb
 
 # Package will be in ariax repos
 apt-get install aria-man-pages

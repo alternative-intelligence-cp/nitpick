@@ -1,0 +1,1906 @@
+// ═══════════════════════════════════════════════════════════════════════
+// parser.aria — Self-hosted recursive descent parser for Aria
+// Phase 5.2 of the self-hosting plan
+//
+// Takes a LexState (from lexer.aria's tokenize()) and produces an AST
+// using opaque node handles managed by ast_helpers.cpp.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════
+// Node Type Constants (NT_*)
+// ═══════════════════════════════════════════════════════════════════════
+
+// Expressions
+int32:NT_LITERAL = 0i32;
+int32:NT_IDENTIFIER = 1i32;
+int32:NT_BINARY_OP = 2i32;
+int32:NT_UNARY_OP = 3i32;
+int32:NT_CALL = 4i32;
+int32:NT_INDEX = 5i32;
+int32:NT_MEMBER_ACCESS = 6i32;
+int32:NT_POINTER_MEMBER = 7i32;
+int32:NT_LAMBDA = 8i32;
+int32:NT_TEMPLATE_LITERAL = 9i32;
+int32:NT_RANGE = 10i32;
+int32:NT_TERNARY = 11i32;
+int32:NT_SAFE_NAV = 12i32;
+int32:NT_NULL_COALESCE = 13i32;
+int32:NT_PIPELINE = 14i32;
+int32:NT_UNWRAP = 15i32;
+int32:NT_ARRAY_LITERAL = 16i32;
+int32:NT_OBJECT_LITERAL = 17i32;
+int32:NT_AWAIT = 18i32;
+int32:NT_MOVE = 19i32;
+int32:NT_VECTOR_CONSTRUCTOR = 20i32;
+int32:NT_CAST = 21i32;
+
+// Statements / Declarations
+int32:NT_VAR_DECL = 22i32;
+int32:NT_FUNC_DECL = 23i32;
+int32:NT_STRUCT_DECL = 24i32;
+int32:NT_ENUM_DECL = 25i32;
+int32:NT_TYPE_DECL = 26i32;
+int32:NT_OPAQUE_STRUCT = 27i32;
+int32:NT_TRAIT_DECL = 28i32;
+int32:NT_IMPL_DECL = 29i32;
+int32:NT_RETURN = 30i32;
+int32:NT_PASS = 31i32;
+int32:NT_FAIL = 32i32;
+int32:NT_BREAK = 33i32;
+int32:NT_CONTINUE = 34i32;
+int32:NT_DEFER = 35i32;
+int32:NT_BLOCK = 36i32;
+int32:NT_EXPRESSION_STMT = 37i32;
+
+// We skip 38 (gap in the enum)
+
+// Control flow
+int32:NT_IF = 39i32;
+int32:NT_WHILE = 40i32;
+int32:NT_FOR = 41i32;
+int32:NT_LOOP = 42i32;
+int32:NT_TILL = 43i32;
+int32:NT_WHEN = 44i32;
+int32:NT_PICK = 45i32;
+int32:NT_PICK_CASE = 46i32;
+int32:NT_FALL = 47i32;
+
+// Types
+int32:NT_TYPE_ANNOTATION = 48i32;
+int32:NT_GENERIC_TYPE = 49i32;
+int32:NT_ARRAY_TYPE = 50i32;
+int32:NT_POINTER_TYPE = 51i32;
+int32:NT_SAFE_REF_TYPE = 52i32;
+int32:NT_OPTIONAL_TYPE = 53i32;
+int32:NT_FUNCTION_TYPE = 54i32;
+
+// Modules
+int32:NT_USE = 55i32;
+int32:NT_MOD = 56i32;
+int32:NT_EXTERN = 57i32;
+int32:NT_PROGRAM = 58i32;
+
+// Special
+int32:NT_ASSIGNMENT = 59i32;
+int32:NT_PARAMETER = 60i32;
+int32:NT_ARGUMENT = 61i32;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Token Type Constants (subset needed by the parser)
+// Must match values from lexer.aria / token.h
+// ═══════════════════════════════════════════════════════════════════════
+
+// Memory qualifiers
+int32:TK_KW_WILD = 0i32;
+int32:TK_KW_WILDX = 1i32;
+int32:TK_KW_STACK = 2i32;
+int32:TK_KW_GC = 3i32;
+int32:TK_KW_DEFER = 4i32;
+int32:TK_KW_MOVE = 5i32;
+
+// Control flow
+int32:TK_KW_IF = 11i32;
+int32:TK_KW_ELSE = 12i32;
+int32:TK_KW_WHILE = 13i32;
+int32:TK_KW_FOR = 14i32;
+int32:TK_KW_LOOP = 15i32;
+int32:TK_KW_TILL = 16i32;
+int32:TK_KW_WHEN = 17i32;
+int32:TK_KW_THEN = 18i32;
+int32:TK_KW_END = 19i32;
+int32:TK_KW_PICK = 20i32;
+int32:TK_KW_FALL = 21i32;
+int32:TK_KW_BREAK = 22i32;
+int32:TK_KW_CONTINUE = 23i32;
+int32:TK_KW_RETURN = 24i32;
+int32:TK_KW_PASS = 25i32;
+int32:TK_KW_FAIL = 26i32;
+
+// Async
+int32:TK_KW_ASYNC = 27i32;
+int32:TK_KW_AWAIT = 28i32;
+int32:TK_KW_IN = 30i32;
+
+// Declarations
+int32:TK_KW_FUNC = 31i32;
+int32:TK_KW_STRUCT = 32i32;
+int32:TK_KW_ENUM = 33i32;
+int32:TK_KW_TYPE = 34i32;
+int32:TK_KW_OPAQUE = 35i32;
+int32:TK_KW_TRAIT = 36i32;
+int32:TK_KW_IMPL = 37i32;
+int32:TK_KW_USE = 38i32;
+int32:TK_KW_MOD = 39i32;
+int32:TK_KW_PUB = 40i32;
+int32:TK_KW_EXTERN = 41i32;
+int32:TK_KW_CONST = 42i32;
+int32:TK_KW_FIXED = 43i32;
+int32:TK_KW_AS = 45i32;
+
+// Design by contract
+int32:TK_KW_REQUIRES = 46i32;
+int32:TK_KW_ENSURES = 47i32;
+int32:TK_KW_INVARIANT = 48i32;
+
+// Special keywords
+int32:TK_KW_IS = 115i32;
+int32:TK_KW_NULL = 116i32;
+int32:TK_KW_NIL = 117i32;
+int32:TK_KW_TRUE = 118i32;
+int32:TK_KW_FALSE = 119i32;
+int32:TK_KW_ERR = 120i32;
+int32:TK_KW_UNKNOWN = 121i32;
+
+// Cast
+int32:TK_KW_CAST = 122i32;
+int32:TK_KW_CAST_UNCHECKED = 123i32;
+
+// Operators
+int32:TK_PLUS = 124i32;
+int32:TK_MINUS = 125i32;
+int32:TK_STAR = 126i32;
+int32:TK_PLUS_PLUS = 129i32;
+int32:TK_MINUS_MINUS = 130i32;
+int32:TK_EQUAL = 131i32;
+int32:TK_LESS = 139i32;
+int32:TK_GREATER = 141i32;
+int32:TK_BANG = 146i32;
+int32:TK_AMPERSAND = 149i32;
+int32:TK_TILDE = 152i32;
+int32:TK_AT = 155i32;
+int32:TK_DOLLAR = 156i32;
+int32:TK_HASH = 157i32;
+int32:TK_ARROW = 158i32;
+int32:TK_LEFT_ARROW = 159i32;
+int32:TK_FAT_ARROW = 160i32;
+int32:TK_SAFE_NAV = 161i32;
+int32:TK_NULL_COALESCE = 162i32;
+int32:TK_QUESTION = 163i32;
+int32:TK_PIPE_RIGHT = 164i32;
+int32:TK_DOT_DOT = 166i32;
+int32:TK_DOT_DOT_DOT = 167i32;
+
+// Punctuation
+int32:TK_DOT = 174i32;
+int32:TK_COMMA = 175i32;
+int32:TK_COLON = 176i32;
+int32:TK_SEMICOLON = 177i32;
+int32:TK_LEFT_PAREN = 178i32;
+int32:TK_RIGHT_PAREN = 179i32;
+int32:TK_LEFT_BRACE = 180i32;
+int32:TK_RIGHT_BRACE = 181i32;
+int32:TK_LEFT_BRACKET = 182i32;
+int32:TK_RIGHT_BRACKET = 183i32;
+
+// Literals
+int32:TK_INTEGER = 184i32;
+int32:TK_FLOAT = 185i32;
+int32:TK_LIT_STRING = 216i32;
+int32:TK_CHAR = 217i32;
+int32:TK_TERNARY = 218i32;
+int32:TK_NONARY = 219i32;
+
+// Special tokens
+int32:TK_IDENTIFIER = 220i32;
+int32:TK_EOF = 221i32;
+int32:TK_ERROR = 222i32;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Literal kind flags (stored in ast_set_int for NT_LITERAL nodes)
+// ═══════════════════════════════════════════════════════════════════════
+
+int32:LIT_INT = 1i32;
+int32:LIT_FLOAT = 2i32;
+int32:LIT_STRING = 3i32;
+int32:LIT_BOOL = 4i32;
+int32:LIT_NULL = 5i32;
+int32:LIT_CHAR = 6i32;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Flag bits for declarations
+// ═══════════════════════════════════════════════════════════════════════
+
+int32:FLAG_PUB = 1i32;
+int32:FLAG_CONST = 2i32;
+int32:FLAG_FIXED = 4i32;
+int32:FLAG_ASYNC = 8i32;
+int32:FLAG_EXTERN = 16i32;
+int32:FLAG_UNCHECKED_CAST = 32i32;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Extern Declarations — ast_helpers.cpp C helper layer
+// ═══════════════════════════════════════════════════════════════════════
+
+// AST node management
+extern func:ast_new_node = wild int8*(int32:typ, int32:line, int32:col);
+extern func:ast_set_str = void(wild int8*:node, string:s);
+extern func:ast_set_str2 = void(wild int8*:node, string:s);
+extern func:ast_set_str3 = void(wild int8*:node, string:s);
+extern func:ast_set_int = void(wild int8*:node, int64:val);
+extern func:ast_set_float = void(wild int8*:node, flt64:val);
+extern func:ast_set_bool = void(wild int8*:node, int32:val);
+extern func:ast_set_flags = void(wild int8*:node, int32:flags);
+extern func:ast_add_child = void(wild int8*:parent, wild int8*:child);
+extern func:ast_child_count = int64(wild int8*:node);
+extern func:ast_child_at = wild int8*(wild int8*:node, int64:idx);
+extern func:ast_get_type = int32(wild int8*:node);
+extern func:ast_get_str = string(wild int8*:node);
+extern func:ast_get_str2 = string(wild int8*:node);
+extern func:ast_get_str3 = string(wild int8*:node);
+extern func:ast_get_int = int64(wild int8*:node);
+extern func:ast_get_float = flt64(wild int8*:node);
+extern func:ast_get_bool = int32(wild int8*:node);
+extern func:ast_get_flags = int32(wild int8*:node);
+extern func:ast_get_line = int32(wild int8*:node);
+extern func:ast_get_col = int32(wild int8*:node);
+extern func:ast_free = void(wild int8*:node);
+
+// ParseState management
+extern func:ps_new = wild int8*(wild int8*:lex_state);
+extern func:ps_free = void(wild int8*:state);
+
+// Token navigation
+extern func:ps_peek = int32(wild int8*:state);
+extern func:ps_peek_next = int32(wild int8*:state);
+extern func:ps_peek_at = int32(wild int8*:state, int64:offset);
+extern func:ps_advance = void(wild int8*:state);
+extern func:ps_is_at_end = int32(wild int8*:state);
+extern func:ps_check = int32(wild int8*:state, int32:typ);
+extern func:ps_match = int32(wild int8*:state, int32:typ);
+extern func:ps_expect = int32(wild int8*:state, int32:typ, string:msg);
+extern func:ps_current_pos = int64(wild int8*:state);
+extern func:ps_set_pos = void(wild int8*:state, int64:pos);
+extern func:ps_previous_type = int32(wild int8*:state);
+
+// Current token accessors
+extern func:ps_peek_lexeme = string(wild int8*:state);
+extern func:ps_peek_line = int32(wild int8*:state);
+extern func:ps_peek_col = int32(wild int8*:state);
+extern func:ps_peek_int_val = int64(wild int8*:state);
+extern func:ps_peek_float_val = flt64(wild int8*:state);
+extern func:ps_peek_str_val = string(wild int8*:state);
+extern func:ps_peek_string_value = string(wild int8*:state);
+
+// Previous token accessors
+extern func:ps_previous_lexeme = string(wild int8*:state);
+extern func:ps_previous_line = int32(wild int8*:state);
+extern func:ps_previous_col = int32(wild int8*:state);
+extern func:ps_previous_int_val = int64(wild int8*:state);
+extern func:ps_previous_float_val = flt64(wild int8*:state);
+extern func:ps_previous_str_val = string(wild int8*:state);
+
+// Error management
+extern func:ps_add_error = void(wild int8*:state, string:msg);
+extern func:ps_error_count = int64(wild int8*:state);
+extern func:ps_get_error = string(wild int8*:state, int64:idx);
+extern func:ps_synchronize = void(wild int8*:state);
+
+// Lookup helpers
+extern func:ast_is_type_keyword = int32(int32:tok);
+extern func:ast_get_precedence = int32(int32:tok);
+extern func:ast_is_binary_op = int32(int32:tok);
+extern func:ast_is_unary_op = int32(int32:tok);
+extern func:ast_is_assignment_op = int32(int32:tok);
+extern func:ast_is_name_token = int32(int32:tok);
+extern func:ast_is_sync_keyword = int32(int32:tok);
+extern func:ast_is_int_literal = int32(int32:tok);
+extern func:ast_is_float_literal = int32(int32:tok);
+extern func:ast_is_memory_qualifier = int32(int32:tok);
+extern func:ast_is_postfix_op = int32(int32:tok);
+
+// Null pointer helper
+extern func:ast_null_ptr = wild int8*();
+
+// String helpers (workaround for Aria string concat codegen bug)
+extern func:ast_concat_str = string(string:a, string:b);
+extern func:ast_concat_str3 = string(string:a, string:b, string:c);
+
+// I/O for debugging
+extern func:puts = int32(string:s);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Helper: consume a name token (identifier or contextual keyword)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:consume_name = string(wild int8->:ps, string:err_msg) {
+    int32:tok = ps_peek(ps);
+    int32:name_ok = ast_is_name_token(tok);
+    if (name_ok == 1i32) {
+        string:name = ps_peek_lexeme(ps);
+        ps_advance(ps);
+        pass(name);
+    }
+    ps_add_error(ps, err_msg);
+    pass("");
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Type Expression Parsing
+// ═══════════════════════════════════════════════════════════════════════
+
+// Parse a type annotation.
+// Handles: primitive types, memory-qualified types, pointer types,
+//          array types, optional types, generic types, NIL, void
+func:parse_type_expr = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    int32:tok = ps_peek(ps);
+    wild int8->:node = ast_null_ptr();
+
+    // Memory qualifier prefix: wild, wildx, stack, gc
+    int32:mem_qual = ast_is_memory_qualifier(tok);
+    string:mem_name = "";
+    if (mem_qual == 1i32) {
+        mem_name = ps_peek_lexeme(ps);
+        ps_advance(ps);
+        tok = ps_peek(ps);
+    }
+
+    // NIL type (for void returns in non-extern context)
+    if (tok == TK_KW_NIL) {
+        wild int8->:nn_nil = ast_new_node(NT_TYPE_ANNOTATION, line, col);
+        ast_set_str(nn_nil, "NIL");
+        node = nn_nil;
+        ps_advance(ps);
+    } else if (ast_is_type_keyword(tok) == 1i32) {
+        // Primitive type keyword
+        string:type_name = ps_peek_lexeme(ps);
+        ps_advance(ps);
+        wild int8->:nn_prim = ast_new_node(NT_TYPE_ANNOTATION, line, col);
+        ast_set_str(nn_prim, type_name);
+        node = nn_prim;
+    } else if (tok == TK_IDENTIFIER) {
+        // User-defined type name
+        string:type_name = ps_peek_lexeme(ps);
+        ps_advance(ps);
+        wild int8->:nn_udt = ast_new_node(NT_TYPE_ANNOTATION, line, col);
+        ast_set_str(nn_udt, type_name);
+        node = nn_udt;
+    } else if (tok == TK_KW_FUNC) {
+        // Function type
+        wild int8->:nn_fn = ast_new_node(NT_FUNCTION_TYPE, line, col);
+        node = nn_fn;
+        ps_advance(ps);
+    } else {
+        ps_add_error(ps, "Expected type");
+        wild int8->:nn_err = ast_new_node(NT_TYPE_ANNOTATION, line, col);
+        ast_set_str(nn_err, "error");
+        node = nn_err;
+    }
+
+    // Set memory qualifier if present
+    int64:mem_len = string_length(mem_name);
+    if (mem_len > 0i64) {
+        ast_set_str2(node, mem_name);
+    }
+
+    // Parse type suffixes: ->, *, [], ?, <T>, $
+    int32:done = 0i32;
+    while (done == 0i32) {
+        int32:stok = ps_peek(ps);
+        if (stok == TK_ARROW) {
+            // Pointer type: int8->
+            wild int8->:ptr_node = ast_new_node(NT_POINTER_TYPE, line, col);
+            ast_add_child(ptr_node, node);
+            ast_set_str(ptr_node, "->");
+            ps_advance(ps);
+            node = ptr_node;
+        } else if (stok == TK_STAR) {
+            // Raw pointer: int8*
+            wild int8->:ptr_node = ast_new_node(NT_POINTER_TYPE, line, col);
+            ast_add_child(ptr_node, node);
+            ast_set_str(ptr_node, "*");
+            ps_advance(ps);
+            node = ptr_node;
+        } else if (stok == TK_LEFT_BRACKET) {
+            // Array type: int32[] or int32[100]
+            ps_advance(ps);
+            wild int8->:arr_node = ast_new_node(NT_ARRAY_TYPE, line, col);
+            ast_add_child(arr_node, node);
+            if (ps_check(ps, TK_RIGHT_BRACKET) == 0i32) {
+                // Sized array
+                wild int8->:size_expr = raw(parse_expression(ps));
+                ast_add_child(arr_node, size_expr);
+            }
+            ps_expect(ps, TK_RIGHT_BRACKET, "Expected ']' after array type");
+            node = arr_node;
+        } else if (stok == TK_QUESTION) {
+            // Optional type: int32?
+            wild int8->:opt_node = ast_new_node(NT_OPTIONAL_TYPE, line, col);
+            ast_add_child(opt_node, node);
+            ps_advance(ps);
+            node = opt_node;
+        } else if (stok == TK_DOLLAR) {
+            // Safe ref type: int64$
+            wild int8->:ref_node = ast_new_node(NT_SAFE_REF_TYPE, line, col);
+            ast_add_child(ref_node, node);
+            ps_advance(ps);
+            node = ref_node;
+        } else if (stok == TK_LESS) {
+            // Generic type: Array<int32>
+            ps_advance(ps);
+            wild int8->:gen_node = ast_new_node(NT_GENERIC_TYPE, line, col);
+            ast_add_child(gen_node, node);
+            // Parse type arguments
+            if (ps_check(ps, TK_GREATER) == 0i32) {
+                wild int8->:arg = raw(parse_type_expr(ps));
+                ast_add_child(gen_node, arg);
+                while (ps_match(ps, TK_COMMA) == 1i32) {
+                    wild int8->:arg2 = raw(parse_type_expr(ps));
+                    ast_add_child(gen_node, arg2);
+                }
+            }
+            ps_expect(ps, TK_GREATER, "Expected '>' after generic type args");
+            node = gen_node;
+        } else {
+            done = 1i32;
+        }
+    }
+
+    pass(node);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Expression Parsing — Primary (literal and atom dispatch)
+// ═══════════════════════════════════════════════════════════════════════
+
+// Make an integer literal node
+func:make_int_literal = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    int64:val = ps_peek_int_val(ps);
+    int32:tok = ps_peek(ps);
+    wild int8->:node = ast_new_node(NT_LITERAL, line, col);
+    ast_set_int(node, val);
+    ast_set_bool(node, LIT_INT);
+    // Store the token type for typed literals (i32, u64, etc.)
+    ast_set_flags(node, tok);
+    ps_advance(ps);
+    pass(node);
+};
+
+// Make a float literal node
+func:make_float_literal = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    flt64:val = ps_peek_float_val(ps);
+    int32:tok = ps_peek(ps);
+    wild int8->:node = ast_new_node(NT_LITERAL, line, col);
+    ast_set_float(node, val);
+    ast_set_bool(node, LIT_FLOAT);
+    ast_set_flags(node, tok);
+    ps_advance(ps);
+    pass(node);
+};
+
+// Make a string literal node
+func:make_string_literal = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    string:val = ps_peek_string_value(ps);
+    wild int8->:node = ast_new_node(NT_LITERAL, line, col);
+    ast_set_str(node, val);
+    ast_set_bool(node, LIT_STRING);
+    ps_advance(ps);
+    pass(node);
+};
+
+// Make a char literal node
+func:make_char_literal = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    string:val = ps_peek_str_val(ps);
+    wild int8->:node = ast_new_node(NT_LITERAL, line, col);
+    ast_set_str(node, val);
+    ast_set_bool(node, LIT_CHAR);
+    ps_advance(ps);
+    pass(node);
+};
+
+// Make a boolean literal node
+func:make_bool_literal = wild int8->(wild int8->:ps, int32:bval) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    wild int8->:node = ast_new_node(NT_LITERAL, line, col);
+    ast_set_int(node, @cast<int64>(bval));
+    ast_set_bool(node, LIT_BOOL);
+    ps_advance(ps);
+    pass(node);
+};
+
+// Make a null/nil literal node
+func:make_null_literal = wild int8->(wild int8->:ps, string:which) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    wild int8->:node = ast_new_node(NT_LITERAL, line, col);
+    ast_set_str(node, which);
+    ast_set_bool(node, LIT_NULL);
+    ps_advance(ps);
+    pass(node);
+};
+
+// Parse a cast expression: @cast<Type>(expr) or @cast_unchecked<Type>(expr)
+func:parse_cast_expr = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    int32:tok = ps_peek(ps);
+    int32:unchecked = 0i32;
+    if (tok == TK_KW_CAST_UNCHECKED) {
+        unchecked = 1i32;
+    }
+    ps_advance(ps);
+    ps_expect(ps, TK_LESS, "Expected '<' after @cast");
+    wild int8->:target_type = raw(parse_type_expr(ps));
+    ps_expect(ps, TK_GREATER, "Expected '>' after cast type");
+    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after cast type");
+    wild int8->:expr = raw(parse_expression(ps));
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after cast expression");
+    wild int8->:node = ast_new_node(NT_CAST, line, col);
+    ast_add_child(node, target_type);
+    ast_add_child(node, expr);
+    if (unchecked == 1i32) {
+        ast_set_flags(node, FLAG_UNCHECKED_CAST);
+    }
+    pass(node);
+};
+
+// Parse an array literal: [expr, expr, ...]
+func:parse_array_literal = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume [
+    wild int8->:node = ast_new_node(NT_ARRAY_LITERAL, line, col);
+    if (ps_check(ps, TK_RIGHT_BRACKET) == 0i32) {
+        wild int8->:elem = raw(parse_expression(ps));
+        ast_add_child(node, elem);
+        while (ps_match(ps, TK_COMMA) == 1i32) {
+            if (ps_check(ps, TK_RIGHT_BRACKET) == 1i32) {
+                break;
+            }
+            wild int8->:elem2 = raw(parse_expression(ps));
+            ast_add_child(node, elem2);
+        }
+    }
+    ps_expect(ps, TK_RIGHT_BRACKET, "Expected ']' after array literal");
+    pass(node);
+};
+
+// Parse an object literal: { key: value, ... }
+func:parse_object_literal = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume {
+    wild int8->:node = ast_new_node(NT_OBJECT_LITERAL, line, col);
+    if (ps_check(ps, TK_RIGHT_BRACE) == 0i32) {
+        // key: value
+        string:key = raw(consume_name(ps, "Expected key in object literal"));
+        ps_expect(ps, TK_COLON, "Expected ':' after object key");
+        wild int8->:val = raw(parse_expression(ps));
+        wild int8->:pair = ast_new_node(NT_IDENTIFIER, line, col);
+        ast_set_str(pair, key);
+        ast_add_child(pair, val);
+        ast_add_child(node, pair);
+        while (ps_match(ps, TK_COMMA) == 1i32) {
+            if (ps_check(ps, TK_RIGHT_BRACE) == 1i32) {
+                break;
+            }
+            string:key2 = raw(consume_name(ps, "Expected key in object literal"));
+            ps_expect(ps, TK_COLON, "Expected ':' after object key");
+            wild int8->:val2 = raw(parse_expression(ps));
+            wild int8->:pair2 = ast_new_node(NT_IDENTIFIER, ps_previous_line(ps), ps_previous_col(ps));
+            ast_set_str(pair2, key2);
+            ast_add_child(pair2, val2);
+            ast_add_child(node, pair2);
+        }
+    }
+    ps_expect(ps, TK_RIGHT_BRACE, "Expected '}' after object literal");
+    pass(node);
+};
+
+// Parse grouped expression: (expr)
+func:parse_grouped = wild int8->(wild int8->:ps) {
+    ps_advance(ps);  // consume (
+    wild int8->:expr = raw(parse_expression(ps));
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after expression");
+    pass(expr);
+};
+
+// Parse primary expression — dispatch based on token type.
+// Uses a single result variable with one pass() at end.
+func:parse_primary = wild int8->(wild int8->:ps) {
+    int32:tok = ps_peek(ps);
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    wild int8->:result = ast_null_ptr();
+
+    int32:is_int = ast_is_int_literal(tok);
+    int32:is_flt = ast_is_float_literal(tok);
+
+    if (is_int == 1i32) {
+        result = raw(make_int_literal(ps));
+    } else if (is_flt == 1i32) {
+        result = raw(make_float_literal(ps));
+    } else if (tok == TK_LIT_STRING) {
+        result = raw(make_string_literal(ps));
+    } else if (tok == TK_CHAR) {
+        result = raw(make_char_literal(ps));
+    } else if (tok == TK_KW_TRUE) {
+        result = raw(make_bool_literal(ps, 1i32));
+    } else if (tok == TK_KW_FALSE) {
+        result = raw(make_bool_literal(ps, 0i32));
+    } else if (tok == TK_KW_NULL) {
+        result = raw(make_null_literal(ps, "null"));
+    } else if (tok == TK_KW_NIL) {
+        result = raw(make_null_literal(ps, "nil"));
+    } else if (tok == TK_KW_ERR) {
+        result = raw(make_null_literal(ps, "err"));
+    } else if (tok == TK_KW_UNKNOWN) {
+        result = raw(make_null_literal(ps, "unknown"));
+    } else if (tok == TK_IDENTIFIER) {
+        wild int8->:id_nn = ast_new_node(NT_IDENTIFIER, line, col);
+        string:id_lex = ps_peek_lexeme(ps);
+        ast_set_str(id_nn, id_lex);
+        ps_advance(ps);
+        result = id_nn;
+    } else if (tok == TK_LEFT_PAREN) {
+        result = raw(parse_grouped(ps));
+    } else if (tok == TK_LEFT_BRACKET) {
+        result = raw(parse_array_literal(ps));
+    } else if (tok == TK_LEFT_BRACE) {
+        result = raw(parse_object_literal(ps));
+    } else if (tok == TK_KW_CAST) {
+        result = raw(parse_cast_expr(ps));
+    } else if (tok == TK_KW_CAST_UNCHECKED) {
+        result = raw(parse_cast_expr(ps));
+    } else if (tok == TK_KW_AWAIT) {
+        ps_advance(ps);
+        wild int8->:await_expr = raw(parse_expression(ps));
+        wild int8->:nn_aw = ast_new_node(NT_AWAIT, line, col);
+        ast_add_child(nn_aw, await_expr);
+        result = nn_aw;
+    } else if (tok == TK_KW_MOVE) {
+        ps_advance(ps);
+        ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after move");
+        wild int8->:move_expr = raw(parse_expression(ps));
+        ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after move expression");
+        wild int8->:nn_mv = ast_new_node(NT_MOVE, line, col);
+        ast_add_child(nn_mv, move_expr);
+        result = nn_mv;
+    } else if (tok == TK_AT) {
+        // @ could be @cast - check next token
+        int32:next = ps_peek_next(ps);
+        if (next == TK_KW_CAST) {
+            ps_advance(ps);  // consume @
+            result = raw(parse_cast_expr(ps));
+        } else if (next == TK_KW_CAST_UNCHECKED) {
+            ps_advance(ps);  // consume @
+            result = raw(parse_cast_expr(ps));
+        } else {
+            // @ as address-of unary prefix — handled in parse_unary
+            ps_add_error(ps, "Unexpected '@'");
+            wild int8->:nn_at = ast_new_node(NT_LITERAL, line, col);
+            ast_set_bool(nn_at, LIT_NULL);
+            result = nn_at;
+            ps_advance(ps);
+        }
+    } else {
+        ps_add_error(ps, "Expected expression");
+        wild int8->:nn_err = ast_new_node(NT_LITERAL, line, col);
+        ast_set_bool(nn_err, LIT_NULL);
+        result = nn_err;
+    }
+
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Expression Parsing — Unary
+// ═══════════════════════════════════════════════════════════════════════
+
+func:parse_unary = wild int8->(wild int8->:ps) {
+    int32:tok = ps_peek(ps);
+    int32:is_unary = ast_is_unary_op(tok);
+    wild int8->:result = ast_null_ptr();
+
+    if (is_unary == 1i32) {
+        int32:line = ps_peek_line(ps);
+        int32:col = ps_peek_col(ps);
+        ps_advance(ps);
+        wild int8->:operand = raw(parse_unary(ps));
+        wild int8->:nn_u1 = ast_new_node(NT_UNARY_OP, line, col);
+        ast_set_int(nn_u1, @cast<int64>(tok));
+        ast_add_child(nn_u1, operand);
+        result = nn_u1;
+    } else if (tok == TK_PLUS_PLUS) {
+        // Prefix increment
+        int32:line = ps_peek_line(ps);
+        int32:col = ps_peek_col(ps);
+        ps_advance(ps);
+        wild int8->:operand = raw(parse_unary(ps));
+        wild int8->:nn_u2 = ast_new_node(NT_UNARY_OP, line, col);
+        ast_set_int(nn_u2, @cast<int64>(tok));
+        ast_set_str(nn_u2, "pre");
+        ast_add_child(nn_u2, operand);
+        result = nn_u2;
+    } else if (tok == TK_MINUS_MINUS) {
+        // Prefix decrement
+        int32:line = ps_peek_line(ps);
+        int32:col = ps_peek_col(ps);
+        ps_advance(ps);
+        wild int8->:operand = raw(parse_unary(ps));
+        wild int8->:nn_u3 = ast_new_node(NT_UNARY_OP, line, col);
+        ast_set_int(nn_u3, @cast<int64>(tok));
+        ast_set_str(nn_u3, "pre");
+        ast_add_child(nn_u3, operand);
+        result = nn_u3;
+    } else {
+        result = raw(parse_primary(ps));
+    }
+
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Expression Parsing — Postfix
+// ═══════════════════════════════════════════════════════════════════════
+
+// Parse function call arguments: (arg, arg, ...)
+func:parse_call_args = wild int8->(wild int8->:ps, wild int8->:callee) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume (
+    wild int8->:node = ast_new_node(NT_CALL, line, col);
+    ast_add_child(node, callee);
+    if (ps_check(ps, TK_RIGHT_PAREN) == 0i32) {
+        wild int8->:arg = raw(parse_expression(ps));
+        ast_add_child(node, arg);
+        while (ps_match(ps, TK_COMMA) == 1i32) {
+            wild int8->:arg2 = raw(parse_expression(ps));
+            ast_add_child(node, arg2);
+        }
+    }
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after arguments");
+    pass(node);
+};
+
+// Parse index expression: expr[index]
+func:parse_index = wild int8->(wild int8->:ps, wild int8->:obj) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume [
+    wild int8->:idx = raw(parse_expression(ps));
+    ps_expect(ps, TK_RIGHT_BRACKET, "Expected ']' after index");
+    wild int8->:node = ast_new_node(NT_INDEX, line, col);
+    ast_add_child(node, obj);
+    ast_add_child(node, idx);
+    pass(node);
+};
+
+// Parse member access: expr.member
+func:parse_member = wild int8->(wild int8->:ps, wild int8->:obj) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume .
+    string:member = raw(consume_name(ps, "Expected member name after '.'"));
+    wild int8->:node = ast_new_node(NT_MEMBER_ACCESS, line, col);
+    ast_set_str(node, member);
+    ast_add_child(node, obj);
+    pass(node);
+};
+
+// Parse pointer member: expr->member
+func:parse_ptr_member = wild int8->(wild int8->:ps, wild int8->:obj) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume ->
+    string:member = raw(consume_name(ps, "Expected member name after '->'"));
+    wild int8->:node = ast_new_node(NT_POINTER_MEMBER, line, col);
+    ast_set_str(node, member);
+    ast_add_child(node, obj);
+    pass(node);
+};
+
+// Parse safe navigation: expr?.member
+func:parse_safe_nav = wild int8->(wild int8->:ps, wild int8->:obj) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume ?.
+    string:member = raw(consume_name(ps, "Expected member name after '?.'"));
+    wild int8->:node = ast_new_node(NT_SAFE_NAV, line, col);
+    ast_set_str(node, member);
+    ast_add_child(node, obj);
+    pass(node);
+};
+
+// Apply one postfix operation to an expression
+func:apply_postfix = wild int8->(wild int8->:ps, wild int8->:left) {
+    int32:tok = ps_peek(ps);
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    wild int8->:result = left;
+
+    if (tok == TK_LEFT_PAREN) {
+        result = raw(parse_call_args(ps, left));
+    } else if (tok == TK_LEFT_BRACKET) {
+        result = raw(parse_index(ps, left));
+    } else if (tok == TK_DOT) {
+        result = raw(parse_member(ps, left));
+    } else if (tok == TK_ARROW) {
+        result = raw(parse_ptr_member(ps, left));
+    } else if (tok == TK_SAFE_NAV) {
+        result = raw(parse_safe_nav(ps, left));
+    } else if (tok == TK_PLUS_PLUS) {
+        ps_advance(ps);
+        wild int8->:nn_pp = ast_new_node(NT_UNARY_OP, line, col);
+        ast_set_int(nn_pp, @cast<int64>(TK_PLUS_PLUS));
+        ast_set_str(nn_pp, "post");
+        ast_add_child(nn_pp, left);
+        result = nn_pp;
+    } else if (tok == TK_MINUS_MINUS) {
+        ps_advance(ps);
+        wild int8->:nn_mm = ast_new_node(NT_UNARY_OP, line, col);
+        ast_set_int(nn_mm, @cast<int64>(TK_MINUS_MINUS));
+        ast_set_str(nn_mm, "post");
+        ast_add_child(nn_mm, left);
+        result = nn_mm;
+    } else if (tok == TK_QUESTION) {
+        // Unwrap: expr?
+        ps_advance(ps);
+        wild int8->:nn_uw = ast_new_node(NT_UNWRAP, line, col);
+        ast_add_child(nn_uw, left);
+        result = nn_uw;
+    }
+
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Expression Parsing — Binary (with precedence climbing)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:parse_binary_expr = wild int8->(wild int8->:ps, int32:min_prec) {
+    wild int8->:left = raw(parse_unary(ps));
+
+    // Apply postfix operators first (they bind tightest)
+    int32:ptok = ps_peek(ps);
+    int32:is_pf = ast_is_postfix_op(ptok);
+    while (is_pf == 1i32) {
+        left = raw(apply_postfix(ps, left));
+        ptok = ps_peek(ps);
+        is_pf = ast_is_postfix_op(ptok);
+    }
+
+    // Binary operator loop with precedence climbing
+    int32:cont = 1i32;
+    while (cont == 1i32) {
+        int32:tok = ps_peek(ps);
+        int32:prec = ast_get_precedence(tok);
+
+        if (prec < min_prec) {
+            cont = 0i32;
+        } else if (prec == 16i32) {
+            // Postfix (shouldn't reach here, but handle it)
+            left = raw(apply_postfix(ps, left));
+        } else if (prec == 0i32) {
+            // Assignment — right associative
+            int32:op_line = ps_peek_line(ps);
+            int32:op_col = ps_peek_col(ps);
+            int32:op_tok = tok;
+            ps_advance(ps);
+            wild int8->:right = raw(parse_binary_expr(ps, 0i32));
+            wild int8->:anode = ast_new_node(NT_ASSIGNMENT, op_line, op_col);
+            ast_set_int(anode, @cast<int64>(op_tok));
+            ast_add_child(anode, left);
+            ast_add_child(anode, right);
+            left = anode;
+        } else if (prec == 1i32) {
+            // Ternary: left is true_expr : false_expr
+            int32:op_line = ps_peek_line(ps);
+            int32:op_col = ps_peek_col(ps);
+            ps_advance(ps);  // consume 'is'
+            wild int8->:true_expr = raw(parse_binary_expr(ps, 2i32));
+            ps_expect(ps, TK_COLON, "Expected ':' in ternary expression");
+            wild int8->:false_expr = raw(parse_binary_expr(ps, 2i32));
+            wild int8->:tnode = ast_new_node(NT_TERNARY, op_line, op_col);
+            ast_add_child(tnode, left);
+            ast_add_child(tnode, true_expr);
+            ast_add_child(tnode, false_expr);
+            left = tnode;
+        } else if (prec == 10i32) {
+            // Range: start..end or start...end
+            int32:op_line = ps_peek_line(ps);
+            int32:op_col = ps_peek_col(ps);
+            int32:op_tok = tok;
+            ps_advance(ps);
+            wild int8->:right = raw(parse_binary_expr(ps, 11i32));
+            wild int8->:rnode = ast_new_node(NT_RANGE, op_line, op_col);
+            ast_set_int(rnode, @cast<int64>(op_tok));
+            ast_add_child(rnode, left);
+            ast_add_child(rnode, right);
+            left = rnode;
+        } else if (prec == 14i32) {
+            // Pipeline: |> or <|
+            int32:op_line = ps_peek_line(ps);
+            int32:op_col = ps_peek_col(ps);
+            int32:op_tok = tok;
+            ps_advance(ps);
+            wild int8->:right = raw(parse_binary_expr(ps, 15i32));
+            wild int8->:pnode = ast_new_node(NT_PIPELINE, op_line, op_col);
+            ast_set_int(pnode, @cast<int64>(op_tok));
+            ast_add_child(pnode, left);
+            ast_add_child(pnode, right);
+            left = pnode;
+        } else {
+            // Regular binary operator (left-associative)
+            int32:op_line = ps_peek_line(ps);
+            int32:op_col = ps_peek_col(ps);
+            int32:op_tok = tok;
+            ps_advance(ps);
+            wild int8->:right = raw(parse_binary_expr(ps, prec + 1i32));
+            wild int8->:bnode = ast_new_node(NT_BINARY_OP, op_line, op_col);
+            ast_set_int(bnode, @cast<int64>(op_tok));
+            ast_add_child(bnode, left);
+            ast_add_child(bnode, right);
+            left = bnode;
+        }
+    }
+
+    pass(left);
+};
+
+// Top-level expression entry point
+func:parse_expression = wild int8->(wild int8->:ps) {
+    wild int8->:result = raw(parse_binary_expr(ps, 0i32));
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Statement Parsing
+// ═══════════════════════════════════════════════════════════════════════
+
+// Parse a block: { statement* }
+func:parse_block = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_expect(ps, TK_LEFT_BRACE, "Expected '{'");
+    wild int8->:node = ast_new_node(NT_BLOCK, line, col);
+    while (ps_check(ps, TK_RIGHT_BRACE) == 0i32) {
+        int32:at_end = ps_is_at_end(ps);
+        if (at_end == 1i32) {
+            ps_add_error(ps, "Unexpected end of input in block");
+            break;
+        }
+        wild int8->:stmt = raw(parse_declaration(ps));
+        ast_add_child(node, stmt);
+    }
+    ps_expect(ps, TK_RIGHT_BRACE, "Expected '}'");
+    pass(node);
+};
+
+// Parse if statement: if (cond) { body } else if (...) { } else { }
+func:parse_if_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'if'
+    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after 'if'");
+    wild int8->:cond = raw(parse_expression(ps));
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after if condition");
+    wild int8->:then_block = raw(parse_block(ps));
+    wild int8->:node = ast_new_node(NT_IF, line, col);
+    ast_add_child(node, cond);
+    ast_add_child(node, then_block);
+    // Handle else if / else
+    if (ps_check(ps, TK_KW_ELSE) == 1i32) {
+        ps_advance(ps);  // consume 'else'
+        if (ps_check(ps, TK_KW_IF) == 1i32) {
+            // else if — parse as nested if
+            wild int8->:else_if = raw(parse_if_stmt(ps));
+            ast_add_child(node, else_if);
+        } else {
+            // else block
+            wild int8->:else_block = raw(parse_block(ps));
+            ast_add_child(node, else_block);
+        }
+    }
+    pass(node);
+};
+
+// Parse while statement: while (cond) { body }
+func:parse_while_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'while'
+    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after 'while'");
+    wild int8->:cond = raw(parse_expression(ps));
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after while condition");
+    wild int8->:body = raw(parse_block(ps));
+    wild int8->:node = ast_new_node(NT_WHILE, line, col);
+    ast_add_child(node, cond);
+    ast_add_child(node, body);
+    pass(node);
+};
+
+// Parse for statement: for (item in collection) { body }
+func:parse_for_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'for'
+    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after 'for'");
+    string:iter_name = raw(consume_name(ps, "Expected iterator variable name"));
+    ps_expect(ps, TK_KW_IN, "Expected 'in' in for loop");
+    wild int8->:collection = raw(parse_expression(ps));
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after for clause");
+    wild int8->:body = raw(parse_block(ps));
+    wild int8->:node = ast_new_node(NT_FOR, line, col);
+    ast_set_str(node, iter_name);
+    ast_add_child(node, collection);
+    ast_add_child(node, body);
+    pass(node);
+};
+
+// Parse loop statement: loop(start, limit, step) { body }
+func:parse_loop_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'loop'
+    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after 'loop'");
+    wild int8->:start_expr = raw(parse_expression(ps));
+    ps_expect(ps, TK_COMMA, "Expected ',' after loop start");
+    wild int8->:limit_expr = raw(parse_expression(ps));
+    ps_expect(ps, TK_COMMA, "Expected ',' after loop limit");
+    wild int8->:step_expr = raw(parse_expression(ps));
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after loop params");
+    wild int8->:body = raw(parse_block(ps));
+    wild int8->:node = ast_new_node(NT_LOOP, line, col);
+    ast_add_child(node, start_expr);
+    ast_add_child(node, limit_expr);
+    ast_add_child(node, step_expr);
+    ast_add_child(node, body);
+    pass(node);
+};
+
+// Parse till statement: till(limit, step) { body }
+func:parse_till_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'till'
+    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after 'till'");
+    wild int8->:limit_expr = raw(parse_expression(ps));
+    ps_expect(ps, TK_COMMA, "Expected ',' after till limit");
+    wild int8->:step_expr = raw(parse_expression(ps));
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after till params");
+    wild int8->:body = raw(parse_block(ps));
+    wild int8->:node = ast_new_node(NT_TILL, line, col);
+    ast_add_child(node, limit_expr);
+    ast_add_child(node, step_expr);
+    ast_add_child(node, body);
+    pass(node);
+};
+
+// Parse pick statement: pick (expr) { when value: { } when value: { } }
+func:parse_pick_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'pick'
+    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after 'pick'");
+    wild int8->:subject = raw(parse_expression(ps));
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after pick expression");
+    ps_expect(ps, TK_LEFT_BRACE, "Expected '{' for pick body");
+    wild int8->:node = ast_new_node(NT_PICK, line, col);
+    ast_add_child(node, subject);
+    // Parse when clauses
+    while (ps_check(ps, TK_RIGHT_BRACE) == 0i32) {
+        int32:at_end = ps_is_at_end(ps);
+        if (at_end == 1i32) {
+            break;
+        }
+        if (ps_check(ps, TK_KW_WHEN) == 1i32) {
+            int32:wline = ps_peek_line(ps);
+            int32:wcol = ps_peek_col(ps);
+            ps_advance(ps);  // consume 'when'
+            wild int8->:pattern = raw(parse_expression(ps));
+            ps_expect(ps, TK_COLON, "Expected ':' after when pattern");
+            wild int8->:wbody = raw(parse_block(ps));
+            wild int8->:wcase = ast_new_node(NT_PICK_CASE, wline, wcol);
+            ast_add_child(wcase, pattern);
+            ast_add_child(wcase, wbody);
+            ast_add_child(node, wcase);
+        } else if (ps_check(ps, TK_KW_ELSE) == 1i32) {
+            int32:eline = ps_peek_line(ps);
+            int32:ecol = ps_peek_col(ps);
+            ps_advance(ps);  // consume 'else'
+            ps_expect(ps, TK_COLON, "Expected ':' after else in pick");
+            wild int8->:ebody = raw(parse_block(ps));
+            wild int8->:ecase = ast_new_node(NT_PICK_CASE, eline, ecol);
+            ast_set_str(ecase, "else");
+            ast_add_child(ecase, ebody);
+            ast_add_child(node, ecase);
+        } else {
+            ps_add_error(ps, "Expected 'when' or 'else' in pick");
+            ps_synchronize(ps);
+        }
+    }
+    ps_expect(ps, TK_RIGHT_BRACE, "Expected '}' after pick body");
+    pass(node);
+};
+
+// Parse return statement: return; or return expr;
+func:parse_return_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'return'
+    wild int8->:node = ast_new_node(NT_RETURN, line, col);
+    if (ps_check(ps, TK_SEMICOLON) == 0i32) {
+        wild int8->:expr = raw(parse_expression(ps));
+        ast_add_child(node, expr);
+    }
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after return");
+    pass(node);
+};
+
+// Parse pass statement: pass(expr);
+func:parse_pass_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'pass'
+    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after 'pass'");
+    wild int8->:expr = raw(parse_expression(ps));
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after pass expression");
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after pass");
+    wild int8->:node = ast_new_node(NT_PASS, line, col);
+    ast_add_child(node, expr);
+    pass(node);
+};
+
+// Parse fail statement: fail(expr);
+func:parse_fail_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'fail'
+    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after 'fail'");
+    wild int8->:expr = raw(parse_expression(ps));
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after fail expression");
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after fail");
+    wild int8->:node = ast_new_node(NT_FAIL, line, col);
+    ast_add_child(node, expr);
+    pass(node);
+};
+
+// Parse break statement: break;
+func:parse_break_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after break");
+    wild int8->:node = ast_new_node(NT_BREAK, line, col);
+    pass(node);
+};
+
+// Parse continue statement: continue;
+func:parse_continue_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after continue");
+    wild int8->:node = ast_new_node(NT_CONTINUE, line, col);
+    pass(node);
+};
+
+// Parse defer statement: defer { block } or defer expr;
+func:parse_defer_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'defer'
+    wild int8->:node = ast_new_node(NT_DEFER, line, col);
+    if (ps_check(ps, TK_LEFT_BRACE) == 1i32) {
+        wild int8->:body = raw(parse_block(ps));
+        ast_add_child(node, body);
+    } else {
+        wild int8->:expr = raw(parse_expression(ps));
+        ast_add_child(node, expr);
+        ps_expect(ps, TK_SEMICOLON, "Expected ';' after defer expression");
+    }
+    pass(node);
+};
+
+// Parse fall statement: fall;
+func:parse_fall_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after fall");
+    wild int8->:node = ast_new_node(NT_FALL, line, col);
+    pass(node);
+};
+
+// Parse expression statement: expr;
+func:parse_expression_stmt = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    wild int8->:expr = raw(parse_expression(ps));
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after expression");
+    wild int8->:node = ast_new_node(NT_EXPRESSION_STMT, line, col);
+    ast_add_child(node, expr);
+    pass(node);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Statement Dispatch — routes to specific parsers with one pass()
+// ═══════════════════════════════════════════════════════════════════════
+
+func:parse_stmt_control = wild int8->(wild int8->:ps, int32:tok) {
+    wild int8->:result = ast_null_ptr();
+    if (tok == TK_KW_IF) {
+        result = raw(parse_if_stmt(ps));
+    } else if (tok == TK_KW_WHILE) {
+        result = raw(parse_while_stmt(ps));
+    } else if (tok == TK_KW_FOR) {
+        result = raw(parse_for_stmt(ps));
+    } else if (tok == TK_KW_LOOP) {
+        result = raw(parse_loop_stmt(ps));
+    } else if (tok == TK_KW_TILL) {
+        result = raw(parse_till_stmt(ps));
+    } else if (tok == TK_KW_PICK) {
+        result = raw(parse_pick_stmt(ps));
+    }
+    pass(result);
+};
+
+func:parse_stmt_jump = wild int8->(wild int8->:ps, int32:tok) {
+    wild int8->:result = ast_null_ptr();
+    if (tok == TK_KW_RETURN) {
+        result = raw(parse_return_stmt(ps));
+    } else if (tok == TK_KW_PASS) {
+        result = raw(parse_pass_stmt(ps));
+    } else if (tok == TK_KW_FAIL) {
+        result = raw(parse_fail_stmt(ps));
+    } else if (tok == TK_KW_BREAK) {
+        result = raw(parse_break_stmt(ps));
+    } else if (tok == TK_KW_CONTINUE) {
+        result = raw(parse_continue_stmt(ps));
+    } else if (tok == TK_KW_FALL) {
+        result = raw(parse_fall_stmt(ps));
+    } else if (tok == TK_KW_DEFER) {
+        result = raw(parse_defer_stmt(ps));
+    }
+    pass(result);
+};
+
+func:parse_statement = wild int8->(wild int8->:ps) {
+    int32:tok = ps_peek(ps);
+    wild int8->:result = ast_null_ptr();
+
+    // Control flow
+    if (tok == TK_KW_IF) {
+        result = raw(parse_stmt_control(ps, tok));
+    } else if (tok == TK_KW_WHILE) {
+        result = raw(parse_stmt_control(ps, tok));
+    } else if (tok == TK_KW_FOR) {
+        result = raw(parse_stmt_control(ps, tok));
+    } else if (tok == TK_KW_LOOP) {
+        result = raw(parse_stmt_control(ps, tok));
+    } else if (tok == TK_KW_TILL) {
+        result = raw(parse_stmt_control(ps, tok));
+    } else if (tok == TK_KW_PICK) {
+        result = raw(parse_stmt_control(ps, tok));
+    // Jump statements
+    } else if (tok == TK_KW_RETURN) {
+        result = raw(parse_stmt_jump(ps, tok));
+    } else if (tok == TK_KW_PASS) {
+        result = raw(parse_stmt_jump(ps, tok));
+    } else if (tok == TK_KW_FAIL) {
+        result = raw(parse_stmt_jump(ps, tok));
+    } else if (tok == TK_KW_BREAK) {
+        result = raw(parse_stmt_jump(ps, tok));
+    } else if (tok == TK_KW_CONTINUE) {
+        result = raw(parse_stmt_jump(ps, tok));
+    } else if (tok == TK_KW_FALL) {
+        result = raw(parse_stmt_jump(ps, tok));
+    } else if (tok == TK_KW_DEFER) {
+        result = raw(parse_stmt_jump(ps, tok));
+    // Block
+    } else if (tok == TK_LEFT_BRACE) {
+        result = raw(parse_block(ps));
+    // Expression statement (fallback)
+    } else {
+        result = raw(parse_expression_stmt(ps));
+    }
+
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Declaration Parsing
+// ═══════════════════════════════════════════════════════════════════════
+
+// Parse a function parameter: type:name
+func:parse_parameter = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    wild int8->:ptype = raw(parse_type_expr(ps));
+    ps_expect(ps, TK_COLON, "Expected ':' after parameter type");
+    string:pname = raw(consume_name(ps, "Expected parameter name"));
+    wild int8->:node = ast_new_node(NT_PARAMETER, line, col);
+    ast_set_str(node, pname);
+    ast_add_child(node, ptype);
+    // Check for default value
+    if (ps_match(ps, TK_EQUAL) == 1i32) {
+        wild int8->:def_val = raw(parse_expression(ps));
+        ast_add_child(node, def_val);
+    }
+    pass(node);
+};
+
+// Parse function declaration: func:name = ReturnType(params) { body };
+// or: pub func:name = ...
+func:parse_func_decl = wild int8->(wild int8->:ps, int32:flags) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'func'
+    ps_expect(ps, TK_COLON, "Expected ':' after 'func'");
+    string:fname = raw(consume_name(ps, "Expected function name"));
+    ps_expect(ps, TK_EQUAL, "Expected '=' after function name");
+
+    // Parse return type
+    wild int8->:ret_type = raw(parse_type_expr(ps));
+
+    // Parse parameter list
+    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' for parameter list");
+    wild int8->:node = ast_new_node(NT_FUNC_DECL, line, col);
+    ast_set_str(node, fname);
+    ast_set_flags(node, flags);
+    ast_add_child(node, ret_type);
+
+    // Parameters
+    if (ps_check(ps, TK_RIGHT_PAREN) == 0i32) {
+        wild int8->:param = raw(parse_parameter(ps));
+        ast_add_child(node, param);
+        while (ps_match(ps, TK_COMMA) == 1i32) {
+            wild int8->:param2 = raw(parse_parameter(ps));
+            ast_add_child(node, param2);
+        }
+    }
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after parameters");
+
+    // Function body
+    wild int8->:body = raw(parse_block(ps));
+    ast_add_child(node, body);
+
+    // Trailing semicolon after function body
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after function body");
+
+    pass(node);
+};
+
+// Parse variable declaration: Type:name = value;
+func:parse_var_decl = wild int8->(wild int8->:ps, int32:flags) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+
+    // Parse type
+    wild int8->:vtype = raw(parse_type_expr(ps));
+    ps_expect(ps, TK_COLON, "Expected ':' after variable type");
+    string:vname = raw(consume_name(ps, "Expected variable name"));
+
+    wild int8->:node = ast_new_node(NT_VAR_DECL, line, col);
+    ast_set_str(node, vname);
+    ast_set_flags(node, flags);
+    ast_add_child(node, vtype);
+
+    // Optional initializer
+    if (ps_match(ps, TK_EQUAL) == 1i32) {
+        wild int8->:init_expr = raw(parse_expression(ps));
+        ast_add_child(node, init_expr);
+    }
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after variable declaration");
+
+    pass(node);
+};
+
+// Parse struct declaration: struct Name { fields };
+func:parse_struct_decl = wild int8->(wild int8->:ps, int32:flags) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'struct'
+    ps_expect(ps, TK_COLON, "Expected ':' after 'struct'");
+    string:sname = raw(consume_name(ps, "Expected struct name"));
+    wild int8->:node = ast_new_node(NT_STRUCT_DECL, line, col);
+    ast_set_str(node, sname);
+    ast_set_flags(node, flags);
+
+    // Optional generic parameters
+    if (ps_match(ps, TK_LESS) == 1i32) {
+        while (ps_check(ps, TK_GREATER) == 0i32) {
+            string:gname = raw(consume_name(ps, "Expected generic parameter name"));
+            wild int8->:gparam = ast_new_node(NT_TYPE_ANNOTATION, line, col);
+            ast_set_str(gparam, gname);
+            ast_add_child(node, gparam);
+            ps_match(ps, TK_COMMA);
+        }
+        ps_expect(ps, TK_GREATER, "Expected '>' after generic params");
+    }
+
+    ps_expect(ps, TK_EQUAL, "Expected '=' after struct name");
+    ps_expect(ps, TK_LEFT_BRACE, "Expected '{' for struct body");
+
+    // Parse fields: Type:name;
+    while (ps_check(ps, TK_RIGHT_BRACE) == 0i32) {
+        int32:at_end = ps_is_at_end(ps);
+        if (at_end == 1i32) {
+            break;
+        }
+        int32:fline = ps_peek_line(ps);
+        int32:fcol = ps_peek_col(ps);
+        wild int8->:ftype = raw(parse_type_expr(ps));
+        ps_expect(ps, TK_COLON, "Expected ':' after field type");
+        string:fname = raw(consume_name(ps, "Expected field name"));
+        wild int8->:field = ast_new_node(NT_VAR_DECL, fline, fcol);
+        ast_set_str(field, fname);
+        ast_add_child(field, ftype);
+        // Optional default value
+        if (ps_match(ps, TK_EQUAL) == 1i32) {
+            wild int8->:def = raw(parse_expression(ps));
+            ast_add_child(field, def);
+        }
+        ps_expect(ps, TK_SEMICOLON, "Expected ';' after field");
+        ast_add_child(node, field);
+    }
+
+    ps_expect(ps, TK_RIGHT_BRACE, "Expected '}' after struct body");
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after struct declaration");
+
+    pass(node);
+};
+
+// Parse enum declaration: enum Name { VARIANT = value, ... };
+func:parse_enum_decl = wild int8->(wild int8->:ps, int32:flags) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'enum'
+    string:ename = raw(consume_name(ps, "Expected enum name"));
+    wild int8->:node = ast_new_node(NT_ENUM_DECL, line, col);
+    ast_set_str(node, ename);
+    ast_set_flags(node, flags);
+
+    ps_expect(ps, TK_LEFT_BRACE, "Expected '{' for enum body");
+
+    while (ps_check(ps, TK_RIGHT_BRACE) == 0i32) {
+        int32:at_end = ps_is_at_end(ps);
+        if (at_end == 1i32) {
+            break;
+        }
+        int32:vline = ps_peek_line(ps);
+        int32:vcol = ps_peek_col(ps);
+        string:vname = raw(consume_name(ps, "Expected enum variant name"));
+        wild int8->:variant = ast_new_node(NT_VAR_DECL, vline, vcol);
+        ast_set_str(variant, vname);
+        // Optional explicit value
+        if (ps_match(ps, TK_EQUAL) == 1i32) {
+            wild int8->:val = raw(parse_expression(ps));
+            ast_add_child(variant, val);
+        }
+        ast_add_child(node, variant);
+        // Comma or semicolon separator
+        if (ps_match(ps, TK_COMMA) == 0i32) {
+            ps_match(ps, TK_SEMICOLON);
+        }
+    }
+
+    ps_expect(ps, TK_RIGHT_BRACE, "Expected '}' after enum body");
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after enum declaration");
+
+    pass(node);
+};
+
+// Parse extern block: extern { func:name = type(params); ... }
+func:parse_extern_block = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+
+    // Single extern declaration on one line (no block)
+    // extern func:name = type(params);
+    int32:tok = ps_peek(ps);
+    if (tok == TK_KW_FUNC) {
+        wild int8->:edecl = raw(parse_extern_func(ps));
+        pass(edecl);
+    }
+
+    // Not a function — could be extern var or block
+    // For now, treat other extern declarations as expression statements
+    ps_add_error(ps, "Expected 'func' after 'extern'");
+    wild int8->:err_node = ast_new_node(NT_EXTERN, line, col);
+    ps_synchronize(ps);
+    pass(err_node);
+};
+
+// Parse a single extern function declaration: extern func:name = RetType(params);
+func:parse_extern_func = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'func'
+    ps_expect(ps, TK_COLON, "Expected ':' after 'func'");
+    string:fname = raw(consume_name(ps, "Expected function name"));
+    ps_expect(ps, TK_EQUAL, "Expected '=' after function name");
+
+    // Parse return type
+    wild int8->:ret_type = raw(parse_type_expr(ps));
+
+    // Parse parameters
+    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' for parameter list");
+    wild int8->:node = ast_new_node(NT_FUNC_DECL, line, col);
+    ast_set_str(node, fname);
+    ast_set_flags(node, FLAG_EXTERN);
+    ast_add_child(node, ret_type);
+
+    if (ps_check(ps, TK_RIGHT_PAREN) == 0i32) {
+        wild int8->:param = raw(parse_parameter(ps));
+        ast_add_child(node, param);
+        while (ps_match(ps, TK_COMMA) == 1i32) {
+            wild int8->:param2 = raw(parse_parameter(ps));
+            ast_add_child(node, param2);
+        }
+    }
+    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after parameters");
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after extern function");
+
+    pass(node);
+};
+
+// Parse use statement: use "path"; or use name;
+func:parse_use_decl = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'use'
+    wild int8->:node = ast_new_node(NT_USE, line, col);
+    int32:tok = ps_peek(ps);
+    if (tok == TK_LIT_STRING) {
+        string:path = ps_peek_str_val(ps);
+        ast_set_str(node, path);
+        ps_advance(ps);
+    } else {
+        string:name = raw(consume_name(ps, "Expected module name or path after 'use'"));
+        ast_set_str(node, name);
+    }
+    // Optional 'as' alias
+    if (ps_check(ps, TK_KW_AS) == 1i32) {
+        ps_advance(ps);
+        string:alias = raw(consume_name(ps, "Expected alias after 'as'"));
+        ast_set_str2(node, alias);
+    }
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after use statement");
+    pass(node);
+};
+
+// Parse type declaration: Type:Name = { ... };
+func:parse_type_decl = wild int8->(wild int8->:ps, int32:flags) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'type'
+    ps_expect(ps, TK_COLON, "Expected ':' after 'type'");
+    string:tname = raw(consume_name(ps, "Expected type name"));
+    ps_expect(ps, TK_EQUAL, "Expected '=' after type name");
+    wild int8->:node = ast_new_node(NT_TYPE_DECL, line, col);
+    ast_set_str(node, tname);
+    ast_set_flags(node, flags);
+
+    // Type body
+    ps_expect(ps, TK_LEFT_BRACE, "Expected '{' for type body");
+    while (ps_check(ps, TK_RIGHT_BRACE) == 0i32) {
+        int32:at_end = ps_is_at_end(ps);
+        if (at_end == 1i32) {
+            break;
+        }
+        wild int8->:member = raw(parse_declaration(ps));
+        ast_add_child(node, member);
+    }
+    ps_expect(ps, TK_RIGHT_BRACE, "Expected '}' after type body");
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after type declaration");
+
+    pass(node);
+};
+
+// Parse opaque struct: opaque struct:Name;
+func:parse_opaque_struct = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'opaque'
+    ps_expect(ps, TK_KW_STRUCT, "Expected 'struct' after 'opaque'");
+    ps_expect(ps, TK_COLON, "Expected ':'");
+    string:sname = raw(consume_name(ps, "Expected struct name"));
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after opaque struct");
+    wild int8->:node = ast_new_node(NT_OPAQUE_STRUCT, line, col);
+    ast_set_str(node, sname);
+    pass(node);
+};
+
+// Parse trait: trait:Name = { func:method = ...; };
+func:parse_trait_decl = wild int8->(wild int8->:ps, int32:flags) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'trait'
+    ps_expect(ps, TK_COLON, "Expected ':' after 'trait'");
+    string:tname = raw(consume_name(ps, "Expected trait name"));
+    ps_expect(ps, TK_EQUAL, "Expected '=' after trait name");
+    ps_expect(ps, TK_LEFT_BRACE, "Expected '{' for trait body");
+
+    wild int8->:node = ast_new_node(NT_TRAIT_DECL, line, col);
+    ast_set_str(node, tname);
+    ast_set_flags(node, flags);
+
+    while (ps_check(ps, TK_RIGHT_BRACE) == 0i32) {
+        int32:at_end = ps_is_at_end(ps);
+        if (at_end == 1i32) {
+            break;
+        }
+        wild int8->:member = raw(parse_declaration(ps));
+        ast_add_child(node, member);
+    }
+    ps_expect(ps, TK_RIGHT_BRACE, "Expected '}' after trait body");
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after trait declaration");
+
+    pass(node);
+};
+
+// Parse impl: impl:Trait:for:Type = { func:method = ...; };
+func:parse_impl_decl = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    ps_advance(ps);  // consume 'impl'
+    ps_expect(ps, TK_COLON, "Expected ':' after 'impl'");
+    string:trait_name = raw(consume_name(ps, "Expected trait name"));
+    ps_expect(ps, TK_COLON, "Expected ':' in impl");
+    // Expect 'for'
+    string:for_kw = raw(consume_name(ps, "Expected 'for'"));
+    ps_expect(ps, TK_COLON, "Expected ':' before type name");
+    string:type_name = raw(consume_name(ps, "Expected type name"));
+    ps_expect(ps, TK_EQUAL, "Expected '=' after impl header");
+    ps_expect(ps, TK_LEFT_BRACE, "Expected '{' for impl body");
+
+    wild int8->:node = ast_new_node(NT_IMPL_DECL, line, col);
+    ast_set_str(node, trait_name);
+    ast_set_str2(node, type_name);
+
+    while (ps_check(ps, TK_RIGHT_BRACE) == 0i32) {
+        int32:at_end = ps_is_at_end(ps);
+        if (at_end == 1i32) {
+            break;
+        }
+        wild int8->:member = raw(parse_declaration(ps));
+        ast_add_child(node, member);
+    }
+    ps_expect(ps, TK_RIGHT_BRACE, "Expected '}' after impl body");
+    ps_expect(ps, TK_SEMICOLON, "Expected ';' after impl declaration");
+
+    pass(node);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Declaration Dispatch — checks for type keyword or memory qualifier
+// to detect variable declarations vs other statements
+// ═══════════════════════════════════════════════════════════════════════
+
+// Check if current position starts a variable declaration
+// Pattern: TypeKeyword COLON Name or MemQual TypeKeyword ...
+func:is_var_decl_start = int32(wild int8->:ps) {
+    int32:tok = ps_peek(ps);
+    int32:is_type = ast_is_type_keyword(tok);
+    int32:is_mem = ast_is_memory_qualifier(tok);
+    int32:result = 0i32;
+
+    if (is_type == 1i32) {
+        // Type keyword — check if next is COLON or a pointer/array suffix
+        int32:next = ps_peek_next(ps);
+        if (next == TK_COLON) {
+            result = 1i32;
+        } else if (next == TK_ARROW) {
+            // e.g., int8->:ptr — could be var decl, check further
+            int32:after = ps_peek_at(ps, 2i64);
+            if (after == TK_COLON) {
+                result = 1i32;
+            }
+        } else if (next == TK_STAR) {
+            int32:after = ps_peek_at(ps, 2i64);
+            if (after == TK_COLON) {
+                result = 1i32;
+            }
+        } else if (next == TK_LEFT_BRACKET) {
+            // Array type: int32[]:name or int32[10]:name
+            result = 1i32;
+        } else if (next == TK_QUESTION) {
+            // Optional type: int32?:name
+            result = 1i32;
+        }
+    } else if (is_mem == 1i32) {
+        // Memory qualifier — assume var decl
+        result = 1i32;
+    } else if (tok == TK_IDENTIFIER) {
+        // Could be user-defined type: MyStruct:name
+        int32:next = ps_peek_next(ps);
+        if (next == TK_COLON) {
+            // Peek further: if after COLON we have an identifier followed by EQUAL or SEMICOLON,
+            // it's a var decl. If it's a function call or other expression, it's not.
+            int32:after = ps_peek_at(ps, 2i64);
+            int32:is_name = ast_is_name_token(after);
+            if (is_name == 1i32) {
+                result = 1i32;
+            }
+        }
+    }
+
+    pass(result);
+};
+
+// Parse declaration dispatchers (split to limit exits per function)
+func:parse_decl_keyword = wild int8->(wild int8->:ps, int32:tok, int32:flags) {
+    wild int8->:result = ast_null_ptr();
+
+    if (tok == TK_KW_FUNC) {
+        result = raw(parse_func_decl(ps, flags));
+    } else if (tok == TK_KW_STRUCT) {
+        result = raw(parse_struct_decl(ps, flags));
+    } else if (tok == TK_KW_ENUM) {
+        result = raw(parse_enum_decl(ps, flags));
+    } else if (tok == TK_KW_TYPE) {
+        result = raw(parse_type_decl(ps, flags));
+    } else if (tok == TK_KW_TRAIT) {
+        result = raw(parse_trait_decl(ps, flags));
+    } else if (tok == TK_KW_OPAQUE) {
+        result = raw(parse_opaque_struct(ps));
+    }
+
+    pass(result);
+};
+
+func:parse_decl_other = wild int8->(wild int8->:ps, int32:tok) {
+    wild int8->:result = ast_null_ptr();
+
+    if (tok == TK_KW_EXTERN) {
+        ps_advance(ps);  // consume 'extern'
+        result = raw(parse_extern_block(ps));
+    } else if (tok == TK_KW_USE) {
+        result = raw(parse_use_decl(ps));
+    } else if (tok == TK_KW_IMPL) {
+        result = raw(parse_impl_decl(ps));
+    }
+
+    pass(result);
+};
+
+// Top-level declaration parser
+func:parse_declaration = wild int8->(wild int8->:ps) {
+    int32:tok = ps_peek(ps);
+    int32:flags = 0i32;
+    wild int8->:result = ast_null_ptr();
+
+    // Check for pub prefix
+    if (tok == TK_KW_PUB) {
+        flags = FLAG_PUB;
+        ps_advance(ps);
+        tok = ps_peek(ps);
+    }
+
+    // Check for const/fixed prefix
+    if (tok == TK_KW_CONST) {
+        flags = flags + FLAG_CONST;
+        ps_advance(ps);
+        tok = ps_peek(ps);
+    } else if (tok == TK_KW_FIXED) {
+        flags = flags + FLAG_FIXED;
+        ps_advance(ps);
+        tok = ps_peek(ps);
+    }
+
+    // Check for async prefix
+    if (tok == TK_KW_ASYNC) {
+        flags = flags + FLAG_ASYNC;
+        ps_advance(ps);
+        tok = ps_peek(ps);
+    }
+
+    // Declaration keywords
+    if (tok == TK_KW_FUNC) {
+        result = raw(parse_decl_keyword(ps, tok, flags));
+    } else if (tok == TK_KW_STRUCT) {
+        result = raw(parse_decl_keyword(ps, tok, flags));
+    } else if (tok == TK_KW_ENUM) {
+        result = raw(parse_decl_keyword(ps, tok, flags));
+    } else if (tok == TK_KW_TYPE) {
+        result = raw(parse_decl_keyword(ps, tok, flags));
+    } else if (tok == TK_KW_TRAIT) {
+        result = raw(parse_decl_keyword(ps, tok, flags));
+    } else if (tok == TK_KW_OPAQUE) {
+        result = raw(parse_decl_keyword(ps, tok, flags));
+    } else if (tok == TK_KW_EXTERN) {
+        result = raw(parse_decl_other(ps, tok));
+    } else if (tok == TK_KW_USE) {
+        result = raw(parse_decl_other(ps, tok));
+    } else if (tok == TK_KW_IMPL) {
+        result = raw(parse_decl_other(ps, tok));
+    } else {
+        // Check for variable declaration
+        int32:is_var = raw(is_var_decl_start(ps));
+        if (is_var == 1i32) {
+            result = raw(parse_var_decl(ps, flags));
+        } else {
+            result = raw(parse_statement(ps));
+        }
+    }
+
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Program parsing — top-level entry
+// ═══════════════════════════════════════════════════════════════════════
+
+func:parse_program = wild int8->(wild int8->:ps) {
+    int32:line = ps_peek_line(ps);
+    int32:col = ps_peek_col(ps);
+    wild int8->:root = ast_new_node(NT_PROGRAM, line, col);
+
+    while (ps_is_at_end(ps) == 0i32) {
+        int64:before = ps_current_pos(ps);
+        wild int8->:decl = raw(parse_declaration(ps));
+        int64:after = ps_current_pos(ps);
+        // Error recovery: if parse_declaration didn't consume any tokens, skip one
+        if (after == before) {
+            ps_advance(ps);
+        } else {
+            int32:ntype = ast_get_type(decl);
+            if (ntype >= 0i32) {
+                ast_add_child(root, decl);
+            }
+        }
+    }
+
+    pass(root);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API
+// ═══════════════════════════════════════════════════════════════════════
+
+// Parse a token stream (from lexer's tokenize()) into an AST.
+// Returns an opaque handle to the AST root (NT_PROGRAM node).
+// The caller should use ast_* functions to inspect the tree.
+pub func:parse = wild int8->(wild int8->:lex_state) {
+    wild int8->:ps = ps_new(lex_state);
+    wild int8->:root = raw(parse_program(ps));
+    // Store error count in the root node's int_val
+    int64:err_count = ps_error_count(ps);
+    ast_set_int(root, err_count);
+    ps_free(ps);
+    pass(root);
+};
+
+// Get number of parse errors
+pub func:parse_error_count = int64(wild int8->:ps_handle) {
+    int64:count = ps_error_count(ps_handle);
+    pass(count);
+};
+
+// Get a specific parse error message
+pub func:parse_get_error = string(wild int8->:ps_handle, int64:idx) {
+    string:err = ps_get_error(ps_handle, idx);
+    pass(err);
+};

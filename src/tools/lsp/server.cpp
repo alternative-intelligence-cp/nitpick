@@ -234,7 +234,7 @@ json Server::handle_initialize(const json& params) {
         {"capabilities", capabilities_.to_json()},
         {"serverInfo", {
             {"name", "aria-ls"},
-            {"version", "0.1.0"}
+            {"version", "0.2.0"}
         }}
     };
     

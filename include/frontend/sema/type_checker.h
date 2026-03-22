@@ -360,14 +360,16 @@ private:
      * 
      * Returns: Result type if valid, ErrorType otherwise
      */
-    Type* checkBinaryOperator(frontend::TokenType op, Type* leftType, Type* rightType);
+    Type* checkBinaryOperator(frontend::TokenType op, Type* leftType, Type* rightType,
+                              ASTNode* sourceNode = nullptr);
     
     /**
      * Check if unary operator is valid for given operand type
      * 
      * Returns: Result type if valid, ErrorType otherwise
      */
-    Type* checkUnaryOperator(frontend::TokenType op, Type* operandType);
+    Type* checkUnaryOperator(frontend::TokenType op, Type* operandType,
+                             ASTNode* sourceNode = nullptr);
     
     // ========================================================================
     // TBB Type Validation (Phase 3.2.4)

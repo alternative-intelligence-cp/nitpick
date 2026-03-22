@@ -1,68 +1,339 @@
 // stdlib/binary.aria
-// Binary Serialization Module
+// Binary Serialization Module — Pure Aria Implementation (v0.2.0)
 //
 // Buffer-based binary encoder/decoder for structured binary data.
 // Import with: use "stdlib/binary.aria".*;
 //
-// All integer writes use native (little-endian on x86) byte order.
+// All integer writes use little-endian byte order.
 // Strings are stored as int64 length prefix + raw bytes.
 //
+// Handle layout: wild int64-> with 4 elements
+//   h[0] = len       (bytes written / data size)
+//   h[1] = cap       (data buffer capacity)
+//   h[2] = pos       (read cursor position)
+//   h[3] = data_ptr  (address of uint8_t* buffer, stored as int64)
+//
+// Only irreducible C helpers remain (binary_helpers.cpp):
+//   byte read/write through stored pointer, string construction,
+//   data buffer alloc/realloc/free, file I/O.
+// ALL serialization logic is pure Aria.
+//
 // ── Buffer management ────────────────────────────────────────────────
-//   bin_new()                                → handle   create empty buffer
-//   bin_from_file(path)                      → handle   load from file
+//   bin_new()                                → wild int64->  create buffer
+//   bin_from_file(path)                      → wild int64->  load from file
 //   bin_to_file(h, path)                     → int32    save to file (1=ok)
 //   bin_size(h)                              → int64    total bytes written
 //   bin_pos(h)                               → int64    current read cursor
-//   bin_seek(h, pos)                         → void     set cursor position
+//   bin_seek(h, pos)                         → NIL      set cursor position
 //   bin_remaining(h)                         → int64    bytes left to read
-//   bin_free(h)                              → void     release buffer
+//   bin_free(h)                              → NIL      release buffer
 //
 // ── Writers ──────────────────────────────────────────────────────────
-//   bin_write_int8(h, val)                   → void     write 1 byte
-//   bin_write_int16(h, val)                  → void     write 2 bytes
-//   bin_write_int32(h, val)                  → void     write 4 bytes
-//   bin_write_int64(h, val)                  → void     write 8 bytes
-//   bin_write_flt32(h, val)                  → void     write 4-byte float
-//   bin_write_flt64(h, val)                  → void     write 8-byte double
-//   bin_write_str(h, val)                    → void     write length+string
-//   bin_write_bool(h, val)                   → void     write 1-byte bool
+//   bin_write_int8(h, val)                   → NIL      write 1 byte
+//   bin_write_int16(h, val)                  → NIL      write 2 bytes LE
+//   bin_write_int32(h, val)                  → NIL      write 4 bytes LE
+//   bin_write_int64(h, val)                  → NIL      write 8 bytes LE
+//   bin_write_flt32(h, val)                  → NIL      write 4-byte float
+//   bin_write_flt64(h, val)                  → NIL      write 8-byte double
+//   bin_write_str(h, val)                    → NIL      write length+string
+//   bin_write_bool(h, val)                   → NIL      write 1-byte bool
 //
 // ── Readers ──────────────────────────────────────────────────────────
 //   bin_read_int8(h)                         → int32    read 1 byte
-//   bin_read_int16(h)                        → int32    read 2 bytes
-//   bin_read_int32(h)                        → int32    read 4 bytes
-//   bin_read_int64(h)                        → int64    read 8 bytes
+//   bin_read_int16(h)                        → int32    read 2 bytes LE
+//   bin_read_int32(h)                        → int32    read 4 bytes LE
+//   bin_read_int64(h)                        → int64    read 8 bytes LE
 //   bin_read_flt32(h)                        → flt64    read 4-byte float
 //   bin_read_flt64(h)                        → flt64    read 8-byte double
 //   bin_read_str(h)                          → string   read length+string
 //   bin_read_bool(h)                         → int32    read 1-byte bool
 
-// ── Buffer management ────────────────────────────────────────────────
-extern func:bin_new = wild int8*();
-extern func:bin_from_file = wild int8*(string:path);
-extern func:bin_to_file = int32(wild int8*:h, string:path);
-extern func:bin_size = int64(wild int8*:h);
-extern func:bin_pos = int64(wild int8*:h);
-extern func:bin_seek = void(wild int8*:h, int64:pos);
-extern func:bin_remaining = int64(wild int8*:h);
-extern func:bin_free = void(wild int8*:h);
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: libc memory
+// ═══════════════════════════════════════════════════════════════════════
+extern func:malloc = wild int64*(int64:size);
+extern func:free = void(wild int64*:ptr);
 
-// ── Writers ──────────────────────────────────────────────────────────
-extern func:bin_write_int8 = void(wild int8*:h, int32:val);
-extern func:bin_write_int16 = void(wild int8*:h, int32:val);
-extern func:bin_write_int32 = void(wild int8*:h, int32:val);
-extern func:bin_write_int64 = void(wild int8*:h, int64:val);
-extern func:bin_write_flt32 = void(wild int8*:h, flt64:val);
-extern func:bin_write_flt64 = void(wild int8*:h, flt64:val);
-extern func:bin_write_str = void(wild int8*:h, string:val);
-extern func:bin_write_bool = void(wild int8*:h, int32:val);
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: C helpers (src/runtime/binary/binary_helpers.cpp)
+// ═══════════════════════════════════════════════════════════════════════
+extern func:bh_set_byte = void(int64*:h, int64:off, int32:val);
+extern func:bh_get_byte = int32(int64*:h, int64:off);
+extern func:bh_alloc_data = void(int64*:h, int64:cap);
+extern func:bh_realloc_data = void(int64*:h, int64:new_cap);
+extern func:bh_free_data = void(int64*:h);
+extern func:bh_make_str = string(int64*:h, int64:off, int64:len);
+extern func:bh_copy_str = void(int64*:h, int64:off, string:s, int64:len);
+extern func:bh_flt64_bits = int64(flt64:val);
+extern func:bh_flt64_from_bits = flt64(int64:bits);
+extern func:bh_flt32_bits = int32(flt64:val);
+extern func:bh_flt32_from_bits = flt64(int32:bits);
+extern func:bh_read_file = int32(int64*:h, string:path);
+extern func:bh_write_file = int32(int64*:h, string:path);
 
-// ── Readers ──────────────────────────────────────────────────────────
-extern func:bin_read_int8 = int32(wild int8*:h);
-extern func:bin_read_int16 = int32(wild int8*:h);
-extern func:bin_read_int32 = int32(wild int8*:h);
-extern func:bin_read_int64 = int64(wild int8*:h);
-extern func:bin_read_flt32 = flt64(wild int8*:h);
-extern func:bin_read_flt64 = flt64(wild int8*:h);
-extern func:bin_read_str = string(wild int8*:h);
-extern func:bin_read_bool = int32(wild int8*:h);
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: ensure capacity
+// ═══════════════════════════════════════════════════════════════════════
+func:bin_ensure = NIL(int64->:h, int64:extra) {
+    int64:need = h[0i64] + extra;
+    if (need > h[1i64]) {
+        int64:new_cap = h[1i64];
+        while (new_cap < need) {
+            new_cap = new_cap * 2i64;
+        }
+        bh_realloc_data(h, new_cap);
+        h[1i64] = new_cap;
+    }
+    drop(NIL);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Buffer management
+// ═══════════════════════════════════════════════════════════════════════
+func:bin_new = wild int64->() {
+    wild int64->:h = malloc(32i64);
+    h[0i64] = 0i64;
+    h[1i64] = 256i64;
+    h[2i64] = 0i64;
+    h[3i64] = 0i64;
+    bh_alloc_data(h, 256i64);
+    pass(h);
+};
+
+func:bin_from_file = wild int64->(string:path) {
+    wild int64->:h = malloc(32i64);
+    h[0i64] = 0i64;
+    h[1i64] = 0i64;
+    h[2i64] = 0i64;
+    h[3i64] = 0i64;
+    bh_read_file(h, path);
+    pass(h);
+};
+
+func:bin_to_file = int32(int64->:h, string:path) {
+    pass(raw(bh_write_file(h, path)));
+};
+
+func:bin_size = int64(int64->:h) {
+    pass(h[0i64]);
+};
+
+func:bin_pos = int64(int64->:h) {
+    pass(h[2i64]);
+};
+
+func:bin_seek = NIL(int64->:h, int64:pos) {
+    int64:p = pos;
+    if (p < 0i64) { p = 0i64; }
+    if (p > h[0i64]) { p = h[0i64]; }
+    h[2i64] = p;
+    drop(NIL);
+};
+
+func:bin_remaining = int64(int64->:h) {
+    pass(h[0i64] - h[2i64]);
+};
+
+func:bin_free = NIL(wild int64->:h) {
+    bh_free_data(h);
+    free(h);
+    drop(NIL);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Writers — little-endian byte encoding
+// ═══════════════════════════════════════════════════════════════════════
+func:bin_write_int8 = NIL(int64->:h, int32:val) {
+    drop(bin_ensure(h, 1i64));
+    int64:off = h[0i64];
+    bh_set_byte(h, off, val & 255i32);
+    h[0i64] = off + 1i64;
+    drop(NIL);
+};
+
+func:bin_write_int16 = NIL(int64->:h, int32:val) {
+    drop(bin_ensure(h, 2i64));
+    int64:off = h[0i64];
+    uint32:uv = @cast<uint32>(val);
+    bh_set_byte(h, off,        @cast<int32>(uv & 255u32));
+    bh_set_byte(h, off + 1i64, @cast<int32>((uv >> 8u32) & 255u32));
+    h[0i64] = off + 2i64;
+    drop(NIL);
+};
+
+func:bin_write_int32 = NIL(int64->:h, int32:val) {
+    drop(bin_ensure(h, 4i64));
+    int64:off = h[0i64];
+    uint32:uv = @cast<uint32>(val);
+    bh_set_byte(h, off,        @cast<int32>(uv & 255u32));
+    bh_set_byte(h, off + 1i64, @cast<int32>((uv >> 8u32) & 255u32));
+    bh_set_byte(h, off + 2i64, @cast<int32>((uv >> 16u32) & 255u32));
+    bh_set_byte(h, off + 3i64, @cast<int32>((uv >> 24u32) & 255u32));
+    h[0i64] = off + 4i64;
+    drop(NIL);
+};
+
+func:bin_write_int64 = NIL(int64->:h, int64:val) {
+    drop(bin_ensure(h, 8i64));
+    int64:off = h[0i64];
+    uint64:uv = @cast<uint64>(val);
+    bh_set_byte(h, off,        @cast<int32>(uv & 255u64));
+    bh_set_byte(h, off + 1i64, @cast<int32>((uv >> 8u64) & 255u64));
+    bh_set_byte(h, off + 2i64, @cast<int32>((uv >> 16u64) & 255u64));
+    bh_set_byte(h, off + 3i64, @cast<int32>((uv >> 24u64) & 255u64));
+    bh_set_byte(h, off + 4i64, @cast<int32>((uv >> 32u64) & 255u64));
+    bh_set_byte(h, off + 5i64, @cast<int32>((uv >> 40u64) & 255u64));
+    bh_set_byte(h, off + 6i64, @cast<int32>((uv >> 48u64) & 255u64));
+    bh_set_byte(h, off + 7i64, @cast<int32>((uv >> 56u64) & 255u64));
+    h[0i64] = off + 8i64;
+    drop(NIL);
+};
+
+func:bin_write_flt32 = NIL(int64->:h, flt64:val) {
+    int32:ibits = raw(bh_flt32_bits(val));
+    uint32:bits = @cast<uint32>(ibits);
+    drop(bin_ensure(h, 4i64));
+    int64:off = h[0i64];
+    bh_set_byte(h, off,        @cast<int32>(bits & 255u32));
+    bh_set_byte(h, off + 1i64, @cast<int32>((bits >> 8u32) & 255u32));
+    bh_set_byte(h, off + 2i64, @cast<int32>((bits >> 16u32) & 255u32));
+    bh_set_byte(h, off + 3i64, @cast<int32>((bits >> 24u32) & 255u32));
+    h[0i64] = off + 4i64;
+    drop(NIL);
+};
+
+func:bin_write_flt64 = NIL(int64->:h, flt64:val) {
+    int64:ibits = raw(bh_flt64_bits(val));
+    uint64:bits = @cast<uint64>(ibits);
+    drop(bin_ensure(h, 8i64));
+    int64:off = h[0i64];
+    bh_set_byte(h, off,        @cast<int32>(bits & 255u64));
+    bh_set_byte(h, off + 1i64, @cast<int32>((bits >> 8u64) & 255u64));
+    bh_set_byte(h, off + 2i64, @cast<int32>((bits >> 16u64) & 255u64));
+    bh_set_byte(h, off + 3i64, @cast<int32>((bits >> 24u64) & 255u64));
+    bh_set_byte(h, off + 4i64, @cast<int32>((bits >> 32u64) & 255u64));
+    bh_set_byte(h, off + 5i64, @cast<int32>((bits >> 40u64) & 255u64));
+    bh_set_byte(h, off + 6i64, @cast<int32>((bits >> 48u64) & 255u64));
+    bh_set_byte(h, off + 7i64, @cast<int32>((bits >> 56u64) & 255u64));
+    h[0i64] = off + 8i64;
+    drop(NIL);
+};
+
+func:bin_write_str = NIL(int64->:h, string:val) {
+    int64:slen = string_length(val);
+    // Write length prefix (int64 = 8 bytes LE)
+    drop(bin_write_int64(h, slen));
+    // Write string bytes
+    if (slen > 0i64) {
+        drop(bin_ensure(h, slen));
+        int64:off = h[0i64];
+        bh_copy_str(h, off, val, slen);
+        h[0i64] = off + slen;
+    }
+    drop(NIL);
+};
+
+func:bin_write_bool = NIL(int64->:h, int32:val) {
+    drop(bin_ensure(h, 1i64));
+    int64:off = h[0i64];
+    int32:b = 0i32;
+    if (val != 0i32) { b = 1i32; }
+    bh_set_byte(h, off, b);
+    h[0i64] = off + 1i64;
+    drop(NIL);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Readers — little-endian byte decoding
+// ═══════════════════════════════════════════════════════════════════════
+func:bin_read_int8 = int32(int64->:h) {
+    int64:p = h[2i64];
+    int32:val = raw(bh_get_byte(h, p));
+    // Sign-extend from int8
+    if (val > 127i32) { val = val - 256i32; }
+    h[2i64] = p + 1i64;
+    pass(val);
+};
+
+func:bin_read_int16 = int32(int64->:h) {
+    int64:p = h[2i64];
+    uint32:b0 = @cast<uint32>(raw(bh_get_byte(h, p))) & 255u32;
+    uint32:b1 = @cast<uint32>(raw(bh_get_byte(h, p + 1i64))) & 255u32;
+    uint32:raw_val = b0 | (b1 << 8u32);
+    // Sign-extend from int16
+    int32:val = @cast<int32>(raw_val);
+    if (val > 32767i32) { val = val - 65536i32; }
+    h[2i64] = p + 2i64;
+    pass(val);
+};
+
+func:bin_read_int32 = int32(int64->:h) {
+    int64:p = h[2i64];
+    uint32:b0 = @cast<uint32>(raw(bh_get_byte(h, p))) & 255u32;
+    uint32:b1 = @cast<uint32>(raw(bh_get_byte(h, p + 1i64))) & 255u32;
+    uint32:b2 = @cast<uint32>(raw(bh_get_byte(h, p + 2i64))) & 255u32;
+    uint32:b3 = @cast<uint32>(raw(bh_get_byte(h, p + 3i64))) & 255u32;
+    int32:val = @cast<int32>(b0 | (b1 << 8u32) | (b2 << 16u32) | (b3 << 24u32));
+    h[2i64] = p + 4i64;
+    pass(val);
+};
+
+func:bin_read_int64 = int64(int64->:h) {
+    int64:p = h[2i64];
+    uint64:b0 = @cast<uint64>(raw(bh_get_byte(h, p))) & 255u64;
+    uint64:b1 = @cast<uint64>(raw(bh_get_byte(h, p + 1i64))) & 255u64;
+    uint64:b2 = @cast<uint64>(raw(bh_get_byte(h, p + 2i64))) & 255u64;
+    uint64:b3 = @cast<uint64>(raw(bh_get_byte(h, p + 3i64))) & 255u64;
+    uint64:b4 = @cast<uint64>(raw(bh_get_byte(h, p + 4i64))) & 255u64;
+    uint64:b5 = @cast<uint64>(raw(bh_get_byte(h, p + 5i64))) & 255u64;
+    uint64:b6 = @cast<uint64>(raw(bh_get_byte(h, p + 6i64))) & 255u64;
+    uint64:b7 = @cast<uint64>(raw(bh_get_byte(h, p + 7i64))) & 255u64;
+    uint64:uv = b0 | (b1 << 8u64) | (b2 << 16u64) | (b3 << 24u64)
+              | (b4 << 32u64) | (b5 << 40u64) | (b6 << 48u64) | (b7 << 56u64);
+    h[2i64] = p + 8i64;
+    pass(@cast<int64>(uv));
+};
+
+func:bin_read_flt32 = flt64(int64->:h) {
+    int64:p = h[2i64];
+    uint32:b0 = @cast<uint32>(raw(bh_get_byte(h, p))) & 255u32;
+    uint32:b1 = @cast<uint32>(raw(bh_get_byte(h, p + 1i64))) & 255u32;
+    uint32:b2 = @cast<uint32>(raw(bh_get_byte(h, p + 2i64))) & 255u32;
+    uint32:b3 = @cast<uint32>(raw(bh_get_byte(h, p + 3i64))) & 255u32;
+    int32:bits = @cast<int32>(b0 | (b1 << 8u32) | (b2 << 16u32) | (b3 << 24u32));
+    h[2i64] = p + 4i64;
+    pass(raw(bh_flt32_from_bits(bits)));
+};
+
+func:bin_read_flt64 = flt64(int64->:h) {
+    int64:p = h[2i64];
+    uint64:b0 = @cast<uint64>(raw(bh_get_byte(h, p))) & 255u64;
+    uint64:b1 = @cast<uint64>(raw(bh_get_byte(h, p + 1i64))) & 255u64;
+    uint64:b2 = @cast<uint64>(raw(bh_get_byte(h, p + 2i64))) & 255u64;
+    uint64:b3 = @cast<uint64>(raw(bh_get_byte(h, p + 3i64))) & 255u64;
+    uint64:b4 = @cast<uint64>(raw(bh_get_byte(h, p + 4i64))) & 255u64;
+    uint64:b5 = @cast<uint64>(raw(bh_get_byte(h, p + 5i64))) & 255u64;
+    uint64:b6 = @cast<uint64>(raw(bh_get_byte(h, p + 6i64))) & 255u64;
+    uint64:b7 = @cast<uint64>(raw(bh_get_byte(h, p + 7i64))) & 255u64;
+    int64:bits = @cast<int64>(b0 | (b1 << 8u64) | (b2 << 16u64) | (b3 << 24u64)
+                | (b4 << 32u64) | (b5 << 40u64) | (b6 << 48u64) | (b7 << 56u64));
+    h[2i64] = p + 8i64;
+    pass(raw(bh_flt64_from_bits(bits)));
+};
+
+func:bin_read_str = string(int64->:h) {
+    int64:slen = raw(bin_read_int64(h));
+    if (slen <= 0i64) { pass(""); }
+    int64:off = h[2i64];
+    string:result = raw(bh_make_str(h, off, slen));
+    h[2i64] = off + slen;
+    pass(result);
+};
+
+func:bin_read_bool = int32(int64->:h) {
+    int64:p = h[2i64];
+    int32:val = raw(bh_get_byte(h, p));
+    h[2i64] = p + 1i64;
+    if (val != 0i32) { pass(1i32); }
+    pass(0i32);
+};

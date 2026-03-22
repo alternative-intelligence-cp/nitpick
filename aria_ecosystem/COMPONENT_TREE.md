@@ -40,7 +40,7 @@ AILP/
 ### 1.1 Aria Programming Language
 
 **Repository**: `/home/randy/._____RANDY_____/REPOS/aria`  
-**Version**: v0.1.0-dev (December 2025)  
+**Version**: v0.2.0 (March 2026)  
 **Language**: Specification (implemented in C++20)
 
 #### Language Features Tree

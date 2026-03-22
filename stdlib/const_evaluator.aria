@@ -1,0 +1,64 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Const Evaluator — Self-hosted Aria implementation
+// Phase 5.5: Supporting Passes
+//
+// Evaluates compile-time constant expressions:
+// - Integer/float/bool/string literals
+// - Binary arithmetic: add, sub, mul, div, mod
+// - Unary operations: negation, logical not
+// - Comparison: ==, !=, <, <=, >, >=
+// - Logical: and, or, not
+// - TBB arithmetic with sticky error semantics
+//
+// NOTE: Aria wrapper functions removed due to compiler codegen bug
+// (wild int8-> NIL comparison + extern call crashes LLVM).
+// Use extern functions directly from test/calling code.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Value kind constants
+const int32:VAL_INT = 0i32;
+const int32:VAL_FLOAT = 1i32;
+const int32:VAL_BOOL = 2i32;
+const int32:VAL_STRING = 3i32;
+const int32:VAL_ERR = 4i32;
+const int32:VAL_NULL = 5i32;
+
+// Comparison operator constants
+const int32:CMP_EQ = 0i32;
+const int32:CMP_NE = 1i32;
+const int32:CMP_LT = 2i32;
+const int32:CMP_LE = 3i32;
+const int32:CMP_GT = 4i32;
+const int32:CMP_GE = 5i32;
+
+// ─── C Helper Externs ─────────────────────────────────────────────────
+
+extern func:consteval_make_int = wild int8*(int64:val);
+extern func:consteval_make_float = wild int8*(float64:val);
+extern func:consteval_make_bool = wild int8*(int32:val);
+extern func:consteval_make_string = wild int8*(string:val);
+extern func:consteval_make_err = wild int8*();
+extern func:consteval_make_null = wild int8*();
+extern func:consteval_free = void(wild int8*:val);
+
+extern func:consteval_val_kind = int32(wild int8*:val);
+extern func:consteval_val_int = int64(wild int8*:val);
+extern func:consteval_val_float = float64(wild int8*:val);
+extern func:consteval_val_bool = int32(wild int8*:val);
+extern func:consteval_val_string = string(wild int8*:val);
+
+extern func:consteval_add = wild int8*(wild int8*:a, wild int8*:b);
+extern func:consteval_sub = wild int8*(wild int8*:a, wild int8*:b);
+extern func:consteval_mul = wild int8*(wild int8*:a, wild int8*:b);
+extern func:consteval_div = wild int8*(wild int8*:a, wild int8*:b);
+extern func:consteval_mod = wild int8*(wild int8*:a, wild int8*:b);
+extern func:consteval_neg = wild int8*(wild int8*:val);
+
+extern func:consteval_tbb_add = wild int8*(wild int8*:a, wild int8*:b, int32:bits);
+extern func:consteval_tbb_sub = wild int8*(wild int8*:a, wild int8*:b, int32:bits);
+extern func:consteval_tbb_mul = wild int8*(wild int8*:a, wild int8*:b, int32:bits);
+
+extern func:consteval_compare = int32(wild int8*:a, wild int8*:b, int32:op);
+extern func:consteval_logical_and = int32(wild int8*:a, wild int8*:b);
+extern func:consteval_logical_or = int32(wild int8*:a, wild int8*:b);
+extern func:consteval_logical_not = int32(wild int8*:val);

@@ -29,7 +29,7 @@ func:main = int32() {
 
     // T01: Empty object
     wild int8->:obj1 = json_new_object();
-    string:enc1 = json_encode(obj1);
+    string:enc1 = raw(json_encode(obj1));
     if (string_equals(enc1, "{}")) { drop(check(true, "T01 empty object → {}")); passed = passed + 1i32;
     } else { drop(check(false, "T01 empty object")); failed = failed + 1i32; }
     json_free(obj1);
@@ -37,7 +37,7 @@ func:main = int32() {
     // T02: Object with string field
     wild int8->:obj2 = json_new_object();
     json_obj_set_str(obj2, "name", "Aria");
-    string:enc2 = json_encode(obj2);
+    string:enc2 = raw(json_encode(obj2));
     if (string_contains(enc2, "\"name\"")) {
         if (string_contains(enc2, "\"Aria\"")) { drop(check(true, "T02 obj set_str name=Aria")); passed = passed + 1i32;
         } else { drop(check(false, "T02 obj set_str val")); failed = failed + 1i32; }
@@ -47,7 +47,7 @@ func:main = int32() {
     // T03: Object with int field
     wild int8->:obj3 = json_new_object();
     json_obj_set_int(obj3, "age", 42i64);
-    string:enc3 = json_encode(obj3);
+    string:enc3 = raw(json_encode(obj3));
     if (string_contains(enc3, "42")) { drop(check(true, "T03 obj set_int age=42")); passed = passed + 1i32;
     } else { drop(check(false, "T03 obj set_int")); failed = failed + 1i32; }
     json_free(obj3);
@@ -55,7 +55,7 @@ func:main = int32() {
     // T04: Object with float field
     wild int8->:obj4 = json_new_object();
     json_obj_set_flt(obj4, "pi", 3.14);
-    string:enc4 = json_encode(obj4);
+    string:enc4 = raw(json_encode(obj4));
     if (string_contains(enc4, "3.14")) { drop(check(true, "T04 obj set_flt pi=3.14")); passed = passed + 1i32;
     } else { drop(check(false, "T04 obj set_flt")); failed = failed + 1i32; }
     json_free(obj4);
@@ -64,7 +64,7 @@ func:main = int32() {
     wild int8->:obj5 = json_new_object();
     json_obj_set_bool(obj5, "active", 1i32);
     json_obj_set_bool(obj5, "deleted", 0i32);
-    string:enc5 = json_encode(obj5);
+    string:enc5 = raw(json_encode(obj5));
     if (string_contains(enc5, "true")) {
         if (string_contains(enc5, "false")) { drop(check(true, "T05 obj set_bool true+false")); passed = passed + 1i32;
         } else { drop(check(false, "T05 obj set_bool false")); failed = failed + 1i32; }
@@ -74,7 +74,7 @@ func:main = int32() {
     // T06: Object with null field
     wild int8->:obj6 = json_new_object();
     json_obj_set_null(obj6, "data");
-    string:enc6 = json_encode(obj6);
+    string:enc6 = raw(json_encode(obj6));
     if (string_contains(enc6, "null")) { drop(check(true, "T06 obj set_null")); passed = passed + 1i32;
     } else { drop(check(false, "T06 obj set_null")); failed = failed + 1i32; }
     json_free(obj6);
@@ -84,7 +84,7 @@ func:main = int32() {
     json_obj_set_str(obj7, "lang", "Aria");
     json_obj_set_int(obj7, "version", 1i64);
     json_obj_set_bool(obj7, "stable", 1i32);
-    string:enc7 = json_encode(obj7);
+    string:enc7 = raw(json_encode(obj7));
     if (string_contains(enc7, "\"lang\"")) {
         if (string_contains(enc7, "\"version\"")) {
             if (string_contains(enc7, "\"stable\"")) { drop(check(true, "T07 obj multiple fields")); passed = passed + 1i32;
@@ -102,7 +102,7 @@ func:main = int32() {
 
     // T08: Empty array
     wild int8->:arr1 = json_new_array();
-    string:enc8 = json_encode(arr1);
+    string:enc8 = raw(json_encode(arr1));
     if (string_equals(enc8, "[]")) { drop(check(true, "T08 empty array → []")); passed = passed + 1i32;
     } else { drop(check(false, "T08 empty array")); failed = failed + 1i32; }
     json_free(arr1);
@@ -112,7 +112,7 @@ func:main = int32() {
     json_arr_push_int(arr2, 1i64);
     json_arr_push_int(arr2, 2i64);
     json_arr_push_int(arr2, 3i64);
-    string:enc9 = json_encode(arr2);
+    string:enc9 = raw(json_encode(arr2));
     if (string_equals(enc9, "[1,2,3]")) { drop(check(true, "T09 arr ints [1,2,3]")); passed = passed + 1i32;
     } else { drop(check(false, "T09 arr ints")); failed = failed + 1i32; }
     json_free(arr2);
@@ -121,7 +121,7 @@ func:main = int32() {
     wild int8->:arr3 = json_new_array();
     json_arr_push_str(arr3, "hello");
     json_arr_push_str(arr3, "world");
-    string:enc10 = json_encode(arr3);
+    string:enc10 = raw(json_encode(arr3));
     if (string_contains(enc10, "\"hello\"")) {
         if (string_contains(enc10, "\"world\"")) { drop(check(true, "T10 arr strings")); passed = passed + 1i32;
         } else { drop(check(false, "T10 arr strings B")); failed = failed + 1i32; }
@@ -134,7 +134,7 @@ func:main = int32() {
     json_arr_push_str(arr4, "test");
     json_arr_push_bool(arr4, 1i32);
     json_arr_push_null(arr4);
-    string:enc11 = json_encode(arr4);
+    string:enc11 = raw(json_encode(arr4));
     if (string_contains(enc11, "42")) {
         if (string_contains(enc11, "\"test\"")) {
             if (string_contains(enc11, "null")) { drop(check(true, "T11 arr mixed types")); passed = passed + 1i32;
@@ -157,7 +157,7 @@ func:main = int32() {
     json_obj_set_str(outer1, "name", "Randy");
     json_obj_set_obj(outer1, "address", inner1);
     json_free(inner1);
-    string:enc12 = json_encode(outer1);
+    string:enc12 = raw(json_encode(outer1));
     if (string_contains(enc12, "\"address\"")) {
         if (string_contains(enc12, "\"Austin\"")) { drop(check(true, "T12 nested object")); passed = passed + 1i32;
         } else { drop(check(false, "T12 nested B")); failed = failed + 1i32; }
@@ -172,7 +172,7 @@ func:main = int32() {
     json_obj_set_str(outer2, "project", "Aria");
     json_obj_set_arr(outer2, "tags", tags);
     json_free(tags);
-    string:enc13 = json_encode(outer2);
+    string:enc13 = raw(json_encode(outer2));
     if (string_contains(enc13, "\"tags\"")) {
         if (string_contains(enc13, "\"systems\"")) { drop(check(true, "T13 obj with nested array")); passed = passed + 1i32;
         } else { drop(check(false, "T13 nested arr B")); failed = failed + 1i32; }
@@ -191,7 +191,7 @@ func:main = int32() {
     json_arr_push_obj(portfolio, item2);
     json_free(item1);
     json_free(item2);
-    string:enc14 = json_encode(portfolio);
+    string:enc14 = raw(json_encode(portfolio));
     if (string_contains(enc14, "\"BTC\"")) {
         if (string_contains(enc14, "\"ETH\"")) { drop(check(true, "T14 array of objects")); passed = passed + 1i32;
         } else { drop(check(false, "T14 arr objs B")); failed = failed + 1i32; }
@@ -388,7 +388,7 @@ func:main = int32() {
     wild int8->:rt1 = json_new_object();
     json_obj_set_str(rt1, "msg", "hello");
     json_obj_set_int(rt1, "num", 7i64);
-    string:rt1_enc = json_encode(rt1);
+    string:rt1_enc = raw(json_encode(rt1));
     json_free(rt1);
     wild int8->:rt1_dec = json_parse(rt1_enc);
     string:rt1_msg = json_obj_get_str(rt1_dec, "msg");
@@ -404,7 +404,7 @@ func:main = int32() {
     json_arr_push_int(rt2, 11i64);
     json_arr_push_int(rt2, 22i64);
     json_arr_push_int(rt2, 33i64);
-    string:rt2_enc = json_encode(rt2);
+    string:rt2_enc = raw(json_encode(rt2));
     json_free(rt2);
     wild int8->:rt2_dec = json_parse(rt2_enc);
     int64:rt2_len = json_arr_len(rt2_dec);
@@ -421,7 +421,7 @@ func:main = int32() {
     wild int8->:rt3 = json_new_object();
     json_obj_set_obj(rt3, "child", rt3_inner);
     json_free(rt3_inner);
-    string:rt3_enc = json_encode(rt3);
+    string:rt3_enc = raw(json_encode(rt3));
     json_free(rt3);
     wild int8->:rt3_dec = json_parse(rt3_enc);
     wild int8->:rt3_child = json_obj_get_obj(rt3_dec, "child");
@@ -435,7 +435,7 @@ func:main = int32() {
     wild int8->:rt4 = json_new_object();
     json_obj_set_bool(rt4, "flag", 1i32);
     json_obj_set_null(rt4, "empty");
-    string:rt4_enc = json_encode(rt4);
+    string:rt4_enc = raw(json_encode(rt4));
     json_free(rt4);
     wild int8->:rt4_dec = json_parse(rt4_enc);
     int32:rt4_flag = json_obj_get_bool(rt4_dec, "flag");
@@ -449,7 +449,7 @@ func:main = int32() {
     // T35: Round-trip float
     wild int8->:rt5 = json_new_object();
     json_obj_set_flt(rt5, "val", 2.718);
-    string:rt5_enc = json_encode(rt5);
+    string:rt5_enc = raw(json_encode(rt5));
     json_free(rt5);
     wild int8->:rt5_dec = json_parse(rt5_enc);
     flt64:rt5_val = json_obj_get_flt(rt5_dec, "val");
@@ -510,7 +510,7 @@ func:main = int32() {
     } else { drop(check(false, "T41 key overwrite")); failed = failed + 1i32; }
 
     // Encode after overwrite — should have only one x
-    string:pe6_enc = json_encode(pe6);
+    string:pe6_enc = raw(json_encode(pe6));
     // Count that "x" appears exactly once as key
     int64:pe6_count = json_obj_count(pe6);
     if (pe6_count == 1i64) { drop(check(true, "T42 overwrite preserves count=1")); passed = passed + 1i32;
@@ -520,7 +520,7 @@ func:main = int32() {
     // T43: String escaping (quotes in value)
     wild int8->:pe7 = json_new_object();
     json_obj_set_str(pe7, "msg", "say \"hi\"");
-    string:pe7_enc = json_encode(pe7);
+    string:pe7_enc = raw(json_encode(pe7));
     if (string_contains(pe7_enc, "\\\"hi\\\"")) { drop(check(true, "T43 string escape quotes")); passed = passed + 1i32;
     } else { drop(check(false, "T43 string escape")); failed = failed + 1i32; }
     json_free(pe7);
@@ -566,7 +566,7 @@ func:main = int32() {
     json_obj_set_arr(ticker, "changes_pct", changes);
     json_free(changes);
 
-    string:ticker_json = json_encode(ticker);
+    string:ticker_json = raw(json_encode(ticker));
     json_free(ticker);
 
     // Parse it back
@@ -606,7 +606,7 @@ func:main = int32() {
     json_arr_push_arr(mat, row2);
     json_free(row1);
     json_free(row2);
-    string:mat_enc = json_encode(mat);
+    string:mat_enc = raw(json_encode(mat));
     if (string_equals(mat_enc, "[[1,2],[3,4]]")) { drop(check(true, "T47 nested arrays [[1,2],[3,4]]")); passed = passed + 1i32;
     } else { drop(check(false, "T47 nested arrays")); failed = failed + 1i32; }
     json_free(mat);
