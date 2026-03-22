@@ -2,6 +2,19 @@
 
 All notable changes to the "aria-lang" extension will be documented in this file.
 
+## [0.2.1] - 2026-03
+
+### Added
+- **Code completion** — Aria keywords (37 with descriptions), built-in types (15), and file-scoped symbols from AST analysis. Trigger characters: `:` and `.`
+
+### Fixed
+- **Hover** — Now shows full type signatures for declared symbols (functions with parameter types, structs with fields, enums with variants, traits with methods, constants, variables). Falls back to descriptions for Aria builtin types (int8–int64, float32/64, string, unknown, pass, fail, etc.)
+- **Go to definition** — Jumps to actual AST declaration locations instead of naive text search
+
+### Changed
+- Updated bundled aria-ls binary with AST-based analysis
+- Updated to match Aria compiler v0.2.1
+
 ## [0.2.0] - 2026-03
 
 ### Changed
