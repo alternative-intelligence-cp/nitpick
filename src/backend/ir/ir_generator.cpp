@@ -4622,6 +4622,21 @@ skip_comparison:
                     // Field 0: value (may need type conversion)
                     llvm::Type* valueFieldType = resultStruct->getElementType(0);
                     if (value->getType() != valueFieldType) {
+                        // Unwrap optional { i1, T } structs from extern pointer returns
+                        if (value->getType()->isStructTy() && !valueFieldType->isStructTy()) {
+                            llvm::StructType* valSt = llvm::cast<llvm::StructType>(value->getType());
+                            if (valSt->getNumElements() == 2 && valSt->getElementType(0)->isIntegerTy(1)) {
+                                // Optional wrapper { i1, T } — extract field 1 (the value)
+                                value = builder.CreateExtractValue(value, {1}, "unwrap_optional_for_pass");
+                                std::cerr << "[DEBUG] pass(): unwrapped optional { i1, T } to raw value" << std::endl;
+                            } else if (valSt->getNumElements() == 3 &&
+                                       valSt->getElementType(1)->isPointerTy() &&
+                                       valSt->getElementType(2)->isIntegerTy(8)) {
+                                // Result wrapper { T, ptr, i8 } — extract field 0
+                                value = builder.CreateExtractValue(value, {0}, "unwrap_result_for_pass");
+                                std::cerr << "[DEBUG] pass(): unwrapped Result<T> to raw value" << std::endl;
+                            }
+                        }
                         if (value->getType()->isIntegerTy() && valueFieldType->isIntegerTy()) {
                             llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(value->getType());
                             llvm::IntegerType* fldIntTy = llvm::cast<llvm::IntegerType>(valueFieldType);
@@ -6393,6 +6408,21 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             if (sn.find("struct.int") == 0 || sn.find("struct.uint") == 0) {
                                 result = promoteToLBIMStruct(result, targetType);
                             }
+                        } else if (result->getType()->isStructTy() && !targetType->isStructTy()) {
+                            // Unwrap Optional { i1, T } or Result { T, ptr, i8 } when
+                            // re-assigning to a variable whose alloca is the inner type.
+                            llvm::StructType* resST = llvm::cast<llvm::StructType>(result->getType());
+                            unsigned numFields = resST->getNumElements();
+                            if (numFields == 2 &&
+                                resST->getElementType(0)->isIntegerTy(1)) {
+                                // Optional { i1, T } → extract field 1
+                                result = builder.CreateExtractValue(result, {1}, "unwrap_opt_assign");
+                            } else if (numFields == 3 &&
+                                       resST->getElementType(1)->isPointerTy() &&
+                                       resST->getElementType(2)->isIntegerTy(8)) {
+                                // Result { T, ptr, i8 } → extract field 0
+                                result = builder.CreateExtractValue(result, {0}, "unwrap_res_assign");
+                            }
                         }
                     }
                 }
@@ -6642,6 +6672,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         std::cerr << "[DEBUG] Replaced right NIL with OptionalNone for comparison" << std::endl;
                     }
                 }
+
+                // Handle pointer-NIL comparison: NIL generates as empty struct {},
+                // but when compared to a pointer we need null pointer instead
+                if (leftIsNIL && R->getType()->isPointerTy()) {
+                    L = llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+                    std::cerr << "[DEBUG] Replaced left NIL with null pointer for pointer comparison" << std::endl;
+                } else if (rightIsNIL && L->getType()->isPointerTy()) {
+                    R = llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+                    std::cerr << "[DEBUG] Replaced right NIL with null pointer for pointer comparison" << std::endl;
+                }
+
+                // Handle integer-NIL comparison: NIL sentinel for integers is 0
+                if (leftIsNIL && R->getType()->isIntegerTy()) {
+                    L = llvm::ConstantInt::get(R->getType(), 0);
+                    std::cerr << "[DEBUG] Replaced left NIL with 0 for integer comparison" << std::endl;
+                } else if (rightIsNIL && L->getType()->isIntegerTy()) {
+                    R = llvm::ConstantInt::get(L->getType(), 0);
+                    std::cerr << "[DEBUG] Replaced right NIL with 0 for integer comparison" << std::endl;
+                }
             }
             
             // SPECIAL HANDLING: unknown literal comparisons (polymorphic)
@@ -6809,6 +6858,24 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             if (!isUnsigned && leftLiteral && isUnsignedName(leftLiteral->explicit_type)) isUnsigned = true;
             if (!isUnsigned && rightLiteral && isUnsignedName(rightLiteral->explicit_type)) isUnsigned = true;
 
+            // Auto-unwrap Result<T> structs in binary expressions.
+            // Aria functions return { T, ptr, i8 } but binary ops need raw T.
+            auto isResultStruct = [](llvm::Type* ty) -> bool {
+                if (!ty->isStructTy()) return false;
+                llvm::StructType* st = llvm::cast<llvm::StructType>(ty);
+                return st->getNumElements() == 3 &&
+                       st->getElementType(1)->isPointerTy() &&
+                       st->getElementType(2)->isIntegerTy(8);
+            };
+            if (isResultStruct(L->getType()) && !isResultStruct(R->getType())) {
+                L = builder.CreateExtractValue(L, {0}, "unwrap_result_lhs");
+                std::cerr << "[DEBUG] Auto-unwrapped Result<T> on left operand" << std::endl;
+            }
+            if (isResultStruct(R->getType()) && !isResultStruct(L->getType())) {
+                R = builder.CreateExtractValue(R, {0}, "unwrap_result_rhs");
+                std::cerr << "[DEBUG] Auto-unwrapped Result<T> on right operand" << std::endl;
+            }
+
             // Generate appropriate operation based on operator
             switch (binop->op.type) {
                 // Arithmetic operators
@@ -6891,6 +6958,55 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Float addition: use FAdd for floating-point types
                     if (L->getType()->isFloatingPointTy()) {
                         return builder.CreateFAdd(L, R, "faddtmp");
+                    }
+                    // String concatenation: detect string operands and call runtime
+                    {
+                        bool leftIsStr = false, rightIsStr = false;
+                        if (leftType && leftType->isPrimitive() &&
+                            static_cast<PrimitiveType*>(leftType)->getName() == "string")
+                            leftIsStr = true;
+                        if (rightType && rightType->isPrimitive() &&
+                            static_cast<PrimitiveType*>(rightType)->getName() == "string")
+                            rightIsStr = true;
+                        if (!leftIsStr && binop->left->type == ASTNode::NodeType::IDENTIFIER) {
+                            auto* id = static_cast<IdentifierExpr*>(binop->left.get());
+                            auto it2 = var_aria_types.find(id->name);
+                            if (it2 != var_aria_types.end() && it2->second == "string") leftIsStr = true;
+                        }
+                        if (!rightIsStr && binop->right->type == ASTNode::NodeType::IDENTIFIER) {
+                            auto* id = static_cast<IdentifierExpr*>(binop->right.get());
+                            auto it2 = var_aria_types.find(id->name);
+                            if (it2 != var_aria_types.end() && it2->second == "string") rightIsStr = true;
+                        }
+                        if (!leftIsStr && binop->left->type == ASTNode::NodeType::LITERAL) {
+                            auto* lit = static_cast<LiteralExpr*>(binop->left.get());
+                            if (std::holds_alternative<std::string>(lit->value)) leftIsStr = true;
+                        }
+                        if (!rightIsStr && binop->right->type == ASTNode::NodeType::LITERAL) {
+                            auto* lit = static_cast<LiteralExpr*>(binop->right.get());
+                            if (std::holds_alternative<std::string>(lit->value)) rightIsStr = true;
+                        }
+                        if (leftIsStr || rightIsStr) {
+                            std::cerr << "[STRING +] Emitting aria_string_concat call" << std::endl;
+                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                            if (!ariaStrType) {
+                                ariaStrType = llvm::StructType::create(context,
+                                    {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                                     llvm::Type::getInt64Ty(context)},
+                                    "struct.AriaString");
+                            }
+                            llvm::FunctionType* concatFT = llvm::FunctionType::get(
+                                llvm::PointerType::get(context, 0),
+                                {ariaStrType, ariaStrType}, false);
+                            llvm::FunctionCallee concatFn = module->getOrInsertFunction("aria_string_concat", concatFT);
+                            llvm::Value* lStr = L->getType()->isPointerTy()
+                                ? builder.CreateLoad(ariaStrType, L, "str.lhs")
+                                : L;
+                            llvm::Value* rStr = R->getType()->isPointerTy()
+                                ? builder.CreateLoad(ariaStrType, R, "str.rhs")
+                                : R;
+                            return builder.CreateCall(concatFn, {lStr, rStr}, "str.concat");
+                        }
                     }
                     // Layer 1 Safety: Safe addition returns Unknown on overflow
                     return generateSafeAdd(L, R, "addtmp");

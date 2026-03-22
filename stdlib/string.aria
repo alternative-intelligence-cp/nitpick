@@ -1,5 +1,5 @@
 // stdlib/string.aria
-// String Manipulation Module
+// String Manipulation Module — Pure Aria Implementation (v0.2.0)
 //
 // Provides string operations not available as built-in intrinsics.
 // Import with: use "stdlib/string.aria".*;
@@ -11,7 +11,7 @@
 //   string_trim_end, string_to_upper, string_to_lower, string_pad_left,
 //   string_pad_right, string_from_int, string_from_char
 //
-// This module adds:
+// This module adds (pure Aria, thin C helpers for irreducible ops):
 //   str_replace(s, old, new)           → string   replace all occurrences
 //   str_replace_first(s, old, new)     → string   replace first occurrence
 //   str_count(s, sub)                  → int64    count occurrences
@@ -25,16 +25,399 @@
 //   str_split_free(h)                 → void     free split handle
 //   str_join(h, delim)                → string   join parts with delimiter
 
-// ── Extern declarations for runtime string functions ─────────────────────────
-extern func:str_replace = string(string:src, string:old_s, string:new_s);
-extern func:str_replace_first = string(string:src, string:old_s, string:new_s);
-extern func:str_count = int64(string:haystack, string:needle);
-extern func:str_byte_at = int64(string:s, int64:idx);
-extern func:str_char_at = string(string:s, int64:idx);
-extern func:str_reverse = string(string:s);
-extern func:str_to_int = int64(string:s);
-extern func:str_split = wild int8*(string:s, string:delim);
-extern func:str_split_count = int64(wild int8*:handle);
-extern func:str_split_get = string(wild int8*:handle, int64:idx);
-extern func:str_split_free = void(wild int8*:handle);
-extern func:str_join = string(wild int8*:handle, string:delim);
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: libc memory
+// ═══════════════════════════════════════════════════════════════════════
+extern func:malloc = wild int64*(int64:size);
+extern func:free = void(wild int64*:ptr);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: C helpers (src/runtime/strings/string_helpers.cpp)
+// ═══════════════════════════════════════════════════════════════════════
+
+// String construction
+extern func:sh_make_str = string(int64*:buf, int64:offset, int64:len);
+extern func:sh_make_str_direct = string(string:data, int64:offset, int64:len);
+extern func:sh_empty_str = string();
+
+// Byte-level access
+extern func:sh_byte_at = int64(string:s, int64:idx);
+extern func:sh_strlen = int64(string:s);
+
+// Working buffer ops
+extern func:sh_alloc_buf = void(int64*:h, int64:size);
+extern func:sh_free_buf = void(int64*:h);
+extern func:sh_set_byte = void(int64*:h, int64:offset, int32:val);
+extern func:sh_get_byte = int32(int64*:h, int64:offset);
+extern func:sh_copy_from_str = void(int64*:h, int64:buf_offset, string:src, int64:src_offset, int64:len);
+
+// Split handle ops
+extern func:sh_split_alloc = void(int64*:h, int64:count);
+extern func:sh_split_set = void(int64*:h, int64:idx, string:data, int64:offset, int64:len);
+extern func:sh_split_get = string(int64*:h, int64:idx);
+extern func:sh_split_part_len = int64(int64*:h, int64:idx);
+extern func:sh_split_copy_to_buf = void(int64*:dst_h, int64:buf_offset, int64*:src_h, int64:idx);
+
+// Integer parsing
+extern func:sh_parse_int = int64(string:s);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: check if bytes match at position
+// Uses built-in string intrinsics for substring extraction + compare
+// ═══════════════════════════════════════════════════════════════════════
+func:str_match_at = bool(string:haystack, int64:pos, string:needle, int64:h_len, int64:n_len) {
+    // Check each byte of needle against haystack at pos
+    int64:i = 0i64;
+    while (i < n_len) {
+        int64:hb = sh_byte_at(haystack, pos + i);
+        int64:nb = sh_byte_at(needle, i);
+        if (hb != nb) {
+            pass(false);
+        }
+        i = i + 1i64;
+    }
+    pass(true);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_count — count non-overlapping occurrences
+// ═══════════════════════════════════════════════════════════════════════
+func:str_count = int64(string:haystack, string:needle) {
+    int64:h_len = sh_strlen(haystack);
+    int64:n_len = sh_strlen(needle);
+    if (n_len == 0i64) { pass(0i64); }
+    if (n_len > h_len) { pass(0i64); }
+
+    int64:count = 0i64;
+    int64:i = 0i64;
+    int64:limit = h_len - n_len;
+    while (i <= limit) {
+        bool:m = raw(str_match_at(haystack, i, needle, h_len, n_len));
+        if (m == true) {
+            count = count + 1i64;
+            i = i + n_len;
+        } else {
+            i = i + 1i64;
+        }
+    }
+    pass(count);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_replace — replace all non-overlapping occurrences
+// ═══════════════════════════════════════════════════════════════════════
+func:str_replace = string(string:src, string:old_s, string:new_s) {
+    int64:src_len = sh_strlen(src);
+    int64:old_len = sh_strlen(old_s);
+    int64:new_len = sh_strlen(new_s);
+
+    if (old_len == 0i64) {
+        // Empty pattern: return copy of source
+        string:copy = sh_make_str_direct(src, 0i64, src_len);
+        pass(copy);
+    }
+
+    // Count occurrences to know result size
+    int64:count = raw(str_count(src, old_s));
+    if (count == 0i64) {
+        string:copy = sh_make_str_direct(src, 0i64, src_len);
+        pass(copy);
+    }
+
+    // Allocate result buffer
+    int64:result_len = src_len + count * (new_len - old_len);
+    wild int64->:buf = malloc(8i64);
+    sh_alloc_buf(buf, result_len + 1i64);
+
+    int64:pos = 0i64;
+    int64:i = 0i64;
+    int64:limit = src_len - old_len;
+    while (i < src_len) {
+        if (i <= limit) {
+            bool:m = raw(str_match_at(src, i, old_s, src_len, old_len));
+            if (m == true) {
+                // Copy replacement
+                if (new_len > 0i64) {
+                    sh_copy_from_str(buf, pos, new_s, 0i64, new_len);
+                    pos = pos + new_len;
+                }
+                i = i + old_len;
+            } else {
+                // Copy original byte
+                int64:b = sh_byte_at(src, i);
+                sh_set_byte(buf, pos, @cast<int32>(b));
+                pos = pos + 1i64;
+                i = i + 1i64;
+            }
+        } else {
+            // Past limit, just copy remaining bytes
+            int64:b = sh_byte_at(src, i);
+            sh_set_byte(buf, pos, @cast<int32>(b));
+            pos = pos + 1i64;
+            i = i + 1i64;
+        }
+    }
+    sh_set_byte(buf, result_len, 0i32);
+
+    string:result = sh_make_str(buf, 0i64, result_len);
+    sh_free_buf(buf);
+    free(buf);
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_replace_first — replace first occurrence only
+// ═══════════════════════════════════════════════════════════════════════
+func:str_replace_first = string(string:src, string:old_s, string:new_s) {
+    int64:src_len = sh_strlen(src);
+    int64:old_len = sh_strlen(old_s);
+    int64:new_len = sh_strlen(new_s);
+
+    if (old_len == 0i64) {
+        string:copy = sh_make_str_direct(src, 0i64, src_len);
+        pass(copy);
+    }
+
+    // Find first occurrence
+    int64:found = -1i64;
+    int64:limit = src_len - old_len;
+    int64:i = 0i64;
+    while (i <= limit) {
+        bool:m = raw(str_match_at(src, i, old_s, src_len, old_len));
+        if (m == true) {
+            found = i;
+            i = limit + 1i64;  // break
+        } else {
+            i = i + 1i64;
+        }
+    }
+
+    if (found == -1i64) {
+        string:copy = sh_make_str_direct(src, 0i64, src_len);
+        pass(copy);
+    }
+
+    // Build result: prefix + new_s + suffix
+    int64:result_len = src_len + (new_len - old_len);
+    wild int64->:buf = malloc(8i64);
+    sh_alloc_buf(buf, result_len + 1i64);
+
+    // Copy prefix
+    if (found > 0i64) {
+        sh_copy_from_str(buf, 0i64, src, 0i64, found);
+    }
+    // Copy replacement
+    if (new_len > 0i64) {
+        sh_copy_from_str(buf, found, new_s, 0i64, new_len);
+    }
+    // Copy suffix
+    int64:suffix_start = found + old_len;
+    int64:suffix_len = src_len - suffix_start;
+    if (suffix_len > 0i64) {
+        sh_copy_from_str(buf, found + new_len, src, suffix_start, suffix_len);
+    }
+    sh_set_byte(buf, result_len, 0i32);
+
+    string:result = sh_make_str(buf, 0i64, result_len);
+    sh_free_buf(buf);
+    free(buf);
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_byte_at — byte value at index (-1 on OOB)
+// ═══════════════════════════════════════════════════════════════════════
+func:str_byte_at = int64(string:s, int64:idx) {
+    int64:len = sh_strlen(s);
+    if (idx < 0i64) { pass(-1i64); }
+    if (idx >= len) { pass(-1i64); }
+    pass(sh_byte_at(s, idx));
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_char_at — single-character string at index
+// ═══════════════════════════════════════════════════════════════════════
+func:str_char_at = string(string:s, int64:idx) {
+    int64:len = sh_strlen(s);
+    if (idx < 0i64) { string:e = sh_empty_str(); pass(e); }
+    if (idx >= len) { string:e = sh_empty_str(); pass(e); }
+    string:ch = sh_make_str_direct(s, idx, 1i64);
+    pass(ch);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_reverse — reverse bytes (ASCII)
+// ═══════════════════════════════════════════════════════════════════════
+func:str_reverse = string(string:s) {
+    int64:len = sh_strlen(s);
+    if (len <= 1i64) {
+        string:copy = sh_make_str_direct(s, 0i64, len);
+        pass(copy);
+    }
+
+    wild int64->:buf = malloc(8i64);
+    sh_alloc_buf(buf, len + 1i64);
+
+    int64:i = 0i64;
+    while (i < len) {
+        int64:b = sh_byte_at(s, len - 1i64 - i);
+        sh_set_byte(buf, i, @cast<int32>(b));
+        i = i + 1i64;
+    }
+    sh_set_byte(buf, len, 0i32);
+
+    string:result = sh_make_str(buf, 0i64, len);
+    sh_free_buf(buf);
+    free(buf);
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_to_int — parse string to int64
+// ═══════════════════════════════════════════════════════════════════════
+func:str_to_int = int64(string:s) {
+    pass(sh_parse_int(s));
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_split — split string by delimiter
+//
+// Split handle layout: wild int64-> with 2 elements
+//   h[0] = parts_array_ptr (AriaString** stored as int64)
+//   h[1] = count
+// ═══════════════════════════════════════════════════════════════════════
+func:str_split = wild int64->(string:s, string:delim) {
+    int64:s_len = sh_strlen(s);
+    int64:d_len = sh_strlen(delim);
+
+    // Allocate split handle (2 int64s)
+    wild int64->:h = malloc(16i64);
+    h[0i64] = 0i64;
+    h[1i64] = 0i64;
+
+    // Empty string → 0 parts
+    if (s_len == 0i64) {
+        pass(h);
+    }
+
+    // Empty delimiter → split into individual chars
+    if (d_len == 0i64) {
+        sh_split_alloc(h, s_len);
+        int64:i = 0i64;
+        while (i < s_len) {
+            sh_split_set(h, i, s, i, 1i64);
+            i = i + 1i64;
+        }
+        pass(h);
+    }
+
+    // Count occurrences of delimiter to find number of parts
+    int64:count = 1i64;
+    int64:i = 0i64;
+    int64:limit = s_len - d_len;
+    while (i <= limit) {
+        bool:m = raw(str_match_at(s, i, delim, s_len, d_len));
+        if (m == true) {
+            count = count + 1i64;
+            i = i + d_len;
+        } else {
+            i = i + 1i64;
+        }
+    }
+
+    // Allocate parts array
+    sh_split_alloc(h, count);
+
+    // Fill parts
+    int64:part_idx = 0i64;
+    int64:start = 0i64;
+    i = 0i64;
+    while (i <= limit) {
+        bool:m = raw(str_match_at(s, i, delim, s_len, d_len));
+        if (m == true) {
+            sh_split_set(h, part_idx, s, start, i - start);
+            part_idx = part_idx + 1i64;
+            start = i + d_len;
+            i = i + d_len;
+        } else {
+            i = i + 1i64;
+        }
+    }
+    // Final part
+    sh_split_set(h, part_idx, s, start, s_len - start);
+
+    pass(h);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_split_count — number of parts in split handle
+// ═══════════════════════════════════════════════════════════════════════
+func:str_split_count = int64(int64->:h) {
+    pass(h[1i64]);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_split_get — get i-th part from split handle
+// ═══════════════════════════════════════════════════════════════════════
+func:str_split_get = string(int64->:h, int64:idx) {
+    string:result = sh_split_get(h, idx);
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_split_free — free split handle
+// ═══════════════════════════════════════════════════════════════════════
+func:str_split_free = NIL(wild int64->:h) {
+    free(h);
+    drop(NIL);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_join — join split parts with delimiter
+// ═══════════════════════════════════════════════════════════════════════
+func:str_join = string(int64->:h, string:delim) {
+    int64:count = h[1i64];
+
+    if (count == 0i64) {
+        string:e = sh_empty_str();
+        pass(e);
+    }
+
+    int64:d_len = sh_strlen(delim);
+
+    // Calculate total length
+    int64:total = 0i64;
+    int64:i = 0i64;
+    while (i < count) {
+        total = total + sh_split_part_len(h, i);
+        i = i + 1i64;
+    }
+    if (d_len > 0i64) {
+        total = total + d_len * (count - 1i64);
+    }
+
+    // Allocate result buffer
+    wild int64->:buf = malloc(8i64);
+    sh_alloc_buf(buf, total + 1i64);
+
+    // Build result
+    int64:pos = 0i64;
+    i = 0i64;
+    while (i < count) {
+        if (i > 0i64) {
+            if (d_len > 0i64) {
+                sh_copy_from_str(buf, pos, delim, 0i64, d_len);
+                pos = pos + d_len;
+            }
+        }
+        sh_split_copy_to_buf(buf, pos, h, i);
+        pos = pos + sh_split_part_len(h, i);
+        i = i + 1i64;
+    }
+    sh_set_byte(buf, total, 0i32);
+
+    string:result = sh_make_str(buf, 0i64, total);
+    sh_free_buf(buf);
+    free(buf);
+    pass(result);
+};

@@ -1,0 +1,38 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Exhaustiveness Checker — Self-hosted Aria implementation
+// Phase 5.5: Supporting Passes
+//
+// Checks that pick (match) statements cover all possible values:
+// - Bool: must cover true + false (or use default)
+// - Integer ranges: must cover entire range (e.g., -128..127 for int8)
+// - TBB types: must also handle ERR
+// - Enums: must cover all variants
+// - Infinite types: require default/wildcard case
+//
+// NOTE: Aria wrapper functions removed due to compiler codegen bug
+// (wild int8-> NIL comparison + extern call crashes LLVM).
+// Use extern functions directly from test/calling code.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Domain kind constants
+const int32:DOMAIN_BOOL = 0i32;
+const int32:DOMAIN_INT_RANGE = 1i32;
+const int32:DOMAIN_ENUM = 2i32;
+const int32:DOMAIN_INFINITE = 3i32;
+const int32:DOMAIN_UNKNOWN = 4i32;
+
+// ─── C Helper Externs ─────────────────────────────────────────────────
+
+extern func:exhaust_new = wild int8*();
+extern func:exhaust_free = void(wild int8*:cov);
+extern func:exhaust_add_range = void(wild int8*:cov, int64:mn, int64:mx);
+extern func:exhaust_add_symbol = void(wild int8*:cov, string:symbol);
+extern func:exhaust_add_default = void(wild int8*:cov);
+extern func:exhaust_add_err = void(wild int8*:cov);
+extern func:exhaust_add_unknown = void(wild int8*:cov);
+extern func:exhaust_domain_kind = int32(string:type_name);
+extern func:exhaust_domain_min = int64(string:type_name);
+extern func:exhaust_domain_max = int64(string:type_name);
+extern func:exhaust_domain_requires_err = int32(string:type_name);
+extern func:exhaust_is_exhaustive = int32(wild int8*:cov, string:type_name);
+extern func:exhaust_missing_message = string(wild int8*:cov, string:type_name);

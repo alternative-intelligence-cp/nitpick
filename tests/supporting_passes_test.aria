@@ -1,0 +1,515 @@
+// tests/supporting_passes_test.aria
+// Phase 5.5: Supporting Passes Tests (40 tests)
+// Tests safety_checker, exhaustiveness, const_evaluator, borrow_checker
+use "stdlib/safety_checker.aria".*;
+use "stdlib/exhaustiveness.aria".*;
+use "stdlib/const_evaluator.aria".*;
+use "stdlib/borrow_checker.aria".*;
+use "stdlib/string_convert.aria".*;
+
+func:failsafe = NIL(int32:code) { };
+
+func:check = NIL(bool:cond, string:msg) {
+    if (cond) {
+        print("  [PASS] ");
+        println(msg);
+    }
+    if (cond == false) {
+        print("  [FAIL] ");
+        println(msg);
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 1: Safety Checker (T01-T10)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_safety = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Safety Checker ----------------------------------");
+
+    // T01: New state starts clean
+    wild int8->:s01 = safety_new(0i32);
+    int32:c01 = safety_issue_count(s01);
+    if (c01 == 0i32) { drop(check(true, "T01 new checker has zero issues")); passed = passed + 1i32; }
+    else { drop(check(false, "T01 new checker has zero issues")); failed = failed + 1i32; }
+    safety_free(s01);
+
+    // T02: Permissive mode — issues exist but no errors
+    wild int8->:s02 = safety_new(0i32);
+    safety_add_issue(s02, 0i32, "wild memory", "use defer", 1i32, 1i32);
+    int32:hasErr02 = safety_has_errors(s02);
+    if (hasErr02 == 0i32) { drop(check(true, "T02 permissive has no errors")); passed = passed + 1i32; }
+    else { drop(check(false, "T02 permissive has no errors")); failed = failed + 1i32; }
+    safety_free(s02);
+
+    // T03: Strict mode — issues become errors
+    wild int8->:s03 = safety_new(1i32);
+    safety_add_issue(s03, 0i32, "wild memory", "use defer", 1i32, 1i32);
+    int32:hasErr03 = safety_has_errors(s03);
+    if (hasErr03 == 1i32) { drop(check(true, "T03 strict mode reports errors")); passed = passed + 1i32; }
+    else { drop(check(false, "T03 strict mode reports errors")); failed = failed + 1i32; }
+    safety_free(s03);
+
+    // T04: Issue count increments correctly
+    wild int8->:s04 = safety_new(0i32);
+    safety_add_issue(s04, 0i32, "msg1", "sug1", 1i32, 1i32);
+    safety_add_issue(s04, 1i32, "msg2", "sug2", 2i32, 1i32);
+    safety_add_issue(s04, 3i32, "msg3", "sug3", 3i32, 1i32);
+    int32:c04 = safety_issue_count(s04);
+    if (c04 == 3i32) { drop(check(true, "T04 three issues counted")); passed = passed + 1i32; }
+    else { drop(check(false, "T04 three issues counted")); failed = failed + 1i32; }
+    safety_free(s04);
+
+    // T05: Get issue message retrieval
+    wild int8->:s05 = safety_new(0i32);
+    safety_add_issue(s05, 0i32, "wild mem detected", "use defer", 1i32, 1i32);
+    string:msg05 = safety_get_issue_message(s05, 0i32);
+    if (msg05 == "wild mem detected") { drop(check(true, "T05 issue message correct")); passed = passed + 1i32; }
+    else { drop(check(false, "T05 issue message correct")); failed = failed + 1i32; }
+    safety_free(s05);
+
+    // T06: Get issue operation type
+    wild int8->:s06 = safety_new(0i32);
+    safety_add_issue(s06, 3i32, "extern call", "validate", 5i32, 1i32);
+    int32:op06 = safety_get_issue_op(s06, 0i32);
+    if (op06 == 3i32) { drop(check(true, "T06 issue op type is FFI")); passed = passed + 1i32; }
+    else { drop(check(false, "T06 issue op type is FFI")); failed = failed + 1i32; }
+    safety_free(s06);
+
+    // T07: Operation name lookup
+    string:name07 = safety_op_name(0i32);
+    if (name07 == "wild memory") { drop(check(true, "T07 op name wild memory")); passed = passed + 1i32; }
+    else { drop(check(false, "T07 op name wild memory")); failed = failed + 1i32; }
+
+    // T08: Help text lookup
+    string:help08 = safety_help_text(3i32);
+    bool:ok08 = (help08 != "");
+    if (ok08) { drop(check(true, "T08 help text non-empty")); passed = passed + 1i32; }
+    else { drop(check(false, "T08 help text non-empty")); failed = failed + 1i32; }
+
+    // T09: Paranoid mode — also catches issues
+    wild int8->:s09 = safety_new(2i32);
+    safety_add_issue(s09, 1i32, "async detected", "sync", 1i32, 1i32);
+    int32:hasErr09 = safety_has_errors(s09);
+    if (hasErr09 == 1i32) { drop(check(true, "T09 paranoid mode catches async")); passed = passed + 1i32; }
+    else { drop(check(false, "T09 paranoid mode catches async")); failed = failed + 1i32; }
+    safety_free(s09);
+
+    // T10: Multiple operation types recorded
+    wild int8->:s10 = safety_new(0i32);
+    safety_add_issue(s10, 0i32, "wild", "tip1", 1i32, 1i32);
+    safety_add_issue(s10, 1i32, "async", "tip2", 2i32, 1i32);
+    safety_add_issue(s10, 3i32, "ffi", "tip3", 3i32, 1i32);
+    int32:op10a = safety_get_issue_op(s10, 0i32);
+    int32:op10b = safety_get_issue_op(s10, 1i32);
+    int32:op10c = safety_get_issue_op(s10, 2i32);
+    bool:ok10 = (op10a == 0i32);
+    if (ok10) {
+        bool:ok10b = (op10b == 1i32);
+        if (ok10b) {
+            bool:ok10c = (op10c == 3i32);
+            if (ok10c) { drop(check(true, "T10 multi op types")); passed = passed + 1i32; }
+            else { drop(check(false, "T10 multi op types")); failed = failed + 1i32; }
+        } else { drop(check(false, "T10 multi op types")); failed = failed + 1i32; }
+    } else { drop(check(false, "T10 multi op types")); failed = failed + 1i32; }
+    safety_free(s10);
+
+    println("");
+    print("  Safety: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+    pass(passed);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 2: Exhaustiveness Checker (T11-T20)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_exhaustiveness = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Exhaustiveness Checker --------------------------");
+
+    // T11: Bool with true+false is exhaustive
+    wild int8->:c11 = exhaust_new();
+    exhaust_add_symbol(c11, "true");
+    exhaust_add_symbol(c11, "false");
+    int32:r11 = exhaust_is_exhaustive(c11, "bool");
+    if (r11 == 1i32) { drop(check(true, "T11 bool true+false exhaustive")); passed = passed + 1i32; }
+    else { drop(check(false, "T11 bool true+false exhaustive")); failed = failed + 1i32; }
+    exhaust_free(c11);
+
+    // T12: Bool with only true is NOT exhaustive
+    wild int8->:c12 = exhaust_new();
+    exhaust_add_symbol(c12, "true");
+    int32:r12 = exhaust_is_exhaustive(c12, "bool");
+    if (r12 == 0i32) { drop(check(true, "T12 bool only-true not exhaustive")); passed = passed + 1i32; }
+    else { drop(check(false, "T12 bool only-true not exhaustive")); failed = failed + 1i32; }
+    exhaust_free(c12);
+
+    // T13: Default case covers everything
+    wild int8->:c13 = exhaust_new();
+    exhaust_add_default(c13);
+    int32:r13 = exhaust_is_exhaustive(c13, "int32");
+    if (r13 == 1i32) { drop(check(true, "T13 default covers int32")); passed = passed + 1i32; }
+    else { drop(check(false, "T13 default covers int32")); failed = failed + 1i32; }
+    exhaust_free(c13);
+
+    // T14: Int8 full range is exhaustive
+    wild int8->:c14 = exhaust_new();
+    exhaust_add_range(c14, -128i64, 127i64);
+    int32:r14 = exhaust_is_exhaustive(c14, "int8");
+    if (r14 == 1i32) { drop(check(true, "T14 int8 full range exhaustive")); passed = passed + 1i32; }
+    else { drop(check(false, "T14 int8 full range exhaustive")); failed = failed + 1i32; }
+    exhaust_free(c14);
+
+    // T15: Int8 partial range is NOT exhaustive
+    wild int8->:c15 = exhaust_new();
+    exhaust_add_range(c15, 0i64, 127i64);
+    int32:r15 = exhaust_is_exhaustive(c15, "int8");
+    if (r15 == 0i32) { drop(check(true, "T15 int8 partial not exhaustive")); passed = passed + 1i32; }
+    else { drop(check(false, "T15 int8 partial not exhaustive")); failed = failed + 1i32; }
+    exhaust_free(c15);
+
+    // T16: TBB type requires ERR case
+    wild int8->:c16 = exhaust_new();
+    exhaust_add_range(c16, -127i64, 127i64);
+    int32:r16 = exhaust_is_exhaustive(c16, "tbb8");
+    if (r16 == 0i32) { drop(check(true, "T16 tbb8 without ERR not exhaustive")); passed = passed + 1i32; }
+    else { drop(check(false, "T16 tbb8 without ERR not exhaustive")); failed = failed + 1i32; }
+    exhaust_free(c16);
+
+    // T17: TBB type with ERR + full range IS exhaustive
+    wild int8->:c17 = exhaust_new();
+    exhaust_add_range(c17, -127i64, 127i64);
+    exhaust_add_err(c17);
+    int32:r17 = exhaust_is_exhaustive(c17, "tbb8");
+    if (r17 == 1i32) { drop(check(true, "T17 tbb8 with ERR exhaustive")); passed = passed + 1i32; }
+    else { drop(check(false, "T17 tbb8 with ERR exhaustive")); failed = failed + 1i32; }
+    exhaust_free(c17);
+
+    // T18: Domain kind classification — bool
+    int32:dk18 = exhaust_domain_kind("bool");
+    if (dk18 == 0i32) { drop(check(true, "T18 bool domain kind = 0")); passed = passed + 1i32; }
+    else { drop(check(false, "T18 bool domain kind = 0")); failed = failed + 1i32; }
+
+    // T19: Domain kind classification — int8
+    int32:dk19 = exhaust_domain_kind("int8");
+    if (dk19 == 1i32) { drop(check(true, "T19 int8 domain kind = INT_RANGE")); passed = passed + 1i32; }
+    else { drop(check(false, "T19 int8 domain kind = INT_RANGE")); failed = failed + 1i32; }
+
+    // T20: Missing cases message for incomplete bool
+    wild int8->:c20 = exhaust_new();
+    exhaust_add_symbol(c20, "true");
+    string:msg20 = exhaust_missing_message(c20, "bool");
+    bool:ok20 = (msg20 != "");
+    if (ok20) { drop(check(true, "T20 missing cases msg non-empty")); passed = passed + 1i32; }
+    else { drop(check(false, "T20 missing cases msg non-empty")); failed = failed + 1i32; }
+    exhaust_free(c20);
+
+    println("");
+    print("  Exhaustiveness: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+    pass(passed);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 3: Const Evaluator (T21-T30)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_const_eval = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Const Evaluator ---------------------------------");
+
+    // T21: Integer literal creation
+    wild int8->:v21 = consteval_make_int(42i64);
+    int32:k21 = consteval_val_kind(v21);
+    int64:i21 = consteval_val_int(v21);
+    bool:ok21 = (k21 == 0i32);
+    if (ok21) {
+        bool:ok21b = (i21 == 42i64);
+        if (ok21b) { drop(check(true, "T21 make_int(42)")); passed = passed + 1i32; }
+        else { drop(check(false, "T21 make_int(42)")); failed = failed + 1i32; }
+    } else { drop(check(false, "T21 make_int(42)")); failed = failed + 1i32; }
+    consteval_free(v21);
+
+    // T22: Float literal creation
+    wild int8->:v22 = consteval_make_float(3.14);
+    int32:k22 = consteval_val_kind(v22);
+    float64:f22 = consteval_val_float(v22);
+    bool:ok22 = (k22 == 1i32);
+    if (ok22) {
+        bool:ok22b = (f22 > 3.13);
+        if (ok22b) {
+            bool:ok22c = (f22 < 3.15);
+            if (ok22c) { drop(check(true, "T22 make_float(3.14)")); passed = passed + 1i32; }
+            else { drop(check(false, "T22 make_float(3.14)")); failed = failed + 1i32; }
+        } else { drop(check(false, "T22 make_float(3.14)")); failed = failed + 1i32; }
+    } else { drop(check(false, "T22 make_float(3.14)")); failed = failed + 1i32; }
+    consteval_free(v22);
+
+    // T23: Boolean literal creation
+    wild int8->:v23 = consteval_make_bool(1i32);
+    int32:k23 = consteval_val_kind(v23);
+    int32:b23 = consteval_val_bool(v23);
+    bool:ok23 = (k23 == 2i32);
+    if (ok23) {
+        bool:ok23b = (b23 == 1i32);
+        if (ok23b) { drop(check(true, "T23 make_bool(true)")); passed = passed + 1i32; }
+        else { drop(check(false, "T23 make_bool(true)")); failed = failed + 1i32; }
+    } else { drop(check(false, "T23 make_bool(true)")); failed = failed + 1i32; }
+    consteval_free(v23);
+
+    // T24: Integer addition
+    wild int8->:va24 = consteval_make_int(10i64);
+    wild int8->:vb24 = consteval_make_int(32i64);
+    wild int8->:vr24 = consteval_add(va24, vb24);
+    int64:i24 = consteval_val_int(vr24);
+    if (i24 == 42i64) { drop(check(true, "T24 10 + 32 = 42")); passed = passed + 1i32; }
+    else { drop(check(false, "T24 10 + 32 = 42")); failed = failed + 1i32; }
+    consteval_free(va24);
+    consteval_free(vb24);
+    consteval_free(vr24);
+
+    // T25: Integer multiplication
+    wild int8->:va25 = consteval_make_int(6i64);
+    wild int8->:vb25 = consteval_make_int(7i64);
+    wild int8->:vr25 = consteval_mul(va25, vb25);
+    int64:i25 = consteval_val_int(vr25);
+    if (i25 == 42i64) { drop(check(true, "T25 6 * 7 = 42")); passed = passed + 1i32; }
+    else { drop(check(false, "T25 6 * 7 = 42")); failed = failed + 1i32; }
+    consteval_free(va25);
+    consteval_free(vb25);
+    consteval_free(vr25);
+
+    // T26: Comparison — equal
+    wild int8->:va26 = consteval_make_int(5i64);
+    wild int8->:vb26 = consteval_make_int(5i64);
+    int32:cmp26 = consteval_compare(va26, vb26, 0i32);
+    if (cmp26 == 1i32) { drop(check(true, "T26 5 == 5")); passed = passed + 1i32; }
+    else { drop(check(false, "T26 5 == 5")); failed = failed + 1i32; }
+    consteval_free(va26);
+    consteval_free(vb26);
+
+    // T27: Negation
+    wild int8->:v27 = consteval_make_int(42i64);
+    wild int8->:vn27 = consteval_neg(v27);
+    int64:i27 = consteval_val_int(vn27);
+    if (i27 == -42i64) { drop(check(true, "T27 neg(42) = -42")); passed = passed + 1i32; }
+    else { drop(check(false, "T27 neg(42) = -42")); failed = failed + 1i32; }
+    consteval_free(v27);
+    consteval_free(vn27);
+
+    // T28: Division
+    wild int8->:va28 = consteval_make_int(100i64);
+    wild int8->:vb28 = consteval_make_int(4i64);
+    wild int8->:vr28 = consteval_div(va28, vb28);
+    int64:i28 = consteval_val_int(vr28);
+    if (i28 == 25i64) { drop(check(true, "T28 100 / 4 = 25")); passed = passed + 1i32; }
+    else { drop(check(false, "T28 100 / 4 = 25")); failed = failed + 1i32; }
+    consteval_free(va28);
+    consteval_free(vb28);
+    consteval_free(vr28);
+
+    // T29: Division by zero returns ERR
+    wild int8->:va29 = consteval_make_int(10i64);
+    wild int8->:vb29 = consteval_make_int(0i64);
+    wild int8->:vr29 = consteval_div(va29, vb29);
+    int32:k29 = consteval_val_kind(vr29);
+    if (k29 == 4i32) { drop(check(true, "T29 div by zero = ERR")); passed = passed + 1i32; }
+    else { drop(check(false, "T29 div by zero = ERR")); failed = failed + 1i32; }
+    consteval_free(va29);
+    consteval_free(vb29);
+    consteval_free(vr29);
+
+    // T30: TBB overflow returns ERR
+    wild int8->:va30 = consteval_make_int(127i64);
+    wild int8->:vb30 = consteval_make_int(1i64);
+    wild int8->:vr30 = consteval_tbb_add(va30, vb30, 8i32);
+    int32:k30 = consteval_val_kind(vr30);
+    if (k30 == 4i32) { drop(check(true, "T30 tbb8 overflow = ERR")); passed = passed + 1i32; }
+    else { drop(check(false, "T30 tbb8 overflow = ERR")); failed = failed + 1i32; }
+    consteval_free(va30);
+    consteval_free(vb30);
+    consteval_free(vr30);
+
+    println("");
+    print("  ConstEval: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+    pass(passed);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 4: Borrow Checker (T31-T40)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_borrow = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Borrow Checker ----------------------------------");
+
+    // T31: New state has zero errors
+    wild int8->:b31 = borrow_new();
+    int32:ec31 = borrow_error_count(b31);
+    if (ec31 == 0i32) { drop(check(true, "T31 new checker zero errors")); passed = passed + 1i32; }
+    else { drop(check(false, "T31 new checker zero errors")); failed = failed + 1i32; }
+    borrow_free(b31);
+
+    // T32: Register and allocate wild variable
+    wild int8->:b32 = borrow_new();
+    borrow_enter_scope(b32);
+    borrow_register_var(b32, "ptr", 1i32);
+    borrow_mark_allocated(b32, "ptr");
+    int32:ws32 = borrow_wild_state(b32, "ptr");
+    if (ws32 == 1i32) { drop(check(true, "T32 wild alloc state = ALLOC")); passed = passed + 1i32; }
+    else { drop(check(false, "T32 wild alloc state = ALLOC")); failed = failed + 1i32; }
+    borrow_mark_freed(b32, "ptr");
+    borrow_exit_scope(b32);
+    borrow_free(b32);
+
+    // T33: Use after move detection
+    wild int8->:b33 = borrow_new();
+    borrow_enter_scope(b33);
+    borrow_register_var(b33, "data", 1i32);
+    borrow_mark_allocated(b33, "data");
+    borrow_mark_moved(b33, "data");
+    int32:use33 = borrow_check_use(b33, "data", 10i32, 1i32);
+    if (use33 == 1i32) { drop(check(true, "T33 use after move detected")); passed = passed + 1i32; }
+    else { drop(check(false, "T33 use after move detected")); failed = failed + 1i32; }
+    borrow_exit_scope(b33);
+    borrow_free(b33);
+
+    // T34: Use after free detection
+    wild int8->:b34 = borrow_new();
+    borrow_enter_scope(b34);
+    borrow_register_var(b34, "buf", 1i32);
+    borrow_mark_allocated(b34, "buf");
+    borrow_mark_freed(b34, "buf");
+    int32:use34 = borrow_check_use(b34, "buf", 10i32, 1i32);
+    if (use34 == 1i32) { drop(check(true, "T34 use after free detected")); passed = passed + 1i32; }
+    else { drop(check(false, "T34 use after free detected")); failed = failed + 1i32; }
+    borrow_exit_scope(b34);
+    borrow_free(b34);
+
+    // T35: Mutable borrow conflict
+    wild int8->:b35 = borrow_new();
+    borrow_enter_scope(b35);
+    borrow_register_var(b35, "host", 0i32);
+    int32:br35a = borrow_record_borrow(b35, "ref1", "host", 1i32, 1i32, 1i32);
+    int32:br35b = borrow_record_borrow(b35, "ref2", "host", 1i32, 2i32, 1i32);
+    if (br35b == 1i32) { drop(check(true, "T35 double mut borrow conflict")); passed = passed + 1i32; }
+    else { drop(check(false, "T35 double mut borrow conflict")); failed = failed + 1i32; }
+    borrow_exit_scope(b35);
+    borrow_free(b35);
+
+    // T36: Multiple immutable borrows allowed
+    wild int8->:b36 = borrow_new();
+    borrow_enter_scope(b36);
+    borrow_register_var(b36, "data36", 0i32);
+    int32:br36a = borrow_record_borrow(b36, "r1", "data36", 0i32, 1i32, 1i32);
+    int32:br36b = borrow_record_borrow(b36, "r2", "data36", 0i32, 2i32, 1i32);
+    bool:ok36 = (br36a == 0i32);
+    if (ok36) {
+        bool:ok36b = (br36b == 0i32);
+        if (ok36b) { drop(check(true, "T36 multi immut borrow ok")); passed = passed + 1i32; }
+        else { drop(check(false, "T36 multi immut borrow ok")); failed = failed + 1i32; }
+    } else { drop(check(false, "T36 multi immut borrow ok")); failed = failed + 1i32; }
+    borrow_exit_scope(b36);
+    borrow_free(b36);
+
+    // T37: Wild alloc + free = clean exit (no leak errors)
+    wild int8->:b37 = borrow_new();
+    borrow_enter_scope(b37);
+    borrow_register_var(b37, "mem", 1i32);
+    borrow_mark_allocated(b37, "mem");
+    borrow_mark_freed(b37, "mem");
+    borrow_exit_scope(b37);
+    int32:ec37 = borrow_error_count(b37);
+    if (ec37 == 0i32) { drop(check(true, "T37 alloc+free no leak")); passed = passed + 1i32; }
+    else { drop(check(false, "T37 alloc+free no leak")); failed = failed + 1i32; }
+    borrow_free(b37);
+
+    // T38: Unfreed wild at scope exit = leak error
+    wild int8->:b38 = borrow_new();
+    borrow_enter_scope(b38);
+    borrow_register_var(b38, "leak", 1i32);
+    borrow_mark_allocated(b38, "leak");
+    borrow_exit_scope(b38);
+    int32:ec38 = borrow_error_count(b38);
+    if (ec38 > 0i32) { drop(check(true, "T38 unfreed wild = leak error")); passed = passed + 1i32; }
+    else { drop(check(false, "T38 unfreed wild = leak error")); failed = failed + 1i32; }
+    borrow_free(b38);
+
+    // T39: Error message retrieval
+    wild int8->:b39 = borrow_new();
+    borrow_add_error(b39, "test error message");
+    string:err39 = borrow_get_error(b39, 0i32);
+    if (err39 == "test error message") { drop(check(true, "T39 error msg retrieval")); passed = passed + 1i32; }
+    else { drop(check(false, "T39 error msg retrieval")); failed = failed + 1i32; }
+    borrow_free(b39);
+
+    // T40: Moved variable state check
+    wild int8->:b40 = borrow_new();
+    borrow_enter_scope(b40);
+    borrow_register_var(b40, "v40", 1i32);
+    borrow_mark_allocated(b40, "v40");
+    borrow_mark_moved(b40, "v40");
+    int32:mv40 = borrow_is_moved(b40, "v40");
+    if (mv40 == 1i32) { drop(check(true, "T40 moved var detected")); passed = passed + 1i32; }
+    else { drop(check(false, "T40 moved var detected")); failed = failed + 1i32; }
+    borrow_exit_scope(b40);
+    borrow_free(b40);
+
+    println("");
+    print("  Borrow: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+    pass(passed);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Main
+// ═══════════════════════════════════════════════════════════════════════
+func:main = int32() {
+    println("");
+    println("════════════════════════════════════════════════════");
+    println("  Phase 5.5: Supporting Passes Tests");
+    println("════════════════════════════════════════════════════");
+    println("");
+
+    int32:p1 = raw(test_safety());
+    int32:p2 = raw(test_exhaustiveness());
+    int32:p3 = raw(test_const_eval());
+    int32:p4 = raw(test_borrow());
+
+    int32:total = p1 + p2 + p3 + p4;
+    println("════════════════════════════════════════════════════");
+    print("  Total passed: ");
+    print(int32_toString(total));
+    println(" / 40");
+    println("════════════════════════════════════════════════════");
+
+    pass(0i32);
+};

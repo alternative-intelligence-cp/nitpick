@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(aria VERSION 0.1.0 LANGUAGES CXX)
+project(aria VERSION 0.2.0 LANGUAGES CXX)
 
 # C++17 standard required
 set(CMAKE_CXX_STANDARD 17)
@@ -265,12 +265,16 @@ set(STDLIB_SOURCES
     src/runtime/result/result.cpp
     src/runtime/collections/collections.cpp
     src/runtime/collections/map.cpp
-    src/runtime/collections/collections_typed.cpp
+    src/runtime/collections/collection_helpers.cpp
     src/runtime/strings/strings.cpp
-    src/runtime/strings/strings_typed.cpp
-    src/runtime/json/json.cpp
-    src/runtime/toml/toml.cpp
-    src/runtime/binary/binary.cpp
+    src/runtime/strings/string_helpers.cpp
+    src/runtime/json/json_helpers.cpp
+    src/runtime/toml/toml_helpers.cpp
+    src/runtime/binary/binary_helpers.cpp
+    src/runtime/lex/lex_helpers.cpp
+    src/runtime/ast/ast_helpers.cpp
+    src/runtime/sema/sema_helpers.cpp
+    src/runtime/sema/pass_helpers.cpp
     src/runtime/net/net.cpp
     src/runtime/math/math.cpp
     src/runtime/math/lbim.cpp
@@ -284,6 +288,21 @@ set(STDLIB_SOURCES
 set(HIGHPREC_SOURCES
     src/runtime/highprec_float.cpp
     src/runtime/highprec_simd.cpp
+)
+
+# Phase 5.4: Integration Pipeline — AST converter + validation
+# These frontend sources are LLVM-free and needed by pipeline_helpers.cpp
+# to convert self-hosted ASTNodeCompat trees to native C++ AST nodes.
+# Added ONLY to aria_runtime (ariac already has them via ARIA_SOURCES).
+set(PIPELINE_SOURCES
+    src/frontend/ast/ast_node.cpp
+    src/frontend/ast/expr.cpp
+    src/frontend/ast/stmt.cpp
+    src/frontend/ast/type.cpp
+    src/frontend/lexer/token.cpp
+    src/frontend/lexer/lexer.cpp
+    src/frontend/parser/parser.cpp
+    src/runtime/pipeline/pipeline_helpers.cpp
 )
 
 # Phase 7: Tooling
@@ -341,6 +360,7 @@ add_library(aria_runtime STATIC
     ${RUNTIME_SOURCES}
     ${STDLIB_SOURCES}
     ${HIGHPREC_SOURCES}
+    ${PIPELINE_SOURCES}
 )
 
 # ARIA-017: Enable AVX-512 and ADX intrinsics for high-precision floating-point

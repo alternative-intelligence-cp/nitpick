@@ -31,7 +31,7 @@ func:main = int32() {
 
     // T01: Empty table
     wild int8->:t1 = toml_new_table();
-    string:enc1 = toml_encode(t1);
+    string:enc1 = raw(toml_encode(t1));
     if (string_equals(enc1, "")) { drop(check(true, "T01 empty table encodes to empty string")); passed = passed + 1i32;
     } else { drop(check(false, "T01 empty table")); failed = failed + 1i32; }
     toml_free(t1);
@@ -39,7 +39,7 @@ func:main = int32() {
     // T02: Table with string field
     wild int8->:t2 = toml_new_table();
     toml_set_str(t2, "name", "Aria");
-    string:enc2 = toml_encode(t2);
+    string:enc2 = raw(toml_encode(t2));
     if (string_contains(enc2, "name")) {
         if (string_contains(enc2, "\"Aria\"")) { drop(check(true, "T02 set_str name=Aria")); passed = passed + 1i32;
         } else { drop(check(false, "T02 set_str val")); failed = failed + 1i32; }
@@ -49,7 +49,7 @@ func:main = int32() {
     // T03: Table with int field
     wild int8->:t3 = toml_new_table();
     toml_set_int(t3, "version", 42i64);
-    string:enc3 = toml_encode(t3);
+    string:enc3 = raw(toml_encode(t3));
     if (string_contains(enc3, "version")) {
         if (string_contains(enc3, "42")) { drop(check(true, "T03 set_int version=42")); passed = passed + 1i32;
         } else { drop(check(false, "T03 set_int val")); failed = failed + 1i32; }
@@ -59,7 +59,7 @@ func:main = int32() {
     // T04: Table with float field
     wild int8->:t4 = toml_new_table();
     toml_set_flt(t4, "pi", 3.14);
-    string:enc4 = toml_encode(t4);
+    string:enc4 = raw(toml_encode(t4));
     if (string_contains(enc4, "3.14")) { drop(check(true, "T04 set_flt pi=3.14")); passed = passed + 1i32;
     } else { drop(check(false, "T04 set_flt")); failed = failed + 1i32; }
     toml_free(t4);
@@ -68,7 +68,7 @@ func:main = int32() {
     wild int8->:t5 = toml_new_table();
     toml_set_bool(t5, "active", 1i32);
     toml_set_bool(t5, "deleted", 0i32);
-    string:enc5 = toml_encode(t5);
+    string:enc5 = raw(toml_encode(t5));
     if (string_contains(enc5, "true")) {
         if (string_contains(enc5, "false")) { drop(check(true, "T05 set_bool true+false")); passed = passed + 1i32;
         } else { drop(check(false, "T05 set_bool false")); failed = failed + 1i32; }
@@ -80,7 +80,7 @@ func:main = int32() {
     toml_set_str(t6, "title", "Config");
     toml_set_int(t6, "port", 8080i64);
     toml_set_bool(t6, "debug", 1i32);
-    string:enc6 = toml_encode(t6);
+    string:enc6 = raw(toml_encode(t6));
     if (string_contains(enc6, "title")) {
         if (string_contains(enc6, "port")) {
             if (string_contains(enc6, "debug")) { drop(check(true, "T06 multiple fields")); passed = passed + 1i32;
@@ -102,7 +102,7 @@ func:main = int32() {
     toml_set_str(t7sub, "host", "localhost");
     toml_set_int(t7sub, "port", 5432i64);
     toml_set_tbl(t7, "database", t7sub);
-    string:enc7 = toml_encode(t7);
+    string:enc7 = raw(toml_encode(t7));
     if (string_contains(enc7, "[database]")) {
         if (string_contains(enc7, "host")) { drop(check(true, "T07 nested table [database]")); passed = passed + 1i32;
         } else { drop(check(false, "T07 nested table content")); failed = failed + 1i32; }
@@ -117,7 +117,7 @@ func:main = int32() {
     toml_set_str(t8b, "key", "deep");
     toml_set_tbl(t8a, "inner", t8b);
     toml_set_tbl(t8, "outer", t8a);
-    string:enc8 = toml_encode(t8);
+    string:enc8 = raw(toml_encode(t8));
     if (string_contains(enc8, "[outer]")) {
         if (string_contains(enc8, "[outer.inner]")) { drop(check(true, "T08 deep nesting outer.inner")); passed = passed + 1i32;
         } else { drop(check(false, "T08 deep nesting")); failed = failed + 1i32; }
@@ -140,7 +140,7 @@ func:main = int32() {
     toml_arr_push_str(a9, "green");
     toml_arr_push_str(a9, "blue");
     toml_set_arr(t9, "colors", a9);
-    string:enc9 = toml_encode(t9);
+    string:enc9 = raw(toml_encode(t9));
     if (string_contains(enc9, "colors")) {
         if (string_contains(enc9, "\"red\"")) { drop(check(true, "T09 array of strings")); passed = passed + 1i32;
         } else { drop(check(false, "T09 arr strings val")); failed = failed + 1i32; }
@@ -155,7 +155,7 @@ func:main = int32() {
     toml_arr_push_int(a10, 2i64);
     toml_arr_push_int(a10, 3i64);
     toml_set_arr(t10, "ports", a10);
-    string:enc10 = toml_encode(t10);
+    string:enc10 = raw(toml_encode(t10));
     if (string_contains(enc10, "ports")) {
         if (string_contains(enc10, "1")) { drop(check(true, "T10 array of ints")); passed = passed + 1i32;
         } else { drop(check(false, "T10 arr ints val")); failed = failed + 1i32; }
@@ -169,7 +169,7 @@ func:main = int32() {
     toml_arr_push_flt(a11, 1.1);
     toml_arr_push_flt(a11, 2.2);
     toml_set_arr(t11, "vals", a11);
-    string:enc11 = toml_encode(t11);
+    string:enc11 = raw(toml_encode(t11));
     if (string_contains(enc11, "1.1")) {
         if (string_contains(enc11, "2.2")) { drop(check(true, "T11 array of floats")); passed = passed + 1i32;
         } else { drop(check(false, "T11 arr flt")); failed = failed + 1i32; }
@@ -183,7 +183,7 @@ func:main = int32() {
     toml_arr_push_bool(a12, 1i32);
     toml_arr_push_bool(a12, 0i32);
     toml_set_arr(t12, "flags", a12);
-    string:enc12 = toml_encode(t12);
+    string:enc12 = raw(toml_encode(t12));
     if (string_contains(enc12, "true")) {
         if (string_contains(enc12, "false")) { drop(check(true, "T12 array of bools")); passed = passed + 1i32;
         } else { drop(check(false, "T12 arr bool")); failed = failed + 1i32; }
@@ -314,7 +314,7 @@ func:main = int32() {
     // T23: String round-trip
     wild int8->:rt23 = toml_new_table();
     toml_set_str(rt23, "msg", "Hello World");
-    string:rt23e = toml_encode(rt23);
+    string:rt23e = raw(toml_encode(rt23));
     wild int8->:rt23p = toml_parse(rt23e);
     string:rt23v = toml_get_str(rt23p, "msg");
     if (string_equals(rt23v, "Hello World")) { drop(check(true, "T23 string round-trip")); passed = passed + 1i32;
@@ -325,7 +325,7 @@ func:main = int32() {
     // T24: Int round-trip
     wild int8->:rt24 = toml_new_table();
     toml_set_int(rt24, "n", 99999i64);
-    string:rt24e = toml_encode(rt24);
+    string:rt24e = raw(toml_encode(rt24));
     wild int8->:rt24p = toml_parse(rt24e);
     int64:rt24v = toml_get_int(rt24p, "n");
     if (rt24v == 99999i64) { drop(check(true, "T24 int round-trip n=99999")); passed = passed + 1i32;
@@ -336,7 +336,7 @@ func:main = int32() {
     // T25: Float round-trip
     wild int8->:rt25 = toml_new_table();
     toml_set_flt(rt25, "e", 2.71828);
-    string:rt25e = toml_encode(rt25);
+    string:rt25e = raw(toml_encode(rt25));
     wild int8->:rt25p = toml_parse(rt25e);
     flt64:rt25v = toml_get_flt(rt25p, "e");
     if (rt25v > 2.71) {
@@ -349,7 +349,7 @@ func:main = int32() {
     // T26: Bool round-trip
     wild int8->:rt26 = toml_new_table();
     toml_set_bool(rt26, "flag", 1i32);
-    string:rt26e = toml_encode(rt26);
+    string:rt26e = raw(toml_encode(rt26));
     wild int8->:rt26p = toml_parse(rt26e);
     int32:rt26v = toml_get_bool(rt26p, "flag");
     if (rt26v == 1i32) { drop(check(true, "T26 bool round-trip flag=true")); passed = passed + 1i32;
@@ -364,7 +364,7 @@ func:main = int32() {
     toml_arr_push_int(rt27a, 20i64);
     toml_arr_push_int(rt27a, 30i64);
     toml_set_arr(rt27, "nums", rt27a);
-    string:rt27e = toml_encode(rt27);
+    string:rt27e = raw(toml_encode(rt27));
     wild int8->:rt27p = toml_parse(rt27e);
     wild int8->:rt27ra = toml_get_arr(rt27p, "nums");
     int64:rt27len = toml_arr_len(rt27ra);
@@ -385,7 +385,7 @@ func:main = int32() {
     toml_set_str(rt28db, "url", "postgres://localhost");
     toml_set_int(rt28db, "max_conn", 25i64);
     toml_set_tbl(rt28, "database", rt28db);
-    string:rt28e = toml_encode(rt28);
+    string:rt28e = raw(toml_encode(rt28));
     wild int8->:rt28p = toml_parse(rt28e);
     string:rt28title = toml_get_str(rt28p, "title");
     wild int8->:rt28pdb = toml_get_tbl(rt28p, "database");
@@ -439,7 +439,7 @@ func:main = int32() {
     // T32: String with escape sequences
     wild int8->:t32 = toml_new_table();
     toml_set_str(t32, "msg", "line1\nline2");
-    string:e32 = toml_encode(t32);
+    string:e32 = raw(toml_encode(t32));
     wild int8->:t32p = toml_parse(e32);
     string:v32 = toml_get_str(t32p, "msg");
     if (string_contains(v32, "line1")) {
@@ -508,7 +508,7 @@ func:main = int32() {
     toml_set_str(deps, "tokio", "1.28");
     toml_set_tbl(cargo, "dependencies", deps);
 
-    string:cargo_enc = toml_encode(cargo);
+    string:cargo_enc = raw(toml_encode(cargo));
     if (string_contains(cargo_enc, "[package]")) {
         if (string_contains(cargo_enc, "my-project")) {
             if (string_contains(cargo_enc, "[dependencies]")) { drop(check(true, "T37 Cargo.toml-style build")); passed = passed + 1i32;
@@ -543,7 +543,7 @@ func:main = int32() {
     toml_set_int(t39, "count", 5i64);
     toml_set_flt(t39, "ratio", 0.75);
     toml_set_bool(t39, "active", 1i32);
-    string:e39 = toml_encode(t39);
+    string:e39 = raw(toml_encode(t39));
     wild int8->:t39p = toml_parse(e39);
     string:t39n = toml_get_str(t39p, "name");
     int64:t39c = toml_get_int(t39p, "count");
