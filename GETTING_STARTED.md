@@ -26,7 +26,7 @@ Welcome! This guide will walk you through everything you need to set up the Aria
 
 Aria is a compiled systems programming language. Think of it like C or Rust, but with its own unique syntax. You write `.aria` files, compile them with the `ariac` compiler, and get a native executable you can run directly. It compiles down to machine code via LLVM — so the programs are fast.
 
-Aria is brand new (version 0.2.1), so **you will probably find bugs**. That's exactly what we need your help with! When something doesn't work the way you'd expect, that's valuable information.
+Aria is brand new (version 0.2.1.1), so **you will probably find bugs**. That's exactly what we need your help with! When something doesn't work the way you'd expect, that's valuable information.
 
 ---
 

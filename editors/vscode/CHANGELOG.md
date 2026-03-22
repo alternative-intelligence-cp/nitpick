@@ -2,6 +2,17 @@
 
 All notable changes to the "aria-lang" extension will be documented in this file.
 
+## [0.2.1.1] - 2026-06
+
+### Added
+- **Debugger support** — Integrated aria-dap Debug Adapter Protocol server for debugging Aria programs directly in VS Code
+- **Debug launch configurations** — Auto-compile with `-g`, breakpoint support, variable inspection, stepping
+- **Configuration settings** — `aria.debugger.path` and `aria.compiler.path` for custom binary locations
+- **Launch.json snippets** — Quick configuration for Aria debug sessions
+
+### Changed
+- Updated to match Aria compiler v0.2.1.1
+
 ## [0.2.1] - 2026-03
 
 ### Added

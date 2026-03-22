@@ -8,6 +8,8 @@
 #include <iostream>
 #include <sstream>
 #include <unistd.h>
+#include <thread>
+#include <chrono>
 
 // Note: Fully qualify nlohmann::nlohmann::json to avoid conflicts with LLDB's internal JSON types
 
@@ -37,6 +39,24 @@ DAPServer::DAPServer(int in_fd, int out_fd)
       m_initialized(false),
       m_shutdown(false)
 {
+    // Ensure LLDB can find lldb-server (may not be on PATH)
+    if (!getenv("LLDB_DEBUGSERVER_PATH")) {
+        // Try common LLVM installation paths
+        const char* paths[] = {
+            "/usr/lib/llvm-20/bin/lldb-server",
+            "/usr/lib/llvm-19/bin/lldb-server",
+            "/usr/lib/llvm-18/bin/lldb-server",
+            "/usr/local/lib/llvm/bin/lldb-server",
+            nullptr
+        };
+        for (const char** p = paths; *p; ++p) {
+            if (access(*p, X_OK) == 0) {
+                setenv("LLDB_DEBUGSERVER_PATH", *p, 0);
+                break;
+            }
+        }
+    }
+    
     // Initialize LLDB
     lldb::SBDebugger::Initialize();
     m_debugger = lldb::SBDebugger::Create();
@@ -123,6 +143,11 @@ void DAPServer::initializeHandlers() {
         handleEvaluate(req, res);
     };
     
+    // Terminate request
+    m_handlers["terminate"] = [this](const DAPMessage& req, DAPMessage& res) {
+        handleDisconnect(req, res);
+    };
+    
     // Custom Aria extensions (Phase 7.4.6)
     m_handlers["ariaMemoryMap"] = [this](const DAPMessage& req, DAPMessage& res) {
         handleAriaMemoryMap(req, res);
@@ -143,7 +168,11 @@ int DAPServer::run() {
         // Process request
         DAPMessage response;
         response.type = DAPMessageType::RESPONSE;
-        response.seq = m_next_seq++;
+        {
+            std::lock_guard<std::mutex> lock(m_write_mutex);
+            response.seq = m_next_seq++;
+        }
+        response.request_seq = request->seq;
         response.command = request->command;
         response.success = true;
         
@@ -162,6 +191,11 @@ int DAPServer::run() {
         }
         
         writeMessage(response);
+        
+        // Send initialized event after initialize response (DAP spec requirement)
+        if (request->command == "initialize" && response.success) {
+            sendEvent("initialized", nlohmann::json::object());
+        }
     }
     
     std::cerr << "[DAP] Server exiting\n";
@@ -169,34 +203,41 @@ int DAPServer::run() {
 }
 
 std::unique_ptr<DAPMessage> DAPServer::readMessage() {
-    // Read Content-Length header
+    // Read headers (DAP uses HTTP-style Content-Length headers with \r\n)
+    int content_length = -1;
     std::string header;
-    std::getline(std::cin, header);
+    while (std::getline(std::cin, header)) {
+        // Strip trailing \r (DAP uses \r\n line endings)
+        if (!header.empty() && header.back() == '\r') {
+            header.pop_back();
+        }
+        
+        // Empty line marks end of headers
+        if (header.empty()) {
+            break;
+        }
+        
+        // Parse Content-Length
+        size_t colon = header.find(':');
+        if (colon != std::string::npos) {
+            std::string name = header.substr(0, colon);
+            if (name == "Content-Length") {
+                content_length = std::stoi(header.substr(colon + 1));
+            }
+        }
+    }
     
-    if (std::cin.eof()) {
+    if (std::cin.eof() || content_length < 0) {
         return nullptr;
     }
     
-    // Parse Content-Length
-    size_t colon = header.find(':');
-    if (colon == std::string::npos) {
-        std::cerr << "[DAP] Invalid header: " << header << "\n";
-        return nullptr;
-    }
-    
-    int content_length = std::stoi(header.substr(colon + 1));
-    
-    // Skip empty line
-    std::string empty;
-    std::getline(std::cin, empty);
-    
-    // Read content
+    // Read content body
     std::string content;
     content.resize(content_length);
     std::cin.read(&content[0], content_length);
     
     if (std::cin.gcount() != content_length) {
-        std::cerr << "[DAP] Short read\n";
+        std::cerr << "[DAP] Short read: expected " << content_length << ", got " << std::cin.gcount() << "\n";
         return nullptr;
     }
     
@@ -221,12 +262,13 @@ std::unique_ptr<DAPMessage> DAPServer::readMessage() {
 }
 
 void DAPServer::writeMessage(const DAPMessage& msg) {
+    std::lock_guard<std::mutex> lock(m_write_mutex);
     nlohmann::json j;
     j["seq"] = msg.seq;
     
     if (msg.type == DAPMessageType::RESPONSE) {
         j["type"] = "response";
-        j["request_seq"] = msg.seq - 1;  // Simplified
+        j["request_seq"] = msg.request_seq;
         j["command"] = msg.command;
         j["success"] = msg.success;
         
@@ -257,7 +299,11 @@ void DAPServer::sendResponse(int request_seq, const std::string& command,
                              const std::string& message) {
     DAPMessage response;
     response.type = DAPMessageType::RESPONSE;
-    response.seq = m_next_seq++;
+    {
+        std::lock_guard<std::mutex> lock(m_write_mutex);
+        response.seq = m_next_seq++;
+    }
+    response.request_seq = request_seq;
     response.command = command;
     response.success = success;
     response.message = message;
@@ -269,7 +315,10 @@ void DAPServer::sendResponse(int request_seq, const std::string& command,
 void DAPServer::sendEvent(const std::string& event, const nlohmann::json& body) {
     DAPMessage evt;
     evt.type = DAPMessageType::EVENT;
-    evt.seq = m_next_seq++;
+    {
+        std::lock_guard<std::mutex> lock(m_write_mutex);
+        evt.seq = m_next_seq++;
+    }
     evt.event = event;
     evt.body = new nlohmann::json(body);
     
@@ -289,16 +338,45 @@ void DAPServer::eventThreadFunc() {
             
             if (lldb::SBProcess::EventIsProcessEvent(event)) {
                 lldb::StateType state = lldb::SBProcess::GetStateFromEvent(event);
+                std::cerr << "[DAP] Process event: state=" << state << "\n";
                 
                 switch (state) {
                 case lldb::eStateStopped: {
-                    // Thread stopped - send stopped event
+                    // Thread stopped - determine stop reason
                     lldb::SBThread thread = m_process.GetSelectedThread();
                     if (thread.IsValid()) {
                         nlohmann::json body;
-                        body["reason"] = "breakpoint";  // Could be step, pause, etc.
-                        body["threadId"] = thread.GetThreadID();
+                        body["threadId"] = static_cast<int64_t>(thread.GetThreadID());
                         body["allThreadsStopped"] = true;
+                        
+                        // Determine stop reason
+                        lldb::StopReason reason = thread.GetStopReason();
+                        switch (reason) {
+                        case lldb::eStopReasonBreakpoint:
+                            body["reason"] = "breakpoint";
+                            break;
+                        case lldb::eStopReasonWatchpoint:
+                            body["reason"] = "data breakpoint";
+                            break;
+                        case lldb::eStopReasonSignal:
+                            body["reason"] = "pause";
+                            break;
+                        case lldb::eStopReasonPlanComplete:
+                            body["reason"] = "step";
+                            break;
+                        case lldb::eStopReasonException: {
+                            body["reason"] = "exception";
+                            char desc[256];
+                            size_t len = thread.GetStopDescription(desc, sizeof(desc));
+                            if (len > 0) {
+                                body["text"] = std::string(desc, len);
+                            }
+                            break;
+                        }
+                        default:
+                            body["reason"] = "pause";
+                            break;
+                        }
                         
                         sendEvent("stopped", body);
                     }
@@ -387,8 +465,7 @@ void DAPServer::handleInitialize(const DAPMessage& request, DAPMessage& response
     response.body = new nlohmann::json(capabilities);
     m_initialized = true;
     
-    // Send initialized event
-    sendEvent("initialized", nlohmann::json::object());
+    // Note: initialized event is sent by the run() loop AFTER the response
 }
 
 void DAPServer::handleLaunch(const DAPMessage& request, DAPMessage& response) {
@@ -411,40 +488,59 @@ void DAPServer::handleLaunch(const DAPMessage& request, DAPMessage& response) {
     
     if (!m_target.IsValid()) {
         response.success = false;
-        response.message = "Failed to create target: " + std::string(error.GetCString());
+        response.message = "Failed to create target: " + std::string(error.GetCString() ? error.GetCString() : "unknown error");
         return;
     }
     
-    // Get launch arguments
-    std::vector<const char*> argv;
-    argv.push_back(program.c_str());
+    // Get launch arguments (keep string storage alive for argv pointers)
+    std::vector<std::string> arg_strings;
+    arg_strings.push_back(program);
     
     if (args.contains("args") && args["args"].is_array()) {
         for (const auto& arg : args["args"]) {
-            argv.push_back(arg.get<std::string>().c_str());
+            arg_strings.push_back(arg.get<std::string>());
         }
+    }
+    
+    std::vector<const char*> argv;
+    for (const auto& s : arg_strings) {
+        argv.push_back(s.c_str());
     }
     argv.push_back(nullptr);
     
     // Launch process
-    // Note: LLDB 20 GetListener() returns by value, not reference
-    lldb::SBListener listener = m_debugger.GetListener();
-    m_process = m_target.Launch(
-        listener,
-        argv.data(),
-        nullptr,  // envp
-        nullptr,  // stdin
-        nullptr,  // stdout
-        nullptr,  // stderr
-        nullptr,  // working directory
-        0,        // launch flags
-        false,    // stop at entry
-        error
-    );
+    // Working directory
+    const char* cwd = nullptr;
+    std::string cwd_str;
+    if (args.contains("cwd") && args["cwd"].is_string()) {
+        cwd_str = args["cwd"].get<std::string>();
+        cwd = cwd_str.c_str();
+    }
+    
+    // Stop at entry point
+    bool stop_at_entry = args.value("stopOnEntry", false);
+    
+    // Use synchronous mode for launch so process is fully started before we continue
+    m_debugger.SetAsync(false);
+    
+    lldb::SBLaunchInfo launch_info(argv.data());
+    launch_info.SetWorkingDirectory(cwd ? cwd : ".");
+    // Redirect process I/O away from DAP stdin/stdout
+    launch_info.AddOpenFileAction(STDIN_FILENO, "/dev/null", true, false);
+    launch_info.AddOpenFileAction(STDOUT_FILENO, "/dev/null", false, true);
+    launch_info.AddOpenFileAction(STDERR_FILENO, "/dev/null", false, true);
+    if (stop_at_entry) {
+        launch_info.SetLaunchFlags(launch_info.GetLaunchFlags() | lldb::eLaunchFlagStopAtEntry);
+    }
+    
+    m_process = m_target.Launch(launch_info, error);
+    
+    // Restore async mode for interactive debugging
+    m_debugger.SetAsync(true);
     
     if (!m_process.IsValid()) {
         response.success = false;
-        response.message = "Failed to launch: " + std::string(error.GetCString());
+        response.message = "Failed to launch: " + std::string(error.GetCString() ? error.GetCString() : "unknown error");
         return;
     }
     
@@ -454,10 +550,39 @@ void DAPServer::handleLaunch(const DAPMessage& request, DAPMessage& response) {
     // Initialize memory visualizer (Phase 7.4.6)
     m_memory_visualizer = std::make_unique<MemoryVisualizer>(m_target, m_process);
     
+    // Explicitly subscribe listener to process state change events
+    m_process.GetBroadcaster().AddListener(
+        m_listener,
+        lldb::SBProcess::eBroadcastBitStateChanged |
+        lldb::SBProcess::eBroadcastBitSTDOUT |
+        lldb::SBProcess::eBroadcastBitSTDERR
+    );
+    
     // Start event thread
     m_event_thread = std::make_unique<std::thread>(&DAPServer::eventThreadFunc, this);
     
     response.body = new nlohmann::json(nlohmann::json::object());
+    
+    // If stopOnEntry, send stopped event after responding
+    // (LLDB returns process in stopped state — no event is generated for initial stop)
+    std::cerr << "[DAP] Process state after launch: " << m_process.GetState() 
+              << " stopOnEntry=" << stop_at_entry << "\n";
+    if (stop_at_entry && m_process.GetState() == lldb::eStateStopped) {
+        lldb::SBThread thread = m_process.GetSelectedThread();
+        std::cerr << "[DAP] Thread valid: " << thread.IsValid() 
+                  << " tid=" << (thread.IsValid() ? thread.GetThreadID() : 0) << "\n";
+        if (thread.IsValid()) {
+            nlohmann::json stop_body;
+            stop_body["reason"] = "entry";
+            stop_body["threadId"] = static_cast<int64_t>(thread.GetThreadID());
+            stop_body["allThreadsStopped"] = true;
+            // Defer the event so the launch response is sent first
+            std::thread([this, stop_body]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                sendEvent("stopped", stop_body);
+            }).detach();
+        }
+    }
 }
 
 void DAPServer::handleAttach(const DAPMessage& request, DAPMessage& response) {
@@ -497,7 +622,7 @@ void DAPServer::handleAttach(const DAPMessage& request, DAPMessage& response) {
     
     if (!m_process.IsValid()) {
         response.success = false;
-        response.message = "Failed to attach: " + std::string(error.GetCString());
+        response.message = "Failed to attach: " + std::string(error.GetCString() ? error.GetCString() : "unknown error");
         return;
     }
     
@@ -506,6 +631,14 @@ void DAPServer::handleAttach(const DAPMessage& request, DAPMessage& response) {
     
     // Initialize memory visualizer (Phase 7.4.6)
     m_memory_visualizer = std::make_unique<MemoryVisualizer>(m_target, m_process);
+    
+    // Explicitly subscribe listener to process state change events
+    m_process.GetBroadcaster().AddListener(
+        m_listener,
+        lldb::SBProcess::eBroadcastBitStateChanged |
+        lldb::SBProcess::eBroadcastBitSTDOUT |
+        lldb::SBProcess::eBroadcastBitSTDERR
+    );
     
     // Start event thread
     m_event_thread = std::make_unique<std::thread>(&DAPServer::eventThreadFunc, this);
@@ -619,7 +752,7 @@ void DAPServer::handleContinue(const DAPMessage& request, DAPMessage& response) 
     
     if (error.Fail()) {
         response.success = false;
-        response.message = error.GetCString();
+        response.message = error.GetCString() ? error.GetCString() : "unknown error";
         return;
     }
     
@@ -715,7 +848,7 @@ void DAPServer::handlePause(const DAPMessage& request, DAPMessage& response) {
     
     if (error.Fail()) {
         response.success = false;
-        response.message = error.GetCString();
+        response.message = error.GetCString() ? error.GetCString() : "unknown error";
         return;
     }
     
@@ -789,13 +922,13 @@ void DAPServer::handleStackTrace(const DAPMessage& request, DAPMessage& response
             frame_json["id"] = i;  // Frame ID
             frame_json["name"] = frame.GetFunctionName() ? frame.GetFunctionName() : "<unknown>";
             
-            if (file_spec.IsValid()) {
+            if (file_spec.IsValid() && file_spec.GetFilename()) {
                 char path[1024];
                 file_spec.GetPath(path, sizeof(path));
                 
                 frame_json["source"] = {
-                    {"path", path},
-                    {"name", file_spec.GetFilename()}
+                    {"path", std::string(path)},
+                    {"name", file_spec.GetFilename() ? std::string(file_spec.GetFilename()) : std::string(path)}
                 };
                 frame_json["line"] = line_entry.GetLine();
                 frame_json["column"] = line_entry.GetColumn();
@@ -923,10 +1056,13 @@ void DAPServer::handleVariables(const DAPMessage& request, DAPMessage& response)
     nlohmann::json variables = nlohmann::json::array();
     
     if (scope == 1) {
-        // Locals
-        lldb::SBValueList locals = frame.GetVariables(true, false, false, false);
+        // Locals — get all local variables and arguments
+        lldb::SBValueList locals = frame.GetVariables(true, true, false, true);
         for (uint32_t i = 0; i < locals.GetSize(); ++i) {
             lldb::SBValue value = locals.GetValueAtIndex(i);
+            std::cerr << "[DAP]   local[" << i << "] valid=" << value.IsValid()
+                      << " name=" << (value.GetName() ? value.GetName() : "null")
+                      << " value=" << (value.GetValue() ? value.GetValue() : "null") << "\n";
             
             if (value.IsValid()) {
                 nlohmann::json var_json;

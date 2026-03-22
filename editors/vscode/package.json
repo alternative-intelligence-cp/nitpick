@@ -2,7 +2,7 @@
     "name": "aria-lang",
     "displayName": "Aria Language Support",
     "description": "Language support for Aria - a systems programming language with TBB arithmetic and hybrid memory model",
-    "version": "0.2.1",
+    "version": "0.2.1.1",
     "publisher": "aria-lang",
     "license": "MIT",
     "repository": {
@@ -22,6 +22,9 @@
         "systems programming",
         "tbb",
         "memory safety"
+    ],
+    "activationEvents": [
+        "onDebugResolve:aria"
     ],
     "contributes": {
         "languages": [
@@ -71,9 +74,90 @@
                     ],
                     "default": "off",
                     "description": "Traces the communication between VS Code and the language server"
+                },
+                "aria.debugger.path": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to aria-dap executable. If empty, uses bundled binary or system PATH."
+                },
+                "aria.compiler.path": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to ariac executable. If empty, uses system PATH."
                 }
             }
-        }
+        },
+        "debuggers": [
+            {
+                "type": "aria",
+                "label": "Aria Debug",
+                "languages": ["aria"],
+                "configurationAttributes": {
+                    "launch": {
+                        "required": ["program"],
+                        "properties": {
+                            "program": {
+                                "type": "string",
+                                "description": "Absolute path to the Aria program executable to debug.",
+                                "default": "${workspaceFolder}/build/${fileBasenameNoExtension}"
+                            },
+                            "source": {
+                                "type": "string",
+                                "description": "Path to the .aria source file (for source mapping).",
+                                "default": "${file}"
+                            },
+                            "stopOnEntry": {
+                                "type": "boolean",
+                                "description": "Stop at program entry point.",
+                                "default": false
+                            },
+                            "cwd": {
+                                "type": "string",
+                                "description": "Working directory for the debuggee.",
+                                "default": "${workspaceFolder}"
+                            },
+                            "args": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "description": "Command line arguments for the debuggee.",
+                                "default": []
+                            },
+                            "compileFirst": {
+                                "type": "boolean",
+                                "description": "Compile the source file with -g before launching.",
+                                "default": true
+                            }
+                        }
+                    }
+                },
+                "initialConfigurations": [
+                    {
+                        "type": "aria",
+                        "request": "launch",
+                        "name": "Debug Aria Program",
+                        "program": "${workspaceFolder}/build/${fileBasenameNoExtension}",
+                        "source": "${file}",
+                        "stopOnEntry": false,
+                        "compileFirst": true
+                    }
+                ],
+                "configurationSnippets": [
+                    {
+                        "label": "Aria: Debug Program",
+                        "description": "Launch and debug an Aria program",
+                        "body": {
+                            "type": "aria",
+                            "request": "launch",
+                            "name": "Debug ${1:program}",
+                            "program": "^\"\\${workspaceFolder}/build/${1:program}\"",
+                            "source": "^\"\\${file}\"",
+                            "stopOnEntry": false,
+                            "compileFirst": true
+                        }
+                    }
+                ]
+            }
+        ]
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
