@@ -1,0 +1,645 @@
+// tests/type_checker_test.aria
+// Tests for stdlib/type_checker.aria — Aria self-hosted type checker
+use "stdlib/lexer.aria".*;
+use "stdlib/parser.aria".*;
+use "stdlib/type_checker.aria".*;
+use "stdlib/string_convert.aria".*;
+
+extern func:ast_free = void(wild int8*:node);
+extern func:tc_free = void(wild int8*:state);
+extern func:tc_error_count = int64(wild int8*:state);
+extern func:tc_get_error = string(wild int8*:state, int64:idx);
+
+func:failsafe = NIL(int32:code) { };
+
+func:check_pass = NIL(bool:cond, string:msg) {
+    if (cond) {
+        print("  [PASS] ");
+        println(msg);
+    }
+    if (cond == false) {
+        print("  [FAIL] ");
+        println(msg);
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 1: Basic Type Inference (T01-T08)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_basic_inference = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Basic Type Inference ----------------------------");
+
+    // T01: Integer variable declaration — no errors
+    wild int8->:a01 = parse(tokenize("int32:x = 42i32;"));
+    wild int8->:tc01 = type_check(a01);
+    ast_free(a01);
+    int64:e01 = tc_error_count(tc01);
+    if (e01 == 0i64) {
+        drop(check_pass(true, "T01 int32 var decl")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T01 int32 var decl")); failed = failed + 1i32; }
+    tc_free(tc01);
+
+    // T02: String variable declaration
+    wild int8->:a02 = parse(tokenize("string:s = \"hello\";"));
+    wild int8->:tc02 = type_check(a02);
+    ast_free(a02);
+    int64:e02 = tc_error_count(tc02);
+    if (e02 == 0i64) {
+        drop(check_pass(true, "T02 string var decl")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T02 string var decl")); failed = failed + 1i32; }
+    tc_free(tc02);
+
+    // T03: Bool variable declaration
+    wild int8->:a03 = parse(tokenize("bool:flag = true;"));
+    wild int8->:tc03 = type_check(a03);
+    ast_free(a03);
+    int64:e03 = tc_error_count(tc03);
+    if (e03 == 0i64) {
+        drop(check_pass(true, "T03 bool var decl")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T03 bool var decl")); failed = failed + 1i32; }
+    tc_free(tc03);
+
+    // T04: Float variable declaration
+    wild int8->:a04 = parse(tokenize("flt64:pi = 3.14;"));
+    wild int8->:tc04 = type_check(a04);
+    ast_free(a04);
+    int64:e04 = tc_error_count(tc04);
+    if (e04 == 0i64) {
+        drop(check_pass(true, "T04 flt64 var decl")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T04 flt64 var decl")); failed = failed + 1i32; }
+    tc_free(tc04);
+
+    // T05: uint32 variable
+    wild int8->:a05 = parse(tokenize("uint32:u = 100u32;"));
+    wild int8->:tc05 = type_check(a05);
+    ast_free(a05);
+    int64:e05 = tc_error_count(tc05);
+    if (e05 == 0i64) {
+        drop(check_pass(true, "T05 uint32 var decl")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T05 uint32 var decl")); failed = failed + 1i32; }
+    tc_free(tc05);
+
+    // T06: Type mismatch — string assigned to int32
+    wild int8->:a06 = parse(tokenize("int32:x = \"hello\";"));
+    wild int8->:tc06 = type_check(a06);
+    ast_free(a06);
+    int64:e06 = tc_error_count(tc06);
+    if (e06 > 0i64) {
+        drop(check_pass(true, "T06 type mismatch detected")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T06 type mismatch detected")); failed = failed + 1i32; }
+    tc_free(tc06);
+
+    // T07: Undefined identifier
+    wild int8->:a07 = parse(tokenize("int32:y = undefined_var;"));
+    wild int8->:tc07 = type_check(a07);
+    ast_free(a07);
+    int64:e07 = tc_error_count(tc07);
+    if (e07 > 0i64) {
+        drop(check_pass(true, "T07 undefined identifier")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T07 undefined identifier")); failed = failed + 1i32; }
+    tc_free(tc07);
+
+    // T08: Multiple declarations, second uses first
+    wild int8->:a08 = parse(tokenize("int32:a = 1i32; int32:b = a;"));
+    wild int8->:tc08 = type_check(a08);
+    ast_free(a08);
+    int64:e08 = tc_error_count(tc08);
+    if (e08 == 0i64) {
+        drop(check_pass(true, "T08 var uses previous var")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T08 var uses previous var")); failed = failed + 1i32; }
+    tc_free(tc08);
+
+    println("");
+    print("  Basic Inference: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+
+    int32:total = passed + failed;
+    pass(total);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 2: Binary Operations (T09-T12)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_binary_ops = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Binary Operations --------------------------------");
+
+    // T09: int32 + int32 — no error
+    wild int8->:a09 = parse(tokenize("int32:a = 1i32; int32:b = 2i32; int32:c = a + b;"));
+    wild int8->:tc09 = type_check(a09);
+    ast_free(a09);
+    int64:e09 = tc_error_count(tc09);
+    if (e09 == 0i64) {
+        drop(check_pass(true, "T09 int32 addition")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T09 int32 addition")); failed = failed + 1i32; }
+    tc_free(tc09);
+
+    // T10: bool == bool — comparison
+    wild int8->:a10 = parse(tokenize("bool:a = true; bool:b = false; bool:c = a == b;"));
+    wild int8->:tc10 = type_check(a10);
+    ast_free(a10);
+    int64:e10 = tc_error_count(tc10);
+    if (e10 == 0i64) {
+        drop(check_pass(true, "T10 bool comparison")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T10 bool comparison")); failed = failed + 1i32; }
+    tc_free(tc10);
+
+    // T11: bool && bool — logical
+    wild int8->:a11 = parse(tokenize("bool:a = true; bool:b = false; bool:c = a && b;"));
+    wild int8->:tc11 = type_check(a11);
+    ast_free(a11);
+    int64:e11 = tc_error_count(tc11);
+    if (e11 == 0i64) {
+        drop(check_pass(true, "T11 logical AND")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T11 logical AND")); failed = failed + 1i32; }
+    tc_free(tc11);
+
+    // T12: string + string — concatenation
+    wild int8->:a12 = parse(tokenize("string:a = \"foo\"; string:b = \"bar\"; string:c = a + b;"));
+    wild int8->:tc12 = type_check(a12);
+    ast_free(a12);
+    int64:e12 = tc_error_count(tc12);
+    if (e12 == 0i64) {
+        drop(check_pass(true, "T12 string concatenation")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T12 string concatenation")); failed = failed + 1i32; }
+    tc_free(tc12);
+
+    println("");
+    print("  Binary Ops: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+
+    int32:total = passed + failed;
+    pass(total);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 3: Function Declarations (T13-T16)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_functions = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Function Declarations ----------------------------");
+
+    // T13: Simple function declaration
+    wild int8->:a13 = parse(tokenize("func:add = int32(int32:a, int32:b) { pass(a + b); };"));
+    wild int8->:tc13 = type_check(a13);
+    ast_free(a13);
+    int64:e13 = tc_error_count(tc13);
+    if (e13 == 0i64) {
+        drop(check_pass(true, "T13 simple function")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T13 simple function")); failed = failed + 1i32; }
+    tc_free(tc13);
+
+    // T14: Forward function call — caller uses callee defined later
+    wild int8->:a14 = parse(tokenize("func:caller = int32() { int32:r = raw(callee()); pass(r); }; func:callee = int32() { pass(42i32); };"));
+    wild int8->:tc14 = type_check(a14);
+    ast_free(a14);
+    int64:e14 = tc_error_count(tc14);
+    if (e14 == 0i64) {
+        drop(check_pass(true, "T14 forward function call")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T14 forward function call")); failed = failed + 1i32; }
+    tc_free(tc14);
+
+    // T15: Extern function — valid
+    wild int8->:a15 = parse(tokenize("extern func:cfunc = int32(int32:x);"));
+    wild int8->:tc15 = type_check(a15);
+    ast_free(a15);
+    int64:e15 = tc_error_count(tc15);
+    if (e15 == 0i64) {
+        drop(check_pass(true, "T15 extern function")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T15 extern function")); failed = failed + 1i32; }
+    tc_free(tc15);
+
+    // T16: Calling function with wrong number of args
+    wild int8->:a16 = parse(tokenize("func:take_two = int32(int32:a, int32:b) { pass(a); }; func:caller = int32() { int32:r = raw(take_two(1i32)); pass(r); };"));
+    wild int8->:tc16 = type_check(a16);
+    ast_free(a16);
+    int64:e16 = tc_error_count(tc16);
+    if (e16 > 0i64) {
+        drop(check_pass(true, "T16 wrong arg count")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T16 wrong arg count")); failed = failed + 1i32; }
+    tc_free(tc16);
+
+    println("");
+    print("  Functions: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+
+    int32:total = passed + failed;
+    pass(total);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 4: Scope & Symbol Table (T17-T20)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_scope = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Scope & Symbol Table -----------------------------");
+
+    // T17: Variable visible in inner block
+    wild int8->:a17 = parse(tokenize("int32:x = 1i32; if (true) { int32:y = x; }"));
+    wild int8->:tc17 = type_check(a17);
+    ast_free(a17);
+    int64:e17 = tc_error_count(tc17);
+    if (e17 == 0i64) {
+        drop(check_pass(true, "T17 var visible in block")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T17 var visible in block")); failed = failed + 1i32; }
+    tc_free(tc17);
+
+    // T18: Inner scope not visible outside
+    wild int8->:a18 = parse(tokenize("func:f = NIL() { int32:inner = 5i32; }; int32:z = inner;"));
+    wild int8->:tc18 = type_check(a18);
+    ast_free(a18);
+    int64:e18 = tc_error_count(tc18);
+    if (e18 > 0i64) {
+        drop(check_pass(true, "T18 scope isolation")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T18 scope isolation")); failed = failed + 1i32; }
+    tc_free(tc18);
+
+    // T19: Redefinition in same scope — error
+    wild int8->:a19 = parse(tokenize("int32:dup = 1i32; int32:dup = 2i32;"));
+    wild int8->:tc19 = type_check(a19);
+    ast_free(a19);
+    int64:e19 = tc_error_count(tc19);
+    if (e19 > 0i64) {
+        drop(check_pass(true, "T19 redefinition error")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T19 redefinition error")); failed = failed + 1i32; }
+    tc_free(tc19);
+
+    // T20: Parameters visible within function body
+    wild int8->:a20 = parse(tokenize("func:use_param = int32(int32:val) { pass(val); };"));
+    wild int8->:tc20 = type_check(a20);
+    ast_free(a20);
+    int64:e20 = tc_error_count(tc20);
+    if (e20 == 0i64) {
+        drop(check_pass(true, "T20 param in body")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T20 param in body")); failed = failed + 1i32; }
+    tc_free(tc20);
+
+    println("");
+    print("  Scope: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+
+    int32:total = passed + failed;
+    pass(total);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 5: Control Flow (T21-T24)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_control_flow = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Control Flow ------------------------------------");
+
+    // T21: If statement with bool condition — valid
+    wild int8->:a21 = parse(tokenize("bool:cond = true; if (cond) { int32:x = 1i32; }"));
+    wild int8->:tc21 = type_check(a21);
+    ast_free(a21);
+    int64:e21 = tc_error_count(tc21);
+    if (e21 == 0i64) {
+        drop(check_pass(true, "T21 if bool condition")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T21 if bool condition")); failed = failed + 1i32; }
+    tc_free(tc21);
+
+    // T22: While loop with bool condition — valid
+    wild int8->:a22 = parse(tokenize("bool:running = true; while (running) { running = false; }"));
+    wild int8->:tc22 = type_check(a22);
+    ast_free(a22);
+    int64:e22 = tc_error_count(tc22);
+    if (e22 == 0i64) {
+        drop(check_pass(true, "T22 while bool condition")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T22 while bool condition")); failed = failed + 1i32; }
+    tc_free(tc22);
+
+    // T23: If with non-bool condition — error
+    wild int8->:a23 = parse(tokenize("int32:x = 1i32; if (x) { int32:y = 2i32; }"));
+    wild int8->:tc23 = type_check(a23);
+    ast_free(a23);
+    int64:e23 = tc_error_count(tc23);
+    if (e23 > 0i64) {
+        drop(check_pass(true, "T23 non-bool if condition")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T23 non-bool if condition")); failed = failed + 1i32; }
+    tc_free(tc23);
+
+    // T24: If-else with both branches
+    wild int8->:a24 = parse(tokenize("bool:c = true; if (c) { int32:a = 1i32; } else { int32:b = 2i32; }"));
+    wild int8->:tc24 = type_check(a24);
+    ast_free(a24);
+    int64:e24 = tc_error_count(tc24);
+    if (e24 == 0i64) {
+        drop(check_pass(true, "T24 if-else branches")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T24 if-else branches")); failed = failed + 1i32; }
+    tc_free(tc24);
+
+    println("");
+    print("  Control Flow: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+
+    int32:total = passed + failed;
+    pass(total);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 6: Struct Types (T25-T26)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_structs = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Struct Types ------------------------------------");
+
+    // T25: Simple struct declaration
+    wild int8->:a25 = parse(tokenize("struct:Point { int32:x; int32:y; }"));
+    wild int8->:tc25 = type_check(a25);
+    ast_free(a25);
+    int64:e25 = tc_error_count(tc25);
+    if (e25 == 0i64) {
+        drop(check_pass(true, "T25 struct declaration")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T25 struct declaration")); failed = failed + 1i32; }
+    tc_free(tc25);
+
+    // T26: Struct with fields
+    wild int8->:a26 = parse(tokenize("struct:Pair { int32:first; int32:second; }"));
+    wild int8->:tc26 = type_check(a26);
+    ast_free(a26);
+    int64:e26 = tc_error_count(tc26);
+    if (e26 == 0i64) {
+        drop(check_pass(true, "T26 struct with fields")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T26 struct with fields")); failed = failed + 1i32; }
+    tc_free(tc26);
+
+    println("");
+    print("  Structs: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+
+    int32:total = passed + failed;
+    pass(total);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 7: Type System Features (T27-T35)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_type_features = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Type System Features ----------------------------");
+
+    // T27: Multiple int32 declarations
+    wild int8->:a27 = parse(tokenize("int32:a = 1i32; int32:b = 2i32;"));
+    wild int8->:tc27 = type_check(a27);
+    ast_free(a27);
+    int64:e27 = tc_error_count(tc27);
+    if (e27 == 0i64) {
+        drop(check_pass(true, "T27 multiple int32 decls")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T27 multiple int32 decls")); failed = failed + 1i32; }
+    tc_free(tc27);
+
+    // T28: Unary negation on signed type
+    wild int8->:a28 = parse(tokenize("int32:x = 5i32; int32:y = -x;"));
+    wild int8->:tc28 = type_check(a28);
+    ast_free(a28);
+    int64:e28 = tc_error_count(tc28);
+    if (e28 == 0i64) {
+        drop(check_pass(true, "T28 unary negation")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T28 unary negation")); failed = failed + 1i32; }
+    tc_free(tc28);
+
+    // T29: Logical NOT on bool
+    wild int8->:a29 = parse(tokenize("bool:a = true; bool:b = !a;"));
+    wild int8->:tc29 = type_check(a29);
+    ast_free(a29);
+    int64:e29 = tc_error_count(tc29);
+    if (e29 == 0i64) {
+        drop(check_pass(true, "T29 logical NOT")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T29 logical NOT")); failed = failed + 1i32; }
+    tc_free(tc29);
+
+    // T30: int64 widening from int32 — should coerce
+    wild int8->:a30 = parse(tokenize("int32:x = 1i32; int64:y = x;"));
+    wild int8->:tc30 = type_check(a30);
+    ast_free(a30);
+    int64:e30 = tc_error_count(tc30);
+    if (e30 == 0i64) {
+        drop(check_pass(true, "T30 int32->int64 coercion")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T30 int32->int64 coercion")); failed = failed + 1i32; }
+    tc_free(tc30);
+
+    // T31: flt64 cannot be assigned to int32
+    wild int8->:a31 = parse(tokenize("int32:x = 3.14;"));
+    wild int8->:tc31 = type_check(a31);
+    ast_free(a31);
+    int64:e31 = tc_error_count(tc31);
+    if (e31 > 0i64) {
+        drop(check_pass(true, "T31 flt64 to int32 rejected")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T31 flt64 to int32 rejected")); failed = failed + 1i32; }
+    tc_free(tc31);
+
+    // T32: Unknown type in declaration — error
+    wild int8->:a32 = parse(tokenize("Nonexistent:x = 42i32;"));
+    wild int8->:tc32 = type_check(a32);
+    ast_free(a32);
+    int64:e32 = tc_error_count(tc32);
+    if (e32 > 0i64) {
+        drop(check_pass(true, "T32 unknown type")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T32 unknown type")); failed = failed + 1i32; }
+    tc_free(tc32);
+
+    // T33: flt32 variable
+    wild int8->:a33 = parse(tokenize("flt32:f = 1.0f32;"));
+    wild int8->:tc33 = type_check(a33);
+    ast_free(a33);
+    int64:e33 = tc_error_count(tc33);
+    if (e33 == 0i64) {
+        drop(check_pass(true, "T33 flt32 var decl")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T33 flt32 var decl")); failed = failed + 1i32; }
+    tc_free(tc33);
+
+    // T34: int8 variable
+    wild int8->:a34 = parse(tokenize("int8:b = 10i8;"));
+    wild int8->:tc34 = type_check(a34);
+    ast_free(a34);
+    int64:e34 = tc_error_count(tc34);
+    if (e34 == 0i64) {
+        drop(check_pass(true, "T34 int8 var decl")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T34 int8 var decl")); failed = failed + 1i32; }
+    tc_free(tc34);
+
+    // T35: int64 variable
+    wild int8->:a35 = parse(tokenize("int64:big = 999i64;"));
+    wild int8->:tc35 = type_check(a35);
+    ast_free(a35);
+    int64:e35 = tc_error_count(tc35);
+    if (e35 == 0i64) {
+        drop(check_pass(true, "T35 int64 var decl")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T35 int64 var decl")); failed = failed + 1i32; }
+    tc_free(tc35);
+
+    println("");
+    print("  Type Features: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+
+    int32:total = passed + failed;
+    pass(total);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test Group 8: Error Reporting Quality (T36-T40)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:test_error_reporting = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    println("-- Error Reporting ---------------------------------");
+
+    // T36: Error count is accurate for multiple errors
+    wild int8->:a36 = parse(tokenize("int32:a = undefined1; int32:b = undefined2;"));
+    wild int8->:tc36 = type_check(a36);
+    ast_free(a36);
+    int64:e36 = tc_error_count(tc36);
+    if (e36 >= 2i64) {
+        drop(check_pass(true, "T36 multiple errors counted")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T36 multiple errors counted")); failed = failed + 1i32; }
+    tc_free(tc36);
+
+    // T37: Error for undefined reference
+    wild int8->:a37 = parse(tokenize("int32:myvar = missing_name;"));
+    wild int8->:tc37 = type_check(a37);
+    ast_free(a37);
+    int64:e37 = tc_error_count(tc37);
+    if (e37 > 0i64) {
+        drop(check_pass(true, "T37 error for undefined")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T37 error for undefined")); failed = failed + 1i32; }
+    tc_free(tc37);
+
+    // T38: No errors on valid program
+    wild int8->:a38 = parse(tokenize("int32:x = 1i32; int32:y = 2i32; int32:z = x + y;"));
+    wild int8->:tc38 = type_check(a38);
+    ast_free(a38);
+    int64:e38 = tc_error_count(tc38);
+    if (e38 == 0i64) {
+        drop(check_pass(true, "T38 valid program no errors")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T38 valid program no errors")); failed = failed + 1i32; }
+    tc_free(tc38);
+
+    // T39: Empty program — no errors
+    wild int8->:a39 = parse(tokenize(""));
+    wild int8->:tc39 = type_check(a39);
+    ast_free(a39);
+    int64:e39 = tc_error_count(tc39);
+    if (e39 == 0i64) {
+        drop(check_pass(true, "T39 empty program")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T39 empty program")); failed = failed + 1i32; }
+    tc_free(tc39);
+
+    // T40: Single valid statement
+    wild int8->:a40 = parse(tokenize("bool:done = false;"));
+    wild int8->:tc40 = type_check(a40);
+    ast_free(a40);
+    int64:e40 = tc_error_count(tc40);
+    if (e40 == 0i64) {
+        drop(check_pass(true, "T40 single valid stmt")); passed = passed + 1i32;
+    } else { drop(check_pass(false, "T40 single valid stmt")); failed = failed + 1i32; }
+    tc_free(tc40);
+
+    println("");
+    print("  Error Reporting: ");
+    print(int32_toString(passed));
+    print(" passed, ");
+    print(int32_toString(failed));
+    println(" failed");
+    println("");
+
+    int32:total = passed + failed;
+    pass(total);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Main entry point
+// ═══════════════════════════════════════════════════════════════════════
+
+func:main = int32() {
+    println("═══════════════════════════════════════════════════════════════");
+    println("  Type Checker Test Suite (Phase 5.3)");
+    println("═══════════════════════════════════════════════════════════════");
+    println("");
+
+    int32:total = 0i32;
+
+    int32:r1 = raw(test_basic_inference());
+    total = total + r1;
+
+    int32:r2 = raw(test_binary_ops());
+    total = total + r2;
+
+    int32:r3 = raw(test_functions());
+    total = total + r3;
+
+    int32:r4 = raw(test_scope());
+    total = total + r4;
+
+    int32:r5 = raw(test_control_flow());
+    total = total + r5;
+
+    int32:r6 = raw(test_structs());
+    total = total + r6;
+
+    int32:r7 = raw(test_type_features());
+    total = total + r7;
+
+    int32:r8 = raw(test_error_reporting());
+    total = total + r8;
+
+    println("═══════════════════════════════════════════════════════════════");
+    print("  Total tests: ");
+    println(int32_toString(total));
+    println("═══════════════════════════════════════════════════════════════");
+
+    pass(0i32);
+};

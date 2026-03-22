@@ -1421,6 +1421,7 @@ func:parse_struct_decl = wild int8->(wild int8->:ps, int32:flags) {
     int32:line = ps_peek_line(ps);
     int32:col = ps_peek_col(ps);
     ps_advance(ps);  // consume 'struct'
+    ps_expect(ps, TK_COLON, "Expected ':' after 'struct'");
     string:sname = raw(consume_name(ps, "Expected struct name"));
     wild int8->:node = ast_new_node(NT_STRUCT_DECL, line, col);
     ast_set_str(node, sname);
