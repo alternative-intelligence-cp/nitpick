@@ -24,6 +24,7 @@
 #   - CMake >= 3.20
 #   - C++17 compiler (g++ or clang++)
 #   - Git, Python 3.8+
+#   - zlib, zstd, libcurl (dev packages for LLVM linking)
 # ──────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -191,6 +192,22 @@ else
     MISSING+=("LLVM 20 development headers (install: sudo apt install llvm-20-dev)")
 fi
 
+# Clang (used by ariac as linker backend)
+if command -v clang++ &>/dev/null; then
+    ok "Clang: $(clang++ --version | head -1)"
+elif command -v clang++-20 &>/dev/null; then
+    ok "Clang: $(clang++-20 --version | head -1)"
+    warn "clang++ not found but clang++-20 exists — creating symlink"
+    if [ -w /usr/bin ]; then
+        ln -sf /usr/bin/clang++-20 /usr/bin/clang++
+        ln -sf /usr/bin/clang-20 /usr/bin/clang 2>/dev/null || true
+    else
+        warn "Cannot create symlink (not root). Run: sudo ln -s /usr/bin/clang++-20 /usr/bin/clang++"
+    fi
+else
+    MISSING+=("Clang (install: sudo apt install clang-20, then: sudo ln -s /usr/bin/clang++-20 /usr/bin/clang++)")
+fi
+
 # Git
 if command -v git &>/dev/null; then
     ok "Git: $(git --version | head -1)"
@@ -223,19 +240,38 @@ info "Building Aria toolchain (${JOBS} jobs)..."
 # Configure
 if [ ! -d build ] || [ ! -f build/CMakeCache.txt ]; then
     info "Configuring CMake..."
-    cmake -B build -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -5
+    if ! cmake -B build -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -20; then
+        fail "CMake configuration failed. Run 'cmake -B build' manually for details."
+    fi
+    # Verify configuration succeeded
+    if [ ! -f build/CMakeCache.txt ]; then
+        fail "CMake configuration failed — no CMakeCache.txt generated."
+    fi
 fi
 
 # Build compiler
 info "Building ariac..."
-cmake --build build --target ariac -j"${JOBS}" 2>&1 | tail -3
+if ! cmake --build build --target ariac -j"${JOBS}" 2>&1 | tail -5; then
+    fail "Failed to build ariac. Check compiler output above."
+fi
 ok "ariac built"
+
+# Build runtime library (required for compiled programs to link)
+info "Building aria_runtime..."
+if ! cmake --build build --target aria_runtime -j"${JOBS}" 2>&1 | tail -3; then
+    warn "aria_runtime failed to build — compiled programs may not link correctly"
+else
+    ok "aria_runtime built"
+fi
 
 # Build tools
 for tool in aria-ls aria-pkg aria-doc; do
     info "Building ${tool}..."
-    cmake --build build --target "${tool}" -j"${JOBS}" 2>&1 | tail -2
-    ok "${tool} built"
+    if ! cmake --build build --target "${tool}" -j"${JOBS}" 2>&1 | tail -3; then
+        warn "${tool} failed to build — skipping"
+    else
+        ok "${tool} built"
+    fi
 done
 
 # Build aria-safety (standalone C program)
@@ -297,6 +333,12 @@ done
 if [ -x tools/aria-safety/aria-safety ]; then
     install -m 755 tools/aria-safety/aria-safety "${BINDIR}/aria-safety"
     ok "Installed ${BINDIR}/aria-safety"
+fi
+
+# Install runtime library (needed by ariac for linking compiled programs)
+if [ -f build/libaria_runtime.a ]; then
+    install -m 644 build/libaria_runtime.a "${PREFIX}/lib/libaria_runtime.a"
+    ok "Installed ${PREFIX}/lib/libaria_runtime.a"
 fi
 
 # Install aria-mcp wrapper
