@@ -279,6 +279,7 @@ extern func:ps_peek_col = int32(wild int8*:state);
 extern func:ps_peek_int_val = int64(wild int8*:state);
 extern func:ps_peek_float_val = flt64(wild int8*:state);
 extern func:ps_peek_str_val = string(wild int8*:state);
+extern func:ps_peek_string_value = string(wild int8*:state);
 
 // Previous token accessors
 extern func:ps_previous_lexeme = string(wild int8*:state);
@@ -496,7 +497,7 @@ func:make_float_literal = wild int8->(wild int8->:ps) {
 func:make_string_literal = wild int8->(wild int8->:ps) {
     int32:line = ps_peek_line(ps);
     int32:col = ps_peek_col(ps);
-    string:val = ps_peek_str_val(ps);
+    string:val = ps_peek_string_value(ps);
     wild int8->:node = ast_new_node(NT_LITERAL, line, col);
     ast_set_str(node, val);
     ast_set_bool(node, LIT_STRING);
@@ -1439,6 +1440,7 @@ func:parse_struct_decl = wild int8->(wild int8->:ps, int32:flags) {
         ps_expect(ps, TK_GREATER, "Expected '>' after generic params");
     }
 
+    ps_expect(ps, TK_EQUAL, "Expected '=' after struct name");
     ps_expect(ps, TK_LEFT_BRACE, "Expected '{' for struct body");
 
     // Parse fields: Type:name;

@@ -610,6 +610,21 @@ AriaString* ps_peek_lexeme(void* state) {
     return lex_token_lexeme(ps->lex_state, idx);
 }
 
+// Return the string value from a string literal token (lexeme with quotes stripped)
+AriaString* ps_peek_string_value(void* state) {
+    ParseState* ps = (ParseState*)state;
+    int64_t idx = ps->current;
+    if (idx >= ps->token_count) idx = ps->token_count - 1;
+    AriaString* lex = lex_token_lexeme(ps->lex_state, idx);
+    if (!lex || lex->length < 2) return lex;
+    // Strip leading and trailing quote characters
+    if ((lex->data[0] == '"' && lex->data[lex->length - 1] == '"') ||
+        (lex->data[0] == '\'' && lex->data[lex->length - 1] == '\'')) {
+        return make_str(lex->data + 1, lex->length - 2);
+    }
+    return lex;
+}
+
 int32_t ps_peek_line(void* state) {
     ParseState* ps = (ParseState*)state;
     int64_t idx = ps->current;
