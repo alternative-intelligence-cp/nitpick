@@ -78,7 +78,7 @@ extern "C" {
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 2
 #define ARIA_VERSION_PATCH 0
-#define ARIA_VERSION "0.2.1"
+#define ARIA_VERSION "0.2.1.1"
 
 // Compiler options
 struct CompilerOptions {
@@ -99,6 +99,7 @@ struct CompilerOptions {
     std::vector<std::string> library_paths;   // -L<path> library search paths
     std::vector<std::string> linker_flags;    // -Wl,<option> flags passed to linker
     bool build_library = false;               // -c: Compile library (no failsafe required)
+    bool debug_info = false;                  // -g: Emit DWARF debug info
     
     // GPU/PTX Backend Options (NVIDIA CUDA)
     bool emit_ptx = false;            // --emit-ptx: Generate PTX assembly
@@ -146,6 +147,7 @@ void print_help() {
     std::cout << "  --ast-dump        Dump AST and exit\n";
     std::cout << "  --tokens          Dump tokens and exit\n";
     std::cout << "  -c                Compile library (no failsafe required)\n";
+    std::cout << "  -g                Emit DWARF debug info (for aria-dap)\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
     std::cout << "  -v, --verbose     Verbose output\n\n";
     std::cout << "GPU Target Options (NVIDIA CUDA/PTX):\n";
@@ -248,6 +250,8 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.enable_gpu_debug = true;
         } else if (arg == "-c") {
             opts.build_library = true;
+        } else if (arg == "-g") {
+            opts.debug_info = true;
         } else if (arg == "-E") {
             opts.preprocess_only = true;
         } else if (arg == "--ast-dump") {
@@ -758,6 +762,24 @@ llvm::Module* compile_to_module(
     // Pass TypeSystem to IR generator for struct type lookups
     ir_gen.setTypeSystem(&type_system);
     
+    // Initialize debug info if -g flag is set
+    if (opts.debug_info) {
+        std::string file = filename;
+        std::string dir;
+        size_t slash = filename.find_last_of("/\\");
+        if (slash != std::string::npos) {
+            dir = filename.substr(0, slash);
+            file = filename.substr(slash + 1);
+        }
+        // If the path is relative, make it absolute using cwd
+        if (dir.empty() || dir[0] != '/') {
+            char cwd[PATH_MAX];
+            std::string cwd_str = getcwd(cwd, sizeof(cwd)) ? cwd : ".";
+            dir = dir.empty() ? cwd_str : cwd_str + "/" + dir;
+        }
+        ir_gen.initDebugInfo(file, dir);
+    }
+    
     // Generate IR for specialized generic functions FIRST (before main codegen)
     // This ensures specialized functions exist when regular code tries to call them
     const auto& specializations = monomorphizer.getSpecializations();
@@ -833,6 +855,11 @@ llvm::Module* compile_to_module(
         diags.error(aria::SourceLocation(filename, 0, 0),
                    std::string("IR generation error: ") + e.what());
         return nullptr;
+    }
+
+    // Finalize debug info (must be done after all codegen)
+    if (opts.debug_info) {
+        ir_gen.finalizeDebugInfo();
     }
 
     // Return raw pointer - caller must keep IRGenerator alive
@@ -913,7 +940,7 @@ static bool hasLargeIntegerTypes(llvm::Module* module) {
 /**
  * Emit assembly to file
  */
-bool emit_assembly(llvm::Module* module, const std::string& output_file) {
+bool emit_assembly(llvm::Module* module, const std::string& output_file, bool debug_info = false) {
     // Initialize native target only
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmParser();
@@ -990,9 +1017,9 @@ bool emit_assembly(llvm::Module* module, const std::string& output_file) {
         PB.registerLoopAnalyses(LAM);
         PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-        // Use the default O1 optimization pipeline which includes proper coroutine handling
-        // The coroutine passes need to be interleaved with optimization passes to work correctly
-        llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O1);
+        // Use O0 when debug info is enabled to preserve variables and line entries
+        auto opt = debug_info ? llvm::OptimizationLevel::O0 : llvm::OptimizationLevel::O1;
+        llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(opt);
 
         // Run optimization pipeline (includes coroutine lowering)
         MPM.run(*module, MAM);
@@ -1295,6 +1322,12 @@ bool link_executable(const std::string& object_file, const std::string& output_f
     std::vector<std::string> link_args;
     link_args.push_back("clang++");
 
+    // Preserve debug info through linking
+    if (opts.debug_info) {
+        link_args.push_back("-g");
+        link_args.push_back("-O0");
+    }
+
     // Add object file
     link_args.push_back(object_file);
 
@@ -1392,7 +1425,7 @@ int main(int argc, char** argv) {
             diags.printAll();
             return 1;
         }
-        aria::IRGenerator ir_gen(opts.input_files[0]);
+        aria::IRGenerator ir_gen(opts.input_files[0], opts.debug_info);
         llvm::Module* module = compile_to_module(source, opts.input_files[0], opts, ir_gen, diags);
         // compile_to_module returns nullptr for early exits (dump modes)
         if (diags.hasErrors()) {
@@ -1438,7 +1471,7 @@ int main(int argc, char** argv) {
         }
         
         // Create IR generator (must stay alive)
-        ir_generators.push_back(std::make_unique<aria::IRGenerator>(input_file));
+        ir_generators.push_back(std::make_unique<aria::IRGenerator>(input_file, opts.debug_info));
         
         // Compile to LLVM module
         llvm::Module* module = compile_to_module(source, input_file, opts, *ir_generators.back(), diags);
@@ -1521,7 +1554,7 @@ int main(int argc, char** argv) {
             std::cout << "PTX assembly written to: " << opts.output_file << "\n";
         }
     } else if (opts.emit_asm) {
-        if (!emit_assembly(final_module, opts.output_file)) {
+        if (!emit_assembly(final_module, opts.output_file, opts.debug_info)) {
             return 1;
         }
         if (opts.verbose) {
@@ -1538,7 +1571,7 @@ int main(int argc, char** argv) {
     } else {
         // Generate executable
         std::string asm_file = opts.output_file + ".s";
-        if (!emit_assembly(final_module, asm_file)) {
+        if (!emit_assembly(final_module, asm_file, opts.debug_info)) {
             return 1;
         }
         

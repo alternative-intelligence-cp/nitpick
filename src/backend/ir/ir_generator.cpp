@@ -2114,6 +2114,34 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
                         }
                     }
                 }
+
+                // Emit debug info for parameter
+                if (debug_enabled && di_builder && getCurrentDebugScope()) {
+                    std::string typeStr = param->typeNode ? param->typeNode->toString() : "int32";
+                    llvm::DIType* di_type = nullptr;
+                    if (type_system) {
+                        auto* aria_type_for_debug = type_system->getPrimitiveType(typeStr);
+                        if (aria_type_for_debug) di_type = mapDebugType(aria_type_for_debug);
+                    }
+                    if (!di_type) {
+                        unsigned bits = arg.getType()->getPrimitiveSizeInBits();
+                        if (bits == 0) bits = module->getDataLayout().getTypeSizeInBits(arg.getType());
+                        di_type = di_builder->createBasicType(typeStr, bits, llvm::dwarf::DW_ATE_signed);
+                    }
+                    auto* di_param = di_builder->createParameterVariable(
+                        getCurrentDebugScope(), param->paramName, idx + 1, di_file,
+                        funcDecl->line, di_type);
+                    llvm::Value* storage = named_values[param->paramName];
+                    if (auto* ai = llvm::dyn_cast<llvm::AllocaInst>(storage)) {
+                        di_builder->insertDeclare(ai, di_param, di_builder->createExpression(),
+                            llvm::DILocation::get(context, funcDecl->line, 0, getCurrentDebugScope()),
+                            builder.GetInsertBlock());
+                    } else {
+                        di_builder->insertDbgValueIntrinsic(storage, di_param, di_builder->createExpression(),
+                            llvm::DILocation::get(context, funcDecl->line, 0, getCurrentDebugScope()),
+                            builder.GetInsertBlock());
+                    }
+                }
             }
             idx++;
         }
@@ -2713,6 +2741,30 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
             builder.SetInsertPoint(entry);
             
+            // Create debug info for this function
+            if (debug_enabled && di_builder && di_file) {
+                // Create subroutine type (simplified - just return type for now)
+                llvm::SmallVector<llvm::Metadata*, 8> di_param_types;
+                di_param_types.push_back(nullptr); // return type placeholder
+                llvm::DISubroutineType* di_func_type = di_builder->createSubroutineType(
+                    di_builder->getOrCreateTypeArray(di_param_types));
+                
+                llvm::DISubprogram* di_sp = di_builder->createFunction(
+                    getCurrentDebugScope() ? getCurrentDebugScope() : di_file,
+                    funcDecl->funcName,      // name
+                    func_name,               // linkage name
+                    di_file,
+                    funcDecl->line,          // line number
+                    di_func_type,
+                    funcDecl->line,          // scope line
+                    llvm::DINode::FlagPrototyped,
+                    llvm::DISubprogram::SPFlagDefinition
+                );
+                func->setSubprogram(di_sp);
+                pushDebugScope(di_sp);
+                setDebugLocation(funcDecl->line, funcDecl->column);
+            }
+            
             // Initialize GC for main function before any user code runs
             if (funcDecl->funcName == "main") {
                 // Declare aria_gc_init(size_t nursery_size, size_t old_gen_threshold)
@@ -3113,6 +3165,12 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             current_func_is_async = false;
             current_coro_suspend_block = nullptr;
 
+            // Pop debug scope for this function
+            if (debug_enabled && di_builder && di_file) {
+                popDebugScope();
+                clearDebugLocation();
+            }
+
             // P1-4: Clear current function declaration
             current_func_decl = nullptr;
 
@@ -3257,6 +3315,11 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
 llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
     if (!stmt) {
         return nullptr;
+    }
+
+    // Emit debug location for every statement
+    if (stmt->line > 0) {
+        setDebugLocation(stmt->line, stmt->column);
     }
 
     // ARIA-022: Prevent stack overflow from deeply nested statements
@@ -3606,6 +3669,29 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             
             llvm::AllocaInst* alloca = builder.CreateAlloca(varType, nullptr, varDecl->varName);
             
+            // Emit debug info for local variable
+            if (debug_enabled && di_builder && getCurrentDebugScope()) {
+                llvm::DIType* di_type = nullptr;
+                if (type_system) {
+                    auto* aria_type_for_debug = type_system->getPrimitiveType(actualTypeName);
+                    if (aria_type_for_debug) {
+                        di_type = mapDebugType(aria_type_for_debug);
+                    }
+                }
+                if (!di_type) {
+                    // Fallback: create basic type from LLVM type size
+                    unsigned bits = varType->getPrimitiveSizeInBits();
+                    if (bits == 0) bits = module->getDataLayout().getTypeSizeInBits(varType);
+                    di_type = di_builder->createBasicType(actualTypeName, bits, llvm::dwarf::DW_ATE_signed);
+                }
+                auto* di_var = di_builder->createAutoVariable(
+                    getCurrentDebugScope(), varDecl->varName, di_file,
+                    varDecl->line, di_type);
+                di_builder->insertDeclare(alloca, di_var, di_builder->createExpression(),
+                    llvm::DILocation::get(context, varDecl->line, varDecl->column, getCurrentDebugScope()),
+                    builder.GetInsertBlock());
+            }
+
             // P0: Apply explicit alignment from #[align(N)] attribute if specified
             if (varDecl->alignment > 0) {
                 alloca->setAlignment(llvm::Align(varDecl->alignment));
@@ -9316,7 +9402,7 @@ void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::st
     di_compile_unit = di_builder->createCompileUnit(
         llvm::dwarf::DW_LANG_C,  // Use C for now (could register DW_LANG_Aria later)
         di_file,
-        "Aria Compiler v0.0.7",  // Producer
+        "Aria Compiler v0.2.1.1",  // Producer
         false,                    // isOptimized
         "",                       // Flags
         0                         // Runtime version
