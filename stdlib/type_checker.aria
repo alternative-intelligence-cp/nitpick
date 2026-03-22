@@ -1,0 +1,1805 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Aria Self-Hosted Type Checker — Phase 5.3
+// ═══════════════════════════════════════════════════════════════════════
+// Walks the AST produced by parser.aria and performs:
+//   - Symbol table management (define, lookup, resolve)
+//   - Type resolution from type annotations
+//   - Expression type inference (literals, identifiers, binary/unary ops)
+//   - Statement type checking (var decl, func decl, struct decl, etc.)
+//   - Error collection
+//
+// State management via opaque C handle (sema_helpers.cpp).
+// Uses the same AST opaque handles from ast_helpers.cpp.
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// TypeKind Constants (match sema_helpers.cpp TK enum)
+// ═══════════════════════════════════════════════════════════════════════
+
+const int32:TYPE_PRIMITIVE = 0i32;
+const int32:TYPE_POINTER   = 1i32;
+const int32:TYPE_ARRAY     = 2i32;
+const int32:TYPE_FUNCTION  = 3i32;
+const int32:TYPE_STRUCT    = 4i32;
+const int32:TYPE_OPTIONAL  = 5i32;
+const int32:TYPE_RESULT    = 6i32;
+const int32:TYPE_VECTOR    = 7i32;
+const int32:TYPE_GENERIC   = 8i32;
+const int32:TYPE_UNKNOWN   = 9i32;
+const int32:TYPE_ERROR     = 10i32;
+
+// ═══════════════════════════════════════════════════════════════════════
+// SymbolKind Constants (match sema_helpers.cpp SK enum)
+// ═══════════════════════════════════════════════════════════════════════
+
+const int32:SYM_VARIABLE  = 0i32;
+const int32:SYM_FUNCTION  = 1i32;
+const int32:SYM_PARAMETER = 2i32;
+const int32:SYM_TYPE      = 3i32;
+const int32:SYM_TRAIT     = 4i32;
+const int32:SYM_MODULE    = 5i32;
+const int32:SYM_CONSTANT  = 6i32;
+
+// ═══════════════════════════════════════════════════════════════════════
+// ScopeKind Constants (match sema_helpers.cpp ScopeK enum)
+// ═══════════════════════════════════════════════════════════════════════
+
+const int32:SCOPE_GLOBAL   = 0i32;
+const int32:SCOPE_FUNCTION = 1i32;
+const int32:SCOPE_BLOCK    = 2i32;
+const int32:SCOPE_STRUCT   = 3i32;
+const int32:SCOPE_MODULE   = 4i32;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Node Type Constants (must match parser.aria / ast_helpers.cpp)
+// ═══════════════════════════════════════════════════════════════════════
+
+// Expressions
+const int32:NT_LITERAL           = 0i32;
+const int32:NT_IDENTIFIER        = 1i32;
+const int32:NT_BINARY_OP         = 2i32;
+const int32:NT_UNARY_OP          = 3i32;
+const int32:NT_CALL              = 4i32;
+const int32:NT_INDEX             = 5i32;
+const int32:NT_MEMBER_ACCESS     = 6i32;
+const int32:NT_POINTER_MEMBER    = 7i32;
+const int32:NT_LAMBDA            = 8i32;
+const int32:NT_TEMPLATE_LITERAL  = 9i32;
+const int32:NT_RANGE             = 10i32;
+const int32:NT_TERNARY           = 11i32;
+const int32:NT_SAFE_NAV          = 12i32;
+const int32:NT_NULL_COALESCE     = 13i32;
+const int32:NT_PIPELINE          = 14i32;
+const int32:NT_UNWRAP            = 15i32;
+const int32:NT_ARRAY_LITERAL     = 16i32;
+const int32:NT_OBJECT_LITERAL    = 17i32;
+const int32:NT_AWAIT             = 18i32;
+const int32:NT_MOVE              = 19i32;
+const int32:NT_VECTOR_CONSTRUCTOR = 20i32;
+const int32:NT_CAST              = 21i32;
+
+// Statements / Declarations
+const int32:NT_VAR_DECL       = 22i32;
+const int32:NT_FUNC_DECL      = 23i32;
+const int32:NT_STRUCT_DECL    = 24i32;
+const int32:NT_ENUM_DECL      = 25i32;
+const int32:NT_TYPE_DECL      = 26i32;
+const int32:NT_OPAQUE_STRUCT  = 27i32;
+const int32:NT_TRAIT_DECL     = 28i32;
+const int32:NT_IMPL_DECL      = 29i32;
+const int32:NT_RETURN         = 30i32;
+const int32:NT_PASS           = 31i32;
+const int32:NT_FAIL           = 32i32;
+const int32:NT_BREAK          = 33i32;
+const int32:NT_CONTINUE       = 34i32;
+const int32:NT_DEFER          = 35i32;
+const int32:NT_BLOCK          = 36i32;
+const int32:NT_EXPRESSION_STMT = 37i32;
+
+// Control flow
+const int32:NT_IF    = 39i32;
+const int32:NT_WHILE = 40i32;
+const int32:NT_FOR   = 41i32;
+const int32:NT_LOOP  = 42i32;
+const int32:NT_TILL  = 43i32;
+const int32:NT_WHEN  = 44i32;
+const int32:NT_PICK  = 45i32;
+
+// Types
+const int32:NT_TYPE_ANNOTATION = 48i32;
+const int32:NT_GENERIC_TYPE    = 49i32;
+const int32:NT_ARRAY_TYPE      = 50i32;
+const int32:NT_POINTER_TYPE    = 51i32;
+const int32:NT_SAFE_REF_TYPE   = 52i32;
+const int32:NT_OPTIONAL_TYPE   = 53i32;
+const int32:NT_FUNCTION_TYPE   = 54i32;
+
+// Modules
+const int32:NT_USE     = 55i32;
+const int32:NT_MOD     = 56i32;
+const int32:NT_EXTERN  = 57i32;
+const int32:NT_PROGRAM = 58i32;
+
+// Special
+const int32:NT_ASSIGNMENT = 59i32;
+const int32:NT_PARAMETER  = 60i32;
+const int32:NT_ARGUMENT   = 61i32;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Token Type Constants (subset for operators in type checking)
+// Must match lexer.aria values
+// ═══════════════════════════════════════════════════════════════════════
+
+const int32:TK_PLUS         = 124i32;
+const int32:TK_MINUS        = 125i32;
+const int32:TK_STAR         = 126i32;
+const int32:TK_SLASH        = 127i32;
+const int32:TK_PERCENT      = 128i32;
+
+const int32:TK_EQUAL_EQUAL   = 137i32;
+const int32:TK_BANG_EQUAL    = 138i32;
+const int32:TK_LESS          = 139i32;
+const int32:TK_LESS_EQUAL    = 140i32;
+const int32:TK_GREATER       = 141i32;
+const int32:TK_GREATER_EQUAL = 142i32;
+
+const int32:TK_AND_AND       = 144i32;
+const int32:TK_OR_OR         = 145i32;
+const int32:TK_BANG          = 146i32;
+
+const int32:TK_AMPERSAND    = 149i32;
+const int32:TK_PIPE         = 150i32;
+const int32:TK_CARET        = 151i32;
+const int32:TK_TILDE        = 152i32;
+const int32:TK_SHIFT_LEFT   = 153i32;
+const int32:TK_SHIFT_RIGHT  = 154i32;
+
+// Literal sub-kinds (stored in bool field of literal nodes)
+const int32:LIT_INT    = 1i32;
+const int32:LIT_FLOAT  = 2i32;
+const int32:LIT_STRING = 3i32;
+const int32:LIT_BOOL   = 4i32;
+const int32:LIT_NULL   = 5i32;
+const int32:LIT_NIL    = 6i32;
+const int32:LIT_CHAR   = 7i32;
+const int32:LIT_ERR    = 8i32;
+const int32:LIT_UNKNOWN = 9i32;
+
+// Flags bits used in var decl / func decl
+const int32:FLAG_IS_CONST  = 1i32;
+const int32:FLAG_IS_PUBLIC = 2i32;
+const int32:FLAG_IS_ASYNC  = 4i32;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Extern C Helper Declarations — sema_helpers.cpp
+// ═══════════════════════════════════════════════════════════════════════
+
+// TypeChecker state lifecycle
+extern func:tc_new = wild int8*();
+extern func:tc_free = void(wild int8*:state);
+
+// Error tracking
+extern func:tc_add_error = void(wild int8*:state, string:msg);
+extern func:tc_add_error_at = void(wild int8*:state, string:msg, int32:line, int32:col);
+extern func:tc_error_count = int64(wild int8*:state);
+extern func:tc_get_error = string(wild int8*:state, int64:idx);
+
+// Type creation / retrieval
+extern func:tc_get_primitive = wild int8*(wild int8*:state, string:name);
+extern func:tc_get_error_type = wild int8*(wild int8*:state);
+extern func:tc_get_unknown_type = wild int8*(wild int8*:state);
+extern func:tc_make_pointer_type = wild int8*(wild int8*:state, wild int8*:pointee, int32:is_wild);
+extern func:tc_make_erased_pointer = wild int8*(wild int8*:state);
+extern func:tc_make_array_type = wild int8*(wild int8*:state, wild int8*:elem, int32:sz);
+extern func:tc_make_optional_type = wild int8*(wild int8*:state, wild int8*:wrapped);
+extern func:tc_make_result_type = wild int8*(wild int8*:state, wild int8*:value_type);
+extern func:tc_prep_func_return = wild int8*(wild int8*:state, wild int8*:value_type, int32:has_body);
+extern func:tc_resolve_func_ret = wild int8*(wild int8*:state, string:type_name, int32:has_body);
+extern func:tc_resolve_func_ret_node = wild int8*(wild int8*:state, wild int8*:ast_node, int32:has_body);
+extern func:tc_resolve_func_ret_from_decl = wild int8*(wild int8*:state, wild int8*:func_decl_node, int32:has_body);
+extern func:tc_make_func_type = wild int8*(wild int8*:state, int32:param_count);
+extern func:tc_func_type_add_param = void(wild int8*:func_type, wild int8*:param_type);
+extern func:tc_func_type_set_return = void(wild int8*:func_type, wild int8*:ret_type);
+extern func:tc_make_struct_type = wild int8*(wild int8*:state, string:name);
+extern func:tc_struct_add_field = void(wild int8*:struct_type, string:fname, wild int8*:ftype, int32:is_public);
+extern func:tc_make_vector_type = wild int8*(wild int8*:state, wild int8*:comp_type, int32:dim);
+
+// Type queries
+extern func:tc_type_kind = int32(wild int8*:type_handle);
+extern func:tc_type_name = string(wild int8*:type_handle);
+extern func:tc_type_bit_width = int32(wild int8*:type_handle);
+extern func:tc_type_is_signed = int32(wild int8*:type_handle);
+extern func:tc_type_is_floating = int32(wild int8*:type_handle);
+extern func:tc_type_is_tbb = int32(wild int8*:type_handle);
+extern func:tc_type_is_exotic = int32(wild int8*:type_handle);
+extern func:tc_type_is_numeric = int32(wild int8*:type_handle);
+extern func:tc_type_is_integer = int32(wild int8*:type_handle);
+extern func:tc_types_equal = int32(wild int8*:a, wild int8*:b);
+extern func:tc_can_coerce = int32(wild int8*:source, wild int8*:target);
+
+// Pointer, array, function, struct type component access
+extern func:tc_pointer_pointee = wild int8*(wild int8*:type_handle);
+extern func:tc_pointer_is_wild = int32(wild int8*:type_handle);
+extern func:tc_array_element = wild int8*(wild int8*:type_handle);
+extern func:tc_array_size = int32(wild int8*:type_handle);
+extern func:tc_func_return_type = wild int8*(wild int8*:type_handle);
+extern func:tc_func_param_count = int32(wild int8*:type_handle);
+extern func:tc_func_param_type = wild int8*(wild int8*:type_handle, int32:idx);
+extern func:tc_struct_field_count = int32(wild int8*:type_handle);
+extern func:tc_struct_field_name = string(wild int8*:type_handle, int32:idx);
+extern func:tc_struct_field_type = wild int8*(wild int8*:type_handle, int32:idx);
+extern func:tc_struct_field_by_name = wild int8*(wild int8*:type_handle, string:fname);
+extern func:tc_wrapped_type = wild int8*(wild int8*:type_handle);
+extern func:tc_vector_component = wild int8*(wild int8*:type_handle);
+extern func:tc_vector_dimension = int32(wild int8*:type_handle);
+
+// Symbol table operations
+extern func:tc_push_scope = void(wild int8*:state, int32:scope_kind, string:name);
+extern func:tc_pop_scope = void(wild int8*:state);
+extern func:tc_define_symbol = int32(wild int8*:state, string:name, int32:kind, wild int8*:type_handle, int32:line, int32:col);
+extern func:tc_symbol_set_public = void(wild int8*:state, string:name, int32:is_pub);
+extern func:tc_symbol_set_mutable = void(wild int8*:state, string:name, int32:is_mut);
+extern func:tc_symbol_set_initialized = void(wild int8*:state, string:name, int32:is_init);
+extern func:tc_lookup_symbol = wild int8*(wild int8*:state, string:name);
+extern func:tc_resolve_symbol = wild int8*(wild int8*:state, string:name);
+extern func:tc_symbol_type = wild int8*(wild int8*:sym_handle);
+extern func:tc_symbol_kind = int32(wild int8*:sym_handle);
+extern func:tc_symbol_name = string(wild int8*:sym_handle);
+extern func:tc_symbol_is_mutable = int32(wild int8*:sym_handle);
+extern func:tc_symbol_is_initialized = int32(wild int8*:sym_handle);
+
+// Function context
+extern func:tc_set_func_return_type = void(wild int8*:state, wild int8*:type_handle);
+extern func:tc_get_func_return_type = wild int8*(wild int8*:state);
+extern func:tc_set_func_value_type = void(wild int8*:state, wild int8*:type_handle);
+extern func:tc_get_func_value_type = wild int8*(wild int8*:state);
+
+// Operator type checking
+extern func:tc_check_binary_op = wild int8*(wild int8*:state, int32:op_token, wild int8*:left_type, wild int8*:right_type);
+extern func:tc_check_unary_op = wild int8*(wild int8*:state, int32:op_token, wild int8*:operand_type);
+
+// Utilities
+extern func:tc_suffix_to_type_name = string(string:suffix);
+extern func:tc_token_to_type_name = string(int32:token_id);
+extern func:tc_lookup_type = wild int8*(wild int8*:state, string:name);
+extern func:tc_null_ptr = wild int8*();
+extern func:tc_is_null = int32(wild int8*:ptr);
+extern func:tc_resolve_var_type = wild int8*(wild int8*:state, wild int8*:ast_node);
+extern func:tc_save_func_context = void(wild int8*:state);
+extern func:tc_restore_func_context = void(wild int8*:state);
+extern func:tc_resolve_param_type = wild int8*(wild int8*:state, wild int8*:param_node);
+extern func:tc_symbol_exists = int32(wild int8*:state, string:name);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Extern AST Helper Declarations (from ast_helpers.cpp)
+// ═══════════════════════════════════════════════════════════════════════
+
+extern func:ast_new_node = wild int8*(int32:typ, int32:line, int32:col);
+extern func:ast_get_type = int32(wild int8*:node);
+extern func:ast_get_str = string(wild int8*:node);
+extern func:ast_get_str2 = string(wild int8*:node);
+extern func:ast_get_str3 = string(wild int8*:node);
+extern func:ast_get_int = int64(wild int8*:node);
+extern func:ast_get_float = flt64(wild int8*:node);
+extern func:ast_get_bool = int32(wild int8*:node);
+extern func:ast_get_flags = int32(wild int8*:node);
+extern func:ast_get_line = int32(wild int8*:node);
+extern func:ast_get_col = int32(wild int8*:node);
+extern func:ast_child_count = int64(wild int8*:node);
+extern func:ast_child_at = wild int8*(wild int8*:node, int64:idx);
+extern func:ast_free = void(wild int8*:node);
+extern func:ast_null_ptr = wild int8*();
+
+// Scalar query helpers (avoid cross-module extern pointer return corruption)
+extern func:ast_child_type = int32(wild int8*:node, int64:idx);
+extern func:ast_child_str = wild int8*(wild int8*:node, int64:idx);
+extern func:ast_child_int = int64(wild int8*:node, int64:idx);
+extern func:ast_child_bool = int32(wild int8*:node, int64:idx);
+extern func:ast_child_flags = int32(wild int8*:node, int64:idx);
+extern func:ast_child_child_count = int64(wild int8*:node, int64:idx);
+extern func:ast_child2_type = int32(wild int8*:node, int64:i, int64:j);
+extern func:ast_child2_str = wild int8*(wild int8*:node, int64:i, int64:j);
+extern func:ast_child2_child_count = int64(wild int8*:node, int64:i, int64:j);
+
+// String helpers
+extern func:ast_concat_str = string(string:a, string:b);
+extern func:ast_concat_str3 = string(string:a, string:b, string:c);
+
+// I/O
+extern func:puts = int32(string:s);
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// resolve_type_node — Convert a type AST node to a type handle
+// ═══════════════════════════════════════════════════════════════════════
+// Handles NT_TYPE_ANNOTATION, NT_POINTER_TYPE, NT_ARRAY_TYPE,
+//         NT_OPTIONAL_TYPE, NT_FUNCTION_TYPE
+//
+// Returns a wild int8-> type handle, or error type on failure.
+
+func:resolve_type_node = wild int8->(wild int8->:tc, wild int8->:type_node) {
+    int32:tn_null = tc_is_null(type_node);
+    if (tn_null == 1i32) {
+        // No type node — default to void
+        wild int8->:v_type = tc_get_primitive(tc, "void");
+        pass(v_type);
+    }
+
+    int32:ntype = ast_get_type(type_node);
+
+    // --- TYPE_ANNOTATION: primitive or struct name ---
+    if (ntype == NT_TYPE_ANNOTATION) {
+        string:tname = ast_get_str(type_node);
+        // Look up in type cache (primitives + registered structs)
+        wild int8->:found = tc_lookup_type(tc, tname);
+        int32:found_null = tc_is_null(found);
+        if (found_null == 0i32) {
+            pass(found);
+        }
+        // Unknown type name
+        string:err = ast_concat_str3("Unknown type '", tname, "'");
+        int32:ln = ast_get_line(type_node);
+        int32:cl = ast_get_col(type_node);
+        tc_add_error_at(tc, err, ln, cl);
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+
+    // --- POINTER_TYPE: T-> or wild T-> ---
+    if (ntype == NT_POINTER_TYPE) {
+        // child[0] = base type node
+        int64:cc = ast_child_count(type_node);
+        if (cc > 0i64) {
+            wild int8->:base_node = ast_child_at(type_node, 0i64);
+            wild int8->:base_type = raw(resolve_type_node(tc, base_node));
+            // Check for wild qualifier via str2
+            string:mem_q = ast_get_str2(type_node);
+            int32:is_w = 0i32;
+            int64:mlen = string_length(mem_q);
+            if (mlen > 0i64) {
+                is_w = 1i32;
+            }
+            wild int8->:ptr_t = tc_make_pointer_type(tc, base_type, is_w);
+            pass(ptr_t);
+        }
+        wild int8->:erased = tc_make_erased_pointer(tc);
+        pass(erased);
+    }
+
+    // --- ARRAY_TYPE: T[] or T[N] ---
+    if (ntype == NT_ARRAY_TYPE) {
+        int64:cc2 = ast_child_count(type_node);
+        if (cc2 > 0i64) {
+            wild int8->:elem_node = ast_child_at(type_node, 0i64);
+            wild int8->:elem_type = raw(resolve_type_node(tc, elem_node));
+            int32:arr_sz = -1i32;
+            // If the node has an int value, that's the array size
+            int64:sz_val = ast_get_int(type_node);
+            if (sz_val > 0i64) {
+                arr_sz = @cast<int32>(sz_val);
+            }
+            wild int8->:arr_t = tc_make_array_type(tc, elem_type, arr_sz);
+            pass(arr_t);
+        }
+        wild int8->:err_t2 = tc_get_error_type(tc);
+        pass(err_t2);
+    }
+
+    // --- OPTIONAL_TYPE: T? ---
+    if (ntype == NT_OPTIONAL_TYPE) {
+        int64:cc3 = ast_child_count(type_node);
+        if (cc3 > 0i64) {
+            wild int8->:inner_node = ast_child_at(type_node, 0i64);
+            wild int8->:inner_type = raw(resolve_type_node(tc, inner_node));
+            wild int8->:opt_t = tc_make_optional_type(tc, inner_type);
+            pass(opt_t);
+        }
+        wild int8->:err_t3 = tc_get_error_type(tc);
+        pass(err_t3);
+    }
+
+    // --- FUNCTION_TYPE: func(T1, T2) -> R ---
+    if (ntype == NT_FUNCTION_TYPE) {
+        wild int8->:ft = tc_make_func_type(tc, 0i32);
+        int64:cc4 = ast_child_count(type_node);
+        // Children: [param_type_1, ..., param_type_N, return_type]
+        // Last child is return type, rest are param types
+        if (cc4 > 0i64) {
+            int64:param_end = cc4 - 1i64;
+            int64:pi = 0i64;
+            while (pi < param_end) {
+                wild int8->:pt_node = ast_child_at(type_node, pi);
+                wild int8->:pt = raw(resolve_type_node(tc, pt_node));
+                tc_func_type_add_param(ft, pt);
+                pi = pi + 1i64;
+            }
+            wild int8->:rt_node = ast_child_at(type_node, param_end);
+            wild int8->:rt = raw(resolve_type_node(tc, rt_node));
+            tc_func_type_set_return(ft, rt);
+        } else {
+            wild int8->:void_t = tc_get_primitive(tc, "void");
+            tc_func_type_set_return(ft, void_t);
+        }
+        pass(ft);
+    }
+
+    // Unsupported type node
+    string:err2 = "Unsupported type node kind";
+    tc_add_error(tc, err2);
+    wild int8->:err_t4 = tc_get_error_type(tc);
+    pass(err_t4);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_literal — Infer the type of a literal expression
+// ═══════════════════════════════════════════════════════════════════════
+
+func:infer_literal = wild int8->(wild int8->:tc, wild int8->:node) {
+    int32:lit_kind = ast_get_bool(node);
+
+    // Check for explicit type suffix via token type stored in flags
+    int32:tok_flags = ast_get_flags(node);
+    string:explicit_t = tc_token_to_type_name(tok_flags);
+    int64:et_len = string_length(explicit_t);
+
+    if (et_len > 0i64) {
+        // NIL literal
+        if (lit_kind == LIT_NIL) {
+            wild int8->:unk = tc_get_unknown_type(tc);
+            pass(unk);
+        }
+        // NULL literal
+        if (lit_kind == LIT_NULL) {
+            wild int8->:unk2 = tc_get_unknown_type(tc);
+            pass(unk2);
+        }
+        // Typed literal — convert suffix to type name
+        string:type_name = tc_suffix_to_type_name(explicit_t);
+        wild int8->:typed = tc_get_primitive(tc, type_name);
+        int32:typed_null = tc_is_null(typed);
+        if (typed_null == 0i32) {
+            pass(typed);
+        }
+        string:err = ast_concat_str3("Unknown type suffix '", explicit_t, "' in literal");
+        tc_add_error(tc, err);
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+
+    // Untyped literals — use defaults
+    if (lit_kind == LIT_INT) {
+        wild int8->:int32_t = tc_get_primitive(tc, "int32");
+        pass(int32_t);
+    }
+    if (lit_kind == LIT_FLOAT) {
+        wild int8->:flt64_t = tc_get_primitive(tc, "flt64");
+        pass(flt64_t);
+    }
+    if (lit_kind == LIT_STRING) {
+        wild int8->:str_t = tc_get_primitive(tc, "string");
+        pass(str_t);
+    }
+    if (lit_kind == LIT_BOOL) {
+        wild int8->:bool_t = tc_get_primitive(tc, "bool");
+        pass(bool_t);
+    }
+    if (lit_kind == LIT_NULL) {
+        wild int8->:unk3 = tc_get_unknown_type(tc);
+        pass(unk3);
+    }
+    if (lit_kind == LIT_NIL) {
+        wild int8->:unk4 = tc_get_unknown_type(tc);
+        pass(unk4);
+    }
+    if (lit_kind == LIT_ERR) {
+        // ERR defaults to tbb32
+        wild int8->:tbb_t = tc_get_primitive(tc, "tbb32");
+        pass(tbb_t);
+    }
+    if (lit_kind == LIT_UNKNOWN) {
+        wild int8->:unk5 = tc_get_unknown_type(tc);
+        pass(unk5);
+    }
+
+    // Default: int32
+    wild int8->:def_t = tc_get_primitive(tc, "int32");
+    pass(def_t);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_identifier — Resolve identifier to its declared type
+// ═══════════════════════════════════════════════════════════════════════
+
+func:infer_identifier = wild int8->(wild int8->:tc, wild int8->:node) {
+    string:name = ast_get_str(node);
+    wild int8->:sym = tc_resolve_symbol(tc, name);
+    int32:sym_null = tc_is_null(sym);
+    if (sym_null == 1i32) {
+        string:err = ast_concat_str3("Undefined identifier '", name, "'");
+        int32:ln = ast_get_line(node);
+        int32:cl = ast_get_col(node);
+        tc_add_error_at(tc, err, ln, cl);
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+    wild int8->:sym_t = tc_symbol_type(sym);
+    pass(sym_t);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_binary_op — Type check a binary operation
+// ═══════════════════════════════════════════════════════════════════════
+// child[0] = left, child[1] = right; str = operator lexeme; int = op token type
+
+func:infer_binary_op = wild int8->(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+    if (cc < 2i64) {
+        tc_add_error(tc, "Binary op node missing operands");
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+    wild int8->:left_node = ast_child_at(node, 0i64);
+    wild int8->:right_node = ast_child_at(node, 1i64);
+
+    wild int8->:left_type = raw(infer_type(tc, left_node));
+    wild int8->:right_type = raw(infer_type(tc, right_node));
+
+    // Get operator token type from int field
+    int64:op_long = ast_get_int(node);
+    int32:op_tok = @cast<int32>(op_long);
+
+    // Delegate to C helper for operator-specific checking
+    wild int8->:result_t = tc_check_binary_op(tc, op_tok, left_type, right_type);
+    pass(result_t);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_unary_op — Type check a unary operation
+// ═══════════════════════════════════════════════════════════════════════
+
+func:infer_unary_op = wild int8->(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+    if (cc < 1i64) {
+        tc_add_error(tc, "Unary op node missing operand");
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+    wild int8->:operand_node = ast_child_at(node, 0i64);
+    wild int8->:operand_type = raw(infer_type(tc, operand_node));
+
+    int64:op_long = ast_get_int(node);
+    int32:op_tok = @cast<int32>(op_long);
+
+    wild int8->:result_t = tc_check_unary_op(tc, op_tok, operand_type);
+    pass(result_t);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_call — Type check a function call expression
+// ═══════════════════════════════════════════════════════════════════════
+// CALL node layout (self-hosted parser):
+//   str   = '' (empty)
+//   child[0] = callee expression (NT_IDENTIFIER with function name)
+//   child[1..N] = arguments
+
+func:infer_call = wild int8->(wild int8->:tc, wild int8->:node) {
+    // Extract function name from child[0] (callee identifier)
+    // CALL layout: child[0]=callee(NT_IDENTIFIER), child[1..N]=args
+    wild int8->:callee_node = ast_child_at(node, 0i64);
+    string:fname = ast_get_str(callee_node);
+    int64:total_cc = ast_child_count(node);
+    int64:arg_count = total_cc - 1i64;
+    if (arg_count < 0i64) {
+        arg_count = 0i64;
+    }
+
+    // Built-in: raw(Result<T>) -> T — unwrap result type
+    if (fname == "raw") {
+        if (arg_count != 1i64) {
+            tc_add_error(tc, "raw() requires exactly one argument");
+            wild int8->:err_raw = tc_get_error_type(tc);
+            pass(err_raw);
+        }
+        wild int8->:arg0 = ast_child_at(node, 1i64);
+        wild int8->:arg_t = raw(infer_type(tc, arg0));
+        int32:ak = tc_type_kind(arg_t);
+        if (ak == TYPE_RESULT) {
+            wild int8->:inner_t = tc_wrapped_type(arg_t);
+            pass(inner_t);
+        }
+        if (ak == TYPE_ERROR || ak == TYPE_UNKNOWN) {
+            pass(arg_t);
+        }
+        tc_add_error(tc, "raw() argument must be Result<T>");
+        wild int8->:err_raw2 = tc_get_error_type(tc);
+        pass(err_raw2);
+    }
+
+    // Built-in: drop(expr) -> void — discard value
+    if (fname == "drop") {
+        if (arg_count > 0i64) {
+            wild int8->:darg = ast_child_at(node, 1i64);
+            wild int8->:darg_t = raw(infer_type(tc, darg));
+        }
+        wild int8->:void_t = tc_get_primitive(tc, "void");
+        pass(void_t);
+    }
+
+    wild int8->:sym = tc_resolve_symbol(tc, fname);
+    int32:sym_null = tc_is_null(sym);
+
+    if (sym_null == 1i32) {
+        string:err = ast_concat_str3("Undefined function '", fname, "'");
+        int32:ln = ast_get_line(node);
+        int32:cl = ast_get_col(node);
+        tc_add_error_at(tc, err, ln, cl);
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+
+    wild int8->:sym_t = tc_symbol_type(sym);
+    int32:tk = tc_type_kind(sym_t);
+
+    // If the symbol is a function type, check param count and return type
+    if (tk == TYPE_FUNCTION) {
+        int32:expected = tc_func_param_count(sym_t);
+        int32:given = @cast<int32>(arg_count);
+
+        if (given != expected) {
+            string:e1 = ast_concat_str3("Function '", fname, "' expects ");
+            string:e2 = ast_concat_str(e1, "different number of arguments");
+            tc_add_error(tc, e2);
+        }
+
+        // Check argument types match parameter types
+        int32:check_count = expected;
+        if (given < expected) {
+            check_count = given;
+        }
+        int32:ci = 0i32;
+        while (ci < check_count) {
+            // Arguments start at child[1] (child[0] is callee)
+            int64:ci_64 = @cast<int64>(ci) + 1i64;
+            wild int8->:arg_node = ast_child_at(node, ci_64);
+            wild int8->:arg_type = raw(infer_type(tc, arg_node));
+            wild int8->:param_type = tc_func_param_type(sym_t, ci);
+            int32:eq = tc_types_equal(arg_type, param_type);
+            int32:coerce = tc_can_coerce(arg_type, param_type);
+            if (eq == 0i32 && coerce == 0i32) {
+                // Type unknown means we skip strict checking
+                int32:ak = tc_type_kind(arg_type);
+                int32:pk = tc_type_kind(param_type);
+                if (ak != TYPE_UNKNOWN && pk != TYPE_UNKNOWN) {
+                    string:e3 = ast_concat_str3("Type mismatch in argument to '", fname, "'");
+                    tc_add_error(tc, e3);
+                }
+            }
+            ci = ci + 1i32;
+        }
+
+        // Return type of the function
+        wild int8->:ret_t = tc_func_return_type(sym_t);
+        pass(ret_t);
+    }
+
+    // Symbol exists but is not a function — might be callable (struct constructor)
+    // For now, return unknown
+    wild int8->:unk = tc_get_unknown_type(tc);
+    pass(unk);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_member_access — Type check member access (a.b)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:infer_member_access = wild int8->(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+    if (cc < 1i64) {
+        tc_add_error(tc, "Member access missing object");
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+    wild int8->:obj_node = ast_child_at(node, 0i64);
+    wild int8->:obj_type = raw(infer_type(tc, obj_node));
+    int32:tk = tc_type_kind(obj_type);
+
+    string:member_name = ast_get_str(node);
+
+    // Struct member access
+    if (tk == TYPE_STRUCT) {
+        wild int8->:field_t = tc_struct_field_by_name(obj_type, member_name);
+        int32:field_null = tc_is_null(field_t);
+        if (field_null == 0i32) {
+            pass(field_t);
+        }
+        string:sname = tc_type_name(obj_type);
+        string:err = ast_concat_str3("No field '", member_name, "' on struct ");
+        string:err2 = ast_concat_str(err, sname);
+        tc_add_error(tc, err2);
+        wild int8->:err_t2 = tc_get_error_type(tc);
+        pass(err_t2);
+    }
+
+    // Array .length
+    if (tk == TYPE_ARRAY) {
+        if (member_name == "length") {
+            wild int8->:int64_t = tc_get_primitive(tc, "int64");
+            pass(int64_t);
+        }
+    }
+
+    // String .length
+    if (tk == TYPE_PRIMITIVE) {
+        string:tn = tc_type_name(obj_type);
+        if (tn == "string") {
+            if (member_name == "length") {
+                wild int8->:int64_t2 = tc_get_primitive(tc, "int64");
+                pass(int64_t2);
+            }
+        }
+    }
+
+    // Unknown object type — return unknown to avoid cascading errors
+    wild int8->:unk = tc_get_unknown_type(tc);
+    pass(unk);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_index — Type check index expression (a[i])
+// ═══════════════════════════════════════════════════════════════════════
+
+func:infer_index = wild int8->(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+    if (cc < 2i64) {
+        tc_add_error(tc, "Index expression missing operands");
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+    wild int8->:obj_node = ast_child_at(node, 0i64);
+    wild int8->:idx_node = ast_child_at(node, 1i64);
+
+    wild int8->:obj_type = raw(infer_type(tc, obj_node));
+    wild int8->:idx_type = raw(infer_type(tc, idx_node));
+
+    int32:tk = tc_type_kind(obj_type);
+
+    // Array indexing
+    if (tk == TYPE_ARRAY) {
+        wild int8->:elem = tc_array_element(obj_type);
+        pass(elem);
+    }
+
+    // String indexing returns uint8
+    if (tk == TYPE_PRIMITIVE) {
+        string:tn = tc_type_name(obj_type);
+        if (tn == "string") {
+            wild int8->:uint8_t = tc_get_primitive(tc, "uint8");
+            pass(uint8_t);
+        }
+    }
+
+    // Pointer indexing (pointer arithmetic)
+    if (tk == TYPE_POINTER) {
+        wild int8->:pointee = tc_pointer_pointee(obj_type);
+        pass(pointee);
+    }
+
+    wild int8->:unk = tc_get_unknown_type(tc);
+    pass(unk);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_ternary — Type check ternary expression (cond ? a : b)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:infer_ternary = wild int8->(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+    if (cc < 3i64) {
+        tc_add_error(tc, "Ternary expression missing operands");
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+    wild int8->:cond_node = ast_child_at(node, 0i64);
+    wild int8->:then_node = ast_child_at(node, 1i64);
+    wild int8->:else_node = ast_child_at(node, 2i64);
+
+    wild int8->:cond_type = raw(infer_type(tc, cond_node));
+    wild int8->:then_type = raw(infer_type(tc, then_node));
+    wild int8->:else_type = raw(infer_type(tc, else_node));
+
+    // Condition must be bool
+    wild int8->:bool_t = tc_get_primitive(tc, "bool");
+    int32:cond_ok = tc_types_equal(cond_type, bool_t);
+    if (cond_ok == 0i32) {
+        tc_add_error(tc, "Ternary condition must be bool");
+    }
+
+    // Both branches must have same type
+    int32:branches_eq = tc_types_equal(then_type, else_type);
+    if (branches_eq == 0i32) {
+        tc_add_error(tc, "Ternary branches must have matching types");
+    }
+
+    pass(then_type);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_cast — Type check cast expression (@cast<T>(expr))
+// ═══════════════════════════════════════════════════════════════════════
+
+func:infer_cast = wild int8->(wild int8->:tc, wild int8->:node) {
+    // The cast target type is child[0] (type annotation), operand is child[1]
+    int64:cc = ast_child_count(node);
+    if (cc < 1i64) {
+        tc_add_error(tc, "Cast expression missing target type");
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+    wild int8->:type_node = ast_child_at(node, 0i64);
+    wild int8->:target_type = raw(resolve_type_node(tc, type_node));
+    // Type check the operand if present
+    if (cc >= 2i64) {
+        wild int8->:operand = ast_child_at(node, 1i64);
+        wild int8->:op_type = raw(infer_type(tc, operand));
+        // We don't restrict casts — the programmer takes responsibility
+    }
+    pass(target_type);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_array_literal — Type check array literal [a, b, c]
+// ═══════════════════════════════════════════════════════════════════════
+
+func:infer_array_literal = wild int8->(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+    if (cc == 0i64) {
+        // Empty array — type is unknown[]
+        wild int8->:unk = tc_get_unknown_type(tc);
+        wild int8->:arr = tc_make_array_type(tc, unk, 0i32);
+        pass(arr);
+    }
+    // Infer from first element
+    wild int8->:first = ast_child_at(node, 0i64);
+    wild int8->:elem_type = raw(infer_type(tc, first));
+
+    // Check all elements match
+    int64:i = 1i64;
+    while (i < cc) {
+        wild int8->:en = ast_child_at(node, i);
+        wild int8->:et = raw(infer_type(tc, en));
+        int32:eq = tc_types_equal(elem_type, et);
+        if (eq == 0i32) {
+            int32:ek = tc_type_kind(et);
+            if (ek != TYPE_UNKNOWN && ek != TYPE_ERROR) {
+                tc_add_error(tc, "Array elements must have matching types");
+            }
+        }
+        i = i + 1i64;
+    }
+
+    int32:sz = @cast<int32>(cc);
+    wild int8->:arr_t = tc_make_array_type(tc, elem_type, sz);
+    pass(arr_t);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_template_literal — Always returns string
+// ═══════════════════════════════════════════════════════════════════════
+
+func:infer_template_literal = wild int8->(wild int8->:tc, wild int8->:node) {
+    // Template literals produce strings; type-check interpolated parts
+    int64:cc = ast_child_count(node);
+    int64:i = 0i64;
+    while (i < cc) {
+        wild int8->:part = ast_child_at(node, i);
+        wild int8->:pt = raw(infer_type(tc, part));
+        i = i + 1i64;
+    }
+    wild int8->:str_t = tc_get_primitive(tc, "string");
+    pass(str_t);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_unwrap — Type check unwrap expression (x!)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:infer_unwrap = wild int8->(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+    if (cc < 1i64) {
+        tc_add_error(tc, "Unwrap expression missing operand");
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+    wild int8->:operand = ast_child_at(node, 0i64);
+    wild int8->:op_type = raw(infer_type(tc, operand));
+    int32:tk = tc_type_kind(op_type);
+
+    // Unwrap optional → wrapped type
+    if (tk == TYPE_OPTIONAL) {
+        wild int8->:inner = tc_wrapped_type(op_type);
+        pass(inner);
+    }
+    // Unwrap result → value type
+    if (tk == TYPE_RESULT) {
+        wild int8->:inner2 = tc_wrapped_type(op_type);
+        pass(inner2);
+    }
+
+    tc_add_error(tc, "Cannot unwrap non-optional/non-result type");
+    pass(op_type);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// infer_type — Main dispatcher for expression type inference
+// ═══════════════════════════════════════════════════════════════════════
+
+func:infer_type = wild int8->(wild int8->:tc, wild int8->:node) {
+    int32:node_is_null = tc_is_null(node);
+    if (node_is_null == 1i32) {
+        wild int8->:err_t = tc_get_error_type(tc);
+        pass(err_t);
+    }
+
+    int32:ntype = ast_get_type(node);
+
+    if (ntype == NT_LITERAL) {
+        wild int8->:r1 = raw(infer_literal(tc, node));
+        pass(r1);
+    }
+    if (ntype == NT_IDENTIFIER) {
+        wild int8->:r2 = raw(infer_identifier(tc, node));
+        pass(r2);
+    }
+    if (ntype == NT_BINARY_OP) {
+        wild int8->:r3 = raw(infer_binary_op(tc, node));
+        pass(r3);
+    }
+    if (ntype == NT_UNARY_OP) {
+        wild int8->:r4 = raw(infer_unary_op(tc, node));
+        pass(r4);
+    }
+    if (ntype == NT_CALL) {
+        wild int8->:r5 = raw(infer_call(tc, node));
+        pass(r5);
+    }
+    if (ntype == NT_MEMBER_ACCESS) {
+        wild int8->:r6 = raw(infer_member_access(tc, node));
+        pass(r6);
+    }
+    if (ntype == NT_POINTER_MEMBER) {
+        wild int8->:r6b = raw(infer_member_access(tc, node));
+        pass(r6b);
+    }
+    if (ntype == NT_INDEX) {
+        wild int8->:r7 = raw(infer_index(tc, node));
+        pass(r7);
+    }
+    if (ntype == NT_TERNARY) {
+        wild int8->:r8 = raw(infer_ternary(tc, node));
+        pass(r8);
+    }
+    if (ntype == NT_CAST) {
+        wild int8->:r9 = raw(infer_cast(tc, node));
+        pass(r9);
+    }
+    if (ntype == NT_ARRAY_LITERAL) {
+        wild int8->:r10 = raw(infer_array_literal(tc, node));
+        pass(r10);
+    }
+    if (ntype == NT_TEMPLATE_LITERAL) {
+        wild int8->:r11 = raw(infer_template_literal(tc, node));
+        pass(r11);
+    }
+    if (ntype == NT_UNWRAP) {
+        wild int8->:r12 = raw(infer_unwrap(tc, node));
+        pass(r12);
+    }
+    if (ntype == NT_OBJECT_LITERAL) {
+        // Object literal — returns struct type but we need context for the name
+        // For now, return unknown (type inferred from var decl context)
+        wild int8->:r13 = tc_get_unknown_type(tc);
+        pass(r13);
+    }
+    if (ntype == NT_RANGE) {
+        // Range expression — type check start and end, return the element type
+        int64:rcc = ast_child_count(node);
+        if (rcc >= 2i64) {
+            wild int8->:start_n = ast_child_at(node, 0i64);
+            wild int8->:r14a = raw(infer_type(tc, start_n));
+            pass(r14a);
+        }
+        wild int8->:r14b = tc_get_primitive(tc, "int32");
+        pass(r14b);
+    }
+    if (ntype == NT_AWAIT) {
+        // Await — type is the awaited expression's type
+        int64:acc = ast_child_count(node);
+        if (acc >= 1i64) {
+            wild int8->:aw_n = ast_child_at(node, 0i64);
+            wild int8->:r15 = raw(infer_type(tc, aw_n));
+            pass(r15);
+        }
+        wild int8->:r15b = tc_get_unknown_type(tc);
+        pass(r15b);
+    }
+    if (ntype == NT_MOVE) {
+        // Move — same type as operand
+        int64:mcc = ast_child_count(node);
+        if (mcc >= 1i64) {
+            wild int8->:mv_n = ast_child_at(node, 0i64);
+            wild int8->:r16 = raw(infer_type(tc, mv_n));
+            pass(r16);
+        }
+        wild int8->:r16b = tc_get_unknown_type(tc);
+        pass(r16b);
+    }
+    if (ntype == NT_LAMBDA) {
+        // Lambda — return placeholder (IR generator handles it)
+        wild int8->:r17 = tc_get_primitive(tc, "uint64");
+        pass(r17);
+    }
+
+    // Unhandled expression type — return error type
+    wild int8->:def = tc_get_error_type(tc);
+    pass(def);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_var_decl — Type check a variable declaration
+// ═══════════════════════════════════════════════════════════════════════
+// VAR_DECL node layout:
+//   str  = variable name
+//   str2 = type name (legacy)
+//   flags = IS_CONST | IS_PUBLIC
+//   child[0] = type node (TYPE_ANNOTATION etc.)
+//   child[1] = initializer expression (if present)
+
+func:check_var_decl = void(wild int8->:tc, wild int8->:node) {
+    string:var_name = ast_get_str(node);
+    int32:flags = ast_get_flags(node);
+    uint32:uflags = @cast<uint32>(flags);
+    uint32:uconst = uflags & @cast<uint32>(FLAG_IS_CONST);
+    int32:is_const = @cast<int32>(uconst);
+    int32:ln = ast_get_line(node);
+    int32:cl = ast_get_col(node);
+
+    // Resolve declared type via C helper (avoids wild pointer reassignment)
+    wild int8->:declared_type = tc_resolve_var_type(tc, node);
+    int64:cc = ast_child_count(node);
+
+    // If type still null, report error
+    int32:dt_null = tc_is_null(declared_type);
+    if (dt_null == 1i32) {
+        string:err2 = ast_concat_str3("Missing type for variable '", var_name, "'");
+        tc_add_error_at(tc, err2, ln, cl);
+    }
+
+    // Check initializer if present
+    if (cc > 1i64) {
+        wild int8->:init_node = ast_child_at(node, 1i64);
+        wild int8->:init_type = raw(infer_type(tc, init_node));
+
+        // Type compatibility check
+        int32:dt_null4 = tc_is_null(declared_type);
+        if (dt_null4 == 0i32) {
+            int32:eq = tc_types_equal(declared_type, init_type);
+            int32:coerce = tc_can_coerce(init_type, declared_type);
+            int32:init_k = tc_type_kind(init_type);
+            // Safety: skip mismatch check if init_type is garbage (kind < 0 or > 20)
+            if (init_k >= 0i32 && init_k <= 20i32 && eq == 0i32 && coerce == 0i32 && init_k != TYPE_UNKNOWN && init_k != TYPE_ERROR) {
+                int32:dk = tc_type_kind(declared_type);
+                if (dk != TYPE_UNKNOWN) {
+                    string:e1 = ast_concat_str3("Type mismatch in variable '", var_name, "': declared ");
+                    string:dt_name = tc_type_name(declared_type);
+                    string:it_name = tc_type_name(init_type);
+                    string:e2 = ast_concat_str3(e1, dt_name, " but got ");
+                    string:e3 = ast_concat_str(e2, it_name);
+                    tc_add_error_at(tc, e3, ln, cl);
+                }
+            }
+        }
+
+        // Mark as initialized
+        int32:def_ok = tc_define_symbol(tc, var_name, SYM_VARIABLE, declared_type, ln, cl);
+        if (def_ok == 1i32) {
+            tc_symbol_set_initialized(tc, var_name, 1i32);
+            if (is_const == 0i32) {
+                tc_symbol_set_mutable(tc, var_name, 1i32);
+            } else {
+                tc_symbol_set_mutable(tc, var_name, 0i32);
+            }
+        } else {
+            string:e4 = ast_concat_str3("Redefinition of '", var_name, "'");
+            tc_add_error_at(tc, e4, ln, cl);
+        }
+    } else {
+        // No initializer
+        if (is_const != 0i32) {
+            string:e5 = ast_concat_str3("const variable '", var_name, "' must have initializer");
+            tc_add_error_at(tc, e5, ln, cl);
+        }
+        int32:def_ok2 = tc_define_symbol(tc, var_name, SYM_VARIABLE, declared_type, ln, cl);
+        if (def_ok2 == 0i32) {
+            string:e6 = ast_concat_str3("Redefinition of '", var_name, "'");
+            tc_add_error_at(tc, e6, ln, cl);
+        }
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_func_decl — Type check a function declaration
+// ═══════════════════════════════════════════════════════════════════════
+// FUNC_DECL node layout:
+//   str   = function name
+//   flags = IS_PUBLIC | IS_ASYNC
+//   child[0..N-2] = parameters (NT_PARAMETER nodes)
+//   child[N-1]    = return type node (TYPE_ANNOTATION etc.)
+//   Optional: child[N] = body (BLOCK node) — absent for extern funcs
+//
+// The parser stores: params as children, return type as last child before body,
+// and body as the final child (if present).
+// We determine body presence from the last child's node type.
+
+func:check_func_decl = void(wild int8->:tc, wild int8->:node) {
+    string:func_name = ast_get_str(node);
+    int32:flags = ast_get_flags(node);
+    int32:ln = ast_get_line(node);
+    int32:cl = ast_get_col(node);
+
+    int64:cc = ast_child_count(node);
+
+    // Self-hosted parser layout:
+    //   child[0]       = return type (TYPE_ANNOTATION node)
+    //   child[1..N-2]  = parameters (NT_PARAMETER nodes)
+    //   child[N-1]     = body (NT_BLOCK) — if present
+
+    // Determine if there's a body — examine last child
+    int32:has_body = 0i32;
+    if (cc > 0i64) {
+        int64:last_idx = cc - 1i64;
+        int32:last_type = ast_child_type(node, last_idx);
+        if (last_type == NT_BLOCK) {
+            has_body = 1i32;
+        }
+    }
+
+    // Save previous function context via C stack (no wild pointers needed)
+    tc_save_func_context(tc);
+
+    // Resolve return type from child[0] via C helper (no Aria wild pointers)
+    wild int8->:actual_ret = tc_resolve_func_ret_from_decl(tc, node, has_body);
+
+    // Build function type: collect parameter types (start from child[1])
+    wild int8->:func_type = tc_make_func_type(tc, 0i32);
+    int64:param_end = cc;
+    if (has_body == 1i32) {
+        param_end = cc - 1i64;
+    }
+
+    int64:pi = 1i64;
+    while (pi < param_end) {
+        int32:child_nt = ast_child_type(node, pi);
+        if (child_nt == NT_PARAMETER) {
+            wild int8->:param_node = ast_child_at(node, pi);
+            wild int8->:pt = tc_resolve_param_type(tc, param_node);
+            tc_func_type_add_param(func_type, pt);
+        }
+        pi = pi + 1i64;
+    }
+    tc_func_type_set_return(func_type, actual_ret);
+
+    // Register function in symbol table if not already registered
+    wild int8->:existing_sym = tc_lookup_symbol(tc, func_name);
+    int32:sym_exists = tc_is_null(existing_sym);
+    if (sym_exists == 1i32) {
+        tc_define_symbol(tc, func_name, SYM_FUNCTION, func_type, ln, cl);
+    }
+
+    // Enter function scope and define parameters
+    if (has_body == 1i32) {
+
+        tc_push_scope(tc, SCOPE_FUNCTION, func_name);
+
+        // Define parameters in scope (start from child[1])
+        int64:pi2 = 1i64;
+        while (pi2 < param_end) {
+            int32:child_nt2 = ast_child_type(node, pi2);
+            if (child_nt2 == NT_PARAMETER) {
+                wild int8->:pn = ast_child_at(node, pi2);
+                string:pname2 = ast_get_str(pn);
+                wild int8->:pt2 = tc_resolve_param_type(tc, pn);
+                tc_define_symbol(tc, pname2, SYM_PARAMETER, pt2, ln, cl);
+                tc_symbol_set_initialized(tc, pname2, 1i32);
+            }
+            pi2 = pi2 + 1i64;
+        }
+
+        // Check body
+        int64:body_idx = cc - 1i64;
+        wild int8->:body_node = ast_child_at(node, body_idx);
+        check_block(tc, body_node);
+
+        tc_pop_scope(tc);
+    }
+
+    // Restore previous function context from C stack
+    tc_restore_func_context(tc);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_struct_decl — Type check a struct declaration
+// ═══════════════════════════════════════════════════════════════════════
+// STRUCT_DECL node layout:
+//   str  = struct name
+//   children = field declarations (VAR_DECL nodes)
+
+func:check_struct_decl = void(wild int8->:tc, wild int8->:node) {
+    string:struct_name = ast_get_str(node);
+    int32:ln = ast_get_line(node);
+    int32:cl = ast_get_col(node);
+
+    // Check if struct type already registered
+    wild int8->:existing = tc_lookup_type(tc, struct_name);
+    int32:ex_null = tc_is_null(existing);
+    if (ex_null == 0i32) {
+        // Already registered in pre-pass, skip
+        return;
+    }
+
+    // Create struct type
+    wild int8->:st = tc_make_struct_type(tc, struct_name);
+
+    // Process fields
+    int64:cc = ast_child_count(node);
+    int64:fi = 0i64;
+    while (fi < cc) {
+        wild int8->:field_node = ast_child_at(node, fi);
+        int32:fn_type = ast_get_type(field_node);
+        if (fn_type == NT_VAR_DECL) {
+            string:fname = ast_get_str(field_node);
+            int32:fflags = ast_get_flags(field_node);
+            uint32:ufflags = @cast<uint32>(fflags);
+            uint32:upub = ufflags & @cast<uint32>(FLAG_IS_PUBLIC);
+            int32:is_pub = @cast<int32>(upub);
+            wild int8->:ftype = tc_resolve_var_type(tc, field_node);
+            int32:ftype_null = tc_is_null(ftype);
+            if (ftype_null == 1i32) {
+                ftype = tc_get_error_type(tc);
+            }
+
+            int32:pub_flag = 0i32;
+            if (is_pub != 0i32) {
+                pub_flag = 1i32;
+            }
+            tc_struct_add_field(st, fname, ftype, pub_flag);
+        }
+        fi = fi + 1i64;
+    }
+
+    // Register as type symbol
+    tc_define_symbol(tc, struct_name, SYM_TYPE, st, ln, cl);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_block — Type check a block of statements
+// ═══════════════════════════════════════════════════════════════════════
+
+func:check_block = void(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+    int64:i = 0i64;
+    while (i < cc) {
+        wild int8->:stmt = ast_child_at(node, i);
+        check_statement(tc, stmt);
+        i = i + 1i64;
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_if — Type check an if/else statement
+// ═══════════════════════════════════════════════════════════════════════
+
+func:check_if = void(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+
+    // child[0] = condition
+    if (cc >= 1i64) {
+        wild int8->:cond = ast_child_at(node, 0i64);
+        wild int8->:cond_type = raw(infer_type(tc, cond));
+        wild int8->:bool_t = tc_get_primitive(tc, "bool");
+        int32:cond_ok = tc_types_equal(cond_type, bool_t);
+        if (cond_ok == 0i32) {
+            int32:ck = tc_type_kind(cond_type);
+            if (ck != TYPE_UNKNOWN && ck != TYPE_ERROR) {
+                tc_add_error(tc, "If condition must be bool (no implicit truthiness)");
+            }
+        }
+    }
+
+    // child[1] = then block
+    if (cc >= 2i64) {
+        tc_push_scope(tc, SCOPE_BLOCK, "if_then");
+        wild int8->:then_node = ast_child_at(node, 1i64);
+        int32:then_nt = ast_get_type(then_node);
+        if (then_nt == NT_BLOCK) {
+            check_block(tc, then_node);
+        } else {
+            check_statement(tc, then_node);
+        }
+        tc_pop_scope(tc);
+    }
+
+    // child[2] = else block (optional)
+    if (cc >= 3i64) {
+        tc_push_scope(tc, SCOPE_BLOCK, "if_else");
+        wild int8->:else_node = ast_child_at(node, 2i64);
+        int32:else_nt = ast_get_type(else_node);
+        if (else_nt == NT_BLOCK) {
+            check_block(tc, else_node);
+        } else if (else_nt == NT_IF) {
+            // else-if chain
+            check_if(tc, else_node);
+        } else {
+            check_statement(tc, else_node);
+        }
+        tc_pop_scope(tc);
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_while — Type check a while loop
+// ═══════════════════════════════════════════════════════════════════════
+
+func:check_while = void(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+
+    // child[0] = condition
+    if (cc >= 1i64) {
+        wild int8->:cond = ast_child_at(node, 0i64);
+        wild int8->:cond_type = raw(infer_type(tc, cond));
+        wild int8->:bool_t = tc_get_primitive(tc, "bool");
+        int32:cond_ok = tc_types_equal(cond_type, bool_t);
+        if (cond_ok == 0i32) {
+            int32:ck = tc_type_kind(cond_type);
+            if (ck != TYPE_UNKNOWN && ck != TYPE_ERROR) {
+                tc_add_error(tc, "While condition must be bool");
+            }
+        }
+    }
+
+    // child[1] = body
+    if (cc >= 2i64) {
+        tc_push_scope(tc, SCOPE_BLOCK, "while_body");
+        wild int8->:body = ast_child_at(node, 1i64);
+        int32:body_nt = ast_get_type(body);
+        if (body_nt == NT_BLOCK) {
+            check_block(tc, body);
+        } else {
+            check_statement(tc, body);
+        }
+        tc_pop_scope(tc);
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_for — Type check a for loop
+// ═══════════════════════════════════════════════════════════════════════
+
+func:check_for = void(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+    // For loop: str = iterator var name
+    // child[0] = iterable expression
+    // child[1] = body
+    string:iter_name = ast_get_str(node);
+    int32:ln = ast_get_line(node);
+    int32:cl = ast_get_col(node);
+
+    tc_push_scope(tc, SCOPE_BLOCK, "for_body");
+
+    // Infer iterator type from iterable
+    if (cc >= 1i64) {
+        wild int8->:iterable = ast_child_at(node, 0i64);
+        wild int8->:iter_type = raw(infer_type(tc, iterable));
+        int32:tk = tc_type_kind(iter_type);
+
+        // Determine element type
+        wild int8->:elem_type = tc_get_unknown_type(tc);
+        if (tk == TYPE_ARRAY) {
+            elem_type = tc_array_element(iter_type);
+        }
+
+        // Define iterator variable
+        int64:iname_len = string_length(iter_name);
+        if (iname_len > 0i64) {
+            tc_define_symbol(tc, iter_name, SYM_VARIABLE, elem_type, ln, cl);
+            tc_symbol_set_initialized(tc, iter_name, 1i32);
+        }
+    }
+
+    // Check body
+    if (cc >= 2i64) {
+        wild int8->:body = ast_child_at(node, 1i64);
+        int32:body_nt = ast_get_type(body);
+        if (body_nt == NT_BLOCK) {
+            check_block(tc, body);
+        } else {
+            check_statement(tc, body);
+        }
+    }
+
+    tc_pop_scope(tc);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_return_pass_fail — Type check return/pass/fail statements
+// ═══════════════════════════════════════════════════════════════════════
+
+func:check_return_pass_fail = void(wild int8->:tc, wild int8->:node) {
+    int32:ntype = ast_get_type(node);
+    int64:cc = ast_child_count(node);
+
+    wild int8->:value_type = tc_get_func_value_type(tc);
+
+    // Check if we have a return value
+    if (cc > 0i64) {
+        wild int8->:val_node = ast_child_at(node, 0i64);
+        wild int8->:val_type = raw(infer_type(tc, val_node));
+
+        // For pass/fail, check against function's value type
+        int32:vt_null = tc_is_null(value_type);
+        if (vt_null == 0i32) {
+            int32:eq = tc_types_equal(val_type, value_type);
+            int32:coerce = tc_can_coerce(val_type, value_type);
+            int32:vk = tc_type_kind(val_type);
+            if (eq == 0i32 && coerce == 0i32 && vk != TYPE_UNKNOWN && vk != TYPE_ERROR) {
+                int32:dvk = tc_type_kind(value_type);
+                if (dvk != TYPE_UNKNOWN) {
+                    if (ntype == NT_PASS) {
+                        tc_add_error(tc, "Type mismatch in pass statement");
+                    } else if (ntype == NT_FAIL) {
+                        tc_add_error(tc, "Type mismatch in fail statement");
+                    } else {
+                        tc_add_error(tc, "Type mismatch in return statement");
+                    }
+                }
+            }
+        }
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_assignment — Type check an assignment (a = b)
+// ═══════════════════════════════════════════════════════════════════════
+
+func:check_assignment = void(wild int8->:tc, wild int8->:node) {
+    int64:cc = ast_child_count(node);
+    if (cc < 2i64) {
+        tc_add_error(tc, "Assignment missing operands");
+        return;
+    }
+
+    wild int8->:target = ast_child_at(node, 0i64);
+    wild int8->:value = ast_child_at(node, 1i64);
+
+    // Check target is an identifier or member access
+    int32:target_nt = ast_get_type(target);
+    if (target_nt == NT_IDENTIFIER) {
+        string:name = ast_get_str(target);
+        wild int8->:sym = tc_resolve_symbol(tc, name);
+        int32:sym_null2 = tc_is_null(sym);
+        if (sym_null2 == 1i32) {
+            string:err = ast_concat_str3("Undefined variable '", name, "'");
+            tc_add_error(tc, err);
+            return;
+        }
+        // Check mutability
+        int32:is_mut = tc_symbol_is_mutable(sym);
+        if (is_mut == 0i32) {
+            string:err2 = ast_concat_str3("Cannot assign to immutable variable '", name, "'");
+            tc_add_error(tc, err2);
+        }
+    }
+
+    // Type check the value
+    wild int8->:target_type = raw(infer_type(tc, target));
+    wild int8->:value_type = raw(infer_type(tc, value));
+
+    int32:eq = tc_types_equal(target_type, value_type);
+    int32:coerce = tc_can_coerce(value_type, target_type);
+    int32:vk = tc_type_kind(value_type);
+    int32:tk = tc_type_kind(target_type);
+    if (eq == 0i32 && coerce == 0i32 && vk != TYPE_UNKNOWN && vk != TYPE_ERROR && tk != TYPE_UNKNOWN) {
+        tc_add_error(tc, "Type mismatch in assignment");
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_statement — Main dispatcher for statement type checking
+// ═══════════════════════════════════════════════════════════════════════
+
+func:check_statement = void(wild int8->:tc, wild int8->:node) {
+    int32:node_null = tc_is_null(node);
+    if (node_null == 1i32) {
+        return;
+    }
+
+    int32:ntype = ast_get_type(node);
+
+    if (ntype == NT_VAR_DECL) {
+        check_var_decl(tc, node);
+        return;
+    }
+    if (ntype == NT_FUNC_DECL) {
+        check_func_decl(tc, node);
+        return;
+    }
+    if (ntype == NT_STRUCT_DECL) {
+        check_struct_decl(tc, node);
+        return;
+    }
+    if (ntype == NT_BLOCK) {
+        tc_push_scope(tc, SCOPE_BLOCK, "block");
+        check_block(tc, node);
+        tc_pop_scope(tc);
+        return;
+    }
+    if (ntype == NT_IF) {
+        check_if(tc, node);
+        return;
+    }
+    if (ntype == NT_WHILE) {
+        check_while(tc, node);
+        return;
+    }
+    if (ntype == NT_FOR) {
+        check_for(tc, node);
+        return;
+    }
+    if (ntype == NT_PASS || ntype == NT_FAIL || ntype == NT_RETURN) {
+        check_return_pass_fail(tc, node);
+        return;
+    }
+    if (ntype == NT_ASSIGNMENT) {
+        check_assignment(tc, node);
+        return;
+    }
+    if (ntype == NT_EXPRESSION_STMT) {
+        // Type check the expression
+        int64:cc = ast_child_count(node);
+        if (cc > 0i64) {
+            wild int8->:expr = ast_child_at(node, 0i64);
+            wild int8->:et = raw(infer_type(tc, expr));
+        }
+        return;
+    }
+    if (ntype == NT_LOOP) {
+        // Loop has child[0] = body
+        int64:cc2 = ast_child_count(node);
+        if (cc2 > 0i64) {
+            tc_push_scope(tc, SCOPE_BLOCK, "loop_body");
+            wild int8->:body = ast_child_at(node, 0i64);
+            int32:body_nt = ast_get_type(body);
+            if (body_nt == NT_BLOCK) {
+                check_block(tc, body);
+            } else {
+                check_statement(tc, body);
+            }
+            tc_pop_scope(tc);
+        }
+        return;
+    }
+    if (ntype == NT_TILL) {
+        // Till loop: child[0] = condition, child[1] = body
+        int64:cc3 = ast_child_count(node);
+        if (cc3 >= 1i64) {
+            wild int8->:cond = ast_child_at(node, 0i64);
+            wild int8->:ct = raw(infer_type(tc, cond));
+        }
+        if (cc3 >= 2i64) {
+            tc_push_scope(tc, SCOPE_BLOCK, "till_body");
+            wild int8->:body = ast_child_at(node, 1i64);
+            int32:body_nt = ast_get_type(body);
+            if (body_nt == NT_BLOCK) {
+                check_block(tc, body);
+            } else {
+                check_statement(tc, body);
+            }
+            tc_pop_scope(tc);
+        }
+        return;
+    }
+    if (ntype == NT_BREAK || ntype == NT_CONTINUE || ntype == NT_DEFER) {
+        // No type checking needed for these
+        return;
+    }
+    if (ntype == NT_WHEN) {
+        // When: child[0] = condition, child[1] = body
+        int64:cc4 = ast_child_count(node);
+        if (cc4 >= 1i64) {
+            wild int8->:cond = ast_child_at(node, 0i64);
+            wild int8->:ct = raw(infer_type(tc, cond));
+        }
+        if (cc4 >= 2i64) {
+            tc_push_scope(tc, SCOPE_BLOCK, "when_body");
+            wild int8->:body = ast_child_at(node, 1i64);
+            int32:body_nt = ast_get_type(body);
+            if (body_nt == NT_BLOCK) {
+                check_block(tc, body);
+            } else {
+                check_statement(tc, body);
+            }
+            tc_pop_scope(tc);
+        }
+        return;
+    }
+    if (ntype == NT_ENUM_DECL || ntype == NT_TYPE_DECL || ntype == NT_TRAIT_DECL ||
+        ntype == NT_IMPL_DECL || ntype == NT_OPAQUE_STRUCT) {
+        // Deferred — not checked in this phase
+        return;
+    }
+    if (ntype == NT_USE || ntype == NT_MOD || ntype == NT_EXTERN) {
+        // Module-level declarations — skip in type checker
+        return;
+    }
+
+    // Unhandled statement type — silently skip
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// pre_register — Pre-pass to register structs and functions
+// ═══════════════════════════════════════════════════════════════════════
+// Mirrors the C++ check() pre-pass:
+// 1. Register all struct type names first
+// 2. Forward-declare all function signatures
+
+func:pre_register = void(wild int8->:tc, wild int8->:root) {
+    int64:cc = ast_child_count(root);
+
+    // Pass 1: Register struct types
+    int64:i = 0i64;
+    while (i < cc) {
+        int32:child_nt = ast_child_type(root, i);
+        if (child_nt == NT_STRUCT_DECL) {
+            wild int8->:sn = ast_child_at(root, i);
+            string:sname = ast_get_str(sn);
+            wild int8->:existing = tc_lookup_type(tc, sname);
+            int32:ex_null2 = tc_is_null(existing);
+            if (ex_null2 == 1i32) {
+                check_struct_decl(tc, sn);
+            }
+        }
+        i = i + 1i64;
+    }
+
+    // Pass 2: Forward-declare functions
+    int64:j = 0i64;
+    while (j < cc) {
+        int32:child_nt2 = ast_child_type(root, j);
+        if (child_nt2 == NT_FUNC_DECL) {
+            wild int8->:fn = ast_child_at(root, j);
+            string:fname = ast_get_str(fn);
+            wild int8->:existing2 = tc_lookup_symbol(tc, fname);
+            int32:ex2_null = tc_is_null(existing2);
+            if (ex2_null == 1i32) {
+                // Build function type from parameters
+                wild int8->:ft = tc_make_func_type(tc, 0i32);
+                int64:fcc = ast_child_count(fn);
+
+                // Determine body presence
+                int32:has_body = 0i32;
+                if (fcc > 0i64) {
+                    int64:last_idx = fcc - 1i64;
+                    int32:last_t = ast_child_type(fn, last_idx);
+                    if (last_t == NT_BLOCK) {
+                        has_body = 1i32;
+                    }
+                }
+
+                // Collect parameters (start from child[1], child[0] is return type)
+                int64:pend = fcc;
+                if (has_body == 1i32) {
+                    pend = fcc - 1i64;
+                }
+                int64:pk = 1i64;
+                while (pk < pend) {
+                    int32:pnt = ast_child_type(fn, pk);
+                    if (pnt == NT_PARAMETER) {
+                        wild int8->:pnode = ast_child_at(fn, pk);
+                        wild int8->:pt = tc_resolve_param_type(tc, pnode);
+                        tc_func_type_add_param(ft, pt);
+                    }
+                    pk = pk + 1i64;
+                }
+
+                // Resolve return type from child[0] via C helper
+                wild int8->:actual_ret2 = tc_resolve_func_ret_from_decl(tc, fn, has_body);
+                tc_func_type_set_return(ft, actual_ret2);
+
+                int32:fln = ast_get_line(fn);
+                int32:fcl = ast_get_col(fn);
+                tc_define_symbol(tc, fname, SYM_FUNCTION, ft, fln, fcl);
+            }
+        }
+        j = j + 1i64;
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API
+// ═══════════════════════════════════════════════════════════════════════
+
+// Type check an AST (from parser's parse() function).
+// Returns the TypeChecker state handle (use tc_error_count/tc_get_error to inspect).
+pub func:type_check = wild int8->(wild int8->:ast_root) {
+    wild int8->:tc = tc_new();
+    int32:root_null = tc_is_null(ast_root);
+
+    if (root_null == 1i32) {
+        tc_add_error(tc, "Null AST root");
+        pass(tc);
+    }
+
+    int32:root_type = ast_get_type(ast_root);
+
+    // Pre-pass: register structs and forward-declare functions
+    if (root_type == NT_PROGRAM || root_type == NT_BLOCK) {
+        drop(pre_register(tc, ast_root));
+    }
+
+    // Main pass: walk all statements
+    if (root_type == NT_PROGRAM || root_type == NT_BLOCK) {
+        int64:cc = ast_child_count(ast_root);
+        int64:i = 0i64;
+        while (i < cc) {
+            wild int8->:stmt = ast_child_at(ast_root, i);
+            drop(check_statement(tc, stmt));
+            i = i + 1i64;
+        }
+    } else {
+        // Single statement
+        drop(check_statement(tc, ast_root));
+    }
+
+    pass(tc);
+};
+
+// Get the number of type errors
+pub func:tc_errors = int64(wild int8->:tc_state) {
+    int64:count = tc_error_count(tc_state);
+    pass(count);
+};
+
+// Get a specific error message
+pub func:tc_error_msg = string(wild int8->:tc_state, int64:idx) {
+    string:msg = tc_get_error(tc_state, idx);
+    pass(msg);
+};
+
+// Free type checker state
+pub func:tc_cleanup = NIL(wild int8->:tc_state) {
+    tc_free(tc_state);
+};
