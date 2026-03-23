@@ -70,6 +70,7 @@ MODEL_PROFILES = {
     "qwen2.5-coder-32b": dict(lora_r=32, grad_accum=8, batch_size=1, max_len=2048),
     "qwen2.5-coder-14b": dict(lora_r=16, grad_accum=4, batch_size=4, max_len=2048),
     "qwen2.5-coder-7b":  dict(lora_r=16, grad_accum=4, batch_size=4, max_len=2048),
+    "qwen2.5-7b":        dict(lora_r=16, grad_accum=8, batch_size=2, max_len=1024),
     "qwen2.5-14b":       dict(lora_r=16, grad_accum=4, batch_size=4, max_len=2048),
     "phi-4":             dict(lora_r=16, grad_accum=4, batch_size=4, max_len=2048),
     "phi-3":             dict(lora_r=16, grad_accum=4, batch_size=4, max_len=2048),
@@ -347,6 +348,8 @@ def main():
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
     parser.add_argument("--lora-rank",  type=int, default=None, help="Override LoRA rank")
     parser.add_argument("--lr",      type=float, default=2e-4)
+    parser.add_argument("--grad-accum", type=int, default=None, help="Override gradient accumulation steps")
+    parser.add_argument("--max-length", type=int, default=None, help="Override max sequence length")
     parser.add_argument(
         "--resume-from",
         default=None,
@@ -364,6 +367,8 @@ def main():
         lora_r=args.lora_rank,
         num_epochs=args.epochs,
         batch_size=args.batch_size,
+        grad_accum=args.grad_accum,
+        max_length=args.max_length,
         learning_rate=args.lr,
         resume_from=args.resume_from,
     )

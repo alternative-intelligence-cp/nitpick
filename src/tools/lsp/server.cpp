@@ -1,5 +1,6 @@
 #include "tools/lsp/server.h"
 #include <iostream>
+#include <sstream>
 
 namespace aria {
 namespace lsp {
@@ -23,6 +24,9 @@ Server::Server(size_t worker_count)
     capabilities_.hoverProvider = true; // Show type info on hover
     capabilities_.definitionProvider = true; // Go to definition
     capabilities_.completionProvider = true; // Code completion
+    capabilities_.documentSymbolProvider = true; // Document outline
+    capabilities_.referencesProvider = true; // Find all references
+    capabilities_.signatureHelpProvider = true; // Parameter hints
     
     // Set result callback for thread pool
     thread_pool_.set_result_callback([this](const json& id, const json& result) {
@@ -137,6 +141,15 @@ void Server::handle_request(const json& id, const std::string& method, const jso
             }
             else if (method == "textDocument/completion") {
                 return handle_completion(params);
+            }
+            else if (method == "textDocument/documentSymbol") {
+                return handle_document_symbol(params);
+            }
+            else if (method == "textDocument/references") {
+                return handle_references(params);
+            }
+            else if (method == "textDocument/signatureHelp") {
+                return handle_signature_help(params);
             }
             else {
                 // Method not found
@@ -785,6 +798,229 @@ json Server::handle_completion(const json& params) {
 }
 
 // ============================================================================
+// Document Symbol Handler (Outline View)
+// ============================================================================
+
+json Server::handle_document_symbol(const json& params) {
+    std::string uri = params["textDocument"]["uri"];
+    auto content = vfs_.get_content(uri);
+    if (!content) return json::array();
+    
+    aria::frontend::Lexer lexer(*content);
+    auto tokens = lexer.tokenize();
+    aria::Parser parser(tokens);
+    
+    json symbols = json::array();
+    
+    try {
+        auto ast = parser.parse();
+        if (ast) {
+            auto decls = collect_declarations(ast);
+            for (const auto& decl : decls) {
+                // Skip parameters and local variables for outline
+                if (decl.kind == "parameter" || decl.kind == "variable") continue;
+                
+                int kind = 13; // Variable (default)
+                if (decl.kind == "function") kind = 12;      // Function
+                else if (decl.kind == "struct") kind = 23;    // Struct
+                else if (decl.kind == "enum") kind = 10;      // Enum
+                else if (decl.kind == "trait") kind = 11;     // Interface
+                else if (decl.kind == "type") kind = 5;       // Class
+                else if (decl.kind == "constant") kind = 14;  // Constant
+                
+                int line0 = decl.line > 0 ? decl.line - 1 : 0;
+                int col0 = decl.column > 0 ? decl.column - 1 : 0;
+                int name_len = static_cast<int>(decl.name.size());
+                
+                json range = json{
+                    {"start", {{"line", line0}, {"character", col0}}},
+                    {"end", {{"line", line0}, {"character", col0 + name_len}}}
+                };
+                
+                json sym = json{
+                    {"name", decl.name},
+                    {"kind", kind},
+                    {"detail", decl.signature},
+                    {"range", range},
+                    {"selectionRange", range}
+                };
+                symbols.push_back(sym);
+            }
+        }
+    } catch (...) {}
+    
+    return symbols;
+}
+
+// ============================================================================
+// References Handler (Find All References)
+// ============================================================================
+
+json Server::handle_references(const json& params) {
+    std::string uri = params["textDocument"]["uri"];
+    int line = params["position"]["line"];
+    int character = params["position"]["character"];
+    
+    auto content = vfs_.get_content(uri);
+    if (!content) return json::array();
+    
+    // Find the identifier at the cursor position
+    aria::frontend::Lexer lexer(*content);
+    auto tokens = lexer.tokenize();
+    
+    int aria_line = line + 1;
+    int aria_col = character + 1;
+    
+    std::string target_name;
+    for (const auto& tok : tokens) {
+        if (tok.type == aria::frontend::TokenType::TOKEN_IDENTIFIER &&
+            tok.line == aria_line &&
+            tok.column <= aria_col &&
+            aria_col < tok.column + static_cast<int>(tok.lexeme.length())) {
+            target_name = tok.lexeme;
+            break;
+        }
+    }
+    
+    if (target_name.empty()) return json::array();
+    
+    // Find all occurrences of the identifier in the file
+    json locations = json::array();
+    for (const auto& tok : tokens) {
+        if (tok.type == aria::frontend::TokenType::TOKEN_IDENTIFIER && tok.lexeme == target_name) {
+            int tok_line = tok.line - 1;
+            int tok_col = tok.column - 1;
+            json loc = json{
+                {"uri", uri},
+                {"range", {
+                    {"start", {{"line", tok_line}, {"character", tok_col}}},
+                    {"end", {{"line", tok_line}, {"character", tok_col + static_cast<int>(tok.lexeme.length())}}}
+                }}
+            };
+            locations.push_back(loc);
+        }
+    }
+    
+    return locations;
+}
+
+// ============================================================================
+// Signature Help Handler (Parameter Hints)
+// ============================================================================
+
+json Server::handle_signature_help(const json& params) {
+    std::string uri = params["textDocument"]["uri"];
+    int line = params["position"]["line"];
+    int character = params["position"]["character"];
+    
+    auto content = vfs_.get_content(uri);
+    if (!content) return json(nullptr);
+    
+    // Walk backwards from cursor to find the function name before the open paren
+    // Also count commas to determine active parameter
+    const std::string& text = *content;
+    
+    // Split into lines
+    std::vector<std::string> lines;
+    std::istringstream stream(text);
+    std::string ln;
+    while (std::getline(stream, ln)) {
+        lines.push_back(ln);
+    }
+    
+    if (line < 0 || line >= (int)lines.size()) return json(nullptr);
+    
+    const std::string& current_line = lines[line];
+    if (character < 0 || character > (int)current_line.size()) return json(nullptr);
+    
+    // Find the matching open paren by scanning backwards
+    int paren_depth = 0;
+    int comma_count = 0;
+    int scan_pos = character - 1;
+    int func_end = -1;
+    
+    while (scan_pos >= 0) {
+        char ch = current_line[scan_pos];
+        if (ch == ')') {
+            paren_depth++;
+        } else if (ch == '(') {
+            if (paren_depth == 0) {
+                func_end = scan_pos;
+                break;
+            }
+            paren_depth--;
+        } else if (ch == ',' && paren_depth == 0) {
+            comma_count++;
+        }
+        scan_pos--;
+    }
+    
+    if (func_end < 0) return json(nullptr);
+    
+    // Extract function name before the paren
+    int name_end = func_end;
+    while (name_end > 0 && current_line[name_end - 1] == ' ') name_end--;
+    int name_start = name_end;
+    while (name_start > 0 && (std::isalnum(current_line[name_start - 1]) || current_line[name_start - 1] == '_'))
+        name_start--;
+    
+    std::string func_name = current_line.substr(name_start, name_end - name_start);
+    if (func_name.empty()) return json(nullptr);
+    
+    // Look up the function in AST declarations
+    aria::frontend::Lexer lexer2(text);
+    auto tokens = lexer2.tokenize();
+    aria::Parser parser(tokens);
+    
+    try {
+        auto ast = parser.parse();
+        if (ast) {
+            auto decls = collect_declarations(ast);
+            for (const auto& decl : decls) {
+                if (decl.kind == "function" && decl.name == func_name) {
+                    // Build parameter labels from signature
+                    // Signature format: "func:name = retType(params)"
+                    json param_labels = json::array();
+                    size_t paren_open = decl.signature.find('(');
+                    size_t paren_close = decl.signature.rfind(')');
+                    if (paren_open != std::string::npos && paren_close != std::string::npos && paren_close > paren_open + 1) {
+                        std::string params_str = decl.signature.substr(paren_open + 1, paren_close - paren_open - 1);
+                        // Split by ", "
+                        std::istringstream ps(params_str);
+                        std::string param;
+                        while (std::getline(ps, param, ',')) {
+                            // Trim leading whitespace
+                            size_t start = param.find_first_not_of(' ');
+                            if (start != std::string::npos)
+                                param = param.substr(start);
+                            json pl = json{{"label", param}};
+                            param_labels.push_back(pl);
+                        }
+                    }
+                    
+                    int active_param = param_labels.empty() ? 0 : std::min(comma_count, static_cast<int>(param_labels.size()) - 1);
+                    
+                    json sig_info = json{
+                        {"label", decl.signature},
+                        {"parameters", param_labels}
+                    };
+                    json sigs = json::array();
+                    sigs.push_back(sig_info);
+                    
+                    return json{
+                        {"signatures", sigs},
+                        {"activeSignature", 0},
+                        {"activeParameter", active_param}
+                    };
+                }
+            }
+        }
+    } catch (...) {}
+    
+    return json(nullptr);
+}
+
+// ============================================================================
 // AST Analysis Helpers
 // ============================================================================
 
@@ -1015,6 +1251,8 @@ TaskType Server::classify_method(const std::string& method) const {
     if (method == "textDocument/definition") return TaskType::DEFINITION;
     if (method == "textDocument/completion") return TaskType::COMPLETION;
     if (method == "textDocument/documentSymbol") return TaskType::DOCUMENT_SYMBOL;
+    if (method == "textDocument/references") return TaskType::REFERENCES;
+    if (method == "textDocument/signatureHelp") return TaskType::SIGNATURE_HELP;
     return TaskType::OTHER;
 }
 
@@ -1028,7 +1266,8 @@ TaskPriority Server::get_priority(const std::string& method) const {
     // High: User-facing queries
     if (method == "textDocument/hover" || 
         method == "textDocument/completion" ||
-        method == "textDocument/definition") {
+        method == "textDocument/definition" ||
+        method == "textDocument/signatureHelp") {
         return TaskPriority::HIGH;
     }
     
@@ -1039,7 +1278,8 @@ TaskPriority Server::get_priority(const std::string& method) const {
     }
     
     // Low: Background analysis
-    if (method == "textDocument/documentSymbol") {
+    if (method == "textDocument/documentSymbol" ||
+        method == "textDocument/references") {
         return TaskPriority::LOW;
     }
     

@@ -50,6 +50,8 @@ enum class TaskType {
     DEFINITION,
     COMPLETION,
     DOCUMENT_SYMBOL,
+    REFERENCES,
+    SIGNATURE_HELP,
     OTHER
 };
 
