@@ -315,6 +315,19 @@ aria-ls/fast:
 .PHONY : aria-ls/fast
 
 #=============================================================================
+# Target rules for targets named aria-dap
+
+# Build rule for target.
+aria-dap: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 aria-dap
+.PHONY : aria-dap
+
+# fast build rule for target.
+aria-dap/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/build
+.PHONY : aria-dap/fast
+
+#=============================================================================
 # Target rules for targets named aria-pkg
 
 # Build rule for target.
@@ -2622,6 +2635,36 @@ src/runtime/collections/map.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/collections/map.cpp.s
 .PHONY : src/runtime/collections/map.cpp.s
 
+src/runtime/exotic_types.o: src/runtime/exotic_types.c.o
+.PHONY : src/runtime/exotic_types.o
+
+# target to build an object file
+src/runtime/exotic_types.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/exotic_types.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/exotic_types.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/exotic_types.c.o
+.PHONY : src/runtime/exotic_types.c.o
+
+src/runtime/exotic_types.i: src/runtime/exotic_types.c.i
+.PHONY : src/runtime/exotic_types.i
+
+# target to preprocess a source file
+src/runtime/exotic_types.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/exotic_types.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/exotic_types.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/exotic_types.c.i
+.PHONY : src/runtime/exotic_types.c.i
+
+src/runtime/exotic_types.s: src/runtime/exotic_types.c.s
+.PHONY : src/runtime/exotic_types.s
+
+# target to generate assembly for a file
+src/runtime/exotic_types.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria_runtime.dir/build.make CMakeFiles/aria_runtime.dir/src/runtime/exotic_types.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac.dir/build.make CMakeFiles/ariac.dir/src/runtime/exotic_types.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/runtime/exotic_types.c.s
+.PHONY : src/runtime/exotic_types.c.s
+
 src/runtime/fmt/formatters.o: src/runtime/fmt/formatters.cpp.o
 .PHONY : src/runtime/fmt/formatters.o
 
@@ -3561,6 +3604,126 @@ src/semantic/literal_converter.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ariac_testing.dir/build.make CMakeFiles/ariac_testing.dir/src/semantic/literal_converter.cpp.s
 .PHONY : src/semantic/literal_converter.cpp.s
 
+src/tools/debugger/aria_dap.o: src/tools/debugger/aria_dap.cpp.o
+.PHONY : src/tools/debugger/aria_dap.o
+
+# target to build an object file
+src/tools/debugger/aria_dap.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_dap.cpp.o
+.PHONY : src/tools/debugger/aria_dap.cpp.o
+
+src/tools/debugger/aria_dap.i: src/tools/debugger/aria_dap.cpp.i
+.PHONY : src/tools/debugger/aria_dap.i
+
+# target to preprocess a source file
+src/tools/debugger/aria_dap.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_dap.cpp.i
+.PHONY : src/tools/debugger/aria_dap.cpp.i
+
+src/tools/debugger/aria_dap.s: src/tools/debugger/aria_dap.cpp.s
+.PHONY : src/tools/debugger/aria_dap.s
+
+# target to generate assembly for a file
+src/tools/debugger/aria_dap.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_dap.cpp.s
+.PHONY : src/tools/debugger/aria_dap.cpp.s
+
+src/tools/debugger/aria_formatters.o: src/tools/debugger/aria_formatters.cpp.o
+.PHONY : src/tools/debugger/aria_formatters.o
+
+# target to build an object file
+src/tools/debugger/aria_formatters.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_formatters.cpp.o
+.PHONY : src/tools/debugger/aria_formatters.cpp.o
+
+src/tools/debugger/aria_formatters.i: src/tools/debugger/aria_formatters.cpp.i
+.PHONY : src/tools/debugger/aria_formatters.i
+
+# target to preprocess a source file
+src/tools/debugger/aria_formatters.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_formatters.cpp.i
+.PHONY : src/tools/debugger/aria_formatters.cpp.i
+
+src/tools/debugger/aria_formatters.s: src/tools/debugger/aria_formatters.cpp.s
+.PHONY : src/tools/debugger/aria_formatters.s
+
+# target to generate assembly for a file
+src/tools/debugger/aria_formatters.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/aria_formatters.cpp.s
+.PHONY : src/tools/debugger/aria_formatters.cpp.s
+
+src/tools/debugger/async_debugger.o: src/tools/debugger/async_debugger.cpp.o
+.PHONY : src/tools/debugger/async_debugger.o
+
+# target to build an object file
+src/tools/debugger/async_debugger.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/async_debugger.cpp.o
+.PHONY : src/tools/debugger/async_debugger.cpp.o
+
+src/tools/debugger/async_debugger.i: src/tools/debugger/async_debugger.cpp.i
+.PHONY : src/tools/debugger/async_debugger.i
+
+# target to preprocess a source file
+src/tools/debugger/async_debugger.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/async_debugger.cpp.i
+.PHONY : src/tools/debugger/async_debugger.cpp.i
+
+src/tools/debugger/async_debugger.s: src/tools/debugger/async_debugger.cpp.s
+.PHONY : src/tools/debugger/async_debugger.s
+
+# target to generate assembly for a file
+src/tools/debugger/async_debugger.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/async_debugger.cpp.s
+.PHONY : src/tools/debugger/async_debugger.cpp.s
+
+src/tools/debugger/dap_server.o: src/tools/debugger/dap_server.cpp.o
+.PHONY : src/tools/debugger/dap_server.o
+
+# target to build an object file
+src/tools/debugger/dap_server.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/dap_server.cpp.o
+.PHONY : src/tools/debugger/dap_server.cpp.o
+
+src/tools/debugger/dap_server.i: src/tools/debugger/dap_server.cpp.i
+.PHONY : src/tools/debugger/dap_server.i
+
+# target to preprocess a source file
+src/tools/debugger/dap_server.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/dap_server.cpp.i
+.PHONY : src/tools/debugger/dap_server.cpp.i
+
+src/tools/debugger/dap_server.s: src/tools/debugger/dap_server.cpp.s
+.PHONY : src/tools/debugger/dap_server.s
+
+# target to generate assembly for a file
+src/tools/debugger/dap_server.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/dap_server.cpp.s
+.PHONY : src/tools/debugger/dap_server.cpp.s
+
+src/tools/debugger/memory_visualizer.o: src/tools/debugger/memory_visualizer.cpp.o
+.PHONY : src/tools/debugger/memory_visualizer.o
+
+# target to build an object file
+src/tools/debugger/memory_visualizer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/memory_visualizer.cpp.o
+.PHONY : src/tools/debugger/memory_visualizer.cpp.o
+
+src/tools/debugger/memory_visualizer.i: src/tools/debugger/memory_visualizer.cpp.i
+.PHONY : src/tools/debugger/memory_visualizer.i
+
+# target to preprocess a source file
+src/tools/debugger/memory_visualizer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/memory_visualizer.cpp.i
+.PHONY : src/tools/debugger/memory_visualizer.cpp.i
+
+src/tools/debugger/memory_visualizer.s: src/tools/debugger/memory_visualizer.cpp.s
+.PHONY : src/tools/debugger/memory_visualizer.s
+
+# target to generate assembly for a file
+src/tools/debugger/memory_visualizer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/aria-dap.dir/build.make CMakeFiles/aria-dap.dir/src/tools/debugger/memory_visualizer.cpp.s
+.PHONY : src/tools/debugger/memory_visualizer.cpp.s
+
 src/tools/debugger/web_server.o: src/tools/debugger/web_server.cpp.o
 .PHONY : src/tools/debugger/web_server.o
 
@@ -3963,6 +4126,7 @@ help:
 	@echo "... intrinsics_gen"
 	@echo "... omp_gen"
 	@echo "... vt_gen"
+	@echo "... aria-dap"
 	@echo "... aria-doc"
 	@echo "... aria-ls"
 	@echo "... aria-pkg"
@@ -4165,6 +4329,9 @@ help:
 	@echo "... src/runtime/collections/map.o"
 	@echo "... src/runtime/collections/map.i"
 	@echo "... src/runtime/collections/map.s"
+	@echo "... src/runtime/exotic_types.o"
+	@echo "... src/runtime/exotic_types.i"
+	@echo "... src/runtime/exotic_types.s"
 	@echo "... src/runtime/fmt/formatters.o"
 	@echo "... src/runtime/fmt/formatters.i"
 	@echo "... src/runtime/fmt/formatters.s"
@@ -4261,6 +4428,21 @@ help:
 	@echo "... src/semantic/literal_converter.o"
 	@echo "... src/semantic/literal_converter.i"
 	@echo "... src/semantic/literal_converter.s"
+	@echo "... src/tools/debugger/aria_dap.o"
+	@echo "... src/tools/debugger/aria_dap.i"
+	@echo "... src/tools/debugger/aria_dap.s"
+	@echo "... src/tools/debugger/aria_formatters.o"
+	@echo "... src/tools/debugger/aria_formatters.i"
+	@echo "... src/tools/debugger/aria_formatters.s"
+	@echo "... src/tools/debugger/async_debugger.o"
+	@echo "... src/tools/debugger/async_debugger.i"
+	@echo "... src/tools/debugger/async_debugger.s"
+	@echo "... src/tools/debugger/dap_server.o"
+	@echo "... src/tools/debugger/dap_server.i"
+	@echo "... src/tools/debugger/dap_server.s"
+	@echo "... src/tools/debugger/memory_visualizer.o"
+	@echo "... src/tools/debugger/memory_visualizer.i"
+	@echo "... src/tools/debugger/memory_visualizer.s"
 	@echo "... src/tools/debugger/web_server.o"
 	@echo "... src/tools/debugger/web_server.i"
 	@echo "... src/tools/debugger/web_server.s"
