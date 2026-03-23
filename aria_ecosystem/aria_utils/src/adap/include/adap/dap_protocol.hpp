@@ -173,11 +173,11 @@ struct Event : ProtocolMessage {
 struct Capabilities {
     bool supportsConfigurationDoneRequest = true;
     bool supportsFunctionBreakpoints = false;
-    bool supportsConditionalBreakpoints = false;
-    bool supportsHitConditionalBreakpoints = false;
+    bool supportsConditionalBreakpoints = true;
+    bool supportsHitConditionalBreakpoints = true;
     bool supportsEvaluateForHovers = true;
     bool supportsStepBack = false;
-    bool supportsSetVariable = false;
+    bool supportsSetVariable = true;
     bool supportsRestartFrame = false;
     bool supportsGotoTargetsRequest = false;
     bool supportsStepInTargetsRequest = false;
@@ -189,7 +189,7 @@ struct Capabilities {
     bool supportTerminateDebuggee = true;
     bool supportsDelayedStackTraceLoading = false;
     bool supportsLoadedSourcesRequest = false;
-    bool supportsLogPoints = false;
+    bool supportsLogPoints = true;
     bool supportsTerminateThreadsRequest = false;
     bool supportsSetExpression = false;
     bool supportsTerminateRequest = true;
@@ -217,6 +217,28 @@ struct Source {
 
     JsonObject to_json() const;
     static Source from_json(const JsonObject& obj);
+};
+
+struct SourceBreakpoint {
+    int line = 0;
+    int column = 0;
+    std::string condition;       // Expression for conditional breakpoint
+    std::string hitCondition;    // Expression for hit count condition (e.g. ">= 5")
+    std::string logMessage;      // Log message template (logpoint); {expr} placeholders
+
+    JsonObject to_json() const;
+    static SourceBreakpoint from_json(const JsonObject& obj);
+};
+
+struct ExceptionBreakpointsFilter {
+    std::string filter;           // Internal ID (e.g. "all", "uncaught")
+    std::string label;            // Human-readable label
+    std::string description;
+    bool default_value = false;
+    bool supportsCondition = false;
+    std::string conditionDescription;
+
+    JsonObject to_json() const;
 };
 
 struct Breakpoint {

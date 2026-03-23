@@ -12,6 +12,7 @@
  *   check       Show what would be built (dry run)
  *   targets     List all targets
  *   deps        Show dependency graph
+ *   test        Build and run test files (test_*.aria, *_test.aria)
  *
  * Options:
  *   -C <dir>    Change to directory before building
@@ -32,6 +33,10 @@
 #include <string>
 #include <vector>
 #include <cstring>
+#include <filesystem>
+#include <algorithm>
+#include <cstdlib>
+#include <sys/wait.h>
 
 using namespace aria::make;
 
@@ -59,6 +64,7 @@ COMMANDS:
     check       Show what would be built (dry run)
     targets     List all available targets
     deps        Show dependency graph in DOT format
+    test        Build and run test files (test_*.aria, *_test.aria)
 
 OPTIONS:
     -C <dir>        Change to directory before building
@@ -172,7 +178,8 @@ enum class Command {
     REBUILD,
     CHECK,
     TARGETS,
-    DEPS
+    DEPS,
+    TEST
 };
 
 struct Options {
@@ -222,6 +229,10 @@ bool parse_args(int argc, char* argv[], Options& opts) {
         }
         if (arg == "deps") {
             opts.command = Command::DEPS;
+            continue;
+        }
+        if (arg == "test") {
+            opts.command = Command::TEST;
             continue;
         }
 
@@ -399,6 +410,70 @@ int main(int argc, char* argv[]) {
 
             std::cout << orchestrator.dependency_graph_dot();
             return 0;
+        }
+
+        case Command::TEST: {
+            namespace fs = std::filesystem;
+            std::string dir = opts.config.project_root.empty() ? "." : opts.config.project_root;
+            std::vector<fs::path> test_files;
+
+            for (const auto& entry : fs::directory_iterator(dir)) {
+                if (!entry.is_regular_file()) continue;
+                std::string name = entry.path().filename().string();
+                if ((name.size() > 5 && name.substr(0, 5) == "test_" && name.substr(name.size() - 5) == ".aria") ||
+                    (name.size() > 10 && name.substr(name.size() - 10) == "_test.aria")) {
+                    test_files.push_back(entry.path());
+                }
+            }
+
+            std::sort(test_files.begin(), test_files.end());
+
+            if (test_files.empty()) {
+                std::cout << "No test files found (test_*.aria or *_test.aria)\n";
+                return 0;
+            }
+
+            int passed = 0, failed = 0, errors = 0;
+
+            std::cout << "Running " << test_files.size() << " test file(s)...\n\n";
+
+            for (const auto& tf : test_files) {
+                std::string stem = tf.stem().string();
+                std::string out = (fs::path(dir) / stem).string();
+                std::string compile_cmd = "ariac " + tf.string() + " -o " + out + " 2>&1";
+
+                if (opts.config.verbose) {
+                    std::cout << "  compile: " << compile_cmd << "\n";
+                }
+
+                int compile_rc = std::system(compile_cmd.c_str());
+                if (compile_rc != 0) {
+                    std::cout << "  FAIL (compile error): " << tf.filename().string() << "\n";
+                    errors++;
+                    continue;
+                }
+
+                std::string run_cmd = out + " 2>&1";
+                int run_rc = std::system(run_cmd.c_str());
+
+                if (run_rc == 0) {
+                    std::cout << "  PASS: " << tf.filename().string() << "\n";
+                    passed++;
+                } else {
+                    std::cout << "  FAIL: " << tf.filename().string()
+                              << " (exit code " << WEXITSTATUS(run_rc) << ")\n";
+                    failed++;
+                }
+
+                // Clean up compiled binary
+                fs::remove(out);
+            }
+
+            std::cout << "\nResults: " << passed << " passed, "
+                      << failed << " failed, " << errors << " errors"
+                      << " (" << test_files.size() << " total)\n";
+
+            return (failed + errors) > 0 ? 1 : 0;
         }
     }
 

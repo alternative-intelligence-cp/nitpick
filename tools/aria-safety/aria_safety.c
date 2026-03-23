@@ -11,6 +11,10 @@
  *   [WEAK_CAS] compare_exchange_weak* — spurious failure; must be in retry loop
  *   [RELAXED]  relaxed atomic op — verify memory ordering is sufficient
  *   [FAILSAFE] empty or trivial failsafe block — error silently swallowed
+ *   [UNSAFE]   unsafe block — bypasses safety guarantees
+ *   [EXTERN]   extern declaration — FFI boundary; verify foreign function safety
+ *   [CAST]     transmute/reinterpret — unchecked type conversion
+ *   [TODO]     TODO/FIXME/HACK comment — unfinished or fragile code
  *
  * Build:
  *   gcc -O2 -Wall -Wextra -std=c99 -o aria-safety aria_safety.c
@@ -19,6 +23,8 @@
  * Usage:
  *   aria-safety file.aria [file.aria ...]
  *   aria-safety src/                          recursive directory scan
+ *   aria-safety --json file.aria              JSON output
+ *   aria-safety --summary src/                per-file summary stats
  *
  * Exit codes: 0 = clean, 1 = findings present, 2 = usage/IO error
  *
@@ -45,6 +51,9 @@
 
 static int g_findings      = 0;
 static int g_files_scanned = 0;
+static int g_json_mode     = 0;
+static int g_summary_mode  = 0;
+static int g_json_first    = 1;  /* for comma-separated JSON array elements */
 
 /* ── word-boundary search ────────────────────────────────────── */
 
@@ -118,6 +127,16 @@ static const Pattern PATTERNS[] = {
     { "fetch_and_relaxed",     0, "RELAXED", "fetch_and_relaxed — relaxed ordering; verify ordering is sufficient" },
     { "fetch_xor_relaxed",     0, "RELAXED", "fetch_xor_relaxed — relaxed ordering; verify ordering is sufficient" },
     { "swap_relaxed",          0, "RELAXED", "swap_relaxed — relaxed ordering; verify ordering is sufficient" },
+
+    /* unsafe blocks */
+    { "unsafe",                 1, "UNSAFE",  "unsafe block — type and memory safety guarantees bypassed" },
+
+    /* FFI boundary */
+    { "extern",                 1, "EXTERN",  "extern declaration — FFI boundary; verify foreign function safety" },
+
+    /* unchecked casts */
+    { "transmute(",             0, "CAST",    "transmute() — unchecked type reinterpretation; verify layout compatibility" },
+    { "reinterpret(",           0, "CAST",    "reinterpret() — unchecked cast; verify type is valid" },
 };
 
 #define N_PATTERNS (sizeof(PATTERNS) / sizeof(PATTERNS[0]))
@@ -126,7 +145,19 @@ static const Pattern PATTERNS[] = {
 
 static void emit(const char *file, int lineno, const char *tag, const char *msg)
 {
-    printf("%s:%d: [%s] %s\n", file, lineno, tag, msg);
+    if (g_json_mode) {
+        if (g_json_first) {
+            printf("[\n");
+            g_json_first = 0;
+        } else {
+            printf(",\n");
+        }
+        /* Emit JSON object — file/line/tag/msg are safe ASCII, no escaping needed */
+        printf("  {\"file\":\"%s\",\"line\":%d,\"tag\":\"%s\",\"message\":\"%s\"}",
+               file, lineno, tag, msg);
+    } else {
+        printf("%s:%d: [%s] %s\n", file, lineno, tag, msg);
+    }
     g_findings++;
 }
 
@@ -207,6 +238,15 @@ static void scan_file(const char *path)
                     : (strstr(line, PATTERNS[i].needle) != NULL);
                 if (hit)
                     emit(path, lineno, PATTERNS[i].tag, PATTERNS[i].msg);
+            }
+
+            /* TODO/FIXME/HACK in comments (check original raw line) */
+            {
+                const char *cmt = strstr(raw, "//");
+                if (cmt) {
+                    if (strstr(cmt, "TODO") || strstr(cmt, "FIXME") || strstr(cmt, "HACK"))
+                        emit(path, lineno, "TODO", "TODO/FIXME/HACK — unfinished or fragile code");
+                }
             }
         }
 
@@ -336,7 +376,11 @@ int main(int argc, char **argv)
             "aria-safety — static safety audit for Aria source files\n"
             "\n"
             "Usage:\n"
-            "  aria-safety <path> [path ...]    path = .aria file or directory\n"
+            "  aria-safety [options] <path> [path ...]    path = .aria file or directory\n"
+            "\n"
+            "Options:\n"
+            "  --json      Output findings as JSON array\n"
+            "  --summary   Print per-tag summary statistics\n"
             "\n"
             "Finds:\n"
             "  [WILD]     wild / wildx allocation\n"
@@ -347,17 +391,39 @@ int main(int argc, char **argv)
             "  [WEAK_CAS] compare_exchange_weak — must be in retry loop\n"
             "  [RELAXED]  relaxed atomic operation\n"
             "  [FAILSAFE] empty or trivial failsafe block\n"
+            "  [UNSAFE]   unsafe block — bypasses safety guarantees\n"
+            "  [EXTERN]   extern declaration — FFI boundary\n"
+            "  [CAST]     transmute/reinterpret — unchecked type conversion\n"
+            "  [TODO]     TODO/FIXME/HACK comment — unfinished code\n"
             "\n"
             "Exit codes: 0 = clean, 1 = findings, 2 = error\n");
         return 2;
     }
 
-    for (int i = 1; i < argc; i++)
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--json") == 0) {
+            g_json_mode = 1;
+            continue;
+        }
+        if (strcmp(argv[i], "--summary") == 0) {
+            g_summary_mode = 1;
+            continue;
+        }
         scan_path(argv[i]);
+    }
+
+    if (g_json_mode && g_files_scanned > 0) {
+        /* Close was deferred; we opened with "[\n" before first emit */
+    }
 
     if (g_files_scanned == 0) {
+        if (g_json_mode) printf("[]\n");
         fprintf(stderr, "aria-safety: no .aria files found\n");
         return 2;
+    }
+
+    if (g_json_mode) {
+        printf("\n]\n");
     }
 
     if (g_findings > 0) {

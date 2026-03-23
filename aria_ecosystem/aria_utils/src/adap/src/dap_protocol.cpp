@@ -391,6 +391,26 @@ JsonObject Capabilities::to_json() const {
     obj["supportsDisassembleRequest"] = supportsDisassembleRequest;
     obj["supportsCancelRequest"] = supportsCancelRequest;
     obj["supportsBreakpointLocationsRequest"] = supportsBreakpointLocationsRequest;
+
+    // Exception breakpoints filter for Aria
+    JsonArray filters;
+    JsonObject all_filter;
+    all_filter["filter"] = std::string("all");
+    all_filter["label"] = std::string("All Exceptions");
+    all_filter["description"] = std::string("Break on all thrown exceptions");
+    all_filter["default"] = false;
+    all_filter["supportsCondition"] = true;
+    all_filter["conditionDescription"] = std::string("Exception type name or expression");
+    filters.push_back(JsonValue(all_filter));
+    JsonObject uncaught_filter;
+    uncaught_filter["filter"] = std::string("uncaught");
+    uncaught_filter["label"] = std::string("Uncaught Exceptions");
+    uncaught_filter["description"] = std::string("Break on exceptions not caught by any handler");
+    uncaught_filter["default"] = true;
+    uncaught_filter["supportsCondition"] = false;
+    filters.push_back(JsonValue(uncaught_filter));
+    obj["exceptionBreakpointFilters"] = JsonValue(std::move(filters));
+
     return obj;
 }
 
@@ -417,6 +437,52 @@ Source Source::from_json(const JsonObject& obj) {
         src.sourceReference = static_cast<int>(it->second.as_int());
     }
     return src;
+}
+
+JsonObject SourceBreakpoint::to_json() const {
+    JsonObject obj;
+    obj["line"] = line;
+    if (column > 0) obj["column"] = column;
+    if (!condition.empty()) obj["condition"] = condition;
+    if (!hitCondition.empty()) obj["hitCondition"] = hitCondition;
+    if (!logMessage.empty()) obj["logMessage"] = logMessage;
+    return obj;
+}
+
+SourceBreakpoint SourceBreakpoint::from_json(const JsonObject& obj) {
+    SourceBreakpoint bp;
+    auto it = obj.find("line");
+    if (it != obj.end() && it->second.is_int()) {
+        bp.line = static_cast<int>(it->second.as_int());
+    }
+    it = obj.find("column");
+    if (it != obj.end() && it->second.is_int()) {
+        bp.column = static_cast<int>(it->second.as_int());
+    }
+    it = obj.find("condition");
+    if (it != obj.end() && it->second.is_string()) {
+        bp.condition = it->second.as_string();
+    }
+    it = obj.find("hitCondition");
+    if (it != obj.end() && it->second.is_string()) {
+        bp.hitCondition = it->second.as_string();
+    }
+    it = obj.find("logMessage");
+    if (it != obj.end() && it->second.is_string()) {
+        bp.logMessage = it->second.as_string();
+    }
+    return bp;
+}
+
+JsonObject ExceptionBreakpointsFilter::to_json() const {
+    JsonObject obj;
+    obj["filter"] = filter;
+    obj["label"] = label;
+    if (!description.empty()) obj["description"] = description;
+    obj["default"] = default_value;
+    obj["supportsCondition"] = supportsCondition;
+    if (!conditionDescription.empty()) obj["conditionDescription"] = conditionDescription;
+    return obj;
 }
 
 JsonObject Breakpoint::to_json() const {

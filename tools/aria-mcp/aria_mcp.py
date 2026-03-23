@@ -214,7 +214,7 @@ def aria_compile(source: str) -> dict:
     if not ARIAC_BIN:
         return {
             "success":  False,
-            "errors":   ["ariac binary not found — set ARIAC_BIN env var or add to $PATH"],
+            "errors":   [{"message": "ariac binary not found — set ARIAC_BIN env var or add to $PATH"}],
             "warnings": [],
             "output":   "",
         }
@@ -230,18 +230,35 @@ def aria_compile(source: str) -> dict:
             [ARIAC_BIN, src_path, "-o", out_path],
             capture_output=True, text=True, timeout=30,
         )
-        errors: list[str]   = []
-        warnings: list[str] = []
+        errors: list[dict]   = []
+        warnings: list[dict] = []
+
+        # Match patterns like "file.aria:10:5: error: message" or "error: message"
+        diag_re = re.compile(r'^(?:(.+?):(\d+)(?::(\d+))?:\s*)?'
+                             r'(error|warning|note):\s*(.+)$', re.IGNORECASE)
+
         for line in (proc.stderr + proc.stdout).splitlines():
-            l = line.lower()
-            if "error" in l:
-                errors.append(line)
-            elif "warning" in l or "warn" in l:
-                warnings.append(line)
+            m = diag_re.match(line.strip())
+            if m:
+                entry: dict = {"message": m.group(5)}
+                if m.group(2):
+                    entry["line"] = int(m.group(2))
+                if m.group(3):
+                    entry["column"] = int(m.group(3))
+                severity = m.group(4).lower()
+                if severity == "error":
+                    errors.append(entry)
+                else:
+                    warnings.append(entry)
             elif line.strip():
-                # unclassified non-empty output goes to errors on failure,
-                # warnings on success
-                (errors if proc.returncode != 0 else warnings).append(line)
+                l = line.lower()
+                entry = {"message": line.strip()}
+                if "error" in l:
+                    errors.append(entry)
+                elif "warning" in l or "warn" in l:
+                    warnings.append(entry)
+                else:
+                    (errors if proc.returncode != 0 else warnings).append(entry)
 
         return {
             "success":  proc.returncode == 0,
@@ -316,6 +333,47 @@ def aria_check(source: str) -> dict:
             pass
 
 # ── tool: aria_docs ───────────────────────────────────────────────────────
+
+def aria_format(source: str) -> dict:
+    """Basic Aria source code formatter: normalizes indentation and whitespace."""
+    lines = source.splitlines()
+    result: list[str] = []
+    indent = 0
+    indent_str = "    "  # 4 spaces
+
+    # Keywords that increase indentation
+    openers = {"func", "struct", "enum", "trait", "impl", "Type", "if", "else",
+               "while", "for", "loop", "till", "when", "pick", "failsafe",
+               "extern", "defer"}
+
+    for raw_line in lines:
+        stripped = raw_line.strip()
+
+        # Decrease indent for closing braces/end
+        if stripped in ("}", "};", "end"):
+            indent = max(0, indent - 1)
+
+        if stripped:
+            result.append(indent_str * indent + stripped)
+        else:
+            result.append("")
+
+        # Increase indent after lines ending with { or containing opener keywords
+        if stripped.endswith("{"):
+            indent += 1
+        elif any(stripped.startswith(op + " ") or stripped.startswith(op + "(")
+                 or stripped == op for op in openers):
+            # Only if line doesn't also close on same line
+            if not stripped.endswith("}") and not stripped.endswith("};"):
+                if "{" not in stripped:
+                    pass  # opener keyword without brace — don't indent yet
+
+    formatted = "\n".join(result)
+    if source.endswith("\n"):
+        formatted += "\n"
+
+    return {"formatted": formatted}
+
 
 def aria_docs(query: str) -> dict:
     sections = _get_sections()
@@ -420,6 +478,23 @@ TOOL_DEFINITIONS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "aria_format",
+        "description": (
+            "Format Aria source code — normalize indentation and whitespace. "
+            "Returns { formatted: string } with consistently indented code."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type":        "string",
+                    "description": "Aria source code to format.",
+                }
+            },
+            "required": ["source"],
+        },
+    },
 ] + ([] if ARIA_ASK_DISABLED else [
     {
         "name": "aria_ask",
@@ -457,8 +532,8 @@ TOOL_DEFINITIONS = [
     },
 ])
 
-SERVER_INFO  = {"name": "aria-mcp", "version": "0.2.0"}
-CAPABILITIES = {"tools": {}}
+SERVER_INFO  = {"name": "aria-mcp", "version": "0.2.2"}
+CAPABILITIES = {"tools": {}, "resources": {}}
 
 
 def _handle(req: dict) -> dict | None:
@@ -491,6 +566,34 @@ def _handle(req: dict) -> dict | None:
     if method == "ping":
         return ok({})
 
+    # ── resources ──────────────────────────────────────────────
+    if method == "resources/list":
+        sections = _get_sections()
+        resources = []
+        for i, sec in enumerate(sections):
+            heading = sec["heading"].strip().lstrip("#").strip()
+            resources.append({
+                "uri": f"aria://ref/{i}",
+                "name": heading,
+                "mimeType": "text/markdown",
+            })
+        return ok({"resources": resources})
+
+    if method == "resources/read":
+        uri = params.get("uri", "")
+        if uri.startswith("aria://ref/"):
+            try:
+                idx = int(uri.split("/")[-1])
+                sections = _get_sections()
+                if 0 <= idx < len(sections):
+                    sec = sections[idx]
+                    text = sec["heading"] + "\n\n" + sec["body"]
+                    return ok({"contents": [{"uri": uri, "mimeType": "text/markdown", "text": text}]})
+            except (ValueError, IndexError):
+                pass
+            return err(-32602, f"Resource not found: {uri}")
+        return err(-32602, f"Unknown resource URI scheme: {uri}")
+
     # ── tools ─────────────────────────────────────────────────
     if method == "tools/list":
         return ok({"tools": TOOL_DEFINITIONS})
@@ -512,6 +615,11 @@ def _handle(req: dict) -> dict | None:
         if name == "aria_docs":
             r = aria_docs(args.get("query", ""))
             return ok({"content": [{"type": "text", "text": r["excerpt"]}]})
+
+        if name == "aria_format":
+            r = aria_format(args.get("source", ""))
+            text = json.dumps(r, indent=2)
+            return ok({"content": [{"type": "text", "text": text}]})
 
         if name == "aria_ask":
             if ARIA_ASK_DISABLED:
