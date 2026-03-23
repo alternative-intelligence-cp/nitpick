@@ -146,7 +146,6 @@ int32_t aria_http_get(const char *url) {
     if (!g_curl) return 0;
     curl_easy_setopt(g_curl, CURLOPT_URL, url);
     curl_easy_setopt(g_curl, CURLOPT_HTTPGET, 1L);
-    curl_easy_setopt(g_curl, CURLOPT_POSTFIELDS, NULL);
     return perform();
 }
 
@@ -170,7 +169,7 @@ int32_t aria_http_delete(const char *url) {
     if (!g_curl) return 0;
     curl_easy_setopt(g_curl, CURLOPT_URL, url);
     curl_easy_setopt(g_curl, CURLOPT_CUSTOMREQUEST, "DELETE");
-    curl_easy_setopt(g_curl, CURLOPT_POSTFIELDS, NULL);
+    curl_easy_setopt(g_curl, CURLOPT_POSTFIELDS, "");
     return perform();
 }
 

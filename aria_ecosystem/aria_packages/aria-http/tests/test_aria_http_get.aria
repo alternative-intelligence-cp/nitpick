@@ -1,32 +1,37 @@
-// test_aria_http_get.aria — HTTP method tests (local, no external network)
+// test_aria_http_get.aria — GET & HEAD against local test server (:8888)
 
 func:failsafe = NIL(int32:code) { pass(NIL); };
 
-extern func:aria_http_init           = int32();
-extern func:aria_http_get            = int32(string:url);
-extern func:aria_http_post           = int32(string:url, string:body);
-extern func:aria_http_set_timeout    = void(int32:seconds);
-extern func:aria_http_cleanup        = void();
-extern func:aria_http_assert_int_eq  = void(int32:actual, int32:expected, string:msg);
-extern func:aria_http_test_summary   = void();
+extern func:aria_http_init              = int32();
+extern func:aria_http_get               = int32(string:url);
+extern func:aria_http_head              = int32(string:url);
+extern func:aria_http_status            = int32();
+extern func:aria_http_assert_int_eq     = void(int32:actual, int32:expected, string:msg);
+extern func:aria_http_assert_body_contains = void(string:substring, string:msg);
+extern func:aria_http_test_summary      = void();
 
 func:main = int32() {
     int32:r = aria_http_init();
     aria_http_assert_int_eq(r, 1i32, "test 01: http_init");
 
-    aria_http_set_timeout(2i32);
+    int32:g = aria_http_get("http://127.0.0.1:8888/health");
+    aria_http_assert_int_eq(g, 1i32, "test 02: GET /health");
 
-    int32:g = aria_http_get("http://127.0.0.1:1/test");
-    aria_http_assert_int_eq(g, 0i32, "test 02: GET fails on closed port");
+    int32:gs = aria_http_status();
+    aria_http_assert_int_eq(gs, 200i32, "test 03: GET status=200");
 
-    int32:g2 = aria_http_get("http://127.0.0.1:1/other");
-    aria_http_assert_int_eq(g2, 0i32, "test 03: GET second request also fails");
+    aria_http_assert_body_contains("healthy", "test 04: body contains healthy");
 
-    int32:p = aria_http_post("http://127.0.0.1:1/data", "payload");
-    aria_http_assert_int_eq(p, 0i32, "test 04: POST fails on closed port");
+    int32:h = aria_http_head("http://127.0.0.1:8888/json");
+    aria_http_assert_int_eq(h, 1i32, "test 05: HEAD /json");
 
-    aria_http_cleanup();
-    aria_http_assert_int_eq(1i32, 1i32, "test 05: cleanup");
+    int32:hs = aria_http_status();
+    aria_http_assert_int_eq(hs, 200i32, "test 06: HEAD status=200");
+
+    int32:g2 = aria_http_get("http://127.0.0.1:8888/json");
+    aria_http_assert_int_eq(g2, 1i32, "test 07: GET /json after HEAD");
+
+    aria_http_assert_body_contains("aria-dev", "test 08: body contains aria-dev");
 
     aria_http_test_summary();
     pass(0i32);

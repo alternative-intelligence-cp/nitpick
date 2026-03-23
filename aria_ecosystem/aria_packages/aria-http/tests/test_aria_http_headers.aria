@@ -1,33 +1,36 @@
-// test_aria_http_headers.aria — Headers, status & response tests
+// test_aria_http_headers.aria — Headers, POST/PUT/PATCH/DELETE against :8888
 
 func:failsafe = NIL(int32:code) { pass(NIL); };
 
 extern func:aria_http_init            = int32();
-extern func:aria_http_set_header      = void(string:header);
-extern func:aria_http_clear_headers   = void();
+extern func:aria_http_post            = int32(string:url, string:body);
+extern func:aria_http_put             = int32(string:url, string:body);
+extern func:aria_http_delete          = int32(string:url);
 extern func:aria_http_status          = int32();
-extern func:aria_http_response_length = int32();
 extern func:aria_http_assert_int_eq   = void(int32:actual, int32:expected, string:msg);
+extern func:aria_http_assert_body_contains = void(string:substring, string:msg);
 extern func:aria_http_test_summary    = void();
 
 func:main = int32() {
     int32:r = aria_http_init();
     aria_http_assert_int_eq(r, 1i32, "test 01: init");
 
-    aria_http_set_header("Content-Type: application/json");
-    aria_http_assert_int_eq(1i32, 1i32, "test 02: set_header");
+    int32:p = aria_http_post("http://127.0.0.1:8888/echo", "hello aria");
+    aria_http_assert_int_eq(p, 1i32, "test 02: POST /echo");
 
-    aria_http_set_header("X-Custom: test");
-    aria_http_assert_int_eq(1i32, 1i32, "test 03: set_header second");
+    int32:ps = aria_http_status();
+    aria_http_assert_int_eq(ps, 200i32, "test 03: POST status=200");
 
-    aria_http_clear_headers();
-    aria_http_assert_int_eq(1i32, 1i32, "test 04: clear_headers");
+    aria_http_assert_body_contains("hello aria", "test 04: POST body echoed");
+    aria_http_assert_body_contains("POST", "test 05: method=POST in echo");
 
-    int32:s = aria_http_status();
-    aria_http_assert_int_eq(s, 0i32, "test 05: status=0 before request");
+    int32:u = aria_http_put("http://127.0.0.1:8888/echo", "put data");
+    aria_http_assert_int_eq(u, 1i32, "test 06: PUT /echo");
+    aria_http_assert_body_contains("PUT", "test 07: method=PUT in echo");
 
-    int32:l = aria_http_response_length();
-    aria_http_assert_int_eq(l, 0i32, "test 06: response_length=0 before request");
+    int32:d = aria_http_delete("http://127.0.0.1:8888/echo");
+    aria_http_assert_int_eq(d, 1i32, "test 08: DELETE /echo");
+    aria_http_assert_body_contains("DELETE", "test 09: method=DELETE in echo");
 
     aria_http_test_summary();
     pass(0i32);
