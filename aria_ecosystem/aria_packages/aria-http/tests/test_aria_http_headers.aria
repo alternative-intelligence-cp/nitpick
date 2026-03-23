@@ -1,0 +1,34 @@
+// test_aria_http_headers.aria — Headers, status & response tests
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_http_init            = int32();
+extern func:aria_http_set_header      = void(string:header);
+extern func:aria_http_clear_headers   = void();
+extern func:aria_http_status          = int32();
+extern func:aria_http_response_length = int32();
+extern func:aria_http_assert_int_eq   = void(int32:actual, int32:expected, string:msg);
+extern func:aria_http_test_summary    = void();
+
+func:main = int32() {
+    int32:r = aria_http_init();
+    aria_http_assert_int_eq(r, 1i32, "test 01: init");
+
+    aria_http_set_header("Content-Type: application/json");
+    aria_http_assert_int_eq(1i32, 1i32, "test 02: set_header");
+
+    aria_http_set_header("X-Custom: test");
+    aria_http_assert_int_eq(1i32, 1i32, "test 03: set_header second");
+
+    aria_http_clear_headers();
+    aria_http_assert_int_eq(1i32, 1i32, "test 04: clear_headers");
+
+    int32:s = aria_http_status();
+    aria_http_assert_int_eq(s, 0i32, "test 05: status=0 before request");
+
+    int32:l = aria_http_response_length();
+    aria_http_assert_int_eq(l, 0i32, "test 06: response_length=0 before request");
+
+    aria_http_test_summary();
+    pass(0i32);
+};

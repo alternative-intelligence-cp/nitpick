@@ -1,0 +1,40 @@
+// aria_socket.aria — TCP/UDP socket abstractions for Aria
+
+extern "aria_socket_shim" {
+    func:aria_socket_error           = string();
+    func:aria_socket_tcp_connect     = int32(string:host, int32:port);
+    func:aria_socket_tcp_listen      = int32(string:addr, int32:port, int32:backlog);
+    func:aria_socket_tcp_accept      = int32(int32:listen_fd);
+    func:aria_socket_udp_create      = int32();
+    func:aria_socket_udp_bind        = int32(int32:fd, string:addr, int32:port);
+    func:aria_socket_udp_sendto      = int32(int32:fd, string:data, int32:len, string:host, int32:port);
+    func:aria_socket_udp_recvfrom    = string(int32:fd);
+    func:aria_socket_send            = int32(int32:fd, string:data, int32:len);
+    func:aria_socket_send_str        = int32(int32:fd, string:data);
+    func:aria_socket_recv            = string(int32:fd, int32:max);
+    func:aria_socket_last_result     = string();
+    func:aria_socket_recv_length     = int64();
+    func:aria_socket_set_nonblocking = int32(int32:fd);
+    func:aria_socket_poll_read       = int32(int32:fd, int32:timeout_ms);
+    func:aria_socket_close           = void(int32:fd);
+    func:aria_socket_set_timeout     = int32(int32:fd, int32:seconds);
+}
+
+// ── pub wrappers ────────────────────────────────────────
+
+pub func:socket_error        = string()                                                     { pass(aria_socket_error()); };
+pub func:socket_tcp_connect  = int32(string:host, int32:port)                               { pass(aria_socket_tcp_connect(host, port)); };
+pub func:socket_tcp_listen   = int32(string:addr, int32:port, int32:backlog)                 { pass(aria_socket_tcp_listen(addr, port, backlog)); };
+pub func:socket_tcp_accept   = int32(int32:listen_fd)                                       { pass(aria_socket_tcp_accept(listen_fd)); };
+pub func:socket_udp_create   = int32()                                                      { pass(aria_socket_udp_create()); };
+pub func:socket_udp_bind     = int32(int32:fd, string:addr, int32:port)                      { pass(aria_socket_udp_bind(fd, addr, port)); };
+pub func:socket_udp_sendto   = int32(int32:fd, string:data, int32:len, string:host, int32:port) { pass(aria_socket_udp_sendto(fd, data, len, host, port)); };
+pub func:socket_udp_recvfrom = string(int32:fd)                                             { drop(aria_socket_udp_recvfrom(fd)); pass(aria_socket_last_result()); };
+pub func:socket_send         = int32(int32:fd, string:data, int32:len)                       { pass(aria_socket_send(fd, data, len)); };
+pub func:socket_send_str     = int32(int32:fd, string:data)                                  { pass(aria_socket_send_str(fd, data)); };
+pub func:socket_recv         = string(int32:fd, int32:max)                                   { drop(aria_socket_recv(fd, max)); pass(aria_socket_last_result()); };
+pub func:socket_recv_length  = int64()                                                      { pass(aria_socket_recv_length()); };
+pub func:socket_set_nonblocking = int32(int32:fd)                                            { pass(aria_socket_set_nonblocking(fd)); };
+pub func:socket_poll_read    = int32(int32:fd, int32:timeout_ms)                             { pass(aria_socket_poll_read(fd, timeout_ms)); };
+pub func:socket_close        = NIL(int32:fd)                                                 { aria_socket_close(fd); pass(NIL); };
+pub func:socket_set_timeout  = int32(int32:fd, int32:seconds)                                { pass(aria_socket_set_timeout(fd, seconds)); };

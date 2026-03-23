@@ -1,0 +1,47 @@
+// test_aria_fs_ops.aria — Copy, rename, size tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_fs_write_file  = int32(string:path, string:data);
+extern func:aria_fs_copy        = int32(string:src, string:dst);
+extern func:aria_fs_rename      = int32(string:oldp, string:newp);
+extern func:aria_fs_exists      = int32(string:path);
+extern func:aria_fs_remove      = int32(string:path);
+extern func:aria_fs_assert_int_eq = void(int32:actual, int32:expected, string:msg);
+extern func:aria_fs_test_summary  = void();
+
+func:main = int32() {
+    // ── setup ──────────────────────────────────────────────────
+    int32:w = aria_fs_write_file("/tmp/aria_fs_ops_src.txt", "copy me");
+    aria_fs_assert_int_eq(w, 1i32, "test 01: write source");
+
+    // ── copy ───────────────────────────────────────────────────
+    int32:cp = aria_fs_copy("/tmp/aria_fs_ops_src.txt", "/tmp/aria_fs_ops_dst.txt");
+    aria_fs_assert_int_eq(cp, 1i32, "test 02: copy");
+
+    int32:e1 = aria_fs_exists("/tmp/aria_fs_ops_dst.txt");
+    aria_fs_assert_int_eq(e1, 1i32, "test 03: copy target exists");
+
+    // ── rename ─────────────────────────────────────────────────
+    int32:rn = aria_fs_rename("/tmp/aria_fs_ops_dst.txt", "/tmp/aria_fs_ops_ren.txt");
+    aria_fs_assert_int_eq(rn, 1i32, "test 04: rename");
+
+    int32:e2 = aria_fs_exists("/tmp/aria_fs_ops_dst.txt");
+    aria_fs_assert_int_eq(e2, 0i32, "test 05: old name gone");
+
+    int32:e3 = aria_fs_exists("/tmp/aria_fs_ops_ren.txt");
+    aria_fs_assert_int_eq(e3, 1i32, "test 06: new name exists");
+
+    // ── cleanup ────────────────────────────────────────────────
+    int32:r1 = aria_fs_remove("/tmp/aria_fs_ops_src.txt");
+    aria_fs_assert_int_eq(r1, 1i32, "test 07: remove src");
+
+    int32:r2 = aria_fs_remove("/tmp/aria_fs_ops_ren.txt");
+    aria_fs_assert_int_eq(r2, 1i32, "test 08: remove renamed");
+
+    int32:ne = aria_fs_exists("/tmp/aria_fs_ops_ren.txt");
+    aria_fs_assert_int_eq(ne, 0i32, "test 09: removed file gone");
+
+    aria_fs_test_summary();
+    pass(0i32);
+};

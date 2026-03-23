@@ -1,0 +1,41 @@
+// aria_test.aria — Lightweight test framework for Aria
+
+extern "aria_test_shim" {
+    func:aria_test_begin           = void(string:suite);
+    func:aria_test_set_verbose     = void(int32:v);
+    func:aria_test_end             = int32();
+    func:aria_test_passed_count    = int64();
+    func:aria_test_failed_count    = int64();
+    func:aria_test_skipped_count   = int64();
+    func:aria_test_total_count     = int64();
+    func:aria_test_skip            = void(string:name);
+    func:aria_test_assert          = void(string:name, int32:cond);
+    func:aria_test_assert_eq_i32   = void(string:name, int32:actual, int32:expected);
+    func:aria_test_assert_eq_i64   = void(string:name, int64:actual, int64:expected);
+    func:aria_test_assert_eq_str   = void(string:name, string:actual, string:expected);
+    func:aria_test_assert_near_f64 = void(string:name, flt64:actual, flt64:expected, flt64:epsilon);
+    func:aria_test_assert_not_empty = void(string:name, string:value);
+    func:aria_test_assert_gt_i32   = void(string:name, int32:actual, int32:threshold);
+    func:aria_test_assert_gt_i64   = void(string:name, int64:actual, int64:threshold);
+    func:aria_test_assert_ne_i32   = void(string:name, int32:actual, int32:unexpected);
+}
+
+// ── pub wrappers ────────────────────────────────────────
+
+pub func:test_begin           = NIL(string:suite)                                        { aria_test_begin(suite); pass(NIL); };
+pub func:test_set_verbose     = NIL(int32:v)                                             { aria_test_set_verbose(v); pass(NIL); };
+pub func:test_end             = int32()                                                  { pass(aria_test_end()); };
+pub func:test_passed_count    = int64()                                                  { pass(aria_test_passed_count()); };
+pub func:test_failed_count    = int64()                                                  { pass(aria_test_failed_count()); };
+pub func:test_skipped_count   = int64()                                                  { pass(aria_test_skipped_count()); };
+pub func:test_total_count     = int64()                                                  { pass(aria_test_total_count()); };
+pub func:test_skip            = NIL(string:name)                                         { aria_test_skip(name); pass(NIL); };
+pub func:test_assert          = NIL(string:name, int32:cond)                             { aria_test_assert(name, cond); pass(NIL); };
+pub func:test_assert_eq_i32   = NIL(string:name, int32:a, int32:e)                       { aria_test_assert_eq_i32(name, a, e); pass(NIL); };
+pub func:test_assert_eq_i64   = NIL(string:name, int64:a, int64:e)                       { aria_test_assert_eq_i64(name, a, e); pass(NIL); };
+pub func:test_assert_eq_str   = NIL(string:name, string:a, string:e)                     { aria_test_assert_eq_str(name, a, e); pass(NIL); };
+pub func:test_assert_near_f64 = NIL(string:name, flt64:a, flt64:e, flt64:eps)            { aria_test_assert_near_f64(name, a, e, eps); pass(NIL); };
+pub func:test_assert_not_empty = NIL(string:name, string:v)                              { aria_test_assert_not_empty(name, v); pass(NIL); };
+pub func:test_assert_gt_i32   = NIL(string:name, int32:a, int32:t)                       { aria_test_assert_gt_i32(name, a, t); pass(NIL); };
+pub func:test_assert_gt_i64   = NIL(string:name, int64:a, int64:t)                       { aria_test_assert_gt_i64(name, a, t); pass(NIL); };
+pub func:test_assert_ne_i32   = NIL(string:name, int32:a, int32:u)                       { aria_test_assert_ne_i32(name, a, u); pass(NIL); };

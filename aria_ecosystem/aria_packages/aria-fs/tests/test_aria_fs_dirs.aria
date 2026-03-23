@@ -1,0 +1,42 @@
+// test_aria_fs_dirs.aria — Directory & stat tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_fs_write_file  = int32(string:path, string:data);
+extern func:aria_fs_is_file     = int32(string:path);
+extern func:aria_fs_is_dir      = int32(string:path);
+extern func:aria_fs_mkdir       = int32(string:path);
+extern func:aria_fs_rmdir       = int32(string:path);
+extern func:aria_fs_assert_int_eq = void(int32:actual, int32:expected, string:msg);
+extern func:aria_fs_test_summary  = void();
+
+func:main = int32() {
+    // ── file type checks ───────────────────────────────────────
+    int32:w = aria_fs_write_file("/tmp/aria_fs_stat_test.txt", "stat");
+    aria_fs_assert_int_eq(w, 1i32, "test 01: write test file");
+
+    int32:isf = aria_fs_is_file("/tmp/aria_fs_stat_test.txt");
+    aria_fs_assert_int_eq(isf, 1i32, "test 02: is_file=1");
+
+    int32:isd = aria_fs_is_dir("/tmp/aria_fs_stat_test.txt");
+    aria_fs_assert_int_eq(isd, 0i32, "test 03: is_dir=0 for file");
+
+    // ── directory ops ──────────────────────────────────────────
+    int32:md = aria_fs_mkdir("/tmp/aria_fs_test_dir");
+    aria_fs_assert_int_eq(md, 1i32, "test 04: mkdir");
+
+    int32:isd2 = aria_fs_is_dir("/tmp/aria_fs_test_dir");
+    aria_fs_assert_int_eq(isd2, 1i32, "test 05: is_dir=1 for dir");
+
+    int32:md2 = aria_fs_mkdir("/tmp/aria_fs_test_dir");
+    aria_fs_assert_int_eq(md2, 1i32, "test 06: mkdir idempotent");
+
+    int32:rd = aria_fs_rmdir("/tmp/aria_fs_test_dir");
+    aria_fs_assert_int_eq(rd, 1i32, "test 07: rmdir");
+
+    int32:isd3 = aria_fs_is_dir("/tmp/aria_fs_test_dir");
+    aria_fs_assert_int_eq(isd3, 0i32, "test 08: is_dir=0 after rmdir");
+
+    aria_fs_test_summary();
+    pass(0i32);
+};

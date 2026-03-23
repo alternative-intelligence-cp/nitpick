@@ -1,0 +1,33 @@
+// test_aria_http.aria — Init, config & URL encoding tests (no network)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_http_init           = int32();
+extern func:aria_http_set_timeout    = void(int32:seconds);
+extern func:aria_http_set_user_agent = void(string:ua);
+extern func:aria_http_cleanup        = void();
+extern func:aria_http_assert_int_eq  = void(int32:actual, int32:expected, string:msg);
+extern func:aria_http_assert_url_encode_eq = void(string:input, string:expected, string:msg);
+extern func:aria_http_test_summary   = void();
+
+func:main = int32() {
+    int32:r = aria_http_init();
+    aria_http_assert_int_eq(r, 1i32, "test 01: http_init");
+
+    aria_http_set_timeout(10i32);
+    aria_http_assert_int_eq(1i32, 1i32, "test 02: set_timeout");
+
+    aria_http_set_user_agent("aria-test/0.2.2");
+    aria_http_assert_int_eq(1i32, 1i32, "test 03: set_user_agent");
+
+    aria_http_assert_url_encode_eq("hello world", "hello%20world", "test 04: url_encode spaces");
+    aria_http_assert_url_encode_eq("a=1&b=2", "a%3D1%26b%3D2", "test 05: url_encode special chars");
+    aria_http_assert_url_encode_eq("", "", "test 06: url_encode empty");
+    aria_http_assert_url_encode_eq("abc123", "abc123", "test 07: url_encode plain");
+
+    aria_http_cleanup();
+    aria_http_assert_int_eq(1i32, 1i32, "test 08: cleanup");
+
+    aria_http_test_summary();
+    pass(0i32);
+};

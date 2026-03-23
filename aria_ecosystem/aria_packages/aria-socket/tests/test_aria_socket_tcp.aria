@@ -1,0 +1,35 @@
+// test_aria_socket_tcp.aria — TCP loopback tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_socket_tcp_listen      = int32(string:addr, int32:port, int32:backlog);
+extern func:aria_socket_tcp_connect     = int32(string:host, int32:port);
+extern func:aria_socket_tcp_accept      = int32(int32:listen_fd);
+extern func:aria_socket_send_str        = int32(int32:fd, string:data);
+extern func:aria_socket_assert_true     = void(int32:val, string:msg);
+extern func:aria_socket_assert_tcp_recv_eq = void(int32:fd, int32:max_len, string:expected, string:msg);
+extern func:aria_socket_test_summary    = void();
+
+func:main = int32() {
+    // ── create TCP server ──────────────────────────────────────
+    int32:srv = aria_socket_tcp_listen("127.0.0.1", 19877i32, 5i32);
+    aria_socket_assert_true(srv, "test 01: tcp_listen");
+
+    // ── connect client ─────────────────────────────────────────
+    int32:cli = aria_socket_tcp_connect("127.0.0.1", 19877i32);
+    aria_socket_assert_true(cli, "test 02: tcp_connect");
+
+    // ── accept connection ──────────────────────────────────────
+    int32:acc = aria_socket_tcp_accept(srv);
+    aria_socket_assert_true(acc, "test 03: tcp_accept");
+
+    // ── send from client ───────────────────────────────────────
+    int32:sent = aria_socket_send_str(cli, "hello tcp");
+    aria_socket_assert_true(sent, "test 04: send_str");
+
+    // ── receive on server side ─────────────────────────────────
+    aria_socket_assert_tcp_recv_eq(acc, 1024i32, "hello tcp", "test 05: tcp recv content");
+
+    aria_socket_test_summary();
+    pass(0i32);
+};

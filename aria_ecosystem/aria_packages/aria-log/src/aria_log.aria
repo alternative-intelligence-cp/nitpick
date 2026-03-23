@@ -1,0 +1,51 @@
+// aria_log.aria — Structured logging library for Aria
+//
+// Leveled logging with timestamps and configurable output.
+// Requires: libaria_log_shim.so
+
+extern "aria_log_shim" {
+    func:aria_log_init              = void();
+    func:aria_log_cleanup           = void();
+    func:aria_log_set_level         = void(int32:level);
+    func:aria_log_get_level         = int32();
+    func:aria_log_set_output_file   = void(string:path);
+    func:aria_log_set_output_stderr = void();
+    func:aria_log_set_output_stdout = void();
+    func:aria_log_show_timestamp    = void(int32:show);
+    func:aria_log_show_level        = void(int32:show);
+    func:aria_log_trace = void(string:msg);
+    func:aria_log_debug = void(string:msg);
+    func:aria_log_info  = void(string:msg);
+    func:aria_log_warn  = void(string:msg);
+    func:aria_log_error = void(string:msg);
+    func:aria_log_fatal = void(string:msg);
+    func:aria_log_count = int64();
+}
+
+// log level constants
+pub func:LOG_TRACE = int32() { pass(0i32); };
+pub func:LOG_DEBUG = int32() { pass(1i32); };
+pub func:LOG_INFO  = int32() { pass(2i32); };
+pub func:LOG_WARN  = int32() { pass(3i32); };
+pub func:LOG_ERROR = int32() { pass(4i32); };
+pub func:LOG_FATAL = int32() { pass(5i32); };
+
+pub func:log_init = NIL() { aria_log_init(); pass(NIL); };
+pub func:log_cleanup = NIL() { aria_log_cleanup(); pass(NIL); };
+
+pub func:log_set_level = NIL(int32:level) { aria_log_set_level(level); pass(NIL); };
+pub func:log_get_level = int32() { int32:r = aria_log_get_level(); pass(r); };
+pub func:log_to_file = NIL(string:path) { aria_log_set_output_file(path); pass(NIL); };
+pub func:log_to_stderr = NIL() { aria_log_set_output_stderr(); pass(NIL); };
+pub func:log_to_stdout = NIL() { aria_log_set_output_stdout(); pass(NIL); };
+pub func:log_show_timestamp = NIL(int32:show) { aria_log_show_timestamp(show); pass(NIL); };
+pub func:log_show_level = NIL(int32:show) { aria_log_show_level(show); pass(NIL); };
+
+pub func:log_trace = NIL(string:msg) { aria_log_trace(msg); pass(NIL); };
+pub func:log_debug = NIL(string:msg) { aria_log_debug(msg); pass(NIL); };
+pub func:log_info  = NIL(string:msg) { aria_log_info(msg); pass(NIL); };
+pub func:log_warn  = NIL(string:msg) { aria_log_warn(msg); pass(NIL); };
+pub func:log_error = NIL(string:msg) { aria_log_error(msg); pass(NIL); };
+pub func:log_fatal = NIL(string:msg) { aria_log_fatal(msg); pass(NIL); };
+
+pub func:log_count = int64() { int64:r = aria_log_count(); pass(r); };

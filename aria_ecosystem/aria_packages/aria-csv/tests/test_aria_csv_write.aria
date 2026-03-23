@@ -1,0 +1,68 @@
+// test_aria_csv_write.aria — Write tests for aria-csv (C-side assertions)
+// Uses <=7 externs to stay under compiler complexity limit.
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_csv_write_begin        = void();
+extern func:aria_csv_write_field        = void(string:value);
+extern func:aria_csv_write_row_end      = void();
+extern func:aria_csv_write_length       = int32();
+extern func:aria_csv_assert_true        = void(int32:val, string:msg);
+extern func:aria_csv_assert_write_contains = void(string:substr, string:msg);
+extern func:aria_csv_test_summary       = void();
+
+func:main = int32() {
+    // ── test 01: write_begin no crash ──────────────────────────
+    aria_csv_write_begin();
+    aria_csv_assert_true(1i32, "test 01: write_begin no crash");
+
+    // ── test 02: write header row ──────────────────────────────
+    aria_csv_write_field("name");
+    aria_csv_write_field("age");
+    aria_csv_write_field("city");
+    aria_csv_write_row_end();
+    aria_csv_assert_true(1i32, "test 02: write header row no crash");
+
+    // ── test 03: write data row ────────────────────────────────
+    aria_csv_write_field("Alice");
+    aria_csv_write_field("30");
+    aria_csv_write_field("NYC");
+    aria_csv_write_row_end();
+    aria_csv_assert_true(1i32, "test 03: write data row no crash");
+
+    // ── test 04: write_length > 0 ──────────────────────────────
+    int32:len1 = aria_csv_write_length();
+    aria_csv_assert_true(len1, "test 04: write_length > 0");
+
+    // ── test 05: output contains header ────────────────────────
+    aria_csv_assert_write_contains("name,age,city", "test 05: header in output");
+
+    // ── test 06: output contains data ──────────────────────────
+    aria_csv_assert_write_contains("Alice,30,NYC", "test 06: data in output");
+
+    // ── test 07: write field with comma (auto-quoted) ──────────
+    aria_csv_write_field("has,comma");
+    aria_csv_write_field("normal");
+    aria_csv_write_row_end();
+    int32:len2 = aria_csv_write_length();
+    aria_csv_assert_true(len2, "test 07: length after quoted write");
+
+    // ── test 08: quoted field in output ────────────────────────
+    aria_csv_assert_write_contains("\"has,comma\"", "test 08: comma field quoted");
+
+    // ── test 09: write another data row ────────────────────────
+    aria_csv_write_field("Bob");
+    aria_csv_write_field("25");
+    aria_csv_write_field("LA");
+    aria_csv_write_row_end();
+    aria_csv_assert_write_contains("Bob,25,LA", "test 09: second data row");
+
+    // ── test 10: final length check ────────────────────────────
+    int32:len3 = aria_csv_write_length();
+    aria_csv_assert_true(len3, "test 10: final length > 0");
+
+    // ── summary ────────────────────────────────────────────────
+    aria_csv_test_summary();
+
+    pass(0i32);
+};

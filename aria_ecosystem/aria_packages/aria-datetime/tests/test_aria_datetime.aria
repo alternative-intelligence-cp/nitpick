@@ -1,0 +1,28 @@
+// test_aria_datetime.aria — Time basics (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_datetime_now              = int64();
+extern func:aria_datetime_now_ms           = int64();
+extern func:aria_datetime_now_us           = int64();
+extern func:aria_datetime_monotonic_ms     = int64();
+extern func:aria_datetime_assert_int64_positive = void(int64:val, string:msg);
+extern func:aria_datetime_assert_int64_gt  = void(int64:a, int64:b, string:msg);
+extern func:aria_datetime_test_summary     = void();
+
+func:main = int32() {
+    int64:now = aria_datetime_now();
+    aria_datetime_assert_int64_positive(now, "test 01: now > 0");
+
+    int64:now_ms = aria_datetime_now_ms();
+    aria_datetime_assert_int64_positive(now_ms, "test 02: now_ms > 0");
+
+    int64:now_us = aria_datetime_now_us();
+    aria_datetime_assert_int64_gt(now_us, now_ms, "test 03: now_us > now_ms");
+
+    int64:mono = aria_datetime_monotonic_ms();
+    aria_datetime_assert_int64_positive(mono, "test 04: monotonic > 0");
+
+    aria_datetime_test_summary();
+    pass(0i32);
+};

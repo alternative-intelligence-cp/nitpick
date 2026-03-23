@@ -1,0 +1,36 @@
+// test_aria_socket.aria — UDP loopback tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_socket_udp_create       = int32();
+extern func:aria_socket_udp_bind         = int32(int32:fd, string:addr, int32:port);
+extern func:aria_socket_udp_sendto       = int32(int32:fd, string:data, int32:len, string:host, int32:port);
+extern func:aria_socket_poll_read        = int32(int32:fd, int32:timeout_ms);
+extern func:aria_socket_assert_int_eq    = void(int32:actual, int32:expected, string:msg);
+extern func:aria_socket_assert_udp_recv_eq = void(int32:fd, string:expected, string:msg);
+extern func:aria_socket_test_summary     = void();
+
+func:main = int32() {
+    // ── create & bind UDP socket ───────────────────────────────
+    int32:udp = aria_socket_udp_create();
+    int32:ub = aria_socket_udp_bind(udp, "127.0.0.1", 19876i32);
+    aria_socket_assert_int_eq(ub, 1i32, "test 01: udp_bind");
+
+    // ── send to self ───────────────────────────────────────────
+    int32:sent = aria_socket_udp_sendto(udp, "hello udp", 9i32, "127.0.0.1", 19876i32);
+    aria_socket_assert_int_eq(sent, 9i32, "test 02: udp_sendto=9");
+
+    // ── poll for data ──────────────────────────────────────────
+    int32:pr = aria_socket_poll_read(udp, 100i32);
+    aria_socket_assert_int_eq(pr, 1i32, "test 03: poll_read=1 (data ready)");
+
+    // ── receive and verify ─────────────────────────────────────
+    aria_socket_assert_udp_recv_eq(udp, "hello udp", "test 04: udp recv content");
+
+    // ── poll again (nothing left) ──────────────────────────────
+    int32:pr2 = aria_socket_poll_read(udp, 50i32);
+    aria_socket_assert_int_eq(pr2, 0i32, "test 05: poll_read=0 (timeout)");
+
+    aria_socket_test_summary();
+    pass(0i32);
+};

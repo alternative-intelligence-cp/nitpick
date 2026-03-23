@@ -1,0 +1,48 @@
+// test_aria_log.aria — Config & level tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_log_init           = void();
+extern func:aria_log_set_level      = void(int32:level);
+extern func:aria_log_get_level      = int32();
+extern func:aria_log_assert_int_eq  = void(int32:actual, int32:expected, string:msg);
+extern func:aria_log_assert_true    = void(int32:val, string:msg);
+extern func:aria_log_test_summary   = void();
+
+func:main = int32() {
+    // ── test 01: init ──────────────────────────────────────────
+    aria_log_init();
+    aria_log_assert_true(1i32, "test 01: log_init no crash");
+
+    // ── test 02: default level is INFO (2) ─────────────────────
+    int32:lvl = aria_log_get_level();
+    aria_log_assert_int_eq(lvl, 2i32, "test 02: default level=INFO(2)");
+
+    // ── test 03: set level to TRACE (0) ────────────────────────
+    aria_log_set_level(0i32);
+    int32:lvl2 = aria_log_get_level();
+    aria_log_assert_int_eq(lvl2, 0i32, "test 03: set level=TRACE(0)");
+
+    // ── test 04: set level to ERROR (4) ────────────────────────
+    aria_log_set_level(4i32);
+    int32:lvl3 = aria_log_get_level();
+    aria_log_assert_int_eq(lvl3, 4i32, "test 04: set level=ERROR(4)");
+
+    // ── test 05: set level to FATAL (5) ────────────────────────
+    aria_log_set_level(5i32);
+    int32:lvl4 = aria_log_get_level();
+    aria_log_assert_int_eq(lvl4, 5i32, "test 05: set level=FATAL(5)");
+
+    // ── test 06: set level to DEBUG (1) ────────────────────────
+    aria_log_set_level(1i32);
+    int32:lvl5 = aria_log_get_level();
+    aria_log_assert_int_eq(lvl5, 1i32, "test 06: set level=DEBUG(1)");
+
+    // ── test 07: set level to WARN (3) ─────────────────────────
+    aria_log_set_level(3i32);
+    int32:lvl6 = aria_log_get_level();
+    aria_log_assert_int_eq(lvl6, 3i32, "test 07: set level=WARN(3)");
+
+    aria_log_test_summary();
+    pass(0i32);
+};

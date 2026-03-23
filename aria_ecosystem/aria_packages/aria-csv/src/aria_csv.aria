@@ -1,0 +1,81 @@
+// aria_csv.aria — CSV parser and writer for Aria
+//
+// RFC 4180 compliant. Parse CSV text into a row×column grid,
+// or build CSV output field-by-field.
+// Requires: libaria_csv_shim.so
+
+extern "aria_csv_shim" {
+    // parsing
+    func:aria_csv_parse    = int32(string:csv_text);
+    func:aria_csv_num_rows = int32();
+    func:aria_csv_num_cols = int32();
+    func:aria_csv_get_s    = int32(int32:row, int32:col);
+    func:aria_csv_last_result = string();
+
+    // writing
+    func:aria_csv_write_begin    = void();
+    func:aria_csv_write_field    = void(string:value);
+    func:aria_csv_write_row_end  = void();
+    func:aria_csv_write_result   = string();
+    func:aria_csv_write_length   = int32();
+
+    // cleanup
+    func:aria_csv_cleanup = void();
+}
+
+// ── public API: parsing ─────────────────────────────────────────────
+
+pub func:csv_parse = int32(string:text) {
+    int32:r = aria_csv_parse(text);
+    pass(r);
+};
+
+pub func:csv_num_rows = int32() {
+    int32:r = aria_csv_num_rows();
+    pass(r);
+};
+
+pub func:csv_num_cols = int32() {
+    int32:r = aria_csv_num_cols();
+    pass(r);
+};
+
+pub func:csv_get = string(int32:row, int32:col) {
+    int32:status = aria_csv_get_s(row, col);
+    string:r = aria_csv_last_result();
+    pass(r);
+};
+
+// ── public API: writing ─────────────────────────────────────────────
+
+pub func:csv_write_begin = NIL() {
+    aria_csv_write_begin();
+    pass(NIL);
+};
+
+pub func:csv_write_field = NIL(string:value) {
+    aria_csv_write_field(value);
+    pass(NIL);
+};
+
+pub func:csv_write_row_end = NIL() {
+    aria_csv_write_row_end();
+    pass(NIL);
+};
+
+pub func:csv_write_result = string() {
+    string:r = aria_csv_write_result();
+    pass(r);
+};
+
+pub func:csv_write_length = int32() {
+    int32:r = aria_csv_write_length();
+    pass(r);
+};
+
+// ── public API: cleanup ─────────────────────────────────────────────
+
+pub func:csv_cleanup = NIL() {
+    aria_csv_cleanup();
+    pass(NIL);
+};

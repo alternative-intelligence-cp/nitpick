@@ -1,0 +1,32 @@
+// test_aria_fs_paths.aria — Path helper & size tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_fs_assert_extension_eq  = void(string:path, string:expected, string:msg);
+extern func:aria_fs_assert_basename_eq   = void(string:path, string:expected, string:msg);
+extern func:aria_fs_assert_dirname_eq    = void(string:path, string:expected, string:msg);
+extern func:aria_fs_file_size            = int64(string:path);
+extern func:aria_fs_modified_time        = int64(string:path);
+extern func:aria_fs_assert_int64_positive = void(int64:val, string:msg);
+extern func:aria_fs_test_summary         = void();
+
+func:main = int32() {
+    // ── path helpers (pure string manipulation) ────────────────
+    aria_fs_assert_extension_eq("/tmp/test.txt", ".txt", "test 01: extension .txt");
+    aria_fs_assert_extension_eq("/tmp/archive.tar.gz", ".gz", "test 02: extension .gz");
+    aria_fs_assert_extension_eq("/tmp/noext", "", "test 03: no extension");
+    aria_fs_assert_basename_eq("/tmp/test.txt", "test.txt", "test 04: basename");
+    aria_fs_assert_basename_eq("/home/user/file", "file", "test 05: basename no ext");
+    aria_fs_assert_dirname_eq("/tmp/test.txt", "/tmp", "test 06: dirname");
+    aria_fs_assert_dirname_eq("/home/user/file", "/home/user", "test 07: dirname deep");
+
+    // ── file_size & modified_time on /etc/hostname ─────────────
+    int64:sz = aria_fs_file_size("/etc/hostname");
+    aria_fs_assert_int64_positive(sz, "test 08: file_size > 0");
+
+    int64:mt = aria_fs_modified_time("/etc/hostname");
+    aria_fs_assert_int64_positive(mt, "test 09: modified_time > 0");
+
+    aria_fs_test_summary();
+    pass(0i32);
+};

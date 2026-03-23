@@ -1,0 +1,37 @@
+// test_aria_base64.aria — Tests for aria-base64 (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_base64_assert_encode_eq     = void(string:input, string:expected, string:msg);
+extern func:aria_base64_assert_encode_len_eq = void(string:input, int32:len, string:expected, string:msg);
+extern func:aria_base64_assert_encode_url_eq = void(string:input, string:expected, string:msg);
+extern func:aria_base64_assert_decode_eq     = void(string:encoded, string:expected, string:msg);
+extern func:aria_base64_assert_roundtrip     = void(string:input, string:msg);
+extern func:aria_base64_assert_int_eq        = void(int32:actual, int32:expected, string:msg);
+extern func:aria_base64_test_summary         = void();
+
+func:main = int32() {
+    // ── encode tests ───────────────────────────────────────────
+    aria_base64_assert_encode_eq("Hello", "SGVsbG8=", "test 01: encode Hello");
+    aria_base64_assert_encode_eq("", "", "test 02: encode empty");
+    aria_base64_assert_encode_len_eq("Hi!", 3i32, "SGkh", "test 03: encode Hi! with len");
+    aria_base64_assert_encode_len_eq("A", 1i32, "QQ==", "test 04: encode single byte");
+    aria_base64_assert_encode_len_eq("AB", 2i32, "QUI=", "test 05: encode two bytes");
+    aria_base64_assert_encode_len_eq("ABC", 3i32, "QUJD", "test 06: encode three bytes");
+
+    // ── decode tests ───────────────────────────────────────────
+    aria_base64_assert_decode_eq("SGVsbG8=", "Hello", "test 07: decode SGVsbG8=");
+    aria_base64_assert_decode_eq("SGVsbG8", "Hello", "test 08: decode unpadded");
+    aria_base64_assert_decode_eq("QUJD", "ABC", "test 09: decode QUJD");
+
+    // ── URL-safe encode ────────────────────────────────────────
+    aria_base64_assert_encode_url_eq("Hello", "SGVsbG8", "test 10: URL encode no padding");
+
+    // ── roundtrip tests ────────────────────────────────────────
+    aria_base64_assert_roundtrip("Hello", "test 11: roundtrip Hello");
+    aria_base64_assert_roundtrip("The quick brown fox", "test 12: roundtrip long string");
+    aria_base64_assert_roundtrip("", "test 13: roundtrip empty");
+
+    aria_base64_test_summary();
+    pass(0i32);
+};

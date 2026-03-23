@@ -1,0 +1,39 @@
+// aria_regex.aria — Regular expression library for Aria
+//
+// POSIX extended regex: compile, match, search, groups, replace.
+// Requires: libaria_regex_shim.so
+
+extern "aria_regex_shim" {
+    func:aria_regex_compile       = int32(string:pattern);
+    func:aria_regex_compile_icase = int32(string:pattern);
+    func:aria_regex_cleanup      = void();
+    func:aria_regex_error         = string();
+
+    func:aria_regex_match      = int32(string:text);
+    func:aria_regex_match_full = int32(string:text);
+    func:aria_regex_search     = int32(string:text);
+
+    func:aria_regex_group_count = int32();
+    func:aria_regex_group       = string(int32:idx);
+    func:aria_regex_group_start = int32(int32:idx);
+    func:aria_regex_group_end   = int32(int32:idx);
+
+    func:aria_regex_replace = string(string:text, string:replacement);
+    func:aria_regex_last_result = string();
+}
+
+pub func:regex_compile = int32(string:pattern) { int32:r = aria_regex_compile(pattern); pass(r); };
+pub func:regex_compile_icase = int32(string:pattern) { int32:r = aria_regex_compile_icase(pattern); pass(r); };
+pub func:regex_cleanup = NIL() { aria_regex_cleanup(); pass(NIL); };
+pub func:regex_error = string() { string:r = aria_regex_error(); pass(r); };
+
+pub func:regex_match = int32(string:text) { int32:r = aria_regex_match(text); pass(r); };
+pub func:regex_match_full = int32(string:text) { int32:r = aria_regex_match_full(text); pass(r); };
+pub func:regex_search = int32(string:text) { int32:r = aria_regex_search(text); pass(r); };
+
+pub func:regex_group_count = int32() { int32:r = aria_regex_group_count(); pass(r); };
+pub func:regex_group = string(int32:idx) { drop(aria_regex_group(idx)); string:r = aria_regex_last_result(); pass(r); };
+pub func:regex_group_start = int32(int32:idx) { int32:r = aria_regex_group_start(idx); pass(r); };
+pub func:regex_group_end = int32(int32:idx) { int32:r = aria_regex_group_end(idx); pass(r); };
+
+pub func:regex_replace = string(string:text, string:replacement) { drop(aria_regex_replace(text, replacement)); string:r = aria_regex_last_result(); pass(r); };

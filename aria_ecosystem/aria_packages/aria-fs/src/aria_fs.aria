@@ -1,0 +1,52 @@
+// aria_fs.aria — Filesystem utilities for Aria
+
+extern "aria_fs_shim" {
+    func:aria_fs_error         = string();
+    func:aria_fs_read_file     = string(string:path);
+    func:aria_fs_read_length   = int64();
+    func:aria_fs_write_file    = int32(string:path, string:data);
+    func:aria_fs_append_file   = int32(string:path, string:data);
+    func:aria_fs_exists        = int32(string:path);
+    func:aria_fs_is_file       = int32(string:path);
+    func:aria_fs_is_dir        = int32(string:path);
+    func:aria_fs_file_size     = int64(string:path);
+    func:aria_fs_modified_time = int64(string:path);
+    func:aria_fs_mkdir         = int32(string:path);
+    func:aria_fs_rmdir         = int32(string:path);
+    func:aria_fs_list_dir      = string(string:path);
+    func:aria_fs_remove        = int32(string:path);
+    func:aria_fs_rename        = int32(string:oldp, string:newp);
+    func:aria_fs_copy          = int32(string:src, string:dst);
+    func:aria_fs_get_cwd       = string();
+    func:aria_fs_absolute      = string(string:path);
+    func:aria_fs_extension     = string(string:path);
+    func:aria_fs_basename      = string(string:path);
+    func:aria_fs_dirname       = string(string:path);
+    func:aria_fs_last_result   = string();
+    func:aria_fs_cleanup       = void();
+}
+
+// ── pub wrappers ────────────────────────────────────────
+
+pub func:fs_error         = string()                         { pass(aria_fs_error()); };
+pub func:fs_read_file     = string(string:path)              { drop(aria_fs_read_file(path)); pass(aria_fs_last_result()); };
+pub func:fs_read_length   = int64()                          { pass(aria_fs_read_length()); };
+pub func:fs_write_file    = int32(string:path, string:data)  { pass(aria_fs_write_file(path, data)); };
+pub func:fs_append_file   = int32(string:path, string:data)  { pass(aria_fs_append_file(path, data)); };
+pub func:fs_exists        = int32(string:path)               { pass(aria_fs_exists(path)); };
+pub func:fs_is_file       = int32(string:path)               { pass(aria_fs_is_file(path)); };
+pub func:fs_is_dir        = int32(string:path)               { pass(aria_fs_is_dir(path)); };
+pub func:fs_file_size     = int64(string:path)               { pass(aria_fs_file_size(path)); };
+pub func:fs_modified_time = int64(string:path)               { pass(aria_fs_modified_time(path)); };
+pub func:fs_mkdir         = int32(string:path)               { pass(aria_fs_mkdir(path)); };
+pub func:fs_rmdir         = int32(string:path)               { pass(aria_fs_rmdir(path)); };
+pub func:fs_list_dir      = string(string:path)              { drop(aria_fs_list_dir(path)); pass(aria_fs_last_result()); };
+pub func:fs_remove        = int32(string:path)               { pass(aria_fs_remove(path)); };
+pub func:fs_rename        = int32(string:o, string:n)        { pass(aria_fs_rename(o, n)); };
+pub func:fs_copy          = int32(string:s, string:d)        { pass(aria_fs_copy(s, d)); };
+pub func:fs_get_cwd       = string()                         { pass(aria_fs_get_cwd()); };
+pub func:fs_absolute      = string(string:path)              { drop(aria_fs_absolute(path)); pass(aria_fs_last_result()); };
+pub func:fs_extension     = string(string:path)              { drop(aria_fs_extension(path)); pass(aria_fs_last_result()); };
+pub func:fs_basename      = string(string:path)              { drop(aria_fs_basename(path)); pass(aria_fs_last_result()); };
+pub func:fs_dirname       = string(string:path)              { drop(aria_fs_dirname(path)); pass(aria_fs_last_result()); };
+pub func:fs_cleanup       = NIL()                            { aria_fs_cleanup(); pass(NIL); };

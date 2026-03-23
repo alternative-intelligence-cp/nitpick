@@ -1,0 +1,37 @@
+// test_aria_datetime_construct.aria — Construction & arithmetic (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_datetime_make_utc       = int64(int32:year, int32:month, int32:day, int32:hour, int32:minute, int32:second);
+extern func:aria_datetime_utc_year       = int32(int64:epoch);
+extern func:aria_datetime_utc_day        = int32(int64:epoch);
+extern func:aria_datetime_utc_hour       = int32(int64:epoch);
+extern func:aria_datetime_add_seconds    = int64(int64:epoch, int64:seconds);
+extern func:aria_datetime_assert_int_eq  = void(int32:actual, int32:expected, string:msg);
+extern func:aria_datetime_test_summary   = void();
+
+func:main = int32() {
+    // make_utc(2026, 3, 23, 12, 0, 0)
+    int64:made = aria_datetime_make_utc(2026i32, 3i32, 23i32, 12i32, 0i32, 0i32);
+    int32:y = aria_datetime_utc_year(made);
+    aria_datetime_assert_int_eq(y, 2026i32, "test 01: make_utc year=2026");
+
+    int32:d = aria_datetime_utc_day(made);
+    aria_datetime_assert_int_eq(d, 23i32, "test 02: make_utc day=23");
+
+    int32:h = aria_datetime_utc_hour(made);
+    aria_datetime_assert_int_eq(h, 12i32, "test 03: make_utc hour=12");
+
+    // add 3600 seconds (1 hour) → hour becomes 13
+    int64:added = aria_datetime_add_seconds(made, 3600i64);
+    int32:h2 = aria_datetime_utc_hour(added);
+    aria_datetime_assert_int_eq(h2, 13i32, "test 04: add_seconds +3600 → hour=13");
+
+    // add 86400 seconds (1 day) from epoch 0 → day 2
+    int64:day2 = aria_datetime_add_seconds(0i64, 86400i64);
+    int32:d2 = aria_datetime_utc_day(day2);
+    aria_datetime_assert_int_eq(d2, 2i32, "test 05: add 86400s → day=2");
+
+    aria_datetime_test_summary();
+    pass(0i32);
+};

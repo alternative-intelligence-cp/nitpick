@@ -1,0 +1,42 @@
+// test_aria_datetime_components.aria — UTC component tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_datetime_utc_year    = int32(int64:epoch);
+extern func:aria_datetime_utc_month   = int32(int64:epoch);
+extern func:aria_datetime_utc_day     = int32(int64:epoch);
+extern func:aria_datetime_utc_hour    = int32(int64:epoch);
+extern func:aria_datetime_utc_minute  = int32(int64:epoch);
+extern func:aria_datetime_assert_int_eq = void(int32:actual, int32:expected, string:msg);
+extern func:aria_datetime_test_summary  = void();
+
+func:main = int32() {
+    // epoch 0 = 1970-01-01 00:00:00 UTC
+    int32:y = aria_datetime_utc_year(0i64);
+    aria_datetime_assert_int_eq(y, 1970i32, "test 01: utc_year(0)=1970");
+
+    int32:m = aria_datetime_utc_month(0i64);
+    aria_datetime_assert_int_eq(m, 1i32, "test 02: utc_month(0)=1");
+
+    int32:d = aria_datetime_utc_day(0i64);
+    aria_datetime_assert_int_eq(d, 1i32, "test 03: utc_day(0)=1");
+
+    int32:h = aria_datetime_utc_hour(0i64);
+    aria_datetime_assert_int_eq(h, 0i32, "test 04: utc_hour(0)=0");
+
+    int32:mi = aria_datetime_utc_minute(0i64);
+    aria_datetime_assert_int_eq(mi, 0i32, "test 05: utc_minute(0)=0");
+
+    // epoch 90061 = 1970-01-02 01:01:01 UTC
+    int32:y2 = aria_datetime_utc_year(90061i64);
+    aria_datetime_assert_int_eq(y2, 1970i32, "test 06: utc_year(90061)=1970");
+
+    int32:d2 = aria_datetime_utc_day(90061i64);
+    aria_datetime_assert_int_eq(d2, 2i32, "test 07: utc_day(90061)=2");
+
+    int32:h2 = aria_datetime_utc_hour(90061i64);
+    aria_datetime_assert_int_eq(h2, 1i32, "test 08: utc_hour(90061)=1");
+
+    aria_datetime_test_summary();
+    pass(0i32);
+};

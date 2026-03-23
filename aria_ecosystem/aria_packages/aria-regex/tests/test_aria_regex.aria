@@ -1,0 +1,48 @@
+// test_aria_regex.aria — Compile & match tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_regex_compile       = int32(string:pattern);
+extern func:aria_regex_match         = int32(string:text);
+extern func:aria_regex_match_full    = int32(string:text);
+extern func:aria_regex_compile_icase = int32(string:pattern);
+extern func:aria_regex_assert_int_eq = void(int32:actual, int32:expected, string:msg);
+extern func:aria_regex_cleanup       = void();
+extern func:aria_regex_test_summary  = void();
+
+func:main = int32() {
+    // ── compile & match ────────────────────────────────────────
+    int32:c1 = aria_regex_compile("[0-9]+");
+    aria_regex_assert_int_eq(c1, 1i32, "test 01: compile [0-9]+");
+
+    int32:m1 = aria_regex_match("abc123def");
+    aria_regex_assert_int_eq(m1, 1i32, "test 02: match digits");
+
+    int32:m2 = aria_regex_match("abcdef");
+    aria_regex_assert_int_eq(m2, 0i32, "test 03: no match");
+
+    // ── match_full ─────────────────────────────────────────────
+    int32:c2 = aria_regex_compile("[0-9]{3}-[0-9]{4}");
+    aria_regex_assert_int_eq(c2, 1i32, "test 04: compile phone");
+
+    int32:mf1 = aria_regex_match_full("555-1234");
+    aria_regex_assert_int_eq(mf1, 1i32, "test 05: match_full exact");
+
+    int32:mf2 = aria_regex_match_full("call 555-1234 now");
+    aria_regex_assert_int_eq(mf2, 0i32, "test 06: match_full rejects partial");
+
+    // ── case-insensitive ───────────────────────────────────────
+    int32:c3 = aria_regex_compile_icase("hello");
+    aria_regex_assert_int_eq(c3, 1i32, "test 07: compile_icase");
+
+    int32:mi = aria_regex_match("HELLO WORLD");
+    aria_regex_assert_int_eq(mi, 1i32, "test 08: icase match");
+
+    // ── invalid pattern ────────────────────────────────────────
+    int32:bad = aria_regex_compile("[invalid");
+    aria_regex_assert_int_eq(bad, 0i32, "test 09: invalid pattern → 0");
+
+    aria_regex_cleanup();
+    aria_regex_test_summary();
+    pass(0i32);
+};

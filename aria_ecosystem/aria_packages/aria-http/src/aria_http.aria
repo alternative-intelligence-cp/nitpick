@@ -1,0 +1,144 @@
+// aria_http.aria — Idiomatic Aria HTTP client library
+//
+// Provides GET, POST, PUT, DELETE, PATCH, HEAD requests via libcurl.
+// Requires: libaria_http_shim.so + libcurl
+
+// ── extern declarations (C shim) ────────────────────────────────────
+
+extern "aria_http_shim" {
+    // init / cleanup
+    func:aria_http_init    = int32();
+    func:aria_http_cleanup = void();
+
+    // request configuration
+    func:aria_http_set_header           = void(string:header);
+    func:aria_http_clear_headers        = void();
+    func:aria_http_set_timeout          = void(int32:seconds);
+    func:aria_http_set_follow_redirects = void(int32:follow);
+    func:aria_http_set_user_agent       = void(string:ua);
+
+    // HTTP methods
+    func:aria_http_get    = int32(string:url);
+    func:aria_http_post   = int32(string:url, string:body);
+    func:aria_http_put    = int32(string:url, string:body);
+    func:aria_http_delete = int32(string:url);
+    func:aria_http_patch  = int32(string:url, string:body);
+    func:aria_http_head   = int32(string:url);
+
+    // response accessors
+    func:aria_http_status           = int32();
+    func:aria_http_response_body    = string();
+    func:aria_http_response_length  = int32();
+    func:aria_http_response_headers = string();
+    func:aria_http_error            = string();
+
+    // URL encoding
+    func:aria_http_url_encode = string(string:str);
+    func:aria_http_last_result = string();
+}
+
+// ── public API: init / cleanup ──────────────────────────────────────
+
+pub func:http_init = int32() {
+    int32:r = aria_http_init();
+    pass(r);
+};
+
+pub func:http_cleanup = NIL() {
+    aria_http_cleanup();
+    pass(NIL);
+};
+
+// ── public API: request configuration ───────────────────────────────
+
+pub func:http_set_header = NIL(string:header) {
+    aria_http_set_header(header);
+    pass(NIL);
+};
+
+pub func:http_clear_headers = NIL() {
+    aria_http_clear_headers();
+    pass(NIL);
+};
+
+pub func:http_set_timeout = NIL(int32:seconds) {
+    aria_http_set_timeout(seconds);
+    pass(NIL);
+};
+
+pub func:http_follow_redirects = NIL(int32:follow) {
+    aria_http_set_follow_redirects(follow);
+    pass(NIL);
+};
+
+pub func:http_set_user_agent = NIL(string:ua) {
+    aria_http_set_user_agent(ua);
+    pass(NIL);
+};
+
+// ── public API: HTTP methods ────────────────────────────────────────
+
+pub func:http_get = int32(string:url) {
+    int32:r = aria_http_get(url);
+    pass(r);
+};
+
+pub func:http_post = int32(string:url, string:body) {
+    int32:r = aria_http_post(url, body);
+    pass(r);
+};
+
+pub func:http_put = int32(string:url, string:body) {
+    int32:r = aria_http_put(url, body);
+    pass(r);
+};
+
+pub func:http_delete = int32(string:url) {
+    int32:r = aria_http_delete(url);
+    pass(r);
+};
+
+pub func:http_patch = int32(string:url, string:body) {
+    int32:r = aria_http_patch(url, body);
+    pass(r);
+};
+
+pub func:http_head = int32(string:url) {
+    int32:r = aria_http_head(url);
+    pass(r);
+};
+
+// ── public API: response ────────────────────────────────────────────
+
+pub func:http_status = int32() {
+    int32:r = aria_http_status();
+    pass(r);
+};
+
+pub func:http_body = string() {
+    string:r = aria_http_response_body();
+    pass(r);
+};
+
+pub func:http_body_length = int32() {
+    int32:r = aria_http_response_length();
+    pass(r);
+};
+
+pub func:http_response_headers = string() {
+    string:r = aria_http_response_headers();
+    pass(r);
+};
+
+pub func:http_error = string() {
+    string:r = aria_http_error();
+    pass(r);
+};
+
+// ── public API: utilities ───────────────────────────────────────────
+
+pub func:http_url_encode = string(string:str) {
+    drop(aria_http_url_encode(str));
+    string:r = aria_http_last_result();
+    pass(r);
+};

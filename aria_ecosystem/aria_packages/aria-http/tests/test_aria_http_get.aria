@@ -1,0 +1,33 @@
+// test_aria_http_get.aria — HTTP method tests (local, no external network)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_http_init           = int32();
+extern func:aria_http_get            = int32(string:url);
+extern func:aria_http_post           = int32(string:url, string:body);
+extern func:aria_http_set_timeout    = void(int32:seconds);
+extern func:aria_http_cleanup        = void();
+extern func:aria_http_assert_int_eq  = void(int32:actual, int32:expected, string:msg);
+extern func:aria_http_test_summary   = void();
+
+func:main = int32() {
+    int32:r = aria_http_init();
+    aria_http_assert_int_eq(r, 1i32, "test 01: http_init");
+
+    aria_http_set_timeout(2i32);
+
+    int32:g = aria_http_get("http://127.0.0.1:1/test");
+    aria_http_assert_int_eq(g, 0i32, "test 02: GET fails on closed port");
+
+    int32:g2 = aria_http_get("http://127.0.0.1:1/other");
+    aria_http_assert_int_eq(g2, 0i32, "test 03: GET second request also fails");
+
+    int32:p = aria_http_post("http://127.0.0.1:1/data", "payload");
+    aria_http_assert_int_eq(p, 0i32, "test 04: POST fails on closed port");
+
+    aria_http_cleanup();
+    aria_http_assert_int_eq(1i32, 1i32, "test 05: cleanup");
+
+    aria_http_test_summary();
+    pass(0i32);
+};

@@ -1,0 +1,38 @@
+// test_aria_fs.aria — File write/read/append tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_fs_write_file            = int32(string:path, string:data);
+extern func:aria_fs_append_file           = int32(string:path, string:data);
+extern func:aria_fs_exists                = int32(string:path);
+extern func:aria_fs_remove                = int32(string:path);
+extern func:aria_fs_assert_int_eq         = void(int32:actual, int32:expected, string:msg);
+extern func:aria_fs_assert_file_content_eq = void(string:path, string:expected, string:msg);
+extern func:aria_fs_test_summary          = void();
+
+func:main = int32() {
+    // ── write ──────────────────────────────────────────────────
+    int32:w = aria_fs_write_file("/tmp/aria_fs_test.txt", "hello aria");
+    aria_fs_assert_int_eq(w, 1i32, "test 01: write_file");
+
+    int32:e1 = aria_fs_exists("/tmp/aria_fs_test.txt");
+    aria_fs_assert_int_eq(e1, 1i32, "test 02: exists after write");
+
+    aria_fs_assert_file_content_eq("/tmp/aria_fs_test.txt", "hello aria", "test 03: content matches");
+
+    // ── append ─────────────────────────────────────────────────
+    int32:a = aria_fs_append_file("/tmp/aria_fs_test.txt", " world");
+    aria_fs_assert_int_eq(a, 1i32, "test 04: append_file");
+
+    aria_fs_assert_file_content_eq("/tmp/aria_fs_test.txt", "hello aria world", "test 05: content after append");
+
+    // ── remove ─────────────────────────────────────────────────
+    int32:r = aria_fs_remove("/tmp/aria_fs_test.txt");
+    aria_fs_assert_int_eq(r, 1i32, "test 06: remove");
+
+    int32:e2 = aria_fs_exists("/tmp/aria_fs_test.txt");
+    aria_fs_assert_int_eq(e2, 0i32, "test 07: gone after remove");
+
+    aria_fs_test_summary();
+    pass(0i32);
+};

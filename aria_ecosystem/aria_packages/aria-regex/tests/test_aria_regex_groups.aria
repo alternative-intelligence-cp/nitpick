@@ -1,0 +1,37 @@
+// test_aria_regex_groups.aria — Search, groups & replace tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_regex_compile          = int32(string:pattern);
+extern func:aria_regex_search           = int32(string:text);
+extern func:aria_regex_group_count      = int32();
+extern func:aria_regex_assert_int_eq    = void(int32:actual, int32:expected, string:msg);
+extern func:aria_regex_assert_group_eq  = void(int32:idx, string:expected, string:msg);
+extern func:aria_regex_assert_replace_eq = void(string:text, string:replacement, string:expected, string:msg);
+extern func:aria_regex_test_summary     = void();
+
+func:main = int32() {
+    // ── search with groups ─────────────────────────────────────
+    int32:c1 = aria_regex_compile("([a-z]+)@([a-z]+)\\.([a-z]+)");
+    aria_regex_assert_int_eq(c1, 1i32, "test 01: compile email pattern");
+
+    int32:s1 = aria_regex_search("email: test@example.com here");
+    aria_regex_assert_int_eq(s1, 1i32, "test 02: search email");
+
+    int32:gc = aria_regex_group_count();
+    aria_regex_assert_int_eq(gc, 4i32, "test 03: group_count=4");
+
+    aria_regex_assert_group_eq(0i32, "test@example.com", "test 04: group(0) full match");
+    aria_regex_assert_group_eq(1i32, "test", "test 05: group(1) user");
+    aria_regex_assert_group_eq(2i32, "example", "test 06: group(2) domain");
+    aria_regex_assert_group_eq(3i32, "com", "test 07: group(3) tld");
+
+    // ── replace ────────────────────────────────────────────────
+    int32:c2 = aria_regex_compile("world");
+    aria_regex_assert_int_eq(c2, 1i32, "test 08: compile world");
+    aria_regex_assert_replace_eq("hello world!", "Aria", "hello Aria!", "test 09: replace");
+    aria_regex_assert_replace_eq("hello planet!", "Aria", "hello planet!", "test 10: replace no-match");
+
+    aria_regex_test_summary();
+    pass(0i32);
+};

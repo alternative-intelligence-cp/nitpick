@@ -1,0 +1,26 @@
+// aria_base64.aria — Base64 encoding and decoding for Aria
+
+extern "aria_base64_shim" {
+    func:aria_base64_encode         = string(string:data, int32:len);
+    func:aria_base64_encode_str     = string(string:str);
+    func:aria_base64_encode_url     = string(string:data, int32:len);
+    func:aria_base64_encode_url_str = string(string:str);
+    func:aria_base64_decode         = string(string:encoded);
+    func:aria_base64_last_result     = string();
+    func:aria_base64_decode_length  = int64();
+    func:aria_base64_encoded_length = int64(int32:input_len);
+    func:aria_base64_is_valid       = int32(string:str);
+    func:aria_base64_cleanup        = void();
+}
+
+// ── pub wrappers ────────────────────────────────────────
+
+pub func:b64_encode         = string(string:data, int32:len)   { drop(aria_base64_encode(data, len)); pass(aria_base64_last_result()); };
+pub func:b64_encode_str     = string(string:str)               { drop(aria_base64_encode_str(str)); pass(aria_base64_last_result()); };
+pub func:b64_encode_url     = string(string:data, int32:len)   { drop(aria_base64_encode_url(data, len)); pass(aria_base64_last_result()); };
+pub func:b64_encode_url_str = string(string:str)               { drop(aria_base64_encode_url_str(str)); pass(aria_base64_last_result()); };
+pub func:b64_decode         = string(string:encoded)            { drop(aria_base64_decode(encoded)); pass(aria_base64_last_result()); };
+pub func:b64_decode_length  = int64()                           { pass(aria_base64_decode_length()); };
+pub func:b64_encoded_length = int64(int32:input_len)            { pass(aria_base64_encoded_length(input_len)); };
+pub func:b64_is_valid       = int32(string:str)                 { pass(aria_base64_is_valid(str)); };
+pub func:b64_cleanup        = NIL()                             { aria_base64_cleanup(); pass(NIL); };

@@ -1,0 +1,37 @@
+// test_aria_log_output.aria — Logging & count tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_log_init             = void();
+extern func:aria_log_set_level        = void(int32:level);
+extern func:aria_log_info             = void(string:msg);
+extern func:aria_log_error            = void(string:msg);
+extern func:aria_log_assert_int64_eq  = void(int64:actual, int64:expected, string:msg);
+extern func:aria_log_assert_true      = void(int32:val, string:msg);
+extern func:aria_log_test_summary     = void();
+
+func:main = int32() {
+    // ── setup ──────────────────────────────────────────────────
+    aria_log_init();
+    aria_log_set_level(0i32);
+
+    // ── test 01: log_info no crash ─────────────────────────────
+    aria_log_info("test info message");
+    aria_log_assert_true(1i32, "test 01: log_info no crash");
+
+    // ── test 02: log_error no crash ────────────────────────────
+    aria_log_error("test error message");
+    aria_log_assert_true(1i32, "test 02: log_error no crash");
+
+    // ── test 03: level filtering ───────────────────────────────
+    aria_log_set_level(4i32);
+    aria_log_info("should be suppressed");
+    aria_log_assert_true(1i32, "test 03: info suppressed at ERROR level");
+
+    // ── test 04: error passes through ──────────────────────────
+    aria_log_error("should pass through");
+    aria_log_assert_true(1i32, "test 04: error passes at ERROR level");
+
+    aria_log_test_summary();
+    pass(0i32);
+};

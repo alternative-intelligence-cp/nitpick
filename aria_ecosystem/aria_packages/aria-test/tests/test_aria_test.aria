@@ -1,0 +1,73 @@
+// test_aria_test.aria — Self-test for the aria-test framework
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_test_begin           = void(string:suite);
+extern func:aria_test_set_verbose     = void(int32:v);
+extern func:aria_test_end             = int32();
+extern func:aria_test_passed_count    = int64();
+extern func:aria_test_failed_count    = int64();
+extern func:aria_test_skipped_count   = int64();
+extern func:aria_test_total_count     = int64();
+extern func:aria_test_skip            = void(string:name);
+extern func:aria_test_assert          = void(string:name, int32:cond);
+extern func:aria_test_assert_eq_i32   = void(string:name, int32:actual, int32:expected);
+extern func:aria_test_assert_eq_i64   = void(string:name, int64:actual, int64:expected);
+extern func:aria_test_assert_eq_str   = void(string:name, string:actual, string:expected);
+extern func:aria_test_assert_near_f64 = void(string:name, flt64:actual, flt64:expected, flt64:epsilon);
+extern func:aria_test_assert_not_empty = void(string:name, string:value);
+extern func:aria_test_assert_gt_i32   = void(string:name, int32:actual, int32:threshold);
+extern func:aria_test_assert_gt_i64   = void(string:name, int64:actual, int64:threshold);
+extern func:aria_test_assert_ne_i32   = void(string:name, int32:actual, int32:unexpected);
+
+func:main = int32() {
+    aria_test_begin("aria-test self-test");
+
+    // ── basic boolean assertion ──────────────────────────────────────
+    aria_test_assert("true is true", 1i32);
+
+    // ── int32 equality ──────────────────────────────────────────────
+    aria_test_assert_eq_i32("1 + 1 = 2", 1i32 + 1i32, 2i32);
+
+    // ── int64 equality ──────────────────────────────────────────────
+    aria_test_assert_eq_i64("100 + 200 = 300", 100i64 + 200i64, 300i64);
+
+    // ── string equality ─────────────────────────────────────────────
+    aria_test_assert_eq_str("hello == hello", "hello", "hello");
+
+    // ── float near-equal ────────────────────────────────────────────
+    aria_test_assert_near_f64("3.14 ~ pi", 3.14f64, 3.14159f64, 0.01f64);
+
+    // ── not-empty ───────────────────────────────────────────────────
+    aria_test_assert_not_empty("non-empty string", "content");
+
+    // ── greater-than i32 ────────────────────────────────────────────
+    aria_test_assert_gt_i32("10 > 5", 10i32, 5i32);
+
+    // ── greater-than i64 ────────────────────────────────────────────
+    aria_test_assert_gt_i64("1000 > 0", 1000i64, 0i64);
+
+    // ── not-equal i32 ───────────────────────────────────────────────
+    aria_test_assert_ne_i32("42 != 0", 42i32, 0i32);
+
+    // ── skip ────────────────────────────────────────────────────────
+    aria_test_skip("intentionally skipped");
+
+    // ── counter verification ────────────────────────────────────────
+    int64:pc = aria_test_passed_count();
+    aria_test_assert_eq_i64("passed_count = 9", pc, 9i64);
+
+    int64:sc = aria_test_skipped_count();
+    aria_test_assert_eq_i64("skipped_count = 1", sc, 1i64);
+
+    int64:fc = aria_test_failed_count();
+    aria_test_assert_eq_i64("failed_count = 0", fc, 0i64);
+
+    // the above 3 assertions add 3 more passes → total_count = 13
+    int64:tc = aria_test_total_count();
+    aria_test_assert_eq_i64("total_count = 13", tc, 13i64);
+
+    // ── summary ─────────────────────────────────────────────────────
+    int32:result = aria_test_end();
+    pass(result);
+};

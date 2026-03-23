@@ -1,0 +1,29 @@
+// test_aria_datetime_format.aria — Format, diff, sleep tests (C-side assertions)
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:aria_datetime_assert_iso8601_eq     = void(int64:epoch, string:expected, string:msg);
+extern func:aria_datetime_assert_format_utc_eq  = void(int64:epoch, string:fmt, string:expected, string:msg);
+extern func:aria_datetime_assert_true           = void(int32:val, string:msg);
+extern func:aria_datetime_sleep_ms              = void(int32:ms);
+extern func:aria_datetime_monotonic_ms          = int64();
+extern func:aria_datetime_assert_int64_gt       = void(int64:a, int64:b, string:msg);
+extern func:aria_datetime_test_summary          = void();
+
+func:main = int32() {
+    // ── formatting tests ───────────────────────────────────────
+    aria_datetime_assert_iso8601_eq(0i64, "1970-01-01T00:00:00Z", "test 01: iso8601(0)");
+    aria_datetime_assert_format_utc_eq(0i64, "%Y/%m/%d", "1970/01/01", "test 02: format_utc custom");
+    aria_datetime_assert_format_utc_eq(0i64, "%H:%M:%S", "00:00:00", "test 03: format_utc time");
+
+    // ── sleep + monotonic ──────────────────────────────────────
+    int64:mono1 = aria_datetime_monotonic_ms();
+    aria_datetime_sleep_ms(5i32);
+    int64:mono2 = aria_datetime_monotonic_ms();
+    aria_datetime_assert_int64_gt(mono2, mono1, "test 04: monotonic increased after sleep");
+
+    aria_datetime_assert_true(1i32, "test 05: sleep no crash");
+
+    aria_datetime_test_summary();
+    pass(0i32);
+};
