@@ -1,0 +1,1103 @@
+// stdlib/toml.aria
+// TOML Serialization / Deserialization Module — Pure Aria (v0.2.0)
+//
+// Full TOML encoding and decoding for Aria programs.
+// Import with: use "stdlib/toml.aria".*;
+//
+// Type codes: 0=string, 1=int, 2=float, 3=bool, 4=table, 5=array
+//
+// Self-hosting: All public API, encoder, and parser in pure Aria.
+//               Thin C helpers (th_*) for irreducible value-tree ops.
+
+// ═══════════════════════════════════════════════════════════════════════
+// Extern: C helpers (toml_helpers.cpp)
+// ═══════════════════════════════════════════════════════════════════════
+extern func:th_new_string = wild int8*(string:val);
+extern func:th_new_int = wild int8*(int64:val);
+extern func:th_new_float = wild int8*(flt64:val);
+extern func:th_new_bool = wild int8*(int32:val);
+extern func:th_new_table = wild int8*();
+extern func:th_new_array = wild int8*();
+
+extern func:th_type = int32(wild int8*:h);
+extern func:th_get_string = string(wild int8*:h);
+extern func:th_get_int = int64(wild int8*:h);
+extern func:th_get_float = flt64(wild int8*:h);
+extern func:th_get_bool = int32(wild int8*:h);
+
+extern func:th_tbl_set = void(wild int8*:h, string:key, wild int8*:child);
+extern func:th_tbl_find = wild int8*(wild int8*:h, string:key);
+extern func:th_tbl_count = int64(wild int8*:h);
+extern func:th_tbl_key_at = string(wild int8*:h, int64:idx);
+extern func:th_tbl_val_at = wild int8*(wild int8*:h, int64:idx);
+
+extern func:th_arr_push = void(wild int8*:h, wild int8*:child);
+extern func:th_arr_get = wild int8*(wild int8*:h, int64:idx);
+extern func:th_arr_len = int64(wild int8*:h);
+
+extern func:th_clone = wild int8*(wild int8*:h);
+extern func:th_free = void(wild int8*:h);
+
+extern func:th_buf_new = wild int8*();
+extern func:th_buf_char = void(wild int8*:buf, int32:c);
+extern func:th_buf_str = void(wild int8*:buf, string:s);
+extern func:th_buf_to_string = string(wild int8*:buf);
+
+extern func:th_int_to_cstr = string(int64:val);
+extern func:th_float_to_cstr = string(flt64:val);
+extern func:th_parse_int = int64(string:s, int64:start, int64:len);
+extern func:th_parse_float = flt64(string:s, int64:start, int64:len);
+
+extern func:th_ps_new = wild int8*(int64:len);
+extern func:th_ps_pos = int64(wild int8*:ps);
+extern func:th_ps_len = int64(wild int8*:ps);
+extern func:th_ps_set_pos = void(wild int8*:ps, int64:pos);
+extern func:th_ps_free = void(wild int8*:ps);
+
+extern func:th_byte_at = int32(string:s, int64:idx);
+extern func:th_strlen = int64(string:s);
+extern func:th_substr = string(string:s, int64:start, int64:len);
+extern func:th_memcmp_at = int32(string:s, int64:pos, string:lit);
+
+extern func:ch_ptr_to_int = int64(wild int8*:ptr);
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — needs_quote check for bare keys
+// ═══════════════════════════════════════════════════════════════════════
+func:te_needs_quote = int32(string:key) {
+    int64:slen = th_strlen(key);
+    if (slen == 0i64) { pass(1i32); }
+    int64:i = 0i64;
+    while (i < slen) {
+        int32:c = th_byte_at(key, i);
+        bool:ok = false;
+        if (c >= 97i32) { if (c <= 122i32) { ok = true; } }
+        if (c >= 65i32) { if (c <= 90i32) { ok = true; } }
+        if (c >= 48i32) { if (c <= 57i32) { ok = true; } }
+        if (c == 95i32) { ok = true; }
+        if (c == 45i32) { ok = true; }
+        if (ok == false) { pass(1i32); }
+        i = i + 1i64;
+    }
+    pass(0i32);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — write key (quoted or bare)
+// ═══════════════════════════════════════════════════════════════════════
+func:te_encode_key = NIL(wild int8->:buf, string:key) {
+    int32:nq = raw(te_needs_quote(key));
+    if (nq == 1i32) {
+        th_buf_char(buf, 34i32);
+        int64:klen = th_strlen(key);
+        int64:ki = 0i64;
+        while (ki < klen) {
+            int32:kc = th_byte_at(key, ki);
+            if (kc == 34i32) { th_buf_str(buf, "\\\""); }
+            else if (kc == 92i32) { th_buf_str(buf, "\\\\"); }
+            else { th_buf_char(buf, kc); }
+            ki = ki + 1i64;
+        }
+        th_buf_char(buf, 34i32);
+    } else {
+        th_buf_str(buf, key);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — write escaped string value
+// ═══════════════════════════════════════════════════════════════════════
+func:te_encode_string = NIL(wild int8->:buf, string:s) {
+    th_buf_char(buf, 34i32);
+    int64:slen = th_strlen(s);
+    int64:si = 0i64;
+    while (si < slen) {
+        int32:sc = th_byte_at(s, si);
+        if (sc == 34i32) { th_buf_str(buf, "\\\""); }
+        else if (sc == 92i32) { th_buf_str(buf, "\\\\"); }
+        else if (sc == 10i32) { th_buf_str(buf, "\\n"); }
+        else if (sc == 9i32) { th_buf_str(buf, "\\t"); }
+        else if (sc == 13i32) { th_buf_str(buf, "\\r"); }
+        else { th_buf_char(buf, sc); }
+        si = si + 1i64;
+    }
+    th_buf_char(buf, 34i32);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — build dotted path (prefix + "." + key)
+// ═══════════════════════════════════════════════════════════════════════
+func:te_build_path = string(string:prefix, string:key) {
+    int64:plen = th_strlen(prefix);
+    if (plen == 0i64) { pass(key); }
+    wild int8->:pb = th_buf_new();
+    th_buf_str(pb, prefix);
+    th_buf_char(pb, 46i32);
+    th_buf_str(pb, key);
+    string:result = th_buf_to_string(pb);
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — inline value (recursive)
+// ═══════════════════════════════════════════════════════════════════════
+func:te_encode_inline_value = NIL(wild int8->:buf, wild int8->:v) {
+    int32:t = th_type(v);
+    if (t == 0i32) {
+        string:sv = th_get_string(v);
+        drop(te_encode_string(buf, sv));
+    }
+    else if (t == 1i32) {
+        string:ns = th_int_to_cstr(th_get_int(v));
+        th_buf_str(buf, ns);
+    }
+    else if (t == 2i32) {
+        string:fs = th_float_to_cstr(th_get_float(v));
+        th_buf_str(buf, fs);
+    }
+    else if (t == 3i32) {
+        int32:bv = th_get_bool(v);
+        if (bv == 1i32) { th_buf_str(buf, "true"); }
+        else { th_buf_str(buf, "false"); }
+    }
+    else if (t == 4i32) {
+        th_buf_char(buf, 123i32);
+        int64:tlen = th_tbl_count(v);
+        int64:ti = 0i64;
+        while (ti < tlen) {
+            if (ti > 0i64) { th_buf_str(buf, ", "); }
+            string:tk = th_tbl_key_at(v, ti);
+            drop(te_encode_key(buf, tk));
+            th_buf_str(buf, " = ");
+            wild int8->:tv = th_tbl_val_at(v, ti);
+            drop(te_encode_inline_value(buf, tv));
+            ti = ti + 1i64;
+        }
+        th_buf_char(buf, 125i32);
+    }
+    else if (t == 5i32) {
+        th_buf_char(buf, 91i32);
+        int64:alen = th_arr_len(v);
+        int64:ai = 0i64;
+        while (ai < alen) {
+            if (ai > 0i64) { th_buf_str(buf, ", "); }
+            wild int8->:av = th_arr_get(v, ai);
+            drop(te_encode_inline_value(buf, av));
+            ai = ai + 1i64;
+        }
+        th_buf_char(buf, 93i32);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Encoder — 3-pass table encoding with [section] headers
+// ═══════════════════════════════════════════════════════════════════════
+func:te_encode_table = NIL(wild int8->:buf, wild int8->:tbl, string:prefix) {
+    int64:tlen = th_tbl_count(tbl);
+
+    // Pass 1: simple values (not tables, not arrays-of-tables)
+    int64:p1 = 0i64;
+    while (p1 < tlen) {
+        wild int8->:v1 = th_tbl_val_at(tbl, p1);
+        int32:v1t = th_type(v1);
+        bool:skip1 = false;
+        if (v1t == 4i32) { skip1 = true; }
+        if (v1t == 5i32) {
+            if (th_arr_len(v1) > 0i64) {
+                wild int8->:first = th_arr_get(v1, 0i64);
+                if (th_type(first) == 4i32) { skip1 = true; }
+            }
+        }
+        if (skip1 == false) {
+            string:k1 = th_tbl_key_at(tbl, p1);
+            drop(te_encode_key(buf, k1));
+            th_buf_str(buf, " = ");
+            drop(te_encode_inline_value(buf, v1));
+            th_buf_char(buf, 10i32);
+        }
+        p1 = p1 + 1i64;
+    }
+
+    // Pass 2: sub-tables with [section] headers
+    int64:p2 = 0i64;
+    while (p2 < tlen) {
+        wild int8->:v2 = th_tbl_val_at(tbl, p2);
+        if (th_type(v2) == 4i32) {
+            string:k2 = th_tbl_key_at(tbl, p2);
+            string:fk2 = raw(te_build_path(prefix, k2));
+            th_buf_char(buf, 10i32);
+            th_buf_char(buf, 91i32);
+            th_buf_str(buf, fk2);
+            th_buf_str(buf, "]\n");
+            drop(te_encode_table(buf, v2, fk2));
+        }
+        p2 = p2 + 1i64;
+    }
+
+    // Pass 3: arrays-of-tables with [[section]] headers
+    int64:p3 = 0i64;
+    while (p3 < tlen) {
+        wild int8->:v3 = th_tbl_val_at(tbl, p3);
+        if (th_type(v3) == 5i32) {
+            if (th_arr_len(v3) > 0i64) {
+                wild int8->:f3 = th_arr_get(v3, 0i64);
+                if (th_type(f3) == 4i32) {
+                    string:k3 = th_tbl_key_at(tbl, p3);
+                    string:fk3 = raw(te_build_path(prefix, k3));
+                    int64:ai3 = 0i64;
+                    while (ai3 < th_arr_len(v3)) {
+                        th_buf_char(buf, 10i32);
+                        th_buf_str(buf, "[[");
+                        th_buf_str(buf, fk3);
+                        th_buf_str(buf, "]]\n");
+                        wild int8->:ae3 = th_arr_get(v3, ai3);
+                        drop(te_encode_table(buf, ae3, fk3));
+                        ai3 = ai3 + 1i64;
+                    }
+                }
+            }
+        }
+        p3 = p3 + 1i64;
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — skip whitespace (space/tab only)
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_skip_ws = NIL(string:src, wild int8->:ps) {
+    int64:pos = th_ps_pos(ps);
+    int64:len = th_ps_len(ps);
+    bool:cont = true;
+    while (cont) {
+        if (pos >= len) { cont = false; }
+        else {
+            int32:c = th_byte_at(src, pos);
+            if (c == 32i32) { pos = pos + 1i64; }
+            else if (c == 9i32) { pos = pos + 1i64; }
+            else { cont = false; }
+        }
+    }
+    th_ps_set_pos(ps, pos);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — skip to next line
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_skip_line = NIL(string:src, wild int8->:ps) {
+    int64:pos = th_ps_pos(ps);
+    int64:len = th_ps_len(ps);
+    bool:cont = true;
+    while (cont) {
+        if (pos >= len) { cont = false; }
+        else if (th_byte_at(src, pos) == 10i32) { pos = pos + 1i64; cont = false; }
+        else { pos = pos + 1i64; }
+    }
+    th_ps_set_pos(ps, pos);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — skip whitespace, newlines, and comments
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_skip_ws_nl = NIL(string:src, wild int8->:ps) {
+    int64:pos = th_ps_pos(ps);
+    int64:len = th_ps_len(ps);
+    bool:cont = true;
+    while (cont) {
+        if (pos >= len) { cont = false; }
+        else {
+            int32:c = th_byte_at(src, pos);
+            if (c == 32i32) { pos = pos + 1i64; }
+            else if (c == 9i32) { pos = pos + 1i64; }
+            else if (c == 10i32) { pos = pos + 1i64; }
+            else if (c == 13i32) { pos = pos + 1i64; }
+            else if (c == 35i32) {
+                bool:sc = true;
+                while (sc) {
+                    if (pos >= len) { sc = false; }
+                    else if (th_byte_at(src, pos) == 10i32) { pos = pos + 1i64; sc = false; }
+                    else { pos = pos + 1i64; }
+                }
+            }
+            else { cont = false; }
+        }
+    }
+    th_ps_set_pos(ps, pos);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — parse bare key [a-zA-Z0-9_-]+
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_parse_bare_key = string(string:src, wild int8->:ps) {
+    int64:start = th_ps_pos(ps);
+    int64:pos = start;
+    int64:len = th_ps_len(ps);
+    bool:cont = true;
+    while (cont) {
+        if (pos >= len) { cont = false; }
+        else {
+            int32:c = th_byte_at(src, pos);
+            bool:ok = false;
+            if (c >= 97i32) { if (c <= 122i32) { ok = true; } }
+            if (c >= 65i32) { if (c <= 90i32) { ok = true; } }
+            if (c >= 48i32) { if (c <= 57i32) { ok = true; } }
+            if (c == 95i32) { ok = true; }
+            if (c == 45i32) { ok = true; }
+            if (ok) { pos = pos + 1i64; }
+            else { cont = false; }
+        }
+    }
+    th_ps_set_pos(ps, pos);
+    if (pos == start) { pass(""); }
+    string:result = th_substr(src, start, pos - start);
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — parse quoted key "..." with escapes
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_parse_quoted_key = string(string:src, wild int8->:ps) {
+    int64:pos = th_ps_pos(ps);
+    int64:len = th_ps_len(ps);
+    if (pos >= len) { pass(""); }
+    if (th_byte_at(src, pos) != 34i32) { pass(""); }
+    pos = pos + 1i64;
+    wild int8->:buf = th_buf_new();
+    bool:cont = true;
+    while (cont) {
+        if (pos >= len) { cont = false; }
+        else if (th_byte_at(src, pos) == 34i32) { cont = false; }
+        else if (th_byte_at(src, pos) == 92i32) {
+            pos = pos + 1i64;
+            if (pos < len) {
+                int32:esc = th_byte_at(src, pos);
+                if (esc == 34i32) { th_buf_char(buf, 34i32); }
+                else if (esc == 92i32) { th_buf_char(buf, 92i32); }
+                else if (esc == 110i32) { th_buf_char(buf, 10i32); }
+                else if (esc == 116i32) { th_buf_char(buf, 9i32); }
+                else if (esc == 114i32) { th_buf_char(buf, 13i32); }
+                else { th_buf_char(buf, esc); }
+                pos = pos + 1i64;
+            }
+        } else {
+            th_buf_char(buf, th_byte_at(src, pos));
+            pos = pos + 1i64;
+        }
+    }
+    if (pos < len) { pos = pos + 1i64; }
+    th_ps_set_pos(ps, pos);
+    string:result = th_buf_to_string(buf);
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — parse key (bare or quoted)
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_parse_key = string(string:src, wild int8->:ps) {
+    drop(tp_skip_ws(src, ps));
+    int64:pos = th_ps_pos(ps);
+    if (pos < th_ps_len(ps)) {
+        if (th_byte_at(src, pos) == 34i32) {
+            pass(raw(tp_parse_quoted_key(src, ps)));
+        }
+    }
+    pass(raw(tp_parse_bare_key(src, ps)));
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — parse string value "..." with escapes
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_parse_string = wild int8->(string:src, wild int8->:ps) {
+    int64:pos = th_ps_pos(ps);
+    int64:len = th_ps_len(ps);
+    if (pos >= len) { pass(th_new_string("")); }
+    if (th_byte_at(src, pos) != 34i32) { pass(th_new_string("")); }
+    pos = pos + 1i64;
+    wild int8->:buf = th_buf_new();
+    bool:cont = true;
+    while (cont) {
+        if (pos >= len) { cont = false; }
+        else if (th_byte_at(src, pos) == 34i32) { cont = false; }
+        else if (th_byte_at(src, pos) == 92i32) {
+            pos = pos + 1i64;
+            if (pos < len) {
+                int32:esc = th_byte_at(src, pos);
+                if (esc == 34i32) { th_buf_char(buf, 34i32); }
+                else if (esc == 92i32) { th_buf_char(buf, 92i32); }
+                else if (esc == 110i32) { th_buf_char(buf, 10i32); }
+                else if (esc == 116i32) { th_buf_char(buf, 9i32); }
+                else if (esc == 114i32) { th_buf_char(buf, 13i32); }
+                else { th_buf_char(buf, esc); }
+                pos = pos + 1i64;
+            }
+        } else {
+            th_buf_char(buf, th_byte_at(src, pos));
+            pos = pos + 1i64;
+        }
+    }
+    if (pos < len) { pos = pos + 1i64; }
+    th_ps_set_pos(ps, pos);
+    string:sval = th_buf_to_string(buf);
+    pass(th_new_string(sval));
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — parse number (int or float, handles +/-, _)
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_parse_number = wild int8->(string:src, wild int8->:ps) {
+    int64:start = th_ps_pos(ps);
+    int64:pos = start;
+    int64:len = th_ps_len(ps);
+    bool:is_float = false;
+
+    // Optional +/- prefix
+    if (pos < len) {
+        int32:pc = th_byte_at(src, pos);
+        if (pc == 43i32) { pos = pos + 1i64; }
+        else if (pc == 45i32) { pos = pos + 1i64; }
+    }
+
+    // Check for inf/nan after sign
+    if (pos + 3i64 <= len) {
+        if (th_memcmp_at(src, pos, "inf") == 1i32) {
+            pos = pos + 3i64;
+            th_ps_set_pos(ps, pos);
+            // Determine sign
+            int32:sc = th_byte_at(src, start);
+            if (sc == 45i32) {
+                flt64:ninf = -1.0 / 0.0;
+                pass(th_new_float(ninf));
+            }
+            flt64:pinf = 1.0 / 0.0;
+            pass(th_new_float(pinf));
+        }
+        if (th_memcmp_at(src, pos, "nan") == 1i32) {
+            pos = pos + 3i64;
+            th_ps_set_pos(ps, pos);
+            flt64:nanv = 0.0 / 0.0;
+            pass(th_new_float(nanv));
+        }
+    }
+
+    // Digits (with underscores)
+    bool:sc1 = true;
+    while (sc1) {
+        if (pos >= len) { sc1 = false; }
+        else {
+            int32:d = th_byte_at(src, pos);
+            bool:dig = false;
+            if (d >= 48i32) { if (d <= 57i32) { dig = true; } }
+            if (d == 95i32) { dig = true; }
+            if (dig) { pos = pos + 1i64; }
+            else { sc1 = false; }
+        }
+    }
+    // Decimal part
+    if (pos < len) {
+        if (th_byte_at(src, pos) == 46i32) {
+            is_float = true;
+            pos = pos + 1i64;
+            bool:sc2 = true;
+            while (sc2) {
+                if (pos >= len) { sc2 = false; }
+                else {
+                    int32:d2 = th_byte_at(src, pos);
+                    bool:dig2 = false;
+                    if (d2 >= 48i32) { if (d2 <= 57i32) { dig2 = true; } }
+                    if (d2 == 95i32) { dig2 = true; }
+                    if (dig2) { pos = pos + 1i64; }
+                    else { sc2 = false; }
+                }
+            }
+        }
+    }
+    // Exponent part
+    if (pos < len) {
+        int32:ec = th_byte_at(src, pos);
+        if (ec == 101i32) { is_float = true; pos = pos + 1i64;
+            if (pos < len) {
+                int32:esc = th_byte_at(src, pos);
+                if (esc == 43i32) { pos = pos + 1i64; }
+                else if (esc == 45i32) { pos = pos + 1i64; }
+            }
+            bool:sc3 = true;
+            while (sc3) {
+                if (pos >= len) { sc3 = false; }
+                else {
+                    int32:d3 = th_byte_at(src, pos);
+                    bool:dig3 = false;
+                    if (d3 >= 48i32) { if (d3 <= 57i32) { dig3 = true; } }
+                    if (d3 == 95i32) { dig3 = true; }
+                    if (dig3) { pos = pos + 1i64; }
+                    else { sc3 = false; }
+                }
+            }
+        }
+        else if (ec == 69i32) { is_float = true; pos = pos + 1i64;
+            if (pos < len) {
+                int32:esc2 = th_byte_at(src, pos);
+                if (esc2 == 43i32) { pos = pos + 1i64; }
+                else if (esc2 == 45i32) { pos = pos + 1i64; }
+            }
+            bool:sc4 = true;
+            while (sc4) {
+                if (pos >= len) { sc4 = false; }
+                else {
+                    int32:d4 = th_byte_at(src, pos);
+                    bool:dig4 = false;
+                    if (d4 >= 48i32) { if (d4 <= 57i32) { dig4 = true; } }
+                    if (d4 == 95i32) { dig4 = true; }
+                    if (dig4) { pos = pos + 1i64; }
+                    else { sc4 = false; }
+                }
+            }
+        }
+    }
+
+    int64:numlen = pos - start;
+    th_ps_set_pos(ps, pos);
+    if (is_float) {
+        flt64:fv = th_parse_float(src, start, numlen);
+        pass(th_new_float(fv));
+    }
+    int64:iv = th_parse_int(src, start, numlen);
+    pass(th_new_int(iv));
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — parse value (dispatch)
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_parse_value = wild int8->(string:src, wild int8->:ps) {
+    drop(tp_skip_ws(src, ps));
+    int64:pos = th_ps_pos(ps);
+    int64:len = th_ps_len(ps);
+    if (pos >= len) { pass(th_new_string("")); }
+    int32:c = th_byte_at(src, pos);
+
+    // String
+    if (c == 34i32) { pass(raw(tp_parse_string(src, ps))); }
+
+    // Boolean true
+    if (c == 116i32) {
+        if (th_memcmp_at(src, pos, "true") == 1i32) {
+            th_ps_set_pos(ps, pos + 4i64);
+            pass(th_new_bool(1i32));
+        }
+    }
+    // Boolean false
+    if (c == 102i32) {
+        if (th_memcmp_at(src, pos, "false") == 1i32) {
+            th_ps_set_pos(ps, pos + 5i64);
+            pass(th_new_bool(0i32));
+        }
+    }
+
+    // Inline array [...]
+    if (c == 91i32) {
+        th_ps_set_pos(ps, pos + 1i64);
+        wild int8->:arr = th_new_array();
+        drop(tp_skip_ws_nl(src, ps));
+        int64:ap = th_ps_pos(ps);
+        if (ap < len) {
+            if (th_byte_at(src, ap) != 93i32) {
+                bool:more = true;
+                while (more) {
+                    drop(tp_skip_ws_nl(src, ps));
+                    wild int8->:aval = raw(tp_parse_value(src, ps));
+                    th_arr_push(arr, aval);
+                    drop(tp_skip_ws_nl(src, ps));
+                    int64:cp = th_ps_pos(ps);
+                    if (cp < th_ps_len(ps)) {
+                        if (th_byte_at(src, cp) == 44i32) { th_ps_set_pos(ps, cp + 1i64); }
+                        else { more = false; }
+                    } else { more = false; }
+                }
+            }
+        }
+        drop(tp_skip_ws_nl(src, ps));
+        int64:ep = th_ps_pos(ps);
+        if (ep < th_ps_len(ps)) {
+            if (th_byte_at(src, ep) == 93i32) { th_ps_set_pos(ps, ep + 1i64); }
+        }
+        pass(arr);
+    }
+
+    // Inline table {...}
+    if (c == 123i32) {
+        th_ps_set_pos(ps, pos + 1i64);
+        wild int8->:tbl = th_new_table();
+        drop(tp_skip_ws(src, ps));
+        int64:tp2 = th_ps_pos(ps);
+        if (tp2 < len) {
+            if (th_byte_at(src, tp2) != 125i32) {
+                bool:more2 = true;
+                while (more2) {
+                    drop(tp_skip_ws(src, ps));
+                    string:ik = raw(tp_parse_key(src, ps));
+                    if (th_strlen(ik) == 0i64) { more2 = false; }
+                    else {
+                        drop(tp_skip_ws(src, ps));
+                        int64:eqp = th_ps_pos(ps);
+                        if (eqp < th_ps_len(ps)) {
+                            if (th_byte_at(src, eqp) == 61i32) { th_ps_set_pos(ps, eqp + 1i64); }
+                        }
+                        drop(tp_skip_ws(src, ps));
+                        wild int8->:ival = raw(tp_parse_value(src, ps));
+                        th_tbl_set(tbl, ik, ival);
+                        drop(tp_skip_ws(src, ps));
+                        int64:cp2 = th_ps_pos(ps);
+                        if (cp2 < th_ps_len(ps)) {
+                            if (th_byte_at(src, cp2) == 44i32) { th_ps_set_pos(ps, cp2 + 1i64); }
+                            else { more2 = false; }
+                        } else { more2 = false; }
+                    }
+                }
+            }
+        }
+        drop(tp_skip_ws(src, ps));
+        int64:ep2 = th_ps_pos(ps);
+        if (ep2 < th_ps_len(ps)) {
+            if (th_byte_at(src, ep2) == 125i32) { th_ps_set_pos(ps, ep2 + 1i64); }
+        }
+        pass(tbl);
+    }
+
+    // Standalone inf/nan
+    if (c == 105i32) {
+        if (th_memcmp_at(src, pos, "inf") == 1i32) {
+            th_ps_set_pos(ps, pos + 3i64);
+            flt64:piv = 1.0 / 0.0;
+            pass(th_new_float(piv));
+        }
+    }
+    if (c == 110i32) {
+        if (th_memcmp_at(src, pos, "nan") == 1i32) {
+            th_ps_set_pos(ps, pos + 3i64);
+            flt64:nv = 0.0 / 0.0;
+            pass(th_new_float(nv));
+        }
+    }
+
+    // Number (digit, +, -)
+    if (c >= 48i32) { if (c <= 57i32) { pass(raw(tp_parse_number(src, ps))); } }
+    if (c == 43i32) { pass(raw(tp_parse_number(src, ps))); }
+    if (c == 45i32) { pass(raw(tp_parse_number(src, ps))); }
+
+    pass(th_new_string(""));
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — ensure dotted path exists as tables
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_ensure_path = wild int8->(wild int8->:root, string:path) {
+    int64:plen = th_strlen(path);
+    wild int8->:cur = root;
+    int64:seg_start = 0i64;
+    int64:i = 0i64;
+    while (i <= plen) {
+        bool:is_sep = false;
+        if (i < plen) { if (th_byte_at(path, i) == 46i32) { is_sep = true; } }
+        if (i == plen) { is_sep = true; }
+        if (is_sep) {
+            if (i > seg_start) {
+                string:seg = th_substr(path, seg_start, i - seg_start);
+                wild int8->:next = th_tbl_find(cur, seg);
+                int64:nptr = ch_ptr_to_int(next);
+                if (nptr == 0i64) {
+                    wild int8->:nt = th_new_table();
+                    th_tbl_set(cur, seg, nt);
+                    cur = th_tbl_find(cur, seg);
+                } else {
+                    cur = next;
+                }
+            }
+            seg_start = i + 1i64;
+        }
+        i = i + 1i64;
+    }
+    pass(cur);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — set value at dotted path
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_set_dotted = NIL(wild int8->:root, string:path, wild int8->:val) {
+    int64:plen = th_strlen(path);
+    int64:last_dot = -1i64;
+    int64:i = 0i64;
+    while (i < plen) {
+        if (th_byte_at(path, i) == 46i32) { last_dot = i; }
+        i = i + 1i64;
+    }
+    if (last_dot == -1i64) {
+        th_tbl_set(root, path, val);
+    } else {
+        string:parent_path = th_substr(path, 0i64, last_dot);
+        wild int8->:parent = raw(tp_ensure_path(root, parent_path));
+        string:final_key = th_substr(path, last_dot + 1i64, plen - last_dot - 1i64);
+        th_tbl_set(parent, final_key, val);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: Parser — parse full TOML document
+// ═══════════════════════════════════════════════════════════════════════
+func:tp_parse_document = wild int8->(string:src, wild int8->:ps) {
+    wild int8->:root = th_new_table();
+    string:cur_sect = "";
+    bool:running = true;
+
+    while (running) {
+        drop(tp_skip_ws_nl(src, ps));
+        int64:pos = th_ps_pos(ps);
+        int64:len = th_ps_len(ps);
+        if (pos >= len) { running = false; }
+        else {
+            int32:c = th_byte_at(src, pos);
+
+            // Comment line
+            if (c == 35i32) { drop(tp_skip_line(src, ps)); }
+
+            // Section header [ or [[
+            else if (c == 91i32) {
+                // Check for [[array_of_tables]]
+                int64:nxp = pos + 1i64;
+                bool:is_aot = false;
+                if (nxp < len) {
+                    if (th_byte_at(src, nxp) == 91i32) { is_aot = true; }
+                }
+
+                if (is_aot) {
+                    // [[array_of_tables]] — skip past header
+                    th_ps_set_pos(ps, pos + 2i64);
+                    drop(tp_skip_ws(src, ps));
+                    wild int8->:aotb = th_buf_new();
+                    bool:aotc = true;
+                    while (aotc) {
+                        int64:ap = th_ps_pos(ps);
+                        if (ap >= len) { aotc = false; }
+                        else if (th_byte_at(src, ap) == 93i32) { aotc = false; }
+                        else { th_buf_char(aotb, th_byte_at(src, ap)); th_ps_set_pos(ps, ap + 1i64); }
+                    }
+                    // Skip ]]
+                    int64:s1 = th_ps_pos(ps);
+                    if (s1 < len) { th_ps_set_pos(ps, s1 + 1i64); }
+                    int64:s2 = th_ps_pos(ps);
+                    if (s2 < len) { th_ps_set_pos(ps, s2 + 1i64); }
+                    string:aot_path = th_buf_to_string(aotb);
+
+                    // Navigate to parent, find/create array, push new table
+                    int64:aplen = th_strlen(aot_path);
+                    int64:aldot = -1i64;
+                    int64:ai = 0i64;
+                    while (ai < aplen) {
+                        if (th_byte_at(aot_path, ai) == 46i32) { aldot = ai; }
+                        ai = ai + 1i64;
+                    }
+                    wild int8->:aparent = root;
+                    string:arr_key = aot_path;
+                    if (aldot > 0i64) {
+                        string:pp = th_substr(aot_path, 0i64, aldot);
+                        aparent = raw(tp_ensure_path(root, pp));
+                        arr_key = th_substr(aot_path, aldot + 1i64, aplen - aldot - 1i64);
+                    }
+                    wild int8->:exarr = th_tbl_find(aparent, arr_key);
+                    int64:eaptr = ch_ptr_to_int(exarr);
+                    if (eaptr == 0i64) {
+                        exarr = th_new_array();
+                        th_tbl_set(aparent, arr_key, exarr);
+                        exarr = th_tbl_find(aparent, arr_key);
+                    }
+                    wild int8->:aentry = th_new_table();
+                    th_arr_push(exarr, aentry);
+
+                    // Read key=value pairs until next [
+                    bool:aread = true;
+                    while (aread) {
+                        drop(tp_skip_ws_nl(src, ps));
+                        int64:arp = th_ps_pos(ps);
+                        if (arp >= th_ps_len(ps)) { aread = false; }
+                        else {
+                            int32:arc = th_byte_at(src, arp);
+                            if (arc == 91i32) { aread = false; }
+                            else if (arc == 35i32) { drop(tp_skip_line(src, ps)); }
+                            else {
+                                string:akey = raw(tp_parse_key(src, ps));
+                                if (th_strlen(akey) == 0i64) { drop(tp_skip_line(src, ps)); }
+                                else {
+                                    drop(tp_skip_ws(src, ps));
+                                    int64:aeq = th_ps_pos(ps);
+                                    if (aeq < th_ps_len(ps)) {
+                                        if (th_byte_at(src, aeq) == 61i32) { th_ps_set_pos(ps, aeq + 1i64); }
+                                    }
+                                    drop(tp_skip_ws(src, ps));
+                                    wild int8->:aval = raw(tp_parse_value(src, ps));
+                                    drop(tp_skip_ws(src, ps));
+                                    int64:acp = th_ps_pos(ps);
+                                    if (acp < th_ps_len(ps)) {
+                                        if (th_byte_at(src, acp) == 35i32) { drop(tp_skip_line(src, ps)); }
+                                    }
+                                    // Set on the last entry in the array
+                                    wild int8->:lastentry = th_arr_get(exarr, th_arr_len(exarr) - 1i64);
+                                    th_tbl_set(lastentry, akey, aval);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // [table] header
+                    th_ps_set_pos(ps, pos + 1i64);
+                    drop(tp_skip_ws(src, ps));
+                    wild int8->:sb = th_buf_new();
+                    bool:sc = true;
+                    while (sc) {
+                        int64:sp = th_ps_pos(ps);
+                        if (sp >= len) { sc = false; }
+                        else if (th_byte_at(src, sp) == 93i32) { sc = false; }
+                        else { th_buf_char(sb, th_byte_at(src, sp)); th_ps_set_pos(ps, sp + 1i64); }
+                    }
+                    int64:sp2 = th_ps_pos(ps);
+                    if (sp2 < len) { th_ps_set_pos(ps, sp2 + 1i64); }
+                    string:sect_path = th_buf_to_string(sb);
+                    cur_sect = sect_path;
+                    wild int8->:ignore = raw(tp_ensure_path(root, sect_path));
+                }
+            }
+
+            // Key = Value
+            else {
+                string:key = raw(tp_parse_key(src, ps));
+                if (th_strlen(key) == 0i64) { drop(tp_skip_line(src, ps)); }
+                else {
+                    drop(tp_skip_ws(src, ps));
+                    int64:epos = th_ps_pos(ps);
+                    if (epos < th_ps_len(ps)) {
+                        if (th_byte_at(src, epos) == 61i32) { th_ps_set_pos(ps, epos + 1i64); }
+                    }
+                    drop(tp_skip_ws(src, ps));
+                    wild int8->:val = raw(tp_parse_value(src, ps));
+                    drop(tp_skip_ws(src, ps));
+                    int64:cpos = th_ps_pos(ps);
+                    if (cpos < th_ps_len(ps)) {
+                        if (th_byte_at(src, cpos) == 35i32) { drop(tp_skip_line(src, ps)); }
+                    }
+
+                    if (th_strlen(cur_sect) > 0i64) {
+                        string:full_path = raw(te_build_path(cur_sect, key));
+                        drop(tp_set_dotted(root, full_path, val));
+                    } else {
+                        th_tbl_set(root, key, val);
+                    }
+                }
+            }
+        }
+    }
+    pass(root);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Constructors
+// ═══════════════════════════════════════════════════════════════════════
+func:toml_new_table = wild int8->() { pass(th_new_table()); };
+func:toml_new_array = wild int8->() { pass(th_new_array()); };
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Table setters
+// ═══════════════════════════════════════════════════════════════════════
+func:toml_set_str = NIL(wild int8->:h, string:key, string:val) {
+    th_tbl_set(h, key, th_new_string(val));
+};
+func:toml_set_int = NIL(wild int8->:h, string:key, int64:val) {
+    th_tbl_set(h, key, th_new_int(val));
+};
+func:toml_set_flt = NIL(wild int8->:h, string:key, flt64:val) {
+    th_tbl_set(h, key, th_new_float(val));
+};
+func:toml_set_bool = NIL(wild int8->:h, string:key, int32:val) {
+    th_tbl_set(h, key, th_new_bool(val));
+};
+func:toml_set_tbl = NIL(wild int8->:h, string:key, wild int8->:child) {
+    th_tbl_set(h, key, th_clone(child));
+};
+func:toml_set_arr = NIL(wild int8->:h, string:key, wild int8->:child) {
+    th_tbl_set(h, key, th_clone(child));
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Array pushers
+// ═══════════════════════════════════════════════════════════════════════
+func:toml_arr_push_str = NIL(wild int8->:h, string:val) {
+    th_arr_push(h, th_new_string(val));
+};
+func:toml_arr_push_int = NIL(wild int8->:h, int64:val) {
+    th_arr_push(h, th_new_int(val));
+};
+func:toml_arr_push_flt = NIL(wild int8->:h, flt64:val) {
+    th_arr_push(h, th_new_float(val));
+};
+func:toml_arr_push_bool = NIL(wild int8->:h, int32:val) {
+    th_arr_push(h, th_new_bool(val));
+};
+func:toml_arr_push_tbl = NIL(wild int8->:h, wild int8->:child) {
+    th_arr_push(h, th_clone(child));
+};
+func:toml_arr_push_arr = NIL(wild int8->:h, wild int8->:child) {
+    th_arr_push(h, th_clone(child));
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Encoder
+// ═══════════════════════════════════════════════════════════════════════
+func:toml_encode = string(wild int8->:h) {
+    wild int8->:buf = th_buf_new();
+    drop(te_encode_table(buf, h, ""));
+    string:result = th_buf_to_string(buf);
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Parser
+// ═══════════════════════════════════════════════════════════════════════
+func:toml_parse = wild int8->(string:toml_str) {
+    int64:slen = th_strlen(toml_str);
+    if (slen == 0i64) { pass(th_new_table()); }
+    wild int8->:ps = th_ps_new(slen);
+    wild int8->:result = raw(tp_parse_document(toml_str, ps));
+    th_ps_free(ps);
+    pass(result);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Type query
+// ═══════════════════════════════════════════════════════════════════════
+func:toml_type = int32(wild int8->:h) { pass(th_type(h)); };
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Table getters
+// ═══════════════════════════════════════════════════════════════════════
+func:toml_has = int32(wild int8->:h, string:key) {
+    wild int8->:found = th_tbl_find(h, key);
+    int64:fptr = ch_ptr_to_int(found);
+    if (fptr == 0i64) { pass(0i32); }
+    pass(1i32);
+};
+
+func:toml_count = int64(wild int8->:h) { pass(th_tbl_count(h)); };
+
+func:toml_get_str = string(wild int8->:h, string:key) {
+    wild int8->:found = th_tbl_find(h, key);
+    int64:fptr = ch_ptr_to_int(found);
+    if (fptr == 0i64) { pass(""); }
+    int32:ft = th_type(found);
+    if (ft != 0i32) { pass(""); }
+    string:sv = th_get_string(found);
+    pass(sv);
+};
+
+func:toml_get_int = int64(wild int8->:h, string:key) {
+    wild int8->:found = th_tbl_find(h, key);
+    int64:fptr = ch_ptr_to_int(found);
+    if (fptr == 0i64) { pass(0i64); }
+    pass(th_get_int(found));
+};
+
+func:toml_get_flt = flt64(wild int8->:h, string:key) {
+    wild int8->:found = th_tbl_find(h, key);
+    int64:fptr = ch_ptr_to_int(found);
+    if (fptr == 0i64) { pass(0.0); }
+    pass(th_get_float(found));
+};
+
+func:toml_get_bool = int32(wild int8->:h, string:key) {
+    wild int8->:found = th_tbl_find(h, key);
+    int64:fptr = ch_ptr_to_int(found);
+    if (fptr == 0i64) { pass(0i32); }
+    int32:ft = th_type(found);
+    if (ft != 3i32) { pass(0i32); }
+    pass(th_get_bool(found));
+};
+
+func:toml_get_tbl = wild int8->(wild int8->:h, string:key) {
+    wild int8->:found = th_tbl_find(h, key);
+    int64:fptr = ch_ptr_to_int(found);
+    if (fptr == 0i64) { pass(th_new_table()); }
+    int32:ft = th_type(found);
+    if (ft != 4i32) { pass(th_new_table()); }
+    pass(th_clone(found));
+};
+
+func:toml_get_arr = wild int8->(wild int8->:h, string:key) {
+    wild int8->:found = th_tbl_find(h, key);
+    int64:fptr = ch_ptr_to_int(found);
+    if (fptr == 0i64) { pass(th_new_array()); }
+    int32:ft = th_type(found);
+    if (ft != 5i32) { pass(th_new_array()); }
+    pass(th_clone(found));
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Array getters
+// ═══════════════════════════════════════════════════════════════════════
+func:toml_arr_len = int64(wild int8->:h) { pass(th_arr_len(h)); };
+
+func:toml_arr_get_str = string(wild int8->:h, int64:idx) {
+    wild int8->:elem = th_arr_get(h, idx);
+    int64:eptr = ch_ptr_to_int(elem);
+    if (eptr == 0i64) { pass(""); }
+    int32:et = th_type(elem);
+    if (et != 0i32) { pass(""); }
+    string:sv = th_get_string(elem);
+    pass(sv);
+};
+
+func:toml_arr_get_int = int64(wild int8->:h, int64:idx) {
+    wild int8->:elem = th_arr_get(h, idx);
+    int64:eptr = ch_ptr_to_int(elem);
+    if (eptr == 0i64) { pass(0i64); }
+    pass(th_get_int(elem));
+};
+
+func:toml_arr_get_flt = flt64(wild int8->:h, int64:idx) {
+    wild int8->:elem = th_arr_get(h, idx);
+    int64:eptr = ch_ptr_to_int(elem);
+    if (eptr == 0i64) { pass(0.0); }
+    pass(th_get_float(elem));
+};
+
+func:toml_arr_get_bool = int32(wild int8->:h, int64:idx) {
+    wild int8->:elem = th_arr_get(h, idx);
+    int64:eptr = ch_ptr_to_int(elem);
+    if (eptr == 0i64) { pass(0i32); }
+    int32:et = th_type(elem);
+    if (et != 3i32) { pass(0i32); }
+    pass(th_get_bool(elem));
+};
+
+func:toml_arr_get_tbl = wild int8->(wild int8->:h, int64:idx) {
+    wild int8->:elem = th_arr_get(h, idx);
+    int64:eptr = ch_ptr_to_int(elem);
+    if (eptr == 0i64) { pass(th_new_table()); }
+    int32:et = th_type(elem);
+    if (et != 4i32) { pass(th_new_table()); }
+    pass(th_clone(elem));
+};
+
+func:toml_arr_get_arr = wild int8->(wild int8->:h, int64:idx) {
+    wild int8->:elem = th_arr_get(h, idx);
+    int64:eptr = ch_ptr_to_int(elem);
+    if (eptr == 0i64) { pass(th_new_array()); }
+    int32:et = th_type(elem);
+    if (et != 5i32) { pass(th_new_array()); }
+    pass(th_clone(elem));
+};
+
+func:toml_arr_get_type = int32(wild int8->:h, int64:idx) {
+    wild int8->:elem = th_arr_get(h, idx);
+    int64:eptr = ch_ptr_to_int(elem);
+    if (eptr == 0i64) { pass(0i32); }
+    pass(th_type(elem));
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Public API: Cleanup
+// ═══════════════════════════════════════════════════════════════════════
+func:toml_free = NIL(wild int8->:h) { th_free(h); };
