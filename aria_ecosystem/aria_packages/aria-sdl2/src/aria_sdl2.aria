@@ -1,0 +1,335 @@
+// aria_sdl2.aria — Idiomatic Aria bindings for SDL2
+//
+// Provides windowing, 2D rendering, event handling, and input.
+// Requires: libaria_sdl2_shim.so + libSDL2.so
+
+// ── extern declarations (C shim) ────────────────────────────────────
+
+extern "aria_sdl2_shim" {
+    // init / quit
+    func:aria_sdl2_init = int32(int32:flags);
+    func:aria_sdl2_quit = void();
+
+    // window
+    func:aria_sdl2_create_window     = int32(string:title, int32:x, int32:y,
+                                             int32:w, int32:h, int32:flags);
+    func:aria_sdl2_set_window_title    = void(string:title);
+    func:aria_sdl2_set_window_size     = void(int32:w, int32:h);
+    func:aria_sdl2_set_window_position = void(int32:x, int32:y);
+    func:aria_sdl2_get_window_width    = int32();
+    func:aria_sdl2_get_window_height   = int32();
+    func:aria_sdl2_show_window         = void();
+    func:aria_sdl2_hide_window         = void();
+    func:aria_sdl2_maximize_window     = void();
+    func:aria_sdl2_minimize_window     = void();
+
+    // renderer
+    func:aria_sdl2_create_renderer       = int32(int32:flags);
+    func:aria_sdl2_set_render_draw_color = void(int32:r, int32:g, int32:b, int32:a);
+    func:aria_sdl2_render_clear          = void();
+    func:aria_sdl2_render_present        = void();
+
+    // drawing
+    func:aria_sdl2_render_draw_point = void(int32:x, int32:y);
+    func:aria_sdl2_render_draw_line  = void(int32:x1, int32:y1, int32:x2, int32:y2);
+    func:aria_sdl2_render_draw_rect  = void(int32:x, int32:y, int32:w, int32:h);
+    func:aria_sdl2_render_fill_rect  = void(int32:x, int32:y, int32:w, int32:h);
+
+    // events
+    func:aria_sdl2_poll_event  = int32();
+    func:aria_sdl2_event_type  = int32();
+
+    // keyboard event fields
+    func:aria_sdl2_event_key_scancode = int32();
+    func:aria_sdl2_event_key_keycode  = int32();
+    func:aria_sdl2_event_key_mod      = int32();
+    func:aria_sdl2_event_key_repeat   = int32();
+
+    // mouse motion event fields
+    func:aria_sdl2_event_mouse_x    = int32();
+    func:aria_sdl2_event_mouse_y    = int32();
+    func:aria_sdl2_event_mouse_xrel = int32();
+    func:aria_sdl2_event_mouse_yrel = int32();
+
+    // mouse button event fields
+    func:aria_sdl2_event_mouse_button   = int32();
+    func:aria_sdl2_event_mouse_clicks   = int32();
+    func:aria_sdl2_event_mouse_button_x = int32();
+    func:aria_sdl2_event_mouse_button_y = int32();
+
+    // mouse wheel event fields
+    func:aria_sdl2_event_wheel_x = int32();
+    func:aria_sdl2_event_wheel_y = int32();
+
+    // window event fields
+    func:aria_sdl2_event_window_event_id = int32();
+    func:aria_sdl2_event_window_data1    = int32();
+    func:aria_sdl2_event_window_data2    = int32();
+
+    // keyboard state
+    func:aria_sdl2_get_keyboard_state = int32(int32:scancode);
+
+    // mouse state
+    func:aria_sdl2_get_mouse_state_x       = int32();
+    func:aria_sdl2_get_mouse_state_y       = int32();
+    func:aria_sdl2_get_mouse_state_buttons = int32();
+
+    // timing
+    func:aria_sdl2_get_ticks = int32();
+    func:aria_sdl2_delay     = void(int32:ms);
+
+    // misc
+    func:aria_sdl2_get_error                  = string();
+    func:aria_sdl2_set_render_draw_blend_mode = int32(int32:mode);
+}
+
+// ── SDL2 init flag constants ────────────────────────────────────────
+
+pub func:SDL_INIT_VIDEO = int32() { pass(32i32); };
+pub func:SDL_INIT_AUDIO = int32() { pass(16i32); };
+pub func:SDL_INIT_TIMER = int32() { pass(1i32); };
+pub func:SDL_INIT_EVENTS = int32() { pass(16384i32); };
+pub func:SDL_INIT_EVERYTHING = int32() { pass(62001i32); };
+
+// ── SDL2 window flag constants ──────────────────────────────────────
+
+pub func:SDL_WINDOW_SHOWN       = int32() { pass(4i32); };
+pub func:SDL_WINDOW_RESIZABLE   = int32() { pass(32i32); };
+pub func:SDL_WINDOW_FULLSCREEN  = int32() { pass(1i32); };
+pub func:SDL_WINDOW_BORDERLESS  = int32() { pass(16i32); };
+pub func:SDL_WINDOW_MAXIMIZED   = int32() { pass(128i32); };
+pub func:SDL_WINDOW_MINIMIZED   = int32() { pass(64i32); };
+
+// ── SDL2 window position constants ──────────────────────────────────
+
+pub func:SDL_WINDOWPOS_CENTERED  = int32() { pass(805240832i32); };
+pub func:SDL_WINDOWPOS_UNDEFINED = int32() { pass(536805376i32); };
+
+// ── SDL2 renderer flag constants ────────────────────────────────────
+
+pub func:SDL_RENDERER_ACCELERATED  = int32() { pass(2i32); };
+pub func:SDL_RENDERER_PRESENTVSYNC = int32() { pass(4i32); };
+pub func:SDL_RENDERER_SOFTWARE     = int32() { pass(1i32); };
+
+// ── SDL2 event type constants ───────────────────────────────────────
+
+pub func:SDL_QUIT_EVENT       = int32() { pass(256i32); };
+pub func:SDL_KEYDOWN_EVENT    = int32() { pass(768i32); };
+pub func:SDL_KEYUP_EVENT      = int32() { pass(769i32); };
+pub func:SDL_MOUSEMOTION_EVENT  = int32() { pass(1024i32); };
+pub func:SDL_MOUSEBUTTONDOWN_EVENT = int32() { pass(1025i32); };
+pub func:SDL_MOUSEBUTTONUP_EVENT   = int32() { pass(1026i32); };
+pub func:SDL_MOUSEWHEEL_EVENT = int32() { pass(1027i32); };
+pub func:SDL_WINDOWEVENT      = int32() { pass(512i32); };
+
+// ── SDL2 keycode constants (common keys) ────────────────────────────
+
+pub func:SDLK_ESCAPE = int32() { pass(27i32); };
+pub func:SDLK_RETURN = int32() { pass(13i32); };
+pub func:SDLK_SPACE  = int32() { pass(32i32); };
+pub func:SDLK_a      = int32() { pass(97i32); };
+pub func:SDLK_d      = int32() { pass(100i32); };
+pub func:SDLK_s      = int32() { pass(115i32); };
+pub func:SDLK_w      = int32() { pass(119i32); };
+pub func:SDLK_UP     = int32() { pass(1073741906i32); };
+pub func:SDLK_DOWN   = int32() { pass(1073741905i32); };
+pub func:SDLK_LEFT   = int32() { pass(1073741904i32); };
+pub func:SDLK_RIGHT  = int32() { pass(1073741903i32); };
+
+// ── public API: init / quit ─────────────────────────────────────────
+
+pub func:sdl_init = int32(int32:flags) {
+    int32:r = aria_sdl2_init(flags);
+    pass(r);
+};
+
+pub func:sdl_quit = NIL() {
+    aria_sdl2_quit();
+    pass(NIL);
+};
+
+// ── public API: window ──────────────────────────────────────────────
+
+pub func:sdl_create_window = int32(string:title, int32:x, int32:y,
+                                    int32:w, int32:h, int32:flags) {
+    int32:r = aria_sdl2_create_window(title, x, y, w, h, flags);
+    pass(r);
+};
+
+pub func:sdl_set_window_title = NIL(string:title) {
+    aria_sdl2_set_window_title(title);
+    pass(NIL);
+};
+
+pub func:sdl_set_window_size = NIL(int32:w, int32:h) {
+    aria_sdl2_set_window_size(w, h);
+    pass(NIL);
+};
+
+pub func:sdl_get_window_width = int32() {
+    int32:r = aria_sdl2_get_window_width();
+    pass(r);
+};
+
+pub func:sdl_get_window_height = int32() {
+    int32:r = aria_sdl2_get_window_height();
+    pass(r);
+};
+
+pub func:sdl_show_window = NIL() {
+    aria_sdl2_show_window();
+    pass(NIL);
+};
+
+pub func:sdl_hide_window = NIL() {
+    aria_sdl2_hide_window();
+    pass(NIL);
+};
+
+// ── public API: renderer ────────────────────────────────────────────
+
+pub func:sdl_create_renderer = int32(int32:flags) {
+    int32:r = aria_sdl2_create_renderer(flags);
+    pass(r);
+};
+
+pub func:sdl_set_draw_color = NIL(int32:r, int32:g, int32:b, int32:a) {
+    aria_sdl2_set_render_draw_color(r, g, b, a);
+    pass(NIL);
+};
+
+pub func:sdl_clear = NIL() {
+    aria_sdl2_render_clear();
+    pass(NIL);
+};
+
+pub func:sdl_present = NIL() {
+    aria_sdl2_render_present();
+    pass(NIL);
+};
+
+// ── public API: drawing ─────────────────────────────────────────────
+
+pub func:sdl_draw_point = NIL(int32:x, int32:y) {
+    aria_sdl2_render_draw_point(x, y);
+    pass(NIL);
+};
+
+pub func:sdl_draw_line = NIL(int32:x1, int32:y1, int32:x2, int32:y2) {
+    aria_sdl2_render_draw_line(x1, y1, x2, y2);
+    pass(NIL);
+};
+
+pub func:sdl_draw_rect = NIL(int32:x, int32:y, int32:w, int32:h) {
+    aria_sdl2_render_draw_rect(x, y, w, h);
+    pass(NIL);
+};
+
+pub func:sdl_fill_rect = NIL(int32:x, int32:y, int32:w, int32:h) {
+    aria_sdl2_render_fill_rect(x, y, w, h);
+    pass(NIL);
+};
+
+// ── public API: events ──────────────────────────────────────────────
+
+pub func:sdl_poll_event = int32() {
+    int32:r = aria_sdl2_poll_event();
+    pass(r);
+};
+
+pub func:sdl_event_type = int32() {
+    int32:r = aria_sdl2_event_type();
+    pass(r);
+};
+
+// ── public API: keyboard event fields ───────────────────────────────
+
+pub func:sdl_event_key_scancode = int32() {
+    int32:r = aria_sdl2_event_key_scancode();
+    pass(r);
+};
+
+pub func:sdl_event_key_keycode = int32() {
+    int32:r = aria_sdl2_event_key_keycode();
+    pass(r);
+};
+
+pub func:sdl_event_key_mod = int32() {
+    int32:r = aria_sdl2_event_key_mod();
+    pass(r);
+};
+
+pub func:sdl_event_key_repeat = int32() {
+    int32:r = aria_sdl2_event_key_repeat();
+    pass(r);
+};
+
+// ── public API: mouse event fields ──────────────────────────────────
+
+pub func:sdl_event_mouse_x = int32() {
+    int32:r = aria_sdl2_event_mouse_x();
+    pass(r);
+};
+
+pub func:sdl_event_mouse_y = int32() {
+    int32:r = aria_sdl2_event_mouse_y();
+    pass(r);
+};
+
+pub func:sdl_event_mouse_button = int32() {
+    int32:r = aria_sdl2_event_mouse_button();
+    pass(r);
+};
+
+pub func:sdl_event_wheel_x = int32() {
+    int32:r = aria_sdl2_event_wheel_x();
+    pass(r);
+};
+
+pub func:sdl_event_wheel_y = int32() {
+    int32:r = aria_sdl2_event_wheel_y();
+    pass(r);
+};
+
+// ── public API: keyboard state ──────────────────────────────────────
+
+pub func:sdl_key_is_down = int32(int32:scancode) {
+    int32:r = aria_sdl2_get_keyboard_state(scancode);
+    pass(r);
+};
+
+// ── public API: mouse state ─────────────────────────────────────────
+
+pub func:sdl_get_mouse_x = int32() {
+    int32:r = aria_sdl2_get_mouse_state_x();
+    pass(r);
+};
+
+pub func:sdl_get_mouse_y = int32() {
+    int32:r = aria_sdl2_get_mouse_state_y();
+    pass(r);
+};
+
+pub func:sdl_get_mouse_buttons = int32() {
+    int32:r = aria_sdl2_get_mouse_state_buttons();
+    pass(r);
+};
+
+// ── public API: timing ──────────────────────────────────────────────
+
+pub func:sdl_get_ticks = int32() {
+    int32:r = aria_sdl2_get_ticks();
+    pass(r);
+};
+
+pub func:sdl_delay = NIL(int32:ms) {
+    aria_sdl2_delay(ms);
+    pass(NIL);
+};
+
+// ── public API: misc ────────────────────────────────────────────────
+
+pub func:sdl_get_error = string() {
+    string:r = aria_sdl2_get_error();
+    pass(r);
+};

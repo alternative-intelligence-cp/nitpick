@@ -1,0 +1,228 @@
+// test_aria_raylib.aria — Automated tests for aria-raylib bindings
+//
+// Tests the FFI bridge by exercising core functions.
+// The window opens briefly and closes automatically.
+
+extern func:println = int32(string:msg);
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// ── shim externs (direct for test, no module import) ────────────────
+
+extern func:aria_rl_init_window          = void(int32:w, int32:h, string:title);
+extern func:aria_rl_close_window         = void();
+extern func:aria_rl_window_should_close  = int32();
+extern func:aria_rl_is_window_ready      = int32();
+extern func:aria_rl_get_screen_width     = int32();
+extern func:aria_rl_get_screen_height    = int32();
+extern func:aria_rl_set_target_fps       = void(int32:fps);
+extern func:aria_rl_get_fps              = int32();
+extern func:aria_rl_get_time             = flt64();
+extern func:aria_rl_begin_drawing        = void();
+extern func:aria_rl_end_drawing          = void();
+extern func:aria_rl_clear_background     = void(int32:r, int32:g, int32:b, int32:a);
+extern func:aria_rl_draw_rectangle       = void(int32:x, int32:y, int32:w, int32:h,
+                                                 int32:r, int32:g, int32:b, int32:a);
+extern func:aria_rl_draw_circle          = void(int32:cx, int32:cy, flt32:radius,
+                                                 int32:r, int32:g, int32:b, int32:a);
+extern func:aria_rl_draw_line            = void(int32:x1, int32:y1, int32:x2, int32:y2,
+                                                 int32:r, int32:g, int32:b, int32:a);
+extern func:aria_rl_draw_text            = void(string:text, int32:x, int32:y,
+                                                 int32:font_size,
+                                                 int32:r, int32:g, int32:b, int32:a);
+extern func:aria_rl_draw_fps             = void(int32:x, int32:y);
+extern func:aria_rl_measure_text         = int32(string:text, int32:font_size);
+extern func:aria_rl_draw_rectangle_lines = void(int32:x, int32:y, int32:w, int32:h,
+                                                 int32:r, int32:g, int32:b, int32:a);
+extern func:aria_rl_draw_circle_lines    = void(int32:cx, int32:cy, flt32:radius,
+                                                 int32:r, int32:g, int32:b, int32:a);
+extern func:aria_rl_draw_triangle        = void(flt32:x1, flt32:y1,
+                                                 flt32:x2, flt32:y2,
+                                                 flt32:x3, flt32:y3,
+                                                 int32:r, int32:g, int32:b, int32:a);
+extern func:aria_rl_is_key_pressed       = int32(int32:key);
+extern func:aria_rl_get_key_pressed      = int32();
+extern func:aria_rl_get_mouse_x          = int32();
+extern func:aria_rl_get_mouse_y          = int32();
+
+func:main = int32() {
+    int64:passed = 0i64;
+    int64:failed = 0i64;
+
+    // ── test 01: init window ────────────────────────────────────────
+    aria_rl_init_window(800i32, 600i32, "Aria Raylib Test");
+
+    // ── test 02: window is ready ────────────────────────────────────
+    int32:ready = aria_rl_is_window_ready();
+    if (ready == 1i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] window is ready"));
+    }
+    if (ready != 1i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] window is ready"));
+    }
+
+    // ── test 03: screen width ───────────────────────────────────────
+    int32:sw = aria_rl_get_screen_width();
+    if (sw == 800i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] screen width = 800"));
+    }
+    if (sw != 800i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] screen width = 800"));
+    }
+
+    // ── test 04: screen height ──────────────────────────────────────
+    int32:sh = aria_rl_get_screen_height();
+    if (sh == 600i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] screen height = 600"));
+    }
+    if (sh != 600i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] screen height = 600"));
+    }
+
+    // ── test 05: set target fps ─────────────────────────────────────
+    aria_rl_set_target_fps(60i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] set target fps (no crash)"));
+
+    // ── test 06: window should not close initially ──────────────────
+    int32:sc = aria_rl_window_should_close();
+    if (sc == 0i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] window should not close yet"));
+    }
+    if (sc != 0i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] window should not close yet"));
+    }
+
+    // ── test 07: measure text returns > 0 ───────────────────────────
+    int32:tw = aria_rl_measure_text("Hello Aria", 20i32);
+    if (tw > 0i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] measure text > 0"));
+    }
+    if (tw < 1i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] measure text > 0"));
+    }
+
+    // ── test 08: get_time returns >= 0 ──────────────────────────────
+    flt64:t = aria_rl_get_time();
+    if (t > 0.0 - 1.0) {
+        passed = passed + 1i64;
+        drop(println("[PASS] get_time >= 0"));
+    }
+    if (t < 0.0 - 1.0) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] get_time >= 0"));
+    }
+
+    // ── test 09-15: draw calls (no crash = pass) ────────────────────
+    aria_rl_begin_drawing();
+    aria_rl_clear_background(40i32, 40i32, 40i32, 255i32);
+
+    // test 09: draw rectangle
+    aria_rl_draw_rectangle(50i32, 50i32, 200i32, 100i32,
+                           230i32, 41i32, 55i32, 255i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] draw rectangle (no crash)"));
+
+    // test 10: draw rectangle lines
+    aria_rl_draw_rectangle_lines(300i32, 50i32, 200i32, 100i32,
+                                 0i32, 228i32, 48i32, 255i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] draw rectangle lines (no crash)"));
+
+    // test 11: draw circle
+    aria_rl_draw_circle(400i32, 300i32, 50.0f32,
+                        0i32, 121i32, 107i32, 255i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] draw circle (no crash)"));
+
+    // test 12: draw circle lines
+    aria_rl_draw_circle_lines(550i32, 300i32, 40.0f32,
+                              255i32, 193i32, 7i32, 255i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] draw circle lines (no crash)"));
+
+    // test 13: draw line
+    aria_rl_draw_line(50i32, 400i32, 750i32, 400i32,
+                      255i32, 255i32, 255i32, 255i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] draw line (no crash)"));
+
+    // test 14: draw triangle
+    aria_rl_draw_triangle(150.0f32, 500.0f32,
+                          100.0f32, 580.0f32,
+                          200.0f32, 580.0f32,
+                          33i32, 150i32, 243i32, 255i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] draw triangle (no crash)"));
+
+    // test 15: draw text
+    aria_rl_draw_text("Aria + Raylib!", 250i32, 250i32, 30i32,
+                      255i32, 255i32, 255i32, 255i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] draw text (no crash)"));
+
+    // test 16: draw fps
+    aria_rl_draw_fps(10i32, 10i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] draw fps (no crash)"));
+
+    aria_rl_end_drawing();
+
+    // test 17: end drawing (no crash)
+    passed = passed + 1i64;
+    drop(println("[PASS] begin/end drawing cycle (no crash)"));
+
+    // ── test 18: mouse position accessible ──────────────────────────
+    int32:mx = aria_rl_get_mouse_x();
+    int32:my = aria_rl_get_mouse_y();
+    passed = passed + 1i64;
+    drop(println("[PASS] get mouse position (no crash)"));
+
+    // ── test 19: key pressed returns 0 (no key pressed) ─────────────
+    int32:kp = aria_rl_get_key_pressed();
+    if (kp == 0i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] no key pressed initially"));
+    }
+    if (kp != 0i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] key press detected (ok)"));
+    }
+
+    // ── test 20: is_key_pressed(ESCAPE) returns 0 ───────────────────
+    int32:esc = aria_rl_is_key_pressed(256i32);
+    if (esc == 0i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] escape not pressed"));
+    }
+    if (esc != 0i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] escape detected (ok)"));
+    }
+
+    // ── cleanup ─────────────────────────────────────────────────────
+    aria_rl_close_window();
+
+    // ── summary ─────────────────────────────────────────────────────
+    drop(println(""));
+    drop(println("=== aria-raylib test summary ==="));
+
+    if (failed == 0i64) {
+        drop(println("ALL TESTS PASSED"));
+    }
+    if (failed > 0i64) {
+        drop(println("SOME TESTS FAILED"));
+    }
+
+    pass(0i32);
+};

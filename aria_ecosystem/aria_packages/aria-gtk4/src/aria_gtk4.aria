@@ -1,0 +1,228 @@
+// aria_gtk4.aria — Idiomatic Aria bindings for GTK4
+//
+// Provides native desktop GUI with window, labels, buttons, entries,
+// checkboxes, and CSS styling.
+// Requires: libaria_gtk4_shim.so + GTK4 libraries
+
+// ── extern declarations (C shim) ────────────────────────────────────
+
+extern "aria_gtk4_shim" {
+    // init / quit
+    func:aria_gtk4_init = int32(string:app_id);
+    func:aria_gtk4_run  = int32();
+    func:aria_gtk4_quit = void();
+
+    // main loop
+    func:aria_gtk4_is_running      = int32();
+    func:aria_gtk4_iteration       = int32(int32:blocking);
+    func:aria_gtk4_events_pending  = int32();
+
+    // events
+    func:aria_gtk4_get_last_event = int32();
+
+    // window
+    func:aria_gtk4_has_window          = int32();
+    func:aria_gtk4_set_title           = void(string:title);
+    func:aria_gtk4_set_default_size    = void(int32:w, int32:h);
+    func:aria_gtk4_window_close        = void();
+    func:aria_gtk4_window_present      = void();
+    func:aria_gtk4_window_fullscreen   = void();
+    func:aria_gtk4_window_unfullscreen = void();
+    func:aria_gtk4_window_maximize     = void();
+    func:aria_gtk4_window_minimize     = void();
+
+    // widgets: label
+    func:aria_gtk4_add_label      = int32(string:text);
+    func:aria_gtk4_label_set_text = void(int32:id, string:text);
+
+    // widgets: button
+    func:aria_gtk4_add_button = int32(string:label);
+
+    // widgets: entry
+    func:aria_gtk4_add_entry      = int32(string:placeholder);
+    func:aria_gtk4_entry_get_text = string(int32:id);
+
+    // widgets: separator
+    func:aria_gtk4_add_separator = int32();
+
+    // widgets: check button
+    func:aria_gtk4_add_check_button        = int32(string:label);
+    func:aria_gtk4_check_button_get_active = int32(int32:id);
+    func:aria_gtk4_check_button_set_active = void(int32:id, int32:active);
+
+    // widget properties
+    func:aria_gtk4_widget_set_visible      = void(int32:id, int32:visible);
+    func:aria_gtk4_widget_set_sensitive    = void(int32:id, int32:sensitive);
+    func:aria_gtk4_widget_set_size_request = void(int32:id, int32:w, int32:h);
+    func:aria_gtk4_widget_add_css_class    = void(int32:id, string:css_class);
+
+    // CSS
+    func:aria_gtk4_load_css = void(string:css);
+
+    // box layout
+    func:aria_gtk4_box_set_spacing      = void(int32:spacing);
+    func:aria_gtk4_box_set_homogeneous  = void(int32:homogeneous);
+}
+
+// ── event constants ─────────────────────────────────────────────────
+
+pub func:GTK_EVT_NONE     = int32() { pass(0i32); };
+pub func:GTK_EVT_ACTIVATE = int32() { pass(1i32); };
+pub func:GTK_EVT_DESTROY  = int32() { pass(2i32); };
+pub func:GTK_EVT_CLICKED  = int32() { pass(3i32); };
+
+// ── public API: init / quit ─────────────────────────────────────────
+
+pub func:gtk_init = int32(string:app_id) {
+    int32:r = aria_gtk4_init(app_id);
+    pass(r);
+};
+
+pub func:gtk_run = int32() {
+    int32:r = aria_gtk4_run();
+    pass(r);
+};
+
+pub func:gtk_quit = NIL() {
+    aria_gtk4_quit();
+    pass(NIL);
+};
+
+// ── public API: main loop ───────────────────────────────────────────
+
+pub func:gtk_is_running = int32() {
+    int32:r = aria_gtk4_is_running();
+    pass(r);
+};
+
+pub func:gtk_iterate = int32(int32:blocking) {
+    int32:r = aria_gtk4_iteration(blocking);
+    pass(r);
+};
+
+pub func:gtk_events_pending = int32() {
+    int32:r = aria_gtk4_events_pending();
+    pass(r);
+};
+
+// ── public API: events ──────────────────────────────────────────────
+
+pub func:gtk_get_last_event = int32() {
+    int32:r = aria_gtk4_get_last_event();
+    pass(r);
+};
+
+// ── public API: window ──────────────────────────────────────────────
+
+pub func:gtk_has_window = int32() {
+    int32:r = aria_gtk4_has_window();
+    pass(r);
+};
+
+pub func:gtk_set_title = NIL(string:title) {
+    aria_gtk4_set_title(title);
+    pass(NIL);
+};
+
+pub func:gtk_set_default_size = NIL(int32:w, int32:h) {
+    aria_gtk4_set_default_size(w, h);
+    pass(NIL);
+};
+
+pub func:gtk_window_close = NIL() {
+    aria_gtk4_window_close();
+    pass(NIL);
+};
+
+pub func:gtk_window_present = NIL() {
+    aria_gtk4_window_present();
+    pass(NIL);
+};
+
+// ── public API: widgets ─────────────────────────────────────────────
+
+pub func:gtk_add_label = int32(string:text) {
+    int32:r = aria_gtk4_add_label(text);
+    pass(r);
+};
+
+pub func:gtk_label_set_text = NIL(int32:id, string:text) {
+    aria_gtk4_label_set_text(id, text);
+    pass(NIL);
+};
+
+pub func:gtk_add_button = int32(string:label) {
+    int32:r = aria_gtk4_add_button(label);
+    pass(r);
+};
+
+pub func:gtk_add_entry = int32(string:placeholder) {
+    int32:r = aria_gtk4_add_entry(placeholder);
+    pass(r);
+};
+
+pub func:gtk_entry_get_text = string(int32:id) {
+    string:r = aria_gtk4_entry_get_text(id);
+    pass(r);
+};
+
+pub func:gtk_add_separator = int32() {
+    int32:r = aria_gtk4_add_separator();
+    pass(r);
+};
+
+pub func:gtk_add_check_button = int32(string:label) {
+    int32:r = aria_gtk4_add_check_button(label);
+    pass(r);
+};
+
+pub func:gtk_check_get_active = int32(int32:id) {
+    int32:r = aria_gtk4_check_button_get_active(id);
+    pass(r);
+};
+
+pub func:gtk_check_set_active = NIL(int32:id, int32:active) {
+    aria_gtk4_check_button_set_active(id, active);
+    pass(NIL);
+};
+
+// ── public API: widget properties ───────────────────────────────────
+
+pub func:gtk_widget_set_visible = NIL(int32:id, int32:visible) {
+    aria_gtk4_widget_set_visible(id, visible);
+    pass(NIL);
+};
+
+pub func:gtk_widget_set_sensitive = NIL(int32:id, int32:sensitive) {
+    aria_gtk4_widget_set_sensitive(id, sensitive);
+    pass(NIL);
+};
+
+pub func:gtk_widget_set_size = NIL(int32:id, int32:w, int32:h) {
+    aria_gtk4_widget_set_size_request(id, w, h);
+    pass(NIL);
+};
+
+pub func:gtk_widget_add_css_class = NIL(int32:id, string:css_class) {
+    aria_gtk4_widget_add_css_class(id, css_class);
+    pass(NIL);
+};
+
+// ── public API: CSS ─────────────────────────────────────────────────
+
+pub func:gtk_load_css = NIL(string:css) {
+    aria_gtk4_load_css(css);
+    pass(NIL);
+};
+
+// ── public API: box layout ──────────────────────────────────────────
+
+pub func:gtk_box_set_spacing = NIL(int32:spacing) {
+    aria_gtk4_box_set_spacing(spacing);
+    pass(NIL);
+};
+
+pub func:gtk_box_set_homogeneous = NIL(int32:homogeneous) {
+    aria_gtk4_box_set_homogeneous(homogeneous);
+    pass(NIL);
+};

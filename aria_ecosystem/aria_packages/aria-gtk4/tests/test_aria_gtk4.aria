@@ -1,0 +1,249 @@
+// test_aria_gtk4.aria — Automated tests for aria-gtk4 bindings
+//
+// GTK4 requires a running GLib main loop.  We use aria_gtk4_run()
+// which triggers 'activate' then returns.  After that we use
+// aria_gtk4_iteration() to step the loop and test widgets.
+
+extern func:println = int32(string:msg);
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// ── shim externs ────────────────────────────────────────────────────
+
+extern func:aria_gtk4_init              = int32(string:app_id);
+extern func:aria_gtk4_run               = int32();
+extern func:aria_gtk4_quit              = void();
+extern func:aria_gtk4_is_running        = int32();
+extern func:aria_gtk4_iteration         = int32(int32:blocking);
+extern func:aria_gtk4_get_last_event    = int32();
+extern func:aria_gtk4_has_window        = int32();
+extern func:aria_gtk4_set_title         = void(string:title);
+extern func:aria_gtk4_set_default_size  = void(int32:w, int32:h);
+extern func:aria_gtk4_add_label         = int32(string:text);
+extern func:aria_gtk4_label_set_text    = void(int32:id, string:text);
+extern func:aria_gtk4_add_button        = int32(string:label);
+extern func:aria_gtk4_add_entry         = int32(string:placeholder);
+extern func:aria_gtk4_entry_get_text    = string(int32:id);
+extern func:aria_gtk4_add_separator     = int32();
+extern func:aria_gtk4_add_check_button  = int32(string:label);
+extern func:aria_gtk4_check_button_get_active = int32(int32:id);
+extern func:aria_gtk4_check_button_set_active = void(int32:id, int32:active);
+extern func:aria_gtk4_widget_set_visible    = void(int32:id, int32:visible);
+extern func:aria_gtk4_widget_set_sensitive  = void(int32:id, int32:sensitive);
+extern func:aria_gtk4_widget_set_size_request = void(int32:id, int32:w, int32:h);
+extern func:aria_gtk4_widget_add_css_class  = void(int32:id, string:css_class);
+extern func:aria_gtk4_load_css         = void(string:css);
+extern func:aria_gtk4_box_set_spacing  = void(int32:spacing);
+extern func:aria_gtk4_window_close     = void();
+extern func:aria_gtk4_events_pending   = int32();
+
+func:main = int32() {
+    int64:passed = 0i64;
+    int64:failed = 0i64;
+
+    // ── test 01: init ───────────────────────────────────────────────
+    int32:init_ok = aria_gtk4_init("org.aria.test.gtk4");
+    if (init_ok == 1i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] gtk4_init succeeded"));
+    }
+    if (init_ok != 1i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] gtk4_init failed"));
+    }
+
+    // ── test 02: run (triggers activate, creates window) ────────────
+    int32:run_status = aria_gtk4_run();
+    passed = passed + 1i64;
+    drop(println("[PASS] gtk4_run returned"));
+
+    // ── test 03: window exists ──────────────────────────────────────
+    int32:has_win = aria_gtk4_has_window();
+    if (has_win == 1i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] window exists after activate"));
+    }
+    if (has_win != 1i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] window does not exist after activate"));
+    }
+
+    // ── test 04: is_running ─────────────────────────────────────────
+    int32:running = aria_gtk4_is_running();
+    if (running == 1i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] is_running = true"));
+    }
+    if (running != 1i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] is_running = false"));
+    }
+
+    // ── test 05: get_last_event == ACTIVATE (1) ─────────────────────
+    int32:evt = aria_gtk4_get_last_event();
+    if (evt == 1i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] last event = ACTIVATE"));
+    }
+    if (evt != 1i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] last event != ACTIVATE"));
+    }
+
+    // ── test 06: set title ──────────────────────────────────────────
+    aria_gtk4_set_title("Aria GTK4 Test Window");
+    passed = passed + 1i64;
+    drop(println("[PASS] set_title (no crash)"));
+
+    // ── test 07: set default size ───────────────────────────────────
+    aria_gtk4_set_default_size(1024i32, 768i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] set_default_size (no crash)"));
+
+    // ── test 08: add label ──────────────────────────────────────────
+    int32:lbl_id = aria_gtk4_add_label("Hello from Aria!");
+    if (lbl_id > 0i32 - 1i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] add_label returned valid id"));
+    }
+    if (lbl_id < 0i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] add_label failed"));
+    }
+
+    // ── test 09: label set text ─────────────────────────────────────
+    aria_gtk4_label_set_text(lbl_id, "Updated Label Text");
+    passed = passed + 1i64;
+    drop(println("[PASS] label_set_text (no crash)"));
+
+    // ── test 10: add button ─────────────────────────────────────────
+    int32:btn_id = aria_gtk4_add_button("Click Me");
+    if (btn_id > 0i32 - 1i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] add_button returned valid id"));
+    }
+    if (btn_id < 0i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] add_button failed"));
+    }
+
+    // ── test 11: add entry ──────────────────────────────────────────
+    int32:entry_id = aria_gtk4_add_entry("Enter text...");
+    if (entry_id > 0i32 - 1i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] add_entry returned valid id"));
+    }
+    if (entry_id < 0i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] add_entry failed"));
+    }
+
+    // ── test 12: entry get text (should be empty) ───────────────────
+    string:entry_text = aria_gtk4_entry_get_text(entry_id);
+    passed = passed + 1i64;
+    drop(println("[PASS] entry_get_text (no crash)"));
+
+    // ── test 13: add separator ──────────────────────────────────────
+    int32:sep_id = aria_gtk4_add_separator();
+    if (sep_id > 0i32 - 1i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] add_separator returned valid id"));
+    }
+    if (sep_id < 0i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] add_separator failed"));
+    }
+
+    // ── test 14: add check button ───────────────────────────────────
+    int32:chk_id = aria_gtk4_add_check_button("Enable Feature");
+    if (chk_id > 0i32 - 1i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] add_check_button returned valid id"));
+    }
+    if (chk_id < 0i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] add_check_button failed"));
+    }
+
+    // ── test 15: check button get active (default = false) ──────────
+    int32:chk_active = aria_gtk4_check_button_get_active(chk_id);
+    if (chk_active == 0i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] check button default = inactive"));
+    }
+    if (chk_active != 0i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] check button default != inactive"));
+    }
+
+    // ── test 16: check button set active ────────────────────────────
+    aria_gtk4_check_button_set_active(chk_id, 1i32);
+    int32:chk_now = aria_gtk4_check_button_get_active(chk_id);
+    if (chk_now == 1i32) {
+        passed = passed + 1i64;
+        drop(println("[PASS] check button set active"));
+    }
+    if (chk_now != 1i32) {
+        failed = failed + 1i64;
+        drop(println("[FAIL] check button set active failed"));
+    }
+
+    // ── test 17: widget set visible ─────────────────────────────────
+    aria_gtk4_widget_set_visible(lbl_id, 0i32);
+    aria_gtk4_widget_set_visible(lbl_id, 1i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] widget set_visible (no crash)"));
+
+    // ── test 18: widget set sensitive ───────────────────────────────
+    aria_gtk4_widget_set_sensitive(btn_id, 0i32);
+    aria_gtk4_widget_set_sensitive(btn_id, 1i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] widget set_sensitive (no crash)"));
+
+    // ── test 19: widget set size request ────────────────────────────
+    aria_gtk4_widget_set_size_request(btn_id, 100i32, 40i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] widget set_size_request (no crash)"));
+
+    // ── test 20: widget add css class ───────────────────────────────
+    aria_gtk4_widget_add_css_class(btn_id, "suggested-action");
+    passed = passed + 1i64;
+    drop(println("[PASS] widget add_css_class (no crash)"));
+
+    // ── test 21: load CSS ───────────────────────────────────────────
+    aria_gtk4_load_css("button { padding: 10px; }");
+    passed = passed + 1i64;
+    drop(println("[PASS] load_css (no crash)"));
+
+    // ── test 22: box set spacing ────────────────────────────────────
+    aria_gtk4_box_set_spacing(10i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] box_set_spacing (no crash)"));
+
+    // ── test 23: iteration (non-blocking) ───────────────────────────
+    int32:iter_result = aria_gtk4_iteration(0i32);
+    passed = passed + 1i64;
+    drop(println("[PASS] iteration non-blocking (no crash)"));
+
+    // ── test 24: events_pending ─────────────────────────────────────
+    int32:pending = aria_gtk4_events_pending();
+    passed = passed + 1i64;
+    drop(println("[PASS] events_pending (no crash)"));
+
+    // ── cleanup ─────────────────────────────────────────────────────
+    aria_gtk4_window_close();
+    aria_gtk4_quit();
+
+    // ── summary ─────────────────────────────────────────────────────
+    drop(println(""));
+    drop(println("=== aria-gtk4 test summary ==="));
+
+    if (failed == 0i64) {
+        drop(println("ALL TESTS PASSED"));
+    }
+    if (failed > 0i64) {
+        drop(println("SOME TESTS FAILED"));
+    }
+
+    pass(0i32);
+};

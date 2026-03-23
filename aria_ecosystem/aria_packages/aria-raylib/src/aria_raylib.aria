@@ -1,0 +1,327 @@
+// aria_raylib.aria — Idiomatic Aria bindings for raylib
+//
+// Provides windowing, 2D drawing, text rendering, and input handling.
+// Requires: libaria_raylib_shim.so + libraylib.so
+
+// ── extern declarations (C shim) ────────────────────────────────────
+
+extern "aria_raylib_shim" {
+    // window
+    func:aria_rl_init_window          = void(int32:w, int32:h, string:title);
+    func:aria_rl_close_window         = void();
+    func:aria_rl_window_should_close  = int32();
+    func:aria_rl_is_window_ready      = int32();
+    func:aria_rl_is_window_fullscreen = int32();
+    func:aria_rl_toggle_fullscreen    = void();
+    func:aria_rl_set_window_size      = void(int32:w, int32:h);
+    func:aria_rl_set_window_title     = void(string:title);
+    func:aria_rl_set_window_position  = void(int32:x, int32:y);
+    func:aria_rl_get_screen_width     = int32();
+    func:aria_rl_get_screen_height    = int32();
+
+    // drawing lifecycle
+    func:aria_rl_begin_drawing    = void();
+    func:aria_rl_end_drawing      = void();
+    func:aria_rl_clear_background = void(int32:r, int32:g, int32:b, int32:a);
+
+    // timing
+    func:aria_rl_set_target_fps = void(int32:fps);
+    func:aria_rl_get_fps        = int32();
+    func:aria_rl_get_frame_time = flt32();
+    func:aria_rl_get_time       = flt64();
+
+    // shapes: pixel
+    func:aria_rl_draw_pixel = void(int32:x, int32:y,
+                                   int32:r, int32:g, int32:b, int32:a);
+
+    // shapes: line
+    func:aria_rl_draw_line = void(int32:x1, int32:y1, int32:x2, int32:y2,
+                                  int32:r, int32:g, int32:b, int32:a);
+
+    // shapes: circle
+    func:aria_rl_draw_circle       = void(int32:cx, int32:cy, flt32:radius,
+                                          int32:r, int32:g, int32:b, int32:a);
+    func:aria_rl_draw_circle_lines = void(int32:cx, int32:cy, flt32:radius,
+                                          int32:r, int32:g, int32:b, int32:a);
+
+    // shapes: rectangle
+    func:aria_rl_draw_rectangle       = void(int32:x, int32:y, int32:w, int32:h,
+                                             int32:r, int32:g, int32:b, int32:a);
+    func:aria_rl_draw_rectangle_lines = void(int32:x, int32:y, int32:w, int32:h,
+                                             int32:r, int32:g, int32:b, int32:a);
+
+    // shapes: triangle
+    func:aria_rl_draw_triangle       = void(flt32:x1, flt32:y1,
+                                            flt32:x2, flt32:y2,
+                                            flt32:x3, flt32:y3,
+                                            int32:r, int32:g, int32:b, int32:a);
+    func:aria_rl_draw_triangle_lines = void(flt32:x1, flt32:y1,
+                                            flt32:x2, flt32:y2,
+                                            flt32:x3, flt32:y3,
+                                            int32:r, int32:g, int32:b, int32:a);
+
+    // text
+    func:aria_rl_draw_text    = void(string:text, int32:x, int32:y,
+                                     int32:font_size,
+                                     int32:r, int32:g, int32:b, int32:a);
+    func:aria_rl_draw_fps     = void(int32:x, int32:y);
+    func:aria_rl_measure_text = int32(string:text, int32:font_size);
+
+    // keyboard
+    func:aria_rl_is_key_pressed  = int32(int32:key);
+    func:aria_rl_is_key_down     = int32(int32:key);
+    func:aria_rl_is_key_released = int32(int32:key);
+    func:aria_rl_is_key_up       = int32(int32:key);
+    func:aria_rl_get_key_pressed = int32();
+
+    // mouse
+    func:aria_rl_get_mouse_x              = int32();
+    func:aria_rl_get_mouse_y              = int32();
+    func:aria_rl_is_mouse_button_pressed  = int32(int32:button);
+    func:aria_rl_is_mouse_button_down     = int32(int32:button);
+    func:aria_rl_is_mouse_button_released = int32(int32:button);
+    func:aria_rl_get_mouse_wheel_move     = flt32();
+    func:aria_rl_set_mouse_position       = void(int32:x, int32:y);
+    func:aria_rl_set_mouse_cursor         = void(int32:cursor);
+}
+
+// ── public API: window ──────────────────────────────────────────────
+
+pub func:rl_init_window = NIL(int32:w, int32:h, string:title) {
+    aria_rl_init_window(w, h, title);
+    pass(NIL);
+};
+
+pub func:rl_close_window = NIL() {
+    aria_rl_close_window();
+    pass(NIL);
+};
+
+pub func:rl_window_should_close = int32() {
+    int32:r = aria_rl_window_should_close();
+    pass(r);
+};
+
+pub func:rl_is_window_ready = int32() {
+    int32:r = aria_rl_is_window_ready();
+    pass(r);
+};
+
+pub func:rl_toggle_fullscreen = NIL() {
+    aria_rl_toggle_fullscreen();
+    pass(NIL);
+};
+
+pub func:rl_set_window_size = NIL(int32:w, int32:h) {
+    aria_rl_set_window_size(w, h);
+    pass(NIL);
+};
+
+pub func:rl_set_window_title = NIL(string:title) {
+    aria_rl_set_window_title(title);
+    pass(NIL);
+};
+
+pub func:rl_get_screen_width = int32() {
+    int32:r = aria_rl_get_screen_width();
+    pass(r);
+};
+
+pub func:rl_get_screen_height = int32() {
+    int32:r = aria_rl_get_screen_height();
+    pass(r);
+};
+
+// ── public API: drawing lifecycle ───────────────────────────────────
+
+pub func:rl_begin_drawing = NIL() {
+    aria_rl_begin_drawing();
+    pass(NIL);
+};
+
+pub func:rl_end_drawing = NIL() {
+    aria_rl_end_drawing();
+    pass(NIL);
+};
+
+pub func:rl_clear_background = NIL(int32:r, int32:g, int32:b, int32:a) {
+    aria_rl_clear_background(r, g, b, a);
+    pass(NIL);
+};
+
+// ── public API: timing ──────────────────────────────────────────────
+
+pub func:rl_set_target_fps = NIL(int32:fps) {
+    aria_rl_set_target_fps(fps);
+    pass(NIL);
+};
+
+pub func:rl_get_fps = int32() {
+    int32:r = aria_rl_get_fps();
+    pass(r);
+};
+
+pub func:rl_get_frame_time = flt32() {
+    flt32:r = aria_rl_get_frame_time();
+    pass(r);
+};
+
+pub func:rl_get_time = flt64() {
+    flt64:r = aria_rl_get_time();
+    pass(r);
+};
+
+// ── public API: shapes ──────────────────────────────────────────────
+
+pub func:rl_draw_pixel = NIL(int32:x, int32:y,
+                              int32:r, int32:g, int32:b, int32:a) {
+    aria_rl_draw_pixel(x, y, r, g, b, a);
+    pass(NIL);
+};
+
+pub func:rl_draw_line = NIL(int32:x1, int32:y1, int32:x2, int32:y2,
+                             int32:r, int32:g, int32:b, int32:a) {
+    aria_rl_draw_line(x1, y1, x2, y2, r, g, b, a);
+    pass(NIL);
+};
+
+pub func:rl_draw_circle = NIL(int32:cx, int32:cy, flt32:radius,
+                               int32:r, int32:g, int32:b, int32:a) {
+    aria_rl_draw_circle(cx, cy, radius, r, g, b, a);
+    pass(NIL);
+};
+
+pub func:rl_draw_circle_lines = NIL(int32:cx, int32:cy, flt32:radius,
+                                     int32:r, int32:g, int32:b, int32:a) {
+    aria_rl_draw_circle_lines(cx, cy, radius, r, g, b, a);
+    pass(NIL);
+};
+
+pub func:rl_draw_rectangle = NIL(int32:x, int32:y, int32:w, int32:h,
+                                  int32:r, int32:g, int32:b, int32:a) {
+    aria_rl_draw_rectangle(x, y, w, h, r, g, b, a);
+    pass(NIL);
+};
+
+pub func:rl_draw_rectangle_lines = NIL(int32:x, int32:y, int32:w, int32:h,
+                                        int32:r, int32:g, int32:b, int32:a) {
+    aria_rl_draw_rectangle_lines(x, y, w, h, r, g, b, a);
+    pass(NIL);
+};
+
+pub func:rl_draw_triangle = NIL(flt32:x1, flt32:y1,
+                                 flt32:x2, flt32:y2,
+                                 flt32:x3, flt32:y3,
+                                 int32:r, int32:g, int32:b, int32:a) {
+    aria_rl_draw_triangle(x1, y1, x2, y2, x3, y3, r, g, b, a);
+    pass(NIL);
+};
+
+// ── public API: text ────────────────────────────────────────────────
+
+pub func:rl_draw_text = NIL(string:text, int32:x, int32:y,
+                             int32:font_size,
+                             int32:r, int32:g, int32:b, int32:a) {
+    aria_rl_draw_text(text, x, y, font_size, r, g, b, a);
+    pass(NIL);
+};
+
+pub func:rl_draw_fps = NIL(int32:x, int32:y) {
+    aria_rl_draw_fps(x, y);
+    pass(NIL);
+};
+
+pub func:rl_measure_text = int32(string:text, int32:font_size) {
+    int32:r = aria_rl_measure_text(text, font_size);
+    pass(r);
+};
+
+// ── public API: keyboard ────────────────────────────────────────────
+
+pub func:rl_is_key_pressed = int32(int32:key) {
+    int32:r = aria_rl_is_key_pressed(key);
+    pass(r);
+};
+
+pub func:rl_is_key_down = int32(int32:key) {
+    int32:r = aria_rl_is_key_down(key);
+    pass(r);
+};
+
+pub func:rl_is_key_released = int32(int32:key) {
+    int32:r = aria_rl_is_key_released(key);
+    pass(r);
+};
+
+pub func:rl_get_key_pressed = int32() {
+    int32:r = aria_rl_get_key_pressed();
+    pass(r);
+};
+
+// ── public API: mouse ───────────────────────────────────────────────
+
+pub func:rl_get_mouse_x = int32() {
+    int32:r = aria_rl_get_mouse_x();
+    pass(r);
+};
+
+pub func:rl_get_mouse_y = int32() {
+    int32:r = aria_rl_get_mouse_y();
+    pass(r);
+};
+
+pub func:rl_is_mouse_button_pressed = int32(int32:button) {
+    int32:r = aria_rl_is_mouse_button_pressed(button);
+    pass(r);
+};
+
+pub func:rl_is_mouse_button_down = int32(int32:button) {
+    int32:r = aria_rl_is_mouse_button_down(button);
+    pass(r);
+};
+
+pub func:rl_get_mouse_wheel_move = flt32() {
+    flt32:r = aria_rl_get_mouse_wheel_move();
+    pass(r);
+};
+
+// ── key constants (raylib KEY_* values) ─────────────────────────────
+
+pub func:KEY_ESCAPE = int32() { pass(256i32); };
+pub func:KEY_ENTER  = int32() { pass(257i32); };
+pub func:KEY_SPACE  = int32() { pass(32i32); };
+pub func:KEY_RIGHT  = int32() { pass(262i32); };
+pub func:KEY_LEFT   = int32() { pass(263i32); };
+pub func:KEY_DOWN   = int32() { pass(264i32); };
+pub func:KEY_UP     = int32() { pass(265i32); };
+pub func:KEY_A      = int32() { pass(65i32); };
+pub func:KEY_B      = int32() { pass(66i32); };
+pub func:KEY_C      = int32() { pass(67i32); };
+pub func:KEY_D      = int32() { pass(68i32); };
+pub func:KEY_E      = int32() { pass(69i32); };
+pub func:KEY_F      = int32() { pass(70i32); };
+pub func:KEY_G      = int32() { pass(71i32); };
+pub func:KEY_H      = int32() { pass(72i32); };
+pub func:KEY_I      = int32() { pass(73i32); };
+pub func:KEY_J      = int32() { pass(74i32); };
+pub func:KEY_K      = int32() { pass(75i32); };
+pub func:KEY_L      = int32() { pass(76i32); };
+pub func:KEY_M      = int32() { pass(77i32); };
+pub func:KEY_N      = int32() { pass(78i32); };
+pub func:KEY_O      = int32() { pass(79i32); };
+pub func:KEY_P      = int32() { pass(80i32); };
+pub func:KEY_Q      = int32() { pass(81i32); };
+pub func:KEY_R      = int32() { pass(82i32); };
+pub func:KEY_S      = int32() { pass(83i32); };
+pub func:KEY_T      = int32() { pass(84i32); };
+pub func:KEY_U      = int32() { pass(85i32); };
+pub func:KEY_V      = int32() { pass(86i32); };
+pub func:KEY_W      = int32() { pass(87i32); };
+pub func:KEY_X      = int32() { pass(88i32); };
+pub func:KEY_Y      = int32() { pass(89i32); };
+pub func:KEY_Z      = int32() { pass(90i32); };
+
+// mouse button constants
+pub func:MOUSE_LEFT   = int32() { pass(0i32); };
+pub func:MOUSE_RIGHT  = int32() { pass(1i32); };
+pub func:MOUSE_MIDDLE = int32() { pass(2i32); };
