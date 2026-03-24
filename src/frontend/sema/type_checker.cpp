@@ -2882,6 +2882,15 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             // Returns string (char*)
             return typeSystem->getPrimitiveType("string");
         }
+
+        // Builtin: stdin_read_all() -> string
+        if (idExpr->name == "stdin_read_all") {
+            if (expr->arguments.size() != 0) {
+                addError("stdin_read_all() takes no arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
         
         // ====================================================================
         // ARENA ALLOCATOR BUILTINS (Phase 4.2.5.2)

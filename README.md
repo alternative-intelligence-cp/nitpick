@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.5
+# Aria Programming Language v0.2.7
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -10,11 +10,11 @@
 
 ---
 
-## Current Status (June 2026)
+## Current Status (March 2026)
 
-**v0.2.5 — Documentation, CI/CD & Infrastructure**
+**v0.2.7 — Six-Stream I/O & POSIX Tools**
 
-The project now has a GitHub Actions CI pipeline, issue/PR templates, man pages for all tools, a 695-line compiler architecture manual, and comprehensive documentation fixes. The package ecosystem stands at 43 libraries including 4 database client libraries (SQLite, PostgreSQL, MySQL, Redis).
+Complete six-stream I/O model with graceful fallback and 26 POSIX tools implemented in Aria. The runtime now initializes all 6 streams (stdin/stdout/stderr/stddbg/stddati/stddato), the compiler exposes `stdin_read_all()` and `stdin_read_line()` builtins with proper AriaString wrapping, and the argument access runtime (`aria_get_argc`, `aria_arg`) is fully integrated. All 26 tools support standard Unix pipelines.
 
 - **Async/await error propagation** — Promise-based mechanism stores `Result<T>` to coroutine promise via `@llvm.coro.promise`. Fixed dual await paths, coroutine memory management (malloc/free, not GC), and proper final suspend routing. Valgrind-clean.
 - **`fail()` from user functions** — Result-style: `fail(err)` is sugar for `Result{error:err, value:NIL, is_error:true}`, the complement to `pass(val)`. Separate `failsafe(errCode)` for panic-style shutdown.
@@ -77,7 +77,7 @@ The project now has a GitHub Actions CI pipeline, issue/PR templates, man pages 
 - **Standard library** — string_convert, string (manipulation), string_builder, print_utils, wave/wavemech, complex, dbug, quantum, atomic, io (file streams), math (transcendentals), linalg (linear algebra), collections (Vec, Map, Set, Graph), json, toml, binary, net (TCP sockets)
 
 ### In Progress / Specified
-- **Six-stream I/O** — stdin/stdout/stderr/stddbg/stddati/stddato specified; implementation in progress
+- **Six-stream I/O** — stdin/stdout/stderr/stddbg/stddati/stddato — runtime initialization with graceful fallback, `stdin_read_all()` and `stdin_read_line()` builtins
 - **Traits & borrow semantics** — RFC complete (monomorphized traits + `dyn Trait` opt-in, `$x`/`$mut x` borrows); implementation in future release
 - **Async channels & actors** — Concurrent workloads, task scheduling, and async I/O with event loop — deferred to post-0.2.4
 
