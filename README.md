@@ -1,7 +1,8 @@
-# Aria Programming Language v0.2.2
+# Aria Programming Language v0.2.4
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![CI](https://github.com/alternative-intelligence-cp/aria/actions/workflows/ci.yml/badge.svg)](https://github.com/alternative-intelligence-cp/aria/actions/workflows/ci.yml)
 
 **The Alternative Intelligence Liberation Platform presents: A systems programming language built for safety, determinism, and AI-native applications**
 
@@ -9,21 +10,21 @@
 
 ---
 
-## Current Status (March 2026)
+## Current Status (June 2026)
 
-**v0.2.2 — Ecosystem expansion — GUI toolkit wrappers, 9 utility libraries, tooling improvements, Debian packaging**
+**v0.2.4 — Compiler bug fixes, async/await error propagation, language core completion, code quality pass**
 
-The compiler has reached its self-hosting milestone. The entire compiler frontend (lexer, parser, type checker, borrow checker, safety checker, exhaustiveness checker, const evaluator) has been ported to Aria and passes 220 tests. All 27 catalogued compiler bugs plus 7 additional critical codegen bugs have been fixed.
+The compiler continues to mature with async/await error propagation, arrays-in-structs fixes, balanced ternary/nonary runtime arithmetic, and zero Aria-source warnings. The package ecosystem has grown to 43 libraries including 4 database client libraries (SQLite, PostgreSQL, MySQL, Redis).
 
-- **Self-hosting phases 1–5.5 complete** — The compiler frontend is now written in Aria itself. 220 tests across 5 modules (lexer, parser, type_checker, pipeline, supporting_passes) verify correct operation. The LLVM backend remains in C++ by design.
-- **All compiler bugs resolved** — Bugs #1–#27 catalogued and fixed, plus 7 additional codegen bugs discovered during self-hosting (inline return comparison, string concatenation, pass() unwrapping, pointer reassignment, NIL comparison). See [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
-- **GUI toolkit wrappers** — Idiomatic Aria bindings for raylib, SDL2, and GTK4 via C shim pattern. Window management, drawing, input, widgets, events. 59 tests passing.
-- **`aria_packages` library ecosystem** — 39 packages with 770+ assertions, all passing. Original 27 packages plus 3 GUI wrappers (aria-raylib, aria-sdl2, aria-gtk4) and 9 utility libraries (aria-test, aria-csv, aria-log, aria-base64, aria-datetime, aria-regex, aria-fs, aria-socket, aria-http).
-- **Improved tooling** — aria-ls (documentSymbol, references, signatureHelp), aria-mcp (format tool, resources), aria_make (test command), aria-dap (conditional breakpoints, logpoints), aria-safety (4 new checks, --json output).
-- **Debian packaging** — `aria_0.2.2-1_amd64.deb` (17 MB) builds cleanly, tested install/remove on Linux Mint 22.3.
-- **850+ test files** — Comprehensive test suite covering compiler features, self-hosting, safety-critical validation, fuzzer corpus, library assertions, and GUI wrapper tests.
-- **Language specialist model** — V5 training in progress (Qwen 7B LoRA, 2,688-example corpus covering all v0.2.2 additions).
-- **Repository reorganization** — Monorepo split into 10 focused repos under `alternative-intelligence-cp` GitHub org.
+- **Async/await error propagation** — Promise-based mechanism stores `Result<T>` to coroutine promise via `@llvm.coro.promise`. Fixed dual await paths, coroutine memory management (malloc/free, not GC), and proper final suspend routing. Valgrind-clean.
+- **`fail()` from user functions** — Result-style: `fail(err)` is sugar for `Result{error:err, value:NIL, is_error:true}`, the complement to `pass(val)`. Separate `failsafe(errCode)` for panic-style shutdown.
+- **Arrays in structs fixed** — Nested member access (`cloud.pts[0].x`) for both read and write. Fixed Aria element type registration for loaded struct array elements.
+- **Balanced ternary/nonary runtime** — Full trit/tryte arithmetic (add, sub, mul, div, mod, conversions). Runtime: `ternary_ops.cpp` (821 lines), codegen: `ternary_codegen.cpp` (600 lines), `tbb_codegen.cpp` (467 lines). 15/15 tests passing.
+- **NIL ↔ void bridge settled** — NIL is Aria's unit type (always wrapped in `Result<nil>`), void is C ABI type (restricted to extern blocks). Bridge through pointer erasure: `void*` (extern) ↔ `wild T->` (Aria).
+- **Database client libraries (v0.2.3)** — aria-sqlite (34 assertions), aria-postgres (40 assertions), aria-mysql (44 assertions), aria-redis (53 assertions). All use parameterized queries by default. SQL injection tests pass.
+- **Code quality pass** — Migrated 44 deprecated LLVM API calls, fixed all unused variable/parameter warnings, constructor initialization order. Zero Aria-source warnings.
+- **695+ test files** — Comprehensive test suite with 6 regression tests, covering compiler features, self-hosting, safety-critical validation, fuzzer corpus, and library assertions.
+- **Traits & borrow semantics designed** — RFC complete for monomorphized traits with `dyn Trait` opt-in, `$x`/`$mut x` borrow syntax. Implementation deferred to v0.2.6+.
 - **Fuzzing** — Continuous fuzzing via Fuzzer V2. 48-hour stress campaigns, crashes archived and regression-tested. Valgrind-clean runtime.
 
 ---
@@ -34,7 +35,7 @@ The compiler has reached its self-hosting milestone. The entire compiler fronten
 |---|---|---|
 | `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
 | `aria-ls` | ✅ Improved | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
-| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 39/39 packages verified |
+| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 43/43 packages verified |
 | `aria-doc` | ✅ Fixed | Documentation generator — 435 unique HTML pages from ecosystem |
 | `aria-mcp` | ✅ Improved | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Improved | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
@@ -42,10 +43,10 @@ The compiler has reached its self-hosting milestone. The entire compiler fronten
 | `aria_make` | ✅ Working | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
 | Fuzzer V2 | ✅ Active | 48-hour stress campaigns |
-| Specialist model | 🔧 V5 Training | Qwen 7B LoRA, 2,688-example v5 corpus |
+| Specialist model | ✅ V6 | Qwen 7B LoRA, v6 corpus covering v0.2.3 additions |
 | Debian package | ✅ Built | `aria_0.2.2-1_amd64.deb` (17 MB), tested on Mint 22.3 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 39 packages, 770+ assertions, all passing |
+| `aria_packages` | ✅ Active | 43 packages (39 utility/GUI + 4 database clients), all passing |
 
 ---
 
@@ -54,31 +55,31 @@ The compiler has reached its self-hosting milestone. The entire compiler fronten
 ### Stable
 - **All primitive types** — int8/16/32/64, uint8/16/32/64, flt32/flt64, bool, string
 - **TBB Types (tbb8/16/32/64)** — Symmetric signed integers with overflow sentinel (-128/ERR)
-- **Balanced Ternary/Nonary Literals** — `0t[01T]+` and `0n[01234ABCD]+` syntax
+- **Balanced Ternary/Nonary Literals & Runtime** — `0t[01T]+` and `0n[01234ABCD]+` syntax, full trit/tryte/nit/nyte arithmetic
 - **Quantum Types** — Superposition states for probabilistic computation
 - **Generic Functions and Structs** — Monomorphization with type inference
 - **Result Types** — `pass`/`fail` with `?` propagation and `!` unwrap, `Result<T>` signatures
+- **`fail()` from user functions** — Result-style: `fail(err)` produces `Result{error:err, is_error:true}`, complement to `pass(val)`
 - **Layered Safety** — `?!` (checked), `!!!` (unchecked), `unknown`/`ok()`, `failsafe`
+- **Async/Await** — LLVM coroutine-based with promise mechanism for error propagation through async boundaries
 - **All loop forms** — `while`, `for(;;)` (C-style), `for (i in a..b)` (range), `loop`, `till`, `when/then/end`
 - **Control flow** — `if/else`, `pick` (exhaustive match), `break`, `continue`, `fall`
 - **Module system** — `use`, `mod`, `pub`, `extern`
 - **Closures** — First-class functions with capture
 - **Borrow checker** — Compile-time memory safety analysis
+- **Arrays in structs** — Fixed-size scalar and struct array fields with nested member access
 - **SIMD types** — Vector arithmetic via LLVM intrinsics
 - **Atomic types** — Lock-free concurrent primitives
 - **Dimensional algebra** — Unit-typed arithmetic
+- **NIL/void separation** — NIL is Aria's unit type (wrapped in `Result<nil>`), void restricted to extern blocks, bridge via pointer erasure
 - **Operators** — Full suite including `@` (address), `#` (pin), `->` (arrow), `..`/`...` (ranges)
 - **Template literals** — `` `&{variable}` `` string interpolation
 - **Standard library** — string_convert, string (manipulation), string_builder, print_utils, wave/wavemech, complex, dbug, quantum, atomic, io (file streams), math (transcendentals), linalg (linear algebra), collections (Vec, Map, Set, Graph), json, toml, binary, net (TCP sockets)
 
 ### In Progress / Specified
-- **Balanced Ternary/Nonary runtime** — Literal parsing ✅; trit/tryte/nit/nyte arithmetic 🔧 (high priority — Nikola core requirement)
 - **Six-stream I/O** — stdin/stdout/stderr/stddbg/stddati/stddato specified; implementation in progress
-- **Async/Await** — Specified and partially implemented
-- **`fail()` from user functions** — Planned; current workaround is sentinel values or Result<T> from wrapper functions
-- **`uint32_toString`** — Missing from stdlib; workaround: `int64_toString(@cast<int64>(val))`
-- **Arrays in structs** — Under investigation
-- **NIL ↔ void bridge** — `void` and `*` are mostly in `extern` blocks; bridge semantics being worked out
+- **Traits & borrow semantics** — RFC complete (monomorphized traits + `dyn Trait` opt-in, `$x`/`$mut x` borrows); implementation in future release
+- **Async channels & actors** — Concurrent workloads, task scheduling, and async I/O with event loop — deferred to post-0.2.4
 
 ---
 
@@ -86,7 +87,7 @@ The compiler has reached its self-hosting milestone. The entire compiler fronten
 
 A collection of tested, versioned utility libraries built alongside the compiler. Each package has a `src/` module, a `tests/` file with 15 tests, and where FFI is needed, a C `shim/`. Every package passes its full test suite before being committed — they serve simultaneously as integration tests for the compiler and as real utilities.
 
-**Current packages (39 total, 770+ assertions, all passing):**
+**Current packages (43 total, all passing):**
 
 | # | Package | Description |
 |---|---------|-------------|
@@ -129,10 +130,14 @@ A collection of tested, versioned utility libraries built alongside the compiler
 | 37 | `aria-fs` | File system utilities (stat, mkdir, readdir, copy) |
 | 38 | `aria-socket` | Socket abstraction layer |
 | 39 | `aria-http` | HTTP client (GET/POST requests) |
+| 40 | `aria-sqlite` | SQLite3 embedded database client (parameterized queries, transactions) |
+| 41 | `aria-postgres` | PostgreSQL client via libpq (parameterized, LISTEN/NOTIFY) |
+| 42 | `aria-mysql` | MySQL/MariaDB client via libmysqlclient (parameterized, transactions) |
+| 43 | `aria-redis` | Redis client via hiredis (strings, lists, hashes, sets) |
 
 **Demo:** `aria_ecosystem/demos/aria-jrpg-demo/` — an interactive JRPG battle scene using all four virtual console libraries (LIB-17-20) plus aria-rand. Demonstrates the full stack: ANSI rendering, raw input, audio SFX, and the console memory map.
 
-Packages live in `aria_ecosystem/aria_packages/`. FFI-backed packages (aria-math, aria-display, aria-input, aria-audio) include pre-built shim `.so` files. Pure-Aria packages (aria-rand, aria-clamp, aria-bits, aria-ascii, etc.) can be `use`d directly.
+Packages live in `aria_ecosystem/aria_packages/`. FFI-backed packages (aria-math, aria-display, aria-input, aria-audio, database clients) include pre-built shim `.so` files. Pure-Aria packages (aria-rand, aria-clamp, aria-bits, aria-ascii, etc.) can be `use`d directly.
 
 ---
 
@@ -327,6 +332,9 @@ EOF
 
 ```
 aria/
+├── .github/                  # CI/CD and GitHub templates
+│   ├── workflows/           # GitHub Actions (build + test)
+│   └── ISSUE_TEMPLATE/      # Bug report, feature request, crash report
 ├── src/                      # Compiler source
 │   ├── frontend/            # Lexer, parser, AST, semantic analysis
 │   │   ├── lexer/
@@ -355,7 +363,8 @@ aria/
 │   ├── quantum.aria         # Quantum types
 │   ├── lib_hashmap_*.aria   # HashMap implementations
 │   └── lib_vec_int32.aria   # Vec<int32>
-├── tests/                    # Test suite (681 tests and growing)
+├── tests/                    # Test suite (695+ tests and growing)
+│   ├── regression/          # Regression tests (6 tests)
 │   ├── fuzz/                # Fuzzer V2 and corpus
 │   ├── gpu/                 # GPU/CUDA tests and PTX
 │   └── *.aria               # Feature test files
@@ -383,7 +392,11 @@ aria/
 │   │   ├── aria-regex/      # LIB-36: regex matching
 │   │   ├── aria-fs/         # LIB-37: file system utilities
 │   │   ├── aria-socket/     # LIB-38: socket abstraction
-│   │   └── aria-http/       # LIB-39: HTTP client│   ├── demos/               # Demo programs
+│   │   ├── aria-http/       # LIB-39: HTTP client
+│   │   ├── aria-sqlite/     # LIB-40: SQLite3 database client
+│   │   ├── aria-postgres/   # LIB-41: PostgreSQL client
+│   │   ├── aria-mysql/      # LIB-42: MySQL/MariaDB client
+│   │   └── aria-redis/      # LIB-43: Redis client│   ├── demos/               # Demo programs
 │   │   └── aria-jrpg-demo/  # JRPG battle scene using LIB-17/18/19/20
 │   ├── programming_guide/   # Source for web/man docs
 │   ├── man_pages/           # Man page builder
@@ -400,6 +413,7 @@ aria/
 ├── SAFETY.md
 ├── ARCHITECTURE.md
 ├── CHANGELOG.md
+├── CONTRIBUTING.md
 └── LICENSE.md
 ```
 
@@ -408,6 +422,9 @@ aria/
 ## Testing
 
 ```bash
+# Run regression tests
+./tests/regression/run_regression.sh
+
 # Run the full test suite
 ./scripts/run_comprehensive_tests.sh
 
@@ -459,6 +476,26 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **V5 specialist corpus** — 2,688 examples covering all v0.2.2 additions
 - ✅ **Extended fuzzing** — 48-hour adversarial campaign, zero unresolved crashes
 
+### v0.2.3 — Released
+
+- ✅ **Database client libraries** — 4 packages: aria-sqlite (34 assertions), aria-postgres (40 assertions), aria-mysql (44 assertions), aria-redis (53 assertions)
+- ✅ **Parameterized queries by default** — All SQL drivers use parameter binding; SQL injection tests pass on all 3 SQL drivers
+- ✅ **Full CRUD + transactions** — Insert, select, update, delete, begin/commit/rollback across all drivers
+- ✅ **PostgreSQL LISTEN/NOTIFY** — Async notification support
+- ✅ **Database guide** — `aria-packages/DATABASE_GUIDE.md` with prerequisites, patterns, and API reference
+- ✅ **V6 specialist model** — Updated corpus covering database additions
+
+### v0.2.4 — Released (Current)
+
+- ✅ **Async/await error propagation** — Promise-based `Result<T>` through coroutine boundaries, fixed dual await paths, proper memory management, Valgrind-clean
+- ✅ **`fail()` from user functions** — Result-style mechanism: `fail(err)` is complement to `pass(val)`, no more sentinel workarounds
+- ✅ **Arrays in structs fixed** — Nested member access (`cloud.pts[0].x`) for read and write, Aria element type registration
+- ✅ **Balanced ternary/nonary runtime** — Full trit/tryte arithmetic (add, sub, mul, div, mod), 15/15 tests
+- ✅ **NIL ↔ void bridge** — NIL = Aria unit type, void = C ABI only, pointer erasure bridge
+- ✅ **Code quality pass** — 44 deprecated LLVM API migrations, all warnings fixed, zero Aria-source warnings
+- ✅ **Traits & borrow semantics RFC** — Design doc for monomorphized traits + `$x`/`$mut x` borrows
+- ✅ **6 regression tests** — Dedicated regression suite covering critical bug fixes
+
 ### v0.2.1.1 — Released
 
 - ✅ **aria-dap debugger** — Full DAP server with LLDB 20 backend. Breakpoints, stepping, stack traces, variable inspection.
@@ -477,9 +514,17 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Benchmark suite** — 3 benchmarks (primes, collatz, gcd) in Aria and C with runner script. Aria matches or beats gcc -O2 on 2/3 benchmarks.
 - ✅ **Clean-machine build verified** — CMake and install.sh fixes for fresh Linux installs.
 
+### v0.2.5 — In Progress
+
+- 🔧 **Documentation polish** — Programming guide review, test all doc code examples, compiler architecture manual
+- 🔧 **CI/CD** — GitHub Actions (build + test on push/PR), issue templates, PR template
+- 🔧 **Repository presentation** — Professional repo metadata, contributor onboarding guide
+- 🔧 **Website update** — Package listings, tool docs, install instructions on ai-liberation-platform.org
+
 ### v0.3.0+ — Planned
 
 - Advanced async patterns (channels, actors)
+- Traits & borrow semantics implementation
 - AriaX Linux distribution packaging
 - Nikola integration
 
