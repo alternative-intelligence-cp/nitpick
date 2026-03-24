@@ -1,0 +1,108 @@
+.\" aria-pkg(1) man page
+.TH ARIA\-PKG 1 "July 2026" "Aria 0.2.5" "Aria Language"
+.SH NAME
+aria\-pkg \- Aria package manager
+.SH SYNOPSIS
+.B aria\-pkg
+.I command
+.RI [ options ]
+.br
+.B aria\-pkg help
+.SH DESCRIPTION
+.B aria\-pkg
+manages Aria packages. It can install packages from
+.B .aria\-pkg
+tarballs or source directories, remove installed packages, list and inspect
+installed packages, search a package registry, pack directories into
+distributable tarballs, and initialize the package directory structure.
+.PP
+Packages are installed to
+.BR ~/.aria/packages/ .
+.SH COMMANDS
+.TP
+.BI install " path"
+Install a package from a
+.B .aria\-pkg
+file or a directory. Auto\-detects the source type.
+.TP
+.BI remove " name"
+Remove an installed package (all versions).
+.TP
+.B list
+List all installed packages with name, version, and path.
+.TP
+.BI info " name"
+Show detailed information about an installed package including name, version,
+path, binaries, and dependency status.
+.TP
+.BI search " [query]"
+Search the package registry. Without a query, lists all packages.
+.TP
+.BI pack " [dir]"
+Pack a directory into a
+.B .aria\-pkg
+tarball. Defaults to the current directory.
+.TP
+.B init
+Initialize the
+.B ~/.aria/packages/
+directory structure.
+.TP
+.BR help ", " \-\-help ", " \-h
+Show help message.
+.SH ENVIRONMENT
+.TP
+.B ARIA_REGISTRY
+Path to
+.B registry.json
+file for the
+.B search
+command. If not set, searches fallback locations:
+.RS
+.IP \(bu 2
+.B aria_ecosystem/aria_package_repository/registry.json
+.IP \(bu 2
+.B ../aria_ecosystem/.../registry.json
+.IP \(bu 2
+.B ~/.aria/registry/registry.json
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Error (missing arguments, package not found, install/remove failure, registry
+not found).
+.SH EXAMPLES
+Install a package from a tarball:
+.PP
+.RS
+.B aria\-pkg install mylib.aria\-pkg
+.RE
+.PP
+Install from a source directory:
+.PP
+.RS
+.B aria\-pkg install ./mylib/
+.RE
+.PP
+List installed packages:
+.PP
+.RS
+.B aria\-pkg list
+.RE
+.PP
+Search for packages:
+.PP
+.RS
+.B aria\-pkg search http
+.RE
+.SH SEE ALSO
+.BR ariac (1),
+.BR aria\-ls (1),
+.BR aria\-doc (1),
+.BR aria\-dap (1)
+.SH AUTHORS
+The Aria programming language is developed by the Alternative Intelligence
+Collective Protocol (AICP).
