@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.1.1
+# Aria Programming Language v0.2.2
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -11,18 +11,20 @@
 
 ## Current Status (March 2026)
 
-**v0.2.1.1 — Debugger support — aria-dap with LLDB backend, DWARF debug info, VS Code integration**
+**v0.2.2 — Ecosystem expansion — GUI toolkit wrappers, 9 utility libraries, tooling improvements, Debian packaging**
 
 The compiler has reached its self-hosting milestone. The entire compiler frontend (lexer, parser, type checker, borrow checker, safety checker, exhaustiveness checker, const evaluator) has been ported to Aria and passes 220 tests. All 27 catalogued compiler bugs plus 7 additional critical codegen bugs have been fixed.
 
 - **Self-hosting phases 1–5.5 complete** — The compiler frontend is now written in Aria itself. 220 tests across 5 modules (lexer, parser, type_checker, pipeline, supporting_passes) verify correct operation. The LLVM backend remains in C++ by design.
 - **All compiler bugs resolved** — Bugs #1–#27 catalogued and fixed, plus 7 additional codegen bugs discovered during self-hosting (inline return comparison, string concatenation, pass() unwrapping, pointer reassignment, NIL comparison). See [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
-- **Improved compiler diagnostics** — "Did you mean?" suggestions for undefined identifiers and unknown types using Levenshtein distance. All operator type errors now report accurate source locations.
-- **Safety-critical validation** — 10 dedicated safety test files in `tests/safety_critical/` verify IEEE 754 compliance, overflow/underflow boundaries, catastrophic cancellation detection, determinism, energy conservation, and TBB sticky error propagation. All pass.
-- **`aria_packages` library ecosystem** — 27 packages (LIB-1 through LIB-27) with 543+ assertions, all passing. Packages cover math, PRNG, graphics, data encoding, string manipulation, JSON, CLI args, a virtual console stack, and AI-focused libraries (decision trees, quantum entanglement, gradient fields, resource memory). See the [Packages](#aria_packages-library-ecosystem) section below.
-- **677+ test files** — Comprehensive test suite covering compiler features, self-hosting, safety-critical validation, fuzzer corpus, and ecosystem integration.
-- **Language specialist model** — V3 training complete (Qwen 7B LoRA, 71% pattern match). V4 training in progress with a higher-quality corpus (2,484 examples, 100% drill compilation rate, proper `Result<T>` + `?` patterns, `NIL`/`void` correctness).
-- **Fuzzing** — Continuous fuzzing via Fuzzer V2. 24-hour stress campaigns, crashes archived and regression-tested. Valgrind-clean runtime.
+- **GUI toolkit wrappers** — Idiomatic Aria bindings for raylib, SDL2, and GTK4 via C shim pattern. Window management, drawing, input, widgets, events. 59 tests passing.
+- **`aria_packages` library ecosystem** — 39 packages with 770+ assertions, all passing. Original 27 packages plus 3 GUI wrappers (aria-raylib, aria-sdl2, aria-gtk4) and 9 utility libraries (aria-test, aria-csv, aria-log, aria-base64, aria-datetime, aria-regex, aria-fs, aria-socket, aria-http).
+- **Improved tooling** — aria-ls (documentSymbol, references, signatureHelp), aria-mcp (format tool, resources), aria_make (test command), aria-dap (conditional breakpoints, logpoints), aria-safety (4 new checks, --json output).
+- **Debian packaging** — `aria_0.2.2-1_amd64.deb` (17 MB) builds cleanly, tested install/remove on Linux Mint 22.3.
+- **850+ test files** — Comprehensive test suite covering compiler features, self-hosting, safety-critical validation, fuzzer corpus, library assertions, and GUI wrapper tests.
+- **Language specialist model** — V5 training in progress (Qwen 7B LoRA, 2,688-example corpus covering all v0.2.2 additions).
+- **Repository reorganization** — Monorepo split into 10 focused repos under `alternative-intelligence-cp` GitHub org.
+- **Fuzzing** — Continuous fuzzing via Fuzzer V2. 48-hour stress campaigns, crashes archived and regression-tested. Valgrind-clean runtime.
 
 ---
 
@@ -31,17 +33,19 @@ The compiler has reached its self-hosting milestone. The entire compiler fronten
 | Tool | Status | Description |
 |---|---|---|
 | `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
-| `aria-ls` | ✅ Wired | Language Server — hover (type signatures), goto-definition, completion |
-| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 27/27 packages verified |
+| `aria-ls` | ✅ Improved | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
+| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 39/39 packages verified |
 | `aria-doc` | ✅ Fixed | Documentation generator — 435 unique HTML pages from ecosystem |
-| `aria-mcp` | ✅ Working | MCP server — compile, safety audit, docs search, specialist model |
-| `aria-safety` | ✅ Working | Static safety auditor (wild, raw, drop, ok, CAS, relaxed, failsafe) |
-| `aria-dap` | 🔧 Stub | Debug Adapter Protocol (requires LLDB) |
-| `install.sh` | ✅ New | One-command build + install with prerequisite checking |
-| Fuzzer V2 | ✅ Active | 24-hour stress campaigns |
-| Specialist model | 🔧 V4 Training | Qwen 7B LoRA, V3 complete (71% match), V4 in progress |
+| `aria-mcp` | ✅ Improved | MCP server — compile, safety audit, docs search, format, specialist model |
+| `aria-safety` | ✅ Improved | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
+| `aria-dap` | ✅ Working | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
+| `aria_make` | ✅ Working | Build system — project manifest, dependency resolution, test runner |
+| `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
+| Fuzzer V2 | ✅ Active | 48-hour stress campaigns |
+| Specialist model | 🔧 V5 Training | Qwen 7B LoRA, 2,688-example v5 corpus |
+| Debian package | ✅ Built | `aria_0.2.2-1_amd64.deb` (17 MB), tested on Mint 22.3 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 27 packages, 543+ assertions, all passing |
+| `aria_packages` | ✅ Active | 39 packages, 770+ assertions, all passing |
 
 ---
 
@@ -82,7 +86,7 @@ The compiler has reached its self-hosting milestone. The entire compiler fronten
 
 A collection of tested, versioned utility libraries built alongside the compiler. Each package has a `src/` module, a `tests/` file with 15 tests, and where FFI is needed, a C `shim/`. Every package passes its full test suite before being committed — they serve simultaneously as integration tests for the compiler and as real utilities.
 
-**Current packages (27 total, 543+ assertions, all passing):**
+**Current packages (39 total, 770+ assertions, all passing):**
 
 | # | Package | Description |
 |---|---------|-------------|
@@ -113,6 +117,18 @@ A collection of tested, versioned utility libraries built alongside the compiler
 | 25 | `aria-entangled` | Quantum-inspired entangled variable pairs |
 | 26 | `aria-resource-mem` | RAII-style resource lifecycle management |
 | 27 | `aria-gradient-field` | 3D gradient field computation for continuous optimization |
+| 28 | `aria-raylib` | raylib v6.0 bindings: window, drawing, shapes, text, input |
+| 29 | `aria-sdl2` | SDL2 multimedia bindings: window, renderer, drawing, events |
+| 30 | `aria-gtk4` | GTK4 desktop GUI: widget registry, events, non-blocking UI |
+| 31 | `aria-test` | Test framework with assertion helpers |
+| 32 | `aria-csv` | CSV parsing and generation |
+| 33 | `aria-log` | Structured logging with severity levels |
+| 34 | `aria-base64` | Base64 encoding and decoding |
+| 35 | `aria-datetime` | Date/time formatting and arithmetic |
+| 36 | `aria-regex` | Regular expression matching |
+| 37 | `aria-fs` | File system utilities (stat, mkdir, readdir, copy) |
+| 38 | `aria-socket` | Socket abstraction layer |
+| 39 | `aria-http` | HTTP client (GET/POST requests) |
 
 **Demo:** `aria_ecosystem/demos/aria-jrpg-demo/` — an interactive JRPG battle scene using all four virtual console libraries (LIB-17-20) plus aria-rand. Demonstrates the full stack: ANSI rendering, raw input, audio SFX, and the console memory map.
 
@@ -353,33 +369,21 @@ aria/
 │   ├── aria_patch_corpus.py # Training data preparation
 │   └── semantic_db/         # Semantic test archive
 ├── aria_ecosystem/           # Ecosystem tools
-│   ├── aria_packages/       # Library ecosystem (20 packages, each with src/ + tests/)
+│   ├── aria_packages/       # Library ecosystem (39 packages, each with src/ + tests/)
 │   │   ├── aria-math/       # LIB-1: trig/exp/log via C libm
-│   │   ├── aria-rand/       # LIB-2: xorshift64 PRNG
-│   │   ├── aria-color/      # LIB-3: RGBA pixel ops
-│   │   ├── aria-vec/        # LIB-4: 2D/3D float64 vectors
-│   │   ├── aria-buf/        # LIB-5: uint64 byte packing
-│   │   ├── aria-clamp/      # LIB-6: min/max/clamp/abs/sign
-│   │   ├── aria-bits/       # LIB-7: bit manipulation
-│   │   ├── aria-ascii/      # LIB-8: ASCII utils
-│   │   ├── aria-fixed/      # LIB-9: Q32.32 fixed-point
-│   │   ├── aria-freq/       # LIB-10: frequency/baud arithmetic
-│   │   ├── aria-mux/        # LIB-11: bit-select/field/mask
-│   │   ├── aria-conv/       # LIB-12: saturating conversions
-│   │   ├── aria-hash/       # LIB-13: FNV-1a / djb2 hashing
-│   │   ├── aria-endian/     # LIB-14: byte-swap utilities
-│   │   ├── aria-uuid/       # LIB-15: UUID v4 generation
-│   │   ├── aria-zigzag/     # LIB-16: zigzag encode/decode
-│   │   ├── aria-display/    # LIB-17: ANSI/termios virtual console display
-│   │   ├── aria-input/      # LIB-18: raw keyboard + SNES button mapping
-│   │   ├── aria-audio/      # LIB-19: software synthesis (MIDI, 4 channels)
-│   │   └── aria-console/    # LIB-20: 16-bit memory map + frame scheduler│   ├── aria-str/        # LIB-21: String utilities
-│   ├── aria-json/       # LIB-22: JSON encoding
-│   ├── aria-args/       # LIB-23: CLI argument parser
-│   ├── aria-decision-t/ # LIB-24: Decision tree classifier
-│   ├── aria-entangled/  # LIB-25: Quantum entangled pairs
-│   ├── aria-resource-mem/ # LIB-26: RAII resource management
-│   └── aria-gradient-field/ # LIB-27: 3D gradient fields│   ├── demos/               # Demo programs
+│   │   ├── ...              # LIB-2 through LIB-27 (original packages)
+│   │   ├── aria-raylib/     # LIB-28: raylib v6.0 bindings
+│   │   ├── aria-sdl2/       # LIB-29: SDL2 multimedia bindings
+│   │   ├── aria-gtk4/       # LIB-30: GTK4 desktop GUI
+│   │   ├── aria-test/       # LIB-31: test framework
+│   │   ├── aria-csv/        # LIB-32: CSV parsing
+│   │   ├── aria-log/        # LIB-33: structured logging
+│   │   ├── aria-base64/     # LIB-34: Base64 encode/decode
+│   │   ├── aria-datetime/   # LIB-35: date/time utilities
+│   │   ├── aria-regex/      # LIB-36: regex matching
+│   │   ├── aria-fs/         # LIB-37: file system utilities
+│   │   ├── aria-socket/     # LIB-38: socket abstraction
+│   │   └── aria-http/       # LIB-39: HTTP client│   ├── demos/               # Demo programs
 │   │   └── aria-jrpg-demo/  # JRPG battle scene using LIB-17/18/19/20
 │   ├── programming_guide/   # Source for web/man docs
 │   ├── man_pages/           # Man page builder
@@ -444,6 +448,16 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Improved compiler diagnostics** — "Did you mean?" suggestions, accurate source locations for all type errors
 - ✅ **License changed to Apache 2.0**
 - ✅ **Language specialist model** V3 complete (71% pattern match), V4 in progress
+
+### v0.2.2 — Released
+
+- ✅ **GUI toolkit wrappers** — Idiomatic Aria bindings for raylib (20 tests), SDL2 (19 tests), GTK4 (20 tests) via C shim pattern
+- ✅ **9 utility libraries** — aria-test, aria-csv, aria-log, aria-base64, aria-datetime, aria-regex, aria-fs, aria-socket, aria-http (166 tests, all passing)
+- ✅ **Tooling improvements** — aria-ls (documentSymbol, references, signatureHelp), aria-mcp (format tool, resources), aria_make (test command), aria-dap (conditional breakpoints, logpoints), aria-safety (4 new checks, --json)
+- ✅ **Debian packaging** — `aria_0.2.2-1_amd64.deb` (17 MB), tested on Linux Mint 22.3
+- ✅ **Repository reorganization** — Monorepo split into 10 repos under `alternative-intelligence-cp` org
+- ✅ **V5 specialist corpus** — 2,688 examples covering all v0.2.2 additions
+- ✅ **Extended fuzzing** — 48-hour adversarial campaign, zero unresolved crashes
 
 ### v0.2.1.1 — Released
 

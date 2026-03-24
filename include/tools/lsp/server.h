@@ -55,6 +55,12 @@ struct ServerCapabilities {
     // Code completion
     bool completionProvider = false;
     
+    // References (find all references)
+    bool referencesProvider = false;
+    
+    // Signature help (parameter hints)
+    bool signatureHelpProvider = false;
+    
     // Diagnostics
     bool diagnosticProvider = false;
     
@@ -66,6 +72,8 @@ struct ServerCapabilities {
             {"documentSymbolProvider", documentSymbolProvider},
             {"workspaceSymbolProvider", workspaceSymbolProvider},
             {"completionProvider", completionProvider ? json{{"triggerCharacters", json::array({":", "."})}} : json(false)},
+            {"referencesProvider", referencesProvider},
+            {"signatureHelpProvider", signatureHelpProvider ? json{{"triggerCharacters", json::array({"(", ","})}} : json(false)},
             {"diagnosticProvider", diagnosticProvider}
         };
     }
@@ -137,6 +145,9 @@ private:
     json handle_hover(const json& params);
     json handle_definition(const json& params);
     json handle_completion(const json& params);
+    json handle_document_symbol(const json& params);
+    json handle_references(const json& params);
+    json handle_signature_help(const json& params);
     
     // AST-based analysis helpers
     struct DeclInfo {
