@@ -1,5 +1,22 @@
 # Aria Language Changelog
 
+## [0.2.3] - March 2026
+
+### Added
+- **Database client libraries** — Four new packages providing idiomatic Aria bindings for popular databases:
+  - `aria-sqlite` — SQLite3 embedded database: open, exec, parameterized queries (?1/?2), result iteration, transactions (34/34 tests)
+  - `aria-postgres` — PostgreSQL via libpq: connect, exec, parameterized queries ($1/$2), result cursors, transactions, LISTEN/NOTIFY (40/40 tests)
+  - `aria-mysql` — MySQL via libmysqlclient: connect, exec, parameterized queries (?), stmt-based SELECT, simple_query, transactions, affected_rows, last_insert_id (44/44 tests)
+  - `aria-redis` — Redis via hiredis: connect, GET/SET/DEL/EXISTS, EXPIRE/TTL, INCR, lists (LPUSH/RPUSH/LPOP/RPOP/LRANGE), hashes (HSET/HGET/HDEL), sets (SADD/SREM/SISMEMBER), PING, SELECT DB (53/53 tests)
+  - All SQL drivers include SQL injection safety tests (parameterized queries block `'; DROP TABLE` attacks)
+  - All use C shim pattern with connection pool (16 slots) and parameter staging
+  - Total: 171 assertions across 4 packages, all passing
+- **DATABASE_GUIDE.md** — Comprehensive guide covering all 4 database libraries: prerequisites, building, common patterns, API reference tables, known workarounds
+- **GETTING_STARTED.md Section 14** — Database Client Libraries quickstart
+
+### Changed
+- Package registry updated to 43 packages (added aria-sqlite, aria-postgres, aria-mysql, aria-redis)
+
 ## [0.2.2] - March 2026
 
 ### Added
