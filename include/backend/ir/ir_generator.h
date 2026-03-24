@@ -101,6 +101,8 @@ private:
     // Async function context tracking (Phase 4.6: Coroutines)
     bool current_func_is_async;                    // Is current function async?
     llvm::BasicBlock* current_coro_suspend_block;  // Where return statements branch to in async functions
+    llvm::AllocaInst* current_async_promise;       // Promise alloca for storing Result<T> in coroutine frame
+    llvm::Type* current_async_result_type;         // The LLVM Result<T> struct type for this async function
 
     // P1-4: Contract tracking (Design by Contract)
     class FuncDeclStmt* current_func_decl;  // Currently generating function (for contract checking)

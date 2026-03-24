@@ -1,6 +1,6 @@
-# Aria 0.2.0 — Known Issues & Limitations
+# Aria 0.2.4 — Known Issues & Limitations
 
-Last updated: March 2026
+Last updated: July 2026
 
 ---
 
@@ -89,7 +89,7 @@ int32:y = x + 1;
 - **Closures / Lambdas**: Not supported. Use named functions.
 - **Traits / Interfaces**: `impl` blocks are parsed but not yet functional for user-defined traits.
 - **Pattern matching**: No `match` / `switch` statement. Use `if`/`else if` chains.
-- **Async / Await**: Not supported.
+- **Async / Await**: Basic async/await works (single-threaded coroutine model with promise-based error propagation). Task scheduling and async I/O with event loop not yet integrated.
 - **Module system**: Single-file compilation only. No `import` or `use` statements across files. Multi-file programs require extern declarations or linking.
 - **String type**: No built-in `string` type. Use `int8->` (pointer to byte array) with extern C functions, or the `aria-str` ecosystem package.
 
@@ -105,7 +105,7 @@ int32:y = x + 1;
 ### 3. Compiler Behavior
 
 - **Compiler crash on optional types**: Using optional type syntax (e.g., `int64?:x = NIL;`) causes a compiler segfault. Optional types are specified but not yet safely handled. Workaround: Use `Result<T>` for fallible values instead.
-- **Build warnings**: The compiler builds with ~61 C++ warnings (unused variables, sign comparison). These do not affect compiled Aria program correctness.
+- **Build warnings**: The compiler builds with 0 Aria-source warnings. ~23 warnings from LLVM headers remain (not actionable).
 - **Error messages**: Some error messages include ANSI color codes. Pipe through `sed 's/\x1b\[[0-9;]*m//g'` to strip them for plain-text processing.
 - **Void return type**: `void` is only valid in `extern` function declarations (for FFI). Use `NIL` for Aria functions that return no value.
 - **Pointer syntax**: Use `->` for pointers in Aria code, not `*`. The `*` syntax is only valid in extern blocks for FFI compatibility.
