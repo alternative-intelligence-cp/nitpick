@@ -4006,6 +4006,25 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return create_stream_write("stddbg_write", "aria_stddbg_write");
     }
     
+    // Helper to get or declare aria_string_from_cstr_simple
+    auto getOrDeclareStringFromCstr = [&]() -> llvm::Function* {
+        llvm::Function* func = module->getFunction("aria_string_from_cstr_simple");
+        if (!func) {
+            llvm::StructType* strType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+            if (!strType) {
+                strType = llvm::StructType::create(context,
+                    {llvm::PointerType::get(builder.getInt8Ty(), 0), builder.getInt64Ty()},
+                    "struct.AriaString");
+            }
+            std::vector<llvm::Type*> params = {llvm::PointerType::get(builder.getInt8Ty(), 0)};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(strType, 0), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_from_cstr_simple", module);
+        }
+        return func;
+    };
+
     // stdin_read_line() -> string
     if (callee_ident->name == "stdin_read_line") {
         if (expr->arguments.size() != 0) {
@@ -4027,7 +4046,33 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             );
         }
         
-        return builder.CreateCall(read_func, {}, "stdin_read_call");
+        llvm::Value* cstr = builder.CreateCall(read_func, {}, "stdin_read_call");
+        return builder.CreateCall(getOrDeclareStringFromCstr(), {cstr}, "stdin_line_str");
+    }
+
+    // stdin_read_all() -> string
+    if (callee_ident->name == "stdin_read_all") {
+        if (expr->arguments.size() != 0) {
+            throw std::runtime_error("stdin_read_all() takes no arguments");
+        }
+        
+        llvm::Function* read_func = module->getFunction("aria_stdin_read_all");
+        if (!read_func) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(context, 0),
+                {},
+                false
+            );
+            read_func = llvm::Function::Create(
+                func_type,
+                llvm::Function::ExternalLinkage,
+                "aria_stdin_read_all",
+                module
+            );
+        }
+        
+        llvm::Value* cstr = builder.CreateCall(read_func, {}, "stdin_readall_call");
+        return builder.CreateCall(getOrDeclareStringFromCstr(), {cstr}, "stdin_all_str");
     }
     
     // ====================================================================

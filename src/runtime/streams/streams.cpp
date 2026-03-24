@@ -296,27 +296,51 @@ char* aria_text_stream_read_line(AriaTextStream* stream) {
 char* aria_text_stream_read_all(AriaTextStream* stream) {
     if (!stream) return NULL;
     
-    // Get file size
+    // Try to get file size via seeking (works for regular files)
     long current = ftell(stream->file);
-    fseek(stream->file, 0, SEEK_END);
-    long size = ftell(stream->file);
-    fseek(stream->file, current, SEEK_SET);
+    bool seekable = (current >= 0);
     
-    long remaining = size - current;
-    if (remaining < 0) remaining = 0;
-    
-    // Allocate buffer
-    char* buffer = (char*)malloc(remaining + 1);
-    if (!buffer) return NULL;
-    
-    // Read all data
-    size_t bytes_read = fread(buffer, 1, remaining, stream->file);
-    buffer[bytes_read] = '\0';
-    
-    if (feof(stream->file)) {
-        stream->is_eof = true;
+    if (seekable) {
+        fseek(stream->file, 0, SEEK_END);
+        long size = ftell(stream->file);
+        fseek(stream->file, current, SEEK_SET);
+        
+        long remaining = size - current;
+        if (remaining < 0) remaining = 0;
+        
+        char* buffer = (char*)malloc(remaining + 1);
+        if (!buffer) return NULL;
+        
+        size_t bytes_read = fread(buffer, 1, remaining, stream->file);
+        buffer[bytes_read] = '\0';
+        
+        if (feof(stream->file)) {
+            stream->is_eof = true;
+        }
+        return buffer;
     }
     
+    // Non-seekable (pipe/stdin): read in chunks until EOF
+    size_t capacity = 4096;
+    size_t length = 0;
+    char* buffer = (char*)malloc(capacity);
+    if (!buffer) return NULL;
+    
+    while (1) {
+        size_t bytes_read = fread(buffer + length, 1, capacity - length - 1, stream->file);
+        length += bytes_read;
+        if (bytes_read == 0 || feof(stream->file)) {
+            stream->is_eof = true;
+            break;
+        }
+        if (length + 1 >= capacity) {
+            capacity *= 2;
+            char* new_buf = (char*)realloc(buffer, capacity);
+            if (!new_buf) { free(buffer); return NULL; }
+            buffer = new_buf;
+        }
+    }
+    buffer[length] = '\0';
     return buffer;
 }
 

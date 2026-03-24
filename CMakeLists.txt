@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(aria VERSION 0.2.3 LANGUAGES C CXX)
+project(aria VERSION 0.2.7 LANGUAGES C CXX)
 
 # C++17 standard required
 set(CMAKE_CXX_STANDARD 17)
@@ -256,6 +256,7 @@ set(RUNTIME_SOURCES
     src/runtime/async/work_stealing.cpp
     src/runtime/async/gc_integration.cpp
     src/runtime/telemetry/telemetry.cpp
+    src/runtime/args/args.c
     src/runtime/exotic_types.c
 )
 
