@@ -452,8 +452,10 @@ target_link_libraries(aria-doc)
 
 enable_testing()
 
-# Test runner (Phase 0.2)
-add_subdirectory(tests)
+# Test runner (Phase 0.2) — only if test_runner.cpp exists (gitignored in dev)
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/test_runner.cpp")
+    add_subdirectory(tests)
+endif()
 
 # ============================================================================
 # Installation
