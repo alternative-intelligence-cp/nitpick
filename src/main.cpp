@@ -77,8 +77,8 @@ extern "C" {
 // Version information
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 2
-#define ARIA_VERSION_PATCH 5
-#define ARIA_VERSION "0.2.5"
+#define ARIA_VERSION_PATCH 6
+#define ARIA_VERSION "0.2.6"
 
 // Compiler options
 struct CompilerOptions {
@@ -99,6 +99,7 @@ struct CompilerOptions {
     std::vector<std::string> library_paths;   // -L<path> library search paths
     std::vector<std::string> linker_flags;    // -Wl,<option> flags passed to linker
     bool build_library = false;               // -c: Compile library (no failsafe required)
+    bool build_shared = false;                // --shared: Compile to shared library (.so)
     bool debug_info = false;                  // -g: Emit DWARF debug info
     
     // GPU/PTX Backend Options (NVIDIA CUDA)
@@ -147,6 +148,7 @@ void print_help() {
     std::cout << "  --ast-dump        Dump AST and exit\n";
     std::cout << "  --tokens          Dump tokens and exit\n";
     std::cout << "  -c                Compile library (no failsafe required)\n";
+    std::cout << "  --shared          Compile to shared library (.so)\n";
     std::cout << "  -g                Emit DWARF debug info (for aria-dap)\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
     std::cout << "  -v, --verbose     Verbose output\n\n";
@@ -174,6 +176,7 @@ void print_help() {
     std::cout << "  ariac main.aria utils.aria -o program\n";
     std::cout << "  ariac program.aria -o program -lm -lpthread\n";
     std::cout << "  ariac program.aria --emit-llvm -o program.ll\n";
+    std::cout << "  ariac mylib.aria --shared -o libmylib.so\n";
     std::cout << "  ariac test.aria --ast-dump\n\n";
     std::cout << "Examples (GPU):\n";
     std::cout << "  ariac physics.aria --emit-ptx -o physics.ptx\n";
@@ -250,6 +253,9 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.enable_gpu_debug = true;
         } else if (arg == "-c") {
             opts.build_library = true;
+        } else if (arg == "--shared") {
+            opts.build_shared = true;
+            opts.build_library = true;  // shared implies library mode (no failsafe)
         } else if (arg == "-g") {
             opts.debug_info = true;
         } else if (arg == "-E") {
@@ -315,6 +321,9 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".s";
         } else if (opts.emit_ptx) {
             opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".ptx";
+        } else if (opts.build_shared) {
+            std::string base = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.'));
+            opts.output_file = "lib" + base + ".so";
         } else if (opts.build_library) {
             opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".o";
         } else {
@@ -1559,6 +1568,65 @@ int main(int argc, char** argv) {
         }
         if (opts.verbose) {
             std::cout << "Assembly written to: " << opts.output_file << "\n";
+        }
+    } else if (opts.build_shared) {
+        // --shared flag: Compile to shared library (.so)
+        std::string obj_file = opts.output_file + ".o";
+        if (!emit_object(final_module, obj_file)) {
+            return 1;
+        }
+
+        // Build shared library link command
+        std::vector<std::string> link_args;
+        link_args.push_back("clang++");
+        link_args.push_back("-shared");
+        link_args.push_back("-fPIC");
+        link_args.push_back(obj_file);
+
+        // Add library search paths (-L)
+        for (const auto& lib_path : opts.library_paths) {
+            link_args.push_back("-L" + lib_path);
+        }
+        // Add libraries to link (-l)
+        for (const auto& lib : opts.link_libraries) {
+            link_args.push_back("-l" + lib);
+        }
+        // Add linker flags (-Wl,...)
+        for (const auto& flag : opts.linker_flags) {
+            link_args.push_back("-Wl," + flag);
+        }
+        link_args.push_back("-o");
+        link_args.push_back(opts.output_file);
+
+        if (opts.verbose) {
+            std::cout << "[LINK]";
+            for (const auto& a : link_args) std::cout << " " << a;
+            std::cout << "\n";
+        }
+
+        std::vector<char*> argv_vec;
+        for (auto& s : link_args) argv_vec.push_back(const_cast<char*>(s.c_str()));
+        argv_vec.push_back(nullptr);
+
+        pid_t pid = fork();
+        if (pid == -1) {
+            std::cerr << "ariac: fork failed: " << strerror(errno) << "\n";
+            return 1;
+        }
+        if (pid == 0) {
+            execvp("clang++", argv_vec.data());
+            std::cerr << "ariac: execvp(clang++): " << strerror(errno) << "\n";
+            _exit(127);
+        }
+        int wstatus = 0;
+        if (waitpid(pid, &wstatus, 0) == -1 || !WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != 0) {
+            std::cerr << "Error: Shared library linking failed\n";
+            std::remove(obj_file.c_str());
+            return 1;
+        }
+        std::remove(obj_file.c_str());
+        if (opts.verbose) {
+            std::cout << "Shared library written to: " << opts.output_file << "\n";
         }
     } else if (opts.build_library) {
         // -c flag: Compile to object file (no linking)

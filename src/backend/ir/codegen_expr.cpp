@@ -2064,6 +2064,9 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
                 interpStr = int64ToString(interpVal);
             } else if (valType->isFloatingPointTy()) {
                 interpStr = floatToString(interpVal);
+            } else if (ariaType == "string" && valType->isPointerTy()) {
+                // String variable: already an AriaString*, just load the struct
+                interpStr = builder.CreateLoad(ariaStringType, interpVal, "str_interp");
             } else if (valType->isPointerTy()) {
                 interpStr = ptrToAriaString(interpVal);
             } else {
