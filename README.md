@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.4
+# Aria Programming Language v0.2.5
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -12,9 +12,9 @@
 
 ## Current Status (June 2026)
 
-**v0.2.4 — Compiler bug fixes, async/await error propagation, language core completion, code quality pass**
+**v0.2.5 — Documentation, CI/CD & Infrastructure**
 
-The compiler continues to mature with async/await error propagation, arrays-in-structs fixes, balanced ternary/nonary runtime arithmetic, and zero Aria-source warnings. The package ecosystem has grown to 43 libraries including 4 database client libraries (SQLite, PostgreSQL, MySQL, Redis).
+The project now has a GitHub Actions CI pipeline, issue/PR templates, man pages for all tools, a 695-line compiler architecture manual, and comprehensive documentation fixes. The package ecosystem stands at 43 libraries including 4 database client libraries (SQLite, PostgreSQL, MySQL, Redis).
 
 - **Async/await error propagation** — Promise-based mechanism stores `Result<T>` to coroutine promise via `@llvm.coro.promise`. Fixed dual await paths, coroutine memory management (malloc/free, not GC), and proper final suspend routing. Valgrind-clean.
 - **`fail()` from user functions** — Result-style: `fail(err)` is sugar for `Result{error:err, value:NIL, is_error:true}`, the complement to `pass(val)`. Separate `failsafe(errCode)` for panic-style shutdown.
@@ -488,7 +488,7 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Database guide** — `aria-packages/DATABASE_GUIDE.md` with prerequisites, patterns, and API reference
 - ✅ **V6 specialist model** — Updated corpus covering database additions
 
-### v0.2.4 — Released (Current)
+### v0.2.4 — Released
 
 - ✅ **Async/await error propagation** — Promise-based `Result<T>` through coroutine boundaries, fixed dual await paths, proper memory management, Valgrind-clean
 - ✅ **`fail()` from user functions** — Result-style mechanism: `fail(err)` is complement to `pass(val)`, no more sentinel workarounds
@@ -517,12 +517,15 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Benchmark suite** — 3 benchmarks (primes, collatz, gcd) in Aria and C with runner script. Aria matches or beats gcc -O2 on 2/3 benchmarks.
 - ✅ **Clean-machine build verified** — CMake and install.sh fixes for fresh Linux installs.
 
-### v0.2.5 — In Progress
+### v0.2.5 — Released (Current)
 
-- 🔧 **Documentation polish** — Programming guide review, test all doc code examples, compiler architecture manual
-- 🔧 **CI/CD** — GitHub Actions (build + test on push/PR), issue templates, PR template
-- 🔧 **Repository presentation** — Professional repo metadata, contributor onboarding guide
-- 🔧 **Website update** — Package listings, tool docs, install instructions on ai-liberation-platform.org
+- ✅ **CI/CD pipeline** — GitHub Actions: build, test, .deb packaging on push/PR to main/dev
+- ✅ **GitHub templates** — Bug report, feature request, compiler crash issue templates; PR template with checklist
+- ✅ **CONTRIBUTING.md** — Contributor guide with prerequisites, build instructions, code style
+- ✅ **Compiler architecture manual** — 695-line technical document covering full pipeline, AST, type system, IR generation, runtime, FFI, memory model
+- ✅ **Man pages** — groff man pages for ariac(1), aria-ls(1), aria-pkg(1), aria-doc(1), aria-dap(1)
+- ✅ **Documentation fixes** — Tested 24 code examples, fixed 7 doc bugs, documented 2 compiler bugs
+- ✅ **Specialist model evaluation** — Comprehensive evaluation of all model versions, strategy documented
 
 ### v0.3.0+ — Planned
 
