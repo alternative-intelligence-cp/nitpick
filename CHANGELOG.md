@@ -11,15 +11,12 @@
 - **Specialist model evaluation** — Comprehensive evaluation of all model versions (v1–v6). v4.1 remains best (82.1% keyword accuracy, 47.1% compile rate). Strategy documented: fix corpus quality before scaling model size.
 
 ### Fixed
+- **String interpolation in template literals** — String variables in template literals (`` `Hello, &{name}!` ``) produced garbage output. The codegen was sending `AriaString*` pointers to the generic `ptrToAriaString()` handler which called `strlen()` on the struct pointer. Now correctly loads the AriaString struct directly when the interpolated expression is a string type. Integer interpolation was unaffected.
 - **README code examples** — Fixed 5 incorrect examples: `fail("string")` → `fail(1i32)` (integer error code required), removed unimplemented `!` postfix unwrap, fixed `ok()` pattern, replaced unimplemented `+?!/+!!!` operators with working TBB overflow example.
 - **GETTING_STARTED hello world** — Added missing `failsafe` function and fixed its signature from `void` to `NIL`.
 
 ### Changed
 - **README update** — Comprehensive update from v0.2.2 to v0.2.4: CI badge, status section (June 2026), toolchain table (43 packages), moved async/await, fail(), arrays-in-structs to Stable features, added 4 DB packages, v0.2.3/v0.2.4/v0.2.5 roadmap sections.
-
-### Known Issues
-- String variables in template literals produce garbage output (integer variables work correctly).
-- `$` iteration variable in `till` loops not parsed.
 
 ## [0.2.4] - July 2026
 
