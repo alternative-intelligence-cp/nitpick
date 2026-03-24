@@ -215,7 +215,7 @@ std::string WebServer::generateDefaultHTML() {
             <h3>Example launch.json:</h3>
             <div class="code">
 {
-  "version": "0.2.3",
+  "version": "0.2.4",
   "configurations": [{
     "type": "aria",
     "request": "launch",
