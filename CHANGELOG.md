@@ -1,5 +1,27 @@
 # Aria Language Changelog
 
+## [0.2.6] - July 2026
+
+### Added
+- **`--shared` compiler flag** — Compile Aria source directly to shared libraries (`.so`). Functions are exported with C ABI linkage, enabling cross-language interop with C, Python, Rust, Go, and any language supporting C FFI.
+- **Cross-language bindings documentation** — `docs/CROSS_LANGUAGE_BINDINGS.md` covers Aria→C export, C→Aria FFI, Aria→Python via ctypes, type mapping tables, and symbol naming conventions.
+- **Binding examples** — `examples/bindings/` with working Aria→C and Aria→Python demos: `mathlib.aria`, `use_from_c.c`, `use_from_python.py`, and `run_demo.sh`.
+- **12 new ecosystem packages** (aria-packages repo):
+  - **aria-websocket** — RFC 6455 WebSocket client/server with pure POSIX sockets
+  - **aria-toml** — Self-contained TOML parser with dotted keys and table support
+  - **aria-yaml** — Indentation-based YAML parser with dotted key access
+  - **aria-compress** — zlib deflate/inflate, gzip/gunzip compression
+  - **aria-crypto** — SHA-256, MD5, HMAC-SHA256 (self-contained, no OpenSSL)
+  - **aria-url** — URL parsing, percent-encode/decode, component extraction
+  - **aria-mime** — 70+ MIME type lookups by filename/extension
+  - **aria-semver** — Semantic version parsing, comparison, constraint matching
+  - **aria-template** — `{{var}}` string template engine with set/get/render
+  - **aria-cli** — ANSI colors, bold/italic/underline, progress bars, banners
+  - **aria-env** — Environment variable get/set/unset, home/path/user helpers
+  - **aria-xml** — XML tag/attribute lookup, path queries, element counting
+- **Package READMEs** — All 12 new packages documented with API tables and usage examples.
+- **Package registry updated** — 55 total packages in `registry/index.json`.
+
 ## [0.2.5] - July 2026
 
 ### Added
@@ -11,15 +33,12 @@
 - **Specialist model evaluation** — Comprehensive evaluation of all model versions (v1–v6). v4.1 remains best (82.1% keyword accuracy, 47.1% compile rate). Strategy documented: fix corpus quality before scaling model size.
 
 ### Fixed
+- **String interpolation in template literals** — String variables in template literals (`` `Hello, &{name}!` ``) produced garbage output. The codegen was sending `AriaString*` pointers to the generic `ptrToAriaString()` handler which called `strlen()` on the struct pointer. Now correctly loads the AriaString struct directly when the interpolated expression is a string type. Integer interpolation was unaffected.
 - **README code examples** — Fixed 5 incorrect examples: `fail("string")` → `fail(1i32)` (integer error code required), removed unimplemented `!` postfix unwrap, fixed `ok()` pattern, replaced unimplemented `+?!/+!!!` operators with working TBB overflow example.
 - **GETTING_STARTED hello world** — Added missing `failsafe` function and fixed its signature from `void` to `NIL`.
 
 ### Changed
 - **README update** — Comprehensive update from v0.2.2 to v0.2.4: CI badge, status section (June 2026), toolchain table (43 packages), moved async/await, fail(), arrays-in-structs to Stable features, added 4 DB packages, v0.2.3/v0.2.4/v0.2.5 roadmap sections.
-
-### Known Issues
-- String variables in template literals produce garbage output (integer variables work correctly).
-- `$` iteration variable in `till` loops not parsed.
 
 ## [0.2.4] - July 2026
 
