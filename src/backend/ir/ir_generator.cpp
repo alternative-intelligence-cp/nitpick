@@ -1570,10 +1570,10 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     }
     
     // Floating point types
-    if (type_name == "flt16") return builder.getHalfTy();
+    if (type_name == "flt16" || type_name == "float16") return builder.getHalfTy();
     if (type_name == "flt32" || type_name == "float32") return builder.getFloatTy();
     if (type_name == "flt64" || type_name == "float64") return builder.getDoubleTy();
-    if (type_name == "flt128") return llvm::Type::getFP128Ty(context);
+    if (type_name == "flt128" || type_name == "float128") return llvm::Type::getFP128Ty(context);
     // ARIA-017: Extended precision floats (library-based, stored as limb arrays)
     // flt256: 4 x i64 limbs (256 bits), 32-byte aligned
     // flt512: 8 x i64 limbs (512 bits), 64-byte aligned
@@ -9402,7 +9402,7 @@ void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::st
     di_compile_unit = di_builder->createCompileUnit(
         llvm::dwarf::DW_LANG_C,  // Use C for now (could register DW_LANG_Aria later)
         di_file,
-        "Aria Compiler v0.2.1.1",  // Producer
+        "Aria Compiler v0.2.2",  // Producer
         false,                    // isOptimized
         "",                       // Flags
         0                         // Runtime version

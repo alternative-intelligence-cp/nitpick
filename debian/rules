@@ -1,0 +1,48 @@
+#!/usr/bin/make -f
+# Debian rules file for the Aria compiler package
+
+export DH_VERBOSE = 1
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	mkdir -p build
+	cd build && cmake .. \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DLLVM_DIR=/usr/lib/llvm-20/cmake
+
+override_dh_auto_build:
+	cd build && $(MAKE) -j$$(nproc) ariac aria-ls
+	# Build aria-safety (standalone C)
+	cd tools/aria-safety && gcc -O2 -Wall -Wextra -std=c99 -o aria-safety aria_safety.c
+
+override_dh_auto_install:
+	# Compiler binary
+	mkdir -p debian/aria/usr/bin
+	install -m 755 build/ariac debian/aria/usr/bin/ariac
+	# Language server
+	install -m 755 build/aria-ls debian/aria/usr/bin/aria-ls
+	# Safety audit tool
+	install -m 755 tools/aria-safety/aria-safety debian/aria/usr/bin/aria-safety
+	# MCP server (Python)
+	mkdir -p debian/aria/usr/lib/aria/tools
+	install -m 755 tools/aria-mcp/aria_mcp.py debian/aria/usr/lib/aria/tools/aria_mcp.py
+	# Standard library
+	mkdir -p debian/aria/usr/lib/aria/stdlib
+	if [ -d stdlib ]; then cp -r stdlib/* debian/aria/usr/lib/aria/stdlib/; fi
+	# Package libraries
+	mkdir -p debian/aria/usr/lib/aria/packages
+	for pkg in aria_ecosystem/aria_packages/*/; do \
+		pkgname=$$(basename "$$pkg"); \
+		if [ -d "$$pkg/src" ]; then \
+			mkdir -p debian/aria/usr/lib/aria/packages/$$pkgname; \
+			cp -r "$$pkg/src/"* debian/aria/usr/lib/aria/packages/$$pkgname/; \
+		fi; \
+	done
+
+override_dh_auto_clean:
+	rm -rf build
+	rm -f tools/aria-safety/aria-safety
+	dh_auto_clean

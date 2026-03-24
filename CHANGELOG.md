@@ -1,5 +1,40 @@
 # Aria Language Changelog
 
+## [0.2.2] - March 2026
+
+### Added
+- **GUI toolkit wrappers** — Three new packages providing idiomatic Aria bindings for native GUI/graphics libraries:
+  - `aria-raylib` — raylib v6.0 bindings: window, drawing, shapes, text, keyboard, mouse, timing (20/20 tests)
+  - `aria-sdl2` — SDL2 multimedia bindings: init, window, renderer, drawing, events, input, timing (19/19 tests)
+  - `aria-gtk4` — GTK4 desktop GUI bindings: widget registry (label, button, entry, separator, check_button), flag-based event model, non-blocking activation (20/20 tests)
+  - All use C shim pattern with flat parameter decomposition (Aria can't pass function pointers or struct values to extern)
+
+- **9 ecosystem utility libraries** — All with C shim + full test suites (166 tests total, all passing):
+  - `aria-test` — Test framework with assertion helpers (14/14)
+  - `aria-csv` — CSV parsing and generation (25/25)
+  - `aria-log` — Structured logging with severity levels (11/11)
+  - `aria-base64` — Base64 encoding and decoding (13/13)
+  - `aria-datetime` — Date/time formatting and arithmetic (22/22)
+  - `aria-regex` — Regular expression matching (19/19)
+  - `aria-fs` — File system utilities (33/33)
+  - `aria-socket` — Socket abstraction layer (10/10)
+  - `aria-http` — HTTP client (GET/POST) (19/19)
+
+- **aria-ls improvements** — `documentSymbol` (outline view), `references` (find all references), `signatureHelp` (parameter hints)
+- **aria-mcp improvements** — `aria_format` tool, structured error reporting, MCP resources for `aria_ref.md` sections
+- **aria_make test command** — Scans for `test_*.aria` / `*_test.aria`, compiles, runs, reports pass/fail
+- **aria-dap improvements** — Conditional breakpoints, hit conditions, logpoints, set variable. Added `SourceBreakpoint` type and `ExceptionBreakpointsFilter` (all/uncaught)
+- **aria-safety improvements** — 4 new checks: `UNSAFE`, `EXTERN`, `CAST`, `TODO`. Added `--json` output mode
+- **Debian packaging** — `debian/` directory with control, rules, changelog, copyright, `build-deb.sh`. Produces `aria_0.2.2-1_amd64.deb` (17 MB). Tested install/remove on Linux Mint 22.3
+- **V5 specialist corpus** — 2,688 training examples (2,419 train / 269 val) covering all new libraries, GUI wrappers, and tooling code
+- **Repository reorganization** — Monorepo split into 10 focused repos under `alternative-intelligence-cp` org: aria (compiler core), aria-packages, aria-docs, aria-tools, aria-specialist, aria-lang (hub), ariax, educational, johnny5, tech
+
+### Changed
+- **Package count** — Ecosystem expanded from 27 to 39 packages (27 original + 3 GUI wrappers + 9 utility libraries)
+- **Test count** — 677+ → 850+ test files with 172 new library assertions and 59 GUI wrapper tests
+
+---
+
 ## [0.2.1.1] - June 2026
 
 ### Added
