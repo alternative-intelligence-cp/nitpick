@@ -173,12 +173,11 @@ func:failsafe = NIL(int32:err_code) {
 **Layer 2: Result Types** — Explicit error propagation with concise syntax:
 ```aria
 func:divide = Result<int32>(int32:a, int32:b) {
-    if (b == 0i32) { fail("Division by zero"); }
+    if (b == 0i32) { fail(1i32); }
     pass(a / b);
 };
 
 int32:result = divide(10i32, 2i32) ? 0i32;  // Unwrap with default
-int32:strict = divide(10i32, 0i32)!;         // Unwrap or trigger failsafe
 ```
 
 **Layer 3: Unknown/Ok Pattern** — Explicit null safety without null types:
@@ -186,17 +185,21 @@ int32:strict = divide(10i32, 0i32)!;         // Unwrap or trigger failsafe
 int32:maybe_valid = unknown;
 if (some_condition) {
     maybe_valid = 42i32;
-    ok(maybe_valid);
+    ok(maybe_valid);  // Mark as valid
 }
-if (ok(maybe_valid)) {
-    drop(println(int32_toString(maybe_valid)));  // Safe here
-}
+// ok() returns the value itself — use wherever the value is needed
+int32:safe_val = ok(maybe_valid);
 ```
 
-**Layer 4: Operator Variants** — Choose your safety level:
+**Layer 4: TBB Overflow Detection** — Symmetric integers with error sentinels:
 ```aria
-tbb8:safe = 100tbb8 +?! 50tbb8;     // Checked: panics on overflow
-int32:fast = huge1 +!!! huge2;       // Unchecked: wraps silently
+tbb8:x = 120tbb8;
+tbb8:y = 10tbb8;
+tbb8:result = x + y;     // Overflow: result = ERR (-128)
+tbb8:err = -128tbb8;
+if (result == err) {
+    drop(println("Overflow detected!"));
+}
 ```
 
 ### For Loops — Two Forms

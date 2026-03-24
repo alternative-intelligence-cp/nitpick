@@ -172,6 +172,7 @@ func:main = int32(){
     print("Hello, World!");
     pass(0);
 };
+func:failsafe = NIL(int32:err_code) {};
 ```
 
 Save it somewhere you can find it (your home directory is fine).
@@ -462,7 +463,7 @@ Here are some prompts you can give Copilot (or any AI assistant) to help you wri
 > - Types: int8, int16, int32, int64, uint8-uint64, flt32, flt64, bool, string
 > - Large integers: int128, int256, int512, int1024, int2048, int4096
 > - Result type: `result:r = func(); r.val` for value, `r.err` for error code
-> - The failsafe function is required as an error handler: `func:failsafe = void(int32:err_code){ };`
+> - The failsafe function is required as an error handler: `func:failsafe = NIL(int32:err_code) {};`
 >
 > I have the language spec at `.internal/aria_specs.txt` and examples in `examples/basic/` in my project. Help me write Aria programs following these rules.
 
