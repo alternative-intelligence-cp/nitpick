@@ -703,6 +703,7 @@ llvm::Value* ExprCodegen::generateTBBBinaryOp(const std::string& tbbType,
                                                frontend::TokenType op,
                                                llvm::Value* left,
                                                llvm::Value* right) {
+    (void)tbbType;
     llvm::Type* type = left->getType();
     llvm::Value* sentinel = getTBBSentinel(type);
     
@@ -734,7 +735,7 @@ llvm::Value* ExprCodegen::generateTBBBinaryOp(const std::string& tbbType,
     
     if (op == frontend::TokenType::TOKEN_PLUS) {
         // Use llvm.sadd.with.overflow for addition
-        llvm::Function* saddFunc = llvm::Intrinsic::getDeclaration(
+        llvm::Function* saddFunc = llvm::Intrinsic::getOrInsertDeclaration(
             module,
             llvm::Intrinsic::sadd_with_overflow,
             {type}
@@ -744,7 +745,7 @@ llvm::Value* ExprCodegen::generateTBBBinaryOp(const std::string& tbbType,
         overflow = builder.CreateExtractValue(resStruct, 1, "ovf");
     } else if (op == frontend::TokenType::TOKEN_MINUS) {
         // Use llvm.ssub.with.overflow for subtraction
-        llvm::Function* ssubFunc = llvm::Intrinsic::getDeclaration(
+        llvm::Function* ssubFunc = llvm::Intrinsic::getOrInsertDeclaration(
             module,
             llvm::Intrinsic::ssub_with_overflow,
             {type}
@@ -754,7 +755,7 @@ llvm::Value* ExprCodegen::generateTBBBinaryOp(const std::string& tbbType,
         overflow = builder.CreateExtractValue(resStruct, 1, "ovf");
     } else if (op == frontend::TokenType::TOKEN_STAR) {
         // Use llvm.smul.with.overflow for multiplication
-        llvm::Function* smulFunc = llvm::Intrinsic::getDeclaration(
+        llvm::Function* smulFunc = llvm::Intrinsic::getOrInsertDeclaration(
             module,
             llvm::Intrinsic::smul_with_overflow,
             {type}
@@ -1617,7 +1618,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
                 module
             );
         }
-        llvm::Value* panicMsg = builder.CreateGlobalStringPtr(
+        llvm::Value* panicMsg = builder.CreateGlobalString(
             "Out of memory in int64 to string conversion",
             "int_oom_msg"
         );
@@ -1710,7 +1711,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
                 module
             );
         }
-        llvm::Value* panicMsg = builder.CreateGlobalStringPtr(
+        llvm::Value* panicMsg = builder.CreateGlobalString(
             "Out of memory in float to string conversion",
             "float_oom_msg"
         );
@@ -1974,7 +1975,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
                 module
             );
         }
-        llvm::Value* panicMsg = builder.CreateGlobalStringPtr(
+        llvm::Value* panicMsg = builder.CreateGlobalString(
             "Out of memory allocating template literal array",
             "gc_oom_msg"
         );
@@ -2137,7 +2138,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             module
         );
     }
-    llvm::Value* panicMsg = builder.CreateGlobalStringPtr(
+    llvm::Value* panicMsg = builder.CreateGlobalString(
         "Out of memory in string concatenation (template literal)",
         "oom_msg"
     );
@@ -2460,7 +2461,6 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     
     if (leftIsNIL || rightIsNIL) {
         // Check if the other operand is an optional (struct with 2 fields: {i1, T})
-        llvm::Type* optType = nullptr;
         llvm::Type* wrappedType = nullptr;
         
         if (leftIsNIL && right->getType()->isStructTy()) {
@@ -2507,6 +2507,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     bool leftIsVector = left->getType()->isVectorTy();
     bool rightIsVector = right->getType()->isVectorTy();
     bool isVector = leftIsVector || rightIsVector;
+    (void)isVector;
     
     std::cerr << "[BROADCAST DEBUG] leftIsVector=" << leftIsVector 
               << ", rightIsVector=" << rightIsVector << std::endl;
@@ -2825,6 +2826,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     if (op == TokenType::TOKEN_NULL_COALESCE) {
         // Save left value and block
         llvm::Value* leftVal = left;
+        (void)leftVal;
         llvm::BasicBlock* leftBB = builder.GetInsertBlock();
         
         // Create blocks for conditional evaluation
@@ -2881,6 +2883,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     // Guard: LBIM extended types (int2048/int4096/uint2048/uint4096) are stored as
     // structs but were not caught by getExprLBIMTypeName above. Route them to runtime.
     auto lbimBitwiseGuard = [&](const char* opSuffix) -> llvm::Value* {
+        (void)opSuffix;
         if (!left->getType()->isStructTy()) return nullptr;
         auto* st = llvm::cast<llvm::StructType>(left->getType());
         std::string sname = st->getName().str();
@@ -6943,9 +6946,31 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("drop() requires one argument");
         }
         
-        // Just evaluate the expression (for side effects) and discard the result
-        // Don't free anything - this is for discarding result<void> and similar
-        codegenExpressionNode(expr->arguments[0].get(), this);
+        // Evaluate the expression (for side effects) and discard the result
+        llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+        
+        // If the dropped expression is a call to an async function, resume and free
+        // the coroutine so its body actually executes
+        if (val && val->getType()->isPointerTy()) {
+            ASTNode* arg = expr->arguments[0].get();
+            if (arg->type == ASTNode::NodeType::CALL) {
+                CallExpr* innerCall = static_cast<CallExpr*>(arg);
+                if (innerCall->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* innerIdent = static_cast<IdentifierExpr*>(innerCall->callee.get());
+                    llvm::Function* callee_fn = module->getFunction(innerIdent->name);
+                    if (callee_fn && callee_fn->hasMetadata("aria.async")) {
+                        // Resume the coroutine (runs the body to completion)
+                        llvm::Function* coro_resume = llvm::Intrinsic::getOrInsertDeclaration(
+                            module, llvm::Intrinsic::coro_resume);
+                        builder.CreateCall(coro_resume, {val});
+                        // Destroy the coroutine frame (triggers cleanup → free)
+                        llvm::Function* coro_destroy = llvm::Intrinsic::getOrInsertDeclaration(
+                            module, llvm::Intrinsic::coro_destroy);
+                        builder.CreateCall(coro_destroy, {val});
+                    }
+                }
+            }
+        }
         
         // drop() returns void - LLVM represents this as no value
         return nullptr;
@@ -7550,6 +7575,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         // Get path argument (should be AriaString)
         llvm::Value* path_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
         llvm::Value* path_str = builder.CreateLoad(getAriaStringType(), path_ptr, "path_str");
+        (void)path_str;
         
         // Extract char* from AriaString
         llvm::Value* path_data_ptr = builder.CreateStructGEP(getAriaStringType(), 
@@ -7727,7 +7753,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("clz32() requires one argument");
         }
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* ctlz = llvm::Intrinsic::getDeclaration(
+        llvm::Function* ctlz = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::ctlz, {builder.getInt32Ty()});
         llvm::Value* is_zero_undef = builder.getInt1(false);  // Return bit-width if zero
         return builder.CreateCall(ctlz, {arg, is_zero_undef}, "clz");
@@ -7738,7 +7764,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("clz64() requires one argument");
         }
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* ctlz = llvm::Intrinsic::getDeclaration(
+        llvm::Function* ctlz = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::ctlz, {builder.getInt64Ty()});
         llvm::Value* is_zero_undef = builder.getInt1(false);
         llvm::Value* result64 = builder.CreateCall(ctlz, {arg, is_zero_undef}, "clz");
@@ -7751,7 +7777,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("ctz32() requires one argument");
         }
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* cttz = llvm::Intrinsic::getDeclaration(
+        llvm::Function* cttz = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::cttz, {builder.getInt32Ty()});
         llvm::Value* is_zero_undef = builder.getInt1(false);
         return builder.CreateCall(cttz, {arg, is_zero_undef}, "ctz");
@@ -7762,7 +7788,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("ctz64() requires one argument");
         }
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* cttz = llvm::Intrinsic::getDeclaration(
+        llvm::Function* cttz = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::cttz, {builder.getInt64Ty()});
         llvm::Value* is_zero_undef = builder.getInt1(false);
         llvm::Value* result64 = builder.CreateCall(cttz, {arg, is_zero_undef}, "ctz");
@@ -7775,7 +7801,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("popcount32() requires one argument");
         }
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* ctpop = llvm::Intrinsic::getDeclaration(
+        llvm::Function* ctpop = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::ctpop, {builder.getInt32Ty()});
         return builder.CreateCall(ctpop, {arg}, "popcount");
     }
@@ -7785,7 +7811,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("popcount64() requires one argument");
         }
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* ctpop = llvm::Intrinsic::getDeclaration(
+        llvm::Function* ctpop = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::ctpop, {builder.getInt64Ty()});
         llvm::Value* result64 = builder.CreateCall(ctpop, {arg}, "popcount");
         return builder.CreateTrunc(result64, builder.getInt32Ty(), "popcount32");
@@ -7797,7 +7823,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("bswap16() requires one argument");
         }
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* bswap = llvm::Intrinsic::getDeclaration(
+        llvm::Function* bswap = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::bswap, {builder.getInt16Ty()});
         return builder.CreateCall(bswap, {arg}, "bswap");
     }
@@ -7807,7 +7833,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("bswap32() requires one argument");
         }
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* bswap = llvm::Intrinsic::getDeclaration(
+        llvm::Function* bswap = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::bswap, {builder.getInt32Ty()});
         return builder.CreateCall(bswap, {arg}, "bswap");
     }
@@ -7817,7 +7843,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("bswap64() requires one argument");
         }
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* bswap = llvm::Intrinsic::getDeclaration(
+        llvm::Function* bswap = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::bswap, {builder.getInt64Ty()});
         return builder.CreateCall(bswap, {arg}, "bswap");
     }
@@ -7828,7 +7854,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("likely() requires one argument");
         }
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* expect = llvm::Intrinsic::getDeclaration(
+        llvm::Function* expect = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::expect, {builder.getInt1Ty()});
         llvm::Value* true_val = builder.getInt1(true);
         return builder.CreateCall(expect, {arg, true_val}, "likely");
@@ -7839,7 +7865,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("unlikely() requires one argument");
         }
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* expect = llvm::Intrinsic::getDeclaration(
+        llvm::Function* expect = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::expect, {builder.getInt1Ty()});
         llvm::Value* false_val = builder.getInt1(false);
         return builder.CreateCall(expect, {arg, false_val}, "unlikely");
@@ -7851,7 +7877,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("prefetch() requires one argument");
         }
         llvm::Value* ptr = codegenExpressionNode(expr->arguments[0].get(), this);
-        llvm::Function* prefetch = llvm::Intrinsic::getDeclaration(
+        llvm::Function* prefetch = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::prefetch, {ptr->getType()});
         // rw=0 (read), locality=3 (high), cache type=1 (data)
         llvm::Value* rw = builder.getInt32(0);
@@ -7864,7 +7890,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     
     // @breakpoint - Debugger breakpoint
     if (callee_ident->name == "@breakpoint" || callee_ident->name == "breakpoint") {
-        llvm::Function* debugtrap = llvm::Intrinsic::getDeclaration(
+        llvm::Function* debugtrap = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::debugtrap);
         builder.CreateCall(debugtrap);
         return llvm::ConstantInt::get(builder.getInt32Ty(), 0);
@@ -7872,7 +7898,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     
     // @trap - Intentional trap/abort
     if (callee_ident->name == "@trap" || callee_ident->name == "trap") {
-        llvm::Function* trap = llvm::Intrinsic::getDeclaration(
+        llvm::Function* trap = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::trap);
         builder.CreateCall(trap);
         // Insert unreachable after trap
@@ -7906,11 +7932,11 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             return builder.CreateSelect(is_negative, negated, arg, "abs");
         } else if (arg->getType()->isDoubleTy()) {
             // Float absolute value: llvm.fabs intrinsic
-            llvm::Function* fabs_func = llvm::Intrinsic::getDeclaration(
+            llvm::Function* fabs_func = llvm::Intrinsic::getOrInsertDeclaration(
                 module, llvm::Intrinsic::fabs, {arg->getType()});
             return builder.CreateCall(fabs_func, {arg}, "abs");
         } else if (arg->getType()->isFloatTy()) {
-            llvm::Function* fabs_func = llvm::Intrinsic::getDeclaration(
+            llvm::Function* fabs_func = llvm::Intrinsic::getOrInsertDeclaration(
                 module, llvm::Intrinsic::fabs, {arg->getType()});
             return builder.CreateCall(fabs_func, {arg}, "abs");
         }
@@ -7936,7 +7962,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             // Use LLVM intrinsics for float min/max
             llvm::Intrinsic::ID intrinsic_id = is_min ? 
                 llvm::Intrinsic::minnum : llvm::Intrinsic::maxnum;
-            llvm::Function* minmax_func = llvm::Intrinsic::getDeclaration(
+            llvm::Function* minmax_func = llvm::Intrinsic::getOrInsertDeclaration(
                 module, intrinsic_id, {arg1->getType()});
             return builder.CreateCall(minmax_func, {arg1, arg2}, callee_ident->name);
         }
@@ -7966,7 +7992,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         else if (callee_ident->name == "round") intrinsic_id = llvm::Intrinsic::round;
         else intrinsic_id = llvm::Intrinsic::trunc;
         
-        llvm::Function* func = llvm::Intrinsic::getDeclaration(
+        llvm::Function* func = llvm::Intrinsic::getOrInsertDeclaration(
             module, intrinsic_id, {builder.getDoubleTy()});
         return builder.CreateCall(func, {arg}, callee_ident->name);
     }
@@ -7984,7 +8010,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
             }
         }
-        llvm::Function* sqrt_func = llvm::Intrinsic::getDeclaration(
+        llvm::Function* sqrt_func = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::sqrt, {builder.getDoubleTy()});
         return builder.CreateCall(sqrt_func, {arg}, "sqrt");
     }
@@ -8037,7 +8063,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             }
         }
         
-        llvm::Function* pow_func = llvm::Intrinsic::getDeclaration(
+        llvm::Function* pow_func = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::pow, {builder.getDoubleTy()});
         return builder.CreateCall(pow_func, {base, exp}, "pow");
     }
@@ -8055,7 +8081,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 arg = builder.CreateSIToFP(arg, builder.getDoubleTy());
             }
         }
-        llvm::Function* exp_func = llvm::Intrinsic::getDeclaration(
+        llvm::Function* exp_func = llvm::Intrinsic::getOrInsertDeclaration(
             module, llvm::Intrinsic::exp, {builder.getDoubleTy()});
         return builder.CreateCall(exp_func, {arg}, "exp");
     }
@@ -8081,7 +8107,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         else if (callee_ident->name == "log10") intrinsic_id = llvm::Intrinsic::log10;
         else intrinsic_id = llvm::Intrinsic::log2;
         
-        llvm::Function* log_func = llvm::Intrinsic::getDeclaration(
+        llvm::Function* log_func = llvm::Intrinsic::getOrInsertDeclaration(
             module, intrinsic_id, {builder.getDoubleTy()});
         return builder.CreateCall(log_func, {arg}, callee_ident->name);
     }
@@ -8102,7 +8128,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         
         llvm::Intrinsic::ID intrinsic_id = (callee_ident->name == "sin") ? 
             llvm::Intrinsic::sin : llvm::Intrinsic::cos;
-        llvm::Function* trig_func = llvm::Intrinsic::getDeclaration(
+        llvm::Function* trig_func = llvm::Intrinsic::getOrInsertDeclaration(
             module, intrinsic_id, {builder.getDoubleTy()});
         return builder.CreateCall(trig_func, {arg}, callee_ident->name);
     }
@@ -9106,6 +9132,7 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
         std::vector<llvm::Type*> env_field_types;
         
         for (const auto& captured : expr->capturedVars) {
+            (void)captured;
             // For now, assume all captures are i64 (will be refined later)
             // TODO: Determine actual type from symbol table
             llvm::Type* field_type = llvm::Type::getInt64Ty(context);
@@ -9508,86 +9535,80 @@ llvm::Value* ExprCodegen::codegenAwait(ASTNode* node) {
     
     std::cerr << "[DEBUG AWAIT] Async check passed, continuing..." << std::endl;
     
-    // Step 1: Evaluate the operand (should return a Future or coroutine handle)
-    llvm::Value* future_value = codegenExpressionNode(expr->operand.get(), this);
+    // Step 1: Evaluate the operand (should return a coroutine handle ptr)
+    llvm::Value* coro_handle = codegenExpressionNode(expr->operand.get(), this);
     
-    // For now, assume operand returns i8* (coroutine handle)
-    // TODO: Proper Future<T> type handling when we implement the trait system
+    if (!coro_handle || !coro_handle->getType()->isPointerTy()) {
+        std::cerr << "ERROR: await operand must return a coroutine handle (ptr)" << std::endl;
+        return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
+    }
     
-    // Step 2: Get coroutine intrinsics
-    llvm::Function* coro_save = llvm::Intrinsic::getDeclaration(
-        module,
-        llvm::Intrinsic::coro_save
-    );
-    
-    llvm::Function* coro_suspend = llvm::Intrinsic::getDeclaration(
-        module,
-        llvm::Intrinsic::coro_suspend
-    );
-    
-    llvm::Function* coro_resume = llvm::Intrinsic::getDeclaration(
+    // Step 2: Resume the awaited coroutine (runs it to completion for sync model)
+    llvm::Function* coro_resume = llvm::Intrinsic::getOrInsertDeclaration(
         module,
         llvm::Intrinsic::coro_resume
     );
+    builder.CreateCall(coro_resume, {coro_handle});
     
-    // Step 3: If the operand is a coroutine handle (i8*), resume it
-    if (future_value->getType()->isPointerTy()) {
-        // Resume the awaited coroutine
-        builder.CreateCall(coro_resume, {future_value});
+    // Step 3: Extract Result<T> from the awaited coroutine's promise
+    // Use @llvm.coro.promise(ptr handle, i32 align, i1 from=false) to get promise ptr
+    llvm::Function* coro_promise_fn = llvm::Intrinsic::getOrInsertDeclaration(
+        module,
+        llvm::Intrinsic::coro_promise
+    );
+    
+    llvm::Value* promise_ptr = builder.CreateCall(
+        coro_promise_fn,
+        {coro_handle,
+         llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 8),
+         llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0)},
+        "await.promise.ptr"
+    );
+    
+    // Determine the awaited function's Result type by looking up the called function
+    llvm::Type* result_type = nullptr;
+    
+    // The operand is typically a function call — find the callee for its metadata
+    if (expr->operand->type == ASTNode::NodeType::CALL) {
+        CallExpr* callExpr = static_cast<CallExpr*>(expr->operand.get());
+        if (callExpr->callee->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* ident = static_cast<IdentifierExpr*>(callExpr->callee.get());
+            llvm::Function* callee = module->getFunction(ident->name);
+            if (callee && callee->hasMetadata("aria.async")) {
+                // Reconstruct the Result<T> type from the async function's AST info
+                // The async function's promise type was set during its codegen
+                // For now, use llvm.coro.promise to get the raw promise ptr
+                // and trust the caller knows the type
+            }
+        }
     }
     
-    // Get the current coroutine handle
-    // LLVM's coroutine pass will insert this properly during transformation
-    // For now, we use the awaited handle as placeholder
-    llvm::Value* current_handle = future_value;
+    // If we can't determine the exact type, try to infer from the awaited function's
+    // original return type. For now, use a generic Result<i32> as common case.
+    // The caller can use .value / .is_error on the returned Result.
+    if (!result_type) {
+        // Build Result<i32> as default (most common async return type)
+        std::vector<llvm::Type*> result_fields = {
+            llvm::Type::getInt32Ty(context),     // value
+            llvm::PointerType::get(context, 0),  // error ptr
+            llvm::Type::getInt8Ty(context)        // is_error
+        };
+        result_type = llvm::StructType::get(context, result_fields);
+    }
     
-    // Step 4: Save state and suspend
-    llvm::Value* save_token = builder.CreateCall(coro_save, {current_handle}, "await.save");
+    // Load the Result from the promise.
+    // With proper final suspend routing, coro.resume suspends the frame (case 0)
+    // WITHOUT freeing it. The frame is still valid, so we can safely read the promise.
+    llvm::Value* result = builder.CreateLoad(result_type, promise_ptr, "await.result");
     
-    // Suspend (not final - this is an intermediate suspension point)
-    llvm::Value* is_final = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
-    llvm::Value* suspend_result = builder.CreateCall(
-        coro_suspend,
-        {save_token, is_final},
-        "await.suspend"
+    // Now destroy the coroutine frame (triggers case 1 → cleanup → free)
+    llvm::Function* coro_destroy = llvm::Intrinsic::getOrInsertDeclaration(
+        module,
+        llvm::Intrinsic::coro_destroy
     );
+    builder.CreateCall(coro_destroy, {coro_handle});
     
-    // Step 5: Create resume and cleanup blocks
-    llvm::BasicBlock* resume_block = llvm::BasicBlock::Create(
-        context,
-        "await.resume",
-        current_func
-    );
-    
-    llvm::BasicBlock* cleanup_block = llvm::BasicBlock::Create(
-        context,
-        "await.cleanup",
-        current_func
-    );
-    
-    // Step 6: Switch on suspend result
-    // 0 = resume (continue execution)
-    // 1 = destroy (cleanup)
-    llvm::SwitchInst* suspend_switch = builder.CreateSwitch(suspend_result, resume_block, 1);
-    suspend_switch->addCase(
-        llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 1),
-        cleanup_block
-    );
-    
-    // Step 7: Generate cleanup block (jump to function's main cleanup)
-    builder.SetInsertPoint(cleanup_block);
-    // TODO: Jump to function's coro.cleanup block when we refactor to share state
-    // For now, just create unreachable as LLVM's pass will fix this
-    builder.CreateUnreachable();
-    
-    // Step 8: Generate resume block - continue execution here
-    builder.SetInsertPoint(resume_block);
-    
-    // For now, return the future value itself
-    // TODO: Extract actual result from Future<T> when trait system is ready
-    // This will involve calling Future::poll() and handling Ready/Pending states
-    
-    return future_value;
+    return result;
 }
 
 // ============================================================================
