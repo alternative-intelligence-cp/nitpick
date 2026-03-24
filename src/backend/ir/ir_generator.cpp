@@ -2362,6 +2362,13 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             }
         }
 
+        // v0.2.7: main() always uses C-standard (i32, ptr) signature for argc/argv
+        if (fd->funcName == "main") {
+            pre_params.clear();
+            pre_params.push_back(builder.getInt32Ty());  // argc
+            pre_params.push_back(builder.getPtrTy());    // argv (char**)
+        }
+
         llvm::FunctionType* pre_ft = llvm::FunctionType::get(pre_ret, pre_params, false);
         llvm::Function::Create(pre_ft, llvm::Function::ExternalLinkage, pre_name, module.get());
     }
@@ -2677,7 +2684,17 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 std::cerr << "[DEBUG] Async function detected: " << funcDecl->funcName << ", changing return type to i8*" << std::endl;
             }
             
-            llvm::FunctionType* func_type = llvm::FunctionType::get(actual_return_type, param_types, false);
+            // v0.2.7: main() always uses C-standard (i32, ptr) signature for argc/argv
+            // User-declared parameters are mapped to these LLVM args; if none declared,
+            // the args still exist but aren't bound to named variables.
+            std::vector<llvm::Type*> actual_param_types = param_types;
+            if (funcDecl->funcName == "main") {
+                actual_param_types.clear();
+                actual_param_types.push_back(builder.getInt32Ty());  // argc
+                actual_param_types.push_back(builder.getPtrTy());    // argv (char**)
+            }
+
+            llvm::FunctionType* func_type = llvm::FunctionType::get(actual_return_type, actual_param_types, false);
             
             // Determine function name (qualified if in a module)
             std::string func_name = modulePrefix.empty() 
@@ -2793,6 +2810,32 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 
                 // Call aria_gc_init(0, 0) to use default sizes (4MB nursery, 64MB old gen)
                 builder.CreateCall(gc_init, {builder.getInt64(0), builder.getInt64(0)});
+
+                // v0.2.7: Initialize command-line argument storage
+                // aria_args_init(int32_t argc, char** argv)
+                llvm::FunctionType* args_init_type = llvm::FunctionType::get(
+                    builder.getVoidTy(),
+                    {builder.getInt32Ty(), builder.getPtrTy()},
+                    false
+                );
+                llvm::Function* args_init = llvm::dyn_cast<llvm::Function>(
+                    module->getOrInsertFunction("aria_args_init", args_init_type).getCallee()
+                );
+                // main's first two LLVM args are always argc (i32) and argv (ptr)
+                auto main_arg_iter = func->arg_begin();
+                llvm::Value* argc_val = &*main_arg_iter++;
+                llvm::Value* argv_val = &*main_arg_iter;
+                builder.CreateCall(args_init, {argc_val, argv_val});
+
+                // v0.2.7: Initialize six-stream I/O (FDs 0-5)
+                // aria_streams_init(void)
+                llvm::FunctionType* streams_init_type = llvm::FunctionType::get(
+                    builder.getVoidTy(), false
+                );
+                llvm::Function* streams_init = llvm::dyn_cast<llvm::Function>(
+                    module->getOrInsertFunction("aria_streams_init", streams_init_type).getCallee()
+                );
+                builder.CreateCall(streams_init, {});
             }
             
             // Phase 4.6: Async function coroutine setup

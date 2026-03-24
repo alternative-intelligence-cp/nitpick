@@ -1,5 +1,23 @@
 # Aria Language Changelog
 
+## [0.2.7] - March 2026
+
+### Added
+- **Six-Stream I/O runtime** — `aria_streams_init()` called at program startup, initializes all 6 file descriptors (stdin/stdout/stderr/stddbg/stddati/stddato) with graceful fallback when FDs 3-5 aren't available.
+- **`stdin_read_all()` builtin** — Reads all content from stdin as a string. Supports piped input (non-seekable streams) via chunked reading.
+- **`stdin_read_line()` fix** — Now properly wraps C `char*` return in `AriaString*` via `aria_string_from_cstr_simple`.
+- **Argument access runtime** — `aria_args_init(argc, argv)` called at startup. `aria_get_argc()` and `aria_arg(index)` builtins for command-line argument access.
+- **Main function signature** — Compiler now generates `main(i32, ptr)` automatically, passing argc/argv to the runtime.
+- **26 POSIX tools** — Complete set of Unix utilities implemented in Aria, living in the `ariax` repo under `tools/`. All support stdin for pipeline chaining.
+  - File utilities: cat, head, tail, wc, tee, cut, sort, uniq, tr
+  - Search & filter: grep, find, diff
+  - System utilities: echo, yes, true, false, env, sleep, basename, dirname, seq
+  - Text processing: nl, fold, paste, expand, unexpand
+- **Pipeline support** — All tools read from stdin when no file argument given, enabling standard Unix pipelines: `cat file | grep pattern | sort | uniq | wc`
+
+### Fixed
+- **`aria_text_stream_read_all` pipe support** — Now handles non-seekable streams (pipes) by reading in chunks until EOF, instead of using `ftell/fseek` which fails on pipes.
+
 ## [0.2.6] - July 2026
 
 ### Added
