@@ -47,9 +47,10 @@ jobs:
 
       - name: Run regression tests
         run: |
-          # The regression runner expects build/ariac
+          # The regression runner expects build/ariac and runtime library
           mkdir -p build
           cp build_ci/ariac build/ariac
+          cp build_ci/libaria_runtime.a build/libaria_runtime.a
           bash tests/regression/run_regression.sh
 
       - name: Build .deb package
