@@ -1,5 +1,27 @@
 # Aria Language Changelog
 
+## [0.2.6] - July 2026
+
+### Added
+- **`--shared` compiler flag** — Compile Aria source directly to shared libraries (`.so`). Functions are exported with C ABI linkage, enabling cross-language interop with C, Python, Rust, Go, and any language supporting C FFI.
+- **Cross-language bindings documentation** — `docs/CROSS_LANGUAGE_BINDINGS.md` covers Aria→C export, C→Aria FFI, Aria→Python via ctypes, type mapping tables, and symbol naming conventions.
+- **Binding examples** — `examples/bindings/` with working Aria→C and Aria→Python demos: `mathlib.aria`, `use_from_c.c`, `use_from_python.py`, and `run_demo.sh`.
+- **12 new ecosystem packages** (aria-packages repo):
+  - **aria-websocket** — RFC 6455 WebSocket client/server with pure POSIX sockets
+  - **aria-toml** — Self-contained TOML parser with dotted keys and table support
+  - **aria-yaml** — Indentation-based YAML parser with dotted key access
+  - **aria-compress** — zlib deflate/inflate, gzip/gunzip compression
+  - **aria-crypto** — SHA-256, MD5, HMAC-SHA256 (self-contained, no OpenSSL)
+  - **aria-url** — URL parsing, percent-encode/decode, component extraction
+  - **aria-mime** — 70+ MIME type lookups by filename/extension
+  - **aria-semver** — Semantic version parsing, comparison, constraint matching
+  - **aria-template** — `{{var}}` string template engine with set/get/render
+  - **aria-cli** — ANSI colors, bold/italic/underline, progress bars, banners
+  - **aria-env** — Environment variable get/set/unset, home/path/user helpers
+  - **aria-xml** — XML tag/attribute lookup, path queries, element counting
+- **Package READMEs** — All 12 new packages documented with API tables and usage examples.
+- **Package registry updated** — 55 total packages in `registry/index.json`.
+
 ## [0.2.5] - July 2026
 
 ### Added
