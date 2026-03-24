@@ -1,0 +1,209 @@
+.\" ariac(1) man page
+.TH ARIAC 1 "July 2026" "Aria 0.2.5" "Aria Language"
+.SH NAME
+ariac \- compile Aria source files
+.SH SYNOPSIS
+.B ariac
+.RI [ options ]
+.I file.aria
+.RI [ file2.aria " ...]"
+.br
+.B ariac \-\-version
+.br
+.B ariac \-\-help
+.SH DESCRIPTION
+.B ariac
+is the compiler for the Aria programming language. It orchestrates the full
+compilation pipeline: preprocessing (NASM\-style macros), lexical analysis,
+parsing, semantic analysis (type checking, generic resolution, borrow
+checking), LLVM IR generation, optimization, and linking.
+.PP
+It can compile one or more
+.I .aria
+source files into a native executable, emit intermediate representations
+(LLVM IR, bitcode, assembly), or generate NVIDIA PTX code for GPU execution.
+Linking is performed via
+.B clang++
+and requires
+.BR libaria_runtime.a .
+.PP
+Every Aria executable must define a
+.BI failsafe( int32 )
+function for error\-handling accountability. Library builds
+.RB ( \-c )
+are exempt from this requirement.
+.SH OPTIONS
+.SS "Output Options"
+.TP
+.BI \-o " file"
+Write output to
+.IR file .
+Default:
+.B a.out
+for executables, or derived from the input filename for other output types.
+.TP
+.BI \-I " dir"
+Add directory to module search path (for
+.B use
+statements).
+.TP
+.B \-E
+Preprocess only \(em output preprocessed source to stdout.
+.TP
+.B \-\-emit\-llvm
+Emit LLVM IR text
+.RB ( .ll ).
+.TP
+.B \-\-emit\-llvm\-bc
+Emit LLVM bitcode
+.RB ( .bc ).
+.TP
+.B \-\-emit\-asm
+Emit native assembly
+.RB ( .s ).
+.TP
+.B \-\-emit\-deps
+Emit JSON dependency manifest to stdout for
+.BR aria\-make .
+Outputs
+.BR "{\(dqsource\(dq, \(dqimports\(dq, \(dqerror\(dq}" .
+.TP
+.B \-\-ast\-dump
+Dump AST and exit.
+.TP
+.B \-\-tokens
+Dump tokens and exit.
+.TP
+.B \-c
+Compile to object file
+.RB ( .o )
+\(em library mode. No
+.B failsafe()
+required.
+.TP
+.B \-g
+Emit DWARF debug info. Forces optimization to
+.BR \-O0 .
+Required for use with
+.BR aria\-dap (1).
+.SS "Optimization"
+.TP
+.BI \-O level
+Optimization level:
+.BR 0 ", " 1 ", " 2 ", or " 3 .
+.SS "GPU Target Options"
+.TP
+.B \-\-emit\-ptx
+Emit PTX assembly for GPU execution.
+.TP
+.BI \-\-target= arch
+Target architecture:
+.BR cpu ", " gpu ", or " gpu+cpu .
+.B gpu
+implies
+.BR \-\-emit\-ptx .
+.TP
+.BI \-\-gpu\-arch= sm
+CUDA compute capability. Default:
+.BR sm_50 .
+Examples:
+.BR sm_50 ", " sm_75 ", " sm_86 ", " sm_89 ", " sm_90 .
+.TP
+.BI \-\-gpu\-opt= level
+GPU optimization level 0\(en3. Default:
+.BR 3 .
+.TP
+.B \-\-gpu\-debug
+Embed debug info in PTX output.
+.SS "Linking Options"
+.TP
+.BI \-l library
+Link against
+.IR library .
+.TP
+.BI \-L path
+Add library search path.
+.TP
+.BI \-Wl, option
+Pass option directly to linker.
+.SS "Warning Options"
+.TP
+.B \-Wall
+Enable all warnings.
+.TP
+.B \-Werror
+Treat warnings as errors.
+.TP
+.BI \-W warning
+Enable specific warning.
+.TP
+.BI \-Wno\- warning
+Disable specific warning.
+.SS "General"
+.TP
+.B \-\-version
+Show version and LLVM version, then exit.
+.TP
+.BR \-\-help ", " \-h
+Show help message and exit.
+.TP
+.BR \-v ", " \-\-verbose
+Verbose output showing compilation phases.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Error (compilation failure, invalid arguments, linking failure, missing input).
+.SH NOTES
+Multiple input files are compiled to separate LLVM modules and linked using
+.BR llvm::Linker .
+.PP
+Modules containing 128+\-bit integer types are automatically compiled at
+.B \-O0
+to work around LLVM bugs.
+.PP
+The compiler finds stdlib modules relative to its own executable path via
+.IR /proc/self/exe .
+.PP
+.B \-latomic
+is always linked implicitly.
+.SH EXAMPLES
+Compile a program:
+.PP
+.RS
+.B ariac hello.aria \-o hello
+.RE
+.PP
+Emit LLVM IR:
+.PP
+.RS
+.B ariac hello.aria \-\-emit\-llvm
+.RE
+.PP
+Compile with debug info:
+.PP
+.RS
+.B ariac \-g hello.aria \-o hello
+.RE
+.PP
+Compile to object file (library mode):
+.PP
+.RS
+.B ariac \-c mylib.aria
+.RE
+.PP
+Emit PTX for GPU:
+.PP
+.RS
+.B ariac \-\-target=gpu \-\-gpu\-arch=sm_86 kernel.aria
+.RE
+.SH SEE ALSO
+.BR aria\-ls (1),
+.BR aria\-pkg (1),
+.BR aria\-doc (1),
+.BR aria\-dap (1)
+.SH AUTHORS
+The Aria programming language is developed by the Alternative Intelligence
+Collective Protocol (AICP).

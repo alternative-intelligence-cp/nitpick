@@ -1,0 +1,58 @@
+name: Aria CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install LLVM 20
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/llvm.asc
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main" | sudo tee /etc/apt/sources.list.d/llvm-20.list
+          sudo apt-get update
+          sudo apt-get install -y \
+            llvm-20-dev \
+            libclang-20-dev \
+            clang-20 \
+            lld-20 \
+            liburing-dev \
+            cmake \
+            ninja-build
+
+      - name: Configure
+        run: |
+          cmake -B build_ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang-20 \
+            -DCMAKE_CXX_COMPILER=clang++-20 \
+            -DLLVM_DIR=/usr/lib/llvm-20/lib/cmake/llvm
+
+      - name: Build
+        run: cmake --build build_ci -j$(nproc)
+
+      - name: Verify version
+        run: ./build_ci/ariac --version
+
+      - name: Run regression tests
+        run: |
+          # The regression runner expects build/ariac
+          mkdir -p build
+          cp build_ci/ariac build/ariac
+          bash tests/regression/run_regression.sh
+
+      - name: Build .deb package
+        run: |
+          cp build_ci/ariac build/ariac
+          if [ -f build_ci/aria-ls ]; then cp build_ci/aria-ls build/aria-ls; fi
+          bash debian/build-deb.sh ${{ github.ref_name == 'main' && '0.2.5' || '0.2.5-dev' }}
+        continue-on-error: true

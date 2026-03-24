@@ -1,5 +1,26 @@
 # Aria Language Changelog
 
+## [0.2.5] - July 2026
+
+### Added
+- **GitHub Actions CI pipeline** — Automated build, test, and .deb packaging on push/PR to main/dev. Uses ubuntu-24.04, LLVM 20, CMake + Ninja.
+- **GitHub issue & PR templates** — Bug report, feature request, and compiler crash issue templates (YAML forms). PR template with regression test and valgrind checklist.
+- **CONTRIBUTING.md** — Contributor guide covering prerequisites, build instructions, project structure, code style, and submission process.
+- **Compiler architecture manual** — 695-line technical document (`docs/COMPILER_ARCHITECTURE.md`) covering the full compilation pipeline, AST (49 node types), type system (16 TypeKind values), IR generation, runtime library (~33,900 lines, 20+ components), memory model, FFI mechanism, and source map with line counts.
+- **Man pages** — groff man pages for all 5 tools: `ariac(1)`, `aria-ls(1)`, `aria-pkg(1)`, `aria-doc(1)`, `aria-dap(1)`.
+- **Specialist model evaluation** — Comprehensive evaluation of all model versions (v1–v6). v4.1 remains best (82.1% keyword accuracy, 47.1% compile rate). Strategy documented: fix corpus quality before scaling model size.
+
+### Fixed
+- **README code examples** — Fixed 5 incorrect examples: `fail("string")` → `fail(1i32)` (integer error code required), removed unimplemented `!` postfix unwrap, fixed `ok()` pattern, replaced unimplemented `+?!/+!!!` operators with working TBB overflow example.
+- **GETTING_STARTED hello world** — Added missing `failsafe` function and fixed its signature from `void` to `NIL`.
+
+### Changed
+- **README update** — Comprehensive update from v0.2.2 to v0.2.4: CI badge, status section (June 2026), toolchain table (43 packages), moved async/await, fail(), arrays-in-structs to Stable features, added 4 DB packages, v0.2.3/v0.2.4/v0.2.5 roadmap sections.
+
+### Known Issues
+- String variables in template literals produce garbage output (integer variables work correctly).
+- `$` iteration variable in `till` loops not parsed.
+
 ## [0.2.4] - July 2026
 
 ### Added
