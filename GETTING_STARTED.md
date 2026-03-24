@@ -656,6 +656,82 @@ git pull
 
 ---
 
+## 14. Database Client Libraries
+
+Aria includes client libraries for four popular databases. Each uses a C shim to bridge Aria's FFI to the database's native C library.
+
+### Prerequisites
+
+Install the development libraries for the databases you want to use:
+
+```bash
+# SQLite (embedded, no server needed)
+sudo apt install libsqlite3-dev
+
+# PostgreSQL
+sudo apt install libpq-dev
+
+# MySQL
+sudo apt install libmysqlclient-dev
+
+# Redis
+sudo apt install libhiredis-dev
+```
+
+### Building a database package
+
+Each database package lives in `aria-packages/packages/aria-<db>/`. To build:
+
+```bash
+cd aria-packages/packages/aria-sqlite
+
+# 1. Build the C shim
+cd shim
+cc -O2 -shared -fPIC -Wall -o libaria_sqlite_shim.so aria_sqlite_shim.c -lsqlite3
+cd ..
+
+# 2. Compile your program that uses the library
+ariac my_program.aria -L shim -laria_sqlite_shim -lsqlite3 -o my_program
+
+# 3. Run (shim must be in library path)
+LD_LIBRARY_PATH=shim ./my_program
+```
+
+### Quick example — SQLite
+
+```
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern "aria_sqlite_shim" {
+    func:aria_sqlite_open  = int32(string:path);
+    func:aria_sqlite_last_db = int32();
+    func:aria_sqlite_exec  = int32(int32:db, string:sql);
+    func:aria_sqlite_disconnect = int32(int32:db);
+}
+
+func:main = int32() {
+    int32:db = aria_sqlite_open(":memory:");
+    int32:d = aria_sqlite_last_db();
+    aria_sqlite_exec(d, "CREATE TABLE test(id INTEGER PRIMARY KEY, name TEXT)");
+    int32:d2 = aria_sqlite_last_db();
+    aria_sqlite_exec(d2, "INSERT INTO test VALUES(1, 'hello')");
+    int32:d3 = aria_sqlite_last_db();
+    aria_sqlite_disconnect(d3);
+    pass(0i32);
+};
+```
+
+### Available packages
+
+| Package | API Prefix | System Library | Server Required |
+|---------|-----------|----------------|-----------------|
+| aria-sqlite | `sqlite_*` | libsqlite3 | No (embedded) |
+| aria-postgres | `pg_*` | libpq | Yes |
+| aria-mysql | `mysql_db_*` | libmysqlclient | Yes |
+| aria-redis | `redis_*` | libhiredis | Yes |
+
+All SQL database packages support parameterized queries to prevent SQL injection.
+
 ## Quick Start Checklist
 
 - [ ] Installed build-essential, cmake, git
