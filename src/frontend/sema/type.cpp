@@ -219,8 +219,24 @@ bool ArrayType::isAssignableTo(const Type* target) const {
         return false;
     }
     
-    // Array types must match exactly (including size)
-    return equals(target);
+    if (target->getKind() != TypeKind::ARRAY) {
+        return false;
+    }
+    
+    const ArrayType* targetArray = static_cast<const ArrayType*>(target);
+    
+    // Element types must match
+    if (!elementType->equals(targetArray->elementType)) {
+        return false;
+    }
+    
+    // Allow fixed-size to dynamic: int32[3] → int32[]
+    if (targetArray->isDynamic()) {
+        return true;
+    }
+    
+    // Otherwise require exact size match
+    return size == targetArray->size;
 }
 
 std::string ArrayType::toString() const {

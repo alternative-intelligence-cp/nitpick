@@ -6607,6 +6607,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 IdentifierExpr* lhs = static_cast<IdentifierExpr*>(binop->left.get());
                 
+                // Explicit discard: _ = expr — evaluate RHS for side effects only
+                if (lhs->name == "_") {
+                    llvm::Value* rhs = codegenExpression(binop->right.get());
+                    return rhs ? rhs : llvm::UndefValue::get(builder.getVoidTy());
+                }
+
                 // Look up the variable
                 auto it = named_values.find(lhs->name);
                 if (it == named_values.end()) {
@@ -7200,6 +7206,61 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             if (!isUnsigned && leftLiteral && isUnsignedName(leftLiteral->explicit_type)) isUnsigned = true;
             if (!isUnsigned && rightLiteral && isUnsignedName(rightLiteral->explicit_type)) isUnsigned = true;
+
+            // Detect string operands for comparison operators
+            bool isStringOp = false;
+            if (leftType && leftType->isPrimitive() &&
+                static_cast<PrimitiveType*>(leftType)->getName() == "string")
+                isStringOp = true;
+            if (!isStringOp && rightType && rightType->isPrimitive() &&
+                static_cast<PrimitiveType*>(rightType)->getName() == "string")
+                isStringOp = true;
+            if (!isStringOp && binop->left->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* id = static_cast<IdentifierExpr*>(binop->left.get());
+                auto it = var_aria_types.find(id->name);
+                if (it != var_aria_types.end() && it->second == "string") isStringOp = true;
+            }
+            if (!isStringOp && binop->right->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* id = static_cast<IdentifierExpr*>(binop->right.get());
+                auto it = var_aria_types.find(id->name);
+                if (it != var_aria_types.end() && it->second == "string") isStringOp = true;
+            }
+            if (!isStringOp && binop->left->type == ASTNode::NodeType::LITERAL) {
+                auto* lit = static_cast<LiteralExpr*>(binop->left.get());
+                if (std::holds_alternative<std::string>(lit->value)) {
+                    const std::string& s = std::get<std::string>(lit->value);
+                    if (s != "unknown" && s != "ERR") isStringOp = true;
+                }
+            }
+            if (!isStringOp && binop->right->type == ASTNode::NodeType::LITERAL) {
+                auto* lit = static_cast<LiteralExpr*>(binop->right.get());
+                if (std::holds_alternative<std::string>(lit->value)) {
+                    const std::string& s = std::get<std::string>(lit->value);
+                    if (s != "unknown" && s != "ERR") isStringOp = true;
+                }
+            }
+
+            // Helper lambda: call aria_string_compare_str and return i32 result (-1/0/1)
+            auto emitStringCompare = [&]() -> llvm::Value* {
+                llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                if (!ariaStrType) {
+                    ariaStrType = llvm::StructType::create(context,
+                        {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                         llvm::Type::getInt64Ty(context)},
+                        "struct.AriaString");
+                }
+                llvm::FunctionType* cmpFT = llvm::FunctionType::get(
+                    llvm::Type::getInt32Ty(context),
+                    {ariaStrType, ariaStrType}, false);
+                llvm::FunctionCallee cmpFn = module->getOrInsertFunction("aria_string_compare_str", cmpFT);
+                llvm::Value* lStr = L->getType()->isPointerTy()
+                    ? builder.CreateLoad(ariaStrType, L, "str.cmp.lhs")
+                    : L;
+                llvm::Value* rStr = R->getType()->isPointerTy()
+                    ? builder.CreateLoad(ariaStrType, R, "str.cmp.rhs")
+                    : R;
+                return builder.CreateCall(cmpFn, {lStr, rStr}, "str.cmp");
+            };
 
             // Auto-unwrap Result<T> structs in binary expressions.
             // Aria functions return { T, ptr, i8 } but binary ops need raw T.
@@ -7954,6 +8015,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     
+                    // String comparison: a < b
+                    if (isStringOp) {
+                        llvm::Value* cmp = emitStringCompare();
+                        return builder.CreateICmpSLT(cmp, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0), "str.lt");
+                    }
                     // ARIA-024: LBIM comparison for large integers
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         return generateLBIMSLT(L, R, numLimbs);
@@ -8021,6 +8087,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     
+                    // String comparison: a <= b
+                    if (isStringOp) {
+                        llvm::Value* cmp = emitStringCompare();
+                        return builder.CreateICmpSLE(cmp, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0), "str.le");
+                    }
                     // ARIA-024: LBIM comparison for large integers
                     // L <= R is equivalent to !(R < L)
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
@@ -8092,6 +8163,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     
+                    // String comparison: a > b
+                    if (isStringOp) {
+                        llvm::Value* cmp = emitStringCompare();
+                        return builder.CreateICmpSGT(cmp, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0), "str.gt");
+                    }
                     // ARIA-024: LBIM comparison for large integers
                     // L > R is equivalent to R < L
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
@@ -8160,6 +8236,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     
+                    // String comparison: a >= b
+                    if (isStringOp) {
+                        llvm::Value* cmp = emitStringCompare();
+                        return builder.CreateICmpSGE(cmp, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0), "str.ge");
+                    }
                     // ARIA-024: LBIM comparison for large integers
                     // L >= R is equivalent to !(L < R)
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
@@ -8208,6 +8289,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // SPACESHIP OPERATOR (<=>)
                 // Three-way comparison: returns -1 if left < right, 0 if equal, 1 if left > right
                 case frontend::TokenType::TOKEN_SPACESHIP: {
+                    // String spaceship: returns -1/0/1 directly from aria_string_compare_str
+                    if (isStringOp) {
+                        llvm::Value* cmp = emitStringCompare();
+                        return builder.CreateSExt(cmp, llvm::Type::getInt64Ty(context), "str.spaceship");
+                    }
                     // LBIM dispatch: use limb-by-limb comparison for large types
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         // spaceship = (L < R) ? -1 : ((L == R) ? 0 : 1)
