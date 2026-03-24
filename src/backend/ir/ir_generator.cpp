@@ -24,6 +24,8 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
       module(std::make_unique<llvm::Module>(module_name.empty() ? "aria_module" : module_name, context)),
       builder(context),
       type_system(nullptr),
+      tbb_codegen(context, builder),
+      ternary_codegen(context, builder),
       di_builder(nullptr),
       di_compile_unit(nullptr),
       di_file(nullptr),
@@ -31,9 +33,9 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
       current_module_name(""),
       current_func_is_async(false),
       current_coro_suspend_block(nullptr),
-      current_func_decl(nullptr),
-      tbb_codegen(context, builder),
-      ternary_codegen(context, builder) {
+      current_async_promise(nullptr),
+      current_async_result_type(nullptr),
+      current_func_decl(nullptr) {
     // Set source filename for better debug info
     module->setSourceFileName(module_name.empty() ? "aria_module" : module_name);
 
@@ -357,6 +359,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         case TypeKind::POINTER: {
             auto* ptr_type = static_cast<sema::PointerType*>(aria_type);
             llvm::Type* pointee = mapType(ptr_type->getPointeeType());
+            (void)pointee;  // LLVM opaque pointers don't use pointee type directly
             // LLVM uses opaque pointers in newer versions
             llvm_type = llvm::PointerType::get(context, 0);
             break;
@@ -511,6 +514,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             // Reference: include/runtime/gen_arena.h (aria_handle)
             // P1-3 Phase 3: Handle operations & generation checks
             auto* handle_type = static_cast<HandleType*>(aria_type);
+            (void)handle_type;
             
             std::vector<llvm::Type*> handle_fields = {
                 builder.getInt64Ty(),  // index (field 0) - size_t (usize)
@@ -657,6 +661,7 @@ llvm::Value* IRGenerator::generateLBIMAdd(llvm::Value* L, llvm::Value* R, unsign
 
     llvm::Type* i64Ty = builder.getInt64Ty();
     llvm::Type* i1Ty = builder.getInt1Ty();
+    (void)i1Ty;
     llvm::Type* structType = L->getType();
 
     // If R is not the same LBIM struct type, convert it
@@ -683,7 +688,7 @@ llvm::Value* IRGenerator::generateLBIMAdd(llvm::Value* L, llvm::Value* R, unsign
     }
 
     // Get the overflow intrinsic
-    llvm::Function* uaddOverflow = llvm::Intrinsic::getDeclaration(
+    llvm::Function* uaddOverflow = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::uadd_with_overflow, {i64Ty});
 
     // Start with zero carry
@@ -753,7 +758,7 @@ llvm::Value* IRGenerator::generateLBIMSub(llvm::Value* L, llvm::Value* R, unsign
     }
 
     // Get the overflow intrinsic for subtraction
-    llvm::Function* usubOverflow = llvm::Intrinsic::getDeclaration(
+    llvm::Function* usubOverflow = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::usub_with_overflow, {i64Ty});
 
     // Start with zero borrow
@@ -939,6 +944,7 @@ llvm::Value* IRGenerator::generateLBIMSLT(llvm::Value* L, llvm::Value* R, unsign
     llvm::Value* highLt = builder.CreateICmpSLT(highL, highR, "high.slt");
     llvm::Value* highGt = builder.CreateICmpSGT(highL, highR, "high.sgt");
     llvm::Value* highEq = builder.CreateICmpEQ(highL, highR, "high.eq");
+    (void)highEq;
 
     llvm::BasicBlock* highLtBlock = llvm::BasicBlock::Create(context, "high.lt", func);
     llvm::BasicBlock* highNotLtBlock = llvm::BasicBlock::Create(context, "high.notlt", func);
@@ -1021,7 +1027,7 @@ llvm::Value* IRGenerator::generateLBIMMul(llvm::Value* L, llvm::Value* R, unsign
     }
 
     // Get the overflow intrinsic for accumulation
-    llvm::Function* uaddOverflow = llvm::Intrinsic::getDeclaration(
+    llvm::Function* uaddOverflow = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::uadd_with_overflow, {i64Ty});
 
     // Allocate result limbs initialized to zero
@@ -1413,7 +1419,7 @@ llvm::Value* IRGenerator::generateSafeAdd(llvm::Value* L, llvm::Value* R, const 
     }
     
     // Get the overflow intrinsic: llvm.sadd.with.overflow
-    llvm::Function* saddIntrinsic = llvm::Intrinsic::getDeclaration(
+    llvm::Function* saddIntrinsic = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::sadd_with_overflow, {intType});
     
     // Call the intrinsic - returns {result, overflow_bit}
@@ -1446,7 +1452,7 @@ llvm::Value* IRGenerator::generateSafeSub(llvm::Value* L, llvm::Value* R, const 
     unsigned bitWidth = intType->getBitWidth();
     
     // Get the overflow intrinsic: llvm.ssub.with.overflow
-    llvm::Function* ssubIntrinsic = llvm::Intrinsic::getDeclaration(
+    llvm::Function* ssubIntrinsic = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::ssub_with_overflow, {intType});
     
     // Call the intrinsic - returns {result, overflow_bit}
@@ -1494,7 +1500,7 @@ llvm::Value* IRGenerator::generateSafeMul(llvm::Value* L, llvm::Value* R, const 
     }
     
     // Get the overflow intrinsic: llvm.smul.with.overflow
-    llvm::Function* smulIntrinsic = llvm::Intrinsic::getDeclaration(
+    llvm::Function* smulIntrinsic = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::smul_with_overflow, {intType});
     
     // Call the intrinsic - returns {result, overflow_bit}
@@ -2167,7 +2173,7 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
                     builder.SetInsertPoint(contractFailBB);
                     
                     // Create error message (simplified for now)
-                    llvm::Value* errorMsg = builder.CreateGlobalStringPtr(
+                    llvm::Value* errorMsg = builder.CreateGlobalString(
                         "Precondition #" + std::to_string(i + 1) + " failed", 
                         "contract.err.msg");
                     
@@ -2190,6 +2196,7 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
         // Generate function body
         if (funcDecl->body) {
             llvm::Value* bodyVal = codegenStatement(funcDecl->body.get());
+            (void)bodyVal;
             
             // If body didn't already create a terminator, add one
             // For Result<T> returns, create default success Result
@@ -2663,7 +2670,9 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             }
             
             // Phase 4.6: Async functions return i8* (coroutine handle)
+            // Save the Result<T> type for promise-based value passing before override
             if (funcDecl->isAsync) {
+                current_async_result_type = actual_return_type;  // Result{T, ptr, i8}
                 actual_return_type = llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0);
                 std::cerr << "[DEBUG] Async function detected: " << funcDecl->funcName << ", changing return type to i8*" << std::endl;
             }
@@ -2712,6 +2721,11 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             // This tells CoroSplit that this function contains coroutine intrinsics
             if (funcDecl->isAsync) {
                 func->addFnAttr(llvm::Attribute::PresplitCoroutine);
+                // Set aria.async metadata so await expressions can verify async context
+                llvm::MDNode* async_md = llvm::MDNode::get(context,
+                    llvm::ConstantAsMetadata::get(
+                        llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 1)));
+                func->setMetadata("aria.async", async_md);
             }
             
             // GPU/PTX Backend - Phase 3: Add NVVM kernel metadata for GPU kernels
@@ -2788,8 +2802,13 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             llvm::BasicBlock* coro_cleanup_block = nullptr;
             
             if (funcDecl->isAsync) {
+                // 0. Allocate promise area for Result<T> in the coroutine frame
+                current_async_promise = builder.CreateAlloca(
+                    current_async_result_type, nullptr, "coro.promise");
+                current_async_promise->setAlignment(llvm::Align(8));
+
                 // 1. Generate coroutine ID: token @llvm.coro.id(i32 align, i8* promise, i8* coroaddr, i8* fnaddr)
-                llvm::Function* coroIdFunc = llvm::Intrinsic::getDeclaration(
+                llvm::Function* coroIdFunc = llvm::Intrinsic::getOrInsertDeclaration(
                     module.get(),
                     llvm::Intrinsic::coro_id
                 );
@@ -2801,37 +2820,38 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 
                 coro_id = builder.CreateCall(
                     coroIdFunc,
-                    {align, null_ptr, null_ptr, null_ptr},
+                    {align, current_async_promise, null_ptr, null_ptr},
                     "coro.id"
                 );
                 
                 // 2. Get coroutine frame size
-                llvm::Function* coroSizeFunc = llvm::Intrinsic::getDeclaration(
+                llvm::Function* coroSizeFunc = llvm::Intrinsic::getOrInsertDeclaration(
                     module.get(),
                     llvm::Intrinsic::coro_size,
                     {llvm::Type::getInt64Ty(context)}
                 );
                 llvm::Value* coro_size = builder.CreateCall(coroSizeFunc, {}, "coro.size");
                 
-                // 3. Allocate coroutine frame (BUG-01 FIX: GC-tracked allocation)
-                llvm::Function* gc_alloc_func = module->getFunction("aria_gc_alloc");
-                if (!gc_alloc_func) {
-                    llvm::FunctionType* gc_alloc_type = llvm::FunctionType::get(
+                // 3. Allocate coroutine frame using malloc (not GC — coro frames
+                //    have explicit lifetime managed by coro.destroy)
+                llvm::Function* coro_alloc_func = module->getFunction("malloc");
+                if (!coro_alloc_func) {
+                    llvm::FunctionType* malloc_type = llvm::FunctionType::get(
                         llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                         {llvm::Type::getInt64Ty(context)},
                         false
                     );
-                    gc_alloc_func = llvm::Function::Create(
-                        gc_alloc_type,
+                    coro_alloc_func = llvm::Function::Create(
+                        malloc_type,
                         llvm::Function::ExternalLinkage,
-                        "aria_gc_alloc",
+                        "malloc",
                         module.get()
                     );
                 }
-                llvm::Value* coro_mem = builder.CreateCall(gc_alloc_func, {coro_size}, "coro.alloc");
+                llvm::Value* coro_mem = builder.CreateCall(coro_alloc_func, {coro_size}, "coro.alloc");
                 
                 // 4. Begin coroutine
-                llvm::Function* coroBeginFunc = llvm::Intrinsic::getDeclaration(
+                llvm::Function* coroBeginFunc = llvm::Intrinsic::getOrInsertDeclaration(
                     module.get(),
                     llvm::Intrinsic::coro_begin
                 );
@@ -2844,13 +2864,13 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 coro_cleanup_block = llvm::BasicBlock::Create(context, "coro.cleanup", func);
 
                 // 5. Initial suspend (required by LLVM coroutine lowering)
-                llvm::Function* coroSaveFunc = llvm::Intrinsic::getDeclaration(
+                llvm::Function* coroSaveFunc = llvm::Intrinsic::getOrInsertDeclaration(
                     module.get(),
                     llvm::Intrinsic::coro_save
                 );
                 llvm::Value* init_save_token = builder.CreateCall(coroSaveFunc, {coro_handle}, "coro.init.save");
 
-                llvm::Function* coroSuspendFunc = llvm::Intrinsic::getDeclaration(
+                llvm::Function* coroSuspendFunc = llvm::Intrinsic::getOrInsertDeclaration(
                     module.get(),
                     llvm::Intrinsic::coro_suspend
                 );
@@ -3033,7 +3053,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         builder.SetInsertPoint(contractFailBB);
                         
                         if (actual_return_type->isStructTy()) {
-                            llvm::Value* errorMsg = builder.CreateGlobalStringPtr(
+                            llvm::Value* errorMsg = builder.CreateGlobalString(
                                 "Precondition #" + std::to_string(i + 1) + " failed in " + func_name);
                             llvm::Value* errorResult = llvm::UndefValue::get(actual_return_type);
                             errorResult = builder.CreateInsertValue(errorResult,
@@ -3092,14 +3112,14 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 builder.SetInsertPoint(coro_suspend_block);
                 
                 // Save coroutine state before final suspend
-                llvm::Function* coroSaveFunc = llvm::Intrinsic::getDeclaration(
+                llvm::Function* coroSaveFunc = llvm::Intrinsic::getOrInsertDeclaration(
                     module.get(),
                     llvm::Intrinsic::coro_save
                 );
                 llvm::Value* save_token = builder.CreateCall(coroSaveFunc, {coro_handle}, "coro.save");
                 
                 // Final suspend: i8 @llvm.coro.suspend(token save, i1 final)
-                llvm::Function* coroSuspendFunc = llvm::Intrinsic::getDeclaration(
+                llvm::Function* coroSuspendFunc = llvm::Intrinsic::getOrInsertDeclaration(
                     module.get(),
                     llvm::Intrinsic::coro_suspend
                 );
@@ -3111,45 +3131,49 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 );
                 
                 // Switch on final suspend result:
-                //   -1 (255 unsigned) -> cleanup (suspended at final, done)
-                //    0 -> unreachable (shouldn't resume after final suspend)
-                //    1 -> cleanup (destroy called)
-                // Default goes to cleanup since final suspend means we're done
-                llvm::SwitchInst* suspend_switch = builder.CreateSwitch(suspend_result, coro_cleanup_block, 2);
-                // -1 (signed) = 255 (unsigned i8) -> cleanup
-                suspend_switch->addCase(llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 255, false), coro_cleanup_block);
-                // 1 -> cleanup
+                // Case 0 (default): suspended — frame stays alive for caller to
+                //   read the promise, then coro.destroy frees it.
+                // Case 1: destroy was called — go to cleanup to free the frame.
+                llvm::BasicBlock* coro_ret_block = llvm::BasicBlock::Create(
+                    context, "coro.ret", func);
+                llvm::SwitchInst* suspend_switch = builder.CreateSwitch(suspend_result, coro_ret_block, 2);
+                // 0 -> ret (suspended, frame alive)
+                suspend_switch->addCase(llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 0), coro_ret_block);
+                // 1 -> cleanup (destroy called, free frame)
                 suspend_switch->addCase(llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 1), coro_cleanup_block);
 
-                // Cleanup block: free coroutine frame
+                // Cleanup block: free coroutine frame (only reached via coro.destroy)
                 builder.SetInsertPoint(coro_cleanup_block);
                 
                 // Get memory to free
-                llvm::Function* coroFreeFunc = llvm::Intrinsic::getDeclaration(
+                llvm::Function* coroFreeFunc = llvm::Intrinsic::getOrInsertDeclaration(
                     module.get(),
                     llvm::Intrinsic::coro_free
                 );
                 llvm::Value* free_mem = builder.CreateCall(coroFreeFunc, {coro_id, coro_handle}, "coro.free.mem");
                 
-                // Free the memory (BUG-10 FIX: GC-aware deallocation)
-                llvm::Function* gc_free_func = module->getFunction("aria_gc_free");
-                if (!gc_free_func) {
-                    llvm::FunctionType* gc_free_type = llvm::FunctionType::get(
+                // Free the memory (direct free — matches malloc in coro setup)
+                llvm::Function* coro_free_func = module->getFunction("free");
+                if (!coro_free_func) {
+                    llvm::FunctionType* free_type = llvm::FunctionType::get(
                         llvm::Type::getVoidTy(context),
                         {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)},
                         false
                     );
-                    gc_free_func = llvm::Function::Create(
-                        gc_free_type,
+                    coro_free_func = llvm::Function::Create(
+                        free_type,
                         llvm::Function::ExternalLinkage,
-                        "aria_gc_free",
+                        "free",
                         module.get()
                     );
                 }
-                builder.CreateCall(gc_free_func, {free_mem});
+                builder.CreateCall(coro_free_func, {free_mem});
+                // Fall through to coro.ret
+                builder.CreateBr(coro_ret_block);
                 
-                // End coroutine (LLVM 17+: takes ptr, i1, token)
-                llvm::Function* coroEndFunc = llvm::Intrinsic::getDeclaration(
+                // Return block: end coroutine and return handle
+                builder.SetInsertPoint(coro_ret_block);
+                llvm::Function* coroEndFunc = llvm::Intrinsic::getOrInsertDeclaration(
                     module.get(),
                     llvm::Intrinsic::coro_end
                 );
@@ -3164,6 +3188,8 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             // Reset async context after function generation
             current_func_is_async = false;
             current_coro_suspend_block = nullptr;
+            current_async_promise = nullptr;
+            current_async_result_type = nullptr;
 
             // Pop debug scope for this function
             if (debug_enabled && di_builder && di_file) {
@@ -3378,13 +3404,26 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
 
             // Phase 4.6: Async functions branch to suspend block instead of direct return
             if (current_func_is_async && current_coro_suspend_block) {
-                // For async functions, the return value is ignored for now
-                // (coroutine result storage can be added later)
                 if (ret->value) {
-                    // Evaluate the return expression for side effects (if any)
-                    codegenExpression(ret->value.get());
+                    llvm::Value* retVal = codegenExpression(ret->value.get());
+                    // Store return value to promise if available
+                    if (retVal && current_async_promise && current_async_result_type) {
+                        llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(current_async_result_type);
+                        llvm::Value* result = llvm::UndefValue::get(resultStruct);
+                        llvm::Type* valueFieldType = resultStruct->getElementType(0);
+                        if (retVal->getType() != valueFieldType && retVal->getType()->isIntegerTy()
+                            && valueFieldType->isIntegerTy()) {
+                            retVal = builder.CreateIntCast(retVal, valueFieldType, true, "async.ret.cast");
+                        }
+                        result = builder.CreateInsertValue(result, retVal, 0, "result.val");
+                        result = builder.CreateInsertValue(result,
+                            llvm::ConstantPointerNull::get(
+                                llvm::cast<llvm::PointerType>(resultStruct->getElementType(1))),
+                            1, "result.err");
+                        result = builder.CreateInsertValue(result, builder.getInt8(0), 2, "result.is_error");
+                        builder.CreateStore(result, current_async_promise);
+                    }
                 }
-                // Branch to the coroutine suspend block
                 builder.CreateBr(current_coro_suspend_block);
             } else {
                 // Normal synchronous return
@@ -4306,6 +4345,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
         case ASTNode::NodeType::BREAK: {
             // Break statement - jump to loop exit
             BreakStmt* breakStmt = static_cast<BreakStmt*>(stmt);
+            (void)breakStmt;
             
             if (loop_stack.empty()) {
                 // Error: break outside of loop
@@ -4328,6 +4368,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
         case ASTNode::NodeType::CONTINUE: {
             // Continue statement - jump to loop start/update
             ContinueStmt* continueStmt = static_cast<ContinueStmt*>(stmt);
+            (void)continueStmt;
             
             if (loop_stack.empty()) {
                 // Error: continue outside of loop
@@ -4648,6 +4689,44 @@ skip_comparison:
             // Generate code for the value expression
             llvm::Value* value = codegenExpression(passStmt->value.get());
             if (value) {
+                // Phase 4.6: Async functions store Result to promise and branch to suspend
+                if (current_func_is_async && current_async_promise && current_async_result_type) {
+                    llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(current_async_result_type);
+                    llvm::Value* result = llvm::UndefValue::get(resultStruct);
+
+                    // Field 0: value (with type conversion)
+                    llvm::Type* valueFieldType = resultStruct->getElementType(0);
+                    if (value->getType() != valueFieldType) {
+                        if (value->getType()->isIntegerTy() && valueFieldType->isIntegerTy()) {
+                            value = builder.CreateIntCast(value, valueFieldType, true, "async.val.cast");
+                        } else if (value->getType()->isStructTy() && !valueFieldType->isStructTy()) {
+                            // Unwrap nested Result or optional
+                            llvm::StructType* valSt = llvm::cast<llvm::StructType>(value->getType());
+                            if (valSt->getNumElements() == 3 && valSt->getElementType(1)->isPointerTy()
+                                && valSt->getElementType(2)->isIntegerTy(8)) {
+                                value = builder.CreateExtractValue(value, {0}, "async.unwrap.result");
+                            }
+                        }
+                    }
+                    result = builder.CreateInsertValue(result, value, 0, "result.val");
+
+                    // Field 1: error = NULL
+                    result = builder.CreateInsertValue(result,
+                        llvm::ConstantPointerNull::get(
+                            llvm::cast<llvm::PointerType>(resultStruct->getElementType(1))),
+                        1, "result.err");
+
+                    // Field 2: is_error = false
+                    result = builder.CreateInsertValue(result, builder.getInt8(0), 2, "result.is_error");
+
+                    // Store Result to promise
+                    builder.CreateStore(result, current_async_promise);
+
+                    // Branch to final suspend (NOT ret)
+                    builder.CreateBr(current_coro_suspend_block);
+                    return nullptr;
+                }
+
                 llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
                 llvm::Type* returnType = currentFunc->getReturnType();
                 
@@ -4675,7 +4754,7 @@ skip_comparison:
                             
                             if (returnType->isStructTy()) {
                                 llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(returnType);
-                                llvm::Value* errorMsg = builder.CreateGlobalStringPtr(
+                                llvm::Value* errorMsg = builder.CreateGlobalString(
                                     "Postcondition #" + std::to_string(i + 1) + " failed", 
                                     "postcond.err.msg");
                                 
@@ -4783,6 +4862,34 @@ skip_comparison:
             // Generate code for the error code expression
             llvm::Value* errorCode = codegenExpression(failStmt->errorCode.get());
             if (errorCode) {
+                // Phase 4.6: Async functions store error Result to promise and suspend
+                if (current_func_is_async && current_async_promise && current_async_result_type) {
+                    llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(current_async_result_type);
+                    llvm::Value* result = llvm::UndefValue::get(resultStruct);
+
+                    // Field 0: value = zero
+                    llvm::Type* valueFieldType = resultStruct->getElementType(0);
+                    result = builder.CreateInsertValue(result,
+                        llvm::Constant::getNullValue(valueFieldType), 0, "result.val");
+
+                    // Field 1: error = inttoptr(error_code)
+                    llvm::Value* errorPtr;
+                    if (errorCode->getType()->isIntegerTy()) {
+                        errorPtr = builder.CreateIntToPtr(errorCode,
+                            llvm::PointerType::get(context, 0), "err_ptr");
+                    } else {
+                        errorPtr = errorCode;
+                    }
+                    result = builder.CreateInsertValue(result, errorPtr, 1, "result.err");
+
+                    // Field 2: is_error = true
+                    result = builder.CreateInsertValue(result, builder.getInt8(1), 2, "result.is_error");
+
+                    builder.CreateStore(result, current_async_promise);
+                    builder.CreateBr(current_coro_suspend_block);
+                    return nullptr;
+                }
+
                 llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
                 llvm::Type* returnType = currentFunc->getReturnType();
                 
@@ -5539,6 +5646,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // a string literal on the other side of a comparison (ICmpInst assert).
                     if (llvm::isa<llvm::Argument>(val)) {
                         auto typeIt = value_types.find(val);
+                        (void)typeIt;
                         // (value_types entry was already registered during parameter setup)
                         return val;
                     }
@@ -6254,9 +6362,114 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 if (binop->left->type == ASTNode::NodeType::MEMBER_ACCESS) {
                     MemberAccessExpr* member = static_cast<MemberAccessExpr*>(binop->left.get());
                     
-                    // Get the object pointer (for now, only support direct identifiers)
+                    // Handle nested member access: obj.arr[i].field = value
                     if (member->object->type != ASTNode::NodeType::IDENTIFIER) {
-                        return nullptr;  // TODO: Support nested member access
+                        if (member->object->type == ASTNode::NodeType::INDEX) {
+                            IndexExpr* ixExpr = static_cast<IndexExpr*>(member->object.get());
+                            if (ixExpr->array->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                                MemberAccessExpr* arrMem =
+                                    static_cast<MemberAccessExpr*>(ixExpr->array.get());
+                                if (arrMem->object->type == ASTNode::NodeType::IDENTIFIER) {
+                                    IdentifierExpr* objId =
+                                        static_cast<IdentifierExpr*>(arrMem->object.get());
+                                    auto oIt = named_values.find(objId->name);
+                                    if (oIt != named_values.end()) {
+                                        llvm::Value* sPtr = oIt->second;
+                                        llvm::Type* sATy = nullptr;
+                                        if (auto* ai = llvm::dyn_cast<llvm::AllocaInst>(sPtr))
+                                            sATy = ai->getAllocatedType();
+                                        if (sATy && sATy->isStructTy()) {
+                                            int aFIdx = -1;
+                                            Type* aFType = nullptr;
+                                            auto tIt = value_types.find(oIt->second);
+                                            if (tIt != value_types.end() &&
+                                                tIt->second->getKind() == TypeKind::STRUCT) {
+                                                StructType* sT =
+                                                    static_cast<StructType*>(tIt->second);
+                                                const auto& fs = sT->getFields();
+                                                for (size_t fi = 0; fi < fs.size(); ++fi) {
+                                                    if (fs[fi].name == arrMem->member) {
+                                                        aFIdx = static_cast<int>(fi);
+                                                        aFType = fs[fi].type;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            if (aFIdx < 0) {
+                                                auto vIt = var_aria_types.find(objId->name);
+                                                if (vIt != var_aria_types.end()) {
+                                                    sema::StructType* semST =
+                                                        type_system->getStructType(vIt->second);
+                                                    if (semST) {
+                                                        aFIdx = semST->getFieldIndex(arrMem->member);
+                                                        const sema::StructType::Field* sf =
+                                                            semST->getField(arrMem->member);
+                                                        if (sf) aFType = sf->type;
+                                                    }
+                                                }
+                                            }
+                                            if (aFIdx >= 0) {
+                                                auto* llST = llvm::cast<llvm::StructType>(sATy);
+                                                llvm::Type* fTy = llST->getElementType(aFIdx);
+                                                if (fTy->isArrayTy()) {
+                                                    auto* aT = llvm::cast<llvm::ArrayType>(fTy);
+                                                    llvm::Type* eTy = aT->getElementType();
+                                                    if (eTy->isStructTy()) {
+                                                        // Find nested field index
+                                                        int nFIdx = -1;
+                                                        Type* eAT = nullptr;
+                                                        if (aFType && aFType->getKind() == TypeKind::ARRAY)
+                                                            eAT = static_cast<sema::ArrayType*>(aFType)
+                                                                      ->getElementType();
+                                                        if (eAT && eAT->getKind() == TypeKind::STRUCT) {
+                                                            StructType* eST =
+                                                                static_cast<StructType*>(eAT);
+                                                            const auto& eFs = eST->getFields();
+                                                            for (size_t fi = 0; fi < eFs.size(); ++fi) {
+                                                                if (eFs[fi].name == member->member) {
+                                                                    nFIdx = static_cast<int>(fi);
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                        if (nFIdx >= 0) {
+                                                            // GEP chain: struct → array field → element → nested field
+                                                            llvm::Value* fP = builder.CreateStructGEP(
+                                                                sATy, sPtr, aFIdx,
+                                                                arrMem->member + ".field.ptr");
+                                                            llvm::Value* iV =
+                                                                codegenExpression(ixExpr->index.get());
+                                                            if (!iV) return nullptr;
+                                                            if (!iV->getType()->isIntegerTy(64))
+                                                                iV = builder.CreateSExtOrTrunc(
+                                                                    iV, builder.getInt64Ty(), "idx.i64");
+                                                            std::vector<llvm::Value*> gI = {
+                                                                llvm::ConstantInt::get(
+                                                                    builder.getInt64Ty(), 0),
+                                                                iV};
+                                                            llvm::Value* eP =
+                                                                builder.CreateInBoundsGEP(
+                                                                    fTy, fP, gI,
+                                                                    arrMem->member + ".elem.ptr");
+                                                            llvm::Value* nFP =
+                                                                builder.CreateStructGEP(
+                                                                    eTy, eP, nFIdx,
+                                                                    member->member + ".ptr");
+                                                            llvm::Value* rhs =
+                                                                codegenExpression(binop->right.get());
+                                                            if (!rhs) return nullptr;
+                                                            builder.CreateStore(rhs, nFP);
+                                                            return rhs;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return nullptr;
                     }
                     
                     IdentifierExpr* obj_ident = static_cast<IdentifierExpr*>(member->object.get());
@@ -6297,6 +6510,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (field_index < 0) {
                         return nullptr;  // Field not found
                     }
+                    (void)field_type;
                     
                     // Get the LLVM struct type
                     llvm::Type* llvm_struct_type = mapType(struct_type);
@@ -8149,7 +8363,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     unwrappedValue = nullptr;  // Will be set in non-null block
                 } else {
                     // Unsupported type for nil coalescing
-                    throw std::runtime_error("Nil coalescing operator (??) requires Optional or pointer type");
+                    throw std::runtime_error("Nil coalescing operator (\?\?) requires Optional or pointer type");
                 }
                 
                 // Create basic blocks for control flow
@@ -8897,6 +9111,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             if (sAllocTy && sAllocTy->isStructTy()) {
                                 // Find field index via value_types / type_system
                                 int fieldIdx = -1;
+                                Type* ariaFieldType = nullptr;
                                 auto type_it = value_types.find(obj_it->second);
                                 if (type_it != value_types.end() &&
                                     type_it->second->getKind() == TypeKind::STRUCT) {
@@ -8906,6 +9121,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                     for (size_t fi = 0; fi < flds.size(); ++fi) {
                                         if (flds[fi].name == memberExpr->member) {
                                             fieldIdx = static_cast<int>(fi);
+                                            ariaFieldType = flds[fi].type;
                                             break;
                                         }
                                     }
@@ -8916,8 +9132,13 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                     if (var_it != var_aria_types.end()) {
                                         sema::StructType* semaST =
                                             type_system->getStructType(var_it->second);
-                                        if (semaST)
+                                        if (semaST) {
                                             fieldIdx = semaST->getFieldIndex(memberExpr->member);
+                                            const sema::StructType::Field* semField =
+                                                semaST->getField(memberExpr->member);
+                                            if (semField)
+                                                ariaFieldType = semField->type;
+                                        }
                                     }
                                 }
                                 if (fieldIdx >= 0) {
@@ -8947,9 +9168,23 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                             builder.CreateInBoundsGEP(
                                                 fieldTy, fieldPtr, gepIdx,
                                                 memberExpr->member + ".elem.ptr");
-                                        return builder.CreateLoad(
+                                        llvm::Value* loadedElem = builder.CreateLoad(
                                             elemTy, elemPtr,
                                             memberExpr->member + ".elem");
+
+                                        // Register Aria element type so subsequent
+                                        // member access (e.g. cloud.pts[0].x) can
+                                        // find type info for the loaded struct element.
+                                        if (ariaFieldType &&
+                                            ariaFieldType->getKind() == TypeKind::ARRAY) {
+                                            Type* elemAriaType =
+                                                static_cast<sema::ArrayType*>(ariaFieldType)
+                                                    ->getElementType();
+                                            if (elemAriaType)
+                                                value_types[loadedElem] = elemAriaType;
+                                        }
+
+                                        return loadedElem;
                                     }
                                 }
                             }
@@ -9107,168 +9342,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
         }
         
         case ASTNode::NodeType::AWAIT: {
-            // Phase 4.6: Await expression - suspend coroutine until operand completes
-            AwaitExpr* awaitExpr = static_cast<AwaitExpr*>(expr);
-            
-            // Check if we're in an async function
-            llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
-            if (!currentFunc) {
-                std::cerr << "ERROR: await expression outside of function context" << std::endl;
-                return nullptr;
-            }
-            
-            std::string func_name = std::string(currentFunc->getName());
-            bool is_async = func_name.find("async") != std::string::npos ||
-                           currentFunc->hasMetadata("aria.async");
-            
-            if (!is_async) {
-                // ERROR: await in non-async function
-                std::cerr << "ERROR: 'await' can only be used in async functions (found in '" 
-                          << func_name << "')" << std::endl;
-                std::cerr << "  Hint: Change 'func:" << func_name << "' to 'async func:" << func_name << "'" << std::endl;
-                // Return dummy value to prevent crash
-                return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
-            }
-            
-            // Step 1: Evaluate the operand (should return a Future* pointer)
-            llvm::Value* future_ptr = codegenExpression(awaitExpr->operand.get());
-            if (!future_ptr) return nullptr;
-            
-            // BUG-02 FIX: Install continuation mechanism - poll Future and conditionally suspend
-            
-            // Call Future::poll() to check if ready
-            llvm::Function* poll_func = module->getFunction("_ZN4aria7runtime6Future4pollEv");
-            if (!poll_func) {
-                // Declare: PollResult Future::poll()
-                llvm::Type* poll_result_type = llvm::Type::getInt32Ty(context); // enum PollResult
-                llvm::FunctionType* poll_type = llvm::FunctionType::get(
-                    poll_result_type,
-                    {future_ptr->getType()}, // this pointer
-                    false
-                );
-                poll_func = llvm::Function::Create(
-                    poll_type,
-                    llvm::Function::ExternalLinkage,
-                    "_ZN4aria7runtime6Future4pollEv",
-                    module.get()
-                );
-            }
-            
-            llvm::Value* poll_result = builder.CreateCall(poll_func, {future_ptr}, "poll.result");
-            
-            // Check if READY (1) or PENDING (0)
-            llvm::Value* is_ready = builder.CreateICmpEQ(
-                poll_result,
-                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 1), // PollResult::READY = 1
-                "is.ready"
-            );
-            
-            // Create blocks: ready (extract value), suspend (wait), resume (after suspension)
-            llvm::BasicBlock* ready_block = llvm::BasicBlock::Create(context, "await.ready", currentFunc);
-            llvm::BasicBlock* suspend_block = llvm::BasicBlock::Create(context, "await.suspend", currentFunc);
-            llvm::BasicBlock* resume_block = llvm::BasicBlock::Create(context, "await.resume", currentFunc);
-            llvm::BasicBlock* cleanup_block = llvm::BasicBlock::Create(context, "await.cleanup", currentFunc);
-            
-            // Branch: if ready, extract value; else suspend
-            builder.CreateCondBr(is_ready, ready_block, suspend_block);
-            
-            // SUSPEND BLOCK: Future not ready - install continuation and suspend
-            builder.SetInsertPoint(suspend_block);
-            
-            // Get coroutine intrinsics
-            llvm::Function* coroSaveFunc = llvm::Intrinsic::getDeclaration(
-                module.get(),
-                llvm::Intrinsic::coro_save
-            );
-            
-            llvm::Function* coroSuspendFunc = llvm::Intrinsic::getDeclaration(
-                module.get(),
-                llvm::Intrinsic::coro_suspend
-            );
-            
-            // Save coroutine state
-            // Get current coroutine handle (stored in function prologue)
-            llvm::Value* coro_handle = nullptr;
-            if (auto* alloca_inst = currentFunc->getEntryBlock().getFirstNonPHI()) {
-                // Look for the coro.handle alloca in entry block
-                for (auto& inst : currentFunc->getEntryBlock()) {
-                    if (auto* alloca = llvm::dyn_cast<llvm::AllocaInst>(&inst)) {
-                        if (alloca->getName().starts_with("coro.handle")) {
-                            coro_handle = builder.CreateLoad(alloca->getAllocatedType(), alloca, "coro.hdl");
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            if (!coro_handle) {
-                // Fallback: use null handle (should not happen in well-formed async functions)
-                coro_handle = llvm::ConstantPointerNull::get(
-                    llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)
-                );
-            }
-            
-            llvm::Value* save_token = builder.CreateCall(coroSaveFunc, {coro_handle}, "await.save");
-            
-            // Suspend (not final - intermediate suspension point)
-            llvm::Value* is_final = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
-            llvm::Value* suspend_result = builder.CreateCall(
-                coroSuspendFunc,
-                {save_token, is_final},
-                "await.suspend.result"
-            );
-            
-            // Switch on suspend result: 0 = resume, 1 = cleanup
-            llvm::SwitchInst* suspend_switch = builder.CreateSwitch(suspend_result, resume_block, 1);
-            suspend_switch->addCase(
-                llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 1),
-                cleanup_block
-            );
-            
-            // CLEANUP BLOCK
-            builder.SetInsertPoint(cleanup_block);
-            builder.CreateUnreachable();
-            
-            // READY BLOCK: Future is ready - extract value (BUG-03 FIX)
-            builder.SetInsertPoint(ready_block);
-            
-            // Call Future::getValue() to extract the result
-            llvm::Function* getValue_func = module->getFunction("_ZN4aria7runtime6Future8getValueEv");
-            if (!getValue_func) {
-                // Declare: void* Future::getValue() const
-                llvm::FunctionType* getValue_type = llvm::FunctionType::get(
-                    llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0), // void*
-                    {future_ptr->getType()},
-                    false
-                );
-                getValue_func = llvm::Function::Create(
-                    getValue_type,
-                    llvm::Function::ExternalLinkage,
-                    "_ZN4aria7runtime6Future8getValueEv",
-                    module.get()
-                );
-            }
-            
-            llvm::Value* value_ptr_ready = builder.CreateCall(getValue_func, {future_ptr}, "value.ready");
-            builder.CreateBr(resume_block);
-            
-            // RESUME BLOCK: Merge point - value available from either ready or resumed path
-            builder.SetInsertPoint(resume_block);
-            
-            // Poll again after resume to get value
-            llvm::Value* value_ptr_resumed = builder.CreateCall(getValue_func, {future_ptr}, "value.resumed");
-            
-            // PHI node to merge values from ready and resumed paths
-            llvm::PHINode* result_value = builder.CreatePHI(
-                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
-                2,
-                "await.result"
-            );
-            result_value->addIncoming(value_ptr_ready, ready_block);
-            result_value->addIncoming(value_ptr_resumed, suspend_block);
-            
-            // BUG-03 FIX: Return the extracted value pointer, not the Future pointer
-            return result_value;
+            // Delegate to ExprCodegen's promise-based await implementation
+            backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values, var_aria_types, type_system);
+            return expr_codegen.codegenAwait(expr);
         }
         
         case ASTNode::NodeType::MOVE: {
@@ -9402,7 +9478,7 @@ void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::st
     di_compile_unit = di_builder->createCompileUnit(
         llvm::dwarf::DW_LANG_C,  // Use C for now (could register DW_LANG_Aria later)
         di_file,
-        "Aria Compiler v0.2.3",  // Producer
+        "Aria Compiler v0.2.4",  // Producer
         false,                    // isOptimized
         "",                       // Flags
         0                         // Runtime version

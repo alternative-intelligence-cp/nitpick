@@ -1,5 +1,25 @@
 # Aria Language Changelog
 
+## [0.2.4] - July 2026
+
+### Added
+- **Async/await error propagation** — `pass()` and `fail()` in async functions store `Result<T>` to the coroutine promise; `await` extracts the Result via `@llvm.coro.promise`. Full error propagation across async boundaries.
+- **Async-aware `drop()`** — `drop(async_func())` automatically resumes and destroys the coroutine frame, running the async body to completion.
+- **Regression test suite** — 5 regression tests (test_async_await, test_extern_count, test_extern_names, test_main_call_limit, test_nested_struct_array) with `run_regression.sh` runner.
+- **Traits & Borrow Semantics RFC** — Design document for trait system (monomorphization by default, `dyn Trait` opt-in) and user-facing borrow syntax (`$x` / `$mut x`). Implementation deferred to v0.2.5+. See `META/ARIA/TRAITS_AND_BORROW_SEMANTICS_RFC.md`.
+
+### Fixed
+- **Coroutine double-free** — Fixed final suspend switch routing: case 0 (suspended) now goes to return block (frame stays alive for promise read), case 1 (destroy) goes to cleanup (frees frame). Previously all cases went to cleanup, causing `coro.resume` and `coro.destroy` to both free the frame.
+- **Coroutine memory management** — Changed coroutine frame allocation from `aria_gc_alloc`/`aria_gc_free` to `malloc`/`free` directly. GC allocator returned offset pointers that caused invalid free.
+- **Dual await code paths** — Unified two `await` handlers (old Future-based in IRGenerator, new promise-based in ExprCodegen) into a single promise-based path.
+- **`aria.async` metadata** — Added missing `setMetadata("aria.async", ...)` on async functions so `await` and `drop()` can detect async callees.
+- **Arrays in structs: nested read** — Fixed nested member access through array-of-structs (`cloud.pts[0].x`) by registering the Aria element type in `value_types` for loaded struct array elements.
+- **Arrays in structs: nested write** — Fixed nested member assignment (`cloud.pts[0].x = val`) by adding GEP chain for struct→array field→element→nested field in the assignment handler.
+
+### Changed
+- **Deprecated LLVM API migration** — Replaced ~44 `Intrinsic::getDeclaration` → `getOrInsertDeclaration` and ~8 `CreateGlobalStringPtr` → `CreateGlobalString` calls. Ready for LLVM 21.
+- **Zero Aria-source warnings** — Fixed 17 unused variable/parameter warnings, constructor field initialization order, and trigraph warning. Build now produces 0 warnings from Aria code.
+
 ## [0.2.3] - March 2026
 
 ### Added

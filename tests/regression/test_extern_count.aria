@@ -1,0 +1,46 @@
+// Regression test: extern declaration count (Bug 1c)
+// Previously, 7+ standalone extern declarations caused SIGABRT.
+// This test verifies 20+ standalone + block externs compile correctly.
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// 20 standalone extern declarations
+extern func:abs = int32(int32:x);
+extern func:atoi = int32(wild int8*:nptr);
+extern func:atol = int64(wild int8*:nptr);
+extern func:malloc = wild int8*(int64:size);
+extern func:free = void(wild int8*:ptr);
+extern func:calloc = wild int8*(int64:nmemb, int64:size);
+extern func:realloc = wild int8*(wild int8*:ptr, int64:size);
+extern func:getenv = wild int8*(wild int8*:name);
+extern func:rand = int32();
+extern func:srand = void(int32:seed);
+extern func:close = int32(int32:fd);
+extern func:read = int64(int32:fd, wild int8*:buf, int64:count);
+extern func:write = int64(int32:fd, wild int8*:buf, int64:count);
+extern func:sleep = int32(int32:seconds);
+extern func:memset = wild int8*(wild int8*:s, int32:c, int64:n);
+extern func:memcpy = wild int8*(wild int8*:dest, wild int8*:src, int64:n);
+extern func:strlen = int64(wild int8*:s);
+extern func:strcmp = int32(wild int8*:s1, wild int8*:s2);
+extern func:strncmp = int32(wild int8*:s1, wild int8*:s2, int64:n);
+extern func:strtol = int64(wild int8*:nptr, wild int8*:endptr, int32:base);
+
+// Block extern declarations (additional 10)
+extern "c" {
+    func:putchar = int32(int32:c);
+    func:getchar = int32();
+    func:isdigit = int32(int32:c);
+    func:isalpha = int32(int32:c);
+    func:toupper = int32(int32:c);
+    func:tolower = int32(int32:c);
+    func:isspace = int32(int32:c);
+    func:isupper = int32(int32:c);
+    func:islower = int32(int32:c);
+    func:isprint = int32(int32:c);
+}
+
+func:main = int32() {
+    int32:result = abs(-42i32);
+    pass(0i32);
+};

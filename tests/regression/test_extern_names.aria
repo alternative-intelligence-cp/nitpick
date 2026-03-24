@@ -1,0 +1,22 @@
+// Regression test: extern function naming (Bug 1b)
+// Previously, extern functions named "free", "close", etc. caused issues.
+// This test verifies common C stdlib names compile as extern declarations.
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+extern func:malloc = wild int8*(int64:size);
+extern func:free = void(wild int8*:ptr);
+extern func:calloc = wild int8*(int64:nmemb, int64:size);
+extern func:realloc = wild int8*(wild int8*:ptr, int64:size);
+extern func:close = int32(int32:fd);
+extern func:open = int32(wild int8*:pathname, int32:flags);
+extern func:read = int64(int32:fd, wild int8*:buf, int64:count);
+extern func:write = int64(int32:fd, wild int8*:buf, int64:count);
+extern func:memset = wild int8*(wild int8*:s, int32:c, int64:n);
+extern func:memcpy = wild int8*(wild int8*:dest, wild int8*:src, int64:n);
+extern func:abs = int32(int32:x);
+
+func:main = int32() {
+    int32:result = abs(-1i32);
+    pass(0i32);
+};
