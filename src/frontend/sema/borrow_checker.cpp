@@ -1661,14 +1661,17 @@ std::unordered_set<std::string> BorrowChecker::scanDeferBlockForFree(ASTNode* no
 
                 if (isDeallocator(callee->name)) {
                     // Found a deallocator call - extract the freed variable
+                    // Only track if it's actually a wild-allocated variable
                     if (!call->arguments.empty()) {
                         ASTNode* arg = call->arguments[0].get();
 
                         // Handle direct variable: free(ptr)
                         if (arg->type == ASTNode::NodeType::IDENTIFIER) {
                             auto* argIdent = static_cast<IdentifierExpr*>(arg);
-                            freed_vars.insert(argIdent->name);
-                            recordDeferFree(argIdent->name, deferLine);
+                            if (ctx.wild_states.find(argIdent->name) != ctx.wild_states.end()) {
+                                freed_vars.insert(argIdent->name);
+                                recordDeferFree(argIdent->name, deferLine);
+                            }
                         }
                         // Handle member access: free(obj.ptr)
                         else if (arg->type == ASTNode::NodeType::MEMBER_ACCESS) {
@@ -1816,13 +1819,19 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
 
     // ARIA-022: Check for wild memory deallocation calls
     // If this is a free() call, record it for double-free and use-after-free detection
+    // Only applies to wild-tracked variables (pointers), not plain value types like int32
     if (expr->callee && expr->callee->type == ASTNode::NodeType::IDENTIFIER) {
         auto* callee = static_cast<IdentifierExpr*>(expr->callee.get());
         if (isDeallocator(callee->name) && !expr->arguments.empty()) {
             ASTNode* arg = expr->arguments[0].get();
             if (arg && arg->type == ASTNode::NodeType::IDENTIFIER) {
                 auto* argIdent = static_cast<IdentifierExpr*>(arg);
-                recordWildFree(argIdent->name, expr);
+                // Only record deallocation if the variable is actually a wild pointer.
+                // Non-wild variables (int32, string, etc.) passed to functions whose
+                // names happen to end in _close/_free/_destroy are not deallocations.
+                if (ctx.wild_states.find(argIdent->name) != ctx.wild_states.end()) {
+                    recordWildFree(argIdent->name, expr);
+                }
             }
         }
     }
