@@ -332,6 +332,15 @@ bool FunctionType::isAssignableTo(const Type* target) const {
         return false;
     }
     
+    // Function-to-pointer coercion: function refs can be passed as erased pointers
+    // for FFI callbacks (e.g., thread spawn). Codegen extracts method_ptr from fat pointer.
+    if (target->getKind() == TypeKind::POINTER) {
+        const PointerType* ptrTarget = static_cast<const PointerType*>(target);
+        if (ptrTarget->isErasedPointer()) {
+            return true;
+        }
+    }
+    
     // Function types must match exactly for now
     // TODO Phase 3.4: Implement contravariance for parameters, covariance for return
     return equals(target);

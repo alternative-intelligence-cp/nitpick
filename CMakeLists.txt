@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(aria VERSION 0.2.10 LANGUAGES C CXX)
+project(aria VERSION 0.2.11 LANGUAGES C CXX)
 
 # C++17 standard required
 set(CMAKE_CXX_STANDARD 17)
@@ -235,6 +235,9 @@ set(RUNTIME_SOURCES
     src/runtime/streams/streams.cpp
     src/runtime/process/process.cpp
     src/runtime/thread/thread.cpp
+    src/runtime/thread/thread_shim.cpp
+    src/runtime/thread/thread_pool_shim.cpp
+    src/runtime/thread/lockfree_shim.c
     src/backend/runtime/ternary_ops.cpp
     src/backend/runtime/frac_ops.cpp
     src/backend/runtime/tfp_ops.cpp
@@ -242,6 +245,7 @@ set(RUNTIME_SOURCES
     src/backend/runtime/tmatrix_ops.cpp
     src/backend/runtime/ttensor_ops.cpp
     src/runtime/atomic/atomic.cpp
+    src/runtime/atomic/atomic_shim.cpp
     src/runtime/int_array.cpp
     src/runtime/timer/timer.cpp
     src/runtime/async/executor.cpp
@@ -258,6 +262,9 @@ set(RUNTIME_SOURCES
     src/runtime/telemetry/telemetry.cpp
     src/runtime/args/args.c
     src/runtime/exotic_types.c
+    src/runtime/os/os_shim.c
+    src/runtime/os/aifs_shim.c
+    src/runtime/os/hexstream_shim.c
 )
 
 # Phase 6: Standard Library Runtime Support
