@@ -1,0 +1,51 @@
+#!/bin/bash
+# aria-fs-create — Initialize an AriaFS mount
+# Usage: aria-fs-create <mountpoint> [--foreground]
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ARIA_FS="$SCRIPT_DIR/aria-fs"
+
+if [ $# -lt 1 ]; then
+    echo "Usage: aria-fs-create <mountpoint> [--foreground]"
+    echo ""
+    echo "Creates and mounts an AriaFS instance at <mountpoint>."
+    echo "The directory will be created if it doesn't exist."
+    echo ""
+    echo "Options:"
+    echo "  --foreground    Run in foreground (for debugging)"
+    exit 1
+fi
+
+MOUNTPOINT="$1"
+shift
+
+# Create mountpoint if needed
+mkdir -p "$MOUNTPOINT"
+
+# Check if already mounted
+if mountpoint -q "$MOUNTPOINT" 2>/dev/null; then
+    echo "Error: $MOUNTPOINT is already a mountpoint"
+    exit 1
+fi
+
+OPTS=""
+FOREGROUND=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --foreground) FOREGROUND="-f" ;;
+        *) OPTS="$OPTS $1" ;;
+    esac
+    shift
+done
+
+echo "AriaFS — AI-Native Filesystem"
+echo "Mounting at: $MOUNTPOINT"
+
+if [ -n "$FOREGROUND" ]; then
+    exec "$ARIA_FS" "$MOUNTPOINT" $FOREGROUND $OPTS
+else
+    "$ARIA_FS" "$MOUNTPOINT" $OPTS
+    echo "AriaFS mounted at $MOUNTPOINT"
+    echo "Unmount with: fusermount3 -u $MOUNTPOINT"
+fi

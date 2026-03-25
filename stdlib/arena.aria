@@ -1,0 +1,50 @@
+// stdlib/arena.aria
+// Arena allocator — fast bump allocation with bulk free
+// Uses handle-based shim (os/os_shim.c)
+
+extern func:aria_shim_arena_create = int64(int64:capacity);
+extern func:aria_shim_arena_destroy = int32(int64:handle);
+extern func:aria_shim_arena_alloc = int64(int64:handle, int64:nbytes);
+extern func:aria_shim_arena_reset = int32(int64:handle);
+extern func:aria_shim_arena_used = int64(int64:handle);
+extern func:aria_shim_arena_remaining = int64(int64:handle);
+extern func:aria_shim_arena_write_int64 = int32(int64:handle, int64:offset, int64:value);
+extern func:aria_shim_arena_read_int64 = int64(int64:handle, int64:offset);
+
+Type:Arena = {
+    func:create = int64(int64:capacity) {
+        pass(aria_shim_arena_create(capacity));
+    };
+
+    func:destroy = int32(int64:arena) {
+        pass(aria_shim_arena_destroy(arena));
+    };
+
+    func:alloc = int64(int64:arena, int64:nbytes) {
+        pass(aria_shim_arena_alloc(arena, nbytes));
+    };
+
+    func:reset = int32(int64:arena) {
+        pass(aria_shim_arena_reset(arena));
+    };
+
+    func:used = int64(int64:arena) {
+        pass(aria_shim_arena_used(arena));
+    };
+
+    func:remaining = int64(int64:arena) {
+        pass(aria_shim_arena_remaining(arena));
+    };
+
+    func:write_int64 = int32(int64:arena, int64:offset, int64:value) {
+        pass(aria_shim_arena_write_int64(arena, offset, value));
+    };
+
+    func:read_int64 = int64(int64:arena, int64:offset) {
+        pass(aria_shim_arena_read_int64(arena, offset));
+    };
+
+    struct:interface = {
+        int64:handle;
+    };
+};

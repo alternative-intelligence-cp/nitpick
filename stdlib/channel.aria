@@ -1,0 +1,76 @@
+// stdlib/channel.aria
+// Bounded MPMC (Multi-Producer Multi-Consumer) channels for inter-thread communication
+//
+// Channels send int64 values between threads. For complex data, use the value
+// as an index into a shared array or as a ptr_to_int64 handle.
+//
+// Usage:
+//   int64:ch = Channel.create(16i32);  // bounded channel, capacity 16
+//   // Producer thread:
+//   Channel.send(ch, 42i64);           // blocks if full
+//   // Consumer thread:
+//   int64:val = Channel.recv(ch);       // blocks if empty
+//   Channel.close(ch);
+//   Channel.destroy(ch);
+
+extern func:aria_shim_channel_create = int64(int32:capacity);
+extern func:aria_shim_channel_send = int32(int64:handle, int64:value);
+extern func:aria_shim_channel_try_send = int32(int64:handle, int64:value);
+extern func:aria_shim_channel_recv = int64(int64:handle);
+extern func:aria_shim_channel_try_recv = int64(int64:handle);
+extern func:aria_shim_channel_count = int32(int64:handle);
+extern func:aria_shim_channel_close = int32(int64:handle);
+extern func:aria_shim_channel_destroy = int32(int64:handle);
+extern func:aria_shim_channel_is_closed = bool(int64:handle);
+
+Type:Channel = {
+    // Create a bounded channel with given capacity (max 1024).
+    // Returns handle or -1.
+    func:create = int64(int32:capacity) {
+        pass(aria_shim_channel_create(capacity));
+    };
+
+    // Send value to channel. Blocks if full.
+    // Returns 0 on success, -1 if channel is closed.
+    func:send = int32(int64:handle, int64:value) {
+        pass(aria_shim_channel_send(handle, value));
+    };
+
+    // Try to send without blocking.
+    // Returns 0 on success, -1 if full or closed.
+    func:try_send = int32(int64:handle, int64:value) {
+        pass(aria_shim_channel_try_send(handle, value));
+    };
+
+    // Receive value from channel. Blocks if empty.
+    // Returns the value. Returns 0 if channel is closed and empty.
+    func:recv = int64(int64:handle) {
+        pass(aria_shim_channel_recv(handle));
+    };
+
+    // Try to receive without blocking.
+    // Returns the value, or 0 if empty.
+    func:try_recv = int64(int64:handle) {
+        pass(aria_shim_channel_try_recv(handle));
+    };
+
+    // Get count of pending items in channel.
+    func:count = int32(int64:handle) {
+        pass(aria_shim_channel_count(handle));
+    };
+
+    // Close channel (no more sends; existing data can still be received).
+    func:close = int32(int64:handle) {
+        pass(aria_shim_channel_close(handle));
+    };
+
+    // Destroy channel (close + free resources).
+    func:destroy = int32(int64:handle) {
+        pass(aria_shim_channel_destroy(handle));
+    };
+
+    // Check if channel is closed.
+    func:is_closed = bool(int64:handle) {
+        pass(aria_shim_channel_is_closed(handle));
+    };
+};

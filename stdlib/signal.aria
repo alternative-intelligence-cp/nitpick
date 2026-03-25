@@ -1,0 +1,38 @@
+// stdlib/signal.aria
+// POSIX signal handling — register handlers, check pending, ignore/restore
+// Uses handle-based shim (os/os_shim.c)
+
+extern func:aria_shim_signal_register = int32(int32:signo);
+extern func:aria_shim_signal_pending = int32(int32:signo);
+extern func:aria_shim_signal_ignore = int32(int32:signo);
+extern func:aria_shim_signal_restore = int32(int32:signo);
+
+// POSIX signal numbers
+int32:SIGHUP = 1;
+int32:SIGINT = 2;
+int32:SIGQUIT = 3;
+int32:SIGTERM = 15;
+int32:SIGUSR1 = 10;
+int32:SIGUSR2 = 12;
+
+Type:Signal = {
+    func:register = int32(int32:signo) {
+        pass(aria_shim_signal_register(signo));
+    };
+
+    func:pending = int32(int32:signo) {
+        pass(aria_shim_signal_pending(signo));
+    };
+
+    func:ignore = int32(int32:signo) {
+        pass(aria_shim_signal_ignore(signo));
+    };
+
+    func:restore = int32(int32:signo) {
+        pass(aria_shim_signal_restore(signo));
+    };
+
+    struct:interface = {
+        int32:signo;
+    };
+};
