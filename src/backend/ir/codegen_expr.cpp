@@ -1260,6 +1260,16 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         std::cerr << "[DEBUG] codegenLiteral string value: " << std::get<std::string>(expr->value) << std::endl;
     }
     
+    // Phase 4: If literal has explicit float type suffix (f32, f64), use it directly.
+    // This must come BEFORE the hasRawValue() check which always produces double.
+    if (!expr->explicit_type.empty()) {
+        llvm::Type* llvm_type = getLLVMTypeFromString(expr->explicit_type);
+        if (llvm_type && llvm_type->isFloatingPointTy() && std::holds_alternative<double>(expr->value)) {
+            double val = std::get<double>(expr->value);
+            return llvm::ConstantFP::get(llvm_type, val);
+        }
+    }
+
     // Phase 3.2.5: Check for high-precision literal with raw string value
     // For now, we'll infer the type from the variant - in future we could pass target type as parameter
     if (expr->hasRawValue()) {
@@ -8638,6 +8648,38 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         bool is_extern = direct_func->hasExternalLinkage() && direct_func->isDeclaration();
         
         if (is_extern && return_type->isPointerTy()) {
+            // FFI-STRING-RETURN FIX: If this extern returns a string type,
+            // wrap the raw char* into a proper AriaString struct before
+            // Optional-wrapping. Without this, the raw char* is stored as-is
+            // but later code treats it as an AriaString*, reading string data
+            // bytes as struct fields (causing segfaults).
+            std::string callee_name = direct_func->getName().str();
+            auto ffi_ret_it = var_aria_types.find("__ffi_ret_" + callee_name);
+            if (ffi_ret_it != var_aria_types.end() && ffi_ret_it->second == "string") {
+                // call_result is a raw char* from C. Wrap into AriaString {ptr, i64}.
+                llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                if (!aria_string_type) {
+                    aria_string_type = llvm::StructType::create(context,
+                        {builder.getPtrTy(), builder.getInt64Ty()}, "struct.AriaString");
+                }
+
+                // Get string length via strlen
+                llvm::FunctionType* strlen_type = llvm::FunctionType::get(
+                    builder.getInt64Ty(), {builder.getPtrTy()}, false);
+                llvm::FunctionCallee strlen_fn = module->getOrInsertFunction("strlen", strlen_type);
+                llvm::Value* str_len = builder.CreateCall(strlen_fn, {call_result}, "ffi_strlen");
+
+                // Allocate AriaString on the stack and populate
+                llvm::AllocaInst* str_alloca = builder.CreateAlloca(aria_string_type, nullptr, "ffi_str_wrap");
+                builder.CreateStore(call_result,
+                    builder.CreateStructGEP(aria_string_type, str_alloca, 0, "ffi_str_data"));
+                builder.CreateStore(str_len,
+                    builder.CreateStructGEP(aria_string_type, str_alloca, 1, "ffi_str_len"));
+
+                // Use the AriaString pointer as the result
+                call_result = str_alloca;
+            }
+
             // Wrap NULL-possible pointer in Optional { i1 hasValue, T* value }
             // This enforces null checks at the Aria boundary
             
