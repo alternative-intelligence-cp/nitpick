@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.7
+# Aria Programming Language v0.2.8
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -12,20 +12,21 @@
 
 ## Current Status (March 2026)
 
-**v0.2.7 — Six-Stream I/O & POSIX Tools**
+**v0.2.8 — Graphics, Games & Repo Reorganization**
 
-Complete six-stream I/O model with graceful fallback and 26 POSIX tools implemented in Aria. The runtime now initializes all 6 streams (stdin/stdout/stderr/stddbg/stddati/stddato), the compiler exposes `stdin_read_all()` and `stdin_read_line()` builtins with proper AriaString wrapping, and the argument access runtime (`aria_get_argc`, `aria_arg`) is fully integrated. All 26 tools support standard Unix pipelines.
+Full game development stack landed alongside a major repository reorganization. `aria_ecosystem/` was split into purpose-built repos: packages are now in [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) (59 packages), documentation in [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs), and POSIX tools + AX Linux in [`ariax`](https://github.com/alternative-intelligence-cp/ariax).
 
-- **Async/await error propagation** — Promise-based mechanism stores `Result<T>` to coroutine promise via `@llvm.coro.promise`. Fixed dual await paths, coroutine memory management (malloc/free, not GC), and proper final suspend routing. Valgrind-clean.
-- **`fail()` from user functions** — Result-style: `fail(err)` is sugar for `Result{error:err, value:NIL, is_error:true}`, the complement to `pass(val)`. Separate `failsafe(errCode)` for panic-style shutdown.
-- **Arrays in structs fixed** — Nested member access (`cloud.pts[0].x`) for both read and write. Fixed Aria element type registration for loaded struct array elements.
-- **Balanced ternary/nonary runtime** — Full trit/tryte arithmetic (add, sub, mul, div, mod, conversions). Runtime: `ternary_ops.cpp` (821 lines), codegen: `ternary_codegen.cpp` (600 lines), `tbb_codegen.cpp` (467 lines). 15/15 tests passing.
-- **NIL ↔ void bridge settled** — NIL is Aria's unit type (always wrapped in `Result<nil>`), void is C ABI type (restricted to extern blocks). Bridge through pointer erasure: `void*` (extern) ↔ `wild T->` (Aria).
-- **Database client libraries (v0.2.3)** — aria-sqlite (34 assertions), aria-postgres (40 assertions), aria-mysql (44 assertions), aria-redis (53 assertions). All use parameterized queries by default. SQL injection tests pass.
-- **Code quality pass** — Migrated 44 deprecated LLVM API calls, fixed all unused variable/parameter warnings, constructor initialization order. Zero Aria-source warnings.
-- **695+ test files** — Comprehensive test suite with 6 regression tests, covering compiler features, self-hosting, safety-critical validation, fuzzer corpus, and library assertions.
-- **Traits & borrow semantics designed** — RFC complete for monomorphized traits with `dyn Trait` opt-in, `$x`/`$mut x` borrow syntax. Implementation deferred to v0.2.6+.
-- **Fuzzing** — Continuous fuzzing via Fuzzer V2. 48-hour stress campaigns, crashes archived and regression-tested. Valgrind-clean runtime.
+- **Repo reorganization** — `aria_ecosystem/` removed from core compiler repo; packages, docs, and tools now live in their own repos under `alternative-intelligence-cp`
+- **Gamepad API** — `rl_is_gamepad_button_pressed/down/released`, `rl_get_gamepad_axis_movement`, full button/axis constants (D-pad, face buttons, sticks, triggers, Start/Select) in aria-raylib
+- **Procedural audio synthesis** — `rl_gen_beep(freq_hz, dur_ms, wave_type, volume)` synthesizes square/triangle/sawtooth/sine tones at runtime — no audio files required, 10% fade-out envelope eliminates click artifacts
+- **aria-tetris v0.2.8** — 928-line Tetris clone: 7 procedural sound effects, gamepad support, high score persistence (`aria_tetris_best.txt`), 300ms line-clear flash animation
+- **aria-gml package** — GML compatibility layer: 40+ GML-style functions mapped to raylib, xorshift32 RNG, persistent draw state, `gml_bounce` example
+- **aria-opengl package** — OpenGL 3.3 Core via GLAD + SDL2: shaders, VAO/VBO/EBO, textures, uniform upload, 3D rotation example
+- **aria-editor package** — Terminal-mode text editor: file open/edit/save, search (Ctrl+F), status bar, raw input handling
+- **16 new packages** — aria-cli, aria-compress, aria-crypto, aria-env, aria-mime, aria-semver, aria-template, aria-toml, aria-url, aria-websocket, aria-xml, aria-yaml (plus aria-gml, aria-opengl, aria-editor, aria-tetris)
+- **FFI codegen fixes** — Explicit float type suffixes (`1.0f32`) now produce correct flt32 IR; extern `string`-returning functions now auto-wrap `char*` → `AriaString` at the call site
+- **GML → Native tutorial** — `aria-docs/guide/from_gml_to_native.md`: full walkthrough from GML source through Aria FFI, C shim, shared library, to GPU draw call
+- **Package reference docs** — `aria-docs/packages/` API reference for aria-raylib, aria-tetris, aria-gml, aria-opengl
 
 ---
 
@@ -35,7 +36,7 @@ Complete six-stream I/O model with graceful fallback and 26 POSIX tools implemen
 |---|---|---|
 | `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
 | `aria-ls` | ✅ Improved | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
-| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 43/43 packages verified |
+| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 59/59 packages verified |
 | `aria-doc` | ✅ Fixed | Documentation generator — 435 unique HTML pages from ecosystem |
 | `aria-mcp` | ✅ Improved | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Improved | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
@@ -83,11 +84,11 @@ Complete six-stream I/O model with graceful fallback and 26 POSIX tools implemen
 
 ---
 
-## `aria_packages` Library Ecosystem
+## `aria-packages` Library Ecosystem
 
-A collection of tested, versioned utility libraries built alongside the compiler. Each package has a `src/` module, a `tests/` file with 15 tests, and where FFI is needed, a C `shim/`. Every package passes its full test suite before being committed — they serve simultaneously as integration tests for the compiler and as real utilities.
+All packages live in the separate [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) repository (previously `aria_ecosystem/aria_packages/` in this repo). 59 packages total, organized into utility, graphics/game, server, and database tiers. Each package has a `src/` module, a `tests/` file with assertions, and where FFI is needed, a C `shim/`.
 
-**Current packages (43 total, all passing):**
+**Package tiers:**
 
 | # | Package | Description |
 |---|---------|-------------|
@@ -109,7 +110,7 @@ A collection of tested, versioned utility libraries built alongside the compiler
 | 16 | `aria-zigzag` | Zigzag encode/decode for signed integer interleaving |
 | 17 | `aria-display` | ANSI/termios terminal rendering (virtual console display) |
 | 18 | `aria-input` | Raw keyboard input with SNES-style button mapping |
-| 19 | `aria-audio` | Software synthesis, MIDI note table, 4 channels (dry mode) |
+| 19 | `aria-audio` | Software synthesis, MIDI note table, 4 channels (ALSA backend) |
 | 20 | `aria-console` | 16-bit memory-mapped address space + 60fps frame scheduler |
 | 21 | `aria-str` | String utilities (pad, trim, repeat, contains, split) |
 | 22 | `aria-json` | Lightweight JSON encoding for basic types |
@@ -118,7 +119,7 @@ A collection of tested, versioned utility libraries built alongside the compiler
 | 25 | `aria-entangled` | Quantum-inspired entangled variable pairs |
 | 26 | `aria-resource-mem` | RAII-style resource lifecycle management |
 | 27 | `aria-gradient-field` | 3D gradient field computation for continuous optimization |
-| 28 | `aria-raylib` | raylib v6.0 bindings: window, drawing, shapes, text, input |
+| 28 | `aria-raylib` | raylib v6.0 bindings: window, drawing, shapes, text, input, audio, **gamepad**, **gen_beep** |
 | 29 | `aria-sdl2` | SDL2 multimedia bindings: window, renderer, drawing, events |
 | 30 | `aria-gtk4` | GTK4 desktop GUI: widget registry, events, non-blocking UI |
 | 31 | `aria-test` | Test framework with assertion helpers |
@@ -134,10 +135,22 @@ A collection of tested, versioned utility libraries built alongside the compiler
 | 41 | `aria-postgres` | PostgreSQL client via libpq (parameterized, LISTEN/NOTIFY) |
 | 42 | `aria-mysql` | MySQL/MariaDB client via libmysqlclient (parameterized, transactions) |
 | 43 | `aria-redis` | Redis client via hiredis (strings, lists, hashes, sets) |
-
-**Demo:** `aria_ecosystem/demos/aria-jrpg-demo/` — an interactive JRPG battle scene using all four virtual console libraries (LIB-17-20) plus aria-rand. Demonstrates the full stack: ANSI rendering, raw input, audio SFX, and the console memory map.
-
-Packages live in `aria_ecosystem/aria_packages/`. FFI-backed packages (aria-math, aria-display, aria-input, aria-audio, database clients) include pre-built shim `.so` files. Pure-Aria packages (aria-rand, aria-clamp, aria-bits, aria-ascii, etc.) can be `use`d directly.
+| 44 | `aria-gml` | GML compatibility layer: 40+ GML-style functions mapped to raylib, xorshift32 RNG |
+| 45 | `aria-opengl` | OpenGL 3.3 Core via GLAD + SDL2: shaders, VAO/VBO/EBO, textures, uniforms |
+| 46 | `aria-tetris` | Full Tetris clone: 7 sound effects, gamepad, high score, line flash animation |
+| 47 | `aria-editor` | Terminal-mode text editor: file open/save, search, status bar |
+| 48 | `aria-cli` | Enhanced CLI argument parsing with subcommands |
+| 49 | `aria-compress` | Data compression (LZ4/zstd via FFI) |
+| 50 | `aria-crypto` | Cryptographic primitives (SHA-256, AES, HMAC via FFI) |
+| 51 | `aria-env` | Environment variable access and process info |
+| 52 | `aria-mime` | MIME type detection and mapping |
+| 53 | `aria-semver` | Semantic versioning: parse, compare, satisfy |
+| 54 | `aria-template` | String template rendering with variable substitution |
+| 55 | `aria-toml` | TOML configuration file parsing |
+| 56 | `aria-url` | URL parsing, encoding, query string manipulation |
+| 57 | `aria-websocket` | WebSocket client/server (RFC 6455) |
+| 58 | `aria-xml` | XML parsing and generation |
+| 59 | `aria-yaml` | YAML parsing and serialization |
 
 ---
 
@@ -318,16 +331,15 @@ EOF
 
 ## Documentation
 
-📚 **[Web Programming Guide](https://aria.docs.ai-liberation-platform.org/)** — Complete interactive guide with all language features, safety patterns, and examples.
+📚 **[aria-docs](https://github.com/alternative-intelligence-cp/aria-docs)** — Package reference, language guides, and tutorials (separate repo).
 
-**Quick links:**
-- [Language Guide](https://aria.docs.ai-liberation-platform.org/language-guide/)
-- [Standard Library](https://aria.docs.ai-liberation-platform.org/stdlib/)
-- [Control Flow](https://aria.docs.ai-liberation-platform.org/control-flow/)
+**Quick links in aria-docs:**
+- `guide/from_gml_to_native.md` — GML → Native walkthrough
+- `packages/` — API reference for all game/graphics packages
 
-**Man pages:** Install with `cd aria_ecosystem/man_pages && make install` → then `man aria-control-flow-for`, `man aria-types-int32`, etc.  
-**Programming guide source:** [`aria_ecosystem/programming_guide/`](aria_ecosystem/programming_guide/)  
-**Language spec:** [`.internal/aria_specs.txt`](.internal/aria_specs.txt)
+**Man pages:** Install with `./install.sh` — then `man aria-control-flow-for`, `man aria-types-int32`, etc.  
+**Language spec:** [`.internal/aria_specs.txt`](.internal/aria_specs.txt)  
+**Compiler architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 ---
 
@@ -340,85 +352,41 @@ aria/
 │   └── ISSUE_TEMPLATE/      # Bug report, feature request, crash report
 ├── src/                      # Compiler source
 │   ├── frontend/            # Lexer, parser, AST, semantic analysis
-│   │   ├── lexer/
-│   │   ├── parser/
-│   │   ├── ast/
-│   │   └── sema/            # Type checker, borrow checker, etc.
 │   ├── backend/             # LLVM IR generation
-│   │   └── ir/
-│   ├── runtime/             # Runtime support (GC, strings, async, streams)
-│   └── tools/               # ariac tool implementations
+│   └── runtime/             # Runtime support (GC, strings, async, streams)
 ├── include/                  # Headers
 ├── stdlib/                   # Standard library (.aria files)
-│   ├── print_utils.aria     # print, println, drop
-│   ├── string_convert.aria  # int32_toString, etc.
-│   ├── string.aria          # String manipulation (replace, split, reverse, etc.)
-│   ├── string_builder.aria  # StringBuilder MVP
-│   ├── io.aria              # File I/O streams (open, read, write, close)
-│   ├── math.aria            # Math functions (sqrt, sin, cos, exp, log, etc.)
-│   ├── linalg.aria          # Linear algebra (Vec2, Vec3, Mat2x2, Mat3x3)
-│   ├── collections.aria     # Collections (Vec, VecI32, VecF64, Map, Set, Graph)
-│   ├── dbug.aria            # Debug instrumentation
-│   ├── wave.aria            # Wave mechanics
-│   ├── wavemech.aria        # Wave encoding/decoding
-│   ├── complex.aria         # Complex number types
-│   ├── atomic.aria          # Atomic primitives
-│   ├── quantum.aria         # Quantum types
-│   ├── lib_hashmap_*.aria   # HashMap implementations
-│   └── lib_vec_int32.aria   # Vec<int32>
-├── tests/                    # Test suite (695+ tests and growing)
-│   ├── regression/          # Regression tests (6 tests)
+├── tests/                    # Test suite (700+ tests)
+│   ├── regression/          # Regression tests
 │   ├── fuzz/                # Fuzzer V2 and corpus
-│   ├── gpu/                 # GPU/CUDA tests and PTX
-│   └── *.aria               # Feature test files
+│   ├── gpu/                 # GPU/CUDA tests
+│   └── misc/                # Exploratory/scratch tests and archived test results
 ├── examples/                 # Example programs
-├── docs/                     # Documentation and design docs
+├── docs/                     # Design docs and architecture
 ├── scripts/                  # Build and maintenance scripts
-│   └── gpu/                 # GPU/CUDA setup scripts
-├── tools/                    # Development tooling
-│   ├── aria_specialist_*/   # Language specialist model
-│   ├── train_aria_specialist*.py
-│   ├── aria_patch_corpus.py # Training data preparation
-│   └── semantic_db/         # Semantic test archive
-├── aria_ecosystem/           # Ecosystem tools
-│   ├── aria_packages/       # Library ecosystem (39 packages, each with src/ + tests/)
-│   │   ├── aria-math/       # LIB-1: trig/exp/log via C libm
-│   │   ├── ...              # LIB-2 through LIB-27 (original packages)
-│   │   ├── aria-raylib/     # LIB-28: raylib v6.0 bindings
-│   │   ├── aria-sdl2/       # LIB-29: SDL2 multimedia bindings
-│   │   ├── aria-gtk4/       # LIB-30: GTK4 desktop GUI
-│   │   ├── aria-test/       # LIB-31: test framework
-│   │   ├── aria-csv/        # LIB-32: CSV parsing
-│   │   ├── aria-log/        # LIB-33: structured logging
-│   │   ├── aria-base64/     # LIB-34: Base64 encode/decode
-│   │   ├── aria-datetime/   # LIB-35: date/time utilities
-│   │   ├── aria-regex/      # LIB-36: regex matching
-│   │   ├── aria-fs/         # LIB-37: file system utilities
-│   │   ├── aria-socket/     # LIB-38: socket abstraction
-│   │   ├── aria-http/       # LIB-39: HTTP client
-│   │   ├── aria-sqlite/     # LIB-40: SQLite3 database client
-│   │   ├── aria-postgres/   # LIB-41: PostgreSQL client
-│   │   ├── aria-mysql/      # LIB-42: MySQL/MariaDB client
-│   │   └── aria-redis/      # LIB-43: Redis client│   ├── demos/               # Demo programs
-│   │   └── aria-jrpg-demo/  # JRPG battle scene using LIB-17/18/19/20
-│   ├── programming_guide/   # Source for web/man docs
-│   ├── man_pages/           # Man page builder
-│   ├── aria_make/           # Build system
-│   ├── aria_shell/          # Aria-native shell
-│   └── aria_utils/          # CLI utilities (als, acp, agrep, etc.)
+├── tools/                    # Development tooling (specialist model, semantic_db)
+├── benchmarks/               # Performance benchmarks
+├── runtime/                  # Runtime C source
+├── lib/                      # Bundled libraries
+├── vendor/                   # Vendored dependencies
+├── third_party/              # Third-party components
+├── debian/                   # Debian packaging
 ├── .internal/                # Internal: spec, session notes, status docs
-│   ├── aria_specs.txt       # Master language specification
-│   └── *.md                 # Development status tracking
-├── test_results/             # Historical test run output
 ├── build/                    # Build artifacts (gitignored)
 ├── CMakeLists.txt
 ├── README.md
 ├── SAFETY.md
-├── ARCHITECTURE.md
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 └── LICENSE.md
 ```
+
+**Related repositories:**
+- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 59 library packages
+- [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs) — reference docs and guides
+- [`ariax`](https://github.com/alternative-intelligence-cp/ariax) — POSIX tools and AX Linux distro
+- [`aria-lang`](https://github.com/alternative-intelligence-cp/aria-lang) — VS Code extension
+- [`aria-make`](https://github.com/alternative-intelligence-cp/aria-make) — build system
 
 ---
 
@@ -517,7 +485,7 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Benchmark suite** — 3 benchmarks (primes, collatz, gcd) in Aria and C with runner script. Aria matches or beats gcc -O2 on 2/3 benchmarks.
 - ✅ **Clean-machine build verified** — CMake and install.sh fixes for fresh Linux installs.
 
-### v0.2.5 — Released (Current)
+### v0.2.5 — Released
 
 - ✅ **CI/CD pipeline** — GitHub Actions: build, test, .deb packaging on push/PR to main/dev
 - ✅ **GitHub templates** — Bug report, feature request, compiler crash issue templates; PR template with checklist
@@ -526,6 +494,36 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Man pages** — groff man pages for ariac(1), aria-ls(1), aria-pkg(1), aria-doc(1), aria-dap(1)
 - ✅ **Documentation fixes** — Tested 24 code examples, fixed 7 doc bugs, documented 2 compiler bugs
 - ✅ **Specialist model evaluation** — Comprehensive evaluation of all model versions, strategy documented
+
+### v0.2.6 — Released
+
+- ✅ **`--shared` flag** — Compile Aria source directly to `.so` shared libraries with C ABI export
+- ✅ **Cross-language bindings** — Aria → C, Python (ctypes), Rust (FFI), Go (cgo); documented in `docs/CROSS_LANGUAGE_BINDINGS.md`
+- ✅ **GUI/game packages** — aria-raylib (v6.0), aria-sdl2, aria-gtk4, OpenGL bindings (aria-opengl via GLAD)
+- ✅ **12 new library packages** — aria-test, aria-csv, aria-log, aria-base64, aria-datetime, aria-regex, aria-fs, aria-socket, aria-http, and infrastructure packages
+- ✅ **aria-doc improvements** — Full HTML generation pipeline, 435+ unique pages
+
+### v0.2.7 — Released
+
+- ✅ **Six-stream I/O runtime** — All 6 streams (stdin/stdout/stderr/stddbg/stddati/stddato) initialized with graceful fallback
+- ✅ **`stdin_read_all()` / `stdin_read_line()` builtins** — Proper AriaString wrapping, pipes and non-seekable streams supported
+- ✅ **Argument access runtime** — `aria_get_argc()`, `aria_arg(index)` builtins; compiler auto-generates `main(i32, ptr)` signature
+- ✅ **26 POSIX tools** — cat, head, tail, wc, tee, cut, sort, uniq, tr, grep, find, diff, echo, yes, true, false, env, sleep, basename, dirname, seq, nl, fold, paste, expand, unexpand (in `ariax` repo)
+- ✅ **Pipeline support** — All tools read from stdin when no file argument given
+- ✅ **String comparison fix** — `_=expr` discard syntax, `sleep_ms` builtin
+
+### v0.2.8 — Released (Current)
+
+- ✅ **Repo reorganization** — `aria_ecosystem/` split into `aria-packages`, `aria-docs`, and `ariax` repos
+- ✅ **Gamepad input API** — Full button/axis constants in aria-raylib; gamepad support in aria-tetris
+- ✅ **Procedural audio synthesis** — `rl_gen_beep()`: square/triangle/sawtooth/sine tones, no audio files needed
+- ✅ **aria-tetris** — 928-line Tetris clone with sound, gamepad, high score, line-clear flash animation
+- ✅ **aria-gml** — GML compatibility layer: 40+ functions, xorshift32 RNG, persistent draw state
+- ✅ **aria-opengl** — OpenGL 3.3 Core bindings via GLAD + SDL2
+- ✅ **aria-editor** — Terminal-mode text editor (file open/edit/save/search)
+- ✅ **16 new packages** — 59 total in aria-packages
+- ✅ **FFI codegen fixes** — Explicit float literals, auto-wrap `char*` → `AriaString` for extern string returns
+- ✅ **GML → Native tutorial** — Full walkthrough in aria-docs
 
 ### v0.3.0+ — Planned
 
