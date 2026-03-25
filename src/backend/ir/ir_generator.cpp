@@ -2775,6 +2775,15 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
 
             // Skip body generation if no body (extern declaration)
             if (!funcDecl->body) {
+                // FFI-STRING-RETURN: Track standalone extern functions that return string type.
+                // This handles `extern func:name = string(...)` syntax (not in extern block).
+                if (funcDecl->isExtern && funcDecl->returnType &&
+                    funcDecl->returnType->type == ASTNode::NodeType::TYPE_ANNOTATION) {
+                    SimpleType* retType = static_cast<SimpleType*>(funcDecl->returnType.get());
+                    if (retType->typeName == "string") {
+                        var_aria_types["__ffi_ret_" + funcDecl->funcName] = "string";
+                    }
+                }
                 continue;
             }
             
@@ -9706,7 +9715,7 @@ void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::st
     di_compile_unit = di_builder->createCompileUnit(
         llvm::dwarf::DW_LANG_C,  // Use C for now (could register DW_LANG_Aria later)
         di_file,
-        "Aria Compiler v0.2.8",  // Producer
+        "Aria Compiler v0.2.9",  // Producer
         false,                    // isOptimized
         "",                       // Flags
         0                         // Runtime version
