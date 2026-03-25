@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.9
+# Aria Programming Language v0.2.10
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -12,17 +12,18 @@
 
 ## Current Status (March 2026)
 
-**v0.2.9 — Server Platform**
+**v0.2.10 — AI/ML Ecosystem & Communication Protocol**
 
-Full HTTP server stack with Express-style routing and 6 middleware libraries. Aria can now serve web APIs with path parameters, middleware chains, CORS, sessions, rate limiting, cookies, body parsing, and static file serving — 154+ tests across all server packages.
+Full AI/ML stack with 4 neural architecture packages, GPU acceleration, and a universal AI communication protocol. Aria now has native Transformer, Mamba, Jamba (hybrid), and Looping (iterative refinement) model implementations, plus a self-improving specialist training loop.
 
-- **aria-server** — HTTP/1.1 server: listen, accept, request parsing, response building, header management, peer info
-- **aria-router** — Express-style routing: path params (`:id`), middleware chain, wildcards, method dispatch (21 tests)
-- **aria-body-parser** — JSON field extraction, URL-encoded form parsing, content-type detection, raw body access (28 tests)
-- **aria-cors** — CORS header generation, preflight handling, origin validation, credentials support (18 tests)
-- **aria-cookie** — Cookie parsing, Set-Cookie builder with Path/Domain/Max-Age/Secure/HttpOnly/SameSite (23 tests)
-- **aria-session** — In-memory sessions, cryptographic IDs via `/dev/urandom`, key/value storage, session cookies (23 tests)
-- **aria-rate-limit** — Token bucket algorithm, per-client rate limiting, rate limit response headers (14 tests)
+- **aria-transformer** — Full Transformer encoder: multi-head attention, causal masking, positional embeddings, attention visualization, weight-tied unembedding (10/10 tests)
+- **aria-mamba** — Mamba selective state space model: linear projections, 1D depthwise convolution, selective SSM (S6), SiLU gating, layer norm + residuals (10/10 tests)
+- **aria-jamba** — Jamba hybrid: interleaved Transformer attention + Mamba SSM layers, Mixture of Experts (MoE) FFN with top-k gating (10/10 tests)
+- **aria-looping** — Iterative refinement model: shared-weight Universal Transformer style, iteration embeddings, adaptive convergence stopping, configurable iteration count (10/10 tests)
+- **aria-tensor** — Dense tensor library: creation, arithmetic, matmul, activations (ReLU, sigmoid, tanh, SiLU, GELU, softmax), layer norm, concat/slice, GPU interop (12/12 tests)
+- **aria-cuda** — CUDA FFI bindings: device management, memory alloc/copy/free, kernel launch, cuBLAS GEMM, stream operations (10/10 tests)
+- **aria-uacp** — Universal AI Communication Protocol: binary-framed message types (text, tensor, tool invocation, streaming, store/load), capability negotiation, codec layer (12/12 tests)
+- **Self-improving training loop** — Automated specialist pipeline: generate → compile → filter → expand corpus → retrain
 - **aria-static** — Static file serving, MIME type detection (28 types), path traversal protection, directory index (22 tests)
 - **demo_api.aria** — REST API showcase: 5 endpoints with HTML, JSON, path params, POST body handling
 - **Borrow checker fix** — False positive on deallocator-named void externs (`_close`/`_free` pattern match) with int32 args
@@ -47,7 +48,7 @@ Full HTTP server stack with Express-style routing and 6 middleware libraries. Ar
 | Specialist model | ✅ V6 | Qwen 7B LoRA, v6 corpus covering v0.2.3 additions |
 | Debian package | ✅ Built | `aria_0.2.2-1_amd64.deb` (17 MB), tested on Mint 22.3 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 43 packages (39 utility/GUI + 4 database clients), all passing |
+| `aria_packages` | ✅ Active | 72 packages (39 utility/GUI + 4 database + 7 server + 8 AI/ML + 14 more), all passing |
 
 ---
 
@@ -512,7 +513,18 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Pipeline support** — All tools read from stdin when no file argument given
 - ✅ **String comparison fix** — `_=expr` discard syntax, `sleep_ms` builtin
 
-### v0.2.9 — Released (Current)
+### v0.2.10 — Released (Current)
+
+- ✅ **aria-transformer** — Full Transformer encoder with multi-head attention, causal masking, attention visualization (10/10 tests)
+- ✅ **aria-mamba** — Mamba SSM: selective scan, 1D convolution, SiLU gating, layer norm (10/10 tests)
+- ✅ **aria-jamba** — Hybrid Transformer + Mamba + MoE: interleaved layers, top-k expert gating (10/10 tests)
+- ✅ **aria-looping** — Iterative refinement model: shared weights, iteration embeddings, convergence stopping (10/10 tests)
+- ✅ **aria-tensor** — Dense tensor library: 47 operations, GPU interop (12/12 tests)
+- ✅ **aria-cuda** — CUDA FFI: device mgmt, memory ops, kernel launch, cuBLAS GEMM (10/10 tests)
+- ✅ **aria-uacp** — Universal AI Communication Protocol: binary framing, 8 message types (12/12 tests)
+- ✅ **Self-improving training loop** — Automated specialist: generate → compile → filter → retrain
+
+### v0.2.9 — Released
 
 - ✅ **HTTP server** — aria-server: listen, accept, parse, respond with headers and status codes
 - ✅ **Express-style router** — aria-router: path params, middleware chains, wildcards, method dispatch (21 tests)

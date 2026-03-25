@@ -1,5 +1,17 @@
 # Aria Language Changelog
 
+## [0.2.10] - March 2026
+
+### Added
+- **aria-transformer** — Full Transformer encoder package: token + positional embeddings, multi-head scaled dot-product attention with causal masking, GELU feed-forward network, pre-norm architecture with residual connections, weight-tied unembedding, attention visualization. 10/10 tests.
+- **aria-mamba** — Mamba selective state space model package: linear projections, 1D causal depthwise convolution, selective SSM (S6) with input-dependent discretization (dt, B, C), softplus for dt, A_log diagonal initialization, SiLU gating, output projection, layer norm + residuals. 10/10 tests.
+- **aria-jamba** — Jamba hybrid model package: interleaved Transformer attention + Mamba SSM layers (configurable `attn_every` ratio), Mixture of Experts (MoE) FFN with top-k softmax gating over N expert networks, each expert a 2-layer FFN with SiLU. 10/10 tests.
+- **aria-looping** — Looping / iterative-refinement model package (Universal Transformer style): shared weights across iterations, iteration embeddings to distinguish passes, adaptive convergence stopping via L2 delta threshold, configurable fixed or adaptive iteration count. 10/10 tests.
+- **aria-tensor** — Dense tensor library: 47 operations including creation (1D-3D), element access, fill (xavier, random), reshape/transpose, arithmetic (add/sub/mul/scale), matmul, activations (ReLU, sigmoid, tanh, SiLU, GELU, softmax), reductions (sum, mean, max, min), layer_norm, concat/slice, GPU interop. 12/12 tests.
+- **aria-cuda** — CUDA FFI bindings: device management, memory alloc/copy/free, kernel launch, cuBLAS GEMM, stream operations. 10/10 tests.
+- **aria-uacp** — Universal AI Communication Protocol: binary-framed message types (text, tensor, tool invocation, streaming, store/load, heartbeat, capability negotiation), error/retry semantics, codec layer for human-readable interface. 12/12 tests.
+- **Self-improving training loop** — `self_improve.py` for aria-specialist: automated pipeline that generates Aria code from the specialist model, compile-filters with ariac, appends successes to the training corpus, retrains, and tracks metrics across iterations. Foundation for Nikola self-improvement in v0.3.0.
+
 ## [0.2.9] - July 2026
 
 ### Added
