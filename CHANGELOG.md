@@ -1,5 +1,22 @@
 # Aria Language Changelog
 
+## [0.2.9] - July 2026
+
+### Added
+- **aria-server** — HTTP/1.1 server library: `server_listen(port)`, `server_accept()`, request parsing (method, path, query, headers, body), response building with status codes, content types, and custom headers, peer address/port info. C shim + Aria wrapper + test suite.
+- **aria-router** — Express-style routing library: `router_add(method, path, handler_id)`, path parameters (`/users/:id`) with `router_param()` extraction, multi-parameter routes, middleware chain (`router_use(prefix, id)`), wildcard routes (`/files/*`), method dispatch. 21 tests passing.
+- **aria-body-parser** — Request body parsing: JSON top-level object parser, URL-encoded form parser with `%XX`/`+` decoding, content-type detection (JSON/form/multipart/text), field access by key/index, raw body passthrough. 28 tests passing.
+- **aria-cors** — CORS middleware: configurable origins (wildcard or specific list), methods, headers, expose headers, credentials, max-age. Generates CORS response headers and preflight headers. Case-insensitive origin matching. 18 tests passing.
+- **aria-cookie** — Cookie handling: Cookie header parsing (semicolon-separated, trimmed), get by name/index, Set-Cookie builder with Path/Domain/Max-Age/Secure/HttpOnly/SameSite attributes, delete cookie helper. 23 tests passing.
+- **aria-session** — In-memory session management: cryptographic session IDs via `/dev/urandom` (32 hex chars = 128 bits), create/load/destroy, key/value storage (32 vars/session), expiry with max-age, cookie header generation, active session counting, eviction of oldest when full. 23 tests passing.
+- **aria-rate-limit** — Token bucket rate limiting: per-client buckets by key (max 1024), configurable max tokens + refill rate, check with optional cost, remaining tokens, retry-after calculation, `X-RateLimit-*` response headers. 14 tests passing.
+- **aria-static** — Static file serving: configurable root directory, MIME type detection (28 types), path traversal protection (`..` rejection + `realpath` validation), directory index (`index.html`), file reading (max 1MB). 22 tests passing.
+- **demo_api.aria** — REST API example demonstrating server + router integration: GET `/` (HTML homepage), GET `/health` (JSON health check), GET `/api/users` (user list), GET `/api/users/:id` (path param extraction), POST `/api/users` (JSON body handling).
+
+### Fixed
+- **Borrow checker false positive** — `isDeallocator()` pattern-matched function names ending in `_close`/`_free`/`_destroy`/`_release` and assumed arguments were wild pointers, even for `int32` values. Added `wild_states` guard before `recordWildFree` and `recordDeferFree` calls.
+- **FFI string return ABI** — Corrected AriaString struct return ABI for extern functions.
+
 ## [0.2.8] - July 2026
 
 ### Added

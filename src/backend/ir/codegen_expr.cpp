@@ -3270,7 +3270,36 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
     
     // Increment/decrement operators (++, --)
     if (op == TokenType::TOKEN_PLUS_PLUS || op == TokenType::TOKEN_MINUS_MINUS) {
-        throw std::runtime_error("Increment/decrement operators (++/--) require lvalue support (Phase 4.3+)");
+        // Require an identifier lvalue so we can find the alloca to write back
+        if (expr->operand->type != ASTNode::NodeType::IDENTIFIER) {
+            throw std::runtime_error("++ and -- require an identifier lvalue");
+        }
+        IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr->operand.get());
+        auto it = named_values.find(ident->name);
+        if (it == named_values.end()) {
+            throw std::runtime_error("++ / -- : variable '" + ident->name + "' not found");
+        }
+        llvm::Value* alloca_ptr = it->second;
+        llvm::Value* oldVal = operand;  // already loaded above
+        llvm::Value* one;
+        if (oldVal->getType()->isFloatingPointTy()) {
+            one = llvm::ConstantFP::get(oldVal->getType(), 1.0);
+        } else {
+            one = llvm::ConstantInt::get(oldVal->getType(), 1);
+        }
+        llvm::Value* newVal;
+        if (op == TokenType::TOKEN_PLUS_PLUS) {
+            newVal = oldVal->getType()->isFloatingPointTy()
+                ? builder.CreateFAdd(oldVal, one, "inctmp")
+                : builder.CreateAdd(oldVal, one, "inctmp");
+        } else {
+            newVal = oldVal->getType()->isFloatingPointTy()
+                ? builder.CreateFSub(oldVal, one, "dectmp")
+                : builder.CreateSub(oldVal, one, "dectmp");
+        }
+        builder.CreateStore(newVal, alloca_ptr);
+        // Postfix: return old value; Prefix: return new value
+        return expr->isPostfix ? oldVal : newVal;
     }
     
     throw std::runtime_error("Unknown unary operator: " + std::to_string(static_cast<int>(op)));
@@ -4066,6 +4095,28 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         if (!arg->getType()->isPointerTy()) {
             throw std::runtime_error(func_name + " requires a string argument");
         }
+
+        // Extract the char* data pointer from the AriaString* pointer.
+        // All Aria strings are AriaString structs { char* data, int64_t length }.
+        // The C runtime stream functions expect a raw const char*.
+        llvm::StructType* ariaStringType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        if (!ariaStringType) {
+            ariaStringType = llvm::StructType::create(context, {
+                llvm::PointerType::get(context, 0),
+                llvm::Type::getInt64Ty(context)
+            }, "struct.AriaString");
+        }
+
+        llvm::Value* str_ptr = nullptr;
+        if (llvm::isa<llvm::GlobalVariable>(arg)) {
+            // String literal: GEP into the global AriaString to get .data
+            llvm::Value* data_gep = builder.CreateStructGEP(ariaStringType, arg, 0, "sw_data_ptr");
+            str_ptr = builder.CreateLoad(llvm::PointerType::get(context, 0), data_gep, "sw_data");
+        } else {
+            // AriaString* from variable or runtime call: load struct, extract .data
+            llvm::Value* str_struct = builder.CreateLoad(ariaStringType, arg, "sw_str_struct");
+            str_ptr = builder.CreateExtractValue(str_struct, 0, "sw_data");
+        }
         
         // Declare the C runtime function if not already declared
         // Signature: int64_t aria_xxx_write(const char* str)
@@ -4084,8 +4135,8 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             );
         }
         
-        // Call the stream function
-        return builder.CreateCall(stream_func_ptr, {arg}, func_name + "_call");
+        // Call the stream function with the extracted char* data pointer
+        return builder.CreateCall(stream_func_ptr, {str_ptr}, func_name + "_call");
     };
     
     // stdout_write(string) -> int64
@@ -7144,6 +7195,73 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return nullptr;
     }
 
+    // exit(int32) -> noreturn — terminate the process with the given exit code.
+    // Only valid in main/failsafe (enforced by type checker).
+    if (callee_ident->name == "exit") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("exit() requires one argument (exit code: int32)");
+        }
+        llvm::Value* code_val = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!code_val) {
+            throw std::runtime_error("Failed to generate code for exit() argument");
+        }
+        if (code_val->getType() != builder.getInt32Ty()) {
+            code_val = builder.CreateIntCast(code_val, builder.getInt32Ty(), true);
+        }
+        llvm::Function* exit_fn = module->getFunction("exit");
+        if (!exit_fn) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getVoidTy(), {builder.getInt32Ty()}, false);
+            exit_fn = llvm::Function::Create(
+                ft, llvm::Function::ExternalLinkage, "exit", module);
+            exit_fn->addFnAttr(llvm::Attribute::NoReturn);
+        }
+        llvm::CallInst* call = builder.CreateCall(exit_fn, {code_val});
+        call->setDoesNotReturn();
+        builder.CreateUnreachable();
+        return nullptr;
+    }
+
+    // env_get(string) -> string — return the value of an environment variable,
+    // or an empty string if the variable is not set.
+    if (callee_ident->name == "env_get") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("env_get() requires one argument (name: string)");
+        }
+        llvm::Function* func = module->getFunction("aria_env_get_builtin");
+        if (!func) {
+            // aria_env_get_builtin(AriaString name) -> AriaString*
+            std::vector<llvm::Type*> params = {getAriaStringType()};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(getAriaStringType(), 0), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_env_get_builtin", module);
+        }
+        llvm::Value* name_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* name_val = builder.CreateLoad(getAriaStringType(), name_ptr, "env_name");
+        return builder.CreateCall(func, {name_val}, "env_val");
+    }
+
+    // sort_lines(string) -> string — sort newline-separated lines lexicographically.
+    if (callee_ident->name == "sort_lines") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("sort_lines() requires one argument (content: string)");
+        }
+        llvm::Function* func = module->getFunction("aria_sort_lines");
+        if (!func) {
+            // aria_sort_lines(AriaString* content) -> AriaString*
+            std::vector<llvm::Type*> params = {
+                llvm::PointerType::get(getAriaStringType(), 0)
+            };
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(getAriaStringType(), 0), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_sort_lines", module);
+        }
+        llvm::Value* content_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        return builder.CreateCall(func, {content_ptr}, "sorted_lines");
+    }
+
     // ====================================================================
     // COLLECTION BUILTINS (Phase 6.2)
     // ====================================================================
@@ -8669,15 +8787,32 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 llvm::FunctionCallee strlen_fn = module->getOrInsertFunction("strlen", strlen_type);
                 llvm::Value* str_len = builder.CreateCall(strlen_fn, {call_result}, "ffi_strlen");
 
-                // Allocate AriaString on the stack and populate
-                llvm::AllocaInst* str_alloca = builder.CreateAlloca(aria_string_type, nullptr, "ffi_str_wrap");
-                builder.CreateStore(call_result,
-                    builder.CreateStructGEP(aria_string_type, str_alloca, 0, "ffi_str_data"));
-                builder.CreateStore(str_len,
-                    builder.CreateStructGEP(aria_string_type, str_alloca, 1, "ffi_str_len"));
+                // GC-allocate AriaString struct (16 bytes: ptr + i64) to survive function returns.
+                // Stack alloca would become a dangling pointer when returned through wrapper functions.
+                llvm::FunctionCallee gc_alloc_callee = module->getOrInsertFunction("aria_gc_alloc",
+                    llvm::FunctionType::get(builder.getPtrTy(), {builder.getInt64Ty()}, false));
+                llvm::Value* struct_size = llvm::ConstantInt::get(builder.getInt64Ty(), 16);
+                llvm::Value* str_heap = builder.CreateCall(gc_alloc_callee, {struct_size}, "ffi_str_gc");
 
-                // Use the AriaString pointer as the result
-                call_result = str_alloca;
+                // Also GC-copy the string data so it's independent of C memory lifetime
+                llvm::Value* data_size = builder.CreateAdd(str_len,
+                    llvm::ConstantInt::get(builder.getInt64Ty(), 1), "ffi_data_sz"); // +1 for null terminator
+                llvm::Value* data_heap = builder.CreateCall(gc_alloc_callee, {data_size}, "ffi_data_gc");
+                llvm::FunctionCallee memcpy_fn = module->getOrInsertFunction("memcpy",
+                    llvm::FunctionType::get(builder.getPtrTy(),
+                        {builder.getPtrTy(), builder.getPtrTy(), builder.getInt64Ty()}, false));
+                builder.CreateCall(memcpy_fn, {data_heap, call_result, data_size});
+
+                // Populate the GC-allocated AriaString struct
+                builder.CreateStore(data_heap,
+                    builder.CreateStructGEP(aria_string_type, str_heap, 0, "ffi_str_data"));
+                builder.CreateStore(str_len,
+                    builder.CreateStructGEP(aria_string_type, str_heap, 1, "ffi_str_len"));
+
+                // Use the GC-allocated AriaString pointer as the result.
+                // Skip Optional wrapping — the string is always valid (never NULL).
+                call_result = str_heap;
+                return call_result;
             }
 
             // Wrap NULL-possible pointer in Optional { i1 hasValue, T* value }

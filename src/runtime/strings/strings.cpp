@@ -11,6 +11,9 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstdio>
+#include <algorithm>
+#include <vector>
+#include <string>
 
 // ═══════════════════════════════════════════════════════════════════════
 // Helper Functions
@@ -892,6 +895,55 @@ AriaString* aria_string_from_cstr_simple(const char* cstr) {
     AriaResultPtr result = aria_string_from_cstr(cstr);
     if (result.is_error) { std::abort(); }
     return (AriaString*)result.value;
+}
+
+// env_get(name: string) -> string builtin runtime
+// Returns the value of the named environment variable, or empty string if unset.
+extern "C" AriaString* aria_env_get_builtin(AriaString name) {
+    // AriaString.data is always null-terminated (see make_aria_str / alloc paths)
+    const char* val = std::getenv(name.data);
+    return aria_string_from_cstr_simple(val ? val : "");
+}
+
+// sort_lines(content: string) -> string  builtin runtime
+// Splits content by newlines, sorts lines lexicographically (O(n log n)),
+// then joins them back with newlines.
+extern "C" AriaString* aria_sort_lines(AriaString* content) {
+    if (!content || content->length == 0) {
+        return aria_string_from_cstr_simple("");
+    }
+
+    // Split into lines
+    std::vector<std::string> lines;
+    const char* data = content->data;
+    int64_t len = content->length;
+    int64_t start = 0;
+    for (int64_t i = 0; i < len; i++) {
+        if (data[i] == '\n') {
+            lines.emplace_back(data + start, i - start);
+            start = i + 1;
+        }
+    }
+    // Last line (possibly without trailing newline)
+    if (start < len) {
+        lines.emplace_back(data + start, len - start);
+    }
+
+    // Sort lexicographically — std::string::operator< does exactly this
+    std::sort(lines.begin(), lines.end());
+
+    // Join with newlines
+    std::string result;
+    for (size_t i = 0; i < lines.size(); i++) {
+        if (i > 0) result += '\n';
+        result += lines[i];
+    }
+    // Preserve trailing newline if original had one
+    if (len > 0 && data[len - 1] == '\n') {
+        result += '\n';
+    }
+
+    return aria_string_from_cstr_simple(result.c_str());
 }
 
 AriaString* aria_string_concat_simple(AriaString* a, AriaString* b) {

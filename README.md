@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.8
+# Aria Programming Language v0.2.9
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -12,21 +12,21 @@
 
 ## Current Status (March 2026)
 
-**v0.2.8 — Graphics, Games & Repo Reorganization**
+**v0.2.9 — Server Platform**
 
-Full game development stack landed alongside a major repository reorganization. `aria_ecosystem/` was split into purpose-built repos: packages are now in [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) (59 packages), documentation in [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs), and POSIX tools + AX Linux in [`ariax`](https://github.com/alternative-intelligence-cp/ariax).
+Full HTTP server stack with Express-style routing and 6 middleware libraries. Aria can now serve web APIs with path parameters, middleware chains, CORS, sessions, rate limiting, cookies, body parsing, and static file serving — 154+ tests across all server packages.
 
-- **Repo reorganization** — `aria_ecosystem/` removed from core compiler repo; packages, docs, and tools now live in their own repos under `alternative-intelligence-cp`
-- **Gamepad API** — `rl_is_gamepad_button_pressed/down/released`, `rl_get_gamepad_axis_movement`, full button/axis constants (D-pad, face buttons, sticks, triggers, Start/Select) in aria-raylib
-- **Procedural audio synthesis** — `rl_gen_beep(freq_hz, dur_ms, wave_type, volume)` synthesizes square/triangle/sawtooth/sine tones at runtime — no audio files required, 10% fade-out envelope eliminates click artifacts
-- **aria-tetris v0.2.8** — 928-line Tetris clone: 7 procedural sound effects, gamepad support, high score persistence (`aria_tetris_best.txt`), 300ms line-clear flash animation
-- **aria-gml package** — GML compatibility layer: 40+ GML-style functions mapped to raylib, xorshift32 RNG, persistent draw state, `gml_bounce` example
-- **aria-opengl package** — OpenGL 3.3 Core via GLAD + SDL2: shaders, VAO/VBO/EBO, textures, uniform upload, 3D rotation example
-- **aria-editor package** — Terminal-mode text editor: file open/edit/save, search (Ctrl+F), status bar, raw input handling
-- **16 new packages** — aria-cli, aria-compress, aria-crypto, aria-env, aria-mime, aria-semver, aria-template, aria-toml, aria-url, aria-websocket, aria-xml, aria-yaml (plus aria-gml, aria-opengl, aria-editor, aria-tetris)
-- **FFI codegen fixes** — Explicit float type suffixes (`1.0f32`) now produce correct flt32 IR; extern `string`-returning functions now auto-wrap `char*` → `AriaString` at the call site
-- **GML → Native tutorial** — `aria-docs/guide/from_gml_to_native.md`: full walkthrough from GML source through Aria FFI, C shim, shared library, to GPU draw call
-- **Package reference docs** — `aria-docs/packages/` API reference for aria-raylib, aria-tetris, aria-gml, aria-opengl
+- **aria-server** — HTTP/1.1 server: listen, accept, request parsing, response building, header management, peer info
+- **aria-router** — Express-style routing: path params (`:id`), middleware chain, wildcards, method dispatch (21 tests)
+- **aria-body-parser** — JSON field extraction, URL-encoded form parsing, content-type detection, raw body access (28 tests)
+- **aria-cors** — CORS header generation, preflight handling, origin validation, credentials support (18 tests)
+- **aria-cookie** — Cookie parsing, Set-Cookie builder with Path/Domain/Max-Age/Secure/HttpOnly/SameSite (23 tests)
+- **aria-session** — In-memory sessions, cryptographic IDs via `/dev/urandom`, key/value storage, session cookies (23 tests)
+- **aria-rate-limit** — Token bucket algorithm, per-client rate limiting, rate limit response headers (14 tests)
+- **aria-static** — Static file serving, MIME type detection (28 types), path traversal protection, directory index (22 tests)
+- **demo_api.aria** — REST API showcase: 5 endpoints with HTML, JSON, path params, POST body handling
+- **Borrow checker fix** — False positive on deallocator-named void externs (`_close`/`_free` pattern match) with int32 args
+- **FFI string return ABI fix** — Corrected AriaString struct return for extern functions
 
 ---
 
@@ -512,7 +512,16 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Pipeline support** — All tools read from stdin when no file argument given
 - ✅ **String comparison fix** — `_=expr` discard syntax, `sleep_ms` builtin
 
-### v0.2.8 — Released (Current)
+### v0.2.9 — Released (Current)
+
+- ✅ **HTTP server** — aria-server: listen, accept, parse, respond with headers and status codes
+- ✅ **Express-style router** — aria-router: path params, middleware chains, wildcards, method dispatch (21 tests)
+- ✅ **6 server middleware libraries** — body-parser (28), cors (18), cookie (23), session (23), rate-limit (14), static (22) — 154+ tests total
+- ✅ **REST API demo** — demo_api.aria: 5 endpoints with HTML, JSON, path params, POST handling
+- ✅ **Borrow checker fix** — False positive on void externs with `_close`/`_free` in name
+- ✅ **FFI string return ABI fix** — AriaString struct returns from extern functions
+
+### v0.2.8 — Released
 
 - ✅ **Repo reorganization** — `aria_ecosystem/` split into `aria-packages`, `aria-docs`, and `ariax` repos
 - ✅ **Gamepad input API** — Full button/axis constants in aria-raylib; gamepad support in aria-tetris

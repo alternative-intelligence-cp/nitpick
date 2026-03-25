@@ -1627,6 +1627,25 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType,
         return typeSystem->getErrorType();
     }
     
+    // ========================================================================
+    // Increment/Decrement: ++ and --
+    // ========================================================================
+    if (op == TokenType::TOKEN_PLUS_PLUS || op == TokenType::TOKEN_MINUS_MINUS) {
+        if (!primType) {
+            addError("Increment/decrement requires a numeric type, got '" +
+                     operandType->toString() + "'", sourceNode);
+            return typeSystem->getErrorType();
+        }
+        const std::string& nm = primType->getName();
+        bool isNumeric = (nm.find("int") == 0 || nm.find("uint") == 0 || nm.find("flt") == 0);
+        if (!isNumeric) {
+            addError("Increment/decrement requires an integer or float type, got '" +
+                     operandType->toString() + "'", sourceNode);
+            return typeSystem->getErrorType();
+        }
+        return operandType;  // ++/-- preserve type, return same type
+    }
+
     // Unknown operator
     addError("Unknown unary operator", sourceNode);
     return typeSystem->getErrorType();
@@ -4969,6 +4988,67 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("void");
         }
 
+        // exit(int32) -> noreturn (void for type purposes)
+        // Terminates the process with the given exit code.
+        // Only valid in 'main' and 'failsafe' — the two program endpoints.
+        if (idExpr->name == "exit") {
+            if (currentFunctionName != "main" && currentFunctionName != "failsafe") {
+                addError("exit() can only be called from 'main' or 'failsafe'. "
+                         "Use pass()/fail() to return from regular functions.", expr);
+                return typeSystem->getErrorType();
+            }
+            if (expr->arguments.size() != 1) {
+                addError("exit() requires exactly one argument (exit code: int32)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            PrimitiveType* argPrim = dynamic_cast<PrimitiveType*>(argType);
+            if (!argPrim || argPrim->getName() != "int32") {
+                addError("exit() requires an int32 exit code, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("void");
+        }
+
+        // env_get(string) -> string
+        // Returns the value of an environment variable, or empty string if not set.
+        if (idExpr->name == "env_get") {
+            if (expr->arguments.size() != 1) {
+                addError("env_get() requires exactly one argument (name: string)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->toString() != "string") {
+                addError("env_get() requires a string argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // sort_lines(string) -> string
+        // Sorts newline-separated lines lexicographically.
+        if (idExpr->name == "sort_lines") {
+            if (expr->arguments.size() != 1) {
+                addError("sort_lines() requires exactly one argument (content: string)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->toString() != "string") {
+                addError("sort_lines() requires a string argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
         // ====================================================================
         // COLLECTION BUILTINS (Phase 6.2)
         // ====================================================================
@@ -7314,7 +7394,7 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
     // Prevent shadowing reserved builtin names
     static const std::unordered_set<std::string> reservedBuiltins = {
         "ok", "print", "println", "stdout_write", "stderr_write",
-        "to_string", "fail", "pass", "drop", "raw", "sleep_ms"
+        "to_string", "fail", "pass", "drop", "raw", "sleep_ms", "exit", "env_get", "sort_lines"
     };
     if (reservedBuiltins.count(stmt->varName)) {
         addError("'" + stmt->varName + "' is a reserved builtin and cannot be used as a variable name", stmt);
@@ -8189,8 +8269,10 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     // Set current function return types for pass/fail/return statement checking
     Type* previousReturnType = currentFunctionReturnType;
     Type* previousValueType = currentFunctionValueType;
+    std::string previousFunctionName = currentFunctionName;
     currentFunctionReturnType = actualReturnType;
     currentFunctionValueType = valueType;
+    currentFunctionName = stmt->funcName;
     
     // PRE-REGISTER FUNCTION SYMBOL FOR SELF-RECURSION SUPPORT
     // Build a forward-reference symbol BEFORE entering the function scope so the
@@ -8281,6 +8363,7 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     // Restore previous function return types
     currentFunctionReturnType = previousReturnType;
     currentFunctionValueType = previousValueType;
+    currentFunctionName = previousFunctionName;
     
     // Note: The function symbol was pre-registered before the scope entry (above)
     // to support self-recursion.  No further defineSymbol() call needed here.

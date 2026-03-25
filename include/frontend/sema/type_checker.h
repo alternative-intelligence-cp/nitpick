@@ -96,6 +96,9 @@ private:
     // Current function value type (the T in Result<T>)
     // Used by pass/fail statements to validate value types
     Type* currentFunctionValueType;
+
+    // Current function name (for exit() restriction to main/failsafe)
+    std::string currentFunctionName;
     
     // Current module path (for resolving relative imports)
     std::string currentModulePath;
@@ -568,7 +571,8 @@ public:
           moduleLoader(loader),
           currentModulePath(modulePath),
           currentFunctionReturnType(nullptr),
-          currentFunctionValueType(nullptr) {}
+          currentFunctionValueType(nullptr),
+          currentFunctionName("") {}
     
     ~TypeChecker() {
         delete constEvaluator;  // Clean up
