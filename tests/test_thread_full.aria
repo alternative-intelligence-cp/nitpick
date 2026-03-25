@@ -1,0 +1,368 @@
+// Comprehensive threading test — exercises Thread.spawn, Mutex, Channel, Barrier, atomics
+use "thread.aria".*;
+use "mutex.aria".*;
+use "channel.aria".*;
+use "barrier.aria".*;
+use "atomic.aria".*;
+
+extern func:aria_shim_thread_sleep_ms = void(int64:ms);
+
+func:failsafe = NIL(int32:err_code) {
+    println("FAILSAFE HIT");
+};
+
+// ============================================================================
+// Test 1: Basic thread spawn and join
+// ============================================================================
+func:test_spawn_join = int32() {
+    (int64)(int64):worker = int64(int64:x) {
+        pass(x);
+    };
+
+    int64:h = raw(Thread.spawn(worker, 99i64));
+    if (h < 0) { pass(1i32); }
+
+    int32:jr = raw(Thread.join(h));
+    if (jr != 0i32) { pass(2i32); }
+
+    pass(0i32);
+};
+
+// ============================================================================
+// Test 2: Multiple threads
+// ============================================================================
+func:test_multiple_threads = int32() {
+    (int64)(int64):noop = int64(int64:x) {
+        pass(x);
+    };
+
+    int64:h1 = raw(Thread.spawn(noop, 1i64));
+    int64:h2 = raw(Thread.spawn(noop, 2i64));
+    int64:h3 = raw(Thread.spawn(noop, 3i64));
+    int64:h4 = raw(Thread.spawn(noop, 4i64));
+
+    if (h1 < 0) { pass(1i32); }
+    if (h2 < 0) { pass(2i32); }
+    if (h3 < 0) { pass(3i32); }
+    if (h4 < 0) { pass(4i32); }
+
+    int32:j1 = raw(Thread.join(h1));
+    int32:j2 = raw(Thread.join(h2));
+    int32:j3 = raw(Thread.join(h3));
+    int32:j4 = raw(Thread.join(h4));
+
+    if (j1 != 0i32) { pass(5i32); }
+    if (j2 != 0i32) { pass(6i32); }
+    if (j3 != 0i32) { pass(7i32); }
+    if (j4 != 0i32) { pass(8i32); }
+
+    pass(0i32);
+};
+
+// ============================================================================
+// Test 3: Mutex protects shared resource
+// ============================================================================
+func:test_mutex = int32() {
+    int64:mtx = raw(Mutex.create());
+    if (mtx < 0) { pass(1i32); }
+
+    int32:lock_r = raw(Mutex.lock(mtx));
+    if (lock_r != 0i32) { pass(2i32); }
+
+    int32:unlock_r = raw(Mutex.unlock(mtx));
+    if (unlock_r != 0i32) { pass(3i32); }
+
+    int32:dest_r = raw(Mutex.destroy(mtx));
+    if (dest_r != 0i32) { pass(4i32); }
+
+    pass(0i32);
+};
+
+// ============================================================================
+// Test 4: Channel send/recv between threads
+// ============================================================================
+func:test_channel = int32() {
+    int64:ch = raw(Channel.create(8i32));
+    if (ch < 0) { pass(1i32); }
+
+    // Producer thread sends 42
+    (int64)(int64):producer = int64(int64:channel) {
+        raw(Channel.send(channel, 42i64));
+        pass(0i64);
+    };
+
+    int64:prod_h = raw(Thread.spawn(producer, ch));
+    if (prod_h < 0) { pass(2i32); }
+
+    // Receive from channel
+    int64:val = raw(Channel.recv(ch));
+    if (val != 42) { pass(3i32); }
+
+    raw(Thread.join(prod_h));
+    raw(Channel.destroy(ch));
+
+    pass(0i32);
+};
+
+// ============================================================================
+// Test 5: Channel with multiple producers
+// ============================================================================
+func:test_multi_producer = int32() {
+    int64:ch = raw(Channel.create(32i32));
+    if (ch < 0) { pass(1i32); }
+
+    (int64)(int64):sender = int64(int64:channel) {
+        raw(Channel.send(channel, 10i64));
+        raw(Channel.send(channel, 20i64));
+        raw(Channel.send(channel, 30i64));
+        pass(0i64);
+    };
+
+    int64:h1 = raw(Thread.spawn(sender, ch));
+    int64:h2 = raw(Thread.spawn(sender, ch));
+    if (h1 < 0) { pass(2i32); }
+    if (h2 < 0) { pass(3i32); }
+
+    // Receive 6 values (3 from each producer)
+    int64:sum = 0;
+    int64:v1 = raw(Channel.recv(ch));
+    int64:v2 = raw(Channel.recv(ch));
+    int64:v3 = raw(Channel.recv(ch));
+    int64:v4 = raw(Channel.recv(ch));
+    int64:v5 = raw(Channel.recv(ch));
+    int64:v6 = raw(Channel.recv(ch));
+    sum = v1 + v2 + v3 + v4 + v5 + v6;
+
+    // Each sender sends 10+20+30=60, two senders = 120
+    if (sum != 120) { pass(4i32); }
+
+    raw(Thread.join(h1));
+    raw(Thread.join(h2));
+    raw(Channel.destroy(ch));
+
+    pass(0i32);
+};
+
+// ============================================================================
+// Test 6: Atomics (basic operations) — uses struct-based AtomicInt32
+// ============================================================================
+func:test_atomics = int32() {
+    AtomicInt32:atom = raw(AtomicInt32.create(0i32));
+
+    int32:loaded0 = raw(AtomicInt32.load(atom, 0i32));
+    if (loaded0 != 0i32) { pass(1i32); }
+
+    raw(AtomicInt32.store(atom, 100i32, 0i32));
+    int32:loaded1 = raw(AtomicInt32.load(atom, 0i32));
+    if (loaded1 != 100i32) { pass(2i32); }
+
+    int32:old_val = raw(AtomicInt32.add(atom, 50i32, 0i32));
+    if (old_val != 100i32) { pass(3i32); }
+
+    int32:loaded2 = raw(AtomicInt32.load(atom, 0i32));
+    if (loaded2 != 150i32) { pass(4i32); }
+
+    raw(AtomicInt32.destroy(atom));
+    pass(0i32);
+};
+
+// ============================================================================
+// Test 7: Thread.yield and Thread.sleep
+// ============================================================================
+func:test_yield_sleep = int32() {
+    raw(Thread.yield());
+    aria_shim_thread_sleep_ms(10i64);
+    pass(0i32);
+};
+
+// ============================================================================
+// Test 8: Hardware concurrency and current_id
+// ============================================================================
+func:test_hw_info = int32() {
+    int32:cores = raw(Thread.hardware_concurrency());
+    if (cores < 1i32) { pass(1i32); }
+
+    int64:tid = raw(Thread.current_id());
+    if (tid == 0) { pass(2i32); }
+
+    pass(0i32);
+};
+
+// ============================================================================
+// Test 9: Thread detach
+// ============================================================================
+func:test_detach = int32() {
+    (int64)(int64):sleeper = int64(int64:x) {
+        aria_shim_thread_sleep_ms(10i64);
+        pass(x);
+    };
+
+    int64:h = raw(Thread.spawn(sleeper, 1i64));
+    if (h < 0) { pass(1i32); }
+
+    int32:det = raw(Thread.detach(h));
+    if (det != 0i32) { pass(2i32); }
+
+    // Let detached thread finish
+    aria_shim_thread_sleep_ms(50i64);
+    pass(0i32);
+};
+
+// ============================================================================
+// Test 10: Channel try_send / try_recv
+// ============================================================================
+func:test_channel_try = int32() {
+    int64:ch = raw(Channel.create(2i32));
+    if (ch < 0) { pass(1i32); }
+
+    // Try send should succeed
+    int32:ts1 = raw(Channel.try_send(ch, 10i64));
+    if (ts1 != 0i32) { pass(2i32); }
+
+    int32:ts2 = raw(Channel.try_send(ch, 20i64));
+    if (ts2 != 0i32) { pass(3i32); }
+
+    // Try recv should get values
+    int64:rv1 = raw(Channel.try_recv(ch));
+    if (rv1 != 10) { pass(4i32); }
+
+    int64:rv2 = raw(Channel.try_recv(ch));
+    if (rv2 != 20) { pass(5i32); }
+
+    raw(Channel.destroy(ch));
+    pass(0i32);
+};
+
+// ============================================================================
+// Main test runner
+// ============================================================================
+func:main = int32() {
+    println("=== Aria Threading Comprehensive Test Suite ===");
+    int32:total = 0i32;
+    int32:passed = 0i32;
+
+    // Test 1
+    total = total + 1i32;
+    int32:r1 = raw(test_spawn_join());
+    if (r1 == 0i32) {
+        println(" [PASS] test_spawn_join");
+        passed = passed + 1i32;
+    }
+    if (r1 != 0i32) {
+        println(" [FAIL] test_spawn_join");
+    }
+
+    // Test 2
+    total = total + 1i32;
+    int32:r2 = raw(test_multiple_threads());
+    if (r2 == 0i32) {
+        println(" [PASS] test_multiple_threads");
+        passed = passed + 1i32;
+    }
+    if (r2 != 0i32) {
+        println(" [FAIL] test_multiple_threads");
+    }
+
+    // Test 3
+    total = total + 1i32;
+    int32:r3 = raw(test_mutex());
+    if (r3 == 0i32) {
+        println(" [PASS] test_mutex");
+        passed = passed + 1i32;
+    }
+    if (r3 != 0i32) {
+        println(" [FAIL] test_mutex");
+    }
+
+    // Test 4
+    total = total + 1i32;
+    int32:r4 = raw(test_channel());
+    if (r4 == 0i32) {
+        println(" [PASS] test_channel");
+        passed = passed + 1i32;
+    }
+    if (r4 != 0i32) {
+        println(" [FAIL] test_channel");
+    }
+
+    // Test 5
+    total = total + 1i32;
+    int32:r5 = raw(test_multi_producer());
+    if (r5 == 0i32) {
+        println(" [PASS] test_multi_producer");
+        passed = passed + 1i32;
+    }
+    if (r5 != 0i32) {
+        println(" [FAIL] test_multi_producer");
+    }
+
+    // Test 6
+    total = total + 1i32;
+    int32:r6 = raw(test_atomics());
+    if (r6 == 0i32) {
+        println(" [PASS] test_atomics");
+        passed = passed + 1i32;
+    }
+    if (r6 != 0i32) {
+        println(" [FAIL] test_atomics");
+    }
+
+    // Test 7
+    total = total + 1i32;
+    int32:r7 = raw(test_yield_sleep());
+    if (r7 == 0i32) {
+        println(" [PASS] test_yield_sleep");
+        passed = passed + 1i32;
+    }
+    if (r7 != 0i32) {
+        println(" [FAIL] test_yield_sleep");
+    }
+
+    // Test 8
+    total = total + 1i32;
+    int32:r8 = raw(test_hw_info());
+    if (r8 == 0i32) {
+        println(" [PASS] test_hw_info");
+        passed = passed + 1i32;
+    }
+    if (r8 != 0i32) {
+        println(" [FAIL] test_hw_info");
+    }
+
+    // Test 9
+    total = total + 1i32;
+    int32:r9 = raw(test_detach());
+    if (r9 == 0i32) {
+        println(" [PASS] test_detach");
+        passed = passed + 1i32;
+    }
+    if (r9 != 0i32) {
+        println(" [FAIL] test_detach");
+    }
+
+    // Test 10
+    total = total + 1i32;
+    int32:r10 = raw(test_channel_try());
+    if (r10 == 0i32) {
+        println(" [PASS] test_channel_try");
+        passed = passed + 1i32;
+    }
+    if (r10 != 0i32) {
+        println(" [FAIL] test_channel_try");
+    }
+
+    // Summary
+    println("=== Test Results ===");
+    string:p_str = string_from_int(passed);
+    string:t_str = string_from_int(total);
+    string:summary = string_concat(p_str, "/");
+    string:summary2 = string_concat(summary, t_str);
+    string:summary3 = string_concat(summary2, " tests passed");
+    println(summary3);
+
+    if (passed == total) {
+        println("ALL TESTS PASSED");
+        pass(0i32);
+    }
+    pass(1i32);
+};

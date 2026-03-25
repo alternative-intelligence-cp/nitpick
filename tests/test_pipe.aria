@@ -1,0 +1,20 @@
+use "pipe.aria".*;
+
+func:failsafe = NIL(int32:err_code) { println("FAILSAFE HIT"); };
+
+func:main = int32() {
+    println("=== Pipe Tests ===");
+
+    int64:pp = raw(Pipe.create());
+    if (pp >= 0i64) { println(" [PASS] pipe create"); }
+    if (pp < 0i64) { println(" [FAIL] pipe create"); }
+
+    raw(Pipe.write_int64(pp, 777i64));
+    int64:pread = raw(Pipe.read_int64(pp));
+    if (pread == 777i64) { println(" [PASS] pipe write/read int64"); }
+    if (pread != 777i64) { println(" [FAIL] pipe write/read int64"); }
+
+    raw(Pipe.destroy(pp));
+    println("=== Pipe Tests Done ===");
+    pass(0i32);
+};

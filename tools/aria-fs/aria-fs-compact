@@ -1,0 +1,49 @@
+#!/bin/bash
+# aria-fs-compact — Report filesystem stats (defrag placeholder)
+# Usage: aria-fs-compact <mountpoint>
+set -e
+
+if [ $# -lt 1 ]; then
+    echo "Usage: aria-fs-compact <mountpoint>"
+    echo ""
+    echo "Reports AriaFS statistics and performs optimization."
+    exit 1
+fi
+
+MOUNTPOINT="$1"
+
+echo "=== AriaFS Compact ==="
+echo "Mount: $MOUNTPOINT"
+echo ""
+
+# Count files and directories
+FILE_COUNT=$(find "$MOUNTPOINT" -type f -not -path '*/\.*' 2>/dev/null | wc -l)
+DIR_COUNT=$(find "$MOUNTPOINT" -type d -not -path '*/\.*' 2>/dev/null | wc -l)
+TOTAL_SIZE=$(find "$MOUNTPOINT" -type f -not -path '*/\.*' -exec stat -c %s {} + 2>/dev/null | awk '{s+=$1} END {print s+0}')
+
+echo "Files:       $FILE_COUNT"
+echo "Directories: $DIR_COUNT"
+echo "Total size:  $TOTAL_SIZE bytes ($(echo "scale=2; $TOTAL_SIZE/1048576" | bc) MB)"
+
+# Count tensor files (files with dtype metadata)
+TENSOR_COUNT=0
+find "$MOUNTPOINT" -type f -not -path '*/\.*' 2>/dev/null | while read -r f; do
+    dtype=$(getfattr -n user.tensor.dtype --only-values "$f" 2>/dev/null)
+    if [ -n "$dtype" ]; then
+        TENSOR_COUNT=$((TENSOR_COUNT + 1))
+    fi
+done
+echo "Tensor files: ~$TENSOR_COUNT"
+
+# Count checkpoints
+CKPT_COUNT=0
+find "$MOUNTPOINT" -type f -not -path '*/\.*' 2>/dev/null | while read -r f; do
+    ckpt=$(getfattr -n user.checkpoint --only-values "$f" 2>/dev/null)
+    if [ "$ckpt" = "1" ]; then
+        CKPT_COUNT=$((CKPT_COUNT + 1))
+    fi
+done
+echo "Checkpoints:  ~$CKPT_COUNT"
+echo ""
+echo "Note: In-memory AriaFS — no on-disk compaction needed."
+echo "For persistent AriaFS, compaction would defragment blocks."

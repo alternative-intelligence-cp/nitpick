@@ -8746,6 +8746,19 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                         arg_value = builder.CreateExtractValue(arg_value, {0}, "arg_unwrap");
                     }
                 }
+
+                // Function-to-pointer coercion: extract method_ptr from fat pointer {ptr, ptr}
+                // when passing a function reference to an extern expecting a pointer (wild ?*).
+                // The fat pointer layout is {method_ptr, env_ptr} — we extract field 0.
+                if (arg_value->getType() != param_type &&
+                    arg_value->getType()->isStructTy() && param_type->isPointerTy()) {
+                    llvm::StructType* arg_struct = llvm::cast<llvm::StructType>(arg_value->getType());
+                    if (arg_struct->getNumElements() == 2 &&
+                        arg_struct->getElementType(0)->isPointerTy() &&
+                        arg_struct->getElementType(1)->isPointerTy()) {
+                        arg_value = builder.CreateExtractValue(arg_value, 0, "func_method_ptr");
+                    }
+                }
             }
 
             args.push_back(arg_value);

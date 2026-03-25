@@ -1,0 +1,110 @@
+// stdlib/lockfree.aria  
+// Lock-free data structures: LFQueue (MPMC), LFStack (Treiber), RingBuf (SPSC)
+// Uses handle-based shim (lockfree_shim.c)
+
+// LFQueue externs — MPMC bounded lock-free queue
+extern func:aria_shim_lfqueue_create = int64(int64:capacity);
+extern func:aria_shim_lfqueue_destroy = int32(int64:handle);
+extern func:aria_shim_lfqueue_push = int32(int64:handle, int64:value);
+extern func:aria_shim_lfqueue_pop_val = int64(int64:handle);
+extern func:aria_shim_lfqueue_size = int64(int64:handle);
+
+// LFStack externs — unbounded lock-free Treiber stack
+extern func:aria_shim_lfstack_create = int64();
+extern func:aria_shim_lfstack_destroy = int32(int64:handle);
+extern func:aria_shim_lfstack_push = int32(int64:handle, int64:value);
+extern func:aria_shim_lfstack_pop = int64(int64:handle);
+extern func:aria_shim_lfstack_size = int64(int64:handle);
+
+// RingBuf externs — SPSC wait-free ring buffer
+extern func:aria_shim_ringbuf_create = int64(int64:capacity);
+extern func:aria_shim_ringbuf_destroy = int32(int64:handle);
+extern func:aria_shim_ringbuf_push = int32(int64:handle, int64:value);
+extern func:aria_shim_ringbuf_pop = int64(int64:handle);
+extern func:aria_shim_ringbuf_size = int64(int64:handle);
+extern func:aria_shim_ringbuf_capacity = int64(int64:handle);
+
+// Type:LFQueue — MPMC bounded lock-free queue
+Type:LFQueue = {
+    func:create = int64(int64:capacity) {
+        pass(aria_shim_lfqueue_create(capacity));
+    };
+
+    func:destroy = int32(int64:queue) {
+        pass(aria_shim_lfqueue_destroy(queue));
+    };
+
+    func:push = int32(int64:queue, int64:value) {
+        pass(aria_shim_lfqueue_push(queue, value));
+    };
+
+    func:pop = int64(int64:queue) {
+        pass(aria_shim_lfqueue_pop_val(queue));
+    };
+
+    func:size = int64(int64:queue) {
+        pass(aria_shim_lfqueue_size(queue));
+    };
+
+    struct:interface = {
+        int64:handle;
+    };
+};
+
+// Type:LFStack — unbounded lock-free Treiber stack
+Type:LFStack = {
+    func:create = int64() {
+        pass(aria_shim_lfstack_create());
+    };
+
+    func:destroy = int32(int64:stack) {
+        pass(aria_shim_lfstack_destroy(stack));
+    };
+
+    func:push = int32(int64:stack, int64:value) {
+        pass(aria_shim_lfstack_push(stack, value));
+    };
+
+    func:pop = int64(int64:stack) {
+        pass(aria_shim_lfstack_pop(stack));
+    };
+
+    func:size = int64(int64:stack) {
+        pass(aria_shim_lfstack_size(stack));
+    };
+
+    struct:interface = {
+        int64:handle;
+    };
+};
+
+// Type:RingBuf — SPSC wait-free ring buffer
+Type:RingBuf = {
+    func:create = int64(int64:capacity) {
+        pass(aria_shim_ringbuf_create(capacity));
+    };
+
+    func:destroy = int32(int64:ring) {
+        pass(aria_shim_ringbuf_destroy(ring));
+    };
+
+    func:push = int32(int64:ring, int64:value) {
+        pass(aria_shim_ringbuf_push(ring, value));
+    };
+
+    func:pop = int64(int64:ring) {
+        pass(aria_shim_ringbuf_pop(ring));
+    };
+
+    func:size = int64(int64:ring) {
+        pass(aria_shim_ringbuf_size(ring));
+    };
+
+    func:capacity = int64(int64:ring) {
+        pass(aria_shim_ringbuf_capacity(ring));
+    };
+
+    struct:interface = {
+        int64:handle;
+    };
+};

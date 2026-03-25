@@ -1,0 +1,45 @@
+// stdlib/pool_alloc.aria
+// Pool allocator — fixed-size block allocation with free list
+// Uses handle-based shim (os/os_shim.c)
+
+extern func:aria_shim_pool_alloc_create = int64(int64:block_size, int64:block_count);
+extern func:aria_shim_pool_alloc_destroy = int32(int64:handle);
+extern func:aria_shim_pool_alloc_get = int64(int64:handle);
+extern func:aria_shim_pool_alloc_put = int32(int64:handle, int64:block_index);
+extern func:aria_shim_pool_alloc_write_int64 = int32(int64:handle, int64:block_index, int64:offset, int64:value);
+extern func:aria_shim_pool_alloc_read_int64 = int64(int64:handle, int64:block_index, int64:offset);
+extern func:aria_shim_pool_alloc_available = int64(int64:handle);
+
+Type:PoolAlloc = {
+    func:create = int64(int64:block_size, int64:block_count) {
+        pass(aria_shim_pool_alloc_create(block_size, block_count));
+    };
+
+    func:destroy = int32(int64:pool) {
+        pass(aria_shim_pool_alloc_destroy(pool));
+    };
+
+    func:get = int64(int64:pool) {
+        pass(aria_shim_pool_alloc_get(pool));
+    };
+
+    func:put = int32(int64:pool, int64:block_index) {
+        pass(aria_shim_pool_alloc_put(pool, block_index));
+    };
+
+    func:write_int64 = int32(int64:pool, int64:block_index, int64:offset, int64:value) {
+        pass(aria_shim_pool_alloc_write_int64(pool, block_index, offset, value));
+    };
+
+    func:read_int64 = int64(int64:pool, int64:block_index, int64:offset) {
+        pass(aria_shim_pool_alloc_read_int64(pool, block_index, offset));
+    };
+
+    func:available = int64(int64:pool) {
+        pass(aria_shim_pool_alloc_available(pool));
+    };
+
+    struct:interface = {
+        int64:handle;
+    };
+};
