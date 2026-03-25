@@ -1,0 +1,65 @@
+#!/bin/bash
+# aria-fs-inspect — Examine AriaFS contents and tensor metadata
+# Usage: aria-fs-inspect <mountpoint> [path]
+set -e
+
+if [ $# -lt 1 ]; then
+    echo "Usage: aria-fs-inspect <mountpoint> [path]"
+    echo ""
+    echo "Inspects files in an AriaFS mount, showing AI metadata."
+    echo "If path is omitted, inspects all files recursively."
+    exit 1
+fi
+
+MOUNTPOINT="$1"
+TARGET="${2:-.}"
+
+if ! mountpoint -q "$MOUNTPOINT" 2>/dev/null; then
+    echo "Warning: $MOUNTPOINT may not be mounted"
+fi
+
+inspect_file() {
+    local file="$1"
+    local relpath="${file#$MOUNTPOINT}"
+    [ -z "$relpath" ] && relpath="/"
+
+    echo "--- $relpath ---"
+    if [ -d "$file" ]; then
+        echo "  type: directory"
+        local count=$(ls -1 "$file" 2>/dev/null | wc -l)
+        echo "  entries: $count"
+    else
+        local size=$(stat -c %s "$file" 2>/dev/null || echo "?")
+        echo "  type: file"
+        echo "  size: $size bytes"
+
+        # Check tensor metadata
+        local dtype=$(getfattr -n user.tensor.dtype --only-values "$file" 2>/dev/null)
+        local shape=$(getfattr -n user.tensor.shape --only-values "$file" 2>/dev/null)
+        local ckpt=$(getfattr -n user.checkpoint --only-values "$file" 2>/dev/null)
+
+        if [ -n "$dtype" ]; then
+            echo "  tensor.dtype: $dtype"
+        fi
+        if [ -n "$shape" ]; then
+            echo "  tensor.shape: [$shape]"
+        fi
+        if [ "$ckpt" = "1" ]; then
+            echo "  checkpoint: yes"
+        fi
+    fi
+    echo ""
+}
+
+echo "=== AriaFS Inspector ==="
+echo "Mount: $MOUNTPOINT"
+echo ""
+
+if [ "$TARGET" = "." ]; then
+    # Recursive inspection
+    find "$MOUNTPOINT" -maxdepth 3 -not -path '*/\.*' | while read -r f; do
+        inspect_file "$f"
+    done
+else
+    inspect_file "$MOUNTPOINT/$TARGET"
+fi

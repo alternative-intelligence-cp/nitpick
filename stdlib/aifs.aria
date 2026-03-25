@@ -1,0 +1,65 @@
+// stdlib/aifs.aria
+// AriaFS — AI-Native Filesystem metadata and streaming I/O
+// Uses aifs_shim.c for xattr-based tensor metadata operations
+
+extern func:aria_shim_aifs_set_dtype = int32(string:path, string:dtype);
+extern func:aria_shim_aifs_get_dtype = string(string:path);
+extern func:aria_shim_aifs_set_shape = int32(string:path, string:shape);
+extern func:aria_shim_aifs_get_shape = string(string:path);
+extern func:aria_shim_aifs_set_checkpoint = int32(string:path, int32:is_ckpt);
+extern func:aria_shim_aifs_is_checkpoint = int32(string:path);
+extern func:aria_shim_aifs_open_read = int64(string:path);
+extern func:aria_shim_aifs_open_write = int64(string:path);
+extern func:aria_shim_aifs_open_append = int64(string:path);
+extern func:aria_shim_aifs_close = int32(int64:fd);
+extern func:aria_shim_aifs_file_size = int64(string:path);
+
+Type:AIFs = {
+    func:set_dtype = int32(string:path, string:dtype) {
+        pass(aria_shim_aifs_set_dtype(path, dtype));
+    };
+
+    func:get_dtype = string(string:path) {
+        pass(aria_shim_aifs_get_dtype(path));
+    };
+
+    func:set_shape = int32(string:path, string:shape) {
+        pass(aria_shim_aifs_set_shape(path, shape));
+    };
+
+    func:get_shape = string(string:path) {
+        pass(aria_shim_aifs_get_shape(path));
+    };
+
+    func:set_checkpoint = int32(string:path, int32:is_ckpt) {
+        pass(aria_shim_aifs_set_checkpoint(path, is_ckpt));
+    };
+
+    func:is_checkpoint = int32(string:path) {
+        pass(aria_shim_aifs_is_checkpoint(path));
+    };
+
+    func:open_read = int64(string:path) {
+        pass(aria_shim_aifs_open_read(path));
+    };
+
+    func:open_write = int64(string:path) {
+        pass(aria_shim_aifs_open_write(path));
+    };
+
+    func:open_append = int64(string:path) {
+        pass(aria_shim_aifs_open_append(path));
+    };
+
+    func:close = int32(int64:fd) {
+        pass(aria_shim_aifs_close(fd));
+    };
+
+    func:file_size = int64(string:path) {
+        pass(aria_shim_aifs_file_size(path));
+    };
+
+    struct:interface = {
+        int64:handle;
+    };
+};

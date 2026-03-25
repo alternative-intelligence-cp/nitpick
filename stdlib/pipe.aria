@@ -1,0 +1,40 @@
+// stdlib/pipe.aria
+// IPC pipe pairs for inter-process communication
+// Uses handle-based shim (os/os_shim.c)
+
+extern func:aria_shim_pipe_create = int64();
+extern func:aria_shim_pipe_destroy = int32(int64:handle);
+extern func:aria_shim_pipe_write_int64 = int32(int64:handle, int64:value);
+extern func:aria_shim_pipe_read_int64 = int64(int64:handle);
+extern func:aria_shim_pipe_close_write = int32(int64:handle);
+extern func:aria_shim_pipe_close_read = int32(int64:handle);
+
+Type:Pipe = {
+    func:create = int64() {
+        pass(aria_shim_pipe_create());
+    };
+
+    func:destroy = int32(int64:p) {
+        pass(aria_shim_pipe_destroy(p));
+    };
+
+    func:write_int64 = int32(int64:p, int64:value) {
+        pass(aria_shim_pipe_write_int64(p, value));
+    };
+
+    func:read_int64 = int64(int64:p) {
+        pass(aria_shim_pipe_read_int64(p));
+    };
+
+    func:close_write = int32(int64:p) {
+        pass(aria_shim_pipe_close_write(p));
+    };
+
+    func:close_read = int32(int64:p) {
+        pass(aria_shim_pipe_close_read(p));
+    };
+
+    struct:interface = {
+        int64:handle;
+    };
+};
