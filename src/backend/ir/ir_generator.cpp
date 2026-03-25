@@ -9715,7 +9715,7 @@ void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::st
     di_compile_unit = di_builder->createCompileUnit(
         llvm::dwarf::DW_LANG_C,  // Use C for now (could register DW_LANG_Aria later)
         di_file,
-        "Aria Compiler v0.2.9",  // Producer
+        "Aria Compiler v0.2.10",  // Producer
         false,                    // isOptimized
         "",                       // Flags
         0                         // Runtime version
