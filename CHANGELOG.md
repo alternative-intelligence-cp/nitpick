@@ -1,5 +1,38 @@
 # Aria Language Changelog
 
+## [0.2.8] - July 2026
+
+### Added
+- **Gamepad input API** — `rl_is_gamepad_available`, `rl_is_gamepad_button_pressed`, `rl_is_gamepad_button_down`, `rl_is_gamepad_button_released`, `rl_get_gamepad_axis_movement` added to `aria-raylib` C shim and Aria bindings. Full set of button constants (`GP_DPAD_*`, `GP_FACE_*`, `GP_L1/R1/L2/R2`, `GP_START/SELECT/HOME`, `GP_L3/R3`) and axis constants exported.
+- **Procedural audio synthesis** — `rl_gen_beep(freq_hz, dur_ms, wave_type, volume)` in `aria-raylib` shim synthesizes square, triangle, sawtooth, or sine tones into raylib sound slots at runtime — no audio files required. Applies 10% fade-out envelope to eliminate click artifacts.
+- **aria-tetris v0.2.8** — Full-featured Tetris clone rewritten (765 → 928 lines):
+  - 7 procedural sound effects (move, rotate, lock, line clear, Tetris, level-up, game over)
+  - Gamepad support: D-pad movement, face buttons for rotate/hard-drop/hold, Start for pause
+  - High score persistence: read/write `aria_tetris_best.txt` on game over
+  - Line-clear flash animation: 300 ms white flash marks cleared rows, suspends physics during flash
+  - Title/pause/game-over screens show persistent high score
+- **Package manifests** — `aria-package.toml` added for `aria-tetris` v0.2.8.
+- **GML → Native educational guide** — `aria-docs/guide/from_gml_to_native.md`: full tutorial tracing a `draw_sprite()` call from GML source through Aria, C shim, shared library, and onto the GPU. Includes bouncing-ball side-by-side, compiler pipeline diagram, ABI explanation, and build walkthrough.
+- **Package reference docs** — `aria-docs/packages/` directory with full API reference for `aria-tetris`, `aria-gml`, `aria-opengl`, and `aria-raylib`.
+
+## [0.2.7] - March 2026
+
+### Added
+- **Six-Stream I/O runtime** — `aria_streams_init()` called at program startup, initializes all 6 file descriptors (stdin/stdout/stderr/stddbg/stddati/stddato) with graceful fallback when FDs 3-5 aren't available.
+- **`stdin_read_all()` builtin** — Reads all content from stdin as a string. Supports piped input (non-seekable streams) via chunked reading.
+- **`stdin_read_line()` fix** — Now properly wraps C `char*` return in `AriaString*` via `aria_string_from_cstr_simple`.
+- **Argument access runtime** — `aria_args_init(argc, argv)` called at startup. `aria_get_argc()` and `aria_arg(index)` builtins for command-line argument access.
+- **Main function signature** — Compiler now generates `main(i32, ptr)` automatically, passing argc/argv to the runtime.
+- **26 POSIX tools** — Complete set of Unix utilities implemented in Aria, living in the `ariax` repo under `tools/`. All support stdin for pipeline chaining.
+  - File utilities: cat, head, tail, wc, tee, cut, sort, uniq, tr
+  - Search & filter: grep, find, diff
+  - System utilities: echo, yes, true, false, env, sleep, basename, dirname, seq
+  - Text processing: nl, fold, paste, expand, unexpand
+- **Pipeline support** — All tools read from stdin when no file argument given, enabling standard Unix pipelines: `cat file | grep pattern | sort | uniq | wc`
+
+### Fixed
+- **`aria_text_stream_read_all` pipe support** — Now handles non-seekable streams (pipes) by reading in chunks until EOF, instead of using `ftell/fseek` which fails on pipes.
+
 ## [0.2.6] - July 2026
 
 ### Added

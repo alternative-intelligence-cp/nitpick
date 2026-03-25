@@ -2882,6 +2882,15 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             // Returns string (char*)
             return typeSystem->getPrimitiveType("string");
         }
+
+        // Builtin: stdin_read_all() -> string
+        if (idExpr->name == "stdin_read_all") {
+            if (expr->arguments.size() != 0) {
+                addError("stdin_read_all() takes no arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
         
         // ====================================================================
         // ARENA ALLOCATOR BUILTINS (Phase 4.2.5.2)
@@ -4943,6 +4952,20 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             // TODO: Verify argument is a wild pointer
+            return typeSystem->getPrimitiveType("void");
+        }
+
+        // sleep_ms(int64) -> void
+        // Suspends execution for given number of milliseconds
+        if (idExpr->name == "sleep_ms") {
+            if (expr->arguments.size() != 1) {
+                addError("sleep_ms() requires exactly one argument (milliseconds)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
             return typeSystem->getPrimitiveType("void");
         }
 
@@ -7291,7 +7314,7 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
     // Prevent shadowing reserved builtin names
     static const std::unordered_set<std::string> reservedBuiltins = {
         "ok", "print", "println", "stdout_write", "stderr_write",
-        "to_string", "fail", "pass", "drop", "raw"
+        "to_string", "fail", "pass", "drop", "raw", "sleep_ms"
     };
     if (reservedBuiltins.count(stmt->varName)) {
         addError("'" + stmt->varName + "' is a reserved builtin and cannot be used as a variable name", stmt);
@@ -7309,6 +7332,18 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             return;
         }
         
+        // Array size inference: int32[]:x = [1, 2, 3] → narrow to int32[3]
+        if (declaredType->getKind() == TypeKind::ARRAY) {
+            const ArrayType* declaredArray = static_cast<const ArrayType*>(declaredType);
+            if (declaredArray->isDynamic() && stmt->initializer &&
+                stmt->initializer->type == ASTNode::NodeType::ARRAY_LITERAL) {
+                auto* arrayLit = static_cast<ArrayLiteralExpr*>(stmt->initializer.get());
+                int inferredSize = static_cast<int>(arrayLit->elements.size());
+                declaredType = typeSystem->getArrayType(
+                    const_cast<Type*>(declaredArray->getElementType()), inferredSize);
+            }
+        }
+
         // CRITICAL: Update typeName to resolved type name for IR generation
         // For generic structs, this will be the mangled name (_Aria_M_Box_<hash>_int64)
         // For other types, this will be the canonical name (int64, string, etc.)

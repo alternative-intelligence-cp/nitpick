@@ -110,6 +110,12 @@ bool aria_string_is_empty(AriaString str);
 bool aria_string_equals(AriaString a, AriaString b);
 
 /**
+ * Compare two strings lexicographically (byte-level).
+ * Returns -1 if a < b, 0 if a == b, 1 if a > b.
+ */
+int32_t aria_string_compare_str(AriaString a, AriaString b);
+
+/**
  * Get substring from start index to end index (exclusive).
  * 
  * @param str Source string

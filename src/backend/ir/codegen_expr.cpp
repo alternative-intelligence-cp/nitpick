@@ -1260,6 +1260,16 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         std::cerr << "[DEBUG] codegenLiteral string value: " << std::get<std::string>(expr->value) << std::endl;
     }
     
+    // Phase 4: If literal has explicit float type suffix (f32, f64), use it directly.
+    // This must come BEFORE the hasRawValue() check which always produces double.
+    if (!expr->explicit_type.empty()) {
+        llvm::Type* llvm_type = getLLVMTypeFromString(expr->explicit_type);
+        if (llvm_type && llvm_type->isFloatingPointTy() && std::holds_alternative<double>(expr->value)) {
+            double val = std::get<double>(expr->value);
+            return llvm::ConstantFP::get(llvm_type, val);
+        }
+    }
+
     // Phase 3.2.5: Check for high-precision literal with raw string value
     // For now, we'll infer the type from the variant - in future we could pass target type as parameter
     if (expr->hasRawValue()) {
@@ -2295,10 +2305,6 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     // Get the operator type early for TBB check
     TokenType op = expr->op.type;
     
-    std::cerr << "[CODEGEN_BINARY] ENTRY - operator type: " << static_cast<int>(op) << std::endl;
-    
-    std::cerr << "[DEBUG] codegenBinary called, op type: " << static_cast<int>(op) << std::endl;
-
     // ========================================================================
     // TBB AUTOMATIC LOWERING (Phase 1 Task 1)
     // Check if this is a TBB arithmetic operation and use safe runtime functions
@@ -2666,7 +2672,74 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     if (!isUnsigned && leftLiteral && isUnsignedTypeName(leftLiteral->explicit_type)) isUnsigned = true;
     if (!isUnsigned && rightLiteral && isUnsignedTypeName(rightLiteral->explicit_type)) isUnsigned = true;
 
+    // Detect string types for comparison operators
+    bool isString = false;
+    if (expr->left->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* id = static_cast<IdentifierExpr*>(expr->left.get());
+        auto it = var_aria_types.find(id->name);
+        if (it != var_aria_types.end() && it->second == "string") isString = true;
+    }
+    if (!isString && expr->right->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* id = static_cast<IdentifierExpr*>(expr->right.get());
+        auto it = var_aria_types.find(id->name);
+        if (it != var_aria_types.end() && it->second == "string") isString = true;
+    }
+    // Also detect string literals (they produce pointer types for AriaString)
+    if (!isString && leftLiteral && leftLiteral->explicit_type == "string") isString = true;
+    if (!isString && rightLiteral && rightLiteral->explicit_type == "string") isString = true;
+
+    // String comparison helper: loads AriaString structs from pointers and calls runtime
+    auto getStrType = [&]() -> llvm::StructType* {
+        llvm::StructType* st = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        if (!st) {
+            st = llvm::StructType::create(context,
+                {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
+                 llvm::Type::getInt64Ty(context)},
+                "struct.AriaString");
+        }
+        return st;
+    };
+
+    auto stringCompareCall = [&]() -> llvm::Value* {
+        llvm::StructType* ariaStrType = getStrType();
+        llvm::Function* cmpFunc = module->getFunction("aria_string_compare_str");
+        if (!cmpFunc) {
+            llvm::FunctionType* cmpFT = llvm::FunctionType::get(
+                builder.getInt32Ty(), {ariaStrType, ariaStrType}, false);
+            cmpFunc = llvm::Function::Create(cmpFT, llvm::Function::ExternalLinkage,
+                "aria_string_compare_str", module);
+        }
+        llvm::Value* lStr = left->getType()->isPointerTy()
+            ? builder.CreateLoad(ariaStrType, left, "str.cmp.lhs")
+            : left;
+        llvm::Value* rStr = right->getType()->isPointerTy()
+            ? builder.CreateLoad(ariaStrType, right, "str.cmp.rhs")
+            : right;
+        return builder.CreateCall(cmpFunc, {lStr, rStr}, "str.cmp");
+    };
+
+    auto stringEqualsCall = [&]() -> llvm::Value* {
+        llvm::StructType* ariaStrType = getStrType();
+        llvm::Function* eqFunc = module->getFunction("aria_string_equals");
+        if (!eqFunc) {
+            llvm::FunctionType* eqFT = llvm::FunctionType::get(
+                builder.getInt1Ty(), {ariaStrType, ariaStrType}, false);
+            eqFunc = llvm::Function::Create(eqFT, llvm::Function::ExternalLinkage,
+                "aria_string_equals", module);
+        }
+        llvm::Value* lStr = left->getType()->isPointerTy()
+            ? builder.CreateLoad(ariaStrType, left, "str.eq.lhs")
+            : left;
+        llvm::Value* rStr = right->getType()->isPointerTy()
+            ? builder.CreateLoad(ariaStrType, right, "str.eq.rhs")
+            : right;
+        return builder.CreateCall(eqFunc, {lStr, rStr}, "str.eq");
+    };
+
     if (op == TokenType::TOKEN_EQUAL_EQUAL) {
+        if (isString) {
+            return stringEqualsCall();
+        }
         // Debug: Check type compatibility
         std::cerr << "[DEBUG COMPARISON] Left type: ";
         left->getType()->print(llvm::errs());
@@ -2682,6 +2755,10 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     if (op == TokenType::TOKEN_BANG_EQUAL) {
+        if (isString) {
+            llvm::Value* eq = stringEqualsCall();
+            return builder.CreateNot(eq, "str.ne");
+        }
         if (isFloat) {
             return builder.CreateFCmpONE(left, right, "netmp");
         } else {
@@ -2690,6 +2767,10 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     if (op == TokenType::TOKEN_LESS) {
+        if (isString) {
+            llvm::Value* cmp = stringCompareCall();
+            return builder.CreateICmpSLT(cmp, builder.getInt32(0), "str.lt");
+        }
         if (isFloat) {
             return builder.CreateFCmpOLT(left, right, "lttmp");
         } else if (isUnsigned) {
@@ -2700,6 +2781,10 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     if (op == TokenType::TOKEN_LESS_EQUAL) {
+        if (isString) {
+            llvm::Value* cmp = stringCompareCall();
+            return builder.CreateICmpSLE(cmp, builder.getInt32(0), "str.le");
+        }
         if (isFloat) {
             return builder.CreateFCmpOLE(left, right, "letmp");
         } else if (isUnsigned) {
@@ -2710,6 +2795,10 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     if (op == TokenType::TOKEN_GREATER) {
+        if (isString) {
+            llvm::Value* cmp = stringCompareCall();
+            return builder.CreateICmpSGT(cmp, builder.getInt32(0), "str.gt");
+        }
         std::cerr << "[COMPARISON >] About to create ICmp/FCmp" << std::endl;
         std::cerr << "[COMPARISON >] isFloat=" << isFloat << std::endl;
         std::cerr << "[COMPARISON >] Left LLVM type: ";
@@ -2729,6 +2818,10 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     if (op == TokenType::TOKEN_GREATER_EQUAL) {
+        if (isString) {
+            llvm::Value* cmp = stringCompareCall();
+            return builder.CreateICmpSGE(cmp, builder.getInt32(0), "str.ge");
+        }
         if (isFloat) {
             return builder.CreateFCmpOGE(left, right, "getmp");
         } else if (isUnsigned) {
@@ -2741,6 +2834,10 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     // SPACESHIP OPERATOR (<=>)
     // Three-way comparison: returns -1 if left < right, 0 if equal, 1 if left > right
     if (op == TokenType::TOKEN_SPACESHIP) {
+        if (isString) {
+            llvm::Value* cmp = stringCompareCall();
+            return builder.CreateSExt(cmp, llvm::Type::getInt64Ty(context), "str.spaceship");
+        }
         llvm::Value* ltCmp, *gtCmp;
         
         if (isFloat) {
@@ -4006,6 +4103,25 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return create_stream_write("stddbg_write", "aria_stddbg_write");
     }
     
+    // Helper to get or declare aria_string_from_cstr_simple
+    auto getOrDeclareStringFromCstr = [&]() -> llvm::Function* {
+        llvm::Function* func = module->getFunction("aria_string_from_cstr_simple");
+        if (!func) {
+            llvm::StructType* strType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+            if (!strType) {
+                strType = llvm::StructType::create(context,
+                    {llvm::PointerType::get(builder.getInt8Ty(), 0), builder.getInt64Ty()},
+                    "struct.AriaString");
+            }
+            std::vector<llvm::Type*> params = {llvm::PointerType::get(builder.getInt8Ty(), 0)};
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(strType, 0), params, false);
+            func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage,
+                "aria_string_from_cstr_simple", module);
+        }
+        return func;
+    };
+
     // stdin_read_line() -> string
     if (callee_ident->name == "stdin_read_line") {
         if (expr->arguments.size() != 0) {
@@ -4027,7 +4143,33 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             );
         }
         
-        return builder.CreateCall(read_func, {}, "stdin_read_call");
+        llvm::Value* cstr = builder.CreateCall(read_func, {}, "stdin_read_call");
+        return builder.CreateCall(getOrDeclareStringFromCstr(), {cstr}, "stdin_line_str");
+    }
+
+    // stdin_read_all() -> string
+    if (callee_ident->name == "stdin_read_all") {
+        if (expr->arguments.size() != 0) {
+            throw std::runtime_error("stdin_read_all() takes no arguments");
+        }
+        
+        llvm::Function* read_func = module->getFunction("aria_stdin_read_all");
+        if (!read_func) {
+            llvm::FunctionType* func_type = llvm::FunctionType::get(
+                llvm::PointerType::get(context, 0),
+                {},
+                false
+            );
+            read_func = llvm::Function::Create(
+                func_type,
+                llvm::Function::ExternalLinkage,
+                "aria_stdin_read_all",
+                module
+            );
+        }
+        
+        llvm::Value* cstr = builder.CreateCall(read_func, {}, "stdin_readall_call");
+        return builder.CreateCall(getOrDeclareStringFromCstr(), {cstr}, "stdin_all_str");
     }
     
     // ====================================================================
@@ -6979,6 +7121,29 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return nullptr;
     }
 
+    // sleep_ms(int64) -> void - Sleep for given milliseconds
+    if (callee_ident->name == "sleep_ms") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("sleep_ms() requires one argument");
+        }
+        llvm::Value* ms_val = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!ms_val) {
+            throw std::runtime_error("Failed to generate code for sleep_ms argument");
+        }
+        if (ms_val->getType() != builder.getInt64Ty()) {
+            ms_val = builder.CreateIntCast(ms_val, builder.getInt64Ty(), true);
+        }
+        llvm::Function* sleep_fn = module->getFunction("aria_sleep_ms");
+        if (!sleep_fn) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getVoidTy(), {builder.getInt64Ty()}, false);
+            sleep_fn = llvm::Function::Create(
+                ft, llvm::Function::ExternalLinkage, "aria_sleep_ms", module);
+        }
+        builder.CreateCall(sleep_fn, {ms_val});
+        return nullptr;
+    }
+
     // ====================================================================
     // COLLECTION BUILTINS (Phase 6.2)
     // ====================================================================
@@ -8483,6 +8648,38 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         bool is_extern = direct_func->hasExternalLinkage() && direct_func->isDeclaration();
         
         if (is_extern && return_type->isPointerTy()) {
+            // FFI-STRING-RETURN FIX: If this extern returns a string type,
+            // wrap the raw char* into a proper AriaString struct before
+            // Optional-wrapping. Without this, the raw char* is stored as-is
+            // but later code treats it as an AriaString*, reading string data
+            // bytes as struct fields (causing segfaults).
+            std::string callee_name = direct_func->getName().str();
+            auto ffi_ret_it = var_aria_types.find("__ffi_ret_" + callee_name);
+            if (ffi_ret_it != var_aria_types.end() && ffi_ret_it->second == "string") {
+                // call_result is a raw char* from C. Wrap into AriaString {ptr, i64}.
+                llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                if (!aria_string_type) {
+                    aria_string_type = llvm::StructType::create(context,
+                        {builder.getPtrTy(), builder.getInt64Ty()}, "struct.AriaString");
+                }
+
+                // Get string length via strlen
+                llvm::FunctionType* strlen_type = llvm::FunctionType::get(
+                    builder.getInt64Ty(), {builder.getPtrTy()}, false);
+                llvm::FunctionCallee strlen_fn = module->getOrInsertFunction("strlen", strlen_type);
+                llvm::Value* str_len = builder.CreateCall(strlen_fn, {call_result}, "ffi_strlen");
+
+                // Allocate AriaString on the stack and populate
+                llvm::AllocaInst* str_alloca = builder.CreateAlloca(aria_string_type, nullptr, "ffi_str_wrap");
+                builder.CreateStore(call_result,
+                    builder.CreateStructGEP(aria_string_type, str_alloca, 0, "ffi_str_data"));
+                builder.CreateStore(str_len,
+                    builder.CreateStructGEP(aria_string_type, str_alloca, 1, "ffi_str_len"));
+
+                // Use the AriaString pointer as the result
+                call_result = str_alloca;
+            }
+
             // Wrap NULL-possible pointer in Optional { i1 hasValue, T* value }
             // This enforces null checks at the Aria boundary
             

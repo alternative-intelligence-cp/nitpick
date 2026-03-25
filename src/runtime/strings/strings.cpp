@@ -141,6 +141,17 @@ bool aria_string_equals(AriaString a, AriaString b) {
     return memcmp(a.data, b.data, a.length) == 0;
 }
 
+int32_t aria_string_compare_str(AriaString a, AriaString b) {
+    int64_t min_len = a.length < b.length ? a.length : b.length;
+    if (min_len > 0) {
+        int result = memcmp(a.data, b.data, min_len);
+        if (result != 0) return result < 0 ? -1 : 1;
+    }
+    if (a.length < b.length) return -1;
+    if (a.length > b.length) return 1;
+    return 0;
+}
+
 AriaResultPtr aria_string_substring(AriaString str, int64_t start, int64_t end) {
     // Bounds checking
     if (start < 0 || start > str.length) {
