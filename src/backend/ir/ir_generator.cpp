@@ -2537,6 +2537,16 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                                   << " to External" << std::endl;
                         func->setLinkage(llvm::Function::ExternalLinkage);
                     }
+
+                    // FFI-STRING-RETURN: Track extern functions that return string type.
+                    // Used by codegen_expr to wrap raw char* returns into AriaString structs.
+                    if (funcDecl->returnType &&
+                        funcDecl->returnType->type == ASTNode::NodeType::TYPE_ANNOTATION) {
+                        SimpleType* retType = static_cast<SimpleType*>(funcDecl->returnType.get());
+                        if (retType->typeName == "string") {
+                            var_aria_types["__ffi_ret_" + funcDecl->funcName] = "string";
+                        }
+                    }
                 }
                 // OPAQUE_STRUCT and STRUCT_DECL in extern don't need special handling here
                 // They're used for type resolution which happens at call sites
@@ -4551,6 +4561,15 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                         // This handles the case where a function was called before its extern declaration
                         func->setLinkage(llvm::Function::ExternalLinkage);
                     }
+
+                    // FFI-STRING-RETURN: Track extern functions that return string type.
+                    if (funcDecl->returnType &&
+                        funcDecl->returnType->type == ASTNode::NodeType::TYPE_ANNOTATION) {
+                        SimpleType* retType = static_cast<SimpleType*>(funcDecl->returnType.get());
+                        if (retType->typeName == "string") {
+                            var_aria_types["__ffi_ret_" + funcDecl->funcName] = "string";
+                        }
+                    }
                 }
                 else if (decl->type == ASTNode::NodeType::OPAQUE_STRUCT) {
                     // Opaque structs map to ptr (void*) in IR - no struct needed
@@ -5508,27 +5527,39 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // PHASE 4: ZERO IMPLICIT CONVERSION - Use Explicit Type
             // ========================================================================
             // If literal has explicit type suffix (u32, i64, f32, etc.), use it!
-            // SKIP this shortcut when hasRawValue() is true: the int64_t value field is 0
-            // for overflow literals (e.g. 18446744073709551616u128 > UINT64_MAX), and using
-            // it would produce a constant zero. The high-precision path below handles these.
-            if (!lit->explicit_type.empty() && !lit->hasRawValue()) {
-                // Get LLVM type from explicit suffix
-                llvm::Type* llvm_type = getLLVMTypeFromSuffix(lit->explicit_type);
-                
-                if (llvm_type) {
-                    // Handle integer types
-                    if (llvm_type->isIntegerTy()) {
-                        int64_t val = std::get<int64_t>(lit->value);
-                        bool is_signed = isSuffixSigned(lit->explicit_type);
-                        return llvm::ConstantInt::get(llvm_type, val, is_signed);
-                    }
-                    // Handle float types
-                    else if (llvm_type->isFloatingPointTy()) {
-                        double val = std::get<double>(lit->value);
-                        return llvm::ConstantFP::get(llvm_type, val);
+            // SKIP this shortcut when hasRawValue() is true FOR INTEGER types: the
+            // int64_t value field is 0 for overflow literals (e.g. 18446744073709551616u128
+            // > UINT64_MAX), and using it would produce a constant zero.
+            // For FLOAT types (f32, f64), the double variant is always accurate, so
+            // we can use Phase 4 even when hasRawValue is true.
+            {
+                bool skipPhase4 = lit->explicit_type.empty();
+                if (!skipPhase4 && lit->hasRawValue()) {
+                    // Allow float suffixes through (double variant is accurate)
+                    llvm::Type* checkType = getLLVMTypeFromSuffix(lit->explicit_type);
+                    if (!checkType || !checkType->isFloatingPointTy()) {
+                        skipPhase4 = true;  // Integer with raw value — skip
                     }
                 }
-                // If we can't find type, fall through to old behavior
+                if (!skipPhase4) {
+                    // Get LLVM type from explicit suffix
+                    llvm::Type* llvm_type = getLLVMTypeFromSuffix(lit->explicit_type);
+                    
+                    if (llvm_type) {
+                        // Handle integer types
+                        if (llvm_type->isIntegerTy()) {
+                            int64_t val = std::get<int64_t>(lit->value);
+                            bool is_signed = isSuffixSigned(lit->explicit_type);
+                            return llvm::ConstantInt::get(llvm_type, val, is_signed);
+                        }
+                        // Handle float types
+                        else if (llvm_type->isFloatingPointTy()) {
+                            double val = std::get<double>(lit->value);
+                            return llvm::ConstantFP::get(llvm_type, val);
+                        }
+                    }
+                    // If we can't find type, fall through to old behavior
+                }
             }
             
             // Phase 3.2.5: Check for high-precision literal with raw string value
@@ -7361,6 +7392,13 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     // Float addition: use FAdd for floating-point types
                     if (L->getType()->isFloatingPointTy()) {
+                        // Harmonize float types (e.g., float + double → double)
+                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                            if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
+                                R = builder.CreateFPExt(R, L->getType(), "add_fpext");
+                            else
+                                L = builder.CreateFPExt(L, R->getType(), "add_fpext");
+                        }
                         return builder.CreateFAdd(L, R, "faddtmp");
                     }
                     // String concatenation: detect string operands and call runtime
@@ -7489,6 +7527,13 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     // Float subtraction: use FSub for floating-point types
                     if (L->getType()->isFloatingPointTy()) {
+                        // Harmonize float types (e.g., float - double → double)
+                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                            if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
+                                R = builder.CreateFPExt(R, L->getType(), "sub_fpext");
+                            else
+                                L = builder.CreateFPExt(L, R->getType(), "sub_fpext");
+                        }
                         return builder.CreateFSub(L, R, "fsubtmp");
                     }
                     // Layer 1 Safety: Safe subtraction returns Unknown on overflow
@@ -7568,6 +7613,13 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     // Float multiplication: use FMul for floating-point types
                     if (L->getType()->isFloatingPointTy()) {
+                        // Harmonize float types (e.g., float * double → double)
+                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                            if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
+                                R = builder.CreateFPExt(R, L->getType(), "mul_fpext");
+                            else
+                                L = builder.CreateFPExt(L, R->getType(), "mul_fpext");
+                        }
                         return builder.CreateFMul(L, R, "fmultmp");
                     }
                     // Unsigned integer types (uint8/16/32/64): use plain wrapping mul.
@@ -7653,6 +7705,13 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     // Float division: use FDiv for floating-point types
                     if (L->getType()->isFloatingPointTy()) {
+                        // Harmonize float types (e.g., float / double → double)
+                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                            if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
+                                R = builder.CreateFPExt(R, L->getType(), "div_fpext");
+                            else
+                                L = builder.CreateFPExt(L, R->getType(), "div_fpext");
+                        }
                         return builder.CreateFDiv(L, R, "fdivtmp");
                     }
                     // Layer 1 Safety: Safe division returns Unknown on divide-by-zero
@@ -7845,6 +7904,16 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                 L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
                             }
                         }
+                        // Promote to wider float type when mixing float/double
+                        else if (L->getType()->isFloatingPointTy() && R->getType()->isFloatingPointTy()) {
+                            unsigned lBits = L->getType()->getScalarSizeInBits();
+                            unsigned rBits = R->getType()->getScalarSizeInBits();
+                            if (lBits > rBits) {
+                                R = builder.CreateFPExt(R, L->getType(), "cmp_fpext");
+                            } else {
+                                L = builder.CreateFPExt(L, R->getType(), "cmp_fpext");
+                            }
+                        }
                     }
                     // Use FCmp for floating point, ICmp for integers
                     if (L->getType()->isFloatingPointTy()) {
@@ -7986,6 +8055,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     // Use FCmp for floating point, ICmp for integers
                     if (L->getType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                            if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
+                                R = builder.CreateFPExt(R, L->getType(), "ne_fpext");
+                            else
+                                L = builder.CreateFPExt(L, R->getType(), "ne_fpext");
+                        }
                         return builder.CreateFCmpONE(L, R, "netmp");
                     } else {
                         return builder.CreateICmpNE(L, R, "netmp");
@@ -8056,6 +8131,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     // Use FCmp for floating point, ICmp for integers
                     if (L->getType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                            if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
+                                R = builder.CreateFPExt(R, L->getType(), "lt_fpext");
+                            else
+                                L = builder.CreateFPExt(L, R->getType(), "lt_fpext");
+                        }
                         return builder.CreateFCmpOLT(L, R, "lttmp");
                     } else if (isUnsigned) {
                         return builder.CreateICmpULT(L, R, "lttmp");
@@ -8130,6 +8211,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     // Use FCmp for floating point, ICmp for integers
                     if (L->getType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                            if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
+                                R = builder.CreateFPExt(R, L->getType(), "le_fpext");
+                            else
+                                L = builder.CreateFPExt(L, R->getType(), "le_fpext");
+                        }
                         return builder.CreateFCmpOLE(L, R, "letmp");
                     } else if (isUnsigned) {
                         return builder.CreateICmpULE(L, R, "letmp");
@@ -8205,6 +8292,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     // Use FCmp for floating point, ICmp for integers
                     if (L->getType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                            if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
+                                R = builder.CreateFPExt(R, L->getType(), "gt_fpext");
+                            else
+                                L = builder.CreateFPExt(L, R->getType(), "gt_fpext");
+                        }
                         return builder.CreateFCmpOGT(L, R, "gttmp");
                     } else if (isUnsigned) {
                         return builder.CreateICmpUGT(L, R, "gttmp");
@@ -8279,6 +8372,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     // Use FCmp for floating point, ICmp for integers
                     if (L->getType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                            if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
+                                R = builder.CreateFPExt(R, L->getType(), "ge_fpext");
+                            else
+                                L = builder.CreateFPExt(L, R->getType(), "ge_fpext");
+                        }
                         return builder.CreateFCmpOGE(L, R, "getmp");
                     } else if (isUnsigned) {
                         return builder.CreateICmpUGE(L, R, "getmp");
@@ -9607,7 +9706,7 @@ void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::st
     di_compile_unit = di_builder->createCompileUnit(
         llvm::dwarf::DW_LANG_C,  // Use C for now (could register DW_LANG_Aria later)
         di_file,
-        "Aria Compiler v0.2.5",  // Producer
+        "Aria Compiler v0.2.8",  // Producer
         false,                    // isOptimized
         "",                       // Flags
         0                         // Runtime version
