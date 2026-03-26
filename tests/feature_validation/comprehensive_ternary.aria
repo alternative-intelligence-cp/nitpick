@@ -55,7 +55,7 @@ func:helper_false = int32() {
 
 func:test_with_calls = int32() {
     int32:flag = 1;
-    int32:answer = is (flag > 0) : helper_true() : helper_false();
+    int32:answer = raw(is (flag > 0) : helper_true() : helper_false());
     pass(answer);  // Returns 30
 };
 
@@ -74,13 +74,13 @@ func:test_multiple = int32() {
 };
 
 func:main = int32() {
-    int32:r1 = test_simple();       // 20
-    int32:r2 = test_min();          // 8
-    int32:r3 = test_sign();         // 12
-    int32:r4 = test_nested();       // 25
-    int32:r5 = test_computation();  // 17
-    int32:r6 = test_with_calls();   // 30
-    int32:r7 = test_multiple();     // 8
+    int32:r1 = raw(test_simple());       // 20
+    int32:r2 = raw(test_min());          // 8
+    int32:r3 = raw(test_sign());         // 12
+    int32:r4 = raw(test_nested());       // 25
+    int32:r5 = raw(test_computation());  // 17
+    int32:r6 = raw(test_with_calls());   // 30
+    int32:r7 = raw(test_multiple());     // 8
     
     int32:sum = r1 + r2 + r3 + r4 + r5 + r6 + r7;
     pass(sum);  // 20+8+12+25+17+30+8 = 120
