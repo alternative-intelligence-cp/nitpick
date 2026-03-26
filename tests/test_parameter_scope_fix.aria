@@ -40,22 +40,24 @@ func:func_c = int8(int8:x, int8:y) {
 // Test 4: Nested scopes - parameters should be isolated
 func:outer = int32(int32:param) {
     int32:local = param + 10i32;
-    return local;
+    pass(local);
 };
 
 func:inner = int32(int64:param) {
     // Different type for 'param' - should not collide with outer
     int32:result = 42i32;
-    return result;
+    pass(result);
 };
 
 // Test 5: Complex types with same param names
 func:handle_array = int32(int32:count) {
-    return count * 2i32;
+    pass(count * 2i32);
 };
 
 func:handle_string = int32(int64:count) {
-    return 100i32;
+    pass(100i32);
 };
 
 func:failsafe = NIL(int32:err_code) {};
+
+func:main = int32() { pass(0); };
