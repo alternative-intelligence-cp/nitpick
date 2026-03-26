@@ -542,6 +542,14 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             break;
         }
         
+        case TypeKind::OPTIONAL: {
+            // Optional<T>: { i1 hasValue, T value }
+            auto* opt = static_cast<OptionalType*>(aria_type);
+            llvm::Type* wrapped = mapType(opt->getWrappedType());
+            llvm_type = llvm::StructType::get(context, {builder.getInt1Ty(), wrapped});
+            break;
+        }
+        
         case TypeKind::UNKNOWN:
         case TypeKind::ERROR:
         default:
@@ -3901,6 +3909,16 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                         } else {
                             std::cerr << "[DEBUG VARDECL] ERROR: Could not find inner type: " << innerTypeStr << std::endl;
                         }
+                    }
+                } else if (isOptional && actualTypeName.size() >= 2) {
+                    // Optional type: strip trailing '?' and look up base type, then wrap
+                    std::string baseTypeName = actualTypeName.substr(0, actualTypeName.size() - 1);
+                    Type* baseType = type_system->getStructType(baseTypeName);
+                    if (!baseType) {
+                        baseType = type_system->getPrimitiveType(baseTypeName);
+                    }
+                    if (baseType) {
+                        aria_type = type_system->getOptionalType(baseType);
                     }
                 } else {
                     // Not a vector or Result, try struct then primitive
@@ -8684,8 +8702,66 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             
             // Determine which operator based on the flag set during parsing
             if (!unwrap->isNullCoalesce) {
-                // ? operator: Unwrap Result<T> struct
-                // Result struct: { value_type, ptr, i1 }
+                // ? operator: Unwrap Result<T> or Optional<T>
+                // Check if left side is an Optional type { i1, T } (2 fields)
+                // vs Result type { T, ptr, i1 } (3 fields)
+                bool isOptionalUnwrap = false;
+                if (leftVal->getType()->isStructTy()) {
+                    llvm::StructType* st = llvm::cast<llvm::StructType>(leftVal->getType());
+                    // Optional: { i1, T } — 2 fields, first is i1
+                    if (st->getNumElements() == 2 && st->getElementType(0)->isIntegerTy(1)) {
+                        isOptionalUnwrap = true;
+                    }
+                }
+                
+                if (isOptionalUnwrap) {
+                    // Optional<T>: { i1 hasValue, T value }
+                    llvm::Value* hasValue = builder.CreateExtractValue(leftVal, 0, "opt.hasValue");
+                    llvm::Value* isNone = builder.CreateNot(hasValue, "opt.isNone");
+                    
+                    llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                    llvm::BasicBlock* noneBlock = llvm::BasicBlock::Create(context, "opt_none", currentFunc);
+                    llvm::BasicBlock* someBlock = llvm::BasicBlock::Create(context, "opt_some", currentFunc);
+                    llvm::BasicBlock* mergeBlock = llvm::BasicBlock::Create(context, "opt_merge", currentFunc);
+                    
+                    builder.CreateCondBr(isNone, noneBlock, someBlock);
+                    
+                    // None block: use default value
+                    builder.SetInsertPoint(noneBlock);
+                    llvm::Value* defaultVal = codegenExpression(unwrap->defaultValue.get());
+                    if (!defaultVal) return nullptr;
+                    llvm::BasicBlock* noneExitBlock = builder.GetInsertBlock();
+                    builder.CreateBr(mergeBlock);
+                    
+                    // Some block: extract value
+                    builder.SetInsertPoint(someBlock);
+                    llvm::Value* someVal = builder.CreateExtractValue(leftVal, 1, "opt.unwrap");
+                    // Type-match: cast if needed (e.g., i32 vs i64 default literal)
+                    if (someVal->getType() != defaultVal->getType()) {
+                        if (someVal->getType()->isIntegerTy() && defaultVal->getType()->isIntegerTy()) {
+                            unsigned someBits = someVal->getType()->getIntegerBitWidth();
+                            unsigned defBits = defaultVal->getType()->getIntegerBitWidth();
+                            if (someBits < defBits) {
+                                someVal = builder.CreateSExt(someVal, defaultVal->getType(), "opt.sext");
+                            } else {
+                                // Truncate default to match someVal's type — rebuild in noneBlock
+                                // Actually, widen someVal to match default is safer
+                                someVal = builder.CreateSExt(someVal, defaultVal->getType(), "opt.sext");
+                            }
+                        }
+                    }
+                    llvm::BasicBlock* someExitBlock = builder.GetInsertBlock();
+                    builder.CreateBr(mergeBlock);
+                    
+                    builder.SetInsertPoint(mergeBlock);
+                    llvm::PHINode* phi = builder.CreatePHI(someVal->getType(), 2, "opt.result");
+                    phi->addIncoming(defaultVal, noneExitBlock);
+                    phi->addIncoming(someVal, someExitBlock);
+                    
+                    return phi;
+                }
+                
+                // Result<T> struct: { value_type, ptr, i1 }
                 // Field 0: value (T)
                 // Field 1: error (ptr)
                 // Field 2: is_error (i1)
@@ -8895,6 +8971,20 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                 } else {
                     // Store the value directly (scalars, nested structs, etc.)
+                    // Fix type mismatch: integer literals default to i64 but field may be i32
+                    if (field_value->getType() != field_llvm_type) {
+                        if (field_value->getType()->isIntegerTy() && field_llvm_type->isIntegerTy()) {
+                            unsigned valBits = field_value->getType()->getIntegerBitWidth();
+                            unsigned fldBits = field_llvm_type->getIntegerBitWidth();
+                            if (valBits > fldBits) {
+                                field_value = builder.CreateTrunc(field_value, field_llvm_type, field.name + ".trunc");
+                            } else if (valBits < fldBits) {
+                                field_value = builder.CreateSExt(field_value, field_llvm_type, field.name + ".sext");
+                            }
+                        } else if (field_value->getType()->isFloatingPointTy() && field_llvm_type->isFloatingPointTy()) {
+                            field_value = builder.CreateFPCast(field_value, field_llvm_type, field.name + ".fpcast");
+                        }
+                    }
                     builder.CreateStore(field_value, field_ptr);
                 }
             }
@@ -9145,6 +9235,79 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Extract directly
                     return builder.CreateExtractValue(object_ptr, field_index, member->member);
                 }
+            }
+            
+            // Handle optional type member access (safe navigation ?.)
+            if (aria_type->getKind() == TypeKind::OPTIONAL) {
+                OptionalType* opt_type = static_cast<OptionalType*>(aria_type);
+                Type* inner_type = opt_type->getWrappedType();
+                
+                if (inner_type->getKind() != TypeKind::STRUCT) {
+                    std::cerr << "[DEBUG MEMBER_ACCESS] Optional wraps non-struct, kind=" << static_cast<int>(inner_type->getKind()) << std::endl;
+                    return nullptr;
+                }
+                
+                StructType* inner_struct = static_cast<StructType*>(inner_type);
+                
+                // Find the field in the inner struct
+                int opt_field_idx = -1;
+                Type* opt_field_type = nullptr;
+                const auto& opt_fields = inner_struct->getFields();
+                for (size_t i = 0; i < opt_fields.size(); ++i) {
+                    if (opt_fields[i].name == member->member) {
+                        opt_field_idx = static_cast<int>(i);
+                        opt_field_type = opt_fields[i].type;
+                        break;
+                    }
+                }
+                
+                if (opt_field_idx < 0) {
+                    std::cerr << "[DEBUG MEMBER_ACCESS] Field '" << member->member << "' not found in optional's inner struct" << std::endl;
+                    return nullptr;
+                }
+                
+                // Load the optional struct { i1, InnerStruct }
+                llvm::Type* opt_llvm_type = mapType(aria_type);
+                llvm::Value* opt_val = builder.CreateLoad(opt_llvm_type, object_ptr, "opt.load");
+                
+                // Extract hasValue flag (field 0)
+                llvm::Value* has_value = builder.CreateExtractValue(opt_val, 0, "opt.hasValue");
+                
+                // Create control flow for safe navigation
+                llvm::Function* func = builder.GetInsertBlock()->getParent();
+                llvm::BasicBlock* accessBB = llvm::BasicBlock::Create(context, "safeNav.access", func);
+                llvm::BasicBlock* nilBB = llvm::BasicBlock::Create(context, "safeNav.nil", func);
+                llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "safeNav.merge", func);
+                
+                builder.CreateCondBr(has_value, accessBB, nilBB);
+                
+                // Access block: extract inner struct, get field, wrap as Optional<FieldType>
+                builder.SetInsertPoint(accessBB);
+                llvm::Value* inner_val = builder.CreateExtractValue(opt_val, 1, "opt.inner");
+                llvm::Value* field_val = builder.CreateExtractValue(inner_val, opt_field_idx, member->member);
+                
+                // Wrap as Optional<FieldType>: { i1 true, FieldType value }
+                llvm::Type* field_llvm_type = field_val->getType();
+                llvm::Type* opt_result_type = llvm::StructType::get(context, {builder.getInt1Ty(), field_llvm_type});
+                llvm::Value* some_result = llvm::UndefValue::get(opt_result_type);
+                some_result = builder.CreateInsertValue(some_result, builder.getTrue(), 0, "opt.some.flag");
+                some_result = builder.CreateInsertValue(some_result, field_val, 1, "opt.some.val");
+                llvm::BasicBlock* accessEndBB = builder.GetInsertBlock();
+                builder.CreateBr(mergeBB);
+                
+                // NIL block: return None { i1 false, FieldType undef }
+                builder.SetInsertPoint(nilBB);
+                llvm::Value* none_result = llvm::UndefValue::get(opt_result_type);
+                none_result = builder.CreateInsertValue(none_result, builder.getFalse(), 0, "opt.none.flag");
+                builder.CreateBr(mergeBB);
+                
+                // Merge with phi
+                builder.SetInsertPoint(mergeBB);
+                llvm::PHINode* phi = builder.CreatePHI(opt_result_type, 2, "safeNav.result");
+                phi->addIncoming(some_result, accessEndBB);
+                phi->addIncoming(none_result, nilBB);
+                
+                return phi;
             }
             
             // Handle struct member access
