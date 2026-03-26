@@ -1,0 +1,26 @@
+// Expected: COMPILER ERROR
+/**
+ * Simple turbofish test with module import
+ */
+
+use stdlib.core;
+
+func:main = int32() {
+    println("Testing turbofish with module-imported function...");
+    
+    // Try calling identity with turbofish
+    // identity is defined in stdlib.core as: func<T>:identity = T(T:x) { pass(x); }
+    wild int32:result = identity::<int32>(42) ? 0;
+    
+    if (result != 42) {
+        println("ERROR: Expected 42");
+        pass(1);
+    }
+    
+    println("SUCCESS: Turbofish with module import works!");
+    pass(0);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

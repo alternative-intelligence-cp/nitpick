@@ -1,0 +1,37 @@
+// Phase 3 Test: Nested if statements
+// Should PASS: state propagates through multiple levels
+
+func:get_result = int32(int32:x) {
+    if (x < 0i32) {
+        fail(-1i32);
+    }
+    pass(x);
+};
+
+func:main = int32() {
+    Result<int32>:r = get_result(100i32);
+    
+    // Outer check
+    if (r.is_error == false) {
+        // SAFE: outer check guarantees this
+        int32:outer = r.value;
+        
+        // Nested check can use outer knowledge
+        if (outer > 0i32) {
+            // Still SAFE: outer check still in scope
+            int32:nested = r.value * 2i32;
+        }
+        
+        // Back to outer level, still SAFE
+        int32:outer2 = r.value;
+    }
+    
+    // Outside all branches - conservative merge
+    // Would need re-check here
+    
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

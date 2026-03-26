@@ -1,0 +1,13 @@
+// Expected: COMPILER ERROR - emphatic unwrap or err() not implemented
+// Test that ?! operator gives correct error messages
+
+func:main = int32() {
+    // This should fail: can't use ?! on a regular int32
+    int32:x = 10i32;
+    int32:y = x  42i32;  // ERROR: Should say "Emphatic unwrap operator () requires Result<T>"
+    pass(y);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

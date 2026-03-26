@@ -1,0 +1,38 @@
+// Test: "No checky no val" Enforcement
+// Current Status: ❌ NOT ENFORCED - This SHOULD fail but likely compiles
+//
+// EXPECTED BEHAVIOR (when enforcement implemented):
+// Accessing .value without checking .is_error first MUST be a compile error
+//
+// Note: Using current non-generic result syntax since result<T> not ready yet
+
+// Simple function that returns int64 via pass/fail
+func:divide = int64(int64:a, int64:b) {
+    if (b == 0i64) {
+        fail(1i64);
+    }
+    pass(a);
+};
+
+func:main = int32() {
+    // Function returns Result{value, error, is_error}
+    int64:r = raw(divide(10i64, 2i64));
+    
+    // ❌ BAD: In future, direct access to r should require checking .is_error first
+    // For now, we get int64 return which is either value or error code
+    
+    // What we WANT to be able to write (when Result<T> ready):
+    //   result<int64>:r = divide(10, 2);
+    //   int64:unsafe_val = r.value;      // ERROR: Must check .is_error first
+    //   
+    //   if (!r.is_error) {
+    //       int64:safe_val = r.value;     // OK: We checked first
+    //   }
+    
+    print("Test demonstrates current lack of Result<T> enforcement");
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

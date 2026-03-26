@@ -1,0 +1,29 @@
+// Test: Boolean negation with !
+// Should compile - ! works on bools
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail(-1i32);
+    }
+    pass(a / b);
+};
+
+func:main = int32() {
+    Result<int32>:r = divide(10i32, 2i32);
+    
+    // Test using ! negation
+    if (!r.is_error) {
+        int32:x = r.value;  // Should be SAFE
+    }
+    
+    // Double negation: !!x == x, so equivalent to r.is_error
+    if (r.is_error) {
+        // Won't execute since r is valid, but should compile
+    }
+    
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

@@ -1,0 +1,17 @@
+// Expected: COMPILER ERROR
+// Test: Atomic<T> type constraints - invalid type (string)
+// Phase 2.2: This should fail with error about incompatible type
+// Expected: "atomic<T> requires lock-free compatible type (int8-64, uint8-64, bool, tbb8-64), got: string"
+
+struct:TestBadAtomic = {
+    atomic<string>:bad;  // This should cause a compile error
+};
+
+func:main = int32() {
+    println("This should not compile");
+    return 0;
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

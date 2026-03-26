@@ -1,0 +1,62 @@
+/**
+ * Test demonstrating the module import fix for generic structs and functions
+ * 
+ * ISSUE: Generic structs (Q3<T>) and functions (q3_add, q3_crystallize, etc.) 
+ * were not accessible when imported from modules using `use stdlib.quantum`.
+ * 
+ * ROOT CAUSE: checkUseStmt() in type_checker.cpp was exporting module symbols
+ * but never called checkStructDecl() or checkFuncDecl(), which meant:
+ *   - Generic structs weren't registered in genericStructRegistry
+ *   - Generic functions weren't properly type-checked and registered
+ * 
+ * FIX: Modified checkUseStmt() to call:
+ *   - checkStructDecl(structDecl) for struct exports
+ *   - checkFuncDecl(funcDecl) for function exports
+ * 
+ * This test verifies the fix by importing Q3<T> from stdlib.quantum.
+ */
+
+use stdlib.quantum;
+
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
+};
+
+func:main = int32() {
+    // Test 1: Create Q3<int32> using struct literals
+    trit:c_zero = 0;
+    trit:c_pos = 1;
+    Q3<int32>:q1 = {a: 100, b: 200, c: c_zero};
+    
+    // Test 2: Verify field access
+    int32:val_a = q1.a;
+    int32:val_b = q1.b;
+    trit:val_c = q1.c;
+    
+    // Test 3: Create Q3<int64> with different confidence
+    Q3<int64>:q2 = {a: 1000, b: 2000, c: c_pos};
+    
+    // Test 4: Verify Q3<int64> monomorphization
+    int64:big_a = q2.a;
+    int64:big_b = q2.b;
+    trit:conf = q2.c;
+    
+    // Verify all values
+    if (val_a == 100 && val_b == 200 && val_c == 0 && 
+        big_a == 1000 && big_b == 2000 && conf == 1) {
+        drop(println("=============================================="));
+        drop(println("MODULE IMPORT FIX VERIFICATION"));
+        drop(println("=============================================="));
+        drop(println("✅ Q3<int32> imported successfully"));
+        drop(println("✅ Q3<int64> monomorphized correctly"));
+        drop(println("✅ Field access working"));
+        drop(println("✅ Struct literal initialization working"));
+        drop(println("=============================================="));
+        drop(println("GENERIC STRUCT MODULE IMPORT: FIXED"));
+        drop(println("=============================================="));
+        pass(0);
+    }
+    
+    drop(println("❌ TEST FAILED: Field values incorrect"));
+    pass(1);
+};

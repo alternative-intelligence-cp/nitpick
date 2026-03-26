@@ -1,0 +1,26 @@
+/**
+ * Test: Generic Complex Numbers with Multiple Numeric Types
+ * Demonstrates complex<T: Numeric> working
+ */
+
+use stdlib.complex.*;
+
+func:main = int32() {
+    // Test 1: Complex with int64
+    int64:r1 = 3;
+    int64:i1 = 4;
+    int64:r2 = 1;
+    int64:i2 = 2;
+    
+    complex<int64>:z1 = complex_new<int64>(r1, i1);
+    complex<int64>:z2 = complex_new<int64>(r2, i2);
+    complex<int64>:sum_i64 = complex_add<int64>(z1, z2);  // Should be (4 + 6i)
+    
+    // Test 2: Complex subtraction
+    complex<int64>:diff = complex_sub<int64>(z1, z2);  // Should be (2 + 2i)
+    
+    // Test 3: Complex multiplication
+    complex<int64>:product = complex_mul<int64>(z1, z2);  // (3+4i)*(1+2i) = -5+10i
+    
+    pass(0);
+};

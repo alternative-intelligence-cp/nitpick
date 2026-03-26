@@ -1,0 +1,22 @@
+// Quick test: Left-arrow dereference (<-)
+// Dereference operator for pointers
+
+func:failsafe = NIL(int32:err_code) {
+    print("ERROR");
+};
+
+func:main = int32() {
+    print("Testing left-arrow dereference");
+    
+    int64:value = 42;
+    int64->:ptr = @value;
+    
+    // Try left-arrow dereference
+    int64:retrieved = <-ptr;  // Should be 42
+    
+    if (retrieved == 42) {
+        print("✓ Left-arrow dereference works!");
+    }
+    
+    pass(0);
+};

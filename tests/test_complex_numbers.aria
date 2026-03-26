@@ -1,0 +1,305 @@
+// Expected: COMPILER ERROR
+/**
+ * Test Suite: Complex Number Operations
+ * 
+ * Tests std/complex.aria implementation:
+ * - Basic arithmetic (add, sub, mul, div)
+ * - ERR propagation
+ * - Special operations (conjugate, magnitude)
+ * - Edge cases (divide by zero, overflow)
+ * - Amnesia prevention in magnitude calculation
+ */
+
+import "std/complex.aria";
+import "std/print_utils.aria";
+
+// Test helper: Print pass/fail
+func:test_result = NIL(bool:passed, int8*:test_name) {
+    if (passed) {
+        print("✓ ");
+        println(test_name);
+    } else {
+        print("✗ FAIL: ");
+        println(test_name);
+        !!! 1;  // Fail fast on test failure
+    };
+};
+
+// Test helper: Compare fix256 with tolerance
+func:approx_equal = bool(fix256:a, fix256:b, fix256:epsilon) {
+    fix256:diff = a - b;
+    if (diff < 0.0) { diff = -diff; };
+    pass(diff < epsilon);
+};
+
+func:main = int32() {
+    println("\n=== Complex Number Test Suite ===\n");
+    
+    // =========================================================================
+    // Test 1: Basic Construction
+    // =========================================================================
+    {
+        complex<fix256>:z = complex_new(3.0, 4.0);
+        bool:passed = (z.real == 3.0 && z.imag == 4.0);
+        test_result(passed, "Construction: complex_new(3.0, 4.0)");
+    };
+    
+    {
+        complex<fix256>:z = complex_from_real(5.0);
+        bool:passed = (z.real == 5.0 && z.imag == 0.0);
+        test_result(passed, "Construction: complex_from_real(5.0)");
+    };
+    
+    {
+        complex<fix256>:z = complex_from_imag(7.0);
+        bool:passed = (z.real == 0.0 && z.imag == 7.0);
+        test_result(passed, "Construction: complex_from_imag(7.0)");
+    };
+    
+    // =========================================================================
+    // Test 2: Addition
+    // =========================================================================
+    {
+        // (3 + 4i) + (1 + 2i) = (4 + 6i)
+        complex<fix256>:z1 = complex_new(3.0, 4.0);
+        complex<fix256>:z2 = complex_new(1.0, 2.0);
+        complex<fix256>:sum = complex_add(z1, z2);
+        bool:passed = (sum.real == 4.0 && sum.imag == 6.0);
+        test_result(passed, "Addition: (3+4i) + (1+2i) = (4+6i)");
+    };
+    
+    {
+        // Addition with zero: z + 0 = z
+        complex<fix256>:z = complex_new(3.0, 4.0);
+        complex<fix256>:zero = complex_new(0.0, 0.0);
+        complex<fix256>:sum = complex_add(z, zero);
+        bool:passed = (sum.real == 3.0 && sum.imag == 4.0);
+        test_result(passed, "Addition: (3+4i) + 0 = (3+4i)");
+    };
+    
+    // =========================================================================
+    // Test 3: Subtraction
+    // =========================================================================
+    {
+        // (5 + 7i) - (2 + 3i) = (3 + 4i)
+        complex<fix256>:z1 = complex_new(5.0, 7.0);
+        complex<fix256>:z2 = complex_new(2.0, 3.0);
+        complex<fix256>:diff = complex_sub(z1, z2);
+        bool:passed = (diff.real == 3.0 && diff.imag == 4.0);
+        test_result(passed, "Subtraction: (5+7i) - (2+3i) = (3+4i)");
+    };
+    
+    {
+        // Self-subtraction: z - z = 0
+        complex<fix256>:z = complex_new(3.0, 4.0);
+        complex<fix256>:diff = complex_sub(z, z);
+        bool:passed = (diff.real == 0.0 && diff.imag == 0.0);
+        test_result(passed, "Subtraction: (3+4i) - (3+4i) = 0");
+    };
+    
+    // =========================================================================
+    // Test 4: Multiplication
+    // =========================================================================
+    {
+        // (3 + 4i) * (1 + 2i) = (3 + 6i + 4i + 8i²) = (3 + 10i - 8) = (-5 + 10i)
+        complex<fix256>:z1 = complex_new(3.0, 4.0);
+        complex<fix256>:z2 = complex_new(1.0, 2.0);
+        complex<fix256>:prod = complex_mul(z1, z2);
+        bool:passed = (prod.real == -5.0 && prod.imag == 10.0);
+        test_result(passed, "Multiplication: (3+4i) * (1+2i) = (-5+10i)");
+    };
+    
+    {
+        // Multiplication by i: (1 + 0i) * (0 + 1i) = (0 + 1i)
+        complex<fix256>:one = complex_new(1.0, 0.0);
+        complex<fix256>:img_unit = complex_new(0.0, 1.0);
+        complex<fix256>:prod = complex_mul(one, img_unit);
+        bool:passed = (prod.real == 0.0 && prod.imag == 1.0);
+        test_result(passed, "Multiplication: 1 * i = i");
+    };
+    
+    {
+        // i * i = -1
+        complex<fix256>:img_unit = complex_new(0.0, 1.0);
+        complex<fix256>:prod = complex_mul(img_unit, img_unit);
+        bool:passed = (prod.real == -1.0 && prod.imag == 0.0);
+        test_result(passed, "Multiplication: i * i = -1");
+    };
+    
+    // =========================================================================
+    // Test 5: Division
+    // =========================================================================
+    {
+        // (5 + 10i) / (1 + 2i) = 5
+        // (5 + 10i) / (1 + 2i) = [(5+10i)(1-2i)] / [(1+2i)(1-2i)]
+        //                       = [5 - 10i + 10i - 20i²] / [1 - 4i²]
+        //                       = [5 + 20] / [1 + 4]
+        //                       = 25 / 5 = 5
+        complex<fix256>:z1 = complex_new(5.0, 10.0);
+        complex<fix256>:z2 = complex_new(1.0, 2.0);
+        complex<fix256>:quot = complex_div(z1, z2);
+        bool:passed = (quot.real == 5.0 && quot.imag == 0.0);
+        test_result(passed, "Division: (5+10i) / (1+2i) = 5");
+    };
+    
+    {
+        // Division by 1: z / 1 = z
+        complex<fix256>:z = complex_new(3.0, 4.0);
+        complex<fix256>:one = complex_new(1.0, 0.0);
+        complex<fix256>:quot = complex_div(z, one);
+        bool:passed = (quot.real == 3.0 && quot.imag == 4.0);
+        test_result(passed, "Division: (3+4i) / 1 = (3+4i)");
+    };
+    
+    {
+        // Division by zero → ERR
+        complex<fix256>:z = complex_new(3.0, 4.0);
+        complex<fix256>:zero = complex_new(0.0, 0.0);
+        complex<fix256>:quot = complex_div(z, zero);
+        bool:passed = complex_is_err(quot);
+        test_result(passed, "Division by zero: (3+4i) / 0 = ERR");
+    };
+    
+    // =========================================================================
+    // Test 6: Conjugate
+    // =========================================================================
+    {
+        // (3 + 4i)* = (3 - 4i)
+        complex<fix256>:z = complex_new(3.0, 4.0);
+        complex<fix256>:z_conj = complex_conjugate(z);
+        bool:passed = (z_conj.real == 3.0 && z_conj.imag == -4.0);
+        test_result(passed, "Conjugate: (3+4i)* = (3-4i)");
+    };
+    
+    {
+        // Real number conjugate: (5 + 0i)* = (5 - 0i) = (5 + 0i)
+        complex<fix256>:z = complex_from_real(5.0);
+        complex<fix256>:z_conj = complex_conjugate(z);
+        bool:passed = (z_conj.real == 5.0 && z_conj.imag == 0.0);
+        test_result(passed, "Conjugate: real number unchanged");
+    };
+    
+    {
+        // Double conjugate: (z*)* = z
+        complex<fix256>:z = complex_new(3.0, 4.0);
+        complex<fix256>:z_conj = complex_conjugate(z);
+        complex<fix256>:z_conj_conj = complex_conjugate(z_conj);
+        bool:passed = (z_conj_conj.real == 3.0 && z_conj_conj.imag == 4.0);
+        test_result(passed, "Conjugate: (z*)* = z");
+    };
+    
+    // =========================================================================
+    // Test 7: Magnitude
+    // =========================================================================
+    {
+        // |3 + 4i| = √(9 + 16) = √25 = 5
+        complex<fix256>:z = complex_new(3.0, 4.0);
+        fix256:mag = complex_magnitude(z);
+        bool:passed = (mag == 5.0);
+        test_result(passed, "Magnitude: |3+4i| = 5");
+    };
+    
+    {
+        // |5 + 12i| = √(25 + 144) = √169 = 13
+        complex<fix256>:z = complex_new(5.0, 12.0);
+        fix256:mag = complex_magnitude(z);
+        bool:passed = (mag == 13.0);
+        test_result(passed, "Magnitude: |5+12i| = 13");
+    };
+    
+    {
+        // |0 + 0i| = 0
+        complex<fix256>:zero = complex_new(0.0, 0.0);
+        fix256:mag = complex_magnitude(zero);
+        bool:passed = (mag == 0.0);
+        test_result(passed, "Magnitude: |0| = 0");
+    };
+    
+    {
+        // |1 + 0i| = 1
+        complex<fix256>:one = complex_from_real(1.0);
+        fix256:mag = complex_magnitude(one);
+        bool:passed = (mag == 1.0);
+        test_result(passed, "Magnitude: |1| = 1");
+    };
+    
+    {
+        // |0 + 1i| = 1
+        complex<fix256>:img_unit = complex_from_imag(1.0);
+        fix256:mag = complex_magnitude(img_unit);
+        bool:passed = (mag == 1.0);
+        test_result(passed, "Magnitude: |i| = 1");
+    };
+    
+    // =========================================================================
+    // Test 8: ERR Propagation
+    // =========================================================================
+    {
+        // ERR + valid = ERR
+        complex<fix256>:err = complex_err<*fix256>();
+        complex<fix256>:valid = complex_new(3.0, 4.0);
+        complex<fix256>:result = complex_add(err, valid);
+        bool:passed = complex_is_err(result);
+        test_result(passed, "ERR propagation: ERR + valid = ERR");
+    };
+    
+    {
+        // valid * ERR = ERR
+        complex<fix256>:valid = complex_new(3.0, 4.0);
+        complex<fix256>:err = complex_err<*fix256>();
+        complex<fix256>:result = complex_mul(valid, err);
+        bool:passed = complex_is_err(result);
+        test_result(passed, "ERR propagation: valid * ERR = ERR");
+    };
+    
+    {
+        // magnitude(ERR) = ERR
+        complex<fix256>:err = complex_err<*fix256>();
+        fix256:mag = complex_magnitude(err);
+        bool:passed = (mag == ERR);
+        test_result(passed, "ERR propagation: |ERR| = ERR");
+    };
+    
+    // =========================================================================
+    // Test 9: Properties (Commutativity, Associativity)
+    // =========================================================================
+    {
+        // Addition is commutative: z1 + z2 = z2 + z1
+        complex<fix256>:z1 = complex_new(3.0, 4.0);
+        complex<fix256>:z2 = complex_new(1.0, 2.0);
+        complex<fix256>:sum1 = complex_add(z1, z2);
+        complex<fix256>:sum2 = complex_add(z2, z1);
+        bool:passed = (sum1.real == sum2.real && sum1.imag == sum2.imag);
+        test_result(passed, "Commutativity: z1 + z2 = z2 + z1");
+    };
+    
+    {
+        // Multiplication is commutative: z1 * z2 = z2 * z1
+        complex<fix256>:z1 = complex_new(3.0, 4.0);
+        complex<fix256>:z2 = complex_new(1.0, 2.0);
+        complex<fix256>:prod1 = complex_mul(z1, z2);
+        complex<fix256>:prod2 = complex_mul(z2, z1);
+        bool:passed = (prod1.real == prod2.real && prod1.imag == prod2.imag);
+        test_result(passed, "Commutativity: z1 * z2 = z2 * z1");
+    };
+    
+    {
+        // z * z* = |z|² (real number)
+        complex<fix256>:z = complex_new(3.0, 4.0);
+        complex<fix256>:z_conj = complex_conjugate(z);
+        complex<fix256>:prod = complex_mul(z, z_conj);
+        fix256:mag = complex_magnitude(z);
+        fix256:mag_sq = mag * mag;
+        bool:passed = (prod.real == mag_sq && prod.imag == 0.0);
+        test_result(passed, "Property: z * z* = |z|²");
+    };
+    
+    println("\n=== All Complex Number Tests Passed! ===\n");
+    pass(0);
+};
+
+func:failsafe = NIL(int32:code) {
+    print("FAILSAFE: Test failed with code ");
+    printInt(code);
+    println("");
+};

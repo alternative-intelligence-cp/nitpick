@@ -1,0 +1,102 @@
+// P1-2 Phase 5: SIMD Horizontal Reductions Test
+// Tests reduction operations that convert SIMD vector to scalar
+
+func:test_simd_sum_int = int32(simd<int32, 4>:vec_int) {
+    // Sum all elements: [1, 2, 3, 4] -> 10
+    int32:total = simd_sum(vec_int);
+    pass(total);
+};
+
+func:test_simd_sum_int64 = int64(simd<int64, 8>:vec_i64) {
+    // Sum 8 int64 values
+    int64:result = simd_sum(vec_i64);
+    pass(result);
+};
+
+func:test_simd_sum_float = float32(simd<float32, 4>:vec_f32) {
+    // Sum floating point values
+    float32:sum = simd_sum(vec_f32);
+    pass(sum);
+};
+
+func:test_simd_product = int32(simd<int32, 4>:vec_prod) {
+    // Multiply all elements: [2, 3, 4, 5] -> 120
+    int32:product = simd_product(vec_prod);
+    pass(product);
+};
+
+func:test_simd_min = int32(simd<int32, 4>:vec_min) {
+    // Find minimum element: [10, 5, 20, 3] -> 3
+    int32:minimum = simd_min(vec_min);
+    pass(minimum);
+};
+
+func:test_simd_max = int32(simd<int32, 4>:vec_max) {
+    // Find maximum element: [10, 5, 20, 3] -> 20
+    int32:maximum = simd_max(vec_max);
+    pass(maximum);
+};
+
+func:test_simd_min_float = float32(simd<float32, 4>:vec) {
+    // Find minimum float value
+    float32:min_val = simd_min(vec);
+    pass(min_val);
+};
+
+func:test_simd_max_float = float32(simd<float32, 4>:vec) {
+    // Find maximum float value
+    float32:max_val = simd_max(vec);
+    return max_val;
+};
+
+func:test_simd_combined_reductions = int32(simd<int32, 4>:values) {
+    // Use multiple reductions in one function
+    int32:sum = simd_sum(values);
+    int32:min = simd_min(values);
+    int32:max = simd_max(values);
+    
+    // Compute range (max - min)
+    int32:range = max - min;
+    
+    // Return average (sum / 4)
+    int32:avg = sum / 4i32;
+    
+    return avg;
+};
+
+func:test_simd_reduction_chain = int32(simd<int32, 8>:vec_a, simd<int32, 8>:vec_b) {
+    // Chain reductions from multiple vectors
+    int32:sum1 = simd_sum(vec_a);
+    int32:sum2 = simd_sum(vec_b);
+    
+    // Total of both vectors
+    int32:total = sum1 + sum2;
+    
+    return total;
+};
+
+func:test_practical_stats = int32(simd<int32, 8>:data) {
+    // Practical example: compute statistics
+    int32:total = simd_sum(data);
+    int32:min_val = simd_min(data);
+    int32:max_val = simd_max(data);
+    
+    // Average
+    int32:avg = total / 8i32;
+    
+    // Check if all values are in reasonable range
+    int32:range = max_val - min_val;
+    if (range > 100i32) {
+        return 0i32;  // Outliers detected
+    }
+    
+    return avg;
+};
+
+func:main = int32() {
+    return 0i32;
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling stub
+};

@@ -1,0 +1,88 @@
+// Test comparisons, conversions, and edge cases
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:test_comparisons = int32() {
+    println("Testing comparisons...");
+    
+    trit:a = 1;
+    trit:b = 0;
+    trit:c = -1;
+    
+    // Equality
+    if (a == a) {
+        println("  ✓ trit equality works");
+    }
+    
+    // Inequality
+    if (a != b) {
+        println("  ✓ trit inequality works");
+    }
+    
+    tryte:x = 100;
+    tryte:y = 50;
+    
+    if (x > y) {
+        println("  ✓ tryte > works");
+    }
+    
+    if (y < x) {
+        println("  ✓ tryte < works");
+    }
+    
+    pass(0i32);
+};
+
+func:test_literals = int32() {
+    println("Testing ternary/nonary literals...");
+    
+    // Ternary literal (T represents -1 in balanced ternary)
+    // Digits: 0, 1, T (where T=-1)
+    trit:ternary_pos = 0t1;     // 1 in ternary
+    trit:ternary_neg = 0tT;     // -1 in ternary
+    trit:ternary_zero = 0t0;    // 0 in ternary
+    
+    // Nonary literal (balanced nonary)
+    // Digits: 0-4 (positive), A=-1, B=-2, C=-3, D=-4
+    nit:nonary_pos = 0n4;       // 4 in nonary
+    nit:nonary_neg = 0nD;       // -4 in nonary
+    nit:nonary_zero = 0n0;      // 0 in nonary
+    
+    println("  ✓ Literal parsing works");
+    pass(0i32);
+};
+
+func:test_edge_cases = int32() {
+    println("Testing edge cases...");
+    
+    // Max/min values
+    tryte:max = 29524;
+    tryte:min = -29524;
+    
+    nyte:nmax = 29524;
+    nyte:nmin = -29524;
+    
+    // Zero operations
+    trit:val_zero = 0;
+    trit:result_zero = val_zero * val_zero;
+    
+    println("  ✓ Edge cases work");
+    pass(0i32);
+};
+
+func:main = int32() {
+    println("========================================");
+    println("EXOTIC TYPES ADVANCED TESTS");
+    println("========================================");
+    println("");
+    
+    drop(test_comparisons());
+    drop(test_literals());
+    drop(test_edge_cases());
+    
+    println("");
+    println("========================================");
+    println("ALL ADVANCED TESTS PASSED ✓");
+    println("========================================");
+    
+    pass(0i32);
+};

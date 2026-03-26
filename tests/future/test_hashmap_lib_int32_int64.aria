@@ -1,0 +1,98 @@
+// Test: HashMap<int32, int64> library wrapper
+// Tests all operations: new, insert, get, has, remove, length, clear, free
+
+func:main = int32() {
+    // TEST 1: Create new HashMap
+    HashMap<int32, int64>:scores = HashMap_int32_int64_new();
+    
+    // Verify initial state
+    if (scores.capacity != 16i64) { pass(1i32); }
+    if (scores.length != 0i64) { pass(2i32); }
+    if (scores.key_size != 4i64) { pass(3i32); }
+    if (scores.value_size != 8i64) { pass(4i32); }
+    
+    // TEST 2: Insert student scores
+    HashMap_int32_int64_insert(scores.entries, 1001i32, 95i64);  // Student 1001: 95
+    HashMap_int32_int64_insert(scores.entries, 1002i32, 88i64);  // Student 1002: 88
+    HashMap_int32_int64_insert(scores.entries, 1003i32, 92i64);  // Student 1003: 92
+    
+    // Update length from runtime
+    HashMap_int32_int64_update_length(@scores);
+    
+    // Verify length
+    if (scores.length != 3i64) { pass(5i32); }
+    
+    // TEST 3: Check existence (has)
+    if (HashMap_int32_int64_has(scores.entries, 1001i32) != 1i32) { pass(6i32); }
+    if (HashMap_int32_int64_has(scores.entries, 1002i32) != 1i32) { pass(7i32); }
+    if (HashMap_int32_int64_has(scores.entries, 1003i32) != 1i32) { pass(8i32); }
+    if (HashMap_int32_int64_has(scores.entries, 9999i32) != 0i32) { pass(9i32); }  // Doesn't exist
+    
+    // TEST 4: Get values
+    int64:score1 = 0i64;
+    int64:score2 = 0i64;
+    int64:score3 = 0i64;
+    int64:score_missing = 0i64;
+    
+    // Get existing values
+    if (HashMap_int32_int64_get(scores.entries, 1001i32, @score1) != 1i32) { pass(10i32); }
+    if (score1 != 95i64) { pass(11i32); }
+    
+    if (HashMap_int32_int64_get(scores.entries, 1002i32, @score2) != 1i32) { pass(12i32); }
+    if (score2 != 88i64) { pass(13i32); }
+    
+    if (HashMap_int32_int64_get(scores.entries, 1003i32, @score3) != 1i32) { pass(14i32); }
+    if (score3 != 92i64) { pass(15i32); }
+    
+    // Get non-existent value
+    if (HashMap_int32_int64_get(scores.entries, 9999i32, @score_missing) != 0i32) { pass(16i32); }
+    
+    // TEST 5: Update existing value
+    HashMap_int32_int64_insert(scores.entries, 1001i32, 98i64);  // Update student 1001
+    
+    int64:updated_score = 0i64;
+    if (HashMap_int32_int64_get(scores.entries, 1001i32, @updated_score) != 1i32) { pass(17i32); }
+    if (updated_score != 98i64) { pass(18i32); }
+    
+    // Length should still be 3 (update, not insert)
+    HashMap_int32_int64_update_length(@scores);
+    if (scores.length != 3i64) { pass(19i32); }
+    
+    // TEST 6: Remove entry
+    if (HashMap_int32_int64_remove(scores.entries, 1002i32) != 1i32) { pass(20i32); }  // Should succeed
+    
+    // Verify removal
+    HashMap_int32_int64_update_length(@scores);
+    if (scores.length != 2i64) { pass(21i32); }
+    if (HashMap_int32_int64_has(scores.entries, 1002i32) != 0i32) { pass(22i32); }
+    
+    // Try to remove non-existent entry
+    if (HashMap_int32_int64_remove(scores.entries, 9999i32) != 0i32) { pass(23i32); }  // Should fail
+    
+    // TEST 7: Length function
+    int64:current_length = HashMap_int32_int64_length(scores.entries);
+    if (current_length != 2i64) { pass(24i32); }
+    
+    // TEST 8: Clear map
+    HashMap_int32_int64_clear(scores.entries);
+    HashMap_int32_int64_update_length(@scores);
+    
+    if (scores.length != 0i64) { pass(25i32); }
+    if (HashMap_int32_int64_has(scores.entries, 1001i32) != 0i32) { pass(26i32); }
+    
+    // TEST 9: Insert after clear
+    HashMap_int32_int64_insert(scores.entries, 2001i32, 100i64);
+    HashMap_int32_int64_update_length(@scores);
+    
+    if (scores.length != 1i64) { pass(27i32); }
+    
+    int64:new_score = 0i64;
+    if (HashMap_int32_int64_get(scores.entries, 2001i32, @new_score) != 1i32) { pass(28i32); }
+    if (new_score != 100i64) { pass(29i32); }
+    
+    // TEST 10: Cleanup
+    HashMap_int32_int64_free(scores.entries);
+    
+    // All tests passed!
+    pass(0i32);
+};

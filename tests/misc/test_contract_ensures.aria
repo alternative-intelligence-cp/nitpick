@@ -1,0 +1,20 @@
+// Test ensures clause
+
+func:abs = int32(int32:value)
+  ensures result >= 0
+{
+    if (value < 0) {
+        pass(0 - value);
+    }
+    pass(value);
+};
+
+func:failsafe = NIL(int32:code) { };
+
+func:main = int32() {
+    Result<int32>:r = abs(-5);
+    if (r.is_error) {
+        pass(-1);
+    }
+    pass(r.value);
+};

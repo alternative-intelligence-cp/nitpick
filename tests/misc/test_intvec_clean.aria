@@ -1,0 +1,83 @@
+// IntVec with CLEAN reassignment using ? unwrap operator!
+// No more vecA, vecB, vecC... just reassign vec!
+
+func:failsafe = NIL(int32:err_code) { pass(NIL); };
+
+func:failsafe = NIL(int32:err_code) { pass(NIL); };
+
+extern func:malloc = wild int8*(int64:size);
+extern func:free = NIL(wild int8*:ptr);
+extern func:ptr_to_int64 = int64(wild int8*:ptr);
+extern func:int64_to_ptr = wild int8*(int64:val);
+extern func:int_array_get = int32(wild int8*:buf, int32:idx);
+extern func:int_array_set = NIL(wild int8*:buf, int32:idx, int32:val);
+
+Type:IntVec = {
+
+func:failsafe = NIL(int32:err_code) { pass(NIL); };
+    func:new = IntVec() {
+        wild int8->:buffer = malloc(40i64);
+        int64:ptr_as_int = ptr_to_int64(buffer);
+        IntVec:result = IntVec{dataptr: ptr_as_int, length: 0i32, capacity: 10i32};
+        pass(result);
+    };
+    
+    func:destroy = NIL(IntVec:self) {
+        _ = free(int64_to_ptr(self.dataptr));
+        pass(NIL);
+    };
+    
+    func:push = IntVec(IntVec:self, int32:value) {
+        wild int8->:buffer = int64_to_ptr(self.dataptr);
+        _ = int_array_set(buffer, self.length, value);
+        int32:new_length = self.length + 1i32;
+        IntVec:result = IntVec{
+            dataptr: self.dataptr,
+            length: new_length,
+            capacity: self.capacity
+        };
+        pass(result);
+    };
+    
+    func:get = int32(IntVec:self, int32:index) {
+        wild int8->:buffer = int64_to_ptr(self.dataptr);
+        int32:val = int_array_get(buffer, index);
+        pass(val);
+    };
+    
+    func:len = int32(IntVec:self) {
+        pass(self.length);
+    };
+    
+    struct:interface = {
+        int64:dataptr;
+        int32:length;
+        int32:capacity;
+    };
+};
+
+func:main = int32() {
+    // Create empty IntVec (fallback for unwrap)
+    IntVec:empty = IntVec{dataptr: 0i64, length: 0i32, capacity: 0i32};
+    
+    // Initialize with unwrap operator
+    IntVec:vec = IntVec.new() ? empty;
+    
+    // CLEAN REASSIGNMENT with ? unwrap operator! 🎉
+    vec = vec.push(100i32) ? vec;  // Push and reassign!
+    vec = vec.push(200i32) ? vec;  // Chain operations!
+    vec = vec.push(300i32) ? vec;
+    vec = vec.push(400i32) ? vec;
+    
+    // Get values with unwrap
+    int32:sum = vec.get(0i32) ? 0i32;  // 100
+    sum = sum + (vec.get(1i32) ? 0i32);  // + 200 = 300
+    sum = sum + (vec.get(2i32) ? 0i32);  // + 300 = 600
+    sum = sum + (vec.get(3i32) ? 0i32);  // + 400 = 1000
+    
+    // Cleanup
+    _ = vec.destroy() ? NIL;
+    
+    // Return 1000 if it all worked!
+    pass(sum);
+};

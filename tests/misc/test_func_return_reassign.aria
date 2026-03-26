@@ -1,0 +1,14 @@
+// Test function return reassignment for primitives
+
+func:get_number = int32(int32:val) {
+    pass(val);
+};
+
+
+func:failsafe = NIL(int32:err_code) { pass(NIL); };
+
+func:main = int32() {
+    int32:x = raw(get_number(10i32));  // Initial assignment
+    x = raw(get_number(20i32));  // Reassignment - does this work?
+    pass(x);  // Should return 20
+};

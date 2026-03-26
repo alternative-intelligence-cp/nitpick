@@ -1,0 +1,18 @@
+// test_fix256_simple.aria - Minimal test for fix256 integration
+
+func:main = int32() {
+    fix256:a = fix256_from_int(42);
+    fix256:b = fix256_from_int(8);
+    fix256:sum = a + b;
+    int64:result = fix256_to_int(sum);
+    
+    if (result != 50) {
+        pass(1);  // FAILURE
+    }
+    
+    pass(0);  // SUCCESS
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling - empty is valid
+};

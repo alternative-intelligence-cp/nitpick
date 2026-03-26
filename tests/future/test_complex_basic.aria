@@ -1,0 +1,42 @@
+// Test: Complex Number Basic Functionality
+// Tests that generic struct fix enables complex number usage
+
+struct<T>:complex = {
+    *T:real;
+    *T:imag;
+};
+
+func:complex_add = complex<int64>(complex<int64>:a, complex<int64>:b) {
+    complex<int64>:result;
+    result.real = a.real + b.real;
+    result.imag = a.imag + b.imag;
+    pass(result);
+};
+
+func:failsafe = int32(int32:err_code) {
+    return err_code;
+};
+
+func:main = int32() {
+    // Test 1: Basic construction
+    complex<int64>:z1;
+    z1.real = 3i64;
+    z1.imag = 4i64;
+    
+    // Test 2: Another complex number
+    complex<int64>:z2;
+    z2.real = 1i64;
+    z2.imag = 2i64;
+    
+    // Test 3: Direct addition (avoiding coalesce for now)
+    complex<int64>:sum;
+    sum.real = z1.real + z2.real;
+    sum.imag = z1.imag + z2.imag;
+    
+    // Verify result: (3+4i) + (1+2i) = (4+6i)
+    if (sum.real == 4i64 && sum.imag == 6i64) {
+        return 0;  // SUCCESS
+    }
+    
+    return 1;  // FAIL
+};

@@ -1,0 +1,26 @@
+// Comprehensive test: ?! (local fallback) and !!! (global failsafe)
+// Demonstrates the two-level safety system
+
+// Mandatory failsafe function - global error handler
+func:failsafe = int32(int32:err_code) {
+    // Critical error handling - this is the last line of defense
+    pass(err_code);
+};
+
+func:main = int32() {
+    // Demonstrate LOCAL handling with ?! (emphatic unwrap)
+    // This would normally unwrap a Result, but for demo purposes:
+    // If we detected a critical system failure...
+    
+    bool:system_ok = false;  // Simulate system check
+    
+    if (!system_ok) {
+        // GLOBAL FAILSAFE: !!! calls failsafe() for catastrophic errors
+        // This is the "emergency button" that triggers the handler
+        int32:exit_code = raw(!!! 99i32);
+        pass(exit_code);
+    }
+    
+    // Normal operation
+    pass(0i32);
+};

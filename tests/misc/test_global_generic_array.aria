@@ -1,0 +1,22 @@
+// Test: Global arrays with generic types
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+// Generic Option type
+struct<T>:Option = {
+    bool:has_value;
+    T:value;
+};
+
+// Global array of generic type instances
+Option<int32>[5]:options;
+
+func:main = int32() {
+    options[0].has_value = true;
+    options[0].value = 42i32;
+    
+    options[1].has_value = false;
+    options[1].value = 0i32;
+    
+    pass(0i32);
+};

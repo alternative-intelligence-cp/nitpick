@@ -1,0 +1,89 @@
+// P1-4: Design by Contract - Basic Test
+// Tests requires and ensures clauses on functions
+
+// Test 1: Simple precondition
+func:divide = int32(int32:a, int32:b)
+  requires b != 0
+{
+    pass(a / b);
+};
+
+// Test 2: Multiple preconditions
+func:sqrt_approx = int32(int32:x)
+  requires x >= 0,
+           x <= 1000
+{
+    pass(x);  // Placeholder - actual sqrt would be complex
+};
+
+// Test 3: Postcondition
+func:abs = Result<int32>(int32:x)
+  ensures result >= 0
+{
+    if (x < 0) {
+        pass(raw(-x));
+    }
+    pass(raw(x));
+};
+
+// Test 4: Both preconditions and postconditions
+func:clamp = Result<int32>(int32:value, int32:min, int32:max)
+  requires min <= max
+  ensures result >= min,
+          result <= max
+{
+    if (value < min) {
+        pass(raw(min));
+    }
+    if (value > max) {
+        pass(raw(max));
+    }
+    pass(raw(value));
+};
+
+// Test 5: Energy conservation example (Nikola use case)
+func:propagate_wave = int64(int64:energy)
+  requires energy > 0,
+           energy <= 1000000
+  ensures result == energy  // Energy conserved
+{
+    // Wave propagation preserves energy
+    pass(energy);
+};
+
+func:failsafe = NIL(int32:code) { };
+
+func:main = int32() {
+    // Test basic division with contract
+    Result<int32>:r1 = divide(10, 2);
+    if (r1.is_error) {
+        pass(-1);
+    }
+    
+    // Test sqrt with precondition
+    Result<int32>:r2 = sqrt_approx(16);
+    if (r2.is_error) {
+        pass(-2);
+    }
+    
+    // Test abs with postcondition
+    Result<int32>:r3 = abs(-5);
+    if (r3.is_error) {
+        pass(-3);
+    }
+    if (r3.value != 5) {
+        pass(-4);
+    }
+    
+    // Test clamp with both conditions
+    Result<int32>:r4 = raw(clamp(15, 0, 10));
+    if (r4.is_error) {
+        pass(-5);
+    }
+    if (r4.value != 10) {
+        pass(-6);
+    }
+    
+    // All tests passed
+    pass(0);
+};

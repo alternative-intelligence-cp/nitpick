@@ -1,0 +1,25 @@
+/**
+ * Test built-in Result<T> type with pass/fail mechanism
+ */
+
+func:get_value = int32() {
+    pass(42i32);
+};
+
+func:main = int32() {
+    Result<int32>:r = get_value();
+    
+    pick(r.is_error) {
+        (false) {
+            // Success — value was returned
+            pass(0i32);
+        },
+        (true) {
+            pass(1i32);
+        }
+    }
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

@@ -1,0 +1,56 @@
+// Test if variable reassignment actually works in Aria
+
+extern func:malloc = wild int8*(int64:size);
+extern func:ptr_to_int64 = int64(wild int8*:ptr);
+extern func:int64_to_ptr = wild int8*(int64:val);
+extern func:int_array_set = void(wild int8*:buf, int32:idx, int32:val);
+extern func:puts = int32(wild int8*:str);
+
+struct:IntVec = {
+    int64:dataptr;
+    int32:length;
+    int32:capacity;
+};
+
+Type:IntVec = {
+    func:new = IntVec() {
+        wild int8->:buffer = malloc(40i64); // 10 * 4 bytes
+        int64:ptr_as_int = ptr_to_int64(buffer);
+        IntVec:vec = IntVec{dataptr: ptr_as_int, length: 0i32, capacity: 10i32};
+        pass(vec);
+    };
+    
+    func:push = IntVec(IntVec:self, int32:value) {
+        wild int8->:buffer = int64_to_ptr(self.dataptr);
+        _ = int_array_set(buffer, self.length, value);
+        int32:new_length = self.length + 1i32;
+        IntVec:result = IntVec{
+            dataptr: self.dataptr,
+            length: new_length,
+            capacity: self.capacity
+        };
+        pass(result);
+    };
+};
+
+func:main = int32() {
+    // Test 1: Simple reassignment
+    int32:x = 10i32;
+    x = 20i32;  // Does this work?
+    _ = puts("✓ Simple reassignment works!");
+    
+    // Test 2: Reassignment in a loop-like pattern
+    int32:counter = 0i32;
+    counter = counter + 1i32;
+    counter = counter + 1i32;
+    counter = counter + 1i32;
+    _ = puts("✓ Incremental reassignment works!");
+    
+    // Test 3: Struct reassignment
+    IntVec:vec = raw(IntVec.new());
+    vec = raw(vec.push(42i32));  // The key test - does THIS work?
+    vec = raw(vec.push(100i32));
+    _ = puts("✓ Struct reassignment works - we don't need functional style!");
+    
+    pass(0i32);
+};

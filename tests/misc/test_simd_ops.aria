@@ -1,0 +1,82 @@
+// P1-2 Phase 4: Complete SIMD Operations Test
+// Tests arithmetic AND comparisons with broadcast
+
+func:test_simd_arithmetic = int32(
+    simd<int32, 4>:a,
+    simd<int32, 4>:b
+) {
+    // SIMD + SIMD (element-wise addition)
+    simd<int32, 4>:sum = a + b;
+    
+    // SIMD * SIMD (element-wise multiplication)
+    simd<int32, 4>:product = a * b;
+    
+    // SIMD - SIMD (element-wise subtraction)
+    simd<int32, 4>:diff = a - b;
+    
+    // SIMD / SIMD (element-wise division)
+    simd<int32, 4>:quot = a / b;
+    
+    // SIMD % SIMD (element-wise modulo)
+    simd<int32, 4>:remainder = a % b;
+    
+    pass(0i32);
+};
+
+func:test_simd_comparisons = int32(
+    simd<int32, 4>:vec,
+    int32:threshold
+) {
+    // SIMD > Scalar (element-wise comparison with broadcast)
+    simd<bool, 4>:mask_gt = vec > threshold;
+    
+    // SIMD < Scalar
+    simd<bool, 4>:mask_lt = vec < threshold;
+    
+    // SIMD >= Scalar
+    simd<bool, 4>:mask_ge = vec >= threshold;
+    
+    // SIMD <= Scalar
+    simd<bool, 4>:mask_le = vec <= threshold;
+    
+    // SIMD == Scalar
+    simd<bool, 4>:mask_eq = vec == threshold;
+    
+    // SIMD != Scalar
+    simd<bool, 4>:mask_ne = vec != threshold;
+    
+    // Scalar > SIMD (reverse broadcast)
+    simd<bool, 4>:mask_gt_rev = threshold > vec;
+    
+    // SIMD > SIMD (vector-vector comparison)
+    simd<bool, 4>:mask_gt_vv = vec > vec;
+    
+    pass(0i32);
+};
+
+func:test_simd_scalar_broadcast = int32(
+    simd<int32, 4>:vec,
+    int32:scalar
+) {
+    // Scalar LEFT of operator
+    simd<int32, 4>:add_left = scalar + vec;
+    simd<int32, 4>:mul_left = scalar * vec;
+    simd<int32, 4>:sub_left = scalar - vec;
+    simd<bool, 4>:cmp_left = scalar > vec;
+    
+    // Scalar RIGHT of operator
+    simd<int32, 4>:add_right = vec + scalar;
+    simd<int32, 4>:mul_right = vec * scalar;
+    simd<int32, 4>:sub_right = vec - scalar;
+    simd<bool, 4>:cmp_right = vec > scalar;
+    
+    pass(0i32);
+};
+
+func:main = int32() {
+    return 0i32;
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling stub for test
+};

@@ -1,0 +1,76 @@
+// Test simd_select() - masked SIMD conditional selection
+// Signature: simd_select(simd<bool, N>:mask, simd<T, N>:true_vals, simd<T, N>:false_vals) -> simd<T, N>
+// Per-lane ternary: result[i] = mask[i] ? true_vals[i] : false_vals[i]
+
+// Required failsafe function
+func:failsafe = NIL(int32:err_code) {
+    // Empty failsafe - tests don't expect errors
+};
+
+// Test basic selection with explicit mask
+func:test_simd_select_basic = NIL(simd<int32, 4>:a, simd<int32, 4>:b, simd<bool, 4>:mask) {
+    // Should return: mask[i] ? a[i] : b[i] for each lane
+    simd<int32, 4>:result = simd_select(mask, a, b);
+    println("test_simd_select_basic passed");
+};
+
+// Test selection with comparison-generated mask
+func:test_simd_select_with_comparison = NIL(simd<int32, 4>:values, simd<int32, 4>:threshold) {
+    // Create mask from comparison: values > threshold
+    simd<bool, 4>:gt_mask = values > threshold;
+    
+    // If value > threshold, keep value; else use threshold (clamp to min)
+    simd<int32, 4>:clamped = simd_select(gt_mask, values, threshold);
+    
+    println("test_simd_select_with_comparison passed");
+};
+
+// Test float selection
+func:test_simd_select_float = NIL(simd<float32, 4>:high, simd<float32, 4>:low, simd<bool, 4>:mask) {
+    // mask[i] ? high[i] : low[i]
+    simd<float32, 4>:result = simd_select(mask, high, low);
+    println("test_simd_select_float passed");
+};
+
+// Test absolute value using select
+// Takes both the values and a zero vector
+func:test_simd_abs_via_select = NIL(simd<float32, 4>:values, simd<float32, 4>:zero) {
+    // Implement abs() using select: if value < 0, negate it; else keep it
+    simd<bool, 4>:is_negative = values < zero;
+    
+    // Negate the values
+    simd<float32, 4>:negated = zero - values;
+    
+    // Select negated if negative, else original
+    simd<float32, 4>:abs_values = simd_select(is_negative, negated, values);
+    println("test_simd_abs_via_select passed");
+};
+
+// Test min/max using select  
+func:test_simd_min_max_via_select = NIL(simd<int32, 4>:a, simd<int32, 4>:b) {
+    // Pairwise minimum: select a if a < b, else b
+    simd<bool, 4>:a_less = a < b;
+    simd<int32, 4>:element_min = simd_select(a_less, a, b);
+    
+    // Pairwise maximum: select a if a > b, else b
+    simd<bool, 4>:a_greater = a > b;
+    simd<int32, 4>:element_max = simd_select(a_greater, a, b);
+    
+    println("test_simd_min_max_via_select passed");
+};
+
+// Test all-true mask
+func:test_simd_select_all_true = NIL(simd<int32, 4>:a, simd<int32, 4>:b) {
+    simd<bool, 4>:all_true = a == a;  // Always true
+    simd<int32, 4>:result = simd_select(all_true, a, b);
+    // Should return all values from 'a'
+    println("test_simd_select_all_true passed");
+};
+
+// Test all-false mask  
+func:test_simd_select_all_false = NIL(simd<int32, 4>:a, simd<int32, 4>:b) {
+    simd<bool, 4>:all_false = a != a;  // Always false (assuming no NaN)
+    simd<int32, 4>:result = simd_select(all_false, a, b);
+    // Should return all values from 'b'
+    println("test_simd_select_all_false passed");
+};

@@ -1,0 +1,21 @@
+// Expected: COMPILER ERROR
+// Test: Result<T> "No Checky No Val" Enforcement
+// This test SHOULD FAIL to compile with proper error messages
+
+func:get_result = Result<int64>() {
+    pass(42i64);
+};
+
+func:main = int32() {
+    Result<int64>:r = get_result();
+    
+    // ❌ TEST 1: Accessing .value WITHOUT checking .is_error first
+    // Expected: ERROR - "Cannot access .value without checking .is_error first"
+    int64:bad_value = r.value;  // Should fail compilation
+    
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

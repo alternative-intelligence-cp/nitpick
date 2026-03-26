@@ -1,0 +1,23 @@
+// Test: Use parentheses to force precedence
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail(-1i32);
+    }
+    pass(a / b);
+};
+
+func:main = int32() {
+    Result<int32>:r = divide(10i32, 2i32);
+    
+    // Test with explicit parentheses
+    if (!(r.is_error)) {
+        int32:x = r.value;  // Will this work?
+    }
+    
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};
