@@ -17,28 +17,28 @@ func:sqrt_approx = int32(int32:x)
 };
 
 // Test 3: Postcondition
-func:abs = Result<int32>(int32:x)
+func:abs = int32(int32:x)
   ensures result >= 0
 {
     if (x < 0) {
-        pass(raw(-x));
+        pass(-x);
     }
-    pass(raw(x));
+    pass(x);
 };
 
 // Test 4: Both preconditions and postconditions
-func:clamp = Result<int32>(int32:value, int32:min, int32:max)
-  requires min <= max
-  ensures result >= min,
-          result <= max
+func:clamp = int32(int32:value, int32:min_val, int32:max_val)
+  requires min_val <= max_val
+  ensures result >= min_val,
+          result <= max_val
 {
-    if (value < min) {
-        pass(raw(min));
+    if (value < min_val) {
+        pass(min_val);
     }
-    if (value > max) {
-        pass(raw(max));
+    if (value > max_val) {
+        pass(max_val);
     }
-    pass(raw(value));
+    pass(value);
 };
 
 // Test 5: Energy conservation example (Nikola use case)
@@ -55,32 +55,26 @@ func:failsafe = NIL(int32:code) { };
 
 func:main = int32() {
     // Test basic division with contract
-    Result<int32>:r1 = divide(10, 2);
-    if (r1.is_error) {
+    int32:r1 = raw(divide(10, 2));
+    if (r1 != 5) {
         pass(-1);
     }
     
     // Test sqrt with precondition
-    Result<int32>:r2 = sqrt_approx(16);
-    if (r2.is_error) {
+    int32:r2 = raw(sqrt_approx(16));
+    if (r2 != 16) {
         pass(-2);
     }
     
     // Test abs with postcondition
-    Result<int32>:r3 = abs(-5);
-    if (r3.is_error) {
-        pass(-3);
-    }
-    if (r3.value != 5) {
+    int32:r3 = abs(-5);
+    if (r3 != 5) {
         pass(-4);
     }
     
     // Test clamp with both conditions
-    Result<int32>:r4 = raw(clamp(15, 0, 10));
-    if (r4.is_error) {
-        pass(-5);
-    }
-    if (r4.value != 10) {
+    int32:r4 = raw(clamp(15, 0, 10));
+    if (r4 != 10) {
         pass(-6);
     }
     
