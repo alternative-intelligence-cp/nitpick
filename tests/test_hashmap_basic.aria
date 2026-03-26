@@ -1,35 +1,46 @@
-// HashMap Basic Test - Validate two-parameter generic HashMap works
-// Tests: Define HashMap struct with <K,V> parameters
+// HashMap<K,V> Basic Test - Phase 1: Type System
+// Testing that HashMap<K,V> type is recognized and fields are mutable
 
-// HashMap with two type parameters
-struct<K, V>:HashMap = {
-    int64:capacity;
-    int64:length;
-    bool:initialized;
+// FFI declarations for HashMap runtime
+extern func:aria_map_new_simple = wild int8*(int64:key_size, int64:value_size);
+extern func:aria_map_length = int64(wild int8*:map);
+extern func:aria_map_free = void(wild int8*:map);
+
+// Helper to create initialized HashMap
+func:HashMap_int32_int64_new = HashMap<int32, int64>() {
+    HashMap<int32, int64>:map;
+    
+    // Call runtime to create map (key_size=4, value_size=8)
+    map.entries = aria_map_new_simple(4i64, 8i64);
+    map.capacity = 16i64;
+    map.length = 0i64;
+    map.key_size = 4i64;
+    map.value_size = 8i64;
+    map.load_factor = 0.75f32;
+    
+    pass(map);
 };
 
-// HashEntry with two type parameters
-struct<K, V>:HashEntry = {
-    K:key;
-    V:value;
-    bool:occupied;
-};
-
-// Test main - just validate struct declarations compile
 func:main = int32() {
-    // Declare HashMap variables with different type parameter combinations
-    HashMap<int64, int32>:scores;
-    HashMap<string, int64>:users;
-    HashMap<int32, bool>:flags;
+    // Test 1: Create HashMap<int32, int64>
+    HashMap<int32, int64>:scores = raw(HashMap_int32_int64_new());
     
-    // Declare HashEntry variables
-    HashEntry<int64, int32>:score_entry;
-    HashEntry<string, int64>:user_entry;
+    // Test 2: Mutate fields (tests our struct field mutation fix!)
+    scores.length = 42i64;
+    scores.capacity = 128i64;
     
-    pass(0i32);
+    // Test 3: Verify field assignments persisted
+    if (scores.length != 42i64) {
+        pass(1i32);  // FAIL: length should be 42
+    }
+    
+    if (scores.capacity != 128i64) {
+        pass(2i32);  // FAIL: capacity should be 128
+    }
+    
+    pass(0i32);  // SUCCESS!
 };
 
-
-func:failsafe = NIL(int32:err_code) {
-    // Error handling
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
 };
