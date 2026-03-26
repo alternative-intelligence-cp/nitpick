@@ -360,6 +360,10 @@ public:
     // Public for testing: Substitute types in an AST node
     void substituteTypes(ASTNode* node, const TypeSubstitution& substitution);
     
+    // Recursively substitute type parameters in a type AST node
+    // Handles SimpleType (*T, T), GenericType (Pair<T>), and nested types
+    ASTNodePtr substituteTypeNode(ASTNode* typeNode, const TypeSubstitution& substitution);
+    
 private:
     GenericResolver* resolver;
     TypeSystem* typeSystem;
