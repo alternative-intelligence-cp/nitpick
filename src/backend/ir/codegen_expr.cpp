@@ -3236,8 +3236,19 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
             }
             
             // Return the alloca pointer itself (the ADDRESS), not the loaded value
-            std::cerr << "[DEBUG] Address-of operator @ for variable: " << ident->name << std::endl;
-            return it->second;
+            llvm::Value* address = it->second;
+            
+            // If the value is NOT an alloca (e.g., a function parameter stored as
+            // a raw SSA value), spill it to a temporary alloca so we have a valid
+            // memory address to return.
+            if (!llvm::isa<llvm::AllocaInst>(address)) {
+                llvm::AllocaInst* tmp = builder.CreateAlloca(
+                    address->getType(), nullptr, ident->name + ".addr");
+                builder.CreateStore(address, tmp);
+                return tmp;
+            }
+            
+            return address;
         }
         
         // Case 2: Array element - @arr[i]

@@ -14,6 +14,7 @@
 #include <llvm/IR/DebugLoc.h>       // For debug locations
 #include <llvm/BinaryFormat/Dwarf.h>  // For DWARF constants
 #include <iostream>  // For debug output
+#include <sstream>   // For istringstream (generic name mangling)
 #include <cassert>
 
 namespace aria {
@@ -440,6 +441,14 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             // Struct types with fields
             // Reference: research_015
             auto* struct_type = static_cast<StructType*>(aria_type);
+            
+            // Check if this struct type already exists in the LLVM module
+            // (avoids creating duplicate types when called from pre-pass and main-pass)
+            llvm::StructType* existing = llvm::StructType::getTypeByName(context, struct_type->getName());
+            if (existing) {
+                llvm_type = existing;
+                break;
+            }
             
             // Map all field types
             std::vector<llvm::Type*> field_types;
@@ -1864,10 +1873,45 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     
     // Check for custom types (structs, unions, etc.) if TypeSystem is available
     if (type_system) {
-        // Look up struct type
+        // Look up struct type by exact name first
         Type* aria_type = type_system->getStructType(type_name);
         if (aria_type) {
             return mapType(aria_type);
+        }
+        
+        // Handle generic type names: "Name<arg1, arg2>" -> mangled "Name_arg1_arg2"
+        // GenericType::toString() produces e.g. "Vec<int8>" but the type checker
+        // registers the struct under the mangled name "Vec_int8" in structCache.
+        size_t angle_pos = type_name.find('<');
+        if (angle_pos != std::string::npos && type_name.back() == '>') {
+            std::string baseName = type_name.substr(0, angle_pos);
+            std::string argsStr = type_name.substr(angle_pos + 1, type_name.size() - angle_pos - 2);
+            
+            // Build mangled name: baseName_arg1_arg2_...
+            std::string mangledName = baseName;
+            size_t start = 0;
+            int depth = 0;
+            for (size_t i = 0; i <= argsStr.size(); i++) {
+                if (i == argsStr.size() || (argsStr[i] == ',' && depth == 0)) {
+                    std::string arg = argsStr.substr(start, i - start);
+                    // Trim whitespace
+                    arg.erase(0, arg.find_first_not_of(" \t"));
+                    arg.erase(arg.find_last_not_of(" \t") + 1);
+                    if (!arg.empty()) {
+                        mangledName += "_" + arg;
+                    }
+                    start = i + 1;
+                } else if (argsStr[i] == '<') {
+                    depth++;
+                } else if (argsStr[i] == '>') {
+                    depth--;
+                }
+            }
+            
+            aria_type = type_system->getStructType(mangledName);
+            if (aria_type) {
+                return mapType(aria_type);
+            }
         }
     }
 
@@ -3861,6 +3905,27 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 } else {
                     // Not a vector or Result, try struct then primitive
                     aria_type = type_system->getStructType(actualTypeName);
+                    // If direct lookup fails, try mangled generic name: Vec<int8> -> Vec_int8
+                    if (!aria_type && actualTypeName.find('<') != std::string::npos) {
+                        size_t lt = actualTypeName.find('<');
+                        std::string baseName = actualTypeName.substr(0, lt);
+                        std::string argsStr = actualTypeName.substr(lt + 1);
+                        if (!argsStr.empty() && argsStr.back() == '>')
+                            argsStr.pop_back();
+                        // Build mangled name: Base_arg1_arg2
+                        std::string mangledName = baseName;
+                        std::istringstream argStream(argsStr);
+                        std::string arg;
+                        while (std::getline(argStream, arg, ',')) {
+                            // Trim whitespace
+                            size_t s = arg.find_first_not_of(" \t");
+                            size_t e = arg.find_last_not_of(" \t");
+                            if (s != std::string::npos)
+                                arg = arg.substr(s, e - s + 1);
+                            mangledName += "_" + arg;
+                        }
+                        aria_type = type_system->getStructType(mangledName);
+                    }
                     if (!aria_type) {
                         aria_type = type_system->getPrimitiveType(actualTypeName);
                     }
@@ -4873,13 +4938,11 @@ skip_comparison:
                             if (valSt->getNumElements() == 2 && valSt->getElementType(0)->isIntegerTy(1)) {
                                 // Optional wrapper { i1, T } — extract field 1 (the value)
                                 value = builder.CreateExtractValue(value, {1}, "unwrap_optional_for_pass");
-                                std::cerr << "[DEBUG] pass(): unwrapped optional { i1, T } to raw value" << std::endl;
                             } else if (valSt->getNumElements() == 3 &&
                                        valSt->getElementType(1)->isPointerTy() &&
                                        valSt->getElementType(2)->isIntegerTy(8)) {
                                 // Result wrapper { T, ptr, i8 } — extract field 0
                                 value = builder.CreateExtractValue(value, {0}, "unwrap_result_for_pass");
-                                std::cerr << "[DEBUG] pass(): unwrapped Result<T> to raw value" << std::endl;
                             }
                         }
                         if (value->getType()->isIntegerTy() && valueFieldType->isIntegerTy()) {
@@ -4897,6 +4960,35 @@ skip_comparison:
                             std::string sn = fldStruct->getName().str();
                             if (sn.find("struct.int") == 0 || sn.find("struct.uint") == 0) {
                                 value = promoteToLBIMStruct(value, valueFieldType);
+                            }
+                            // Optional wrapping: value is T, field expects { i1, T }
+                            else if (fldStruct->getNumElements() == 2 &&
+                                     fldStruct->getElementType(0)->isIntegerTy(1)) {
+                                llvm::Type* innerType = fldStruct->getElementType(1);
+                                llvm::Value* castVal = value;
+                                if (value->getType() != innerType) {
+                                    if (value->getType()->isIntegerTy() && innerType->isIntegerTy()) {
+                                        castVal = builder.CreateIntCast(value, innerType, true, "opt_wrap_cast");
+                                    }
+                                }
+                                llvm::Value* opt = llvm::UndefValue::get(fldStruct);
+                                opt = builder.CreateInsertValue(opt, builder.getTrue(), 0, "opt.has_val");
+                                opt = builder.CreateInsertValue(opt, castVal, 1, "opt.val");
+                                value = opt;
+                            }
+                        }
+                        // Optional wrapping for non-integer types (pointers, floats)
+                        else if (!value->getType()->isIntegerTy() && valueFieldType->isStructTy()) {
+                            llvm::StructType* fldStruct = llvm::cast<llvm::StructType>(valueFieldType);
+                            if (fldStruct->getNumElements() == 2 &&
+                                fldStruct->getElementType(0)->isIntegerTy(1)) {
+                                llvm::Type* innerType = fldStruct->getElementType(1);
+                                if (value->getType() == innerType) {
+                                    llvm::Value* opt = llvm::UndefValue::get(fldStruct);
+                                    opt = builder.CreateInsertValue(opt, builder.getTrue(), 0, "opt.has_val");
+                                    opt = builder.CreateInsertValue(opt, value, 1, "opt.val");
+                                    value = opt;
+                                }
                             }
                         }
                     }
@@ -5843,6 +5935,17 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 // Return the alloca pointer itself (the ADDRESS), not the loaded value
                 llvm::Value* address = it->second;
+                
+                // If the value is NOT an alloca (e.g., a function parameter stored as
+                // a raw SSA value), we need to spill it to a temporary alloca so that
+                // the address-of operator has a valid memory location to return.
+                if (!llvm::isa<llvm::AllocaInst>(address)) {
+                    llvm::AllocaInst* tmp = builder.CreateAlloca(
+                        address->getType(), nullptr, ident->name + ".addr");
+                    builder.CreateStore(address, tmp);
+                    return tmp;
+                }
+                
                 return address;
             }
             
@@ -6626,7 +6729,36 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         member->member + ".ptr"
                     );
                     
+                    // Type coercion for struct field assignment
+                    llvm::Type* expected_field_type = llvm::cast<llvm::StructType>(llvm_struct_type)->getElementType(field_index);
+                    rhs->getType()->print(llvm::errs());
+                    std::cerr << std::endl;
+                    expected_field_type->print(llvm::errs());
+                    std::cerr << std::endl;
+                    if (rhs->getType() != expected_field_type) {
+                        // Unwrap optional {i1, T} when field expects T
+                        if (rhs->getType()->isStructTy()) {
+                            auto* rhs_st = llvm::cast<llvm::StructType>(rhs->getType());
+                            rhs_st->getElementType(1)->print(llvm::errs());
+                            std::cerr << std::endl;
+                            if (rhs_st->getNumElements() == 2 &&
+                                rhs_st->getElementType(0)->isIntegerTy(1) &&
+                                rhs_st->getElementType(1) == expected_field_type) {
+                                rhs = builder.CreateExtractValue(rhs, 1, "unwrap.optional");
+                            }
+                        }
+                        // Integer/float casts
+                        if (rhs->getType() != expected_field_type) {
+                            if (rhs->getType()->isIntegerTy() && expected_field_type->isIntegerTy())
+                                rhs = builder.CreateIntCast(rhs, expected_field_type, true, "field.icast");
+                            else if (rhs->getType()->isFloatingPointTy() && expected_field_type->isFloatingPointTy())
+                                rhs = builder.CreateFPCast(rhs, expected_field_type, "field.fpcast");
+                        }
+                    }
+                    
                     // Store the new value
+                    rhs->getType()->print(llvm::errs());
+                    std::cerr << std::endl;
                     builder.CreateStore(rhs, field_ptr);
                     
                     // Assignment expression returns the assigned value
