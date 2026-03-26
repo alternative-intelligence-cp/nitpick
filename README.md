@@ -1,6 +1,6 @@
-# Aria Programming Language v0.2.15
+# Aria Programming Language v0.2.21
 
-![Aria Logo](/pics/AriaLogocompressed.png)
+![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![CI](https://github.com/alternative-intelligence-cp/aria/actions/workflows/ci.yml/badge.svg)](https://github.com/alternative-intelligence-cp/aria/actions/workflows/ci.yml)
 
