@@ -64,6 +64,15 @@ extern "C" {
     void LLVMInitializeNVPTXAsmPrinter();
 }
 
+// WASM Backend Support (Phase 2: WebAssembly Target)
+extern "C" {
+    void LLVMInitializeWebAssemblyTarget();
+    void LLVMInitializeWebAssemblyTargetInfo();
+    void LLVMInitializeWebAssemblyTargetMC();
+    void LLVMInitializeWebAssemblyAsmPrinter();
+    void LLVMInitializeWebAssemblyAsmParser();
+}
+
 // LLVM New Pass Manager (for coroutine lowering)
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
@@ -78,7 +87,7 @@ extern "C" {
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 2
 #define ARIA_VERSION_PATCH 11
-#define ARIA_VERSION "0.2.12"
+#define ARIA_VERSION "0.2.13"
 
 // Compiler options
 struct CompilerOptions {
@@ -108,6 +117,11 @@ struct CompilerOptions {
     std::string gpu_arch = "sm_50";   // --gpu-arch=sm_XX: CUDA compute capability
     int gpu_opt_level = 3;            // --gpu-opt=<0-3>: GPU optimization (default O3)
     bool enable_gpu_debug = false;    // --gpu-debug: Embed debug info in PTX
+    
+    // WASM Backend Options (WebAssembly)
+    bool emit_wasm = false;           // --emit-wasm: Generate WebAssembly
+    bool wasm_standalone = false;     // --emit-wasm without linking (just .o)
+    std::string wasm_target = "wasm32-wasi";  // WASM target triple
 };
 
 /**
@@ -120,6 +134,18 @@ void initialize_gpu_targets() {
     LLVMInitializeNVPTXTargetInfo();
     LLVMInitializeNVPTXTargetMC();
     LLVMInitializeNVPTXAsmPrinter();
+}
+
+/**
+ * Initialize WASM targets (WebAssembly)
+ * Phase 2: WebAssembly Target Initialization
+ */
+void initialize_wasm_targets() {
+    LLVMInitializeWebAssemblyTarget();
+    LLVMInitializeWebAssemblyTargetInfo();
+    LLVMInitializeWebAssemblyTargetMC();
+    LLVMInitializeWebAssemblyAsmPrinter();
+    LLVMInitializeWebAssemblyAsmParser();
 }
 
 /**
@@ -181,7 +207,15 @@ void print_help() {
     std::cout << "Examples (GPU):\n";
     std::cout << "  ariac physics.aria --emit-ptx -o physics.ptx\n";
     std::cout << "  ariac kernel.aria --emit-ptx --gpu-arch=sm_86 -o kernel.ptx\n";
-    std::cout << "  ariac compute.aria --target=gpu --gpu-opt=3 -o compute.ptx\n";
+    std::cout << "  ariac compute.aria --target=gpu --gpu-opt=3 -o compute.ptx\n\n";
+    std::cout << "WASM Target Options (WebAssembly):\n";
+    std::cout << "  --emit-wasm       Compile to WebAssembly (.wasm)\n";
+    std::cout << "  --target=wasm32-wasi\n";
+    std::cout << "                    Target wasm32-wasi (WASI system interface)\n\n";
+    std::cout << "Examples (WASM):\n";
+    std::cout << "  ariac hello.aria --emit-wasm -o hello.wasm\n";
+    std::cout << "  ariac program.aria --target=wasm32-wasi -o program.wasm\n";
+    std::cout << "  wasmtime hello.wasm                    # Run with wasmtime\n";
 }
 
 /**
@@ -225,13 +259,21 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.emit_deps = true;
         } else if (arg == "--emit-ptx") {
             opts.emit_ptx = true;
+        } else if (arg == "--emit-wasm") {
+            opts.emit_wasm = true;
         } else if (arg.substr(0, 9) == "--target=") {
             opts.target_arch = arg.substr(9);
             if (opts.target_arch == "gpu") {
                 opts.emit_ptx = true;  // GPU target implies PTX emission
+            } else if (opts.target_arch == "wasm32-wasi" || opts.target_arch == "wasm32") {
+                opts.emit_wasm = true;
+                opts.wasm_target = "wasm32-wasi";
+            } else if (opts.target_arch == "wasm32-unknown-unknown") {
+                opts.emit_wasm = true;
+                opts.wasm_target = "wasm32-unknown-unknown";
             } else if (opts.target_arch != "cpu" && opts.target_arch != "gpu+cpu") {
                 std::cerr << "Error: Invalid target architecture: " << opts.target_arch << "\n";
-                std::cerr << "Valid targets: cpu, gpu, gpu+cpu\n";
+                std::cerr << "Valid targets: cpu, gpu, gpu+cpu, wasm32-wasi, wasm32-unknown-unknown\n";
                 return false;
             }
         } else if (arg.substr(0, 11) == "--gpu-arch=") {
@@ -321,6 +363,8 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".s";
         } else if (opts.emit_ptx) {
             opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".ptx";
+        } else if (opts.emit_wasm) {
+            opts.output_file = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.')) + ".wasm";
         } else if (opts.build_shared) {
             std::string base = opts.input_files[0].substr(0, opts.input_files[0].find_last_of('.'));
             opts.output_file = "lib" + base + ".so";
@@ -1297,6 +1341,316 @@ bool emit_ptx(
 }
 
 /**
+ * Emit WebAssembly object file (.o in wasm32 format)
+ *
+ * Uses LLVM's WebAssembly backend to compile the module to a relocatable
+ * WASM object file. This can then be linked with wasm-ld + WASI runtime.
+ *
+ * @param module LLVM module to compile
+ * @param output_file Output object file path
+ * @param target_triple WASM target triple (wasm32-wasi or wasm32-unknown-unknown)
+ * @param opt_level Optimization level (0-3)
+ * @return true on success
+ */
+bool emit_wasm_object(
+    llvm::Module* module,
+    const std::string& output_file,
+    const std::string& target_triple = "wasm32-wasi",
+    int opt_level = 2
+) {
+    // Set target triple for WebAssembly
+    module->setTargetTriple(target_triple);
+
+    // WASI expects __main_argc_argv instead of main (crt1.o -> __main_void -> __main_argc_argv)
+    if (target_triple.find("wasi") != std::string::npos) {
+        if (auto* main_fn = module->getFunction("main")) {
+            main_fn->setName("__main_argc_argv");
+        }
+    }
+
+    // Lookup WebAssembly target
+    std::string error;
+    auto target = llvm::TargetRegistry::lookupTarget("wasm32", error);
+
+    if (!target) {
+        std::cerr << "Error: WebAssembly target not found: " << error << "\n";
+        std::cerr << "Make sure LLVM was built with WebAssembly backend enabled\n";
+        std::cerr << "Check: llvm-config --targets-built | grep WebAssembly\n";
+        return false;
+    }
+
+    // Configure target machine for WASM
+    std::string cpu = "generic";
+    std::string features = "+mutable-globals,+sign-ext";  // Common WASM features
+    llvm::TargetOptions target_opts;
+
+    // Map optimization level
+    llvm::CodeGenOptLevel codegenOpt;
+    llvm::OptimizationLevel llvm_opt;
+    switch (opt_level) {
+        case 0:
+            codegenOpt = llvm::CodeGenOptLevel::None;
+            llvm_opt = llvm::OptimizationLevel::O0;
+            break;
+        case 1:
+            codegenOpt = llvm::CodeGenOptLevel::Less;
+            llvm_opt = llvm::OptimizationLevel::O1;
+            break;
+        case 3:
+            codegenOpt = llvm::CodeGenOptLevel::Aggressive;
+            llvm_opt = llvm::OptimizationLevel::O3;
+            break;
+        case 2:
+        default:
+            codegenOpt = llvm::CodeGenOptLevel::Default;
+            llvm_opt = llvm::OptimizationLevel::O2;
+            break;
+    }
+
+    // Create WebAssembly target machine
+    auto target_machine = target->createTargetMachine(
+        target_triple,
+        cpu,
+        features,
+        target_opts,
+        llvm::Reloc::PIC_,    // Position-independent code (required for WASM)
+        std::nullopt,          // Code model
+        codegenOpt
+    );
+
+    if (!target_machine) {
+        std::cerr << "Error: Could not create WebAssembly target machine\n";
+        return false;
+    }
+
+    // Set data layout for wasm32
+    module->setDataLayout(target_machine->createDataLayout());
+
+    // Run optimization passes
+    if (opt_level > 0) {
+        llvm::LoopAnalysisManager LAM;
+        llvm::FunctionAnalysisManager FAM;
+        llvm::CGSCCAnalysisManager CGAM;
+        llvm::ModuleAnalysisManager MAM;
+
+        llvm::PassBuilder PB(target_machine);
+        PB.registerModuleAnalyses(MAM);
+        PB.registerCGSCCAnalyses(CGAM);
+        PB.registerFunctionAnalyses(FAM);
+        PB.registerLoopAnalyses(LAM);
+        PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+        llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(llvm_opt);
+        MPM.run(*module, MAM);
+    }
+
+    // Open output file
+    std::error_code ec;
+    llvm::raw_fd_ostream out(output_file, ec, llvm::sys::fs::OF_None);
+
+    if (ec) {
+        std::cerr << "Error: Could not open WASM output file: " << output_file << "\n";
+        std::cerr << "  " << ec.message() << "\n";
+        return false;
+    }
+
+    // Emit WASM object file
+    llvm::legacy::PassManager pass;
+    auto file_type = llvm::CodeGenFileType::ObjectFile;
+
+    if (target_machine->addPassesToEmitFile(pass, out, nullptr, file_type)) {
+        std::cerr << "Error: WebAssembly target can't emit object file\n";
+        return false;
+    }
+
+    pass.run(*module);
+    out.flush();
+
+    return true;
+}
+
+/**
+ * Check LLVM module for WASM-incompatible features and emit warnings.
+ */
+void check_wasm_compatibility(llvm::Module* module, bool verbose) {
+    // Functions that are not available in WASM
+    static const char* unsupported_prefixes[] = {
+        "aria_thread_", "aria_mutex_", "aria_rwlock_", "aria_condvar_",
+        "aria_channel_", "aria_threadpool_", "aria_atomic_",
+        "aria_async_", "aria_io_uring_", "aria_event_loop_",
+        "aria_process_", "aria_fork", "aria_exec", "aria_signal_",
+        "aria_pipe_", "aria_mmap", "aria_mprotect",
+        "aria_ipc_", "aria_shmem_",
+        "aria_avx_", "aria_simd_",
+        nullptr
+    };
+
+    int warning_count = 0;
+    for (auto& func : module->functions()) {
+        if (!func.isDeclaration()) continue;
+        std::string name = func.getName().str();
+        for (int i = 0; unsupported_prefixes[i]; i++) {
+            if (name.find(unsupported_prefixes[i]) == 0) {
+                std::cerr << "Warning: WASM target does not support '" << name
+                          << "' — this call will fail at runtime\n";
+                warning_count++;
+                break;
+            }
+        }
+    }
+    if (warning_count > 0) {
+        std::cerr << "Warning: " << warning_count
+                  << " WASM-incompatible function(s) detected. "
+                  << "Threading, async I/O, process management, and SIMD "
+                  << "are not available in WebAssembly.\n";
+    } else if (verbose) {
+        std::cout << "WASM compatibility check passed — no incompatible features detected\n";
+    }
+}
+
+/**
+ * Link WASM object file with wasm-ld + WASI runtime to produce final .wasm
+ *
+ * @param object_file Input WASM object file
+ * @param output_file Output .wasm file
+ * @param opts Compiler options
+ * @return true on success
+ */
+bool link_wasm(const std::string& object_file, const std::string& output_file, const CompilerOptions& opts) {
+    // Get compiler executable directory for runtime library search
+    std::string exe_dir;
+    char exe_path[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path)-1);
+    if (len != -1) {
+        exe_path[len] = '\0';
+        std::string full_exe_path(exe_path);
+        size_t last_slash = full_exe_path.find_last_of('/');
+        if (last_slash != std::string::npos) {
+            exe_dir = full_exe_path.substr(0, last_slash);
+        }
+    }
+
+    // Find the WASM runtime library
+    std::vector<std::string> runtime_search = {
+        "build/libaria_runtime_wasm.a",
+        "../build/libaria_runtime_wasm.a",
+        "libaria_runtime_wasm.a",
+        "/usr/local/lib/libaria_runtime_wasm.a",
+        "/usr/lib/libaria_runtime_wasm.a"
+    };
+    if (!exe_dir.empty()) {
+        runtime_search.insert(runtime_search.begin(), exe_dir + "/libaria_runtime_wasm.a");
+    }
+
+    std::string wasm_runtime;
+    for (const auto& path : runtime_search) {
+        if (access(path.c_str(), F_OK) == 0) {
+            wasm_runtime = path;
+            break;
+        }
+    }
+
+    // WASI libc sysroot locations
+    std::string wasi_crt1;
+    std::string wasi_libc;
+    std::vector<std::string> wasi_sysroot_paths = {
+        "/usr/lib/wasm32-wasi",
+        "/opt/wasi-sdk/share/wasi-sysroot/lib/wasm32-wasi"
+    };
+
+    std::string wasi_lib_dir;
+    for (const auto& dir : wasi_sysroot_paths) {
+        std::string crt1 = dir + "/crt1.o";
+        std::string libc = dir + "/libc.a";
+        if (access(crt1.c_str(), F_OK) == 0 && access(libc.c_str(), F_OK) == 0) {
+            wasi_lib_dir = dir;
+            wasi_crt1 = crt1;
+            wasi_libc = libc;
+            break;
+        }
+    }
+
+    if (wasi_lib_dir.empty()) {
+        std::cerr << "Error: WASI libc sysroot not found\n";
+        std::cerr << "Install wasi-libc: sudo apt install wasi-libc\n";
+        std::cerr << "  Or install WASI SDK from https://github.com/WebAssembly/wasi-sdk\n";
+        std::cerr << "  Searched:\n";
+        for (const auto& p : wasi_sysroot_paths) {
+            std::cerr << "    " << p << "\n";
+        }
+        return false;
+    }
+
+    // Build wasm-ld command
+    std::vector<std::string> link_args;
+    link_args.push_back("wasm-ld");
+
+    // WASI CRT startup
+    link_args.push_back(wasi_crt1);
+
+    // Input object file
+    link_args.push_back(object_file);
+
+    // WASM runtime library
+    if (!wasm_runtime.empty()) {
+        link_args.push_back(wasm_runtime);
+    } else {
+        std::cerr << "Warning: Could not find libaria_runtime_wasm.a, linking without WASM runtime\n";
+    }
+
+    // WASI libc
+    link_args.push_back(wasi_libc);
+
+    // Library search path
+    link_args.push_back("-L" + wasi_lib_dir);
+
+    // Allow undefined symbols that WASI will provide
+    // (some runtime functions may reference WASI imports)
+    
+    // Output
+    link_args.push_back("-o");
+    link_args.push_back(output_file);
+
+    if (opts.verbose) {
+        std::cout << "[WASM-LD]";
+        for (const auto& a : link_args) std::cout << " " << a;
+        std::cout << "\n";
+    }
+
+    // Invoke wasm-ld
+    std::vector<char*> argv_vec;
+    for (auto& s : link_args) argv_vec.push_back(const_cast<char*>(s.c_str()));
+    argv_vec.push_back(nullptr);
+
+    pid_t pid = fork();
+    if (pid == -1) {
+        std::cerr << "ariac: fork failed: " << strerror(errno) << "\n";
+        return false;
+    }
+    if (pid == 0) {
+        execvp("wasm-ld", argv_vec.data());
+        std::cerr << "ariac: execvp(wasm-ld): " << strerror(errno) << "\n";
+        std::cerr << "Install wasm-ld: sudo apt install lld\n";
+        _exit(127);
+    }
+    int wstatus = 0;
+    if (waitpid(pid, &wstatus, 0) == -1) {
+        std::cerr << "ariac: waitpid failed: " << strerror(errno) << "\n";
+        return false;
+    }
+
+    if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0) {
+        std::cerr << "[WASM] Generated: " << output_file << "\n";
+        std::cerr << "[WASM] Target: " << opts.wasm_target << "\n";
+        std::cerr << "[WASM] Run with: wasmtime " << output_file << "\n";
+        return true;
+    }
+
+    std::cerr << "Error: wasm-ld linking failed (exit code " << WEXITSTATUS(wstatus) << ")\n";
+    return false;
+}
+
+/**
  * Link object file to executable
  */
 bool link_executable(const std::string& object_file, const std::string& output_file, const CompilerOptions& opts) {
@@ -1422,6 +1776,9 @@ int main(int argc, char** argv) {
     // Initialize GPU targets (NVPTX for CUDA) - Phase 1
     initialize_gpu_targets();
     
+    // Initialize WASM targets (WebAssembly) - Phase 2
+    initialize_wasm_targets();
+    
     // Parse command-line arguments
     CompilerOptions opts;
     if (!parse_arguments(argc, argv, opts)) {
@@ -1439,6 +1796,9 @@ int main(int argc, char** argv) {
             std::cout << "Target: GPU (NVIDIA CUDA/PTX)\n";
             std::cout << "GPU Architecture: " << opts.gpu_arch << "\n";
             std::cout << "GPU Optimization: O" << opts.gpu_opt_level << "\n";
+        }
+        if (opts.emit_wasm) {
+            std::cout << "Target: WebAssembly (" << opts.wasm_target << ")\n";
         }
     }
 
@@ -1579,6 +1939,21 @@ int main(int argc, char** argv) {
         }
         if (opts.verbose) {
             std::cout << "PTX assembly written to: " << opts.output_file << "\n";
+        }
+    } else if (opts.emit_wasm) {
+        // WASM backend - emit WebAssembly binary
+        check_wasm_compatibility(final_module, opts.verbose);
+        std::string wasm_obj = opts.output_file + ".o";
+        if (!emit_wasm_object(final_module, wasm_obj, opts.wasm_target, opts.opt_level)) {
+            return 1;
+        }
+        if (!link_wasm(wasm_obj, opts.output_file, opts)) {
+            std::remove(wasm_obj.c_str());
+            return 1;
+        }
+        std::remove(wasm_obj.c_str());
+        if (opts.verbose) {
+            std::cout << "WebAssembly binary written to: " << opts.output_file << "\n";
         }
     } else if (opts.emit_asm) {
         if (!emit_assembly(final_module, opts.output_file, opts.debug_info)) {

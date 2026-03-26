@@ -1,0 +1,24 @@
+// WASM Test 3: String operations
+// Expected output:
+// Hello, WASM World!
+// Aria compiles to WebAssembly!
+// PASS: string concat
+
+func:main = int32() {
+    // Basic concat
+    string:greeting = string_concat("Hello, ", "WASM World!");
+    println(greeting);
+
+    // Multi-step concat
+    string:a = "Aria";
+    string:b = " compiles to ";
+    string:c = "WebAssembly!";
+    string:ab = string_concat(a, b);
+    string:abc = string_concat(ab, c);
+    println(abc);
+
+    println("PASS: string concat");
+    pass(0);
+};
+
+func:failsafe = NIL(int32:err_code) {};
