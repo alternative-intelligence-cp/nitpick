@@ -7565,10 +7565,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             "aria_fix256_add", funcType);
                         return builder.CreateCall(addFunc, {L, R}, "fix256.add");
                     }
-                    // Float addition: use FAdd for floating-point types
-                    if (L->getType()->isFloatingPointTy()) {
+                    // Float addition: use FAdd for floating-point types (scalar or SIMD vector)
+                    if (L->getType()->getScalarType()->isFloatingPointTy()) {
                         // Harmonize float types (e.g., float + double → double)
-                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->getScalarType()->isFloatingPointTy()) {
                             if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
                                 R = builder.CreateFPExt(R, L->getType(), "add_fpext");
                             else
@@ -7700,10 +7700,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             "aria_fix256_sub", funcType);
                         return builder.CreateCall(subFunc, {L, R}, "fix256.sub");
                     }
-                    // Float subtraction: use FSub for floating-point types
-                    if (L->getType()->isFloatingPointTy()) {
+                    // Float subtraction: use FSub for floating-point types (scalar or SIMD vector)
+                    if (L->getType()->getScalarType()->isFloatingPointTy()) {
                         // Harmonize float types (e.g., float - double → double)
-                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->getScalarType()->isFloatingPointTy()) {
                             if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
                                 R = builder.CreateFPExt(R, L->getType(), "sub_fpext");
                             else
@@ -7786,10 +7786,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             "aria_fix256_mul", funcType);
                         return builder.CreateCall(mulFunc, {L, R}, "fix256.mul");
                     }
-                    // Float multiplication: use FMul for floating-point types
-                    if (L->getType()->isFloatingPointTy()) {
+                    // Float multiplication: use FMul for floating-point types (scalar or SIMD vector)
+                    if (L->getType()->getScalarType()->isFloatingPointTy()) {
                         // Harmonize float types (e.g., float * double → double)
-                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->getScalarType()->isFloatingPointTy()) {
                             if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
                                 R = builder.CreateFPExt(R, L->getType(), "mul_fpext");
                             else
@@ -7878,10 +7878,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             "aria_fix256_div", funcType);
                         return builder.CreateCall(divFunc, {L, R}, "fix256.div");
                     }
-                    // Float division: use FDiv for floating-point types
-                    if (L->getType()->isFloatingPointTy()) {
+                    // Float division: use FDiv for floating-point types (scalar or SIMD vector)
+                    if (L->getType()->getScalarType()->isFloatingPointTy()) {
                         // Harmonize float types (e.g., float / double → double)
-                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->getScalarType()->isFloatingPointTy()) {
                             if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
                                 R = builder.CreateFPExt(R, L->getType(), "div_fpext");
                             else
@@ -8080,7 +8080,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             }
                         }
                         // Promote to wider float type when mixing float/double
-                        else if (L->getType()->isFloatingPointTy() && R->getType()->isFloatingPointTy()) {
+                        else if (L->getType()->getScalarType()->isFloatingPointTy() && R->getType()->getScalarType()->isFloatingPointTy()) {
                             unsigned lBits = L->getType()->getScalarSizeInBits();
                             unsigned rBits = R->getType()->getScalarSizeInBits();
                             if (lBits > rBits) {
@@ -8090,8 +8090,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             }
                         }
                     }
-                    // Use FCmp for floating point, ICmp for integers
-                    if (L->getType()->isFloatingPointTy()) {
+                    // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers
+                    if (L->getType()->getScalarType()->isFloatingPointTy()) {
                         return builder.CreateFCmpOEQ(L, R, "eqtmp");
                     } else {
                         return builder.CreateICmpEQ(L, R, "eqtmp");
@@ -8228,9 +8228,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             return builder.CreateNot(eq, "str.ne");
                         }
                     }
-                    // Use FCmp for floating point, ICmp for integers
-                    if (L->getType()->isFloatingPointTy()) {
-                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                    // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers
+                    if (L->getType()->getScalarType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->getScalarType()->isFloatingPointTy()) {
                             if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
                                 R = builder.CreateFPExt(R, L->getType(), "ne_fpext");
                             else
@@ -8304,9 +8304,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             }
                         }
                     }
-                    // Use FCmp for floating point, ICmp for integers
-                    if (L->getType()->isFloatingPointTy()) {
-                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                    // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers
+                    if (L->getType()->getScalarType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->getScalarType()->isFloatingPointTy()) {
                             if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
                                 R = builder.CreateFPExt(R, L->getType(), "lt_fpext");
                             else
@@ -8384,9 +8384,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             }
                         }
                     }
-                    // Use FCmp for floating point, ICmp for integers
-                    if (L->getType()->isFloatingPointTy()) {
-                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                    // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers
+                    if (L->getType()->getScalarType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->getScalarType()->isFloatingPointTy()) {
                             if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
                                 R = builder.CreateFPExt(R, L->getType(), "le_fpext");
                             else
@@ -8465,9 +8465,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             }
                         }
                     }
-                    // Use FCmp for floating point, ICmp for integers
-                    if (L->getType()->isFloatingPointTy()) {
-                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                    // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers
+                    if (L->getType()->getScalarType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->getScalarType()->isFloatingPointTy()) {
                             if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
                                 R = builder.CreateFPExt(R, L->getType(), "gt_fpext");
                             else
@@ -8545,9 +8545,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             }
                         }
                     }
-                    // Use FCmp for floating point, ICmp for integers
-                    if (L->getType()->isFloatingPointTy()) {
-                        if (L->getType() != R->getType() && R->getType()->isFloatingPointTy()) {
+                    // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers
+                    if (L->getType()->getScalarType()->isFloatingPointTy()) {
+                        if (L->getType() != R->getType() && R->getType()->getScalarType()->isFloatingPointTy()) {
                             if (L->getType()->getScalarSizeInBits() > R->getType()->getScalarSizeInBits())
                                 R = builder.CreateFPExt(R, L->getType(), "ge_fpext");
                             else
