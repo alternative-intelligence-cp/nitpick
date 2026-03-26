@@ -563,21 +563,23 @@ bool BorrowChecker::checkBorrowRules(const std::string& host, bool is_mutable, A
         // Requesting mutable borrow
         // Error if ANY loans exist (mutable or immutable)
         const Loan& first = loans[0];
-        addError("Cannot borrow '" + host + "' as mutable because it is already borrowed",
+        addErrorWithSuggestion("Cannot borrow '" + host + "' as mutable because it is already borrowed",
                 node,
                 "Existing " + std::string(first.is_mutable ? "mutable" : "immutable") + 
                 " borrow by '" + first.borrower + "' created here",
-                first.creation_line, first.creation_column);
+                first.creation_line, first.creation_column,
+                "hint: consider borrowing immutably with '$" + host + "', or limit the existing borrow's scope");
         return false;
     } else {
         // Requesting immutable borrow
         // Error if a mutable loan exists
         for (const auto& loan : loans) {
             if (loan.is_mutable) {
-                addError("Cannot borrow '" + host + "' as immutable because it is already borrowed as mutable",
+                addErrorWithSuggestion("Cannot borrow '" + host + "' as immutable because it is already borrowed as mutable",
                         node,
                         "Mutable borrow by '" + loan.borrower + "' created here",
-                        loan.creation_line, loan.creation_column);
+                        loan.creation_line, loan.creation_column,
+                        "hint: end the mutable borrow before creating an immutable one, or clone the value");
                 return false;
             }
         }
@@ -669,7 +671,8 @@ void BorrowChecker::recordWildFree(const std::string& var, ASTNode* node) {
     }
     
     if (it->second == WildState::FREED) {
-        addError("Double free of variable '" + var + "' (already freed)", node);
+        addErrorWithSuggestion("Double free of variable '" + var + "' (already freed)", node,
+                "hint: remove the duplicate free(), or set '" + var + "' to null after the first free");
         return;
     }
     
@@ -692,15 +695,18 @@ bool BorrowChecker::checkWildUse(const std::string& var, ASTNode* node) {
 
     switch (it->second) {
         case WildState::FREED:
-            addError("Use after free: variable '" + var + "' was already freed", node);
+            addErrorWithSuggestion("Use after free: variable '" + var + "' was already freed", node,
+                "hint: do not use '" + var + "' after calling free() on it");
             return false;
 
         case WildState::MOVED:
-            addError("Use after move: variable '" + var + "' was moved", node);
+            addErrorWithSuggestion("Use after move: variable '" + var + "' was moved", node,
+                "hint: clone the value before moving if you need it afterward");
             return false;
 
         case WildState::UNINITIALIZED:
-            addError("Use of uninitialized wild pointer '" + var + "'", node);
+            addErrorWithSuggestion("Use of uninitialized wild pointer '" + var + "'", node,
+                "hint: allocate memory for '" + var + "' before using it");
             return false;
 
         case WildState::UNKNOWN:
@@ -727,8 +733,9 @@ void BorrowChecker::checkForLeaks() {
 
         for (const auto& var : current_scope_vars) {
             if (ctx.pending_wild_frees.count(var) > 0) {
-                addError("Memory leak: wild variable '" + var + "' was not freed before scope exit",
-                        1, 1);  // We don't have node info at scope exit, use line 1
+                BorrowError err(1, 1, "Memory leak: wild variable '" + var + "' was not freed before scope exit",
+                        "hint: add 'defer { free(" + var + "); }' after allocation, or free before end of scope");
+                errors.push_back(err);
             }
         }
     }
@@ -992,7 +999,8 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
 
         // Check if target is pinned
         if (isPinned(target->name)) {
-            addError("Cannot assign to pinned variable '" + target->name + "'", expr);
+            addErrorWithSuggestion("Cannot assign to pinned variable '" + target->name + "'", expr,
+                "hint: unpin the variable first, or work with a copy");
             return;
         }
 
@@ -1387,9 +1395,10 @@ void BorrowChecker::checkReferenceEscape(ASTNode* value, ASTNode* context) {
                 }
 
                 if (is_local) {
-                    addError("Cannot return reference to local variable '" + target +
+                    addErrorWithSuggestion("Cannot return reference to local variable '" + target +
                              "'. The reference would become invalid when the function returns.",
-                             context);
+                             context,
+                             "hint: return the value by copy instead, or move it to the caller's scope");
                 }
             }
         }
@@ -1473,8 +1482,9 @@ void BorrowChecker::checkDeferStmt(DeferStmt* stmt) {
                             "Defer block contains conditional/loop - free of '" +
                             var + "' may not execute on all paths";
 
-                        // Emit warning (using addError with warning prefix)
-                        addError("[Warning] " + warningMsg, stmt);
+                        // Emit warning using proper severity
+                        addWarning(warningMsg, stmt,
+                            "hint: ensure the free() call is unconditional within the defer block");
 
                         // One warning per defer block is sufficient
                         break;
@@ -1739,7 +1749,8 @@ void BorrowChecker::checkIdentifier(IdentifierExpr* expr) {
     
     // Check for use-after-move
     if (ctx.moved_variables.find(expr->name) != ctx.moved_variables.end()) {
-        addError("Use after move: variable '" + expr->name + "' was moved", expr);
+        addErrorWithSuggestion("Use after move: variable '" + expr->name + "' was moved", expr,
+                "hint: clone the value before moving if you need it afterward");
         return;
     }
     
@@ -1848,16 +1859,18 @@ void BorrowChecker::checkMoveExpr(MoveExpr* expr) {
 
     // Check if the variable can be used (not already moved or freed)
     if (ctx.moved_variables.find(varName) != ctx.moved_variables.end()) {
-        addError("Cannot move variable '" + varName + "' (already moved)", expr);
+        addErrorWithSuggestion("Cannot move variable '" + varName + "' (already moved)", expr,
+                "hint: a variable can only be moved once — clone it before the first move if needed");
         return;
     }
 
     // ARIA-016: Check for active pins - cannot move pinned objects
     // Pinning locks the object's memory address for FFI/DMA stability
     if (isPinned(varName)) {
-        addError("Cannot move variable '" + varName +
+        addErrorWithSuggestion("Cannot move variable '" + varName +
                  "' because it is currently pinned. Pinned objects must remain "
-                 "at a stable address while wild pointers reference them.", expr);
+                 "at a stable address while wild pointers reference them.", expr,
+                 "hint: unpin the variable before moving, or work with a copy");
         return;
     }
 
@@ -1865,9 +1878,10 @@ void BorrowChecker::checkMoveExpr(MoveExpr* expr) {
     auto loans_it = ctx.active_loans.find(varName);
     if (loans_it != ctx.active_loans.end() && !loans_it->second.empty()) {
         const Loan& loan = loans_it->second.front();
-        addError("Cannot move variable '" + varName +
+        addErrorWithSuggestion("Cannot move variable '" + varName +
                  "' because it is currently borrowed by '" + loan.borrower + "'", expr,
-                 "Variable was borrowed here", loan.creation_line, loan.creation_column);
+                 "Variable was borrowed here", loan.creation_line, loan.creation_column,
+                 "hint: ensure all borrows of '" + varName + "' have ended before moving");
         return;
     }
 
@@ -1909,6 +1923,42 @@ void BorrowChecker::addError(const std::string& message, ASTNode* node,
     } else {
         errors.emplace_back(0, 0, message, related_line, related_col, related_msg);
     }
+}
+
+void BorrowChecker::addErrorWithSuggestion(const std::string& message, ASTNode* node,
+                                            const std::string& suggestion) {
+    if (node) {
+        errors.emplace_back(node->line, node->column, message, suggestion);
+    } else {
+        errors.emplace_back(0, 0, message, suggestion);
+    }
+}
+
+void BorrowChecker::addErrorWithSuggestion(const std::string& message, ASTNode* node,
+                                            const std::string& related_msg, int related_line, int related_col,
+                                            const std::string& suggestion) {
+    BorrowError err = node 
+        ? BorrowError(node->line, node->column, message, related_line, related_col, related_msg)
+        : BorrowError(0, 0, message, related_line, related_col, related_msg);
+    err.suggestion = suggestion;
+    errors.push_back(err);
+}
+
+void BorrowChecker::addWarning(const std::string& message, ASTNode* node) {
+    BorrowError err = node 
+        ? BorrowError(node->line, node->column, message)
+        : BorrowError(0, 0, message);
+    err.severity = BorrowSeverity::WARNING;
+    errors.push_back(err);
+}
+
+void BorrowChecker::addWarning(const std::string& message, ASTNode* node,
+                               const std::string& suggestion) {
+    BorrowError err = node 
+        ? BorrowError(node->line, node->column, message, suggestion)
+        : BorrowError(0, 0, message, suggestion);
+    err.severity = BorrowSeverity::WARNING;
+    errors.push_back(err);
 }
 
 // ============================================================================

@@ -320,6 +320,9 @@ ComptimeValue ConstEvaluator::evaluateExpr(ASTNode* node) {
             return evalTernary(static_cast<TernaryExpr*>(node));
         case ASTNode::NodeType::CALL:
             return evalFunctionCall(static_cast<CallExpr*>(node));
+        case ASTNode::NodeType::COMPTIME_EXPR:
+            // Unwrap: comptime(expr) just evaluates the inner expression
+            return evaluateExpr(static_cast<ComptimeExpr*>(node)->expr.get());
         default:
             addError("Unsupported expression type in const evaluation");
             return ComptimeValue();
@@ -327,7 +330,7 @@ ComptimeValue ConstEvaluator::evaluateExpr(ASTNode* node) {
 }
 
 ComptimeValue ConstEvaluator::evaluateStmt(ASTNode* stmt) {
-    // For now, only variable declarations are evaluated
+    // Variable declarations with const initializers
     if (stmt->type == ASTNode::NodeType::VAR_DECL) {
         auto* varDecl = static_cast<VarDeclStmt*>(stmt);
         if (varDecl->isConst && varDecl->initializer) {
@@ -337,6 +340,26 @@ ComptimeValue ConstEvaluator::evaluateStmt(ASTNode* stmt) {
         }
     }
     
+    // Comptime block: evaluate all statements in the block body
+    if (stmt->type == ASTNode::NodeType::COMPTIME_BLOCK) {
+        auto* comptimeBlock = static_cast<ComptimeBlockStmt*>(stmt);
+        if (comptimeBlock->body) {
+            return evaluate(comptimeBlock->body.get());
+        }
+        return ComptimeValue();
+    }
+    
+    // Block statement: evaluate each statement, return last value
+    if (stmt->type == ASTNode::NodeType::BLOCK) {
+        auto* block = static_cast<BlockStmt*>(stmt);
+        ComptimeValue lastValue;
+        for (const auto& child : block->statements) {
+            lastValue = evaluate(child.get());
+            if (hasErrors()) return ComptimeValue();
+        }
+        return lastValue;
+    }
+    
     addError("Statement cannot be evaluated at compile time");
     return ComptimeValue();
 }
@@ -344,12 +367,33 @@ ComptimeValue ConstEvaluator::evaluateStmt(ASTNode* stmt) {
 ComptimeValue ConstEvaluator::evalLiteral(LiteralExpr* lit) {
     // LiteralExpr uses std::variant<int64_t, double, std::string, bool, std::monostate>
     if (std::holds_alternative<int64_t>(lit->value)) {
-        // Integer literal - default to int64
-        return ComptimeValue::makeInteger(std::get<int64_t>(lit->value), "int64", 64);
+        // Integer literal - use explicit type if available
+        std::string typeName = "int64";
+        int bits = 64;
+        if (lit->hasExplicitType()) {
+            typeName = lit->getExplicitType();
+            // Extract bit width from type name (e.g., "i64" -> 64, "u32" -> 32)
+            std::string numPart;
+            for (char c : typeName) {
+                if (c >= '0' && c <= '9') numPart += c;
+            }
+            if (!numPart.empty()) bits = std::stoi(numPart);
+            
+            // Handle unsigned types
+            if (typeName[0] == 'u') {
+                return ComptimeValue::makeUnsigned(static_cast<uint64_t>(std::get<int64_t>(lit->value)), typeName, bits);
+            }
+            // Handle TBB types
+            if (typeName.find("tbb") == 0) {
+                return ComptimeValue::makeTBB(std::get<int64_t>(lit->value), typeName, bits);
+            }
+        }
+        return ComptimeValue::makeInteger(std::get<int64_t>(lit->value), typeName, bits);
     } 
     else if (std::holds_alternative<double>(lit->value)) {
-        // Float literal - default to flt64
-        return ComptimeValue::makeFloat(std::get<double>(lit->value), "flt64");
+        // Float literal - use explicit type if available
+        std::string typeName = lit->hasExplicitType() ? lit->getExplicitType() : "flt64";
+        return ComptimeValue::makeFloat(std::get<double>(lit->value), typeName);
     }
     else if (std::holds_alternative<bool>(lit->value)) {
         // Boolean literal

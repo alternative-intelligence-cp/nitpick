@@ -134,6 +134,13 @@ private:
     Type* inferLiteral(LiteralExpr* expr);
     
     /**
+     * Infer the type of a comptime expression: comptime(expr)
+     * Evaluates the expression at compile time using ConstEvaluator
+     * and returns the type of the resulting constant value.
+     */
+    Type* inferComptimeExpr(ComptimeExpr* expr);
+    
+    /**
      * Infer the type of a template literal expression
      * 
      * Rules:
@@ -678,7 +685,12 @@ public:
     void checkFuncDecl(FuncDeclStmt* stmt);
     
     /**
-     * P1-4: Validate contract clauses (Design by Contract)
+     * Check comptime block statement: comptime { ... }
+     * Evaluates the block at compile time using ConstEvaluator.
+     */
+    void checkComptimeBlock(ComptimeBlockStmt* stmt);
+    
+    /**
      * 
      * Rules:
      * - All contract expressions must evaluate to bool

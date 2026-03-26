@@ -232,6 +232,9 @@ void Parser::synchronize() {
             case TokenType::TOKEN_KW_STRUCT:
             case TokenType::TOKEN_KW_ENUM:
             case TokenType::TOKEN_KW_TRAIT:
+            case TokenType::TOKEN_KW_COMPTIME:
+            case TokenType::TOKEN_KW_INLINE:
+            case TokenType::TOKEN_KW_NOINLINE:
                 return;
             default:
                 advance();
@@ -627,6 +630,23 @@ ASTNodePtr Parser::parsePrimary() {
         // Similar to ERR but semantically different: unknown = indeterminate/not-yet-known
         // The semantic analyzer will handle type-specific unknown values
         return std::make_shared<LiteralExpr>(std::string("unknown"), line, col);
+    }
+    
+    // Comptime expression: comptime(expr) — evaluate at compile time
+    if (token.type == TokenType::TOKEN_KW_COMPTIME) {
+        int line = token.line;
+        int col = token.column;
+        advance(); // consume 'comptime'
+        
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'comptime'");
+        ASTNodePtr expr = parseExpression();
+        if (!expr) {
+            error("Expected expression inside comptime()");
+            return nullptr;
+        }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after comptime expression");
+        
+        return std::make_shared<ComptimeExpr>(expr, line, col);
     }
     
     // Identifier
@@ -1759,13 +1779,29 @@ ASTNodePtr Parser::parseStatement() {
             return modStmt;
         }
         
-        // Check for pub func
+        // Check for pub inline/noinline/comptime func
+        bool pubInline = false, pubNoinline = false, pubComptime = false;
+        if (peek().type == TokenType::TOKEN_KW_INLINE) {
+            pubInline = true;
+            advance(); // consume 'inline'
+        } else if (peek().type == TokenType::TOKEN_KW_NOINLINE) {
+            pubNoinline = true;
+            advance(); // consume 'noinline'
+        } else if (peek().type == TokenType::TOKEN_KW_COMPTIME) {
+            pubComptime = true;
+            advance(); // consume 'comptime'
+        }
+        
+        // Check for pub func (or pub inline/noinline/comptime func)
         if (match(TokenType::TOKEN_KW_FUNC)) {
             auto funcStmt = parseFuncDecl();
-            // Set public flag
+            // Set public flag and modifiers
             if (funcStmt && funcStmt->type == ASTNode::NodeType::FUNC_DECL) {
                 auto func = std::static_pointer_cast<FuncDeclStmt>(funcStmt);
                 func->isPublic = true;
+                if (pubInline) func->isInline = true;
+                if (pubNoinline) func->isNoInline = true;
+                if (pubComptime) func->isComptime = true;
             }
             return funcStmt;
         }
@@ -2056,6 +2092,44 @@ ASTNodePtr Parser::parseStatement() {
         // Not a variable declaration, restore position
         current = saved;
         // Fall through to expression statement
+    }
+    
+    // Check for inline/noinline/comptime function declarations or comptime blocks
+    // inline func:name = ..., noinline func:name = ..., comptime func:name = ...
+    // comptime { ... }  (comptime block statement)
+    if (peek().type == TokenType::TOKEN_KW_INLINE || 
+        peek().type == TokenType::TOKEN_KW_NOINLINE ||
+        peek().type == TokenType::TOKEN_KW_COMPTIME) {
+        
+        size_t saved = current;
+        TokenType modifier = peek().type;
+        advance(); // consume inline/noinline/comptime
+        
+        // Check for func keyword after modifier → function with modifier
+        if (peek().type == TokenType::TOKEN_KW_FUNC) {
+            match(TokenType::TOKEN_KW_FUNC); // consume 'func'
+            auto funcDecl = parseFuncDecl();
+            if (funcDecl && funcDecl->type == ASTNode::NodeType::FUNC_DECL) {
+                auto func = std::static_pointer_cast<FuncDeclStmt>(funcDecl);
+                if (modifier == TokenType::TOKEN_KW_INLINE) func->isInline = true;
+                else if (modifier == TokenType::TOKEN_KW_NOINLINE) func->isNoInline = true;
+                else if (modifier == TokenType::TOKEN_KW_COMPTIME) func->isComptime = true;
+            }
+            return funcDecl;
+        }
+        
+        // comptime { ... } → comptime block statement
+        if (modifier == TokenType::TOKEN_KW_COMPTIME && check(TokenType::TOKEN_LEFT_BRACE)) {
+            int line = tokens[saved].line;
+            int col = tokens[saved].column;
+            advance(); // consume '{'
+            ASTNodePtr body = parseBlock();
+            consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after comptime block");
+            return std::make_shared<ComptimeBlockStmt>(body, line, col);
+        }
+        
+        // Not a modifier+func or comptime block, restore position
+        current = saved;
     }
     
     // Check for async function declaration: async func:name = ...

@@ -2773,6 +2773,15 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 nvvm_annotations->addOperand(kernel_md);
             }
 
+            // v0.2.12: Inline/noinline function attributes
+            if (funcDecl->isInline) {
+                func->addFnAttr(llvm::Attribute::InlineHint);
+                func->addFnAttr(llvm::Attribute::AlwaysInline);
+            }
+            if (funcDecl->isNoInline) {
+                func->addFnAttr(llvm::Attribute::NoInline);
+            }
+
             // Skip body generation if no body (extern declaration)
             if (!funcDecl->body) {
                 // FFI-STRING-RETURN: Track standalone extern functions that return string type.
@@ -5509,6 +5518,13 @@ skip_comparison:
             if (!builder.GetInsertBlock()->getTerminator()) {
                 builder.CreateBr(it->second);
             }
+            return nullptr;
+        }
+
+        case ASTNode::NodeType::COMPTIME_BLOCK: {
+            // Comptime block: all evaluation was done at compile time.
+            // Nothing to emit at IR level — side effects (const definitions)
+            // have already been processed by the type checker.
             return nullptr;
         }
 
@@ -9694,6 +9710,34 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             return nullptr;
         }
 
+        case ASTNode::NodeType::COMPTIME_EXPR: {
+            // Comptime expression: emit the pre-computed constant
+            ComptimeExpr* comptimeExpr = static_cast<ComptimeExpr*>(expr);
+            
+            if (!comptimeExpr->evaluated) {
+                std::cerr << "[ERROR] comptime expression was not evaluated during type checking" << std::endl;
+                return nullptr;
+            }
+            
+            const std::string& typeName = comptimeExpr->resultTypeName;
+            
+            if (typeName == "bool") {
+                return builder.getInt1(comptimeExpr->boolResult);
+            } else if (typeName == "str") {
+                return builder.CreateGlobalString(comptimeExpr->stringResult, "comptime.str");
+            } else if (typeName.find("flt") == 0 || typeName.find("f") == 0) {
+                // Float types
+                llvm::Type* llvmType = mapTypeFromName(typeName);
+                if (!llvmType) llvmType = builder.getDoubleTy();
+                return llvm::ConstantFP::get(llvmType, comptimeExpr->floatResult);
+            } else {
+                // Integer types (int*, uint*, i*, u*, tbb*)
+                llvm::Type* llvmType = mapTypeFromName(typeName);
+                if (!llvmType) llvmType = builder.getInt64Ty();
+                return llvm::ConstantInt::get(llvmType, comptimeExpr->intResult, /*isSigned=*/true);
+            }
+        }
+
         default:
             // Other expression types not yet implemented
             return nullptr;
@@ -9715,7 +9759,7 @@ void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::st
     di_compile_unit = di_builder->createCompileUnit(
         llvm::dwarf::DW_LANG_C,  // Use C for now (could register DW_LANG_Aria later)
         di_file,
-        "Aria Compiler v0.2.11",  // Producer
+        "Aria Compiler v0.2.12",  // Producer
         false,                    // isOptimized
         "",                       // Flags
         0                         // Runtime version
