@@ -1,7 +1,7 @@
 // Comprehensive tests for Wave9 9D wave coordinate system
 // Tests the Nikola AGI physics substrate
 
-use stdlib.wave;
+use "wave.aria".*;
 
 func:failsafe = NIL(int32:code) { pass(NIL); };
 
@@ -45,7 +45,7 @@ func:test_wave9_creation = int32() {
 func:test_wave_zero = int32() {
     println("Test 2: wave_zero factory");
     
-    Wave9:zero = raw(wave_zero());
+    Wave9:zero = wave_zero();
     
     if (zero.r != 0 || zero.s != 0 || zero.t != 0 ||
         zero.u != 0 || zero.v != 0 || zero.w != 0 ||
@@ -77,7 +77,7 @@ func:test_wave_interfere = int32() {
         x: 1, y: 3, z: 2
     };
     
-    Wave9:result = raw(wave_interfere(a, b));
+    Wave9:result = wave_interfere(a, b);
     
     // Check superposition: a + b
     if (result.r != 0) {  // 1 + (-1) = 0
@@ -122,7 +122,7 @@ func:test_wave_negate = int32() {
         x: -2, y: 3, z: -4
     };
     
-    Wave9:negated = raw(wave_negate(original));
+    Wave9:negated = wave_negate(original);
     
     // Check that all signs are flipped
     if (negated.r != -2) {
@@ -172,8 +172,8 @@ func:test_destructive_interference = int32() {
         x: -1, y: 0, z: 3
     };
     
-    Wave9:neg_w = raw(wave_negate(w));
-    Wave9:result = raw(wave_interfere(w, neg_w));
+    Wave9:neg_w = wave_negate(w);
+    Wave9:result = wave_interfere(w, neg_w);
     
     // Result should be zero wave (all components = 0)
     if (result.r != 0 || result.s != 0 || result.t != 0 ||
@@ -201,7 +201,7 @@ func:test_wave_scale = int32() {
     };
     
     nit:factor = 2;
-    Wave9:scaled = raw(wave_scale(w, factor));
+    Wave9:scaled = wave_scale(w, factor);
     
     // Check that all components are doubled
     if (scaled.r != 2) {
@@ -242,7 +242,7 @@ func:test_wave_magnitude = int32() {
         x: 1, y: 0, z: 0
     };
     
-    int32:mag_sq = raw(wave_magnitude_squared(unit_x));
+    int32:mag_sq = wave_magnitude_squared(unit_x);
     if (mag_sq != 1) {  // 1² = 1
         println("  ✗ FAILED: Unit vector magnitude incorrect");
         pass(1i32);
@@ -255,7 +255,7 @@ func:test_wave_magnitude = int32() {
         x: 0, y: 0, z: 0
     };
     
-    int32:mag2 = raw(wave_magnitude_squared(w2));
+    int32:mag2 = wave_magnitude_squared(w2);
     if (mag2 != 8) {  // 2² + 2² = 8
         println("  ✗ FAILED: Magnitude calculation incorrect");
         pass(1i32);
@@ -290,7 +290,7 @@ func:test_wave_equals = int32() {
         x: 0, y: 1, z: 3  // Different z
     };
     
-    if (!raw(wave_equals(a), b)) {
+    if (!wave_equals(a, b)) {
         println("  ✗ FAILED: Equal waves not detected");
         pass(1i32);
     }
@@ -347,9 +347,9 @@ func:test_spatial_extraction = int32() {
         x: -3, y: 2, z: 1
     };
     
-    nit:x = raw(wave_spatial_x(w));
-    nit:y = raw(wave_spatial_y(w));
-    nit:z = raw(wave_spatial_z(w));
+    nit:x = wave_spatial_x(w);
+    nit:y = wave_spatial_y(w);
+    nit:z = wave_spatial_z(w);
     
     if (x != -3) {
         println("  ✗ FAILED: X extraction incorrect");
@@ -413,8 +413,8 @@ func:test_complex_interference = int32() {
     Wave9:wave3 = Wave9 { r: -1, s: -1, t: 1, u: 0, v: -1, w: 1, x: 1, y: -1, z: 2 };
     
     // Combine all three (simulates multi-source interference)
-    Wave9:temp = raw(wave_interfere(wave1, wave2));
-    Wave9:combined = raw(wave_interfere(temp, wave3));
+    Wave9:temp = wave_interfere(wave1, wave2);
+    Wave9:combined = wave_interfere(temp, wave3);
     
     // Verify specific components
     if (combined.r != 0) {  // 1 + 0 + (-1) = 0
@@ -454,18 +454,18 @@ func:main = int32() {
     
     int32:failures = 0i32;
     
-    failures = failures + test_wave9_creation();
-    failures = failures + test_wave_zero();
-    failures = failures + test_wave_interfere();
-    failures = failures + test_wave_negate();
-    failures = failures + test_destructive_interference();
-    failures = failures + test_wave_scale();
-    failures = failures + test_wave_magnitude();
-    failures = failures + test_wave_equals();
-    failures = failures + test_spatial_wave();
-    failures = failures + test_spatial_extraction();
-    failures = failures + test_quantum_wave();
-    failures = failures + test_complex_interference();
+    failures = failures + raw(test_wave9_creation());
+    failures = failures + raw(test_wave_zero());
+    failures = failures + raw(test_wave_interfere());
+    failures = failures + raw(test_wave_negate());
+    failures = failures + raw(test_destructive_interference());
+    failures = failures + raw(test_wave_scale());
+    failures = failures + raw(test_wave_magnitude());
+    failures = failures + raw(test_wave_equals());
+    failures = failures + raw(test_spatial_wave());
+    failures = failures + raw(test_spatial_extraction());
+    failures = failures + raw(test_quantum_wave());
+    failures = failures + raw(test_complex_interference());
     
     println("");
     println("========================================");
