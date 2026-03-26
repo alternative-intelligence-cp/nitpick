@@ -1962,6 +1962,15 @@ ASTNodePtr Parser::parseStatement() {
             // It's a type annotation: CustomType:name or Box<int64>:name or CustomType[N]:name
             current = saved; // reset position
             return parseVarDecl();
+        } else if (check(TokenType::TOKEN_QUESTION)) {
+            advance(); // consume '?'
+            if (check(TokenType::TOKEN_COLON)) {
+                // Optional type annotation: CustomType?:name
+                current = saved;
+                return parseVarDecl();
+            }
+            // Not a variable declaration, restore position
+            current = saved;
         } else {
             // It's an identifier used in an expression, restore position
             current = saved;
