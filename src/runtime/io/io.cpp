@@ -423,7 +423,8 @@ int64_t aria_stream_tell(AriaStream* stream) {
 // JSON parsing - simplified implementation
 // For production, would use a proper JSON library like cJSON
 
-void aria_json_free(AriaJsonValue* value) {
+// Static to avoid namespace collision with user packages that may define aria_json_free
+static void aria_json_free(AriaJsonValue* value) {
     if (!value) return;
     
     switch (value->type) {
@@ -522,7 +523,8 @@ bool aria_json_as_bool(AriaJsonValue* value, bool default_val) {
 
 // CSV parsing - basic implementation
 
-void aria_csv_free(AriaCsvData* csv) {
+// Static to avoid namespace collision with user packages that may define aria_csv_free
+static void aria_csv_free(AriaCsvData* csv) {
     if (!csv) return;
     
     for (size_t i = 0; i < csv->row_count; i++) {
