@@ -1,0 +1,70 @@
+// test_fix256_cpu.aria - fix256 deterministic arithmetic on CPU
+// Tests all arithmetic + comparison operators with ABI-correct codegen
+
+func:failsafe = NIL(int32:err_code) {};
+
+func:main = int32() {
+    // Integer conversion roundtrip
+    fix256:a = fix256_from_int(10);
+    fix256:b = fix256_from_int(5);
+
+    // Addition: 10 + 5 = 15
+    fix256:sum = a + b;
+    int64:sum_val = fix256_to_int(sum);
+    if (sum_val != 15) {
+        return 1;
+    }
+
+    // Subtraction: 10 - 5 = 5
+    fix256:diff = a - b;
+    int64:diff_val = fix256_to_int(diff);
+    if (diff_val != 5) {
+        return 2;
+    }
+
+    // Multiplication: 10 * 5 = 50
+    fix256:prod = a * b;
+    int64:prod_val = fix256_to_int(prod);
+    if (prod_val != 50) {
+        return 3;
+    }
+
+    // Division: 10 / 5 = 2
+    fix256:quot = a / b;
+    int64:quot_val = fix256_to_int(quot);
+    if (quot_val != 2) {
+        return 4;
+    }
+
+    // Equality
+    fix256:c = fix256_from_int(10);
+    if (a != c) {
+        return 5;
+    }
+    if (a == b) {
+        return 6;
+    }
+
+    // Ordering
+    if (b > a) {
+        return 7;
+    }
+    if (a < b) {
+        return 8;
+    }
+    if (b >= a) {
+        return 9;
+    }
+    if (a <= b) {
+        return 10;
+    }
+
+    // Float conversion roundtrip
+    fix256:from_flt = fix256_from_float(3.0);
+    int64:flt_val = fix256_to_int(from_flt);
+    if (flt_val != 3) {
+        return 11;
+    }
+
+    return 0;
+};
