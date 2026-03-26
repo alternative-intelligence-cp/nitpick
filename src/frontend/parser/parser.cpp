@@ -2940,17 +2940,23 @@ ASTNodePtr Parser::parseTraitDecl() {
 
         // Parse method name (can be identifier or 'func:name')
         std::string methodName;
+        bool usedFuncPrefix = false;
         if (match(TokenType::TOKEN_KW_FUNC)) {
             consume(TokenType::TOKEN_COLON, "Expected ':' after 'func'");
             Token methodToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected method name");
             methodName = methodToken.lexeme;
+            usedFuncPrefix = true;
         } else {
             Token methodToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected method name in trait");
             methodName = methodToken.lexeme;
         }
 
-        // Expect colon before signature
-        consume(TokenType::TOKEN_COLON, "Expected ':' after method name");
+        // Expect separator before signature: ':' or '=' (func:name = RetType(...) or name:RetType(...))
+        if (usedFuncPrefix && check(TokenType::TOKEN_EQUAL)) {
+            advance(); // consume '=' — RFC syntax: func:method = RetType(params)
+        } else {
+            consume(TokenType::TOKEN_COLON, "Expected ':' after method name");
+        }
 
         // Parse return type first (before parameters)
         std::string returnType = "void";
@@ -2968,6 +2974,8 @@ ASTNodePtr Parser::parseTraitDecl() {
 
         std::vector<ParameterNode> params;
         while (!check(TokenType::TOKEN_RIGHT_PAREN) && !isAtEnd()) {
+            size_t paramPosBefore = current;
+
             // Skip commas
             if (match(TokenType::TOKEN_COMMA)) {
                 continue;
@@ -2983,6 +2991,13 @@ ASTNodePtr Parser::parseTraitDecl() {
             Token paramName = consumeName("parameter");
 
             params.emplace_back(paramTypeNode, paramName.lexeme, nullptr, paramName.line, paramName.column);
+
+            // Safety: if no progress was made, break to avoid infinite loop
+            if (current == paramPosBefore) {
+                error("Unexpected token in trait method parameter list");
+                advance(); // Force progress
+                break;
+            }
         }
 
         // Expect closing paren
