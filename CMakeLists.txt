@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(aria VERSION 0.2.12 LANGUAGES C CXX)
+project(aria VERSION 0.2.13 LANGUAGES C CXX)
 
 # C++17 standard required
 set(CMAKE_CXX_STANDARD 17)
@@ -60,9 +60,13 @@ llvm_map_components_to_libnames(llvm_libs
     native
     orcjit
     passes
-    nvptxcodegen   # NVPTX code generator for GPU/CUDA
-    nvptxdesc      # NVPTX target description
-    nvptxinfo      # NVPTX target info
+    nvptxcodegen        # NVPTX code generator for GPU/CUDA
+    nvptxdesc           # NVPTX target description
+    nvptxinfo           # NVPTX target info
+    webassemblycodegen  # WebAssembly code generator for WASM target
+    webassemblydesc     # WebAssembly target description
+    webassemblyinfo     # WebAssembly target info
+    webassemblyasmparser # WebAssembly assembly parser
 )
 
 # ============================================================================
@@ -400,6 +404,52 @@ endif()
 
 # Install runtime library so the compiler can find it
 install(TARGETS aria_runtime DESTINATION lib)
+
+# ============================================================================
+# WASM Runtime Library (for WebAssembly compilation target)
+# ============================================================================
+# Cross-compiled with clang --target=wasm32-wasi to produce libaria_runtime_wasm.a
+# This is a stripped-down runtime: no threads, no io_uring, no fork/exec, no signals
+
+set(WASM_RUNTIME_SOURCE ${CMAKE_SOURCE_DIR}/src/runtime/wasm/wasm_runtime.c)
+set(WASM_RUNTIME_OUTPUT ${CMAKE_BINARY_DIR}/libaria_runtime_wasm.a)
+set(WASM_SYSROOT_INCLUDE "/usr/include/wasm32-wasi")
+set(WASM_SYSROOT_LIB "/usr/lib/wasm32-wasi")
+
+# Only build WASM runtime if wasi-libc sysroot exists
+if(EXISTS ${WASM_SYSROOT_INCLUDE} AND EXISTS ${WASM_RUNTIME_SOURCE})
+    find_program(CLANG_EXECUTABLE NAMES clang-20 clang)
+    find_program(WASM_AR_EXECUTABLE NAMES llvm-ar-20 llvm-ar)
+
+    if(CLANG_EXECUTABLE AND WASM_AR_EXECUTABLE)
+        add_custom_command(
+            OUTPUT ${WASM_RUNTIME_OUTPUT}
+            COMMAND ${CLANG_EXECUTABLE}
+                --target=wasm32-wasi
+                --sysroot=/usr
+                -I${WASM_SYSROOT_INCLUDE}
+                -O2
+                -c ${WASM_RUNTIME_SOURCE}
+                -o ${CMAKE_BINARY_DIR}/wasm_runtime.o
+            COMMAND ${WASM_AR_EXECUTABLE} rcs
+                ${WASM_RUNTIME_OUTPUT}
+                ${CMAKE_BINARY_DIR}/wasm_runtime.o
+            DEPENDS ${WASM_RUNTIME_SOURCE}
+            COMMENT "Building WASM runtime library (libaria_runtime_wasm.a)"
+        )
+        add_custom_target(aria_runtime_wasm ALL DEPENDS ${WASM_RUNTIME_OUTPUT})
+        message(STATUS "WASM runtime will be built: ${WASM_RUNTIME_OUTPUT}")
+    else()
+        message(STATUS "WASM runtime skipped: clang or llvm-ar not found")
+    endif()
+else()
+    if(NOT EXISTS ${WASM_SYSROOT_INCLUDE})
+        message(STATUS "WASM runtime skipped: wasi-libc sysroot not found at ${WASM_SYSROOT_INCLUDE}")
+    endif()
+    if(NOT EXISTS ${WASM_RUNTIME_SOURCE})
+        message(STATUS "WASM runtime skipped: source not found at ${WASM_RUNTIME_SOURCE}")
+    endif()
+endif()
 
 # ============================================================================
 # Compiler executable
