@@ -6090,10 +6090,38 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         return typeSystem->getErrorType();
     }
     
-    // For safe navigation (?.), the object can be null/NIL
-    // In that case, the result type should be the same as normal access
-    // but the IR generation will handle the null check
-    // TODO: When optional types are implemented, safe navigation should return optional<T>
+    // For safe navigation (?.) or regular access on optional types,
+    // unwrap the optional to get the inner type and proceed with member access.
+    // Safe navigation returns Optional<fieldType>; regular access returns fieldType directly.
+    if (objectType->getKind() == TypeKind::OPTIONAL) {
+        OptionalType* optType = static_cast<OptionalType*>(objectType);
+        Type* innerType = optType->getWrappedType();
+        
+        if (innerType->getKind() == TypeKind::STRUCT) {
+            StructType* structType = static_cast<StructType*>(innerType);
+            const auto& fields = structType->getFields();
+            
+            for (const auto& field : fields) {
+                if (field.name == expr->member) {
+                    // Safe navigation (?.) returns Optional<fieldType>
+                    if (expr->isSafeNavigation) {
+                        return typeSystem->getOptionalType(field.type);
+                    }
+                    // Regular access on optional — return field type directly
+                    return field.type;
+                }
+            }
+            
+            // Member not found
+            addError("Struct '" + structType->getName() + "' has no member named '" +
+                    expr->member + "'", expr);
+            return typeSystem->getErrorType();
+        }
+        
+        addError("Safe navigation requires optional of struct type, got '" +
+                objectType->toString() + "'", expr);
+        return typeSystem->getErrorType();
+    }
     
     // Handle struct member access
     if (objectType->getKind() == TypeKind::STRUCT) {
