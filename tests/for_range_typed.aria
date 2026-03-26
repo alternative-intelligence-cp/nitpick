@@ -32,7 +32,7 @@ func:int64_toString = string(int64:value) {
 func:int32_toString = string(int32:value) {
     // Cast to int64 and use int64_toString
     int64:value64 = value;
-    string:result = int64_toString(value64);
+    string:result = raw(int64_toString(value64));
     pass(result);
 };
 
@@ -42,14 +42,14 @@ func:main = int32() {
     // With int64 type annotation (explicit)
     drop(println("int64:i in 1..3:"));
     for (int64:i in 1..3) {
-        string:i_str = int64_toString(i);
+        string:i_str = raw(int64_toString(i));
         drop(println(i_str));
     }
     
     // With int32 type annotation
     drop(println("int32:j in 10...13:"));
     for (int32:j in 10...13) {
-        string:j_str = int32_toString(j);
+        string:j_str = raw(int32_toString(j));
         drop(println(j_str));
     }
     

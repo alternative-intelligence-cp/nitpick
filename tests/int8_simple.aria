@@ -14,8 +14,8 @@ func:test_int8 = int32() {
     if (a > b) { int32:err = 1; pass(err); }  // 10 !> 20
     if (b < a) { int32:err = 2; pass(err); }  // 20 !< 10
     
-    int32:ok = 0;
-    pass(ok);
+    int32:success = 0;
+    pass(success);
 };
 
 func:test_uint8 = int32() {
@@ -31,15 +31,15 @@ func:test_uint8 = int32() {
     if (x < y) { int32:err = 1; pass(err); }   // 100 !< 50
     if (y > x) { int32:err = 2; pass(err); }   // 50 !> 100
     
-    int32:ok = 0;
-    pass(ok);
+    int32:success = 0;
+    pass(success);
 };
 
 func:main = int32() {
-    int32:result1 = test_int8();
+    int32:result1 = raw(test_int8());
     if (result1 != 0) { pass(result1); }
     
-    int32:result2 = test_uint8();
+    int32:result2 = raw(test_uint8());
     if (result2 != 0) { pass(result2); }
     
     int32:success = 0;

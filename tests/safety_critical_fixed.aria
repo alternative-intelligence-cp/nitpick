@@ -41,7 +41,7 @@ func:test_lbim_overflow = TestResult() {
     res.id = "LBIM-01";
     res.passed = true;
     res.value = 1;
-    return res;
+    pass(res);
 };
 
 func:test_lbim_div_zero = TestResult() {
@@ -56,7 +56,7 @@ func:test_lbim_div_zero = TestResult() {
     res.id = "LBIM-02";
     res.passed = true;  // If we got here without crash, it passed
     res.value = 0;
-    return res;
+    pass(res);
 };
 
 func:test_lbim_carry = TestResult() {
@@ -73,7 +73,7 @@ func:test_lbim_carry = TestResult() {
     res.id = "LBIM-03";
     res.passed = not_zero;
     res.value = 100;
-    return res;
+    pass(res);
 };
 
 // ----------------------------------------------------------------------------
@@ -97,7 +97,7 @@ func:test_tbb_sticky = TestResult() {
     res.id = "TBB-01";
     res.passed = correct;
     res.value = 30;
-    return res;
+    pass(res);
 };
 
 func:test_tbb_div_zero = TestResult() {
@@ -113,7 +113,7 @@ func:test_tbb_div_zero = TestResult() {
     res.id = "TBB-02";
     res.passed = true;  // Passed if no crash
     res.value = 0;
-    return res;
+    pass(res);
 };
 
 // ----------------------------------------------------------------------------
@@ -126,24 +126,24 @@ func:main = int32() {
     
     // SUITE A: LBIM Tests
     total = total + 1;
-    TestResult:r1 = test_lbim_overflow();
+    TestResult:r1 = raw(test_lbim_overflow());
     if (r1.passed) { passed = passed + 1; }
     
     total = total + 1;
-    TestResult:r2 = test_lbim_div_zero();
+    TestResult:r2 = raw(test_lbim_div_zero());
     if (r2.passed) { passed = passed + 1; }
     
     total = total + 1;
-    TestResult:r3 = test_lbim_carry();
+    TestResult:r3 = raw(test_lbim_carry());
     if (r3.passed) { passed = passed + 1; }
     
     // SUITE B: TBB Tests
     total = total + 1;
-    TestResult:r4 = test_tbb_sticky();
+    TestResult:r4 = raw(test_tbb_sticky());
     if (r4.passed) { passed = passed + 1; }
     
     total = total + 1;
-    TestResult:r5 = test_tbb_div_zero();
+    TestResult:r5 = raw(test_tbb_div_zero());
     if (r5.passed) { passed = passed + 1; }
     
     // SUITE C: FIX256 Tests (if implemented)
@@ -155,9 +155,9 @@ func:main = int32() {
     // Return 0 if all passed, 1 otherwise
     bool:all_passed = (passed == total);
     if (all_passed) {
-        return 0;
+        pass(0);
     }
-    return 1;
+    pass(1);
 };
 
 func:failsafe = NIL(int32:err_code) {
