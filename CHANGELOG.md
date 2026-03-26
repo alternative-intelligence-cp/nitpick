@@ -1,5 +1,27 @@
 # Aria Language Changelog
 
+## [0.2.14] - March 2026
+
+### Documentation
+- **Comprehensive documentation overhaul** — 486 files across aria-docs
+- **Syntax corrections** — `fn`→`func:`, `<<`→`print()`/`println()`, `eprint()`→`stderr_write()`, `dprint()`→`stddbg_write()`, `${}`→`&{}` interpolation
+- **Reference rewrites** — interpolation.md, string_interpolation.md, template_syntax.md, comptime.md, macros.md, inline.md (new)
+- **COMPILER_ARCHITECTURE.md** — added WebAssembly compilation section
+- **Unimplemented feature warnings** — 10 type guide pages now warn about features still in development
+- **VS Code extension** — complete grammar rewrite for v0.2.12+ features, added snippets
+
+### Testing
+- **Full test audit** — 862 tests audited, 640 passing (74.2%) with negative test detection
+- **TEST_STATUS.md** — complete rewrite with honest per-category breakdown and failure taxonomy
+- **REMAINING_FAILURES.md** — root cause analysis: 122 test quality issues, 5 compiler bugs, 56 feature gaps
+
+### Quality
+- **93 TODO annotations** documented across compiler source (2 HACKs, 0 FIXMEs)
+- **CONTRIBUTING.md** added to all 15 repos
+- **LICENSE** and **.gitignore** added where missing
+- **Stale files removed** — compiled binaries, duplicate specs, backup files
+- **.gitignore** updated across repos to prevent binary commits
+
 ## [0.2.13] - March 2026
 
 ### Added
