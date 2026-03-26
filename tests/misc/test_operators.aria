@@ -1,0 +1,94 @@
+// Test suite for Aria operators - Final Audit
+// Tests all operators marked as IMPLEMENTED in specs
+
+// Helper functions (defined first)
+func:get_number = int8(int8:n) {
+    pass(n);
+};
+
+func:get_error = int8() {
+    fail(-1i32);
+};
+
+// Test Result<T> unwrap operator (?)
+func:test_unwrap = NIL() {
+    int8:value1 = get_number(42i8) ? 0i8;  // Should be 42
+    int8:value2 = get_error() ? 99i8;      // Should be 99 (from default)
+    
+    print("Unwrap test: ");
+    if (value1 == 42i8 && value2 == 99i8) {
+        print("PASS\n");
+    } else {
+        print("FAIL\n");
+    }
+};
+
+// Test null coalescing operator (??)
+func:test_null_coalesce = NIL() {
+    int8?:maybeValue = NIL;
+    int8?:hasValue = 42i8;
+    
+    int8:val1 = maybeValue ?? 100i8;  // Should be 100
+    int8:val2 = hasValue ?? 200i8;    // Should be 42
+    
+    print("Null coalesce test: ");
+    if (val1 == 100i8 && val2 == 42i8) {
+        print("PASS\n");
+    } else {
+        print("FAIL\n");
+    }
+};
+
+// Test spaceship operator (<=>)
+func:test_spaceship = NIL() {
+    int8:a = 10i8;
+    int8:b = 20i8;
+    int8:c = 10i8;
+    
+    int32:cmp1 = a <=> b;  // Should be -1 (less than)
+    int32:cmp2 = b <=> a;  // Should be 1 (greater than)
+    int32:cmp3 = a <=> c;  // Should be 0 (equal)
+    
+    print("Spaceship test: ");
+    if (cmp1 == -1i32 && cmp2 == 1i32 && cmp3 == 0i32) {
+        print("PASS\n");
+    } else {
+        print("FAIL\n");
+    }
+};
+
+// Test dereference operator (<-)
+func:test_dereference = NIL() {
+    int8:value = 42i8;
+    int8->:ptr = @value;
+    int8:retrieved = <-ptr;
+    
+    print("Dereference test: ");
+    if (retrieved == 42i8) {
+        print("PASS\n");
+    } else {
+        print("FAIL\n");
+    }
+};
+
+// Main execution
+func:main = int32() {
+    print("\n=== Aria Operator Test Suite ===\n\n");
+    
+    test_unwrap() ? NIL;
+    test_null_coalesce() ? NIL;
+    test_spaceship() ? NIL;
+    test_dereference() ? NIL;
+    
+    print("\n=== Tests Complete ===\n\n");
+    
+    pass(0i32);
+};
+
+// Mandatory failsafe function
+func:failsafe = NIL(int32:err_code) {
+    print("FAILSAFE triggered with code: ");
+    // Terminate
+};
+
+

@@ -1,0 +1,72 @@
+// Expected: COMPILER ERROR
+// Test: Atomic<T> with valid lock-free types
+// Phase 2.2: Type constraints - these should all compile successfully
+
+import atomic
+
+func test_atomic_integers() {
+    // Signed integers
+    var a1: atomic<int8> = atomic.new_int8(42)
+    var a2: atomic<int16> = atomic.new_int16(1000)
+    var a3: atomic<int32> = atomic.new_int32(100000)
+    var a4: atomic<int64> = atomic.new_int64(1000000000)
+    
+    // Unsigned integers
+    var u1: atomic<uint8> = atomic.new_uint8(255)
+    var u2: atomic<uint16> = atomic.new_uint16(65535)
+    var u3: atomic<uint32> = atomic.new_uint32(4294967)
+    var u4: atomic<uint64> = atomic.new_uint64(1844674407370)
+    
+    println("All integer atomic types validated")
+}
+
+func test_atomic_bool() {
+    // Boolean type
+    var flag: atomic<bool> = atomic.new_bool(true)
+    var result: bool = atomic.load(flag, MemoryOrder.RELAXED)
+    atomic.store(flag, false, MemoryOrder.RELEASE)
+    
+    println("Boolean atomic type validated")
+}
+
+func test_atomic_tbb() {
+    // TBB (Trapped Bit Behavior) types
+    var t1: atomic<tbb8> = atomic.new_tbb8(42)
+    var t2: atomic<tbb16> = atomic.new_tbb16(1000)
+    var t3: atomic<tbb32> = atomic.new_tbb32(100000)
+    var t4: atomic<tbb64> = atomic.new_tbb64(1000000000)
+    
+    println("TBB atomic types validated")
+}
+
+func test_atomic_operations() {
+    // Test that atomic operations work with valid types
+    var counter: atomic<int32> = atomic.new_int32(0)
+    
+    // Store
+    atomic.store(counter, 10, MemoryOrder.SEQ_CST)
+    
+    // Load
+    var value: int32 = atomic.load(counter, MemoryOrder.SEQ_CST)
+    
+    // Compare-exchange
+    var expected: int32 = 10
+    var desired: int32 = 20
+    var success: bool = atomic.compare_exchange_strong(
+        counter, expected, desired,
+        MemoryOrder.ACQ_REL, MemoryOrder.ACQUIRE
+    )
+    
+    // Fetch-add
+    var old_val: int32 = atomic.fetch_add(counter, 5, MemoryOrder.RELAXED)
+    
+    println("Atomic operations validated")
+}
+
+func main() {
+    test_atomic_integers()
+    test_atomic_bool()
+    test_atomic_tbb()
+    test_atomic_operations()
+    println("All atomic type constraint tests passed!")
+}

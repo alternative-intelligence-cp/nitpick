@@ -17,8 +17,8 @@ func:test_pool_lifecycle = int32() {
     pool_destroy(pool);
     
     print("SUCCESS: Pool lifecycle test passed\n");
-    int32:ok = 0;
-    pass(ok);
+    int32:res_ok = 0;
+    pass(res_ok);
 };
 
 func:test_pool_stats = int32() {
@@ -40,8 +40,8 @@ func:test_pool_stats = int32() {
     pool_destroy(pool);
     
     print("SUCCESS: Pool stats test passed\n");
-    int32:ok = 0;
-    pass(ok);
+    int32:res_ok = 0;
+    pass(res_ok);
 };
 
 func:test_pool_multiple = int32() {
@@ -67,20 +67,20 @@ func:test_pool_multiple = int32() {
     pool_destroy(pool1);
     
     print("SUCCESS: Multiple pools test passed\n");
-    int32:ok = 0;
-    pass(ok);
+    int32:res_ok = 0;
+    pass(res_ok);
 };
 
 func:main = int32() {
     print("=== Pool Allocator Functional Tests ===\n\n");
     
-    int32:result1 = test_pool_lifecycle();
+    int32:result1 = raw(test_pool_lifecycle());
     if (result1 != 0) { pass(result1); }
     
-    int32:result2 = test_pool_stats();
+    int32:result2 = raw(test_pool_stats());
     if (result2 != 0) { pass(result2); }
     
-    int32:result3 = test_pool_multiple();
+    int32:result3 = raw(test_pool_multiple());
     if (result3 != 0) { pass(result3); }
     
     print("\n=== All Pool Tests PASSED ===\n");

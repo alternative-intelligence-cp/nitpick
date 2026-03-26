@@ -1,0 +1,29 @@
+// Expected: COMPILER ERROR
+// Phase 2 Test 5: Branch merge - should FAIL
+// After if/else, we don't know which branch was taken
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail(-1i32);
+    }
+    pass(a / b);
+};
+
+func:main = int32() {
+    Result<int32>:r = divide(10i32, 2i32);
+    
+    if (r.is_error == true) {
+        int64:code = r.error;  // int64 type
+    } else {
+        int32:x = r.value;
+    }
+    
+    // After merge, we don't know the state anymore
+    int32:y = raw(r);  // ERROR: unchecked Result access after merge
+    
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

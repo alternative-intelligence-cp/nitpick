@@ -1,0 +1,56 @@
+// P0: Comprehensive alignment attribute test
+// Tests multiple alignment values and use cases
+
+func:failsafe = NIL(int32:err_code) {
+    // Empty failsafe for testing
+};
+
+func:main = int32() {
+    // Test 1: 64-byte cache line alignment (for Nikola cache optimization)
+    #[align(64)]
+    int64:cache_line_value = 123;
+    
+    // Test 2: 32-byte alignment (AVX/AVX2)
+    #[align(32)]
+    flt64:avx_value = 3.14159;
+    
+    // Test 3: 16-byte alignment (SSE/int128)
+    #[align(16)]
+    int64:sse_value = 999;
+    
+    // Test 4: 8-byte alignment (double precision)
+    #[align(8)]
+    flt64:double_value = 2.71828;
+    
+    // Test 5: Multiple variables with same alignment
+    #[align(64)]
+    int32:first = 1;
+    
+    #[align(64)]
+    int32:second = 2;
+    
+    // Verify all values are preserved
+    bool:all_ok = false;
+    
+    if (cache_line_value == 123) {
+        if (avx_value == 3.14159) {
+            if (sse_value == 999) {
+                if (double_value == 2.71828) {
+                    if (first == 1) {
+                        if (second == 2) {
+                            all_ok = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if (all_ok) {
+        int32:success = 0;
+        pass(success);
+    }
+    
+    int32:error = 1;
+    pass(error);
+};

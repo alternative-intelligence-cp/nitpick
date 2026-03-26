@@ -1,0 +1,34 @@
+// GPU/PTX Backend Phase 4 Test: GPU Intrinsics
+// Tests all 13 GPU intrinsics (thread indexing, dimensions, synchronization)
+
+func:gpu_test_intrinsics = NIL(int32:n) {
+    // Thread indexing (most common - X dimension)
+    int32:tid_x = gpu.thread_id();
+    int32:tid_y = gpu.thread_id_y();
+    int32:tid_z = gpu.thread_id_z();
+    
+    // Block indexing
+    int32:bid_x = gpu.block_id();
+    int32:bid_y = gpu.block_id_y();
+    int32:bid_z = gpu.block_id_z();
+    
+    // Block dimensions
+    int32:bdim_x = gpu.block_dim();
+    int32:bdim_y = gpu.block_dim_y();
+    int32:bdim_z = gpu.block_dim_z();
+    
+    // Grid dimensions  
+    int32:gdim_x = gpu.grid_dim();
+    int32:gdim_y = gpu.grid_dim_y();
+    int32:gdim_z = gpu.grid_dim_z();
+    
+    // Calculate global thread ID (1D)
+    int32:global_id = bid_x * bdim_x + tid_x;
+    
+    // Synchronization barrier
+    gpu.sync_threads();
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling placeholder
+};

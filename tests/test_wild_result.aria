@@ -1,0 +1,20 @@
+// Test: Phase 1.5 - Wild Result Allows .is_error Modification  
+// This should COMPILE - wild Result allows error state modification
+
+func:get_value = int64() {
+    pass(42i64);
+};
+
+func:main = int32() {
+    // Create a wild Result variable
+    // Note: Can't use Result<int64> syntax until generics work
+    // 
+    // wild Result<int64>:r = get_value();
+    // r.is_error = false;  // OK: wild allows modification (dangerous but explicit)
+    
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

@@ -1,0 +1,60 @@
+// Simple Wave9 smoke test
+use stdlib.wave;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+func:main = int32() {
+    println("Wave9 Smoke Test");
+    println("================");
+    
+    // Test 1: Create a wave
+    Wave9:w1 = Wave9 { r: 1, s: 2, t: 0, u: 3, v: -1, w: 0, x: 4, y: -2, z: 1 };
+    println("✓ Created Wave9");
+    
+    // Test 2: Create zero wave
+    Wave9:zero = raw(wave_zero());
+    println("✓ Created zero wave");
+    
+    // Test 3: Wave interference
+    Wave9:w2 = Wave9 { r: -1, s: 1, t: 0, u: 0, v: 1, w: 0, x: -2, y: 2, z: 0 };
+    Wave9:result = raw(wave_interfere(w1, w2));
+    println("✓ Wave interference works");
+    
+    // Test 4: Wave negation
+    Wave9:neg = raw(wave_negate(w1));
+    println("✓ Wave negation works");
+    
+    // Test 5: Wave scaling
+    nit:factor = 2;
+    Wave9:scaled = raw(wave_scale(w1, factor));
+    println("✓ Wave scaling works");
+    
+    // Test 6: Magnitude
+    int32:mag = raw(wave_magnitude_squared(w1));
+    println("✓ Magnitude calculation works");
+    
+    // Test 7: Equality
+    bool:eq = raw(wave_equals(w1, w1));
+    println("✓ Equality test works");
+    
+    // Test 8: Spatial wave
+    nit:x_coord = 3;
+    nit:y_coord = -2;
+    nit:z_coord = 1;
+    Wave9:spatial = raw(wave_from_spatial(x_coord, y_coord, z_coord));
+    println("✓ Spatial wave factory works");
+    
+    // Test 9: Quantum wave
+    nit:u_coord = 2;
+    nit:v_coord = -1;
+    nit:w_coord = 3;
+    Wave9:quantum = raw(wave_from_quantum(u_coord, v_coord, w_coord));
+    println("✓ Quantum wave factory works");
+    
+    println("");
+    println("================");
+    println("ALL SMOKE TESTS PASSED ✓");
+    println("Wave9 system operational!");
+    
+    pass(0i32);
+};

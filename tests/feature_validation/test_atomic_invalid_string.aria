@@ -1,0 +1,13 @@
+// Expected: COMPILER ERROR
+// Test: Atomic<T> with invalid type - string (should fail compilation)
+// Phase 2.2: Type constraints - this should produce a compile error
+// Expected error: "atomic<T> requires lock-free compatible type (int8-64, uint8-64, bool, tbb8-64), got: string"
+
+import atomic
+
+func main() {
+    // This should fail: string is not lock-free compatible
+    var atomic_str: atomic<string> = atomic.new_string("invalid")
+    
+    println("This should not compile!")
+}

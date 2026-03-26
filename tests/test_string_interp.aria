@@ -1,0 +1,23 @@
+/**
+ * Minimal test to isolate string interpolation segfault
+ */
+
+use stdlib.quantum;
+
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
+};
+
+func:main = int32() {
+    // Simple int32 variable
+    int32:x = 42;
+    
+    // Test 1: Plain println (should work)
+    drop(println("Test 1: Plain text"));
+    
+    // Test 2: String interpolation with int32 (suspect this crashes)
+    drop(println(`Test 2: x = &{x}`));
+    
+    drop(println("Test 3: After interpolation"));
+    pass(0);
+};

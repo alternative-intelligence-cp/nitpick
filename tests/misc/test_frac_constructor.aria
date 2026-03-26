@@ -1,0 +1,35 @@
+// Test frac with constructor function
+
+func:main = int32() {
+    // Test 1/2 + 1/3 = 5/6
+    frac32:half = frac32_from_parts(0i32, 1i32, 2i32);
+    frac32:third = frac32_from_parts(0i32, 1i32, 3i32);
+    frac32:sum = frac32_add(half, third);
+    
+    // Test 1/2 * 2/1 = 1/1
+    frac32:two = frac32_from_parts(2i32, 0i32, 1i32);
+    frac32:product = frac32_mul(half, two);
+    
+    // Test 3/4 - 1/4 = 1/2 (auto-reduce)
+    frac32:three_fourths = frac32_from_parts(0i32, 3i32, 4i32);
+    frac32:one_fourth = frac32_from_parts(0i32, 1i32, 4i32);
+    frac32:diff = frac32_sub(three_fourths, one_fourth);
+    
+    // Test 1/2 / 2/1 = 1/4
+    frac32:quotient = frac32_div(half, two);
+    
+    // Test negation
+    frac32:neg_half = frac32_neg(half);
+    
+    // Test comparison (1/2 < 2/3 should be -1)
+    frac32:two_thirds = frac32_from_parts(0i32, 2i32, 3i32);
+    int32:cmp_result = frac32_cmp(half, two_thirds);
+    
+    // Test conversions
+    int32:as_int = frac32_to_int(two);         // Should be 2
+    float32:as_float = frac32_to_float(half);  // Should be 0.5
+    
+    return 0i32;
+};
+
+func:failsafe = NIL(int32:err_code) {};

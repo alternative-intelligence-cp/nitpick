@@ -1,0 +1,20 @@
+// P0: Test alignment attribute
+
+func:failsafe = NIL(int32:err_code) {
+    // Empty failsafe for testing
+};
+
+func:main = int32() {
+    #[align(64)]
+    flt64[4]:cache_aligned = [0.0, 1.0, 2.0, 3.0];
+    
+    flt64:sum = cache_aligned[0] + cache_aligned[3];
+    
+    if (sum == 3.0) {
+        int32:success = 0;
+        pass(success);
+    }
+    
+    int32:err = 1;
+    pass(err);
+};

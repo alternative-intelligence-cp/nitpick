@@ -1,0 +1,95 @@
+/**
+ * Q3<T> Manual Operations Test
+ * Since generic function type inference doesn't work through modules yet,
+ * we test Q3 functionality using direct struct manipulation.
+ */
+
+use stdlib.quantum;
+
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
+};
+
+func:main = int32() {
+    drop(println("=== Q3 Manual Operations Test ==="));
+    
+    // Test 1: Creating Q3 with different confidence levels
+    drop(println("Test 1: Q3 creation with struct literals"));
+    trit:c_unknown = 0;
+    trit:c_lean_a = -1;
+    trit:c_lean_b = 1;
+    
+    Q3<int32>:q_unknown = {a: 10, b: 20, c: c_unknown};
+    Q3<int32>:q_a = {a: 100, b: 200, c: c_lean_a};
+    Q3<int32>:q_b = {a: 50, b: 75, c: c_lean_b};
+    
+    if (q_unknown.c == 0 && q_a.c == -1 && q_b.c == 1) {
+        drop(println("  PASS: All confidence levels created"));
+    }
+    
+    // Test 2: Manual arithmetic (simulating q3_add behavior)
+    drop(println("Test 2: Adding 5 to both hypotheses"));
+    Q3<int32>:q_base = {a: 10, b: 20, c: c_unknown};
+    int32:add_val = 5;
+    
+    Q3<int32>:q_added = {a: q_base.a + add_val, b: q_base.b + add_val, c: q_base.c};
+    
+    if (q_added.a == 15 && q_added.b == 25 && q_added.c == 0) {
+        drop(println("  PASS: Arithmetic on both hypotheses works"));
+    }
+    
+    // Test 3: Manual multiplication
+    drop(println("Test 3: Multiplying both hypotheses by 2"));
+    int32:mul_val = 2;
+    
+    Q3<int32>:q_doubled = {a: q_base.a * mul_val, b: q_base.b * mul_val, c: q_base.c};
+    
+    if (q_doubled.a == 20 && q_doubled.b == 40 && q_doubled.c == 0) {
+        drop(println("  PASS: Multiplication preserves superposition"));
+    }
+    
+    // Test 4: Manual crystallization simulation (Q3 threshold: abs(c) >= 1)
+    drop(println("Test 4: Crystallization logic"));
+    Q3<int32>:q_confident_a = {a: 100, b: 200, c: c_lean_a};
+    Q3<int32>:q_confident_b = {a: 100, b: 200, c: c_lean_b};
+    
+    int32:result_a = 0;
+    int32:result_b = 0;
+    
+    if (q_confident_a.c < 0) {
+        result_a = q_confident_a.a;
+    }
+    if (q_confident_b.c > 0) {
+        result_b = q_confident_b.b;
+    }
+    
+    if (result_a == 100 && result_b == 200) {
+        drop(println("  PASS: Crystallization selects correct hypothesis"));
+    }
+    
+    // Test 5: Confidence flip simulation
+    drop(println("Test 5: Confidence manipulation"));
+    Q3<int32>:q_flip_test = {a: 42, b: 84, c: c_lean_a};
+    
+    trit:flip_multiplier = -1;
+    trit:flipped = q_flip_test.c * flip_multiplier;
+    Q3<int32>:q_flipped = {a: q_flip_test.a, b: q_flip_test.b, c: flipped};
+    
+    if (q_flip_test.c == -1 && q_flipped.c == 1) {
+        drop(println("  PASS: Confidence flip works"));
+    }
+    
+    // Test 6: Check if can crystallize
+    drop(println("Test 6: Crystallization check"));
+    bool:can_cryst_unknown = q_unknown.c != 0;
+    bool:can_cryst_confident = q_a.c != 0;
+    
+    if (can_cryst_unknown == false && can_cryst_confident == true) {
+        drop(println("  PASS: Crystallization check logic correct"));
+    }
+    
+    drop(println("=== All Manual Operation Tests Complete ==="));
+    drop(println("NOTE: Generic function calls from modules need turbofish syntax"));
+    drop(println("      once type inference through Q3<T> parameters is implemented."));
+    pass(0);
+};

@@ -1,0 +1,50 @@
+// Expected: COMPILER ERROR
+/**
+ * Q3<T> Constructor Functions Test  
+ * Tests: q3_create, q3_unknown, q3_lean_a, q3_lean_b
+ */
+
+use stdlib.quantum;
+
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
+};
+
+func:main = int32() {
+    drop(println("=== Q3 Constructor Test ==="));
+    
+    // Test 1: q3_create with explicit confidence
+    drop(println("Test 1: q3_create"));
+    Q3<int32>:q1 = q3_create(10, 20, 0);
+    
+    if (q1.a == 10 && q1.b == 20 && q1.c == 0) {
+        drop(println("  PASS: q3_create works"));
+    }
+    
+    // Test 2: q3_unknown (c = 0)
+    drop(println("Test 2: q3_unknown"));
+    Q3<int32>:q2 = q3_unknown(100, 200);
+    
+    if (q2.a == 100 && q2.b == 200 && q2.c == 0) {
+        drop(println("  PASS: q3_unknown works"));
+    }
+    
+    // Test 3: q3_lean_a (c = -1)
+    drop(println("Test 3: q3_lean_a"));
+    Q3<int32>:q3 = q3_lean_a(50, 75);
+    
+    if (q3.a == 50 && q3.b == 75 && q3.c == -1) {
+        drop(println("  PASS: q3_lean_a works"));
+    }
+    
+    // Test 4: q3_lean_b (c = +1)
+    drop(println("Test 4: q3_lean_b"));
+    Q3<int32>:q4 = q3_lean_b(30, 40);
+    
+    if (q4.a == 30 && q4.b == 40 && q4.c == 1) {
+        drop(println("  PASS: q3_lean_b works"));
+    }
+    
+    drop(println("=== All Constructor Tests Complete ==="));
+    pass(0);
+};

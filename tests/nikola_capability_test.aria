@@ -129,7 +129,7 @@ func:safe_divide = Result<int32>(int32:a, int32:b) {
     if (b == 0) {
         fail("Division by zero");
     }
-    pass(a / b);
+    pass(raw(a / b));
 };
 
 // ============================================================================
@@ -148,11 +148,11 @@ func:main = int32() {
     // TEST 1: Custom Numeric Type (Nit)
     stdout.writeln("[TEST 1] Custom Numeric Type - Nit");
     
-    Nit:n1 = nit_new(3);
-    Nit:n2 = nit_new(-2);
+    Nit:n1 = raw(nit_new(3));
+    Nit:n2 = raw(nit_new(-2));
     
     // Test addition: 3 + (-2) = 1
-    Nit:sum = nit_add(n1, n2);
+    Nit:sum = raw(nit_add(n1, n2));
     if (sum.value != 1) {
         int32:val = sum.value;
         stdout.writeln("FAIL: Nit addition");
@@ -161,7 +161,7 @@ func:main = int32() {
     stdout.writeln("  PASS: Addition works (3 + -2 = 1)");
     
     // Test subtraction: 3 - (-2) = 5, but saturates to 4
-    Nit:diff = nit_sub(n1, n2);
+    Nit:diff = raw(nit_sub(n1, n2));
     if (diff.value != 4) {
         stdout.writeln("FAIL: Nit saturation");
         pass(-2);
@@ -169,8 +169,8 @@ func:main = int32() {
     stdout.writeln("  PASS: Saturation works (3 - -2 = 4 clamped from 5)");
     
     // Test equality
-    Nit:n3 = nit_new(3);
-    if (!nit_eq(n1, n3)) {
+    Nit:n3 = raw(nit_new(3));
+    if (!raw(nit_eq(n1), n3)) {
         stdout.writeln("FAIL: Nit equality");
         pass(-3);
     }
@@ -216,13 +216,13 @@ func:main = int32() {
     // TEST 3: Pattern Matching
     stdout.writeln("[TEST 3] Pattern Matching");
     
-    Nit:neg = nit_new(-3);
-    Nit:zero = nit_new(0);
-    Nit:pos = nit_new(2);
+    Nit:neg = raw(nit_new(-3));
+    Nit:zero = raw(nit_new(0));
+    Nit:pos = raw(nit_new(2));
     
-    int32:class_neg = classify_nit(neg);
-    int32:class_zero = classify_nit(zero);
-    int32:class_pos = classify_nit(pos);
+    int32:class_neg = raw(classify_nit(neg));
+    int32:class_zero = raw(classify_nit(zero));
+    int32:class_pos = raw(classify_nit(pos));
     
     if (class_neg != 1 || class_zero != 0 || class_pos != 2) {
         stdout.writeln("FAIL: Pattern matching classification");
@@ -235,7 +235,7 @@ func:main = int32() {
     // TEST 4: Error Handling
     stdout.writeln("[TEST 4] Error Handling with Result<T>");
     
-    Result<int32>:good_div = safe_divide(10, 2);
+    Result<int32>:good_div = raw(safe_divide(10, 2));
     if (good_div.is_error) {
         stdout.writeln("FAIL: Valid division returned error");
         pass(-8);
@@ -246,7 +246,7 @@ func:main = int32() {
     }
     stdout.writeln("  PASS: Successful Result works");
     
-    Result<int32>:bad_div = safe_divide(10, 0);
+    Result<int32>:bad_div = raw(safe_divide(10, 0));
     if (!bad_div.is_error) {
         stdout.writeln("FAIL: Division by zero should return error");
         pass(-10);

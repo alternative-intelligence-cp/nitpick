@@ -1,0 +1,15 @@
+// Simpler test: just unwrap a stored Result
+
+func:get_five = int32() {
+    pass(5i32);
+};
+
+func:main = int32() {
+    Result<int32>:r = get_five();
+    int32:x = r ? 999i32;  // Unwrap stored Result
+    pass(x);  // Should return 5
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

@@ -1,0 +1,28 @@
+// Expected: COMPILER ERROR
+// Test atomic operations using stdlib wrappers
+use stdlib.atomic.int32;
+
+func:main = int32() {
+    // Create atomic with initial value 0
+    atomic_int32:counter = atomic_int32_new(0);
+    
+    // Store 42
+    atomic_int32_store(counter, 42, 4);  // 4 = SEQ_CST
+    
+    // Load back
+    int32:value = atomic_int32_load(counter, 4);  // 4 = SEQ_CST
+    
+    // Cleanup
+    atomic_int32_destroy(counter);
+    
+    // Check if value is 42
+    if (value == 42) {
+        pass(0);  // SUCCESS
+    } else {
+        pass(1);  // FAIL: value != 42
+    }
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

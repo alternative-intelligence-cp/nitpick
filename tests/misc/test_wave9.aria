@@ -1,0 +1,481 @@
+// Comprehensive tests for Wave9 9D wave coordinate system
+// Tests the Nikola AGI physics substrate
+
+use stdlib.wave;
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+/**
+ * Test 1: Wave9 struct creation
+ * Verify that Wave9 struct can be created with explicit field values
+ */
+func:test_wave9_creation = int32() {
+    println("Test 1: Wave9 struct creation");
+    
+    Wave9:w = Wave9 {
+        r: 1, s: -1, t: 0,
+        u: 2, v: -2, w: 1,
+        x: 3, y: -3, z: 4
+    };
+    
+    // Verify field access
+    if (w.x != 3) {
+        println("  ✗ FAILED: x coordinate incorrect");
+        pass(1i32);
+    }
+    
+    if (w.y != -3) {
+        println("  ✗ FAILED: y coordinate incorrect");
+        pass(1i32);
+    }
+    
+    if (w.z != 4) {
+        println("  ✗ FAILED: z coordinate incorrect");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Test 2: wave_zero factory
+ * Verify that wave_zero creates a wave at origin
+ */
+func:test_wave_zero = int32() {
+    println("Test 2: wave_zero factory");
+    
+    Wave9:zero = raw(wave_zero());
+    
+    if (zero.r != 0 || zero.s != 0 || zero.t != 0 ||
+        zero.u != 0 || zero.v != 0 || zero.w != 0 ||
+        zero.x != 0 || zero.y != 0 || zero.z != 0) {
+        println("  ✗ FAILED: wave_zero not at origin");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Test 3: Wave interference (superposition)
+ * Test that wave_interfere correctly adds wave coordinates
+ */
+func:test_wave_interfere = int32() {
+    println("Test 3: Wave interference");
+    
+    Wave9:a = Wave9 {
+        r: 1, s: 2, t: 0,
+        u: 1, v: 1, w: 1,
+        x: 2, y: 0, z: -1
+    };
+    
+    Wave9:b = Wave9 {
+        r: -1, s: 1, t: 1,
+        u: 0, v: -1, w: 1,
+        x: 1, y: 3, z: 2
+    };
+    
+    Wave9:result = raw(wave_interfere(a, b));
+    
+    // Check superposition: a + b
+    if (result.r != 0) {  // 1 + (-1) = 0
+        println("  ✗ FAILED: r coordinate interference incorrect");
+        pass(1i32);
+    }
+    
+    if (result.s != 3) {  // 2 + 1 = 3
+        println("  ✗ FAILED: s coordinate interference incorrect");
+        pass(1i32);
+    }
+    
+    if (result.x != 3) {  // 2 + 1 = 3
+        println("  ✗ FAILED: x coordinate interference incorrect");
+        pass(1i32);
+    }
+    
+    if (result.y != 3) {  // 0 + 3 = 3
+        println("  ✗ FAILED: y coordinate interference incorrect");
+        pass(1i32);
+    }
+    
+    if (result.z != 1) {  // -1 + 2 = 1
+        println("  ✗ FAILED: z coordinate interference incorrect");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Test 4: Wave negation (phase inversion)
+ * Test that wave_negate correctly flips all signs
+ */
+func:test_wave_negate = int32() {
+    println("Test 4: Wave negation");
+    
+    Wave9:original = Wave9 {
+        r: 2, s: -3, t: 0,
+        u: 1, v: -1, w: 4,
+        x: -2, y: 3, z: -4
+    };
+    
+    Wave9:negated = raw(wave_negate(original));
+    
+    // Check that all signs are flipped
+    if (negated.r != -2) {
+        println("  ✗ FAILED: r not negated correctly");
+        pass(1i32);
+    }
+    
+    if (negated.s != 3) {
+        println("  ✗ FAILED: s not negated correctly");
+        pass(1i32);
+    }
+    
+    if (negated.t != 0) {  // -0 = 0
+        println("  ✗ FAILED: t not negated correctly");
+        pass(1i32);
+    }
+    
+    if (negated.x != 2) {
+        println("  ✗ FAILED: x not negated correctly");
+        pass(1i32);
+    }
+    
+    if (negated.y != -3) {
+        println("  ✗ FAILED: y not negated correctly");
+        pass(1i32);
+    }
+    
+    if (negated.z != 4) {
+        println("  ✗ FAILED: z not negated correctly");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Test 5: Destructive interference
+ * Test that wave + (-wave) ≈ zero
+ */
+func:test_destructive_interference = int32() {
+    println("Test 5: Destructive interference");
+    
+    Wave9:w = Wave9 {
+        r: 3, s: -2, t: 1,
+        u: 4, v: -4, w: 2,
+        x: -1, y: 0, z: 3
+    };
+    
+    Wave9:neg_w = raw(wave_negate(w));
+    Wave9:result = raw(wave_interfere(w, neg_w));
+    
+    // Result should be zero wave (all components = 0)
+    if (result.r != 0 || result.s != 0 || result.t != 0 ||
+        result.u != 0 || result.v != 0 || result.w != 0 ||
+        result.x != 0 || result.y != 0 || result.z != 0) {
+        println("  ✗ FAILED: Destructive interference didn't produce zero");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Test 6: Wave scaling
+ * Test that wave_scale multiplies all components by factor
+ */
+func:test_wave_scale = int32() {
+    println("Test 6: Wave scaling");
+    
+    Wave9:w = Wave9 {
+        r: 1, s: 2, t: 0,
+        u: -1, v: 1, w: 0,
+        x: 2, y: -2, z: 1
+    };
+    
+    nit:factor = 2;
+    Wave9:scaled = raw(wave_scale(w, factor));
+    
+    // Check that all components are doubled
+    if (scaled.r != 2) {
+        println("  ✗ FAILED: r not scaled correctly");
+        pass(1i32);
+    }
+    
+    if (scaled.s != 4) {
+        println("  ✗ FAILED: s not scaled correctly");
+        pass(1i32);
+    }
+    
+    if (scaled.x != 4) {
+        println("  ✗ FAILED: x not scaled correctly");
+        pass(1i32);
+    }
+    
+    if (scaled.y != -4) {
+        println("  ✗ FAILED: y not scaled correctly");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Test 7: Wave magnitude squared
+ * Test L2 norm calculation in 9D space
+ */
+func:test_wave_magnitude = int32() {
+    println("Test 7: Wave magnitude squared");
+    
+    // Simple test case: unit vectors
+    Wave9:unit_x = Wave9 {
+        r: 0, s: 0, t: 0,
+        u: 0, v: 0, w: 0,
+        x: 1, y: 0, z: 0
+    };
+    
+    int32:mag_sq = raw(wave_magnitude_squared(unit_x));
+    if (mag_sq != 1) {  // 1² = 1
+        println("  ✗ FAILED: Unit vector magnitude incorrect");
+        pass(1i32);
+    }
+    
+    // Test case: (2, 2, 0, 0, 0, 0, 0, 0, 0)
+    Wave9:w2 = Wave9 {
+        r: 2, s: 2, t: 0,
+        u: 0, v: 0, w: 0,
+        x: 0, y: 0, z: 0
+    };
+    
+    int32:mag2 = raw(wave_magnitude_squared(w2));
+    if (mag2 != 8) {  // 2² + 2² = 8
+        println("  ✗ FAILED: Magnitude calculation incorrect");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Test 8: Wave equality
+ * Test wave_equals comparison
+ */
+func:test_wave_equals = int32() {
+    println("Test 8: Wave equality");
+    
+    Wave9:a = Wave9 {
+        r: 1, s: 2, t: 3,
+        u: 4, v: -1, w: -2,
+        x: 0, y: 1, z: 2
+    };
+    
+    Wave9:b = Wave9 {
+        r: 1, s: 2, t: 3,
+        u: 4, v: -1, w: -2,
+        x: 0, y: 1, z: 2
+    };
+    
+    Wave9:c = Wave9 {
+        r: 1, s: 2, t: 3,
+        u: 4, v: -1, w: -2,
+        x: 0, y: 1, z: 3  // Different z
+    };
+    
+    if (!raw(wave_equals(a), b)) {
+        println("  ✗ FAILED: Equal waves not detected");
+        pass(1i32);
+    }
+    
+    if (wave_equals(a, c)) {
+        println("  ✗ FAILED: Unequal waves detected as equal");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Test 9: Spatial wave factory
+ * Test wave_from_spatial creates wave with only spatial components
+ */
+func:test_spatial_wave = int32() {
+    println("Test 9: Spatial wave factory");
+    
+    nit:x = 3;
+    nit:y = -2;
+    nit:z = 4;
+    
+    Wave9:spatial = wave_from_spatial(x, y, z);
+    
+    // Check spatial components are set
+    if (spatial.x != 3 || spatial.y != -2 || spatial.z != 4) {
+        println("  ✗ FAILED: Spatial components not set correctly");
+        pass(1i32);
+    }
+    
+    // Check other dimensions are zero
+    if (spatial.r != 0 || spatial.s != 0 || spatial.t != 0 ||
+        spatial.u != 0 || spatial.v != 0 || spatial.w != 0) {
+        println("  ✗ FAILED: Non-spatial dimensions not zeroed");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Test 10: Spatial extraction
+ * Test extracting spatial coordinates from wave
+ */
+func:test_spatial_extraction = int32() {
+    println("Test 10: Spatial coordinate extraction");
+    
+    Wave9:w = Wave9 {
+        r: 1, s: 2, t: 3,
+        u: 4, v: -1, w: -2,
+        x: -3, y: 2, z: 1
+    };
+    
+    nit:x = raw(wave_spatial_x(w));
+    nit:y = raw(wave_spatial_y(w));
+    nit:z = raw(wave_spatial_z(w));
+    
+    if (x != -3) {
+        println("  ✗ FAILED: X extraction incorrect");
+        pass(1i32);
+    }
+    
+    if (y != 2) {
+        println("  ✗ FAILED: Y extraction incorrect");
+        pass(1i32);
+    }
+    
+    if (z != 1) {
+        println("  ✗ FAILED: Z extraction incorrect");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Test 11: Quantum wave factory
+ * Test wave_from_quantum creates wave with only quantum components
+ */
+func:test_quantum_wave = int32() {
+    println("Test 11: Quantum wave factory");
+    
+    nit:u = 2;
+    nit:v = -3;
+    nit:w = 1;
+    
+    Wave9:quantum = wave_from_quantum(u, v, w);
+    
+    // Check quantum components are set
+    if (quantum.u != 2 || quantum.v != -3 || quantum.w != 1) {
+        println("  ✗ FAILED: Quantum components not set correctly");
+        pass(1i32);
+    }
+    
+    // Check other dimensions are zero
+    if (quantum.r != 0 || quantum.s != 0 || quantum.t != 0 ||
+        quantum.x != 0 || quantum.y != 0 || quantum.z != 0) {
+        println("  ✗ FAILED: Non-quantum dimensions not zeroed");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Test 12: Complex interference pattern
+ * Test realistic wave superposition scenario
+ */
+func:test_complex_interference = int32() {
+    println("Test 12: Complex interference pattern");
+    
+    // Create three waves from different sources
+    Wave9:wave1 = Wave9 { r: 1, s: 0, t: 0, u: 2, v: 0, w: 1, x: 3, y: 1, z: 0 };
+    Wave9:wave2 = Wave9 { r: 0, s: 1, t: 0, u: -1, v: 1, w: 0, x: -1, y: 2, z: 1 };
+    Wave9:wave3 = Wave9 { r: -1, s: -1, t: 1, u: 0, v: -1, w: 1, x: 1, y: -1, z: 2 };
+    
+    // Combine all three (simulates multi-source interference)
+    Wave9:temp = raw(wave_interfere(wave1, wave2));
+    Wave9:combined = raw(wave_interfere(temp, wave3));
+    
+    // Verify specific components
+    if (combined.r != 0) {  // 1 + 0 + (-1) = 0
+        println("  ✗ FAILED: Complex r interference incorrect");
+        pass(1i32);
+    }
+    
+    if (combined.u != 1) {  // 2 + (-1) + 0 = 1
+        println("  ✗ FAILED: Complex u interference incorrect");
+        pass(1i32);
+    }
+    
+    if (combined.x != 3) {  // 3 + (-1) + 1 = 3
+        println("  ✗ FAILED: Complex x interference incorrect");
+        pass(1i32);
+    }
+    
+    if (combined.y != 2) {  // 1 + 2 + (-1) = 2
+        println("  ✗ FAILED: Complex y interference incorrect");
+        pass(1i32);
+    }
+    
+    println("  ✓ PASSED");
+    pass(0i32);
+};
+
+/**
+ * Main test runner
+ */
+func:main = int32() {
+    println("========================================");
+    println("WAVE9 COMPREHENSIVE TEST SUITE");
+    println("Testing 9D Wave Coordinate System");
+    println("For Nikola AGI Physics Substrate");
+    println("========================================");
+    println("");
+    
+    int32:failures = 0i32;
+    
+    failures = failures + test_wave9_creation();
+    failures = failures + test_wave_zero();
+    failures = failures + test_wave_interfere();
+    failures = failures + test_wave_negate();
+    failures = failures + test_destructive_interference();
+    failures = failures + test_wave_scale();
+    failures = failures + test_wave_magnitude();
+    failures = failures + test_wave_equals();
+    failures = failures + test_spatial_wave();
+    failures = failures + test_spatial_extraction();
+    failures = failures + test_quantum_wave();
+    failures = failures + test_complex_interference();
+    
+    println("");
+    println("========================================");
+    if (failures == 0i32) {
+        println("ALL WAVE9 TESTS PASSED ✓");
+        println("9D wave mechanics operational!");
+    } else {
+        println("SOME TESTS FAILED ✗");
+    }
+    println("========================================");
+    
+    pass(failures);
+};

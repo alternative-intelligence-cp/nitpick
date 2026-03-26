@@ -1,0 +1,30 @@
+func:failsafe = NIL(int32:err_code) {
+    print("ERROR");
+};
+
+func:add_ten_direct = int32(int32:x) {
+    pass(x + 10);
+};
+
+func:double_it_direct = int32(int32:x) {
+    pass(x * 2);
+};
+
+func:main = int32() {
+    print("Testing pipeline operators");
+    
+    int32:value = 5;
+    int32:result1 = raw(value |> add_ten_direct |> double_it_direct);
+    
+    // Test many possibilities
+    if (result1 == 0) { print("result = 0"); }
+    if (result1 == 5) { print("result = 5"); }
+    if (result1 == 10) { print("result = 10"); }
+    if (result1 == 15) { print("result = 15"); }
+    if (result1 == 20) { print("result = 20"); }
+    if (result1 == 25) { print("result = 25"); }
+    if (result1 == 30) { print("result = 30 CORRECT!"); }
+    if (result1 == 2147483647) { print("result = INT32_MAX (unknown)"); }
+    
+    pass(0);
+};

@@ -1,0 +1,98 @@
+// Comprehensive IntVec mutation test with validation
+// Tests push, pop, clear, and verifies data integrity
+
+extern func:malloc = wild int8*(int64:size);
+extern func:free = NIL(wild int8*:ptr);
+extern func:ptr_to_int64 = int64(wild int8*:ptr);
+extern func:int64_to_ptr = wild int8*(int64:val);
+extern func:int_array_get = int32(wild int8*:buf, int32:idx);
+extern func:int_array_set = NIL(wild int8*:buf, int32:idx, int32:val);
+
+Type:IntVec = {
+    func:create = IntVec(int32:initial_capacity) {
+        int64:bytes = 64i64;
+        wild int8->:buffer = malloc(bytes);
+        IntVec:vec = IntVec{dataptr: ptr_to_int64(buffer), length: 0i32, capacity: initial_capacity};
+        pass(vec);
+    };
+    
+    func:destroy = NIL(IntVec:self) {
+        _ = free(int64_to_ptr(self.dataptr));
+        pass(NIL);
+    };
+    
+    func:len = int32(IntVec:self) { pass(self.length); };
+    func:capacity = int32(IntVec:self) { pass(self.capacity); };
+    func:isEmpty = bool(IntVec:self) { pass(self.length == 0i32); };
+    func:isFull = bool(IntVec:self) { pass(self.length == self.capacity); };
+    
+    func:get = int32(IntVec:self, int32:index) {
+        wild int8->:buffer = int64_to_ptr(self.dataptr);
+        int32:element = int_array_get(buffer, index);
+        pass(element);
+    };
+    
+    func:set = NIL(IntVec:self, int32:index, int32:value) {
+        wild int8->:buffer = int64_to_ptr(self.dataptr);
+        _ = int_array_set(buffer, index, value);
+        pass(NIL);
+    };
+    
+    func:push = IntVec(IntVec:self, int32:value) {
+        wild int8->:buffer = int64_to_ptr(self.dataptr);
+        _ = int_array_set(buffer, self.length, value);
+        int32:new_length = self.length + 1i32;
+        IntVec:result = IntVec{dataptr: self.dataptr, length: new_length, capacity: self.capacity};
+        pass(result);
+    };
+    
+    func:pop = IntVec(IntVec:self) {
+        int32:new_length = self.length - 1i32;
+        IntVec:result = IntVec{dataptr: self.dataptr, length: new_length, capacity: self.capacity};
+        pass(result);
+    };
+    
+    func:clear = IntVec(IntVec:self) {
+        IntVec:result = IntVec{dataptr: self.dataptr, length: 0i32, capacity: self.capacity};
+        pass(result);
+    };
+    
+    func:new = IntVec() {
+        IntVec:vec = raw(instance<IntVec>(16i32));
+        pass(vec);
+    };
+    
+    struct:interface = {
+        int64:dataptr;
+        int32:length;
+        int32:capacity;
+    };
+};
+
+func:main = int32() {
+    // PROOF: Variable reassignment works in Aria!
+    // Instead of creating vecA, vecB, vecC... we REASSIGN vec!
+    
+    IntVec:vec = raw(IntVec.new());
+    vec = raw(vec.push(100i32));  // REASSIGNMENT! 🎯
+    vec = raw(vec.push(200i32));  // REASSIGNMENT! 🎯
+    vec = raw(vec.push(300i32));  // REASSIGNMENT! 🎯
+    vec = raw(vec.push(400i32));  // REASSIGNMENT! 🎯
+    
+    // Validate length
+    int32:length = raw(vec.len());
+    
+    // Validate values
+    int32:sum = raw(vec.get(0i32));  // 100
+    sum = sum + raw(vec.get(1i32));  // + 200 = 300
+    sum = sum + raw(vec.get(2i32));  // + 300 = 600
+    sum = sum + raw(vec.get(3i32));  // + 400 = 1000
+    
+    // Cleanup
+    _ = vec.destroy();
+    
+    // Return 1000 if reassignment worked!
+    pass(sum);
+};
+
+func:failsafe = NIL(int32:err_code) { pass(NIL); };

@@ -1,0 +1,37 @@
+// PROOF: Unwrap operator (?) is fully implemented and working!
+// This enables clean reassignment of function returns
+
+
+func:failsafe = NIL(int32:err_code) { pass(NIL); };
+func:add = int32(int32:a, int32:b) {
+    pass(a + b);
+};
+
+func:multiply = int32(int32:a, int32:b) {
+    pass(a * b);
+};
+
+func:main = int32() {
+    // ========================================
+    // Test 1: Simple variable reassignment ✅
+    // ========================================
+    int32:x = 10i32;
+    x = 20i32;
+    x = 30i32;
+    // x is now 30
+    
+    // ========================================
+    // Test 2: Function return with unwrap ✅
+    // ========================================
+    int32:result = add(10i32, 5i32) ? 0i32;  // result = 15
+    
+    // ========================================
+    // Test 3: REASSIGNMENT with unwrap! ✅
+    // ========================================
+    result = multiply(2i32, 3i32) ? 0i32;     // result = 6
+    result = add(result, 10i32) ? 0i32;       // result = 16
+    result = multiply(result, 2i32) ? 0i32;   // result = 32
+    
+    // Return 32 to prove it all worked!
+    pass(result);
+};

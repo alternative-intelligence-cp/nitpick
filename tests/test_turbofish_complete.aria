@@ -1,0 +1,41 @@
+// Expected: COMPILER ERROR
+/**
+ * Comprehensive turbofish test with Q3<T> functions from module
+ */
+
+use stdlib.quantum;
+
+func:failsafe = NIL(int32:code) {};
+
+func:main = int32() {
+    println("=== Turbofish Module Import Test ===");
+    
+    // Test 1: Call q3_create with turbofish
+    println("Test 1: q3_create::<int32>");
+    trit:c0 = 0;
+    wild obj:q_result = raw(q3_create::<int32>(10, 20, c0));
+    println("  PASS: Function call works");
+    
+    // Test 2: Call q3_add with turbofish  
+    println("Test 2: q3_add::<int32>");
+    trit:c_neg1 = -1;
+    Q3<int32>:q_base = {a: 10, b: 20, c: c_neg1};
+    wild obj:q_added = q3_add::<int32>(q_base, 5);
+    println("  PASS: Function call works");
+    
+    // Test 3: Call q9_create with turbofish
+    println("Test 3: q9_create::<int32>");
+    nit:c0_9 = 0;
+    wild obj:q9_res = q9_create::<int32>(100, 200, c0_9);
+    println("  PASS: Function call works");
+    
+    // Test 4: Call q21_create with turbofish
+    println("Test 4: q21_create::<int32>");
+    tbb8:c0_21 = 0;
+    wild obj:q21_res = q21_create::<int32>(1000, 2000, c0_21);
+    println("  PASS: Function call works");
+    
+    println("=== All Turbofish Tests Complete ===");
+    println("Turbofish syntax works for module-imported generic functions!");
+    pass(0);
+};

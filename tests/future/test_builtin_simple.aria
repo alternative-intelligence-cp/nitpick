@@ -1,0 +1,12 @@
+// Test to verify @sizeof builtin works
+func:test_sizeof = int64() {
+    int64:size = @sizeof(int32);
+    return size;
+};
+
+// Test our SIMD reduction
+func:test_reduction = int32() {
+    simd<int32, 4>:vec = simd<int32, 4>(1, 2, 3, 4);
+    int32:sum = @simd_sum(vec);
+    return sum;
+};

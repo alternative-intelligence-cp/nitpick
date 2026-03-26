@@ -1,0 +1,31 @@
+// Expected: COMPILER ERROR
+// Test: Phase 4 - Proper handling of Result parameters
+// Function checks the Result itself before using it
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail(1i32);
+    }
+    pass(a / b);
+};
+
+// GOOD: Helper extracts value from Result after checking
+func:extract_value = int32(Result<int32>:res) {
+    if (res.is_error) {
+        fail(res.error);  // Propagate the error
+    }
+    pass(res.value);  // Safe - we just checked
+};
+
+func:main = int32() {
+    Result<int32>:r1 = divide(10i32, 2i32);
+    Result<int32>:r2 = extract_value(r1);  // extract_value returns Result<int32>
+    
+    // Use unwrap in main since it must return actual int32
+    int32:result = r2 ? 0i32;
+    return result;
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

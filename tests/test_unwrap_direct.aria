@@ -1,0 +1,15 @@
+// Test: Unwrap only from direct function calls
+
+func:get5 = int32() {
+    pass(5i32);
+};
+
+func:main = int32() {
+    // Direct unwrap - should work
+    int32:x = get5() ? 0i32;
+    pass(x);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

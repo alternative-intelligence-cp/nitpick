@@ -1,0 +1,34 @@
+// Test SIMD reductions with SAME parameter name across functions
+// This would fail before the scope fix!
+
+func:test_sum_int = int32(simd<int32, 4>:vec) {
+    int32:total = simd_sum(vec);
+    pass(total);
+};
+
+func:test_sum_int64 = int64(simd<int64, 8>:vec) {
+    int64:result = simd_sum(vec);
+    pass(result);
+};
+
+func:test_sum_float = float32(simd<float32, 4>:vec) {
+    float32:sum = simd_sum(vec);
+    pass(sum);
+};
+
+func:test_product = int32(simd<int32, 4>:vec) {
+    int32:product = simd_product(vec);
+    pass(product);
+};
+
+func:test_min = int32(simd<int32, 4>:vec) {
+    int32:minimum = simd_min(vec);
+    pass(minimum);
+};
+
+func:test_max = int32(simd<int32, 4>:vec) {
+    int32:maximum = simd_max(vec);
+    pass(maximum);
+};
+
+func:failsafe = NIL(int32:err_code) {};

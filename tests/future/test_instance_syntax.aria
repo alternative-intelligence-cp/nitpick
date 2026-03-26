@@ -1,0 +1,26 @@
+// Test instance<T>() constructor syntax and Type.MEMBER static access
+
+Type:Counter = {
+    func:create = Counter(int32:initial) {
+        Counter:c = { value = initial };
+        pass(c);
+    };
+    
+    func:nextId = int32() {
+        pass(42i32);
+    };
+    
+    struct:interface = {
+        int32:value;
+    };
+};
+
+func:main = int32() {
+    // Test instance<T>() syntax - should desugar to Counter_create(10i32)
+    Counter:c = raw(instance<Counter>(10i32));
+    
+    // Test Type.MEMBER static access - should desugar to Counter_nextId()
+    int32:id = raw(Counter.nextId());
+    
+    pass(0i32);
+};

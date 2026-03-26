@@ -1,0 +1,21 @@
+// Expected: COMPILER ERROR
+// Test for Result enforcement - Immutable is_error violation
+
+// Generic function returning Result
+func<T>:maybe_value = Result<T>(T:value, bool:should_fail) {
+    is should_fail : fail(1i64) : pass(value);
+};
+
+func:main = int32() {
+    # BAD - Modify is_error without wild
+    Result<int64>:r1 = maybe_value::<int64>(42i64, true);
+    
+    # Should ERROR here
+    r1.is_error = false;
+    
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

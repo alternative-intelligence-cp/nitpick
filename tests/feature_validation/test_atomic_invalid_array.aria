@@ -1,0 +1,13 @@
+// Expected: COMPILER ERROR
+// Test: Atomic<T> with invalid type - array (should fail compilation)
+// Phase 2.2: Type constraints - this should produce a compile error
+// Expected error: "atomic<T> requires lock-free compatible type (int8-64, uint8-64, bool, tbb8-64), got: array<int32>"
+
+import atomic
+
+func main() {
+    // This should fail: arrays are not atomically compatible
+    var atomic_arr: atomic<array<int32>> = atomic.new_array([1, 2, 3])
+    
+    println("This should not compile!")
+}

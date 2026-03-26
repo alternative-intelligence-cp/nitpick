@@ -1,0 +1,49 @@
+// Vec<T> Phase 3: Test with struct field mutation
+// This should now work with the member access assignment fix!
+
+extern func:aria_array_new_simple = wild int8*(int64:element_size, int32:type_id);
+extern func:aria_array_push_simple = void(wild int8*:arr, wild int8*:value);
+extern func:aria_array_length = int64(wild int8*:arr);
+extern func:aria_array_free = void(wild int8*:arr);
+
+func:main = int32() {
+    // Create a Vec<int8> (using the type system)
+    // Initialize with zeros/nil first
+    Vec<int8>:numbers = {
+        data: NIL,
+        length: 0i64,
+        capacity: 0i64,
+        element_size: 1i64,
+        type_id: 0i32
+    };
+    
+    // Now set the data pointer from runtime
+    numbers.data = aria_array_new_simple(1i64, 0i32);
+    
+    // Push some values
+    int8:val1 = 42i8;
+    aria_array_push_simple(numbers.data, @val1);
+    
+    int8:val2 = 99i8;
+    aria_array_push_simple(numbers.data, @val2);
+    
+    int8:val3 = 7i8;
+    aria_array_push_simple(numbers.data, @val3);
+    
+    // Update length field (this is the critical test!)
+    numbers.length = aria_array_length(numbers.data);
+    
+    // Verify length was correctly updated
+    if (numbers.length != 3i64) {
+        pass(1i32);  // FAIL: Expected length 3
+    }
+    
+    // Clean up
+    aria_array_free(numbers.data);
+    
+    pass(0i32);  // SUCCESS!
+};
+
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
+};

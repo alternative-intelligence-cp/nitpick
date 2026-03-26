@@ -1,0 +1,78 @@
+// Test: Pick patterns with unknown literal
+// Verifies that unknown is recognized as a valid pattern
+
+func:test_unknown_pattern = int32() {
+    // Test that unknown pattern is recognized
+    int32:x = 5i32;
+    
+    pick(x) {
+        (unknown) {
+            pass(0i32);
+        },
+        (0i32) {
+            pass(10i32);
+        },
+        (5i32) {
+            pass(20i32);
+        },
+        (*) {
+            pass(30i32);
+        }
+    }
+};
+
+func:test_tbb_with_err_unknown = int32() {
+    // TBB with both ERR and unknown cases
+    tbb8:x = 5;
+    
+    pick(x) {
+        (ERR) {
+            pass(0i32);
+        },
+        (unknown) {
+            pass(1i32);
+        },
+        (0) {
+            pass(10i32);
+        },
+        (5) {
+            pass(20i32);
+        },
+        (*) {
+            pass(30i32);
+        }
+    }
+};
+
+func:test_priority_order = int32() {
+    // Test that patterns work with priority order: ERR, unknown, specific, default
+    int32:x = 0i32;
+    
+    pick(x) {
+        (ERR) {
+            pass(1i32);
+        },
+        (unknown) {
+            pass(2i32);
+        },
+        (0i32) {
+            pass(3i32);
+        },
+        (*) {
+            pass(4i32);
+        }
+    }
+};
+
+func:main = int32() {
+    int32:a = raw(test_unknown_pattern());
+    int32:b = raw(test_tbb_with_err_unknown());
+    int32:c = raw(test_priority_order());
+    
+    // Expected: 20 + 20 + 3 = 43
+    pass(a + b + c);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

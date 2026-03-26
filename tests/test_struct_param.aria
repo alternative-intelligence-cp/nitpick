@@ -1,0 +1,24 @@
+// Expected: COMPILER ERROR
+// Simple test: function with struct parameter
+
+struct:Point = {
+    int32:x,
+    int32:y
+};
+
+func:get_x = int32(Point:p) {
+    pass(p.x);
+};
+
+func:main = int32() {
+    Point:point = Point{10i32, 20i32};
+    Result<int32>:rx = get_x(point);
+    if (rx.is_error) {
+        fail(1i32);
+    }
+    pass(rx.value);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

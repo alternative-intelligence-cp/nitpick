@@ -1,0 +1,23 @@
+// P1-2 Phase 1 Test: SIMD Type System
+// Test simd<T, N> type declarations
+// NOTE: Using N4, N8, N16 syntax temporarily (parser limitation)
+// TODO Phase 2: Fix parser to accept integer literals as type args
+
+func:failsafe = int32(int32:err_code) {
+    pass(1);
+};
+
+func:main = int32() {
+    // Basic SIMD declarations (using identifier workaround)
+    simd<int32, N4>:vec_a;       // 4-lane int32 vector (SSE)
+    simd<int64, N8>:vec_b;       // 8-lane int64 vector (AVX-512)
+    simd<fix256, N16>:vec_c;     // 16-lane fix256 vector
+    
+    // TODO: Once operations are implemented:
+    // vec_a = simd_broadcast(10);
+    // vec_c = vec_a + vec_b;
+    
+    // Success - if we get here, types compiled!
+    return 0;
+};
+

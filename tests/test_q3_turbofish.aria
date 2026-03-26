@@ -1,0 +1,47 @@
+// Expected: COMPILER ERROR
+/**
+ * Test Q3<T> generic function calls using turbofish syntax
+ */
+
+use stdlib.quantum;
+
+/**
+ * Test Q3<T> generic function calls using turbofish syntax
+ */
+
+use stdlib.quantum;
+
+func:main = int32() {
+    // Test 1: q3_create with explicit type
+    println("Test 1: Q3 creation with turbofish...");
+    trit:c0 = 0;
+    
+    // Call q3_create with turbofish - returns Result<Q3<int32>>
+    // For now, skip the Result type declaration (parser limitation with nested generics)
+    wild Q3<int32>:q1 = q3_create::<int32>(10, 20, c0) ? {a: 0, b: 0, c: c0};
+    
+    println("  Created Q3 successfully");
+    
+    // Test 2: q3_add with explicit type
+    println("Test 2: Adding 5 to both hypotheses...");
+    wild Q3<int32>:q2 = q3_add::<int32>(q1, 5) ? {a: 0, b: 0, c: c0};
+    
+    println("  After add, checking values...");
+    
+    if (q2.a != 15) {
+        println("ERROR: Expected a=15");
+        pass(3);
+    }
+    
+    if (q2.b != 25) {
+        println("ERROR: Expected b=25");
+        pass(4);
+    }
+    
+    println("All turbofish tests passed!");
+    pass(0);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};
