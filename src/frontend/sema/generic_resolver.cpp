@@ -63,6 +63,63 @@ TypeSubstitution GenericResolver::inferTypeArgs(
                 return TypeSubstitution();
             }
         }
+        // Check if this is a generic struct type (e.g., complex<*T>)
+        // When a parameter type is a generic struct like complex<*T>, we need
+        // to extract T from the concrete monomorphized argument struct type.
+        else if (param->typeNode &&
+                 param->typeNode->type == ASTNode::NodeType::GENERIC_TYPE &&
+                 argType->getKind() == TypeKind::STRUCT && typeSystem) {
+            auto* genericTypeNode = static_cast<aria::GenericType*>(param->typeNode.get());
+            auto* structType = static_cast<StructType*>(argType);
+            std::string argName = structType->getName();
+            std::string baseName = genericTypeNode->baseName;
+            
+            for (const auto& ta : genericTypeNode->typeArgs) {
+                std::string taStr = ta ? ta->toString() : "";
+                if (taStr.size() > 1 && taStr[0] == '*') {
+                    std::string typeParamName = taStr.substr(1);
+                    
+                    // Verify this is a generic param of this function
+                    bool isGenericParam = false;
+                    for (const auto& gp : funcDecl->genericParams) {
+                        if (gp.name == typeParamName) {
+                            isGenericParam = true;
+                            break;
+                        }
+                    }
+                    if (!isGenericParam) continue;
+                    
+                    // Extract concrete type from monomorphized struct name
+                    // Format: _Aria_M_{baseName}_{hexHash}_{type1}_{type2}...
+                    std::string concreteTypeName;
+                    std::string prefix = "_Aria_M_" + baseName + "_";
+                    
+                    if (argName.find(prefix) == 0) {
+                        std::string rest = argName.substr(prefix.size());
+                        // Skip the hex hash (first underscore-delimited segment)
+                        size_t hashEnd = rest.find('_');
+                        if (hashEnd != std::string::npos) {
+                            concreteTypeName = rest.substr(hashEnd + 1);
+                        }
+                    } else if (argName.find(baseName + "_") == 0) {
+                        // Fallback: {baseName}_{type} format
+                        concreteTypeName = argName.substr(baseName.size() + 1);
+                    }
+                    
+                    if (!concreteTypeName.empty()) {
+                        Type* concreteType = typeSystem->getPrimitiveType(concreteTypeName);
+                        if (!concreteType || concreteType->getKind() == TypeKind::ERROR) {
+                            concreteType = typeSystem->getStructType(concreteTypeName);
+                        }
+                        if (concreteType && concreteType->getKind() != TypeKind::ERROR) {
+                            if (!unifyTypes(nullptr, concreteType, substitution, typeParamName)) {
+                                return TypeSubstitution();
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
     // Phase 2: Validate that all type parameters have been inferred
