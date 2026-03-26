@@ -7559,11 +7559,22 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // ARIA-025: fix256 deterministic fixed-point addition
                     if (isFix256Type(L->getType())) {
                         llvm::Type* fix256Type = L->getType();
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                        // SysV ABI: 32-byte struct returned via sret hidden first param
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
-                            fix256Type, {fix256Type, fix256Type}, false);
+                            llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee addFunc = module->getOrInsertFunction(
                             "aria_fix256_add", funcType);
-                        return builder.CreateCall(addFunc, {L, R}, "fix256.add");
+                        llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.add_ret");
+                        llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.add_l");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.add_r");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        auto* call = builder.CreateCall(addFunc, {resultAlloca, leftAlloca, rightAlloca});
+                        call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, fix256Type));
+                        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, fix256Type));
+                        call->addParamAttr(2, llvm::Attribute::getWithByValType(context, fix256Type));
+                        return builder.CreateLoad(fix256Type, resultAlloca, "fix256.add");
                     }
                     // Float addition: use FAdd for floating-point types (scalar or SIMD vector)
                     if (L->getType()->getScalarType()->isFloatingPointTy()) {
@@ -7694,11 +7705,21 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // ARIA-025: fix256 deterministic fixed-point subtraction
                     if (isFix256Type(L->getType())) {
                         llvm::Type* fix256Type = L->getType();
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
-                            fix256Type, {fix256Type, fix256Type}, false);
+                            llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee subFunc = module->getOrInsertFunction(
                             "aria_fix256_sub", funcType);
-                        return builder.CreateCall(subFunc, {L, R}, "fix256.sub");
+                        llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.sub_ret");
+                        llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.sub_l");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.sub_r");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        auto* call = builder.CreateCall(subFunc, {resultAlloca, leftAlloca, rightAlloca});
+                        call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, fix256Type));
+                        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, fix256Type));
+                        call->addParamAttr(2, llvm::Attribute::getWithByValType(context, fix256Type));
+                        return builder.CreateLoad(fix256Type, resultAlloca, "fix256.sub");
                     }
                     // Float subtraction: use FSub for floating-point types (scalar or SIMD vector)
                     if (L->getType()->getScalarType()->isFloatingPointTy()) {
@@ -7780,11 +7801,21 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // ARIA-025: fix256 deterministic fixed-point multiplication
                     if (isFix256Type(L->getType())) {
                         llvm::Type* fix256Type = L->getType();
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
-                            fix256Type, {fix256Type, fix256Type}, false);
+                            llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee mulFunc = module->getOrInsertFunction(
                             "aria_fix256_mul", funcType);
-                        return builder.CreateCall(mulFunc, {L, R}, "fix256.mul");
+                        llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.mul_ret");
+                        llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.mul_l");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.mul_r");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        auto* call = builder.CreateCall(mulFunc, {resultAlloca, leftAlloca, rightAlloca});
+                        call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, fix256Type));
+                        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, fix256Type));
+                        call->addParamAttr(2, llvm::Attribute::getWithByValType(context, fix256Type));
+                        return builder.CreateLoad(fix256Type, resultAlloca, "fix256.mul");
                     }
                     // Float multiplication: use FMul for floating-point types (scalar or SIMD vector)
                     if (L->getType()->getScalarType()->isFloatingPointTy()) {
@@ -7872,11 +7903,21 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // ARIA-025: fix256 deterministic fixed-point division
                     if (isFix256Type(L->getType())) {
                         llvm::Type* fix256Type = L->getType();
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
-                            fix256Type, {fix256Type, fix256Type}, false);
+                            llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee divFunc = module->getOrInsertFunction(
                             "aria_fix256_div", funcType);
-                        return builder.CreateCall(divFunc, {L, R}, "fix256.div");
+                        llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.div_ret");
+                        llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.div_l");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.div_r");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        auto* call = builder.CreateCall(divFunc, {resultAlloca, leftAlloca, rightAlloca});
+                        call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, fix256Type));
+                        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, fix256Type));
+                        call->addParamAttr(2, llvm::Attribute::getWithByValType(context, fix256Type));
+                        return builder.CreateLoad(fix256Type, resultAlloca, "fix256.div");
                     }
                     // Float division: use FDiv for floating-point types (scalar or SIMD vector)
                     if (L->getType()->getScalarType()->isFloatingPointTy()) {
@@ -7967,6 +8008,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         std::cerr << "[DEBUG] LBIM equality comparison detected, numLimbs=" << numLimbs << std::endl;
                         return generateLBIMEQ(L, R, numLimbs);
+                    }
+                    // ARIA-025: fix256 equality comparison
+                    if (isFix256Type(L->getType())) {
+                        llvm::Type* fix256Type = L->getType();
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee eqFunc = module->getOrInsertFunction(
+                            "aria_fix256_eq", funcType);
+                        llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.eq_l");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.eq_r");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        auto* call = builder.CreateCall(eqFunc, {leftAlloca, rightAlloca}, "fix256.eq");
+                        call->addParamAttr(0, llvm::Attribute::getWithByValType(context, fix256Type));
+                        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, fix256Type));
+                        return builder.CreateICmpNE(call,
+                            llvm::ConstantInt::get(i32Type, 0), "fix256.eqbool");
                     }
                     // Optional type comparison: check hasValue fields
                     if (L->getType()->isStructTy() && R->getType()->isStructTy()) {
@@ -8126,6 +8186,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::Value* eq = generateLBIMEQ(L, R, numLimbs);
                         return builder.CreateNot(eq, "netmp");
                     }
+                    // ARIA-025: fix256 inequality comparison
+                    if (isFix256Type(L->getType())) {
+                        llvm::Type* fix256Type = L->getType();
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee eqFunc = module->getOrInsertFunction(
+                            "aria_fix256_eq", funcType);
+                        llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ne_l");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ne_r");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        auto* call = builder.CreateCall(eqFunc, {leftAlloca, rightAlloca}, "fix256.eq");
+                        call->addParamAttr(0, llvm::Attribute::getWithByValType(context, fix256Type));
+                        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, fix256Type));
+                        return builder.CreateICmpEQ(call,
+                            llvm::ConstantInt::get(i32Type, 0), "fix256.nebool");
+                    }
                     // Optional type comparison: check hasValue fields (same as ==, then negate)
                     if (L->getType()->isStructTy() && R->getType()->isStructTy()) {
                         llvm::StructType* leftStruct = llvm::cast<llvm::StructType>(L->getType());
@@ -8274,6 +8353,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         return generateLBIMSLT(L, R, numLimbs);
                     }
+                    // ARIA-025: fix256 less-than comparison
+                    if (isFix256Type(L->getType())) {
+                        llvm::Type* fix256Type = L->getType();
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee ltFunc = module->getOrInsertFunction(
+                            "aria_fix256_lt", funcType);
+                        llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.lt_l");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.lt_r");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        auto* call = builder.CreateCall(ltFunc, {leftAlloca, rightAlloca}, "fix256.lt");
+                        call->addParamAttr(0, llvm::Attribute::getWithByValType(context, fix256Type));
+                        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, fix256Type));
+                        return builder.CreateICmpNE(call,
+                            llvm::ConstantInt::get(i32Type, 0), "fix256.ltbool");
+                    }
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
@@ -8353,6 +8451,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         llvm::Value* gt = generateLBIMSLT(R, L, numLimbs);
                         return builder.CreateNot(gt, "letmp");
+                    }
+                    // ARIA-025: fix256 less-equal comparison
+                    if (isFix256Type(L->getType())) {
+                        llvm::Type* fix256Type = L->getType();
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee leFunc = module->getOrInsertFunction(
+                            "aria_fix256_le", funcType);
+                        llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.le_l");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.le_r");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        auto* call = builder.CreateCall(leFunc, {leftAlloca, rightAlloca}, "fix256.le");
+                        call->addParamAttr(0, llvm::Attribute::getWithByValType(context, fix256Type));
+                        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, fix256Type));
+                        return builder.CreateICmpNE(call,
+                            llvm::ConstantInt::get(i32Type, 0), "fix256.lebool");
                     }
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
@@ -8435,6 +8552,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         return generateLBIMSLT(R, L, numLimbs);
                     }
+                    // ARIA-025: fix256 greater-than comparison
+                    if (isFix256Type(L->getType())) {
+                        llvm::Type* fix256Type = L->getType();
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee gtFunc = module->getOrInsertFunction(
+                            "aria_fix256_gt", funcType);
+                        llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.gt_l");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.gt_r");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        auto* call = builder.CreateCall(gtFunc, {leftAlloca, rightAlloca}, "fix256.gt");
+                        call->addParamAttr(0, llvm::Attribute::getWithByValType(context, fix256Type));
+                        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, fix256Type));
+                        return builder.CreateICmpNE(call,
+                            llvm::ConstantInt::get(i32Type, 0), "fix256.gtbool");
+                    }
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
@@ -8515,6 +8651,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::Value* lt = generateLBIMSLT(L, R, numLimbs);
                         return builder.CreateNot(lt, "getmp");
                     }
+                    // ARIA-025: fix256 greater-equal comparison
+                    if (isFix256Type(L->getType())) {
+                        llvm::Type* fix256Type = L->getType();
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee geFunc = module->getOrInsertFunction(
+                            "aria_fix256_ge", funcType);
+                        llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ge_l");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ge_r");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        auto* call = builder.CreateCall(geFunc, {leftAlloca, rightAlloca}, "fix256.ge");
+                        call->addParamAttr(0, llvm::Attribute::getWithByValType(context, fix256Type));
+                        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, fix256Type));
+                        return builder.CreateICmpNE(call,
+                            llvm::ConstantInt::get(i32Type, 0), "fix256.gebool");
+                    }
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
@@ -8579,6 +8734,24 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::Value* eqSel = builder.CreateSelect(eq, zero, one, "spaceship.eq_sel");
                         llvm::Value* result = builder.CreateSelect(lt, negOne, eqSel, "spaceship.result");
                         return result;
+                    }
+                    // ARIA-025: fix256 spaceship comparison
+                    if (isFix256Type(L->getType())) {
+                        llvm::Type* fix256Type = L->getType();
+                        llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            i32Type, {ptrType, ptrType}, false);
+                        llvm::FunctionCallee cmpFunc = module->getOrInsertFunction(
+                            "aria_fix256_cmp", funcType);
+                        llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.cmp_l");
+                        llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.cmp_r");
+                        builder.CreateStore(L, leftAlloca);
+                        builder.CreateStore(R, rightAlloca);
+                        auto* call = builder.CreateCall(cmpFunc, {leftAlloca, rightAlloca}, "fix256.cmp");
+                        call->addParamAttr(0, llvm::Attribute::getWithByValType(context, fix256Type));
+                        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, fix256Type));
+                        return builder.CreateSExt(call, llvm::Type::getInt64Ty(context), "fix256.spaceship");
                     }
 
                     // Ensure operands have same type
