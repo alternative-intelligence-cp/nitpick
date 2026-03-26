@@ -104,7 +104,7 @@ AriaSpawnOptions* aria_spawn_options_create(void) {
     return options;
 }
 
-void aria_spawn_options_free(AriaSpawnOptions* options) {
+static void aria_spawn_options_free(AriaSpawnOptions* options) {
     if (!options) return;
     free(options);
 }
@@ -407,7 +407,7 @@ int64_t aria_process_get_pid(AriaProcess* process) {
 
 #endif
 
-void aria_process_free(AriaProcess* process) {
+static void aria_process_free(AriaProcess* process) {
     if (!process) return;
     free(process);
 }
@@ -607,7 +607,7 @@ int aria_pipe_get_write_fd(AriaPipe* pipe) {
     return pipe->write_fd;
 }
 
-void aria_pipe_free(AriaPipe* pipe) {
+static void aria_pipe_free(AriaPipe* pipe) {
     if (!pipe) return;
     
     if (!pipe->read_closed) {
@@ -652,7 +652,7 @@ int aria_pipe_get_write_fd(AriaPipe* pipe) {
     return -1;
 }
 
-void aria_pipe_free(AriaPipe* pipe) {
+static void aria_pipe_free(AriaPipe* pipe) {
     if (pipe) free(pipe);
 }
 
@@ -685,12 +685,12 @@ int64_t aria_get_parent_pid(void) {
 
 #endif
 
-void aria_process_info_free(AriaProcessInfo* info) {
+static void aria_process_info_free(AriaProcessInfo* info) {
     if (!info) return;
     free(info);
 }
 
-void aria_fork_info_free(AriaForkInfo* info) {
+static void aria_fork_info_free(AriaForkInfo* info) {
     if (!info) return;
     free(info);
 }

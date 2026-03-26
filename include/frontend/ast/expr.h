@@ -483,6 +483,31 @@ public:
     std::string toString() const override;
 };
 
+/**
+ * Compile-time expression node
+ * Represents: comptime(expr) — forces compile-time evaluation of an expression
+ * The inner expression must be evaluable by the const evaluator.
+ */
+class ComptimeExpr : public ASTNode {
+public:
+    ASTNodePtr expr;  // The expression to evaluate at compile time
+    
+    // Result computed by the type checker / const evaluator
+    // Stored here so the IR generator can emit the constant directly
+    int64_t intResult = 0;
+    double floatResult = 0.0;
+    bool boolResult = false;
+    std::string stringResult;
+    std::string resultTypeName;  // e.g. "int64", "flt64", "bool", "str"
+    bool evaluated = false;      // true once the type checker has evaluated this
+    
+    ComptimeExpr(ASTNodePtr expression, int line = 0, int column = 0)
+        : ASTNode(NodeType::COMPTIME_EXPR, line, column),
+          expr(std::move(expression)) {}
+    
+    std::string toString() const override;
+};
+
 } // namespace aria
 
 #endif // ARIA_EXPR_H

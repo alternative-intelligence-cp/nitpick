@@ -183,15 +183,15 @@ func:ultimate_stress_test = int32() {
     score = score + (r3 ? 0i32);  // Should add 20 or 40
     
     // Test 4: Fallback logic
-    int32:fallback_val = load_config_with_fallback(1i32, 2i32);  // 1 fails, 2 succeeds
+    int32:fallback_val = raw(load_config_with_fallback(1i32, 2i32));  // 1 fails, 2 succeeds
     score = score + fallback_val;  // Should add 20
     
     // Test 5: Error-based defaults
-    int32:default_val = get_or_default(1i32);  // Fails, returns default
+    int32:default_val = raw(get_or_default(1i32));  // Fails, returns default
     score = score + default_val;  // Should add 42
     
     // Test 6: Batch processing
-    int32:batch_sum = sum_valid_configs(0i32, 6i32);  // Lines 0,2,4 succeed (0,20,40)
+    int32:batch_sum = raw(sum_valid_configs(0i32, 6i32));  // Lines 0,2,4 succeed (0,20,40)
     score = score + batch_sum;  // Should add 60
     
     // Test 7: Pick with nested Results
@@ -213,7 +213,7 @@ func:ultimate_stress_test = int32() {
 // ============================================================================
 
 func:main = int32() {
-    int32:result = ultimate_stress_test();
+    int32:result = raw(ultimate_stress_test());
     pass(result);
 };
 

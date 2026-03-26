@@ -14,7 +14,7 @@ namespace frontend {
 std::atomic<uint64_t> Preprocessor::hygiene_counter{0};
 
 Preprocessor::Preprocessor() 
-    : pos(0), line(1), col(1), context_counter(0), macro_expansion_depth(0) {
+    : pos(0), line(1), col(1), context_counter(0), macro_expansion_depth(0), builtin_counter(0) {
     // Initialize with empty context stack
 }
 
@@ -299,6 +299,41 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
                             args.push_back(arg);
                         }
                         
+                        // For variadic macros, read remaining args
+                        if (macro.is_variadic) {
+                            while (peek() != ')' && peek() != 0) {
+                                skipWhitespace();
+                                if (peek() == ')') break;
+                                
+                                std::string arg;
+                                int paren_depth = 0;
+                                bool in_arg_quotes = false;
+                                
+                                while (peek() != 0) {
+                                    char ch = peek();
+                                    if (ch == '"' && (arg.empty() || arg.back() != '\\')) {
+                                        in_arg_quotes = !in_arg_quotes;
+                                        arg += ch; advance(); continue;
+                                    }
+                                    if (!in_arg_quotes) {
+                                        if (ch == '(') paren_depth++;
+                                        if (ch == ')') {
+                                            if (paren_depth == 0) break;
+                                            paren_depth--;
+                                        }
+                                        if (ch == ',' && paren_depth == 0) {
+                                            advance(); break;
+                                        }
+                                    }
+                                    arg += ch; advance();
+                                }
+                                
+                                while (!arg.empty() && (arg.front() == ' ' || arg.front() == '\t')) arg.erase(0, 1);
+                                while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\t')) arg.pop_back();
+                                if (!arg.empty()) args.push_back(arg);
+                            }
+                        }
+                        
                         // Expect closing parenthesis
                         if (peek() == ')') {
                             advance();
@@ -328,6 +363,27 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
                             }
                             
                             args.push_back(arg);
+                        }
+                        
+                        // For variadic macros, read remaining space-separated args
+                        if (macro.is_variadic) {
+                            while (peek() != '\n' && peek() != 0) {
+                                skipWhitespace();
+                                if (peek() == '\n' || peek() == 0) break;
+                                
+                                std::string arg;
+                                bool in_arg_quotes = false;
+                                
+                                while (peek() != 0 && peek() != '\n') {
+                                    if (peek() == '"') in_arg_quotes = !in_arg_quotes;
+                                    if (!in_arg_quotes && (peek() == ' ' || peek() == '\t' || peek() == ',')) {
+                                        if (!arg.empty()) break;
+                                        advance(); continue;
+                                    }
+                                    arg += peek(); advance();
+                                }
+                                if (!arg.empty()) args.push_back(arg);
+                            }
                         }
                     }
                 }
@@ -365,6 +421,18 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
                 
                 // Output the fully processed expansion
                 output << processed_expansion;
+                continue;
+            }
+            
+            // Check for built-in magic constants
+            if (identifier == "__FILE__") {
+                output << "\"" << current_file << "\"";
+                continue;
+            } else if (identifier == "__LINE__") {
+                output << std::to_string(save_line);
+                continue;
+            } else if (identifier == "__COUNTER__") {
+                output << std::to_string(builtin_counter++);
                 continue;
             }
             
@@ -424,6 +492,7 @@ void Preprocessor::handleMacroDefinition() {
     skipWhitespace();
     std::string param_count_str = readWord();
     int param_count = 0;
+    bool is_variadic = false;
     
     if (!param_count_str.empty()) {
         try {
@@ -431,6 +500,12 @@ void Preprocessor::handleMacroDefinition() {
         } catch (...) {
             error("%macro parameter count must be a number");
         }
+    }
+    
+    // Check for variadic marker: N+ means minimum N args, accepts more
+    if (peek() == '+') {
+        is_variadic = true;
+        advance();
     }
     
     // Read macro body until %endmacro
@@ -471,6 +546,7 @@ void Preprocessor::handleMacroDefinition() {
     Macro macro;
     macro.name = macro_name;
     macro.param_count = param_count;
+    macro.is_variadic = is_variadic;
     macro.body = body.str();
     macro.line_defined = start_line;
     
@@ -1175,9 +1251,16 @@ std::string Preprocessor::expandMacro(const std::string& macro_name, const std::
     const Macro& macro = it->second;
     
     // Check argument count
-    if (args.size() != static_cast<size_t>(macro.param_count)) {
-        error("Macro " + macro_name + " expects " + std::to_string(macro.param_count) + 
-              " arguments, got " + std::to_string(args.size()));
+    if (macro.is_variadic) {
+        if (args.size() < static_cast<size_t>(macro.param_count)) {
+            error("Macro " + macro_name + " expects at least " + std::to_string(macro.param_count) + 
+                  " arguments, got " + std::to_string(args.size()));
+        }
+    } else {
+        if (args.size() != static_cast<size_t>(macro.param_count)) {
+            error("Macro " + macro_name + " expects " + std::to_string(macro.param_count) + 
+                  " arguments, got " + std::to_string(args.size()));
+        }
     }
     
     // Mark macro as being expanded (for recursion detection)
@@ -1197,8 +1280,52 @@ std::string Preprocessor::expandMacro(const std::string& macro_name, const std::
     std::string body = hygienic_body;
     
     for (size_t i = 0; i < body.length(); i++) {
+        // Token pasting: ## removes surrounding whitespace to concatenate tokens
+        if (body[i] == '#' && i + 1 < body.length() && body[i + 1] == '#') {
+            i++; // Skip second #
+            // Remove trailing whitespace from result
+            while (!result.empty() && (result.back() == ' ' || result.back() == '\t')) {
+                result.pop_back();
+            }
+            // Skip leading whitespace in body
+            while (i + 1 < body.length() && (body[i + 1] == ' ' || body[i + 1] == '\t')) {
+                i++;
+            }
+        }
+        // Stringification: #%N → "arg_value"
+        else if (body[i] == '#' && i + 1 < body.length() && body[i + 1] == '%'
+                 && i + 2 < body.length() && isdigit(body[i + 2])) {
+            i += 2; // Skip # and %
+            std::string param_num;
+            while (i < body.length() && isdigit(body[i])) {
+                param_num += body[i];
+                i++;
+            }
+            i--; // Back up one since loop will increment
+            
+            int param_index = 0;
+            try {
+                param_index = std::stoi(param_num);
+            } catch (...) {
+                error("Stringification parameter #%" + param_num + " is not valid");
+            }
+            
+            if (param_index >= 1 && param_index <= static_cast<int>(args.size())) {
+                result += "\"" + args[param_index - 1] + "\"";
+            } else {
+                error("Stringification parameter #%" + param_num + " out of range");
+            }
+        }
+        // %* → all args as comma-separated list
+        else if (body[i] == '%' && i + 1 < body.length() && body[i + 1] == '*') {
+            i++; // Skip *
+            for (size_t j = 0; j < args.size(); j++) {
+                if (j > 0) result += ", ";
+                result += args[j];
+            }
+        }
         // Check for %N parameter references
-        if (body[i] == '%' && i + 1 < body.length() && isdigit(body[i + 1])) {
+        else if (body[i] == '%' && i + 1 < body.length() && isdigit(body[i + 1])) {
             i++; // Skip %
             
             // Read parameter number
@@ -1219,8 +1346,12 @@ std::string Preprocessor::expandMacro(const std::string& macro_name, const std::
                 error("Macro parameter %" + param_num + " is too large");
             }
             
+            // %0 = argument count
+            if (param_index == 0) {
+                result += std::to_string(args.size());
+            }
             // Substitute parameter (1-indexed)
-            if (param_index >= 1 && param_index <= static_cast<int>(args.size())) {
+            else if (param_index >= 1 && param_index <= static_cast<int>(args.size())) {
                 result += args[param_index - 1];
             } else {
                 error("Macro parameter %" + param_num + " out of range");

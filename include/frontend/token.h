@@ -80,6 +80,9 @@ enum class TokenType {
     TOKEN_KW_FIXED,     // fixed - runtime immutability (opt-in)
     TOKEN_KW_CFG,       // cfg - conditional compilation
     TOKEN_KW_AS,        // as - alias in use statement
+    TOKEN_KW_COMPTIME,  // comptime - compile-time evaluation
+    TOKEN_KW_INLINE,    // inline - inline hint for functions
+    TOKEN_KW_NOINLINE,  // noinline - prevent inlining
     
     // ========================================================================
     // Keywords - Design by Contract (P1-4 Formal Verification)

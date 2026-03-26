@@ -222,4 +222,8 @@ std::string VectorConstructorExpr::toString() const {
     return oss.str();
 }
 
+std::string ComptimeExpr::toString() const {
+    return "comptime(" + expr->toString() + ")";
+}
+
 } // namespace aria

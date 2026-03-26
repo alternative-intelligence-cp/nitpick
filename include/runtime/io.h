@@ -356,12 +356,8 @@ AriaResult* aria_read_json(const char* path);
  */
 AriaResult* aria_parse_json(const char* json_str);
 
-/**
- * Free JSON value
- * 
- * @param value JSON value to free
- */
-void aria_json_free(AriaJsonValue* value);
+// aria_json_free is internal to the runtime (static in io.cpp)
+// User packages should define their own cleanup functions
 
 /**
  * Get value from JSON object by key
@@ -445,12 +441,8 @@ AriaResult* aria_read_csv(const char* path);
  */
 AriaResult* aria_parse_csv(const char* csv_str);
 
-/**
- * Free CSV data
- * 
- * @param csv CSV data to free
- */
-void aria_csv_free(AriaCsvData* csv);
+// aria_csv_free is internal to the runtime (static in io.cpp)
+// User packages should define their own cleanup functions
 
 // ============================================================================
 // Path Operations

@@ -483,6 +483,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         case ASTNode::NodeType::CAST:
             return inferCastExpr(static_cast<CastExpr*>(expr));
 
+        case ASTNode::NodeType::COMPTIME_EXPR:
+            return inferComptimeExpr(static_cast<ComptimeExpr*>(expr));
+
         case ASTNode::NodeType::LAMBDA: {
             // Lambda expression used as a function pointer initializer.
             // The IR generator handles LAMBDA codegen directly when the declared
@@ -6815,6 +6818,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkExternStmt(static_cast<ExternStmt*>(stmt));
             break;
         
+        case ASTNode::NodeType::COMPTIME_BLOCK:
+            checkComptimeBlock(static_cast<ComptimeBlockStmt*>(stmt));
+            break;
+        
         default:
             // Other statement types not yet implemented
             break;
@@ -8206,6 +8213,11 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
         return;
     }
     
+    // Register comptime functions with the ConstEvaluator for CTFE
+    if (stmt->isComptime) {
+        constEvaluator->registerFunction(stmt->funcName, stmt);
+    }
+    
     // Resolve return type from the type node
     Type* valueType = resolveTypeNode(stmt->returnType.get());
     
@@ -8367,6 +8379,87 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     
     // Note: The function symbol was pre-registered before the scope entry (above)
     // to support self-recursion.  No further defineSymbol() call needed here.
+}
+
+// ============================================================================
+// Comptime Expression and Block Type Checking
+// ============================================================================
+
+Type* TypeChecker::inferComptimeExpr(ComptimeExpr* expr) {
+    if (!expr || !expr->expr) {
+        addError("Invalid comptime expression", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // First, type-check the inner expression normally
+    Type* innerType = inferType(expr->expr.get());
+    if (!innerType || innerType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Evaluate the expression at compile time
+    ComptimeValue result = constEvaluator->evaluate(expr->expr.get());
+    
+    // Check for evaluation errors
+    if (constEvaluator->hasErrors()) {
+        for (const auto& err : constEvaluator->getErrors()) {
+            addError("comptime evaluation failed: " + err, expr);
+        }
+        constEvaluator->clearErrors();
+        return typeSystem->getErrorType();
+    }
+    
+    // Store the result on the AST node for the IR generator
+    expr->evaluated = true;
+    
+    // Map the ComptimeValue kind back to a Type* and store result
+    switch (result.getKind()) {
+        case ComptimeValue::Kind::INTEGER:
+        case ComptimeValue::Kind::UNSIGNED:
+        case ComptimeValue::Kind::TBB: {
+            expr->intResult = result.getInt();
+            const std::string& typeName = result.getTypeName();
+            expr->resultTypeName = typeName.empty() ? "int64" : typeName;
+            Type* t = typeSystem->getPrimitiveType(expr->resultTypeName);
+            return t ? t : typeSystem->getPrimitiveType("int64");
+        }
+        case ComptimeValue::Kind::FLOAT: {
+            expr->floatResult = result.getFloat();
+            const std::string& typeName = result.getTypeName();
+            expr->resultTypeName = typeName.empty() ? "flt64" : typeName;
+            Type* t = typeSystem->getPrimitiveType(expr->resultTypeName);
+            return t ? t : typeSystem->getPrimitiveType("flt64");
+        }
+        case ComptimeValue::Kind::BOOL:
+            expr->boolResult = result.getBool();
+            expr->resultTypeName = "bool";
+            return typeSystem->getPrimitiveType("bool");
+        case ComptimeValue::Kind::STRING:
+            expr->stringResult = result.getString();
+            expr->resultTypeName = "str";
+            return typeSystem->getPrimitiveType("str");
+        default:
+            // For complex types (arrays, structs, etc.), use the inner expression's type
+            return innerType;
+    }
+}
+
+void TypeChecker::checkComptimeBlock(ComptimeBlockStmt* stmt) {
+    if (!stmt || !stmt->body) {
+        addError("Invalid comptime block", stmt);
+        return;
+    }
+    
+    // Evaluate the block at compile time
+    constEvaluator->evaluate(stmt->body.get());
+    
+    // Propagate any evaluation errors
+    if (constEvaluator->hasErrors()) {
+        for (const auto& err : constEvaluator->getErrors()) {
+            addError("comptime block evaluation failed: " + err, stmt);
+        }
+        constEvaluator->clearErrors();
+    }
 }
 
 // ============================================================================
