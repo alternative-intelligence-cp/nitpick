@@ -403,6 +403,10 @@ std::string ImplDeclStmt::toString() const {
     return oss.str();
 }
 
+std::string ComptimeBlockStmt::toString() const {
+    return "comptime " + (body ? body->toString() : "{}");
+}
+
 std::string ProgramNode::toString() const {
     std::ostringstream oss;
     oss << "Program([";

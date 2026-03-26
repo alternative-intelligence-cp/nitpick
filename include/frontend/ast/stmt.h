@@ -85,6 +85,9 @@ public:
     // GPU/PTX Backend - Phase 3: Kernel Attributes
     bool isGPUKernel = false;  // #[gpu_kernel] - Entry point callable from host
     bool isGPUDevice = false;  // #[gpu_device] - Helper function on GPU only  // true if 'wild' qualifier on return type (for FFI)
+    bool isInline = false;     // inline func: - hint to inline at call sites
+    bool isNoInline = false;   // noinline func: - prevent inlining
+    bool isComptime = false;   // comptime func: - evaluated at compile time when all args known
     std::vector<GenericParamInfo> genericParams;  // For generics: func<T: Trait, U>
     
     // P1-4: Design by Contract - Formal verification support
@@ -621,6 +624,23 @@ public:
         : ASTNode(NodeType::IMPL_DECL, line, column),
           traitName(trait), typeName(type), methods(std::move(m)) {}
 
+    std::string toString() const override;
+};
+
+/**
+ * Compile-time block statement
+ * Represents: comptime { ... }
+ * All statements inside are evaluated at compile time by the const evaluator.
+ * Results are embedded as constants in the output.
+ */
+class ComptimeBlockStmt : public ASTNode {
+public:
+    ASTNodePtr body;  // BlockStmt containing the comptime code
+    
+    ComptimeBlockStmt(ASTNodePtr block, int line = 0, int column = 0)
+        : ASTNode(NodeType::COMPTIME_BLOCK, line, column),
+          body(std::move(block)) {}
+    
     std::string toString() const override;
 };
 

@@ -21,6 +21,7 @@ struct MacroParam {
 struct Macro {
     std::string name;
     int param_count;
+    bool is_variadic = false;  // True if macro accepts variable args (N+ syntax)
     std::vector<std::string> param_names;  // Optional named parameters
     std::string body;  // Raw macro body text
     int line_defined;  // For error reporting
@@ -61,6 +62,9 @@ private:
     int macro_expansion_depth;
     static const int MAX_MACRO_EXPANSION_DEPTH = 1000;
     std::set<std::string> expanding_macros;  // Track currently expanding macros for recursion detection
+    
+    // Built-in __COUNTER__ counter
+    int builtin_counter;
     
     // Conditional compilation state
     struct ConditionalState {

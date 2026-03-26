@@ -84,6 +84,10 @@ public:
         EXTERN,               // extern block (FFI)
         PROGRAM,              // Root node (entire program)
         
+        // === COMPTIME ===
+        COMPTIME_BLOCK,       // comptime { ... } — compile-time evaluated block
+        COMPTIME_EXPR,        // comptime(expr) — compile-time evaluated expression
+
         // === SPECIAL ===
         ASSIGNMENT,           // Assignment: =, +=, -=, etc.
         PARAMETER,            // Function parameter
