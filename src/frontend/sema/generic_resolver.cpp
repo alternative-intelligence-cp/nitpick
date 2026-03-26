@@ -418,22 +418,12 @@ FuncDeclStmt* Monomorphizer::cloneAndSubstitute(
         substituteTypes(clonedBody.get(), substitution);
     }
     
-    // Substitute return type
-    ASTNodePtr returnType = funcDecl->returnType;
+    // Substitute return type (v0.2.19: use substituteTypeNode for compound types like Pair<T>)
+    ASTNodePtr returnType;
     if (funcDecl->returnType) {
-        std::string returnTypeStr = funcDecl->returnType->toString();
-        // Handle both *T (dereferenced param) and T (plain param reference)
-        std::string typeParamName;
-        if (!returnTypeStr.empty() && returnTypeStr[0] == '*') {
-            typeParamName = returnTypeStr.substr(1);
-        } else {
-            typeParamName = returnTypeStr;
-        }
-        
-        auto it = substitution.find(typeParamName);
-        if (it != substitution.end() && it->second) {
-            std::string newTypeName = resolver->canonicalizeTypeName(it->second);
-            returnType = std::make_shared<SimpleType>(newTypeName, funcDecl->line, funcDecl->column);
+        returnType = substituteTypeNode(funcDecl->returnType.get(), substitution);
+        if (!returnType) {
+            returnType = cloneAST(funcDecl->returnType.get());
         }
     }
     
@@ -757,16 +747,14 @@ void Monomorphizer::substituteTypes(ASTNode* node,
                     var->typeNode = std::make_shared<SimpleType>(newTypeName, var->line, var->column);
                 }
             }
-            // Also check typeNode directly (may have been set by cloneAST)
+            // v0.2.19: Use substituteTypeNode for compound types (Pair<T>, Vec<T>, etc.)
             else if (var->typeNode) {
-                std::string typeStr = var->typeNode->toString();
-                if (!typeStr.empty() && typeStr[0] == '*') {
-                    std::string paramName = typeStr.substr(1);
-                    auto it = substitution.find(paramName);
-                    if (it != substitution.end() && it->second) {
-                        std::string newTypeName = it->second->toString();
-                        var->typeName = newTypeName;
-                        var->typeNode = std::make_shared<SimpleType>(newTypeName, var->line, var->column);
+                ASTNodePtr substituted = substituteTypeNode(var->typeNode.get(), substitution);
+                if (substituted) {
+                    std::string newTypeStr = substituted->toString();
+                    if (newTypeStr != var->typeNode->toString()) {
+                        var->typeNode = substituted;
+                        var->typeName = newTypeStr;
                     }
                 }
             }
@@ -779,19 +767,13 @@ void Monomorphizer::substituteTypes(ASTNode* node,
         case ASTNode::NodeType::PARAMETER: {
             ParameterNode* param = static_cast<ParameterNode*>(node);
             if (param->typeNode) {
-                std::string typeStr = param->typeNode->toString();
-                // Handle both *T (dereferenced param) and T (plain param reference) 
-                std::string paramName;
-                if (!typeStr.empty() && typeStr[0] == '*') {
-                    paramName = typeStr.substr(1);
-                } else {
-                    paramName = typeStr;
-                }
-                
-                auto it = substitution.find(paramName);
-                if (it != substitution.end() && it->second) {
-                    std::string newTypeName = it->second->toString();
-                    param->typeNode = std::make_shared<SimpleType>(newTypeName, param->line, param->column);
+                // v0.2.19: Use substituteTypeNode for all type forms (*T, T, Pair<T>, etc.)
+                ASTNodePtr substituted = substituteTypeNode(param->typeNode.get(), substitution);
+                if (substituted) {
+                    std::string newTypeStr = substituted->toString();
+                    if (newTypeStr != param->typeNode->toString()) {
+                        param->typeNode = substituted;
+                    }
                 }
             }
             if (param->defaultValue) {
@@ -802,22 +784,11 @@ void Monomorphizer::substituteTypes(ASTNode* node,
         
         case ASTNode::NodeType::FUNC_DECL: {
             FuncDeclStmt* func = static_cast<FuncDeclStmt*>(node);
-            // Substitute return type
+            // v0.2.19: Use substituteTypeNode for return type
             if (func->returnType) {
-                std::string returnTypeStr = func->returnType->toString();
-                
-                // Handle both *T (dereferenced param) and T (plain param reference)
-                std::string paramName;
-                if (!returnTypeStr.empty() && returnTypeStr[0] == '*') {
-                    paramName = returnTypeStr.substr(1);
-                } else {
-                    paramName = returnTypeStr;
-                }
-                
-                auto it = substitution.find(paramName);
-                if (it != substitution.end() && it->second) {
-                    std::string newTypeName = it->second->toString();
-                    func->returnType = std::make_shared<SimpleType>(newTypeName, func->line, func->column);
+                ASTNodePtr substituted = substituteTypeNode(func->returnType.get(), substitution);
+                if (substituted) {
+                    func->returnType = substituted;
                 }
             }
             // Substitute parameter types
@@ -919,6 +890,91 @@ uint64_t Monomorphizer::computeTypeHash(const TypeSubstitution& substitution) co
     }
     
     return hash;
+}
+
+// ============================================================================
+// Type Node Substitution (v0.2.19)
+// ============================================================================
+
+ASTNodePtr Monomorphizer::substituteTypeNode(ASTNode* typeNode,
+                                             const TypeSubstitution& substitution) {
+    if (!typeNode) return nullptr;
+    
+    switch (typeNode->type) {
+        case ASTNode::NodeType::TYPE_ANNOTATION: {
+            SimpleType* simpleType = static_cast<SimpleType*>(typeNode);
+            std::string typeName = simpleType->typeName;
+            
+            // Handle *T prefix (generic type reference)
+            std::string paramName;
+            if (!typeName.empty() && typeName[0] == '*') {
+                paramName = typeName.substr(1);
+            } else {
+                paramName = typeName;
+            }
+            
+            auto it = substitution.find(paramName);
+            if (it != substitution.end() && it->second) {
+                std::string newTypeName = resolver->canonicalizeTypeName(it->second);
+                return std::make_shared<SimpleType>(newTypeName, typeNode->line, typeNode->column);
+            }
+            // Not a type parameter — return clone
+            return std::make_shared<SimpleType>(typeName, typeNode->line, typeNode->column);
+        }
+        
+        case ASTNode::NodeType::GENERIC_TYPE: {
+            aria::GenericType* genericType = static_cast<aria::GenericType*>(typeNode);
+            
+            // Recursively substitute type arguments
+            std::vector<ASTNodePtr> newTypeArgs;
+            for (const auto& arg : genericType->typeArgs) {
+                ASTNodePtr newArg = substituteTypeNode(arg.get(), substitution);
+                if (newArg) {
+                    newTypeArgs.push_back(std::move(newArg));
+                } else {
+                    newTypeArgs.push_back(cloneAST(arg.get()));
+                }
+            }
+            
+            return std::make_shared<aria::GenericType>(genericType->baseName, newTypeArgs,
+                                                  typeNode->line, typeNode->column);
+        }
+        
+        case ASTNode::NodeType::ARRAY_TYPE: {
+            aria::ArrayType* arrayType = static_cast<aria::ArrayType*>(typeNode);
+            ASTNodePtr elemType = substituteTypeNode(arrayType->elementType.get(), substitution);
+            ASTNodePtr sizeExpr = arrayType->sizeExpr ? cloneAST(arrayType->sizeExpr.get()) : nullptr;
+            auto result = std::make_shared<aria::ArrayType>(
+                elemType ? elemType : cloneAST(arrayType->elementType.get()),
+                sizeExpr, typeNode->line, typeNode->column);
+            return result;
+        }
+        
+        case ASTNode::NodeType::POINTER_TYPE: {
+            aria::PointerType* ptrType = static_cast<aria::PointerType*>(typeNode);
+            if (ptrType->isErased) {
+                auto result = std::make_shared<aria::PointerType>(nullptr, typeNode->line, typeNode->column);
+                result->isErased = true;
+                return result;
+            }
+            ASTNodePtr baseType = substituteTypeNode(ptrType->baseType.get(), substitution);
+            return std::make_shared<aria::PointerType>(
+                baseType ? baseType : cloneAST(ptrType->baseType.get()),
+                typeNode->line, typeNode->column);
+        }
+        
+        case ASTNode::NodeType::OPTIONAL_TYPE: {
+            aria::OptionalTypeNode* optType = static_cast<aria::OptionalTypeNode*>(typeNode);
+            ASTNodePtr wrappedType = substituteTypeNode(optType->wrappedType.get(), substitution);
+            return std::make_shared<aria::OptionalTypeNode>(
+                wrappedType ? wrappedType : cloneAST(optType->wrappedType.get()),
+                typeNode->line, typeNode->column);
+        }
+        
+        // For other node types, return a clone
+        default:
+            return cloneAST(typeNode);
+    }
 }
 
 // ============================================================================
