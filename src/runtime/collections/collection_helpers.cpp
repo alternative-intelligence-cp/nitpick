@@ -196,4 +196,86 @@ void map_i64_free(void* map) {
     aria_map_free(map);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Map<int32, int64> typed wrappers
+// ═══════════════════════════════════════════════════════════════════════
+
+void* map_i32_i64_new(void) {
+    return aria_map_new_simple(4, 8);
+}
+
+void map_i32_i64_insert(void* map, int32_t key, int64_t val) {
+    aria_map_insert_simple(map, &key, &val);
+}
+
+int32_t map_i32_i64_get(void* map, int32_t key, int64_t* out_value) {
+    void* ptr = aria_map_get_simple(map, &key);
+    if (!ptr) return 0;
+    memcpy(out_value, ptr, sizeof(int64_t));
+    return 1;
+}
+
+int32_t map_i32_i64_has(void* map, int32_t key) {
+    return aria_map_has(map, &key);
+}
+
+int32_t map_i32_i64_remove(void* map, int32_t key) {
+    if (!aria_map_has(map, &key)) return 0;
+    aria_map_remove(map, &key);
+    return 1;
+}
+
+int64_t map_i32_i64_length(void* map) {
+    return aria_map_length(map);
+}
+
+void map_i32_i64_clear(void* map) {
+    aria_map_clear(map);
+}
+
+void map_i32_i64_free(void* map) {
+    aria_map_free(map);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Map<int8, int8> typed wrappers
+// ═══════════════════════════════════════════════════════════════════════
+
+void* map_i8_i8_new(void) {
+    return aria_map_new_simple(1, 1);
+}
+
+void map_i8_i8_insert(void* map, int8_t key, int8_t val) {
+    aria_map_insert_simple(map, &key, &val);
+}
+
+int32_t map_i8_i8_get(void* map, int8_t key, int8_t* out_value) {
+    void* ptr = aria_map_get_simple(map, &key);
+    if (!ptr) return 0;
+    memcpy(out_value, ptr, sizeof(int8_t));
+    return 1;
+}
+
+int32_t map_i8_i8_has(void* map, int8_t key) {
+    return aria_map_has(map, &key);
+}
+
+int32_t map_i8_i8_remove(void* map, int8_t key) {
+    if (!aria_map_has(map, &key)) return 0;
+    aria_map_remove(map, &key);
+    return 1;
+}
+
+int64_t map_i8_i8_length(void* map) {
+    return aria_map_length(map);
+}
+
+void map_i8_i8_clear(void* map) {
+    aria_map_clear(map);
+}
+
+void map_i8_i8_free(void* map) {
+    aria_map_free(map);
+}
+
 }  // extern "C"
