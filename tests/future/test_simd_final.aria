@@ -1,0 +1,22 @@
+// Final SIMD validation test
+// Tests: element access, arithmetic, comparisons, intrinsics
+
+func:main = int32() {
+    // Element access test
+    var:v1 = simd_broadcast<int32, 4>(42i32);
+    var:elem = v1[0i32];
+    
+    // Arithmetic test  
+    var:a = simd_broadcast<int32, 4>(10i32);
+    var:b = simd_broadcast<int32, 4>(20i32);
+    var:sum = a + b;
+    var:first = sum[0i32];
+    
+    // Comparison test
+    var:gt = b > a;
+    
+    // Return test value
+    return elem + first;  // 42 + 30 = 72
+};
+
+func:failsafe = void(int32:err_code) {};

@@ -1,0 +1,33 @@
+// Expected: COMPILER ERROR
+// Test emphatic unwrap operator (?!) - Type errors
+// The emphatic unwrap operator should ONLY work on Result<T>
+// It should NOT work on pointers or optionals (use ?? for those)
+
+// ERROR TEST 1: Emphatic unwrap on pointer (should fail to compile)
+func:test_failsafe_on_pointer = int32() {
+    ptr int32:p = nil;
+    int32:result = p ?! 42;  // ERROR: Emphatic unwrap requires Result<T>, not ptr
+    pass(result);
+}
+
+// ERROR TEST 2: Emphatic unwrap on optional (should fail to compile)
+func:test_failsafe_on_optional = int32() {
+    int32?:opt = nil;
+    int32:result = opt ?! 42;  // ERROR: Emphatic unwrap requires Result<T>, not Optional
+    pass(result);
+}
+
+// ERROR TEST 3: Emphatic unwrap on regular value (should fail to compile)
+func:test_failsafe_on_int = int32() {
+    int32:value = 10;
+    int32:result = value ?! 42;  // ERROR: Emphatic unwrap requires Result<T>
+    pass(result);
+}
+
+func:main = int32() {
+    pass(0);
+}
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

@@ -1,0 +1,18 @@
+// Simple test: Does ? operator work for unwrapping?
+
+
+func:failsafe = NIL(int32:err_code) { pass(NIL); };
+func:get_number = int32(int32:val) {
+    pass(val);
+};
+
+func:main = int32() {
+    // Test 1: Initial assignment with unwrap
+    int32:x = get_number(42i32) ? 0i32;
+    
+    // Test 2: Reassignment with unwrap
+    x = get_number(100i32) ? 0i32;
+    
+    // If unwrap works, should return 100
+    pass(x);
+};

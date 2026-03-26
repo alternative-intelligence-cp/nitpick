@@ -1,0 +1,29 @@
+/**
+ * Test memory ordering keywords
+ * Phase 2.1 validation: Verify lexer recognizes ordering keywords
+ */
+
+// These should be recognized as keywords:
+// rel relaxed
+// acquire
+// release
+// acq_rel
+// seq_cst
+
+func:test_memory_ordering_keywords = int32() {
+    println("Memory ordering keywords test");
+    
+    // For now, just verify this file lexes without error
+    // The real test will be when we add enum support
+    
+    pass(0);
+};
+
+func:main = int32() {
+    int32:result = raw(test_memory_ordering_keywords());
+    pass(result);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

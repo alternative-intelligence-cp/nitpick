@@ -1,0 +1,20 @@
+/// Test basic write syscall usage
+
+extern "libc" {
+    func:write = int64(int32:fd, int8*:buf, int64:count);
+}
+
+pub func:test_write = NIL() {
+    // Test 1: Write a single character
+    int8:ch = 65i8;  // 'A'
+    write(1i32, @ch, 1i64);
+    
+    // Test 2: Write from array
+    int8[5]:msg = [72i8, 101i8, 108i8, 108i8, 111i8];  // "Hello"
+    write(1i32, msg, 5i64);
+};
+
+func:main = int32() {
+    raw(test_write());
+    pass(0i32);
+};

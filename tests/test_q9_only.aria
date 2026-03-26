@@ -1,0 +1,42 @@
+/**
+ * Test Q9<T> quantum type only
+ */
+
+use stdlib.quantum;
+
+func:failsafe = NIL(int32:code) {};
+
+func:main = int32() {
+    println("=== Q9<T> Test ===");
+    
+    // Test 1: Q9 creation
+    println("Test 1: Q9 creation");
+    nit:c0 = 0;
+    nit:c_neg4 = -4;
+    nit:c4 = 4;
+    
+    Q9<int32>:q9_unknown = {a: 10, b: 20, c: c0};
+    Q9<int32>:q9_strong_a = {a: 100, b: 200, c: c_neg4};
+    Q9<int32>:q9_strong_b = {a: 50, b: 75, c: c4};
+    
+    if (q9_unknown.c != 0 || q9_strong_a.c != -4 || q9_strong_b.c != 4) {
+        println("  FAIL");
+        pass(1);
+    }
+    println("  PASS");
+    
+    // Test 2: Q9 arithmetic
+    println("Test 2: Q9 arithmetic");
+    Q9<int32>:q9_base = {a: 10, b: 20, c: c0};
+    int32:add_val = 5;
+    Q9<int32>:q9_added = {a: q9_base.a + add_val, b: q9_base.b + add_val, c: q9_base.c};
+    
+    if (q9_added.a != 15 || q9_added.b != 25) {
+        println("  FAIL");
+        pass(2);
+    }
+    println("  PASS");
+    
+    println("=== All Q9<T> Tests Complete ===");
+    pass(0);
+};

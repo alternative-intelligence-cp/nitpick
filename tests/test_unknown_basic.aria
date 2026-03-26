@@ -1,0 +1,29 @@
+// Test: unknown literal basic parsing and compilation
+// Phase 5.1: Core unknown literal
+
+func:test_unknown_literal = int32() {
+    // Test that unknown is recognized as a literal
+    int32:x = 5i32;
+    
+    // Test unknown in pick pattern (already supported by exhaustiveness checker)
+    pick(x) {
+        (unknown) {
+            pass(1i32);
+        },
+        (5i32) {
+            pass(2i32);
+        },
+        (*) {
+            pass(3i32);
+        }
+    }
+};
+
+func:main = int32() {
+    int32:result = raw(test_unknown_literal());
+    pass(result);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

@@ -1,0 +1,20 @@
+// GPU/PTX Backend Phase 4 Test: Working GPU Kernel Example
+// Demonstrates actual usage of GPU intrinsics in a parallel computation
+
+func:gpu_vector_add = NIL(int32:n) {
+    // Get global thread ID (standard CUDA pattern)
+    int32:tid = gpu.thread_id();
+    int32:bid = gpu.block_id();
+    int32:bdim = gpu.block_dim();
+    int32:idx = bid * bdim + tid;
+    
+    // Only process if within bounds
+    // (In real kernel, would access arrays here)
+    // For now, just compute something to prevent optimization
+    int32:result = idx * 2i32 + tid;
+    
+    // Synchronize all threads in block vor shared memory operations
+    gpu.sync_threads();
+};
+
+func:failsafe = NIL(int32:err_code) {};

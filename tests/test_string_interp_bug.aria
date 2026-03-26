@@ -1,0 +1,16 @@
+/**
+ * Test: String interpolation segfault (FAILS before fix)
+ * Issue: Template literal crashes when preceded by plain println
+ */
+
+func:failsafe = NIL(int32:err_code) {};
+
+func:main = int32() {
+    int32:x = 42;
+    
+    // This order causes SEGFAULT:
+    drop(println("Test 1: Plain text"));       // OK
+    drop(println(`Test 2: x = &{x}`));          // SEGFAULT
+    
+    pass(0);
+};

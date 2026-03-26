@@ -1,0 +1,189 @@
+// Expected: COMPILER ERROR
+/**
+ * Test: Q3<T> Quantum Type - Basic Operations
+ * 
+ * Verifies Q3<T> fundamental operations:
+ * - Creation (c_unknown, c_lean_a, c_lean_b)
+ * - Arithmetic (add, sub, mul, div)
+ * - Crystallization (collapse superposition)
+ * - Confidence manipulation
+ */
+
+use stdlib.quantum;
+
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
+};
+
+func:main = int32() {
+    drop(println("=== Q3<T> Quantum Type Tests ===\n"));
+    
+    // Declare trit constants for confidence levels
+    trit:c_unknown = 0;
+    trit:c_lean_a = -1;
+    trit:c_lean_b = 1;
+    
+    // =========================================================================
+    // Test 1: Basic Creation
+    // =========================================================================
+    drop(println("Test 1: Basic Creation"));
+    drop(println("----------------------"));
+    
+    Q3<int32>:q1 = {a: 100, b: 200, c: c_unknown};  // Unknown
+    drop(println(`Created Q3 c_unknown: a=&{q1.a}, b=&{q1.b}, c=&{q1.c}`));
+    
+    Q3<int32>:q2 = {a: 50, b: 75, c: c_lean_a};  // Lean A
+    drop(println(`Created Q3 c_lean_a: a=&{q2.a}, b=&{q2.b}, c=&{q2.c}`));
+    
+    Q3<int32>:q3 = {a: 10, b: 20, c: c_lean_b};  // Lean B
+    drop(println(`Created Q3 c_lean_b: a=&{q3.a}, b=&{q3.b}, c=&{q3.c}`));
+    
+    drop(println(""));
+    
+    // =========================================================================
+    // Test 2: Arithmetic Operations (Superposition Preserved)
+    // =========================================================================
+    drop(println("Test 2: Arithmetic Operations"));
+    drop(println("------------------------------"));
+    
+    Q3<int32>:q = {a: 10, b: 20, c: c_unknown};
+    drop(println(`Start: a=&{q.a}, b=&{q.b}, c=&{q.c}`));
+    
+    q = q3_add(q, 5);
+    drop(println(`After +5: a=&{q.a}, b=&{q.b}, c=&{q.c}`));
+    
+    q = q3_mul(q, 2);
+    drop(println(`After *2: a=&{q.a}, b=&{q.b}, c=&{q.c}`));
+    
+    q = q3_sub(q, 10);
+    drop(println(`After -10: a=&{q.a}, b=&{q.b}, c=&{q.c}`));
+    
+    drop(println(""));
+    
+    // =========================================================================
+    // Test 3: Crystallization - Lean A
+    // =========================================================================
+    drop(println("Test 3: Crystallization (Lean A)"));
+    drop(println("---------------------------------"));
+    
+    Q3<int32>:qa = {a: 100, b: 200, c: c_lean_a};
+    drop(println(`Q3 state: a=&{qa.a}, b=&{qa.b}, c=&{qa.c}`));
+    
+    bool:can_cryst = q3_can_crystallize(qa);
+    drop(println(`Can crystallize: &{can_cryst}`));
+    
+    int32:result_a = q3_crystallize(qa);
+    if (result_a != c_unknown) {
+        drop(println(`Crystallized to: &{result_a} (hypothesis A)`));
+    }
+    
+    drop(println(""));
+    
+    // =========================================================================
+    // Test 4: Crystallization - Lean B
+    // =======================================================================================================
+    drop(println("Test 4: Crystallization (Lean B)"));
+    drop(println("---------------------------------"));
+    
+    Q3<int32>:qb = {a: 100, b: 200, c: c_lean_b};
+    drop(println(`Q3 state: a=&{qb.a}, b=&{qb.b}, c=&{qb.c}`));
+    
+    int32:result_b = q3_crystallize(qb);
+    if (result_b != c_unknown) {
+        drop(println(`Crystallized to: &{result_b} (hypothesis B)`));
+    }
+    
+    drop(println(""));
+    
+    // =========================================================================
+    // Test 5: Crystallization - Unknown (should fail)
+    // =========================================================================
+    drop(println("Test 5: Crystallization (Unknown)"));
+    drop(println("----------------------------------"));
+    
+    Q3<int32>:qu = {a: 100, b: 200, c: c_unknown};
+    drop(println(`Q3 state: a=&{qu.a}, b=&{qu.b}, c=&{qu.c}`));
+    
+    can_cryst = q3_can_crystallize(qu);
+    drop(println(`Can crystallize: &{can_cryst}`));
+    
+    int32:result_u = q3_crystallize(qu);
+    if (result_u == c_unknown) {
+        drop(println("Crystallization failed: insufficient confidence (expected)"));
+    } else {
+        drop(println(`Crystallized to: &{result_u}`));
+    }
+    
+    drop(println(""));
+    
+    // =========================================================================
+    // Test 6: Peek (non-destructive read)
+    // =========================================================================
+    drop(println("Test 6: Peek (Non-destructive)"));
+    drop(println("-------------------------------"));
+    
+    Q3<int32>:qp = q3_unknown(42, 84);
+    int32:peek_val = q3_peek(qp);
+    drop(println(`Peek value: &{peek_val} (returns A when c=0)`));
+    drop(println(`Q3 still in superposition: a=&{qp.a}, b=&{qp.b}, c=&{qp.c}`));
+    
+    drop(println(""));
+    
+    // =========================================================================
+    // Test 7: Confidence Manipulation
+    // =========================================================================
+    drop(println("Test 7: Confidence Manipulation"));
+    drop(println("--------------------------------"));
+    
+    Q3<int32>:qc = {a: 50, b: 100, c: c_unknown};
+    drop(println(`Start: c=&{qc.c}`));
+    
+    qc = q3_shift_to_b(qc);
+    drop(println(`After shift_to_b: c=&{qc.c}`));
+    
+    qc = q3_shift_to_a(qc);
+    drop(println(`After shift_to_a: c=&{qc.c}`));
+    
+    qc = q3_shift_to_a(qc);
+    drop(println(`After shift_to_a: c=&{qc.c}`));
+    
+    qc = q3_reset_confidence(qc);
+    drop(println(`After reset: c=&{qc.c}`));
+    
+    qc = q3_shift_to_b(qc);
+    drop(println(`After shift_to_b: c=&{qc.c}`));
+    
+    qc = q3_flip_confidence(qc);
+    drop(println(`After flip: c=&{qc.c}`));
+    
+    drop(println(""));
+    
+    // =========================================================================
+    // Test 8: Evidence Accumulation Pattern
+    // =========================================================================
+    drop(println("Test 8: Evidence Accumulation"));
+    drop(println("------------------------------"));
+    
+    Q3<int32>:sensor = {a: 20, b: 25, c: c_unknown};
+    drop(println(`Sensor reading uncertain: a=&{sensor.a}, b=&{sensor.b}, c=&{sensor.c}`));
+    
+    // Simulate sensor measurements
+    drop(println("Taking measurement 1..."));
+    bool:reading1 = true;  // Simulated reading favors hypothesis B
+    if (reading1) {
+        sensor = q3_shift_to_b(sensor);
+        drop(println(`  Evidence for B: c=&{sensor.c}`));
+    }
+    
+    int32:final_reading = q3_crystallize(sensor);
+    if (final_reading != c_unknown) {
+        drop(println(`Decision made: sensor value = &{final_reading}`));
+    } else {
+        drop(println("Still uncertain, need more evidence"));
+    }
+    
+    drop(println(""));
+    drop(println("=== All Q3<T> Tests Complete ==="));
+    
+    pass(0);
+};

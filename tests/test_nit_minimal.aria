@@ -1,0 +1,41 @@
+// Minimal test to isolate Nit saturation issue
+
+struct:Nit = {
+    int32:value;
+};
+
+func:failsafe = NIL(int32:code) {
+    pass(NIL);
+};
+
+func:main = int32() {
+    println("=== Minimal Nit Test ===");
+    
+    // Test 1: Simple conditional
+    int32:v = 10i32;
+    int32:clamped = v;
+    if (v > 4i32) {
+        clamped = 4i32;
+    }
+    if (clamped != 4i32) {
+        println("FAIL: Basic conditional");
+        pass(-1i32);
+    }
+    println("PASS: Basic conditional works");
+    
+    // Test 2: Same logic in struct init
+    int32:v2 = 10i32;
+    int32:clamped2 = v2;
+    if (v2 > 4i32) {
+        clamped2 = 4i32;
+    }
+    Nit:n = {value: clamped2};
+    if (n.value != 4i32) {
+        println("FAIL: Struct initialization from clamped value");
+        pass(-2i32);
+    }
+    println("PASS: Struct initialization works");
+    
+    println("=== ALL TESTS PASSED ===");
+    pass(0i32);
+};

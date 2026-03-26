@@ -1,0 +1,106 @@
+// Test: HashMap<int8, int8> library wrapper
+// Tests small value mappings (e.g., grade codes)
+
+func:failsafe = NIL(int32:code) {  
+    pass(NIL); 
+};
+
+// Need FFI for cleanup
+extern func:aria_map_free = NIL(wild int8*:map);
+
+func:main = int32() {
+    // TEST 1: Create new HashMap
+    HashMap<int8, int8>:grades = HashMap_int8_int8_new();
+    
+    // Verify initial state
+    if (grades.capacity != 16i64) { pass(1i32); }
+    if (grades.length != 0i64) { pass(2i32); }
+    if (grades.key_size != 1i64) { pass(3i32); }
+    if (grades.value_size != 1i64) { pass(4i32); }
+    
+    // TEST 2: Insert grade mappings
+    // Map grade letters to numeric values
+    HashMap_int8_int8_insert(grades.entries, 65i8, 4i8);  // 'A' (ASCII 65) -> 4.0
+    HashMap_int8_int8_insert(grades.entries, 66i8, 3i8);  // 'B' (ASCII 66) -> 3.0
+    HashMap_int8_int8_insert(grades.entries, 67i8, 2i8);  // 'C' (ASCII 67) -> 2.0
+    HashMap_int8_int8_insert(grades.entries, 68i8, 1i8);  // 'D' (ASCII 68) -> 1.0
+    HashMap_int8_int8_insert(grades.entries, 70i8, 0i8);  // 'F' (ASCII 70) -> 0.0
+    
+    // Update length manually
+    grades.length = HashMap_int8_int8_length(grades.entries);
+    if (grades.length != 5i64) { pass(5i32); }
+    
+    // TEST 3: Check existence
+    if (HashMap_int8_int8_has(grades.entries, 65i8) != 1i32) { pass(6i32); }  // 'A'
+    if (HashMap_int8_int8_has(grades.entries, 66i8) != 1i32) { pass(7i32); }  // 'B'
+    if (HashMap_int8_int8_has(grades.entries, 90i8) != 0i32) { pass(8i32); }  // 'Z' - doesn't exist
+    
+    // TEST 4: Get values using wrapper function (NOW WORKS with <- operator!)
+    int8:value = 0i8;
+    
+    // Get 'A' grade value (should be 4)
+    if (HashMap_int8_int8_get(grades.entries, 65i8, @value) != 1i32) { pass(9i32); }
+    if (value != 4i8) { pass(10i32); }
+    
+    // Get 'B' grade value (should be 3)
+    if (HashMap_int8_int8_get(grades.entries, 66i8, @value) != 1i32) { pass(11i32); }
+    if (value != 3i8) { pass(12i32); }
+    
+    // Get 'F' grade value (should be 0)
+    if (HashMap_int8_int8_get(grades.entries, 70i8, @value) != 1i32) { pass(13i32); }
+    if (value != 0i8) { pass(14i32); }
+    
+    // Try to get non-existent key (should return 0/not found)
+    if (HashMap_int8_int8_get(grades.entries, 90i8, @value) != 0i32) { pass(15i32); }
+    
+    // TEST 5: Update value
+    HashMap_int8_int8_insert(grades.entries, 65i8, 5i8);  // Update 'A' to 5.0 (A+)
+    
+    // Verify updated value
+    if (HashMap_int8_int8_get(grades.entries, 65i8, @value) != 1i32) { pass(16i32); }
+    if (value != 5i8) { pass(17i32); }
+    
+    // Length should still be 5
+    grades.length = HashMap_int8_int8_length(grades.entries);
+    if (grades.length != 5i64) { pass(18i32); }
+    
+    // TEST 6: Remove entry
+    if (HashMap_int8_int8_remove(grades.entries, 70i8) != 1i32) { pass(19i32); }  // Remove 'F'
+    
+    grades.length = HashMap_int8_int8_length(grades.entries);
+    if (grades.length != 4i64) { pass(20i32); }
+    if (HashMap_int8_int8_has(grades.entries, 70i8) != 0i32) { pass(21i32); }
+    
+    // Verify we can't get removed key
+    if (HashMap_int8_int8_get(grades.entries, 70i8, @value) != 0i32) { pass(22i32); }
+    
+    // TEST 7: Length function
+    int64:current_length = HashMap_int8_int8_length(grades.entries);
+    if (current_length != 4i64) { pass(23i32); }
+    
+    // TEST 8: Clear map
+    HashMap_int8_int8_clear(grades.entries);
+    grades.length = HashMap_int8_int8_length(grades.entries);
+    
+    if (grades.length != 0i64) { pass(24i32); }
+    
+    // Verify can't get from cleared map
+    if (HashMap_int8_int8_get(grades.entries, 65i8, @value) != 0i32) { pass(25i32); }
+    
+    // TEST 9: Insert after clear
+    HashMap_int8_int8_insert(grades.entries, 1i8, 100i8);
+    grades.length = HashMap_int8_int8_length(grades.entries);
+    
+    if (grades.length != 1i64) { pass(26i32); }
+    
+    // Verify key exists and has correct value
+    if (HashMap_int8_int8_has(grades.entries, 1i8) != 1i32) { pass(27i32); }
+    if (HashMap_int8_int8_get(grades.entries, 1i8, @value) != 1i32) { pass(28i32); }
+    if (value != 100i8) { pass(29i32); }
+    
+    // TEST 10: Cleanup using FFI directly
+    aria_map_free(grades.entries);
+    
+    // All tests passed!
+    pass(0i32);
+};

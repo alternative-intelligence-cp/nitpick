@@ -1,0 +1,15 @@
+// Minimal SIMD comparison test
+func:test_simd_cmp = int32(
+    simd<int32, 4>:vec,
+    int32:threshold
+) {
+    // This should broadcast threshold to all lanes and compare
+    simd<bool, 4>:mask = vec > threshold;
+    pass(0i32);
+};
+
+func:main = int32() {
+    return 0i32;
+};
+
+func:failsafe = NIL(int32:err_code) {};

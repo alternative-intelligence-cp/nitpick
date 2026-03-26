@@ -1,0 +1,323 @@
+// Expected: COMPILER ERROR - accesses unimplemented dbug internal state
+/**
+ * Test Suite: DBUG Timing and Counter Features
+ * 
+ * Tests the performance timing and statistics counter functionality
+ * added to the dbug module.
+ */
+
+use stdlib.dbug;
+
+// =============================================================================
+// Test 1: Basic Timing
+// =============================================================================
+
+func:test_basic_timing = NIL() {
+    drop(println("\n=== TEST 1: Basic Timing ==="));
+    
+    raw(dbug_enable("perf"));
+    
+    // Time a simple loop
+    int64:start = dbug_time_start("perf", "Simple loop");
+    
+    int32:sum = 0;
+    int32:i = 0;
+    while (i < 1000) {
+        sum = sum + i;
+        i = i + 1;
+    }
+    
+    dbug_time_end("perf", "Simple loop", start);
+    
+    drop(print("Result: "));
+    printInt32(sum);
+    drop(println(""));
+    
+    pass(NIL);
+};
+
+// =============================================================================
+// Test 2: Multiple Timing Sections
+// =============================================================================
+
+func:test_multiple_timings = NIL() {
+    drop(println("\n=== TEST 2: Multiple Timing Sections ==="));
+    
+    raw(dbug_enable("perf"));
+    
+    // Time initialization
+    int64:t1 = dbug_time_start("perf", "Initialization");
+    int32:buffer_size = 100;
+    int32:count = 0;
+    dbug_time_end("perf", "Initialization", t1);
+    
+    // Time processing
+    int64:t2 = dbug_time_start("perf", "Processing");
+    int32:i = 0;
+    while (i < buffer_size) {
+        count = count + 1;
+        i = i + 1;
+    }
+    dbug_time_end("perf", "Processing", t2);
+    
+    // Time cleanup
+    int64:t3 = dbug_time_start("perf", "Cleanup");
+    buffer_size = 0;
+    dbug_time_end("perf", "Cleanup", t3);
+    
+    pass(NIL);
+};
+
+// =============================================================================
+// Test 3: Timing with Disabled Group
+// =============================================================================
+
+func:test_timing_disabled = NIL() {
+    drop(println("\n=== TEST 3: Timing with Disabled Group ==="));
+    
+    raw(dbug_disable("perf"));
+    
+    drop(println("Timing disabled group (should show no output)"));
+    
+    int64:start = dbug_time_start("perf", "This won't print");
+    int32:x = 42 + 13;
+    dbug_time_end("perf", "This won't print", start);
+    
+    drop(println("(Nothing should have printed above)"));
+    
+    pass(NIL);
+};
+
+// =============================================================================
+// Test 4: Basic Counter
+// =============================================================================
+
+func:test_basic_counter = NIL() {
+    drop(println("\n=== TEST 4: Basic Counter ==="));
+    
+    raw(dbug_enable("stats"));
+    
+    drop(println("Processing items with counter..."));
+    
+    int32:i = 0;
+    while (i < 5) {
+        dbug_count("stats", "items_processed");
+        i = i + 1;
+    }
+    
+    dbug_count_show("stats", "items_processed");
+    
+    pass(NIL);
+};
+
+// =============================================================================
+// Test 5: Multiple Counters
+// =============================================================================
+
+func:test_multiple_counters = NIL() {
+    drop(println("\n=== TEST 5: Multiple Counters ==="));
+    
+    raw(dbug_enable("stats"));
+    
+    // Simulate processing with success/error tracking
+    int32:i = 0;
+    while (i < 10) {
+        if (i % 3 == 0) {
+            dbug_count("stats", "errors");
+        } else {
+            dbug_count("stats", "successes");
+        }
+        dbug_count("stats", "total_processed");
+        i = i + 1;
+    }
+    
+    drop(println("\nIndividual counters:"));
+    dbug_count_show("stats", "successes");
+    dbug_count_show("stats", "errors");
+    dbug_count_show("stats", "total_processed");
+    
+    drop(println("\nAll counters at once:"));
+    dbug_count_show_all();
+    
+    pass(NIL);
+};
+
+// =============================================================================
+// Test 6: Counter Reset
+// =============================================================================
+
+func:test_counter_reset = NIL() {
+    drop(println("\n=== TEST 6: Counter Reset ==="));
+    
+    raw(dbug_enable("stats"));
+    
+    // Count some items
+    int32:i = 0;
+    while (i < 5) {
+        dbug_count("stats", "resets_test");
+        i = i + 1;
+    }
+    
+    drop(println("Before reset:"));
+    dbug_count_show("stats", "resets_test");
+    
+    dbug_count_reset("stats", "resets_test");
+    
+    drop(println("After reset:"));
+    dbug_count_show("stats", "resets_test");
+    
+    // Count some more
+    i = 0;
+    while (i < 3) {
+        dbug_count("stats", "resets_test");
+        i = i + 1;
+    }
+    
+    drop(println("After adding 3 more:"));
+    dbug_count_show("stats", "resets_test");
+    
+    pass(NIL);
+};
+
+// =============================================================================
+// Test 7: Counters with Disabled Group
+// =============================================================================
+
+func:test_counter_disabled = NIL() {
+    drop(println("\n=== TEST 7: Counters with Disabled Group ==="));
+    
+    raw(dbug_disable("stats"));
+    
+    drop(println("Counting with disabled group (should not show)"));
+    
+    int32:i = 0;
+    while (i < 10) {
+        dbug_count("stats", "invisible_counter");
+        i = i + 1;
+    }
+    
+    dbug_count_show("stats", "invisible_counter");
+    
+    drop(println("(Counter was incremented but show was suppressed)"));
+    
+    pass(NIL);
+};
+
+// =============================================================================
+// Test 8: Real-World Example - File Processing Simulation
+// =============================================================================
+
+func:process_file = bool(string:filename) {
+    // Simulate processing - every 3rd file fails
+    int32:hash = 0;
+    int32:i = 0;
+    while (i < 10) {  // Simple hash
+        hash = hash + i;
+        i = i + 1;
+    }
+    pass(hash % 3 != 0);
+};
+
+func:test_real_world_example = NIL() {
+    drop(println("\n=== TEST 8: Real-World File Processing Example ==="));
+    
+    raw(dbug_enable("files"));
+    raw(dbug_enable("stats"));
+    
+    int64:total_time = dbug_time_start("files", "Batch processing");
+    
+    int32:file_num = 0;
+    while (file_num < 10) {
+        int64:t = dbug_time_start("files", "Process single file");
+        
+        bool:success = raw(process_file("file.txt"));
+        
+        dbug_time_end("files", "Process single file", t);
+        
+        if (success) {
+            dbug_count("stats", "files_successful");
+        } else {
+            dbug_count("stats", "files_failed");
+        }
+        dbug_count("stats", "files_total");
+        
+        file_num = file_num + 1;
+    }
+    
+    dbug_time_end("files", "Batch processing", total_time);
+    
+    drop(println("\n=== Final Statistics ==="));
+    dbug_count_show_all();
+    
+    pass(NIL);
+};
+
+// =============================================================================
+// Test 9: Combined Timing and Counters
+// =============================================================================
+
+func:test_combined = NIL() {
+    drop(println("\n=== TEST 9: Combined Timing and Counters ==="));
+    
+    raw(dbug_enable("perf"));
+    raw(dbug_enable("stats"));
+    
+    int64:start = dbug_time_start("perf", "Combined test");
+    
+    // Simulate some work with different outcomes
+    int32:i = 0;
+    while (i < 20) {
+        if (i % 5 == 0) {
+            dbug_count("stats", "checkpoints");
+        }
+        
+        if (i % 2 == 0) {
+            dbug_count("stats", "even_numbers");
+        } else {
+            dbug_count("stats", "odd_numbers");
+        }
+        
+        i = i + 1;
+    }
+    
+    dbug_time_end("perf", "Combined test", start);
+    
+    drop(println("\nStatistics:"));
+    dbug_count_show("stats", "checkpoints");
+    dbug_count_show("stats", "even_numbers");
+    dbug_count_show("stats", "odd_numbers");
+    
+    pass(NIL);
+};
+
+// =============================================================================
+// Main Test Runner
+// =============================================================================
+
+func:main = int32() {
+    drop(println("========================================"));
+    drop(println("DBUG Timing and Counter Test Suite"));
+    drop(println("========================================"));
+    
+    raw(test_basic_timing());
+    raw(test_multiple_timings());
+    raw(test_timing_disabled());
+    
+    raw(test_basic_counter());
+    raw(test_multiple_counters());
+    raw(test_counter_reset());
+    raw(test_counter_disabled());
+    
+    raw(test_real_world_example());
+    raw(test_combined());
+    
+    drop(println("\n========================================"));
+    drop(println("All Tests Complete!"));
+    drop(println("========================================"));
+    
+    pass(0);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

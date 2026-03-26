@@ -1,0 +1,27 @@
+/**
+ * Minimal Q3<T> test
+ */
+
+use stdlib.quantum;
+
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
+};
+
+func:main = int32() {
+    trit:c0 = 0;
+    Q3<int32>:q = {a: 10, b: 20, c: c0};
+    
+    int32:val_a = q.a;
+    int32:val_b = q.b;
+    trit:val_c = q.c;
+    
+    // Verify values
+    if (val_a == 10 && val_b == 20 && val_c == 0) {
+        drop(println("SUCCESS: Q3<T> imported from stdlib.quantum works perfectly!"));
+        pass(0);  // Success
+    }
+    
+    drop(println("FAIL: Field values incorrect"));
+    pass(1);  // Fail
+};

@@ -1,0 +1,40 @@
+// Comprehensive SIMD test with all features
+
+func:test_element_access = int32() {
+    // Test element read access
+    let v = simd_broadcast<int32, 4>(1i32, 2i32, 3i32, 4i32);
+    let sum = v[0i32] + v[1i32] + v[2i32] + v[3i32];
+    return sum;
+};
+
+func:test_arithmetic = int32() {
+    let a = simd_broadcast<int32, 4>(10i32);
+    let b = simd_broadcast<int32, 4>(5i32);
+    let sum = a + b;   // [15, 15, 15, 15]
+    let diff = a - b;  // [5, 5, 5, 5]
+    let prod = a * b;  // [50, 50, 50, 50]
+    return sum[0i32] + diff[0i32] + prod[0i32];  // 15 + 5 + 50 = 70
+};
+
+func:test_comparison = int32() {
+    let a = simd_broadcast<int32, 4>(10i32);
+    let b = simd_broadcast<int32, 4>(5i32);
+    let gt = a > b;    // [true, true, true, true]
+    let eq = a == a;   // [true, true, true, true]
+    
+    if simd_all(gt) {
+        if simd_all(eq) {
+            return 42i32;  // Success!
+        };
+    };
+    return 0i32;
+};
+
+func:main = int32() {
+    let r1 = test_element_access();
+    let r2 = test_arithmetic();
+    let r3 = test_comparison();
+    return r1 + r2 + r3;  // 10 + 70 + 42 = 122
+};
+
+func:failsafe = void(int32:err_code) {};

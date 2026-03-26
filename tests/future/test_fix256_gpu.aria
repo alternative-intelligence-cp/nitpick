@@ -1,0 +1,49 @@
+/**
+ * test_fix256_gpu.aria
+ * Test fix256 deterministic arithmetic on GPU
+ * Phase 5: Verifies PTX codegen for GPU kernels
+ */
+
+// GPU kernel: deterministic physics timestep
+fn gpu_kernel physics_step(positions: fix256[], velocities: fix256[], dt: fix256, n: int32) {
+    let tid = gpu.thread_id();
+    let bid = gpu.block_id();
+    let bdim = gpu.block_dim();
+    let idx = bid * bdim + tid;
+    
+    if (idx < n) {
+        // Deterministic position update: position += velocity * dt
+        // NO FLOATING-POINT DRIFT!
+        let displacement = velocities[idx] * dt;
+        positions[idx] = positions[idx] + displacement;
+    }
+}
+
+// GPU kernel: simple addition test
+fn gpu_kernel fix256_add_kernel(a: fix256[], b: fix256[], result: fix256[], n: int32) {
+    let idx = gpu.thread_id() + gpu.block_id() * gpu.block_dim();
+    
+    if (idx < n) {
+        result[idx] = a[idx] + b[idx];
+    }
+}
+
+fn main() -> int32 {
+    print("=== fix256 GPU Test ===\n");
+    print("Testing PTX codegen for deterministic arithmetic\n");
+    
+    // Test values using compiler builtins
+    let a = fix256_from_int(10);
+    let b = fix256_from_int(5);
+    let sum = a + b;
+    let result = fix256_to_int(sum);
+    
+    print("10 + 5 = ");
+    if (result == 15) {
+        print("15 ✓\n");
+    } else {
+        print("ERROR\n");
+    }
+    
+    return 0;
+}

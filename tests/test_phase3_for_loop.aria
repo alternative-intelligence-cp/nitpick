@@ -1,0 +1,36 @@
+// Phase 3 Test: For loop (range-based)
+// Should PASS: range-based for is conservative
+
+func:get_result = int32(int32:x) {
+    if (x < 0i32) {
+        fail(-1i32);
+    }
+    pass(x * 2i32);
+};
+
+func:main = int32() {
+    Result<int32>:r = get_result(21i32);
+    
+    // Check before loop
+    if (r.is_error == false) {
+        // Safe in this branch
+        int32:before = r.value;
+    }
+    
+    // Range-based for loop - conservative
+    for (int32:i in 0..5) {
+        // Would need to re-check r inside loop
+        if (r.is_error == false) {
+            int32:x = r.value;
+        }
+    }
+    
+    // After loop - state is conservative (back to before loop)
+    // This should work if we checked before the loop
+    
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

@@ -1,0 +1,13 @@
+// Expected: COMPILER ERROR
+// Test: Atomic<T> type constraints - floating point (should fail)
+// Phase 2.2: This should produce a compile error
+// Expected error: "atomic<T> requires lock-free compatible type (int8-64, uint8-64, bool, tbb8-64), got: flt32"
+
+func:main = int32() {
+    stack atomic<flt32>:bad;  // This should fail: floating point types are not supported
+    return 0;
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

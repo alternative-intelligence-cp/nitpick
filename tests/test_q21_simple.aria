@@ -1,0 +1,25 @@
+/**
+ * Minimal Q21<T> test to isolate tbb8 issues
+ */
+
+use stdlib.quantum;
+
+func:failsafe = NIL(int32:code) {};
+
+func:main = int32() {
+    println("Q21 minimal test");
+    
+    // Test 1: Create Q21 with tbb8 variables
+    tbb8:c0 = 0;
+    Q21<int32>:q = {a: 10, b: 20, c: c0};
+    
+    println("Q21 created successfully");
+    
+    if (q.a == 10 && q.b == 20) {
+        println("SUCCESS");
+        pass(0);
+    }
+    
+    println("FAIL");
+    pass(1);
+};

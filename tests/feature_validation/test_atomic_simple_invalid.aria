@@ -1,0 +1,9 @@
+// Expected: COMPILER ERROR
+// Test: Atomic<T> type constraints - invalid type (string) in variable declaration
+// Phase 2.2: This should fail with error about incompatible type
+// Expected: "atomic<T> requires lock-free compatible type (int8-64, uint8-64, bool, tbb8-64), got: string"
+
+func:test_invalid_atomic = int32() {
+    stack atomic<string>:bad;  // This should cause a compile error
+    return 0;
+};

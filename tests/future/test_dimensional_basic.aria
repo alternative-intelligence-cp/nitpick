@@ -1,0 +1,36 @@
+// P1-5: Dimensional Analysis - Basic Test
+// Test that dimensional types can be created and used correctly
+
+import stdlib::io::*;
+
+// Test 1: Basic dimensional type creation
+func:test_basic_dimensions = Result<i32>() {
+    // Create dimensionally-typed values
+    // Note: Parser support not yet implemented, so this will fail for now
+    // This file documents the INTENDED syntax
+    
+    // fix256<Joules>:energy = 100.0;
+    // fix256<Meters>:distance = 10.0;
+    // fix256<Newtons>:force = energy / distance;  // Should work: J/m = N
+    
+    // For now, just test that basic types still compile
+    fix256:energy = 100.0;
+    fix256:distance = 10.0;
+    fix256:force = energy / distance;
+    
+    println("Energy: {}", energy);
+    println("Distance: {}", distance);
+    println("Force: {}", force);
+    
+    pass(OK(0));
+};
+
+func:main = i32() {
+    test_basic_dimensions() !!! {
+        println("Test passed!");
+        pass(0);
+    };
+    
+    println("Test failed");
+    pass(1);
+};

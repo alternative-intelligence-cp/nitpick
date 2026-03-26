@@ -1,0 +1,27 @@
+// Test unwrap with structs
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+
+func:failsafe = NIL(int32:err_code) { pass(NIL); };
+func:make_point = Point(int32:x_val, int32:y_val) {
+    Point:p = Point{x: x_val, y: y_val};
+    pass(p);
+};
+
+func:main = int32() {
+    // Create fallback
+    Point:fallback = Point{x: 0i32, y: 0i32};
+    
+    // Test unwrap with struct
+    Point:p = make_point(10i32, 20i32) ? fallback;
+    
+    // Try reassignment
+    p = make_point(42i32, 100i32) ? fallback;
+    
+    // Return x value (should be 42)
+    pass(p.x);
+};

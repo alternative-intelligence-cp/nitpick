@@ -1,0 +1,25 @@
+// P1-4: Test runtime precondition checking
+
+func:divide_safe = int32(int32:a, int32:b)
+  requires b != 0
+{
+    pass(a / b);
+};
+
+func:failsafe = NIL(int32:code) { };
+
+func:main = int32() {
+    // Test with valid input - should succeed
+    Result<int32>:r1 = divide_safe(10, 2);
+    if (r1.is_error) {
+        pass(-1);  // Should not reach here
+    }
+    
+    // Test with invalid input (divide by zero) - should fail precondition
+    Result<int32>:r2 = divide_safe(10, 0);
+    if (r2.is_error) {
+        pass(100);  // Contract violation detected!
+    }
+    
+    pass(-99);  // Should not reach here
+};

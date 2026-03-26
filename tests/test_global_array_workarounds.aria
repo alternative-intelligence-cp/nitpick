@@ -1,0 +1,179 @@
+// Expected: COMPILER ERROR
+/**
+ * Test: Can we use wild pointers with alloc<T> for global arrays?
+ * 
+ * This test explores workarounds for global array limitation.
+ */
+
+use std.core.memory;
+
+// =============================================================================
+// Test 1: Wild Pointer to Array
+// =============================================================================
+
+struct:WatchPoint = {
+    int64:last_value;
+    string:label;
+    string:group;
+    bool:active;
+};
+
+// Try: Wild pointer to allocated array
+wild WatchPoint->:_watches;
+int32:_watch_count = 0;
+const int32:MAX_WATCHES = 16;
+
+func:init_watches = NIL() {
+    // Allocate array using alloc_array<T>
+    _watches = alloc_array<WatchPoint>(MAX_WATCHES);
+    
+    // Initialize elements
+    int32:i = 0;
+    while (i < MAX_WATCHES) {
+        _watches[i].active = false;
+        _watches[i].group = "";
+        _watches[i].label = "";
+        _watches[i].last_value = 0i64;
+        i = i + 1;
+    }
+    
+    _watch_count = 0;
+    pass(NIL);
+};
+
+func:add_watch = bool(string:group, string:label, wild int64->:ptr) {
+    if (_watch_count >= MAX_WATCHES) {
+        pass(false);
+    }
+    
+    int32:idx = _watch_count;
+    _watches[idx].group = group;
+    _watches[idx].label = label;
+    _watches[idx].last_value = <-ptr;
+    _watches[idx].active = true;
+    _watch_count = _watch_count + 1;
+    
+    pass(true);
+};
+
+func:cleanup_watches = NIL() {
+    free(_watches);
+    pass(NIL);
+};
+
+// =============================================================================
+// Test 2: Arena Allocator for Counter Array
+// =============================================================================
+
+use std.core.arena;
+
+struct:DbugCounter = {
+    string:group;
+    string:label;
+    int64:count;
+    bool:active;
+};
+
+// Arena for counters
+arena:_counter_arena;
+wild DbugCounter->:_counters;
+int32:_counter_count = 0;
+const int32:MAX_COUNTERS = 32;
+
+func:init_counters = NIL() {
+    // Create arena
+    arena_result:res = new_arena(8192);
+    if (!is_ok(res)) {
+        // Error handling
+        drop(println("[ERROR] Failed to create counter arena"));
+        pass(NIL);
+    }
+    _counter_arena = unwrap(res);
+    
+    // Allocate counter array from arena
+    alloc_result<DbugCounter>:alloc_res = arena_alloc_array<DbugCounter>(_counter_arena, MAX_COUNTERS);
+    if (!is_ok(alloc_res)) {
+        drop(println("[ERROR] Failed to allocate counters"));
+        pass(NIL);
+    }
+    
+    _counters = unwrap(alloc_res);
+    
+    // Initialize
+    int32:i = 0;
+    while (i < MAX_COUNTERS) {
+        _counters[i].active = false;
+        _counters[i].group = "";
+        _counters[i].label = "";
+        _counters[i].count = 0i64;
+        i = i + 1;
+    }
+    
+    _counter_count = 0;
+    pass(NIL);
+};
+
+func:add_counter = bool(string:group, string:label) {
+    if (_counter_count >= MAX_COUNTERS) {
+        pass(false);
+    }
+    
+    int32:idx = _counter_count;
+    _counters[idx].group = group;
+    _counters[idx].label = label;
+    _counters[idx].count = 1i64;
+    _counters[idx].active = true;
+    _counter_count = _counter_count + 1;
+    
+    pass(true);
+};
+
+func:cleanup_counters = NIL() {
+    destroy(_counter_arena);
+    pass(NIL);
+};
+
+// =============================================================================
+// Main Test
+// =============================================================================
+
+func:main = int32() {
+    drop(println("=== Testing Global Array Workarounds ==="));
+    
+    drop(println("\n[Test 1] Wild pointer + alloc_array"));
+    init_watches();
+    
+    wild int64->:test_var = alloc<int64>();
+    <-test_var = 42i64;
+    
+    if (add_watch("test", "my_variable", test_var)) {
+        drop(println("✓ Added watch successfully"));
+        drop(print("  Watch 0: "));
+        drop(println(_watches[0].label));
+    } else {
+        drop(println("✗ Failed to add watch"));
+    }
+    
+    cleanup_watches();
+    free(test_var);
+    
+    drop(println("\n[Test 2] Arena allocator"));
+    init_counters();
+    
+    if (add_counter("stats", "requests")) {
+        drop(println("✓ Added counter successfully"));
+        drop(print("  Counter 0: "));
+        drop(println(_counters[0].label));
+    } else {
+        drop(println("✗ Failed to add counter"));
+    }
+    
+    cleanup_counters();
+    
+    drop(println("\n=== All tests completed ==="));
+    pass(0);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

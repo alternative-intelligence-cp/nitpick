@@ -1,0 +1,21 @@
+// Minimal SIMD test - just basic operations
+// Step 1: Test if SIMD values can be created and used
+
+func:test_basic_simd = int32() {
+    // Test 1: Create SIMD via broadcast
+    simd<int32, 4>:v = simd_broadcast(42i32, 4i32);
+    
+    // Test 2: Add two SIMD vectors
+    simd<int32, 4>:a = simd_broadcast(10i32, 4i32);
+    simd<int32, 4>:b = simd_broadcast(20i32, 4i32);
+    simd<int32, 4>:sum = a + b;
+    
+    pass(0i32);
+};
+
+func:main = int32() {
+    int32:result = raw(test_basic_simd());
+    return result;
+};
+
+func:failsafe = NIL(int32:err_code) {};

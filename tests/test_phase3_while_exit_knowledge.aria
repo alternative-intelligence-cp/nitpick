@@ -1,0 +1,27 @@
+// Phase 3 Test: While loop exit provides knowledge
+// Should PASS: after while(!r.is_error) exits, we know r.is_error == true
+
+func:get_error = int32(int32:x) {
+    // Always fail to test error path
+    fail(-1i32);
+};
+
+func:main = int32() {
+    Result<int32>:r = get_error(0i32);
+    
+    // This loop won't execute because r.is_error == true
+    while (r.is_error == false) {
+        // Would be safe inside loop
+        int32:x = r.value;
+    }
+    
+    // After exiting, condition is false, so r.is_error == true
+    // Should be able to access error
+    int64:code = r.error;
+    
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

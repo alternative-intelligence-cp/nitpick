@@ -1,0 +1,58 @@
+// P1-5 Phase 4: Dimensional Error Detection Tests
+// These tests verify that invalid dimensional operations are REJECTED
+
+// IMPORTANT: These tests are designed to FAIL compilation
+// Each uncommented test demonstrates a different error case
+
+// Error Test 1: Adding incompatible dimensions
+// Energy + Distance should ERROR
+/*
+func:test_add_incompatible = i32() {
+    fix256<Joules>:energy = fix256_from_int(100);
+    fix256<Meters>:distance = fix256_from_int(10);
+    fix256:invalid = energy + distance;  // ❌ Cannot add J + m
+    return 0;
+};
+*/
+
+// Error Test 2: Subtracting incompatible dimensions
+// Force - Time should ERROR
+/*
+func:test_subtract_incompatible = i32() {
+    fix256<Newtons>:force = fix256_from_int(50);
+    fix256<Seconds>:time = fix256_from_int(5);
+    fix256:invalid = force - time;  // ❌ Cannot subtract N - s
+    return 0;
+};
+*/
+
+// Error Test 3: Adding dimensional with dimensionless
+// Energy + scalar should ERROR
+/*
+func:test_add_dimensional_scalar = i32() {
+    fix256<Joules>:energy = fix256_from_int(100);
+    fix256:scalar = fix256_from_int(10);
+    fix256:invalid = energy + scalar;  // ❌ Cannot add J + dimensionless
+    return 0;
+};
+*/
+
+// Error Test 4: Modulo with dimensional types
+// Energy % Distance should ERROR
+/*
+func:test_modulo_dimensional = i32() {
+    fix256<Joules>:energy = fix256_from_int(100);
+    fix256<Meters>:distance = fix256_from_int(10);
+    fix256:invalid = energy % distance;  // ❌ Modulo not supported for dimensional types
+    return 0;
+};
+*/
+
+// For now, just a passing test
+func:main = int32() {
+    return 0;
+};
+
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
+};

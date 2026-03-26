@@ -1,0 +1,75 @@
+// P1-2 Phase 4e: SIMD Element Access Test
+// Tests subscript operations for reading and writing SIMD elements
+
+func:test_simd_read = int32(simd<int32, 4>:vec) {
+    // Read individual elements from SIMD vector
+    int32:elem0 = vec[0i32];
+    int32:elem1 = vec[1i32];
+    int32:elem2 = vec[2i32];
+    int32:elem3 = vec[3i32];
+    
+    // Use extracted values
+    int32:sum = elem0 + elem1 + elem2 + elem3;
+    
+    pass(sum);
+};
+
+func:test_simd_write = simd<int32, 4>(int32:val) {
+    // Create SIMD vector and write to elements
+    simd<int32, 4>:vec;
+    
+    // Write individual elements
+    vec[0i32] = val;
+    vec[1i32] = val + 1i32;
+    vec[2i32] = val + 2i32;
+    vec[3i32] = val + 3i32;
+    
+    pass(vec);
+};
+
+func:test_simd_modify = simd<int32, 4>(simd<int32, 4>:vec) {
+    // Modify specific elements of SIMD vector
+    int32:temp = vec[0i32];
+    vec[0i32] = vec[3i32];
+    vec[3i32] = temp;
+    
+    // Swap elements 0 and 3
+    pass(vec);
+};
+
+func:test_simd_variable_index = int32(simd<int32, 8>:vec, int32:idx) {
+    // Test with variable index (runtime value)
+    int32:value = vec[idx];
+    pass(value);
+};
+
+func:test_simd_compound_assignment = simd<int32, 4>(simd<int32, 4>:vec) {
+    // Modify element using compound assignment
+    simd<int32, 4>:result = vec;
+    
+    // Double first element
+    int32:first = result[0i32];
+    result[0i32] = first * 2i32;
+    
+    // Increment second element
+    int32:second = result[1i32];
+    result[1i32] = second + 10i32;
+    
+    pass(result);
+};
+
+func:test_simd_mixed_types = int64(simd<int64, 2>:vec64) {
+    // Test with different SIMD element types
+    int64:a = vec64[0i32];
+    int64:b = vec64[1i32];
+    
+    pass(a + b);
+};
+
+func:main = int32() {
+    return 0i32;
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling stub
+};
