@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.13
+# Aria Programming Language v0.2.15
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
