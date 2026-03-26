@@ -1,5 +1,41 @@
 # Aria Language Changelog
 
+## [0.2.13] - March 2026
+
+### Added
+- **WebAssembly compilation target** — `ariac --emit-wasm -o program.wasm` compiles Aria to WASI-compatible WebAssembly
+- **`--emit-wasm` flag** and `--target=wasm32-wasi` compiler option (also `wasm32-unknown-unknown` for bare WASM)
+- **WASM runtime** (`libaria_runtime_wasm.a`) — stripped-down runtime for WASM: strings, I/O, math, allocators, maps (~850 LOC)
+- **LLVM WebAssembly backend** — `emit_wasm_object()` with WASI entry point handling (`__main_argc_argv`), wasm-ld linking
+- **WASM compatibility checker** — scans module and warns about unsupported features (threading, async, fork/exec, signals, mmap)
+- **Compiler-rt builtins** — `__multi3` (128-bit multiply via `__int128`) for int64 arithmetic on wasm32
+- **WASM test suite** — `tests/wasm/`: hello world, strings, arithmetic, functions/recursion (4/4 passing)
+- **WASM documentation** — `docs/WASM_GUIDE.md`: compilation guide, feature matrix, architecture, examples, troubleshooting
+
+## [0.2.12] - March 2026
+
+### Added
+- **Preprocessor macros** — `macro:NAME(params) { body }`, `%*` variadic parameter expansion, `#%N` stringification, `##` token pasting
+- **Comptime evaluation** — `comptime { }` blocks evaluated at compile time, compile-time constants
+- **Magic constants** — `__FILE__`, `__LINE__`, `__FUNC__`, `__COUNTER__` for metaprogramming
+- **Inline hints** — `inline` and `noinline` function attributes for optimization control
+
+### Improved
+- **Borrow checker** — Better analysis of conditional paths and reassignment patterns
+- **Compiler diagnostics** — Improved error messages for macro expansion and comptime evaluation errors
+
+## [0.2.11] - March 2026
+
+### Added
+- **Thread pool** — `ThreadPool.create(n)`, `ThreadPool.submit(pool, func, arg)`, `ThreadPool.wait_idle(pool)`, `ThreadPool.shutdown(pool)`
+- **Atomics stdlib** — `AtomicInt32`, `AtomicInt64`, `AtomicBool` with all memory orderings (relaxed, acquire, release, acq_rel, seq_cst)
+- **Lock-free data structures** — `LFQueue` (MPMC Vyukov), `LFStack` (Treiber), `RingBuf` (SPSC Lamport)
+- **Channels** — `Channel.create()`, `Channel.send()`, `Channel.recv()` for typed inter-thread communication
+- **Synchronization primitives** — `Mutex`, `RWLock`, `Barrier`, `CondVar` stdlib modules
+- **OS components** — Arena, pool, slab allocators; shared memory IPC; signal handling; process management
+- **AI-native filesystem (AIFS)** — FUSE-based filesystem for AI workloads with metadata streams
+- **AriaX kernel mods** — Hexstream FD 3-5 patches for six-stream I/O
+
 ## [0.2.10] - March 2026
 
 ### Added
