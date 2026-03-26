@@ -1,0 +1,20 @@
+// Trait + impl + UFCS method dispatch test
+
+trait:Describable = {
+    func:describe = int32(int32:self);
+};
+
+impl:Describable:for:int32 = {
+    func:describe = int32(int32:self) {
+        pass(self + 100);
+    };
+};
+
+pub func:main = int32() {
+    int32:x = 5;
+    // UFCS: x.describe() should resolve to int32_describe(x)
+    int32:result = raw(x.describe());
+    pass(result);
+};
+
+pub func:failsafe = nil(int32:code) {};
