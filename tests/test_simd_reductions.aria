@@ -46,7 +46,7 @@ func:test_simd_min_float = float32(simd<float32, 4>:vec) {
 func:test_simd_max_float = float32(simd<float32, 4>:vec) {
     // Find maximum float value
     float32:max_val = simd_max(vec);
-    return max_val;
+    pass(max_val);
 };
 
 func:test_simd_combined_reductions = int32(simd<int32, 4>:values) {
@@ -61,7 +61,7 @@ func:test_simd_combined_reductions = int32(simd<int32, 4>:values) {
     // Return average (sum / 4)
     int32:avg = sum / 4i32;
     
-    return avg;
+    pass(avg);
 };
 
 func:test_simd_reduction_chain = int32(simd<int32, 8>:vec_a, simd<int32, 8>:vec_b) {
@@ -72,7 +72,7 @@ func:test_simd_reduction_chain = int32(simd<int32, 8>:vec_a, simd<int32, 8>:vec_
     // Total of both vectors
     int32:total = sum1 + sum2;
     
-    return total;
+    pass(total);
 };
 
 func:test_practical_stats = int32(simd<int32, 8>:data) {
@@ -87,14 +87,14 @@ func:test_practical_stats = int32(simd<int32, 8>:data) {
     // Check if all values are in reasonable range
     int32:range = max_val - min_val;
     if (range > 100i32) {
-        return 0i32;  // Outliers detected
+        pass(0i32);  // Outliers detected
     }
     
-    return avg;
+    pass(avg);
 };
 
 func:main = int32() {
-    return 0i32;
+    pass(0i32);
 };
 
 func:failsafe = NIL(int32:err_code) {
