@@ -120,12 +120,7 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
  */
 AriaSpawnOptions* aria_spawn_options_create(void);
 
-/**
- * Free spawn options
- * 
- * @param options Options to free
- */
-void aria_spawn_options_free(AriaSpawnOptions* options);
+// aria_spawn_options_free is internal to the runtime (static in process.cpp)
 
 // ============================================================================
 // Process Control
@@ -175,14 +170,7 @@ int aria_process_kill(AriaProcess* process, int signal);
  */
 int64_t aria_process_get_pid(AriaProcess* process);
 
-/**
- * Free a process handle
- * 
- * Note: This does NOT kill the process, only frees the handle.
- * 
- * @param process The process to free
- */
-void aria_process_free(AriaProcess* process);
+// aria_process_free is internal to the runtime (static in process.cpp)
 
 // ============================================================================
 // Fork and Exec (Unix-style)
@@ -311,14 +299,7 @@ int aria_pipe_get_read_fd(AriaPipe* pipe);
  */
 int aria_pipe_get_write_fd(AriaPipe* pipe);
 
-/**
- * Free a pipe
- * 
- * Closes both ends if still open and frees resources.
- * 
- * @param pipe The pipe to free
- */
-void aria_pipe_free(AriaPipe* pipe);
+// aria_pipe_free is internal to the runtime (static in process.cpp)
 
 // ============================================================================
 // Process Information
@@ -338,19 +319,9 @@ int64_t aria_get_current_pid(void);
  */
 int64_t aria_get_parent_pid(void);
 
-/**
- * Free process info structure
- * 
- * @param info The info to free
- */
-void aria_process_info_free(AriaProcessInfo* info);
+// aria_process_info_free is internal to the runtime (static in process.cpp)
 
-/**
- * Free fork info structure
- * 
- * @param info The info to free
- */
-void aria_fork_info_free(AriaForkInfo* info);
+// aria_fork_info_free is internal to the runtime (static in process.cpp)
 
 #ifdef __cplusplus
 }

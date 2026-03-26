@@ -78,7 +78,7 @@ extern "C" {
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 2
 #define ARIA_VERSION_PATCH 11
-#define ARIA_VERSION "0.2.11"
+#define ARIA_VERSION "0.2.12"
 
 // Compiler options
 struct CompilerOptions {
@@ -750,17 +750,35 @@ llvm::Module* compile_to_module(
     auto borrow_errors = borrow_checker.analyze(module_node.get());
     
     if (!borrow_errors.empty()) {
+        bool has_errors = false;
         for (const auto& err : borrow_errors) {
             aria::SourceLocation loc(filename, err.line, err.column);
-            diags.error(loc, err.message);
+            
+            switch (err.severity) {
+                case aria::sema::BorrowSeverity::WARNING:
+                    diags.warning(loc, err.message);
+                    break;
+                case aria::sema::BorrowSeverity::HINT:
+                    diags.note(loc, err.message);
+                    break;
+                default:
+                    diags.error(loc, err.message);
+                    has_errors = true;
+                    break;
+            }
             
             // Print related information if available
             if (err.related_line >= 0) {
                 aria::SourceLocation related_loc(filename, err.related_line, err.related_column);
                 diags.note(related_loc, err.related_message);
             }
+            
+            // Print suggestion if available
+            if (!err.suggestion.empty()) {
+                diags.note(loc, err.suggestion);
+            }
         }
-        return nullptr;
+        if (has_errors) return nullptr;
     }
 
     // Phase 4: IR Generation

@@ -45,7 +45,7 @@ func:safe_increment = int32(int32:atomic_val) {
     int32:attempts = 0i32;
     
     while (attempts < max_retries) {
-        int32:current = atomic_load(atomic_val);
+        int32:current = raw(atomic_load(atomic_val));
         int32:next = current + 1i32;
         
         Result<int32>:result = atomic_compare_exchange(atomic_val, current, next);
@@ -63,7 +63,7 @@ func:safe_increment = int32(int32:atomic_val) {
 
 // Conditional update: only update if value meets criteria
 func:update_if_less_than = int32(int32:atomic_val, int32:new_val, int32:limit) {
-    int32:current = atomic_load(atomic_val);
+    int32:current = raw(atomic_load(atomic_val));
     
     // Only update if current < limit
     if (current >= limit) {
@@ -107,7 +107,7 @@ func:release_lock = int32(int32:lock_val) {
     int32:unlocked = 0i32;
     
     // Release always succeeds (we own the lock)
-    int32:new_val = atomic_store(lock_val, unlocked);
+    int32:new_val = raw(atomic_store(lock_val, unlocked));
     pass(new_val);
 };
 
@@ -134,7 +134,7 @@ func:acquire_with_timeout = int32(int32:lock_val, int32:max_tries) {
 // ============================================================================
 
 func:bounded_increment = int32(int32:counter_val, int32:max_value) {
-    int32:current = atomic_load(counter_val);
+    int32:current = raw(atomic_load(counter_val));
     
     // Check bounds
     if (current >= max_value) {
@@ -148,7 +148,7 @@ func:bounded_increment = int32(int32:counter_val, int32:max_value) {
     if (swap.is_error) {
         // CAS failed, someone else modified it
         // Try again (simplified - real code would loop)
-        int32:retry_current = atomic_load(counter_val);
+        int32:retry_current = raw(atomic_load(counter_val));
         
         if (retry_current >= max_value) {
             fail(6i32);
@@ -176,7 +176,7 @@ func:main = int32() {
     
     // Test 1: Simple atomic load (always succeeds)
     int32:atomic1 = atomic_new(10i32);
-    int32:val1 = atomic_load(atomic1);
+    int32:val1 = raw(atomic_load(atomic1));
     result = result + val1;  // +10 = 10
     
     // Test 2: CAS that succeeds
@@ -211,7 +211,7 @@ func:main = int32() {
     Result<int32>:acquired = try_acquire_lock(lock);
     if (!(acquired.is_error)) {
         result = result + 10i32;  // Got lock, +10 = 157
-        int32:released = release_lock(acquired.value);
+        int32:released = raw(release_lock(acquired.value));
         result = result + released;  // Released (0), +0 = 157
     }
     

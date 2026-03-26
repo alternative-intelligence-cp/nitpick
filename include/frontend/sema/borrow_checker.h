@@ -480,17 +480,30 @@ struct LifetimeContext {
 };
 
 /**
+ * Severity level for borrow checker diagnostics
+ */
+enum class BorrowSeverity {
+    ERROR,
+    WARNING,
+    HINT
+};
+
+/**
  * Represents a borrow checking error
  */
 struct BorrowError {
     int line;
     int column;
     std::string message;
+    BorrowSeverity severity = BorrowSeverity::ERROR;
     
     // Optional: Location of the conflicting borrow/definition
     int related_line;
     int related_column;
     std::string related_message;
+    
+    // Optional: Suggested fix
+    std::string suggestion;
     
     BorrowError(int l, int c, const std::string& msg)
         : line(l), column(c), message(msg), related_line(-1), related_column(-1) {}
@@ -499,6 +512,10 @@ struct BorrowError {
                 int rl, int rc, const std::string& rmsg)
         : line(l), column(c), message(msg), 
           related_line(rl), related_column(rc), related_message(rmsg) {}
+    
+    BorrowError(int l, int c, const std::string& msg, const std::string& suggest)
+        : line(l), column(c), message(msg), related_line(-1), related_column(-1),
+          suggestion(suggest) {}
 };
 
 // ============================================================================
@@ -785,6 +802,14 @@ private:
     void addError(const std::string& message, int line, int column);
     void addError(const std::string& message, ASTNode* node,
                  const std::string& related_msg, int related_line, int related_col);
+    void addErrorWithSuggestion(const std::string& message, ASTNode* node,
+                                const std::string& suggestion);
+    void addErrorWithSuggestion(const std::string& message, ASTNode* node,
+                                const std::string& related_msg, int related_line, int related_col,
+                                const std::string& suggestion);
+    void addWarning(const std::string& message, ASTNode* node);
+    void addWarning(const std::string& message, ASTNode* node,
+                    const std::string& suggestion);
     
 public:
     BorrowChecker() = default;

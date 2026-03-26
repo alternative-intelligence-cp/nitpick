@@ -32,7 +32,7 @@ func:int64_toString = string(int64:value) {
 // int32_toString: Cast to int64 to avoid compiler int32 modulo bug
 func:int32_toString = string(int32:value) {
     int64:value64 = value;
-    string:result = int64_toString(value64);
+    string:result = raw(int64_toString(value64));
     pass(result);
 
 };
@@ -84,7 +84,7 @@ pub func:main = int32() {
     // Test large template literal - simplified to avoid wild memory issues
     int32:x = 42;
     drop(print("Template test: "));
-    string:x_str = int32_toString(x);
+    string:x_str = raw(int32_toString(x));
     drop(println(x_str));
     
     drop(println("FFI safety tests passed!"));
