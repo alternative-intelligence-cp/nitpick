@@ -1,0 +1,70 @@
+/**
+ * Test: Generic Complex Numbers with Multiple Numeric Types
+ * Demonstrates complex<T> working with generic functions
+ */
+
+struct<T>:complex = {
+    *T:real;
+    *T:imag;
+};
+
+pub func<T>:complex_new = complex<*T>(*T:real, *T:imag) {
+    complex<*T>:result;
+    result.real = real;
+    result.imag = imag;
+    pass(result);
+};
+
+pub func<T>:complex_add = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
+    complex<*T>:result;
+    result.real = z1.real + z2.real;
+    result.imag = z1.imag + z2.imag;
+    pass(result);
+};
+
+pub func<T>:complex_sub = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
+    complex<*T>:result;
+    result.real = z1.real - z2.real;
+    result.imag = z1.imag - z2.imag;
+    pass(result);
+};
+
+pub func<T>:complex_mul = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
+    // (a+bi)(c+di) = (ac-bd) + (ad+bc)i via Gauss 3-mul
+    *T:k1 = z1.real * (z2.real + z2.imag);
+    *T:k2 = z2.imag * (z1.real + z1.imag);
+    *T:k3 = z2.real * (z1.imag - z1.real);
+    complex<*T>:result;
+    result.real = k1 - k2;
+    result.imag = k1 + k3;
+    pass(result);
+};
+
+func:failsafe = NIL(int32:err_code) {};
+
+func:main = int32() {
+    // Test 1: Complex with int64
+    complex<int64>:z1 = raw(complex_new(3i64, 4i64));
+    complex<int64>:z2 = raw(complex_new(1i64, 2i64));
+    complex<int64>:sum_i64 = raw(complex_add(z1, z2));  // (4 + 6i)
+
+    // Test 2: Complex subtraction
+    complex<int64>:diff = raw(complex_sub(z1, z2));  // (2 + 2i)
+
+    // Test 3: Complex multiplication
+    complex<int64>:product = raw(complex_mul(z1, z2));  // (3+4i)*(1+2i) = -5+10i
+
+    // Test 4: Complex with int32
+    complex<int32>:a = raw(complex_new(5i32, 3i32));
+    complex<int32>:b = raw(complex_new(2i32, 7i32));
+    complex<int32>:sum_i32 = raw(complex_add(a, b));  // (7 + 10i)
+
+    // Test 5: Complex with flt64
+    complex<flt64>:f1 = raw(complex_new(1.5, 2.5));
+    complex<flt64>:f2 = raw(complex_new(3.0, 4.0));
+    complex<flt64>:sum_f64 = raw(complex_add(f1, f2));  // (4.5 + 6.5i)
+    complex<flt64>:prod_f64 = raw(complex_mul(f1, f2));
+
+    println("complex generic: all tests passed");
+    pass(0i32);
+};
