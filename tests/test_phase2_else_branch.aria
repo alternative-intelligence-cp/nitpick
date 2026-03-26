@@ -1,0 +1,27 @@
+// Phase 2 Test 3: Else branch knowledge
+// Should PASS - else branch knows opposite of then branch
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail(-1i32);
+    }
+    pass(a / b);
+};
+
+func:main = int32() {
+    Result<int32>:r = divide(10i32, 2i32);
+    
+    if (r.is_error == true) {
+        // Then branch knows: is_error == true
+        int64:code = r.error;  // Can access error when is_error == true
+    } else {
+        // Else branch knows: is_error == false
+        int32:x = r.value;  // SAFE: else knows is_error == false
+    }
+    
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

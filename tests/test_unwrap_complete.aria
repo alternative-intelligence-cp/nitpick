@@ -1,0 +1,33 @@
+// Test all unwrap patterns
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail(-1i32);
+    }
+    pass(a / b);
+};
+
+func:main = int32() {
+    // Pattern 1: Direct unwrap
+    int32:x = divide(10i32, 2i32) ? 0i32;  // 5
+    
+    // Pattern 2: Manual check
+    Result<int32>:r = divide(20i32, 4i32);
+    int32:y = 0i32;
+    if (!(r.is_error)) {
+        y = r.value;  // 5
+    }
+    
+    // Pattern 3: Stored Result unwrap
+    Result<int32>:r2 = divide(30i32, 5i32);
+    int32:z = r2 ? 0i32;  // 6
+    
+    int32:sum = x + y;
+    sum = sum + z;
+    
+    pass(sum);  // Should be 16
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

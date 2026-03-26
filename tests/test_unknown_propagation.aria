@@ -1,0 +1,36 @@
+// Test: Unknown propagation through arithmetic
+// Layer 1 Safety: Unknown values propagate until checked
+
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
+};
+
+func:main = int32() {
+    // Create Unknown from divide-by-zero
+    int32:zero = 0i32;
+    int32:unk_val = 5i32 / zero;  // Unknown (INT_MAX)
+    
+    // Unknown should propagate through operations
+    int32:result1 = unk_val + 10i32;  // Unknown + 10 = still Unknown
+    int32:result2 = unk_val * 2i32;   // Unknown * 2 = still Unknown
+    int32:result3 = result1 - 5i32;   // (Unknown) - 5 = still Unknown
+    
+    // Check that all results are Unknown
+    if (ok(unk_val) == 0i32 && 
+        ok(result1) == 0i32 && 
+        ok(result2) == 0i32 && 
+        ok(result3) == 0i32) {
+        // Success: Unknown propagated correctly
+        pass(0i32);
+    }
+    
+    // Normal values should still work
+    int32:normal = 5i32 + 3i32;  // 8
+    if (ok(normal) == 1i32) {
+        // Success: normal values are valid
+        pass(0i32);
+    }
+    
+    // Test failed
+    pass(1i32);
+};

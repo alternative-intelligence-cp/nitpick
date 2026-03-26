@@ -1,0 +1,17 @@
+// Test: Null coalescing operator (??)
+
+func:main = int32() {
+    // Test with NIL optional
+    int32?:opt1 = NIL;
+    int32:val1 = opt1 ?? 42i32;  // Should return 42
+    
+    // Test with value optional  
+    int32?:opt2 = 5i32;
+    int32:val2 = opt2 ?? 99i32;  // Should return 5
+    
+    pass(val1 + val2);  // 42 + 5 = 47
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

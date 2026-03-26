@@ -1,0 +1,34 @@
+// Phase 3.5 Test: Break detection with Result checking
+// Tests that early break carries knowledge forward
+
+func:get_next = int32(int32:i) {
+    if (i > 5i32) {
+        fail(-1i32);
+    }
+    pass(i * 2i32);
+};
+
+func:main = int32() {
+    int32:total = 0i32;
+    
+    // Loop with break on error
+    int32:i = 0i32;
+    while (i < 10i32) {
+        Result<int32>:r = get_next(i);
+        
+        // If error, break out
+        if (r.is_error) {
+            break;
+        }
+        
+        // After if: know !r.is_error (because then branch breaks)
+        total = total + r.value;  // SAFE: early break pattern
+        i = i + 1i32;
+    }
+    
+    pass(total);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

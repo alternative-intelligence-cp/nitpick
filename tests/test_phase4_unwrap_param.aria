@@ -1,0 +1,29 @@
+// Expected: COMPILER ERROR
+// Test: Phase 4 - Result parameters with unwrap operator
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail(1i32);
+    }
+    pass(a / b);
+};
+
+// Use unwrap to extract value from parameter
+func:double_it = int32(Result<int32>:r) {
+    int32:val = r ? 0i32;  // Unwrap with default
+    pass(val * 2i32);
+};
+
+func:main = int32() {
+    Result<int32>:r = divide(10i32, 2i32);
+    Result<int32>:doubled = double_it(r);
+    
+    if (doubled.is_error) {
+        fail(1i32);
+    }
+    pass(doubled.value);  // Should return 10 (5 * 2)
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

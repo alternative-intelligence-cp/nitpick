@@ -1,0 +1,75 @@
+// Expected: COMPILER ERROR
+// Test: Basic Complex Number Operations
+// Tests the complex number implementation inline (no imports needed)
+
+/**
+ * Generic complex number type
+ */
+struct<T>:complex = {
+    *T:real;
+    *T:imag;
+};
+
+func:failsafe = int32(int32:err_code) {
+    return err_code;
+};
+
+func:main = int32() {
+    // Test 1: Basic construction and field access
+    complex<fix256>:z;
+    z.real = 3.0;
+    z.imag = 4.0;
+    if (z.real != 3.0 || z.imag != 4.0) {
+        return 1;  // FAIL: Basic construction
+    }
+    
+    // Test 2: Addition (3+4i) + (1+2i) = (4+6i)
+    complex<fix256>:z1;
+    z1.real = 3.0;
+    z1.imag = 4.0;
+    
+    complex<fix256>:z2;
+    z2.real = 1.0;
+    z2.imag = 2.0;
+    
+    complex<fix256>:sum;
+    sum.real = z1.real + z2.real;
+    sum.imag = z1.imag + z2.imag;
+    
+    if (sum.real != 4.0 || sum.imag != 6.0) {
+        return 2;  // FAIL: Addition
+    }
+    
+    // Test 3: Multiplication (3+4i) * (1+2i) = (-5+10i)
+    // Using 3-mul Gauss algorithm inline
+    fix256:k1 = z1.real * (z2.real + z2.imag);
+    fix256:k2 = z2.imag * (z1.real + z1.imag);
+    fix256:k3 = z2.real * (z1.imag - z1.real);
+    
+    complex<fix256>:prod;
+    prod.real = k1 - k2;
+    prod.imag = k1 + k3;
+    
+    if (prod.real != -5.0 || prod.imag != 10.0) {
+        return 3;  // FAIL: Multiplication
+    }
+    
+    //  Test 4: i * i = -1
+    complex<fix256>:i;
+    i.real = 0.0;
+    i.imag = 1.0;
+    
+    fix256:k1_i = i.real * (i.real + i.imag);
+    fix256:k2_i = i.imag * (i.real + i.imag);
+    fix256:k3_i = i.real * (i.imag - i.real);
+    
+    complex<fix256>:i_squared;
+    i_squared.real = k1_i - k2_i;
+    i_squared.imag = k1_i + k3_i;
+    
+    if (i_squared.real != -1.0 || i_squared.imag != 0.0) {
+        return 4;  // FAIL: i squared
+    }
+    
+    return 0;  // SUCCESS: All tests passed
+};

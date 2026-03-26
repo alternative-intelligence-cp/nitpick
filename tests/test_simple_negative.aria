@@ -1,0 +1,20 @@
+// Test simple negative number handling
+// Fixed: Use local variable to avoid parameter reassignment bug
+
+func:negate = int64(int64:value) {
+    // Use local variable instead of reassigning parameter
+    int64:result = -value;
+    pass(result);
+};
+
+func:main = int32() {
+    // Assign literal to int64 variable first for type compatibility
+    int64:neg_value = -123;
+    int64:result = raw(negate(neg_value));
+    drop(println("OK"));
+    pass(0);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

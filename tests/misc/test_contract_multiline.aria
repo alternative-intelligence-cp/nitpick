@@ -1,0 +1,25 @@
+// Test multiline ensures
+
+func:clamp = int32(int32:value, int32:min, int32:max)
+  requires min <= max
+  ensures result >= min,
+          result <= max
+{
+    if (value < min) {
+        pass(min);
+    }
+    if (value > max) {
+        pass(max);
+    }
+    pass(value);
+};
+
+func:failsafe = NIL(int32:code) { };
+
+func:main = int32() {
+    Result<int32>:r = clamp(5, 0, 10);
+    if (r.is_error) {
+        pass(-1);
+    }
+    pass(r.value);
+};

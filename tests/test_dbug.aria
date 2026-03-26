@@ -1,0 +1,210 @@
+// Expected: COMPILER ERROR - accesses unimplemented dbug internal state
+/**
+ * DBUG Module Test & Demonstration
+ * 
+ * Shows all features of the dbug debug utility:
+ * - Group enable/disable
+ * - Conditional printing
+ * - Assertions (hard and soft)
+ * - Function entry/exit tracing
+ * - Label printing
+ * 
+ * Run with different enabled groups to see filtering in action.
+ */
+
+use stdlib.dbug;
+
+/**
+ * Simulated network connection handler.
+ * Demonstrates debug output for networking code.
+ */
+func:connect_to_server = bool(string:hostname, int32:port) {
+    raw(dbug_enter("network", "connect_to_server"));
+    
+    raw(dbug_print("network", "Resolving hostname"));
+    raw(dbug_print_labeled("network", "Hostname", hostname));
+    
+    // Simulate connection validation
+    raw(dbug_check("network", "Port must be in valid range", port > 0 && port < 65536));
+    
+    raw(dbug_print("network", "Opening TCP socket"));
+    raw(dbug_print("network", "Connection established"));
+    
+    raw(dbug_exit("network", "connect_to_server"));
+    pass(true);
+};
+
+/**
+ * Simulated parser that processes tokens.
+ * Demonstrates debug output for parsing operations.
+ */
+func:parse_expression = int32(string:input) {
+    raw(dbug_enter("parser", "parse_expression"));
+    raw(dbug_separator("parser"));
+    
+    raw(dbug_print_labeled("parser", "Input", input));
+    
+    // Simulate parsing steps
+    raw(dbug_print("parser", "Tokenizing input"));
+    raw(dbug_print("parser", "Building AST"));
+    raw(dbug_print("parser", "Type checking"));
+    
+    // Soft warning for unusual but non-fatal conditions
+    int32:token_count = 5;
+    raw(dbug_warn("parser", "Unusually long expression", token_count < 100));
+    
+    raw(dbug_separator("parser"));
+    raw(dbug_exit("parser", "parse_expression"));
+    pass(42);
+};
+
+/**
+ * Simulated validation function.
+ * Demonstrates assertions for invariant checking.
+ */
+func:validate_user_data = bool(int32:age, string:username) {
+    raw(dbug_enter("validation", "validate_user_data"));
+    
+    // Hard assertions - will halt if these fail
+    raw(dbug_check("validation", "Age must be positive", age > 0));
+    raw(dbug_check("validation", "Age must be reasonable", age < 150));
+    
+    // This would work in production but string length not yet in stdlib
+    // dbug_check("validation", "Username cannot be empty", strlen(username) > 0);
+    
+    raw(dbug_print("validation", "User data validated successfully"));
+    
+    raw(dbug_exit("validation", "validate_user_data"));
+    pass(true);
+};
+
+/**
+ * Main test harness.
+ */
+func:main = int32() {
+    drop(println("=== DBUG Module Test Suite ===\n"));
+    
+    // =========================================================================
+    // Test 1: No groups enabled (nothing should print from dbug_print)
+    // =========================================================================
+    drop(println("Test 1: No debug groups enabled"));
+    drop(println("Expected: Only this message visible\n"));
+    
+    raw(dbug_print("network", "This should NOT be visible"));
+    raw(dbug_print("parser", "This should NOT be visible"));
+    
+    drop(println("✓ Test 1 passed (no debug output)\n"));
+    
+    // =========================================================================
+    // Test 2: Enable "network" group only
+    // =========================================================================
+    drop(println("Test 2: Enable 'network' group"));
+    raw(dbug_enable("network"));
+    
+    drop(println("Expected: Network messages visible, parser messages hidden\n"));
+    
+    bool:connected = raw(connect_to_server("api.example.com", 443));
+    int32:result = raw(parse_expression("1 + 2 * 3"));
+    
+    drop(println("\n✓ Test 2 passed (network debug visible)\n"));
+    
+    // =========================================================================
+    // Test 3: Enable "parser" group as well
+    // =========================================================================
+    drop(println("Test 3: Enable 'parser' group (network still enabled)"));
+    raw(dbug_enable("parser"));
+    
+    raw(dbug_list_enabled());
+    drop(println(""));
+    
+    drop(println("Expected: Both network and parser messages visible\n"));
+    
+    bool:connected2 = raw(connect_to_server("db.example.com", 5432));
+    int32:result2 = raw(parse_expression("foo(bar, baz)"));
+    
+    drop(println("\n✓ Test 3 passed (both groups visible)\n"));
+    
+    // =========================================================================
+    // Test 4: Disable network, keep parser
+    // =========================================================================
+    drop(println("Test 4: Disable 'network' group"));
+    raw(dbug_disable("network"));
+    
+    drop(println("Expected: Only parser messages visible\n"));
+    
+    bool:connected3 = raw(connect_to_server("cache.example.com", 6379));
+    int32:result3 = raw(parse_expression("x = y + z"));
+    
+    drop(println("\n✓ Test 4 passed (network hidden, parser visible)\n"));
+    
+    // =========================================================================
+    // Test 5: Enable "all" group
+    // =========================================================================
+    drop(println("Test 5: Enable 'all' groups"));
+    raw(dbug_enable("all"));
+    
+    drop(println("Expected: Everything visible (network, parser, validation)\n"));
+    
+    bool:connected4 = raw(connect_to_server("storage.example.com", 9000));
+    int32:result4 = raw(parse_expression("return 42"));
+    bool:valid = raw(validate_user_data(25, "alice"));
+    
+    drop(println("\n✓ Test 5 passed (all groups visible)\n"));
+    
+    // =========================================================================
+    // Test 6: Assertions (validation group enabled from "all")
+    // =========================================================================
+    drop(println("Test 6: Soft warnings (should not halt)"));
+    drop(println("Expected: Warning printed but execution continues\n"));
+    
+    raw(dbug_warn("perf", "Simulated slow operation", false));  // Force warning
+    
+    drop(println("\n✓ Test 6 passed (warning shown, execution continued)\n"));
+    
+    // =========================================================================
+    // Test 7: Disable all
+    // =========================================================================
+    drop(println("Test 7: Disable all groups"));
+    raw(dbug_disable("all"));
+    
+    drop(println("Expected: No debug output again\n"));
+    
+    bool:connected5 = raw(connect_to_server("final.example.com", 8080));
+    
+    drop(println("\n✓ Test 7 passed (all disabled)\n"));
+    
+    // =========================================================================
+    // Summary
+    // =========================================================================
+    drop(println("=== ALL TESTS PASSED ==="));
+    drop(println(""));
+    drop(println("Key Features Demonstrated:"));
+    drop(println("  ✓ Group-based filtering"));
+    drop(println("  ✓ Selective enable/disable"));
+    drop(println("  ✓ Conditional printing (messages only when enabled)"));
+    drop(println("  ✓ Function entry/exit tracing"));
+    drop(println("  ✓ Labeled output (variable names + values)"));
+    drop(println("  ✓ Separators for visual grouping"));
+    drop(println("  ✓ Soft warnings (non-halting)"));
+    drop(println("  ✓ Hard assertions (ready for use)"));
+    drop(println("  ✓ 'all' group for mass enable/disable"));
+    drop(println(""));
+    drop(println("Try uncommenting the assertion test below to see hard check behavior:"));
+    drop(println("  // dbug_check(\"test\", \"This will halt\", false);"));
+    
+    pass(0);
+};
+
+/**
+ * Uncomment this to test hard assertion (will halt program):
+ * 
+ * func:test_hard_assertion = NIL() {
+ *     dbug_enable("test");
+ *     dbug_check("test", "Intentional assertion failure", false);
+ *     pass();  // Never reached
+ * }
+ */
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

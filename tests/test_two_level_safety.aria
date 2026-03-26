@@ -1,0 +1,35 @@
+// Expected: COMPILER ERROR
+// Comprehensive test: ?! (local fallback) and !!! (global failsafe)
+// Demonstrates the two-level safety system
+
+// Mandatory failsafe function - global error handler
+func:failsafe = int32(int32:err_code) {
+    // In production: log error, cleanup resources, exit gracefully
+    // For this test: just pass through the error code
+    pass(err_code);
+};
+
+// Simulate loading configuration
+func:loadConfig = Result<int32>() {
+    // Simulate: could return ok OR error
+    Result<int32>:r = err(404);  // Config file not found
+    pass(r);
+};
+
+func:main = int32() {
+    // LOCAL HANDLING with ?! (emphatic unwrap)
+    // Try to load config, use default if it fails
+    // This is for "should work but has a reasonable fallback"
+    int32:config = loadConfig() ?! 42i32;
+    
+    // If config loading completely fails (maybe use default config)
+    if (config == 42i32) {
+        // Everything is broken - trigger GLOBAL FAILSAFE
+        // !!! is for "this is catastrophic, call the emergency handler"
+        int32:exit_code = !!! 1i32;  // Critical error code
+        pass(exit_code);
+    }
+    
+    // Normal operation
+    pass(0i32);
+};

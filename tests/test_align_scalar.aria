@@ -1,0 +1,20 @@
+// P0: Simple alignment test with scalar variable
+
+func:failsafe = NIL(int32:err_code) {
+    // Empty failsafe
+};
+
+func:main = int32() {
+    // Test alignment on a simple scalar
+    #[align(64)]
+    int64:aligned_value = 42;
+    
+    // Use the value
+    if (aligned_value == 42) {
+        int32:success = 0;
+        pass(success);
+    }
+    
+    int32:err = 1;
+    pass(err);
+};

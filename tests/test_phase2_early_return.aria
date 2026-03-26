@@ -1,0 +1,26 @@
+// Phase 2 Test 2: Early return pattern
+// Should PASS - after early return on error, we know is_error == false
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail(-1i32);
+    }
+    pass(a / b);
+};
+
+func:main = int32() {
+    Result<int32>:r = divide(10i32, 2i32);
+    
+    // Early return if error
+    if (r.is_error == true) {
+        pass(1i32);  // Return early
+    }
+    
+    // After this point, we KNOW r.is_error == false
+    int32:x = r.value;  // SAFE: then branch returned
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

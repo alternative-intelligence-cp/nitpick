@@ -1,0 +1,29 @@
+/**
+ * Test: P2.7 - Complex Struct Initialization with Array Literals
+ * Goal: Initialize struct with array fields using inline array literals
+ */
+
+func:failsafe = NIL(int32:code) { pass(NIL); };
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+struct:Container = {
+    int32:count;
+    Point[3]:points;
+};
+
+func:main = int32() {
+    // ✅ NOW WORKS: Complex struct initialization with array literals (P2.7)
+    Container:c = {
+        count: 3,
+        points: [{x: 10, y: 20}, {x: 30, y: 40}, {x: 50, y: 60}]
+    };
+    
+    drop(println("✅ Struct initialized with array literal"));
+    
+    // Verify values are correct (no indexing, just creation)
+    pass(0i32);
+};

@@ -1,0 +1,55 @@
+// Vec<T> Phase 3: Method Syntax Test  
+// Goal: Clean, ergonomic Vec API for Nikola
+// NOTE: Using static methods for now to avoid UFCS parameter handling issues
+
+// Test Vec<int8> with static method syntax
+func:main = int32() {
+    // Create new Vec<int8>
+    Vec<int8>:numbers = Vec_int8_new();
+    
+    // Check initial state
+    if (numbers.length != 0i64) {
+        pass(1i32);  // FAIL: Initial length should be 0
+    }
+    
+    // Push some values (passing data pointer directly)
+    _ = Vec_int8_push(numbers.data, 42i8);
+    _ = Vec_int8_push(numbers.data, 99i8);
+    _ = Vec_int8_push(numbers.data, 123i8);
+    
+    // Update length from runtime
+    numbers.length = Vec_int8_update_length(numbers.data) ? 0i64;
+    
+    // Verify length
+    if (numbers.length != 3i64) {
+        pass(2i32);  // FAIL: Length should be 3 after pushes
+    }
+    
+    // Pop values (passing data pointer directly)
+    int8:val3 = Vec_int8_pop(numbers.data);
+    if (val3 != 123i8) {
+        pass(3i32);  // FAIL: Popped value should be 123
+    }
+    
+    int8:val2 = Vec_int8_pop(numbers.data);
+    if (val2 != 99i8) {
+        pass(4i32);  // FAIL: Popped value should be 99
+    }
+    
+    int8:val1 = Vec_int8_pop(numbers.data);
+    if (val1 != 42i8) {
+        pass(5i32);  // FAIL: Popped value should be 42
+    }
+    
+    // Update and check final length
+    numbers.length = Vec_int8_update_length(numbers.data) ? 0i64;
+    if (numbers.length != 0i64) {
+        pass(6i32);  // FAIL: Length should be 0 after popping all
+    }
+    
+    pass(0i32);  // SUCCESS!
+};
+
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
+};

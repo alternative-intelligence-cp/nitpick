@@ -1,0 +1,14 @@
+// Test: Verify pick matches i32(1)
+func:main = int32() {
+    int32:x = 1i32;
+    
+    pick(x) {
+        (0i32) { pass(10i32); },
+        (1i32) { pass(11i32); },  // Should match
+        (*) { pass(99i32); }
+    }
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

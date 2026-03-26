@@ -1,0 +1,35 @@
+// Test: Result<T> "No Checky No Val" Enforcement - GOOD cases
+// This test SHOULD compile successfully
+
+func:get_result = int64() {
+    pass(42i64);
+};
+
+func:get_error = int64() {
+    fail(1i64);
+};
+
+func:main = int32() {
+    // TEST 1: Check .is_error directly BEFORE accessing .value
+    Result<int64>:r1 = get_result();
+
+    if (!r1.is_error) {
+        int64:good_value = r1.value;  // OK: directly checked is_error
+    }
+
+    // TEST 2: Check .is_error directly BEFORE accessing .error
+    Result<int64>:r2 = get_error();
+
+    if (r2.is_error) {
+        int64:error_code = r2.error;  // OK: directly checked is_error
+    }
+
+    // TEST 3: Can use unwrap operator without explicit check
+    int64:safe_unwrap = get_result() ? 0i64;  // OK: Unwrap does implicit check
+
+    pass(0i32);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

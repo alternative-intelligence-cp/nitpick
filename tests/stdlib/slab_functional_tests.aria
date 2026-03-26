@@ -14,8 +14,8 @@ func:test_slab_lifecycle = int32() {
     slab_destroy(slab);
     
     print("SUCCESS: Slab lifecycle test passed\n");
-    int32:ok = 0;
-    pass(ok);
+    int32:res_ok = 0;
+    pass(res_ok);
 };
 
 func:test_slab_stats = int32() {
@@ -37,8 +37,8 @@ func:test_slab_stats = int32() {
     slab_destroy(slab);
     
     print("SUCCESS: Slab stats test passed\n");
-    int32:ok = 0;
-    pass(ok);
+    int32:res_ok = 0;
+    pass(res_ok);
 };
 
 func:test_slab_multiple = int32() {
@@ -64,20 +64,20 @@ func:test_slab_multiple = int32() {
     slab_destroy(slab1);
     
     print("SUCCESS: Multiple slabs test passed\n");
-    int32:ok = 0;
-    pass(ok);
+    int32:res_ok = 0;
+    pass(res_ok);
 };
 
 func:main = int32() {
     print("=== Slab Allocator Functional Tests ===\n\n");
     
-    int32:result1 = test_slab_lifecycle();
+    int32:result1 = raw(test_slab_lifecycle());
     if (result1 != 0) { pass(result1); }
     
-    int32:result2 = test_slab_stats();
+    int32:result2 = raw(test_slab_stats());
     if (result2 != 0) { pass(result2); }
     
-    int32:result3 = test_slab_multiple();
+    int32:result3 = raw(test_slab_multiple());
     if (result3 != 0) { pass(result3); }
     
     print("\n=== All Slab Tests PASSED ===\n");

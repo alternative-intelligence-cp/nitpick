@@ -1,0 +1,25 @@
+/**
+ * Test turbofish with inline generic function (no imports)
+ */
+
+// Define generic identity function inline
+func<T>:identity = T(T:value) {
+    pass(value);
+};
+
+func:failsafe = NIL(int32:code) {};
+
+func:main = int32() {
+    // Test turbofish syntax ::<Type>
+    Result<int64>:result = identity::<int64>(42);
+    
+    if (result.is_error) {
+        pass(1);  // Should not fail
+    }
+    
+    if (result.value != 42) {
+        pass(2);  // Value should be 42
+    }
+    
+    pass(0);  // Success!
+};

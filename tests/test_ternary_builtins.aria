@@ -1,0 +1,32 @@
+// Test ternary builtin functions
+
+func:test_trit_logic = NIL() {
+    trit:a = 1;
+    trit:b = -1;
+    trit:result_and = trit_and(a, b);
+    trit:result_or = trit_or(a, b);
+    
+    // AND(true, false) should be false (-1)
+    // OR(true, false) should be true (1)
+};
+
+func:test_tbb_conversion = NIL() {
+    int32:val = 300;
+    tbb8:converted = tbb8_from_int(val);
+    
+    // 300 is out of range, should be -128 (ERR)
+    if (tbb8_is_err(converted)) {
+        // Success
+        trit:pass_flag = 1;
+    }
+};
+
+func:main = int32() {
+    drop(test_trit_logic());
+    drop(test_tbb_conversion());
+    pass(0);
+};
+
+func:failsafe = NIL(int32:err_code) {
+    // Error handling
+};

@@ -1,0 +1,61 @@
+// P1-5 Phase 4: Dimensional Algebra Tests
+// Tests that dimensional analysis enforces physics correctness
+
+// Test 1: Division creates correct derived dimension
+// Energy / Distance = Force (J/m = N)
+func:test_energy_per_distance = int32() {
+    // This should compile once we have constructors
+    // fix256<Joules>:energy = fix256_from_int(100);
+    // fix256<Meters>:distance = fix256_from_int(10);
+    // fix256<Newtons>:force = energy / distance;  // ✅ J/m = N
+    
+    pass(0);
+};
+
+// Test 2: Multiplication creates composite dimension  
+// Force * Distance = Energy (N⋅m = J)
+func:test_force_times_distance = int32() {
+    // fix256<Newtons>:force = fix256_from_int(10);
+    // fix256<Meters>:distance = fix256_from_int(5);
+    // fix256<Joules>:work = force * distance;  // ✅ N⋅m = J
+    
+    pass(0);
+};
+
+// Test 3: Scalar multiplication preserves dimension
+// Energy * scalar = Energy
+func:test_scalar_multiplication = int32() {
+    // fix256<Joules>:energy = fix256_from_int(50);
+    // fix256<Joules>:doubled = energy * 2;  // ✅ J * scalar = J
+    
+    pass(0);
+};
+
+// Test 4: Addition requires matching dimensions
+// This test will be NEGATIVE - should produce error
+// Uncomment to test error detection:
+/*
+func:test_invalid_addition = int32() {
+    fix256<Joules>:energy = fix256_from_int(100);
+    fix256<Meters>:distance = fix256_from_int(10);
+    fix256:bad = energy + distance;  // ❌ ERROR: Cannot add J + m
+    return 0;
+};
+*/
+
+// Test 5: Power calculation (Energy / Time = Power)
+func:test_power_calculation = int32() {
+    // fix256<Joules>:energy = fix256_from_int(1000);
+    // fix256<Seconds>:time = fix256_from_int(10);
+    // fix256<Watts>:power = energy / time;  // ✅ J/s = W
+    
+    pass(0);
+};
+
+func:main = int32() {
+    return 0;
+};
+
+func:failsafe = int32(int32:err_code) {
+    pass(err_code);
+};

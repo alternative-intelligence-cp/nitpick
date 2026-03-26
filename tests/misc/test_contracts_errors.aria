@@ -1,0 +1,36 @@
+// P1-4 Contract Type Checking - Error Cases
+// These should all produce type errors
+
+// Test 1: Non-boolean precondition (should error)
+func:bad_requires = int32(int32:x)
+  requires x + 5
+{
+    pass(x);
+};
+
+// Test 2: Non-boolean postcondition (should error)
+func:bad_ensures = int32(int32:x)
+  ensures result * 2
+{
+    pass(x);
+};
+
+// Test 3: Invalid variable in requires (should error)
+func:bad_var_requires = int32(int32:x)
+  requires y > 0
+{
+    pass(x);
+};
+
+// Test 4: Using 'result' in precondition (should work but might be odd)
+func:result_in_requires = int32(int32:result)
+  requires result > 0
+{
+    pass(result);
+};
+
+func:failsafe = NIL(int32:code) { };
+
+func:main = int32() {
+    pass(0);
+};

@@ -1,0 +1,14 @@
+// Test if void functions can be called without unwrap
+
+extern "libc" {
+    func:printf = int32(int8*:format);
+}
+
+pub func:test_void = NIL() {
+    int32:_ = printf("Hi\n");
+};
+
+func:main = int32() {
+    test_void();  // Should this work or require unwrap?
+    pass(0i32);
+};

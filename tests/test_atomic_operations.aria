@@ -1,0 +1,249 @@
+// Expected: COMPILER ERROR
+/**
+ * Test Suite: Atomic Operations
+ * 
+ * Tests std/atomic.aria implementation:
+ * - Basic load/store operations
+ * - Memory ordering semantics
+ * - Fetch-add/sub (RMW operations)
+ * - Compare-exchange (CAS)
+ * - Sequential consistency by default
+ * 
+ * Note: This is a single-threaded test suite.
+ * For true concurrency testing, need multi-threading support.
+ */
+
+import "std/atomic.aria";
+import "std/print_utils.aria";
+
+// Test helper: Print pass/fail
+func:test_result = NIL(bool:passed, int8*:test_name) {
+    if (passed) {
+        print("✓ ");
+        println(test_name);
+    } else {
+        print("✗ FAIL: ");
+        println(test_name);
+        !!! 1;  // Fail fast on test failure
+    };
+};
+
+func:main = int32() {
+    println("\n=== Atomic Operations Test Suite ===\n");
+    
+    // =========================================================================
+    // Test 1: Basic Construction and Load/Store (SeqCst)
+    // =========================================================================
+    {
+        AtomicInt32:counter = AtomicInt32.create(0i32);
+        int32:value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (value == 0i32);
+        counter.destroy();
+        test_result(passed, "Construction: AtomicInt32.create(0) loads as 0");
+    };
+    
+    {
+        AtomicInt32:counter = AtomicInt32.create(42i32);
+        int32:value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (value == 42i32);
+        counter.destroy();
+        test_result(passed, "Construction: AtomicInt32.create(42) loads as 42");
+    };
+    
+    {
+        AtomicInt32:counter = AtomicInt32.create(0i32);
+        counter.store(100i32, AtomicInt32.SEQ_CST());
+        int32:value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (value == 100i32);
+        counter.destroy();
+        test_result(passed, "Store/Load: store(100) then load() = 100");
+    };
+    
+    // =========================================================================
+    // Test 2: Fetch-Add (Read-Modify-Write)
+    // =========================================================================
+    {
+        AtomicInt32:counter = AtomicInt32.create(10i32);
+        int32:old_value = counter.add(5i32, AtomicInt32.SEQ_CST());
+        int32:new_value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (old_value == 10i32 && new_value == 15i32);
+        counter.destroy();
+        test_result(passed, "Fetch-Add: add(5) returns old value, updates to new");
+    };
+    
+    {
+        AtomicInt32:counter = AtomicInt32.create(0i32);
+        _ = counter.add(1i32, AtomicInt32.SEQ_CST());
+        _ = counter.add(1i32, AtomicInt32.SEQ_CST());
+        _ = counter.add(1i32, AtomicInt32.SEQ_CST());
+        int32:value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (value == 3i32);
+        counter.destroy();
+        test_result(passed, "Fetch-Add: three add(1) operations = 3");
+    };
+    
+    {
+        // Add negative (subtraction via add)
+        AtomicInt32:counter = AtomicInt32.create(10i32);
+        _ = counter.add(-3i32, AtomicInt32.SEQ_CST());
+        int32:value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (value == 7i32);
+        counter.destroy();
+        test_result(passed, "Fetch-Add: add(-3) subtracts");
+    };
+    
+    // =========================================================================
+    // Test 3: Fetch-Sub (Read-Modify-Write)
+    // =========================================================================
+    {
+        AtomicInt32:counter = AtomicInt32.create(20i32);
+        int32:old_value = counter.sub(7i32, AtomicInt32.SEQ_CST());
+        int32:new_value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (old_value == 20i32 && new_value == 13i32);
+        counter.destroy();
+        test_result(passed, "Fetch-Sub: sub(7) returns old value, updates to new");
+    };
+    
+    {
+        AtomicInt32:counter = AtomicInt32.create(100i32);
+        _ = counter.sub(10i32, AtomicInt32.SEQ_CST());
+        _ = counter.sub(10i32, AtomicInt32.SEQ_CST());
+        _ = counter.sub(10i32, AtomicInt32.SEQ_CST());
+        int32:value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (value == 70i32);
+        counter.destroy();
+        test_result(passed, "Fetch-Sub: three sub(10) operations = 70");
+    };
+    
+    // =========================================================================
+    // Test 4: Compare-Exchange (CAS) - Success Case
+    // =========================================================================
+    {
+        AtomicInt32:counter = AtomicInt32.create(10i32);
+        int32:expected = 10i32;
+        bool:succeeded = counter.compareExchange(expected->, 20i32, AtomicInt32.SEQ_CST());
+        int32:value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (succeeded && value == 20i32 && expected == 10i32);
+        counter.destroy();
+        test_result(passed, "CAS: succeeds when expected matches current");
+    };
+    
+    // =========================================================================
+    // Test 5: Compare-Exchange (CAS) - Failure Case
+    // =========================================================================
+    {
+        AtomicInt32:counter = AtomicInt32.create(10i32);
+        int32:expected = 5i32;  // Wrong expected value
+        bool:succeeded = counter.compareExchange(expected->, 20i32, AtomicInt32.SEQ_CST());
+        int32:value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (!succeeded && value == 10i32 && expected == 10i32);
+        counter.destroy();
+        test_result(passed, "CAS: fails when expected doesn't match, updates expected");
+    };
+    
+    // =========================================================================
+    // Test 6: Memory Ordering Constants
+    // =========================================================================
+    {
+        // Just verify all memory ordering constants exist and are distinct
+        int32:relaxed = AtomicInt32.RELAXED();
+        int32:acquire = AtomicInt32.ACQUIRE();
+        int32:release = AtomicInt32.RELEASE();
+        int32:acq_rel = AtomicInt32.ACQ_REL();
+        int32:seq_cst = AtomicInt32.SEQ_CST();
+        
+        bool:all_different = (
+            relaxed != acquire &&
+            relaxed != release &&
+            relaxed != acq_rel &&
+            relaxed != seq_cst &&
+            acquire != release &&
+            acquire != acq_rel &&
+            acquire != seq_cst &&
+            release != acq_rel &&
+            release != seq_cst &&
+            acq_rel != seq_cst
+        );
+        
+        test_result(all_different, "Memory ordering: all constants are distinct");
+    };
+    
+    // =========================================================================
+    // Test 7: Relaxed Ordering (Performance Test)
+    // =========================================================================
+    {
+        // Relaxed ordering should work correctly even if not synchronized
+        AtomicInt32:counter = AtomicInt32.create(0i32);
+        counter.store(99i32, AtomicInt32.RELAXED());
+        int32:value = counter.load(AtomicInt32.RELAXED());
+        bool:passed = (value == 99i32);
+        counter.destroy();
+        test_result(passed, "Relaxed ordering: store/load works correctly");
+    };
+    
+    // =========================================================================
+    // Test 8: Acquire/Release Ordering
+    // =========================================================================
+    {
+        // Release store followed by acquire load
+        AtomicInt32:counter = AtomicInt32.create(0i32);
+        counter.store(55i32, AtomicInt32.RELEASE());
+        int32:value = counter.load(AtomicInt32.ACQUIRE());
+        bool:passed = (value == 55i32);
+        counter.destroy();
+        test_result(passed, "Acquire/Release: release store → acquire load");
+    };
+    
+    // =========================================================================
+    // Test 9: Sequence of Operations (Counter Pattern)
+    // =========================================================================
+    {
+        // Simulate a typical counter use case
+        AtomicInt32:counter = AtomicInt32.create(0i32);
+        
+        // Increment 10 times
+        int32:i = 0i32;
+        while (i < 10i32) {
+            _ = counter.add(1i32, AtomicInt32.SEQ_CST());
+            i = i + 1i32;
+        };
+        
+        int32:final_value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (final_value == 10i32);
+        counter.destroy();
+        test_result(passed, "Counter pattern: 10 increments = 10");
+    };
+    
+    // =========================================================================
+    // Test 10: CAS Loop (Atomic Increment Pattern)
+    // =========================================================================
+    {
+        // Implement atomic increment via CAS loop
+        AtomicInt32:counter = AtomicInt32.create(100i32);
+        
+        bool:cas_succeeded = false;
+        while (!cas_succeeded) {
+            int32:current = counter.load(AtomicInt32.SEQ_CST());
+            int32:expected = current;
+            int32:new_value = current + 1i32;
+            cas_succeeded = counter.compareExchange(expected->, new_value, AtomicInt32.SEQ_CST());
+        };
+        
+        int32:final_value = counter.load(AtomicInt32.SEQ_CST());
+        bool:passed = (final_value == 101i32);
+        counter.destroy();
+        test_result(passed, "CAS loop: atomic increment via CAS");
+    };
+    
+    println("\n=== All Atomic Operations Tests Passed! ===\n");
+    println("Note: Multi-threaded concurrency tests require threading support");
+    println("");
+    
+    pass(0);
+};
+
+func:failsafe = NIL(int32:code) {
+    print("FAILSAFE: Test failed with code ");
+    printInt(code);
+    println("");
+};
