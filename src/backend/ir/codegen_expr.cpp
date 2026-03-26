@@ -1006,6 +1006,11 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
     // Get the struct type for this LBIM type
     llvm::Type* structType = left->getType();
     
+    // SysV x86-64 ABI: structs >16 bytes are passed in MEMORY (on stack via pointer).
+    // Check struct size to determine if we need byval/sret ABI treatment.
+    uint64_t structSize = module->getDataLayout().getTypeStoreSize(structType);
+    bool needsByvalABI = (structSize > 16);
+    
     // Determine return type and function signature
     llvm::Type* returnType;
     if (isComparison) {
@@ -1020,26 +1025,96 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
         returnType = structType;
     }
     
-    // Get or create the runtime function
-    // Signature: returnType func(struct.intN a, struct.intN b)
-    llvm::FunctionType* funcType = llvm::FunctionType::get(
-        returnType,              // return type (struct for arithmetic, i1/i32 for comparison)
-        {structType, structType}, // parameters (both structs)
-        false                    // not variadic
-    );
+    llvm::Value* result;
     
-    llvm::Function* runtimeFunc = module->getFunction(funcName);
-    if (!runtimeFunc) {
-        runtimeFunc = llvm::Function::Create(
-            funcType,
-            llvm::Function::ExternalLinkage,
-            funcName,
-            module
+    if (needsByvalABI) {
+        // Large struct ABI: use byval for params, sret for struct returns
+        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+        
+        if (!isComparison) {
+            // Arithmetic: void func(struct* sret, struct* byval, struct* byval)
+            llvm::FunctionType* funcType = llvm::FunctionType::get(
+                llvm::Type::getVoidTy(context),
+                {ptrType, ptrType, ptrType},
+                false
+            );
+            
+            llvm::Function* runtimeFunc = module->getFunction(funcName);
+            if (!runtimeFunc) {
+                runtimeFunc = llvm::Function::Create(
+                    funcType,
+                    llvm::Function::ExternalLinkage,
+                    funcName,
+                    module
+                );
+                runtimeFunc->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, structType));
+                runtimeFunc->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+                runtimeFunc->addParamAttr(2, llvm::Attribute::getWithByValType(context, structType));
+            }
+            
+            llvm::Value* resultAlloca = builder.CreateAlloca(structType, nullptr, "lbim_sret");
+            llvm::Value* leftAlloca = builder.CreateAlloca(structType, nullptr, "lbim_lhs");
+            llvm::Value* rightAlloca = builder.CreateAlloca(structType, nullptr, "lbim_rhs");
+            builder.CreateStore(left, leftAlloca);
+            builder.CreateStore(right, rightAlloca);
+            
+            auto* call = builder.CreateCall(runtimeFunc, {resultAlloca, leftAlloca, rightAlloca});
+            call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, structType));
+            call->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+            call->addParamAttr(2, llvm::Attribute::getWithByValType(context, structType));
+            
+            result = builder.CreateLoad(structType, resultAlloca, lbimType + "_result");
+        } else {
+            // Comparison: returnType func(struct* byval, struct* byval)
+            llvm::FunctionType* funcType = llvm::FunctionType::get(
+                returnType,
+                {ptrType, ptrType},
+                false
+            );
+            
+            llvm::Function* runtimeFunc = module->getFunction(funcName);
+            if (!runtimeFunc) {
+                runtimeFunc = llvm::Function::Create(
+                    funcType,
+                    llvm::Function::ExternalLinkage,
+                    funcName,
+                    module
+                );
+                runtimeFunc->addParamAttr(0, llvm::Attribute::getWithByValType(context, structType));
+                runtimeFunc->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+            }
+            
+            llvm::Value* leftAlloca = builder.CreateAlloca(structType, nullptr, "lbim_lhs");
+            llvm::Value* rightAlloca = builder.CreateAlloca(structType, nullptr, "lbim_rhs");
+            builder.CreateStore(left, leftAlloca);
+            builder.CreateStore(right, rightAlloca);
+            
+            auto* call = builder.CreateCall(runtimeFunc, {leftAlloca, rightAlloca}, lbimType + "_result");
+            call->addParamAttr(0, llvm::Attribute::getWithByValType(context, structType));
+            call->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+            
+            result = call;
+        }
+    } else {
+        // Small struct ABI (<=16 bytes): pass by value directly (e.g. int128)
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            returnType,
+            {structType, structType},
+            false
         );
+        
+        llvm::Function* runtimeFunc = module->getFunction(funcName);
+        if (!runtimeFunc) {
+            runtimeFunc = llvm::Function::Create(
+                funcType,
+                llvm::Function::ExternalLinkage,
+                funcName,
+                module
+            );
+        }
+        
+        result = builder.CreateCall(runtimeFunc, {left, right}, lbimType + "_result");
     }
-    
-    // Generate the call
-    llvm::Value* result = builder.CreateCall(runtimeFunc, {left, right}, lbimType + "_result");
     
     // Post-process comparison results
     if (isComparison) {
@@ -6589,10 +6664,12 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             fix256Type = llvm::StructType::create(context, {limbsArray}, "struct.fix256");
         }
         
-        // Call runtime conversion function: aria_fix256_from_i64(int64) -> fix256
+        // SysV x86-64 ABI: fix256 is 32 bytes (>16), so returned via hidden sret pointer.
+        // C ABI: void aria_fix256_from_i64(fix256* sret, int64_t)
+        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
         llvm::FunctionType* funcType = llvm::FunctionType::get(
-            fix256Type,
-            {builder.getInt64Ty()},
+            llvm::Type::getVoidTy(context),
+            {ptrType, builder.getInt64Ty()},
             false
         );
         
@@ -6604,12 +6681,18 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 "aria_fix256_from_i64",
                 module
             );
+            runtimeFunc->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, fix256Type));
         }
         
         // Convert argument to i64 if needed
         llvm::Value* i64Val = builder.CreateSExtOrTrunc(val, builder.getInt64Ty());
         
-        return builder.CreateCall(runtimeFunc, {i64Val}, "fix256_from_int_result");
+        // Allocate space for result, call with sret, load result
+        llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256_sret");
+        auto* call = builder.CreateCall(runtimeFunc, {resultAlloca, i64Val});
+        call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, fix256Type));
+        
+        return builder.CreateLoad(fix256Type, resultAlloca, "fix256_from_int_result");
     }
     
     // fix256_from_float(flt64) -> fix256
@@ -6628,10 +6711,12 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             fix256Type = llvm::StructType::create(context, {limbsArray}, "struct.fix256");
         }
         
-        // Call runtime conversion function: aria_fix256_from_f64(double) -> fix256
+        // SysV x86-64 ABI: fix256 is 32 bytes (>16), so returned via hidden sret pointer.
+        // C ABI: void aria_fix256_from_f64(fix256* sret, double)
+        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
         llvm::FunctionType* funcType = llvm::FunctionType::get(
-            fix256Type,
-            {builder.getDoubleTy()},
+            llvm::Type::getVoidTy(context),
+            {ptrType, builder.getDoubleTy()},
             false
         );
         
@@ -6643,6 +6728,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 "aria_fix256_from_f64",
                 module
             );
+            runtimeFunc->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, fix256Type));
         }
         
         // Convert argument to double if needed
@@ -6651,7 +6737,12 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             doubleVal = builder.CreateFPExt(val, builder.getDoubleTy());
         }
         
-        return builder.CreateCall(runtimeFunc, {doubleVal}, "fix256_from_float_result");
+        // Allocate space for result, call with sret, load result
+        llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256_sret");
+        auto* call = builder.CreateCall(runtimeFunc, {resultAlloca, doubleVal});
+        call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, fix256Type));
+        
+        return builder.CreateLoad(fix256Type, resultAlloca, "fix256_from_float_result");
     }
     
     // fix256_to_int(fix256) -> int64
@@ -6670,10 +6761,12 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             fix256Type = llvm::StructType::create(context, {limbsArray}, "struct.fix256");
         }
         
-        // Call runtime conversion function: aria_fix256_to_i64(fix256) -> int64
+        // SysV x86-64 ABI: fix256 is 32 bytes (>16), so passed via byval pointer.
+        // C ABI: int64_t aria_fix256_to_i64(const fix256* byval)
+        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
         llvm::FunctionType* funcType = llvm::FunctionType::get(
             builder.getInt64Ty(),
-            {fix256Type},
+            {ptrType},
             false
         );
         
@@ -6685,9 +6778,16 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 "aria_fix256_to_i64",
                 module
             );
+            runtimeFunc->addParamAttr(0, llvm::Attribute::getWithByValType(context, fix256Type));
         }
         
-        return builder.CreateCall(runtimeFunc, {val}, "fix256_to_int_result");
+        // Alloca + store, then pass as byval pointer
+        llvm::Value* valAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256_byval");
+        builder.CreateStore(val, valAlloca);
+        auto* call = builder.CreateCall(runtimeFunc, {valAlloca}, "fix256_to_int_result");
+        call->addParamAttr(0, llvm::Attribute::getWithByValType(context, fix256Type));
+        
+        return call;
     }
     
     // fix256_to_float(fix256) -> flt64
@@ -6706,10 +6806,12 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             fix256Type = llvm::StructType::create(context, {limbsArray}, "struct.fix256");
         }
         
-        // Call runtime conversion function: aria_fix256_to_f64(fix256) -> double
+        // SysV x86-64 ABI: fix256 is 32 bytes (>16), so passed via byval pointer.
+        // C ABI: double aria_fix256_to_f64(const fix256* byval)
+        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
         llvm::FunctionType* funcType = llvm::FunctionType::get(
             builder.getDoubleTy(),
-            {fix256Type},
+            {ptrType},
             false
         );
         
@@ -6721,9 +6823,16 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 "aria_fix256_to_f64",
                 module
             );
+            runtimeFunc->addParamAttr(0, llvm::Attribute::getWithByValType(context, fix256Type));
         }
         
-        return builder.CreateCall(runtimeFunc, {val}, "fix256_to_float_result");
+        // Alloca + store, then pass as byval pointer
+        llvm::Value* valAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256_byval");
+        builder.CreateStore(val, valAlloca);
+        auto* call = builder.CreateCall(runtimeFunc, {valAlloca}, "fix256_to_float_result");
+        call->addParamAttr(0, llvm::Attribute::getWithByValType(context, fix256Type));
+        
+        return call;
     }
     
     // trit_from_int(int64) -> trit
