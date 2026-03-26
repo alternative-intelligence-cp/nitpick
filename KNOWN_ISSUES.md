@@ -1,6 +1,6 @@
-# Aria 0.2.4 — Known Issues & Limitations
+# Aria v0.2.13 — Known Issues & Limitations
 
-Last updated: July 2026
+Last updated: March 2026
 
 ---
 
@@ -86,18 +86,11 @@ int32:y = x + 1;
 
 ### 1. Language Features Not Yet Implemented
 
-- **Closures / Lambdas**: Not supported. Use named functions.
-- **Traits / Interfaces**: `impl` blocks are parsed but not yet functional for user-defined traits.
-- **Pattern matching**: No `match` / `switch` statement. Use `if`/`else if` chains.
-- **Async / Await**: Basic async/await works (single-threaded coroutine model with promise-based error propagation). Task scheduling and async I/O with event loop not yet integrated.
-- **Module system**: Single-file compilation only. No `import` or `use` statements across files. Multi-file programs require extern declarations or linking.
-- **String type**: No built-in `string` type. Use `int8->` (pointer to byte array) with extern C functions, or the `aria-str` ecosystem package.
+- **Traits / Interfaces**: `impl` blocks are parsed but not yet functional for user-defined traits. RFC complete (monomorphized traits + `dyn Trait` opt-in, `$x`/`$mut x` borrows); implementation planned for a future release.
+- **Async channels & actors**: Basic async/await works (coroutine model with promise-based error propagation). Task scheduling with actor model not yet integrated.
 
 ### 2. Type System
 
-- **Generic types**: Limited to `Result<T>`, `struct<T>`, and standard library generics. User-defined generic functions/types are not supported.
-- **Complex numbers**: The `complex` type is specified but not implemented in the compiler. Use the `aria-entangled` package for complex number operations.
-- **SIMD types**: `vec2`, `vec3`, `vec4`, `vec9`, and SIMD intrinsics are specified but have limited compiler support.
 - **TensorFloat types**: `tfp32`, `tfp64` are documented in the programming guide but not implemented.
 - **Sub-byte integer types**: `int1`, `int2`, `int4` are specified but not supported as variable types.
 - **Fractional types**: `frac8`, `frac16`, `frac32`, `frac64` are specified but not implemented.
@@ -105,67 +98,39 @@ int32:y = x + 1;
 ### 3. Compiler Behavior
 
 - **Compiler crash on optional types**: Using optional type syntax (e.g., `int64?:x = NIL;`) causes a compiler segfault. Optional types are specified but not yet safely handled. Workaround: Use `Result<T>` for fallible values instead.
-- **Build warnings**: The compiler builds with 0 Aria-source warnings. ~23 warnings from LLVM headers remain (not actionable).
+- **Build warnings**: The compiler builds with 0 Aria-source warnings. Some warnings from LLVM headers remain (not actionable).
 - **Error messages**: Some error messages include ANSI color codes. Pipe through `sed 's/\x1b\[[0-9;]*m//g'` to strip them for plain-text processing.
-- **Void return type**: `void` is only valid in `extern` function declarations (for FFI). Use `NIL` for Aria functions that return no value.
-- **Pointer syntax**: Use `->` for pointers in Aria code, not `*`. The `*` syntax is only valid in extern blocks for FFI compatibility.
-- **Loop syntax**: Aria uses `till` loops (not `for-in`). Example: `till(int64:i = 0i64; i < 10i64; i = i + 1i64) { ... }`
-- **Function closing**: Function bodies close with `};` (semicolon after brace), while `if`/`while`/`till` blocks close with `}` (no semicolon).
+- **88 TODO comments** in compiler source — mostly implementation placeholders for vector components, optional types, array indexing edge cases.
+- **2 HACK comments** — `codegen_expr.cpp` (single-field struct assumption), `parser.cpp` (GPU/PTX testing).
 
-### 4. Standard Library
+### 4. WebAssembly Target
 
-- **Minimal stdlib**: The standard library includes `core.aria` (Result, array generics), `print_utils.aria`, `string_builder.aria`, `string_convert.aria`, `number.aria`, `dbug.aria`, `atomic.aria`, `complex.aria`, `wave.aria`, `wavemech.aria`, and several hashmap/vector implementations.
-- **No file I/O in stdlib**: File operations require extern C declarations (see `aria-json` package for an example).
-- **No networking**: No built-in network support.
+- **No threading**: WASM target is single-threaded (no async, thread pools, mutexes).
+- **No process spawning**: WASM sandbox restriction — no fork/exec.
+- **No signals or mmap**: WASM uses linear memory model.
+- **No native FFI**: WASM has its own import model; native `.so`/`.dll` FFI not available.
+- **File I/O requires WASI**: File operations only work in WASI-compatible runtimes, not bare WASM.
 
-### 5. Tooling
+### 5. Programming Guide
 
-- **aria-doc**: The API documentation generator (`build/aria-doc`) generates HTML output. Supports single-file and multi-file (package/directory) documentation generation. Generates unique pages for all functions, structs, enums, traits, type aliases, and constants. Index page lists all discovered items grouped by kind with signatures and links.
+- **Code examples are fragments**: The programming guide contains thousands of code blocks, most of which are contextual snippets (not complete programs). Some document future/planned features (SIMD vectors, Complex, tfp32, fractionals).
+
+### 6. Tooling
+
 - **aria_make**: The build tool works correctly for ecosystem packages but must be run from the package directory.
-- **Debugger**: No source-level debugger integration. Use `dbug` module for printf-style debugging.
-
-### 6. Programming Guide
-
-- **5,843 code examples**: The programming guide contains 5,843 `aria` code blocks across 357 files. All are fragments (no complete programs). Of those tested with auto-wrapping:
-  - 217 (5%) compile successfully
-  - The remaining 95% fail because they are contextual snippets referencing undefined identifiers, or demonstrate planned/future features (SIMD, Complex, tfp32, etc.)
-- **Future-feature documentation**: Several guide sections document types and features that are specified but not yet implemented (Complex, SIMD, vec types, tfp32/64, fractional types, sub-byte integers). These are marked as part of the language specification but should not be expected to compile.
 
 ---
 
 ## Ecosystem Package Status
 
-All 27 ecosystem packages pass their full test suites (540+ tests total, 0 failures):
+All 74 ecosystem packages in [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) pass their test suites.
 
-| Package | Tests | Notes |
-|---------|-------|-------|
-| aria-args | 20/20 | — |
-| aria-ascii | 20/20 | — |
-| aria-audio | 20/20 | FFI shim for audio output |
-| aria-bits | 20/20 | — |
-| aria-buf | 20/20 | — |
-| aria-clamp | 20/20 | — |
-| aria-color | 20/20 | — |
-| aria-console | 20/20 | — |
-| aria-conv | 20/20 | — |
-| aria-decision-t | 20/20 | — |
-| aria-display | 20/20 | FFI shim |
-| aria-endian | 20/20 | — |
-| aria-entangled | 20/20 | — |
-| aria-fixed | 20/20 | — |
-| aria-freq | 20/20 | Overflow avoidance (idiomatic) |
-| aria-gradient-field | 20/20 | — |
-| aria-hash | 20/20 | — |
-| aria-input | 20/20 | FFI shim |
-| aria-json | 20/20 | — |
-| aria-math | 23/23 | Includes fabs, acos, fmod |
-| aria-mux | 20/20 | — |
-| aria-rand | 20/20 | — |
-| aria-resource-mem | 20/20 | — |
-| aria-str | 20/20 | — |
-| aria-uuid | 20/20 | — |
-| aria-vec | 20/20 | — |
-| aria-zigzag | 20/20 | — |
+**Package tiers:**
+- **39 utility/GUI packages** — math, strings, crypto, compression, graphics (raylib, SDL2, GTK4, OpenGL), games (Tetris), editor
+- **4 database clients** — SQLite, PostgreSQL, MySQL, Redis (all with parameterized queries)
+- **7 server/middleware** — HTTP server, Express-style router, body-parser, CORS, cookie, session, rate-limit, static file serving
+- **8 AI/ML** — tensor, CUDA, Transformer, Mamba, Jamba, Looping, UACP protocol
+- **16 additional** — CLI, env, semver, template, URL, websocket, XML, YAML, and more
 
 ---
 
@@ -190,10 +155,10 @@ A suite of 9 safety-critical test files (`tests/safety_critical/`) was created t
 | Mathematical Field Identities | 10 | ✅ PASS | All field axioms hold |
 | Type Casting Precision | 10 | ✅ PASS | All round-trips preserve values |
 | Catastrophic Cancellation | 6 | ✅ PASS | Kahan summation verified, near-equal note |
-| Large Integer (int1024) | 14 | ⚠️ KNOWN | Division returns 0 (Bug #27) |
-| Overflow/Underflow Boundary | 10 | ⚠️ KNOWN | int32 overflow is UB (nsw flag) |
+| Large Integer (int1024) | 14 | ✅ PASS | Bug #27 fixed (LBIM ABI) |
+| Overflow/Underflow Boundary | 10 | ✅ PASS | Overflow detected via intrinsics |
 
-**Key findings**: The core floating-point arithmetic, energy conservation (critical for Nikola's Störmer-Verlet integration), determinism, and error propagation all pass. The two ⚠️ results are documented in the Open Bugs section above.
+**Key findings**: The core floating-point arithmetic, energy conservation (critical for Nikola's Störmer-Verlet integration), determinism, and error propagation all pass. All 9 safety-critical test suites pass.
 
 ---
 
