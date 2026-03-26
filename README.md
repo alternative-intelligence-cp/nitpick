@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.10
+# Aria Programming Language v0.2.13
 
 ![Aria Logo](/pics/AriaLogocompressed.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -12,22 +12,19 @@
 
 ## Current Status (March 2026)
 
-**v0.2.10 — AI/ML Ecosystem & Communication Protocol**
+**v0.2.13 — WebAssembly Compilation Target**
 
-Full AI/ML stack with 4 neural architecture packages, GPU acceleration, and a universal AI communication protocol. Aria now has native Transformer, Mamba, Jamba (hybrid), and Looping (iterative refinement) model implementations, plus a self-improving specialist training loop.
+Aria programs now compile to WebAssembly via `ariac --emit-wasm`. WASI-compatible runtime, full string/math/IO support, 4/4 WASM test suite passing. Run Aria programs with `wasmtime`, `wasmer`, or any WASI runtime.
 
-- **aria-transformer** — Full Transformer encoder: multi-head attention, causal masking, positional embeddings, attention visualization, weight-tied unembedding (10/10 tests)
-- **aria-mamba** — Mamba selective state space model: linear projections, 1D depthwise convolution, selective SSM (S6), SiLU gating, layer norm + residuals (10/10 tests)
-- **aria-jamba** — Jamba hybrid: interleaved Transformer attention + Mamba SSM layers, Mixture of Experts (MoE) FFN with top-k gating (10/10 tests)
-- **aria-looping** — Iterative refinement model: shared-weight Universal Transformer style, iteration embeddings, adaptive convergence stopping, configurable iteration count (10/10 tests)
-- **aria-tensor** — Dense tensor library: creation, arithmetic, matmul, activations (ReLU, sigmoid, tanh, SiLU, GELU, softmax), layer norm, concat/slice, GPU interop (12/12 tests)
-- **aria-cuda** — CUDA FFI bindings: device management, memory alloc/copy/free, kernel launch, cuBLAS GEMM, stream operations (10/10 tests)
-- **aria-uacp** — Universal AI Communication Protocol: binary-framed message types (text, tensor, tool invocation, streaming, store/load), capability negotiation, codec layer (12/12 tests)
-- **Self-improving training loop** — Automated specialist pipeline: generate → compile → filter → expand corpus → retrain
-- **aria-static** — Static file serving, MIME type detection (28 types), path traversal protection, directory index (22 tests)
-- **demo_api.aria** — REST API showcase: 5 endpoints with HTML, JSON, path params, POST body handling
-- **Borrow checker fix** — False positive on deallocator-named void externs (`_close`/`_free` pattern match) with int32 args
-- **FFI string return ABI fix** — Corrected AriaString struct return for extern functions
+**Recent highlights:**
+- **v0.2.13** — WASM backend: `--emit-wasm` flag, `libaria_runtime_wasm.a`, wasm-ld linking, compiler-rt builtins
+- **v0.2.12** — Macros, comptime, borrow checker improvements, inline/noinline hints
+- **v0.2.11** — Threading & concurrency (thread pools, atomics, channels, lock-free data structures), OS components (arena/pool/slab allocators, IPC, signals), AI-native filesystem (FUSE)
+- **v0.2.10** — AI/ML stack: Transformer, Mamba, Jamba, Looping models, CUDA bindings, tensor library, UACP protocol
+- **v0.2.9** — HTTP server framework with Express-style routing and 6 middleware packages
+- **74 ecosystem packages**, all passing — utility, graphics/game, server, database, AI/ML tiers
+- **862 tests** across 39 test categories
+- **50 stdlib modules** (12.5K lines)
 
 ---
 
@@ -37,7 +34,7 @@ Full AI/ML stack with 4 neural architecture packages, GPU acceleration, and a un
 |---|---|---|
 | `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
 | `aria-ls` | ✅ Improved | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
-| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 59/59 packages verified |
+| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 74 packages verified |
 | `aria-doc` | ✅ Fixed | Documentation generator — 435 unique HTML pages from ecosystem |
 | `aria-mcp` | ✅ Improved | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Improved | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
@@ -48,7 +45,7 @@ Full AI/ML stack with 4 neural architecture packages, GPU acceleration, and a un
 | Specialist model | ✅ V6 | Qwen 7B LoRA, v6 corpus covering v0.2.3 additions |
 | Debian package | ✅ Built | `aria_0.2.2-1_amd64.deb` (17 MB), tested on Mint 22.3 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 72 packages (39 utility/GUI + 4 database + 7 server + 8 AI/ML + 14 more), all passing |
+| `aria_packages` | ✅ Active | 74 packages (39 utility/GUI + 4 database + 7 server + 8 AI/ML + 16 more), all passing |
 
 ---
 
@@ -87,7 +84,7 @@ Full AI/ML stack with 4 neural architecture packages, GPU acceleration, and a un
 
 ## `aria-packages` Library Ecosystem
 
-All packages live in the separate [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) repository (previously `aria_ecosystem/aria_packages/` in this repo). 59 packages total, organized into utility, graphics/game, server, and database tiers. Each package has a `src/` module, a `tests/` file with assertions, and where FFI is needed, a C `shim/`.
+All packages live in the separate [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) repository. 74 packages total, organized into utility, graphics/game, server, database, and AI/ML tiers. Each package has a `src/` module, a `tests/` file with assertions, and where FFI is needed, a C `shim/`.
 
 **Package tiers:**
 
@@ -152,6 +149,21 @@ All packages live in the separate [`aria-packages`](https://github.com/alternati
 | 57 | `aria-websocket` | WebSocket client/server (RFC 6455) |
 | 58 | `aria-xml` | XML parsing and generation |
 | 59 | `aria-yaml` | YAML parsing and serialization |
+| 60 | `aria-server` | HTTP server: listen, accept, parse, respond |
+| 61 | `aria-router` | Express-style router: path params, middleware, wildcards |
+| 62 | `aria-body-parser` | HTTP body parsing middleware |
+| 63 | `aria-cors` | CORS middleware |
+| 64 | `aria-cookie` | Cookie parsing and serialization middleware |
+| 65 | `aria-session` | Session management middleware |
+| 66 | `aria-rate-limit` | Rate limiting middleware |
+| 67 | `aria-static` | Static file serving with MIME detection |
+| 68 | `aria-tensor` | Dense tensor library: creation, arithmetic, matmul, activations, GPU interop |
+| 69 | `aria-cuda` | CUDA FFI: device management, memory ops, kernel launch, cuBLAS GEMM |
+| 70 | `aria-transformer` | Transformer encoder: multi-head attention, causal masking |
+| 71 | `aria-mamba` | Mamba selective state space model with SiLU gating |
+| 72 | `aria-jamba` | Hybrid Transformer + Mamba + Mixture of Experts |
+| 73 | `aria-looping` | Iterative refinement model with convergence stopping |
+| 74 | `aria-uacp` | Universal AI Communication Protocol: binary framing, 8 message types |
 
 ---
 
@@ -324,6 +336,7 @@ EOF
 ./build/ariac program.aria -o program          # compile
 ./build/ariac program.aria --emit-llvm -o out.ll  # LLVM IR
 ./build/ariac program.aria -O2 -o program      # optimized
+./build/ariac program.aria --emit-wasm -o out.wasm  # WebAssembly
 ```
 
 **Prerequisites:** LLVM 20.1+, CMake 3.20+, C++17 compiler, Python 3.8+, Linux/macOS/WSL2
@@ -357,7 +370,7 @@ aria/
 │   └── runtime/             # Runtime support (GC, strings, async, streams)
 ├── include/                  # Headers
 ├── stdlib/                   # Standard library (.aria files)
-├── tests/                    # Test suite (700+ tests)
+├── tests/                    # Test suite (862 tests)
 │   ├── regression/          # Regression tests
 │   ├── fuzz/                # Fuzzer V2 and corpus
 │   ├── gpu/                 # GPU/CUDA tests
@@ -383,7 +396,7 @@ aria/
 ```
 
 **Related repositories:**
-- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 59 library packages
+- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 74 library packages
 - [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs) — reference docs and guides
 - [`ariax`](https://github.com/alternative-intelligence-cp/ariax) — POSIX tools and AX Linux distro
 - [`aria-lang`](https://github.com/alternative-intelligence-cp/aria-lang) — VS Code extension
@@ -513,7 +526,37 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Pipeline support** — All tools read from stdin when no file argument given
 - ✅ **String comparison fix** — `_=expr` discard syntax, `sleep_ms` builtin
 
-### v0.2.10 — Released (Current)
+### v0.2.13 — Released (Current)
+
+- ✅ **WebAssembly compilation target** — `ariac --emit-wasm -o program.wasm` compiles Aria to WASI-compatible WebAssembly
+- ✅ **WASM runtime** — `libaria_runtime_wasm.a`: strings, I/O, math, allocators, maps (~850 LOC)
+- ✅ **LLVM WebAssembly backend** — `emit_wasm_object()`, wasm-ld linking, WASI entry point handling
+- ✅ **Compatibility checker** — Warns about unsupported features (threading, async, fork/exec) at compile time
+- ✅ **Compiler-rt builtins** — `__multi3` (128-bit multiply) for int64 arithmetic on wasm32
+- ✅ **WASM test suite** — 4/4 passing: hello world, strings, arithmetic, functions/recursion
+- ✅ **Documentation** — WASM compilation guide with examples, feature matrix, troubleshooting
+
+### v0.2.12 — Released
+
+- ✅ **Preprocessor macros** — `macro:NAME(params) { body }`, `%*` variadic, `#%N` stringification, `##` token pasting
+- ✅ **Comptime evaluation** — `comptime { }` blocks, evaluated at compile time
+- ✅ **Magic constants** — `__FILE__`, `__LINE__`, `__FUNC__`, `__COUNTER__`
+- ✅ **Inline hints** — `inline` and `noinline` function attributes
+- ✅ **Borrow checker improvements** — Better analysis of conditional paths and reassignment
+- ✅ **Compiler diagnostics** — Improved error messages for macro expansion and comptime errors
+
+### v0.2.11 — Released
+
+- ✅ **Thread pool** — `ThreadPool.create()`, `ThreadPool.submit()`, `ThreadPool.wait_idle()`, `ThreadPool.shutdown()`
+- ✅ **Atomics** — `AtomicInt32`, `AtomicInt64`, `AtomicBool` with all memory orderings
+- ✅ **Lock-free data structures** — `LFQueue` (MPMC), `LFStack` (Treiber), `RingBuf` (SPSC)
+- ✅ **Channels** — `Channel.create()`, `Channel.send()`, `Channel.recv()` for inter-thread communication
+- ✅ **Mutex/RWLock/Barrier/CondVar** — Full synchronization primitives
+- ✅ **OS components** — Arena, pool, slab allocators; shared memory; IPC; signal handling; process management
+- ✅ **AI-native filesystem (AIFS)** — FUSE-based filesystem for AI workloads
+- ✅ **AriaX kernel mods** — Hexstream FD 3-5 patches
+
+### v0.2.10 — Released
 
 - ✅ **aria-transformer** — Full Transformer encoder with multi-head attention, causal masking, attention visualization (10/10 tests)
 - ✅ **aria-mamba** — Mamba SSM: selective scan, 1D convolution, SiLU gating, layer norm (10/10 tests)

@@ -1,251 +1,196 @@
 # Aria Compiler Test Status
 
-**Last Updated**: February 5, 2026
+**Last Updated**: March 28, 2026 (v0.2.14 audit)
+**Previous**: February 5, 2026 (v0.1.0 — 361/363, stale)
 
 ## Current Test Coverage
 
-| Category | Count | Status | Pass Rate |
-|----------|-------|--------|-----------|
-| **Implemented Features** | 361 | ✅ Passing | **100%** |
-| **Future Features** | 2 | ⏸️ Blocked | N/A |
-| **Total Test Files** | 363 | - | 99.4% |
+| Metric | Count | Rate |
+|--------|-------|------|
+| **Total Test Files** | 862 | — |
+| **Positive Tests Passing** | 524 | — |
+| **Negative Tests Correctly Rejected** | 116 | — |
+| **Total Passing** | 640 | **74.2%** |
+| **Actual Failures** | 222 | 25.8% |
+
+> **Note**: "Negative tests" are adversarial tests that expect `COMPILER ERROR`.
+> A negative test *passes* when the compiler correctly rejects the code.
 
 ---
 
-## ✅ Passing Tests (361/361 = 100%)
+## Per-Category Breakdown
 
-All tests for **implemented compiler features** pass successfully:
+| Category | Total | Pass | Fail | Neg✓ | Neg✗ | Rate |
+|----------|------:|-----:|-----:|-----:|-----:|-----:|
+| TOP-LEVEL | 377 | 321 | 7 | 47 | 2 | **98%** |
+| adversarial | 60 | 23 | 5 | 31 | 1 | 90% |
+| allocator | 4 | 3 | 0 | 0 | 1 | 75% |
+| cast | 7 | 0 | 7 | 0 | 0 | 0% |
+| coverage | 2 | 0 | 2 | 0 | 0 | 0% |
+| determinism | 6 | 4 | 0 | 2 | 0 | 100% |
+| feature_validation | 73 | 34 | 26 | 13 | 0 | 64% |
+| future | 2 | 0 | 2 | 0 | 0 | 0% |
+| fuzz | 100 | 85 | 15 | 0 | 0 | 85% |
+| integration | 6 | 4 | 2 | 0 | 0 | 67% |
+| io | 3 | 0 | 1 | 2 | 0 | 67% |
+| kitchen_sink | 1 | 0 | 0 | 1 | 0 | 100% |
+| manual | 8 | 6 | 0 | 2 | 0 | 100% |
+| misc | 156 | 6 | 147 | 3 | 0 | 6% |
+| module_loading | 1 | 0 | 1 | 0 | 0 | 0% |
+| module_test | 3 | 0 | 2 | 1 | 0 | 33% |
+| preprocessor | 2 | 0 | 0 | 2 | 0 | 100% |
+| primitives | 3 | 3 | 0 | 0 | 0 | 100% |
+| regression | 5 | 5 | 0 | 0 | 0 | 100% |
+| result | 4 | 4 | 0 | 0 | 0 | 100% |
+| runtime | 1 | 0 | 0 | 1 | 0 | 100% |
+| safety | 6 | 3 | 0 | 3 | 0 | 100% |
+| safety_critical | 10 | 10 | 0 | 0 | 0 | 100% |
+| stdlib | 12 | 3 | 1 | 8 | 0 | 92% |
+| string | 5 | 5 | 0 | 0 | 0 | 100% |
+| syntax | 1 | 1 | 0 | 0 | 0 | 100% |
+| wasm | 4 | 4 | 0 | 0 | 0 | 100% |
 
-### Core Language Features
-- ✅ Balanced types (TBB8, TBB16, TBB32, TBB64)
-- ✅ Large integer types (int128, int256, int512, int1024, int2048, int4096)
-- ✅ Floating point types (flt64, flt128, flt256, flt512)
-- ✅ Fixed-point types (fix256)
-- ✅ Unsigned types (uint128, uint1024, etc.)
-- ✅ Pointer syntax (`->` forward, `<-` backward, `@` address-of)
-- ✅ Generics (struct templates, function templates)
-- ✅ Result<T> type (error handling)
-- ✅ Arrays and slicing
-- ✅ Strings (basic operations)
-- ✅ Control flow (if/else, loops, when/till)
-- ✅ Defer statements
-- ✅ Move semantics
-- ✅ Borrow checking
-- ✅ Const expressions
-- ✅ Module system
-- ✅ Pattern matching (basic)
-- ✅ Null coalescing (`??` operator)
-- ✅ Map operations (`@` map operator)
+**Key**: Pass = positive test compiled OK, Fail = positive test failed,
+Neg✓ = negative test correctly rejected, Neg✗ = negative test wrongly accepted
 
-### Safety Features
-- ✅ Definite assignment analysis
-- ✅ Borrow lifetime tracking
-- ✅ Use-after-free prevention
-- ✅ Double-free prevention
-- ✅ Wild memory management
-- ✅ ERR propagation (sticky error states)
-- ✅ TBB overflow detection
-- ✅ Explicit type conversions
+### 100% Pass Categories (13)
+determinism, kitchen_sink, manual, preprocessor, primitives, regression,
+result, runtime, safety, safety_critical, string, syntax, wasm
 
-### Standard Library
-- ✅ Memory allocators (Arena, Pool, Slab)
-- ✅ Print functions
-- ✅ Basic math operations
-- ✅ File I/O (basic operations)
-
-### Build System
-- ✅ CMake integration
-- ✅ Integration test runner
-- ✅ Minimal test runner
+### Problem Categories
+- **misc** (6%): 147 failures — mostly AI-generated tests using `void` instead of `NIL`
+- **cast** (0%): 7 tests — cast syntax not yet implemented
+- **feature_validation** (64%): 26 failures — tests for partially-implemented features
+- **fuzz** (85%): 15 failures — edge-case inputs
 
 ---
 
-## ⏸️ Future Features (2 tests - blocked on implementation)
+## Failure Root Causes (222 actual failures)
 
-Located in `tests/future/` - **DO NOT RUN** (will fail until features implemented)
+| Root Cause | Count | Category |
+|------------|------:|----------|
+| Uses `void` instead of `NIL` | 83 | Test quality |
+| Undefined identifier (unimplemented feature) | 47 | Feature gap |
+| Missing `failsafe` function | 37 | Test quality |
+| Result unwrap issues | 19 | Test quality |
+| Parse/syntax errors | 15 | Mixed |
+| Trait-related (unimplemented) | 8 | Feature gap |
+| Negative test wrongly accepted | 4 | Compiler bug |
+| `return` instead of `pass()` | 2 | Test quality |
+| Module import failure | 1 | Feature gap |
+| Borrow checker false positive | 1 | Compiler bug |
+| Other (timeouts, misc) | 5 | Mixed |
+
+### Easily Fixable (122 tests — test quality, not compiler bugs)
+- **83**: Change `void` → `NIL` in return types
+- **37**: Add required `failsafe` function
+- **2**: Change `return` → `pass()`
+
+Fixing these would raise the pass rate to **88.4%** (762/862).
+
+### Compiler Bugs (5 tests)
+- **4 negative tests wrongly accepted**: Compiler should reject but doesn't
+  - `tests/adversarial/type_system/tbb_sentinel_direct_construct.aria`
+  - `tests/allocator/quick_builtin_test.aria`
+  - `tests/borrow_lifetime.aria`
+  - `tests/borrow_wild.aria`
+- **1 borrow checker false positive**
+
+### Feature Gaps (56 tests)
+Tests referencing features not yet implemented (traits, cast syntax, full
+module system, I/O module). These will pass when the features ship.
+
+---
+
+## Future Features (2 tests — blocked on implementation)
+
+Located in `tests/future/` — **not included in pass rate**.
 
 ### 1. batch02_gemini_audit_fixes.aria
-**Status**: Specification test for unimplemented trit/nit types  
-**Blocks**: Nikola substrate implementation  
-**Priority**: **HIGH** - Core requirement (like `int` for C)
-
-**Missing Features**:
-- `trit` type (balanced ternary: -1, 0, 1)
-- `nit` type (balanced nonary: -4..4)
-- Runtime functions: `trit_and()`, `trit_or()`, `nit_and()`, `nit_or()`
-- Trit/nit arithmetic operators
-- ERR sentinel behavior for trit/nit
-
-**Use Case**: Wave interference arithmetic for 9D-TWI substrate  
-**Implementation Estimate**: 2-3 weeks (type system + runtime + tests)
+**Status**: Specification test for unimplemented trit/nit types
+**Blocks**: Nikola substrate implementation
 
 ### 2. safety_critical_suite.aria
-**Status**: Integration test requiring multiple subsystems  
-**Blocks**: Extended safety validation  
-**Priority**: MEDIUM - Extends existing systems
-
-**Missing Features**:
-- Full IO module (`io.read()`, `io.write()`, path operations)
-- Extended TBB runtime (`tbb_widen()`, additional conversions)
-- Large integer stdlib (`int1024_pow()`)
-- String concatenation and manipulation
-- Method call syntax enhancements
-
-**Use Case**: Comprehensive safety-critical system validation  
-**Implementation Estimate**: 3-4 weeks (incremental additions)
+**Status**: Integration test requiring multiple subsystems
+**Blocks**: Extended safety validation
 
 ---
 
-## Implementation Roadmap
+## misc/ Directory (156 tests, 6% pass rate)
 
-### Phase 1: trit/nit Types (HIGH PRIORITY)
-**Goal**: Enable Nikola substrate development  
-**Timeline**: 2-3 weeks
+The `tests/misc/` directory contains 156 tests, mostly AI-generated during
+earlier development phases. 147 of these fail due to test quality issues
+(not compiler bugs):
 
-1. **Type System Integration**
-   - Add `trit` and `nit` as primitive types
-   - Define sentinel values (ERR = -128 for both)
-   - Implement range validation (-1..1 for trit, -4..4 for nit)
+- **83**: Use `void` return type (Aria uses `NIL`)
+- **31**: Missing required `failsafe` function
+- **20**: Reference undefined identifiers
+- **12**: Parse/syntax errors in the test itself
+- **1**: Timeout
 
-2. **Arithmetic Operations**
-   - Addition/subtraction with overflow → ERR
-   - Multiplication with overflow → ERR
-   - ERR propagation (sticky behavior)
-
-3. **Logic Operations**
-   - `trit_and()`, `trit_or()` (Kleene ternary logic)
-   - `nit_and()`, `nit_or()` (nine-valued logic)
-   - Truth table validation
-
-4. **Runtime Library**
-   - Conversion functions (trit/int, nit/int)
-   - Validation helpers (`trit_is_err()`, `nit_is_err()`)
-   - Debug printing
-
-5. **Testing**
-   - Move `batch02_gemini_audit_fixes.aria` back to main suite
-   - Verify all 31 test cases pass
-   - Add fuzzing corpus for trit/nit
-
-### Phase 2: IO Module Completion (MEDIUM PRIORITY)
-**Goal**: Full file I/O and path operations  
-**Timeline**: 1-2 weeks
-
-1. Implement `io.read()` and `io.write()`
-2. Path manipulation functions
-3. Error handling for I/O failures
-4. File descriptor management
-
-### Phase 3: Extended stdlib (LOW PRIORITY)
-**Goal**: Additional math and string operations  
-**Timeline**: 2-3 weeks (incremental)
-
-1. `int1024_pow()` and other large integer functions
-2. String concatenation operators
-3. String manipulation methods
-4. Additional TBB conversions (`tbb_widen<T>()`)
+These tests need cleanup before they can be considered reliable. The compiler
+itself is not at fault.
 
 ---
 
-## Test Organization Philosophy
+## Recommended Next Steps
 
-Following **blueprint construction principles**:
+### Quick Wins (raises pass rate to ~88%)
+1. Batch-fix 83 `void` → `NIL` tests
+2. Add `failsafe` to 37 tests missing it
+3. Fix 2 `return` → `pass()` tests
 
-### ✅ Passing Tests (tests/)
-- Tests for **features that are fully implemented**
-- 100% must pass or build fails
-- These are "as-built" drawings - they document reality
+### Compiler Bugs to Investigate
+1. 4 negative tests the compiler wrongly accepts
+2. 1 borrow checker false positive
 
-### ⏸️ Future Tests (tests/future/)
-- Tests for **features not yet implemented**
-- These are "design intent" drawings - they document plans
-- **Never run in CI** until features are complete
-- Move back to main suite when feature is done
-
-### 🚫 No Lying Rule
-**We do NOT**:
-- ❌ Skip failing tests to claim higher pass rate
-- ❌ Mark tests as "expected fail" to hide problems
-- ❌ Disable safety checks to make tests pass
-- ❌ Use aspirational tests in coverage metrics
-
-**We DO**:
-- ✅ Separate implemented from planned
-- ✅ Report 100% pass on implemented features
-- ✅ Document missing features clearly
-- ✅ Implement missing features before claiming support
-
-**False security kills people.** We follow building codes, not startup culture.
+### Feature Gaps to Close
+1. Cast syntax (7 tests)
+2. Trait system (8 tests)
+3. Full module system (3 tests)
+4. I/O module completion (3 tests)
 
 ---
 
 ## Running Tests
 
-### Full Test Suite (Implemented Features Only)
-```bash
-./test.sh
-```
-
-**Expected**: 100% pass (361/361 tests)
-
-### Integration Tests Only
-```bash
-cd build && ctest
-```
-
-### Individual Test File
+### Individual Test
 ```bash
 ./build/ariac tests/path/to/test.aria
 ```
 
-### Future Tests (Will Fail)
+### Integration Tests
 ```bash
-# DO NOT RUN - for documentation only
-./build/ariac tests/future/batch02_gemini_audit_fixes.aria
-# Expected: 31 errors (trit/nit not implemented)
+cd build && ctest
 ```
 
 ---
 
-## Success Criteria
+## Test Organization
 
-A test is considered **passing** when:
-- ✅ Compiles without errors
-- ✅ Runs without crashes
-- ✅ Produces expected output
-- ✅ Validates actual behavior (not aspirational)
-- ✅ Tests implemented features only
+| Directory | Purpose |
+|-----------|---------|
+| `tests/*.aria` | Core feature tests (top-level) |
+| `tests/adversarial/` | Negative tests — expected to fail compilation |
+| `tests/fuzz/` | Fuzzer-generated edge cases |
+| `tests/feature_validation/` | Tests for specific language features |
+| `tests/misc/` | Bulk AI-generated tests (need cleanup) |
+| `tests/future/` | Tests for unimplemented features (do not run) |
+| `tests/regression/` | Bug-fix regression tests |
+| `tests/safety_critical/` | Safety-critical system tests |
+| `tests/stdlib/` | Standard library tests |
 
-A feature is considered **implemented** when:
-- ✅ Compiler accepts the syntax
-- ✅ Runtime functions available
-- ✅ All test cases pass
-- ✅ No undefined behavior
-- ✅ Documentation complete
-
----
-
-## Contributing Tests
-
-### Adding Tests for Implemented Features
-1. Create `.aria` file in appropriate `tests/` subdirectory
-2. Test must pass before committing
-3. Update this document (increment passing count)
-
-### Adding Tests for Future Features
-1. Create `.aria` file in `tests/future/`
-2. Update `tests/future/README.md` with requirements
-3. Document blocking dependencies clearly
-4. **Do NOT include in CI** until feature complete
-
-### Moving Tests from Future to Main
-1. Implement required feature fully
-2. Verify test passes (`./build/ariac tests/future/test.aria`)
-3. Move file: `mv tests/future/test.aria tests/`
-4. Update both `TEST_STATUS.md` and `tests/future/README.md`
-5. Verify full test suite still at 100%
+### Negative Test Convention
+Tests expecting compiler errors should include a header comment:
+```aria
+/**
+ * Test: [Description]
+ * Expected: COMPILER ERROR - [reason]
+ */
+```
 
 ---
 
-**Current Status**: 361/361 passing (100% on implemented features)  
-**Next Milestone**: Implement trit/nit types → 363/363 (100% full coverage)
+**Current Status**: 640/862 passing (74.2%) — 122 easily fixable test quality issues
+**Previous Claim**: 361/363 (v0.1.0, February 2026) — obsolete, did not count new tests
+**Audited**: March 28, 2026 by automated per-file compilation audit

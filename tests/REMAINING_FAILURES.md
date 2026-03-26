@@ -1,79 +1,112 @@
-# Remaining Test Failures (7/146 files, 4.8%)
+# Remaining Test Failures — v0.2.14 Audit
 
-## Parse Success: 95.2% (139/146 tests)
+**Last Updated**: March 28, 2026
+**Previous**: February 1, 2026 (v0.1.0 — 7/146, stale)
 
-### Category 1: Intentional Test Failures (1 file)
+## Summary: 222 Failures out of 862 Tests (74.2% pass rate)
 
-**tests/diagnostics_demo.aria** - Tests error message quality
-```aria
-int64:y = ;  // Syntax error - missing value (INTENTIONAL)
-```
-Status: ✅ Working as intended - tests compiler error reporting
-
-### Category 2: Unimplemented Parser Features (6 files)
-
-#### 1. Array Syntax - `tests/const_advanced_test.aria`
-```aria
-// Current error: Expected variable name
-int64[ARRAY_SIZE]:buffer;
-```
-**Needs:** Array type syntax support `Type[size]:name`
-
-#### 2. Generic Syntax - `tests/generic_struct_basic.aria`
-```aria
-// Current error: Expected struct name
-struct<T, E>:Result = {
-    T:ok;
-    E:err;
-};
-```
-**Needs:** Generic parameter syntax `<T, E>` for structs
-
-#### 3. Extern Function Syntax - `tests/move_wild_test.aria`
-```aria
-// Current error: Expected library name string after 'extern'
-extern func malloc(size: int64) -> wild int8*;
-```
-**Needs:** Support for `extern func` declarations outside extern blocks
-
-#### 4. Visibility Keywords - `tests/ffi_safety_test.aria`
-```aria
-// Current error: Expected function or variable declaration in extern block
-extern "C" {
-    pub func:good_ffi_string = void(wild int8->:message);
-}
-```
-**Needs:** `pub` keyword support in extern blocks
-
-#### 5. Fraction Literal Syntax - `tests/numeric_types_parser_test.aria`
-```aria
-// Current error: Expected field name in object literal
-frac8:half = {0, 1, 2};  // 0 + 1/2 in base-3
-```
-**Needs:** Ternary tuple syntax `{whole, nit1, nit2}` for fraction literals
-
-#### 6. Static Member Syntax - `tests/safety_critical_suite.aria`
-```aria
-// Current error: Expected member name after '.'
-if (overflow == int1024.ERR) {
-    // ...
-}
-```
-**Needs:** Static member access `Type.CONSTANT` for ERR sentinels
-
-## Summary
-
-All syntax modernization complete! Remaining failures represent 6 unimplemented language features:
-
-1. **Arrays** - Type[size] syntax
-2. **Generics** - struct<T, E> syntax  
-3. **Extern funcs** - extern func outside blocks
-4. **Visibility** - pub keyword
-5. **Fraction literals** - {w, n1, n2} syntax
-6. **Static members** - Type.MEMBER syntax
-
-These features are specified but not yet implemented in parser. When ready to implement, these 6 test files will validate the implementations.
+This count properly handles **negative tests** (adversarial tests that
+*expect* compiler errors). A negative test passes when the compiler
+correctly rejects the code.
 
 ---
-Generated: 2026-02-01 after test suite v0.1.0 syntax modernization  
-Commit: 3730f5b
+
+## Failure Breakdown by Root Cause
+
+### Test Quality Issues (122 — easily fixable, not compiler bugs)
+
+| Issue | Count | Fix |
+|-------|------:|-----|
+| Uses `void` instead of `NIL` | 83 | Change return type to `NIL` |
+| Missing `failsafe` function | 37 | Add `failsafe` func to test |
+| Uses `return` instead of `pass()` | 2 | Replace with `pass()` |
+
+Fixing these 122 tests would raise the pass rate from 74.2% to **88.4%**.
+
+### Undefined Identifiers / Unimplemented Features (47)
+
+Tests reference functions, types, or syntax not yet in the compiler:
+- Trait methods and implementations
+- Cast expressions
+- Extended module system features
+- I/O module functions
+- Various stdlib functions not yet exposed
+
+### Result Unwrap Issues (19)
+
+Tests use `Result<T>` without properly handling the error case, or call
+`.unwrap()` when it doesn't exist as a method.
+
+### Parse / Syntax Errors (15)
+
+Tests contain syntax the parser doesn't yet accept:
+- Array type syntax `Type[size]:name`
+- Generic struct syntax `struct<T, E>`
+- Extern func outside blocks
+- Static member access `Type.CONSTANT`
+
+### Trait-Related (8)
+
+Tests exercise the trait system which is partially implemented.
+These will pass as the trait system matures.
+
+### Compiler Bugs (5)
+
+**4 negative tests wrongly accepted** (compiler fails to reject bad code):
+- `tests/adversarial/type_system/tbb_sentinel_direct_construct.aria`
+- `tests/allocator/quick_builtin_test.aria`
+- `tests/borrow_lifetime.aria`
+- `tests/borrow_wild.aria`
+
+**1 borrow checker false positive** (compiler wrongly rejects valid code)
+
+### Other (6)
+
+- 2 timeouts
+- 1 module import failure
+- 1 `print()` type argument error
+- 2 miscellaneous
+
+---
+
+## By Test Directory
+
+| Directory | Failures | Total | Notes |
+|-----------|:--------:|:-----:|-------|
+| misc/ | 147 | 156 | Mostly `void`→`NIL` + missing `failsafe` |
+| feature_validation/ | 26 | 73 | Partially-implemented features |
+| fuzz/ | 15 | 100 | Edge cases |
+| TOP-LEVEL | 7 | 377 | 98% pass rate |
+| cast/ | 7 | 7 | Cast syntax not implemented |
+| adversarial/ | 5 | 60 | 90% (negative-test-aware) |
+| coverage/ | 2 | 2 | Test infrastructure |
+| future/ | 2 | 2 | By design — blocked on features |
+| integration/ | 2 | 6 | Module/import issues |
+| module_test/ | 2 | 3 | Module system gaps |
+| io/ | 1 | 3 | I/O features not yet available |
+| module_loading/ | 1 | 1 | Module resolution |
+| stdlib/ | 1 | 12 | 92% pass with negative tests |
+| allocator/ | 1 | 4 | One wrongly-accepted negative test |
+
+---
+
+## Priority Recommendations
+
+### P0 — Quick Wins (batch-fixable)
+Fix the 122 test quality issues. These are mechanical fixes:
+```bash
+# void → NIL (83 tests)
+# Add failsafe func (37 tests)
+# return → pass() (2 tests)
+```
+
+### P1 — Compiler Bugs
+Investigate the 5 tests where the compiler produces wrong behavior.
+
+### P2 — Feature Completion
+The 56 feature gap failures will resolve as features ship.
+
+---
+
+Generated: March 28, 2026 — v0.2.14 automated audit
+Previous: February 1, 2026 — v0.1.0 (7/146 failures, commit 3730f5b)
