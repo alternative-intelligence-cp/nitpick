@@ -18,6 +18,7 @@ public:
     std::string varName;
     ASTNodePtr initializer;    // Can be nullptr
     bool isWild;               // wild keyword (opt-out of GC)
+    bool isWildx;              // wildx keyword (wild + executable memory)
     bool isConst;              // const keyword
     bool isFixed;              // fixed keyword (runtime immutability)
     bool isStack;              // stack keyword
@@ -37,7 +38,7 @@ public:
                 ASTNodePtr init = nullptr, int line = 0, int column = 0)
         : ASTNode(NodeType::VAR_DECL, line, column),
           typeName(type), typeNode(nullptr), varName(name), initializer(init),
-          isWild(false), isConst(false), isFixed(false), isStack(false), isGC(false),
+          isWild(false), isWildx(false), isConst(false), isFixed(false), isStack(false), isGC(false),
           scope_depth(0), requires_drop(false), is_pinned_shadow(false), pinned_target("") {}
     
     // Constructor with typeNode support
@@ -45,7 +46,7 @@ public:
                 ASTNodePtr init = nullptr, int line = 0, int column = 0)
         : ASTNode(NodeType::VAR_DECL, line, column),
           typeName(typeN ? typeN->toString() : ""), typeNode(typeN), varName(name), initializer(init),
-          isWild(false), isConst(false), isFixed(false), isStack(false), isGC(false),
+          isWild(false), isWildx(false), isConst(false), isFixed(false), isStack(false), isGC(false),
           scope_depth(0), requires_drop(false), is_pinned_shadow(false), pinned_target("") {}
     
     std::string toString() const override;
@@ -81,6 +82,7 @@ public:
     bool isPublic;
     bool isExtern;
     bool returnIsWild = false;
+    bool returnIsWildx = false;
     
     // GPU/PTX Backend - Phase 3: Kernel Attributes
     bool isGPUKernel = false;  // #[gpu_kernel] - Entry point callable from host
@@ -188,6 +190,7 @@ public:
     std::string paramName;
     ASTNodePtr defaultValue;  // Can be nullptr
     bool isWild = false;      // true if 'wild' qualifier present (for FFI)
+    bool isWildx = false;     // true if 'wildx' qualifier present (wild + executable)
     
     ParameterNode(ASTNodePtr type, const std::string& name,
                   ASTNodePtr defVal = nullptr, int line = 0, int column = 0)
