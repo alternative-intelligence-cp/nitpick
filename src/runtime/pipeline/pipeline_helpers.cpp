@@ -386,6 +386,7 @@ static aria::ASTNodePtr convert_var_decl(ASTNodeCompat* n) {
     // Check type annotation str_val2 for memory qualifier
     std::string qualifier = safe_str(n->str_val2);
     if (qualifier == "wild" || qualifier == "wildx") decl->isWild = true;
+    if (qualifier == "wildx") decl->isWildx = true;
     if (qualifier == "stack") decl->isStack = true;
     if (qualifier == "gc")    decl->isGC = true;
 
