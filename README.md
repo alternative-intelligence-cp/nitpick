@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.24
+# Aria Programming Language v0.2.29
 
 ![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -12,18 +12,23 @@
 
 ## Current Status (March 2026)
 
-**v0.2.13 — WebAssembly Compilation Target**
+**v0.2.29 — String `+` Operator, 80 Packages, Legacy Cleanup**
 
-Aria programs now compile to WebAssembly via `ariac --emit-wasm`. WASI-compatible runtime, full string/math/IO support, 4/4 WASM test suite passing. Run Aria programs with `wasmtime`, `wasmer`, or any WASI runtime.
+String concatenation now works with the `+` operator (`"hello " + "world"`). Six new packages bring the ecosystem to 80. The entire legacy stdlib (`lib/_legacy/std/`) has been removed — all functionality is now covered by packages, stdlib builtins, or the runtime.
 
 **Recent highlights:**
-- **v0.2.13** — WASM backend: `--emit-wasm` flag, `libaria_runtime_wasm.a`, wasm-ld linking, compiler-rt builtins
-- **v0.2.12** — Macros, comptime, borrow checker improvements, inline/noinline hints
-- **v0.2.11** — Threading & concurrency (thread pools, atomics, channels, lock-free data structures), OS components (arena/pool/slab allocators, IPC, signals), AI-native filesystem (FUSE)
-- **v0.2.10** — AI/ML stack: Transformer, Mamba, Jamba, Looping models, CUDA bindings, tensor library, UACP protocol
-- **v0.2.9** — HTTP server framework with Express-style routing and 6 middleware packages
+- **v0.2.29** — String `+` operator, `wildx` parser fix, 6 new packages (jit, bench, path, sort, queue, map), legacy stdlib removed
+- **v0.2.28** — New numeric types: fix256 (256-bit fixed-point), frac32 (fraction API), dimensional type stubs
+- **v0.2.27** — Complex number stdlib with compound generic type inference
+- **v0.2.26** — Module resolution fixes, `std` → `stdlib` symlink restored
+- **v0.2.25** — SIMD builtins fixed (fcmp vs icmp for vector types)
+- **v0.2.23** — Trait system: definition, implementation, UFCS on primitive types
+- **v0.2.22** — Optional types (`T?`, `??` nil-coalescing, `?.` safe navigation)
+- **v0.2.16** — Spec compliance pass: 122 test fixes, 5 compiler bugs fixed, partial feature completion
+- **v0.2.15** — Ecosystem & distribution polish, LSP grammar +49 keywords, package registry sync
+- **v0.2.14** — Documentation review, extended fuzzing, full code audit
 - **80 ecosystem packages**, all passing — utility, graphics/game, server, database, AI/ML tiers
-- **862 tests** across 39 test categories
+- **841 tests**, 838 passing (99%)
 - **50 stdlib modules** (12.5K lines)
 
 ---
@@ -34,7 +39,7 @@ Aria programs now compile to WebAssembly via `ariac --emit-wasm`. WASI-compatibl
 |---|---|---|
 | `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
 | `aria-ls` | ✅ Improved | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
-| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 74 packages verified |
+| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 80 packages verified |
 | `aria-doc` | ✅ Fixed | Documentation generator — 435 unique HTML pages from ecosystem |
 | `aria-mcp` | ✅ Improved | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Improved | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
@@ -45,7 +50,7 @@ Aria programs now compile to WebAssembly via `ariac --emit-wasm`. WASI-compatibl
 | Specialist model | ✅ V6 | Qwen 7B LoRA, v6 corpus covering v0.2.3 additions |
 | Debian package | ✅ Built | `aria_0.2.2-1_amd64.deb` (17 MB), tested on Mint 22.3 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 80 packages (39 utility/GUI + 4 database + 7 server + 8 AI/ML + more), all passing |
+| `aria_packages` | ✅ Active | 80 packages (utility, graphics/game, server, database, AI/ML tiers), all passing |
 
 ---
 
@@ -71,13 +76,14 @@ Aria programs now compile to WebAssembly via `ariac --emit-wasm`. WASI-compatibl
 - **Atomic types** — Lock-free concurrent primitives
 - **Dimensional algebra** — Unit-typed arithmetic
 - **NIL/void separation** — NIL is Aria's unit type (wrapped in `Result<nil>`), void restricted to extern blocks, bridge via pointer erasure
-- **Operators** — Full suite including `@` (address), `#` (pin), `->` (arrow), `..`/`...` (ranges)
+- **Operators** — Full suite including `+` (string concatenation), `@` (address), `#` (pin), `->` (arrow), `..`/`...` (ranges)
 - **Template literals** — `` `&{variable}` `` string interpolation
 - **Standard library** — string_convert, string (manipulation), string_builder, print_utils, wave/wavemech, complex, dbug, quantum, atomic, io (file streams), math (transcendentals), linalg (linear algebra), collections (Vec, Map, Set, Graph), json, toml, binary, net (TCP sockets)
 
 ### In Progress / Specified
 - **Six-stream I/O** — stdin/stdout/stderr/stddbg/stddati/stddato — runtime initialization with graceful fallback, `stdin_read_all()` and `stdin_read_line()` builtins
-- **Traits & borrow semantics** — RFC complete (monomorphized traits + `dyn Trait` opt-in, `$x`/`$mut x` borrows); implementation in future release
+- **Traits** — Definition, implementation, and UFCS working on primitive types; `dyn Trait` dispatch and trait bounds planned
+- **Optional types** — `T?` with `??` nil-coalescing, `?.` safe navigation; working for primitives and custom types
 - **Async channels & actors** — Concurrent workloads, task scheduling, and async I/O with event loop — deferred to post-0.2.4
 
 ---
@@ -378,7 +384,7 @@ aria/
 │   └── runtime/             # Runtime support (GC, strings, async, streams)
 ├── include/                  # Headers
 ├── stdlib/                   # Standard library (.aria files)
-├── tests/                    # Test suite (862 tests)
+├── tests/                    # Test suite (841 tests, 838 passing)
 │   ├── regression/          # Regression tests
 │   ├── fuzz/                # Fuzzer V2 and corpus
 │   ├── gpu/                 # GPU/CUDA tests
@@ -389,7 +395,6 @@ aria/
 ├── tools/                    # Development tooling (specialist model, semantic_db)
 ├── benchmarks/               # Performance benchmarks
 ├── runtime/                  # Runtime C source
-├── lib/                      # Bundled libraries
 ├── vendor/                   # Vendored dependencies
 ├── third_party/              # Third-party components
 ├── debian/                   # Debian packaging
@@ -404,7 +409,7 @@ aria/
 ```
 
 **Related repositories:**
-- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 74 library packages
+- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 80 library packages
 - [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs) — reference docs and guides
 - [`ariax`](https://github.com/alternative-intelligence-cp/ariax) — POSIX tools and AX Linux distro
 - [`aria-lang`](https://github.com/alternative-intelligence-cp/aria-lang) — VS Code extension
@@ -534,7 +539,73 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Pipeline support** — All tools read from stdin when no file argument given
 - ✅ **String comparison fix** — `_=expr` discard syntax, `sleep_ms` builtin
 
-### v0.2.13 — Released (Current)
+### v0.2.29 — Released (Current)
+
+- ✅ **String `+` operator** — `"hello " + "world"` concatenation, chaining, type checker + codegen
+- ✅ **`wildx` parser fix** — Qualifier missing from 7 parser locations; added `isWildx` to AST nodes
+- ✅ **6 new packages** — aria-jit (8/8), aria-bench (4/4), aria-path (10/10), aria-sort (8/8), aria-queue (7/7), aria-map (8/8)
+- ✅ **Legacy stdlib removed** — Entire `lib/_legacy/std/` deleted (42 files, 22 modules); all covered by packages/builtins
+- ✅ **80 ecosystem packages** — 45 new tests, all passing
+
+### v0.2.28 — Released
+
+- ✅ **fix256** — 256-bit deterministic fixed-point: arithmetic, comparisons, conversions; SysV ABI fixed for 32-byte structs
+- ✅ **frac32** — Fraction type with function-call API (from_parts, add/sub/mul/div)
+- ✅ **SIMD builtins audit** — Deferred test audit, 841 tests total, 838 passing (99%)
+- ✅ **Dimensional type stubs** — Type infrastructure for unit-typed arithmetic
+
+### v0.2.27 — Released
+
+- ✅ **Complex number stdlib** — Generic complex API (new, add, sub, mul, conjugate) with int32/int64/flt64
+- ✅ **Compound generic type inference** — GenericResolver extracts type args from monomorphized struct names
+
+### v0.2.26 — Released
+
+- ✅ **Module resolution fixes** — Restored `std` → `stdlib` symlink, created `stdlib/mem.aria`
+- ✅ **4 tests promoted** — 830/833 passing (99%)
+
+### v0.2.25 — Released
+
+- ✅ **SIMD builtins fixed** — Critical bug: LLVM float comparisons (fcmp vs icmp) for vector types, fixed in 10 locations
+- ✅ **7 tests unblocked** — simd_sum, simd_broadcast, simd_product, element access, reductions
+
+### v0.2.23 — Released
+
+- ✅ **Trait system** — Definition parsing, implementation, UFCS on primitive types
+- ✅ **Parser infinite loop fix** — Trait blocks no longer hang the compiler
+- ✅ **815/818 passing** (99%)
+
+### v0.2.22 — Released
+
+- ✅ **Optional types** — `T?` syntax, `NIL` literal, `??` nil-coalescing, `?.` safe navigation, `?` unwrap-with-default
+- ✅ **ABI** — Tagged struct `{i1 hasValue, T value}` for optionals
+
+### v0.2.19 — Released
+
+- ✅ **Generic monomorphization fix** — `substituteTypeNode()` for recursive type parameter substitution
+- ✅ **Compound types** — GenericType, ArrayType, PointerType substitution in generics
+
+### v0.2.18 — Released
+
+- ✅ **Test-side fixes** — 19 tests promoted to main suite, no compiler changes
+- ✅ **Discovery** — `instance<T>()` and `Type.Member` desugaring already work
+
+### v0.2.16 — Released
+
+- ✅ **Spec compliance pass** — 122 test fixes (void→NIL, failsafe, return→pass)
+- ✅ **5 compiler bugs fixed** — Plus 47 TODOs audited
+- ✅ **Partial feature completion** — cast `=>`, pipelines `|>`, safe nav `?.`, pub use, invariants
+
+### v0.2.15 — Released
+
+- ✅ **Ecosystem & distribution polish** — Tooling updates, LSP grammar +49 keywords, package registry synced (55→74)
+- ✅ **Website and repo presentation** — Version strings, code examples, install scripts refreshed
+
+### v0.2.14 — Released
+
+- ✅ **Documentation & quality** — Comprehensive doc review, extended fuzzing, full test suite hardening, code audit across all repos
+
+### v0.2.13 — Released
 
 - ✅ **WebAssembly compilation target** — `ariac --emit-wasm -o program.wasm` compiles Aria to WASI-compatible WebAssembly
 - ✅ **WASM runtime** — `libaria_runtime_wasm.a`: strings, I/O, math, allocators, maps (~850 LOC)
@@ -542,7 +613,6 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Compatibility checker** — Warns about unsupported features (threading, async, fork/exec) at compile time
 - ✅ **Compiler-rt builtins** — `__multi3` (128-bit multiply) for int64 arithmetic on wasm32
 - ✅ **WASM test suite** — 4/4 passing: hello world, strings, arithmetic, functions/recursion
-- ✅ **Documentation** — WASM compilation guide with examples, feature matrix, troubleshooting
 
 ### v0.2.12 — Released
 
