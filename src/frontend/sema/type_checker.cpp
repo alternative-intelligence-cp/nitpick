@@ -1000,6 +1000,17 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         }
         
         // ====================================================================
+        // String Concatenation: string + string → string
+        // ====================================================================
+        if (op == TokenType::TOKEN_PLUS) {
+            PrimitiveType* lp = dynamic_cast<PrimitiveType*>(leftType);
+            PrimitiveType* rp = dynamic_cast<PrimitiveType*>(rightType);
+            if (lp && rp && lp->getName() == "string" && rp->getName() == "string") {
+                return typeSystem->getPrimitiveType("string");
+            }
+        }
+        
+        // ====================================================================
         // P1-5 Phase 4: Dimensional Analysis - Arithmetic
         // ====================================================================
         bool leftIsDimensional = (leftType->getKind() == TypeKind::DIMENSIONAL);

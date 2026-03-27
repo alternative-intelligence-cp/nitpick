@@ -2665,8 +2665,8 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     
     // ARITHMETIC OPERATORS
     if (op == TokenType::TOKEN_PLUS) {
-        // Check for string concatenation: if either side is a pointer (AriaString*),
-        // call aria_string_concat instead of integer add
+        // String concatenation: string + string calls aria_string_concat_simple
+        // which takes AriaString* pointers and returns AriaString* (aborts on error)
         if (left->getType()->isPointerTy() || right->getType()->isPointerTy()) {
             llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
             if (!ariaStrType) {
@@ -2675,17 +2675,12 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
                      llvm::Type::getInt64Ty(context)},
                     "struct.AriaString");
             }
+            llvm::Type* strPtrTy = llvm::PointerType::get(ariaStrType, 0);
             llvm::FunctionType* concatFT = llvm::FunctionType::get(
-                llvm::PointerType::get(context, 0),
-                {ariaStrType, ariaStrType}, false);
-            llvm::FunctionCallee concatFn = module->getOrInsertFunction("aria_string_concat", concatFT);
-            llvm::Value* lStr = left->getType()->isPointerTy()
-                ? builder.CreateLoad(ariaStrType, left, "str.lhs")
-                : left;
-            llvm::Value* rStr = right->getType()->isPointerTy()
-                ? builder.CreateLoad(ariaStrType, right, "str.rhs")
-                : right;
-            return builder.CreateCall(concatFn, {lStr, rStr}, "str.concat");
+                strPtrTy, {strPtrTy, strPtrTy}, false);
+            llvm::FunctionCallee concatFn = module->getOrInsertFunction("aria_string_concat_simple", concatFT);
+            // left and right are already AriaString* pointers from codegenBinary
+            return builder.CreateCall(concatFn, {left, right}, "str.concat");
         }
         if (isFloat) {
             return builder.CreateFAdd(left, right, "addtmp");

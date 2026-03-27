@@ -498,6 +498,8 @@ FuncDeclStmt* Monomorphizer::cloneAndSubstitute(
     cloned->isAsync = funcDecl->isAsync;
     cloned->isPublic = funcDecl->isPublic;
     cloned->isExtern = funcDecl->isExtern;
+    cloned->returnIsWild = funcDecl->returnIsWild;
+    cloned->returnIsWildx = funcDecl->returnIsWildx;
     // Do NOT copy genericParams - this is now a concrete function
     
     return cloned;
@@ -567,6 +569,7 @@ ASTNodePtr Monomorphizer::cloneAST(ASTNode* node) {
                 var->typeName, var->varName, std::move(init),
                 var->line, var->column);
             cloned->isWild = var->isWild;
+            cloned->isWildx = var->isWildx;
             cloned->isConst = var->isConst;
             cloned->isStack = var->isStack;
             cloned->isGC = var->isGC;
@@ -1155,6 +1158,7 @@ StructDeclStmt* Monomorphizer::cloneStructAndSubstitute(
         );
         
         clonedField->isWild = fieldDecl->isWild;
+        clonedField->isWildx = fieldDecl->isWildx;
         clonedField->isConst = fieldDecl->isConst;
         clonedField->isStack = fieldDecl->isStack;
         clonedField->isGC = fieldDecl->isGC;

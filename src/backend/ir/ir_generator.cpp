@@ -7615,7 +7615,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             if (std::holds_alternative<std::string>(lit->value)) rightIsStr = true;
                         }
                         if (leftIsStr || rightIsStr) {
-                            std::cerr << "[STRING +] Emitting aria_string_concat call" << std::endl;
+                            std::cerr << "[STRING +] Emitting aria_string_concat_simple call" << std::endl;
                             llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
                             if (!ariaStrType) {
                                 ariaStrType = llvm::StructType::create(context,
@@ -7623,17 +7623,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                      llvm::Type::getInt64Ty(context)},
                                     "struct.AriaString");
                             }
+                            llvm::Type* strPtrTy = llvm::PointerType::get(ariaStrType, 0);
                             llvm::FunctionType* concatFT = llvm::FunctionType::get(
-                                llvm::PointerType::get(context, 0),
-                                {ariaStrType, ariaStrType}, false);
-                            llvm::FunctionCallee concatFn = module->getOrInsertFunction("aria_string_concat", concatFT);
-                            llvm::Value* lStr = L->getType()->isPointerTy()
-                                ? builder.CreateLoad(ariaStrType, L, "str.lhs")
-                                : L;
-                            llvm::Value* rStr = R->getType()->isPointerTy()
-                                ? builder.CreateLoad(ariaStrType, R, "str.rhs")
-                                : R;
-                            return builder.CreateCall(concatFn, {lStr, rStr}, "str.concat");
+                                strPtrTy, {strPtrTy, strPtrTy}, false);
+                            llvm::FunctionCallee concatFn = module->getOrInsertFunction("aria_string_concat_simple", concatFT);
+                            // L and R are already AriaString* pointers
+                            return builder.CreateCall(concatFn, {L, R}, "str.concat");
                         }
                     }
                     // Layer 1 Safety: Safe addition returns Unknown on overflow
