@@ -1,0 +1,37 @@
+// Vec<int64> Standard Library Implementation
+// Follows same pattern as Vec<int8> in lib_vec_int32.aria
+
+// Runtime function declarations
+extern func:aria_array_new_simple = wild int8*(int64:element_size, int32:type_id);
+extern func:aria_array_length = int64(wild int8*:arr);
+extern func:aria_array_free = void(wild int8*:arr);
+extern func:aria_array_push_simple = void(wild int8*:arr, wild int8*:val);
+extern func:aria_array_pop_simple = void(wild int8*:arr, wild int8*:out_val);
+
+// Vec<int64> constructor
+func:Vec_int64_new = Vec<int64>() {
+    Vec<int64>:vec;
+    vec.data = aria_array_new_simple(8i64, 4i32);
+    vec.length = 0i64;
+    vec.capacity = 16i64;
+    vec.element_size = 8i64;
+    vec.type_id = 4i32;
+    pass(vec);
+};
+
+// Vec<int64> push
+func:Vec_int64_push = void(wild int8->:data, int64:value) {
+    aria_array_push_simple(data, @value);
+};
+
+// Vec<int64> pop
+func:Vec_int64_pop = int64(wild int8->:data) {
+    int64:result = 0i64;
+    aria_array_pop_simple(data, @result);
+    pass(result);
+};
+
+// Vec<int64> update length
+func:Vec_int64_update_length = int64(wild int8->:data) {
+    pass(aria_array_length(data));
+};

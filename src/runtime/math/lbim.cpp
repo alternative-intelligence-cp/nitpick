@@ -383,6 +383,162 @@ extern "C" aria_int1024_t aria_lbim_smod1024(aria_int1024_t dividend, aria_int10
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Exponentiation (int128/256/512/1024)
+// Binary exponentiation (square-and-multiply). Exponent is unsigned int64.
+// Returns ERR sentinel on overflow or if base is ERR.
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace {
+
+// Unsigned multiply with overflow detection for pow.
+// Returns true if overflow occurred (result exceeds N limbs).
+template<int N>
+bool mul_overflow(uint64_t* result, const uint64_t* a, const uint64_t* b) {
+    // Use 2N-limb product buffer to detect overflow
+    uint64_t product[2 * N];
+    memset(product, 0, 2 * N * sizeof(uint64_t));
+
+    for (int i = 0; i < N; ++i) {
+        if (a[i] == 0) continue;
+        uint64_t carry = 0;
+        for (int j = 0; j < N; ++j) {
+            // product[i+j] += a[i] * b[j] + carry
+            __uint128_t wide = (__uint128_t)a[i] * b[j] + product[i + j] + carry;
+            product[i + j] = (uint64_t)wide;
+            carry = (uint64_t)(wide >> 64);
+        }
+        product[i + N] += carry;
+    }
+
+    // Check if any high limbs are set (overflow)
+    for (int i = N; i < 2 * N; ++i) {
+        if (product[i] != 0) return true;
+    }
+    // Also check sign bit for signed interpretation
+    if (product[N - 1] >> 63) return true;
+
+    memcpy(result, product, N * sizeof(uint64_t));
+    return false;
+}
+
+// Binary exponentiation: base^exp where exp is a uint64_t
+// Sets ERR sentinel on overflow.
+template<int N>
+void pow_impl(uint64_t* result, const uint64_t* base, uint64_t exp) {
+    // result = 1
+    memset(result, 0, N * sizeof(uint64_t));
+    result[0] = 1;
+
+    // Handle trivial cases
+    if (exp == 0) return;  // x^0 = 1
+
+    if (is_zero<N>(base)) {
+        memset(result, 0, N * sizeof(uint64_t));  // 0^n = 0 for n>0
+        return;
+    }
+
+    // Square-and-multiply
+    uint64_t temp_base[N];
+    memcpy(temp_base, base, N * sizeof(uint64_t));
+
+    while (exp > 0) {
+        if (exp & 1) {
+            if (mul_overflow<N>(result, result, temp_base)) {
+                set_err_sentinel<N>(result);
+                return;
+            }
+        }
+        exp >>= 1;
+        if (exp > 0) {
+            uint64_t sq[N];
+            if (mul_overflow<N>(sq, temp_base, temp_base)) {
+                // If squaring overflows and we still have bits, result will too
+                if (exp & 1) {
+                    set_err_sentinel<N>(result);
+                    return;
+                }
+                // Even if this intermediate overflows, it might not matter
+                // if remaining exp bits are 0. But conservatively ERR.
+                set_err_sentinel<N>(result);
+                return;
+            }
+            memcpy(temp_base, sq, N * sizeof(uint64_t));
+        }
+    }
+}
+
+} // anonymous namespace (pow helpers)
+
+extern "C" aria_int128_t aria_lbim_pow128(aria_int128_t base, uint64_t exp) {
+    aria_int128_t result;
+    if (is_err_sentinel<2>(base.limbs)) {
+        set_err_sentinel<2>(result.limbs);
+        return result;
+    }
+    // Handle negative base: result is negative if base is negative and exp is odd
+    bool neg = is_negative<2>(base.limbs);
+    uint64_t abs_base[2];
+    memcpy(abs_base, base.limbs, sizeof(abs_base));
+    if (neg) negate<2>(abs_base);
+    pow_impl<2>(result.limbs, abs_base, exp);
+    if (!is_err_sentinel<2>(result.limbs) && neg && (exp & 1)) {
+        negate<2>(result.limbs);
+    }
+    return result;
+}
+
+extern "C" aria_int256_t aria_lbim_pow256(aria_int256_t base, uint64_t exp) {
+    aria_int256_t result;
+    if (is_err_sentinel<4>(base.limbs)) {
+        set_err_sentinel<4>(result.limbs);
+        return result;
+    }
+    bool neg = is_negative<4>(base.limbs);
+    uint64_t abs_base[4];
+    memcpy(abs_base, base.limbs, sizeof(abs_base));
+    if (neg) negate<4>(abs_base);
+    pow_impl<4>(result.limbs, abs_base, exp);
+    if (!is_err_sentinel<4>(result.limbs) && neg && (exp & 1)) {
+        negate<4>(result.limbs);
+    }
+    return result;
+}
+
+extern "C" aria_int512_t aria_lbim_pow512(aria_int512_t base, uint64_t exp) {
+    aria_int512_t result;
+    if (is_err_sentinel<8>(base.limbs)) {
+        set_err_sentinel<8>(result.limbs);
+        return result;
+    }
+    bool neg = is_negative<8>(base.limbs);
+    uint64_t abs_base[8];
+    memcpy(abs_base, base.limbs, sizeof(abs_base));
+    if (neg) negate<8>(abs_base);
+    pow_impl<8>(result.limbs, abs_base, exp);
+    if (!is_err_sentinel<8>(result.limbs) && neg && (exp & 1)) {
+        negate<8>(result.limbs);
+    }
+    return result;
+}
+
+extern "C" aria_int1024_t aria_lbim_pow1024(aria_int1024_t base, uint64_t exp) {
+    aria_int1024_t result;
+    if (is_err_sentinel<16>(base.limbs)) {
+        set_err_sentinel<16>(result.limbs);
+        return result;
+    }
+    bool neg = is_negative<16>(base.limbs);
+    uint64_t abs_base[16];
+    memcpy(abs_base, base.limbs, sizeof(abs_base));
+    if (neg) negate<16>(abs_base);
+    pow_impl<16>(result.limbs, abs_base, exp);
+    if (!is_err_sentinel<16>(result.limbs) && neg && (exp & 1)) {
+        negate<16>(result.limbs);
+    }
+    return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Bitwise Operations (int128/256/512/1024)
 // These are sign-independent: the same function handles both the signed
 // (int*) and unsigned (uint*) variants for each width.

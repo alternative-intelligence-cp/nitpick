@@ -1330,15 +1330,27 @@ ASTNodePtr Parser::parseMemberExpression(ASTNodePtr object) {
     }
     
     // Check for Type.MEMBER static access (Type:Name pattern)
-    // If object is an identifier starting with uppercase and not pointer/safe-nav access,
+    // If object is an identifier that is a type name and not pointer/safe-nav access,
     // transform Type.MEMBER into Type_MEMBER identifier (will become call if needed)
     if (!isPointerAccess && !isSafeNav && 
         object && object->type == ASTNode::NodeType::IDENTIFIER) {
         auto identExpr = std::static_pointer_cast<IdentifierExpr>(object);
         std::string typeName = identExpr->name;
         
-        // Check if identifier starts with uppercase (Type name convention)
-        if (!typeName.empty() && std::isupper(typeName[0])) {
+        // Check if identifier is a type name:
+        // - Starts with uppercase (struct/class convention), OR
+        // - Is a primitive type keyword (tbb8, fix256, int1024, trit, etc.)
+        bool isTypeName = (!typeName.empty() && std::isupper(typeName[0]));
+        if (!isTypeName) {
+            // Check known primitive type families that support static constants
+            isTypeName = (typeName.find("tbb") == 0 || typeName.find("fix") == 0 ||
+                         typeName.find("int") == 0 || typeName.find("uint") == 0 ||
+                         typeName.find("flt") == 0 || typeName.find("frac") == 0 ||
+                         typeName == "trit" || typeName == "tryte" ||
+                         typeName == "nit" || typeName == "nyte");
+        }
+        
+        if (isTypeName) {
             // This is Type.MEMBER static access
             // Transform to Type_MEMBER identifier
             // If followed by (), it becomes Type_MEMBER(...)

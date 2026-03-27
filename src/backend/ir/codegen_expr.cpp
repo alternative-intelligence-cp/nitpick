@@ -866,17 +866,43 @@ llvm::Value* ExprCodegen::generateNumericBinaryOp(const std::string& numericType
         return nullptr;  // Unsupported operation
     }
     
-    // Build function name: <type>_<op> (e.g., frac32_add, tfp64_mul)
+    // For frac types: use sret/pointer ABI matching the C runtime
+    // Runtime: void aria_frac32_add(Frac32* result, const Frac32* a, const Frac32* b)
+    if (numericType.find("frac") == 0) {
+        std::string runtimeFunc = "aria_" + numericType + opSuffix;
+        llvm::StructType* fracType = llvm::cast<llvm::StructType>(left->getType());
+        
+        llvm::Function* c_func = module->getFunction(runtimeFunc);
+        if (!c_func) {
+            llvm::Type* ptrType = llvm::PointerType::get(fracType, 0);
+            llvm::FunctionType* funcType = llvm::FunctionType::get(
+                builder.getVoidTy(),
+                {ptrType, ptrType, ptrType},
+                false
+            );
+            c_func = llvm::Function::Create(funcType,
+                llvm::Function::ExternalLinkage, runtimeFunc, module);
+        }
+        
+        // Allocate temps and store arguments
+        llvm::Value* result_alloca = builder.CreateAlloca(fracType, nullptr, "frac_result");
+        llvm::Value* a_alloca = builder.CreateAlloca(fracType, nullptr, "frac_a");
+        llvm::Value* b_alloca = builder.CreateAlloca(fracType, nullptr, "frac_b");
+        builder.CreateStore(left, a_alloca);
+        builder.CreateStore(right, b_alloca);
+        
+        builder.CreateCall(c_func, {result_alloca, a_alloca, b_alloca});
+        return builder.CreateLoad(fracType, result_alloca, numericType + "_result");
+    }
+    
+    // For other numeric types (tfp*, vec9): by-value calling convention
     std::string funcName = numericType + opSuffix;
+    llvm::Type* returnType = left->getType();
     
-    // Get the LLVM type for this numeric type
-    llvm::Type* returnType = left->getType();  // Same type as operands
-    
-    // Get or create the runtime function
     llvm::FunctionType* funcType = llvm::FunctionType::get(
-        returnType,             // return type (same as input)
-        {returnType, returnType}, // parameters
-        false                   // not variadic
+        returnType,
+        {returnType, returnType},
+        false
     );
     
     llvm::Function* runtimeFunc = module->getFunction(funcName);
@@ -889,7 +915,6 @@ llvm::Value* ExprCodegen::generateNumericBinaryOp(const std::string& numericType
         );
     }
     
-    // Generate the call
     llvm::Value* result = builder.CreateCall(runtimeFunc, {left, right}, numericType + "_result");
     return result;
 }
@@ -6641,6 +6666,87 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return result;
     }
     
+    // ====================================================================
+    // LBIM EXPONENTIATION — int*_pow(base, exp_int64) -> int*
+    // Binary exponentiation via runtime: aria_lbim_pow{128,256,512,1024}
+    // C ABI: struct-return-by-value, struct base by-value, uint64_t exp
+    // LLVM lowering: sret + byval for large structs
+    // ====================================================================
+    
+    if (callee_ident->name == "int128_pow" || callee_ident->name == "uint128_pow" ||
+        callee_ident->name == "int256_pow" || callee_ident->name == "uint256_pow" ||
+        callee_ident->name == "int512_pow" || callee_ident->name == "uint512_pow" ||
+        callee_ident->name == "int1024_pow" || callee_ident->name == "uint1024_pow") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error(callee_ident->name + "() requires two arguments (base, exponent)");
+        }
+        
+        llvm::Value* base = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* exp_val = codegenExpressionNode(expr->arguments[1].get(), this);
+        
+        // Determine LBIM size
+        std::string funcBaseName = callee_ident->name;
+        std::string typeName = funcBaseName.substr(0, funcBaseName.find("_pow"));
+        unsigned numLimbs;
+        std::string runtimeFunc;
+        if (typeName == "int128" || typeName == "uint128") {
+            numLimbs = 2; runtimeFunc = "aria_lbim_pow128";
+        } else if (typeName == "int256" || typeName == "uint256") {
+            numLimbs = 4; runtimeFunc = "aria_lbim_pow256";
+        } else if (typeName == "int512" || typeName == "uint512") {
+            numLimbs = 8; runtimeFunc = "aria_lbim_pow512";
+        } else {
+            numLimbs = 16; runtimeFunc = "aria_lbim_pow1024";
+        }
+        
+        // Get struct type: { [N x i64] }
+        llvm::Type* i64Type = builder.getInt64Ty();
+        llvm::ArrayType* limbsArray = llvm::ArrayType::get(i64Type, numLimbs);
+        llvm::StructType* structType = llvm::StructType::get(context, {limbsArray}, false);
+        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+        
+        // Promote base to struct if it's a scalar (e.g., int1024_pow(3, 20))
+        if (!base->getType()->isStructTy()) {
+            llvm::Value* signExtended = builder.CreateSExtOrTrunc(base, i64Type);
+            llvm::Value* isNegative = builder.CreateICmpSLT(signExtended,
+                llvm::ConstantInt::get(i64Type, 0));
+            llvm::Value* fillValue = builder.CreateSelect(isNegative,
+                llvm::ConstantInt::get(i64Type, -1),
+                llvm::ConstantInt::get(i64Type, 0));
+            llvm::Value* promoted = llvm::UndefValue::get(structType);
+            for (unsigned i = 0; i < numLimbs; i++) {
+                llvm::Value* limbVal = (i == 0) ? signExtended : fillValue;
+                promoted = builder.CreateInsertValue(promoted, limbVal, {0, i});
+            }
+            base = promoted;
+        }
+        
+        // Ensure exp is i64
+        exp_val = builder.CreateZExtOrTrunc(exp_val, i64Type);
+        
+        // C ABI: void aria_lbim_pow*(result*, base*, uint64_t exp)
+        // Using sret + byval pattern matching generateLBIMDiv
+        llvm::FunctionType* funcType = llvm::FunctionType::get(
+            builder.getVoidTy(), {ptrType, ptrType, i64Type}, false);
+        
+        llvm::Function* func = module->getFunction(runtimeFunc);
+        if (!func) {
+            func = llvm::Function::Create(
+                funcType, llvm::Function::ExternalLinkage, runtimeFunc, module);
+            func->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, structType));
+            func->addParamAttr(0, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+            func->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+            func->addParamAttr(1, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+        }
+        
+        llvm::Value* resultAlloca = builder.CreateAlloca(structType, nullptr, "pow_result");
+        llvm::Value* baseAlloca = builder.CreateAlloca(structType, nullptr, "pow_base");
+        builder.CreateStore(base, baseAlloca);
+        
+        builder.CreateCall(func, {resultAlloca, baseAlloca, exp_val});
+        return builder.CreateLoad(structType, resultAlloca, typeName + "_pow_val");
+    }
+    
     // fix256_from_int(int64) -> fix256
     // ARIA-025: Create deterministic fixed-point from integer
     if (callee_ident->name == "fix256_from_int") {
@@ -6830,6 +6936,74 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return call;
     }
     
+    // ====================================================================
+    // STATIC TYPE CONSTANTS (Type.CONSTANT syntax)
+    // Parser transforms Type.MEMBER → Type_MEMBER() zero-arg call
+    // ====================================================================
+    
+    // TBB ERR sentinels
+    if (callee_ident->name == "tbb8_ERR") {
+        return llvm::ConstantInt::get(builder.getInt8Ty(), static_cast<uint8_t>(-128), true);
+    }
+    if (callee_ident->name == "tbb16_ERR") {
+        return llvm::ConstantInt::get(builder.getInt16Ty(), static_cast<uint16_t>(-32768), true);
+    }
+    if (callee_ident->name == "tbb32_ERR") {
+        return llvm::ConstantInt::get(builder.getInt32Ty(), static_cast<uint32_t>(0x80000000), true);
+    }
+    if (callee_ident->name == "tbb64_ERR") {
+        return llvm::ConstantInt::get(builder.getInt64Ty(), static_cast<uint64_t>(0x8000000000000000ULL), true);
+    }
+    
+    // Balanced type ERR sentinels
+    if (callee_ident->name == "trit_ERR") {
+        return llvm::ConstantInt::get(builder.getInt8Ty(), static_cast<uint8_t>(-128), true);
+    }
+    if (callee_ident->name == "nit_ERR") {
+        return llvm::ConstantInt::get(builder.getInt8Ty(), static_cast<uint8_t>(-128), true);
+    }
+    if (callee_ident->name == "tryte_ERR") {
+        return llvm::ConstantInt::get(builder.getInt16Ty(), 0xFFFF);
+    }
+    if (callee_ident->name == "nyte_ERR") {
+        return llvm::ConstantInt::get(builder.getInt16Ty(), 0xFFFF);
+    }
+    
+    // fix256 constants
+    if (callee_ident->name == "fix256_ERR" || callee_ident->name == "fix256_MAX" || callee_ident->name == "fix256_EPSILON") {
+        llvm::StructType* fix256Type = llvm::StructType::getTypeByName(context, "struct.fix256");
+        if (!fix256Type) {
+            llvm::Type* i64Type = builder.getInt64Ty();
+            llvm::ArrayType* limbsArray = llvm::ArrayType::get(i64Type, 4);
+            fix256Type = llvm::StructType::create(context, {limbsArray}, "struct.fix256");
+        }
+        llvm::ArrayType* limbsArray = llvm::ArrayType::get(builder.getInt64Ty(), 4);
+        
+        std::vector<llvm::Constant*> limbs(4);
+        if (callee_ident->name == "fix256_ERR") {
+            // ERR sentinel: most negative value (integer part = INT128_MIN, fraction = 0)
+            limbs[0] = llvm::ConstantInt::get(builder.getInt64Ty(), 0);
+            limbs[1] = llvm::ConstantInt::get(builder.getInt64Ty(), 0);
+            limbs[2] = llvm::ConstantInt::get(builder.getInt64Ty(), 0);
+            limbs[3] = llvm::ConstantInt::get(builder.getInt64Ty(), 0x8000000000000000ULL);
+        } else if (callee_ident->name == "fix256_MAX") {
+            // MAX: most positive value (integer part = INT128_MAX, fraction = all 1s)
+            limbs[0] = llvm::ConstantInt::get(builder.getInt64Ty(), UINT64_MAX);
+            limbs[1] = llvm::ConstantInt::get(builder.getInt64Ty(), UINT64_MAX);
+            limbs[2] = llvm::ConstantInt::get(builder.getInt64Ty(), UINT64_MAX);
+            limbs[3] = llvm::ConstantInt::get(builder.getInt64Ty(), 0x7FFFFFFFFFFFFFFFULL);
+        } else { // fix256_EPSILON
+            // EPSILON: smallest positive value (2^-128)
+            limbs[0] = llvm::ConstantInt::get(builder.getInt64Ty(), 1);
+            limbs[1] = llvm::ConstantInt::get(builder.getInt64Ty(), 0);
+            limbs[2] = llvm::ConstantInt::get(builder.getInt64Ty(), 0);
+            limbs[3] = llvm::ConstantInt::get(builder.getInt64Ty(), 0);
+        }
+        
+        llvm::Constant* limbsConst = llvm::ConstantArray::get(limbsArray, limbs);
+        return llvm::ConstantStruct::get(fix256Type, {limbsConst});
+    }
+    
     // trit_from_int(int64) -> trit
     if (callee_ident->name == "trit_from_int") {
         if (expr->arguments.size() != 1) {
@@ -6964,6 +7138,460 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         llvm::Value* result_i8 = builder.CreateCall(func, {a}, "nit_is_err_i8");
         return builder.CreateTrunc(result_i8, builder.getInt1Ty(), "nit_is_err_result");
+    }
+    
+    // ====================================================================
+    // TRIT_NOT (was removed from above, re-added here)
+    // ====================================================================
+    
+    // trit_not(trit) -> trit
+    if (callee_ident->name == "trit_not") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("trit_not() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("trit_not");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), {builder.getInt8Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "trit_not", module);
+        }
+        return builder.CreateCall(func, {a}, "trit_not_result");
+    }
+    
+    // ====================================================================
+    // NIT ARITHMETIC OPERATIONS
+    // ====================================================================
+    
+    // nit_add(nit, nit) -> nit
+    if (callee_ident->name == "nit_add") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("nit_add() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("nit_add");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt8Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nit_add", module);
+        }
+        return builder.CreateCall(func, {a, b}, "nit_add_result");
+    }
+    
+    // nit_sub(nit, nit) -> nit
+    if (callee_ident->name == "nit_sub") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("nit_sub() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("nit_sub");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt8Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nit_sub", module);
+        }
+        return builder.CreateCall(func, {a, b}, "nit_sub_result");
+    }
+    
+    // nit_mul(nit, nit) -> nit
+    if (callee_ident->name == "nit_mul") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("nit_mul() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("nit_mul");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt8Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nit_mul", module);
+        }
+        return builder.CreateCall(func, {a, b}, "nit_mul_result");
+    }
+    
+    // nit_div(nit, nit) -> nit
+    if (callee_ident->name == "nit_div") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("nit_div() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("nit_div");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt8Ty(), builder.getInt8Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nit_div", module);
+        }
+        return builder.CreateCall(func, {a, b}, "nit_div_result");
+    }
+    
+    // nit_neg(nit) -> nit
+    if (callee_ident->name == "nit_neg") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("nit_neg() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("nit_neg");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), {builder.getInt8Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nit_neg", module);
+        }
+        return builder.CreateCall(func, {a}, "nit_neg_result");
+    }
+    
+    // nit_abs(nit) -> nit
+    if (callee_ident->name == "nit_abs") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("nit_abs() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("nit_abs");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), {builder.getInt8Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nit_abs", module);
+        }
+        return builder.CreateCall(func, {a}, "nit_abs_result");
+    }
+    
+    // ====================================================================
+    // TRYTE ARITHMETIC OPERATIONS (uint16 biased representation)
+    // ====================================================================
+    
+    // tryte_add(tryte, tryte) -> tryte
+    if (callee_ident->name == "tryte_add") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("tryte_add() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("tryte_add");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt16Ty(), builder.getInt16Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "tryte_add", module);
+        }
+        return builder.CreateCall(func, {a, b}, "tryte_add_result");
+    }
+    
+    // tryte_sub(tryte, tryte) -> tryte
+    if (callee_ident->name == "tryte_sub") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("tryte_sub() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("tryte_sub");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt16Ty(), builder.getInt16Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "tryte_sub", module);
+        }
+        return builder.CreateCall(func, {a, b}, "tryte_sub_result");
+    }
+    
+    // tryte_mul(tryte, tryte) -> tryte
+    if (callee_ident->name == "tryte_mul") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("tryte_mul() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("tryte_mul");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt16Ty(), builder.getInt16Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "tryte_mul", module);
+        }
+        return builder.CreateCall(func, {a, b}, "tryte_mul_result");
+    }
+    
+    // tryte_div(tryte, tryte) -> tryte
+    if (callee_ident->name == "tryte_div") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("tryte_div() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("tryte_div");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt16Ty(), builder.getInt16Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "tryte_div", module);
+        }
+        return builder.CreateCall(func, {a, b}, "tryte_div_result");
+    }
+    
+    // tryte_mod(tryte, tryte) -> tryte
+    if (callee_ident->name == "tryte_mod") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("tryte_mod() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("tryte_mod");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt16Ty(), builder.getInt16Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "tryte_mod", module);
+        }
+        return builder.CreateCall(func, {a, b}, "tryte_mod_result");
+    }
+    
+    // tryte_neg(tryte) -> tryte
+    if (callee_ident->name == "tryte_neg") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tryte_neg() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("tryte_neg");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), {builder.getInt16Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "tryte_neg", module);
+        }
+        return builder.CreateCall(func, {a}, "tryte_neg_result");
+    }
+    
+    // tryte_abs(tryte) -> tryte
+    if (callee_ident->name == "tryte_abs") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tryte_abs() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("tryte_abs");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), {builder.getInt16Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "tryte_abs", module);
+        }
+        return builder.CreateCall(func, {a}, "tryte_abs_result");
+    }
+    
+    // tryte_is_err(tryte) -> bool
+    if (callee_ident->name == "tryte_is_err") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tryte_is_err() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("tryte_is_err");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt1Ty(), {builder.getInt16Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "tryte_is_err", module);
+        }
+        return builder.CreateCall(func, {a}, "tryte_is_err_result");
+    }
+    
+    // ====================================================================
+    // NYTE ARITHMETIC OPERATIONS (uint16 biased representation)
+    // ====================================================================
+    
+    // nyte_add(nyte, nyte) -> nyte
+    if (callee_ident->name == "nyte_add") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("nyte_add() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("nyte_add");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt16Ty(), builder.getInt16Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nyte_add", module);
+        }
+        return builder.CreateCall(func, {a, b}, "nyte_add_result");
+    }
+    
+    // nyte_sub(nyte, nyte) -> nyte
+    if (callee_ident->name == "nyte_sub") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("nyte_sub() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("nyte_sub");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt16Ty(), builder.getInt16Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nyte_sub", module);
+        }
+        return builder.CreateCall(func, {a, b}, "nyte_sub_result");
+    }
+    
+    // nyte_mul(nyte, nyte) -> nyte
+    if (callee_ident->name == "nyte_mul") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("nyte_mul() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("nyte_mul");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt16Ty(), builder.getInt16Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nyte_mul", module);
+        }
+        return builder.CreateCall(func, {a, b}, "nyte_mul_result");
+    }
+    
+    // nyte_div(nyte, nyte) -> nyte
+    if (callee_ident->name == "nyte_div") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("nyte_div() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("nyte_div");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt16Ty(), builder.getInt16Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nyte_div", module);
+        }
+        return builder.CreateCall(func, {a, b}, "nyte_div_result");
+    }
+    
+    // nyte_mod(nyte, nyte) -> nyte
+    if (callee_ident->name == "nyte_mod") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("nyte_mod() requires two arguments");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Value* b = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Function* func = module->getFunction("nyte_mod");
+        if (!func) {
+            std::vector<llvm::Type*> paramTypes = {builder.getInt16Ty(), builder.getInt16Ty()};
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), paramTypes, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nyte_mod", module);
+        }
+        return builder.CreateCall(func, {a, b}, "nyte_mod_result");
+    }
+    
+    // nyte_neg(nyte) -> nyte
+    if (callee_ident->name == "nyte_neg") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("nyte_neg() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("nyte_neg");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), {builder.getInt16Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nyte_neg", module);
+        }
+        return builder.CreateCall(func, {a}, "nyte_neg_result");
+    }
+    
+    // nyte_abs(nyte) -> nyte
+    if (callee_ident->name == "nyte_abs") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("nyte_abs() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("nyte_abs");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), {builder.getInt16Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nyte_abs", module);
+        }
+        return builder.CreateCall(func, {a}, "nyte_abs_result");
+    }
+    
+    // nyte_is_err(nyte) -> bool
+    if (callee_ident->name == "nyte_is_err") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("nyte_is_err() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("nyte_is_err");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt1Ty(), {builder.getInt16Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nyte_is_err", module);
+        }
+        return builder.CreateCall(func, {a}, "nyte_is_err_result");
+    }
+    
+    // ====================================================================
+    // TRYTE/NYTE CONVERSION OPERATIONS
+    // ====================================================================
+    
+    // tryte_from_balanced(int32) -> tryte
+    if (callee_ident->name == "tryte_from_balanced") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tryte_from_balanced() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("tryte_from_balanced");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), {builder.getInt32Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "tryte_from_balanced", module);
+        }
+        return builder.CreateCall(func, {a}, "tryte_from_balanced_result");
+    }
+    
+    // nyte_from_balanced(int32) -> nyte
+    if (callee_ident->name == "nyte_from_balanced") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("nyte_from_balanced() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("nyte_from_balanced");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), {builder.getInt32Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nyte_from_balanced", module);
+        }
+        return builder.CreateCall(func, {a}, "nyte_from_balanced_result");
+    }
+    
+    // tryte_to_balanced(tryte) -> int32
+    if (callee_ident->name == "tryte_to_balanced") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tryte_to_balanced() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("tryte_to_balanced");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt32Ty(), {builder.getInt16Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "tryte_to_balanced", module);
+        }
+        return builder.CreateCall(func, {a}, "tryte_to_balanced_result");
+    }
+    
+    // nyte_to_balanced(nyte) -> int32
+    if (callee_ident->name == "nyte_to_balanced") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("nyte_to_balanced() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("nyte_to_balanced");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt32Ty(), {builder.getInt16Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nyte_to_balanced", module);
+        }
+        return builder.CreateCall(func, {a}, "nyte_to_balanced_result");
+    }
+    
+    // tryte_to_nyte(tryte) -> nyte
+    if (callee_ident->name == "tryte_to_nyte") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("tryte_to_nyte() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("tryte_to_nyte");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), {builder.getInt16Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "tryte_to_nyte", module);
+        }
+        return builder.CreateCall(func, {a}, "tryte_to_nyte_result");
+    }
+    
+    // nyte_to_tryte(nyte) -> tryte
+    if (callee_ident->name == "nyte_to_tryte") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("nyte_to_tryte() requires one argument");
+        }
+        llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
+        llvm::Function* func = module->getFunction("nyte_to_tryte");
+        if (!func) {
+            llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt16Ty(), {builder.getInt16Ty()}, false);
+            func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "nyte_to_tryte", module);
+        }
+        return builder.CreateCall(func, {a}, "nyte_to_tryte_result");
     }
     
     // ====================================================================
