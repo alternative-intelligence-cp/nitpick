@@ -921,6 +921,13 @@ public:
      */
     void checkExternStmt(ExternStmt* stmt);
     
+    /**
+     * Recursively analyze a specialized function body for nested generic calls.
+     * When a generic function is monomorphized, its body may contain calls to
+     * other generic functions that also need specialization (transitive monomorphization).
+     */
+    void analyzeSpecializedBody(FuncDeclStmt* specDecl, const TypeSubstitution& outerSub);
+    
     // ========================================================================
     // Module Symbol Importing (Phase 3 from research_module_loading_system)
     // ========================================================================

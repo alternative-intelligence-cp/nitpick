@@ -315,6 +315,18 @@ void TypeChecker::check(ASTNode* module) {
             }
         }
 
+        // GENERIC STRUCT PRE-PASS: register generic struct templates so that
+        // concrete instantiations (e.g. complex<int64>) used in non-generic
+        // function signatures can be resolved during function pre-registration.
+        for (const auto& s2 : stmts) {
+            if (!s2 || s2->type != ASTNode::NodeType::STRUCT_DECL) continue;
+            StructDeclStmt* sd = static_cast<StructDeclStmt*>(s2.get());
+            if (!sd->genericParams.empty() &&
+                genericStructRegistry.find(sd->structName) == genericStructRegistry.end()) {
+                genericStructRegistry[sd->structName] = sd;
+            }
+        }
+
         // TYPE_DECL PRE-PASS: also pre-register Type:X = {...} struct types.
         // Type:X desugars to a struct + prefixed methods. The struct must be registered
         // before function pre-passes resolve parameter types, otherwise a fake
@@ -5772,6 +5784,13 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         // Store the mangled name in the CallExpr for IR generation
         expr->specializedMangledName = spec->mangledName;
         
+        // Transitive monomorphization: walk the specialized body to find and
+        // specialize any nested generic function calls (e.g. complex_add calls
+        // complex_is_err internally — both need to be specialized).
+        if (spec->funcDecl) {
+            analyzeSpecializedBody(spec->funcDecl, spec->substitution);
+        }
+        
         // Resolve the specialized function's return type
         // The specialized function has concrete types substituted
         if (spec->funcDecl && spec->funcDecl->returnType) {
@@ -8512,7 +8531,7 @@ void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
         // Don't create the type yet - it will be created when instantiated
         auto it = genericStructRegistry.find(stmt->structName);
         if (it != genericStructRegistry.end()) {
-            addError("Generic struct '" + stmt->structName + "' is already defined", stmt);
+            // Already pre-registered during preRegisterFunctions — skip silently
             return;
         }
         genericStructRegistry[stmt->structName] = stmt;
@@ -10233,6 +10252,136 @@ void TypeChecker::checkModStmt(ModStmt* stmt) {
     
     // External module declarations (mod name;) don't need further checking
     // The module resolver will validate they exist
+}
+
+// ============================================================================
+// Transitive Monomorphization — analyze specialized function bodies
+// ============================================================================
+
+void TypeChecker::analyzeSpecializedBody(FuncDeclStmt* specDecl, const TypeSubstitution& outerSub) {
+    if (!specDecl || !specDecl->body || !genericResolver || !monomorphizer) return;
+
+    // Recursive AST walker to find CallExpr nodes referencing generic functions
+    std::function<void(ASTNode*)> walkNode = [&](ASTNode* node) {
+        if (!node) return;
+
+        if (node->type == ASTNode::NodeType::CALL) {
+            CallExpr* call = static_cast<CallExpr*>(node);
+            if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                IdentifierExpr* id = static_cast<IdentifierExpr*>(call->callee.get());
+
+                // Check if this callee is a generic function
+                Symbol* sym = symbolTable->lookupSymbol(id->name);
+                FuncDeclStmt* calledFunc = nullptr;
+                if (sym && sym->kind == SymbolKind::FUNCTION) {
+                    calledFunc = sym->getFuncDecl();
+                }
+                if (calledFunc && !calledFunc->genericParams.empty() &&
+                    call->specializedMangledName.empty()) {
+                    // Build substitution for the nested generic call using
+                    // the outer specialization's type mapping.
+                    TypeSubstitution sub;
+                    for (const auto& gp : calledFunc->genericParams) {
+                        auto it = outerSub.find(gp.name);
+                        if (it != outerSub.end()) {
+                            sub[gp.name] = it->second;
+                        }
+                    }
+
+                    if (!sub.empty() && sub.size() == calledFunc->genericParams.size()) {
+                        Specialization* innerSpec =
+                            monomorphizer->requestSpecialization(calledFunc, sub);
+                        if (innerSpec) {
+                            call->specializedMangledName = innerSpec->mangledName;
+                            // Recurse into the newly specialized body
+                            analyzeSpecializedBody(innerSpec->funcDecl, sub);
+                        }
+                    }
+                }
+            }
+            // Walk call arguments
+            for (const auto& arg : call->arguments) {
+                walkNode(arg.get());
+            }
+            return;
+        }
+
+        // Walk children for common node types
+        switch (node->type) {
+            case ASTNode::NodeType::BLOCK: {
+                BlockStmt* block = static_cast<BlockStmt*>(node);
+                for (const auto& s : block->statements) walkNode(s.get());
+                break;
+            }
+            case ASTNode::NodeType::VAR_DECL: {
+                VarDeclStmt* vd = static_cast<VarDeclStmt*>(node);
+                if (vd->initializer) walkNode(vd->initializer.get());
+                break;
+            }
+            case ASTNode::NodeType::EXPRESSION_STMT: {
+                ExpressionStmt* es = static_cast<ExpressionStmt*>(node);
+                if (es->expression) walkNode(es->expression.get());
+                break;
+            }
+            case ASTNode::NodeType::IF: {
+                IfStmt* ifs = static_cast<IfStmt*>(node);
+                if (ifs->condition) walkNode(ifs->condition.get());
+                if (ifs->thenBranch) walkNode(ifs->thenBranch.get());
+                if (ifs->elseBranch) walkNode(ifs->elseBranch.get());
+                break;
+            }
+            case ASTNode::NodeType::WHILE: {
+                WhileStmt* ws = static_cast<WhileStmt*>(node);
+                if (ws->condition) walkNode(ws->condition.get());
+                if (ws->body) walkNode(ws->body.get());
+                break;
+            }
+            case ASTNode::NodeType::FOR: {
+                ForStmt* fs = static_cast<ForStmt*>(node);
+                if (fs->initializer) walkNode(fs->initializer.get());
+                if (fs->condition) walkNode(fs->condition.get());
+                if (fs->update) walkNode(fs->update.get());
+                if (fs->body) walkNode(fs->body.get());
+                break;
+            }
+            case ASTNode::NodeType::RETURN: {
+                ReturnStmt* rs = static_cast<ReturnStmt*>(node);
+                if (rs->value) walkNode(rs->value.get());
+                break;
+            }
+            case ASTNode::NodeType::PASS: {
+                PassStmt* ps = static_cast<PassStmt*>(node);
+                if (ps->value) walkNode(ps->value.get());
+                break;
+            }
+            case ASTNode::NodeType::FAIL: {
+                FailStmt* fs = static_cast<FailStmt*>(node);
+                if (fs->errorCode) walkNode(fs->errorCode.get());
+                break;
+            }
+            case ASTNode::NodeType::BINARY_OP: {
+                BinaryExpr* be = static_cast<BinaryExpr*>(node);
+                if (be->left) walkNode(be->left.get());
+                if (be->right) walkNode(be->right.get());
+                break;
+            }
+            case ASTNode::NodeType::UNARY_OP: {
+                UnaryExpr* ue = static_cast<UnaryExpr*>(node);
+                if (ue->operand) walkNode(ue->operand.get());
+                break;
+            }
+            case ASTNode::NodeType::ASSIGNMENT: {
+                BinaryExpr* ae = static_cast<BinaryExpr*>(node);
+                if (ae->left) walkNode(ae->left.get());
+                if (ae->right) walkNode(ae->right.get());
+                break;
+            }
+            default:
+                break;
+        }
+    };
+
+    walkNode(specDecl->body.get());
 }
 
 void TypeChecker::checkExternStmt(ExternStmt* stmt) {

@@ -1,0 +1,38 @@
+// P1-5: Dimensional Analysis - Basic Test
+// Tests fix256 arithmetic that models physics-style calculations
+// Future: fix256<Joules>, fix256<Meters>, etc. with compiler-enforced units
+
+func:failsafe = NIL(int32:err_code) {};
+
+func:main = int32() {
+    // Model: Energy / Distance = Force (100 J / 10 m = 10 N)
+    // Using unadorned fix256 until dimensional type syntax is implemented
+    fix256:energy = fix256_from_int(100);
+    fix256:distance = fix256_from_int(10);
+    fix256:force = energy / distance;
+
+    int64:force_val = fix256_to_int(force);
+    if (force_val != 10) {
+        pass(1);
+    }
+
+    // Model: Force * Distance = Work (10 N * 5 m = 50 J)
+    fix256:dist2 = fix256_from_int(5);
+    fix256:work = force * dist2;
+
+    int64:work_val = fix256_to_int(work);
+    if (work_val != 50) {
+        pass(2);
+    }
+
+    // Model: Scalar multiplication preserves units (50 J * 2 = 100 J)
+    fix256:two = fix256_from_int(2);
+    fix256:doubled = work * two;
+
+    int64:doubled_val = fix256_to_int(doubled);
+    if (doubled_val != 100) {
+        pass(3);
+    }
+
+    pass(0);
+};
