@@ -210,7 +210,7 @@ static std::string findSimilarType(const std::string& typeName) {
         // Floating point
         "flt32", "flt64", "flt128", "flt256",
         // Other primitives
-        "bool", "string", "void", "NIL", "obj", "dyn",
+        "bool", "string", "void", "NIL", "obj", "dyn", "any",
         // Collections
         "array", "map", "Result", "option",
         // Vector types
@@ -257,7 +257,7 @@ static bool isTypeKeyword(const std::string& name) {
         // Floating point
         "flt32", "flt64", "flt128", "flt256",
         // Other primitives
-        "bool", "string", "void", "NIL", "obj", "dyn",
+        "bool", "string", "void", "NIL", "obj", "dyn", "any",
         // Collections
         "array", "map", "Result", "option"
     };
@@ -2016,6 +2016,101 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                         }
                         else {
                             addError("Unknown atomic method: " + method, expr);
+                            return typeSystem->getErrorType();
+                        }
+                    }
+
+                    // ====================================================================
+                    // SPECIAL HANDLING: any type methods (get, set, resolve)
+                    // ====================================================================
+                    // any:x = ...; x.get::<int64>() -> int64
+                    // any:x = ...; x.set::<int64>(42) -> void
+                    // any:x = ...; x.resolve::<int64>() -> int64-> (consuming)
+                    if (varSymbol->type->getKind() == TypeKind::ANY) {
+                        std::string method = memberExpr->member;
+                        AnyType* anyType = static_cast<AnyType*>(varSymbol->type);
+
+                        if (method == "get") {
+                            // get::<T>() — Read value as T (runtime checked)
+                            if (expr->explicitTypeArgs.empty()) {
+                                addError("any.get() requires a type argument: use .get::<T>()\n"
+                                         "  Example: myAny.get::<int64>()", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            if (expr->arguments.size() != 0) {
+                                addError("any.get::<T>() takes no arguments", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            std::string targetName = expr->explicitTypeArgs[0];
+                            Type* targetType = typeSystem->getPrimitiveType(targetName);
+                            if (!targetType) {
+                                // Try struct lookup
+                                targetType = typeSystem->getStructType(targetName);
+                            }
+                            if (!targetType) {
+                                addError("Unknown type '" + targetName + "' in any.get::<" + targetName + ">()", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            return targetType;
+                        }
+                        else if (method == "set") {
+                            // set::<T>(val) — Write T value (runtime checked)
+                            if (expr->explicitTypeArgs.empty()) {
+                                addError("any.set() requires a type argument: use .set::<T>(value)\n"
+                                         "  Example: myAny.set::<int64>(42)", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            if (expr->arguments.size() != 1) {
+                                addError("any.set::<T>(value) requires exactly one argument", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            std::string targetName = expr->explicitTypeArgs[0];
+                            Type* targetType = typeSystem->getPrimitiveType(targetName);
+                            if (!targetType) {
+                                targetType = typeSystem->getStructType(targetName);
+                            }
+                            if (!targetType) {
+                                addError("Unknown type '" + targetName + "' in any.set::<" + targetName + ">()", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            // Type check the argument against the target type
+                            Type* argType = inferType(expr->arguments[0].get());
+                            if (argType->getKind() == TypeKind::ERROR) {
+                                return typeSystem->getErrorType();
+                            }
+                            if (!argType->isAssignableTo(targetType) && !canCoerce(argType, targetType)) {
+                                addError("any.set::<" + targetName + ">() argument type '" + argType->toString() +
+                                         "' is not compatible with '" + targetName + "'", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            return typeSystem->getPrimitiveType("void");
+                        }
+                        else if (method == "resolve") {
+                            // resolve::<T>() — Consuming transform: any -> T-> (fat pointer)
+                            if (expr->explicitTypeArgs.empty()) {
+                                addError("any.resolve() requires a type argument: use .resolve::<T>()\n"
+                                         "  Example: myAny.resolve::<int64>()", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            if (expr->arguments.size() != 0) {
+                                addError("any.resolve::<T>() takes no arguments", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            std::string targetName = expr->explicitTypeArgs[0];
+                            Type* targetType = typeSystem->getPrimitiveType(targetName);
+                            if (!targetType) {
+                                targetType = typeSystem->getStructType(targetName);
+                            }
+                            if (!targetType) {
+                                addError("Unknown type '" + targetName + "' in any.resolve::<" + targetName + ">()", expr);
+                                return typeSystem->getErrorType();
+                            }
+                            // resolve returns a fat pointer (T->) to the underlying data
+                            return typeSystem->getPointerType(targetType, /*isMutable=*/false, /*isWild=*/anyType->isWildAny());
+                        }
+                        else {
+                            addError("Unknown method '" + method + "' on any type.\n"
+                                     "  Available methods: .get::<T>(), .set::<T>(value), .resolve::<T>()", expr);
                             return typeSystem->getErrorType();
                         }
                     }
@@ -4751,6 +4846,32 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("fix256");
         }
         
+        // LBIM ERR sentinels (for overflow/error detection in multi-limb arithmetic)
+        if (idExpr->name == "int256_ERR") {
+            if (expr->arguments.size() != 0) { addError("int256.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("int256");
+        }
+        if (idExpr->name == "int512_ERR") {
+            if (expr->arguments.size() != 0) { addError("int512.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("int512");
+        }
+        if (idExpr->name == "int1024_ERR") {
+            if (expr->arguments.size() != 0) { addError("int1024.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("int1024");
+        }
+        if (idExpr->name == "uint256_ERR") {
+            if (expr->arguments.size() != 0) { addError("uint256.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("uint256");
+        }
+        if (idExpr->name == "uint512_ERR") {
+            if (expr->arguments.size() != 0) { addError("uint512.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("uint512");
+        }
+        if (idExpr->name == "uint1024_ERR") {
+            if (expr->arguments.size() != 0) { addError("uint1024.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("uint1024");
+        }
+        
         // fix256_from_int(int64) -> fix256
         if (idExpr->name == "fix256_from_int") {
             if (expr->arguments.size() != 1) {
@@ -6953,6 +7074,13 @@ bool TypeChecker::canCoerce(Type* from, Type* to) {
         return true;
     }
     
+    // any type accepts assignment from any other type (type erasure)
+    // This is the entry point for type-erased storage.
+    // Getting the value back out requires resolve<T>() or get<T>().
+    if (to->getKind() == TypeKind::ANY) {
+        return true;
+    }
+    
     // Only handle primitive type coercion for now
     PrimitiveType* fromPrim = dynamic_cast<PrimitiveType*>(from);
     PrimitiveType* toPrim = dynamic_cast<PrimitiveType*>(to);
@@ -7343,6 +7471,11 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             Type* type = typeSystem->getStructType(simpleType->typeName);
             if (type) {
                 return type;
+            }
+            
+            // any type — type-erased pointer (safe void* replacement)
+            if (simpleType->typeName == "any") {
+                return typeSystem->getAnyType();
             }
             
             // Try primitive type

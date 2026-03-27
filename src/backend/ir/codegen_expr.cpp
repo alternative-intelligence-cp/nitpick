@@ -3686,6 +3686,87 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 }
             }
 
+            // ====================================================================
+            // ANY TYPE METHOD DISPATCH
+            // ====================================================================
+            // Handle any type method calls:
+            //   box.get::<int64>() → aria_any_get(any_ptr, type_id, sizeof_T)
+            //   box.set::<int64>(val) → aria_any_set(any_ptr, &val, type_id, sizeof_T)
+            //   box.resolve::<int64>() → aria_any_resolve(any_ptr, type_id, sizeof_T) → T*
+            if (type_name == "any" || type_name == "wild any" || type_name == "wildx any") {
+                std::string method_name = member_access->member;
+                llvm::Value* any_ptr = var_value;
+
+                // Load the any struct {ptr, i64} from the alloca
+                llvm::Type* any_struct_type = llvm::StructType::get(context, {
+                    llvm::PointerType::get(context, 0),  // data pointer
+                    builder.getInt64Ty()                  // size
+                });
+
+                if (method_name == "get") {
+                    // any.get::<T>() — Extract the data pointer and bitcast/load as T
+                    if (expr->explicitTypeArgs.empty()) {
+                        throw std::runtime_error("any.get() requires a type argument via turbofish: .get::<T>()");
+                    }
+                    std::string target_type_name = expr->explicitTypeArgs[0];
+
+                    // Determine target LLVM type
+                    llvm::Type* target_llvm_type = nullptr;
+                    if (target_type_name == "int8") target_llvm_type = builder.getInt8Ty();
+                    else if (target_type_name == "int16") target_llvm_type = builder.getInt16Ty();
+                    else if (target_type_name == "int32") target_llvm_type = builder.getInt32Ty();
+                    else if (target_type_name == "int64") target_llvm_type = builder.getInt64Ty();
+                    else if (target_type_name == "bool") target_llvm_type = builder.getInt1Ty();
+                    else if (target_type_name == "flt32") target_llvm_type = builder.getFloatTy();
+                    else if (target_type_name == "flt64") target_llvm_type = builder.getDoubleTy();
+                    else target_llvm_type = llvm::PointerType::get(context, 0);  // Structs/pointers
+
+                    // Load the any struct from the alloca
+                    llvm::Value* any_val = builder.CreateLoad(any_struct_type, any_ptr, "any_load");
+                    // Extract the data pointer (field 0)
+                    llvm::Value* data_ptr = builder.CreateExtractValue(any_val, 0, "any_data");
+                    // Load the value through the data pointer as target type
+                    return builder.CreateLoad(target_llvm_type, data_ptr, "any_get");
+                }
+                else if (method_name == "set") {
+                    // any.set::<T>(value) — Store value through the data pointer
+                    if (expr->explicitTypeArgs.empty()) {
+                        throw std::runtime_error("any.set() requires a type argument via turbofish: .set::<T>(val)");
+                    }
+                    if (expr->arguments.size() != 1) {
+                        throw std::runtime_error("any.set::<T>() requires exactly one argument");
+                    }
+
+                    // Generate the value to store
+                    llvm::Value* store_val = codegenExpressionNode(expr->arguments[0].get(), this);
+
+                    // Load the any struct from the alloca
+                    llvm::Value* any_val = builder.CreateLoad(any_struct_type, any_ptr, "any_load");
+                    // Extract the data pointer (field 0)
+                    llvm::Value* data_ptr = builder.CreateExtractValue(any_val, 0, "any_data");
+                    // Store the value through the data pointer
+                    builder.CreateStore(store_val, data_ptr);
+                    // Return void-like (store has no meaningful return)
+                    return llvm::ConstantInt::get(builder.getInt32Ty(), 0);
+                }
+                else if (method_name == "resolve") {
+                    // any.resolve::<T>() — Extract the data pointer (consuming)
+                    // Returns T-> (a fat pointer to the underlying data)
+                    if (expr->explicitTypeArgs.empty()) {
+                        throw std::runtime_error("any.resolve() requires a type argument via turbofish: .resolve::<T>()");
+                    }
+
+                    // Load the any struct from the alloca
+                    llvm::Value* any_val = builder.CreateLoad(any_struct_type, any_ptr, "any_load");
+                    // Extract the data pointer (field 0) — this IS the resolved pointer
+                    llvm::Value* data_ptr = builder.CreateExtractValue(any_val, 0, "any_resolve");
+                    return data_ptr;
+                }
+                else {
+                    throw std::runtime_error("Unknown method '" + method_name + "' on any type. Use .get::<T>(), .set::<T>(val), or .resolve::<T>()");
+                }
+            }
+
             mangled_func_name = type_name + "_" + member_access->member;
 
             // Inject the object as the first argument (UFCS transformation)

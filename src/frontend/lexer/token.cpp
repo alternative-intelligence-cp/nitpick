@@ -250,6 +250,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_STRING: return "STRING";
         case TokenType::TOKEN_KW_DYN: return "DYN";
         case TokenType::TOKEN_KW_OBJ: return "OBJ";
+        case TokenType::TOKEN_KW_ANY: return "ANY";
         case TokenType::TOKEN_KW_RESULT: return "RESULT";
         case TokenType::TOKEN_KW_ARRAY: return "ARRAY";
         

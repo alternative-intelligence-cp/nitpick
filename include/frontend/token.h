@@ -169,6 +169,7 @@ enum class TokenType {
     TOKEN_KW_STRING,    // string - string type
     TOKEN_KW_DYN,       // dyn - dynamic type
     TOKEN_KW_OBJ,       // obj - object type
+    TOKEN_KW_ANY,       // any - type-erased pointer (safe void*)
     TOKEN_KW_RESULT,    // result - result type with {err, val}
     TOKEN_KW_ARRAY,     // array - array type marker
     

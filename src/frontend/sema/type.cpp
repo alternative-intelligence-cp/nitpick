@@ -699,6 +699,30 @@ std::string SimdType::toString() const {
 }
 
 // ============================================================================
+// AnyType Implementation
+// ============================================================================
+
+bool AnyType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::ANY) return false;
+    auto* otherAny = static_cast<const AnyType*>(other);
+    return isWild == otherAny->isWild && isWildx == otherAny->isWildx;
+}
+
+bool AnyType::isAssignableTo(const Type* target) const {
+    if (!target) return false;
+    // any can be assigned to any
+    if (target->getKind() == TypeKind::ANY) return true;
+    // any cannot be implicitly assigned to concrete types — must use resolve()
+    return false;
+}
+
+std::string AnyType::toString() const {
+    if (isWildx) return "wildx any";
+    if (isWild) return "wild any";
+    return "any";
+}
+
+// ============================================================================
 // UnknownType Implementation
 // ============================================================================
 
@@ -1005,6 +1029,13 @@ SimdType* TypeSystem::getSimdType(Type* elementType, size_t laneCount) {
     // Validate lane count is power of 2 (future work)
     auto type = std::make_unique<SimdType>(elementType, laneCount);
     SimdType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+AnyType* TypeSystem::getAnyType(bool isWild, bool isWildx) {
+    auto type = std::make_unique<AnyType>(isWild, isWildx);
+    AnyType* ptr = type.get();
     types.push_back(std::move(type));
     return ptr;
 }

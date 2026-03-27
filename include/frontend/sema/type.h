@@ -35,6 +35,7 @@ enum class TypeKind {
     DIMENSIONAL,    // T<Dimension> for dimensional analysis (P1-5)
     HANDLE,         // Handle<T> for generational memory handles (P1-3)
     SIMD,           // simd<T, N> for SIMD vectorization (P1-2)
+    ANY,            // any - type-erased pointer (safe void* replacement)
     UNKNOWN,        // Type not yet inferred
     ERROR,          // Type error occurred
 };
@@ -66,6 +67,7 @@ public:
     virtual bool isGeneric() const { return kind == TypeKind::GENERIC; }
     virtual bool isOptional() const { return kind == TypeKind::OPTIONAL; }
     virtual bool isHandle() const { return kind == TypeKind::HANDLE; }
+    virtual bool isAny() const { return kind == TypeKind::ANY; }
     
     // Must-use checking (Phase 2.1 - research_011)
     virtual bool isNodiscard() const { return nodiscard; }
@@ -535,6 +537,33 @@ public:
 };
 
 // ============================================================================
+// AnyType - Type-erased pointer (safe void* replacement)
+// ============================================================================
+// any is a first-class type-erased pointer type. It holds an opaque pointer
+// to data of unknown type, with runtime-checked get/set and consuming resolve.
+// - get<T>(): Read as T (runtime checked)
+// - set<T>(val): Write T value (runtime checked)
+// - resolve<T>(): Permanently transforms any into T-> (consuming/move)
+// - wild any: Opts out of runtime checks (FFI/JIT interop)
+
+class AnyType : public Type {
+private:
+    bool isWild;     // True for wild any (no runtime checks)
+    bool isWildx;    // True for wildx any (executable memory)
+
+public:
+    explicit AnyType(bool isWild = false, bool isWildx = false)
+        : Type(TypeKind::ANY), isWild(isWild), isWildx(isWildx) {}
+
+    bool isWildAny() const { return isWild; }
+    bool isWildxAny() const { return isWildx; }
+
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
 // UnknownType - Used during type inference
 // ============================================================================
 
@@ -601,6 +630,7 @@ public:
     FutureType* getFutureType(Type* outputType);
     HandleType* getHandleType(Type* pointeeType);  // P1-3: Generational handles
     SimdType* getSimdType(Type* elementType, size_t laneCount);  // P1-2: SIMD vectorization
+    AnyType* getAnyType(bool isWild = false, bool isWildx = false);  // Type-erased pointer
     
     // Type extraction helpers
     // Phase 4.5.3: Extract T from future<T> for await expressions
