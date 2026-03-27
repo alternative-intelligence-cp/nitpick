@@ -1845,8 +1845,9 @@ ASTNodePtr Parser::parseStatement() {
         return parseImplDecl();
     }
 
-    // Check for qualifiers (wild, const, fixed, stack, gc) followed by type
+    // Check for qualifiers (wild, wildx, const, fixed, stack, gc) followed by type
     if (peek().type == TokenType::TOKEN_KW_WILD ||
+        peek().type == TokenType::TOKEN_KW_WILDX ||
         peek().type == TokenType::TOKEN_KW_CONST ||
         peek().type == TokenType::TOKEN_KW_FIXED ||
         peek().type == TokenType::TOKEN_KW_STACK ||
@@ -2347,6 +2348,7 @@ ASTNodePtr Parser::parseVarDecl() {
     uint64_t alignment = parseAlignmentAttribute();
     
     bool isWild = false;
+    bool isWildx = false;
     bool isConst = false;
     bool isFixed = false;
     bool isStack = false;
@@ -2354,12 +2356,16 @@ ASTNodePtr Parser::parseVarDecl() {
     
     // Handle qualifiers
     while (peek().type == TokenType::TOKEN_KW_WILD ||
+           peek().type == TokenType::TOKEN_KW_WILDX ||
            peek().type == TokenType::TOKEN_KW_CONST ||
            peek().type == TokenType::TOKEN_KW_FIXED ||
            peek().type == TokenType::TOKEN_KW_STACK ||
            peek().type == TokenType::TOKEN_KW_GC) {
         if (match(TokenType::TOKEN_KW_WILD)) {
             isWild = true;
+        } else if (match(TokenType::TOKEN_KW_WILDX)) {
+            isWildx = true;
+            isWild = true;  // wildx implies wild
         } else if (match(TokenType::TOKEN_KW_CONST)) {
             isConst = true;
         } else if (match(TokenType::TOKEN_KW_FIXED)) {
@@ -2431,6 +2437,7 @@ ASTNodePtr Parser::parseVarDecl() {
     );
     
     varDecl->isWild = isWild;
+    varDecl->isWildx = isWildx;
     varDecl->isConst = isConst;
     varDecl->isFixed = isFixed;
     varDecl->isStack = isStack;
@@ -2463,10 +2470,11 @@ ASTNodePtr Parser::parseFuncDecl() {
     // Consume equal sign
     consume(TokenType::TOKEN_EQUAL, "Expected '=' after function name");
 
-    // Parse optional return type qualifiers (wild, const) for extern functions
-    bool returnIsWild = false, returnIsConst = false;
-    while (peek().type == TokenType::TOKEN_KW_WILD || peek().type == TokenType::TOKEN_KW_CONST) {
+    // Parse optional return type qualifiers (wild, wildx, const) for extern functions
+    bool returnIsWild = false, returnIsWildx = false, returnIsConst = false;
+    while (peek().type == TokenType::TOKEN_KW_WILD || peek().type == TokenType::TOKEN_KW_WILDX || peek().type == TokenType::TOKEN_KW_CONST) {
         if (match(TokenType::TOKEN_KW_WILD)) returnIsWild = true;
+        else if (match(TokenType::TOKEN_KW_WILDX)) { returnIsWildx = true; returnIsWild = true; }
         else if (match(TokenType::TOKEN_KW_CONST)) returnIsConst = true;
     }
 
@@ -2483,18 +2491,23 @@ ASTNodePtr Parser::parseFuncDecl() {
     std::vector<ASTNodePtr> parameters;
     if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
         do {
-            // Handle parameter qualifiers (wild, const, stack, gc)
+            // Handle parameter qualifiers (wild, wildx, const, stack, gc)
             bool isWild = false;
+            bool isWildx = false;
             bool isConst = false;
             bool isStack = false;
             bool isGC = false;
             
             while (peek().type == TokenType::TOKEN_KW_WILD ||
+                   peek().type == TokenType::TOKEN_KW_WILDX ||
                    peek().type == TokenType::TOKEN_KW_CONST ||
                    peek().type == TokenType::TOKEN_KW_STACK ||
                    peek().type == TokenType::TOKEN_KW_GC) {
                 if (match(TokenType::TOKEN_KW_WILD)) {
                     isWild = true;
+                } else if (match(TokenType::TOKEN_KW_WILDX)) {
+                    isWildx = true;
+                    isWild = true;  // wildx implies wild
                 } else if (match(TokenType::TOKEN_KW_CONST)) {
                     isConst = true;
                 } else if (match(TokenType::TOKEN_KW_STACK)) {
@@ -2525,6 +2538,7 @@ ASTNodePtr Parser::parseFuncDecl() {
             
             // Set wild qualifier flag for FFI
             param->isWild = isWild;
+            param->isWildx = isWildx;
             
             parameters.push_back(param);
             
@@ -2593,6 +2607,7 @@ ASTNodePtr Parser::parseFuncDecl() {
     
     // Set wild qualifier flag for FFI return type
     funcDecl->returnIsWild = returnIsWild;
+    funcDecl->returnIsWildx = returnIsWildx;
     
     // Set generic parameters if present
     funcDecl->genericParams = genericParams;
@@ -3632,9 +3647,10 @@ ASTNodePtr Parser::parseExternStatement() {
             // Parse fields
             std::vector<ASTNodePtr> fields;
             while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
-                // Parse qualifiers (wild, const, etc.)
+                // Parse qualifiers (wild, wildx, const, etc.)
                 std::vector<std::string> qualifiers;
                 while (peek().type == TokenType::TOKEN_KW_WILD ||
+                       peek().type == TokenType::TOKEN_KW_WILDX ||
                        peek().type == TokenType::TOKEN_KW_CONST) {
                     qualifiers.push_back(advance().lexeme);
                 }
@@ -3670,6 +3686,7 @@ ASTNodePtr Parser::parseExternStatement() {
                 // Apply qualifiers
                 for (const auto& qual : qualifiers) {
                     if (qual == "wild") fieldDecl->isWild = true;
+                    else if (qual == "wildx") { fieldDecl->isWildx = true; fieldDecl->isWild = true; }
                     else if (qual == "const") fieldDecl->isConst = true;
                 }
 
@@ -3727,8 +3744,9 @@ ASTNodePtr Parser::parseExternStatement() {
             std::vector<ASTNodePtr> parameters;
             if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
                 do {
-                    // Parse parameter qualifiers (wild, const, etc.)
+                    // Parse parameter qualifiers (wild, wildx, const, etc.)
                     while (peek().type == TokenType::TOKEN_KW_WILD ||
+                           peek().type == TokenType::TOKEN_KW_WILDX ||
                            peek().type == TokenType::TOKEN_KW_CONST ||
                            peek().type == TokenType::TOKEN_KW_STACK ||
                            peek().type == TokenType::TOKEN_KW_GC) {
@@ -3792,6 +3810,7 @@ ASTNodePtr Parser::parseExternStatement() {
         }
         // Check for variable declaration: [qualifier] type:name;
         else if (peek().type == TokenType::TOKEN_KW_WILD ||
+                 peek().type == TokenType::TOKEN_KW_WILDX ||
                  peek().type == TokenType::TOKEN_KW_CONST ||
                  peek().type == TokenType::TOKEN_KW_STACK ||
                  peek().type == TokenType::TOKEN_KW_GC ||
@@ -3800,6 +3819,7 @@ ASTNodePtr Parser::parseExternStatement() {
             // Parse qualifiers
             std::vector<std::string> qualifiers;
             while (peek().type == TokenType::TOKEN_KW_WILD ||
+                   peek().type == TokenType::TOKEN_KW_WILDX ||
                    peek().type == TokenType::TOKEN_KW_CONST ||
                    peek().type == TokenType::TOKEN_KW_STACK ||
                    peek().type == TokenType::TOKEN_KW_GC) {
@@ -3834,6 +3854,7 @@ ASTNodePtr Parser::parseExternStatement() {
             // Apply qualifiers
             for (const auto& qual : qualifiers) {
                 if (qual == "wild") varDecl->isWild = true;
+                else if (qual == "wildx") { varDecl->isWildx = true; varDecl->isWild = true; }
                 else if (qual == "const") varDecl->isConst = true;
                 else if (qual == "stack") varDecl->isStack = true;
                 else if (qual == "gc") varDecl->isGC = true;
