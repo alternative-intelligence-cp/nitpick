@@ -2057,27 +2057,35 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
     
     size_t generated = 0;
     
+    // =========================================================================
+    // PASS 1: Forward-declare all specialized functions
+    // This ensures any specialized function can reference any other specialized
+    // function (transitive monomorphization), regardless of ordering.
+    // =========================================================================
+    struct SpecFuncInfo {
+        llvm::Function* func;
+        llvm::StructType* resultType;
+        llvm::Type* innerType;
+        const sema::Specialization* spec;
+    };
+    std::vector<SpecFuncInfo> specFuncs;
+    
     for (const auto* spec : specializations) {
         if (!spec || !spec->funcDecl) {
             continue;
         }
         
-        // Generate function signature
         FuncDeclStmt* funcDecl = spec->funcDecl;
-        
-        // P1-4: Track current function declaration for contract checking
-        current_func_decl = funcDecl;
         
         // Determine inner value type using proper type mapping
         std::string innerTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
         llvm::Type* innerType = mapTypeFromName(innerTypeStr);
         
         // Aria functions return Result<T> = {T value, error* err, i1 is_error}
-        // Build the Result struct type
         std::vector<llvm::Type*> resultFields = {
-            innerType,                                  // Field 0: value (T)
-            llvm::PointerType::get(context, 0),        // Field 1: error* (generic ptr)
-            llvm::Type::getInt8Ty(context)             // Field 2: is_error (i8)
+            innerType,
+            llvm::PointerType::get(context, 0),
+            llvm::Type::getInt8Ty(context)
         };
         llvm::StructType* resultType = llvm::StructType::get(context, resultFields);
         
@@ -2086,7 +2094,6 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
         for (const auto& param : funcDecl->parameters) {
             ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
             if (pnode->typeNode && pnode->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
-                // Function pointer params are fat pointers: {ptr, ptr} (method_ptr, env_ptr)
                 llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
                 paramTypes.push_back(llvm::StructType::get(context, {ptrTy, ptrTy}));
             } else {
@@ -2095,20 +2102,33 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
             }
         }
         
-        // Create function type with Result<T> return
         llvm::FunctionType* funcType = llvm::FunctionType::get(
-            resultType,  // Return Result<T> not raw T
-            paramTypes,
-            false  // not vararg
-        );
+            resultType, paramTypes, false);
         
-        // Create function with mangled name
+        // Forward-declare the function (no body yet)
         llvm::Function* func = llvm::Function::Create(
             funcType,
             llvm::Function::ExternalLinkage,
             spec->mangledName,
             module.get()
         );
+        
+        specFuncs.push_back({func, resultType, innerType, spec});
+    }
+    
+    // =========================================================================
+    // PASS 2: Generate function bodies
+    // All specialized functions are now declared, so cross-references resolve.
+    // =========================================================================
+    for (auto& info : specFuncs) {
+        const auto* spec = info.spec;
+        FuncDeclStmt* funcDecl = spec->funcDecl;
+        llvm::Function* func = info.func;
+        llvm::StructType* resultType = info.resultType;
+        llvm::Type* innerType = info.innerType;
+        
+        // P1-4: Track current function declaration for contract checking
+        current_func_decl = funcDecl;
         
         // Create entry basic block
         llvm::BasicBlock* entryBB = llvm::BasicBlock::Create(
