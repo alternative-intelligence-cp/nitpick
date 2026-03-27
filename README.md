@@ -45,7 +45,7 @@ Aria programs now compile to WebAssembly via `ariac --emit-wasm`. WASI-compatibl
 | Specialist model | ✅ V6 | Qwen 7B LoRA, v6 corpus covering v0.2.3 additions |
 | Debian package | ✅ Built | `aria_0.2.2-1_amd64.deb` (17 MB), tested on Mint 22.3 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 74 packages (39 utility/GUI + 4 database + 7 server + 8 AI/ML + 16 more), all passing |
+| `aria_packages` | ✅ Active | 80 packages (39 utility/GUI + 4 database + 7 server + 8 AI/ML + more), all passing |
 
 ---
 
