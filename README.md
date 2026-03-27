@@ -22,7 +22,7 @@ Aria programs now compile to WebAssembly via `ariac --emit-wasm`. WASI-compatibl
 - **v0.2.11** — Threading & concurrency (thread pools, atomics, channels, lock-free data structures), OS components (arena/pool/slab allocators, IPC, signals), AI-native filesystem (FUSE)
 - **v0.2.10** — AI/ML stack: Transformer, Mamba, Jamba, Looping models, CUDA bindings, tensor library, UACP protocol
 - **v0.2.9** — HTTP server framework with Express-style routing and 6 middleware packages
-- **74 ecosystem packages**, all passing — utility, graphics/game, server, database, AI/ML tiers
+- **80 ecosystem packages**, all passing — utility, graphics/game, server, database, AI/ML tiers
 - **862 tests** across 39 test categories
 - **50 stdlib modules** (12.5K lines)
 
@@ -90,80 +90,88 @@ All packages live in the separate [`aria-packages`](https://github.com/alternati
 
 | # | Package | Description |
 |---|---------|-------------|
-| 1 | `aria-math` | Trig, exp, log, rounding via C libm |
-| 2 | `aria-rand` | xorshift64 pseudo-random number generator |
-| 3 | `aria-color` | RGBA packing/unpacking and pixel transforms |
-| 4 | `aria-vec` | 2D/3D float64 vector math (dot, cross, length) |
-| 5 | `aria-buf` | Byte/word packing for uint64 buffers (little-endian) |
-| 6 | `aria-clamp` | min, max, clamp, abs, sign for int64/uint64 |
-| 7 | `aria-bits` | Bit test/set/clear/flip, nibble extraction, byte popcount |
-| 8 | `aria-ascii` | ASCII character classification and conversion |
-| 9 | `aria-fixed` | Q32.32 fixed-point arithmetic on uint64 |
-| 10 | `aria-freq` | Frequency/period/baud integer arithmetic |
-| 11 | `aria-mux` | Bit-select, field insert/extract, mask ops, blend |
-| 12 | `aria-conv` | Saturating narrowing and float/int conversion |
-| 13 | `aria-hash` | FNV-1a and djb2 string hashing |
-| 14 | `aria-endian` | Big/little-endian byte-swap for 16/32/64-bit values |
-| 15 | `aria-uuid` | UUID v4 generation and formatting |
-| 16 | `aria-zigzag` | Zigzag encode/decode for signed integer interleaving |
-| 17 | `aria-display` | ANSI/termios terminal rendering (virtual console display) |
-| 18 | `aria-input` | Raw keyboard input with SNES-style button mapping |
-| 19 | `aria-audio` | Software synthesis, MIDI note table, 4 channels (ALSA backend) |
-| 20 | `aria-console` | 16-bit memory-mapped address space + 60fps frame scheduler |
-| 21 | `aria-str` | String utilities (pad, trim, repeat, contains, split) |
-| 22 | `aria-json` | Lightweight JSON encoding for basic types |
-| 23 | `aria-args` | CLI argument parser (flags, key-value, positional) |
-| 24 | `aria-decision-t` | Decision tree classifier (entropy, information gain) |
-| 25 | `aria-entangled` | Quantum-inspired entangled variable pairs |
-| 26 | `aria-resource-mem` | RAII-style resource lifecycle management |
-| 27 | `aria-gradient-field` | 3D gradient field computation for continuous optimization |
-| 28 | `aria-raylib` | raylib v6.0 bindings: window, drawing, shapes, text, input, audio, **gamepad**, **gen_beep** |
-| 29 | `aria-sdl2` | SDL2 multimedia bindings: window, renderer, drawing, events |
-| 30 | `aria-gtk4` | GTK4 desktop GUI: widget registry, events, non-blocking UI |
-| 31 | `aria-test` | Test framework with assertion helpers |
-| 32 | `aria-csv` | CSV parsing and generation |
-| 33 | `aria-log` | Structured logging with severity levels |
-| 34 | `aria-base64` | Base64 encoding and decoding |
-| 35 | `aria-datetime` | Date/time formatting and arithmetic |
-| 36 | `aria-regex` | Regular expression matching |
-| 37 | `aria-fs` | File system utilities (stat, mkdir, readdir, copy) |
-| 38 | `aria-socket` | Socket abstraction layer |
-| 39 | `aria-http` | HTTP client (GET/POST requests) |
-| 40 | `aria-sqlite` | SQLite3 embedded database client (parameterized queries, transactions) |
-| 41 | `aria-postgres` | PostgreSQL client via libpq (parameterized, LISTEN/NOTIFY) |
-| 42 | `aria-mysql` | MySQL/MariaDB client via libmysqlclient (parameterized, transactions) |
-| 43 | `aria-redis` | Redis client via hiredis (strings, lists, hashes, sets) |
-| 44 | `aria-gml` | GML compatibility layer: 40+ GML-style functions mapped to raylib, xorshift32 RNG |
-| 45 | `aria-opengl` | OpenGL 3.3 Core via GLAD + SDL2: shaders, VAO/VBO/EBO, textures, uniforms |
-| 46 | `aria-tetris` | Full Tetris clone: 7 sound effects, gamepad, high score, line flash animation |
-| 47 | `aria-editor` | Terminal-mode text editor: file open/save, search, status bar |
-| 48 | `aria-cli` | Enhanced CLI argument parsing with subcommands |
-| 49 | `aria-compress` | Data compression (LZ4/zstd via FFI) |
-| 50 | `aria-crypto` | Cryptographic primitives (SHA-256, AES, HMAC via FFI) |
-| 51 | `aria-env` | Environment variable access and process info |
-| 52 | `aria-mime` | MIME type detection and mapping |
-| 53 | `aria-semver` | Semantic versioning: parse, compare, satisfy |
-| 54 | `aria-template` | String template rendering with variable substitution |
-| 55 | `aria-toml` | TOML configuration file parsing |
-| 56 | `aria-url` | URL parsing, encoding, query string manipulation |
-| 57 | `aria-websocket` | WebSocket client/server (RFC 6455) |
-| 58 | `aria-xml` | XML parsing and generation |
-| 59 | `aria-yaml` | YAML parsing and serialization |
-| 60 | `aria-server` | HTTP server: listen, accept, parse, respond |
-| 61 | `aria-router` | Express-style router: path params, middleware, wildcards |
-| 62 | `aria-body-parser` | HTTP body parsing middleware |
-| 63 | `aria-cors` | CORS middleware |
-| 64 | `aria-cookie` | Cookie parsing and serialization middleware |
-| 65 | `aria-session` | Session management middleware |
-| 66 | `aria-rate-limit` | Rate limiting middleware |
-| 67 | `aria-static` | Static file serving with MIME detection |
-| 68 | `aria-tensor` | Dense tensor library: creation, arithmetic, matmul, activations, GPU interop |
-| 69 | `aria-cuda` | CUDA FFI: device management, memory ops, kernel launch, cuBLAS GEMM |
-| 70 | `aria-transformer` | Transformer encoder: multi-head attention, causal masking |
-| 71 | `aria-mamba` | Mamba selective state space model with SiLU gating |
-| 72 | `aria-jamba` | Hybrid Transformer + Mamba + Mixture of Experts |
-| 73 | `aria-looping` | Iterative refinement model with convergence stopping |
-| 74 | `aria-uacp` | Universal AI Communication Protocol: binary framing, 8 message types |
+| Package | Description |
+|---------|-------------|
+| aria-args | Command-line argument parsing |
+| aria-ascii | ASCII character classification and conversion |
+| aria-audio | Software synthesis, MIDI note table, ALSA backend |
+| aria-base64 | Base64 encoding/decoding |
+| aria-bench | Benchmarking |
+| aria-bits | Bit test/set/clear/flip, nibble extraction, popcount |
+| aria-body-parser | HTTP body parsing middleware (JSON, URL-encoded, multipart) |
+| aria-buf | Byte/word packing for uint64 buffers |
+| aria-clamp | min, max, clamp, abs, sign for int64/uint64 |
+| aria-cli | Enhanced CLI parsing with subcommands |
+| aria-color | RGBA packing/unpacking and pixel transforms |
+| aria-compress | Data compression (LZ4/zstd via FFI) |
+| aria-console | 16-bit memory-mapped address space + 60fps frame scheduler |
+| aria-conv | Saturating narrowing and float/int conversion |
+| aria-cookie | Cookie parsing and Set-Cookie builder |
+| aria-cors | CORS middleware with configurable origins |
+| aria-crypto | Cryptographic primitives (SHA-256, AES, HMAC via FFI) |
+| aria-csv | CSV parsing and generation |
+| aria-cuda | CUDA FFI: device management, memory ops, kernel launch, cuBLAS |
+| aria-datetime | Date/time formatting and arithmetic |
+| aria-decision-t | Decision tree classifier (entropy, information gain) |
+| aria-display | ANSI/termios terminal rendering (virtual console) |
+| aria-editor | Terminal-mode text editor with search |
+| aria-endian | Big/little-endian byte-swap for 16/32/64-bit |
+| aria-entangled | Quantum-inspired entangled variable pairs |
+| aria-env | Environment variable access and process info |
+| aria-fixed | Q32.32 fixed-point arithmetic on uint64 |
+| aria-freq | Frequency/period/baud integer arithmetic |
+| aria-fs | File system utilities (stat, mkdir, readdir, copy) |
+| aria-gml | GML compatibility layer: 40+ functions, xorshift32 RNG |
+| aria-gradient-field | 3D gradient field computation |
+| aria-gtk4 | GTK4 desktop GUI: widget registry, events, non-blocking UI |
+| aria-hash | FNV-1a and djb2 string hashing |
+| aria-http | HTTP client (GET/POST requests) |
+| aria-input | Raw keyboard input with SNES-style button mapping |
+| aria-jamba | Hybrid Transformer + Mamba + Mixture of Experts model |
+| aria-jit | WildX JIT helpers |
+| aria-json | JSON encoding for basic types |
+| aria-log | Structured logging with severity levels |
+| aria-looping | Iterative refinement model with convergence stopping |
+| aria-mamba | Mamba selective state space model with SiLU gating |
+| aria-map | Map data structure |
+| aria-math | Trig, exp, log, rounding via C libm |
+| aria-mime | MIME type detection and mapping |
+| aria-mux | Bit-select, field insert/extract, mask ops, blend |
+| aria-mysql | MySQL/MariaDB client via libmysqlclient |
+| aria-opengl | OpenGL 3.3 Core via GLAD + SDL2 |
+| aria-path | Path manipulation | 
+| aria-postgres | PostgreSQL client via libpq (parameterized, LISTEN/NOTIFY) |
+| aria-queue | Queue data structure |
+| aria-rand | xorshift64 pseudo-random number generator |
+| aria-rate-limit | Token bucket rate limiting middleware |
+| aria-raylib | raylib v6.0 bindings: window, drawing, shapes, text, input, audio, gamepad |
+| aria-redis | Redis client via hiredis (strings, lists, hashes, sets) |
+| aria-regex | Regular expression matching |
+| aria-resource-mem | RAII-style resource lifecycle management |
+| aria-router | Express-style router: path params, middleware, wildcards |
+| aria-sdl2 | SDL2 multimedia bindings: window, renderer, drawing, events |
+| aria-semver | Semantic versioning: parse, compare, satisfy |
+| aria-server | HTTP/1.1 server: listen, accept, parse, respond |
+| aria-session | In-memory session management with crypto IDs |
+| aria-socket | Socket abstraction layer |
+| aria-sort | Various sorting algorithms |
+| aria-sqlite | SQLite3 embedded database client (parameterized queries) |
+| aria-static | Static file serving with MIME detection and path traversal protection |
+| aria-str | String utilities (pad, trim, repeat, contains, split) |
+| aria-template | String template rendering with variable substitution |
+| aria-tensor | Dense tensor library: creation, arithmetic, matmul, activations, GPU interop |
+| aria-test | Test framework with assertion helpers |
+| aria-tetris | Full Tetris clone: sound effects, gamepad, high score |
+| aria-toml | TOML configuration file parsing |
+| aria-transformer | Transformer encoder: multi-head attention, causal masking |
+| aria-uacp | Universal AI Communication Protocol: binary framing, 8 message types |
+| aria-url | URL parsing, encoding, query string manipulation |
+| aria-uuid | UUID v4 generation and formatting |
+| aria-vec | 2D/3D float64 vector math (dot, cross, length) |
+| aria-websocket | WebSocket client/server (RFC 6455) |
+| aria-xml | XML parsing and generation |
+| aria-yaml | YAML parsing and serialization |
+| aria-zigzag | Zigzag encode/decode for signed integer interleaving |
 
 ---
 
