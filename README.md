@@ -84,7 +84,7 @@ Aria programs now compile to WebAssembly via `ariac --emit-wasm`. WASI-compatibl
 
 ## `aria-packages` Library Ecosystem
 
-All packages live in the separate [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) repository. 74 packages total, organized into utility, graphics/game, server, database, and AI/ML tiers. Each package has a `src/` module, a `tests/` file with assertions, and where FFI is needed, a C `shim/`.
+All packages live in the separate [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) repository. 80 packages total, organized into utility, graphics/game, server, database, and AI/ML tiers. Each package has a `src/` module, a `tests/` file with assertions, and where FFI is needed, a C `shim/`.
 
 **Package tiers:**
 
