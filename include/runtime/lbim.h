@@ -171,6 +171,17 @@ aria_int1024_t aria_lbim_or1024 (aria_int1024_t a, aria_int1024_t b);
 aria_int1024_t aria_lbim_xor1024(aria_int1024_t a, aria_int1024_t b);
 aria_int1024_t aria_lbim_not1024(aria_int1024_t a);
 
+// ═══════════════════════════════════════════════════════════════════════
+// Exponentiation (int128/256/512/1024)
+// Binary exponentiation (square-and-multiply). Exponent is unsigned int64.
+// Returns ERR sentinel on overflow or if base is ERR.
+// ═══════════════════════════════════════════════════════════════════════
+
+aria_int128_t  aria_lbim_pow128 (aria_int128_t  base, uint64_t exp);
+aria_int256_t  aria_lbim_pow256 (aria_int256_t  base, uint64_t exp);
+aria_int512_t  aria_lbim_pow512 (aria_int512_t  base, uint64_t exp);
+aria_int1024_t aria_lbim_pow1024(aria_int1024_t base, uint64_t exp);
+
 #ifdef __cplusplus
 }
 #endif

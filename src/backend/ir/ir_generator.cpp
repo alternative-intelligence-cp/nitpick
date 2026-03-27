@@ -7562,6 +7562,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         std::string typeName = prim->getName();
                         std::string funcName = "aria_" + typeName + "_add";
                         
+                        // frac types use sret/pointer ABI: void aria_frac32_add(Frac32*, const Frac32*, const Frac32*)
+                        if (typeName.find("frac") == 0) {
+                            llvm::Type* fracType = L->getType();
+                            llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                            llvm::FunctionType* funcType = llvm::FunctionType::get(
+                                llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
+                            llvm::FunctionCallee runtimeFunc = module->getOrInsertFunction(funcName, funcType);
+                            llvm::Value* resultAlloca = builder.CreateAlloca(fracType, nullptr, "frac.add_ret");
+                            llvm::Value* leftAlloca = builder.CreateAlloca(fracType, nullptr, "frac.add_l");
+                            llvm::Value* rightAlloca = builder.CreateAlloca(fracType, nullptr, "frac.add_r");
+                            builder.CreateStore(L, leftAlloca);
+                            builder.CreateStore(R, rightAlloca);
+                            builder.CreateCall(runtimeFunc, {resultAlloca, leftAlloca, rightAlloca});
+                            llvm::Value* result = builder.CreateLoad(fracType, resultAlloca, typeName + "_result");
+                            value_types[result] = numericType;
+                            std::cerr << "[DEBUG] Generated numeric addition call: " << funcName << std::endl;
+                            return result;
+                        }
+                        
                         llvm::Type* numericLLVMType = L->getType();
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             numericLLVMType, {numericLLVMType, numericLLVMType}, false);
@@ -7703,6 +7722,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         std::string typeName = prim->getName();
                         std::string funcName = "aria_" + typeName + "_sub";
                         
+                        // frac types use sret/pointer ABI
+                        if (typeName.find("frac") == 0) {
+                            llvm::Type* fracType = L->getType();
+                            llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                            llvm::FunctionType* funcType = llvm::FunctionType::get(
+                                llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
+                            llvm::FunctionCallee runtimeFunc = module->getOrInsertFunction(funcName, funcType);
+                            llvm::Value* resultAlloca = builder.CreateAlloca(fracType, nullptr, "frac.sub_ret");
+                            llvm::Value* leftAlloca = builder.CreateAlloca(fracType, nullptr, "frac.sub_l");
+                            llvm::Value* rightAlloca = builder.CreateAlloca(fracType, nullptr, "frac.sub_r");
+                            builder.CreateStore(L, leftAlloca);
+                            builder.CreateStore(R, rightAlloca);
+                            builder.CreateCall(runtimeFunc, {resultAlloca, leftAlloca, rightAlloca});
+                            llvm::Value* result = builder.CreateLoad(fracType, resultAlloca, typeName + "_result");
+                            value_types[result] = numericType;
+                            std::cerr << "[DEBUG] Generated numeric subtraction call: " << funcName << std::endl;
+                            return result;
+                        }
+                        
                         llvm::Type* numericLLVMType = L->getType();
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             numericLLVMType, {numericLLVMType, numericLLVMType}, false);
@@ -7798,6 +7836,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
                         std::string funcName = "aria_" + typeName + "_mul";
+                        
+                        // frac types use sret/pointer ABI
+                        if (typeName.find("frac") == 0) {
+                            llvm::Type* fracType = L->getType();
+                            llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                            llvm::FunctionType* funcType = llvm::FunctionType::get(
+                                llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
+                            llvm::FunctionCallee runtimeFunc = module->getOrInsertFunction(funcName, funcType);
+                            llvm::Value* resultAlloca = builder.CreateAlloca(fracType, nullptr, "frac.mul_ret");
+                            llvm::Value* leftAlloca = builder.CreateAlloca(fracType, nullptr, "frac.mul_l");
+                            llvm::Value* rightAlloca = builder.CreateAlloca(fracType, nullptr, "frac.mul_r");
+                            builder.CreateStore(L, leftAlloca);
+                            builder.CreateStore(R, rightAlloca);
+                            builder.CreateCall(runtimeFunc, {resultAlloca, leftAlloca, rightAlloca});
+                            llvm::Value* result = builder.CreateLoad(fracType, resultAlloca, typeName + "_result");
+                            value_types[result] = numericType;
+                            std::cerr << "[DEBUG] Generated numeric multiplication call: " << funcName << std::endl;
+                            return result;
+                        }
                         
                         llvm::Type* numericLLVMType = L->getType();
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
@@ -7900,6 +7957,25 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
                         std::string funcName = "aria_" + typeName + "_div";
+                        
+                        // frac types use sret/pointer ABI
+                        if (typeName.find("frac") == 0) {
+                            llvm::Type* fracType = L->getType();
+                            llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                            llvm::FunctionType* funcType = llvm::FunctionType::get(
+                                llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
+                            llvm::FunctionCallee runtimeFunc = module->getOrInsertFunction(funcName, funcType);
+                            llvm::Value* resultAlloca = builder.CreateAlloca(fracType, nullptr, "frac.div_ret");
+                            llvm::Value* leftAlloca = builder.CreateAlloca(fracType, nullptr, "frac.div_l");
+                            llvm::Value* rightAlloca = builder.CreateAlloca(fracType, nullptr, "frac.div_r");
+                            builder.CreateStore(L, leftAlloca);
+                            builder.CreateStore(R, rightAlloca);
+                            builder.CreateCall(runtimeFunc, {resultAlloca, leftAlloca, rightAlloca});
+                            llvm::Value* result = builder.CreateLoad(fracType, resultAlloca, typeName + "_result");
+                            value_types[result] = numericType;
+                            std::cerr << "[DEBUG] Generated numeric division call: " << funcName << std::endl;
+                            return result;
+                        }
                         
                         llvm::Type* numericLLVMType = L->getType();
                         llvm::FunctionType* funcType = llvm::FunctionType::get(

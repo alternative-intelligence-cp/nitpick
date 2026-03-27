@@ -4634,6 +4634,106 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("int1024");
         }
         
+        // ====================================================================
+        // LBIM EXPONENTIATION — int*_pow(base, exp_int64) -> int*
+        // Binary exponentiation, returns ERR on overflow
+        // ====================================================================
+        
+        if (idExpr->name == "int128_pow" || idExpr->name == "uint128_pow") {
+            if (expr->arguments.size() != 2) {
+                addError(idExpr->name + "() requires exactly two arguments (base, exponent)", expr);
+                return typeSystem->getErrorType();
+            }
+            inferType(expr->arguments[0].get());
+            inferType(expr->arguments[1].get());
+            return typeSystem->getPrimitiveType(idExpr->name.substr(0, idExpr->name.find("_pow")));
+        }
+        
+        if (idExpr->name == "int256_pow" || idExpr->name == "uint256_pow") {
+            if (expr->arguments.size() != 2) {
+                addError(idExpr->name + "() requires exactly two arguments (base, exponent)", expr);
+                return typeSystem->getErrorType();
+            }
+            inferType(expr->arguments[0].get());
+            inferType(expr->arguments[1].get());
+            return typeSystem->getPrimitiveType(idExpr->name.substr(0, idExpr->name.find("_pow")));
+        }
+        
+        if (idExpr->name == "int512_pow" || idExpr->name == "uint512_pow") {
+            if (expr->arguments.size() != 2) {
+                addError(idExpr->name + "() requires exactly two arguments (base, exponent)", expr);
+                return typeSystem->getErrorType();
+            }
+            inferType(expr->arguments[0].get());
+            inferType(expr->arguments[1].get());
+            return typeSystem->getPrimitiveType(idExpr->name.substr(0, idExpr->name.find("_pow")));
+        }
+        
+        if (idExpr->name == "int1024_pow" || idExpr->name == "uint1024_pow") {
+            if (expr->arguments.size() != 2) {
+                addError(idExpr->name + "() requires exactly two arguments (base, exponent)", expr);
+                return typeSystem->getErrorType();
+            }
+            inferType(expr->arguments[0].get());
+            inferType(expr->arguments[1].get());
+            return typeSystem->getPrimitiveType(idExpr->name.substr(0, idExpr->name.find("_pow")));
+        }
+        
+        // ====================================================================
+        // STATIC TYPE CONSTANTS (Type.CONSTANT syntax)
+        // Parser transforms Type.MEMBER → Type_MEMBER() zero-arg call
+        // ====================================================================
+        
+        // TBB ERR sentinels
+        if (idExpr->name == "tbb8_ERR") {
+            if (expr->arguments.size() != 0) { addError("tbb8.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("tbb8");
+        }
+        if (idExpr->name == "tbb16_ERR") {
+            if (expr->arguments.size() != 0) { addError("tbb16.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("tbb16");
+        }
+        if (idExpr->name == "tbb32_ERR") {
+            if (expr->arguments.size() != 0) { addError("tbb32.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+        if (idExpr->name == "tbb64_ERR") {
+            if (expr->arguments.size() != 0) { addError("tbb64.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("tbb64");
+        }
+        
+        // Balanced type ERR sentinels
+        if (idExpr->name == "trit_ERR") {
+            if (expr->arguments.size() != 0) { addError("trit.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("trit");
+        }
+        if (idExpr->name == "nit_ERR") {
+            if (expr->arguments.size() != 0) { addError("nit.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("nit");
+        }
+        if (idExpr->name == "tryte_ERR") {
+            if (expr->arguments.size() != 0) { addError("tryte.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("tryte");
+        }
+        if (idExpr->name == "nyte_ERR") {
+            if (expr->arguments.size() != 0) { addError("nyte.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("nyte");
+        }
+        
+        // fix256 constants
+        if (idExpr->name == "fix256_ERR") {
+            if (expr->arguments.size() != 0) { addError("fix256.ERR takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("fix256");
+        }
+        if (idExpr->name == "fix256_MAX") {
+            if (expr->arguments.size() != 0) { addError("fix256.MAX takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("fix256");
+        }
+        if (idExpr->name == "fix256_EPSILON") {
+            if (expr->arguments.size() != 0) { addError("fix256.EPSILON takes no arguments", expr); return typeSystem->getErrorType(); }
+            return typeSystem->getPrimitiveType("fix256");
+        }
+        
         // fix256_from_int(int64) -> fix256
         if (idExpr->name == "fix256_from_int") {
             if (expr->arguments.size() != 1) {
@@ -4880,6 +4980,274 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // ====================================================================
+        // NIT ARITHMETIC INTRINSICS
+        // ====================================================================
+        
+        // nit_add(nit, nit) -> nit
+        if (idExpr->name == "nit_add") {
+            if (expr->arguments.size() != 2) {
+                addError("nit_add() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nit");
+        }
+        
+        // nit_sub(nit, nit) -> nit
+        if (idExpr->name == "nit_sub") {
+            if (expr->arguments.size() != 2) {
+                addError("nit_sub() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nit");
+        }
+        
+        // nit_mul(nit, nit) -> nit
+        if (idExpr->name == "nit_mul") {
+            if (expr->arguments.size() != 2) {
+                addError("nit_mul() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nit");
+        }
+        
+        // nit_div(nit, nit) -> nit
+        if (idExpr->name == "nit_div") {
+            if (expr->arguments.size() != 2) {
+                addError("nit_div() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nit");
+        }
+        
+        // nit_neg(nit) -> nit
+        if (idExpr->name == "nit_neg") {
+            if (expr->arguments.size() != 1) {
+                addError("nit_neg() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nit");
+        }
+        
+        // nit_abs(nit) -> nit
+        if (idExpr->name == "nit_abs") {
+            if (expr->arguments.size() != 1) {
+                addError("nit_abs() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nit");
+        }
+        
+        // ====================================================================
+        // TRYTE ARITHMETIC INTRINSICS
+        // ====================================================================
+        
+        // tryte_add(tryte, tryte) -> tryte
+        if (idExpr->name == "tryte_add") {
+            if (expr->arguments.size() != 2) {
+                addError("tryte_add() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tryte");
+        }
+        
+        // tryte_sub(tryte, tryte) -> tryte
+        if (idExpr->name == "tryte_sub") {
+            if (expr->arguments.size() != 2) {
+                addError("tryte_sub() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tryte");
+        }
+        
+        // tryte_mul(tryte, tryte) -> tryte
+        if (idExpr->name == "tryte_mul") {
+            if (expr->arguments.size() != 2) {
+                addError("tryte_mul() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tryte");
+        }
+        
+        // tryte_div(tryte, tryte) -> tryte
+        if (idExpr->name == "tryte_div") {
+            if (expr->arguments.size() != 2) {
+                addError("tryte_div() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tryte");
+        }
+        
+        // tryte_mod(tryte, tryte) -> tryte
+        if (idExpr->name == "tryte_mod") {
+            if (expr->arguments.size() != 2) {
+                addError("tryte_mod() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tryte");
+        }
+        
+        // tryte_neg(tryte) -> tryte
+        if (idExpr->name == "tryte_neg") {
+            if (expr->arguments.size() != 1) {
+                addError("tryte_neg() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tryte");
+        }
+        
+        // tryte_abs(tryte) -> tryte
+        if (idExpr->name == "tryte_abs") {
+            if (expr->arguments.size() != 1) {
+                addError("tryte_abs() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tryte");
+        }
+        
+        // tryte_is_err(tryte) -> bool
+        if (idExpr->name == "tryte_is_err") {
+            if (expr->arguments.size() != 1) {
+                addError("tryte_is_err() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // ====================================================================
+        // NYTE ARITHMETIC INTRINSICS
+        // ====================================================================
+        
+        // nyte_add(nyte, nyte) -> nyte
+        if (idExpr->name == "nyte_add") {
+            if (expr->arguments.size() != 2) {
+                addError("nyte_add() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nyte");
+        }
+        
+        // nyte_sub(nyte, nyte) -> nyte
+        if (idExpr->name == "nyte_sub") {
+            if (expr->arguments.size() != 2) {
+                addError("nyte_sub() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nyte");
+        }
+        
+        // nyte_mul(nyte, nyte) -> nyte
+        if (idExpr->name == "nyte_mul") {
+            if (expr->arguments.size() != 2) {
+                addError("nyte_mul() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nyte");
+        }
+        
+        // nyte_div(nyte, nyte) -> nyte
+        if (idExpr->name == "nyte_div") {
+            if (expr->arguments.size() != 2) {
+                addError("nyte_div() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nyte");
+        }
+        
+        // nyte_mod(nyte, nyte) -> nyte
+        if (idExpr->name == "nyte_mod") {
+            if (expr->arguments.size() != 2) {
+                addError("nyte_mod() requires exactly two arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nyte");
+        }
+        
+        // nyte_neg(nyte) -> nyte
+        if (idExpr->name == "nyte_neg") {
+            if (expr->arguments.size() != 1) {
+                addError("nyte_neg() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nyte");
+        }
+        
+        // nyte_abs(nyte) -> nyte
+        if (idExpr->name == "nyte_abs") {
+            if (expr->arguments.size() != 1) {
+                addError("nyte_abs() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nyte");
+        }
+        
+        // nyte_is_err(nyte) -> bool
+        if (idExpr->name == "nyte_is_err") {
+            if (expr->arguments.size() != 1) {
+                addError("nyte_is_err() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+        
+        // ====================================================================
+        // TRYTE/NYTE CONVERSION INTRINSICS
+        // ====================================================================
+        
+        // tryte_from_balanced(int32) -> tryte
+        if (idExpr->name == "tryte_from_balanced") {
+            if (expr->arguments.size() != 1) {
+                addError("tryte_from_balanced() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tryte");
+        }
+        
+        // nyte_from_balanced(int32) -> nyte
+        if (idExpr->name == "nyte_from_balanced") {
+            if (expr->arguments.size() != 1) {
+                addError("nyte_from_balanced() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nyte");
+        }
+        
+        // tryte_to_balanced(tryte) -> int32
+        if (idExpr->name == "tryte_to_balanced") {
+            if (expr->arguments.size() != 1) {
+                addError("tryte_to_balanced() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        // nyte_to_balanced(nyte) -> int32
+        if (idExpr->name == "nyte_to_balanced") {
+            if (expr->arguments.size() != 1) {
+                addError("nyte_to_balanced() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+        
+        // tryte_to_nyte(tryte) -> nyte
+        if (idExpr->name == "tryte_to_nyte") {
+            if (expr->arguments.size() != 1) {
+                addError("tryte_to_nyte() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("nyte");
+        }
+        
+        // nyte_to_tryte(nyte) -> tryte
+        if (idExpr->name == "nyte_to_tryte") {
+            if (expr->arguments.size() != 1) {
+                addError("nyte_to_tryte() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("tryte");
         }
         
         // ====================================================================
@@ -6685,6 +7053,14 @@ bool TypeChecker::canCoerce(Type* from, Type* to) {
         int fromWidth = extractBitWidth(fromName);
         int toWidth = extractBitWidth(toName);
         return fromWidth < toWidth;  // Allow widening only
+    }
+
+    // ========================================================================
+    // fix256 literal initialization from int or float
+    // ========================================================================
+    // fix256:x = 1.0 or fix256:x = 42 auto-converts via runtime
+    if (toName == "fix256" && (fromIsFloat || fromIsInt)) {
+        return true;
     }
 
     // REJECT: int → float (requires explicit cast)

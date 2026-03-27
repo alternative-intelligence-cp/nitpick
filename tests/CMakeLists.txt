@@ -35,3 +35,32 @@ if(INTEGRATION_TESTS)
         TIMEOUT 600  # 10 minutes
     )
 endif()
+
+# ============================================================================
+# GPU Tests (target-conditional)
+# ============================================================================
+
+# GPU test runner — auto-detects CUDA toolkit and GPU availability
+# Tests: PTX validation, --emit-ptx codegen, CUDA C++ compilation
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/gpu/run_gpu_tests.sh")
+    add_test(
+        NAME gpu_tests
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/gpu/run_gpu_tests.sh
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/gpu
+    )
+    set_tests_properties(gpu_tests PROPERTIES
+        TIMEOUT 120  # 2 minutes
+        LABELS "gpu"
+    )
+
+    # Optional: GPU tests with --skip-cuda for CI environments without GPU
+    add_test(
+        NAME gpu_tests_ptx_only
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/gpu/run_gpu_tests.sh --skip-cuda
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/gpu
+    )
+    set_tests_properties(gpu_tests_ptx_only PROPERTIES
+        TIMEOUT 60
+        LABELS "gpu;ptx"
+    )
+endif()

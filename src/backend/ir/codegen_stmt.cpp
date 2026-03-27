@@ -673,6 +673,62 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
                     init_value = expr_codegen->promoteLiteralToLBIM(init_value, var_type);
                 }
             }
+            
+            // fix256 literal init: auto-convert float/int → fix256 via runtime
+            if (var_type->isStructTy()) {
+                llvm::StructType* st = llvm::cast<llvm::StructType>(var_type);
+                if (st->hasName() && st->getName() == "struct.fix256") {
+                    if (init_value->getType()->isDoubleTy() || init_value->getType()->isFloatTy()) {
+                        // Convert float to double if needed
+                        llvm::Value* doubleVal = init_value;
+                        if (init_value->getType()->isFloatTy()) {
+                            doubleVal = builder.CreateFPExt(init_value, builder.getDoubleTy(), "f32_to_f64");
+                        }
+                        // Call aria_fix256_from_f64(fix256* sret, double)
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            llvm::Type::getVoidTy(context),
+                            {ptrType, builder.getDoubleTy()},
+                            false
+                        );
+                        llvm::Function* runtimeFunc = module->getFunction("aria_fix256_from_f64");
+                        if (!runtimeFunc) {
+                            runtimeFunc = llvm::Function::Create(
+                                funcType, llvm::Function::ExternalLinkage,
+                                "aria_fix256_from_f64", module
+                            );
+                            runtimeFunc->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, st));
+                        }
+                        llvm::Value* sret = builder.CreateAlloca(st, nullptr, "fix256_sret");
+                        auto* call = builder.CreateCall(runtimeFunc, {sret, doubleVal});
+                        call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, st));
+                        init_value = builder.CreateLoad(st, sret, "fix256_init");
+                    } else if (init_value->getType()->isIntegerTy()) {
+                        // Convert to i64
+                        llvm::Value* i64Val = builder.CreateSExtOrTrunc(init_value, builder.getInt64Ty(), "int_to_i64");
+                        // Call aria_fix256_from_i64(fix256* sret, int64_t)
+                        llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
+                        llvm::FunctionType* funcType = llvm::FunctionType::get(
+                            llvm::Type::getVoidTy(context),
+                            {ptrType, builder.getInt64Ty()},
+                            false
+                        );
+                        llvm::Function* runtimeFunc = module->getFunction("aria_fix256_from_i64");
+                        if (!runtimeFunc) {
+                            runtimeFunc = llvm::Function::Create(
+                                funcType, llvm::Function::ExternalLinkage,
+                                "aria_fix256_from_i64", module
+                            );
+                            runtimeFunc->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, st));
+                        }
+                        llvm::Value* sret = builder.CreateAlloca(st, nullptr, "fix256_sret");
+                        auto* call = builder.CreateCall(runtimeFunc, {sret, i64Val});
+                        call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, st));
+                        init_value = builder.CreateLoad(st, sret, "fix256_init");
+                    }
+                }
+            }
+            
             // For integer types, use trunc or sext/zext
             else if (init_value->getType()->isIntegerTy() && var_type->isIntegerTy()) {
                 llvm::IntegerType* init_int_ty = llvm::cast<llvm::IntegerType>(init_value->getType());
