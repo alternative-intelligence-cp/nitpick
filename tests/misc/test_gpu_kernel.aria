@@ -2,28 +2,30 @@
 // This test verifies that functions starting with "gpu_" are marked as kernels
 // and generate proper NVVM metadata for the NVPTX backend
 
+func:failsafe = NIL(int32:err_code) {};
+
 // Simple GPU kernel (simplified for Phase 3 - no pointers yet)
 // Expected: Should generate ".entry gpu_simple" with nvvm.annotations metadata
-func:gpu_simple = void(int32:n) {
+func:gpu_simple = NIL(int32:n) {
     // Placeholder kernel body
     int32:x = n * 2;
     if (x > 0) {
         x = x + 1;
     }
-}
+};
 
 // Regular CPU function (no GPU prefix, should be .func not .entry)
 func:cpu_helper = int32(int32:x) {
     pass(x * 2);
-}
+};
 
 // GPU device helper function (will be .func on GPU)
 // In full Phase 3, this would have #[gpu_device] attribute
 func:gpu_device_mul = int32(int32:x) {
     pass(x * 2);
-}
+};
 
 // Main entry point
 func:main = int32() {
     pass(0);
-}
+};
