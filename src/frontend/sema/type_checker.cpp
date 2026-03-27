@@ -1250,6 +1250,23 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
             return typeSystem->getErrorType();
         }
         
+        // Special case: balanced type (trit/tryte/nit/nyte) arithmetic with int literals
+        // Example: trit:sensor = -128; trit:result = sensor + 1;
+        // The int32/int64 literal is coerced to the balanced type, result stays balanced.
+        // This mirrors the existing special cases for balanced literal assignment and comparison.
+        bool leftIsBalanced = (leftName == "trit" || leftName == "tryte" ||
+                               leftName == "nit" || leftName == "nyte");
+        bool rightIsBalanced = (rightName == "trit" || rightName == "tryte" ||
+                                rightName == "nit" || rightName == "nyte");
+        if (leftIsBalanced && !rightIsBalanced &&
+            (rightName == "int32" || rightName == "int64")) {
+            return leftType;  // Result is the balanced type
+        }
+        if (rightIsBalanced && !leftIsBalanced &&
+            (leftName == "int32" || leftName == "int64")) {
+            return rightType;  // Result is the balanced type
+        }
+        
         // Find common type (with promotion/widening)
         Type* resultType = findCommonType(leftType, rightType);
         if (resultType->getKind() == TypeKind::ERROR) {

@@ -1,4 +1,3 @@
-// Expected: COMPILER ERROR
 // ARIA Batch 02 Gemini Audit - Safety Critical Bug Fix Verification
 // Tests all 4 bugs identified by Gemini SIL-4 audit:
 //   BUG-004: TBB narrowing wraparound (CRITICAL)
@@ -22,8 +21,7 @@ func:test_bug004_tbb8_wraparound = NIL() {
     if (tbb8_is_err(val_tbb8)) {
         drop(print("✓ BUG-004: TBB8 overflow returns ERR (not 44)"));
     } else {
-        drop(print("✗ FAIL: TBB8 overflow wrapped to: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: TBB8 overflow wrapped instead of returning ERR"));
     }
 };
 
@@ -35,8 +33,7 @@ func:test_bug004_tbb8_underflow = NIL() {
     if (tbb8_is_err(val_tbb8)) {
         drop(print("✓ BUG-004: TBB8 underflow returns ERR"));
     } else {
-        drop(print("✗ FAIL: TBB8 underflow value: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: TBB8 underflow did not return ERR"));
     }
 };
 
@@ -48,8 +45,7 @@ func:test_bug004_tbb8_valid_positive = NIL() {
     if (tbb8_to_int(val_tbb8) == 127) {
         drop(print("✓ BUG-004: TBB8 max valid value passes"));
     } else {
-        drop(print("✗ FAIL: TBB8 max valid corrupted: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: TBB8 max valid value corrupted"));
     }
 };
 
@@ -61,8 +57,7 @@ func:test_bug004_tbb8_valid_negative = NIL() {
     if (tbb8_to_int(val_tbb8) == -127) {
         drop(print("✓ BUG-004: TBB8 min valid value passes"));
     } else {
-        drop(print("✗ FAIL: TBB8 min valid corrupted: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: TBB8 min valid value corrupted"));
     }
 };
 
@@ -75,8 +70,7 @@ func:test_bug004_tbb16_wraparound = NIL() {
     if (tbb16_is_err(val_tbb16)) {
         drop(print("✓ BUG-004: TBB16 overflow returns ERR"));
     } else {
-        drop(print("✗ FAIL: TBB16 overflow value: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: TBB16 overflow did not return ERR"));
     }
 };
 
@@ -89,8 +83,7 @@ func:test_bug004_tbb32_wraparound = NIL() {
     if (tbb32_to_int(val_tbb32) == 2147483647) {
         drop(print("✓ BUG-004: TBB32 max valid passes"));
     } else {
-        drop(print("✗ FAIL: TBB32 max valid corrupted: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: TBB32 max valid value corrupted"));
     }
 };
 
@@ -110,8 +103,7 @@ func:test_bug005_trit_and_logic = NIL() {
     if (result == -1) {
         drop(print("✓ BUG-005: Trit AND(true, false) = false"));
     } else {
-        drop(print("✗ FAIL: Trit AND logic inverted, got: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Trit AND logic inverted"));
     }
 };
 
@@ -124,8 +116,7 @@ func:test_bug005_trit_or_logic = NIL() {
     if (result == 1) {
         drop(print("✓ BUG-005: Trit OR(false, true) = true"));
     } else {
-        drop(print("✗ FAIL: Trit OR logic broken, got: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Trit OR logic broken"));
     }
 };
 
@@ -138,8 +129,7 @@ func:test_bug005_trit_and_both_false = NIL() {
     if (result == -1) {
         drop(print("✓ BUG-005: Trit AND(false, false) = false"));
     } else {
-        drop(print("✗ FAIL: Trit AND both false, got: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Trit AND both false"));
     }
 };
 
@@ -152,22 +142,20 @@ func:test_bug005_trit_and_both_true = NIL() {
     if (result == 1) {
         drop(print("✓ BUG-005: Trit AND(true, true) = true"));
     } else {
-        drop(print("✗ FAIL: Trit AND both true, got: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Trit AND both true"));
     }
 };
 
 func:test_bug005_trit_unknown_and_true = NIL() {
     // AND(unknown, true) = unknown (Kleene logic)
-    trit:unknown = 0;
+    trit:unk_val = 0;
     trit:true_val = 1;
-    trit:result = trit_and(unknown, true_val);
+    trit:result = trit_and(unk_val, true_val);
     
     if (result == 0) {
         drop(print("✓ BUG-005: Trit AND(unknown, true) = unknown"));
     } else {
-        drop(print("✗ FAIL: Trit three-valued logic broken, got: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Trit three-valued logic broken"));
     }
 };
 
@@ -181,8 +169,7 @@ func:test_bug005_nit_and_logic = NIL() {
     if (result == -2) {
         drop(print("✓ BUG-005: Nit AND uses min (Kleene logic)"));
     } else {
-        drop(print("✗ FAIL: Nit AND logic broken, got: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Nit AND logic broken"));
     }
 };
 
@@ -196,8 +183,7 @@ func:test_bug005_nit_or_logic = NIL() {
     if (result == 2) {
         drop(print("✓ BUG-005: Nit OR uses max (Kleene logic)"));
     } else {
-        drop(print("✗ FAIL: Nit OR logic broken, got: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Nit OR logic broken"));
     }
 };
 
@@ -217,8 +203,7 @@ func:test_bug006_trit_err_propagation_add = NIL() {
     if (result == -128) {
         drop(print("✓ BUG-006: Trit ERR + 1 = ERR (sticky)"));
     } else {
-        drop(print("✗ FAIL: Trit error healed to: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Trit error "));
     }
 };
 
@@ -231,8 +216,7 @@ func:test_bug006_trit_err_propagation_mul = NIL() {
     if (result == -128) {
         drop(print("✓ BUG-006: Trit ERR * val = ERR"));
     } else {
-        drop(print("✗ FAIL: Trit ERR multiplication healed to: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Trit ERR multiplication "));
     }
 };
 
@@ -245,8 +229,7 @@ func:test_bug006_trit_err_propagation_and = NIL() {
     if (result == -128) {
         drop(print("✓ BUG-006: Trit ERR && true = ERR"));
     } else {
-        drop(print("✗ FAIL: Trit ERR logic healed to: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Trit ERR logic "));
     }
 };
 
@@ -259,8 +242,7 @@ func:test_bug006_nit_err_propagation = NIL() {
     if (result == -128) {
         drop(print("✓ BUG-006: Nit ERR + val = ERR (sticky)"));
     } else {
-        drop(print("✗ FAIL: Nit error healed to: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Nit error "));
     }
 };
 
@@ -280,8 +262,7 @@ func:test_bug007_nit_add_overflow = NIL() {
     if (result == -128) {  // NIT_ERR
         drop(print("✓ BUG-007: Nit overflow returns ERR (not saturated)"));
     } else {
-        drop(print("✗ FAIL: Nit overflow saturated to: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Nit overflow saturated to"));
     }
 };
 
@@ -294,8 +275,7 @@ func:test_bug007_nit_add_underflow = NIL() {
     if (result == -128) {
         drop(print("✓ BUG-007: Nit underflow returns ERR"));
     } else {
-        drop(print("✗ FAIL: Nit underflow saturated to: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Nit underflow saturated to"));
     }
 };
 
@@ -308,8 +288,7 @@ func:test_bug007_nit_mul_overflow = NIL() {
     if (result == -128) {
         drop(print("✓ BUG-007: Nit mul overflow returns ERR"));
     } else {
-        drop(print("✗ FAIL: Nit mul overflow saturated to: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Nit mul overflow saturated to"));
     }
 };
 
@@ -322,8 +301,7 @@ func:test_bug007_nit_valid_addition = NIL() {
     if (result == 4) {
         drop(print("✓ BUG-007: Nit max + 0 = max (valid)"));
     } else {
-        drop(print("✗ FAIL: Nit valid add corrupted to: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Nit valid add corrupted to"));
     }
 };
 
@@ -336,8 +314,7 @@ func:test_bug007_nit_edge_valid = NIL() {
     if (result == 4) {
         drop(print("✓ BUG-007: Nit 2+2 = 4 (edge valid)"));
     } else {
-        drop(print("✗ FAIL: Nit edge case value: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Nit edge case "));
     }
 };
 
@@ -350,8 +327,7 @@ func:test_bug007_nit_just_over_edge = NIL() {
     if (result == -128) {
         drop(print("✓ BUG-007: Nit 2+3 = ERR (overflow)"));
     } else {
-        drop(print("✗ FAIL: Nit just-over-edge value: "));
-        // Numeric value (print strings only)
+        drop(print("✗ FAIL: Nit just-over-edge "));
     }
 };
 
@@ -363,14 +339,59 @@ func:test_integration_safety_chain = NIL() {
     drop(print("=== Integration Test: Safety Barrier Chain ==="));
     
     // Scenario: Robot control with multiple safety checks
-    // All 9 errors indicate the the whole function scope is broken
-    // Simplified version to avoid whatever parsing issue is happening
+    // Declare all variables upfront to avoid scoping issues
     
-    drop(print("✓ INTEGRATION: Placeholder - individual tests verify fixes"));
-    drop(print("   - Force limits enforced (BUG-004)"));
-    drop(print("   - Logic inversion prevented (BUG-005)"));
-    drop(print("   - Error propagation maintained (BUG-006)"));
-    drop(print("   - Overflow detection working (BUG-007)"));
+    // 1. Force limit check (BUG-004)
+    int32:measured_force = 300;  // Exceeds tbb8 range
+    tbb8:force_tbb8 = tbb8_from_int(measured_force);
+    
+    // 2. Permission logic (BUG-005)
+    trit:has_permission = 1;  // true
+    trit:security_check = -1;  // false
+    trit:access_granted = trit_and(has_permission, security_check);
+    
+    // 3. Sensor error propagation (BUG-006)
+    trit:sensor_reading = -128;  // ERR from failed sensor
+    trit:processed = sensor_reading + 1;  // Attempted error recovery
+    
+    // 4. Accumulator overflow (BUG-007)
+    nit:accumulator = 3;
+    nit:increment = 2;
+    nit:new_value = accumulator + increment;
+    
+    // Validate results (no early returns)
+    bool:all_pass = true;
+    
+    if (!tbb8_is_err(force_tbb8)) {
+        drop(print("✗ INTEGRATION FAIL: Force wraparound not prevented"));
+        all_pass = false;
+    }
+    
+    trit:expected_access = -1;
+    if (access_granted != expected_access) {
+        drop(print("✗ INTEGRATION FAIL: Security bypass possible"));
+        all_pass = false;
+    }
+    
+    trit:expected_err = -128;
+    if (processed != expected_err) {
+        drop(print("✗ INTEGRATION FAIL: Sensor error laundered"));
+        all_pass = false;
+    }
+    
+    nit:expected_nit_err = -128;
+    if (new_value != expected_nit_err) {
+        drop(print("✗ INTEGRATION FAIL: Overflow saturation hiding error"));
+        all_pass = false;
+    }
+    
+    if (all_pass) {
+        drop(print("✓ INTEGRATION: All 4 safety barriers functioning"));
+        drop(print("   - Force limits enforced (BUG-004)"));
+        drop(print("   - Logic inversion prevented (BUG-005)"));
+        drop(print("   - Error propagation maintained (BUG-006)"));
+        drop(print("   - Overflow detection working (BUG-007)"));
+    }
 };
 
 // ==============================================================================

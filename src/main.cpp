@@ -86,8 +86,8 @@ extern "C" {
 // Version information
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 2
-#define ARIA_VERSION_PATCH 32
-#define ARIA_VERSION "0.2.32"
+#define ARIA_VERSION_PATCH 33
+#define ARIA_VERSION "0.2.33"
 
 // Compiler options
 struct CompilerOptions {
