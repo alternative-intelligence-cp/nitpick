@@ -1700,6 +1700,7 @@ bool Parser::isTypeKeyword(frontend::TokenType type) const {
         // Other types
         type == TokenType::TOKEN_KW_BOOL || type == TokenType::TOKEN_KW_STRING ||
         type == TokenType::TOKEN_KW_DYN || type == TokenType::TOKEN_KW_OBJ ||
+        type == TokenType::TOKEN_KW_ANY ||
         type == TokenType::TOKEN_KW_RESULT || type == TokenType::TOKEN_KW_ARRAY ||
         type == TokenType::TOKEN_KW_STRUCT || type == TokenType::TOKEN_KW_NIL ||
         // Note: TOKEN_KW_FUNC removed - handled as identifier in expressions

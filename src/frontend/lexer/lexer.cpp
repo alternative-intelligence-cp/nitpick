@@ -141,6 +141,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"string", TokenType::TOKEN_KW_STRING},
     {"dyn", TokenType::TOKEN_KW_DYN},
     {"obj", TokenType::TOKEN_KW_OBJ},
+    {"any", TokenType::TOKEN_KW_ANY},
     {"Result", TokenType::TOKEN_KW_RESULT},
     {"array", TokenType::TOKEN_KW_ARRAY},
     {"func", TokenType::TOKEN_KW_FUNC},

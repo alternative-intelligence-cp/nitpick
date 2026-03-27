@@ -550,6 +550,16 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             break;
         }
         
+        case TypeKind::ANY: {
+            // any: Type-erased pointer — opaque pointer (safe void* replacement)
+            // Internally represented as { ptr data, i64 size }
+            // For wild any, just a bare pointer (no size tracking)
+            llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+            llvm::Type* sizeTy = builder.getInt64Ty();
+            llvm_type = llvm::StructType::get(context, {ptrTy, sizeTy});
+            break;
+        }
+        
         case TypeKind::UNKNOWN:
         case TypeKind::ERROR:
         default:
@@ -1569,6 +1579,14 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     // Both compile to llvm::PointerType::get(context, 0) — same as every other ptr.
     if (type_name == "?@" || type_name == "?*") {
         return llvm::PointerType::get(context, 0);
+    }
+    
+    // any — type-erased pointer (safe void* replacement)
+    // Represented as { ptr data, i64 size } for runtime safety checks
+    if (type_name == "any" || type_name == "wild any" || type_name == "wildx any") {
+        llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+        llvm::Type* sizeTy = builder.getInt64Ty();
+        return llvm::StructType::get(context, {ptrTy, sizeTy});
     }
 
     // Check for pointer types (e.g., "int64@", "string@")
@@ -4135,12 +4153,44 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                             }
                         }
                         
+                        // ANY TYPE AUTO-BOXING: When the declared variable is `any` type,
+                        // we box the initializer value into the {ptr, i64} fat pointer struct.
+                        // - Allocate stack space for the value
+                        // - Store the value into the allocation
+                        // - Build the any struct: {data_ptr, sizeof(value)}
+                        if (actualTypeName == "any" || actualTypeName == "wild any" || actualTypeName == "wildx any") {
+                            llvm::Type* initType = initVal->getType();
+                            // If already a pointer, use it directly with size 0 (unknown)
+                            llvm::Value* dataPtr;
+                            llvm::Value* dataSize;
+                            if (initType->isPointerTy()) {
+                                dataPtr = initVal;
+                                dataSize = llvm::ConstantInt::get(builder.getInt64Ty(), 0);
+                            } else {
+                                // Auto-box: alloca for the value, store it, use the alloca ptr
+                                llvm::AllocaInst* boxAlloca = builder.CreateAlloca(initType, nullptr, varDecl->varName + ".boxed");
+                                builder.CreateStore(initVal, boxAlloca);
+                                dataPtr = boxAlloca;
+                                // Get sizeof(T) from the data layout
+                                uint64_t typeSize = module->getDataLayout().getTypeAllocSize(initType);
+                                dataSize = llvm::ConstantInt::get(builder.getInt64Ty(), typeSize);
+                            }
+                            // Build the {ptr, i64} struct
+                            llvm::Type* anyStructType = llvm::StructType::get(context, {
+                                llvm::PointerType::get(context, 0),
+                                builder.getInt64Ty()
+                            });
+                            llvm::Value* anyVal = llvm::UndefValue::get(anyStructType);
+                            anyVal = builder.CreateInsertValue(anyVal, dataPtr, 0, "any.ptr");
+                            anyVal = builder.CreateInsertValue(anyVal, dataSize, 1, "any.size");
+                            builder.CreateStore(anyVal, alloca);
+                        }
                         // ARRAY INIT FIX: When the declared variable is a fixed-size array
                         // [N x T] and the initializer is an ARRAY_LITERAL (returned as a
                         // flat pointer to a tmp alloca), copy element-by-element into the
                         // properly-typed alloca using two-index GEP.  This avoids storing
                         // a raw pointer value into an integer/array slot.
-                        if (varType->isArrayTy() && initVal->getType()->isPointerTy()) {
+                        else if (varType->isArrayTy() && initVal->getType()->isPointerTy()) {
                             auto* arrType = llvm::cast<llvm::ArrayType>(varType);
                             llvm::Type* elemType = arrType->getElementType();
                             uint64_t numElems = arrType->getNumElements();
