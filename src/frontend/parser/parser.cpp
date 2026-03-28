@@ -2940,7 +2940,9 @@ ASTNodePtr Parser::parseRulesDecl() {
 ASTNodePtr Parser::parseDollarCondition(ASTNodePtr dollarNode) {
     using namespace frontend;
     
-    ASTNodePtr left = dollarNode;
+    // v0.2.43: Apply postfix parsing to $ so that $.field, $.method(), etc.
+    // chain through parseMemberExpression / parseCallExpression automatically.
+    ASTNodePtr left = parsePostfix(dollarNode);
     
     // Climb precedence for binary operators until we hit ',' or '}'
     while (!isAtEnd() && !check(TokenType::TOKEN_COMMA) && !check(TokenType::TOKEN_RIGHT_BRACE)) {

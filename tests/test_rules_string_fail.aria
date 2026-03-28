@@ -1,0 +1,17 @@
+// test_rules_string_fail.aria — v0.2.43 $.length failure test
+extern func:puts = int32(string:s);
+
+Rules<string>:str_non_empty = {
+    $.length > 0
+};
+
+func:failsafe = NIL() {
+    drop(puts("FAILSAFE: empty strings not allowed!"));
+};
+
+func:main = int32() {
+    // Empty string should trigger failsafe
+    limit<str_non_empty> string:empty = "";
+    drop(puts("FAIL: should have triggered failsafe"));
+    pass(1);
+};

@@ -9927,6 +9927,30 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 return phi;
             }
             
+            // v0.2.43: Handle string member access ($.length)
+            // Strings are PrimitiveType("string") but backed by AriaString = {ptr, i64}
+            if (aria_type->getKind() == TypeKind::PRIMITIVE && aria_type->toString() == "string") {
+                if (member->member == "length") {
+                    // Load the string pointer from the alloca
+                    llvm::Value* strPtr = builder.CreateLoad(
+                        llvm::PointerType::get(context, 0), object_ptr, "str.ptr");
+                    // Get or create AriaString struct type
+                    llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                    if (!ariaStrType) {
+                        std::vector<llvm::Type*> fields = {
+                            llvm::PointerType::get(context, 0),
+                            builder.getInt64Ty()
+                        };
+                        ariaStrType = llvm::StructType::create(context, fields, "struct.AriaString");
+                    }
+                    // GEP to field 1 (length) and load
+                    llvm::Value* lenPtr = builder.CreateStructGEP(ariaStrType, strPtr, 1, "str.len.ptr");
+                    return builder.CreateLoad(builder.getInt64Ty(), lenPtr, "str.length");
+                }
+                std::cerr << "[DEBUG MEMBER_ACCESS] Unknown string member: " << member->member << std::endl;
+                return nullptr;
+            }
+            
             // Handle struct member access
             if (aria_type->getKind() != TypeKind::STRUCT) {
                 // Not a struct type
@@ -11132,6 +11156,29 @@ void aria::IRGenerator::emitLimitChecks(const std::string& rulesName, llvm::Valu
         builder.CreateStore(value, dollarAlloca);
         named_values["$"] = dollarAlloca;
         
+        // v0.2.43: Register Aria type for $ so MemberAccessExpr codegen
+        // can resolve struct fields via value_types lookup.
+        // Also register var_aria_types["$"] for UFCS method dispatch.
+        Type* savedDollarType = nullptr;
+        auto dollarTypeIt = value_types.find(dollarAlloca);
+        if (dollarTypeIt != value_types.end()) {
+            savedDollarType = dollarTypeIt->second;
+        }
+        std::string savedDollarAriaType;
+        auto dollarAriaIt = var_aria_types.find("$");
+        if (dollarAriaIt != var_aria_types.end()) {
+            savedDollarAriaType = dollarAriaIt->second;
+        }
+        if (type_system && !rules->typeParams.empty()) {
+            const std::string& typeName = rules->typeParams[0];
+            Type* ariaType = type_system->getStructType(typeName);
+            if (!ariaType) ariaType = type_system->getPrimitiveType(typeName);
+            if (ariaType) {
+                value_types[dollarAlloca] = ariaType;
+            }
+            var_aria_types["$"] = typeName;
+        }
+        
         // Codegen the condition expression
         llvm::Value* condResult = codegenExpression(rules->conditions[i].get());
         
@@ -11140,6 +11187,18 @@ void aria::IRGenerator::emitLimitChecks(const std::string& rulesName, llvm::Valu
             named_values["$"] = savedDollar;
         } else {
             named_values.erase("$");
+        }
+        // v0.2.43: Restore value_types for $ alloca
+        if (savedDollarType) {
+            value_types[dollarAlloca] = savedDollarType;
+        } else {
+            value_types.erase(dollarAlloca);
+        }
+        // v0.2.43: Restore var_aria_types for $
+        if (!savedDollarAriaType.empty()) {
+            var_aria_types["$"] = savedDollarAriaType;
+        } else {
+            var_aria_types.erase("$");
         }
         
         if (!condResult) continue;
