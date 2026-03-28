@@ -1589,6 +1589,12 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
         return llvm::StructType::get(context, {ptrTy, sizeTy});
     }
 
+    // dyn Trait — dynamic trait object (fat pointer: data + vtable)
+    // Represented as { ptr data, ptr vtable }
+    if (type_name.size() > 4 && type_name.substr(0, 4) == "dyn ") {
+        return getDynFatPtrType();
+    }
+
     // Check for pointer types (e.g., "int64@", "string@")
     // Arrays are represented as pointers in the type system
     if (type_name.size() >= 1 && type_name.back() == '@') {
@@ -2124,12 +2130,16 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
             resultType, paramTypes, false);
         
         // Forward-declare the function (no body yet)
-        llvm::Function* func = llvm::Function::Create(
-            funcType,
-            llvm::Function::ExternalLinkage,
-            spec->mangledName,
-            module.get()
-        );
+        // v0.2.36: Check if already declared by declareSpecializedFunctions
+        llvm::Function* func = module->getFunction(spec->mangledName);
+        if (!func) {
+            func = llvm::Function::Create(
+                funcType,
+                llvm::Function::ExternalLinkage,
+                spec->mangledName,
+                module.get()
+            );
+        }
         
         specFuncs.push_back({func, resultType, innerType, spec});
     }
@@ -2328,6 +2338,59 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
 }
 
 // =============================================================================
+// v0.2.36: Split specialization into declare + codegen for trait bounds support
+// =============================================================================
+
+void aria::IRGenerator::declareSpecializedFunctions(
+    const std::vector<sema::Specialization*>& specializations) {
+    
+    for (const auto* spec : specializations) {
+        if (!spec || !spec->funcDecl) continue;
+        
+        // Skip if already declared
+        if (module->getFunction(spec->mangledName)) continue;
+        
+        FuncDeclStmt* funcDecl = spec->funcDecl;
+        
+        std::string innerTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
+        llvm::Type* innerType = mapTypeFromName(innerTypeStr);
+        
+        std::vector<llvm::Type*> resultFields = {
+            innerType,
+            llvm::PointerType::get(context, 0),
+            llvm::Type::getInt8Ty(context)
+        };
+        llvm::StructType* resultType = llvm::StructType::get(context, resultFields);
+        
+        std::vector<llvm::Type*> paramTypes;
+        for (const auto& param : funcDecl->parameters) {
+            ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+            if (pnode->typeNode && pnode->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
+                llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+                paramTypes.push_back(llvm::StructType::get(context, {ptrTy, ptrTy}));
+            } else {
+                std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
+                paramTypes.push_back(mapTypeFromName(paramTypeStr));
+            }
+        }
+        
+        llvm::FunctionType* funcType = llvm::FunctionType::get(resultType, paramTypes, false);
+        
+        llvm::Function::Create(
+            funcType, llvm::Function::ExternalLinkage,
+            spec->mangledName, module.get());
+    }
+}
+
+size_t aria::IRGenerator::codegenSpecializedBodies(
+    const std::vector<sema::Specialization*>& specializations) {
+    
+    // Delegate to the full implementation which handles both passes
+    // Pass 1 (forward declarations) is idempotent — already-declared functions are skipped
+    return codegenSpecializedFunctions(specializations);
+}
+
+// =============================================================================
 // Module Declaration Processing (Recursive)
 // =============================================================================
 
@@ -2428,6 +2491,14 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             } else {
                 std::string pstr = pn->typeNode ? pn->typeNode->toString() : "void";
                 pre_params.push_back(mapTypeFromName(pstr));
+
+                // v0.2.36: Track dyn Trait parameters for coercion at call sites
+                if (pstr.substr(0, 4) == "dyn ") {
+                    std::string traitName = pstr.substr(4);
+                    std::string fn = modulePrefix.empty() ? fd->funcName
+                                                           : modulePrefix + "." + fd->funcName;
+                    func_dyn_params[fn][static_cast<unsigned>(pre_params.size() - 1)] = traitName;
+                }
             }
         }
 
@@ -3369,8 +3440,40 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
         }
 
         // WP 005: Handle TRAIT_DECL statements
-        // Trait declarations are compile-time only - no IR generated
+        // v0.2.36: Register trait info and generate vtable struct type for dyn dispatch
         if (decl->type == ASTNode::NodeType::TRAIT_DECL) {
+            TraitDeclStmt* traitDecl = static_cast<TraitDeclStmt*>(decl.get());
+            TraitInfo info;
+            info.traitName = traitDecl->traitName;
+
+            std::vector<llvm::Type*> vtableFieldTypes;
+            llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+
+            for (const auto& method : traitDecl->methods) {
+                TraitMethodInfo mi;
+                mi.name = method.name;
+                mi.returnType = method.returnType;
+                for (const auto& param : method.parameters) {
+                    std::string paramTypeStr = param.typeNode ? param.typeNode->toString() : "void";
+                    mi.paramTypes.push_back(paramTypeStr);
+                }
+                info.methods.push_back(mi);
+                vtableFieldTypes.push_back(ptrTy);
+            }
+
+            std::string vtableTyName = traitDecl->traitName + "_vtable_t";
+            info.vtableType = llvm::StructType::create(context, vtableFieldTypes, vtableTyName);
+            trait_info_map[traitDecl->traitName] = info;
+
+            // v0.2.36: Build method order for vtable dispatch index lookup
+            std::vector<std::string> methodNames;
+            for (const auto& m : info.methods) {
+                methodNames.push_back(m.name);
+            }
+            trait_method_order[traitDecl->traitName] = methodNames;
+
+            std::cerr << "[DYN] Registered trait '" << traitDecl->traitName
+                      << "' with " << info.methods.size() << " methods\n";
             continue;
         }
 
@@ -3490,6 +3593,37 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     named_values.erase(pnode->paramName);
                 }
             }
+
+            // v0.2.36: Generate vtable thunks and constant for dyn dispatch
+            auto traitIt = trait_info_map.find(impl->traitName);
+            if (traitIt != trait_info_map.end()) {
+                const TraitInfo& traitInfo = traitIt->second;
+                std::vector<llvm::Constant*> vtableEntries;
+
+                for (const auto& method : traitInfo.methods) {
+                    llvm::Function* thunk = generateVtableThunk(
+                        impl->traitName, impl->typeName, method);
+                    if (thunk) {
+                        vtableEntries.push_back(thunk);
+                    } else {
+                        vtableEntries.push_back(
+                            llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)));
+                    }
+                }
+
+                std::string vtableConstName = impl->traitName + "_vtable_" + impl->typeName;
+                llvm::Constant* vtableInit = llvm::ConstantStruct::get(
+                    traitInfo.vtableType, vtableEntries);
+                llvm::GlobalVariable* vtableGV = new llvm::GlobalVariable(
+                    *module, traitInfo.vtableType, true,
+                    llvm::GlobalValue::InternalLinkage, vtableInit, vtableConstName);
+
+                std::string vtableKey = impl->traitName + ":" + impl->typeName;
+                vtable_constants[vtableKey] = vtableGV;
+
+                std::cerr << "[DYN] Generated vtable: @" << vtableConstName << "\n";
+            }
+
             continue;
         }
     }
@@ -5471,7 +5605,44 @@ skip_comparison:
         // ========================================================================
 
         case ASTNode::NodeType::TRAIT_DECL: {
-            // Trait declarations are compile-time only - no IR to generate
+            // Register trait method info and generate vtable struct type
+            TraitDeclStmt* traitDecl = static_cast<TraitDeclStmt*>(stmt);
+            TraitInfo info;
+            info.traitName = traitDecl->traitName;
+
+            std::vector<llvm::Type*> vtableFieldTypes;
+            llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+
+            for (const auto& method : traitDecl->methods) {
+                TraitMethodInfo mi;
+                mi.name = method.name;
+                mi.returnType = method.returnType;
+                for (const auto& param : method.parameters) {
+                    std::string paramTypeStr = param.typeNode ? param.typeNode->toString() : "void";
+                    mi.paramTypes.push_back(paramTypeStr);
+                }
+                info.methods.push_back(mi);
+                vtableFieldTypes.push_back(ptrTy); // One function pointer per method
+            }
+
+            // Create named vtable struct type: %TraitName_vtable_t
+            std::string vtableTyName = traitDecl->traitName + "_vtable_t";
+            info.vtableType = llvm::StructType::create(context, vtableFieldTypes, vtableTyName);
+
+            trait_info_map[traitDecl->traitName] = info;
+
+            // v0.2.36: Build method order for vtable dispatch index lookup
+            {
+                std::vector<std::string> methodNames;
+                for (const auto& m : info.methods) {
+                    methodNames.push_back(m.name);
+                }
+                trait_method_order[traitDecl->traitName] = methodNames;
+            }
+
+            std::cerr << "[DYN] Registered trait '" << traitDecl->traitName
+                      << "' with " << info.methods.size() << " methods, vtable type: %"
+                      << vtableTyName << "\n";
             return nullptr;
         }
 
@@ -5553,6 +5724,40 @@ skip_comparison:
                     named_values.erase(paramNode->paramName);
                 }
             }
+
+            // v0.2.36: Generate vtable constant if this trait is registered for dyn dispatch
+            auto traitIt = trait_info_map.find(impl->traitName);
+            if (traitIt != trait_info_map.end()) {
+                const TraitInfo& traitInfo = traitIt->second;
+                std::vector<llvm::Constant*> vtableEntries;
+
+                for (const auto& method : traitInfo.methods) {
+                    llvm::Function* thunk = generateVtableThunk(
+                        impl->traitName, impl->typeName, method);
+                    if (thunk) {
+                        vtableEntries.push_back(thunk);
+                    } else {
+                        // Fallback: null pointer if thunk generation failed
+                        vtableEntries.push_back(
+                            llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)));
+                    }
+                }
+
+                // Create vtable constant: @TraitName_vtable_TypeName
+                std::string vtableConstName = impl->traitName + "_vtable_" + impl->typeName;
+                llvm::Constant* vtableInit = llvm::ConstantStruct::get(
+                    traitInfo.vtableType, vtableEntries);
+                llvm::GlobalVariable* vtableGV = new llvm::GlobalVariable(
+                    *module, traitInfo.vtableType, true,
+                    llvm::GlobalValue::InternalLinkage, vtableInit, vtableConstName);
+
+                std::string vtableKey = impl->traitName + ":" + impl->typeName;
+                vtable_constants[vtableKey] = vtableGV;
+
+                std::cerr << "[DYN] Generated vtable constant: @" << vtableConstName
+                          << " for " << vtableKey << "\n";
+            }
+
             return nullptr;
         }
 
@@ -6015,6 +6220,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // - TBB types with ERR sentinels
             // ExprCodegen has the correct, specification-compliant implementations.
             backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values, var_aria_types, type_system);
+            expr_codegen.setDynParamInfo(&func_dyn_params);
+            expr_codegen.setTraitMethodOrder(&trait_method_order);
             return expr_codegen.codegenCall(call);
         }
         
@@ -10706,4 +10913,97 @@ bool aria::IRGenerator::isSuffixSigned(const std::string& suffix) {
     
     // Default to signed for unknown
     return true;
+}
+
+// ============================================================================
+// dyn Trait dispatch infrastructure (v0.2.36)
+// ============================================================================
+
+llvm::StructType* aria::IRGenerator::getDynFatPtrType() {
+    llvm::StructType* dynTy = llvm::StructType::getTypeByName(context, "struct.DynTraitObj");
+    if (!dynTy) {
+        llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+        dynTy = llvm::StructType::create(context, {ptrTy, ptrTy}, "struct.DynTraitObj");
+    }
+    return dynTy;
+}
+
+llvm::Function* aria::IRGenerator::generateVtableThunk(
+    const std::string& traitName,
+    const std::string& typeName,
+    const TraitMethodInfo& method) {
+
+    // Thunk name: __dyn_TraitName_TypeName_methodName
+    std::string thunkName = "__dyn_" + traitName + "_" + typeName + "_" + method.name;
+
+    // If already generated, return it
+    if (auto* existing = module->getFunction(thunkName)) {
+        return existing;
+    }
+
+    // The thunk signature: same return type as the real function, but first param is ptr (data pointer)
+    // Real function: TypeName_methodName(ConcreteType self, ...) -> Result<RetType>
+    // Thunk: __dyn_...(ptr self_data, ...) -> Result<RetType>
+
+    std::string mangledName = typeName + "_" + method.name;
+    llvm::Function* realFunc = module->getFunction(mangledName);
+    if (!realFunc) {
+        std::cerr << "[DYN] Warning: impl function '" << mangledName << "' not found for vtable thunk\n";
+        return nullptr;
+    }
+
+    // Build thunk parameter types: first param is ptr (data), rest match real function
+    std::vector<llvm::Type*> thunkParams;
+    llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+    thunkParams.push_back(ptrTy); // data pointer (replaces concrete self type)
+
+    // Copy remaining params from real function (skip first param which is self)
+    for (unsigned i = 1; i < realFunc->arg_size(); i++) {
+        thunkParams.push_back(realFunc->getArg(i)->getType());
+    }
+
+    llvm::FunctionType* thunkFT = llvm::FunctionType::get(
+        realFunc->getReturnType(), thunkParams, false);
+
+    llvm::Function* thunk = llvm::Function::Create(
+        thunkFT, llvm::Function::InternalLinkage, thunkName, module.get());
+
+    // Generate thunk body: load concrete value from data ptr, call real function
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", thunk);
+
+    // Save current insert point
+    auto savedIP = builder.saveIP();
+    builder.SetInsertPoint(entry);
+
+    // Load the concrete self value from the data pointer
+    llvm::Type* selfType = realFunc->getArg(0)->getType();
+    llvm::Value* selfPtr = thunk->getArg(0);
+    llvm::Value* selfVal;
+    if (selfType->isPointerTy()) {
+        // Struct types are already pointers — just pass through
+        selfVal = selfPtr;
+    } else {
+        // Primitive types — load from pointer
+        selfVal = builder.CreateLoad(selfType, selfPtr, "self.load");
+    }
+
+    // Build argument list for the real function call
+    std::vector<llvm::Value*> callArgs;
+    callArgs.push_back(selfVal);
+    for (unsigned i = 1; i < thunk->arg_size(); i++) {
+        callArgs.push_back(thunk->getArg(i));
+    }
+
+    llvm::Value* result = builder.CreateCall(realFunc, callArgs, "thunk.result");
+
+    if (realFunc->getReturnType()->isVoidTy()) {
+        builder.CreateRetVoid();
+    } else {
+        builder.CreateRet(result);
+    }
+
+    builder.restoreIP(savedIP);
+
+    std::cerr << "[DYN] Generated vtable thunk: " << thunkName << "\n";
+    return thunk;
 }

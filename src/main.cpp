@@ -86,8 +86,8 @@ extern "C" {
 // Version information
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 2
-#define ARIA_VERSION_PATCH 33
-#define ARIA_VERSION "0.2.35"
+#define ARIA_VERSION_PATCH 36
+#define ARIA_VERSION "0.2.36"
 
 // Compiler options
 struct CompilerOptions {
@@ -851,24 +851,16 @@ llvm::Module* compile_to_module(
         ir_gen.initDebugInfo(file, dir);
     }
     
-    // Generate IR for specialized generic functions FIRST (before main codegen)
-    // This ensures specialized functions exist when regular code tries to call them
+    // v0.2.36: Forward-declare specialized generic functions FIRST (before main codegen)
+    // This ensures call sites can resolve, but bodies are generated AFTER main codegen
+    // so that trait impl methods (e.g. int32_add_ten from impl:Addable:for:int32) exist.
     const auto& specializations = monomorphizer.getSpecializations();
     if (!specializations.empty()) {
         if (opts.verbose) {
-            std::cout << "  Generating " << specializations.size()
+            std::cout << "  Forward-declaring " << specializations.size()
                      << " specialized generic function(s)...\n";
         }
-        try {
-            size_t generated = ir_gen.codegenSpecializedFunctions(specializations);
-            if (opts.verbose) {
-                std::cout << "  Generated " << generated << " specialization(s)\n";
-            }
-        } catch (const std::exception& e) {
-            diags.error(aria::SourceLocation(filename, 0, 0),
-                       std::string("Specialization IR error: ") + e.what());
-            return nullptr;
-        }
+        ir_gen.declareSpecializedFunctions(specializations);
     }
     
     // Generate IR for loaded modules (needed for cross-module function calls)
@@ -926,6 +918,24 @@ llvm::Module* compile_to_module(
         diags.error(aria::SourceLocation(filename, 0, 0),
                    std::string("IR generation error: ") + e.what());
         return nullptr;
+    }
+    
+    // v0.2.36: Now generate specialization BODIES (after main codegen created impl methods)
+    if (!specializations.empty()) {
+        if (opts.verbose) {
+            std::cout << "  Generating " << specializations.size()
+                     << " specialized generic function bodies...\n";
+        }
+        try {
+            size_t generated = ir_gen.codegenSpecializedBodies(specializations);
+            if (opts.verbose) {
+                std::cout << "  Generated " << generated << " specialization(s)\n";
+            }
+        } catch (const std::exception& e) {
+            diags.error(aria::SourceLocation(filename, 0, 0),
+                       std::string("Specialization IR error: ") + e.what());
+            return nullptr;
+        }
     }
 
     // Finalize debug info (must be done after all codegen)

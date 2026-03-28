@@ -1,0 +1,25 @@
+// Test trait bounds on generic functions
+
+trait:Addable = {
+    func:add_ten = int32(int32:self);
+};
+
+impl:Addable:for:int32 = {
+    func:add_ten = int32(int32:self) {
+        pass(self + 10i32);
+    };
+};
+
+// Generic function with trait bound: T must implement Addable
+func<T: Addable>:apply_trait = int32(T:val) {
+    pass(val.add_ten());
+};
+
+pub func:main = int32() {
+    int32:x = 7i32;
+    int32:result = raw(apply_trait::<int32>(x));
+    // 7 + 10 = 17
+    pass(result);
+};
+
+func:failsafe = nil(int32:code) {};
