@@ -156,22 +156,25 @@ public:
 
 /**
  * Rules declaration statement node
- * Represents: Rules:Name = { $ < 100, $ % 2 == 0, limit<other_rules> };
+ * Represents: Rules<T1,T2>:Name = { $ < 100, $ % 2 == 0, limit<other_rules> };
+ * Optional <T> type parameters restrict which types the rules can be applied to.
  * Each condition is an expression using $ as the value placeholder.
  * Conditions are AND-combined. Cascading includes import conditions from other Rules.
  */
 class RulesDeclStmt : public ASTNode {
 public:
     std::string rulesName;
+    std::vector<std::string> typeParams;       // v0.2.42: Optional type parameters (e.g., {"uint8", "int32"})
     std::vector<ASTNodePtr> conditions;        // Expressions using $ as placeholder
     std::vector<std::string> cascadedRules;    // Names of other Rules to include
     
     RulesDeclStmt(const std::string& name,
+                  const std::vector<std::string>& typeParams,
                   const std::vector<ASTNodePtr>& conds,
                   const std::vector<std::string>& cascaded,
                   int line = 0, int column = 0)
         : ASTNode(NodeType::RULES_DECL, line, column),
-          rulesName(name), conditions(conds), cascadedRules(cascaded) {}
+          rulesName(name), typeParams(typeParams), conditions(conds), cascadedRules(cascaded) {}
     
     std::string toString() const override;
 };

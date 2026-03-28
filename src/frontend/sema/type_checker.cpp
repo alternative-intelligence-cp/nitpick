@@ -8827,11 +8827,36 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             return;
         }
         
-        // Only numeric types can have limit constraints
-        if (!isNumericType(declaredType)) {
-            addError("limit<> constraints can only be applied to numeric types, not '" + 
-                     declaredType->toString() + "'", stmt);
-            return;
+        RulesDeclStmt* rulesDecl = it->second;
+        
+        // v0.2.42: Type parameter enforcement
+        if (!rulesDecl->typeParams.empty()) {
+            // Rules has type params — variable type must match one of them
+            std::string varTypeName = declaredType->toString();
+            bool typeMatch = false;
+            for (const auto& tp : rulesDecl->typeParams) {
+                if (tp == varTypeName) {
+                    typeMatch = true;
+                    break;
+                }
+            }
+            if (!typeMatch) {
+                std::string allowed;
+                for (size_t i = 0; i < rulesDecl->typeParams.size(); ++i) {
+                    if (i > 0) allowed += ", ";
+                    allowed += rulesDecl->typeParams[i];
+                }
+                addError("limit<" + stmt->limitRulesName + "> can only be applied to " + 
+                         allowed + ", got '" + varTypeName + "'", stmt);
+                return;
+            }
+        } else {
+            // No type params (backward compat) — only numeric types allowed
+            if (!isNumericType(declaredType)) {
+                addError("limit<> constraints can only be applied to numeric types, not '" + 
+                         declaredType->toString() + "'", stmt);
+                return;
+            }
         }
         
         // Track this variable as limited for assignment checking
@@ -9342,6 +9367,19 @@ void TypeChecker::checkRulesDecl(RulesDeclStmt* stmt) {
     if (rulesTable.find(stmt->rulesName) != rulesTable.end()) {
         addError("Rules '" + stmt->rulesName + "' is already defined", stmt);
         return;
+    }
+    
+    // v0.2.42: Validate type parameters are known types
+    for (const auto& typeParam : stmt->typeParams) {
+        if (!isTypeKeyword(typeParam)) {
+            std::string suggestion = findSimilarType(typeParam);
+            std::string msg = "Unknown type '" + typeParam + "' in Rules<> type parameter";
+            if (!suggestion.empty()) {
+                msg += ". Did you mean '" + suggestion + "'?";
+            }
+            addError(msg, stmt);
+            return;
+        }
     }
     
     // Validate cascaded rule references exist

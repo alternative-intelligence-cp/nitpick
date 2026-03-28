@@ -8564,6 +8564,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                 L = builder.CreateFPExt(L, R->getType(), "cmp_fpext");
                             }
                         }
+                        // Float-int coercion: convert integer operand to float
+                        else if (L->getType()->getScalarType()->isFloatingPointTy() && R->getType()->isIntegerTy()) {
+                            R = builder.CreateSIToFP(R, L->getType(), "cmp_itofp");
+                        } else if (R->getType()->getScalarType()->isFloatingPointTy() && L->getType()->isIntegerTy()) {
+                            L = builder.CreateSIToFP(L, R->getType(), "cmp_itofp");
+                        }
                     }
                     // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers
                     if (L->getType()->getScalarType()->isFloatingPointTy()) {
@@ -8722,6 +8728,14 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             return builder.CreateNot(eq, "str.ne");
                         }
                     }
+                    // Float-int coercion for !=
+                    if (L->getType() != R->getType()) {
+                        if (L->getType()->getScalarType()->isFloatingPointTy() && R->getType()->isIntegerTy()) {
+                            R = builder.CreateSIToFP(R, L->getType(), "ne_itofp");
+                        } else if (R->getType()->getScalarType()->isFloatingPointTy() && L->getType()->isIntegerTy()) {
+                            L = builder.CreateSIToFP(L, R->getType(), "ne_itofp");
+                        }
+                    }
                     // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers
                     if (L->getType()->getScalarType()->isFloatingPointTy()) {
                         if (L->getType() != R->getType() && R->getType()->getScalarType()->isFloatingPointTy()) {
@@ -8814,6 +8828,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             } else {
                                 L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
                             }
+                        } else if (L->getType()->getScalarType()->isFloatingPointTy() && R->getType()->isIntegerTy()) {
+                            R = builder.CreateSIToFP(R, L->getType(), "lt_itofp");
+                        } else if (R->getType()->getScalarType()->isFloatingPointTy() && L->getType()->isIntegerTy()) {
+                            L = builder.CreateSIToFP(L, R->getType(), "lt_itofp");
                         }
                     }
                     // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers
@@ -8913,6 +8931,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             } else {
                                 L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
                             }
+                        } else if (L->getType()->getScalarType()->isFloatingPointTy() && R->getType()->isIntegerTy()) {
+                            R = builder.CreateSIToFP(R, L->getType(), "le_itofp");
+                        } else if (R->getType()->getScalarType()->isFloatingPointTy() && L->getType()->isIntegerTy()) {
+                            L = builder.CreateSIToFP(L, R->getType(), "le_itofp");
                         }
                     }
                     // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers
@@ -9013,6 +9035,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             } else {
                                 L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
                             }
+                        } else if (L->getType()->getScalarType()->isFloatingPointTy() && R->getType()->isIntegerTy()) {
+                            R = builder.CreateSIToFP(R, L->getType(), "gt_itofp");
+                        } else if (R->getType()->getScalarType()->isFloatingPointTy() && L->getType()->isIntegerTy()) {
+                            L = builder.CreateSIToFP(L, R->getType(), "gt_itofp");
                         }
                     }
                     // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers
@@ -9112,6 +9138,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             } else {
                                 L = builder.CreateIntCast(L, R->getType(), true, "cmp_cast");
                             }
+                        } else if (L->getType()->getScalarType()->isFloatingPointTy() && R->getType()->isIntegerTy()) {
+                            R = builder.CreateSIToFP(R, L->getType(), "ge_itofp");
+                        } else if (R->getType()->getScalarType()->isFloatingPointTy() && L->getType()->isIntegerTy()) {
+                            L = builder.CreateSIToFP(L, R->getType(), "ge_itofp");
                         }
                     }
                     // Use FCmp for floating point (scalar or SIMD vector), ICmp for integers

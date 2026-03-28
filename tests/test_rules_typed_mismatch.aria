@@ -1,0 +1,19 @@
+// test_rules_typed_mismatch.aria — v0.2.42 compile error test
+// EXPECTED: Compile error — applying Rules<uint8> to int32 variable
+// This file should NOT compile successfully.
+
+extern func:puts = int32(string:s);
+
+Rules<uint8>:r_byte_only = {
+    $ > 0
+};
+
+func:failsafe = NIL() {
+    drop(puts("FAILSAFE"));
+};
+
+func:main = int32() {
+    // ERROR: r_byte_only is Rules<uint8> but x is int32
+    limit<r_byte_only> int32:x = 50;
+    return 0;
+};
