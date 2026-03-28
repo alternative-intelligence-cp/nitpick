@@ -1,5 +1,21 @@
 # Aria Language Changelog
 
+## [0.2.44] - March 2026
+
+### Added
+- **Rules Array Indexing** — `Rules<T[]>` type params for array rules with `$[idx]` element access
+- **Rules Array Length** — `$.length` on array-typed `$` returns compile-time array size
+- **Multi-Type Parameters** — `Rules<int8,int16,int32,flt32>:name` validates variable type matches ANY listed type
+- **Null/NIL Checks in Rules** — `$ != NIL` for integer zero checks, `$ != NULL` for pointer null checks
+- **Array Type Matching** — `limit<arr_rules> T[N]:var` matches `T[]` type param for any size N
+
+### Tests
+- `test_rules_array.aria` — Rules<int32[]> with $[idx] and $.length (3 tests)
+- `test_rules_multitype.aria` — Rules<T1,T2,...> applied to int8, int16, flt64, int32, int64 (5 tests)
+- `test_rules_null.aria` — Rules with $ != NIL and $ != 0 (3 tests)
+- `test_rules_full_suite.aria` — combined test: all Rules features v0.2.41–v0.2.44 (10 tests)
+- All prior Rules tests pass (regression clean)
+
 ## [0.2.14] - March 2026
 
 ### Documentation

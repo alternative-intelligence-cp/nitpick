@@ -8830,6 +8830,7 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         RulesDeclStmt* rulesDecl = it->second;
         
         // v0.2.42: Type parameter enforcement
+        // v0.2.44: Also matches array types (T[] matches T[N]) and pointer types (T@ matches T@)
         if (!rulesDecl->typeParams.empty()) {
             // Rules has type params — variable type must match one of them
             std::string varTypeName = declaredType->toString();
@@ -8838,6 +8839,18 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                 if (tp == varTypeName) {
                     typeMatch = true;
                     break;
+                }
+                // v0.2.44: Array type matching — "int8[]" matches "int8[N]" for any N
+                if (tp.length() > 2 && tp.substr(tp.length()-2) == "[]") {
+                    std::string baseType = tp.substr(0, tp.length()-2);
+                    // varTypeName should be "baseType[N]" for some N
+                    if (varTypeName.length() > baseType.length() + 2 &&
+                        varTypeName.substr(0, baseType.length()) == baseType &&
+                        varTypeName[baseType.length()] == '[' &&
+                        varTypeName.back() == ']') {
+                        typeMatch = true;
+                        break;
+                    }
                 }
             }
             if (!typeMatch) {
@@ -9383,7 +9396,15 @@ void TypeChecker::validateRulesDollarFields(ASTNode* node, const std::string& ty
                         addError("String type has no property '" + member->member + 
                                  "' in Rules body. Valid: $.length, $.contains(), $.startsWith(), $.endsWith()", errorNode);
                     }
-                } else if (structType) {
+                }
+                // v0.2.44: Array type — accept .length
+                else if (typeName.length() > 2 && typeName.substr(typeName.length()-2) == "[]") {
+                    if (member->member != "length") {
+                        addError("Array type has no property '" + member->member + 
+                                 "' in Rules body. Valid: $.length", errorNode);
+                    }
+                }
+                else if (structType) {
                     // Struct type — check field exists
                     bool found = false;
                     const auto& fields = structType->getFields();
@@ -9405,6 +9426,17 @@ void TypeChecker::validateRulesDollarFields(ASTNode* node, const std::string& ty
                 }
             }
         }
+        // v0.2.44: Also handle $.length on $[idx] (e.g., member access on indexed expression)
+        // where the object is an IndexExpr
+        if (member->object->type == ASTNode::NodeType::INDEX) {
+            validateRulesDollarFields(member->object.get(), typeName, structType, errorNode);
+        }
+    }
+    
+    // v0.2.44: Recurse into index expressions (for $[idx] in conditions)
+    if (node->type == ASTNode::NodeType::INDEX) {
+        auto* indexExpr = static_cast<IndexExpr*>(node);
+        validateRulesDollarFields(indexExpr->array.get(), typeName, structType, errorNode);
     }
     
     // Recurse into binary expressions
@@ -9433,9 +9465,17 @@ void TypeChecker::checkRulesDecl(RulesDeclStmt* stmt) {
     
     // v0.2.42: Validate type parameters are known types
     // v0.2.43: Also accept struct/Type names for $.field member access
+    // v0.2.44: Also accept array types (T[]) and pointer types (T@)
     for (const auto& typeParam : stmt->typeParams) {
-        if (!isTypeKeyword(typeParam) && !typeSystem->getStructType(typeParam)) {
-            std::string suggestion = findSimilarType(typeParam);
+        std::string baseType = typeParam;
+        // v0.2.44: Strip array suffix [] or pointer suffix @ to validate the base type
+        if (baseType.length() > 2 && baseType.substr(baseType.length()-2) == "[]") {
+            baseType = baseType.substr(0, baseType.length()-2);
+        } else if (baseType.length() > 1 && baseType.back() == '@') {
+            baseType = baseType.substr(0, baseType.length()-1);
+        }
+        if (!isTypeKeyword(baseType) && !typeSystem->getStructType(baseType)) {
+            std::string suggestion = findSimilarType(baseType);
             std::string msg = "Unknown type '" + typeParam + "' in Rules<> type parameter";
             if (!suggestion.empty()) {
                 msg += ". Did you mean '" + suggestion + "'?";

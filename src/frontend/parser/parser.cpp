@@ -2858,17 +2858,31 @@ ASTNodePtr Parser::parseRulesDecl() {
     if (match(TokenType::TOKEN_LESS)) {
         // Parse comma-separated type names until >
         // Type names can be keywords (int32, uint8, flt64...) or identifiers (struct/Type names)
+        // v0.2.44: Also accepts array suffix [] and pointer suffix ->
         do {
+            std::string typeName;
             if (isTypeKeyword(peek().type)) {
-                typeParams.push_back(peek().lexeme);
+                typeName = peek().lexeme;
                 advance();
             } else if (check(TokenType::TOKEN_IDENTIFIER)) {
-                typeParams.push_back(peek().lexeme);
+                typeName = peek().lexeme;
                 advance();
             } else {
                 error("Expected type name inside Rules<>");
                 return nullptr;
             }
+            // v0.2.44: Check for array suffix []
+            if (check(TokenType::TOKEN_LEFT_BRACKET)) {
+                advance(); // consume [
+                consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after '[' in Rules<T[]>");
+                typeName += "[]";
+            }
+            // v0.2.44: Check for pointer suffix ->
+            else if (check(TokenType::TOKEN_ARROW)) {
+                advance(); // consume ->
+                typeName += "@"; // normalize to match PointerType::toString()
+            }
+            typeParams.push_back(typeName);
         } while (match(TokenType::TOKEN_COMMA));
         consume(TokenType::TOKEN_GREATER, "Expected '>' after type parameters in Rules<>");
     }

@@ -9951,6 +9951,30 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 return nullptr;
             }
             
+            // v0.2.44: Handle array member access ($.length for array types)
+            if (aria_type->getKind() == TypeKind::ARRAY) {
+                if (member->member == "length") {
+                    // Get array size from the LLVM alloca type
+                    if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(object_ptr)) {
+                        llvm::Type* allocType = allocaInst->getAllocatedType();
+                        if (allocType->isArrayTy()) {
+                            uint64_t arrSize = llvm::cast<llvm::ArrayType>(allocType)->getNumElements();
+                            return llvm::ConstantInt::get(builder.getInt64Ty(), arrSize);
+                        }
+                    }
+                    // Fallback: get from Aria type system
+                    sema::ArrayType* arrType = static_cast<sema::ArrayType*>(aria_type);
+                    int size = arrType->getSize();
+                    if (size >= 0) {
+                        return llvm::ConstantInt::get(builder.getInt64Ty(), static_cast<uint64_t>(size));
+                    }
+                    std::cerr << "[DEBUG MEMBER_ACCESS] Array length unknown at compile time" << std::endl;
+                    return nullptr;
+                }
+                std::cerr << "[DEBUG MEMBER_ACCESS] Unknown array member: " << member->member << std::endl;
+                return nullptr;
+            }
+            
             // Handle struct member access
             if (aria_type->getKind() != TypeKind::STRUCT) {
                 // Not a struct type
@@ -11173,6 +11197,22 @@ void aria::IRGenerator::emitLimitChecks(const std::string& rulesName, llvm::Valu
             const std::string& typeName = rules->typeParams[0];
             Type* ariaType = type_system->getStructType(typeName);
             if (!ariaType) ariaType = type_system->getPrimitiveType(typeName);
+            // v0.2.44: Handle array types (e.g., "int8[]")
+            if (!ariaType && typeName.length() > 2 && typeName.substr(typeName.length()-2) == "[]") {
+                std::string elemTypeName = typeName.substr(0, typeName.length()-2);
+                Type* elemType = type_system->getPrimitiveType(elemTypeName);
+                if (!elemType) elemType = type_system->getStructType(elemTypeName);
+                if (elemType) {
+                    // Get array size from the LLVM value type
+                    int arrSize = -1;
+                    if (value->getType()->isArrayTy()) {
+                        arrSize = static_cast<int>(llvm::cast<llvm::ArrayType>(value->getType())->getNumElements());
+                    } else if (dollarAlloca->getAllocatedType()->isArrayTy()) {
+                        arrSize = static_cast<int>(llvm::cast<llvm::ArrayType>(dollarAlloca->getAllocatedType())->getNumElements());
+                    }
+                    ariaType = type_system->getArrayType(elemType, arrSize);
+                }
+            }
             if (ariaType) {
                 value_types[dollarAlloca] = ariaType;
             }
