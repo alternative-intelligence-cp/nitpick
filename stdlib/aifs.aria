@@ -1,6 +1,10 @@
 // stdlib/aifs.aria
 // AriaFS — AI-Native Filesystem metadata and streaming I/O
 // Uses aifs_shim.c for xattr-based tensor metadata operations
+//
+// v0.2.11: Basic tensor metadata (dtype, shape, checkpoint) + streaming I/O
+// v0.2.38: Model format detection, SHA-256 checksums, sequential read
+//          optimization, directory scanning, custom metadata
 
 extern func:aria_shim_aifs_set_dtype = int32(string:path, string:dtype);
 extern func:aria_shim_aifs_get_dtype = string(string:path);
@@ -14,7 +18,32 @@ extern func:aria_shim_aifs_open_append = int64(string:path);
 extern func:aria_shim_aifs_close = int32(int64:fd);
 extern func:aria_shim_aifs_file_size = int64(string:path);
 
+// v0.2.38: Model format detection
+extern func:aria_shim_aifs_detect_format = string(string:path);
+extern func:aria_shim_aifs_set_format = int32(string:path, string:format);
+extern func:aria_shim_aifs_get_format = string(string:path);
+
+// v0.2.38: Checksum / integrity
+extern func:aria_shim_aifs_compute_checksum = int32(string:path);
+extern func:aria_shim_aifs_get_checksum = string(string:path);
+extern func:aria_shim_aifs_verify_checksum = int32(string:path);
+
+// v0.2.38: Sequential read optimization
+extern func:aria_shim_aifs_open_sequential = int64(string:path);
+extern func:aria_shim_aifs_read_chunk = int64(int64:fd, int64:nbytes);
+extern func:aria_shim_aifs_get_read_buffer = string();
+extern func:aria_shim_aifs_seek = int64(int64:fd, int64:offset);
+extern func:aria_shim_aifs_readahead = int32(int64:fd, int64:offset, int64:count);
+
+// v0.2.38: Directory scanning / model index
+extern func:aria_shim_aifs_scan_models = string(string:dir_path);
+
+// v0.2.38: Custom metadata (arbitrary key-value)
+extern func:aria_shim_aifs_set_meta = int32(string:path, string:key, string:value);
+extern func:aria_shim_aifs_get_meta = string(string:path, string:key);
+
 Type:AIFs = {
+    // ── Tensor metadata ──
     func:set_dtype = int32(string:path, string:dtype) {
         pass(aria_shim_aifs_set_dtype(path, dtype));
     };
@@ -39,6 +68,7 @@ Type:AIFs = {
         pass(aria_shim_aifs_is_checkpoint(path));
     };
 
+    // ── Streaming I/O ──
     func:open_read = int64(string:path) {
         pass(aria_shim_aifs_open_read(path));
     };
@@ -57,6 +87,73 @@ Type:AIFs = {
 
     func:file_size = int64(string:path) {
         pass(aria_shim_aifs_file_size(path));
+    };
+
+    // ── Model format detection (v0.2.38) ──
+    // Detects: onnx, safetensors, gguf, pytorch, hdf5, numpy, tflite, tensorrt
+    func:detect_format = string(string:path) {
+        pass(aria_shim_aifs_detect_format(path));
+    };
+
+    func:set_format = int32(string:path, string:format) {
+        pass(aria_shim_aifs_set_format(path, format));
+    };
+
+    func:get_format = string(string:path) {
+        pass(aria_shim_aifs_get_format(path));
+    };
+
+    // ── Checksum / integrity (v0.2.38) ──
+    // compute_checksum: calculates SHA-256 and stores in xattr
+    func:compute_checksum = int32(string:path) {
+        pass(aria_shim_aifs_compute_checksum(path));
+    };
+
+    func:get_checksum = string(string:path) {
+        pass(aria_shim_aifs_get_checksum(path));
+    };
+
+    // verify_checksum: 1 = match, 0 = mismatch, -1 = no stored checksum
+    func:verify_checksum = int32(string:path) {
+        pass(aria_shim_aifs_verify_checksum(path));
+    };
+
+    // ── Sequential read (v0.2.38) ──
+    // Opens file with posix_fadvise(SEQUENTIAL) + readahead hints
+    func:open_sequential = int64(string:path) {
+        pass(aria_shim_aifs_open_sequential(path));
+    };
+
+    func:read_chunk = int64(int64:fd, int64:nbytes) {
+        pass(aria_shim_aifs_read_chunk(fd, nbytes));
+    };
+
+    func:get_read_buffer = string() {
+        pass(aria_shim_aifs_get_read_buffer());
+    };
+
+    func:seek = int64(int64:fd, int64:offset) {
+        pass(aria_shim_aifs_seek(fd, offset));
+    };
+
+    func:readahead = int32(int64:fd, int64:offset, int64:count) {
+        pass(aria_shim_aifs_readahead(fd, offset, count));
+    };
+
+    // ── Model index / directory scan (v0.2.38) ──
+    // Returns tab-separated lines: path\tformat\tdtype\tshape\tsize\tchecksum
+    func:scan_models = string(string:dir_path) {
+        pass(aria_shim_aifs_scan_models(dir_path));
+    };
+
+    // ── Custom metadata (v0.2.38) ──
+    // Arbitrary key-value pairs stored as user.aria.<key> xattrs
+    func:set_meta = int32(string:path, string:key, string:value) {
+        pass(aria_shim_aifs_set_meta(path, key, value));
+    };
+
+    func:get_meta = string(string:path, string:key) {
+        pass(aria_shim_aifs_get_meta(path, key));
     };
 
     struct:interface = {
