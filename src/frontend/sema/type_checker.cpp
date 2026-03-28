@@ -7533,6 +7533,12 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 return type;
             }
             
+            // v0.2.39: Try enum type
+            type = typeSystem->getEnumType(simpleType->typeName);
+            if (type) {
+                return type;
+            }
+            
             // any type — type-erased pointer (safe void* replacement)
             if (simpleType->typeName == "any") {
                 return typeSystem->getAnyType();
@@ -9245,26 +9251,33 @@ void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
 }
 
 void TypeChecker::checkEnumDecl(EnumDeclStmt* stmt) {
-    // Check if enum name already exists
-    // Note: For now, we just register enum variants as constants in the symbol table
-    // Full enum type support can be added later
+    // v0.2.39: Create proper EnumType for type-safe enum variables
     
-    // Register each enum variant as a constant
+    // Check if enum name already exists as a type
+    if (typeSystem->getStructType(stmt->enumName) || typeSystem->getEnumType(stmt->enumName)) {
+        addError("Type '" + stmt->enumName + "' is already defined", stmt);
+        return;
+    }
+    
+    // Create the EnumType in the type system
+    EnumType* enumType = typeSystem->createEnumType(stmt->enumName, stmt->variants);
+    
+    // Register each enum variant as a typed constant in the symbol table
     for (const auto& [variantName, variantValue] : stmt->variants) {
         std::string fullName = stmt->enumName + "." + variantName;
         
-        // Check if this variant name already exists in the enum
         if (symbolTable->isDefined(fullName)) {
             addError("Enum variant '" + variantName + "' is already defined in enum '" + 
                     stmt->enumName + "'", stmt);
             continue;
         }
         
-        // For now, register the variant as an int64 constant in the symbol table
-        // This allows code like: int32:x = MyEnum.VARIANT;
-        // TODO: Create a proper EnumType when type system is extended
-        symbolTable->defineSymbol(fullName, SymbolKind::VARIABLE, typeSystem->getPrimitiveType("int64"));
+        // Register variant with the enum type (not int64 — enables type checking)
+        symbolTable->defineSymbol(fullName, SymbolKind::VARIABLE, enumType);
     }
+    
+    // Also register the enum name itself so it can be used as a type annotation
+    // (resolveTypeNode will look it up via typeSystem->getEnumType())
 }
 
 // ============================================================================

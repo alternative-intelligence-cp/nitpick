@@ -226,8 +226,15 @@ TypeDomain ExhaustivenessAnalyzer::getDomain(Type* type) {
         return TypeDomain::infinite();
     }
     
-    // Enum types have finite, enumerable domains
-    // TODO: Extract enum variants when EnumType is implemented
+    // Enum types have finite, enumerable domains (v0.2.39)
+    if (type->getKind() == TypeKind::ENUM) {
+        EnumType* enumType = static_cast<EnumType*>(type);
+        std::set<std::string> variantNames;
+        for (const auto& [name, value] : enumType->getVariants()) {
+            variantNames.insert(name);
+        }
+        return TypeDomain::forEnum(variantNames);
+    }
     
     // All other types are infinite
     return TypeDomain::infinite();
@@ -370,6 +377,25 @@ void ExhaustivenessAnalyzer::analyzePattern(
             int64_t value;
             if (extractIntValue(pattern, value)) {
                 coverage.addRange(value, value);
+            }
+            break;
+        }
+        
+        case ASTNode::NodeType::MEMBER_ACCESS: {
+            // v0.2.39: Enum variant pattern: Color.RED, Direction.NORTH, etc.
+            MemberAccessExpr* member = static_cast<MemberAccessExpr*>(pattern);
+            if (domain.getKind() == TypeDomain::Kind::ENUM) {
+                // For enum patterns, add the variant name as a covered symbol
+                coverage.addSymbol(member->member);
+            } else {
+                // For non-enum domains, try to resolve as integer constant
+                // (enum used in integer pick context)
+                if (member->object->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* ident = static_cast<IdentifierExpr*>(member->object.get());
+                    std::string fullName = ident->name + "." + member->member;
+                    // Add as symbol since we can't resolve the value here
+                    coverage.addSymbol(fullName);
+                }
             }
             break;
         }
