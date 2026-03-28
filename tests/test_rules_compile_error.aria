@@ -1,0 +1,17 @@
+// test_rules_compile_error.aria — v0.2.41 Compile-time limit violation
+// Expected: compiler error — value 100 violates $ < 100
+
+extern func:puts = int32(string:s);
+
+Rules:r_lt_100 = {
+    $ < 100
+};
+
+func:failsafe = NIL() {
+    drop(puts("FAILSAFE"));
+};
+
+func:main = int32() {
+    limit<r_lt_100> int32:x = 100;
+    pass(0);
+};

@@ -100,6 +100,21 @@ std::string EnumDeclStmt::toString() const {
     return oss.str();
 }
 
+std::string RulesDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "RulesDecl(Rules:" << rulesName << " = { ";
+    for (size_t i = 0; i < conditions.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << conditions[i]->toString();
+    }
+    for (size_t i = 0; i < cascadedRules.size(); ++i) {
+        if (!conditions.empty() || i > 0) oss << ", ";
+        oss << "limit<" << cascadedRules[i] << ">";
+    }
+    oss << " })";
+    return oss.str();
+}
+
 std::string TypeDeclStmt::toString() const {
     std::ostringstream oss;
     oss << "TypeDecl(Type:" << typeName << " = {";

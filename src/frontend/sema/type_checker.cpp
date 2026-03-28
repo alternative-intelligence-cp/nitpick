@@ -12,6 +12,7 @@
 #include <iostream>
 #include <unordered_set>
 #include <set>
+#include <cmath>
 
 namespace aria {
 namespace sema {
@@ -7380,6 +7381,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkEnumDecl(static_cast<EnumDeclStmt*>(stmt));
             break;
 
+        case ASTNode::NodeType::RULES_DECL:
+            checkRulesDecl(static_cast<RulesDeclStmt*>(stmt));
+            break;
+
         case ASTNode::NodeType::TYPE_DECL:
             checkTypeDecl(static_cast<TypeDeclStmt*>(stmt));
             break;
@@ -8812,6 +8817,54 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
     if (declaredType->getKind() == TypeKind::RESULT && stmt->isWild) {
         wildResults.insert(stmt->varName);
     }
+    
+    // v0.2.41: Validate limit<> constraints
+    if (!stmt->limitRulesName.empty()) {
+        auto it = rulesTable.find(stmt->limitRulesName);
+        if (it == rulesTable.end()) {
+            addError("Unknown rules '" + stmt->limitRulesName + "' in limit<>. "
+                     "Declare Rules:" + stmt->limitRulesName + " before using it.", stmt);
+            return;
+        }
+        
+        // Only numeric types can have limit constraints
+        if (!isNumericType(declaredType)) {
+            addError("limit<> constraints can only be applied to numeric types, not '" + 
+                     declaredType->toString() + "'", stmt);
+            return;
+        }
+        
+        // Track this variable as limited for assignment checking
+        limitedVariables[stmt->varName] = stmt->limitRulesName;
+        
+        // Compile-time check: if initializer is a literal, evaluate rules now
+        if (stmt->initializer && stmt->initializer->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* literal = static_cast<LiteralExpr*>(stmt->initializer.get());
+            if (std::holds_alternative<int64_t>(literal->value)) {
+                int64_t value = std::get<int64_t>(literal->value);
+                validateLimitRules(stmt->limitRulesName, value, stmt);
+            } else if (std::holds_alternative<double>(literal->value)) {
+                double value = std::get<double>(literal->value);
+                validateLimitRulesFloat(stmt->limitRulesName, value, stmt);
+            }
+        }
+        // Compile-time check: negative literal (unary minus on literal)
+        else if (stmt->initializer && stmt->initializer->type == ASTNode::NodeType::UNARY_OP) {
+            UnaryExpr* unary = static_cast<UnaryExpr*>(stmt->initializer.get());
+            if (unary->op.type == frontend::TokenType::TOKEN_MINUS &&
+                unary->operand->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* literal = static_cast<LiteralExpr*>(unary->operand.get());
+                if (std::holds_alternative<int64_t>(literal->value)) {
+                    int64_t value = -std::get<int64_t>(literal->value);
+                    validateLimitRules(stmt->limitRulesName, value, stmt);
+                } else if (std::holds_alternative<double>(literal->value)) {
+                    double value = -std::get<double>(literal->value);
+                    validateLimitRulesFloat(stmt->limitRulesName, value, stmt);
+                }
+            }
+        }
+        // Dynamic value: runtime checks will be inserted by IR generator
+    }
 }
 
 // ============================================================================
@@ -9278,6 +9331,221 @@ void TypeChecker::checkEnumDecl(EnumDeclStmt* stmt) {
     
     // Also register the enum name itself so it can be used as a type annotation
     // (resolveTypeNode will look it up via typeSystem->getEnumType())
+}
+
+// ============================================================================
+// v0.2.41: Rules Declaration — Refinement Types
+// ============================================================================
+
+void TypeChecker::checkRulesDecl(RulesDeclStmt* stmt) {
+    // Check for duplicate rules name
+    if (rulesTable.find(stmt->rulesName) != rulesTable.end()) {
+        addError("Rules '" + stmt->rulesName + "' is already defined", stmt);
+        return;
+    }
+    
+    // Validate cascaded rule references exist
+    for (const auto& cascadedName : stmt->cascadedRules) {
+        if (rulesTable.find(cascadedName) == rulesTable.end()) {
+            addError("Cascaded rules '" + cascadedName + "' referenced in Rules:" + 
+                     stmt->rulesName + " has not been declared yet", stmt);
+            return;
+        }
+    }
+    
+    // Register in rules table
+    rulesTable[stmt->rulesName] = stmt;
+}
+
+// Compile-time evaluation of limit rules against an integer literal value
+void TypeChecker::validateLimitRules(const std::string& rulesName, int64_t value, ASTNode* stmt) {
+    auto it = rulesTable.find(rulesName);
+    if (it == rulesTable.end()) return;
+    
+    RulesDeclStmt* rules = it->second;
+    
+    // Check cascaded rules first (recursively)
+    for (const auto& cascadedName : rules->cascadedRules) {
+        validateLimitRules(cascadedName, value, stmt);
+    }
+    
+    // Evaluate each condition by substituting $ with the value
+    for (size_t i = 0; i < rules->conditions.size(); ++i) {
+        auto& condition = rules->conditions[i];
+        if (!evaluateRuleConditionInt(condition.get(), value)) {
+            addError("limit<" + rulesName + "> violation: value " + std::to_string(value) +
+                     " fails rule condition '" + condition->toString() + "'", stmt);
+        }
+    }
+}
+
+// Compile-time evaluation of limit rules against a float literal value
+void TypeChecker::validateLimitRulesFloat(const std::string& rulesName, double value, ASTNode* stmt) {
+    auto it = rulesTable.find(rulesName);
+    if (it == rulesTable.end()) return;
+    
+    RulesDeclStmt* rules = it->second;
+    
+    // Check cascaded rules first (recursively)
+    for (const auto& cascadedName : rules->cascadedRules) {
+        validateLimitRulesFloat(cascadedName, value, stmt);
+    }
+    
+    // Evaluate each condition by substituting $ with the value
+    for (size_t i = 0; i < rules->conditions.size(); ++i) {
+        auto& condition = rules->conditions[i];
+        if (!evaluateRuleConditionFloat(condition.get(), value)) {
+            addError("limit<" + rulesName + "> violation: value " + std::to_string(value) +
+                     " fails rule condition '" + condition->toString() + "'", stmt);
+        }
+    }
+}
+
+// Evaluate a single rule condition AST node with integer $ substitution
+bool TypeChecker::evaluateRuleConditionInt(ASTNode* node, int64_t dollarValue) {
+    if (!node) return true;
+    
+    // Identifier "$" → return the dollar value
+    if (node->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* ident = static_cast<IdentifierExpr*>(node);
+        if (ident->name == "$") return true; // Shouldn't happen at leaf in a binary expr
+    }
+    
+    // Binary expression: evaluate both sides
+    if (node->type == ASTNode::NodeType::BINARY_OP) {
+        auto* binary = static_cast<BinaryExpr*>(node);
+        int64_t left = evalRuleOperandInt(binary->left.get(), dollarValue);
+        int64_t right = evalRuleOperandInt(binary->right.get(), dollarValue);
+        
+        switch (binary->op.type) {
+            case frontend::TokenType::TOKEN_LESS:          return left < right;
+            case frontend::TokenType::TOKEN_LESS_EQUAL:    return left <= right;
+            case frontend::TokenType::TOKEN_GREATER:       return left > right;
+            case frontend::TokenType::TOKEN_GREATER_EQUAL: return left >= right;
+            case frontend::TokenType::TOKEN_EQUAL_EQUAL:   return left == right;
+            case frontend::TokenType::TOKEN_BANG_EQUAL:    return left != right;
+            default:
+                // For non-comparison operators (%, +, etc.), this is a sub-expression
+                // that should have been evaluated in evalRuleOperandInt
+                return true;
+        }
+    }
+    
+    return true; // Unknown node type — pass (runtime will catch it)
+}
+
+// Evaluate a rule operand (part of a condition) to an integer value
+int64_t TypeChecker::evalRuleOperandInt(ASTNode* node, int64_t dollarValue) {
+    if (!node) return 0;
+    
+    // $ placeholder
+    if (node->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* ident = static_cast<IdentifierExpr*>(node);
+        if (ident->name == "$") return dollarValue;
+    }
+    
+    // Integer literal
+    if (node->type == ASTNode::NodeType::LITERAL) {
+        auto* literal = static_cast<LiteralExpr*>(node);
+        if (std::holds_alternative<int64_t>(literal->value)) {
+            return std::get<int64_t>(literal->value);
+        }
+        if (std::holds_alternative<double>(literal->value)) {
+            return static_cast<int64_t>(std::get<double>(literal->value));
+        }
+    }
+    
+    // Unary minus
+    if (node->type == ASTNode::NodeType::UNARY_OP) {
+        auto* unary = static_cast<UnaryExpr*>(node);
+        if (unary->op.type == frontend::TokenType::TOKEN_MINUS) {
+            return -evalRuleOperandInt(unary->operand.get(), dollarValue);
+        }
+    }
+    
+    // Binary sub-expression (e.g., $ % 2 in "$ % 2 == 0")
+    if (node->type == ASTNode::NodeType::BINARY_OP) {
+        auto* binary = static_cast<BinaryExpr*>(node);
+        int64_t left = evalRuleOperandInt(binary->left.get(), dollarValue);
+        int64_t right = evalRuleOperandInt(binary->right.get(), dollarValue);
+        
+        switch (binary->op.type) {
+            case frontend::TokenType::TOKEN_PLUS:    return left + right;
+            case frontend::TokenType::TOKEN_MINUS:   return left - right;
+            case frontend::TokenType::TOKEN_STAR:    return left * right;
+            case frontend::TokenType::TOKEN_SLASH:   return (right != 0) ? left / right : 0;
+            case frontend::TokenType::TOKEN_PERCENT: return (right != 0) ? left % right : 0;
+            default: return 0;
+        }
+    }
+    
+    return 0;
+}
+
+// Evaluate a single rule condition AST node with float $ substitution
+bool TypeChecker::evaluateRuleConditionFloat(ASTNode* node, double dollarValue) {
+    if (!node) return true;
+    
+    if (node->type == ASTNode::NodeType::BINARY_OP) {
+        auto* binary = static_cast<BinaryExpr*>(node);
+        double left = evalRuleOperandFloat(binary->left.get(), dollarValue);
+        double right = evalRuleOperandFloat(binary->right.get(), dollarValue);
+        
+        switch (binary->op.type) {
+            case frontend::TokenType::TOKEN_LESS:          return left < right;
+            case frontend::TokenType::TOKEN_LESS_EQUAL:    return left <= right;
+            case frontend::TokenType::TOKEN_GREATER:       return left > right;
+            case frontend::TokenType::TOKEN_GREATER_EQUAL: return left >= right;
+            case frontend::TokenType::TOKEN_EQUAL_EQUAL:   return left == right;
+            case frontend::TokenType::TOKEN_BANG_EQUAL:    return left != right;
+            default: return true;
+        }
+    }
+    
+    return true;
+}
+
+double TypeChecker::evalRuleOperandFloat(ASTNode* node, double dollarValue) {
+    if (!node) return 0.0;
+    
+    if (node->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* ident = static_cast<IdentifierExpr*>(node);
+        if (ident->name == "$") return dollarValue;
+    }
+    
+    if (node->type == ASTNode::NodeType::LITERAL) {
+        auto* literal = static_cast<LiteralExpr*>(node);
+        if (std::holds_alternative<double>(literal->value)) {
+            return std::get<double>(literal->value);
+        }
+        if (std::holds_alternative<int64_t>(literal->value)) {
+            return static_cast<double>(std::get<int64_t>(literal->value));
+        }
+    }
+    
+    if (node->type == ASTNode::NodeType::UNARY_OP) {
+        auto* unary = static_cast<UnaryExpr*>(node);
+        if (unary->op.type == frontend::TokenType::TOKEN_MINUS) {
+            return -evalRuleOperandFloat(unary->operand.get(), dollarValue);
+        }
+    }
+    
+    if (node->type == ASTNode::NodeType::BINARY_OP) {
+        auto* binary = static_cast<BinaryExpr*>(node);
+        double left = evalRuleOperandFloat(binary->left.get(), dollarValue);
+        double right = evalRuleOperandFloat(binary->right.get(), dollarValue);
+        
+        switch (binary->op.type) {
+            case frontend::TokenType::TOKEN_PLUS:    return left + right;
+            case frontend::TokenType::TOKEN_MINUS:   return left - right;
+            case frontend::TokenType::TOKEN_STAR:    return left * right;
+            case frontend::TokenType::TOKEN_SLASH:   return (right != 0.0) ? left / right : 0.0;
+            case frontend::TokenType::TOKEN_PERCENT: return (right != 0.0) ? std::fmod(left, right) : 0.0;
+            default: return 0.0;
+        }
+    }
+    
+    return 0.0;
 }
 
 // ============================================================================
