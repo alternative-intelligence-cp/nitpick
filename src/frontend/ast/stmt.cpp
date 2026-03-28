@@ -102,7 +102,16 @@ std::string EnumDeclStmt::toString() const {
 
 std::string RulesDeclStmt::toString() const {
     std::ostringstream oss;
-    oss << "RulesDecl(Rules:" << rulesName << " = { ";
+    oss << "RulesDecl(Rules";
+    if (!typeParams.empty()) {
+        oss << "<";
+        for (size_t i = 0; i < typeParams.size(); ++i) {
+            if (i > 0) oss << ",";
+            oss << typeParams[i];
+        }
+        oss << ">";
+    }
+    oss << ":" << rulesName << " = { ";
     for (size_t i = 0; i < conditions.size(); ++i) {
         if (i > 0) oss << ", ";
         oss << conditions[i]->toString();

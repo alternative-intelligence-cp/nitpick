@@ -2847,14 +2847,34 @@ ASTNodePtr Parser::parseEnumDecl() {
     return enumDecl;
 }
 
-// v0.2.41: Parse Rules declaration: Rules:Name = { $ condition1, $ condition2, limit<other>, ... };
+// v0.2.42: Parse Rules declaration: Rules<T1,T2>:Name = { ... }; or Rules:Name = { ... };
 ASTNodePtr Parser::parseRulesDecl() {
     using namespace frontend;
     
     Token rulesToken = previous(); // 'Rules' keyword
     
+    // v0.2.42: Parse optional type parameters: Rules<T1,T2,...>:Name
+    std::vector<std::string> typeParams;
+    if (match(TokenType::TOKEN_LESS)) {
+        // Parse comma-separated type names until >
+        // Type names can be keywords (int32, uint8, flt64...) or identifiers (struct/Type names)
+        do {
+            if (isTypeKeyword(peek().type)) {
+                typeParams.push_back(peek().lexeme);
+                advance();
+            } else if (check(TokenType::TOKEN_IDENTIFIER)) {
+                typeParams.push_back(peek().lexeme);
+                advance();
+            } else {
+                error("Expected type name inside Rules<>");
+                return nullptr;
+            }
+        } while (match(TokenType::TOKEN_COMMA));
+        consume(TokenType::TOKEN_GREATER, "Expected '>' after type parameters in Rules<>");
+    }
+    
     // Consume colon before rules name
-    consume(TokenType::TOKEN_COLON, "Expected ':' after 'Rules' keyword");
+    consume(TokenType::TOKEN_COLON, "Expected ':' after 'Rules' or 'Rules<T>'");
     
     // Get rules name
     Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected rules name");
@@ -2903,6 +2923,7 @@ ASTNodePtr Parser::parseRulesDecl() {
     
     auto rulesDecl = std::make_shared<RulesDeclStmt>(
         nameToken.lexeme,
+        typeParams,
         conditions,
         cascadedRules,
         rulesToken.line,
@@ -4753,10 +4774,23 @@ void Parser::collectEnumNames() {
 void Parser::collectRulesNames() {
     using namespace frontend;
     for (size_t i = 0; i + 2 < tokens.size(); ++i) {
-        if (tokens[i].type == TokenType::TOKEN_KW_RULES &&
-            tokens[i + 1].type == TokenType::TOKEN_COLON &&
-            tokens[i + 2].type == TokenType::TOKEN_IDENTIFIER) {
-            knownRulesNames.insert(tokens[i + 2].lexeme);
+        if (tokens[i].type == TokenType::TOKEN_KW_RULES) {
+            size_t j = i + 1;
+            // v0.2.42: Skip optional <T1,T2,...> type parameters
+            if (j < tokens.size() && tokens[j].type == TokenType::TOKEN_LESS) {
+                j++; // skip <
+                // Skip tokens until we find >
+                while (j < tokens.size() && tokens[j].type != TokenType::TOKEN_GREATER) {
+                    j++;
+                }
+                if (j < tokens.size()) j++; // skip >
+            }
+            // Now expect : Name
+            if (j + 1 < tokens.size() &&
+                tokens[j].type == TokenType::TOKEN_COLON &&
+                tokens[j + 1].type == TokenType::TOKEN_IDENTIFIER) {
+                knownRulesNames.insert(tokens[j + 1].lexeme);
+            }
         }
     }
 }
