@@ -2001,6 +2001,12 @@ ASTNodePtr Parser::parseStatement() {
         size_t saved = current;
         advance(); // consume type keyword
         
+        // Handle 'dyn TraitName' compound type — advance past trait name
+        if (tokens[saved].type == TokenType::TOKEN_KW_DYN &&
+            check(TokenType::TOKEN_IDENTIFIER)) {
+            advance(); // consume trait name identifier
+        }
+        
         // Check for generic type parameters: array<T>, result<int32>
         if (check(TokenType::TOKEN_LESS)) {
             advance(); // consume '<'
@@ -3305,6 +3311,17 @@ ASTNodePtr Parser::parseType() {
             // *T is a generic type reference, not a pointer
             typeName = "*" + typeName;
             prefixPointer = false;  // Don't wrap in PointerType later
+        }
+        
+        // Handle 'dyn TraitName' compound type for dynamic trait objects
+        if (typeToken.type == TokenType::TOKEN_KW_DYN) {
+            if (check(TokenType::TOKEN_IDENTIFIER)) {
+                Token traitToken = advance();
+                typeName = "dyn " + traitToken.lexeme;
+            } else {
+                error("Expected trait name after 'dyn'");
+                return nullptr;
+            }
         }
         
         // Create simple type

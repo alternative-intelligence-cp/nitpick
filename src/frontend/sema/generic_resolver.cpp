@@ -407,6 +407,21 @@ Specialization* Monomorphizer::requestSpecialization(
     
     std::string mangledName = mangleName(funcDecl->funcName, substitution);
     
+    // v0.2.36: Validate trait bounds on generic parameters
+    // Ensures concrete types satisfy all declared trait constraints
+    if (!funcDecl->genericParams.empty()) {
+        if (!resolver->validateConstraints(funcDecl->genericParams, substitution)) {
+            // Propagate resolver errors to monomorphizer for type checker visibility
+            for (const auto& err : resolver->getErrors()) {
+                addError(err.message, err.line, err.column);
+            }
+            resolver->clearErrors();
+            instantiationStack.pop_back();
+            delete cloned;
+            return nullptr;
+        }
+    }
+    
     Specialization* spec = new Specialization(cloned, mangledName, substitution);
     
     // Add to cache and list

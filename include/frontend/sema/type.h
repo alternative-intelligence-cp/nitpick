@@ -36,6 +36,7 @@ enum class TypeKind {
     HANDLE,         // Handle<T> for generational memory handles (P1-3)
     SIMD,           // simd<T, N> for SIMD vectorization (P1-2)
     ANY,            // any - type-erased pointer (safe void* replacement)
+    DYN_TRAIT,      // dyn Trait - dynamic trait object (fat pointer: data + vtable)
     UNKNOWN,        // Type not yet inferred
     ERROR,          // Type error occurred
 };
@@ -68,6 +69,7 @@ public:
     virtual bool isOptional() const { return kind == TypeKind::OPTIONAL; }
     virtual bool isHandle() const { return kind == TypeKind::HANDLE; }
     virtual bool isAny() const { return kind == TypeKind::ANY; }
+    virtual bool isDynTrait() const { return kind == TypeKind::DYN_TRAIT; }
     
     // Must-use checking (Phase 2.1 - research_011)
     virtual bool isNodiscard() const { return nodiscard; }
@@ -564,6 +566,29 @@ public:
 };
 
 // ============================================================================
+// DynTraitType - Dynamic trait object (dyn Trait)
+// ============================================================================
+// A fat pointer containing {data_ptr, vtable_ptr}.
+// data_ptr: points to the concrete value
+// vtable_ptr: points to the trait's vtable for this concrete type
+// Used for runtime polymorphism (heterogeneous collections, plugin dispatch).
+
+class DynTraitType : public Type {
+private:
+    std::string traitName;  // Name of the trait (e.g., "Encodable")
+
+public:
+    explicit DynTraitType(const std::string& traitName)
+        : Type(TypeKind::DYN_TRAIT), traitName(traitName) {}
+
+    const std::string& getTraitName() const { return traitName; }
+
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
 // UnknownType - Used during type inference
 // ============================================================================
 
@@ -631,6 +656,7 @@ public:
     HandleType* getHandleType(Type* pointeeType);  // P1-3: Generational handles
     SimdType* getSimdType(Type* elementType, size_t laneCount);  // P1-2: SIMD vectorization
     AnyType* getAnyType(bool isWild = false, bool isWildx = false);  // Type-erased pointer
+    DynTraitType* getDynTraitType(const std::string& traitName);     // dyn Trait fat pointer
     
     // Type extraction helpers
     // Phase 4.5.3: Extract T from future<T> for await expressions

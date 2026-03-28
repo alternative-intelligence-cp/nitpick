@@ -2115,6 +2115,49 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                         }
                     }
 
+                    // ====================================================================
+                    // SPECIAL HANDLING: dyn Trait method calls (dynamic dispatch)
+                    // ====================================================================
+                    // dyn Trait:x = ...; x.method(args) -> dispatched via vtable
+                    // Type checker validates method exists on trait and returns its type
+                    if (typeName.substr(0, 4) == "dyn ") {
+                        std::string traitName = typeName.substr(4);
+                        std::string method = memberExpr->member;
+
+                        // Look up the trait symbol
+                        Symbol* traitSym = symbolTable->lookupSymbol(traitName);
+                        if (!traitSym || !traitSym->isTrait()) {
+                            addError("Unknown trait '" + traitName + "' in dyn dispatch", expr);
+                            return typeSystem->getErrorType();
+                        }
+
+                        TraitDeclStmt* traitDecl = traitSym->getTraitDecl();
+                        if (!traitDecl) {
+                            addError("Trait '" + traitName + "' has no declaration", expr);
+                            return typeSystem->getErrorType();
+                        }
+
+                        // Find the method in the trait's method list
+                        for (const auto& tm : traitDecl->methods) {
+                            if (tm.name == method) {
+                                // Resolve the return type
+                                Type* retType = typeSystem->getPrimitiveType(tm.returnType);
+                                if (!retType) {
+                                    retType = typeSystem->getStructType(tm.returnType);
+                                }
+                                if (!retType) {
+                                    // Trait methods return Result<T> at ABI level,
+                                    // but the declared return type is the inner type
+                                    retType = typeSystem->getPrimitiveType("int32");  // fallback
+                                }
+                                return retType;
+                            }
+                        }
+
+                        addError("Trait '" + traitName + "' has no method '" + method + "'", expr);
+                        return typeSystem->getErrorType();
+                    }
+
                     // Handle generic types - use base type for method lookup
                     // e.g., array<string> -> array
                     size_t anglePos = typeName.find('<');
@@ -6369,7 +6412,24 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 }
             }
 
-            if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion && !arrayToPointerCoercion) {
+            // v0.2.36: Allow concrete type -> dyn Trait coercion if type implements the trait
+            bool dynTraitCoercion = false;
+            if (paramTypes[i]->getKind() == TypeKind::DYN_TRAIT) {
+                DynTraitType* dynType = static_cast<DynTraitType*>(paramTypes[i]);
+                Symbol* traitSym = symbolTable->lookupSymbol(dynType->getTraitName());
+                if (traitSym && traitSym->kind == SymbolKind::TRAIT) {
+                    // Check if the concrete type has an impl for this trait
+                    std::string concreteTypeName = effectiveArgType->toString();
+                    for (const auto* implDecl : traitSym->getImplDecls()) {
+                        if (implDecl->typeName == concreteTypeName) {
+                            dynTraitCoercion = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion && !arrayToPointerCoercion && !dynTraitCoercion) {
                 addError("Argument " + std::to_string(i + 1) + " has type '" + 
                         argType->toString() + "', but function expects '" + 
                         paramTypes[i]->toString() + "'", expr->arguments[i].get());
@@ -7476,6 +7536,12 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             // any type — type-erased pointer (safe void* replacement)
             if (simpleType->typeName == "any") {
                 return typeSystem->getAnyType();
+            }
+
+            // v0.2.36: dyn Trait types — fat pointer for dynamic dispatch
+            if (simpleType->typeName.substr(0, 4) == "dyn ") {
+                std::string traitName = simpleType->typeName.substr(4);
+                return typeSystem->getDynTraitType(traitName);
             }
             
             // Try primitive type

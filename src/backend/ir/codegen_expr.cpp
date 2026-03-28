@@ -3767,6 +3767,104 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 }
             }
 
+            // ====================================================================
+            // v0.2.36: DYN TRAIT DYNAMIC DISPATCH
+            // ====================================================================
+            // When calling a method on a dyn Trait variable, use vtable dispatch:
+            //   item.describe() where item: dyn Describable
+            //   → extract data_ptr from fat_ptr[0]
+            //   → extract vtable_ptr from fat_ptr[1]
+            //   → load method fn ptr from vtable at correct offset
+            //   → indirect call with data_ptr as first arg
+            if (type_name.substr(0, 4) == "dyn ") {
+                std::string traitName = type_name.substr(4);
+                std::string methodName = member_access->member;
+
+                // Load the fat pointer struct { ptr data, ptr vtable } from the alloca
+                llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+                llvm::StructType* fatPtrTy = llvm::StructType::get(context, {ptrTy, ptrTy});
+                llvm::Value* fatPtr = builder.CreateLoad(fatPtrTy, var_value, "dyn_fat");
+
+                // Extract data pointer (field 0) and vtable pointer (field 1)
+                llvm::Value* dataPtr = builder.CreateExtractValue(fatPtr, 0, "dyn_data_ptr");
+                llvm::Value* vtablePtr = builder.CreateExtractValue(fatPtr, 1, "dyn_vtable_ptr");
+
+                // Look up the trait's vtable struct type to get method index
+                // The vtable struct type is named "TraitName_vtable_t"
+                std::string vtableTyName = traitName + "_vtable_t";
+                llvm::StructType* vtableStructTy = llvm::StructType::getTypeByName(context, vtableTyName);
+                if (!vtableStructTy) {
+                    throw std::runtime_error("No vtable type found for trait '" + traitName + "'");
+                }
+
+                // Find the method's index in the vtable using trait method ordering
+                unsigned methodIndex = 0;
+                bool foundMethod = false;
+
+                if (trait_method_order_) {
+                    auto it = trait_method_order_->find(traitName);
+                    if (it != trait_method_order_->end()) {
+                        for (unsigned i = 0; i < it->second.size(); i++) {
+                            if (it->second[i] == methodName) {
+                                methodIndex = i;
+                                foundMethod = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!foundMethod) {
+                    throw std::runtime_error("Method '" + methodName +
+                                             "' not found in trait '" + traitName + "'");
+                }
+
+                // Load method function pointer from vtable
+                llvm::Value* methodGEP = builder.CreateStructGEP(
+                    vtableStructTy, vtablePtr, methodIndex, "vtable_slot");
+                llvm::Value* methodFnPtr = builder.CreateLoad(ptrTy, methodGEP, "dyn_method_ptr");
+
+                // Build argument list: data_ptr as first arg, then explicit args
+                std::vector<llvm::Value*> dynArgs;
+                dynArgs.push_back(dataPtr);  // self data pointer
+                for (size_t ai = 0; ai < expr->arguments.size(); ai++) {
+                    llvm::Value* argVal = codegenExpressionNode(expr->arguments[ai].get(), this);
+                    if (!argVal) {
+                        throw std::runtime_error("Failed to generate dyn dispatch argument " + std::to_string(ai));
+                    }
+                    dynArgs.push_back(argVal);
+                }
+
+                // Build function type for indirect call
+                // Thunk signature: Result<RetType>(ptr self_data, ...extra_args)
+                // For now, look up the thunk's function type from any existing thunk
+                llvm::FunctionType* thunkFT = nullptr;
+                for (auto& fn : *module) {
+                    std::string fnName = fn.getName().str();
+                    std::string prefix = "__dyn_" + traitName + "_";
+                    std::string suffix = "_" + methodName;
+                    if (fnName.find(prefix) == 0 && fnName.size() > suffix.size() &&
+                        fnName.substr(fnName.size() - suffix.size()) == suffix) {
+                        thunkFT = fn.getFunctionType();
+                        break;
+                    }
+                }
+                if (!thunkFT) {
+                    throw std::runtime_error("No thunk found for " + traitName + "::" + methodName);
+                }
+
+                llvm::Value* result = builder.CreateCall(thunkFT, methodFnPtr, dynArgs, "dyn_call");
+
+                // The thunk returns Result<T> = { T, ptr, i1 }
+                // Extract the actual value (field 0) so callers get the unwrapped value,
+                // just like normal function calls that go through Result unwrapping.
+                llvm::Value* unwrapped = builder.CreateExtractValue(result, 0, "dyn_result_val");
+
+                std::cerr << "[DYN] Dispatched " << traitName << "::" << methodName
+                          << " via vtable (index " << methodIndex << ")\n";
+                return unwrapped;
+            }
+
             mangled_func_name = type_name + "_" + member_access->member;
 
             // Inject the object as the first argument (UFCS transformation)
@@ -9581,6 +9679,65 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                         arg_struct->getElementType(0)->isPointerTy() &&
                         arg_struct->getElementType(1)->isPointerTy()) {
                         arg_value = builder.CreateExtractValue(arg_value, 0, "func_method_ptr");
+                    }
+                }
+
+                // v0.2.36: dyn Trait coercion — package concrete value into fat pointer
+                // When a concrete typed value (e.g., int32) is passed to a dyn Trait
+                // parameter, construct { ptr_to_data, ptr_to_vtable }.
+                if (func_dyn_params_ && param_type->isStructTy()) {
+                    auto fn_it = func_dyn_params_->find(func_name);
+                    if (fn_it != func_dyn_params_->end()) {
+                        auto param_it = fn_it->second.find(static_cast<unsigned>(i));
+                        if (param_it != fn_it->second.end()) {
+                            const std::string& traitName = param_it->second;
+
+                            // Determine the concrete type name from arg's Aria type
+                            std::string concreteType;
+                            if (i < expr->arguments.size()) {
+                                ASTNode* arg_node = expr->arguments[i].get();
+                                if (arg_node->type == ASTNode::NodeType::IDENTIFIER) {
+                                    IdentifierExpr* ident = static_cast<IdentifierExpr*>(arg_node);
+                                    auto type_it = var_aria_types.find(ident->name);
+                                    if (type_it != var_aria_types.end()) {
+                                        concreteType = type_it->second;
+                                    }
+                                }
+                            }
+                            // Fallback: infer from LLVM type
+                            if (concreteType.empty()) {
+                                llvm::Type* at = arg_value->getType();
+                                if (at->isIntegerTy(32)) concreteType = "int32";
+                                else if (at->isIntegerTy(64)) concreteType = "int64";
+                                else if (at->isIntegerTy(16)) concreteType = "int16";
+                                else if (at->isIntegerTy(8)) concreteType = "int8";
+                                else if (at->isDoubleTy()) concreteType = "flt64";
+                                else if (at->isFloatTy()) concreteType = "flt32";
+                            }
+
+                            if (!concreteType.empty()) {
+                                std::string vtableGVName = traitName + "_vtable_" + concreteType;
+                                llvm::GlobalVariable* vtableGV = module->getGlobalVariable(vtableGVName, true);
+                                if (vtableGV) {
+                                    // Alloca space for the concrete value
+                                    llvm::AllocaInst* dataAlloca = builder.CreateAlloca(
+                                        arg_value->getType(), nullptr, "dyn_data");
+                                    builder.CreateStore(arg_value, dataAlloca);
+
+                                    // Build fat pointer: { ptr data, ptr vtable }
+                                    llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+                                    llvm::StructType* fatPtrTy = llvm::StructType::get(context, {ptrTy, ptrTy});
+                                    llvm::Value* fat = llvm::UndefValue::get(fatPtrTy);
+                                    fat = builder.CreateInsertValue(fat, dataAlloca, 0, "dyn_fat.data");
+                                    fat = builder.CreateInsertValue(fat, vtableGV, 1, "dyn_fat.vtable");
+                                    arg_value = fat;
+
+                                    std::cerr << "[DYN] Coerced " << concreteType
+                                              << " to dyn " << traitName
+                                              << " fat ptr (vtable: @" << vtableGVName << ")\n";
+                                }
+                            }
+                        }
                     }
                 }
             }

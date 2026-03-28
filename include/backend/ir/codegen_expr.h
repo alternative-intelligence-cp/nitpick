@@ -83,6 +83,14 @@ private:
     // ARIA-026: String interning pool (Gemini Safety Audit Fix #5)
     // Prevents OOM crashes from duplicate string literals in Teacher system
     std::map<std::string, llvm::GlobalVariable*> string_pool_;
+
+    // v0.2.36: dyn Trait parameter info for call-site coercion
+    // Maps funcName -> { paramIndex -> traitName }
+    const std::map<std::string, std::map<unsigned, std::string>>* func_dyn_params_ = nullptr;
+    
+    // v0.2.36: Trait method ordering for vtable dispatch
+    // Maps traitName -> ordered list of method names
+    const std::map<std::string, std::vector<std::string>>* trait_method_order_ = nullptr;
     
     // Helper: Get LLVM type from Aria type
     llvm::Type* getLLVMType(sema::Type* type);
@@ -163,6 +171,16 @@ public:
      * @param stmt_gen Statement codegen instance
      */
     void setStmtCodegen(StmtCodegen* stmt_gen);
+
+    /**
+     * Set dyn Trait parameter info for call-site coercion (v0.2.36)
+     */
+    void setDynParamInfo(const std::map<std::string, std::map<unsigned, std::string>>* info) {
+        func_dyn_params_ = info;
+    }
+    void setTraitMethodOrder(const std::map<std::string, std::vector<std::string>>* order) {
+        trait_method_order_ = order;
+    }
 
     /**
      * Promote int64 literal to LBIM struct type (int128/256/512/1024/2048/4096)

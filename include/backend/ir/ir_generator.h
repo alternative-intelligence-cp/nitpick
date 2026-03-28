@@ -87,6 +87,41 @@ private:
     static constexpr size_t MAX_CODEGEN_DEPTH = 256;
     size_t codegen_depth_ = 0;
 
+    // ========================================================================
+    // dyn Trait dispatch infrastructure (v0.2.36)
+    // ========================================================================
+    struct TraitMethodInfo {
+        std::string name;       // Method name (e.g., "describe")
+        std::string returnType; // Return type string (e.g., "int32")
+        std::vector<std::string> paramTypes; // Parameter types including Self
+    };
+
+    struct TraitInfo {
+        std::string traitName;
+        std::vector<TraitMethodInfo> methods;
+        llvm::StructType* vtableType = nullptr; // %TraitName_vtable_t
+    };
+
+    // Maps trait name -> trait info (populated during TRAIT_DECL codegen)
+    std::map<std::string, TraitInfo> trait_info_map;
+
+    // Maps trait name -> ordered method names (for vtable dispatch index lookup)
+    std::map<std::string, std::vector<std::string>> trait_method_order;
+
+    // Maps "TraitName:TypeName" -> vtable global constant
+    std::map<std::string, llvm::GlobalVariable*> vtable_constants;
+
+    // Maps funcName -> { paramIndex -> traitName } for dyn Trait parameters
+    std::map<std::string, std::map<unsigned, std::string>> func_dyn_params;
+
+    // The dyn fat pointer type: { ptr, ptr } (data + vtable)
+    llvm::StructType* getDynFatPtrType();
+
+    // Generate vtable thunk for a trait method's concrete implementation
+    llvm::Function* generateVtableThunk(const std::string& traitName,
+                                         const std::string& typeName,
+                                         const TraitMethodInfo& method);
+
     // Debug info generation (Phase 7.4.1)
     std::unique_ptr<llvm::DIBuilder> di_builder;
     llvm::DICompileUnit* di_compile_unit;
@@ -406,6 +441,18 @@ public:
      * @return Number of functions generated
      */
     size_t codegenSpecializedFunctions(const std::vector<sema::Specialization*>& specializations);
+    
+    /**
+     * Forward-declare specialized functions (signatures only, no bodies).
+     * Call this BEFORE main module codegen so call sites can resolve.
+     */
+    void declareSpecializedFunctions(const std::vector<sema::Specialization*>& specializations);
+    
+    /**
+     * Generate bodies for previously declared specialized functions.
+     * Call this AFTER main module codegen so impl methods are available.
+     */
+    size_t codegenSpecializedBodies(const std::vector<sema::Specialization*>& specializations);
     
     /**
      * Get the generated LLVM module

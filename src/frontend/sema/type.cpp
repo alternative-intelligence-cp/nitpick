@@ -723,6 +723,30 @@ std::string AnyType::toString() const {
 }
 
 // ============================================================================
+// DynTraitType Implementation
+// ============================================================================
+
+bool DynTraitType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::DYN_TRAIT) return false;
+    auto* otherDyn = static_cast<const DynTraitType*>(other);
+    return traitName == otherDyn->traitName;
+}
+
+bool DynTraitType::isAssignableTo(const Type* target) const {
+    if (!target) return false;
+    // dyn Trait can be assigned to same dyn Trait
+    if (target->getKind() == TypeKind::DYN_TRAIT) {
+        auto* targetDyn = static_cast<const DynTraitType*>(target);
+        return traitName == targetDyn->traitName;
+    }
+    return false;
+}
+
+std::string DynTraitType::toString() const {
+    return "dyn " + traitName;
+}
+
+// ============================================================================
 // UnknownType Implementation
 // ============================================================================
 
@@ -1036,6 +1060,13 @@ SimdType* TypeSystem::getSimdType(Type* elementType, size_t laneCount) {
 AnyType* TypeSystem::getAnyType(bool isWild, bool isWildx) {
     auto type = std::make_unique<AnyType>(isWild, isWildx);
     AnyType* ptr = type.get();
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+DynTraitType* TypeSystem::getDynTraitType(const std::string& traitName) {
+    auto type = std::make_unique<DynTraitType>(traitName);
+    DynTraitType* ptr = type.get();
     types.push_back(std::move(type));
     return ptr;
 }
