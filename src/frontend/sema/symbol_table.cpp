@@ -14,7 +14,8 @@ Symbol::Symbol(const std::string& name, SymbolKind kind, Type* type,
                Scope* scope, int line, int column)
     : name(name), kind(kind), type(type), scope(scope),
       line(line), column(column), isPublic(false),
-      isMutable(true), isFixed(false), isInitialized(false),
+      isMutable(true), isFixed(false), isBorrowImm(false), isBorrowMut(false),
+      isInitialized(false),
       comptimeValue(nullptr), funcDecl(nullptr), moduleRef(nullptr),
       traitDecl(nullptr) {}
 

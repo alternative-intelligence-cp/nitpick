@@ -49,6 +49,8 @@ struct Symbol {
     bool isPublic;              // Visibility (pub keyword)
     bool isMutable;             // Mutability (const vs mutable)
     bool isFixed;               // Runtime immutability (fixed keyword)
+    bool isBorrowImm;           // Immutable borrow ($$i qualifier)
+    bool isBorrowMut;           // Mutable borrow ($$m qualifier)
     bool isInitialized;         // Has been initialized
     
     // CTFE Integration (Task 8: Symbol Table Integration)

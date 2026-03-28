@@ -553,6 +553,29 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
     // Get the current function
     llvm::Function* func = builder.GetInsertBlock()->getParent();
     
+    // ========================================================================
+    // v0.2.35: Borrow variables ($$i/$$m) — alias the original's storage
+    // A borrow doesn't allocate new memory; it references the original.
+    // ========================================================================
+    if (stmt->isBorrowImm || stmt->isBorrowMut) {
+        if (stmt->initializer && 
+            stmt->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+            std::string target_name = 
+                static_cast<IdentifierExpr*>(stmt->initializer.get())->name;
+            auto it = named_values.find(target_name);
+            if (it != named_values.end()) {
+                // Alias: borrow points to the same storage as the original
+                named_values[stmt->varName] = it->second;
+                var_aria_types[stmt->varName] = stmt->typeName;
+                std::cerr << "[DEBUG] Borrow " << stmt->varName 
+                          << " aliased to " << target_name << std::endl;
+                return;
+            }
+        }
+        // Fallthrough to normal allocation if target not found (shouldn't happen
+        // after type checker validation, but be safe)
+    }
+    
     // Determine allocation strategy
     // Priority: explicit keywords > default behavior
     // Default: stack for primitives, gc for objects

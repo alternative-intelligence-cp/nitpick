@@ -7992,6 +7992,36 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         return;
     }
 
+    // ========================================================================
+    // Borrow Qualifier Validation (v0.2.35)
+    // $$i = immutable borrow, $$m = mutable borrow
+    // ========================================================================
+    if (stmt->isBorrowImm || stmt->isBorrowMut) {
+        // Cannot have both $$i and $$m
+        if (stmt->isBorrowImm && stmt->isBorrowMut) {
+            addError("Cannot use both $$i (immutable borrow) and $$m (mutable borrow) on the same variable", stmt);
+            return;
+        }
+        // Cannot combine borrow with wild/wildx
+        if (stmt->isWild || stmt->isWildx) {
+            addError("Borrow qualifiers ($$i/$$m) cannot be combined with wild/wildx — "
+                     "borrows reference existing memory, they don't allocate", stmt);
+            return;
+        }
+        // Borrow must have an initializer (what are we borrowing?)
+        if (!stmt->initializer) {
+            addError("Borrow variable '" + stmt->varName + "' must have an initializer — "
+                     "$$i/$$m must reference an existing variable", stmt);
+            return;
+        }
+        // Borrow initializer must be a variable reference (not a literal or expression)
+        if (stmt->initializer->type != ASTNode::NodeType::IDENTIFIER) {
+            addError("Borrow variable '" + stmt->varName + "' must borrow from a named variable, "
+                     "not a literal or expression", stmt);
+            return;
+        }
+    }
+
     Type* declaredType = nullptr;
     
     // Handle new typeNode or legacy typeName
@@ -8687,6 +8717,15 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         }
     }
     
+    // Set borrow flags if this is a borrow variable ($$i/$$m)
+    if (stmt->isBorrowImm || stmt->isBorrowMut) {
+        Symbol* sym = symbolTable->resolveSymbol(stmt->varName);
+        if (sym) {
+            sym->isBorrowImm = stmt->isBorrowImm;
+            sym->isBorrowMut = stmt->isBorrowMut;
+        }
+    }
+    
     // If we evaluated a const value, store it in the symbol
     if (evaluatedConstValue) {
         Symbol* sym = symbolTable->resolveSymbol(stmt->varName);
@@ -9087,6 +9126,13 @@ void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
         if (field->type == ASTNode::NodeType::VAR_DECL) {
             VarDeclStmt* fieldDecl = static_cast<VarDeclStmt*>(field.get());
             
+            // v0.2.35: Borrow qualifiers not allowed on struct fields
+            if (fieldDecl->isBorrowImm || fieldDecl->isBorrowMut) {
+                addError("Borrow qualifiers ($$i/$$m) cannot be used on struct fields — "
+                         "structs cannot hold borrowed references (v1 restriction)", field.get());
+                continue;
+            }
+            
             // Extract type name from typeNode (parser stores it there, not in typeName)
             std::string fieldTypeName;
             Type* fieldType = nullptr;
@@ -9454,6 +9500,13 @@ void TypeChecker::checkAssignment(BinaryExpr* expr) {
         // Check if assigning to fixed variable
         if (symbol && symbol->isFixed) {
             addError("Cannot reassign fixed variable '" + ident->name + "' - fixed variables are immutable", expr);
+            return;
+        }
+        
+        // Check if assigning through immutable borrow ($$i)
+        if (symbol && symbol->isBorrowImm) {
+            addError("Cannot assign through immutable borrow '" + ident->name + 
+                     "' — use $$m for a mutable borrow", expr);
             return;
         }
     }

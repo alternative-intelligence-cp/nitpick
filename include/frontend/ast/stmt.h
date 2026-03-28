@@ -23,6 +23,8 @@ public:
     bool isFixed;              // fixed keyword (runtime immutability)
     bool isStack;              // stack keyword
     bool isGC;                 // gc keyword (explicit)
+    bool isBorrowImm;          // $$i keyword (immutable borrow)
+    bool isBorrowMut;          // $$m keyword (mutable borrow)
     
     // P0: Alignment attribute support - #[align(N)]
     // Used for cache line alignment (64), SIMD (16/32/64), and FFI compatibility
@@ -47,6 +49,7 @@ public:
         : ASTNode(NodeType::VAR_DECL, line, column),
           typeName(typeN ? typeN->toString() : ""), typeNode(typeN), varName(name), initializer(init),
           isWild(false), isWildx(false), isConst(false), isFixed(false), isStack(false), isGC(false),
+          isBorrowImm(false), isBorrowMut(false),
           scope_depth(0), requires_drop(false), is_pinned_shadow(false), pinned_target("") {}
     
     std::string toString() const override;
@@ -83,6 +86,8 @@ public:
     bool isExtern;
     bool returnIsWild = false;
     bool returnIsWildx = false;
+    bool returnIsBorrowImm = false;   // $$i qualifier on return type
+    bool returnIsBorrowMut = false;   // $$m qualifier on return type
     
     // GPU/PTX Backend - Phase 3: Kernel Attributes
     bool isGPUKernel = false;  // #[gpu_kernel] - Entry point callable from host
@@ -191,6 +196,8 @@ public:
     ASTNodePtr defaultValue;  // Can be nullptr
     bool isWild = false;      // true if 'wild' qualifier present (for FFI)
     bool isWildx = false;     // true if 'wildx' qualifier present (wild + executable)
+    bool isBorrowImm = false; // true if '$$i' qualifier present (immutable borrow)
+    bool isBorrowMut = false; // true if '$$m' qualifier present (mutable borrow)
     
     ParameterNode(ASTNodePtr type, const std::string& name,
                   ASTNodePtr defVal = nullptr, int line = 0, int column = 0)

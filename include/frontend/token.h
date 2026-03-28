@@ -24,6 +24,8 @@ enum class TokenType {
     TOKEN_KW_GC,        // gc - explicit GC allocation
     TOKEN_KW_DEFER,     // defer - RAII-style cleanup
     TOKEN_KW_MOVE,      // move - transfer ownership
+    TOKEN_KW_BORROW_IMM, // $$i - immutable borrow qualifier
+    TOKEN_KW_BORROW_MUT, // $$m - mutable borrow qualifier
     
     // ========================================================================
     // Keywords - Memory Ordering (for atomic<T> operations)

@@ -1858,13 +1858,15 @@ ASTNodePtr Parser::parseStatement() {
         return parseImplDecl();
     }
 
-    // Check for qualifiers (wild, wildx, const, fixed, stack, gc) followed by type
+    // Check for qualifiers (wild, wildx, const, fixed, stack, gc, $$i, $$m) followed by type
     if (peek().type == TokenType::TOKEN_KW_WILD ||
         peek().type == TokenType::TOKEN_KW_WILDX ||
         peek().type == TokenType::TOKEN_KW_CONST ||
         peek().type == TokenType::TOKEN_KW_FIXED ||
         peek().type == TokenType::TOKEN_KW_STACK ||
-        peek().type == TokenType::TOKEN_KW_GC) {
+        peek().type == TokenType::TOKEN_KW_GC ||
+        peek().type == TokenType::TOKEN_KW_BORROW_IMM ||
+        peek().type == TokenType::TOKEN_KW_BORROW_MUT) {
         return parseVarDecl();
     }
     
@@ -2366,6 +2368,8 @@ ASTNodePtr Parser::parseVarDecl() {
     bool isFixed = false;
     bool isStack = false;
     bool isGC = false;
+    bool isBorrowImm = false;
+    bool isBorrowMut = false;
     
     // Handle qualifiers
     while (peek().type == TokenType::TOKEN_KW_WILD ||
@@ -2373,7 +2377,9 @@ ASTNodePtr Parser::parseVarDecl() {
            peek().type == TokenType::TOKEN_KW_CONST ||
            peek().type == TokenType::TOKEN_KW_FIXED ||
            peek().type == TokenType::TOKEN_KW_STACK ||
-           peek().type == TokenType::TOKEN_KW_GC) {
+           peek().type == TokenType::TOKEN_KW_GC ||
+           peek().type == TokenType::TOKEN_KW_BORROW_IMM ||
+           peek().type == TokenType::TOKEN_KW_BORROW_MUT) {
         if (match(TokenType::TOKEN_KW_WILD)) {
             isWild = true;
         } else if (match(TokenType::TOKEN_KW_WILDX)) {
@@ -2387,6 +2393,10 @@ ASTNodePtr Parser::parseVarDecl() {
             isStack = true;
         } else if (match(TokenType::TOKEN_KW_GC)) {
             isGC = true;
+        } else if (match(TokenType::TOKEN_KW_BORROW_IMM)) {
+            isBorrowImm = true;
+        } else if (match(TokenType::TOKEN_KW_BORROW_MUT)) {
+            isBorrowMut = true;
         }
     }
     
@@ -2455,6 +2465,8 @@ ASTNodePtr Parser::parseVarDecl() {
     varDecl->isFixed = isFixed;
     varDecl->isStack = isStack;
     varDecl->isGC = isGC;
+    varDecl->isBorrowImm = isBorrowImm;
+    varDecl->isBorrowMut = isBorrowMut;
     varDecl->alignment = alignment;  // P0: Set explicit alignment if specified
     
     return varDecl;
@@ -2483,12 +2495,16 @@ ASTNodePtr Parser::parseFuncDecl() {
     // Consume equal sign
     consume(TokenType::TOKEN_EQUAL, "Expected '=' after function name");
 
-    // Parse optional return type qualifiers (wild, wildx, const) for extern functions
+    // Parse optional return type qualifiers (wild, wildx, const, $$i, $$m) for extern functions
     bool returnIsWild = false, returnIsWildx = false, returnIsConst = false;
-    while (peek().type == TokenType::TOKEN_KW_WILD || peek().type == TokenType::TOKEN_KW_WILDX || peek().type == TokenType::TOKEN_KW_CONST) {
+    bool returnIsBorrowImm = false, returnIsBorrowMut = false;
+    while (peek().type == TokenType::TOKEN_KW_WILD || peek().type == TokenType::TOKEN_KW_WILDX || peek().type == TokenType::TOKEN_KW_CONST ||
+           peek().type == TokenType::TOKEN_KW_BORROW_IMM || peek().type == TokenType::TOKEN_KW_BORROW_MUT) {
         if (match(TokenType::TOKEN_KW_WILD)) returnIsWild = true;
         else if (match(TokenType::TOKEN_KW_WILDX)) { returnIsWildx = true; returnIsWild = true; }
         else if (match(TokenType::TOKEN_KW_CONST)) returnIsConst = true;
+        else if (match(TokenType::TOKEN_KW_BORROW_IMM)) returnIsBorrowImm = true;
+        else if (match(TokenType::TOKEN_KW_BORROW_MUT)) returnIsBorrowMut = true;
     }
 
     // Parse return type (supports generics, pointers, etc.)
@@ -2504,18 +2520,22 @@ ASTNodePtr Parser::parseFuncDecl() {
     std::vector<ASTNodePtr> parameters;
     if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
         do {
-            // Handle parameter qualifiers (wild, wildx, const, stack, gc)
+            // Handle parameter qualifiers (wild, wildx, const, stack, gc, $$i, $$m)
             bool isWild = false;
             bool isWildx = false;
             bool isConst = false;
             bool isStack = false;
             bool isGC = false;
+            bool isBorrowImm = false;
+            bool isBorrowMut = false;
             
             while (peek().type == TokenType::TOKEN_KW_WILD ||
                    peek().type == TokenType::TOKEN_KW_WILDX ||
                    peek().type == TokenType::TOKEN_KW_CONST ||
                    peek().type == TokenType::TOKEN_KW_STACK ||
-                   peek().type == TokenType::TOKEN_KW_GC) {
+                   peek().type == TokenType::TOKEN_KW_GC ||
+                   peek().type == TokenType::TOKEN_KW_BORROW_IMM ||
+                   peek().type == TokenType::TOKEN_KW_BORROW_MUT) {
                 if (match(TokenType::TOKEN_KW_WILD)) {
                     isWild = true;
                 } else if (match(TokenType::TOKEN_KW_WILDX)) {
@@ -2527,6 +2547,10 @@ ASTNodePtr Parser::parseFuncDecl() {
                     isStack = true;
                 } else if (match(TokenType::TOKEN_KW_GC)) {
                     isGC = true;
+                } else if (match(TokenType::TOKEN_KW_BORROW_IMM)) {
+                    isBorrowImm = true;
+                } else if (match(TokenType::TOKEN_KW_BORROW_MUT)) {
+                    isBorrowMut = true;
                 }
             }
             
@@ -2549,9 +2573,11 @@ ASTNodePtr Parser::parseFuncDecl() {
                 funcToken.column
             );
             
-            // Set wild qualifier flag for FFI
+            // Set qualifier flags
             param->isWild = isWild;
             param->isWildx = isWildx;
+            param->isBorrowImm = isBorrowImm;
+            param->isBorrowMut = isBorrowMut;
             
             parameters.push_back(param);
             
@@ -2621,6 +2647,8 @@ ASTNodePtr Parser::parseFuncDecl() {
     // Set wild qualifier flag for FFI return type
     funcDecl->returnIsWild = returnIsWild;
     funcDecl->returnIsWildx = returnIsWildx;
+    funcDecl->returnIsBorrowImm = returnIsBorrowImm;
+    funcDecl->returnIsBorrowMut = returnIsBorrowMut;
     
     // Set generic parameters if present
     funcDecl->genericParams = genericParams;
@@ -3762,7 +3790,9 @@ ASTNodePtr Parser::parseExternStatement() {
                            peek().type == TokenType::TOKEN_KW_WILDX ||
                            peek().type == TokenType::TOKEN_KW_CONST ||
                            peek().type == TokenType::TOKEN_KW_STACK ||
-                           peek().type == TokenType::TOKEN_KW_GC) {
+                           peek().type == TokenType::TOKEN_KW_GC ||
+                           peek().type == TokenType::TOKEN_KW_BORROW_IMM ||
+                           peek().type == TokenType::TOKEN_KW_BORROW_MUT) {
                         advance(); // consume qualifier (we'll handle semantics later)
                     }
                     
