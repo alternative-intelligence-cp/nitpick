@@ -1843,6 +1843,11 @@ ASTNodePtr Parser::parseStatement() {
         return parseEnumDecl();
     }
 
+    // Check for Rules declarations (refinement types)
+    if (match(TokenType::TOKEN_KW_RULES)) {
+        return parseRulesDecl();
+    }
+
     // Check for Type declarations (composable units)
     if (match(TokenType::TOKEN_KW_TYPE)) {
         return parseTypeDecl();
@@ -1856,6 +1861,11 @@ ASTNodePtr Parser::parseStatement() {
     // Check for impl declarations
     if (match(TokenType::TOKEN_KW_IMPL)) {
         return parseImplDecl();
+    }
+
+    // Check for limit<> variable declarations (refinement types)
+    if (peek().type == TokenType::TOKEN_KW_LIMIT) {
+        return parseVarDecl();
     }
 
     // Check for qualifiers (wild, wildx, const, fixed, stack, gc, $$i, $$m) followed by type
@@ -2368,6 +2378,19 @@ ASTNodePtr Parser::parseVarDecl() {
     // P0: Parse #[align(N)] attribute if present
     uint64_t alignment = parseAlignmentAttribute();
     
+    // v0.2.41: Parse limit<RulesName> prefix if present
+    std::string limitRulesName;
+    if (match(TokenType::TOKEN_KW_LIMIT)) {
+        consume(TokenType::TOKEN_LESS, "Expected '<' after 'limit'");
+        Token rulesToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected rules name inside limit<>");
+        limitRulesName = rulesToken.lexeme;
+        if (knownRulesNames.find(limitRulesName) == knownRulesNames.end()) {
+            error("Unknown rules name '" + limitRulesName + "' in limit<>. Did you declare Rules:" + limitRulesName + "?");
+            return nullptr;
+        }
+        consume(TokenType::TOKEN_GREATER, "Expected '>' after rules name in limit<>");
+    }
+    
     bool isWild = false;
     bool isWildx = false;
     bool isConst = false;
@@ -2474,6 +2497,7 @@ ASTNodePtr Parser::parseVarDecl() {
     varDecl->isBorrowImm = isBorrowImm;
     varDecl->isBorrowMut = isBorrowMut;
     varDecl->alignment = alignment;  // P0: Set explicit alignment if specified
+    varDecl->limitRulesName = limitRulesName;  // v0.2.41: Set limit rules if specified
     
     return varDecl;
 }
@@ -2821,6 +2845,122 @@ ASTNodePtr Parser::parseEnumDecl() {
     );
     
     return enumDecl;
+}
+
+// v0.2.41: Parse Rules declaration: Rules:Name = { $ condition1, $ condition2, limit<other>, ... };
+ASTNodePtr Parser::parseRulesDecl() {
+    using namespace frontend;
+    
+    Token rulesToken = previous(); // 'Rules' keyword
+    
+    // Consume colon before rules name
+    consume(TokenType::TOKEN_COLON, "Expected ':' after 'Rules' keyword");
+    
+    // Get rules name
+    Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected rules name");
+    
+    // Consume equals sign
+    consume(TokenType::TOKEN_EQUAL, "Expected '=' after rules name");
+    
+    // Parse rules body: { $ condition1, $ condition2, limit<other>, ... }
+    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after '='");
+    
+    std::vector<ASTNodePtr> conditions;
+    std::vector<std::string> cascadedRules;
+    
+    while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+        if (match(TokenType::TOKEN_KW_LIMIT)) {
+            // Cascading rule: limit<other_rules_name>
+            consume(TokenType::TOKEN_LESS, "Expected '<' after 'limit' in cascading rule");
+            Token cascadedToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected rules name in limit<>");
+            cascadedRules.push_back(cascadedToken.lexeme);
+            consume(TokenType::TOKEN_GREATER, "Expected '>' after rules name in limit<>");
+        } else if (match(TokenType::TOKEN_DOLLAR)) {
+            // Condition: $ <expression>
+            // Parse a comparison expression with $ as the LHS placeholder
+            // Create a placeholder node for $
+            auto dollarNode = std::make_shared<IdentifierExpr>("$", previous().line, previous().column);
+            
+            // Parse the rest as a binary expression: operator + RHS
+            // We support: <, >, <=, >=, ==, !=, %, and compound like $ % 2 == 0
+            ASTNodePtr condition = parseDollarCondition(dollarNode);
+            if (condition) {
+                conditions.push_back(condition);
+            }
+        } else {
+            error("Expected '$' condition or 'limit<>' cascade in Rules body");
+            return nullptr;
+        }
+        
+        // Check for comma (optional for last entry)
+        if (!check(TokenType::TOKEN_RIGHT_BRACE)) {
+            consume(TokenType::TOKEN_COMMA, "Expected ',' or '}' after rule condition");
+        }
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after Rules body");
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after Rules declaration");
+    
+    auto rulesDecl = std::make_shared<RulesDeclStmt>(
+        nameToken.lexeme,
+        conditions,
+        cascadedRules,
+        rulesToken.line,
+        rulesToken.column
+    );
+    
+    return rulesDecl;
+}
+
+// v0.2.41: Parse a condition expression after $ placeholder in Rules body.
+// Examples: $ < 100  |  $ % 2 == 0  |  $ != 50  |  $ >= -2
+// The dollarNode is the IdentifierExpr("$") representing the value placeholder.
+// We run the standard Pratt precedence-climbing loop treating dollarNode as the left operand.
+ASTNodePtr Parser::parseDollarCondition(ASTNodePtr dollarNode) {
+    using namespace frontend;
+    
+    ASTNodePtr left = dollarNode;
+    
+    // Climb precedence for binary operators until we hit ',' or '}'
+    while (!isAtEnd() && !check(TokenType::TOKEN_COMMA) && !check(TokenType::TOKEN_RIGHT_BRACE)) {
+        Token op = peek();
+        int prec = getPrecedence(op.type);
+        
+        if (prec <= 0) break;  // Not a binary operator
+        
+        if (!isBinaryOperator(op.type)) break;
+        
+        advance(); // consume operator
+        
+        // Parse right-hand side (use parseUnary to handle negative literals like -2)
+        ASTNodePtr right = parseUnary();
+        if (!right) {
+            error("Expected expression after operator in rule condition");
+            return nullptr;
+        }
+        right = parsePostfix(right);
+        
+        // Continue climbing if next operator has higher precedence
+        while (!isAtEnd() && !check(TokenType::TOKEN_COMMA) && !check(TokenType::TOKEN_RIGHT_BRACE)) {
+            Token nextOp = peek();
+            int nextPrec = getPrecedence(nextOp.type);
+            if (nextPrec <= prec) break;
+            if (!isBinaryOperator(nextOp.type)) break;
+            
+            advance(); // consume higher-precedence operator
+            ASTNodePtr right2 = parseUnary();
+            if (!right2) {
+                error("Expected expression after operator in rule condition");
+                return nullptr;
+            }
+            right2 = parsePostfix(right2);
+            right = std::make_shared<BinaryExpr>(right, nextOp, right2, nextOp.line, nextOp.column);
+        }
+        
+        left = std::make_shared<BinaryExpr>(left, op, right, op.line, op.column);
+    }
+    
+    return left;
 }
 
 // Parse Type declaration: Type:Name = { func:create=...; func:destroy=...; struct:internal=...; struct:interface=...; struct:type=...; };
@@ -4610,10 +4750,22 @@ void Parser::collectEnumNames() {
     }
 }
 
+void Parser::collectRulesNames() {
+    using namespace frontend;
+    for (size_t i = 0; i + 2 < tokens.size(); ++i) {
+        if (tokens[i].type == TokenType::TOKEN_KW_RULES &&
+            tokens[i + 1].type == TokenType::TOKEN_COLON &&
+            tokens[i + 2].type == TokenType::TOKEN_IDENTIFIER) {
+            knownRulesNames.insert(tokens[i + 2].lexeme);
+        }
+    }
+}
+
 ASTNodePtr Parser::parse() {
     // Pre-pass: collect enum names so parseMemberExpression can distinguish
     // enum member access (Color.RED) from UFCS static calls (Struct.method)
     collectEnumNames();
+    collectRulesNames();
     
     std::vector<ASTNodePtr> declarations;
     

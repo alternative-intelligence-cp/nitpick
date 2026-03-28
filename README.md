@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.39
+# Aria Programming Language v0.2.41
 
 ![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -12,11 +12,13 @@
 
 ## Current Status (March 2026)
 
-**v0.2.39 — Enums, Channels, Actors, Traits, 72+ Packages**
+**v0.2.41 — Rules + limit (Refinement Types), Enums, Channels, Actors, Traits, 72+ Packages**
 
-The Aria compiler now supports enums with auto-numbering, thread-safe channels, an actor system, trait bounds on generics, borrow semantics (`$$i`/`$$m`), and the `Type:` composable type system. The package ecosystem has grown to 72+ packages.
+The Aria compiler now supports refinement types via `Rules` and `limit`, enums with auto-numbering, thread-safe channels, an actor system, trait bounds on generics, borrow semantics (`$$i`/`$$m`), and the `Type:` composable type system. The package ecosystem has grown to 72+ packages.
 
 **Recent highlights:**
+- **v0.2.41** — Rules + limit: refinement types with compile-time and runtime constraint checking
+- **v0.2.40** — Documentation update: comprehensive guide refresh
 - **v0.2.39** — Enums: full type system, auto-numbering, typed variables, exhaustiveness
 - **v0.2.38** — AI-Native Filesystem (aria-aifs): POSIX + AI metadata ops via shim layer
 - **v0.2.37** — Async channels & actors: buffered/unbuffered/oneshot channels, actor spawn/send/stop, fan-out/fan-in patterns

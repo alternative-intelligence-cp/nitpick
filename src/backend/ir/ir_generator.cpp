@@ -2589,6 +2589,13 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             continue;
         }
 
+        // v0.2.41: Handle RULES_DECL statements - register rules before processing functions
+        if (decl->type == ASTNode::NodeType::RULES_DECL) {
+            RulesDeclStmt* rulesDecl = static_cast<RulesDeclStmt*>(decl.get());
+            rules_table[rulesDecl->rulesName] = rulesDecl;
+            continue;
+        }
+
         // Handle TYPE_DECL statements - Type Oriented Programming (TOP)
         // Process desugared components through normal code generation
         if (decl->type == ASTNode::NodeType::TYPE_DECL) {
@@ -4392,6 +4399,19 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Track Aria type name for UFCS method resolution
             var_aria_types[varDecl->varName] = actualTypeName;
 
+            // v0.2.41: Track and emit runtime limit<> checks
+            if (!varDecl->limitRulesName.empty()) {
+                var_limit_rules[varDecl->varName] = varDecl->limitRulesName;
+                
+                // Emit runtime checks for non-constant initializers
+                // (Constant violations are caught at compile time by the type checker)
+                if (varDecl->initializer) {
+                    llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                    llvm::Value* loadedVal = builder.CreateLoad(alloca->getAllocatedType(), alloca, "limit.val");
+                    emitLimitChecks(varDecl->limitRulesName, loadedVal, currentFunc);
+                }
+            }
+
             return alloca;
         }
         
@@ -4815,6 +4835,13 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
 
             // No code needs to be generated for the declaration itself
             // Enum values are compile-time constants that will be inlined
+            return nullptr;
+        }
+
+        case ASTNode::NodeType::RULES_DECL: {
+            // v0.2.41: Rules declaration — register if not already done in processModuleDeclarations
+            RulesDeclStmt* rulesDecl = static_cast<RulesDeclStmt*>(stmt);
+            rules_table[rulesDecl->rulesName] = rulesDecl;
             return nullptr;
         }
 
@@ -7293,6 +7320,15 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // Store the result
                 builder.CreateStore(result, var);
                 
+                // v0.2.41: Runtime limit check on assignment to limited variables
+                {
+                    auto limitIt = var_limit_rules.find(lhs->name);
+                    if (limitIt != var_limit_rules.end()) {
+                        llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                        emitLimitChecks(limitIt->second, result, currentFunc);
+                    }
+                }
+                
                 // Assignment expression returns the assigned value
                 return result;
             }
@@ -8699,7 +8735,6 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateICmpNE(L, R, "netmp");
                     }
                 case frontend::TokenType::TOKEN_LESS:
-                    // SIMD/Vector broadcast: Handle vector-scalar or scalar-vector comparisons
                     {
                         bool leftIsVector = L->getType()->isVectorTy();
                         bool rightIsVector = R->getType()->isVectorTy();
@@ -11031,4 +11066,95 @@ llvm::Function* aria::IRGenerator::generateVtableThunk(
 
     std::cerr << "[DYN] Generated vtable thunk: " << thunkName << "\n";
     return thunk;
+}
+
+// ============================================================================
+// v0.2.41: Runtime Limit Checks — emitLimitChecks
+// ============================================================================
+// Evaluates rule conditions at runtime by binding $ to the value,
+// codegen'ing each condition expression, and branching to failsafe on violation.
+
+void aria::IRGenerator::emitLimitChecks(const std::string& rulesName, llvm::Value* value, llvm::Function* currentFunc) {
+    auto it = rules_table.find(rulesName);
+    if (it == rules_table.end()) return;
+    
+    RulesDeclStmt* rules = it->second;
+    
+    // Process cascaded rules first (recursively)
+    for (const auto& cascadedName : rules->cascadedRules) {
+        emitLimitChecks(cascadedName, value, currentFunc);
+    }
+    
+    // For each condition, bind $ to value, codegen the expression, branch on result
+    for (size_t i = 0; i < rules->conditions.size(); ++i) {
+        // Save any existing $ binding
+        llvm::Value* savedDollar = nullptr;
+        auto dollarIt = named_values.find("$");
+        if (dollarIt != named_values.end()) {
+            savedDollar = dollarIt->second;
+        }
+        
+        // Create a temporary alloca for $ and store the value
+        llvm::IRBuilder<> entryBuilder(&currentFunc->getEntryBlock(),
+                                        currentFunc->getEntryBlock().begin());
+        llvm::AllocaInst* dollarAlloca = entryBuilder.CreateAlloca(
+            value->getType(), nullptr, "limit.dollar");
+        builder.CreateStore(value, dollarAlloca);
+        named_values["$"] = dollarAlloca;
+        
+        // Codegen the condition expression
+        llvm::Value* condResult = codegenExpression(rules->conditions[i].get());
+        
+        // Restore $ binding
+        if (savedDollar) {
+            named_values["$"] = savedDollar;
+        } else {
+            named_values.erase("$");
+        }
+        
+        if (!condResult) continue;
+        
+        // Ensure condition is i1
+        if (!condResult->getType()->isIntegerTy(1)) {
+            condResult = builder.CreateICmpNE(
+                condResult,
+                llvm::ConstantInt::get(condResult->getType(), 0),
+                "limit.tobool");
+        }
+        
+        // Create basic blocks for check
+        llvm::BasicBlock* limitOkBB = llvm::BasicBlock::Create(
+            context, "limit.ok", currentFunc);
+        llvm::BasicBlock* limitFailBB = llvm::BasicBlock::Create(
+            context, "limit.fail", currentFunc);
+        
+        builder.CreateCondBr(condResult, limitOkBB, limitFailBB);
+        
+        // Emit fail block: call failsafe with error code
+        builder.SetInsertPoint(limitFailBB);
+        llvm::Function* failsafeFunc = module->getFunction("failsafe");
+        if (failsafeFunc) {
+            // Call failsafe — pass error code if it accepts a parameter, otherwise call with no args
+            if (failsafeFunc->getFunctionType()->getNumParams() > 0) {
+                llvm::Value* errCode = llvm::ConstantInt::get(
+                    failsafeFunc->getFunctionType()->getParamType(0),
+                    static_cast<int64_t>(i + 1));
+                builder.CreateCall(failsafeFunc, {errCode});
+            } else {
+                builder.CreateCall(failsafeFunc, {});
+            }
+        }
+        // Terminate the program after failsafe — ensure we don't fall through
+        // even if the user's failsafe function returns.
+        llvm::FunctionType* exitFT = llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),
+            {llvm::Type::getInt32Ty(context)}, false);
+        llvm::FunctionCallee exitFn = module->getOrInsertFunction("exit", exitFT);
+        builder.CreateCall(exitFn, {llvm::ConstantInt::get(
+            llvm::Type::getInt32Ty(context), static_cast<int64_t>(i + 1))});
+        builder.CreateUnreachable();
+        
+        // Continue in the OK block
+        builder.SetInsertPoint(limitOkBB);
+    }
 }

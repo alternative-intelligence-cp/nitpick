@@ -29,6 +29,10 @@ private:
     std::unordered_set<std::string> knownEnumNames;
     void collectEnumNames();
 
+    // Rules names collected by pre-pass (for limit<> parsing)
+    std::unordered_set<std::string> knownRulesNames;
+    void collectRulesNames();
+
     // ARIA-020: Nesting depth limit to prevent stack overflow
     // Deeply nested code (90+ levels) can exhaust the call stack
     static constexpr int MAX_NESTING_DEPTH = 256;
@@ -81,6 +85,8 @@ private:
     ASTNodePtr parseFuncDecl();
     ASTNodePtr parseStructDecl();
     ASTNodePtr parseEnumDecl();
+    ASTNodePtr parseRulesDecl();     // v0.2.41: Parse Rules:Name = { $ conditions };
+    ASTNodePtr parseDollarCondition(ASTNodePtr dollarNode);  // Parse $ condition expr
     ASTNodePtr parseTypeDecl();      // Parse Type:Name = { func/struct declarations };
     ASTNodePtr parseTraitDecl();     // WP 005: Parse trait:Name = { methods };
     ASTNodePtr parseImplDecl();      // WP 005: Parse impl:Trait:for:Type = { methods };

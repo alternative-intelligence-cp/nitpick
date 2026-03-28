@@ -107,6 +107,12 @@ private:
     // Maps struct name -> generic struct declaration AST
     std::unordered_map<std::string, StructDeclStmt*> genericStructRegistry;
     
+    // v0.2.41: Rules table — maps rules name -> RulesDeclStmt for limit<> validation
+    std::unordered_map<std::string, RulesDeclStmt*> rulesTable;
+    
+    // v0.2.41: Tracks which variables have limit<> constraints (name -> rules name)
+    std::unordered_map<std::string, std::string> limitedVariables;
+    
     // Phase 2: Control flow analysis for Result<T> enforcement
     // Tracks check state through branches and early returns
     ResultCheckState currentResultState;
@@ -728,6 +734,21 @@ public:
      * - Register enum variants in symbol table
      */
     void checkEnumDecl(EnumDeclStmt* stmt);
+
+    /**
+     * v0.2.41: Check Rules declaration (refinement types)
+     * - Register rules in rulesTable for limit<> reference
+     * - Validate cascaded rules references exist
+     */
+    void checkRulesDecl(RulesDeclStmt* stmt);
+    
+    // v0.2.41: Compile-time rule validation for limit<> variables
+    void validateLimitRules(const std::string& rulesName, int64_t value, ASTNode* stmt);
+    void validateLimitRulesFloat(const std::string& rulesName, double value, ASTNode* stmt);
+    bool evaluateRuleConditionInt(ASTNode* node, int64_t dollarValue);
+    int64_t evalRuleOperandInt(ASTNode* node, int64_t dollarValue);
+    bool evaluateRuleConditionFloat(ASTNode* node, double dollarValue);
+    double evalRuleOperandFloat(ASTNode* node, double dollarValue);
 
     /**
      * Check Type declaration and desugar to struct + methods

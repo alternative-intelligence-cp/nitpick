@@ -20,6 +20,7 @@ namespace aria {
 // Forward declarations
 class ASTNode;  // ASTNode is in aria namespace
 class BlockStmt;  // For defer stack support
+class RulesDeclStmt;  // v0.2.41: For rules_table
 namespace sema {
     class Type;  // Forward declaration in correct namespace
     class TypeSystem;  // Forward declaration for custom type lookups
@@ -59,6 +60,12 @@ private:
     
     // Enum constants (maps enum.variant to integer value)
     std::map<std::string, int64_t> enum_constants;
+    
+    // v0.2.41: Rules table (maps rules name -> AST declaration)
+    std::map<std::string, RulesDeclStmt*> rules_table;
+    
+    // v0.2.41: Tracks which variables have limit<> constraints (var name -> rules name)
+    std::map<std::string, std::string> var_limit_rules;
     
     // TBB codegen for safe arithmetic with overflow detection
     TBBCodegen tbb_codegen;
@@ -164,6 +171,12 @@ private:
      * Generate code for an expression node
      */
     llvm::Value* codegenExpression(ASTNode* expr);
+    
+    /**
+     * v0.2.41: Emit runtime limit<> checks for a value against rules
+     * Binds $ to the value, evaluates each condition, branches to failsafe on violation
+     */
+    void emitLimitChecks(const std::string& rulesName, llvm::Value* value, llvm::Function* currentFunc);
     
     /**
      * Execute defer blocks in the current scope (LIFO order)

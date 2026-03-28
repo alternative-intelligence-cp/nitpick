@@ -1,0 +1,154 @@
+// test_rules_limit.aria — v0.2.41 Rules + limit Tests
+// Tests: basic rules, runtime checks, cascading rules,
+//        multiple conditions, assignment checks
+
+extern func:puts = int32(string:s);
+
+// ============================================================
+// Test Rules Declarations
+// ============================================================
+Rules:r_lt_100 = {
+    $ < 100
+};
+
+Rules:r_even = {
+    $ % 2 == 0
+};
+
+Rules:r_positive = {
+    $ > 0
+};
+
+Rules:r_special = {
+    $ >= -2,
+    $ <= 100,
+    $ % 2 == 0,
+    $ != 0,
+    $ != 50
+};
+
+Rules:r_cascading = {
+    limit<r_even>,
+    limit<r_lt_100>,
+    $ > 0
+};
+
+func:failsafe = NIL() {
+    drop(puts("FAILSAFE: limit violation detected!"));
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+
+    // ----------------------------------------------------------
+    // Test 1: Basic limit — valid value
+    // ----------------------------------------------------------
+    limit<r_lt_100> int32:a = 50;
+    if (a == 50) {
+        drop(puts("PASS: Test 1 — basic limit valid value"));
+        passed += 1i32;
+    } else {
+        drop(puts("FAIL: Test 1 — basic limit valid value"));
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 2: Even number rule — valid
+    // ----------------------------------------------------------
+    limit<r_even> int32:b = 42;
+    if (b == 42) {
+        drop(puts("PASS: Test 2 — even rule valid"));
+        passed += 1i32;
+    } else {
+        drop(puts("FAIL: Test 2 — even rule valid"));
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 3: Positive rule — valid
+    // ----------------------------------------------------------
+    limit<r_positive> int32:c = 10;
+    if (c == 10) {
+        drop(puts("PASS: Test 3 — positive rule valid"));
+        passed += 1i32;
+    } else {
+        drop(puts("FAIL: Test 3 — positive rule valid"));
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 4: Multi-condition rule — valid value (4)
+    // ----------------------------------------------------------
+    limit<r_special> int32:d = 4;
+    if (d == 4) {
+        drop(puts("PASS: Test 4 — multi-condition valid"));
+        passed += 1i32;
+    } else {
+        drop(puts("FAIL: Test 4 — multi-condition valid"));
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 5: Cascading rules — valid (even, <100, >0)
+    // ----------------------------------------------------------
+    limit<r_cascading> int32:e = 42;
+    if (e == 42) {
+        drop(puts("PASS: Test 5 — cascading rules valid"));
+        passed += 1i32;
+    } else {
+        drop(puts("FAIL: Test 5 — cascading rules valid"));
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 6: Re-assignment with valid value
+    // ----------------------------------------------------------
+    a = 99;
+    if (a == 99) {
+        drop(puts("PASS: Test 6 — reassignment valid"));
+        passed += 1i32;
+    } else {
+        drop(puts("FAIL: Test 6 — reassignment valid"));
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 7: Even number 0
+    // ----------------------------------------------------------
+    limit<r_even> int32:f = 0;
+    if (f == 0) {
+        drop(puts("PASS: Test 7 — even zero valid"));
+        passed += 1i32;
+    } else {
+        drop(puts("FAIL: Test 7 — even zero valid"));
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 8: Special rules with negative value
+    // (-2 is valid: even, >= -2, <= 100, != 0, != 50)
+    // ----------------------------------------------------------
+    limit<r_special> int32:g = -2;
+    if (g == -2) {
+        drop(puts("PASS: Test 8 — special negative valid"));
+        passed += 1i32;
+    } else {
+        drop(puts("FAIL: Test 8 — special negative valid"));
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Summary
+    // ----------------------------------------------------------
+    drop(puts(""));
+    drop(puts("=== Rules/Limit Test Results ==="));
+
+    if (failed == 0i32) {
+        drop(puts("All tests PASSED!"));
+    } else {
+        drop(puts("Some tests FAILED."));
+    }
+
+    pass(0);
+};
