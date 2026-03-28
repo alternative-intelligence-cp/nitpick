@@ -348,7 +348,24 @@ void Lexer::scanToken() {
                 addToken(TokenType::TOKEN_AT); // Plain @ operator
             }
             break;
-        case '$': addToken(TokenType::TOKEN_DOLLAR); break;
+        case '$':
+            if (peek() == '$') {
+                advance(); // consume second $
+                if (peek() == 'i' && !isAlphaNumeric(peekNext())) {
+                    advance(); // consume 'i'
+                    addToken(TokenType::TOKEN_KW_BORROW_IMM);
+                } else if (peek() == 'm' && !isAlphaNumeric(peekNext())) {
+                    advance(); // consume 'm'
+                    addToken(TokenType::TOKEN_KW_BORROW_MUT);
+                } else {
+                    // Two dollars but not $$i or $$m — emit two TOKEN_DOLLAR
+                    addToken(TokenType::TOKEN_DOLLAR);
+                    addToken(TokenType::TOKEN_DOLLAR);
+                }
+            } else {
+                addToken(TokenType::TOKEN_DOLLAR);
+            }
+            break;
         case '#': addToken(TokenType::TOKEN_HASH); break;
         case '`': scanTemplateLiteral(); break; // Template literals
         

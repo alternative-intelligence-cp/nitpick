@@ -902,6 +902,22 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     if (stmt->initializer) {
         checkExpression(stmt->initializer.get());
 
+        // ====================================================================
+        // v0.2.35: $$i/$$m qualifier-based borrows
+        // ====================================================================
+        if (stmt->isBorrowImm || stmt->isBorrowMut) {
+            // Extract borrow target from initializer (must be an identifier —
+            // validated by type checker, but guard defensively)
+            if (stmt->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+                std::string borrow_target = 
+                    static_cast<IdentifierExpr*>(stmt->initializer.get())->name;
+                bool is_mutable = stmt->isBorrowMut;
+                recordBorrow(borrow_target, stmt->varName, is_mutable, stmt);
+            }
+            // Early return — $$i/$$m variables don't need the legacy $ checks
+            return;
+        }
+
         // Check if initializer is a borrow or pin operation
         if (stmt->initializer->type == ASTNode::NodeType::UNARY_OP) {
             UnaryExpr* unary = static_cast<UnaryExpr*>(stmt->initializer.get());

@@ -336,6 +336,8 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_AT: return "AT";
         case TokenType::TOKEN_DOLLAR: return "DOLLAR";
         case TokenType::TOKEN_HASH: return "HASH";
+        case TokenType::TOKEN_KW_BORROW_IMM: return "BORROW_IMM";
+        case TokenType::TOKEN_KW_BORROW_MUT: return "BORROW_MUT";
         case TokenType::TOKEN_ARROW: return "ARROW";
         case TokenType::TOKEN_LEFT_ARROW: return "LEFT_ARROW";
         case TokenType::TOKEN_FAT_ARROW: return "FAT_ARROW";

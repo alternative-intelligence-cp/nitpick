@@ -3863,9 +3863,25 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Allocate stack space for the variable with proper type mapping
             llvm::Type* varType = mapTypeFromName(actualTypeName);
             
-            // llvm::errs() << "DEBUG: Mapped to LLVM type: ";
-            // varType->print(llvm::errs());
-            // llvm::errs() << "\n";
+            // ================================================================
+            // v0.2.35: Borrow variables ($$i/$$m) — alias the original
+            // ================================================================
+            if (varDecl->isBorrowImm || varDecl->isBorrowMut) {
+                if (varDecl->initializer && 
+                    varDecl->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+                    std::string target_name = 
+                        static_cast<IdentifierExpr*>(varDecl->initializer.get())->name;
+                    auto it = named_values.find(target_name);
+                    if (it != named_values.end()) {
+                        named_values[varDecl->varName] = it->second;
+                        var_aria_types[varDecl->varName] = actualTypeName;
+                        std::cerr << "[DEBUG] Borrow " << varDecl->varName 
+                                  << " aliased to " << target_name << std::endl;
+                        return nullptr;
+                    }
+                }
+                // Fallthrough if target not found (shouldn't happen after type checker)
+            }
             
             llvm::AllocaInst* alloca = builder.CreateAlloca(varType, nullptr, varDecl->varName);
             

@@ -24,16 +24,24 @@ This directory contains comprehensive tests for Aria's borrow checker implementa
 ## Current Implementation Status
 
 **✅ Working:**
-- Immutable borrows with `$` operator
+- Immutable borrows with `$` operator (legacy) and `$$i` qualifier (v0.2.35)
+- Mutable borrows with `$$m` qualifier (v0.2.35)
 - Pinning with `#` operator
 - Address-of with `@` operator
 - AST annotations for borrow tracking
 - Borrow checker integration in compilation pipeline
+- 1-mutable-XOR-N-immutable rule enforcement
+- Immutable borrow write rejection
+- Must-borrow-from-named-variable validation
+- Borrow + wild/wildx conflict detection
+- Codegen pointer aliasing for borrow variables
 
-**🔧 In Progress:**
-- Mutable borrow syntax design
-- Violation detection and error reporting
-- Scope-based lifetime validation
+**🔧 v0.2.35 Borrow Syntax:**
+```aria
+int32:x = 42i32;
+$$i int32:ref = x;    // immutable borrow — read-only alias to x
+$$m int32:mref = x;   // mutable borrow — read/write alias to x
+```
 
 ## Running Tests
 
