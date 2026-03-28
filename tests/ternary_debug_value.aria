@@ -6,12 +6,13 @@ func:main = int32() {
     
     // Check if result is ERR sentinel (-128)
     if (t_sum == -128) {
-        pass(0);  // Success - overflow detected
+        exit(0);  // Success - overflow detected
     } else {
         pass(1);  // Failure - overflow not detected
     }
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

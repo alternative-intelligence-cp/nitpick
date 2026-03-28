@@ -4,7 +4,7 @@ use "shm.aria".*;
 use "signal.aria".*;
 use "process.aria".*;
 
-func:failsafe = NIL(int32:err_code) { println("FAILSAFE HIT"); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     println("=== OS Component Tests ===");
@@ -112,5 +112,5 @@ func:main = int32() {
     // Summary
     println("");
     println("=== OS Tests Complete ===");
-    pass(0i32);
+    exit(0);
 };

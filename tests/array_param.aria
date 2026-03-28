@@ -46,7 +46,7 @@ func:main = int32() {
     // c[0] should still be 5 (pass-by-value copy: callee's mutation is local)
     if (c[0] != 5i32) { pass(4i32); }
 
-    pass(0i32);
+    exit(0);
 };
 
-func:failsafe = NIL(int32:err_code) {};
+func:failsafe = int32(tbb32:err) { exit(1); };

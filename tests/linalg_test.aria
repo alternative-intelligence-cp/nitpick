@@ -40,8 +40,9 @@ func:vec3_approx_eq = bool(vec3:a, vec3:b, flt64:eps) {
     pass(false);
 };
 
-func:failsafe = NIL(int32:code) {
+func:failsafe = int32(tbb32:err) {
     println("[FAILSAFE] triggered");
+    exit(1);
 };
 
 func:main = int32() {
@@ -242,7 +243,7 @@ func:main = int32() {
 
     if (failed == 0i32) {
         println("All 19 tests PASSED");
-        pass(0i32);
+        exit(0);
     } else {
         println("SOME TESTS FAILED");
         pass(failed);

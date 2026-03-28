@@ -13,7 +13,7 @@ func:complex_add = complex<int64>(complex<int64>:a, complex<int64>:b) {
     pass(result);
 };
 
-func:failsafe = NIL(int32:err_code) {};
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     // Test 1: Basic construction
@@ -33,7 +33,7 @@ func:main = int32() {
     
     // Verify result: (3+4i) + (1+2i) = (4+6i)
     if (sum.real == 4i64 && sum.imag == 6i64) {
-        pass(0);
+        exit(0);
     }
     
     pass(1);

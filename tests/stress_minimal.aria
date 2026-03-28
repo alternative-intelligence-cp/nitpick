@@ -11,12 +11,13 @@ func:main = int32() {
     Result<int32>:r = simple_check(true);
     
     if (r.is_error) {
-        pass(0i32);
+        exit(0);
     }
     
     pass(r.value);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

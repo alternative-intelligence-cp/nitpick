@@ -3,7 +3,7 @@
 
 use stdlib.dbug;
 
-func:failsafe = NIL(int32:err_code) { };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     // Test 1: group starts disabled
@@ -43,5 +43,5 @@ func:main = int32() {
     if (!e3) { pass(9i32); }
     drop(dbug_disable("all"));
 
-    pass(0i32);
+    exit(0);
 };

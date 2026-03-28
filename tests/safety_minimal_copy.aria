@@ -114,11 +114,12 @@ func:main = int32() {
     // Return success if all passed
     bool:all_passed = (passed == total);
     if (all_passed) {
-        pass(0);
+        exit(0);
     }
     pass(1);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

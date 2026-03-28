@@ -70,15 +70,15 @@ class AriaFullStackFuzzer:
     
     def generate_basic_program(self) -> str:
         """Generate a simple valid program."""
-        return """func:failsafe = void(int32:err_code) {};
+        return """func:failsafe = int32(tbb32:err) { exit(1); };
 func:main = int32() {
     int32:x = 42i32;
-    pass(x);
+    exit(0);
 };"""
     
     def generate_struct_with_arrays(self) -> str:
         """Test P2.7: Struct initialization with array literals."""
-        return """func:failsafe = void(int32:err_code) {};
+        return """func:failsafe = int32(tbb32:err) { exit(1); };
 
 struct Point {
     int32:x;
@@ -100,22 +100,22 @@ func:main = int32() {
             {x: 50i32, y: 60i32}
         ]
     };
-    pass(c.count);
+    exit(0);
 };"""
     
     def generate_string_interpolation(self) -> str:
         """Test string interpolation fixes."""
-        return """func:failsafe = void(int32:err_code) {};
+        return """func:failsafe = int32(tbb32:err) { exit(1); };
 func:main = int32() {
     int32:x = 42i32;
     int32:y = 13i32;
     // Test template literals
-    pass(0i32);
+    exit(0);
 };"""
     
     def generate_collections_test(self) -> str:
         """Test stdlib collections."""
-        return """func:failsafe = void(int32:err_code) {};
+        return """func:failsafe = int32(tbb32:err) { exit(1); };
 use std.collections;
 
 func:main = int32() {
@@ -128,12 +128,12 @@ func:main = int32() {
     // Test HashMap  
     HashMap<int32,int32>:map = hashmap_new<int32,int32>();
     
-    pass(0i32);
+    exit(0);
 };"""
     
     def generate_async_test(self) -> str:
         """Test async/await (parse only, may not execute)."""
-        return """func:failsafe = void(int32:err_code) {};
+        return """func:failsafe = int32(tbb32:err) { exit(1); };
 use std.async;
 
 async func:compute = Future<int32>() {
@@ -143,7 +143,7 @@ async func:compute = Future<int32>() {
 
 func:main = int32() {
     // Parse test for async syntax
-    pass(0i32);
+    exit(0);
 };"""
     
     def generate_integer_math(self) -> str:
@@ -153,12 +153,12 @@ func:main = int32() {
         a = random.randint(1, 100)
         b = random.randint(1, 100) if op != '/' and op != '%' else random.randint(1, 10)
         
-        return f"""func:failsafe = void(int32:err_code) {{}};
+        return f"""func:failsafe = int32(tbb32:err) {{ exit(1); }};
 func:main = int32() {{
     int32:a = {a}i32;
     int32:b = {b}i32;
     int32:result = (a {op} b);
-    pass(result);
+    exit(0);
 }};"""
     
     def test_program(self, source: str, run_executable: bool = False) -> TestResult:

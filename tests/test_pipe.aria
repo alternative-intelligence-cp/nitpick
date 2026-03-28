@@ -1,6 +1,6 @@
 use "pipe.aria".*;
 
-func:failsafe = NIL(int32:err_code) { println("FAILSAFE HIT"); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     println("=== Pipe Tests ===");
@@ -16,5 +16,5 @@ func:main = int32() {
 
     raw(Pipe.destroy(pp));
     println("=== Pipe Tests Done ===");
-    pass(0i32);
+    exit(0);
 };

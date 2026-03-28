@@ -159,11 +159,12 @@ func:main = int32() {
     // ========================================================================
     if (failures == 0) {
         print("DETERMINISM VERIFICATION: ALL TESTS PASSED\n");
-        pass(0);
+        exit(0);
     }
     pass(1);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     print("FAILSAFE triggered in determinism tests\n");
+    exit(1);
 };

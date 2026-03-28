@@ -18,7 +18,7 @@ extern func:ast_child2_bool = int32(wild int8*:node, int64:i, int64:j);
 extern func:ast_child2_int = int64(wild int8*:node, int64:i, int64:j);
 extern func:ast_child3_type = int32(wild int8*:node, int64:i, int64:j, int64:k);
 
-func:failsafe = NIL(int32:code) { };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:check = NIL(bool:cond, string:msg) {
     if (cond) {
@@ -431,5 +431,5 @@ func:main = int32() {
     println(int32_toString(total));
     println("===================================================");
 
-    pass(0i32);
+    exit(0);
 };

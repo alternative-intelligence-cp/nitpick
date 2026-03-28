@@ -1,8 +1,8 @@
 // Test: Bitwise NOT (~) vs Logical NOT (!)
 // Verify distinct operators behave correctly
 
-func:failsafe = int32(int32:err_code) {
-    pass(err_code);
+func:failsafe = int32(tbb32:err) {
+    exit(1);
 };
 
 func:main = int32() {
@@ -13,7 +13,7 @@ func:main = int32() {
     
     if (not1 == 4294967295u32) {
         // Success: ~0 = MAX_UINT32 (all bits set)
-        pass(0i32);
+        exit(0);
     }
     
     uint32:val2 = 4294967295u32; // 0b11111111111111111111111111111111 (all bits set)
@@ -21,7 +21,7 @@ func:main = int32() {
     
     if (not2 == 0u32) {
         // Success: ~(MAX_UINT32) = 0 (all bits cleared)
-        pass(0i32);
+        exit(0);
     }
     
     uint32:val3 = 5u32;          // 0b00000000000000000000000000000101
@@ -29,7 +29,7 @@ func:main = int32() {
     
     if (not3 == 4294967290u32) {
         // Success: ~5 = 4294967290
-        pass(0i32);
+        exit(0);
     }
     
     // Logical NOT: Boolean negation

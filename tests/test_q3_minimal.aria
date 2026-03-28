@@ -4,8 +4,8 @@
 
 use stdlib.quantum;
 
-func:failsafe = int32(int32:err_code) {
-    pass(err_code);
+func:failsafe = int32(tbb32:err) {
+    exit(1);
 };
 
 func:main = int32() {
@@ -19,7 +19,7 @@ func:main = int32() {
     // Verify values
     if (val_a == 10 && val_b == 20 && val_c == 0) {
         drop(println("SUCCESS: Q3<T> imported from stdlib.quantum works perfectly!"));
-        pass(0);  // Success
+        exit(0);  // Success
     }
     
     drop(println("FAIL: Field values incorrect"));

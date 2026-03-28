@@ -2,7 +2,7 @@
 // Verifies: method defined in impl block is reachable via obj.method() syntax,
 // and self parameter correctly accesses struct fields.
 
-func:failsafe = NIL(int32:err_code) { print("ERROR"); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 struct:Counter = {
     int32:value;
@@ -72,5 +72,5 @@ func:main = int32() {
     int32:v5 = r5 ? 999i32;
     if (v5 != 100i32) { pass(5i32); }
 
-    pass(0i32);
+    exit(0);
 };

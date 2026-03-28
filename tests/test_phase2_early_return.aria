@@ -18,9 +18,10 @@ func:main = int32() {
     
     // After this point, we KNOW r.is_error == false
     int32:x = r.value;  // SAFE: then branch returned
-    pass(0i32);
+    exit(0);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

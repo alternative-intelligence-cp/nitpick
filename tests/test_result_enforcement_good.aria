@@ -27,9 +27,10 @@ func:main = int32() {
     // TEST 3: Can use unwrap operator without explicit check
     int64:safe_unwrap = get_result() ? 0i64;  // OK: Unwrap does implicit check
 
-    pass(0i32);
+    exit(0);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

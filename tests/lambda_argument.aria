@@ -1,7 +1,7 @@
 // Test: Function pointer arguments (higher-order functions)
 // Phase B: Passing lambdas as arguments to functions
 
-func:failsafe = NIL(int32:err_code) { };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 // Higher-order function: applies f to x
 func:apply = int32((int32)(int32):f, int32:x) {
@@ -32,5 +32,5 @@ func:main = int32() {
     int32:r3 = apply_and_add(dbl, 10i32, 11i32) ? -1i32;
     if (r3 != 42i32) { pass(3i32); }
 
-    pass(0i32);
+    exit(0);
 };

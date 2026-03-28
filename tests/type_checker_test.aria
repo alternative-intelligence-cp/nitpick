@@ -10,7 +10,7 @@ extern func:tc_free = void(wild int8*:state);
 extern func:tc_error_count = int64(wild int8*:state);
 extern func:tc_get_error = string(wild int8*:state, int64:idx);
 
-func:failsafe = NIL(int32:code) { };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:check_pass = NIL(bool:cond, string:msg) {
     if (cond) {
@@ -641,5 +641,5 @@ func:main = int32() {
     println(int32_toString(total));
     println("═══════════════════════════════════════════════════════════════");
 
-    pass(0i32);
+    exit(0);
 };

@@ -4,7 +4,7 @@ use "atomic.aria".*;
 extern func:aria_shim_thread_sleep_ms = void(int64:ms);
 extern func:aria_shim_atomic_int32_fetch_add = int32(int64:handle, int32:value, int32:order);
 
-func:failsafe = NIL(int32:err_code) { println("FAILSAFE HIT"); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     println("=== Thread Pool Tests ===");
@@ -45,5 +45,5 @@ func:main = int32() {
     raw(AtomicInt32.destroy(counter));
     
     println("=== Thread Pool Tests Done ===");
-    pass(0i32);
+    exit(0);
 };

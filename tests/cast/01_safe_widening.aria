@@ -28,9 +28,10 @@ func:test_float_widening = int32() {
 func:main = int32() {
     int32:result1 = raw(test_int_widening());
     int32:result2 = raw(test_float_widening());
-    pass(0i32);
+    exit(0);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

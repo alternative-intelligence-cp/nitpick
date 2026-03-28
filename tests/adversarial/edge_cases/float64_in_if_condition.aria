@@ -4,7 +4,7 @@
 // compared inside an if() condition without ICmpInst assertion failures.
 // This was a pattern that triggered Bug #17 (ICmpInst with flt64 + if+pass).
 
-func:failsafe = NIL(int32:code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 pub func:compute_ratio = float64(float64:a, float64:b) {
     float64:r = a / b;
@@ -98,7 +98,7 @@ func:main = int32() {
     drop(println("---"));
     if (failed == 0i64) {
         drop(println("PASS: all 6 float64_in_if_condition tests passed"));
-        pass(0i32);
+        exit(0);
     }
     drop(println("FAIL: some float64_in_if_condition tests failed"));
     pass(1i32);

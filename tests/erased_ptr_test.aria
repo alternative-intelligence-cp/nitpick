@@ -18,7 +18,7 @@
 extern func:malloc = wild ?*(int64:size);
 extern func:free   = void(wild ?*:ptr);
 
-func:failsafe = NIL(int32:err_code) { };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
 
@@ -42,5 +42,5 @@ func:main = int32() {
     wild ?->:tiny = malloc(0i64);
     free(tiny);
 
-    pass(0i32);
+    exit(0);
 };

@@ -13,9 +13,9 @@ func:main = int32() {
     Result<int32>:ok_result = make_result_ok();
     if (!ok_result.is_error) {
         int32:val = ok_result.value;  // Should be 42
-        pass(0i32);
+        exit(0);
     }
     pass(1i32);
 };
 
-func:failsafe = NIL(int32:err_code) {};
+func:failsafe = int32(tbb32:err) { exit(1); };

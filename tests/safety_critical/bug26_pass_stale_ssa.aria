@@ -88,12 +88,13 @@ func:main = int32() {
         print("BUG26 REPRODUCER: All comparisons see correct values\n");
         print("NOTE: pass(variable)/return(variable) still returns initial value\n");
         print("      This test uses comparison workaround to verify mutations work\n");
-        pass(0);
+        exit(0);
     }
     print("BUG26 REPRODUCER: FAILURES DETECTED\n");
     pass(1);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     print("FAILSAFE triggered in Bug #26 reproducer\n");
+    exit(1);
 };

@@ -2,14 +2,14 @@
 // This demonstrates that the struct parameter field access bug fix enables
 // the entire Type Oriented Programming system to work correctly
 
-func:failsafe = NIL(int32:err_code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
-func:failsafe = NIL(int32:err_code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 Type:Counter = {
     // Constructor
 
-func:failsafe = NIL(int32:err_code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
     func:create = Counter(int32:start) {
         Counter:c = Counter{value: start, is_active: 1i32};
         pass(c);
@@ -49,5 +49,5 @@ func:main = int32() {
     int32:ver = raw(Counter.version());   // → Counter_version()
     
     // Success - Type system is fully functional!
-    pass(0i32);
+    exit(0);
 };

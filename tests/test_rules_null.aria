@@ -18,8 +18,9 @@ Rules<int32>:valid_positive = {
     $ < 1000
 };
 
-func:failsafe = NIL() {
+func:failsafe = int32(tbb32:err) {
     drop(puts("FAILSAFE: null/nil rule violation!"));
+    exit(1);
 };
 
 func:main = int32() {
@@ -70,5 +71,5 @@ func:main = int32() {
         pass(1);
     }
     drop(puts("All null/nil rules tests passed!"));
-    pass(0);
+    exit(0);
 };

@@ -10,8 +10,9 @@ Rules<Person>:r_adult = {
     $.age >= 18
 };
 
-func:failsafe = NIL() {
+func:failsafe = int32(tbb32:err) {
     drop(puts("FAILSAFE: age < 18 — limit violation caught!"));
+    exit(1);
 };
 
 func:main = int32() {

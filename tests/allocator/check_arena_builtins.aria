@@ -17,10 +17,11 @@ func:test_arena_lifecycle = int32() {
 func:main = int32() {
     int32:r = test_arena_lifecycle() ? -1i32;
     print("Arena builtins registered successfully");
-    pass(0i32);
+    exit(0);
 };
 
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

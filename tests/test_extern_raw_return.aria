@@ -14,9 +14,10 @@ func:main = int32() {
     int32:val = raw(test_extern_int(42));  // Returns int32, not Result<int32>
     
     // Success if it compiles!
-    pass(0i32);
+    exit(0);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

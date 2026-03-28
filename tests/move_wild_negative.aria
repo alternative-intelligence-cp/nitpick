@@ -14,7 +14,7 @@
 extern func:malloc = wild int8*(int64:size);
 extern func:free = void(wild int8*:ptr);
 
-func:failsafe = NIL(int32:err_code) { };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     wild int8->:buffer = malloc(100i64);
@@ -24,5 +24,5 @@ func:main = int32() {
     free(buffer);   // use-after-move
 
     free(moved);
-    pass(0i32);
+    exit(0);
 };

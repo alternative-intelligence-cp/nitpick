@@ -311,13 +311,14 @@ func:main = int32() {
 
     if (failed == 0i32) {
         println("All 19 tests PASSED");
-        pass(0i32);
+        exit(0);
     } else {
         println("Some tests FAILED");
         pass(1i32);
     }
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     println("FAILSAFE triggered");
+    exit(1);
 };
