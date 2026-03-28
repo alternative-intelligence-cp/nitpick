@@ -1,0 +1,24 @@
+// test_rules_struct_field_fail.aria — v0.2.43 $.field runtime failure test
+extern func:puts = int32(string:s);
+
+struct:Person = {
+    int32:age;
+    int32:score;
+};
+
+Rules<Person>:r_adult = {
+    $.age >= 18
+};
+
+func:failsafe = NIL() {
+    drop(puts("FAILSAFE: age < 18 — limit violation caught!"));
+};
+
+func:main = int32() {
+    // This should trigger failsafe because age=10 < 18
+    stack Person:kid = Person{age: 10, score: 90};
+    limit<r_adult> Person:k = kid;
+    // Should not reach here
+    drop(puts("FAIL: should have triggered failsafe"));
+    pass(1);
+};

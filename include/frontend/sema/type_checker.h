@@ -742,6 +742,10 @@ public:
      */
     void checkRulesDecl(RulesDeclStmt* stmt);
     
+    // v0.2.43: Validate $.field references in rule conditions against type parameter
+    void validateRulesDollarFields(ASTNode* node, const std::string& typeName,
+                                    StructType* structType, ASTNode* errorNode);
+    
     // v0.2.41: Compile-time rule validation for limit<> variables
     void validateLimitRules(const std::string& rulesName, int64_t value, ASTNode* stmt);
     void validateLimitRulesFloat(const std::string& rulesName, double value, ASTNode* stmt);

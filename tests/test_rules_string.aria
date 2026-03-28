@@ -1,0 +1,61 @@
+// test_rules_string.aria — v0.2.43 Rules<string> with $.length and $.method()
+extern func:puts = int32(string:s);
+
+// Rules that string must be non-empty
+Rules<string>:str_non_empty = {
+    $.length > 0
+};
+
+// Rules that string length is bounded
+Rules<string>:str_short = {
+    $.length > 0,
+    $.length <= 50
+};
+
+// Rules using string method — $.contains()
+Rules<string>:str_has_at = {
+    $.contains("@") == true
+};
+
+func:failsafe = NIL() {
+    drop(puts("FAILSAFE: string rule violation!"));
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+
+    // ----------------------------------------------------------
+    // Test 1: Rules<string> $.length > 0 with non-empty string
+    // ----------------------------------------------------------
+    limit<str_non_empty> string:greeting = "Hello, world!";
+    drop(puts(greeting));
+    drop(puts("PASS: Test 1 — Rules<string> $.length > 0"));
+    passed += 1i32;
+
+    // ----------------------------------------------------------
+    // Test 2: Rules<string> multiple $.length conditions
+    // ----------------------------------------------------------
+    limit<str_short> string:name = "Aria";
+    drop(puts(name));
+    drop(puts("PASS: Test 2 — Rules<string> $.length bounded"));
+    passed += 1i32;
+
+    // ----------------------------------------------------------
+    // Test 3: Rules<string> $.contains("@") — email-like check
+    // ----------------------------------------------------------
+    limit<str_has_at> string:email = "user@example.com";
+    drop(puts(email));
+    drop(puts("PASS: Test 3 — Rules<string> $.contains()"));
+    passed += 1i32;
+
+    // ----------------------------------------------------------
+    // Results
+    // ----------------------------------------------------------
+    if (failed > 0i32) {
+        drop(puts("SOME TESTS FAILED"));
+        pass(1);
+    }
+    drop(puts("All string rules tests passed!"));
+    pass(0);
+};

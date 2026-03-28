@@ -9362,6 +9362,68 @@ void TypeChecker::checkEnumDecl(EnumDeclStmt* stmt) {
 // v0.2.41: Rules Declaration — Refinement Types
 // ============================================================================
 
+// v0.2.43: Recursively validate $.field references in rule conditions
+void TypeChecker::validateRulesDollarFields(ASTNode* node, const std::string& typeName,
+                                             StructType* structType, ASTNode* errorNode) {
+    if (!node) return;
+    
+    if (node->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        auto* member = static_cast<MemberAccessExpr*>(node);
+        // Check if the object is the $ placeholder
+        if (member->object->type == ASTNode::NodeType::IDENTIFIER) {
+            auto* ident = static_cast<IdentifierExpr*>(member->object.get());
+            if (ident->name == "$") {
+                // Validate the field against the type parameter
+                if (typeName == "string") {
+                    // String built-in properties and methods
+                    static const std::unordered_set<std::string> validStringMembers = {
+                        "length", "contains", "startsWith", "endsWith"
+                    };
+                    if (validStringMembers.find(member->member) == validStringMembers.end()) {
+                        addError("String type has no property '" + member->member + 
+                                 "' in Rules body. Valid: $.length, $.contains(), $.startsWith(), $.endsWith()", errorNode);
+                    }
+                } else if (structType) {
+                    // Struct type — check field exists
+                    bool found = false;
+                    const auto& fields = structType->getFields();
+                    for (const auto& field : fields) {
+                        if (field.name == member->member) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        std::string available;
+                        for (size_t i = 0; i < fields.size(); ++i) {
+                            if (i > 0) available += ", ";
+                            available += fields[i].name;
+                        }
+                        addError("Type '" + typeName + "' has no field '" + member->member +
+                                 "' in Rules body. Available fields: " + available, errorNode);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Recurse into binary expressions
+    if (node->type == ASTNode::NodeType::BINARY_OP) {
+        auto* binary = static_cast<BinaryExpr*>(node);
+        validateRulesDollarFields(binary->left.get(), typeName, structType, errorNode);
+        validateRulesDollarFields(binary->right.get(), typeName, structType, errorNode);
+    }
+    
+    // Recurse into call expressions (for $.contains() etc.)
+    if (node->type == ASTNode::NodeType::CALL) {
+        auto* call = static_cast<CallExpr*>(node);
+        validateRulesDollarFields(call->callee.get(), typeName, structType, errorNode);
+        for (const auto& arg : call->arguments) {
+            validateRulesDollarFields(arg.get(), typeName, structType, errorNode);
+        }
+    }
+}
+
 void TypeChecker::checkRulesDecl(RulesDeclStmt* stmt) {
     // Check for duplicate rules name
     if (rulesTable.find(stmt->rulesName) != rulesTable.end()) {
@@ -9370,8 +9432,9 @@ void TypeChecker::checkRulesDecl(RulesDeclStmt* stmt) {
     }
     
     // v0.2.42: Validate type parameters are known types
+    // v0.2.43: Also accept struct/Type names for $.field member access
     for (const auto& typeParam : stmt->typeParams) {
-        if (!isTypeKeyword(typeParam)) {
+        if (!isTypeKeyword(typeParam) && !typeSystem->getStructType(typeParam)) {
             std::string suggestion = findSimilarType(typeParam);
             std::string msg = "Unknown type '" + typeParam + "' in Rules<> type parameter";
             if (!suggestion.empty()) {
@@ -9388,6 +9451,21 @@ void TypeChecker::checkRulesDecl(RulesDeclStmt* stmt) {
             addError("Cascaded rules '" + cascadedName + "' referenced in Rules:" + 
                      stmt->rulesName + " has not been declared yet", stmt);
             return;
+        }
+    }
+    
+    // v0.2.43: Validate $.field member access against the type parameter
+    if (!stmt->typeParams.empty()) {
+        const std::string& typeName = stmt->typeParams[0];
+        StructType* structType = nullptr;
+        Type* resolvedType = typeSystem->getStructType(typeName);
+        if (resolvedType && resolvedType->getKind() == TypeKind::STRUCT) {
+            structType = static_cast<StructType*>(resolvedType);
+        }
+        
+        // Walk each condition looking for MemberAccessExpr on $
+        for (const auto& cond : stmt->conditions) {
+            validateRulesDollarFields(cond.get(), typeName, structType, stmt);
         }
     }
     
