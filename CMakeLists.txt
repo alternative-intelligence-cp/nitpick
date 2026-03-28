@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(aria VERSION 0.2.44 LANGUAGES C CXX)
+project(aria VERSION 0.2.45 LANGUAGES C CXX)
 
 # C++17 standard required
 set(CMAKE_CXX_STANDARD 17)
@@ -142,6 +142,22 @@ else()
 endif()
 
 # ============================================================================
+# Z3 SMT Solver Configuration (v0.2.45 — Static Verification)
+# ============================================================================
+
+find_library(Z3_LIBRARY NAMES z3)
+find_path(Z3_INCLUDE_DIR NAMES z3.h)
+if(Z3_LIBRARY AND Z3_INCLUDE_DIR)
+    message(STATUS "Found Z3: ${Z3_LIBRARY}")
+    message(STATUS "Z3 include: ${Z3_INCLUDE_DIR}")
+    include_directories(${Z3_INCLUDE_DIR})
+    set(Z3_FOUND TRUE)
+else()
+    message(STATUS "Z3 not found — --verify flag will not be available")
+    set(Z3_FOUND FALSE)
+endif()
+
+# ============================================================================
 # Include directories
 # ============================================================================
 
@@ -205,6 +221,15 @@ set(SEMA_SOURCES
     src/frontend/sema/safety_checker.cpp
     src/semantic/literal_converter.cpp
 )
+
+# Phase 3.5: Static Verification (Z3 SMT solver)
+if(Z3_FOUND)
+    set(VERIFY_SOURCES
+        src/analysis/z3_verifier.cpp
+    )
+else()
+    set(VERIFY_SOURCES "")
+endif()
 
 # Phase 4: IR Generation
 set(IR_SOURCES
@@ -357,6 +382,7 @@ set(ARIA_SOURCES
     ${PARSER_SOURCES}
     ${DIAGNOSTICS_SOURCES}
     ${SEMA_SOURCES}
+    ${VERIFY_SOURCES}
     ${IR_SOURCES}
     ${RUNTIME_SOURCES}
     ${STDLIB_SOURCES}
@@ -457,13 +483,23 @@ endif()
 
 # Main compiler executable
 add_executable(ariac src/main.cpp ${ARIA_SOURCES})
-target_link_libraries(ariac ${llvm_libs} uring atomic)
+if(Z3_FOUND)
+    target_link_libraries(ariac ${llvm_libs} ${Z3_LIBRARY} uring atomic)
+    target_compile_definitions(ariac PRIVATE ARIA_HAS_Z3=1)
+else()
+    target_link_libraries(ariac ${llvm_libs} uring atomic)
+endif()
 
 # Testing compiler executable (separate binary for testing without disrupting fuzzer)
 # Build with: cmake --build build --target ariac_testing
 # Use with: ./build/ariac_testing your_test.aria
 add_executable(ariac_testing src/main.cpp ${ARIA_SOURCES})
-target_link_libraries(ariac_testing ${llvm_libs} uring atomic)
+if(Z3_FOUND)
+    target_link_libraries(ariac_testing ${llvm_libs} ${Z3_LIBRARY} uring atomic)
+    target_compile_definitions(ariac_testing PRIVATE ARIA_HAS_Z3=1)
+else()
+    target_link_libraries(ariac_testing ${llvm_libs} uring atomic)
+endif()
 
 # LSP server executable (Phase 7.3)
 add_executable(aria-ls src/tools/lsp/aria-ls.cpp 

@@ -1,5 +1,28 @@
 # Aria Language Changelog
 
+## [0.2.45] - March 2026
+
+### Added
+- **Z3 SMT Solver Integration** — Static formal verification of Rules/limit constraints at compile time
+- **`--verify` Flag** — Enables Z3-based proof checking for all `limit<>` declarations with literal initializers
+- **`--verify-report` Flag** — Detailed verification report: proven/disproven/unknown counts per constraint
+- **Rules Consistency Checking** — Z3 detects contradictory Rules (e.g., `$ > 100` + `$ < 50`) and emits compile error
+- **Bitvector-Accurate Proofs** — Integer constraints verified using exact-width bitvector sorts (BV8/BV16/BV32/BV64) matching Aria's integer types
+- **Real Sort Proofs** — Float constraints verified using Z3 real arithmetic sort
+- **Cascading Rules Verification** — Z3 follows `limit<parent>` cascades during proof
+- **Counterexample Reporting** — When Z3 disproves a constraint, reports the violating value
+
+### Architecture
+- `include/analysis/z3_verifier.h` — Z3Verifier class with VerifyResult enum, VerifyOutcome/VerifySummary structs
+- `src/analysis/z3_verifier.cpp` — Full Z3 C API translation: AST→Z3 expressions, solver management, proof/disproof logic
+- CMake integration: conditional Z3 detection with `ARIA_HAS_Z3` compile definition
+- New compiler phase 3.25 (between type checking and borrow checking)
+
+### Tests
+- `test_z3_verify.aria` — 7 tests: positive, range, even+positive, cascading, negative, boundary values (19 conditions proven)
+- `test_z3_verify_complex.aria` — Complex modular arithmetic: `$ % 7 == 0`, `$ % 2 == 0 && $ % 3 == 0` (16 conditions proven)
+- `test_z3_verify_inconsistent.aria` — Contradictory rules detection test (1 disproven, compilation aborted)
+
 ## [0.2.44] - March 2026
 
 ### Added

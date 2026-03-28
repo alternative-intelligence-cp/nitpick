@@ -1,0 +1,19 @@
+// test_z3_verify_fail.aria — v0.2.45 Z3 should detect this violation
+// Compile with: ariac test_z3_verify_fail.aria --verify
+// Expected: Z3 reports DISPROVEN for value -5 against $ > 0
+
+extern func:puts = int32(string:s);
+
+Rules:r_positive = {
+    $ > 0
+};
+
+func:failsafe = NIL() {
+    drop(puts("FAILSAFE"));
+};
+
+func:main = int32() {
+    // This should be flagged by both compile-time check AND Z3
+    limit<r_positive> int32:x = -5;
+    return 0i32;
+};

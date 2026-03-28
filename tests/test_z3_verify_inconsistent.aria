@@ -1,0 +1,20 @@
+// test_z3_verify_inconsistent.aria — v0.2.45 Z3 detects contradictory Rules
+// Compile with: ariac test_z3_verify_inconsistent.aria --verify
+// Expected: Z3 reports DISPROVEN for Rules consistency
+
+extern func:puts = int32(string:s);
+
+// These rules are contradictory: $ > 100 AND $ < 50 cannot both be true
+Rules:r_impossible = {
+    $ > 100,
+    $ < 50
+};
+
+func:failsafe = NIL() {
+    drop(puts("FAILSAFE"));
+};
+
+func:main = int32() {
+    drop(puts("This should not compile with --verify"));
+    return 0i32;
+};

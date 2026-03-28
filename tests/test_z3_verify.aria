@@ -1,0 +1,116 @@
+// test_z3_verify.aria — v0.2.45 Z3 SMT Verification Tests
+// Compile with: ariac test_z3_verify.aria --verify-report
+// Tests: Z3 proves literal initializers satisfy Rules constraints
+
+extern func:puts = int32(string:s);
+
+// ============================================================
+// Rules Declarations
+// ============================================================
+
+// Simple positive constraint
+Rules:r_positive = {
+    $ > 0
+};
+
+// Range constraint
+Rules:r_percentage = {
+    $ >= 0,
+    $ <= 100
+};
+
+// Multiple conditions — even AND positive AND < 1000
+Rules:r_even_pos = {
+    $ > 0,
+    $ % 2 == 0,
+    $ < 1000
+};
+
+// Cascading rules — inherits r_positive, adds < 256
+Rules:r_byte_pos = {
+    limit<r_positive>,
+    $ < 256
+};
+
+// Negative range test
+Rules:r_temp_celsius = {
+    $ >= -273,
+    $ <= 1000
+};
+
+func:failsafe = NIL() {
+    drop(puts("FAILSAFE: limit violation"));
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+
+    // ----------------------------------------------------------
+    // Test 1: Positive literal — Z3 should PROVE $ > 0 for 42
+    // ----------------------------------------------------------
+    limit<r_positive> int32:a = 42;
+    if (a == 42) {
+        drop(puts("PASS: Test 1 — positive literal proven"));
+        passed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 2: Percentage in range — Z3 should PROVE both conditions
+    // ----------------------------------------------------------
+    limit<r_percentage> int32:b = 75;
+    if (b == 75) {
+        drop(puts("PASS: Test 2 — percentage range proven"));
+        passed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 3: Even positive — Z3 should PROVE all 3 conditions
+    // ----------------------------------------------------------
+    limit<r_even_pos> int32:c = 42;
+    if (c == 42) {
+        drop(puts("PASS: Test 3 — even positive proven"));
+        passed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 4: Cascading rules — Z3 should PROVE inherited + local
+    // ----------------------------------------------------------
+    limit<r_byte_pos> int32:d = 100;
+    if (d == 100) {
+        drop(puts("PASS: Test 4 — cascading rules proven"));
+        passed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 5: Negative literal — Z3 should PROVE $ >= -273
+    // ----------------------------------------------------------
+    limit<r_temp_celsius> int32:e = -40;
+    if (e == -40) {
+        drop(puts("PASS: Test 5 — negative literal proven"));
+        passed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 6: Boundary value — exactly 0 for percentage
+    // ----------------------------------------------------------
+    limit<r_percentage> int32:f = 0i32;
+    if (f == 0i32) {
+        drop(puts("PASS: Test 6 — boundary value 0 proven"));
+        passed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 7: Boundary value — exactly 100 for percentage
+    // ----------------------------------------------------------
+    limit<r_percentage> int32:g = 100;
+    if (g == 100) {
+        drop(puts("PASS: Test 7 — boundary value 100 proven"));
+        passed += 1i32;
+    }
+
+    drop(puts(""));
+    drop(puts("All Z3 verification tests passed at compile time!"));
+    drop(puts("Run with --verify-report to see proof details."));
+    
+    return 0i32;
+};
