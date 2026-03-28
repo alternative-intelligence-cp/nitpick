@@ -110,6 +110,7 @@ struct CompilerOptions {
     std::vector<std::string> link_libraries;  // -l<lib> libraries to link
     std::vector<std::string> library_paths;   // -L<path> library search paths
     std::vector<std::string> linker_flags;    // -Wl,<option> flags passed to linker
+    std::vector<std::string> link_args_ordered;  // All -L/-l/-Wl, in user's order
     bool build_library = false;               // -c: Compile library (no failsafe required)
     bool build_shared = false;                // --shared: Compile to shared library (.so)
     bool debug_info = false;                  // -g: Emit DWARF debug info
@@ -334,6 +335,7 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             // Link library: -lm, -lpthread, etc.
             if (arg.length() > 2) {
                 opts.link_libraries.push_back(arg.substr(2));
+                opts.link_args_ordered.push_back("-l" + arg.substr(2));
             } else {
                 std::cerr << "Error: -l requires a library name\n";
                 return false;
@@ -342,8 +344,10 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             // Library search path: -L/usr/local/lib, etc.
             if (arg.length() > 2) {
                 opts.library_paths.push_back(arg.substr(2));
+                opts.link_args_ordered.push_back("-L" + arg.substr(2));
             } else if (i + 1 < argc) {
                 opts.library_paths.push_back(argv[++i]);
+                opts.link_args_ordered.push_back("-L" + std::string(argv[i]));
             } else {
                 std::cerr << "Error: -L requires a path\n";
                 return false;
@@ -351,6 +355,7 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
         } else if (arg.substr(0, 4) == "-Wl,") {
             // Linker flag: -Wl,-rpath,/usr/local/lib, etc.
             opts.linker_flags.push_back(arg.substr(4));
+            opts.link_args_ordered.push_back("-Wl," + arg.substr(4));
         } else if (arg.substr(0, 2) == "-W") {
             // Warning flags: -Wall, -Werror, -Wunused-variable, -Wno-dead-code, etc.
             opts.warning_flags.push_back(arg);
@@ -1901,19 +1906,9 @@ bool link_executable(const std::string& object_file, const std::string& output_f
     // Link libatomic for C++11 atomic operations (required by aria_runtime atomics)
     link_args.push_back("-latomic");
 
-    // Add library search paths (-L)
-    for (const auto& lib_path : opts.library_paths) {
-        link_args.push_back("-L" + lib_path);
-    }
-
-    // Add libraries to link (-l)
-    for (const auto& lib : opts.link_libraries) {
-        link_args.push_back("-l" + lib);
-    }
-
-    // Add linker flags (-Wl,...)
-    for (const auto& flag : opts.linker_flags) {
-        link_args.push_back("-Wl," + flag);
+    // Add user link args in order (preserves -L/-l/-Wl, interleaving)
+    for (const auto& arg : opts.link_args_ordered) {
+        link_args.push_back(arg);
     }
 
     // Add output file
@@ -2157,17 +2152,9 @@ int main(int argc, char** argv) {
         link_args.push_back("-fPIC");
         link_args.push_back(obj_file);
 
-        // Add library search paths (-L)
-        for (const auto& lib_path : opts.library_paths) {
-            link_args.push_back("-L" + lib_path);
-        }
-        // Add libraries to link (-l)
-        for (const auto& lib : opts.link_libraries) {
-            link_args.push_back("-l" + lib);
-        }
-        // Add linker flags (-Wl,...)
-        for (const auto& flag : opts.linker_flags) {
-            link_args.push_back("-Wl," + flag);
+        // Add user link args in order (preserves -L/-l/-Wl, interleaving)
+        for (const auto& arg : opts.link_args_ordered) {
+            link_args.push_back(arg);
         }
         link_args.push_back("-o");
         link_args.push_back(opts.output_file);
