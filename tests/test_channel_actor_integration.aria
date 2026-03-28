@@ -1,0 +1,219 @@
+// test_channel_actor_integration.aria — Integration tests for channels + actors
+// Tests: backpressure, multi-producer fan-in, select with timeout
+
+use "channel.aria".*;
+use "thread.aria".*;
+use "string_convert.aria".*;
+
+func:failsafe = NIL(int32:err_code) {
+    drop(println("FAILSAFE triggered"));
+    pass(NIL);
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+
+    // ========== Test 1: Backpressure (bounded channel) ==========
+    int64:bp_ch = raw(Channel.create(4i32));
+
+    // Fill the channel
+    raw(Channel.send(bp_ch, 1i64));
+    raw(Channel.send(bp_ch, 2i64));
+    raw(Channel.send(bp_ch, 3i64));
+    raw(Channel.send(bp_ch, 4i64));
+
+    // Channel should be full — try_send should fail
+    int32:try_overfill = raw(Channel.try_send(bp_ch, 5i64));
+    if (try_overfill == 0i32 - 1i32) {
+        drop(println("PASS: backpressure — try_send rejected on full channel"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: backpressure — try_send should fail"));
+        failed += 1i32;
+    }
+
+    // Count should be 4
+    int32:bp_count = raw(Channel.count(bp_ch));
+    if (bp_count == 4i32) {
+        drop(println("PASS: backpressure count = 4"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: backpressure count = ", int32_toString(bp_count))));
+        failed += 1i32;
+    }
+
+    // Drain and verify FIFO order
+    int64:d1 = raw(Channel.recv(bp_ch));
+    int64:d2 = raw(Channel.recv(bp_ch));
+    int64:d3 = raw(Channel.recv(bp_ch));
+    int64:d4 = raw(Channel.recv(bp_ch));
+    if (d1 == 1i64) {
+        if (d2 == 2i64) {
+            if (d3 == 3i64) {
+                if (d4 == 4i64) {
+                    drop(println("PASS: FIFO order preserved under backpressure"));
+                    passed += 1i32;
+                }
+            }
+        }
+    }
+    if (d1 != 1i64) {
+        drop(println("FAIL: FIFO order"));
+        failed += 1i32;
+    }
+    if (d2 != 2i64) {
+        drop(println("FAIL: FIFO order d2"));
+        failed += 1i32;
+    }
+    if (d3 != 3i64) {
+        drop(println("FAIL: FIFO order d3"));
+        failed += 1i32;
+    }
+    if (d4 != 4i64) {
+        drop(println("FAIL: FIFO order d4"));
+        failed += 1i32;
+    }
+    raw(Channel.destroy(bp_ch));
+
+    // ========== Test 2: Multi-producer fan-in ==========
+    int64:fanin_ch = raw(Channel.create(32i32));
+
+    // Producer A sends 100,200,300
+    (int64)(int64):prod_a = int64(int64:ch) {
+        raw(Channel.send(ch, 100i64));
+        raw(Channel.send(ch, 200i64));
+        raw(Channel.send(ch, 300i64));
+        pass(0i64);
+    };
+
+    // Producer B sends 10,20,30
+    (int64)(int64):prod_b = int64(int64:ch) {
+        raw(Channel.send(ch, 10i64));
+        raw(Channel.send(ch, 20i64));
+        raw(Channel.send(ch, 30i64));
+        pass(0i64);
+    };
+
+    int64:ta = raw(Thread.spawn(prod_a, fanin_ch));
+    int64:tb = raw(Thread.spawn(prod_b, fanin_ch));
+    raw(Thread.join(ta));
+    raw(Thread.join(tb));
+
+    // Read all 6 values and sum them
+    int64:fanin_sum = 0i64;
+    for(int32:fi = 0i32; fi < 6i32; fi += 1i32) {
+        int64:fv = raw(Channel.recv(fanin_ch));
+        fanin_sum += fv;
+    }
+    // Expected sum: 100+200+300+10+20+30 = 660
+    if (fanin_sum == 660i64) {
+        drop(println("PASS: multi-producer fan-in sum = 660"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: fan-in sum = ", int64_toString(fanin_sum))));
+        failed += 1i32;
+    }
+    raw(Channel.destroy(fanin_ch));
+
+    // ========== Test 3: Select with timeout ==========
+    int64:st_a = raw(Channel.create(4i32));
+    int64:st_b = raw(Channel.create(4i32));
+
+    // Both empty, select with 10ms timeout should return -1
+    int32:sel_timeout = raw(Channel.select2(st_a, st_b, 10i64));
+    if (sel_timeout == 0i32 - 1i32) {
+        drop(println("PASS: select2 timed out = -1"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: select2 timeout = ", int32_toString(sel_timeout))));
+        failed += 1i32;
+    }
+
+    raw(Channel.destroy(st_a));
+    raw(Channel.destroy(st_b));
+
+    // ========== Test 4: Unbuffered channel close semantics ==========
+    int64:uc = raw(Channel.create_unbuffered());
+
+    // Sender thread: send then close
+    (int64)(int64):uc_sender = int64(int64:ch) {
+        raw(Channel.send(ch, 42i64));
+        raw(Channel.close(ch));
+        pass(0i64);
+    };
+
+    int64:uc_tid = raw(Thread.spawn(uc_sender, uc));
+    int64:uc_val = raw(Channel.recv(uc));
+    raw(Thread.join(uc_tid));
+    if (uc_val == 42i64) {
+        drop(println("PASS: unbuffered send/recv/close = 42"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: unbuffered close = ", int64_toString(uc_val))));
+        failed += 1i32;
+    }
+
+    bool:uc_closed = raw(Channel.is_closed(uc));
+    if (uc_closed) {
+        drop(println("PASS: unbuffered channel closed after sender closes"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: unbuffered channel not closed"));
+        failed += 1i32;
+    }
+    raw(Channel.destroy(uc));
+
+    // ========== Test 5: Oneshot for request/reply pattern ==========
+    int64:reply_ch = raw(Channel.create_oneshot());
+
+    // Simulate: worker sends a result to reply channel
+    (int64)(int64):worker = int64(int64:reply) {
+        raw(Channel.send(reply, 42i64));
+        pass(0i64);
+    };
+
+    int64:wt = raw(Thread.spawn(worker, reply_ch));
+    int64:reply_val = raw(Channel.recv(reply_ch));
+    raw(Thread.join(wt));
+    if (reply_val == 42i64) {
+        drop(println("PASS: oneshot request/reply = 42"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: oneshot reply = ", int64_toString(reply_val))));
+        failed += 1i32;
+    }
+    raw(Channel.destroy(reply_ch));
+
+    // ========== Test 6: Select3 ==========
+    int64:s3a = raw(Channel.create(4i32));
+    int64:s3b = raw(Channel.create(4i32));
+    int64:s3c = raw(Channel.create(4i32));
+
+    raw(Channel.send(s3c, 30i64));
+    int32:s3_idx = raw(Channel.select3(s3a, s3b, s3c, 0i64));
+    if (s3_idx == 2i32) {
+        drop(println("PASS: select3 returned index 2 (C has data)"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: select3 = ", int32_toString(s3_idx))));
+        failed += 1i32;
+    }
+    raw(Channel.destroy(s3a));
+    raw(Channel.destroy(s3b));
+    raw(Channel.destroy(s3c));
+
+    // ========== Summary ==========
+    drop(println(""));
+    string:p = int32_toString(passed);
+    string:f = int32_toString(failed);
+    string:s1 = string_concat(p, " passed, ");
+    string:s2 = string_concat(f, " failed");
+    string:summary = string_concat(s1, s2);
+    drop(println(summary));
+
+    if (failed > 0i32) {
+        pass(1i32);
+    }
+    pass(0i32);
+};

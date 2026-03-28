@@ -1,0 +1,288 @@
+// test_channel_variants.aria — Tests for buffered, unbuffered, oneshot channels + select
+// Tests: channel modes, rendezvous semantics, oneshot auto-close, select2
+
+use "channel.aria".*;
+use "thread.aria".*;
+use "string_convert.aria".*;
+
+func:failsafe = NIL(int32:err_code) {
+    drop(println("FAILSAFE triggered"));
+    pass(NIL);
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+
+    // Worker lambdas
+    (int64)(int64):producer = int64(int64:ch) {
+        raw(Channel.send(ch, 1i64));
+        raw(Channel.send(ch, 2i64));
+        raw(Channel.send(ch, 3i64));
+        raw(Channel.send(ch, 4i64));
+        raw(Channel.send(ch, 5i64));
+        raw(Channel.close(ch));
+        pass(0i64);
+    };
+
+    (int64)(int64):rendezvous_sender = int64(int64:ch) {
+        raw(Channel.send(ch, 77i64));
+        pass(0i64);
+    };
+
+    // ========== Test 1: Buffered channel basics ==========
+    int64:buf_ch = raw(Channel.create(8i32));
+    if (buf_ch >= 0i64) {
+        drop(println("PASS: buffered channel created"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: buffered channel create"));
+        failed += 1i32;
+    }
+
+    // Check mode = 0 (buffered)
+    int32:mode = raw(Channel.get_mode(buf_ch));
+    if (mode == 0i32) {
+        drop(println("PASS: buffered mode = 0"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: buffered mode = ", int32_toString(mode))));
+        failed += 1i32;
+    }
+
+    // Check capacity
+    int32:cap = raw(Channel.get_capacity(buf_ch));
+    if (cap == 8i32) {
+        drop(println("PASS: capacity = 8"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: capacity = ", int32_toString(cap))));
+        failed += 1i32;
+    }
+
+    // Send/recv
+    raw(Channel.send(buf_ch, 42i64));
+    int64:val = raw(Channel.recv(buf_ch));
+    if (val == 42i64) {
+        drop(println("PASS: buffered send/recv = 42"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: buffered recv = ", int64_toString(val))));
+        failed += 1i32;
+    }
+    raw(Channel.destroy(buf_ch));
+
+    // ========== Test 2: Buffered producer/consumer ==========
+    int64:pc_ch = raw(Channel.create(16i32));
+    int64:prod_tid = raw(Thread.spawn(producer, pc_ch));
+    int64:sum = 0i64;
+    for(int32:j = 0i32; j < 5i32; j += 1i32) {
+        int64:v = raw(Channel.recv(pc_ch));
+        sum += v;
+    }
+    raw(Thread.join(prod_tid));
+    if (sum == 15i64) {
+        drop(println("PASS: producer/consumer sum = 15"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: producer/consumer sum = ", int64_toString(sum))));
+        failed += 1i32;
+    }
+    raw(Channel.destroy(pc_ch));
+
+    // ========== Test 3: Unbuffered (rendezvous) channel ==========
+    int64:rv_ch = raw(Channel.create_unbuffered());
+    if (rv_ch >= 0i64) {
+        drop(println("PASS: unbuffered channel created"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: unbuffered channel create"));
+        failed += 1i32;
+    }
+
+    // Check mode = 1 (unbuffered)
+    int32:rv_mode = raw(Channel.get_mode(rv_ch));
+    if (rv_mode == 1i32) {
+        drop(println("PASS: unbuffered mode = 1"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: unbuffered mode = ", int32_toString(rv_mode))));
+        failed += 1i32;
+    }
+
+    // Rendezvous: sender blocks until we recv
+    int64:rv_tid = raw(Thread.spawn(rendezvous_sender, rv_ch));
+    int64:rv_val = raw(Channel.recv(rv_ch));
+    raw(Thread.join(rv_tid));
+    if (rv_val == 77i64) {
+        drop(println("PASS: rendezvous recv = 77"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: rendezvous recv = ", int64_toString(rv_val))));
+        failed += 1i32;
+    }
+    raw(Channel.destroy(rv_ch));
+
+    // ========== Test 4: Oneshot channel ==========
+    int64:os_ch = raw(Channel.create_oneshot());
+    if (os_ch >= 0i64) {
+        drop(println("PASS: oneshot channel created"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: oneshot channel create"));
+        failed += 1i32;
+    }
+
+    // Check mode = 2 (oneshot)
+    int32:os_mode = raw(Channel.get_mode(os_ch));
+    if (os_mode == 2i32) {
+        drop(println("PASS: oneshot mode = 2"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: oneshot mode = ", int32_toString(os_mode))));
+        failed += 1i32;
+    }
+
+    // Send one value — channel should auto-close
+    raw(Channel.send(os_ch, 999i64));
+    bool:os_closed = raw(Channel.is_closed(os_ch));
+    if (os_closed) {
+        drop(println("PASS: oneshot auto-closed after send"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: oneshot not closed after send"));
+        failed += 1i32;
+    }
+
+    // Recv the value
+    int64:os_val = raw(Channel.recv(os_ch));
+    if (os_val == 999i64) {
+        drop(println("PASS: oneshot recv = 999"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: oneshot recv = ", int64_toString(os_val))));
+        failed += 1i32;
+    }
+
+    // Second send should fail (-1)
+    int32:os_send2 = raw(Channel.send(os_ch, 888i64));
+    if (os_send2 == 0i32 - 1i32) {
+        drop(println("PASS: oneshot second send rejected"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: oneshot second send = ", int32_toString(os_send2))));
+        failed += 1i32;
+    }
+    raw(Channel.destroy(os_ch));
+
+    // ========== Test 5: Select2 ==========
+    int64:sel_a = raw(Channel.create(4i32));
+    int64:sel_b = raw(Channel.create(4i32));
+
+    // Send to channel B first
+    raw(Channel.send(sel_b, 100i64));
+
+    // Select should return index 1 (channel B has data)
+    int32:sel_idx = raw(Channel.select2(sel_a, sel_b, 0i64));
+    if (sel_idx == 1i32) {
+        drop(println("PASS: select2 returned index 1 (B has data)"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: select2 returned ", int32_toString(sel_idx))));
+        failed += 1i32;
+    }
+
+    // Now send to A
+    raw(Channel.send(sel_a, 200i64));
+    int32:sel_idx2 = raw(Channel.select2(sel_a, sel_b, 0i64));
+    if (sel_idx2 == 0i32) {
+        drop(println("PASS: select2 returned index 0 (A has data)"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: select2 returned ", int32_toString(sel_idx2))));
+        failed += 1i32;
+    }
+
+    // Drain values
+    raw(Channel.recv(sel_a));
+    raw(Channel.recv(sel_b));
+
+    // Select with no data, poll mode (timeout=0) should return -1
+    int32:sel_empty = raw(Channel.select2(sel_a, sel_b, 0i64));
+    if (sel_empty == 0i32 - 1i32) {
+        drop(println("PASS: select2 poll empty = -1"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: select2 poll empty = ", int32_toString(sel_empty))));
+        failed += 1i32;
+    }
+
+    raw(Channel.destroy(sel_a));
+    raw(Channel.destroy(sel_b));
+
+    // ========== Test 6: try_send / try_recv ==========
+    int64:try_ch = raw(Channel.create(2i32));
+    int32:ts1 = raw(Channel.try_send(try_ch, 10i64));
+    int32:ts2 = raw(Channel.try_send(try_ch, 20i64));
+    int32:ts3 = raw(Channel.try_send(try_ch, 30i64));
+    if (ts1 == 0i32) {
+        drop(println("PASS: try_send 1 ok"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: try_send 1"));
+        failed += 1i32;
+    }
+    if (ts2 == 0i32) {
+        drop(println("PASS: try_send 2 ok"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: try_send 2"));
+        failed += 1i32;
+    }
+    if (ts3 == 0i32 - 1i32) {
+        drop(println("PASS: try_send 3 full = -1"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: try_send 3 should fail"));
+        failed += 1i32;
+    }
+    int64:tr1 = raw(Channel.try_recv(try_ch));
+    int64:tr2 = raw(Channel.try_recv(try_ch));
+    int64:tr3 = raw(Channel.try_recv(try_ch));
+    if (tr1 == 10i64) {
+        drop(println("PASS: try_recv 1 = 10"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: try_recv 1"));
+        failed += 1i32;
+    }
+    if (tr2 == 20i64) {
+        drop(println("PASS: try_recv 2 = 20"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: try_recv 2"));
+        failed += 1i32;
+    }
+    if (tr3 == 0i64) {
+        drop(println("PASS: try_recv 3 empty = 0"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: try_recv 3"));
+        failed += 1i32;
+    }
+    raw(Channel.destroy(try_ch));
+
+    // ========== Summary ==========
+    drop(println(""));
+    string:p = int32_toString(passed);
+    string:f = int32_toString(failed);
+    string:s1 = string_concat(p, " passed, ");
+    string:s2 = string_concat(f, " failed");
+    string:summary = string_concat(s1, s2);
+    drop(println(summary));
+
+    if (failed > 0i32) {
+        pass(1i32);
+    }
+    pass(0i32);
+};

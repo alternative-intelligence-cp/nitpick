@@ -1,0 +1,181 @@
+// test_actor.aria — Tests for the actor system
+// Tests: actor spawn, send, is_alive, stop, destroy, mailbox access
+
+use "actor.aria".*;
+use "channel.aria".*;
+use "thread.aria".*;
+use "string_convert.aria".*;
+
+extern func:aria_shim_actor_spawn = int64(wild ?*:behavior_func);
+extern func:aria_shim_actor_send = int32(int64:actor_handle, int64:message);
+extern func:aria_shim_actor_stop = int32(int64:actor_handle);
+extern func:aria_shim_actor_destroy = int32(int64:actor_handle);
+extern func:aria_shim_actor_is_alive = int32(int64:actor_handle);
+extern func:aria_shim_actor_mailbox = int64(int64:actor_handle);
+extern func:aria_shim_actor_pending = int32(int64:actor_handle);
+extern func:aria_shim_set_reply_channel = void(int64:ch);
+extern func:aria_shim_get_reply_channel = int64();
+extern func:aria_shim_reply = int32(int64:value);
+extern func:aria_shim_channel_send = int32(int64:handle, int64:value);
+
+func:failsafe = NIL(int32:err_code) {
+    drop(println("FAILSAFE triggered"));
+    pass(NIL);
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+
+    // Setup ack channel and register it as the global reply channel
+    int64:ack_ch = raw(Channel.create(64i32));
+    aria_shim_set_reply_channel(ack_ch);
+
+    // Actor handler: echo each message to global reply channel
+    (int64)(int64):echo_handler = int64(int64:msg) {
+        aria_shim_reply(msg);
+        pass(0i64);
+    };
+
+    // ========== Test 1: Actor spawn ==========
+    int64:actor1 = aria_shim_actor_spawn(echo_handler);
+    if (actor1 >= 0i64) {
+        drop(println("PASS: actor spawned"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: actor spawn"));
+        failed += 1i32;
+    }
+
+    // Small delay for actor thread to start
+    raw(Thread.sleep_ms(20i64));
+
+    // ========== Test 2: Actor is alive ==========
+    int32:alive = aria_shim_actor_is_alive(actor1);
+    if (alive == 1i32) {
+        drop(println("PASS: actor is alive"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: actor is_alive = ", int32_toString(alive))));
+        failed += 1i32;
+    }
+
+    // ========== Test 3: Actor send + receive ack ==========
+    aria_shim_actor_send(actor1, 42i64);
+    raw(Thread.sleep_ms(20i64));
+    int64:ack1 = raw(Channel.recv(ack_ch));
+    if (ack1 == 42i64) {
+        drop(println("PASS: actor received and acked 42"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: actor ack = ", int64_toString(ack1))));
+        failed += 1i32;
+    }
+
+    // ========== Test 4: Multiple messages ==========
+    aria_shim_actor_send(actor1, 10i64);
+    aria_shim_actor_send(actor1, 20i64);
+    aria_shim_actor_send(actor1, 30i64);
+    raw(Thread.sleep_ms(30i64));
+    int64:a1 = raw(Channel.recv(ack_ch));
+    int64:a2 = raw(Channel.recv(ack_ch));
+    int64:a3 = raw(Channel.recv(ack_ch));
+    int64:msg_sum = a1 + a2 + a3;
+    if (msg_sum == 60i64) {
+        drop(println("PASS: 3 messages sum = 60"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: 3 messages sum = ", int64_toString(msg_sum))));
+        failed += 1i32;
+    }
+
+    // ========== Test 5: Actor mailbox handle ==========
+    int64:mbox = aria_shim_actor_mailbox(actor1);
+    if (mbox >= 0i64) {
+        drop(println("PASS: mailbox handle accessible"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: mailbox handle"));
+        failed += 1i32;
+    }
+
+    // Send directly via mailbox channel
+    raw(Channel.send(mbox, 55i64));
+    raw(Thread.sleep_ms(20i64));
+    int64:ack55 = raw(Channel.recv(ack_ch));
+    if (ack55 == 55i64) {
+        drop(println("PASS: direct mailbox send acked 55"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: direct mailbox ack = ", int64_toString(ack55))));
+        failed += 1i32;
+    }
+
+    // ========== Test 6: Actor stop ==========
+    int32:stop_result = aria_shim_actor_stop(actor1);
+    if (stop_result == 0i32) {
+        drop(println("PASS: actor stopped"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: actor stop = ", int32_toString(stop_result))));
+        failed += 1i32;
+    }
+
+    // ========== Test 7: Actor not alive after stop ==========
+    int32:alive2 = aria_shim_actor_is_alive(actor1);
+    if (alive2 == 0i32) {
+        drop(println("PASS: actor not alive after stop"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: is_alive after stop = ", int32_toString(alive2))));
+        failed += 1i32;
+    }
+
+    // ========== Test 8: Actor destroy ==========
+    int32:destr = aria_shim_actor_destroy(actor1);
+    if (destr == 0i32) {
+        drop(println("PASS: actor destroyed"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: actor destroy = ", int32_toString(destr))));
+        failed += 1i32;
+    }
+
+    // ========== Test 9: Second actor ==========
+    int64:actor2 = aria_shim_actor_spawn(echo_handler);
+    if (actor2 >= 0i64) {
+        drop(println("PASS: second actor spawned"));
+        passed += 1i32;
+    } else {
+        drop(println("FAIL: second actor spawn"));
+        failed += 1i32;
+    }
+    aria_shim_actor_send(actor2, 99i64);
+    raw(Thread.sleep_ms(20i64));
+    int64:ack99 = raw(Channel.recv(ack_ch));
+    if (ack99 == 99i64) {
+        drop(println("PASS: second actor acked 99"));
+        passed += 1i32;
+    } else {
+        drop(println(string_concat("FAIL: second actor ack = ", int64_toString(ack99))));
+        failed += 1i32;
+    }
+    aria_shim_actor_stop(actor2);
+    aria_shim_actor_destroy(actor2);
+
+    raw(Channel.destroy(ack_ch));
+
+    // ========== Summary ==========
+    drop(println(""));
+    string:p = int32_toString(passed);
+    string:f = int32_toString(failed);
+    string:s1 = string_concat(p, " passed, ");
+    string:s2 = string_concat(f, " failed");
+    string:summary = string_concat(s1, s2);
+    drop(println(summary));
+
+    if (failed > 0i32) {
+        pass(1i32);
+    }
+    pass(0i32);
+};
