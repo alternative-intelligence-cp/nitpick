@@ -1,0 +1,62 @@
+// BUG-001/002 regression test — consumer file
+// This file imports via use and tests both bugs:
+// BUG-001: raw(add_wrapper(...)) should work (Result<T> exported correctly)
+// BUG-002: bug_test_add(...) should be visible (extern block exported)
+
+use "bug001_002_lib.aria".*;
+
+func:failsafe = NIL(int32:code) {
+    drop(println("FAILSAFE triggered"));
+    pass(NIL);
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+
+    // BUG-001 test: pub func wrappers return Result<T> through use imports
+    int64:sum = raw(add_wrapper(3i64, 4i64));
+    if (sum == 7i64) {
+        drop(println("PASS: BUG-001 add_wrapper"));
+        passed = passed + 1i32;
+    } else {
+        drop(println("FAIL: BUG-001 add_wrapper"));
+        failed = failed + 1i32;
+    }
+
+    int64:prod = raw(mul_wrapper(5i64, 6i64));
+    if (prod == 30i64) {
+        drop(println("PASS: BUG-001 mul_wrapper"));
+        passed = passed + 1i32;
+    } else {
+        drop(println("FAIL: BUG-001 mul_wrapper"));
+        failed = failed + 1i32;
+    }
+
+    // BUG-002 test: extern block functions visible through use imports
+    int64:direct_sum = bug_test_add(10i64, 20i64);
+    if (direct_sum == 30i64) {
+        drop(println("PASS: BUG-002 direct extern add"));
+        passed = passed + 1i32;
+    } else {
+        drop(println("FAIL: BUG-002 direct extern add"));
+        failed = failed + 1i32;
+    }
+
+    int64:direct_prod = bug_test_mul(3i64, 7i64);
+    if (direct_prod == 21i64) {
+        drop(println("PASS: BUG-002 direct extern mul"));
+        passed = passed + 1i32;
+    } else {
+        drop(println("FAIL: BUG-002 direct extern mul"));
+        failed = failed + 1i32;
+    }
+
+    if (failed == 0i32) {
+        drop(println("ALL 4 TESTS PASSED"));
+    } else {
+        drop(println("SOME TESTS FAILED"));
+    }
+
+    pass(0i32);
+};

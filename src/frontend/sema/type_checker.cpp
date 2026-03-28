@@ -11144,6 +11144,10 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                                           SymbolKind::FUNCTION, ft, fd->line, fd->column);
                         if (sym) sym->setFuncDecl(fd);
                     }
+                } else if (decl->type == ASTNode::NodeType::EXTERN) {
+                    // BUG-002 fix: Register extern block functions in symbol table
+                    // so pub func wrappers in this module can reference them.
+                    checkExternStmt(static_cast<ExternStmt*>(decl.get()));
                 }
             }
 
@@ -11195,6 +11199,13 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                         returnType = resolveTypeNode(funcDecl->returnType.get());
                         if (!returnType || returnType->getKind() == TypeKind::ERROR) {
                             returnType = typeSystem->getPrimitiveType("void");
+                        }
+                        // BUG-001 fix: Non-extern functions use pass() which wraps
+                        // the return value in Result<T>. The export must mirror this
+                        // so importers see Result<T>, not the raw declared type.
+                        // (Matches pre-registration pass at line ~11139)
+                        if (funcDecl->body) {
+                            returnType = new ResultType(returnType);
                         }
                     }
                     
@@ -11275,6 +11286,22 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                                                      typeStructType, nullptr,
                                                      typeDecl->line, typeDecl->column);
                         module->moduleInfo->exportSymbol(typeDecl->typeName, typeSym, Visibility::PUBLIC);
+                    }
+                }
+                else if (decl->type == ASTNode::NodeType::EXTERN) {
+                    // BUG-002 fix: Export extern block functions so importers can
+                    // reference them (both directly and through pub func wrappers).
+                    // Extern functions use raw return types (no Result<T> wrapping).
+                    ExternStmt* externStmt = static_cast<ExternStmt*>(decl.get());
+                    for (const auto& extDecl : externStmt->declarations) {
+                        if (extDecl->type == ASTNode::NodeType::FUNC_DECL) {
+                            FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(extDecl.get());
+                            // Look up the symbol registered by checkExternStmt in the pre-pass
+                            Symbol* sym = symbolTable->lookupSymbol(funcDecl->funcName);
+                            if (sym) {
+                                module->moduleInfo->exportSymbol(funcDecl->funcName, sym, Visibility::PUBLIC);
+                            }
+                        }
                     }
                 }
             }

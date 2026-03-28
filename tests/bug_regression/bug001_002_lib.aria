@@ -1,0 +1,19 @@
+// BUG-001/002 regression test — library file
+// Tests that:
+// 1. pub func wrappers with pass() export Result<T> correctly (BUG-001)
+// 2. extern "lib" {} block functions are visible to importers (BUG-002)
+
+extern "bug001_002_shim" {
+    func:bug_test_add = int64(int64:a, int64:b);
+    func:bug_test_mul = int64(int64:a, int64:b);
+}
+
+pub func:add_wrapper = int64(int64:a, int64:b) {
+    int64:result = bug_test_add(a, b);
+    pass(result);
+};
+
+pub func:mul_wrapper = int64(int64:a, int64:b) {
+    int64:result = bug_test_mul(a, b);
+    pass(result);
+};
