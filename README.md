@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.29
+# Aria Programming Language v0.2.39
 
 ![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -12,12 +12,19 @@
 
 ## Current Status (March 2026)
 
-**v0.2.29 — String `+` Operator, 80 Packages, Legacy Cleanup**
+**v0.2.39 — Enums, Channels, Actors, Traits, 72+ Packages**
 
-String concatenation now works with the `+` operator (`"hello " + "world"`). Six new packages bring the ecosystem to 80. The entire legacy stdlib (`lib/_legacy/std/`) has been removed — all functionality is now covered by packages, stdlib builtins, or the runtime.
+The Aria compiler now supports enums with auto-numbering, thread-safe channels, an actor system, trait bounds on generics, borrow semantics (`$$i`/`$$m`), and the `Type:` composable type system. The package ecosystem has grown to 72+ packages.
 
 **Recent highlights:**
-- **v0.2.29** — String `+` operator, `wildx` parser fix, 6 new packages (jit, bench, path, sort, queue, map), legacy stdlib removed
+- **v0.2.39** — Enums: full type system, auto-numbering, typed variables, exhaustiveness
+- **v0.2.38** — AI-Native Filesystem (aria-aifs): POSIX + AI metadata ops via shim layer
+- **v0.2.37** — Async channels & actors: buffered/unbuffered/oneshot channels, actor spawn/send/stop, fan-out/fan-in patterns
+- **v0.2.36** — dyn Trait: vtable-based dynamic dispatch, object-safe trait checking
+- **v0.2.35** — Borrow semantics: `$$i`/`$$m` qualifiers, compile-time safety, `any` type
+- **v0.2.34** — Type: system, trait bounds on generics, instance<T> construction
+- **v0.2.33** — Generic stdlib: containers, iterators, optional monads
+- **v0.2.29** — String `+` operator, `wildx` parser fix, 6 new packages, legacy stdlib removed
 - **v0.2.28** — New numeric types: fix256 (256-bit fixed-point), frac32 (fraction API), dimensional type stubs
 - **v0.2.27** — Complex number stdlib with compound generic type inference
 - **v0.2.26** — Module resolution fixes, `std` → `stdlib` symlink restored
@@ -539,7 +546,57 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Pipeline support** — All tools read from stdin when no file argument given
 - ✅ **String comparison fix** — `_=expr` discard syntax, `sleep_ms` builtin
 
-### v0.2.29 — Released (Current)
+### v0.2.39 — Released (Current)
+
+- ✅ **Enums** — `enum:Name = { VARIANT1, VARIANT2 = 42 };` with auto-numbering (0, or last+1), explicit values, mixed
+- ✅ **EnumType** — Proper type identity in type system (not just int64 constants)
+- ✅ **Enum-typed variables** — `Color:my_color = Color.RED;`
+- ✅ **Enum comparison** — `==` and `!=` between enum values
+- ✅ **Enum exhaustiveness** — `pick` statements can check coverage of all variants
+- ✅ **Parser pre-pass** — Correctly distinguishes `Enum.VARIANT` from UFCS static calls
+
+### v0.2.38 — Released
+
+- ✅ **AI-Native Filesystem** — aria-aifs package: POSIX file ops + AI metadata tagging via C shim
+- ✅ **Shim layer** — 16 C functions for create/read/write/delete/stat/list + tag/untag/find_by_tag
+
+### v0.2.37 — Released
+
+- ✅ **Channels** — `Channel.create(cap)`, `send()`, `recv()`, `try_send()`, `try_recv()`, `select2()`, `close()`
+- ✅ **Channel modes** — Buffered, unbuffered (rendezvous), oneshot (auto-close)
+- ✅ **Actors** — `actor_spawn(handler)`, `actor_send()`, `actor_stop()`, `actor_destroy()`
+- ✅ **Actor patterns** — Reply channels, mailbox access, lifecycle management
+- ✅ **aria-channel package** — FanOut, FanIn, Pipeline high-level patterns
+- ✅ **aria-actor package** — Actor pool, router, supervisor patterns
+
+### v0.2.36 — Released
+
+- ✅ **dyn Trait** — Dynamic dispatch via vtables, object-safe trait checking
+- ✅ **Vtable generation** — Runtime polymorphism for trait objects
+
+### v0.2.35 — Released
+
+- ✅ **Borrow semantics** — `$$i` (immutable) and `$$m` (mutable) borrow qualifiers
+- ✅ **Compile-time safety** — N immutable OR 1 mutable borrow enforced
+- ✅ **`any` type** — Universal type erased container
+- ✅ **Pinning improvements** — `#` operator integration with borrow checker
+
+### v0.2.34 — Released
+
+- ✅ **Type: system** — Composable types with `struct:internal`, `struct:interface`, `struct:type`, methods
+- ✅ **Trait bounds on generics** — `func<T: Addable>:name = ...` constrained generics
+- ✅ **instance<T>** — Constructor syntax: `instance<Counter>(args)` → `Counter_create(args)`
+
+### v0.2.33 — Released
+
+- ✅ **Generic stdlib** — Generic containers, iterators, optional monads
+- ✅ **Foundation packages** — aria-container, aria-iter, aria-optional
+
+### v0.2.30-v0.2.32 — Released
+
+- ✅ **Incremental improvements** — Parser fixes, type system refinements, test coverage expansion
+
+### v0.2.29 — Released
 
 - ✅ **String `+` operator** — `"hello " + "world"` concatenation, chaining, type checker + codegen
 - ✅ **`wildx` parser fix** — Qualifier missing from 7 parser locations; added `isWildx` to AST nodes
