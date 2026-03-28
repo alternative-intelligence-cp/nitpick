@@ -1,0 +1,73 @@
+// stdlib/actor.aria
+// Lightweight message-passing actors for Aria
+//
+// An actor is a thread with a dedicated mailbox (channel). Messages are
+// dispatched to the actor's behavior function sequentially.
+//
+// Usage:
+//   func:my_handler = NIL(int64:msg) {
+//       drop(println(string_concat("Got: ", int64_toString(msg))));
+//       pass(NIL);
+//   };
+//   int64:actor = Actor.spawn(@my_handler);
+//   Actor.send(actor, 42i64);
+//   Actor.send(actor, 99i64);
+//   Actor.stop(actor);
+//   Actor.destroy(actor);
+
+extern func:aria_shim_actor_spawn = int64(wild ?*:behavior_func);
+extern func:aria_shim_actor_send = int32(int64:actor_handle, int64:message);
+extern func:aria_shim_actor_try_send = int32(int64:actor_handle, int64:message);
+extern func:aria_shim_actor_mailbox = int64(int64:actor_handle);
+extern func:aria_shim_actor_pending = int32(int64:actor_handle);
+extern func:aria_shim_actor_is_alive = int32(int64:actor_handle);
+extern func:aria_shim_actor_stop = int32(int64:actor_handle);
+extern func:aria_shim_actor_destroy = int32(int64:actor_handle);
+
+Type:Actor = {
+    // Spawn an actor with the given behavior function.
+    // behavior_func: called for each message with signature (int64:msg) -> NIL
+    // Returns actor handle (>= 0) on success, -1 on error.
+    func:spawn = int64(?->:behavior_func) {
+        pass(aria_shim_actor_spawn(behavior_func));
+    };
+
+    // Send a message to the actor's mailbox. Blocks if mailbox is full.
+    // Returns 0 on success, -1 if actor is stopped or mailbox full.
+    func:send = int32(int64:actor_handle, int64:message) {
+        pass(aria_shim_actor_send(actor_handle, message));
+    };
+
+    // Try to send without blocking.
+    // Returns 0 on success, -1 if mailbox full or actor stopped.
+    func:try_send = int32(int64:actor_handle, int64:message) {
+        pass(aria_shim_actor_try_send(actor_handle, message));
+    };
+
+    // Get the mailbox channel handle (for advanced channel operations).
+    func:mailbox = int64(int64:actor_handle) {
+        pass(aria_shim_actor_mailbox(actor_handle));
+    };
+
+    // Get count of pending messages in mailbox.
+    func:pending = int32(int64:actor_handle) {
+        pass(aria_shim_actor_pending(actor_handle));
+    };
+
+    // Check if actor is running. Returns 1 if alive, 0 if stopped.
+    func:is_alive = int32(int64:actor_handle) {
+        pass(aria_shim_actor_is_alive(actor_handle));
+    };
+
+    // Stop an actor gracefully (close mailbox, join thread).
+    // Returns 0 on success.
+    func:stop = int32(int64:actor_handle) {
+        pass(aria_shim_actor_stop(actor_handle));
+    };
+
+    // Destroy actor (stop + free all resources).
+    // Returns 0 on success.
+    func:destroy = int32(int64:actor_handle) {
+        pass(aria_shim_actor_destroy(actor_handle));
+    };
+};
