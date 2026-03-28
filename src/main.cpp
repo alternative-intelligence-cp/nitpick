@@ -41,6 +41,9 @@
 #include "frontend/diagnostics.h"
 #include "frontend/warnings.h"
 #include "backend/ir/ir_generator.h"
+#ifdef ARIA_HAS_Z3
+#include "analysis/z3_verifier.h"
+#endif
 
 // LLVM
 #include "llvm/Support/raw_ostream.h"
@@ -86,8 +89,8 @@ extern "C" {
 // Version information
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 2
-#define ARIA_VERSION_PATCH 36
-#define ARIA_VERSION "0.2.42"
+#define ARIA_VERSION_PATCH 45
+#define ARIA_VERSION "0.2.45"
 
 // Compiler options
 struct CompilerOptions {
@@ -122,6 +125,10 @@ struct CompilerOptions {
     bool emit_wasm = false;           // --emit-wasm: Generate WebAssembly
     bool wasm_standalone = false;     // --emit-wasm without linking (just .o)
     std::string wasm_target = "wasm32-wasi";  // WASM target triple
+    
+    // Z3 SMT Verification Options (v0.2.45)
+    bool verify = false;              // --verify: Enable Z3 static verification pass
+    bool verify_report = false;       // --verify-report: Emit detailed proof results
 };
 
 /**
@@ -178,6 +185,9 @@ void print_help() {
     std::cout << "  -g                Emit DWARF debug info (for aria-dap)\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
     std::cout << "  -v, --verbose     Verbose output\n\n";
+    std::cout << "Verification Options (Z3 SMT Solver):\n";
+    std::cout << "  --verify          Enable Z3 static verification of Rules/limit constraints\n";
+    std::cout << "  --verify-report   Emit detailed proof results (implies --verify)\n\n";
     std::cout << "GPU Target Options (NVIDIA CUDA/PTX):\n";
     std::cout << "  --emit-ptx        Emit PTX assembly for GPU execution\n";
     std::cout << "  --target=<arch>   Target architecture (cpu, gpu, gpu+cpu)\n";
@@ -302,6 +312,11 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.debug_info = true;
         } else if (arg == "-E") {
             opts.preprocess_only = true;
+        } else if (arg == "--verify") {
+            opts.verify = true;
+        } else if (arg == "--verify-report") {
+            opts.verify = true;
+            opts.verify_report = true;
         } else if (arg == "--ast-dump") {
             opts.dump_ast = true;
         } else if (arg == "--tokens") {
@@ -784,6 +799,162 @@ llvm::Module* compile_to_module(
             diags.warning(aria::SourceLocation(filename, 0, 0), warn);
         }
     }
+    
+#ifdef ARIA_HAS_Z3
+    // Phase 3.25: Z3 SMT Verification (static contract verification)
+    if (opts.verify) {
+        if (opts.verbose) {
+            std::cout << "Phase 3.25: Z3 SMT verification...\n";
+        }
+        
+        aria::Z3Verifier z3v;
+        z3v.setTypeSystem(&type_system);
+        z3v.setVerbose(opts.verbose);
+        
+        // Register all Rules declarations from the type checker
+        const auto& rules_table = type_checker.getRulesTable();
+        for (const auto& [name, rules_ptr] : rules_table) {
+            z3v.registerRules(name, rules_ptr);
+        }
+        
+        // Verify Rules consistency (check for contradictory constraints)
+        for (const auto& [name, rules_ptr] : rules_table) {
+            std::vector<aria::VerifyOutcome> cons_outcomes;
+            z3v.verifyRulesConsistency(name, cons_outcomes);
+            for (const auto& out : cons_outcomes) {
+                if (out.result == aria::VerifyResult::DISPROVEN) {
+                    diags.error(aria::SourceLocation(filename, rules_ptr->line, rules_ptr->column),
+                                "[z3] " + out.detail);
+                } else if (out.result == aria::VerifyResult::UNKNOWN && opts.verbose) {
+                    diags.warning(aria::SourceLocation(filename, rules_ptr->line, rules_ptr->column),
+                                  "[z3] Could not determine consistency of Rules '" + name + "'");
+                }
+            }
+        }
+        
+        // Walk AST to find limit<> variable declarations with literal initializers
+        // and verify them against their Rules constraints
+        auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+        if (program) {
+            // Recursive lambda to walk statements
+            std::function<void(aria::ASTNode*)> walkNode = [&](aria::ASTNode* node) {
+                if (!node) return;
+                
+                if (node->type == aria::ASTNode::NodeType::VAR_DECL) {
+                    auto* var = static_cast<aria::VarDeclStmt*>(node);
+                    if (!var->limitRulesName.empty() && var->initializer) {
+                        int64_t intVal = 0;
+                        double floatVal = 0.0;
+                        bool isInt = false;
+                        bool isFloat = false;
+                        
+                        // Direct literal
+                        if (var->initializer->type == aria::ASTNode::NodeType::LITERAL) {
+                            auto* lit = static_cast<aria::LiteralExpr*>(var->initializer.get());
+                            if (std::holds_alternative<int64_t>(lit->value)) {
+                                intVal = std::get<int64_t>(lit->value);
+                                isInt = true;
+                            } else if (std::holds_alternative<double>(lit->value)) {
+                                floatVal = std::get<double>(lit->value);
+                                isFloat = true;
+                            }
+                        }
+                        // Negative literal (unary minus on literal)
+                        else if (var->initializer->type == aria::ASTNode::NodeType::UNARY_OP) {
+                            auto* unary = static_cast<aria::UnaryExpr*>(var->initializer.get());
+                            if (unary->op.type == aria::frontend::TokenType::TOKEN_MINUS &&
+                                unary->operand && unary->operand->type == aria::ASTNode::NodeType::LITERAL) {
+                                auto* lit = static_cast<aria::LiteralExpr*>(unary->operand.get());
+                                if (std::holds_alternative<int64_t>(lit->value)) {
+                                    intVal = -std::get<int64_t>(lit->value);
+                                    isInt = true;
+                                } else if (std::holds_alternative<double>(lit->value)) {
+                                    floatVal = -std::get<double>(lit->value);
+                                    isFloat = true;
+                                }
+                            }
+                        }
+                        
+                        if (isInt) {
+                            std::vector<aria::VerifyOutcome> outcomes;
+                            z3v.verifyLimitInt(var->limitRulesName, intVal, outcomes,
+                                               var->line, var->column);
+                            for (const auto& out : outcomes) {
+                                if (out.result == aria::VerifyResult::DISPROVEN) {
+                                    diags.error(aria::SourceLocation(filename, out.line, out.column),
+                                                "[z3] " + out.detail);
+                                } else if (opts.verify_report && out.result == aria::VerifyResult::PROVEN) {
+                                    diags.note(aria::SourceLocation(filename, out.line, out.column),
+                                               "[z3] " + out.detail);
+                                }
+                            }
+                        } else if (isFloat) {
+                            std::vector<aria::VerifyOutcome> outcomes;
+                            z3v.verifyLimitFloat(var->limitRulesName, floatVal, outcomes,
+                                                 var->line, var->column);
+                            for (const auto& out : outcomes) {
+                                if (out.result == aria::VerifyResult::DISPROVEN) {
+                                    diags.error(aria::SourceLocation(filename, out.line, out.column),
+                                                "[z3] " + out.detail);
+                                } else if (opts.verify_report && out.result == aria::VerifyResult::PROVEN) {
+                                    diags.note(aria::SourceLocation(filename, out.line, out.column),
+                                               "[z3] " + out.detail);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Recurse into child nodes
+                if (node->type == aria::ASTNode::NodeType::PROGRAM) {
+                    auto* prog = static_cast<aria::ProgramNode*>(node);
+                    for (const auto& decl : prog->declarations) {
+                        walkNode(decl.get());
+                    }
+                } else if (node->type == aria::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<aria::FuncDeclStmt*>(node);
+                    if (func->body) walkNode(func->body.get());
+                } else if (node->type == aria::ASTNode::NodeType::BLOCK) {
+                    auto* block = static_cast<aria::BlockStmt*>(node);
+                    for (const auto& stmt : block->statements) {
+                        walkNode(stmt.get());
+                    }
+                } else if (node->type == aria::ASTNode::NodeType::TYPE_DECL) {
+                    auto* typeDecl = static_cast<aria::TypeDeclStmt*>(node);
+                    if (typeDecl->createFunc) walkNode(typeDecl->createFunc.get());
+                    if (typeDecl->destroyFunc) walkNode(typeDecl->destroyFunc.get());
+                    for (const auto& method : typeDecl->methods) {
+                        walkNode(method.get());
+                    }
+                }
+            };
+            
+            walkNode(program);
+        }
+        
+        // Print verification summary
+        const auto& sum = z3v.getSummary();
+        if (sum.total() > 0) {
+            if (opts.verify_report) {
+                std::cout << "\n=== Z3 Verification Report ===\n";
+                std::cout << "  Proven:    " << sum.proven << "\n";
+                std::cout << "  Disproven: " << sum.disproven << "\n";
+                std::cout << "  Unknown:   " << sum.unknown << "\n";
+                std::cout << "  Total:     " << sum.total() << "\n";
+                std::cout << "==============================\n\n";
+            } else if (opts.verbose) {
+                std::cout << "Z3: " << sum.proven << " proven, "
+                          << sum.disproven << " disproven, "
+                          << sum.unknown << " unknown\n";
+            }
+        }
+        
+        // Abort compilation if Z3 found provable violations
+        if (sum.disproven > 0) {
+            return nullptr;
+        }
+    }
+#endif // ARIA_HAS_Z3
     
     // Phase 3.5: Borrow Checker (Phase 5b in research)
     if (opts.verbose) {

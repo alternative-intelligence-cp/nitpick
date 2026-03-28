@@ -1005,6 +1005,16 @@ public:
     bool hasErrors() const { return !errors.empty(); }
     
     /**
+     * Get the rules table for Z3 verification pass (v0.2.45)
+     */
+    const std::unordered_map<std::string, RulesDeclStmt*>& getRulesTable() const { return rulesTable; }
+    
+    /**
+     * Get limited variables map (var name -> rules name) for Z3 verification (v0.2.45)
+     */
+    const std::unordered_map<std::string, std::string>& getLimitedVariables() const { return limitedVariables; }
+
+    /**
      * Validate that the required failsafe() function exists
      * 
      * Every Aria program must define a failsafe(int32) function
