@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <map>
 #include <unordered_map>
 
 namespace aria {
@@ -37,6 +38,7 @@ enum class TypeKind {
     SIMD,           // simd<T, N> for SIMD vectorization (P1-2)
     ANY,            // any - type-erased pointer (safe void* replacement)
     DYN_TRAIT,      // dyn Trait - dynamic trait object (fat pointer: data + vtable)
+    ENUM,           // enum - named integer constants with type safety (v0.2.39)
     UNKNOWN,        // Type not yet inferred
     ERROR,          // Type error occurred
 };
@@ -70,6 +72,7 @@ public:
     virtual bool isHandle() const { return kind == TypeKind::HANDLE; }
     virtual bool isAny() const { return kind == TypeKind::ANY; }
     virtual bool isDynTrait() const { return kind == TypeKind::DYN_TRAIT; }
+    virtual bool isEnum() const { return kind == TypeKind::ENUM; }
     
     // Must-use checking (Phase 2.1 - research_011)
     virtual bool isNodiscard() const { return nodiscard; }
@@ -589,6 +592,42 @@ public:
 };
 
 // ============================================================================
+// EnumType - Named integer constants with type safety (v0.2.39)
+// ============================================================================
+// enum:Color = { RED, GREEN, BLUE };
+// Stored as i64 at LLVM level but type-checked at sema level.
+// Variables: Color:c = Color.RED;
+// Exhaustive pick matching on enum types.
+
+class EnumType : public Type {
+private:
+    std::string name;                           // Enum name (e.g., "Color")
+    std::map<std::string, int64_t> variants;    // Variant name -> integer value
+
+public:
+    EnumType(const std::string& name, const std::map<std::string, int64_t>& variants)
+        : Type(TypeKind::ENUM), name(name), variants(variants) {}
+
+    const std::string& getName() const { return name; }
+    const std::map<std::string, int64_t>& getVariants() const { return variants; }
+
+    // Check if a variant name exists in this enum
+    bool hasVariant(const std::string& variantName) const {
+        return variants.find(variantName) != variants.end();
+    }
+
+    // Get variant value (-1 if not found, but callers should use hasVariant first)
+    int64_t getVariantValue(const std::string& variantName) const {
+        auto it = variants.find(variantName);
+        return it != variants.end() ? it->second : -1;
+    }
+
+    bool equals(const Type* other) const override;
+    bool isAssignableTo(const Type* target) const override;
+    std::string toString() const override;
+};
+
+// ============================================================================
 // UnknownType - Used during type inference
 // ============================================================================
 
@@ -626,6 +665,7 @@ private:
     std::unordered_map<std::string, GenericType*> genericCache;
     std::unordered_map<std::string, StructType*> structCache;
     std::unordered_map<std::string, UnionType*> unionCache;
+    std::unordered_map<std::string, EnumType*> enumCache;        // v0.2.39: Enum type cache
     std::unordered_map<std::string, DimensionalType*> dimensionalCache;  // P1-5
     
     // Standard dimension name registry (P1-5)
@@ -670,6 +710,10 @@ public:
     UnionType* getUnionType(const std::string& name);
     UnionType* createUnionType(const std::string& name, const std::vector<UnionType::Variant>& variants,
                               int size = 0);
+    
+    // v0.2.39: Enum types
+    EnumType* getEnumType(const std::string& name);
+    EnumType* createEnumType(const std::string& name, const std::map<std::string, int64_t>& variants);
     
     // Generic types
     GenericType* getGenericType(const std::string& name);

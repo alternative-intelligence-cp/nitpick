@@ -5,6 +5,7 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include "frontend/token.h"
 #include "frontend/lexer/lexer.h"
 #include "frontend/ast/ast_node.h"
@@ -23,6 +24,10 @@ private:
     // - When true: * is allowed (FFI thin pointers)
     // - When false: only @ is allowed (Aria fat pointers)
     bool isInsideExternBlock = false;
+
+    // Enum names collected by pre-pass (for correct member access parsing)
+    std::unordered_set<std::string> knownEnumNames;
+    void collectEnumNames();
 
     // ARIA-020: Nesting depth limit to prevent stack overflow
     // Deeply nested code (90+ levels) can exhaust the call stack

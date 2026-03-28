@@ -560,6 +560,13 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             break;
         }
         
+        case TypeKind::ENUM: {
+            // v0.2.39: Enums are represented as i64 at LLVM level
+            // Type safety is enforced by the sema type checker
+            llvm_type = builder.getInt64Ty();
+            break;
+        }
+        
         case TypeKind::UNKNOWN:
         case TypeKind::ERROR:
         default:
@@ -1979,6 +1986,14 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
                 // Dynamic / unsized array: int32[] -> opaque pointer
                 return llvm::PointerType::get(context, 0);
             }
+        }
+    }
+
+    // v0.2.39: Enum types map to i64
+    if (type_system) {
+        EnumType* enumType = type_system->getEnumType(type_name);
+        if (enumType) {
+            return builder.getInt64Ty();
         }
     }
 
@@ -10767,6 +10782,16 @@ llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
                 // Dynamic array (pointer)
                 di_type = di_builder->createPointerType(elem_type, 64, 0, std::nullopt, "array");
             }
+            break;
+        }
+        
+        case TypeKind::ENUM: {
+            // v0.2.39: Enum debug info — represented as i64 with enum name
+            di_type = di_builder->createBasicType(
+                type_name,
+                64,
+                llvm::dwarf::DW_ATE_signed
+            );
             break;
         }
         

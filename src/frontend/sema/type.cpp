@@ -747,6 +747,35 @@ std::string DynTraitType::toString() const {
 }
 
 // ============================================================================
+// EnumType Implementation (v0.2.39)
+// ============================================================================
+
+bool EnumType::equals(const Type* other) const {
+    if (!other || other->getKind() != TypeKind::ENUM) return false;
+    auto* otherEnum = static_cast<const EnumType*>(other);
+    return name == otherEnum->name;
+}
+
+bool EnumType::isAssignableTo(const Type* target) const {
+    if (!target) return false;
+    // Enum can be assigned to same enum type
+    if (target->getKind() == TypeKind::ENUM) {
+        auto* targetEnum = static_cast<const EnumType*>(target);
+        return name == targetEnum->name;
+    }
+    // Enum can be assigned to int64 (implicit widening for interop)
+    if (target->getKind() == TypeKind::PRIMITIVE) {
+        auto* prim = static_cast<const PrimitiveType*>(target);
+        return prim->getName() == "int64";
+    }
+    return false;
+}
+
+std::string EnumType::toString() const {
+    return name;
+}
+
+// ============================================================================
 // UnknownType Implementation
 // ============================================================================
 
@@ -1119,6 +1148,23 @@ UnionType* TypeSystem::createUnionType(const std::string& name, const std::vecto
     auto type = std::make_unique<UnionType>(name, variants, size);
     UnionType* ptr = type.get();
     unionCache[name] = ptr;
+    types.push_back(std::move(type));
+    return ptr;
+}
+
+// v0.2.39: Enum type factory methods
+EnumType* TypeSystem::getEnumType(const std::string& name) {
+    auto it = enumCache.find(name);
+    if (it != enumCache.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+EnumType* TypeSystem::createEnumType(const std::string& name, const std::map<std::string, int64_t>& variants) {
+    auto type = std::make_unique<EnumType>(name, variants);
+    EnumType* ptr = type.get();
+    enumCache[name] = ptr;
     types.push_back(std::move(type));
     return ptr;
 }

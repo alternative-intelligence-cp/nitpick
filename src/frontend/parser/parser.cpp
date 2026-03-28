@@ -1350,8 +1350,8 @@ ASTNodePtr Parser::parseMemberExpression(ASTNodePtr object) {
                          typeName == "nit" || typeName == "nyte");
         }
         
-        if (isTypeName) {
-            // This is Type.MEMBER static access
+        if (isTypeName && knownEnumNames.find(typeName) == knownEnumNames.end()) {
+            // This is Type.MEMBER static access (NOT enum access)
             // Transform to Type_MEMBER identifier
             // If followed by (), it becomes Type_MEMBER(...)
             // If not followed by (), we wrap it in a call: Type_MEMBER()
@@ -2770,6 +2770,7 @@ ASTNodePtr Parser::parseEnumDecl() {
     consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after '='");
     
     std::map<std::string, int64_t> variants;
+    int64_t nextAutoValue = 0;  // v0.2.39: Auto-numbering from 0
     while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
         // Get variant name (should be an identifier)
         Token variantToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected variant name");
@@ -2781,24 +2782,25 @@ ASTNodePtr Parser::parseEnumDecl() {
             return nullptr;
         }
         
-        // Consume equals sign
-        consume(TokenType::TOKEN_EQUAL, "Expected '=' after variant name");
-        
-        // Get variant value (must be an integer literal)
-        Token valueToken = consume(TokenType::TOKEN_INTEGER, "Expected integer value for enum variant");
-        int64_t value = 0;
-        try {
-            value = std::stoll(valueToken.lexeme);
-        } catch (const std::invalid_argument& e) {
-            error("Invalid integer value for enum variant: '" + valueToken.lexeme + "'");
-            return nullptr;
-        } catch (const std::out_of_range& e) {
-            error("Enum variant value out of range: '" + valueToken.lexeme + "'");
-            return nullptr;
+        // v0.2.39: Value assignment is now optional (auto-numbering)
+        int64_t value = nextAutoValue;
+        if (match(TokenType::TOKEN_EQUAL)) {
+            // Explicit value provided
+            Token valueToken = consume(TokenType::TOKEN_INTEGER, "Expected integer value for enum variant");
+            try {
+                value = std::stoll(valueToken.lexeme);
+            } catch (const std::invalid_argument& e) {
+                error("Invalid integer value for enum variant: '" + valueToken.lexeme + "'");
+                return nullptr;
+            } catch (const std::out_of_range& e) {
+                error("Enum variant value out of range: '" + valueToken.lexeme + "'");
+                return nullptr;
+            }
         }
         
         // Store the variant
         variants[variantName] = value;
+        nextAutoValue = value + 1;  // Next auto value is always last+1
         
         // Check for comma (optional for last variant)
         if (!check(TokenType::TOKEN_RIGHT_BRACE)) {
@@ -4597,7 +4599,22 @@ ASTNodePtr Parser::parseFallStatement() {
     return std::make_shared<FallStmt>(label, fallToken.line, fallToken.column);
 }
 
+void Parser::collectEnumNames() {
+    using namespace frontend;
+    for (size_t i = 0; i + 2 < tokens.size(); ++i) {
+        if (tokens[i].type == TokenType::TOKEN_KW_ENUM &&
+            tokens[i + 1].type == TokenType::TOKEN_COLON &&
+            tokens[i + 2].type == TokenType::TOKEN_IDENTIFIER) {
+            knownEnumNames.insert(tokens[i + 2].lexeme);
+        }
+    }
+}
+
 ASTNodePtr Parser::parse() {
+    // Pre-pass: collect enum names so parseMemberExpression can distinguish
+    // enum member access (Color.RED) from UFCS static calls (Struct.method)
+    collectEnumNames();
+    
     std::vector<ASTNodePtr> declarations;
     
     while (!isAtEnd()) {
