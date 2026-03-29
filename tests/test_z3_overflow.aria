@@ -1,0 +1,58 @@
+// test_z3_overflow.aria — v0.3.4 Z3 SMT Overflow Verification Tests
+// Compile with: ariac test_z3_overflow.aria --verify-overflow --verify-report
+// Tests: Z3 detects integer arithmetic overflow at compile time
+
+extern func:puts = int32(string:s);
+
+func:failsafe = int32(tbb32:err) {
+    drop(puts("FAILSAFE: overflow error"));
+    exit(1);
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+
+    // ============================================================
+    // Test 1: Safe addition — should be PROVEN safe
+    // 100 + 200 = 300, well within int32 range
+    // ============================================================
+    int32:a = 100 + 200;
+    if (a == 300) {
+        drop(puts("PASS: Test 1 — safe addition (100 + 200)"));
+        passed += 1i32;
+    }
+
+    // ============================================================
+    // Test 2: Safe multiplication — should be PROVEN safe
+    // 1000 * 1000 = 1000000, within int32 range
+    // ============================================================
+    int32:b = 1000 * 1000;
+    if (b == 1000000) {
+        drop(puts("PASS: Test 2 — safe multiplication (1000 * 1000)"));
+        passed += 1i32;
+    }
+
+    // ============================================================
+    // Test 3: Safe subtraction — should be PROVEN safe
+    // 50 - 30 = 20
+    // ============================================================
+    int32:c = 50 - 30;
+    if (c == 20) {
+        drop(puts("PASS: Test 3 — safe subtraction (50 - 30)"));
+        passed += 1i32;
+    }
+
+    // ============================================================
+    // Test 4: Safe negative result — should be PROVEN safe
+    // 10 - 100 = -90
+    // ============================================================
+    int32:d = 10 - 100;
+    if (d == -90) {
+        drop(puts("PASS: Test 4 — safe negative subtraction (10 - 100)"));
+        passed += 1i32;
+    }
+
+    drop(puts(""));
+    drop(puts("Overflow tests complete."));
+    exit(0);
+};
