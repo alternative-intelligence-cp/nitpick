@@ -1,0 +1,86 @@
+// test_z3_contracts.aria — v0.3.4 Z3 SMT Contract Verification Tests
+// Compile with: ariac test_z3_contracts.aria --verify-contracts --verify-report
+// Tests: Z3 verifies requires/ensures function contracts
+
+extern func:puts = int32(string:s);
+
+// ============================================================
+// Test 1: Simple requires — parameter must be positive
+// The requires clause should be proven consistent (satisfiable)
+// ============================================================
+func:abs_val = int32(int32:x)
+    requires x > 0
+{
+    pass(x);
+};
+
+// ============================================================
+// Test 2: Multiple requires — range constraint
+// Both preconditions should be satisfiable together
+// ============================================================
+func:clamp_to_byte = int32(int32:val)
+    requires val >= 0, val <= 255
+{
+    pass(val);
+};
+
+// ============================================================
+// Test 3: Multiple requires from two params
+// ============================================================
+func:add_bounded = int32(int32:a, int32:b)
+    requires a >= 0, a <= 100, b >= 0, b <= 100
+{
+    pass(a + b);
+};
+
+// ============================================================
+// Test 4: Requires with ensures (parameter-only, no $result)
+// ensures clause using only parameter relationships
+// ============================================================
+func:check_order = int32(int32:lo, int32:hi)
+    requires lo >= 0, hi > lo
+    ensures hi > 0
+{
+    pass(hi - lo);
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop(puts("FAILSAFE: contract violation"));
+    exit(1);
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+
+    // Test 1: Call abs_val with positive argument
+    int32:r1 = abs_val(42) ? 0i32;
+    if (r1 == 42) {
+        drop(puts("PASS: Test 1 — abs_val requires x > 0"));
+        passed += 1i32;
+    }
+
+    // Test 2: Call clamp_to_byte with in-range value
+    int32:r2 = clamp_to_byte(128) ? 0i32;
+    if (r2 == 128) {
+        drop(puts("PASS: Test 2 — clamp_to_byte requires 0..255"));
+        passed += 1i32;
+    }
+
+    // Test 3: Call add_bounded
+    int32:r3 = add_bounded(50, 75) ? 0i32;
+    if (r3 == 125) {
+        drop(puts("PASS: Test 3 — add_bounded with 4 requires"));
+        passed += 1i32;
+    }
+
+    // Test 4: Call check_order
+    int32:r4 = check_order(10, 50) ? 0i32;
+    if (r4 == 40) {
+        drop(puts("PASS: Test 4 — check_order with requires + ensures"));
+        passed += 1i32;
+    }
+
+    drop(puts(""));
+    drop(puts("Contract tests complete."));
+    exit(0);
+};

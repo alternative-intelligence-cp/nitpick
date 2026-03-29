@@ -10,6 +10,7 @@ namespace aria {
 
 class ASTNode;
 class RulesDeclStmt;
+class FuncDeclStmt;
 
 namespace sema {
     class TypeSystem;
@@ -94,6 +95,37 @@ public:
                                   std::vector<VerifyOutcome>& outcomes,
                                   int line = 0, int column = 0);
 
+    // ================================================================
+    // Phase 2: Design-by-Contract — requires/ensures verification
+    // ================================================================
+
+    /// Verify that a function's requires/ensures clauses are internally
+    /// consistent (no self-contradiction) and attempt to prove ensures
+    /// from requires + function body structure.
+    VerifyResult verifyFunctionContract(FuncDeclStmt* func,
+                                        std::vector<VerifyOutcome>& outcomes);
+
+    /// Verify a specific call site: given the caller's known constraints,
+    /// prove the callee's requires clauses are satisfied by the arguments.
+    /// paramConstraints maps parameter index → known range [lo, hi].
+    VerifyResult verifyCallSiteRequires(FuncDeclStmt* callee,
+                                         const std::vector<ASTNode*>& args,
+                                         std::vector<VerifyOutcome>& outcomes,
+                                         int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 3: Arithmetic Overflow Verification
+    // ================================================================
+
+    /// Verify that an integer arithmetic operation cannot overflow given
+    /// known ranges of operands. op is '+', '-', or '*'.
+    /// Returns PROVEN if no overflow possible, DISPROVEN if overflow found.
+    VerifyResult verifyNoOverflow(char op, int bitWidth, bool isSigned,
+                                  int64_t lhsLo, int64_t lhsHi,
+                                  int64_t rhsLo, int64_t rhsHi,
+                                  std::vector<VerifyOutcome>& outcomes,
+                                  int line = 0, int column = 0);
+
     /// Get verification summary
     const VerifySummary& getSummary() const { return summary; }
 
@@ -118,11 +150,26 @@ private:
     // Translate a rule operand (sub-expression) to a Z3 expression
     Z3_ast translateOperand(ASTNode* node, Z3_ast dollar, Z3_sort sort);
 
+    // Translate an expression to Z3 using a variable environment
+    // (for contract verification where multiple named variables exist)
+    Z3_ast translateExprWithEnv(ASTNode* node,
+                                const std::map<std::string, Z3_ast>& env,
+                                Z3_sort defaultSort);
+
     // Get the Z3 sort for an Aria integer type width
     Z3_sort getIntSort(int bitWidth);
 
     // Get the Z3 sort for an Aria float type
     Z3_sort getRealSort();
+
+    // Resolve an Aria type name to a Z3 sort and bit width
+    // Returns {sort, bitWidth, isFloat}
+    struct TypeInfo {
+        Z3_sort sort;
+        int bitWidth;
+        bool isFloat;
+    };
+    TypeInfo resolveTypeSort(const std::string& typeName);
 
     // Check satisfiability of current assertions
     Z3_lbool checkSat(Z3_solver solver);

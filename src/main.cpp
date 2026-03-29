@@ -89,8 +89,8 @@ extern "C" {
 // Version information
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 3
-#define ARIA_VERSION_PATCH 1
-#define ARIA_VERSION "0.3.3"
+#define ARIA_VERSION_PATCH 4
+#define ARIA_VERSION "0.3.4"
 
 // Compiler options
 struct CompilerOptions {
@@ -128,9 +128,11 @@ struct CompilerOptions {
     bool wasm_standalone = false;     // --emit-wasm without linking (just .o)
     std::string wasm_target = "wasm32-wasi";  // WASM target triple
     
-    // Z3 SMT Verification Options (v0.2.45)
+    // Z3 SMT Verification Options (v0.2.45+)
     bool verify = false;              // --verify: Enable Z3 static verification pass
     bool verify_report = false;       // --verify-report: Emit detailed proof results
+    bool verify_contracts = false;    // --verify-contracts: Verify requires/ensures contracts
+    bool verify_overflow = false;     // --verify-overflow: Verify integer arithmetic overflow
 };
 
 /**
@@ -190,6 +192,8 @@ void print_help() {
     std::cout << "  -v, --verbose     Verbose output\n\n";
     std::cout << "Verification Options (Z3 SMT Solver):\n";
     std::cout << "  --verify          Enable Z3 static verification of Rules/limit constraints\n";
+    std::cout << "  --verify-contracts Verify requires/ensures function contracts\n";
+    std::cout << "  --verify-overflow  Verify integer arithmetic cannot overflow\n";
     std::cout << "  --verify-report   Emit detailed proof results (implies --verify)\n\n";
     std::cout << "GPU Target Options (NVIDIA CUDA/PTX):\n";
     std::cout << "  --emit-ptx        Emit PTX assembly for GPU execution\n";
@@ -323,6 +327,12 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
         } else if (arg == "--verify-report") {
             opts.verify = true;
             opts.verify_report = true;
+        } else if (arg == "--verify-contracts") {
+            opts.verify = true;
+            opts.verify_contracts = true;
+        } else if (arg == "--verify-overflow") {
+            opts.verify = true;
+            opts.verify_overflow = true;
         } else if (arg == "--ast-dump") {
             opts.dump_ast = true;
         } else if (arg == "--tokens") {
@@ -940,6 +950,174 @@ llvm::Module* compile_to_module(
             };
             
             walkNode(program);
+        }
+        
+        // Phase 2: Verify requires/ensures contracts (v0.3.4)
+        if (opts.verify_contracts && program) {
+            if (opts.verbose) {
+                std::cout << "  Phase 2: Verifying function contracts...\n";
+            }
+            
+            std::function<void(aria::ASTNode*)> walkContracts = [&](aria::ASTNode* node) {
+                if (!node) return;
+                
+                if (node->type == aria::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<aria::FuncDeclStmt*>(node);
+                    if (!func->preconditions.empty() || !func->postconditions.empty()) {
+                        std::vector<aria::VerifyOutcome> outcomes;
+                        z3v.verifyFunctionContract(func, outcomes);
+                        for (const auto& out : outcomes) {
+                            if (out.result == aria::VerifyResult::DISPROVEN) {
+                                diags.error(aria::SourceLocation(filename, out.line, out.column),
+                                            "[z3-contract] " + out.detail);
+                            } else if (out.result == aria::VerifyResult::UNKNOWN && opts.verbose) {
+                                diags.note(aria::SourceLocation(filename, out.line, out.column),
+                                           "[z3-contract] " + out.detail);
+                            } else if (opts.verify_report && out.result == aria::VerifyResult::PROVEN) {
+                                diags.note(aria::SourceLocation(filename, out.line, out.column),
+                                           "[z3-contract] " + out.detail);
+                            }
+                        }
+                    }
+                    // Recurse into function body
+                    if (func->body) walkContracts(func->body.get());
+                }
+                
+                // Recurse into containers
+                if (node->type == aria::ASTNode::NodeType::PROGRAM) {
+                    auto* prog = static_cast<aria::ProgramNode*>(node);
+                    for (const auto& decl : prog->declarations) {
+                        walkContracts(decl.get());
+                    }
+                } else if (node->type == aria::ASTNode::NodeType::BLOCK) {
+                    auto* block = static_cast<aria::BlockStmt*>(node);
+                    for (const auto& stmt : block->statements) {
+                        walkContracts(stmt.get());
+                    }
+                } else if (node->type == aria::ASTNode::NodeType::TYPE_DECL) {
+                    auto* typeDecl = static_cast<aria::TypeDeclStmt*>(node);
+                    if (typeDecl->createFunc) walkContracts(typeDecl->createFunc.get());
+                    if (typeDecl->destroyFunc) walkContracts(typeDecl->destroyFunc.get());
+                    for (const auto& method : typeDecl->methods) {
+                        walkContracts(method.get());
+                    }
+                }
+            };
+            
+            walkContracts(program);
+        }
+        
+        // Phase 3: Verify integer arithmetic overflow (v0.3.4)
+        if (opts.verify_overflow && program) {
+            if (opts.verbose) {
+                std::cout << "  Phase 3: Verifying integer overflow safety...\n";
+            }
+            
+            std::function<void(aria::ASTNode*)> walkOverflow = [&](aria::ASTNode* node) {
+                if (!node) return;
+                
+                if (node->type == aria::ASTNode::NodeType::BINARY_OP) {
+                    auto* binary = static_cast<aria::BinaryExpr*>(node);
+                    char op = 0;
+                    switch (binary->op.type) {
+                        case aria::frontend::TokenType::TOKEN_PLUS:  op = '+'; break;
+                        case aria::frontend::TokenType::TOKEN_MINUS: op = '-'; break;
+                        case aria::frontend::TokenType::TOKEN_STAR:  op = '*'; break;
+                        default: break;
+                    }
+                    
+                    if (op != 0) {
+                        // Check if both operands are integer literals (concrete overflow check)
+                        int64_t lhsVal = 0, rhsVal = 0;
+                        bool lhsConst = false, rhsConst = false;
+                        int bitWidth = 32;
+                        
+                        auto extractInt = [](aria::ASTNode* n, int64_t& val) -> bool {
+                            if (!n) return false;
+                            if (n->type == aria::ASTNode::NodeType::LITERAL) {
+                                auto* lit = static_cast<aria::LiteralExpr*>(n);
+                                if (std::holds_alternative<int64_t>(lit->value)) {
+                                    val = std::get<int64_t>(lit->value);
+                                    return true;
+                                }
+                            } else if (n->type == aria::ASTNode::NodeType::UNARY_OP) {
+                                auto* un = static_cast<aria::UnaryExpr*>(n);
+                                if (un->op.type == aria::frontend::TokenType::TOKEN_MINUS &&
+                                    un->operand && un->operand->type == aria::ASTNode::NodeType::LITERAL) {
+                                    auto* lit = static_cast<aria::LiteralExpr*>(un->operand.get());
+                                    if (std::holds_alternative<int64_t>(lit->value)) {
+                                        val = -std::get<int64_t>(lit->value);
+                                        return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        };
+                        
+                        lhsConst = extractInt(binary->left.get(), lhsVal);
+                        rhsConst = extractInt(binary->right.get(), rhsVal);
+                        
+                        if (lhsConst && rhsConst) {
+                            // Both constants: check with tight ranges
+                            std::vector<aria::VerifyOutcome> outcomes;
+                            z3v.verifyNoOverflow(op, bitWidth, true,
+                                                 lhsVal, lhsVal, rhsVal, rhsVal,
+                                                 outcomes, binary->line, binary->column);
+                            for (const auto& out : outcomes) {
+                                if (out.result == aria::VerifyResult::DISPROVEN) {
+                                    diags.error(aria::SourceLocation(filename, out.line, out.column),
+                                                "[z3-overflow] " + out.detail);
+                                } else if (opts.verify_report && out.result == aria::VerifyResult::PROVEN) {
+                                    diags.note(aria::SourceLocation(filename, out.line, out.column),
+                                               "[z3-overflow] " + out.detail);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Recurse into sub-expressions
+                    if (binary->left) walkOverflow(binary->left.get());
+                    if (binary->right) walkOverflow(binary->right.get());
+                    return;
+                }
+                
+                // Generic recursion
+                if (node->type == aria::ASTNode::NodeType::PROGRAM) {
+                    auto* prog = static_cast<aria::ProgramNode*>(node);
+                    for (const auto& decl : prog->declarations) {
+                        walkOverflow(decl.get());
+                    }
+                } else if (node->type == aria::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<aria::FuncDeclStmt*>(node);
+                    if (func->body) walkOverflow(func->body.get());
+                } else if (node->type == aria::ASTNode::NodeType::BLOCK) {
+                    auto* block = static_cast<aria::BlockStmt*>(node);
+                    for (const auto& stmt : block->statements) {
+                        walkOverflow(stmt.get());
+                    }
+                } else if (node->type == aria::ASTNode::NodeType::TYPE_DECL) {
+                    auto* typeDecl = static_cast<aria::TypeDeclStmt*>(node);
+                    if (typeDecl->createFunc) walkOverflow(typeDecl->createFunc.get());
+                    if (typeDecl->destroyFunc) walkOverflow(typeDecl->destroyFunc.get());
+                    for (const auto& method : typeDecl->methods) {
+                        walkOverflow(method.get());
+                    }
+                } else if (node->type == aria::ASTNode::NodeType::EXPRESSION_STMT) {
+                    auto* exprStmt = static_cast<aria::ExpressionStmt*>(node);
+                    if (exprStmt->expression) walkOverflow(exprStmt->expression.get());
+                } else if (node->type == aria::ASTNode::NodeType::VAR_DECL) {
+                    auto* var = static_cast<aria::VarDeclStmt*>(node);
+                    if (var->initializer) walkOverflow(var->initializer.get());
+                } else if (node->type == aria::ASTNode::NodeType::RETURN) {
+                    auto* ret = static_cast<aria::ReturnStmt*>(node);
+                    if (ret->value) walkOverflow(ret->value.get());
+                } else if (node->type == aria::ASTNode::NodeType::PASS) {
+                    auto* pass = static_cast<aria::PassStmt*>(node);
+                    if (pass->value) walkOverflow(pass->value.get());
+                }
+            };
+            
+            walkOverflow(program);
         }
         
         // Print verification summary
