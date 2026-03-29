@@ -16,6 +16,7 @@
 #include <iostream>  // For debug output
 #include <sstream>   // For istringstream (generic name mangling)
 #include <cassert>
+#include "debug_log.h"
 
 namespace aria {
 using namespace sema;  // Now inside aria namespace
@@ -620,7 +621,7 @@ llvm::Value* IRGenerator::createOptionalNone(llvm::Type* optionalType) {
 unsigned IRGenerator::isLBIMType(llvm::Type* type) {
     // Check if type is a struct type
     if (!type->isStructTy()) {
-        std::cerr << "[DEBUG] isLBIMType: type is NOT a struct" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] isLBIMType: type is NOT a struct" << std::endl;
         return 0;
     }
 
@@ -628,12 +629,12 @@ unsigned IRGenerator::isLBIMType(llvm::Type* type) {
 
     // Check the struct name
     if (!structType->hasName()) {
-        std::cerr << "[DEBUG] isLBIMType: struct has NO name" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] isLBIMType: struct has NO name" << std::endl;
         return 0;
     }
 
     llvm::StringRef name = structType->getName();
-    std::cerr << "[DEBUG] isLBIMType: checking struct name='" << name.str() << "'" << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG] isLBIMType: checking struct name='" << name.str() << "'" << std::endl;
 
     if (name == "struct.int128" || name == "struct.uint128") {
         return 2;  // 2 x i64 limbs
@@ -651,19 +652,19 @@ unsigned IRGenerator::isLBIMType(llvm::Type* type) {
         return 32;  // 32 x i64 limbs
     }
     if (name == "struct.int4096" || name == "struct.uint4096") {
-        std::cerr << "[DEBUG] isLBIMType: MATCHED int4096/uint4096, returning 64" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] isLBIMType: MATCHED int4096/uint4096, returning 64" << std::endl;
         return 64;  // 64 x i64 limbs
     }
     if (name == "struct.flt256") {
-        std::cerr << "[DEBUG] isLBIMType: MATCHED flt256, returning 4" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] isLBIMType: MATCHED flt256, returning 4" << std::endl;
         return 4;  // 4 x i64 limbs
     }
     if (name == "struct.flt512") {
-        std::cerr << "[DEBUG] isLBIMType: MATCHED flt512, returning 8" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] isLBIMType: MATCHED flt512, returning 8" << std::endl;
         return 8;  // 8 x i64 limbs
     }
 
-    std::cerr << "[DEBUG] isLBIMType: no match, returning 0" << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG] isLBIMType: no match, returning 0" << std::endl;
     return 0;
 }
 
@@ -2874,7 +2875,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             if (funcDecl->isAsync) {
                 current_async_result_type = actual_return_type;  // Result{T, ptr, i8}
                 actual_return_type = llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0);
-                std::cerr << "[DEBUG] Async function detected: " << funcDecl->funcName << ", changing return type to i8*" << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG] Async function detected: " << funcDecl->funcName << ", changing return type to i8*" << std::endl;
             }
             
             // v0.2.7: main() always uses C-standard (i32, ptr) signature for argc/argv
@@ -3209,7 +3210,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                             var_aria_types[param->paramName] = typeStr;
                         }
                         
-                        std::cerr << "[DEBUG] Registering parameter '" << param->paramName << "' with type '" << typeStr << "'" << std::endl;
+                        ARIA_DBG_STREAM << "[DEBUG] Registering parameter '" << param->paramName << "' with type '" << typeStr << "'" << std::endl;
                         
                         // CRITICAL FIX: Register parameter type in value_types map
                         // This enables member access on struct parameters (e.g., self.field, result.value)
@@ -3234,27 +3235,27 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         // getPrimitiveType() accepts any string and creates a PrimitiveType,
                         // so "Result<int32>" would wrongly become PRIMITIVE instead of RESULT
                         if (typeStr.find("Result<") == 0) {
-                            std::cerr << "[DEBUG] Detected Result type parameter: " << typeStr << std::endl;
+                            ARIA_DBG_STREAM << "[DEBUG] Detected Result type parameter: " << typeStr << std::endl;
                             // Extract inner type: "Result<int32>" -> "int32"
                             size_t start = typeStr.find('<') + 1;
                             size_t end = typeStr.find('>');
                             if (end != std::string::npos && end > start) {
                                 std::string innerTypeStr = typeStr.substr(start, end - start);
-                                std::cerr << "[DEBUG] Result inner type: " << innerTypeStr << std::endl;
+                                ARIA_DBG_STREAM << "[DEBUG] Result inner type: " << innerTypeStr << std::endl;
                                 aria::sema::Type* innerType = type_system->getPrimitiveType(innerTypeStr);
                                 if (!innerType) {
                                     innerType = type_system->getStructType(innerTypeStr);
                                 }
                                 if (innerType) {
-                                    std::cerr << "[DEBUG] Found inner type, calling getResultType()" << std::endl;
+                                    ARIA_DBG_STREAM << "[DEBUG] Found inner type, calling getResultType()" << std::endl;
                                     paramType = type_system->getResultType(innerType);
                                     if (paramType) {
-                                        std::cerr << "[DEBUG] getResultType() returned type with kind: " << static_cast<int>(paramType->getKind()) << std::endl;
+                                        ARIA_DBG_STREAM << "[DEBUG] getResultType() returned type with kind: " << static_cast<int>(paramType->getKind()) << std::endl;
                                     } else {
-                                        std::cerr << "[DEBUG] ERROR: getResultType() returned nullptr!" << std::endl;
+                                        ARIA_DBG_STREAM << "[DEBUG] ERROR: getResultType() returned nullptr!" << std::endl;
                                     }
                                 } else {
-                                    std::cerr << "[DEBUG] ERROR: Could not find inner type: " << innerTypeStr << std::endl;
+                                    ARIA_DBG_STREAM << "[DEBUG] ERROR: Could not find inner type: " << innerTypeStr << std::endl;
                                 }
                             }
                         }
@@ -3263,7 +3264,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         if (!paramType) {
                             paramType = type_system->getStructType(typeStr);
                             if (paramType) {
-                                std::cerr << "[DEBUG] Found as struct type" << std::endl;
+                                ARIA_DBG_STREAM << "[DEBUG] Found as struct type" << std::endl;
                             }
                         }
                         
@@ -3271,7 +3272,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         if (!paramType) {
                             paramType = type_system->getPrimitiveType(typeStr);
                             if (paramType) {
-                                std::cerr << "[DEBUG] Found as primitive type" << std::endl;
+                                ARIA_DBG_STREAM << "[DEBUG] Found as primitive type" << std::endl;
                             }
                         }
                         
@@ -3282,9 +3283,9 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                                 // For struct params, also register the alloca
                                 value_types[param_storage] = paramType;
                             }
-                            std::cerr << "[DEBUG] Registered '" << param->paramName << "' in value_types" << std::endl;
+                            ARIA_DBG_STREAM << "[DEBUG] Registered '" << param->paramName << "' in value_types" << std::endl;
                         } else {
-                            std::cerr << "[DEBUG] WARNING: Could not register type for '" << param->paramName << "'" << std::endl;
+                            ARIA_DBG_STREAM << "[DEBUG] WARNING: Could not register type for '" << param->paramName << "'" << std::endl;
                         }
                     }
                 }
@@ -3323,11 +3324,11 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             }
 
             // Generate function body
-            std::cerr << "[DEBUG] Generating body for function: " << func_name << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG] Generating body for function: " << func_name << std::endl;
             if (!funcDecl->body) {
-                std::cerr << "[DEBUG] WARNING: Function " << func_name << " has NULL body!" << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG] WARNING: Function " << func_name << " has NULL body!" << std::endl;
             } else {
-                std::cerr << "[DEBUG] Function " << func_name << " body node type: " << static_cast<int>(funcDecl->body->type) << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG] Function " << func_name << " body node type: " << static_cast<int>(funcDecl->body->type) << std::endl;
             }
             
             llvm::Value* bodyVal = codegenStatement(funcDecl->body.get());
@@ -3587,7 +3588,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 }
 
                 // Generate function body
-                std::cerr << "[DEBUG] Generating impl method: " << mangledName << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG] Generating impl method: " << mangledName << std::endl;
                 codegenStatement(funcDecl->body.get());
 
                 // Add terminator if missing
@@ -4031,7 +4032,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     if (it != named_values.end()) {
                         named_values[varDecl->varName] = it->second;
                         var_aria_types[varDecl->varName] = actualTypeName;
-                        std::cerr << "[DEBUG] Borrow " << varDecl->varName 
+                        ARIA_DBG_STREAM << "[DEBUG] Borrow " << varDecl->varName 
                                   << " aliased to " << target_name << std::endl;
                         return nullptr;
                     }
@@ -4169,7 +4170,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // ExprCodegen::getExprExoticTypeName() checks var_aria_types to route
             // modulo operations to runtime functions (aria_tryte_mod, aria_nyte_mod)
             var_aria_types[varDecl->varName] = actualTypeName;
-            std::cerr << "[DEBUG] Registered var_aria_types[" << varDecl->varName << "] = " << actualTypeName << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG] Registered var_aria_types[" << varDecl->varName << "] = " << actualTypeName << std::endl;
             
             // Generate initializer if present
             if (varDecl->initializer) {
@@ -4315,7 +4316,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                 unsigned width = intType->getBitWidth();
                                 // unknown sentinel is signed maximum (opposite of ERR min)
                                 initVal = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
-                                std::cerr << "[DEBUG] Generated unknown sentinel for type: ";
+                                ARIA_DBG_STREAM << "[DEBUG] Generated unknown sentinel for type: ";
                                 varType->print(llvm::errs());
                                 std::cerr << std::endl;
                             } else {
@@ -6212,12 +6213,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     llvm::Type* loadType = builder.getInt32Ty();  // Default
                     if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(val)) {
                         loadType = allocaInst->getAllocatedType();
-                        std::cerr << "[DEBUG] Alloca '" << ident->name << "' getAllocatedType()=" 
+                        ARIA_DBG_STREAM << "[DEBUG] Alloca '" << ident->name << "' getAllocatedType()=" 
                                   << (loadType->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
                         if (loadType->isStructTy()) {
                             llvm::StructType* st = llvm::cast<llvm::StructType>(loadType);
                             if (st->hasName()) {
-                                std::cerr << "[DEBUG]   Allocated type name: " << st->getName().str() << std::endl;
+                                ARIA_DBG_STREAM << "[DEBUG]   Allocated type name: " << st->getName().str() << std::endl;
                             }
                         }
                     }
@@ -6225,12 +6226,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Create the load instruction
                     llvm::Value* loaded = builder.CreateLoad(loadType, val, ident->name);
                     
-                    std::cerr << "[DEBUG] Loaded variable '" << ident->name << "' type=" 
+                    ARIA_DBG_STREAM << "[DEBUG] Loaded variable '" << ident->name << "' type=" 
                               << (loaded->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
                     if (loaded->getType()->isStructTy()) {
                         llvm::StructType* st = llvm::cast<llvm::StructType>(loaded->getType());
                         if (st->hasName()) {
-                            std::cerr << "[DEBUG]   Struct name: " << st->getName().str() << std::endl;
+                            ARIA_DBG_STREAM << "[DEBUG]   Struct name: " << st->getName().str() << std::endl;
                         }
                     }
                     
@@ -6436,7 +6437,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         std::string typeName = primType->getName();
                         std::string funcName = "aria_" + typeName + "_neg";
                         
-                        std::cerr << "[DEBUG] Generated numeric negation call: " << funcName << std::endl;
+                        ARIA_DBG_STREAM << "[DEBUG] Generated numeric negation call: " << funcName << std::endl;
                         
                         // Get LLVM types
                         llvm::Type* numericLLVMType = operand->getType();
@@ -7544,7 +7545,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     binop->op.type == frontend::TokenType::TOKEN_GREATER ||
                     binop->op.type == frontend::TokenType::TOKEN_GREATER_EQUAL) {
                     
-                    std::cerr << "[DEBUG] Comparison with one unknown operand - returning unknown sentinel" << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Comparison with one unknown operand - returning unknown sentinel" << std::endl;
                     // Result is unknown - return i32 max (unknown sentinel for bool)
                     return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 
                                                   llvm::APInt::getSignedMaxValue(32).getSExtValue());
@@ -7560,7 +7561,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         structType->getElementType(0)->isIntegerTy(1)) {
                         // Right is optional - replace left NIL with OptionalNone
                         L = createOptionalNone(R->getType());
-                        std::cerr << "[DEBUG] Replaced left NIL with OptionalNone for comparison" << std::endl;
+                        ARIA_DBG_STREAM << "[DEBUG] Replaced left NIL with OptionalNone for comparison" << std::endl;
                     }
                 } else if (rightIsNIL && L->getType()->isStructTy()) {
                     llvm::StructType* structType = llvm::cast<llvm::StructType>(L->getType());
@@ -7568,7 +7569,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         structType->getElementType(0)->isIntegerTy(1)) {
                         // Left is optional - replace right NIL with OptionalNone
                         R = createOptionalNone(L->getType());
-                        std::cerr << "[DEBUG] Replaced right NIL with OptionalNone for comparison" << std::endl;
+                        ARIA_DBG_STREAM << "[DEBUG] Replaced right NIL with OptionalNone for comparison" << std::endl;
                     }
                 }
 
@@ -7576,19 +7577,19 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // but when compared to a pointer we need null pointer instead
                 if (leftIsNIL && R->getType()->isPointerTy()) {
                     L = llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
-                    std::cerr << "[DEBUG] Replaced left NIL with null pointer for pointer comparison" << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Replaced left NIL with null pointer for pointer comparison" << std::endl;
                 } else if (rightIsNIL && L->getType()->isPointerTy()) {
                     R = llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
-                    std::cerr << "[DEBUG] Replaced right NIL with null pointer for pointer comparison" << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Replaced right NIL with null pointer for pointer comparison" << std::endl;
                 }
 
                 // Handle integer-NIL comparison: NIL sentinel for integers is 0
                 if (leftIsNIL && R->getType()->isIntegerTy()) {
                     L = llvm::ConstantInt::get(R->getType(), 0);
-                    std::cerr << "[DEBUG] Replaced left NIL with 0 for integer comparison" << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Replaced left NIL with 0 for integer comparison" << std::endl;
                 } else if (rightIsNIL && L->getType()->isIntegerTy()) {
                     R = llvm::ConstantInt::get(L->getType(), 0);
-                    std::cerr << "[DEBUG] Replaced right NIL with 0 for integer comparison" << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Replaced right NIL with 0 for integer comparison" << std::endl;
                 }
             }
             
@@ -7603,7 +7604,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     llvm::IntegerType* intType = llvm::cast<llvm::IntegerType>(R->getType());
                     unsigned width = intType->getBitWidth();
                     L = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
-                    std::cerr << "[DEBUG] Replaced left unknown with sentinel matching type: ";
+                    ARIA_DBG_STREAM << "[DEBUG] Replaced left unknown with sentinel matching type: ";
                     R->getType()->print(llvm::errs());
                     std::cerr << std::endl;
                 } else if (rightIsUnknown && L->getType()->isIntegerTy()) {
@@ -7611,7 +7612,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     llvm::IntegerType* intType = llvm::cast<llvm::IntegerType>(L->getType());
                     unsigned width = intType->getBitWidth();
                     R = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
-                    std::cerr << "[DEBUG] Replaced right unknown with sentinel matching type: ";
+                    ARIA_DBG_STREAM << "[DEBUG] Replaced right unknown with sentinel matching type: ";
                     L->getType()->print(llvm::errs());
                     std::cerr << std::endl;
                 }
@@ -7645,7 +7646,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     unsigned width = intType->getBitWidth();
                     llvm::Value* unknownResult = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
                     
-                    std::cerr << "[DEBUG] Arithmetic with unknown operand - returning unknown sentinel" << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Arithmetic with unknown operand - returning unknown sentinel" << std::endl;
                     return unknownResult;
                 }
             }
@@ -7691,21 +7692,21 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             if (leftType && leftType->isPrimitive()) {
                 PrimitiveType* prim = static_cast<PrimitiveType*>(leftType);
                 const std::string& name = prim->getName();
-                std::cerr << "[DEBUG] Left operand type: " << name << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG] Left operand type: " << name << std::endl;
                 if (name == "trit" || name == "tryte" || name == "nit" || name == "nyte") {
                     isTernary = true;
                     ternaryType = leftType;
-                    std::cerr << "[DEBUG] Detected ternary type on LEFT: " << name << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Detected ternary type on LEFT: " << name << std::endl;
                 }
             }
             if (!isTernary && rightType && rightType->isPrimitive()) {
                 PrimitiveType* prim = static_cast<PrimitiveType*>(rightType);
                 const std::string& name = prim->getName();
-                std::cerr << "[DEBUG] Right operand type: " << name << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG] Right operand type: " << name << std::endl;
                 if (name == "trit" || name == "tryte" || name == "nit" || name == "nyte") {
                     isTernary = true;
                     ternaryType = rightType;
-                    std::cerr << "[DEBUG] Detected ternary type on RIGHT: " << name << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Detected ternary type on RIGHT: " << name << std::endl;
                 }
             }
             
@@ -7719,7 +7720,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     name == "vec9" || name == "dvec9") {
                     isNumericType = true;
                     numericType = leftType;
-                    std::cerr << "[DEBUG] Detected numeric type on LEFT: " << name << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Detected numeric type on LEFT: " << name << std::endl;
                 }
             }
             if (!isNumericType && rightType && rightType->isPrimitive()) {
@@ -7729,7 +7730,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     name == "vec9" || name == "dvec9") {
                     isNumericType = true;
                     numericType = rightType;
-                    std::cerr << "[DEBUG] Detected numeric type on RIGHT: " << name << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Detected numeric type on RIGHT: " << name << std::endl;
                 }
             }
             
@@ -7823,11 +7824,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             };
             if (isResultStruct(L->getType()) && !isResultStruct(R->getType())) {
                 L = builder.CreateExtractValue(L, {0}, "unwrap_result_lhs");
-                std::cerr << "[DEBUG] Auto-unwrapped Result<T> on left operand" << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG] Auto-unwrapped Result<T> on left operand" << std::endl;
             }
             if (isResultStruct(R->getType()) && !isResultStruct(L->getType())) {
                 R = builder.CreateExtractValue(R, {0}, "unwrap_result_rhs");
-                std::cerr << "[DEBUG] Auto-unwrapped Result<T> on right operand" << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG] Auto-unwrapped Result<T> on right operand" << std::endl;
             }
 
             // Generate appropriate operation based on operator
@@ -7901,7 +7902,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             builder.CreateCall(runtimeFunc, {resultAlloca, leftAlloca, rightAlloca});
                             llvm::Value* result = builder.CreateLoad(fracType, resultAlloca, typeName + "_result");
                             value_types[result] = numericType;
-                            std::cerr << "[DEBUG] Generated numeric addition call: " << funcName << std::endl;
+                            ARIA_DBG_STREAM << "[DEBUG] Generated numeric addition call: " << funcName << std::endl;
                             return result;
                         }
                         
@@ -7912,7 +7913,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         
                         llvm::Value* result = builder.CreateCall(runtimeFunc, {L, R}, typeName + "_result");
                         value_types[result] = numericType;
-                        std::cerr << "[DEBUG] Generated numeric addition call: " << funcName << std::endl;
+                        ARIA_DBG_STREAM << "[DEBUG] Generated numeric addition call: " << funcName << std::endl;
                         return result;
                     }
                     // ARIA-024: LBIM addition for large integers (int128/256/512/1024)
@@ -8061,7 +8062,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             builder.CreateCall(runtimeFunc, {resultAlloca, leftAlloca, rightAlloca});
                             llvm::Value* result = builder.CreateLoad(fracType, resultAlloca, typeName + "_result");
                             value_types[result] = numericType;
-                            std::cerr << "[DEBUG] Generated numeric subtraction call: " << funcName << std::endl;
+                            ARIA_DBG_STREAM << "[DEBUG] Generated numeric subtraction call: " << funcName << std::endl;
                             return result;
                         }
                         
@@ -8072,7 +8073,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         
                         llvm::Value* result = builder.CreateCall(runtimeFunc, {L, R}, typeName + "_result");
                         value_types[result] = numericType;
-                        std::cerr << "[DEBUG] Generated numeric subtraction call: " << funcName << std::endl;
+                        ARIA_DBG_STREAM << "[DEBUG] Generated numeric subtraction call: " << funcName << std::endl;
                         return result;
                     }
                     // ARIA-024: LBIM subtraction for large integers (int128/256/512/1024)
@@ -8176,7 +8177,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             builder.CreateCall(runtimeFunc, {resultAlloca, leftAlloca, rightAlloca});
                             llvm::Value* result = builder.CreateLoad(fracType, resultAlloca, typeName + "_result");
                             value_types[result] = numericType;
-                            std::cerr << "[DEBUG] Generated numeric multiplication call: " << funcName << std::endl;
+                            ARIA_DBG_STREAM << "[DEBUG] Generated numeric multiplication call: " << funcName << std::endl;
                             return result;
                         }
                         
@@ -8187,7 +8188,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         
                         llvm::Value* result = builder.CreateCall(runtimeFunc, {L, R}, typeName + "_result");
                         value_types[result] = numericType;
-                        std::cerr << "[DEBUG] Generated numeric multiplication call: " << funcName << std::endl;
+                        ARIA_DBG_STREAM << "[DEBUG] Generated numeric multiplication call: " << funcName << std::endl;
                         return result;
                     }
                     // ARIA-024: LBIM multiplication for large integers (int128/256/512/1024)
@@ -8297,7 +8298,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             builder.CreateCall(runtimeFunc, {resultAlloca, leftAlloca, rightAlloca});
                             llvm::Value* result = builder.CreateLoad(fracType, resultAlloca, typeName + "_result");
                             value_types[result] = numericType;
-                            std::cerr << "[DEBUG] Generated numeric division call: " << funcName << std::endl;
+                            ARIA_DBG_STREAM << "[DEBUG] Generated numeric division call: " << funcName << std::endl;
                             return result;
                         }
                         
@@ -8308,7 +8309,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         
                         llvm::Value* result = builder.CreateCall(runtimeFunc, {L, R}, typeName + "_result");
                         value_types[result] = numericType;
-                        std::cerr << "[DEBUG] Generated numeric division call: " << funcName << std::endl;
+                        ARIA_DBG_STREAM << "[DEBUG] Generated numeric division call: " << funcName << std::endl;
                         return result;
                     }
                     // ARIA-024: LBIM division for large integers (int128/256/512/1024)
@@ -8417,11 +8418,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     
-                    std::cerr << "[DEBUG] TOKEN_EQUAL_EQUAL: L type=" << (L->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
-                    std::cerr << "[DEBUG] TOKEN_EQUAL_EQUAL: R type=" << (R->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] TOKEN_EQUAL_EQUAL: L type=" << (L->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] TOKEN_EQUAL_EQUAL: R type=" << (R->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
                     // ARIA-024: LBIM equality comparison for large integers
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
-                        std::cerr << "[DEBUG] LBIM equality comparison detected, numLimbs=" << numLimbs << std::endl;
+                        ARIA_DBG_STREAM << "[DEBUG] LBIM equality comparison detected, numLimbs=" << numLimbs << std::endl;
                         return generateLBIMEQ(L, R, numLimbs);
                     }
                     // ARIA-025: fix256 equality comparison
@@ -8450,7 +8451,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Check if both are optional structs {i1, T}
                         if (leftStruct->getNumElements() == 2 && leftStruct->getElementType(0)->isIntegerTy(1) &&
                             rightStruct->getNumElements() == 2 && rightStruct->getElementType(0)->isIntegerTy(1)) {
-                            std::cerr << "[DEBUG] Comparing two optional types" << std::endl;
+                            ARIA_DBG_STREAM << "[DEBUG] Comparing two optional types" << std::endl;
                             // For optional comparison, we compare hasValue fields
                             // Two optionals are equal if both are NIL or both have same value
                             llvm::Value* leftHasValue = builder.CreateExtractValue(L, 0, "left.hasValue");
@@ -8633,7 +8634,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Check if both are optional structs {i1, T}
                         if (leftStruct->getNumElements() == 2 && leftStruct->getElementType(0)->isIntegerTy(1) &&
                             rightStruct->getNumElements() == 2 && rightStruct->getElementType(0)->isIntegerTy(1)) {
-                            std::cerr << "[DEBUG] Comparing two optional types (!=)" << std::endl;
+                            ARIA_DBG_STREAM << "[DEBUG] Comparing two optional types (!=)" << std::endl;
                             // For optional comparison, we compare hasValue fields
                             llvm::Value* leftHasValue = builder.CreateExtractValue(L, 0, "left.hasValue");
                             llvm::Value* rightHasValue = builder.CreateExtractValue(R, 0, "right.hasValue");
@@ -10599,7 +10600,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 value_types[srcVal] = valTypeIt->second;
             }
 
-            std::cerr << "[DEBUG] move(): transferred ownership of '"
+            ARIA_DBG_STREAM << "[DEBUG] move(): transferred ownership of '"
                       << moveExpr->variableName << "', nullified source" << std::endl;
             return srcVal;
         }

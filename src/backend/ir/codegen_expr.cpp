@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <cmath>  // For ldexp in fix256_from_float
+#include "debug_log.h"
 
 using namespace aria;
 using namespace aria::frontend;
@@ -484,9 +485,9 @@ std::string ExprCodegen::getExprExoticTypeName(ASTNode* expr) {
         auto it = var_aria_types.find(ident->name);
         if (it != var_aria_types.end()) {
             const std::string& typeName = it->second;
-            std::cerr << "[DEBUG] Checking identifier '" << ident->name << "' type: " << typeName << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG] Checking identifier '" << ident->name << "' type: " << typeName << std::endl;
             if (isExoticTypeName(typeName)) {
-                std::cerr << "[DEBUG] Detected exotic type: " << typeName << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG] Detected exotic type: " << typeName << std::endl;
                 return typeName;
             }
         } else {
@@ -1354,10 +1355,10 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         throw std::runtime_error("Null literal expression");
     }
     
-    std::cerr << "[DEBUG] codegenLiteral called, hasRawValue=" << expr->hasRawValue() << std::endl;
-    std::cerr << "[DEBUG] codegenLiteral variant index: " << expr->value.index() << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG] codegenLiteral called, hasRawValue=" << expr->hasRawValue() << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG] codegenLiteral variant index: " << expr->value.index() << std::endl;
     if (std::holds_alternative<std::string>(expr->value)) {
-        std::cerr << "[DEBUG] codegenLiteral string value: " << std::get<std::string>(expr->value) << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] codegenLiteral string value: " << std::get<std::string>(expr->value) << std::endl;
     }
     
     // Phase 4: If literal has explicit float type suffix (f32, f64), use it directly.
@@ -1394,7 +1395,7 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
             auto apfloat_opt = aria::semantic::LiteralConverter::convertFloatLiteral(raw, precision);
             if (apfloat_opt) {
                 llvm::Value* result = llvm::ConstantFP::get(context, *apfloat_opt);
-                std::cerr << "[DEBUG] codegenLiteral: high-precision float '" << raw << "' -> type: ";
+                ARIA_DBG_STREAM << "[DEBUG] codegenLiteral: high-precision float '" << raw << "' -> type: ";
                 result->getType()->print(llvm::errs());
                 std::cerr << std::endl;
                 return result;
@@ -1415,7 +1416,7 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
             auto apint_opt = aria::semantic::LiteralConverter::convertIntLiteral(raw, bit_width, is_signed);
             if (apint_opt) {
                 llvm::Value* result = llvm::ConstantInt::get(context, *apint_opt);
-                std::cerr << "[DEBUG] codegenLiteral: high-precision int '" << raw << "' -> type: ";
+                ARIA_DBG_STREAM << "[DEBUG] codegenLiteral: high-precision int '" << raw << "' -> type: ";
                 result->getType()->print(llvm::errs());
                 std::cerr << std::endl;
                 return result;
@@ -1460,7 +1461,7 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
     if (std::holds_alternative<double>(expr->value)) {
         double val = std::get<double>(expr->value);
         llvm::Value* result = llvm::ConstantFP::get(context, llvm::APFloat(val));
-        std::cerr << "[DEBUG] codegenLiteral: float " << val << " -> type: ";
+        ARIA_DBG_STREAM << "[DEBUG] codegenLiteral: float " << val << " -> type: ";
         result->getType()->print(llvm::errs());
         std::cerr << std::endl;
         return result;
@@ -1469,7 +1470,7 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
     // String literal - create global AriaString struct
     if (std::holds_alternative<std::string>(expr->value)) {
         const std::string& str = std::get<std::string>(expr->value);
-        std::cerr << "[DEBUG] String literal detected: \"" << str << "\"" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] String literal detected: \"" << str << "\"" << std::endl;
         
         // Check for special literals: ERR and unknown
         // These are represented as string literals by the parser but need special handling
@@ -1477,7 +1478,7 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
             // ERR sentinel - need to know target type from context
             // For now, default to int32 (will be handled better with type inference)
             llvm::Type* target_type = llvm::Type::getInt32Ty(context);
-            std::cerr << "[DEBUG] ERR literal - generating sentinel for type: ";
+            ARIA_DBG_STREAM << "[DEBUG] ERR literal - generating sentinel for type: ";
             target_type->print(llvm::errs());
             std::cerr << std::endl;
             return getTBBSentinel(target_type);
@@ -1486,11 +1487,11 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         if (str == "unknown") {
             // unknown sentinel - similar to ERR but uses max value instead of min
             llvm::Type* target_type = llvm::Type::getInt32Ty(context);
-            std::cerr << "[DEBUG] unknown literal - generating sentinel for type: ";
+            ARIA_DBG_STREAM << "[DEBUG] unknown literal - generating sentinel for type: ";
             target_type->print(llvm::errs());
             std::cerr << std::endl;
             llvm::Value* sentinel = getUnknownSentinel(target_type);
-            std::cerr << "[DEBUG] unknown sentinel generated, result type: ";
+            ARIA_DBG_STREAM << "[DEBUG] unknown sentinel generated, result type: ";
             sentinel->getType()->print(llvm::errs());
             std::cerr << std::endl;
             return sentinel;
@@ -1610,7 +1611,7 @@ llvm::Value* ExprCodegen::codegenIdentifier(IdentifierExpr* expr) {
         
         // Create a load instruction
         llvm::Value* loaded = builder.CreateLoad(loadType, var_ptr, expr->name);
-        std::cerr << "[DEBUG] codegenIdentifier: " << expr->name << " -> type: ";
+        ARIA_DBG_STREAM << "[DEBUG] codegenIdentifier: " << expr->name << " -> type: ";
         loaded->getType()->print(llvm::errs());
         std::cerr << std::endl;
         return loaded;
@@ -2412,7 +2413,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     std::string leftTBBType = getExprTBBTypeName(expr->left.get());
     std::string rightTBBType = getExprTBBTypeName(expr->right.get());
     
-    std::cerr << "[DEBUG] TBB types: left='" << leftTBBType << "', right='" << rightTBBType << "'" << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG] TBB types: left='" << leftTBBType << "', right='" << rightTBBType << "'" << std::endl;
 
     if (!leftTBBType.empty() && !rightTBBType.empty() && leftTBBType == rightTBBType) {
         // Both operands are the same TBB type - use safe TBB arithmetic
@@ -2447,7 +2448,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     std::string leftExoticType = getExprExoticTypeName(expr->left.get());
     std::string rightExoticType = getExprExoticTypeName(expr->right.get());
     
-    std::cerr << "[DEBUG] Exotic types: left='" << leftExoticType << "', right='" << rightExoticType << "'" << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG] Exotic types: left='" << leftExoticType << "', right='" << rightExoticType << "'" << std::endl;
 
     if (!leftExoticType.empty() && !rightExoticType.empty() && leftExoticType == rightExoticType) {
         // Both operands are the same exotic type - use runtime functions
@@ -2482,7 +2483,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     std::string leftNumericType = getExprNumericTypeName(expr->left.get());
     std::string rightNumericType = getExprNumericTypeName(expr->right.get());
     
-    std::cerr << "[DEBUG] Numeric types: left='" << leftNumericType << "', right='" << rightNumericType << "'" << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG] Numeric types: left='" << leftNumericType << "', right='" << rightNumericType << "'" << std::endl;
 
     if (!leftNumericType.empty() && !rightNumericType.empty() && leftNumericType == rightNumericType) {
         // Both operands are the same numeric type - use runtime functions
@@ -2517,7 +2518,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     std::string leftLBIMType = getExprLBIMTypeName(expr->left.get());
     std::string rightLBIMType = getExprLBIMTypeName(expr->right.get());
     
-    std::cerr << "[DEBUG] LBIM types: left='" << leftLBIMType << "', right='" << rightLBIMType << "'" << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG] LBIM types: left='" << leftLBIMType << "', right='" << rightLBIMType << "'" << std::endl;
 
     if (!leftLBIMType.empty() && !rightLBIMType.empty() && leftLBIMType == rightLBIMType) {
         // Both operands are the same LBIM type - use runtime functions
@@ -2579,7 +2580,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
                 // Right is optional - replace left NIL with OptionalNone
                 wrappedType = structType->getElementType(1);
                 left = createOptionalNone(wrappedType);
-                std::cerr << "[DEBUG] Replaced left NIL with OptionalNone for comparison" << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG] Replaced left NIL with OptionalNone for comparison" << std::endl;
             }
         } else if (rightIsNIL && left->getType()->isStructTy()) {
             llvm::StructType* structType = llvm::cast<llvm::StructType>(left->getType());
@@ -2588,7 +2589,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
                 // Left is optional - replace right NIL with OptionalNone
                 wrappedType = structType->getElementType(1);
                 right = createOptionalNone(wrappedType);
-                std::cerr << "[DEBUG] Replaced right NIL with OptionalNone for comparison" << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG] Replaced right NIL with OptionalNone for comparison" << std::endl;
             }
         }
 
@@ -2596,19 +2597,19 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         // but when compared to a pointer we need null pointer instead
         if (leftIsNIL && right->getType()->isPointerTy()) {
             left = llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
-            std::cerr << "[DEBUG] Replaced left NIL with null pointer for pointer comparison" << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG] Replaced left NIL with null pointer for pointer comparison" << std::endl;
         } else if (rightIsNIL && left->getType()->isPointerTy()) {
             right = llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
-            std::cerr << "[DEBUG] Replaced right NIL with null pointer for pointer comparison" << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG] Replaced right NIL with null pointer for pointer comparison" << std::endl;
         }
 
         // Handle integer-NIL comparison: NIL sentinel for integers is 0
         if (leftIsNIL && right->getType()->isIntegerTy()) {
             left = llvm::ConstantInt::get(right->getType(), 0);
-            std::cerr << "[DEBUG] Replaced left NIL with 0 for integer comparison" << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG] Replaced left NIL with 0 for integer comparison" << std::endl;
         } else if (rightIsNIL && left->getType()->isIntegerTy()) {
             right = llvm::ConstantInt::get(left->getType(), 0);
-            std::cerr << "[DEBUG] Replaced right NIL with 0 for integer comparison" << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG] Replaced right NIL with 0 for integer comparison" << std::endl;
         }
     }
 
@@ -2661,11 +2662,11 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     };
     if (isResultStruct(left->getType()) && !isResultStruct(right->getType())) {
         left = builder.CreateExtractValue(left, {0}, "unwrap_result_lhs");
-        std::cerr << "[DEBUG] Auto-unwrapped Result<T> on left operand (codegen_expr)" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] Auto-unwrapped Result<T> on left operand (codegen_expr)" << std::endl;
     }
     if (isResultStruct(right->getType()) && !isResultStruct(left->getType())) {
         right = builder.CreateExtractValue(right, {0}, "unwrap_result_rhs");
-        std::cerr << "[DEBUG] Auto-unwrapped Result<T> on right operand (codegen_expr)" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] Auto-unwrapped Result<T> on right operand (codegen_expr)" << std::endl;
     }
 
     // Check if operands are floating point (check AFTER broadcast)
@@ -3892,7 +3893,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // The callee should be an identifier (function name or func variable)
     IdentifierExpr* callee_ident = dynamic_cast<IdentifierExpr*>(expr->callee.get());
     if (!callee_ident) {
-        std::cerr << "[DEBUG] Callee is not an IdentifierExpr! Type: " << static_cast<int>(expr->callee->type) << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] Callee is not an IdentifierExpr! Type: " << static_cast<int>(expr->callee->type) << std::endl;
         throw std::runtime_error("Function callee must be an identifier or module member access");
     }
     
@@ -3925,7 +3926,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         if (!arg) {
             throw std::runtime_error("Failed to generate code for ok() argument");
         }
-        std::cerr << "[DEBUG] ok() pass-through" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] ok() pass-through" << std::endl;
         return arg;
     }
     
@@ -11225,7 +11226,7 @@ llvm::Value* ExprCodegen::codegenObjectLiteral(ObjectLiteralExpr* expr) {
         throw std::runtime_error("Null object literal expression");
     }
     
-    std::cerr << "[DEBUG] codegenObjectLiteral: fields=" << expr->fields.size() 
+    ARIA_DBG_STREAM << "[DEBUG] codegenObjectLiteral: fields=" << expr->fields.size() 
               << ", type_name=" << expr->type_name << std::endl;
     
     // For vec9 and other array-like types: create an array/struct with field values

@@ -14,6 +14,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <iostream>  // For debug output
 #include <stdexcept>
+#include "debug_log.h"
 
 using namespace aria;
 using namespace aria::backend;
@@ -567,7 +568,7 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
                 // Alias: borrow points to the same storage as the original
                 named_values[stmt->varName] = it->second;
                 var_aria_types[stmt->varName] = stmt->typeName;
-                std::cerr << "[DEBUG] Borrow " << stmt->varName 
+                ARIA_DBG_STREAM << "[DEBUG] Borrow " << stmt->varName 
                           << " aliased to " << target_name << std::endl;
                 return;
             }
@@ -653,10 +654,10 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
 
     // Track Aria type name for UFCS method resolution
     var_aria_types[stmt->varName] = stmt->typeName;
-    std::cerr << "[DEBUG] Registered var_aria_types[" << stmt->varName << "] = " << stmt->typeName << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG] Registered var_aria_types[" << stmt->varName << "] = " << stmt->typeName << std::endl;
 
     // DEBUG: Check if initializer exists
-    std::cerr << "[DEBUG] codegenVarDecl: Variable " << stmt->varName 
+    ARIA_DBG_STREAM << "[DEBUG] codegenVarDecl: Variable " << stmt->varName 
               << ", initializer ptr = " << (void*)stmt->initializer.get() << std::endl;
     
     // If there's an initializer, generate code for it and store the result
@@ -665,10 +666,10 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
             throw std::runtime_error("ExprCodegen not set in StmtCodegen");
         }
         
-        std::cerr << "[DEBUG] codegenVarDecl: Generating initializer for " << stmt->varName << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] codegenVarDecl: Generating initializer for " << stmt->varName << std::endl;
         
         // Debug: print initializer node type
-        std::cerr << "[DEBUG] codegenVarDecl: Initializer node type = " << static_cast<int>(stmt->initializer->type) << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] codegenVarDecl: Initializer node type = " << static_cast<int>(stmt->initializer->type) << std::endl;
         
         // Generate code for initializer expression
         llvm::Value* init_value = expr_codegen->codegenExpressionNode(stmt->initializer.get(), expr_codegen);
@@ -677,7 +678,7 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
             throw std::runtime_error("Failed to generate code for initializer expression");
         }
         
-        std::cerr << "[DEBUG] codegenVarDecl: Initializer type for " << stmt->varName << " = ";
+        ARIA_DBG_STREAM << "[DEBUG] codegenVarDecl: Initializer type for " << stmt->varName << " = ";
         init_value->getType()->print(llvm::errs());
         std::cerr << ", expected type = ";
         var_type->print(llvm::errs());
@@ -692,7 +693,7 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
                 
                 // If target is LBIM type, promote the literal
                 if (struct_name.find("struct.int") == 0 || struct_name.find("struct.uint") == 0) {
-                    std::cerr << "[DEBUG] codegenVarDecl: Promoting literal to LBIM type " << struct_name << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] codegenVarDecl: Promoting literal to LBIM type " << struct_name << std::endl;
                     init_value = expr_codegen->promoteLiteralToLBIM(init_value, var_type);
                 }
             }
@@ -833,7 +834,7 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     llvm::Type* actual_return_type = return_type;
     if (stmt->isAsync) {
         actual_return_type = llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0);
-        std::cerr << "[DEBUG] Changed return type to i8* for coroutine" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] Changed return type to i8* for coroutine" << std::endl;
     }
     
     // Build parameter types
@@ -1053,28 +1054,28 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
  * already created and type-checked in checkTypeDecl().
  */
 void StmtCodegen::codegenTypeDecl(TypeDeclStmt* stmt) {
-    std::cerr << "[DEBUG] codegenTypeDecl: " << stmt->typeName << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG] codegenTypeDecl: " << stmt->typeName << std::endl;
     
     // The struct was already registered during type checking
     // Just generate code for the methods
     
     // Generate func:create
     if (stmt->createFunc) {
-        std::cerr << "[DEBUG] Generating create function" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] Generating create function" << std::endl;
         auto createFunc = std::static_pointer_cast<FuncDeclStmt>(stmt->createFunc);
         codegenFuncDecl(createFunc.get());
     }
     
     // Generate func:destroy
     if (stmt->destroyFunc) {
-        std::cerr << "[DEBUG] Generating destroy function" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] Generating destroy function" << std::endl;
         auto destroyFunc = std::static_pointer_cast<FuncDeclStmt>(stmt->destroyFunc);
         codegenFuncDecl(destroyFunc.get());
     }
     
     // Generate all methods
     for (const auto& method : stmt->methods) {
-        std::cerr << "[DEBUG] Generating method" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG] Generating method" << std::endl;
         auto methodFunc = std::static_pointer_cast<FuncDeclStmt>(method);
         codegenFuncDecl(methodFunc.get());
     }
@@ -1203,7 +1204,7 @@ void StmtCodegen::codegenIf(IfStmt* stmt) {
         throw std::runtime_error("Failed to generate code for if condition");
     }
     
-    std::cerr << "[DEBUG] codegenIf: condition type = ";
+    ARIA_DBG_STREAM << "[DEBUG] codegenIf: condition type = ";
     cond_value->getType()->print(llvm::errs());
     std::cerr << ", isInt1 = " << (cond_value->getType() == llvm::Type::getInt1Ty(context));
     std::cerr << ", isIntegerTy = " << cond_value->getType()->isIntegerTy();
@@ -1219,14 +1220,14 @@ void StmtCodegen::codegenIf(IfStmt* stmt) {
         }
         // Compare against zero for integer types
         if (cond_value->getType() != llvm::Type::getInt1Ty(context) && cond_value->getType()->isIntegerTy()) {
-            std::cerr << "[DEBUG] codegenIf: Using ICmpNE for integer" << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG] codegenIf: Using ICmpNE for integer" << std::endl;
             cond_value = builder.CreateICmpNE(
                 cond_value,
                 llvm::ConstantInt::get(cond_value->getType(), 0),
                 "tobool"
             );
         } else if (cond_value->getType()->isFloatingPointTy()) {
-            std::cerr << "[DEBUG] codegenIf: Using FCmpONE for float" << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG] codegenIf: Using FCmpONE for float" << std::endl;
             // Compare against 0.0 for floating point types
             cond_value = builder.CreateFCmpONE(
                 cond_value,
@@ -1460,22 +1461,22 @@ void StmtCodegen::codegenFor(ForStmt* stmt) {
     std::string counter_type_name;
     bool has_tbb_counter = false;
     
-    std::cerr << "[TBB DEBUG] For loop - checking initializer\n";
-    std::cerr << "[TBB DEBUG]   Has initializer: " << (stmt->initializer != nullptr) << "\n";
+    ARIA_DBG_STREAM << "[TBB DEBUG] For loop - checking initializer\n";
+    ARIA_DBG_STREAM << "[TBB DEBUG]   Has initializer: " << (stmt->initializer != nullptr) << "\n";
     
     if (stmt->initializer && stmt->initializer->type == ASTNode::NodeType::VAR_DECL) {
         VarDeclStmt* init_decl = static_cast<VarDeclStmt*>(stmt->initializer.get());
         counter_var_name = init_decl->varName;
         counter_type_name = init_decl->typeName;
         
-        std::cerr << "[TBB DEBUG]   Counter var name: '" << counter_var_name << "'\n";
-        std::cerr << "[TBB DEBUG]   Counter type name: '" << counter_type_name << "'\n";
+        ARIA_DBG_STREAM << "[TBB DEBUG]   Counter var name: '" << counter_var_name << "'\n";
+        ARIA_DBG_STREAM << "[TBB DEBUG]   Counter type name: '" << counter_type_name << "'\n";
         
         // Check if counter is TBB type
         has_tbb_counter = (counter_type_name == "tbb8" || counter_type_name == "tbb16" ||
                           counter_type_name == "tbb32" || counter_type_name == "tbb64");
         
-        std::cerr << "[TBB DEBUG]   Is TBB counter: " << has_tbb_counter << "\n";
+        ARIA_DBG_STREAM << "[TBB DEBUG]   Is TBB counter: " << has_tbb_counter << "\n";
     }
     
     // Generate initialization statement (if present)
@@ -1502,19 +1503,19 @@ void StmtCodegen::codegenFor(ForStmt* stmt) {
     
     // TBB LOOP SAFETY (GAP_2 Fix): Check for ERR sentinel BEFORE user condition
     // This prevents infinite loops when counter overflows to ERR value
-    std::cerr << "[TBB DEBUG] In condition block - has_tbb_counter: " << has_tbb_counter << "\n";
-    std::cerr << "[TBB DEBUG]   Has condition: " << (stmt->condition != nullptr) << "\n";
+    ARIA_DBG_STREAM << "[TBB DEBUG] In condition block - has_tbb_counter: " << has_tbb_counter << "\n";
+    ARIA_DBG_STREAM << "[TBB DEBUG]   Has condition: " << (stmt->condition != nullptr) << "\n";
     
     if (has_tbb_counter && stmt->condition) {
-        std::cerr << "[TBB DEBUG] Entering TBB sentinel guard section\n";
-        std::cerr << "[TBB DEBUG]   Looking for counter: '" << counter_var_name << "'\n";
+        ARIA_DBG_STREAM << "[TBB DEBUG] Entering TBB sentinel guard section\n";
+        ARIA_DBG_STREAM << "[TBB DEBUG]   Looking for counter: '" << counter_var_name << "'\n";
         
         // Get counter variable alloca
         auto counter_it = named_values.find(counter_var_name);
-        std::cerr << "[TBB DEBUG]   Found in named_values: " << (counter_it != named_values.end()) << "\n";
+        ARIA_DBG_STREAM << "[TBB DEBUG]   Found in named_values: " << (counter_it != named_values.end()) << "\n";
         
         if (counter_it != named_values.end()) {
-            std::cerr << "[TBB DEBUG] Injecting sentinel guard!\n";
+            ARIA_DBG_STREAM << "[TBB DEBUG] Injecting sentinel guard!\n";
             
             llvm::Value* counter_alloca = counter_it->second;
             
@@ -1546,7 +1547,7 @@ void StmtCodegen::codegenFor(ForStmt* stmt) {
             // Continue in user condition block
             builder.SetInsertPoint(user_cond_block);
         } else {
-            std::cerr << "[TBB DEBUG] Counter NOT found in named_values!\n";
+            ARIA_DBG_STREAM << "[TBB DEBUG] Counter NOT found in named_values!\n";
         }
     }
     
