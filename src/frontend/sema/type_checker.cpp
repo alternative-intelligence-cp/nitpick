@@ -1386,12 +1386,12 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         bool exoticIntLiteralComparison = false;
         
         // Check if left is exotic type and right is int32 (literal type)
-        if ((isBalancedType(leftType) || isNumericExoticType(leftType)) && 
+        if ((isBalancedType(leftType) || isNumericExoticType(leftType) || isTBBType(leftType)) && 
             (rightType->toString() == "int32" || rightType->toString() == "int64")) {
             exoticIntLiteralComparison = true;
         }
         // Check if right is exotic type and left is int32 (literal type)
-        else if ((isBalancedType(rightType) || isNumericExoticType(rightType)) && 
+        else if ((isBalancedType(rightType) || isNumericExoticType(rightType) || isTBBType(rightType)) && 
                  (leftType->toString() == "int32" || leftType->toString() == "int64")) {
             exoticIntLiteralComparison = true;
         }
@@ -6690,8 +6690,8 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
                     return typeSystem->getErrorType();
                 }
             }
-            // Return pointer to error (void* in C, int64 in Aria IR)
-            return typeSystem->getPrimitiveType("int64");
+            // Error code type: int32 (matches failsafe tbb32 convention and fail() error codes)
+            return typeSystem->getPrimitiveType("int32");
         }
         
         // Invalid member
@@ -6918,11 +6918,27 @@ Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
         ResultType* resType = static_cast<ResultType*>(resultType);
         valueType = resType->getValueType();
         
-        // Check that default value type matches the unwrapped value type
+        // Fits-or-fails for unsuffixed integer literals:
+        // If the default is an unsuffixed integer literal (defaults to int32),
+        // check if the value fits in the Result's value type (e.g., tbb32).
+        // This mirrors how variable declarations handle `tbb32:x = 42;`.
         if (!defaultType->isAssignableTo(valueType) && !canCoerce(defaultType, valueType)) {
-            addError("Unwrap operator (" + opName + ") default value type '" + defaultType->toString() + 
-                    "' does not match result value type '" + valueType->toString() + "'", expr);
-            return typeSystem->getErrorType();
+            bool literalRetyped = false;
+            if (expr->defaultValue->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(expr->defaultValue.get());
+                if (lit->explicit_type.empty() && std::holds_alternative<int64_t>(lit->value)) {
+                    int64_t val = std::get<int64_t>(lit->value);
+                    if (integerFitsInType(val, valueType->toString())) {
+                        defaultType = valueType;
+                        literalRetyped = true;
+                    }
+                }
+            }
+            if (!literalRetyped) {
+                addError("Unwrap operator (" + opName + ") default value type '" + defaultType->toString() + 
+                        "' does not match result value type '" + valueType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
         }
     } 
     else if (resultType->getKind() == TypeKind::POINTER) {
@@ -8104,8 +8120,9 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                      "$$i/$$m must reference an existing variable", stmt);
             return;
         }
-        // Borrow initializer must be a variable reference (not a literal or expression)
-        if (stmt->initializer->type != ASTNode::NodeType::IDENTIFIER) {
+        // Borrow initializer must be a variable reference or struct field access
+        if (stmt->initializer->type != ASTNode::NodeType::IDENTIFIER &&
+            stmt->initializer->type != ASTNode::NodeType::MEMBER_ACCESS) {
             addError("Borrow variable '" + stmt->varName + "' must borrow from a named variable, "
                      "not a literal or expression", stmt);
             return;

@@ -906,11 +906,23 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
         // v0.2.35: $$i/$$m qualifier-based borrows
         // ====================================================================
         if (stmt->isBorrowImm || stmt->isBorrowMut) {
-            // Extract borrow target from initializer (must be an identifier —
-            // validated by type checker, but guard defensively)
+            // Extract borrow target from initializer (must be an identifier or
+            // member access — validated by type checker, but guard defensively)
+            std::string borrow_target;
             if (stmt->initializer->type == ASTNode::NodeType::IDENTIFIER) {
-                std::string borrow_target = 
+                borrow_target = 
                     static_cast<IdentifierExpr*>(stmt->initializer.get())->name;
+            } else if (stmt->initializer->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                // For struct field borrows (e.g., data.temperature),
+                // borrow from the base object
+                MemberAccessExpr* member =
+                    static_cast<MemberAccessExpr*>(stmt->initializer.get());
+                if (member->object && member->object->type == ASTNode::NodeType::IDENTIFIER) {
+                    borrow_target =
+                        static_cast<IdentifierExpr*>(member->object.get())->name;
+                }
+            }
+            if (!borrow_target.empty()) {
                 bool is_mutable = stmt->isBorrowMut;
                 recordBorrow(borrow_target, stmt->varName, is_mutable, stmt);
             }

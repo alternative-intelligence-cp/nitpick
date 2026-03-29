@@ -10228,9 +10228,12 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
             return result;
         }
         else if (expr->member == "error") {
-            // Field 1: error (void*)
+            // Field 1: error (stored as void* via inttoptr in fail())
+            // Convert back to int32 error code (matches failsafe tbb32 convention)
             std::cerr << "[DEBUG_RESULT_ACCESS] Extracting error (field 1)" << std::endl;
-            llvm::Value* result = builder.CreateExtractValue(objectVal, 1, "error");
+            llvm::Value* errorPtr = builder.CreateExtractValue(objectVal, 1, "error_ptr");
+            // Convert ptr directly to int32 error code
+            llvm::Value* result = builder.CreatePtrToInt(errorPtr, builder.getInt32Ty(), "error_code");
             std::cerr << "[DEBUG_RESULT_ACCESS] Extracted value type: ";
             result->getType()->print(llvm::errs());
             std::cerr << std::endl;
