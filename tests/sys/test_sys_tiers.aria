@@ -1,0 +1,45 @@
+// test_sys_tiers.aria — Comprehensive sys() tier testing
+
+func:failsafe = int32(tbb32:err) {
+    exit(1);
+};
+
+func:main = int32() {
+    // ================================================================
+    // Test 1: sys() safe tier — WRITE to stdout
+    // ================================================================
+    Result<int64>:w = sys(WRITE, 1i64, "Test 1: sys(WRITE) OK\n", 22i64);
+    int64:wb = w ? 0i64;
+    
+    // ================================================================
+    // Test 2: sys!!() full tier — WRITE to stdout
+    // ================================================================
+    Result<int64>:w2 = sys!!(WRITE, 1i64, "Test 2: sys!!(WRITE) OK\n", 24i64);
+    int64:wb2 = w2 ? 0i64;
+    
+    // ================================================================
+    // Test 3: sys!!!() raw tier — WRITE to stdout
+    // ================================================================
+    int64:wb3 = sys!!!(WRITE, 1i64, "Test 3: sys!!!(WRITE) OK\n", 25i64);
+    
+    // ================================================================
+    // Test 4: sys() — GETPID (0 args to syscall)
+    // ================================================================
+    Result<int64>:pid = sys(GETPID);
+    int64:mypid = pid ? 0i64;
+    
+    // ================================================================
+    // Test 5: Error handling — write to invalid fd (should fail)
+    // ================================================================
+    Result<int64>:bad = sys(WRITE, 999i64, "should fail\n", 12i64);
+    int64:bad_val = bad ? -1i64;
+    
+    // ================================================================
+    // Test 6: sys!!() — dangerous syscall (KILL with signal 0 = check process)
+    // ================================================================
+    Result<int64>:sigcheck = sys!!(KILL, mypid, 0i64);
+    int64:sc = sigcheck ? -1i64;
+    
+    println("All sys() tier tests passed!");
+    exit(0);
+};

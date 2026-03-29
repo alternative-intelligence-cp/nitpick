@@ -312,6 +312,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_EQUAL_EQUAL: return "EQUAL_EQUAL";
         case TokenType::TOKEN_BANG_EQUAL: return "BANG_EQUAL";
         case TokenType::TOKEN_QUESTION_BANG: return "QUESTION_BANG";
+        case TokenType::TOKEN_BANG_BANG: return "BANG_BANG";
         case TokenType::TOKEN_BANG_BANG_BANG: return "BANG_BANG_BANG";
         case TokenType::TOKEN_LESS: return "LESS";
         case TokenType::TOKEN_LESS_EQUAL: return "LESS_EQUAL";

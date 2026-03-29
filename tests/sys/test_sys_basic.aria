@@ -1,0 +1,36 @@
+// test_sys.aria — Test sys() / sys!!() / sys!!!() tiered syscall builtin
+
+func:failsafe = int32(tbb32:err) {
+    exit(1);
+};
+
+func:main = int32() {
+    // ================================================================
+    // Test 1: sys() safe tier — WRITE syscall
+    // write(fd=1, buf="Hello from sys()!\n", len=18)
+    // ================================================================
+    Result<int64>:w1 = sys(WRITE, 1i64, "Hello from sys()!\n", 18i64);
+    int64:bytes1 = w1 ? -1i64;
+    
+    // ================================================================
+    // Test 2: sys!!!() raw tier — WRITE syscall
+    // Returns bare int64 (no Result wrapping)
+    // ================================================================
+    int64:bytes2 = sys!!!(WRITE, 1i64, "Hello from sys!!!()!\n", 21i64);
+
+    // ================================================================
+    // Test 3: sys!!() full tier — GETPID 
+    // ================================================================
+    Result<int64>:pid_r = sys!!(GETPID);
+    int64:pid = pid_r ? -1i64;
+
+    // ================================================================
+    // Test 4: sys() safe tier — GETPID
+    // ================================================================
+    Result<int64>:pid2_r = sys(GETPID);
+    int64:pid2 = pid2_r ? -1i64;
+
+    println("sys() tests completed successfully!");
+    
+    exit(0);
+};

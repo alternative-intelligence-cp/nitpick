@@ -10,6 +10,7 @@
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/InlineAsm.h>
 #include <llvm/IR/Intrinsics.h>  // Phase 4.5.3: Coroutine intrinsics for await
 #include <llvm/Support/raw_ostream.h>
 #include <stdexcept>
@@ -4438,6 +4439,256 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // stddbg_write(string) -> int64
     if (callee_ident->name == "stddbg_write") {
         return create_stream_write("stddbg_write", "aria_stddbg_write");
+    }
+    
+    // ====================================================================
+    // SYSCALL BUILTINS — sys() / sys!!() / sys!!!()
+    // Emits x86-64 Linux syscall via LLVM inline assembly.
+    // ====================================================================
+    if (callee_ident->name == "sys" || callee_ident->name == "sys!!" || callee_ident->name == "sys!!!") {
+        bool isRaw = (callee_ident->name == "sys!!!");
+        
+        // Map syscall name constants to x86-64 Linux syscall numbers
+        static const std::unordered_map<std::string, int64_t> syscallNumbers = {
+            // File I/O
+            {"READ", 0}, {"WRITE", 1}, {"OPEN", 2}, {"CLOSE", 3},
+            {"STAT", 4}, {"FSTAT", 5}, {"LSTAT", 6},
+            {"LSEEK", 8}, {"PREAD64", 17}, {"PWRITE64", 18},
+            {"READV", 19}, {"WRITEV", 20},
+            {"ACCESS", 21}, {"PIPE2", 293},
+            {"OPENAT", 257}, {"NEWFSTATAT", 262},
+            // Memory
+            {"MMAP", 9}, {"MPROTECT", 10}, {"MUNMAP", 11}, {"BRK", 12}, {"MREMAP", 25},
+            {"MADVISE", 28}, {"MINCORE", 27},
+            {"MLOCK", 149}, {"MUNLOCK", 150}, {"MLOCKALL", 151}, {"MUNLOCKALL", 152},
+            // Directory
+            {"GETDENTS64", 217}, {"GETCWD", 79}, {"CHDIR", 80},
+            {"MKDIR", 83}, {"RMDIR", 84}, {"RENAME", 82},
+            {"RENAMEAT2", 316}, {"UNLINK", 87}, {"UNLINKAT", 263},
+            {"SYMLINK", 88}, {"READLINK", 89},
+            {"MKDIRAT", 258}, {"MKNODAT", 259}, {"SYMLINKAT", 265}, {"READLINKAT", 267}, {"LINKAT", 265},
+            // File metadata
+            {"FCHMOD", 91}, {"FCHOWN", 93}, {"UTIMENSAT", 280}, {"FACCESSAT", 269},
+            {"CHMOD", 90}, {"CHOWN", 92}, {"LCHOWN", 94},
+            {"LINK", 86}, {"TRUNCATE", 76}, {"FTRUNCATE", 77},
+            {"STATX", 332},
+            // Process info
+            {"GETPID", 39}, {"GETPPID", 110}, {"GETTID", 186},
+            {"GETUID", 102}, {"GETGID", 104}, {"GETEUID", 107}, {"GETEGID", 108},
+            // Time
+            {"CLOCK_GETTIME", 228}, {"CLOCK_NANOSLEEP", 230}, {"NANOSLEEP", 35},
+            // Networking
+            {"SOCKET", 41}, {"BIND", 49}, {"LISTEN", 50}, {"ACCEPT4", 288},
+            {"CONNECT", 42}, {"SEND", 44}, {"RECV", 45},
+            {"SENDTO", 44}, {"RECVFROM", 45},
+            {"SETSOCKOPT", 54}, {"GETSOCKOPT", 55}, {"SHUTDOWN", 48},
+            {"SENDMSG", 46}, {"RECVMSG", 47}, {"SENDMMSG", 307}, {"RECVMMSG", 299},
+            // Polling
+            {"POLL", 7}, {"PPOLL", 271},
+            {"EPOLL_CREATE1", 291}, {"EPOLL_CTL", 233}, {"EPOLL_WAIT", 232},
+            {"SELECT", 23}, {"PSELECT6", 270},
+            // Pipe / IPC / fd ops
+            {"DUP", 32}, {"DUP2", 33}, {"DUP3", 292}, {"EVENTFD2", 290},
+            {"IOCTL", 16}, {"FCNTL", 72}, {"FLOCK", 73}, {"FSYNC", 74}, {"FDATASYNC", 75},
+            {"GETRANDOM", 318},
+            // Dangerous (require sys!! or sys!!!)
+            {"EXIT", 60}, {"EXIT_GROUP", 231},
+            {"KILL", 62}, {"TKILL", 200}, {"TGKILL", 234},
+            {"EXECVE", 59}, {"EXECVEAT", 322},
+            {"FORK", 57}, {"CLONE", 56}, {"CLONE3", 435}, {"VFORK", 58},
+            {"PTRACE", 101},
+            {"MOUNT", 165}, {"UMOUNT2", 166},
+            {"REBOOT", 169},
+            {"SETUID", 105}, {"SETGID", 106}, {"SETREUID", 113}, {"SETREGID", 114},
+            {"SETEUID", 117}, {"SETEGID", 119},
+            {"INIT_MODULE", 175}, {"DELETE_MODULE", 176}, {"FINIT_MODULE", 313},
+            {"WAIT4", 61}, {"WAITID", 247},
+            {"PRCTL", 157}, {"ARCH_PRCTL", 158},
+            {"SECCOMP", 317}, {"USERFAULTFD", 323}, {"PERF_EVENT_OPEN", 298},
+            {"SIGNALFD4", 289}, {"TIMERFD_CREATE", 283},
+            {"TIMERFD_SETTIME", 286}, {"TIMERFD_GETTIME", 287},
+            {"RT_SIGACTION", 13}, {"RT_SIGPROCMASK", 14},
+            {"RT_SIGRETURN", 15}, {"RT_SIGPENDING", 127}, {"SIGALTSTACK", 131},
+            {"SETXATTR", 188}, {"GETXATTR", 191}, {"REMOVEXATTR", 197},
+            {"LSETXATTR", 189}, {"LGETXATTR", 192}, {"LREMOVEXATTR", 198},
+            {"FSETXATTR", 190}, {"FGETXATTR", 193}, {"FREMOVEXATTR", 199},
+            {"LISTXATTR", 194}, {"LLISTXATTR", 195}, {"FLISTXATTR", 196},
+            {"IO_URING_SETUP", 425}, {"IO_URING_ENTER", 426}, {"IO_URING_REGISTER", 427},
+            {"SCHED_YIELD", 24}, {"SCHED_GETAFFINITY", 204}, {"SCHED_SETAFFINITY", 203},
+            {"FUTEX", 202},
+            {"SET_TID_ADDRESS", 218}, {"SET_ROBUST_LIST", 273}, {"GET_ROBUST_LIST", 274},
+            {"SYSINFO", 99}, {"UNAME", 63},
+            {"GETRLIMIT", 97}, {"SETRLIMIT", 160}, {"PRLIMIT64", 302},
+            {"GETRUSAGE", 98}, {"SYSLOG", 103},
+            {"INOTIFY_INIT1", 294}, {"INOTIFY_ADD_WATCH", 254}, {"INOTIFY_RM_WATCH", 255}
+        };
+        
+        // x86-64 register names for syscall arguments (after rax for the number)
+        static const char* const regConstraints[] = {
+            "{rdi}", "{rsi}", "{rdx}", "{r10}", "{r8}", "{r9}"
+        };
+        
+        size_t numArgs = expr->arguments.size();  // includes syscall number
+        size_t numSyscallArgs = numArgs - 1;      // actual args to the syscall
+        
+        // --- Resolve syscall number ---
+        llvm::Value* syscallNr = nullptr;
+        IdentifierExpr* syscallId = dynamic_cast<IdentifierExpr*>(expr->arguments[0].get());
+        if (syscallId) {
+            auto it = syscallNumbers.find(syscallId->name);
+            if (it != syscallNumbers.end()) {
+                syscallNr = builder.getInt64(it->second);
+            }
+        }
+        if (!syscallNr) {
+            // Not a named constant — evaluate as expression
+            syscallNr = codegenExpressionNode(expr->arguments[0].get(), this);
+            if (!syscallNr) {
+                throw std::runtime_error("Failed to generate syscall number");
+            }
+            // Cast to i64 if needed
+            if (syscallNr->getType() != builder.getInt64Ty()) {
+                if (syscallNr->getType()->isIntegerTy()) {
+                    syscallNr = builder.CreateZExtOrTrunc(syscallNr, builder.getInt64Ty(), "sys_nr_cast");
+                } else {
+                    throw std::runtime_error("Syscall number must be an integer type");
+                }
+            }
+        }
+        
+        // --- Evaluate and convert syscall arguments to i64 ---
+        std::vector<llvm::Value*> syscallArgVals;
+        for (size_t i = 1; i < numArgs; i++) {
+            llvm::Value* argVal = codegenExpressionNode(expr->arguments[i].get(), this);
+            if (!argVal) {
+                throw std::runtime_error("Failed to generate syscall argument " + std::to_string(i));
+            }
+            
+            // Convert to i64 for register passing
+            if (argVal->getType()->isIntegerTy(64)) {
+                // Already i64
+            } else if (argVal->getType()->isIntegerTy()) {
+                argVal = builder.CreateZExt(argVal, builder.getInt64Ty(), "sys_arg_zext");
+            } else if (llvm::isa<llvm::GlobalVariable>(argVal)) {
+                // String literal: GlobalVariable pointing to struct.AriaString
+                // Extract the char* data field via GEP + Load
+                llvm::GlobalVariable* gv = llvm::cast<llvm::GlobalVariable>(argVal);
+                llvm::Type* gvType = gv->getValueType();
+                if (gvType->isStructTy()) {
+                    llvm::Value* dataGep = builder.CreateStructGEP(
+                        gvType, argVal, 0, "sys_str_data_ptr");
+                    llvm::Value* dataPtr = builder.CreateLoad(
+                        llvm::PointerType::get(context, 0), dataGep, "sys_str_data");
+                    argVal = builder.CreatePtrToInt(dataPtr, builder.getInt64Ty(), "sys_str_int");
+                } else {
+                    argVal = builder.CreatePtrToInt(argVal, builder.getInt64Ty(), "sys_gv_int");
+                }
+            } else if (argVal->getType()->isPointerTy()) {
+                // Could be AriaString* (string variable) or raw pointer
+                // Try to load as AriaString struct and extract data
+                llvm::StructType* ariaStringType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                if (ariaStringType) {
+                    // Check if this looks like a string variable by trying AriaString load
+                    // For non-string pointers (wild T@), just pass the pointer as-is
+                    // Heuristic: if the type checker said this arg is a string, treat as AriaString
+                    llvm::Value* strStruct = builder.CreateLoad(ariaStringType, argVal, "sys_str_struct");
+                    llvm::Value* dataPtr = builder.CreateExtractValue(strStruct, 0, "sys_str_data");
+                    argVal = builder.CreatePtrToInt(dataPtr, builder.getInt64Ty(), "sys_strvar_int");
+                } else {
+                    // Raw pointer — just convert to int
+                    argVal = builder.CreatePtrToInt(argVal, builder.getInt64Ty(), "sys_ptr_int");
+                }
+            } else if (argVal->getType()->isStructTy()) {
+                // Struct value (e.g., AriaString by value) — extract element 0
+                argVal = builder.CreateExtractValue(argVal, {0}, "sys_struct_ptr");
+                if (argVal->getType()->isPointerTy()) {
+                    argVal = builder.CreatePtrToInt(argVal, builder.getInt64Ty(), "sys_struct_int");
+                } else if (!argVal->getType()->isIntegerTy(64)) {
+                    argVal = builder.CreateZExtOrTrunc(argVal, builder.getInt64Ty(), "sys_struct_cast");
+                }
+            } else {
+                throw std::runtime_error("sys() argument " + std::to_string(i + 1) +
+                                         ": unsupported type for syscall register");
+            }
+            syscallArgVals.push_back(argVal);
+        }
+        
+        // --- Build inline asm for the syscall instruction ---
+        // x86-64 syscall ABI:
+        //   rax = syscall number
+        //   rdi = arg1, rsi = arg2, rdx = arg3, r10 = arg4, r8 = arg5, r9 = arg6
+        //   return in rax
+        //   rcx and r11 are clobbered by kernel
+        
+        // Build function type: i64(i64 nr, i64 a1, i64 a2, ...) 
+        std::vector<llvm::Type*> asmParamTypes(1 + numSyscallArgs, builder.getInt64Ty());
+        llvm::FunctionType* asmFuncType = llvm::FunctionType::get(
+            builder.getInt64Ty(), asmParamTypes, false);
+        
+        // Build constraint string
+        std::string constraints = "={rax},{rax}";
+        for (size_t i = 0; i < numSyscallArgs; i++) {
+            constraints += ",";
+            constraints += regConstraints[i];
+        }
+        constraints += ",~{rcx},~{r11},~{memory}";
+        
+        llvm::InlineAsm* sysAsm = llvm::InlineAsm::get(
+            asmFuncType,
+            "syscall",
+            constraints,
+            /*hasSideEffects=*/true,
+            /*isAlignStack=*/false,
+            llvm::InlineAsm::AD_ATT
+        );
+        
+        // Build call arguments: [syscall_nr, arg1, arg2, ...]
+        std::vector<llvm::Value*> asmArgs;
+        asmArgs.push_back(syscallNr);
+        asmArgs.insert(asmArgs.end(), syscallArgVals.begin(), syscallArgVals.end());
+        
+        llvm::Value* rawResult = builder.CreateCall(asmFuncType, sysAsm, asmArgs, "syscall_ret");
+        
+        // --- Wrap return value ---
+        if (isRaw) {
+            // sys!!!() → return bare int64
+            return rawResult;
+        }
+        
+        // sys() and sys!!() → wrap in Result<int64>
+        // Result<int64> = { int64 value, ptr error, i8 is_error }
+        // If rawResult >= 0: pass (value = rawResult, error = null, is_error = 0)
+        // If rawResult < 0:  fail (value = 0, error = inttoptr(-rawResult), is_error = 1)
+        
+        llvm::Type* i64Ty = builder.getInt64Ty();
+        llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+        llvm::Type* i8Ty = builder.getInt8Ty();
+        
+        llvm::StructType* resultTy = llvm::StructType::get(context, {i64Ty, ptrTy, i8Ty});
+        
+        // Check: rawResult < 0 (indicates error, -errno)
+        llvm::Value* isNeg = builder.CreateICmpSLT(rawResult, builder.getInt64(0), "sys_is_err");
+        
+        // Compute negated value for error code
+        llvm::Value* negResult = builder.CreateNeg(rawResult, "sys_neg_errno");
+        llvm::Value* errPtr = builder.CreateIntToPtr(negResult, ptrTy, "sys_err_ptr");
+        llvm::Value* nullPtr = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(ptrTy));
+        
+        // Select values based on error condition
+        llvm::Value* val = builder.CreateSelect(isNeg, builder.getInt64(0), rawResult, "sys_val");
+        llvm::Value* err = builder.CreateSelect(isNeg, errPtr, nullPtr, "sys_err");
+        llvm::Value* flag = builder.CreateSelect(isNeg,
+            llvm::ConstantInt::get(i8Ty, 1),
+            llvm::ConstantInt::get(i8Ty, 0),
+            "sys_flag");
+        
+        // Build the Result struct
+        llvm::Value* result = llvm::UndefValue::get(resultTy);
+        result = builder.CreateInsertValue(result, val, 0, "sys_result.val");
+        result = builder.CreateInsertValue(result, err, 1, "sys_result.err");
+        result = builder.CreateInsertValue(result, flag, 2, "sys_result.is_error");
+        
+        return result;
     }
     
     // Helper to get or declare aria_string_from_cstr_simple

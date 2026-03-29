@@ -673,6 +673,37 @@ ASTNodePtr Parser::parsePrimary() {
             return std::make_shared<IdentifierExpr>(createFuncName, line, col);
         }
         
+        // Check for sys() / sys!!() / sys!!!() — tiered syscall builtin
+        if (lexeme == "sys") {
+            std::string calleeName = "sys";
+            
+            // Check for tier modifiers: !! (full) or !!! (raw)
+            if (check(TokenType::TOKEN_BANG_BANG_BANG)) {
+                advance(); // consume !!!
+                calleeName = "sys!!!";
+            } else if (check(TokenType::TOKEN_BANG_BANG)) {
+                advance(); // consume !!
+                calleeName = "sys!!";
+            }
+            
+            consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after " + calleeName);
+            
+            std::vector<ASTNodePtr> arguments;
+            if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+                do {
+                    ASTNodePtr arg = parseExpression();
+                    if (arg) {
+                        arguments.push_back(arg);
+                    }
+                } while (match(TokenType::TOKEN_COMMA));
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after " + calleeName + " arguments");
+            
+            auto identExpr = std::make_shared<IdentifierExpr>(calleeName, line, col);
+            return std::make_shared<CallExpr>(identExpr, arguments, line, col);
+        }
+        
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
     }
     

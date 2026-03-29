@@ -438,11 +438,7 @@ void Lexer::scanToken() {
                 if (match('!')) {
                     addToken(TokenType::TOKEN_BANG_BANG_BANG);  // !!!
                 } else {
-                    // Just !!, but that's not a valid token anymore
-                    // This would be an error, but let parser handle it
-                    error("Unexpected '!!' - did you mean '!!!' for failsafe call?");
-                    addToken(TokenType::TOKEN_BANG);
-                    addToken(TokenType::TOKEN_BANG);
+                    addToken(TokenType::TOKEN_BANG_BANG);  // !! (sys!! modifier)
                 }
             } else if (match('=')) {
                 addToken(TokenType::TOKEN_BANG_EQUAL);

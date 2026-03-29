@@ -1,0 +1,11 @@
+// test_sys_safety.aria — Verify safe tier rejects dangerous syscalls
+
+func:failsafe = int32(tbb32:err) {
+    exit(1);
+};
+
+func:main = int32() {
+    // This should be a compile error: FORK is not in the safe set
+    Result<int64>:pid = sys(FORK);
+    exit(0);
+};

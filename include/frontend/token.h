@@ -263,6 +263,7 @@ enum class TokenType {
     TOKEN_OR_OR,        // ||
     TOKEN_BANG,         // !
     TOKEN_QUESTION_BANG,// ?! - emphatic unwrap operator
+    TOKEN_BANG_BANG,    // !! - sys!! full-tier syscall modifier
     TOKEN_BANG_BANG_BANG,// !!! - failsafe call operator
     
     // ========================================================================
