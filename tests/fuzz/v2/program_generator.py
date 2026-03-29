@@ -83,6 +83,7 @@ class AriaGenerator:
             'string_interp': self._gen_string_interp,
             'multi_struct': self._gen_multi_struct,
             'runtime_check': self._gen_runtime_check,
+            'syscall': self._gen_syscall,
         }
         fn = dispatch.get(strategy)
         if fn is None:
@@ -559,6 +560,124 @@ class AriaGenerator:
                 f"    }} else {{\n"
                 f"        result = b;\n"
                 f"    }}\n"
+                f"    exit(0);\n"
+                f"}};\n\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+            )
+
+        return prog
+
+    def _gen_syscall(self) -> str:
+        """Test sys() tiered syscall system — safe, full, and raw tiers."""
+        # Only use syscalls that are safe to execute in a fuzzer environment
+        safe_noarg = ['GETPID', 'GETPPID', 'GETTID', 'GETUID', 'GETGID', 'GETEUID', 'GETEGID']
+        full_noarg = ['GETPID', 'GETPPID', 'GETTID', 'GETUID', 'GETGID']
+
+        variant = random.choice([
+            'safe_noarg',
+            'safe_write',
+            'safe_multi',
+            'full_noarg',
+            'raw_noarg',
+            'result_unwrap',
+            'wrapper_func',
+        ])
+
+        if variant == 'safe_noarg':
+            sc = random.choice(safe_noarg)
+            prog = (
+                f'use "sys.aria".*;\n\n'
+                f"func:main = int32() {{\n"
+                f"    Result<int64>:r = sys({sc});\n"
+                f"    int64:val = r ? -1i64;\n"
+                f"    exit(0);\n"
+                f"}};\n\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+            )
+
+        elif variant == 'safe_write':
+            msg = f"fuzz_{random.randint(0, 9999)}"
+            prog = (
+                f'use "sys.aria".*;\n\n'
+                f"func:main = int32() {{\n"
+                f'    Result<int64>:w = sys(WRITE, 1i64, "{msg}\\n", {len(msg) + 1}i64);\n'
+                f"    int64:bytes = w ? 0i64;\n"
+                f"    exit(0);\n"
+                f"}};\n\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+            )
+
+        elif variant == 'safe_multi':
+            calls = random.sample(safe_noarg, min(3, len(safe_noarg)))
+            body = ""
+            for i, sc in enumerate(calls):
+                body += f"    Result<int64>:r{i} = sys({sc});\n"
+                body += f"    int64:v{i} = r{i} ? -1i64;\n"
+            prog = (
+                f'use "sys.aria".*;\n\n'
+                f"func:main = int32() {{\n"
+                f"{body}"
+                f"    exit(0);\n"
+                f"}};\n\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+            )
+
+        elif variant == 'full_noarg':
+            sc = random.choice(full_noarg)
+            prog = (
+                f'use "sys.aria".*;\n\n'
+                f"func:main = int32() {{\n"
+                f"    Result<int64>:r = sys!!({sc});\n"
+                f"    int64:val = r ? -1i64;\n"
+                f"    exit(0);\n"
+                f"}};\n\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+            )
+
+        elif variant == 'raw_noarg':
+            sc = random.choice(full_noarg)
+            # For raw tier, use the syscall number directly
+            syscall_numbers = {
+                'GETPID': 39, 'GETPPID': 110, 'GETTID': 186,
+                'GETUID': 102, 'GETGID': 104,
+            }
+            nr = syscall_numbers[sc]
+            prog = (
+                f'use "sys.aria".*;\n\n'
+                f"func:main = int32() {{\n"
+                f"    int64:val = sys!!!({nr}i64);\n"
+                f"    exit(0);\n"
+                f"}};\n\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+            )
+
+        elif variant == 'result_unwrap':
+            sc = random.choice(safe_noarg)
+            prog = (
+                f'use "sys.aria".*;\n\n'
+                f"func:main = int32() {{\n"
+                f"    Result<int64>:r = sys({sc});\n"
+                f"    int64:val = r ? -1i64;\n"
+                f"    if (val > 0i64) {{\n"
+                f'        drop(println("ok"));\n'
+                f"    }}\n"
+                f"    exit(0);\n"
+                f"}};\n\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+            )
+
+        elif variant == 'wrapper_func':
+            sc = random.choice(safe_noarg)
+            prog = (
+                f'use "sys.aria".*;\n\n'
+                f"func:get_val = int64() {{\n"
+                f"    Result<int64>:r = sys({sc});\n"
+                f"    int64:val = r ? -1i64;\n"
+                f"    pass(val);\n"
+                f"}};\n\n"
+                f"func:main = int32() {{\n"
+                f"    Result<int64>:v = get_val();\n"
+                f"    int64:result = v ? 0i64;\n"
                 f"    exit(0);\n"
                 f"}};\n\n"
                 f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"

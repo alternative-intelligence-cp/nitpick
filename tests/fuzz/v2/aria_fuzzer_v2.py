@@ -134,6 +134,7 @@ class AriaFuzzer:
                     'string_interp',
                     'multi_struct',
                     'runtime_check',
+                    'syscall',
                 ])
                 program = self.generator.generate_program(strategy)
                 

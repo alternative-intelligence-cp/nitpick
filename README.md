@@ -82,6 +82,7 @@ The Aria compiler now includes **Z3 SMT solver integration** for static formal v
 - **Operators** — Full suite including `+` (string concatenation), `@` (address), `#` (pin), `->` (arrow), `..`/`...` (ranges)
 - **Template literals** — `` `&{variable}` `` string interpolation
 - **Six-stream I/O** — stdin/stdout/stderr/stddbg/stddati/stddato with runtime initialization, graceful fallback, `stdin_read_all()` and `stdin_read_line()` builtins
+- **sys() syscall interface** — Three-tier direct Linux syscall invocation (`sys`/`sys!!`/`sys!!!`) with compile-time safety whitelist, Result<int64> wrapping, and TOS escalation integration
 - **Traits** — Definition, implementation, UFCS on primitive types, `dyn Trait` vtable dispatch, trait bounds on generics
 - **Optional types** — `T?` with `??` nil-coalescing, `?.` safe navigation; working for primitives and custom types
 - **Async channels & actors** — Buffered/unbuffered/oneshot channels, actor spawn/send/stop, fan-out/fan-in/pipeline patterns
