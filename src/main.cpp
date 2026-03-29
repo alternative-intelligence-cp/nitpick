@@ -113,6 +113,7 @@ struct CompilerOptions {
     std::vector<std::string> link_args_ordered;  // All -L/-l/-Wl, in user's order
     bool build_library = false;               // -c: Compile library (no failsafe required)
     bool build_shared = false;                // --shared: Compile to shared library (.so)
+    bool build_static = false;                // --static: Link as static executable
     bool debug_info = false;                  // -g: Emit DWARF debug info
     
     // GPU/PTX Backend Options (NVIDIA CUDA)
@@ -183,6 +184,7 @@ void print_help() {
     std::cout << "  --tokens          Dump tokens and exit\n";
     std::cout << "  -c                Compile library (no failsafe required)\n";
     std::cout << "  --shared          Compile to shared library (.so)\n";
+    std::cout << "  --static          Link as fully static executable\n";
     std::cout << "  -g                Emit DWARF debug info (for aria-dap)\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
     std::cout << "  -v, --verbose     Verbose output\n\n";
@@ -214,6 +216,7 @@ void print_help() {
     std::cout << "  ariac program.aria -o program -lm -lpthread\n";
     std::cout << "  ariac program.aria --emit-llvm -o program.ll\n";
     std::cout << "  ariac mylib.aria --shared -o libmylib.so\n";
+    std::cout << "  ariac program.aria --static -o program -lm\n";
     std::cout << "  ariac test.aria --ast-dump\n\n";
     std::cout << "Examples (GPU):\n";
     std::cout << "  ariac physics.aria --emit-ptx -o physics.ptx\n";
@@ -309,6 +312,8 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
         } else if (arg == "--shared") {
             opts.build_shared = true;
             opts.build_library = true;  // shared implies library mode (no failsafe)
+        } else if (arg == "--static") {
+            opts.build_static = true;
         } else if (arg == "-g") {
             opts.debug_info = true;
         } else if (arg == "-E") {
@@ -1901,6 +1906,11 @@ bool link_executable(const std::string& object_file, const std::string& output_f
     // Add runtime library if found
     if (!runtime_lib.empty()) {
         link_args.push_back(runtime_lib);
+    }
+
+    // Static linking: produce a fully static executable
+    if (opts.build_static) {
+        link_args.push_back("-static");
     }
 
     // Link libatomic for C++11 atomic operations (required by aria_runtime atomics)
