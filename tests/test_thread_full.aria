@@ -7,8 +7,9 @@ use "atomic.aria".*;
 
 extern func:aria_shim_thread_sleep_ms = void(int64:ms);
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     println("FAILSAFE HIT");
+    exit(1);
 };
 
 // ============================================================================
@@ -362,7 +363,7 @@ func:main = int32() {
 
     if (passed == total) {
         println("ALL TESTS PASSED");
-        pass(0i32);
+        exit(0);
     }
     pass(1i32);
 };

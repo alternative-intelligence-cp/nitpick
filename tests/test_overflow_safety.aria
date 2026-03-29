@@ -1,8 +1,8 @@
 // Test: Integer overflow returns Unknown instead of wrapping
 // Layer 1 Safety: Arithmetic operations detect overflow
 
-func:failsafe = int32(int32:err_code) {
-    pass(err_code);
+func:failsafe = int32(tbb32:err) {
+    exit(1);
 };
 
 func:main = int32() {
@@ -14,7 +14,7 @@ func:main = int32() {
     
     if (ok(overflow_add) == 0i32) {
         // Success: overflow detected as Unknown
-        pass(0i32);
+        exit(0);
     }
     
     // Test 2: Subtraction underflow
@@ -23,7 +23,7 @@ func:main = int32() {
     
     if (ok(underflow_sub) == 0i32) {
         // Success: underflow detected as Unknown
-        pass(0i32);
+        exit(0);
     }
     
     // Test 3: Multiplication overflow
@@ -32,7 +32,7 @@ func:main = int32() {
     
     if (ok(overflow_mul) == 0i32) {
         // Success: overflow detected as Unknown
-        pass(0i32);
+        exit(0);
     }
     
     // Test 4: Compound assignment overflow
@@ -41,7 +41,7 @@ func:main = int32() {
     
     if (ok(val) == 0i32) {
         // Success: overflow in compound assignment detected
-        pass(0i32);
+        exit(0);
     }
     
     // If we reach here, one of the tests failed

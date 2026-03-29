@@ -88,9 +88,9 @@ extern "C" {
 
 // Version information
 #define ARIA_VERSION_MAJOR 0
-#define ARIA_VERSION_MINOR 2
-#define ARIA_VERSION_PATCH 45
-#define ARIA_VERSION "0.2.45"
+#define ARIA_VERSION_MINOR 3
+#define ARIA_VERSION_PATCH 0
+#define ARIA_VERSION "0.3.0"
 
 // Compiler options
 struct CompilerOptions {
@@ -110,8 +110,10 @@ struct CompilerOptions {
     std::vector<std::string> link_libraries;  // -l<lib> libraries to link
     std::vector<std::string> library_paths;   // -L<path> library search paths
     std::vector<std::string> linker_flags;    // -Wl,<option> flags passed to linker
+    std::vector<std::string> link_args_ordered;  // All -L/-l/-Wl, in user's order
     bool build_library = false;               // -c: Compile library (no failsafe required)
     bool build_shared = false;                // --shared: Compile to shared library (.so)
+    bool build_static = false;                // --static: Link as static executable
     bool debug_info = false;                  // -g: Emit DWARF debug info
     
     // GPU/PTX Backend Options (NVIDIA CUDA)
@@ -182,6 +184,7 @@ void print_help() {
     std::cout << "  --tokens          Dump tokens and exit\n";
     std::cout << "  -c                Compile library (no failsafe required)\n";
     std::cout << "  --shared          Compile to shared library (.so)\n";
+    std::cout << "  --static          Link as fully static executable\n";
     std::cout << "  -g                Emit DWARF debug info (for aria-dap)\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
     std::cout << "  -v, --verbose     Verbose output\n\n";
@@ -213,6 +216,7 @@ void print_help() {
     std::cout << "  ariac program.aria -o program -lm -lpthread\n";
     std::cout << "  ariac program.aria --emit-llvm -o program.ll\n";
     std::cout << "  ariac mylib.aria --shared -o libmylib.so\n";
+    std::cout << "  ariac program.aria --static -o program -lm\n";
     std::cout << "  ariac test.aria --ast-dump\n\n";
     std::cout << "Examples (GPU):\n";
     std::cout << "  ariac physics.aria --emit-ptx -o physics.ptx\n";
@@ -308,6 +312,8 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
         } else if (arg == "--shared") {
             opts.build_shared = true;
             opts.build_library = true;  // shared implies library mode (no failsafe)
+        } else if (arg == "--static") {
+            opts.build_static = true;
         } else if (arg == "-g") {
             opts.debug_info = true;
         } else if (arg == "-E") {
@@ -334,6 +340,7 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             // Link library: -lm, -lpthread, etc.
             if (arg.length() > 2) {
                 opts.link_libraries.push_back(arg.substr(2));
+                opts.link_args_ordered.push_back("-l" + arg.substr(2));
             } else {
                 std::cerr << "Error: -l requires a library name\n";
                 return false;
@@ -342,8 +349,10 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             // Library search path: -L/usr/local/lib, etc.
             if (arg.length() > 2) {
                 opts.library_paths.push_back(arg.substr(2));
+                opts.link_args_ordered.push_back("-L" + arg.substr(2));
             } else if (i + 1 < argc) {
                 opts.library_paths.push_back(argv[++i]);
+                opts.link_args_ordered.push_back("-L" + std::string(argv[i]));
             } else {
                 std::cerr << "Error: -L requires a path\n";
                 return false;
@@ -351,6 +360,7 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
         } else if (arg.substr(0, 4) == "-Wl,") {
             // Linker flag: -Wl,-rpath,/usr/local/lib, etc.
             opts.linker_flags.push_back(arg.substr(4));
+            opts.link_args_ordered.push_back("-Wl," + arg.substr(4));
         } else if (arg.substr(0, 2) == "-W") {
             // Warning flags: -Wall, -Werror, -Wunused-variable, -Wno-dead-code, etc.
             opts.warning_flags.push_back(arg);
@@ -1898,22 +1908,17 @@ bool link_executable(const std::string& object_file, const std::string& output_f
         link_args.push_back(runtime_lib);
     }
 
+    // Static linking: produce a fully static executable
+    if (opts.build_static) {
+        link_args.push_back("-static");
+    }
+
     // Link libatomic for C++11 atomic operations (required by aria_runtime atomics)
     link_args.push_back("-latomic");
 
-    // Add library search paths (-L)
-    for (const auto& lib_path : opts.library_paths) {
-        link_args.push_back("-L" + lib_path);
-    }
-
-    // Add libraries to link (-l)
-    for (const auto& lib : opts.link_libraries) {
-        link_args.push_back("-l" + lib);
-    }
-
-    // Add linker flags (-Wl,...)
-    for (const auto& flag : opts.linker_flags) {
-        link_args.push_back("-Wl," + flag);
+    // Add user link args in order (preserves -L/-l/-Wl, interleaving)
+    for (const auto& arg : opts.link_args_ordered) {
+        link_args.push_back(arg);
     }
 
     // Add output file
@@ -2157,17 +2162,9 @@ int main(int argc, char** argv) {
         link_args.push_back("-fPIC");
         link_args.push_back(obj_file);
 
-        // Add library search paths (-L)
-        for (const auto& lib_path : opts.library_paths) {
-            link_args.push_back("-L" + lib_path);
-        }
-        // Add libraries to link (-l)
-        for (const auto& lib : opts.link_libraries) {
-            link_args.push_back("-l" + lib);
-        }
-        // Add linker flags (-Wl,...)
-        for (const auto& flag : opts.linker_flags) {
-            link_args.push_back("-Wl," + flag);
+        // Add user link args in order (preserves -L/-l/-Wl, interleaving)
+        for (const auto& arg : opts.link_args_ordered) {
+            link_args.push_back(arg);
         }
         link_args.push_back("-o");
         link_args.push_back(opts.output_file);

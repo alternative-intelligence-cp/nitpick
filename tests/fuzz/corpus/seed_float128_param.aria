@@ -1,5 +1,5 @@
 // seed_pub_func_float64.aria — Bug #16-#19 patterns (float64 pub func)
-func:failsafe = NIL(int32:code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 pub func:compute = float64(float64:a, float64:b) {
     float64:r = a + b;
     pass(r);
@@ -12,5 +12,5 @@ pub func:classify = int64(float128:v) {
 func:main = int32() {
     float64:x = raw(compute(3.14, 2.72));
     int64:c = raw(classify(x));
-    pass(0i32);
+    exit(0);
 };

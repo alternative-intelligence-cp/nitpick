@@ -4,7 +4,7 @@
 // while loops and then used after loop exit. Tests that the post-loop
 // value is correct (final iteration's assignment, not the initial value).
 
-func:failsafe = NIL(int32:code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 pub func:sum_to_n = int64(int64:n) {
     int64:acc = 0i64;
@@ -138,7 +138,7 @@ func:main = int32() {
     drop(println("---"));
     if (failed == 0i64) {
         drop(println("PASS: all 6 while_loop_variable_reuse tests passed"));
-        pass(0i32);
+        exit(0);
     }
     drop(println("FAIL: some while_loop_variable_reuse tests failed"));
     pass(1i32);

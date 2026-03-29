@@ -8,9 +8,9 @@ use "string_convert.aria".*;
 
 extern func:system = int32(string:cmd);
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     drop(println("FAILSAFE triggered"));
-    pass(NIL);
+    exit(1);
 };
 
 func:main = int32() {
@@ -272,5 +272,5 @@ func:main = int32() {
     if (failed > 0i32) {
         pass(1i32);
     }
-    pass(0i32);
+    exit(0);
 };

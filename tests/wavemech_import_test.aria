@@ -7,7 +7,7 @@
 
 use "stdlib/wavemech.aria".*;
 
-func:failsafe = NIL(int32:err_code) { };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     // All wave.aria symbols should be available via wavemech's re-export chain
@@ -60,5 +60,5 @@ func:main = int32() {
     bool:noWaveErr = !wave_err_guard(wa);
     if (!noWaveErr) { pass(10i32); }
 
-    pass(0i32);
+    exit(0);
 };

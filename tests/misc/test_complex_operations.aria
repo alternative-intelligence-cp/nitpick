@@ -48,7 +48,7 @@ pub func<T>:complex_conjugate = complex<*T>(complex<*T>:z) {
     pass(result);
 };
 
-func:failsafe = NIL(int32:err_code) {};
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     // Test 1: complex<int32> basic operations
@@ -75,5 +75,5 @@ func:main = int32() {
     complex<flt64>:x_prod = raw(complex_mul(x1, x2));
 
     println("complex operations: all tests passed");
-    pass(0i32);
+    exit(0);
 };

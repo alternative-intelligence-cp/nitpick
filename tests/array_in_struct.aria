@@ -1,7 +1,7 @@
 // Correctness test: fixed-size array field inside a struct
 // Verifies: write and read back element values, multiple elements, nested member access
 
-func:failsafe = NIL(int32:err_code) { print("ERROR"); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 struct:Vec3 = {
     int32:x;
@@ -73,5 +73,5 @@ func:main = int32() {
     if (buf.data[1] != 20i32) { pass(18i32); }
     if (buf.data[3] != 40i32) { pass(19i32); }
 
-    pass(0i32);
+    exit(0);
 };

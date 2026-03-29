@@ -2,7 +2,7 @@
 // Previously, too many function calls in main caused crashes.
 // This test verifies 100+ calls in main compile and run correctly.
 
-func:failsafe = NIL(int32:code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:increment = NIL(int32:x) {
     pass(NIL);
@@ -109,5 +109,5 @@ func:main = int32() {
     drop(increment(98i32));
     drop(increment(99i32));
     drop(increment(100i32));
-    pass(0i32);
+    exit(0);
 };

@@ -27,13 +27,13 @@ func:main = int32() {
     
     // Check results: value should be 42, old should be 42, new_value should be 52
     if (value == 42 && old == 42 && new_value == 52) {
-        pass(0);  // SUCCESS
+        exit(0);  // SUCCESS
     } else {
         pass(1);  // FAIL
     }
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
-    pass(NIL);
+    exit(1);
 };

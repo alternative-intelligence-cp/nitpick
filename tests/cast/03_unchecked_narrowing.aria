@@ -26,9 +26,10 @@ func:test_unchecked_multi_step = int32() {
 func:main = int32() {
     int32:r1 = raw(test_unchecked_truncation());
     int32:r2 = raw(test_unchecked_multi_step());
-    pass(0i32);
+    exit(0);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

@@ -251,6 +251,8 @@ class AriaMutator:
 class AriaGenerator:
     """Generates random Aria programs."""
 
+    FAILSAFE = "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+
     def __init__(self, seed: Optional[int] = None):
         if seed is not None:
             random.seed(seed)
@@ -268,69 +270,70 @@ class AriaGenerator:
         return random.choice(generators)()
 
     def _gen_minimal(self) -> str:
-        return "func:main = int32() { return 0; };"
+        return self.FAILSAFE + "func:main = int32() { exit(0); };"
 
     def _gen_with_vars(self) -> str:
         types = ['int32', 'int64', 'bool', 'flt64']
         t = random.choice(types)
         val = random.randint(-1000, 1000)
-        return f"""func:main = int32() {{
+        return self.FAILSAFE + f"""func:main = int32() {{
     {t}:x = {val};
     print(x);
-    return 0;
+    exit(0);
 }};"""
 
     def _gen_with_loops(self) -> str:
         count = random.randint(1, 100)
-        return f"""func:main = int32() {{
+        return self.FAILSAFE + f"""func:main = int32() {{
     int64:i = 0;
     int64:count = {count};
     while (i < count) {{
         print(i);
         i = (i + 1);
     }}
-    return 0;
+    exit(0);
 }};"""
 
     def _gen_with_alloc(self) -> str:
         size = random.choice([1, 16, 64, 256, 1024, 4096, 65536, 1048576])
-        return f"""func:main = int32() {{
+        return self.FAILSAFE + f"""func:main = int32() {{
     int64:size = {size};
     wild int8@:ptr = alloc(size);
     free(ptr);
-    return 0;
+    exit(0);
 }};"""
 
     def _gen_with_functions(self) -> str:
-        return """func:helper = int64(int64:x) {
+        return self.FAILSAFE + """func:helper = int64(int64:x) {
     int64:result = (x * 2);
-    return result;
+    pass(result);
 };
 
 func:main = int32() {
     int64:val = 21;
     int64:result = helper(val);
     print(result);
-    return 0;
+    exit(0);
 };"""
 
     def _gen_adversarial(self) -> str:
         """Generate adversarial edge cases."""
+        fs = self.FAILSAFE
         cases = [
             # Empty function
-            "func:main = int32() { };",
-            # Missing return
-            "func:main = int32() { int32:x = 1; };",
+            fs + "func:main = int32() { };",
+            # Missing exit
+            fs + "func:main = int32() { int32:x = 1; };",
             # Recursive (could cause stack overflow)
-            "func:main = int32() { return main(); };",
+            fs + "func:main = int32() { return main(); };",
             # Very long line
-            "func:main = int32() { " + "int32:x = 1; " * 1000 + "return 0; };",
+            fs + "func:main = int32() { " + "int32:x = 1; " * 1000 + "exit(0); };",
             # Many parameters
-            "func:main = int32(" + ", ".join(f"int32:p{i}" for i in range(100)) + ") { return 0; };",
+            fs + "func:main = int32(" + ", ".join(f"int32:p{i}" for i in range(100)) + ") { exit(0); };",
             # Unicode identifier
-            "func:main = int32() { int32:变量 = 42; return 0; };",
+            fs + "func:main = int32() { int32:変量 = 42; exit(0); };",
             # Null byte in source
-            "func:main = int32() { int32:x\x00y = 1; return 0; };",
+            fs + "func:main = int32() { int32:x\x00y = 1; exit(0); };",
         ]
         return random.choice(cases)
 
@@ -369,8 +372,8 @@ class AriaFuzzer:
         if not self.corpus:
             # Add minimal seeds
             self.corpus = [
-                "func:main = int32() { return 0; };",
-                "func:main = int32() { int32:x = 42; print(x); return 0; };",
+                "func:failsafe = int32(tbb32:err) { exit(1); };\nfunc:main = int32() { exit(0); };",
+                "func:failsafe = int32(tbb32:err) { exit(1); };\nfunc:main = int32() { int32:x = 42; print(x); exit(0); };",
             ]
 
     def _hash_input(self, source: str) -> str:

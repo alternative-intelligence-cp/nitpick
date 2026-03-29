@@ -12,9 +12,10 @@ func:main = int32() {
     // Call the async function to prevent DCE
     // Note: Discarding result for now until async type system is complete
     drop(get_value());
-    pass(0i32);
+    exit(0);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

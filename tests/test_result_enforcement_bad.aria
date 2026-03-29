@@ -13,9 +13,10 @@ func:main = int32() {
     // Expected: ERROR - "Cannot access .value without checking .is_error first"
     int64:bad_value = r.value;  // Should fail compilation
     
-    pass(0i32);
+    exit(0);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

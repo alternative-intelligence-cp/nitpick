@@ -35,8 +35,9 @@ Rules<int32>:r_int32_special = {
     $ < 1000
 };
 
-func:failsafe = NIL() {
+func:failsafe = int32(tbb32:err) {
     drop(puts("FAILSAFE: limit violation detected!"));
+    exit(1);
 };
 
 func:main = int32() {

@@ -10,11 +10,12 @@ func:main = int32() {
     int32:x = 42;
     int32:y = raw(identity(x));  // Type inference: T = int32
     if (y == 42) {
-        pass(0);
+        exit(0);
     }
     pass(1);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

@@ -4,7 +4,7 @@ use "atomic.aria".*;
 
 extern func:aria_shim_thread_sleep_ms = void(int64:ms);
 
-func:failsafe = NIL(int32:err_code) { println("FAILSAFE HIT"); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     println("=== Lock-Free Data Structure Tests ===");
@@ -135,5 +135,5 @@ func:main = int32() {
     raw(RingBuf.destroy(rb));
     
     println("=== Lock-Free Tests Done ===");
-    pass(0i32);
+    exit(0);
 };

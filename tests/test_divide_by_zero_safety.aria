@@ -1,8 +1,8 @@
 // Test Layer 1 Safety: Divide-by-zero returns Unknown instead of crashing
 
 // Required failsafe function
-func:failsafe = int32(int32:err_code) {
-    pass(err_code);
+func:failsafe = int32(tbb32:err) {
+    exit(1);
 };
 
 func:main = int32() {
@@ -14,7 +14,7 @@ func:main = int32() {
     // ok() returns 0 for Unknown, 1 for valid values
     if (ok(result) == 0i32) {
         // Successfully caught the Unknown value!
-        pass(0i32);  // Test passes
+        exit(0);  // Test passes
     }
     
     // If we got here without checking, result would be Unknown (INT_MAX = 2147483647)

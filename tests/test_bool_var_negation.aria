@@ -16,7 +16,7 @@ func:main = int32() {
             // KNOWN_SUCCESS: can access .value
             int32:x = r.value;
             drop(x);
-            pass(0i32);
+            exit(0);
         },
         (true) {
             pass(1i32);
@@ -24,6 +24,7 @@ func:main = int32() {
     }
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

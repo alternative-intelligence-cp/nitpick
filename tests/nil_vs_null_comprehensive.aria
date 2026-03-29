@@ -11,8 +11,9 @@
 // semantics (NIL) separate from null-pointer semantics (NULL).
 // ============================================================================
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     print("Test failed with error");
+    exit(1);
 };
 
 func:returns_nil = int64?() {
@@ -125,5 +126,5 @@ func:main = int32() {
     print("\n=== All NIL vs NULL tests passed ===");
     print("NIL and NULL are properly distinguished and type-safe!");
     
-    pass(0);
+    exit(0);
 };

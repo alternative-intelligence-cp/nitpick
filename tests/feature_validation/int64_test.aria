@@ -6,9 +6,10 @@ func:test = int64() {
 
 func:main = int32() {
     int64:result = raw(test());
-    pass(0i32);  // was: pass(result)
+    exit(0);  // was: pass(result)
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

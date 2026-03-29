@@ -1,6 +1,6 @@
 // Test SIMD reduction without @ prefix syntax
 
-func:failsafe = NIL(int32:err_code) {};
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:test_reduction = int32(simd<int32, 4>:vec) {
     int32:result = simd_sum(vec);
@@ -14,5 +14,5 @@ func:test_broadcast_reduction = int32() {
 };
 
 func:main = int32() {
-    pass(0i32);
+    exit(0);
 };

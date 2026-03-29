@@ -21,7 +21,7 @@ extern func:ast_free = void(wild int8*:node);
 extern func:ast_node_type = int32(wild int8*:node);
 extern func:ast_node_child_count = int64(wild int8*:node);
 
-func:failsafe = NIL(int32:code) { };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:check = NIL(bool:cond, string:msg) {
     if (cond) {
@@ -476,5 +476,5 @@ func:main = int32() {
     println(" / 40");
     println("════════════════════════════════════════════════════");
 
-    pass(0i32);
+    exit(0);
 };

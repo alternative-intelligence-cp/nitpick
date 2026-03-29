@@ -17,7 +17,7 @@ func:main = int32() {
             // .error is null on success
             int64:errptr = r.error;
             drop(errptr);
-            pass(0i32);
+            exit(0);
         },
         (true) {
             pass(1i32);
@@ -25,6 +25,7 @@ func:main = int32() {
     }
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

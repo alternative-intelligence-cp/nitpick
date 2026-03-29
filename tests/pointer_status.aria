@@ -20,9 +20,10 @@ func:test_address_syntax = int32() {
 
 func:main = int32() {
     int32:r = raw(test_address_syntax());
-    pass(0);
+    exit(0);
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

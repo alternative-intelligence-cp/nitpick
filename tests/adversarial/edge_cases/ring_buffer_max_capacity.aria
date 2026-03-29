@@ -4,7 +4,7 @@
 // overwrites old entries, and indices cycle back to zero. Tests the exact
 // boundary conditions that occur in aria-decision-t and aria-entangled.
 
-func:failsafe = NIL(int32:code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 extern func:aria_alloc = wild int64*(int64:size);
 extern func:aria_free  = void(wild int64*:ptr);
@@ -160,7 +160,7 @@ func:main = int32() {
     drop(println("---"));
     if (failed == 0i64) {
         drop(println("PASS: all 8 ring_buffer tests passed"));
-        pass(0i32);
+        exit(0);
     }
     drop(println("FAIL: some ring_buffer tests failed"));
     pass(1i32);

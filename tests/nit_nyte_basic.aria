@@ -11,7 +11,7 @@
  *   18:    nit function parameter round-trip
  */
 
-func:failsafe = NIL(int32:err_code) { };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:nit_double = nit(nit:x) {
     pass(x + x);
@@ -117,5 +117,5 @@ func:main = int32() {
     nit:doubled = nit_double(two) ? two;
     if (doubled != 4) { pass(18i32); }
 
-    pass(0i32);
+    exit(0);
 };

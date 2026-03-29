@@ -1,7 +1,7 @@
 // Correctness test: nested structs (struct containing another struct)
 // Verifies: nested field write/read, multiple levels, independent instances
 
-func:failsafe = NIL(int32:err_code) { print("ERROR"); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 struct:Point2D = {
     int32:x;
@@ -65,5 +65,5 @@ func:main = int32() {
     if (r.origin.x != 99i32) { pass(14i32); }
     if (r.origin.y != 20i32) { pass(15i32); }  // sibling y unchanged
 
-    pass(0i32);
+    exit(0);
 };

@@ -40,7 +40,7 @@ pub func<T>:complex_mul = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     pass(result);
 };
 
-func:failsafe = NIL(int32:err_code) {};
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     // Test 1: Complex with int64
@@ -66,5 +66,5 @@ func:main = int32() {
     complex<flt64>:prod_f64 = raw(complex_mul(f1, f2));
 
     println("complex generic: all tests passed");
-    pass(0i32);
+    exit(0);
 };

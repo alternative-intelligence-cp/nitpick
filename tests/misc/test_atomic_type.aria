@@ -2,9 +2,9 @@
 // Demonstrates: atomic.load(order) → AtomicInt32_load(atomic, order)
 
 // Runtime extern functions (implemented in runtime/atomic.cpp)
-func:failsafe = NIL(int32:err_code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
-func:failsafe = NIL(int32:err_code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 
 extern func:aria_atomic_int32_create = wild int8*(int32:initial_value);
 extern func:aria_atomic_int32_destroy = NIL(wild int8*:atomic_ptr);
@@ -22,7 +22,7 @@ extern func:int64_to_ptr = wild int8*(int64:val);
 Type:AtomicInt32 = {
     // Constructor: Create atomic with initial value
 
-func:failsafe = NIL(int32:err_code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
     func:create = AtomicInt32(int32:initial) {
         wild int8->:raw_ptr = aria_atomic_int32_create(initial);
         AtomicInt32:atomic = AtomicInt32{ptr_val: ptr_to_int64(raw_ptr)};
@@ -91,7 +91,7 @@ func:main = int32() {
     
     // Verify: value should be 42, old should be 42, new_value should be 52
     if (value == 42i32 && old == 42i32 && new_value == 52i32) {
-        pass(0i32);  // SUCCESS
+        exit(0);  // SUCCESS
     } else {
         pass(1i32);  // FAIL
     }

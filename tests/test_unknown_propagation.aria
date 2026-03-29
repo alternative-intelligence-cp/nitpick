@@ -1,8 +1,8 @@
 // Test: Unknown propagation through arithmetic
 // Layer 1 Safety: Unknown values propagate until checked
 
-func:failsafe = int32(int32:err_code) {
-    pass(err_code);
+func:failsafe = int32(tbb32:err) {
+    exit(1);
 };
 
 func:main = int32() {
@@ -21,14 +21,14 @@ func:main = int32() {
         ok(result2) == 0i32 && 
         ok(result3) == 0i32) {
         // Success: Unknown propagated correctly
-        pass(0i32);
+        exit(0);
     }
     
     // Normal values should still work
     int32:normal = 5i32 + 3i32;  // 8
     if (ok(normal) == 1i32) {
         // Success: normal values are valid
-        pass(0i32);
+        exit(0);
     }
     
     // Test failed

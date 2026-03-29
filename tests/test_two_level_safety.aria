@@ -3,10 +3,10 @@
 // Demonstrates the two-level safety system
 
 // Mandatory failsafe function - global error handler
-func:failsafe = int32(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // In production: log error, cleanup resources, exit gracefully
     // For this test: just pass through the error code
-    pass(err_code);
+    exit(1);
 };
 
 // Simulate loading configuration
@@ -31,5 +31,5 @@ func:main = int32() {
     }
     
     // Normal operation
-    pass(0i32);
+    exit(0);
 };

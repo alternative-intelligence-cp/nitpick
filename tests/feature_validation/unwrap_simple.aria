@@ -41,13 +41,14 @@ func:main = int32() {
         Result<int32>:r2 = test_unwrap_expr();
         int32:result2 = r2 ? -1i32;
         if (result2 == 0i32) {
-            pass(0i32);  // All tests passed
+            exit(0);  // All tests passed
         }
     }
 
     pass(1i32);  // Failed
 };
 
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Error handling
+    exit(1);
 };

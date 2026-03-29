@@ -1,5 +1,5 @@
 // seed_ring_buffer.aria — ring buffer with modulo indexing
-func:failsafe = NIL(int32:code) { pass(NIL); };
+func:failsafe = int32(tbb32:err) { exit(1); };
 extern func:aria_alloc = wild int64*(int64:size);
 extern func:aria_free  = void(wild int64*:ptr);
 pub func:ring_write = int64(wild int64->:buf, int64:cap, int64:head, int64:val) {
@@ -18,5 +18,5 @@ func:main = int32() {
     head = raw(ring_write(buf, cap, head, 40i64));
     head = raw(ring_write(buf, cap, head, 50i64));
     aria_free(buf);
-    pass(0i32);
+    exit(0);
 };

@@ -5586,6 +5586,19 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 addError("exit() requires an int32 exit code, got '" + argType->toString() + "'", expr);
                 return typeSystem->getErrorType();
             }
+            // In failsafe, exit code must be > 0 (error path — exit(0) is wrong)
+            if (currentFunctionName == "failsafe") {
+                if (expr->arguments[0]->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* lit = static_cast<LiteralExpr*>(expr->arguments[0].get());
+                    if (std::holds_alternative<int64_t>(lit->value)) {
+                        int64_t val = std::get<int64_t>(lit->value);
+                        if (val <= 0) {
+                            addError("exit() in failsafe must have a positive exit code (got " +
+                                     std::to_string(val) + "). failsafe is an error path.", expr);
+                        }
+                    }
+                }
+            }
             return typeSystem->getPrimitiveType("void");
         }
 
@@ -9032,6 +9045,33 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
         }
     }
 
+    // Validate failsafe function signature
+    // failsafe must return int32 and take exactly one tbb32 parameter
+    if (stmt->funcName == "failsafe") {
+        std::string returnTypeName = valueType->toString();
+        if (returnTypeName != "int32") {
+            addError("Function 'failsafe' must return 'int32', but returns '" +
+                     returnTypeName + "'. Use exit() to terminate, not pass().", stmt);
+        }
+
+        if (stmt->parameters.size() != 1) {
+            addError("Function 'failsafe' must take exactly one parameter: tbb32:err_code", stmt);
+        } else {
+            // Check parameter type is tbb32
+            auto& param = stmt->parameters[0];
+            if (param->type == ASTNode::NodeType::PARAMETER) {
+                ParameterNode* pn = static_cast<ParameterNode*>(param.get());
+                if (pn->typeNode) {
+                    std::string paramTypeName = pn->typeNode->toString();
+                    if (paramTypeName != "tbb32") {
+                        addError("Function 'failsafe' parameter must be tbb32, got '" +
+                                 paramTypeName + "'. tbb32 allows ERR signal for unknown errors.", stmt);
+                    }
+                }
+            }
+        }
+    }
+
     // ARIA-026 FIX: FFI Safety - Ban string return types from extern functions
     if (!stmt->body && valueType->toString() == "str") {  // No body = extern function
         addError("FFI Safety Violation: Cannot return 'str' from extern function '" + 
@@ -10189,6 +10229,13 @@ void TypeChecker::checkPassStmt(PassStmt* stmt) {
         addError("pass statement outside of function", stmt);
         return;
     }
+
+    // pass() is not allowed in main or failsafe — use exit() instead
+    if (currentFunctionName == "main" || currentFunctionName == "failsafe") {
+        addError("pass() cannot be used in '" + currentFunctionName + "'. "
+                 "Use exit(code) to terminate program endpoints.", stmt);
+        return;
+    }
     
     // Get the primitive type "NIL" for comparison
     Type* nilType = typeSystem->getPrimitiveType("NIL");
@@ -11144,6 +11191,10 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                                           SymbolKind::FUNCTION, ft, fd->line, fd->column);
                         if (sym) sym->setFuncDecl(fd);
                     }
+                } else if (decl->type == ASTNode::NodeType::EXTERN) {
+                    // BUG-002 fix: Register extern block functions in symbol table
+                    // so pub func wrappers in this module can reference them.
+                    checkExternStmt(static_cast<ExternStmt*>(decl.get()));
                 }
             }
 
@@ -11195,6 +11246,13 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                         returnType = resolveTypeNode(funcDecl->returnType.get());
                         if (!returnType || returnType->getKind() == TypeKind::ERROR) {
                             returnType = typeSystem->getPrimitiveType("void");
+                        }
+                        // BUG-001 fix: Non-extern functions use pass() which wraps
+                        // the return value in Result<T>. The export must mirror this
+                        // so importers see Result<T>, not the raw declared type.
+                        // (Matches pre-registration pass at line ~11139)
+                        if (funcDecl->body) {
+                            returnType = new ResultType(returnType);
                         }
                     }
                     
@@ -11275,6 +11333,22 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                                                      typeStructType, nullptr,
                                                      typeDecl->line, typeDecl->column);
                         module->moduleInfo->exportSymbol(typeDecl->typeName, typeSym, Visibility::PUBLIC);
+                    }
+                }
+                else if (decl->type == ASTNode::NodeType::EXTERN) {
+                    // BUG-002 fix: Export extern block functions so importers can
+                    // reference them (both directly and through pub func wrappers).
+                    // Extern functions use raw return types (no Result<T> wrapping).
+                    ExternStmt* externStmt = static_cast<ExternStmt*>(decl.get());
+                    for (const auto& extDecl : externStmt->declarations) {
+                        if (extDecl->type == ASTNode::NodeType::FUNC_DECL) {
+                            FuncDeclStmt* funcDecl = static_cast<FuncDeclStmt*>(extDecl.get());
+                            // Look up the symbol registered by checkExternStmt in the pre-pass
+                            Symbol* sym = symbolTable->lookupSymbol(funcDecl->funcName);
+                            if (sym) {
+                                module->moduleInfo->exportSymbol(funcDecl->funcName, sym, Visibility::PUBLIC);
+                            }
+                        }
                     }
                 }
             }
@@ -12073,9 +12147,9 @@ bool TypeChecker::validateFailsafeExists() {
     Symbol* failsafeSymbol = symbolTable->resolveSymbol("failsafe");
     
     if (!failsafeSymbol) {
-        addError("Every Aria program must define a 'failsafe(int32:err_code)' function. "
-                 "This ensures accountability for error handling. "
-                 "Even an empty failsafe is valid - it documents your decision.", nullptr);
+        addError("Every Aria program must define a 'func:failsafe = int32(tbb32:err)' function. "
+                 "failsafe is one of two program endpoints (with main). "
+                 "It handles error exits via exit(code) where code > 0.", nullptr);
         return false;
     }
     
@@ -12086,8 +12160,7 @@ bool TypeChecker::validateFailsafeExists() {
         return false;
     }
     
-    // Optional: Validate signature (should be int32(int32))
-    // For now, we just ensure it exists - type checking will catch signature issues
+    // Signature details validated in checkFuncDecl() when the function is parsed
     
     return true;
 }
