@@ -10303,6 +10303,13 @@ void TypeChecker::checkFailStmt(FailStmt* stmt) {
         return;
     }
     
+    // fail() is not allowed in main or failsafe — use exit() instead
+    if (currentFunctionName == "main" || currentFunctionName == "failsafe") {
+        addError("fail() cannot be used in '" + currentFunctionName + "'. "
+                 "Use exit(code) to terminate program endpoints.", stmt);
+        return;
+    }
+    
     // Infer type of the error code
     Type* errorType = inferType(stmt->errorCode.get());
     
@@ -12157,6 +12164,29 @@ bool TypeChecker::validateFailsafeExists() {
     if (failsafeSymbol->type->getKind() != TypeKind::FUNCTION) {
         addError("'failsafe' must be a function, but is defined as: " + 
                  failsafeSymbol->type->toString(), nullptr);
+        return false;
+    }
+    
+    // Signature details validated in checkFuncDecl() when the function is parsed
+    
+    return true;
+}
+
+bool TypeChecker::validateMainExists() {
+    // Check if main() function is defined in the symbol table
+    Symbol* mainSymbol = symbolTable->resolveSymbol("main");
+    
+    if (!mainSymbol) {
+        addError("Every Aria program must define a 'func:main = int32()' function. "
+                 "main is one of two program endpoints (with failsafe). "
+                 "It is the entry point and must call exit(code) where code 0 = success.", nullptr);
+        return false;
+    }
+    
+    // Validate that it's actually a function
+    if (mainSymbol->type->getKind() != TypeKind::FUNCTION) {
+        addError("'main' must be a function, but is defined as: " + 
+                 mainSymbol->type->toString(), nullptr);
         return false;
     }
     

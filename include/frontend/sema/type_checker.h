@@ -1026,6 +1026,14 @@ public:
     bool validateFailsafeExists();
     
     /**
+     * Validate that func:main is defined in the program.
+     * Every Aria program must define a main() function as the entry point.
+     * 
+     * Returns: true if main() is defined with correct signature
+     */
+    bool validateMainExists();
+    
+    /**
      * Clear accumulated errors
      */
     void clearErrors() { errors.clear(); }
