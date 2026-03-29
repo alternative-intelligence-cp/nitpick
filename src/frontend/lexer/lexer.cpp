@@ -525,6 +525,20 @@ void Lexer::scanToken() {
             }
             break;
             
+        case '_':
+            // _? (drop shorthand) and _! (raw shorthand)
+            if (peek() == '?') {
+                advance();
+                addToken(TokenType::TOKEN_UNDERSCORE_QUESTION);
+            } else if (peek() == '!') {
+                advance();
+                addToken(TokenType::TOKEN_UNDERSCORE_BANG);
+            } else {
+                // Plain underscore or _identifier — scan as identifier
+                scanIdentifier();
+            }
+            break;
+            
         default:
             // Check for identifiers (variable names, keywords)
             if (isAlpha(c)) {

@@ -485,6 +485,42 @@ func:get_val = int64() {{
     exit(0);
 }};"""
 
+    def generate_drop_raw_shorthand(self) -> str:
+        """_? drop shorthand and _! raw shorthand operators."""
+        variant = random.choice(['drop_print', 'raw_add', 'mixed', 'drop_func', 'raw_chain'])
+
+        if variant == 'drop_print':
+            return f"""{self.FAILSAFE}func:main = int32() {{
+    _?println("fuzz drop {self._rand_int32()}");
+    exit(0);
+}};"""
+        elif variant == 'raw_add':
+            a, b = self._rand_int64(), self._rand_int64()
+            return f"""func:safe_add = Result<int64>(int64:a, int64:b) {{ pass(a + b); }};
+{self.FAILSAFE}func:main = int32() {{
+    int64:x = _!safe_add({a}i64, {b}i64);
+    exit(0);
+}};"""
+        elif variant == 'mixed':
+            return f"""{self.FAILSAFE}func:main = int32() {{
+    drop(println("verbose"));
+    _?println("shorthand");
+    exit(0);
+}};"""
+        elif variant == 'drop_func':
+            return f"""func:do_work = Result<int64>() {{ pass({self._rand_int64()}i64); }};
+{self.FAILSAFE}func:main = int32() {{
+    _?do_work();
+    exit(0);
+}};"""
+        else:  # raw_chain
+            v = self._rand_int64()
+            return f"""func:safe_val = Result<int64>() {{ pass({v}i64); }};
+{self.FAILSAFE}func:main = int32() {{
+    int64:x = _!safe_val() + 1i64;
+    exit(0);
+}};"""
+
     def test_program(self, source: str, run_executable: bool = False) -> TestResult:
         """Compile, link, and optionally run a program."""
         test_file = Path(f"/tmp/fuzz_{os.getpid()}.aria")
@@ -599,6 +635,7 @@ func:get_val = int64() {{
             ("Const Literal", self.generate_const_literal),
             ("Pointer Basic", self.generate_pointer_basic),
             ("Syscall", self.generate_syscall),
+            ("Drop/Raw Shorthand", self.generate_drop_raw_shorthand),
         ]
         
         for i in range(iterations):

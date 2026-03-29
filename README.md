@@ -63,7 +63,7 @@ The Aria compiler now includes **Z3 SMT solver integration** for static formal v
 - **Balanced Ternary/Nonary Literals & Runtime** — `0t[01T]+` and `0n[01234ABCD]+` syntax, full trit/tryte/nit/nyte arithmetic
 - **Quantum Types** — Superposition states for probabilistic computation
 - **Generic Functions and Structs** — Monomorphization with type inference
-- **Result Types** — `pass`/`fail` with `?` propagation and `!` unwrap, `Result<T>` signatures
+- **Result Types** — `pass`/`fail` with `?` propagation and `!` unwrap, `Result<T>` signatures, `_?`/`_!` shorthand operators
 - **`fail()` from user functions** — Result-style: `fail(err)` produces `Result{error:err, is_error:true}`, complement to `pass(val)`
 - **Layered Safety** — `?!` (checked), `!!!` (unchecked), `unknown`/`ok()`, `failsafe`
 - **Async/Await** — LLVM coroutine-based with promise mechanism for error propagation through async boundaries

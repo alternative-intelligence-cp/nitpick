@@ -265,6 +265,8 @@ enum class TokenType {
     TOKEN_QUESTION_BANG,// ?! - emphatic unwrap operator
     TOKEN_BANG_BANG,    // !! - sys!! full-tier syscall modifier
     TOKEN_BANG_BANG_BANG,// !!! - failsafe call operator
+    TOKEN_UNDERSCORE_QUESTION, // _? - drop shorthand (prefix, desugars to drop())
+    TOKEN_UNDERSCORE_BANG,     // _! - raw shorthand (prefix, desugars to raw())
     
     // ========================================================================
     // Operators - Bitwise
