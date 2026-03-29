@@ -37,7 +37,7 @@ The Aria compiler now includes **Z3 SMT solver integration** for static formal v
 |---|---|---|
 | `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
 | `aria-ls` | ✅ Improved | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
-| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 80 packages verified |
+| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 102 packages verified |
 | `aria-doc` | ✅ Fixed | Documentation generator — 435 unique HTML pages from ecosystem |
 | `aria-mcp` | ✅ Improved | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Improved | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
@@ -78,34 +78,38 @@ The Aria compiler now includes **Z3 SMT solver integration** for static formal v
 - **NIL/void separation** — NIL is Aria's unit type (wrapped in `Result<nil>`), void restricted to extern blocks, bridge via pointer erasure
 - **Operators** — Full suite including `+` (string concatenation), `@` (address), `#` (pin), `->` (arrow), `..`/`...` (ranges)
 - **Template literals** — `` `&{variable}` `` string interpolation
+- **Six-stream I/O** — stdin/stdout/stderr/stddbg/stddati/stddato with runtime initialization, graceful fallback, `stdin_read_all()` and `stdin_read_line()` builtins
+- **Traits** — Definition, implementation, UFCS on primitive types, `dyn Trait` vtable dispatch, trait bounds on generics
+- **Optional types** — `T?` with `??` nil-coalescing, `?.` safe navigation; working for primitives and custom types
+- **Async channels & actors** — Buffered/unbuffered/oneshot channels, actor spawn/send/stop, fan-out/fan-in/pipeline patterns
 - **Standard library** — string_convert, string (manipulation), string_builder, print_utils, wave/wavemech, complex, dbug, quantum, atomic, io (file streams), math (transcendentals), linalg (linear algebra), collections (Vec, Map, Set, Graph), json, toml, binary, net (TCP sockets)
 
 ### In Progress / Specified
-- **Six-stream I/O** — stdin/stdout/stderr/stddbg/stddati/stddato — runtime initialization with graceful fallback, `stdin_read_all()` and `stdin_read_line()` builtins
-- **Traits** — Definition, implementation, and UFCS working on primitive types; `dyn Trait` dispatch and trait bounds planned
-- **Optional types** — `T?` with `??` nil-coalescing, `?.` safe navigation; working for primitives and custom types
-- **Async channels & actors** — Concurrent workloads, task scheduling, and async I/O with event loop — deferred to post-0.2.4
+- **AriaX Linux** — Custom distro with full toolchain pre-installed
+- **Specialist model V7** — Next training corpus covering v0.3.x additions
 
 ---
 
 ## `aria-packages` Library Ecosystem
 
-All packages live in the separate [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) repository. 80 packages total, organized into utility, graphics/game, server, database, and AI/ML tiers. Each package has a `src/` module, a `tests/` file with assertions, and where FFI is needed, a C `shim/`.
+All packages live in the separate [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) repository. 102 packages total, organized into utility, graphics/game, server, database, and AI/ML tiers. Each package has a `src/` module, a `tests/` file with assertions, and where FFI is needed, a C `shim/`.
 
 **Package tiers:**
 
-| # | Package | Description |
-|---|---------|-------------|
 | Package | Description |
 |---------|-------------|
+| aria-actor | Extended actor patterns (pool, router, supervisor) |
+| aria-aifs | AI filesystem utilities (POSIX ops + metadata tagging) |
 | aria-args | Command-line argument parsing |
 | aria-ascii | ASCII character classification and conversion |
 | aria-audio | Software synthesis, MIDI note table, ALSA backend |
 | aria-base64 | Base64 encoding/decoding |
 | aria-bench | Benchmarking |
+| aria-bigdecimal | Arbitrary precision decimal arithmetic |
 | aria-bits | Bit test/set/clear/flip, nibble extraction, popcount |
 | aria-body-parser | HTTP body parsing middleware (JSON, URL-encoded, multipart) |
 | aria-buf | Byte/word packing for uint64 buffers |
+| aria-channel | High-level channel patterns (fan-out, fan-in, pipeline) |
 | aria-clamp | min, max, clamp, abs, sign for int64/uint64 |
 | aria-cli | Enhanced CLI parsing with subcommands |
 | aria-color | RGBA packing/unpacking and pixel transforms |
@@ -119,7 +123,9 @@ All packages live in the separate [`aria-packages`](https://github.com/alternati
 | aria-cuda | CUDA FFI: device management, memory ops, kernel launch, cuBLAS |
 | aria-datetime | Date/time formatting and arithmetic |
 | aria-decision-t | Decision tree classifier (entropy, information gain) |
+| aria-diff | Text diffing |
 | aria-display | ANSI/termios terminal rendering (virtual console) |
+| aria-dns | DNS resolution |
 | aria-editor | Terminal-mode text editor with search |
 | aria-endian | Big/little-endian byte-swap for 16/32/64-bit |
 | aria-entangled | Quantum-inspired entangled variable pairs |
@@ -127,26 +133,35 @@ All packages live in the separate [`aria-packages`](https://github.com/alternati
 | aria-fixed | Q32.32 fixed-point arithmetic on uint64 |
 | aria-freq | Frequency/period/baud integer arithmetic |
 | aria-fs | File system utilities (stat, mkdir, readdir, copy) |
+| aria-ftp | FTP client session management |
 | aria-gml | GML compatibility layer: 40+ functions, xorshift32 RNG |
 | aria-gradient-field | 3D gradient field computation |
 | aria-gtk4 | GTK4 desktop GUI: widget registry, events, non-blocking UI |
 | aria-hash | FNV-1a and djb2 string hashing |
+| aria-hex | Hexadecimal encoding/decoding |
 | aria-http | HTTP client (GET/POST requests) |
+| aria-ini | INI config file parsing |
 | aria-input | Raw keyboard input with SNES-style button mapping |
 | aria-jamba | Hybrid Transformer + Mamba + Mixture of Experts model |
 | aria-jit | WildX JIT helpers |
 | aria-json | JSON encoding for basic types |
+| aria-libc | Standard C library wrappers |
 | aria-log | Structured logging with severity levels |
 | aria-looping | Iterative refinement model with convergence stopping |
 | aria-mamba | Mamba selective state space model with SiLU gating |
 | aria-map | Map data structure |
 | aria-math | Trig, exp, log, rounding via C libm |
+| aria-matrix | Matrix operations |
 | aria-mime | MIME type detection and mapping |
+| aria-mock | Test mocking framework |
+| aria-msgpack | MessagePack binary serialization |
 | aria-mux | Bit-select, field insert/extract, mask ops, blend |
 | aria-mysql | MySQL/MariaDB client via libmysqlclient |
 | aria-opengl | OpenGL 3.3 Core via GLAD + SDL2 |
 | aria-path | Path manipulation | 
 | aria-postgres | PostgreSQL client via libpq (parameterized, LISTEN/NOTIFY) |
+| aria-pqueue | Priority queue (min-heap) |
+| aria-qt6 | Qt6 Widgets GUI toolkit bindings |
 | aria-queue | Queue data structure |
 | aria-rand | xorshift64 pseudo-random number generator |
 | aria-rate-limit | Token bucket rate limiting middleware |
@@ -154,15 +169,20 @@ All packages live in the separate [`aria-packages`](https://github.com/alternati
 | aria-redis | Redis client via hiredis (strings, lists, hashes, sets) |
 | aria-regex | Regular expression matching |
 | aria-resource-mem | RAII-style resource lifecycle management |
+| aria-ringbuf | Ring buffer (circular buffer) |
 | aria-router | Express-style router: path params, middleware, wildcards |
+| aria-rules-common | Commonly used Rules<T> declarations |
 | aria-sdl2 | SDL2 multimedia bindings: window, renderer, drawing, events |
+| aria-sdl3 | SDL3 bindings |
 | aria-semver | Semantic versioning: parse, compare, satisfy |
 | aria-server | HTTP/1.1 server: listen, accept, parse, respond |
 | aria-session | In-memory session management with crypto IDs |
+| aria-smtp | SMTP email composition |
 | aria-socket | Socket abstraction layer |
 | aria-sort | Various sorting algorithms |
 | aria-sqlite | SQLite3 embedded database client (parameterized queries) |
 | aria-static | Static file serving with MIME detection and path traversal protection |
+| aria-stats | Statistics functions |
 | aria-str | String utilities (pad, trim, repeat, contains, split) |
 | aria-template | String template rendering with variable substitution |
 | aria-tensor | Dense tensor library: creation, arithmetic, matmul, activations, GPU interop |
@@ -175,6 +195,8 @@ All packages live in the separate [`aria-packages`](https://github.com/alternati
 | aria-uuid | UUID v4 generation and formatting |
 | aria-vec | 2D/3D float64 vector math (dot, cross, length) |
 | aria-websocket | WebSocket client/server (RFC 6455) |
+| aria-webkit-gtk | WebKitGTK web content bindings |
+| aria-wxwidgets | wxWidgets GUI toolkit bindings |
 | aria-xml | XML parsing and generation |
 | aria-yaml | YAML parsing and serialization |
 | aria-zigzag | Zigzag encode/decode for signed integer interleaving |
@@ -205,15 +227,16 @@ Aria's safety philosophy: make dangerous operations **explicit**, provide multip
 
 **Layer 1: Failsafe** — Every Aria program has a `failsafe` that catches unhandled errors:
 ```aria
-func:failsafe = NIL(int32:err_code) {
+func:failsafe = int32(tbb32:err) {
     // Log, cleanup, graceful shutdown
+    exit(1);
 };
 ```
 
 **Layer 2: Result Types** — Explicit error propagation with concise syntax:
 ```aria
-func:divide = Result<int32>(int32:a, int32:b) {
-    if (b == 0i32) { fail(1i32); }
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) { fail(-1i32); }
     pass(a / b);
 };
 
@@ -362,9 +385,9 @@ cd ..
 cat > hello.aria << 'EOF'
 func:main = int32() {
     drop(println("Hello from Aria!"));
-    pass(0i32);
+    exit(0);
 };
-func:failsafe = NIL(int32:err_code) {};
+func:failsafe = int32(tbb32:err) { exit(1); };
 EOF
 
 ./build/ariac hello.aria -o hello
