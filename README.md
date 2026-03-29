@@ -1,4 +1,4 @@
-# Aria Programming Language v0.2.41
+# Aria Programming Language v0.3.4
 
 ![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -12,32 +12,21 @@
 
 ## Current Status (March 2026)
 
-**v0.2.41 — Rules + limit (Refinement Types), Enums, Channels, Actors, Traits, 72+ Packages**
+**v0.3.4 — Z3 SMT Formal Verification, 102 Packages, Safety-Critical Tooling**
 
-The Aria compiler now supports refinement types via `Rules` and `limit`, enums with auto-numbering, thread-safe channels, an actor system, trait bounds on generics, borrow semantics (`$$i`/`$$m`), and the `Type:` composable type system. The package ecosystem has grown to 72+ packages.
+The Aria compiler now includes **Z3 SMT solver integration** for static formal verification of function contracts (`requires`/`ensures`), integer overflow proofs, and refinement type constraints — placing Aria alongside Ada/SPARK as one of the few languages with built-in compile-time formal verification for safety-critical systems.
 
-**Recent highlights:**
-- **v0.2.41** — Rules + limit: refinement types with compile-time and runtime constraint checking
-- **v0.2.40** — Documentation update: comprehensive guide refresh
-- **v0.2.39** — Enums: full type system, auto-numbering, typed variables, exhaustiveness
-- **v0.2.38** — AI-Native Filesystem (aria-aifs): POSIX + AI metadata ops via shim layer
-- **v0.2.37** — Async channels & actors: buffered/unbuffered/oneshot channels, actor spawn/send/stop, fan-out/fan-in patterns
-- **v0.2.36** — dyn Trait: vtable-based dynamic dispatch, object-safe trait checking
-- **v0.2.35** — Borrow semantics: `$$i`/`$$m` qualifiers, compile-time safety, `any` type
-- **v0.2.34** — Type: system, trait bounds on generics, instance<T> construction
-- **v0.2.33** — Generic stdlib: containers, iterators, optional monads
-- **v0.2.29** — String `+` operator, `wildx` parser fix, 6 new packages, legacy stdlib removed
-- **v0.2.28** — New numeric types: fix256 (256-bit fixed-point), frac32 (fraction API), dimensional type stubs
-- **v0.2.27** — Complex number stdlib with compound generic type inference
-- **v0.2.26** — Module resolution fixes, `std` → `stdlib` symlink restored
-- **v0.2.25** — SIMD builtins fixed (fcmp vs icmp for vector types)
-- **v0.2.23** — Trait system: definition, implementation, UFCS on primitive types
-- **v0.2.22** — Optional types (`T?`, `??` nil-coalescing, `?.` safe navigation)
-- **v0.2.16** — Spec compliance pass: 122 test fixes, 5 compiler bugs fixed, partial feature completion
-- **v0.2.15** — Ecosystem & distribution polish, LSP grammar +49 keywords, package registry sync
-- **v0.2.14** — Documentation review, extended fuzzing, full code audit
-- **80 ecosystem packages**, all passing — utility, graphics/game, server, database, AI/ML tiers
-- **841 tests**, 838 passing (99%)
+**v0.3.x highlights:**
+- **v0.3.4** — Z3 SMT Phase 2+3: `requires`/`ensures` contract verification, integer overflow proofs via bitvector analysis, `--verify-contracts` and `--verify-overflow` flags
+- **v0.3.3** — Safety showcase & tooling polish: 860 lines dead code removed, 118 debug prints gated, CI badges, comprehensive doc fixes (695+)
+- **v0.3.2** — 101 packages: aria-stats, aria-matrix, aria-mock, aria-bigdecimal + SDL3, wxWidgets, WebKitGTK wrappers
+- **v0.3.1** — Version bump, package ecosystem expansion
+- **v0.3.0** — `--static` flag, fuzzer rewrite (27 generators, 100% compile rate), BUG-001 through BUG-004 fixes, 92 packages
+- **v0.2.45** — Z3 SMT Phase 1: Rules/limit constraint verification with bitvector-accurate proofs, counterexample reporting
+
+**Key capabilities:**
+- **102 ecosystem packages**, all passing — utility, graphics/game, server, database, AI/ML tiers
+- **Z3 formal verification** — Compile-time mathematical proofs of contract compliance and arithmetic safety
 - **50 stdlib modules** (12.5K lines)
 
 ---
@@ -52,14 +41,15 @@ The Aria compiler now supports refinement types via `Rules` and `limit`, enums w
 | `aria-doc` | ✅ Fixed | Documentation generator — 435 unique HTML pages from ecosystem |
 | `aria-mcp` | ✅ Improved | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Improved | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
+| Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow proofs, Rules/limit constraints |
 | `aria-dap` | ✅ Working | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Working | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
-| Fuzzer V2 | ✅ Active | 48-hour stress campaigns |
+| Fuzzer V2 | ✅ Active | 27 generators, 100% compile rate, zero unresolved crashes |
 | Specialist model | ✅ V6 | Qwen 7B LoRA, v6 corpus covering v0.2.3 additions |
-| Debian package | ✅ Built | `aria_0.2.2-1_amd64.deb` (17 MB), tested on Mint 22.3 |
+| Debian package | ✅ Built | `aria_0.3.4-1_amd64.deb`, tested on Mint 22.3 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 80 packages (utility, graphics/game, server, database, AI/ML tiers), all passing |
+| `aria_packages` | ✅ Active | 102 packages (utility, graphics/game, server, database, AI/ML tiers), all passing |
 
 ---
 
@@ -79,6 +69,7 @@ The Aria compiler now supports refinement types via `Rules` and `limit`, enums w
 - **Control flow** — `if/else`, `pick` (exhaustive match), `break`, `continue`, `fall`
 - **Module system** — `use`, `mod`, `pub`, `extern`
 - **Closures** — First-class functions with capture
+- **Z3 Formal Verification** — SMT-based compile-time proofs: `requires`/`ensures` contracts, integer overflow, Rules/limit constraints (`--verify`, `--verify-contracts`, `--verify-overflow`)
 - **Borrow checker** — Compile-time memory safety analysis
 - **Arrays in structs** — Fixed-size scalar and struct array fields with nested member access
 - **SIMD types** — Vector arithmetic via LLVM intrinsics
@@ -251,6 +242,32 @@ if (result == err) {
 }
 ```
 
+**Layer 5: Z3 SMT Formal Verification** — Compile-time mathematical proofs via Z3 solver:
+```aria
+// Design-by-Contract: requires/ensures are verified at compile time
+func:safe_divide = Result<int32>(int32:a, int32:b)
+    requires(b != 0i32)
+    ensures($ >= 0i32)
+{
+    pass(a / b);
+};
+
+// Integer overflow proofs: Z3 bitvector analysis proves absence of overflow
+func:safe_add = int32(int32:a, int32:b)
+    requires(a > 0i32)
+    requires(a < 1000i32)
+    requires(b > 0i32)
+    requires(b < 1000i32)
+{
+    pass(a + b);  // Z3 proves: no overflow possible in int32 range
+};
+```
+```bash
+# Verify contracts and overflow safety at compile time
+ariac program.aria --verify-contracts --verify-overflow --verify-report -o program
+```
+Aria uses the Z3 SMT solver to mathematically *prove* the absence of contract violations and arithmetic overflow across all possible execution paths — the same class of static formal verification used by Ada/SPARK for safety-critical aerospace and automotive systems.
+
 ### For Loops — Two Forms
 
 ```aria
@@ -393,7 +410,7 @@ aria/
 │   └── runtime/             # Runtime support (GC, strings, async, streams)
 ├── include/                  # Headers
 ├── stdlib/                   # Standard library (.aria files)
-├── tests/                    # Test suite (841 tests, 838 passing)
+├── tests/                    # Test suite
 │   ├── regression/          # Regression tests
 │   ├── fuzz/                # Fuzzer V2 and corpus
 │   ├── gpu/                 # GPU/CUDA tests
@@ -418,7 +435,7 @@ aria/
 ```
 
 **Related repositories:**
-- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 80 library packages
+- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 102 library packages
 - [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs) — reference docs and guides
 - [`ariax`](https://github.com/alternative-intelligence-cp/ariax) — POSIX tools and AX Linux distro
 - [`aria-lang`](https://github.com/alternative-intelligence-cp/aria-lang) — VS Code extension
@@ -548,7 +565,7 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Pipeline support** — All tools read from stdin when no file argument given
 - ✅ **String comparison fix** — `_=expr` discard syntax, `sleep_ms` builtin
 
-### v0.2.39 — Released (Current)
+### v0.2.39 — Released
 
 - ✅ **Enums** — `enum:Name = { VARIANT1, VARIANT2 = 42 };` with auto-numbering (0, or last+1), explicit values, mixed
 - ✅ **EnumType** — Proper type identity in type system (not just int64 constants)
@@ -726,12 +743,43 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **FFI codegen fixes** — Explicit float literals, auto-wrap `char*` → `AriaString` for extern string returns
 - ✅ **GML → Native tutorial** — Full walkthrough in aria-docs
 
-### v0.3.0+ — Planned
+### v0.3.0 — Released
 
-- Advanced async patterns (channels, actors)
-- Traits & borrow semantics implementation
+- ✅ **`--static` flag** — Compile static executables with all dependencies linked
+- ✅ **Fuzzer rewrite** — 27 generators, 100% compile rate, zero unresolved crashes
+- ✅ **BUG-001 through BUG-004 fixes** — Module resolution for FFI packages, linker flag ordering, failsafe/main/exit contract enforcement
+- ✅ **92 ecosystem packages** — 5 new: rules-common, ini, hex, ringbuf, pqueue
+
+### v0.3.1 — Released
+
+- ✅ **Version bump** — Package ecosystem expansion and stability improvements
+
+### v0.3.2 — Released
+
+- ✅ **101 ecosystem packages** — aria-stats, aria-matrix, aria-mock, aria-bigdecimal + SDL3, wxWidgets, WebKitGTK wrappers
+- ✅ **GUI framework expansion** — SDL3, wxWidgets, WebKitGTK bindings via C shim pattern
+
+### v0.3.3 — Released
+
+- ✅ **Safety showcase & tooling polish** — CI/CD badges, comprehensive documentation fixes (695+)
+- ✅ **Dead code removal** — 860 lines of dead code removed from compiler
+- ✅ **Debug print gating** — 118 debug prints behind `ARIA_DEBUG_CODEGEN` flag
+- ✅ **LSP version bump** — Language server updated to 0.3.3
+
+### v0.3.4 — Released
+
+- ✅ **Z3 SMT Phase 2: Design-by-Contract verification** — `requires`/`ensures` clauses verified at compile time via Z3 solver. Function preconditions and postconditions are mathematically proven across all execution paths.
+- ✅ **Z3 SMT Phase 3: Arithmetic overflow proofs** — Integer arithmetic operations verified using Z3 bitvector overflow intrinsics (`bvadd_no_overflow`, `bvsub_no_underflow`). Proves absence of overflow for bounded inputs.
+- ✅ **`--verify-contracts` flag** — Enable contract verification pass
+- ✅ **`--verify-overflow` flag** — Enable overflow verification pass
+- ✅ **`--verify-report` flag** — Emit detailed proof results (proven/unproven/skipped per function)
+- ✅ **Regression fix** — `test_nested_struct_array` updated: `pass()` → `exit()` in main
+
+### v0.3.5+ — Planned
+
 - AriaX Linux distribution packaging
 - Nikola integration
+- Specialist model retraining with v0.3.x corpus
 
 ### Long Term
 
