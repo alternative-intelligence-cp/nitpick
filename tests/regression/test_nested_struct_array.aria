@@ -24,17 +24,17 @@ func:main = int32() {
     seg.endpoints[1].y = 40i32;
 
     // Verify writes took effect via reads
-    if (seg.id != 42i32) { pass(1i32); }
-    if (seg.endpoints[0].x != 10i32) { pass(2i32); }
-    if (seg.endpoints[0].y != 20i32) { pass(3i32); }
-    if (seg.endpoints[1].x != 30i32) { pass(4i32); }
-    if (seg.endpoints[1].y != 40i32) { pass(5i32); }
+    if (seg.id != 42i32) { exit(1); }
+    if (seg.endpoints[0].x != 10i32) { exit(2); }
+    if (seg.endpoints[0].y != 20i32) { exit(3); }
+    if (seg.endpoints[1].x != 30i32) { exit(4); }
+    if (seg.endpoints[1].y != 40i32) { exit(5); }
 
     // Overwrite one nested field and verify isolation
     seg.endpoints[0].x = 99i32;
-    if (seg.endpoints[0].x != 99i32) { pass(6i32); }
-    if (seg.endpoints[0].y != 20i32) { pass(7i32); }
-    if (seg.endpoints[1].x != 30i32) { pass(8i32); }
+    if (seg.endpoints[0].x != 99i32) { exit(6); }
+    if (seg.endpoints[0].y != 20i32) { exit(7); }
+    if (seg.endpoints[1].x != 30i32) { exit(8); }
 
     exit(0);
 };
