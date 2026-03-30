@@ -1,9 +1,11 @@
 /**
  * Aria User Stack (astack) — Runtime Implementation
- * v0.4.2: Compiler-managed typed LIFO scratch pad
+ * v0.4.3: Per-scope implicit typed LIFO scratch pad
  *
  * Storage: contiguous mmap region, 16 bytes per slot (8 value + 8 tag).
  * Uses a simple bump pointer for O(1) push/pop.
+ * All errors are fatal (exit(1)) — the compiler guarantees type safety
+ * via tags, and the user is responsible for not overflowing/underflowing.
  */
 
 #include "runtime/ustack.h"
@@ -68,23 +70,24 @@ extern "C" void aria_ustack_destroy(int64_t handle) {
  * Push / Pop / Peek
  * ═══════════════════════════════════════════════════════════════════════ */
 
-extern "C" int32_t aria_ustack_push(int64_t handle, int64_t value, int64_t type_tag) {
+extern "C" void aria_ustack_push(int64_t handle, int64_t value, int64_t type_tag) {
     if (handle == 0) {
-        return ARIA_USTACK_ERR_NULL;
+        fprintf(stderr, "aria: user stack error — push on null handle (missing astack() in scope?)\n");
+        exit(1);
     }
 
     AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
 
     if (stk->size >= stk->capacity) {
-        return ARIA_USTACK_ERR_OVERFLOW;
+        fprintf(stderr, "aria: user stack overflow — capacity %lld exceeded\n",
+                (long long)stk->capacity);
+        exit(1);
     }
 
     int64_t idx = stk->size * 2; /* 2 int64s per slot */
     stk->data[idx]     = value;
     stk->data[idx + 1] = type_tag;
     stk->size++;
-
-    return ARIA_USTACK_OK;
 }
 
 extern "C" int64_t aria_ustack_pop(int64_t handle, int64_t expected_tag) {

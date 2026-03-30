@@ -149,6 +149,11 @@ private:
     // P1-4: Contract tracking (Design by Contract)
     class FuncDeclStmt* current_func_decl;  // Currently generating function (for contract checking)
 
+    // v0.4.3: User stack pop/peek destination type context
+    // Set by VarDecl handler before generating initializer, so the CALL dispatcher
+    // can propagate it to the fresh ExprCodegen instance for apop()/apeek().
+    llvm::Type* ustack_pop_dest_type = nullptr;
+
     /**
      * Map Aria type to LLVM type
      * Reference: research_012-017 for type specifications

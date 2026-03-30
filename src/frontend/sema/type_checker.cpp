@@ -3605,69 +3605,61 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
 
         // ====================================================================
-        // USER STACK BUILTINS (v0.4.2 — Typed LIFO Scratch Pad)
+        // USER STACK BUILTINS (v0.4.3 — Per-scope Implicit Typed LIFO)
         // ====================================================================
-        // astack(capacity) → int64 handle
-        // apush(handle, value) → int32 (0 = ok, negative = error)
-        // apop(handle) → T (type from assignment context, runtime-checked)
-        // apeek(handle) → T (same as apop but non-destructive)
+        // astack()          → int64 (hidden handle; initializes scope stack with default capacity)
+        // astack(capacity)  → int64 (hidden handle; initializes scope stack with given capacity)
+        // apush(value)      → int64 (pushes value with auto-detected type tag; fatal on overflow)
+        // apop()            → T (returns value typed to assignment context; runtime type-checked)
+        // apeek()           → T (same as apop but non-destructive)
 
-        // Builtin: astack(capacity: int64) -> int64
+        // Builtin: astack() or astack(capacity) -> int64 (handle stored implicitly)
         if (idExpr->name == "astack") {
-            if (expr->arguments.size() != 1) {
-                addError("astack() requires exactly one argument (capacity in slots)", expr);
+            if (expr->arguments.size() > 1) {
+                addError("astack() takes 0 or 1 arguments (optional capacity in slots)", expr);
                 return typeSystem->getErrorType();
             }
-            Type* argType = inferType(expr->arguments[0].get());
-            if (argType->getKind() == TypeKind::ERROR) {
-                return typeSystem->getErrorType();
+            if (expr->arguments.size() == 1) {
+                Type* argType = inferType(expr->arguments[0].get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
             }
             return typeSystem->getPrimitiveType("int64");
         }
 
-        // Builtin: apush(handle: int64, value: any) -> int32
+        // Builtin: apush(value: any) -> int64 (fatal on overflow, return value discarded)
         if (idExpr->name == "apush") {
-            if (expr->arguments.size() != 2) {
-                addError("apush() requires exactly two arguments (handle, value)", expr);
+            if (expr->arguments.size() != 1) {
+                addError("apush() requires exactly one argument (value to push)", expr);
                 return typeSystem->getErrorType();
             }
-            Type* handleType = inferType(expr->arguments[0].get());
-            if (handleType->getKind() == TypeKind::ERROR) {
-                return typeSystem->getErrorType();
-            }
-            Type* valueType = inferType(expr->arguments[1].get());
+            Type* valueType = inferType(expr->arguments[0].get());
             if (valueType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
             }
-            return typeSystem->getPrimitiveType("int32");
+            return typeSystem->getPrimitiveType("int64");
         }
 
-        // Builtin: apop(handle: int64) -> int64
-        // The actual type is checked at runtime via type tags.
-        // Compiler returns int64; codegen will bitcast to destination type.
+        // Builtin: apop() -> T (type from assignment context, runtime type-checked)
+        // Returns UnknownType so it is assignable to any destination type.
+        // The codegen uses the destination type to determine the expected tag
+        // and converts the raw i64 to the correct LLVM type.
         if (idExpr->name == "apop") {
-            if (expr->arguments.size() != 1) {
-                addError("apop() requires exactly one argument (handle)", expr);
+            if (!expr->arguments.empty()) {
+                addError("apop() takes no arguments (uses implicit scope stack)", expr);
                 return typeSystem->getErrorType();
             }
-            Type* argType = inferType(expr->arguments[0].get());
-            if (argType->getKind() == TypeKind::ERROR) {
-                return typeSystem->getErrorType();
-            }
-            return typeSystem->getPrimitiveType("int64");
+            return typeSystem->getUnknownType();
         }
 
-        // Builtin: apeek(handle: int64) -> int64
+        // Builtin: apeek() -> T (same as apop but non-destructive)
         if (idExpr->name == "apeek") {
-            if (expr->arguments.size() != 1) {
-                addError("apeek() requires exactly one argument (handle)", expr);
+            if (!expr->arguments.empty()) {
+                addError("apeek() takes no arguments (uses implicit scope stack)", expr);
                 return typeSystem->getErrorType();
             }
-            Type* argType = inferType(expr->arguments[0].get());
-            if (argType->getKind() == TypeKind::ERROR) {
-                return typeSystem->getErrorType();
-            }
-            return typeSystem->getPrimitiveType("int64");
+            return typeSystem->getUnknownType();
         }
 
         // ====================================================================

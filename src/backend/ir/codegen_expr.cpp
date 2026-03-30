@@ -5961,13 +5961,16 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     }
 
     // ====================================================================
-    // USER STACK BUILTINS (v0.4.2 — Typed LIFO Scratch Pad)
+    // USER STACK BUILTINS (v0.4.3 — Per-scope Implicit Typed LIFO)
     // ====================================================================
+    // The handle is stored in named_values["__aria_ustack_handle"] as
+    // a hidden alloca, invisible to user code. Each function scope gets
+    // at most one stack, initialized by astack().
 
-    // astack(capacity: int64) -> int64 handle
+    // astack() or astack(capacity) — initialize scope stack
     if (callee_ident->name == "astack") {
-        if (expr->arguments.size() != 1) {
-            throw std::runtime_error("astack() requires exactly one argument (capacity)");
+        if (expr->arguments.size() > 1) {
+            throw std::runtime_error("astack() takes 0 or 1 arguments (optional capacity)");
         }
 
         llvm::Function* func = module->getFunction("aria_ustack_new");
@@ -5978,35 +5981,53 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 "aria_ustack_new", module);
         }
 
-        llvm::Value* capacity = codegenExpressionNode(expr->arguments[0].get(), this);
-        if (!capacity->getType()->isIntegerTy(64)) {
-            capacity = builder.CreateSExtOrTrunc(capacity, builder.getInt64Ty());
+        // Capacity: user-specified or default (256 slots = 1 page)
+        llvm::Value* capacity;
+        if (expr->arguments.size() == 1) {
+            capacity = codegenExpressionNode(expr->arguments[0].get(), this);
+            if (!capacity->getType()->isIntegerTy(64)) {
+                capacity = builder.CreateSExtOrTrunc(capacity, builder.getInt64Ty());
+            }
+        } else {
+            capacity = builder.getInt64(256); // ARIA_USTACK_DEFAULT_CAPACITY
         }
-        return builder.CreateCall(func, {capacity}, "ustack_handle");
+
+        llvm::Value* handle = builder.CreateCall(func, {capacity}, "ustack_handle");
+
+        // Store handle in a hidden alloca accessible to apush/apop/apeek
+        llvm::AllocaInst* handle_alloca = builder.CreateAlloca(
+            builder.getInt64Ty(), nullptr, "__aria_ustack_handle");
+        builder.CreateStore(handle, handle_alloca);
+        named_values["__aria_ustack_handle"] = handle_alloca;
+
+        // Return the handle value (discarded when used as statement)
+        return handle;
     }
 
-    // apush(handle: int64, value: T) -> int32
+    // apush(value) — push value onto implicit scope stack
     if (callee_ident->name == "apush") {
-        if (expr->arguments.size() != 2) {
-            throw std::runtime_error("apush() requires exactly two arguments (handle, value)");
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("apush() requires exactly one argument (value)");
         }
+
+        // Load hidden handle
+        auto it = named_values.find("__aria_ustack_handle");
+        if (it == named_values.end()) {
+            throw std::runtime_error("apush() called without astack() in scope");
+        }
+        llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_h");
 
         llvm::Function* func = module->getFunction("aria_ustack_push");
         if (!func) {
             llvm::FunctionType* ft = llvm::FunctionType::get(
-                builder.getInt32Ty(),
+                builder.getVoidTy(),
                 {builder.getInt64Ty(), builder.getInt64Ty(), builder.getInt64Ty()},
                 false);
             func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
                 "aria_ustack_push", module);
         }
 
-        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
-        if (!handle->getType()->isIntegerTy(64)) {
-            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
-        }
-
-        llvm::Value* rawVal = codegenExpressionNode(expr->arguments[1].get(), this);
+        llvm::Value* rawVal = codegenExpressionNode(expr->arguments[0].get(), this);
 
         // Determine type tag and convert value to i64
         int64_t typeTag = 3; // default: int64
@@ -6021,14 +6042,11 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         else if (valTy->isDoubleTy())     { typeTag = 5; valAsI64 = builder.CreateBitCast(rawVal, builder.getInt64Ty()); }
         else if (valTy->isIntegerTy(1))   { typeTag = 6; valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
         else if (valTy->isPointerTy()) {
-            // Check if it's an AriaString (struct.AriaString) or generic pointer
-            // String globals and variables are pointers to struct.AriaString
-            typeTag = 7; // default to string for pointers (most common case)
+            typeTag = 7; // string/pointer
             valAsI64 = builder.CreatePtrToInt(rawVal, builder.getInt64Ty());
         }
         else {
-            // Fallback: try to bitcast via inttoptr or truncate
-            typeTag = 8; // pointer/unknown
+            typeTag = 8; // unknown
             if (valTy->isIntegerTy()) {
                 valAsI64 = builder.CreateZExtOrTrunc(rawVal, builder.getInt64Ty());
             } else {
@@ -6037,14 +6055,24 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
 
         llvm::Value* tagVal = builder.getInt64(typeTag);
-        return builder.CreateCall(func, {handle, valAsI64, tagVal}, "ustack_push");
+        builder.CreateCall(func, {handle, valAsI64, tagVal});
+
+        // Return a dummy int64 zero (push is effectively void; value is discarded)
+        return builder.getInt64(0);
     }
 
-    // apop(handle: int64) -> int64 (runtime type-checked)
+    // apop() — pop typed value from implicit scope stack
     if (callee_ident->name == "apop") {
-        if (expr->arguments.size() != 1) {
-            throw std::runtime_error("apop() requires exactly one argument (handle)");
+        if (!expr->arguments.empty()) {
+            throw std::runtime_error("apop() takes no arguments (uses implicit scope stack)");
         }
+
+        // Load hidden handle
+        auto it = named_values.find("__aria_ustack_handle");
+        if (it == named_values.end()) {
+            throw std::runtime_error("apop() called without astack() in scope");
+        }
+        llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_h");
 
         llvm::Function* func = module->getFunction("aria_ustack_pop");
         if (!func) {
@@ -6056,22 +6084,54 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 "aria_ustack_pop", module);
         }
 
-        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
-        if (!handle->getType()->isIntegerTy(64)) {
-            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        // Determine expected type tag from destination type context
+        // (set by StmtCodegen before codegenning the initializer/RHS)
+        int64_t expectedTag = -1;
+        llvm::Type* destType = ustack_pop_dest_type;
+
+        if (destType) {
+            if (destType->isIntegerTy(8))       expectedTag = 0;
+            else if (destType->isIntegerTy(16)) expectedTag = 1;
+            else if (destType->isIntegerTy(32)) expectedTag = 2;
+            else if (destType->isIntegerTy(64)) expectedTag = 3;
+            else if (destType->isFloatTy())     expectedTag = 4;
+            else if (destType->isDoubleTy())    expectedTag = 5;
+            else if (destType->isIntegerTy(1))  expectedTag = 6;
+            else if (destType->isPointerTy())   expectedTag = 7;
         }
 
-        // Use tag -1 to skip type checking at runtime (v0.4.2 — basic)
-        // The receiving variable's type determines how the i64 is interpreted.
-        llvm::Value* tag = builder.getInt64(-1);
-        return builder.CreateCall(func, {handle, tag}, "ustack_pop");
+        llvm::Value* tag = builder.getInt64(expectedTag);
+        llvm::Value* rawVal = builder.CreateCall(func, {handle, tag}, "ustack_pop");
+
+        // Convert i64 to destination type
+        if (destType && destType != builder.getInt64Ty()) {
+            if (destType->isIntegerTy()) {
+                rawVal = builder.CreateTrunc(rawVal, destType, "ustack_pop_trunc");
+            } else if (destType->isFloatTy()) {
+                llvm::Value* asDouble = builder.CreateBitCast(rawVal, builder.getDoubleTy(), "ustack_pop_d");
+                rawVal = builder.CreateFPTrunc(asDouble, destType, "ustack_pop_f32");
+            } else if (destType->isDoubleTy()) {
+                rawVal = builder.CreateBitCast(rawVal, destType, "ustack_pop_f64");
+            } else if (destType->isPointerTy()) {
+                rawVal = builder.CreateIntToPtr(rawVal, destType, "ustack_pop_ptr");
+            }
+        }
+
+        return rawVal;
     }
 
-    // apeek(handle: int64) -> int64 (runtime type-checked)
+    // apeek() — peek typed value from implicit scope stack (non-destructive)
     if (callee_ident->name == "apeek") {
-        if (expr->arguments.size() != 1) {
-            throw std::runtime_error("apeek() requires exactly one argument (handle)");
+        if (!expr->arguments.empty()) {
+            throw std::runtime_error("apeek() takes no arguments (uses implicit scope stack)");
         }
+
+        // Load hidden handle
+        auto it = named_values.find("__aria_ustack_handle");
+        if (it == named_values.end()) {
+            throw std::runtime_error("apeek() called without astack() in scope");
+        }
+        llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_h");
 
         llvm::Function* func = module->getFunction("aria_ustack_peek");
         if (!func) {
@@ -6083,13 +6143,39 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 "aria_ustack_peek", module);
         }
 
-        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
-        if (!handle->getType()->isIntegerTy(64)) {
-            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        // Determine expected type tag from destination type context
+        int64_t expectedTag = -1;
+        llvm::Type* destType = ustack_pop_dest_type;
+
+        if (destType) {
+            if (destType->isIntegerTy(8))       expectedTag = 0;
+            else if (destType->isIntegerTy(16)) expectedTag = 1;
+            else if (destType->isIntegerTy(32)) expectedTag = 2;
+            else if (destType->isIntegerTy(64)) expectedTag = 3;
+            else if (destType->isFloatTy())     expectedTag = 4;
+            else if (destType->isDoubleTy())    expectedTag = 5;
+            else if (destType->isIntegerTy(1))  expectedTag = 6;
+            else if (destType->isPointerTy())   expectedTag = 7;
         }
 
-        llvm::Value* tag = builder.getInt64(-1);
-        return builder.CreateCall(func, {handle, tag}, "ustack_peek");
+        llvm::Value* tag = builder.getInt64(expectedTag);
+        llvm::Value* rawVal = builder.CreateCall(func, {handle, tag}, "ustack_peek");
+
+        // Convert i64 to destination type
+        if (destType && destType != builder.getInt64Ty()) {
+            if (destType->isIntegerTy()) {
+                rawVal = builder.CreateTrunc(rawVal, destType, "ustack_peek_trunc");
+            } else if (destType->isFloatTy()) {
+                llvm::Value* asDouble = builder.CreateBitCast(rawVal, builder.getDoubleTy(), "ustack_peek_d");
+                rawVal = builder.CreateFPTrunc(asDouble, destType, "ustack_peek_f32");
+            } else if (destType->isDoubleTy()) {
+                rawVal = builder.CreateBitCast(rawVal, destType, "ustack_peek_f64");
+            } else if (destType->isPointerTy()) {
+                rawVal = builder.CreateIntToPtr(rawVal, destType, "ustack_peek_ptr");
+            }
+        }
+
+        return rawVal;
     }
 
     // ====================================================================

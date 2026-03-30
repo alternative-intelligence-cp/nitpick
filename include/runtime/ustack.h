@@ -1,10 +1,13 @@
 /**
  * Aria User Stack (astack) — Header
- * v0.4.2: Compiler-managed typed LIFO scratch pad
+ * v0.4.3: Per-scope implicit typed LIFO scratch pad
  *
  * A user-space stack separate from the hardware call stack.
  * Each slot stores an 8-byte value + 8-byte type tag (16 bytes/slot).
- * The runtime validates type tags on pop/peek.
+ * The runtime validates type tags on pop/peek — fatal on mismatch.
+ *
+ * From the user's perspective there is only one stack per function scope.
+ * The compiler manages the handle invisibly.
  */
 
 #ifndef ARIA_RUNTIME_USTACK_H
@@ -27,12 +30,8 @@ extern "C" {
 #define ARIA_USTACK_TAG_STRING  7
 #define ARIA_USTACK_TAG_POINTER 8
 
-/* Error codes (returned as negative values or used with failsafe) */
-#define ARIA_USTACK_OK             0
-#define ARIA_USTACK_ERR_OVERFLOW  -1
-#define ARIA_USTACK_ERR_UNDERFLOW -2
-#define ARIA_USTACK_ERR_TYPE      -3
-#define ARIA_USTACK_ERR_NULL      -4
+/* Default capacity when astack() is called without arguments (1 page / 16 = 256 slots) */
+#define ARIA_USTACK_DEFAULT_CAPACITY 256
 
 /**
  * Create a new user stack with the given slot capacity.
@@ -44,33 +43,31 @@ int64_t aria_ustack_new(int64_t capacity);
 
 /**
  * Push a value onto the user stack.
+ * Fatal on overflow or null handle — prints diagnostic and calls exit(1).
  *
  * @param handle    Stack handle from aria_ustack_new
  * @param value     Value to push (all types widened to int64)
  * @param type_tag  Type tag (ARIA_USTACK_TAG_*)
- * @return 0 on success, ARIA_USTACK_ERR_OVERFLOW if full,
- *         ARIA_USTACK_ERR_NULL if invalid handle
  */
-int32_t aria_ustack_push(int64_t handle, int64_t value, int64_t type_tag);
+void aria_ustack_push(int64_t handle, int64_t value, int64_t type_tag);
 
 /**
  * Pop the top value from the user stack.
+ * Fatal on underflow, type mismatch, or null handle.
  *
  * @param handle        Stack handle
- * @param expected_tag  Expected type tag; -1 to skip type checking
- * @return The value (as int64) on success.
- *         On error (underflow, type mismatch, null handle): prints diagnostic
- *         to stderr and calls exit(1). These are unrecoverable — the program's
- *         failsafe should have been called via codegen-side checks.
+ * @param expected_tag  Expected type tag (ARIA_USTACK_TAG_*); -1 to skip
+ * @return The value (as int64).
  */
 int64_t aria_ustack_pop(int64_t handle, int64_t expected_tag);
 
 /**
  * Peek at the top value without removing it.
+ * Fatal on underflow, type mismatch, or null handle.
  *
  * @param handle        Stack handle
- * @param expected_tag  Expected type tag; -1 to skip type checking
- * @return The value (as int64). Same error semantics as pop.
+ * @param expected_tag  Expected type tag (ARIA_USTACK_TAG_*); -1 to skip
+ * @return The value (as int64).
  */
 int64_t aria_ustack_peek(int64_t handle, int64_t expected_tag);
 
