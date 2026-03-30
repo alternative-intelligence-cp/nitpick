@@ -1,5 +1,30 @@
 # Aria Language Changelog
 
+## [0.4.2] - March 2026
+
+### Added
+- **User Stack (`astack` / `apush` / `apop` / `apeek`)** — Compiler-managed typed LIFO scratch pad, separate from the hardware call stack. Zero cost when unused.
+- **`astack(capacity)`** — Create a user stack with N slot capacity. Returns opaque int64 handle. Uses mmap for lazy page allocation.
+- **`apush(handle, value)`** — Push any typed value (int8–int64, flt32/flt64, bool, string, pointer). Returns 0 on success, -1 on overflow. Type tag stored automatically per slot.
+- **`apop(handle)`** — Pop top value (LIFO). Runtime error on underflow or type mismatch.
+- **`apeek(handle)`** — Read top value without removing. Same error semantics as apop.
+- **Type-tagged slots** — Each stack slot is 16 bytes (8 value + 8 type tag). Runtime validates tags on pop/peek for type safety.
+- **Overflow/underflow detection** — Push to full stack returns error code; pop/peek on empty stack triggers runtime error with diagnostic to stderr.
+
+### Architecture
+- `include/runtime/ustack.h` — Header with type tag constants, error codes, function declarations
+- `src/runtime/collections/ustack.cpp` — Runtime: mmap-backed storage, O(1) push/pop/peek via bump pointer
+- `src/frontend/sema/type_checker.cpp` — Builtin type checking for astack/apush/apop/apeek
+- `src/backend/ir/codegen_expr.cpp` — Codegen: auto-detects LLVM type → type tag, widens values to i64 for uniform slot storage
+
+### Tests
+- `tests/test_ustack.aria` — 9 tests: creation, LIFO ordering, peek non-destructive, multi-push/pop, overflow detection
+- `tests/test_ustack_strings.aria` — 4 tests: string push/pop, mixed int64+string stack usage
+
+### Backward Compatibility
+- No breaking changes. New builtins only — existing code unaffected.
+- `stack` keyword (memory placement qualifier) is unrelated and unaffected.
+
 ## [0.4.1] - March 2026
 
 ### Added

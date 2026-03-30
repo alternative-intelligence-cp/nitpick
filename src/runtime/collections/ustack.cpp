@@ -1,0 +1,169 @@
+/**
+ * Aria User Stack (astack) — Runtime Implementation
+ * v0.4.2: Compiler-managed typed LIFO scratch pad
+ *
+ * Storage: contiguous mmap region, 16 bytes per slot (8 value + 8 tag).
+ * Uses a simple bump pointer for O(1) push/pop.
+ */
+
+#include "runtime/ustack.h"
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <sys/mman.h>
+
+/* Internal stack structure — pointed to by the opaque handle */
+struct AriaUStack {
+    int64_t* data;       /* Interleaved [value, tag, value, tag, ...] */
+    int64_t  capacity;   /* Max slots */
+    int64_t  size;       /* Current slot count */
+    int64_t  data_bytes; /* mmap region size for munmap */
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Creation / Destruction
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+extern "C" int64_t aria_ustack_new(int64_t capacity) {
+    if (capacity <= 0) {
+        return 0;
+    }
+
+    /* Allocate the control struct on the heap */
+    AriaUStack* stk = static_cast<AriaUStack*>(malloc(sizeof(AriaUStack)));
+    if (!stk) {
+        return 0;
+    }
+
+    /* Allocate the data region via mmap (lazy page allocation, no page faults
+       until actually touched — this is the "zero cost when unused" part) */
+    int64_t data_bytes = capacity * 16; /* 16 bytes per slot */
+    void* region = mmap(nullptr, static_cast<size_t>(data_bytes),
+                        PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (region == MAP_FAILED) {
+        free(stk);
+        return 0;
+    }
+
+    stk->data       = static_cast<int64_t*>(region);
+    stk->capacity   = capacity;
+    stk->size       = 0;
+    stk->data_bytes = data_bytes;
+
+    return reinterpret_cast<int64_t>(stk);
+}
+
+extern "C" void aria_ustack_destroy(int64_t handle) {
+    if (handle == 0) return;
+
+    AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
+    if (stk->data) {
+        munmap(stk->data, static_cast<size_t>(stk->data_bytes));
+    }
+    free(stk);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Push / Pop / Peek
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+extern "C" int32_t aria_ustack_push(int64_t handle, int64_t value, int64_t type_tag) {
+    if (handle == 0) {
+        return ARIA_USTACK_ERR_NULL;
+    }
+
+    AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
+
+    if (stk->size >= stk->capacity) {
+        return ARIA_USTACK_ERR_OVERFLOW;
+    }
+
+    int64_t idx = stk->size * 2; /* 2 int64s per slot */
+    stk->data[idx]     = value;
+    stk->data[idx + 1] = type_tag;
+    stk->size++;
+
+    return ARIA_USTACK_OK;
+}
+
+extern "C" int64_t aria_ustack_pop(int64_t handle, int64_t expected_tag) {
+    if (handle == 0) {
+        fprintf(stderr, "aria: user stack error — pop on null handle\n");
+        exit(1);
+    }
+
+    AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
+
+    if (stk->size <= 0) {
+        fprintf(stderr, "aria: user stack underflow — pop on empty stack\n");
+        exit(1);
+    }
+
+    stk->size--;
+    int64_t idx   = stk->size * 2;
+    int64_t value = stk->data[idx];
+    int64_t tag   = stk->data[idx + 1];
+
+    if (expected_tag >= 0 && tag != expected_tag) {
+        static const char* tag_names[] = {
+            "int8", "int16", "int32", "int64",
+            "flt32", "flt64", "bool", "string", "pointer"
+        };
+        const char* expected_name = (expected_tag >= 0 && expected_tag <= 8)
+            ? tag_names[expected_tag] : "unknown";
+        const char* actual_name = (tag >= 0 && tag <= 8)
+            ? tag_names[tag] : "unknown";
+        fprintf(stderr,
+            "aria: user stack type mismatch — expected %s (tag %lld), got %s (tag %lld)\n",
+            expected_name, (long long)expected_tag, actual_name, (long long)tag);
+        exit(1);
+    }
+
+    return value;
+}
+
+extern "C" int64_t aria_ustack_peek(int64_t handle, int64_t expected_tag) {
+    if (handle == 0) {
+        fprintf(stderr, "aria: user stack error — peek on null handle\n");
+        exit(1);
+    }
+
+    AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
+
+    if (stk->size <= 0) {
+        fprintf(stderr, "aria: user stack underflow — peek on empty stack\n");
+        exit(1);
+    }
+
+    int64_t idx   = (stk->size - 1) * 2;
+    int64_t value = stk->data[idx];
+    int64_t tag   = stk->data[idx + 1];
+
+    if (expected_tag >= 0 && tag != expected_tag) {
+        static const char* tag_names[] = {
+            "int8", "int16", "int32", "int64",
+            "flt32", "flt64", "bool", "string", "pointer"
+        };
+        const char* expected_name = (expected_tag >= 0 && expected_tag <= 8)
+            ? tag_names[expected_tag] : "unknown";
+        const char* actual_name = (tag >= 0 && tag <= 8)
+            ? tag_names[tag] : "unknown";
+        fprintf(stderr,
+            "aria: user stack type mismatch — expected %s (tag %lld), got %s (tag %lld)\n",
+            expected_name, (long long)expected_tag, actual_name, (long long)tag);
+        exit(1);
+    }
+
+    return value;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Query
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+extern "C" int64_t aria_ustack_size(int64_t handle) {
+    if (handle == 0) return 0;
+    AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
+    return stk->size;
+}

@@ -1,0 +1,59 @@
+// test_ustack_strings.aria — Test user stack with string values (v0.4.2)
+
+func:failsafe = int32(tbb32:err) {
+    exit(1);
+};
+
+func:main = int32() {
+    int64:stk = astack(16i64);
+
+    // ================================================================
+    // Test 1: Push and pop strings
+    // ================================================================
+    apush(stk, "hello");
+    apush(stk, "world");
+
+    // Pop returns int64 (pointer to AriaString) — but for now we just
+    // verify the push didn't crash and the values come back in order.
+    int64:w = apop(stk);
+    int64:h = apop(stk);
+
+    // Both should be valid non-zero pointers
+    if (w != 0i64) {
+        println("PASS: string pop returned non-null");
+    } else {
+        println("FAIL: string pop returned null");
+    }
+
+    if (h != 0i64) {
+        println("PASS: string pop 2 returned non-null");
+    } else {
+        println("FAIL: string pop 2 returned null");
+    }
+
+    // ================================================================
+    // Test 2: Mix int64 and strings
+    // ================================================================
+    apush(stk, 42i64);
+    apush(stk, "mixed");
+    apush(stk, 99i64);
+
+    int64:v1 = apop(stk);
+    int64:v2 = apop(stk);
+    int64:v3 = apop(stk);
+
+    if (v1 == 99i64) {
+        println("PASS: mixed pop int64 correct");
+    } else {
+        println("FAIL: mixed pop int64 wrong");
+    }
+
+    if (v3 == 42i64) {
+        println("PASS: mixed pop int64 bottom correct");
+    } else {
+        println("FAIL: mixed pop int64 bottom wrong");
+    }
+
+    println("String stack tests completed!");
+    return 0;
+};

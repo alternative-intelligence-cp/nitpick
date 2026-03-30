@@ -5961,6 +5961,138 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     }
 
     // ====================================================================
+    // USER STACK BUILTINS (v0.4.2 — Typed LIFO Scratch Pad)
+    // ====================================================================
+
+    // astack(capacity: int64) -> int64 handle
+    if (callee_ident->name == "astack") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("astack() requires exactly one argument (capacity)");
+        }
+
+        llvm::Function* func = module->getFunction("aria_ustack_new");
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                "aria_ustack_new", module);
+        }
+
+        llvm::Value* capacity = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!capacity->getType()->isIntegerTy(64)) {
+            capacity = builder.CreateSExtOrTrunc(capacity, builder.getInt64Ty());
+        }
+        return builder.CreateCall(func, {capacity}, "ustack_handle");
+    }
+
+    // apush(handle: int64, value: T) -> int32
+    if (callee_ident->name == "apush") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("apush() requires exactly two arguments (handle, value)");
+        }
+
+        llvm::Function* func = module->getFunction("aria_ustack_push");
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt32Ty(),
+                {builder.getInt64Ty(), builder.getInt64Ty(), builder.getInt64Ty()},
+                false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                "aria_ustack_push", module);
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        llvm::Value* rawVal = codegenExpressionNode(expr->arguments[1].get(), this);
+
+        // Determine type tag and convert value to i64
+        int64_t typeTag = 3; // default: int64
+        llvm::Value* valAsI64 = nullptr;
+
+        llvm::Type* valTy = rawVal->getType();
+        if (valTy->isIntegerTy(8))       { typeTag = 0; valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(16))  { typeTag = 1; valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(32))  { typeTag = 2; valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(64))  { typeTag = 3; valAsI64 = rawVal; }
+        else if (valTy->isFloatTy())      { typeTag = 4; valAsI64 = builder.CreateBitCast(builder.CreateFPExt(rawVal, builder.getDoubleTy()), builder.getInt64Ty()); }
+        else if (valTy->isDoubleTy())     { typeTag = 5; valAsI64 = builder.CreateBitCast(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(1))   { typeTag = 6; valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isPointerTy()) {
+            // Check if it's an AriaString (struct.AriaString) or generic pointer
+            // String globals and variables are pointers to struct.AriaString
+            typeTag = 7; // default to string for pointers (most common case)
+            valAsI64 = builder.CreatePtrToInt(rawVal, builder.getInt64Ty());
+        }
+        else {
+            // Fallback: try to bitcast via inttoptr or truncate
+            typeTag = 8; // pointer/unknown
+            if (valTy->isIntegerTy()) {
+                valAsI64 = builder.CreateZExtOrTrunc(rawVal, builder.getInt64Ty());
+            } else {
+                valAsI64 = builder.CreatePtrToInt(rawVal, builder.getInt64Ty());
+            }
+        }
+
+        llvm::Value* tagVal = builder.getInt64(typeTag);
+        return builder.CreateCall(func, {handle, valAsI64, tagVal}, "ustack_push");
+    }
+
+    // apop(handle: int64) -> int64 (runtime type-checked)
+    if (callee_ident->name == "apop") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("apop() requires exactly one argument (handle)");
+        }
+
+        llvm::Function* func = module->getFunction("aria_ustack_pop");
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt64Ty(),
+                {builder.getInt64Ty(), builder.getInt64Ty()},
+                false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                "aria_ustack_pop", module);
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        // Use tag -1 to skip type checking at runtime (v0.4.2 — basic)
+        // The receiving variable's type determines how the i64 is interpreted.
+        llvm::Value* tag = builder.getInt64(-1);
+        return builder.CreateCall(func, {handle, tag}, "ustack_pop");
+    }
+
+    // apeek(handle: int64) -> int64 (runtime type-checked)
+    if (callee_ident->name == "apeek") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("apeek() requires exactly one argument (handle)");
+        }
+
+        llvm::Function* func = module->getFunction("aria_ustack_peek");
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt64Ty(),
+                {builder.getInt64Ty(), builder.getInt64Ty()},
+                false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                "aria_ustack_peek", module);
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        llvm::Value* tag = builder.getInt64(-1);
+        return builder.CreateCall(func, {handle, tag}, "ustack_peek");
+    }
+
+    // ====================================================================
     // WILD MEMORY BUILTINS (Phase 2.2 - Manual Memory Management)
     // ====================================================================
     // Primitive wild memory operations tracked by the borrow checker.
