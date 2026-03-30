@@ -3115,6 +3115,35 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             
+            // --- Typed return categories for sys() ---
+            // Most syscalls return int64 (count, fd, 0/-errno).
+            // STRING_BUF syscalls write into a user buffer and return length;
+            // the compiler auto-allocates the buffer and converts to Aria string.
+            enum class SysReturnCategory { INT64, STRING_BUF };
+            static const std::unordered_map<std::string, SysReturnCategory> syscallReturnTypes = {
+                {"GETCWD",   SysReturnCategory::STRING_BUF},
+                {"READLINK", SysReturnCategory::STRING_BUF},
+            };
+            
+            // Typed-return syscalls: validate arg count (v0.4.1)
+            // STRING_BUF syscalls manage their own buffer — user provides fewer args.
+            {
+                IdentifierExpr* firstId = dynamic_cast<IdentifierExpr*>(expr->arguments[0].get());
+                if (firstId) {
+                    auto retIt = syscallReturnTypes.find(firstId->name);
+                    if (retIt != syscallReturnTypes.end() && retIt->second == SysReturnCategory::STRING_BUF) {
+                        if (firstId->name == "GETCWD" && expr->arguments.size() != 1) {
+                            addError("sys(GETCWD) takes no additional arguments — buffer is managed automatically", expr);
+                            return typeSystem->getErrorType();
+                        }
+                        if (firstId->name == "READLINK" && expr->arguments.size() != 2) {
+                            addError("sys(READLINK, path) takes exactly one argument (the symlink path)", expr);
+                            return typeSystem->getErrorType();
+                        }
+                    }
+                }
+            }
+            
             // --- Safe-tier whitelist (sys() only) ---
             // The safe tier requires the first argument to be a compile-time
             // constant identifier from the curated safe syscall set.
@@ -3285,7 +3314,18 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 // sys!!!() returns bare int64 — no safety wrapping
                 return typeSystem->getPrimitiveType("int64");
             } else {
-                // sys() and sys!!() return Result<int64>
+                // Determine return type from syscall name (typed returns, v0.4.1)
+                std::string syscallName;
+                IdentifierExpr* firstArgId = dynamic_cast<IdentifierExpr*>(expr->arguments[0].get());
+                if (firstArgId) {
+                    syscallName = firstArgId->name;
+                }
+                
+                auto retIt = syscallReturnTypes.find(syscallName);
+                if (retIt != syscallReturnTypes.end() && retIt->second == SysReturnCategory::STRING_BUF) {
+                    return typeSystem->getResultType(typeSystem->getPrimitiveType("string"));
+                }
+                // Default: Result<int64>
                 return typeSystem->getResultType(typeSystem->getPrimitiveType("int64"));
             }
         }
