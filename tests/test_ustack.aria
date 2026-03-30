@@ -1,0 +1,103 @@
+// test_ustack.aria — Test user stack builtins (v0.4.2)
+// astack / apush / apop / apeek
+
+func:failsafe = int32(tbb32:err) {
+    exit(1);
+};
+
+func:main = int32() {
+    // ================================================================
+    // Test 1: Create a user stack
+    // ================================================================
+    int64:stk = astack(64i64);
+    if (stk != 0i64) {
+        println("PASS: astack created");
+    } else {
+        println("FAIL: astack returned null");
+    }
+
+    // ================================================================
+    // Test 2: Push and pop int64 values
+    // ================================================================
+    apush(stk, 42i64);
+    apush(stk, 99i64);
+    int64:val1 = apop(stk);
+    int64:val2 = apop(stk);
+
+    if (val1 == 99i64) {
+        println("PASS: pop returned 99 (LIFO order)");
+    } else {
+        println("FAIL: pop did not return 99");
+    }
+
+    if (val2 == 42i64) {
+        println("PASS: pop returned 42 (LIFO order)");
+    } else {
+        println("FAIL: pop did not return 42");
+    }
+
+    // ================================================================
+    // Test 3: Peek does not remove
+    // ================================================================
+    apush(stk, 77i64);
+    int64:peeked = apeek(stk);
+    int64:popped = apop(stk);
+
+    if (peeked == 77i64) {
+        println("PASS: peek returned 77");
+    } else {
+        println("FAIL: peek wrong value");
+    }
+
+    if (popped == 77i64) {
+        println("PASS: pop after peek returned 77");
+    } else {
+        println("FAIL: pop after peek wrong");
+    }
+
+    // ================================================================
+    // Test 4: Push multiple, pop in correct LIFO order
+    // ================================================================
+    apush(stk, 10i64);
+    apush(stk, 20i64);
+    apush(stk, 30i64);
+
+    int64:a = apop(stk);
+    int64:b = apop(stk);
+    int64:c = apop(stk);
+
+    if (a == 30i64) {
+        println("PASS: LIFO 30");
+    } else {
+        println("FAIL: expected 30");
+    }
+
+    if (b == 20i64) {
+        println("PASS: LIFO 20");
+    } else {
+        println("FAIL: expected 20");
+    }
+
+    if (c == 10i64) {
+        println("PASS: LIFO 10");
+    } else {
+        println("FAIL: expected 10");
+    }
+
+    // ================================================================
+    // Test 5: Push overflow detection (push returns non-zero)
+    // ================================================================
+    int64:tiny = astack(2i64);
+    apush(tiny, 1i64);
+    apush(tiny, 2i64);
+    int32:overflow = apush(tiny, 3i64);
+
+    if (overflow != 0i32) {
+        println("PASS: overflow detected");
+    } else {
+        println("FAIL: overflow not detected");
+    }
+
+    println("All user stack tests completed!");
+    return 0;
+};

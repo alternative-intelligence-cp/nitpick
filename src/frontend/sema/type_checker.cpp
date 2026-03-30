@@ -3605,6 +3605,72 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
 
         // ====================================================================
+        // USER STACK BUILTINS (v0.4.2 — Typed LIFO Scratch Pad)
+        // ====================================================================
+        // astack(capacity) → int64 handle
+        // apush(handle, value) → int32 (0 = ok, negative = error)
+        // apop(handle) → T (type from assignment context, runtime-checked)
+        // apeek(handle) → T (same as apop but non-destructive)
+
+        // Builtin: astack(capacity: int64) -> int64
+        if (idExpr->name == "astack") {
+            if (expr->arguments.size() != 1) {
+                addError("astack() requires exactly one argument (capacity in slots)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // Builtin: apush(handle: int64, value: any) -> int32
+        if (idExpr->name == "apush") {
+            if (expr->arguments.size() != 2) {
+                addError("apush() requires exactly two arguments (handle, value)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* handleType = inferType(expr->arguments[0].get());
+            if (handleType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            Type* valueType = inferType(expr->arguments[1].get());
+            if (valueType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+
+        // Builtin: apop(handle: int64) -> int64
+        // The actual type is checked at runtime via type tags.
+        // Compiler returns int64; codegen will bitcast to destination type.
+        if (idExpr->name == "apop") {
+            if (expr->arguments.size() != 1) {
+                addError("apop() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // Builtin: apeek(handle: int64) -> int64
+        if (idExpr->name == "apeek") {
+            if (expr->arguments.size() != 1) {
+                addError("apeek() requires exactly one argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // ====================================================================
         // WILD MEMORY BUILTINS (Phase 2.2 - Manual Memory Management)
         // ====================================================================
         // These are the primitive wild memory operations that the borrow checker
