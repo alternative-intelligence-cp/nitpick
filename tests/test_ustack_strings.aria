@@ -1,59 +1,103 @@
-// test_ustack_strings.aria — Test user stack with string values (v0.4.2)
+// test_ustack_strings.aria — Test per-scope user stack with strings and mixed types (v0.4.3)
 
 func:failsafe = int32(tbb32:err) {
     exit(1);
 };
 
+func:helper = NIL() {
+    // Separate scope with its own stack
+    astack();  // default size (256 slots)
+
+    apush(100i64);
+    apush(200i64);
+    int64:x = apop();
+    int64:y = apop();
+
+    if (x == 200i64) {
+        println("PASS: helper scope stack independent (200)");
+    } else {
+        println("FAIL: helper scope wrong value");
+    }
+
+    if (y == 100i64) {
+        println("PASS: helper scope stack independent (100)");
+    } else {
+        println("FAIL: helper scope wrong value");
+    }
+    // Stack auto-cleaned on scope exit
+    pass(NIL);
+};
+
 func:main = int32() {
-    int64:stk = astack(16i64);
+    astack(32i64);
 
     // ================================================================
-    // Test 1: Push and pop strings
+    // Test 1: Push and pop int64 values across helper call
     // ================================================================
-    apush(stk, "hello");
-    apush(stk, "world");
+    apush(42i64);
 
-    // Pop returns int64 (pointer to AriaString) — but for now we just
-    // verify the push didn't crash and the values come back in order.
-    int64:w = apop(stk);
-    int64:h = apop(stk);
+    // Call helper which uses its own separate scope stack
+    NIL:_ = raw(helper());
 
-    // Both should be valid non-zero pointers
-    if (w != 0i64) {
-        println("PASS: string pop returned non-null");
+    // Our stack should still have 42
+    int64:v = apop();
+    if (v == 42i64) {
+        println("PASS: main stack preserved across helper call");
     } else {
-        println("FAIL: string pop returned null");
-    }
-
-    if (h != 0i64) {
-        println("PASS: string pop 2 returned non-null");
-    } else {
-        println("FAIL: string pop 2 returned null");
+        println("FAIL: main stack corrupted by helper");
     }
 
     // ================================================================
-    // Test 2: Mix int64 and strings
+    // Test 2: Mixed int types — push int8, int32, int64, pop correctly
     // ================================================================
-    apush(stk, 42i64);
-    apush(stk, "mixed");
-    apush(stk, 99i64);
+    apush(7i8);
+    apush(1000i32);
+    apush(999999i64);
 
-    int64:v1 = apop(stk);
-    int64:v2 = apop(stk);
-    int64:v3 = apop(stk);
+    int64:m3 = apop();
+    int32:m2 = apop();
+    int8:m1 = apop();
 
-    if (v1 == 99i64) {
-        println("PASS: mixed pop int64 correct");
+    if (m3 == 999999i64) {
+        println("PASS: mixed int64 correct");
     } else {
-        println("FAIL: mixed pop int64 wrong");
+        println("FAIL: mixed int64 wrong");
     }
 
-    if (v3 == 42i64) {
-        println("PASS: mixed pop int64 bottom correct");
+    if (m2 == 1000i32) {
+        println("PASS: mixed int32 correct");
     } else {
-        println("FAIL: mixed pop int64 bottom wrong");
+        println("FAIL: mixed int32 wrong");
     }
 
-    println("String stack tests completed!");
+    if (m1 == 7i8) {
+        println("PASS: mixed int8 correct");
+    } else {
+        println("FAIL: mixed int8 wrong");
+    }
+
+    // ================================================================
+    // Test 3: Float + int mixed
+    // ================================================================
+    apush(42i64);
+    apush(1.5f32);
+
+    flt32:fv = apop();
+    int64:iv = apop();
+
+    flt32:fdiff = fv - 1.5f32;
+    if (fdiff < 0.001f32) {
+        println("PASS: mixed float pop correct");
+    } else {
+        println("FAIL: mixed float pop wrong");
+    }
+
+    if (iv == 42i64) {
+        println("PASS: mixed int64 under float correct");
+    } else {
+        println("FAIL: mixed int64 under float wrong");
+    }
+
+    println("Mixed type and scope tests completed!");
     return 0;
 };

@@ -1,5 +1,38 @@
 # Aria Language Changelog
 
+## [0.4.3] - March 2026
+
+### Changed — Per-Scope Implicit User Stack (Breaking Redesign)
+The v0.4.2 handle-based user stack has been redesigned to use per-scope implicit stacks with no handles, context-typed pop, and auto-cleanup.
+
+- **`astack()`** — Initialize one implicit stack per function scope (optional capacity arg, default 256 slots). No handle returned or needed.
+- **`apush(value)`** — Push a typed value. One argument only — handle is implicit. Fatal exit(1) on overflow with diagnostic.
+- **`apop()`** — Pop top value. Zero arguments — destination type inferred from assignment target (e.g., `flt32:f = apop()` returns float). Runtime type-tag checking with fatal exit(1) on mismatch or underflow.
+- **`apeek()`** — Non-destructive peek. Same context-typed semantics as apop.
+- **Auto-cleanup** — Stack automatically destroyed on function return (both explicit `return` and fallthrough).
+- **Fatal error model** — Push overflow, pop underflow, pop type mismatch all call `exit(1)` with diagnostic to stderr. No error codes, no Result<T> wrapping.
+
+### Architecture
+- `include/runtime/ustack.h` — Push changed to void return, removed error code defines, added default capacity
+- `src/runtime/collections/ustack.cpp` — Push now returns void with fatal exit on overflow
+- `include/backend/ir/codegen_expr.h` — Added `ustack_pop_dest_type` context variable for type-aware pop
+- `include/backend/ir/ir_generator.h` — Added `ustack_pop_dest_type` for propagation to ExprCodegen
+- `src/frontend/sema/type_checker.cpp` — New signatures: astack(0-1 args), apush(1 arg), apop/apeek(0 args, return UnknownType)
+- `src/backend/ir/codegen_expr.cpp` — Per-scope implicit stack via hidden `__aria_ustack_handle` alloca; type-aware pop/peek with bitcast chain for float round-trip
+- `src/backend/ir/codegen_stmt.cpp` — VarDecl sets dest type context before initializer codegen; auto-cleanup on return
+- `src/backend/ir/ir_generator.cpp` — VarDecl sets dest type context; CALL dispatch propagates to fresh ExprCodegen
+
+### Tests
+- `tests/test_ustack.aria` — 14 tests: LIFO ordering, peek, multi-push, typed pop (int8/int32/int64/flt32/flt64), mixed types
+- `tests/test_ustack_strings.aria` — 8 tests: scope independence across function calls, mixed int/float types
+
+### Breaking Changes
+- `apush(handle, value)` → `apush(value)` (handle removed)
+- `apop(handle)` → `apop()` (handle removed, type from context)
+- `apeek(handle)` → `apeek()` (handle removed, type from context)
+- `astack(capacity)` return value no longer meaningful (handle is implicit)
+- Push no longer returns error code (fatal on overflow)
+
 ## [0.4.2] - March 2026
 
 ### Added

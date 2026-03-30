@@ -4175,7 +4175,10 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Generate initializer if present
             if (varDecl->initializer) {
                 std::cerr << "[DEBUG IR_GEN] Variable '" << varDecl->varName << "' HAS initializer, generating..." << std::endl;
+                // v0.4.3: Set user stack pop/peek destination type context
+                ustack_pop_dest_type = varType;
                 llvm::Value* initVal = codegenExpression(varDecl->initializer.get());
+                ustack_pop_dest_type = nullptr;
                 std::cerr << "[DEBUG IR_GEN] Initializer generated, value = " << (void*)initVal << std::endl;
                 if (initVal) {
                     // For optional types, need to construct the { i1, T } struct
@@ -6265,6 +6268,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             backend::ExprCodegen expr_codegen(context, builder, module.get(), named_values, var_aria_types, type_system);
             expr_codegen.setDynParamInfo(&func_dyn_params);
             expr_codegen.setTraitMethodOrder(&trait_method_order);
+            // v0.4.3: Propagate user stack pop/peek destination type context
+            expr_codegen.ustack_pop_dest_type = ustack_pop_dest_type;
             return expr_codegen.codegenCall(call);
         }
         

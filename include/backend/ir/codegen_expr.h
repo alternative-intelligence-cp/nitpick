@@ -182,6 +182,12 @@ public:
         trait_method_order_ = order;
     }
 
+    // v0.4.3: User stack pop/peek destination type context
+    // Set by StmtCodegen before codegenning an initializer that may be apop()/apeek().
+    // The apop/apeek codegen reads this to determine the expected type tag and
+    // convert the raw i64 to the correct LLVM type before returning.
+    llvm::Type* ustack_pop_dest_type = nullptr;
+
     /**
      * Promote int64 literal to LBIM struct type (int128/256/512/1024/2048/4096)
      * Used when assigning literals to large integer variables

@@ -671,8 +671,16 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
         // Debug: print initializer node type
         ARIA_DBG_STREAM << "[DEBUG] codegenVarDecl: Initializer node type = " << static_cast<int>(stmt->initializer->type) << std::endl;
         
+        // v0.4.3: Set user stack pop/peek destination type context
+        // If the initializer is an apop()/apeek() call, the codegen needs
+        // to know the destination type for tag checking and type conversion.
+        expr_codegen->ustack_pop_dest_type = var_type;
+
         // Generate code for initializer expression
         llvm::Value* init_value = expr_codegen->codegenExpressionNode(stmt->initializer.get(), expr_codegen);
+        
+        // v0.4.3: Clear context after codegen
+        expr_codegen->ustack_pop_dest_type = nullptr;
         
         if (!init_value) {
             throw std::runtime_error("Failed to generate code for initializer expression");
@@ -966,6 +974,22 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
     // If the last instruction isn't a terminator, add a default return
     llvm::BasicBlock* current_block = builder.GetInsertBlock();
     if (current_block && !current_block->getTerminator()) {
+        // v0.4.3: Auto-cleanup user stack before fallthrough return
+        {
+            auto it = named_values.find("__aria_ustack_handle");
+            if (it != named_values.end()) {
+                llvm::Function* destroyFunc = module->getFunction("aria_ustack_destroy");
+                if (!destroyFunc) {
+                    llvm::FunctionType* ft = llvm::FunctionType::get(
+                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
+                    destroyFunc = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                        "aria_ustack_destroy", module);
+                }
+                llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_cleanup");
+                builder.CreateCall(destroyFunc, {handle});
+            }
+        }
+
         if (stmt->isAsync) {
             // Async function: Jump to final suspend instead of returning directly
             builder.CreateBr(coro_suspend_block);
@@ -2536,6 +2560,22 @@ void StmtCodegen::executeFunctionDefers() {
 void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
     // Execute all defer blocks before returning (LIFO order)
     executeFunctionDefers();
+    
+    // v0.4.3: Auto-cleanup user stack if present in this scope
+    {
+        auto it = named_values.find("__aria_ustack_handle");
+        if (it != named_values.end()) {
+            llvm::Function* destroyFunc = module->getFunction("aria_ustack_destroy");
+            if (!destroyFunc) {
+                llvm::FunctionType* ft = llvm::FunctionType::get(
+                    builder.getVoidTy(), {builder.getInt64Ty()}, false);
+                destroyFunc = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                    "aria_ustack_destroy", module);
+            }
+            llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_cleanup");
+            builder.CreateCall(destroyFunc, {handle});
+        }
+    }
     
     if (stmt->value) {
         std::cerr << "[DEBUG RETURN] Return statement has a value expression\n";
