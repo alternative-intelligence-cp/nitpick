@@ -854,6 +854,7 @@ int32_t tk_pipe_right()     { return (int32_t)TokenType::TOKEN_PIPE_RIGHT; }
 int32_t tk_pipe_left()      { return (int32_t)TokenType::TOKEN_PIPE_LEFT; }
 int32_t tk_null_coalesce()  { return (int32_t)TokenType::TOKEN_NULL_COALESCE; }
 int32_t tk_question_bang()  { return (int32_t)TokenType::TOKEN_QUESTION_BANG; }
+int32_t tk_bang_bang()      { return (int32_t)TokenType::TOKEN_BANG_BANG; }
 int32_t tk_plus_plus()      { return (int32_t)TokenType::TOKEN_PLUS_PLUS; }
 int32_t tk_minus_minus()    { return (int32_t)TokenType::TOKEN_MINUS_MINUS; }
 int32_t tk_bang_bang_bang()  { return (int32_t)TokenType::TOKEN_BANG_BANG_BANG; }

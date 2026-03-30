@@ -141,6 +141,14 @@ Test combinations of features:
 - Async + error handling
 - Traits + impl + generics
 
+### Strategy 7: Drop & Raw Shorthand Operators
+Test `_?` and `_!` prefix operators:
+- `_?expr` desugars to `drop(expr)` — discard Result without checking
+- `_!expr` desugars to `raw(expr)` — extract value without error check
+- Mixed verbose/shorthand: `drop()` + `_?`, `raw()` + `_!`
+- `_!` on non-Result (should error)
+- `_?`/`_!` with chained expressions
+
 ## Test Categories
 
 ### A. Positive Tests (Should Compile)

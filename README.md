@@ -56,12 +56,14 @@ The Aria compiler now includes **Z3 SMT solver integration** for static formal v
 ## Language Features
 
 ### Stable
-- **All primitive types** — int8/16/32/64, uint8/16/32/64, flt32/flt64, bool, string
+- **All primitive types** — int1/2/4/8/16/32/64/128/256/512/1024/2048/4096, uint1/2/4/8/16/32/64/128/256/512/1024/2048/4096, flt32/64/128/256/512, bool, string
 - **TBB Types (tbb8/16/32/64)** — Symmetric signed integers with overflow sentinel (-128/ERR)
+- **TFP TYPES (tfp16/32)** — Twisted Floating Point
+- **any** — type erased pointer, equivalent to void* in C
 - **Balanced Ternary/Nonary Literals & Runtime** — `0t[01T]+` and `0n[01234ABCD]+` syntax, full trit/tryte/nit/nyte arithmetic
 - **Quantum Types** — Superposition states for probabilistic computation
 - **Generic Functions and Structs** — Monomorphization with type inference
-- **Result Types** — `pass`/`fail` with `?` propagation and `!` unwrap, `Result<T>` signatures
+- **Result Types** — `pass`/`fail` with `?` propagation and `!` unwrap, `Result<T>` signatures, `_?`/`_!` shorthand operators
 - **`fail()` from user functions** — Result-style: `fail(err)` produces `Result{error:err, is_error:true}`, complement to `pass(val)`
 - **Layered Safety** — `?!` (checked), `!!!` (unchecked), `unknown`/`ok()`, `failsafe`
 - **Async/Await** — LLVM coroutine-based with promise mechanism for error propagation through async boundaries
@@ -76,9 +78,11 @@ The Aria compiler now includes **Z3 SMT solver integration** for static formal v
 - **Atomic types** — Lock-free concurrent primitives
 - **Dimensional algebra** — Unit-typed arithmetic
 - **NIL/void separation** — NIL is Aria's unit type (wrapped in `Result<nil>`), void restricted to extern blocks, bridge via pointer erasure
+- **NIL/NULL separation** — NIL for no value, NULL for no reference
 - **Operators** — Full suite including `+` (string concatenation), `@` (address), `#` (pin), `->` (arrow), `..`/`...` (ranges)
 - **Template literals** — `` `&{variable}` `` string interpolation
 - **Six-stream I/O** — stdin/stdout/stderr/stddbg/stddati/stddato with runtime initialization, graceful fallback, `stdin_read_all()` and `stdin_read_line()` builtins
+- **sys() syscall interface** — Three-tier direct Linux syscall invocation (`sys`/`sys!!`/`sys!!!`) with compile-time safety whitelist, Result<int64> wrapping, and TOS escalation integration
 - **Traits** — Definition, implementation, UFCS on primitive types, `dyn Trait` vtable dispatch, trait bounds on generics
 - **Optional types** — `T?` with `??` nil-coalescing, `?.` safe navigation; working for primitives and custom types
 - **Async channels & actors** — Buffered/unbuffered/oneshot channels, actor spawn/send/stop, fan-out/fan-in/pipeline patterns

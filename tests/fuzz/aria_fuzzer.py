@@ -266,6 +266,7 @@ class AriaGenerator:
             self._gen_with_alloc,
             self._gen_with_functions,
             self._gen_adversarial,
+            self._gen_drop_raw_shorthand,
         ]
         return random.choice(generators)()
 
@@ -334,6 +335,26 @@ func:main = int32() {
             fs + "func:main = int32() { int32:変量 = 42; exit(0); };",
             # Null byte in source
             fs + "func:main = int32() { int32:x\x00y = 1; exit(0); };",
+        ]
+        return random.choice(cases)
+
+    def _gen_drop_raw_shorthand(self) -> str:
+        """Generate programs using _? and _! shorthand operators."""
+        fs = self.FAILSAFE
+        cases = [
+            # _? basic — drop println result
+            fs + 'func:main = int32() { _?println("hello"); exit(0); };',
+            # _! basic — raw extract from known-good result
+            fs + 'func:safe_add = Result<int64>(int64:a, int64:b) { pass(a + b); };\n'
+               + 'func:main = int32() { int64:x = _!safe_add(1i64, 2i64); exit(0); };',
+            # Mixed verbose and shorthand
+            fs + 'func:main = int32() { drop(println("a")); _?println("b"); exit(0); };',
+            # _? with side-effect expression
+            fs + 'func:do_work = Result<int64>() { pass(42i64); };\n'
+               + 'func:main = int32() { _?do_work(); exit(0); };',
+            # _! chained with arithmetic
+            fs + 'func:safe_val = Result<int64>() { pass(10i64); };\n'
+               + 'func:main = int32() { int64:x = _!safe_val() + 5i64; exit(0); };',
         ]
         return random.choice(cases)
 

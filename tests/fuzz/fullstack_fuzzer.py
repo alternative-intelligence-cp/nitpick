@@ -434,7 +434,93 @@ func:main = int32() {{
     stack int32->:ptr = @val;
     exit(0);
 }};"""
-    
+
+    def generate_syscall(self) -> str:
+        """Tiered sys() syscall invocations."""
+        safe_calls = ['GETPID', 'GETPPID', 'GETTID', 'GETUID', 'GETGID', 'GETEUID', 'GETEGID']
+        variant = random.choice(['safe', 'safe_write', 'full', 'raw', 'wrapper'])
+        sc = random.choice(safe_calls)
+
+        if variant == 'safe':
+            return f"""use "sys.aria".*;
+{self.FAILSAFE}func:main = int32() {{
+    Result<int64>:r = sys({sc});
+    int64:val = r ? -1i64;
+    exit(0);
+}};"""
+        elif variant == 'safe_write':
+            msg = f"fuzz{random.randint(0,9999)}"
+            return f"""use "sys.aria".*;
+{self.FAILSAFE}func:main = int32() {{
+    Result<int64>:w = sys(WRITE, 1i64, "{msg}\n", {len(msg)+1}i64);
+    int64:bytes = w ? 0i64;
+    exit(0);
+}};"""
+        elif variant == 'full':
+            return f"""use "sys.aria".*;
+{self.FAILSAFE}func:main = int32() {{
+    Result<int64>:r = sys!!({sc});
+    int64:val = r ? -1i64;
+    exit(0);
+}};"""
+        elif variant == 'raw':
+            nr_map = {'GETPID': 39, 'GETPPID': 110, 'GETTID': 186,
+                      'GETUID': 102, 'GETGID': 104, 'GETEUID': 107, 'GETEGID': 108}
+            nr = nr_map[sc]
+            return f"""use "sys.aria".*;
+{self.FAILSAFE}func:main = int32() {{
+    int64:val = sys!!!({nr}i64);
+    exit(0);
+}};"""
+        else:  # wrapper
+            return f"""use "sys.aria".*;
+func:get_val = int64() {{
+    Result<int64>:r = sys({sc});
+    int64:v = r ? -1i64;
+    pass(v);
+}};
+{self.FAILSAFE}func:main = int32() {{
+    Result<int64>:v = get_val();
+    int64:result = v ? 0i64;
+    exit(0);
+}};"""
+
+    def generate_drop_raw_shorthand(self) -> str:
+        """_? drop shorthand and _! raw shorthand operators."""
+        variant = random.choice(['drop_print', 'raw_add', 'mixed', 'drop_func', 'raw_chain'])
+
+        if variant == 'drop_print':
+            return f"""{self.FAILSAFE}func:main = int32() {{
+    _?println("fuzz drop {self._rand_int32()}");
+    exit(0);
+}};"""
+        elif variant == 'raw_add':
+            a, b = self._rand_int64(), self._rand_int64()
+            return f"""func:safe_add = Result<int64>(int64:a, int64:b) {{ pass(a + b); }};
+{self.FAILSAFE}func:main = int32() {{
+    int64:x = _!safe_add({a}i64, {b}i64);
+    exit(0);
+}};"""
+        elif variant == 'mixed':
+            return f"""{self.FAILSAFE}func:main = int32() {{
+    drop(println("verbose"));
+    _?println("shorthand");
+    exit(0);
+}};"""
+        elif variant == 'drop_func':
+            return f"""func:do_work = Result<int64>() {{ pass({self._rand_int64()}i64); }};
+{self.FAILSAFE}func:main = int32() {{
+    _?do_work();
+    exit(0);
+}};"""
+        else:  # raw_chain
+            v = self._rand_int64()
+            return f"""func:safe_val = Result<int64>() {{ pass({v}i64); }};
+{self.FAILSAFE}func:main = int32() {{
+    int64:x = _!safe_val() + 1i64;
+    exit(0);
+}};"""
+
     def test_program(self, source: str, run_executable: bool = False) -> TestResult:
         """Compile, link, and optionally run a program."""
         test_file = Path(f"/tmp/fuzz_{os.getpid()}.aria")
@@ -548,6 +634,8 @@ func:main = int32() {{
             ("String Compare", self.generate_string_compare),
             ("Const Literal", self.generate_const_literal),
             ("Pointer Basic", self.generate_pointer_basic),
+            ("Syscall", self.generate_syscall),
+            ("Drop/Raw Shorthand", self.generate_drop_raw_shorthand),
         ]
         
         for i in range(iterations):

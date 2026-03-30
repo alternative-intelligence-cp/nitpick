@@ -9847,11 +9847,20 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Get the Result struct type from the type system
                     llvm::Type* result_llvm_type = mapType(aria_type);
                     llvm::Value* result_val = builder.CreateLoad(result_llvm_type, object_ptr, "result");
-                    return builder.CreateExtractValue(result_val, field_index, member->member);
+                    llvm::Value* field = builder.CreateExtractValue(result_val, field_index, member->member);
+                    // .error field is ptr (inttoptr of error code in fail()) — convert back to int32
+                    if (field_index == 1 && field->getType()->isPointerTy()) {
+                        field = builder.CreatePtrToInt(field, builder.getInt32Ty(), "error_code");
+                    }
+                    return field;
                 } else {
                     // Result is an SSA value (e.g., function parameter)
                     // Extract directly
-                    return builder.CreateExtractValue(object_ptr, field_index, member->member);
+                    llvm::Value* field = builder.CreateExtractValue(object_ptr, field_index, member->member);
+                    if (field_index == 1 && field->getType()->isPointerTy()) {
+                        field = builder.CreatePtrToInt(field, builder.getInt32Ty(), "error_code");
+                    }
+                    return field;
                 }
             }
             

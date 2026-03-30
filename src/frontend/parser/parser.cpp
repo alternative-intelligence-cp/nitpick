@@ -673,6 +673,37 @@ ASTNodePtr Parser::parsePrimary() {
             return std::make_shared<IdentifierExpr>(createFuncName, line, col);
         }
         
+        // Check for sys() / sys!!() / sys!!!() — tiered syscall builtin
+        if (lexeme == "sys") {
+            std::string calleeName = "sys";
+            
+            // Check for tier modifiers: !! (full) or !!! (raw)
+            if (check(TokenType::TOKEN_BANG_BANG_BANG)) {
+                advance(); // consume !!!
+                calleeName = "sys!!!";
+            } else if (check(TokenType::TOKEN_BANG_BANG)) {
+                advance(); // consume !!
+                calleeName = "sys!!";
+            }
+            
+            consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after " + calleeName);
+            
+            std::vector<ASTNodePtr> arguments;
+            if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+                do {
+                    ASTNodePtr arg = parseExpression();
+                    if (arg) {
+                        arguments.push_back(arg);
+                    }
+                } while (match(TokenType::TOKEN_COMMA));
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after " + calleeName + " arguments");
+            
+            auto identExpr = std::make_shared<IdentifierExpr>(calleeName, line, col);
+            return std::make_shared<CallExpr>(identExpr, arguments, line, col);
+        }
+        
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
     }
     
@@ -998,6 +1029,46 @@ ASTNodePtr Parser::parseUnary() {
         consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after variable in move()");
         
         return std::make_shared<MoveExpr>(varName, varExpr, line, col);
+    }
+    
+    // Check for _? (drop shorthand): _? <expression> → drop(expression)
+    if (token.type == TokenType::TOKEN_UNDERSCORE_QUESTION) {
+        advance(); // consume '_?'
+        
+        ASTNodePtr operand = parseUnary();
+        if (!operand) {
+            error("Expected expression after '_?'");
+            return nullptr;
+        }
+        
+        // Apply postfix operators so _? myFunc().field works correctly
+        operand = parsePostfix(operand);
+        
+        // Desugar to drop(operand)
+        std::vector<ASTNodePtr> args;
+        args.push_back(operand);
+        auto identExpr = std::make_shared<IdentifierExpr>("drop", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // Check for _! (raw shorthand): _! <expression> → raw(expression)
+    if (token.type == TokenType::TOKEN_UNDERSCORE_BANG) {
+        advance(); // consume '_!'
+        
+        ASTNodePtr operand = parseUnary();
+        if (!operand) {
+            error("Expected expression after '_!'");
+            return nullptr;
+        }
+        
+        // Apply postfix operators so _! myFunc().field works correctly
+        operand = parsePostfix(operand);
+        
+        // Desugar to raw(operand)
+        std::vector<ASTNodePtr> args;
+        args.push_back(operand);
+        auto identExpr = std::make_shared<IdentifierExpr>("raw", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
     }
     
     // Check for failsafe call: !!! <expression>

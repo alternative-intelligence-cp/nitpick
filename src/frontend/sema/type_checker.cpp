@@ -1386,12 +1386,12 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         bool exoticIntLiteralComparison = false;
         
         // Check if left is exotic type and right is int32 (literal type)
-        if ((isBalancedType(leftType) || isNumericExoticType(leftType)) && 
+        if ((isBalancedType(leftType) || isNumericExoticType(leftType) || isTBBType(leftType)) && 
             (rightType->toString() == "int32" || rightType->toString() == "int64")) {
             exoticIntLiteralComparison = true;
         }
         // Check if right is exotic type and left is int32 (literal type)
-        else if ((isBalancedType(rightType) || isNumericExoticType(rightType)) && 
+        else if ((isBalancedType(rightType) || isNumericExoticType(rightType) || isTBBType(rightType)) && 
                  (leftType->toString() == "int32" || leftType->toString() == "int64")) {
             exoticIntLiteralComparison = true;
         }
@@ -3091,6 +3091,203 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             return typeSystem->getPrimitiveType("string");
+        }
+        
+        // ====================================================================
+        // SYSCALL BUILTINS — sys() / sys!!() / sys!!!()
+        // Tiered system call interface (v0.4.0)
+        // ====================================================================
+        
+        if (idExpr->name == "sys" || idExpr->name == "sys!!" || idExpr->name == "sys!!!") {
+            bool isSafe = (idExpr->name == "sys");
+            bool isRaw  = (idExpr->name == "sys!!!");
+            
+            // Need at least 1 argument (the syscall number)
+            if (expr->arguments.size() < 1) {
+                addError(idExpr->name + "() requires at least one argument (syscall constant)", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Maximum 7 arguments (syscall number + 6 args)
+            if (expr->arguments.size() > 7) {
+                addError(idExpr->name + "() accepts at most 7 arguments (syscall number + 6 args), got " +
+                         std::to_string(expr->arguments.size()), expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // --- Safe-tier whitelist (sys() only) ---
+            // The safe tier requires the first argument to be a compile-time
+            // constant identifier from the curated safe syscall set.
+            static const std::unordered_set<std::string> safeSyscalls = {
+                // File I/O
+                "READ", "WRITE", "OPEN", "CLOSE", "LSEEK", "PREAD64", "PWRITE64",
+                "OPENAT", "READV", "WRITEV", "FSTAT", "NEWFSTATAT",
+                // Memory
+                "MMAP", "MUNMAP", "MPROTECT", "BRK", "MREMAP",
+                // Directory
+                "GETDENTS64", "GETCWD", "CHDIR", "MKDIR", "RMDIR", "RENAME", "RENAMEAT2",
+                "UNLINK", "UNLINKAT", "SYMLINK", "READLINK",
+                // File metadata
+                "FCHMOD", "FCHOWN", "UTIMENSAT", "FACCESSAT",
+                // Process info (read-only)
+                "GETPID", "GETPPID", "GETTID", "GETUID", "GETGID", "GETEUID", "GETEGID",
+                // Time
+                "CLOCK_GETTIME", "CLOCK_NANOSLEEP", "NANOSLEEP",
+                // Networking
+                "SOCKET", "BIND", "LISTEN", "ACCEPT4", "CONNECT", "SEND", "RECV",
+                "SENDTO", "RECVFROM", "SETSOCKOPT", "GETSOCKOPT", "SHUTDOWN",
+                // Polling
+                "POLL", "PPOLL", "EPOLL_CREATE1", "EPOLL_CTL", "EPOLL_WAIT",
+                "SELECT", "PSELECT6",
+                // Pipe / IPC
+                "PIPE2", "DUP", "DUP2", "DUP3", "EVENTFD2",
+                // Misc safe
+                "IOCTL", "FCNTL", "FLOCK", "FSYNC", "FDATASYNC",
+                "GETRANDOM"
+            };
+            
+            // All known syscall constants (for full/raw tiers)
+            static const std::unordered_set<std::string> allSyscalls = {
+                // Everything in safeSyscalls plus dangerous ops:
+                "READ", "WRITE", "OPEN", "CLOSE", "LSEEK", "PREAD64", "PWRITE64",
+                "OPENAT", "READV", "WRITEV", "FSTAT", "NEWFSTATAT",
+                "MMAP", "MUNMAP", "MPROTECT", "BRK", "MREMAP",
+                "GETDENTS64", "GETCWD", "CHDIR", "MKDIR", "RMDIR", "RENAME", "RENAMEAT2",
+                "UNLINK", "UNLINKAT", "SYMLINK", "READLINK",
+                "FCHMOD", "FCHOWN", "UTIMENSAT", "FACCESSAT",
+                "GETPID", "GETPPID", "GETTID", "GETUID", "GETGID", "GETEUID", "GETEGID",
+                "CLOCK_GETTIME", "CLOCK_NANOSLEEP", "NANOSLEEP",
+                "SOCKET", "BIND", "LISTEN", "ACCEPT4", "CONNECT", "SEND", "RECV",
+                "SENDTO", "RECVFROM", "SETSOCKOPT", "GETSOCKOPT", "SHUTDOWN",
+                "POLL", "PPOLL", "EPOLL_CREATE1", "EPOLL_CTL", "EPOLL_WAIT",
+                "SELECT", "PSELECT6",
+                "PIPE2", "DUP", "DUP2", "DUP3", "EVENTFD2",
+                "IOCTL", "FCNTL", "FLOCK", "FSYNC", "FDATASYNC",
+                "GETRANDOM",
+                // Dangerous — require sys!! or sys!!!
+                "EXIT", "EXIT_GROUP",
+                "KILL", "TKILL", "TGKILL",
+                "EXECVE", "EXECVEAT",
+                "FORK", "CLONE", "CLONE3", "VFORK",
+                "PTRACE",
+                "MOUNT", "UMOUNT2",
+                "REBOOT",
+                "SETUID", "SETGID", "SETREUID", "SETREGID", "SETEUID", "SETEGID",
+                "INIT_MODULE", "DELETE_MODULE", "FINIT_MODULE",
+                "SETXATTR", "GETXATTR", "REMOVEXATTR", "LSETXATTR", "LGETXATTR", "LREMOVEXATTR",
+                "FSETXATTR", "FGETXATTR", "FREMOVEXATTR", "LISTXATTR", "LLISTXATTR", "FLISTXATTR",
+                "WAIT4", "WAITID",
+                "PRCTL", "ARCH_PRCTL",
+                "SECCOMP", "USERFAULTFD", "PERF_EVENT_OPEN",
+                "SIGNALFD4", "TIMERFD_CREATE", "TIMERFD_SETTIME", "TIMERFD_GETTIME",
+                "RT_SIGACTION", "RT_SIGPROCMASK", "RT_SIGRETURN", "RT_SIGPENDING",
+                "SIGALTSTACK",
+                "MADVISE", "MINCORE", "MLOCK", "MUNLOCK", "MLOCKALL", "MUNLOCKALL",
+                "SENDMSG", "RECVMSG", "SENDMMSG", "RECVMMSG",
+                "STAT", "LSTAT",
+                "ACCESS", "TRUNCATE", "FTRUNCATE",
+                "CHOWN", "LCHOWN", "CHMOD",
+                "LINK", "LINKAT", "SYMLINKAT", "READLINKAT",
+                "MKDIRAT", "MKNODAT", "UNLINKAT2",
+                "STATX",
+                "IO_URING_SETUP", "IO_URING_ENTER", "IO_URING_REGISTER",
+                "SCHED_YIELD", "SCHED_GETAFFINITY", "SCHED_SETAFFINITY",
+                "FUTEX",
+                "SET_TID_ADDRESS", "SET_ROBUST_LIST", "GET_ROBUST_LIST",
+                "SYSINFO", "UNAME",
+                "GETRLIMIT", "SETRLIMIT", "PRLIMIT64",
+                "GETRUSAGE",
+                "SYSLOG",
+                "INOTIFY_INIT1", "INOTIFY_ADD_WATCH", "INOTIFY_RM_WATCH"
+            };
+            
+            // Validate first argument (syscall constant)
+            if (isSafe) {
+                // Safe tier: first arg MUST be an identifier from the whitelist
+                IdentifierExpr* syscallId = dynamic_cast<IdentifierExpr*>(expr->arguments[0].get());
+                if (!syscallId) {
+                    addError("sys() requires a named syscall constant as the first argument "
+                             "(e.g., READ, WRITE, OPEN). Variables and expressions are not allowed. "
+                             "Use sys!!() or sys!!!() for unrestricted syscall access.", expr);
+                    return typeSystem->getErrorType();
+                }
+                if (safeSyscalls.find(syscallId->name) == safeSyscalls.end()) {
+                    if (allSyscalls.find(syscallId->name) != allSyscalls.end()) {
+                        addError("'" + syscallId->name + "' is not in the safe syscall set. "
+                                 "This syscall could compromise process integrity. "
+                                 "Use sys!!('" + syscallId->name + "', ...) for full access, or "
+                                 "sys!!!('" + syscallId->name + "', ...) for raw access.", expr);
+                    } else {
+                        addError("Unknown syscall constant '" + syscallId->name + "' in sys(). "
+                                 "See stdlib/sys.aria for available syscall names.", expr);
+                    }
+                    return typeSystem->getErrorType();
+                }
+            }
+            
+            // Infer types for all arguments
+            for (size_t i = 0; i < expr->arguments.size(); i++) {
+                // First argument (syscall number): check for named constant FIRST
+                // Named constants (READ, WRITE, etc.) are compiler builtins —
+                // they are NOT variables and must NOT go through inferType().
+                if (i == 0) {
+                    IdentifierExpr* asId = dynamic_cast<IdentifierExpr*>(expr->arguments[0].get());
+                    if (asId && (safeSyscalls.count(asId->name) || allSyscalls.count(asId->name))) {
+                        // Named syscall constant — validated, codegen resolves to number
+                        continue;
+                    }
+                    // Not a named constant — must be a numeric expression
+                    if (!isSafe) {
+                        // Full/raw tiers allow any integer expression as syscall number
+                        Type* argType = inferType(expr->arguments[0].get());
+                        if (argType->getKind() == TypeKind::ERROR) {
+                            return typeSystem->getErrorType();
+                        }
+                        PrimitiveType* prim = dynamic_cast<PrimitiveType*>(argType);
+                        if (!prim || (prim->getName() != "int64" && prim->getName() != "int32" &&
+                                      prim->getName() != "uint64" && prim->getName() != "uint32")) {
+                            addError(idExpr->name + "() first argument (syscall number) must be an integer type or "
+                                     "a named syscall constant (e.g., READ, WRITE), got '" + argType->toString() + "'", expr);
+                            return typeSystem->getErrorType();
+                        }
+                    }
+                    // Safe tier already validated above (must be identifier in whitelist)
+                    continue;
+                }
+                
+                // Remaining args: infer type and validate
+                Type* argType = inferType(expr->arguments[i].get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+                
+                // Accept integer types, string, or pointer types
+                PrimitiveType* prim = dynamic_cast<PrimitiveType*>(argType);
+                if (prim) {
+                    std::string name = prim->getName();
+                    if (name == "int8" || name == "int16" || name == "int32" || name == "int64" ||
+                        name == "uint8" || name == "uint16" || name == "uint32" || name == "uint64" ||
+                        name == "string") {
+                        continue;
+                    }
+                }
+                PointerType* ptr = dynamic_cast<PointerType*>(argType);
+                if (ptr) {
+                    continue;
+                }
+                addError(idExpr->name + "() argument " + std::to_string(i + 1) +
+                         " must be integer, string, or pointer type, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            
+            // Return type depends on tier
+            if (isRaw) {
+                // sys!!!() returns bare int64 — no safety wrapping
+                return typeSystem->getPrimitiveType("int64");
+            } else {
+                // sys() and sys!!() return Result<int64>
+                return typeSystem->getResultType(typeSystem->getPrimitiveType("int64"));
+            }
         }
         
         // ====================================================================
@@ -6690,8 +6887,8 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
                     return typeSystem->getErrorType();
                 }
             }
-            // Return pointer to error (void* in C, int64 in Aria IR)
-            return typeSystem->getPrimitiveType("int64");
+            // Error code type: int32 (matches failsafe tbb32 convention and fail() error codes)
+            return typeSystem->getPrimitiveType("int32");
         }
         
         // Invalid member
@@ -6918,11 +7115,27 @@ Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
         ResultType* resType = static_cast<ResultType*>(resultType);
         valueType = resType->getValueType();
         
-        // Check that default value type matches the unwrapped value type
+        // Fits-or-fails for unsuffixed integer literals:
+        // If the default is an unsuffixed integer literal (defaults to int32),
+        // check if the value fits in the Result's value type (e.g., tbb32).
+        // This mirrors how variable declarations handle `tbb32:x = 42;`.
         if (!defaultType->isAssignableTo(valueType) && !canCoerce(defaultType, valueType)) {
-            addError("Unwrap operator (" + opName + ") default value type '" + defaultType->toString() + 
-                    "' does not match result value type '" + valueType->toString() + "'", expr);
-            return typeSystem->getErrorType();
+            bool literalRetyped = false;
+            if (expr->defaultValue->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(expr->defaultValue.get());
+                if (lit->explicit_type.empty() && std::holds_alternative<int64_t>(lit->value)) {
+                    int64_t val = std::get<int64_t>(lit->value);
+                    if (integerFitsInType(val, valueType->toString())) {
+                        defaultType = valueType;
+                        literalRetyped = true;
+                    }
+                }
+            }
+            if (!literalRetyped) {
+                addError("Unwrap operator (" + opName + ") default value type '" + defaultType->toString() + 
+                        "' does not match result value type '" + valueType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
         }
     } 
     else if (resultType->getKind() == TypeKind::POINTER) {
@@ -8075,7 +8288,8 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
     // Prevent shadowing reserved builtin names
     static const std::unordered_set<std::string> reservedBuiltins = {
         "ok", "print", "println", "stdout_write", "stderr_write",
-        "to_string", "fail", "pass", "drop", "raw", "sleep_ms", "exit", "env_get", "sort_lines"
+        "to_string", "fail", "pass", "drop", "raw", "sleep_ms", "exit", "env_get", "sort_lines",
+        "sys"
     };
     if (reservedBuiltins.count(stmt->varName)) {
         addError("'" + stmt->varName + "' is a reserved builtin and cannot be used as a variable name", stmt);
@@ -8104,8 +8318,9 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                      "$$i/$$m must reference an existing variable", stmt);
             return;
         }
-        // Borrow initializer must be a variable reference (not a literal or expression)
-        if (stmt->initializer->type != ASTNode::NodeType::IDENTIFIER) {
+        // Borrow initializer must be a variable reference or struct field access
+        if (stmt->initializer->type != ASTNode::NodeType::IDENTIFIER &&
+            stmt->initializer->type != ASTNode::NodeType::MEMBER_ACCESS) {
             addError("Borrow variable '" + stmt->varName + "' must borrow from a named variable, "
                      "not a literal or expression", stmt);
             return;
@@ -10303,6 +10518,13 @@ void TypeChecker::checkFailStmt(FailStmt* stmt) {
         return;
     }
     
+    // fail() is not allowed in main or failsafe — use exit() instead
+    if (currentFunctionName == "main" || currentFunctionName == "failsafe") {
+        addError("fail() cannot be used in '" + currentFunctionName + "'. "
+                 "Use exit(code) to terminate program endpoints.", stmt);
+        return;
+    }
+    
     // Infer type of the error code
     Type* errorType = inferType(stmt->errorCode.get());
     
@@ -12157,6 +12379,29 @@ bool TypeChecker::validateFailsafeExists() {
     if (failsafeSymbol->type->getKind() != TypeKind::FUNCTION) {
         addError("'failsafe' must be a function, but is defined as: " + 
                  failsafeSymbol->type->toString(), nullptr);
+        return false;
+    }
+    
+    // Signature details validated in checkFuncDecl() when the function is parsed
+    
+    return true;
+}
+
+bool TypeChecker::validateMainExists() {
+    // Check if main() function is defined in the symbol table
+    Symbol* mainSymbol = symbolTable->resolveSymbol("main");
+    
+    if (!mainSymbol) {
+        addError("Every Aria program must define a 'func:main = int32()' function. "
+                 "main is one of two program endpoints (with failsafe). "
+                 "It is the entry point and must call exit(code) where code 0 = success.", nullptr);
+        return false;
+    }
+    
+    // Validate that it's actually a function
+    if (mainSymbol->type->getKind() != TypeKind::FUNCTION) {
+        addError("'main' must be a function, but is defined as: " + 
+                 mainSymbol->type->toString(), nullptr);
         return false;
     }
     

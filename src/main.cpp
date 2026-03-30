@@ -782,6 +782,16 @@ llvm::Module* compile_to_module(
         return nullptr;
     }
     
+    // Validate that the mandatory main() function exists
+    // Every Aria executable must define main() as the program entry point
+    // Libraries (-c flag) are exempt as they're components, not final programs
+    if (!opts.build_library && !type_checker.validateMainExists()) {
+        for (const auto& err : type_checker.getErrors()) {
+            diags.error(aria::SourceLocation(filename, 0, 0), err);
+        }
+        return nullptr;
+    }
+    
     // Type check all loaded modules (for cross-module calls)
     const auto& loaded_modules = module_loader.getLoadedModules();
     for (const auto& [path, loaded_module] : loaded_modules) {

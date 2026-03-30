@@ -1,0 +1,19 @@
+// BUG-009: .error should return int32 when used on Result<int32>
+// Expected: int32:code = r.error; should compile
+
+func:maybe_fail = int32() {
+    fail(1i32);
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit(1);
+};
+
+func:main = int32() {
+    Result<int32>:r = maybe_fail();
+    if (r.is_error) {
+        int32:code = r.error;
+        println("got error");
+    }
+    exit(0);
+};
