@@ -4556,6 +4556,265 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             }
         }
         
+        // ================================================================
+        // STRING_BUF SYSCALLS — typed returns (v0.4.1)
+        // GETCWD and READLINK write a string into a user buffer.
+        // The compiler manages the buffer and returns Result<string>.
+        // ================================================================
+        if (syscallId && !isRaw) {
+            if (syscallId->name == "GETCWD" || syscallId->name == "READLINK") {
+                // All STRING_BUF syscalls follow this pattern:
+                //   1. mmap anonymous buffer (4096 bytes)
+                //   2. Issue syscall with buffer as appropriate arg
+                //   3. On success: strdup(buf) → Aria string
+                //   4. munmap buffer
+                //   5. Return Result<string>
+                
+                llvm::Type* i64Ty = builder.getInt64Ty();
+                llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+                llvm::Type* i8Ty = builder.getInt8Ty();
+                llvm::Value* bufSize = builder.getInt64(4096);
+                
+                // --- Step 1: mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANON, -1, 0) ---
+                // mmap is syscall 9
+                std::vector<llvm::Type*> mmapParamTypes(7, i64Ty);
+                llvm::FunctionType* mmapAsmType = llvm::FunctionType::get(i64Ty, mmapParamTypes, false);
+                llvm::InlineAsm* mmapAsm = llvm::InlineAsm::get(
+                    mmapAsmType, "syscall",
+                    "={rax},{rax},{rdi},{rsi},{rdx},{r10},{r8},{r9},~{rcx},~{r11},~{memory}",
+                    true, false, llvm::InlineAsm::AD_ATT);
+                
+                llvm::Value* mmapResult = builder.CreateCall(mmapAsmType, mmapAsm, {
+                    builder.getInt64(9),    // SYS_MMAP
+                    builder.getInt64(0),    // addr = NULL
+                    bufSize,                // len = 4096
+                    builder.getInt64(3),    // prot = PROT_READ|PROT_WRITE
+                    builder.getInt64(34),   // flags = MAP_PRIVATE|MAP_ANONYMOUS
+                    builder.getInt64(-1),   // fd = -1
+                    builder.getInt64(0)     // offset = 0
+                }, "sys_strbuf_mmap");
+                
+                // Check mmap success (result should be positive)
+                llvm::Value* mmapFailed = builder.CreateICmpSLT(mmapResult, builder.getInt64(1), "sys_mmap_fail");
+                
+                // We need basic blocks for mmap success/fail
+                llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                llvm::BasicBlock* mmapOkBB = llvm::BasicBlock::Create(context, "sys_strbuf_mmap_ok", currentFunc);
+                llvm::BasicBlock* mmapFailBB = llvm::BasicBlock::Create(context, "sys_strbuf_mmap_fail", currentFunc);
+                llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(context, "sys_strbuf_merge", currentFunc);
+                
+                builder.CreateCondBr(mmapFailed, mmapFailBB, mmapOkBB);
+                
+                // --- mmap failed path: return error Result<string> ---
+                builder.SetInsertPoint(mmapFailBB);
+                // Create empty string for error case
+                llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                if (!ariaStrType) {
+                    ariaStrType = llvm::StructType::create(context, {ptrTy, i64Ty}, "struct.AriaString");
+                }
+                // Result<string> = { AriaString* value, ptr error, i8 is_error }
+                // For string results, use AriaString pointer as value
+                llvm::StructType* resultStrTy = llvm::StructType::get(context, {ptrTy, ptrTy, i8Ty});
+                
+                // Alloca at function entry for Result<string> — LLVM mem2reg optimizes to PHI
+                llvm::BasicBlock& entryBlock = currentFunc->getEntryBlock();
+                llvm::IRBuilder<> entryBuilder(&entryBlock, entryBlock.begin());
+                llvm::Value* resultAlloca = entryBuilder.CreateAlloca(resultStrTy, nullptr, "sys_strbuf_result");
+                
+                // Create empty string constant for error path
+                llvm::Constant* emptyStrData = builder.CreateGlobalStringPtr("", "sys_strbuf_empty_data");
+                llvm::Value* emptyStr_fail = llvm::UndefValue::get(ariaStrType);
+                emptyStr_fail = builder.CreateInsertValue(emptyStr_fail, emptyStrData, 0, "es_fail.data");
+                emptyStr_fail = builder.CreateInsertValue(emptyStr_fail, builder.getInt64(0), 1, "es_fail.len");
+                
+                // GC-alloc to hold the AriaString struct
+                llvm::FunctionCallee gcAlloc = module->getOrInsertFunction("aria_gc_alloc",
+                    llvm::FunctionType::get(ptrTy, {i64Ty}, false));
+                llvm::Value* emptyStrPtr_fail = builder.CreateCall(gcAlloc, {builder.getInt64(16)}, "es_fail_ptr");
+                builder.CreateStore(emptyStr_fail, emptyStrPtr_fail);
+                
+                // Negate mmap result for errno
+                llvm::Value* negMmap = builder.CreateNeg(mmapResult, "sys_strbuf_neg_errno");
+                llvm::Value* errPtrFail = builder.CreateIntToPtr(negMmap, ptrTy, "sys_strbuf_err_ptr");
+                
+                llvm::Value* failResult = llvm::UndefValue::get(resultStrTy);
+                failResult = builder.CreateInsertValue(failResult, emptyStrPtr_fail, 0, "sys_strbuf_fail.val");
+                failResult = builder.CreateInsertValue(failResult, errPtrFail, 1, "sys_strbuf_fail.err");
+                failResult = builder.CreateInsertValue(failResult, llvm::ConstantInt::get(i8Ty, 1), 2, "sys_strbuf_fail.flag");
+                builder.CreateStore(failResult, resultAlloca);
+                builder.CreateBr(mergeBB);
+                
+                // --- mmap succeeded path: issue the actual syscall ---
+                builder.SetInsertPoint(mmapOkBB);
+                
+                llvm::Value* bufPtr = mmapResult; // buffer address as i64
+                llvm::Value* sysRawResult = nullptr;
+                
+                if (syscallId->name == "GETCWD") {
+                    // getcwd(buf, size) — syscall 79
+                    std::vector<llvm::Type*> cwdParamTypes(3, i64Ty);
+                    llvm::FunctionType* cwdAsmType = llvm::FunctionType::get(i64Ty, cwdParamTypes, false);
+                    llvm::InlineAsm* cwdAsm = llvm::InlineAsm::get(
+                        cwdAsmType, "syscall",
+                        "={rax},{rax},{rdi},{rsi},~{rcx},~{r11},~{memory}",
+                        true, false, llvm::InlineAsm::AD_ATT);
+                    sysRawResult = builder.CreateCall(cwdAsmType, cwdAsm, {
+                        syscallNr, bufPtr, bufSize
+                    }, "sys_getcwd_ret");
+                    
+                } else if (syscallId->name == "READLINK") {
+                    // readlink(path, buf, bufsiz) — syscall 89
+                    // User provides 1 arg: the path
+                    llvm::Value* pathArg = codegenExpressionNode(expr->arguments[1].get(), this);
+                    if (!pathArg) {
+                        throw std::runtime_error("Failed to generate READLINK path argument");
+                    }
+                    // Convert path to char* (i64 for register)
+                    if (llvm::isa<llvm::GlobalVariable>(pathArg)) {
+                        llvm::GlobalVariable* gv = llvm::cast<llvm::GlobalVariable>(pathArg);
+                        llvm::Type* gvType = gv->getValueType();
+                        if (gvType->isStructTy()) {
+                            llvm::Value* dataGep = builder.CreateStructGEP(gvType, pathArg, 0, "sys_rl_data_ptr");
+                            llvm::Value* dataPtr = builder.CreateLoad(ptrTy, dataGep, "sys_rl_data");
+                            pathArg = builder.CreatePtrToInt(dataPtr, i64Ty, "sys_rl_str_int");
+                        } else {
+                            pathArg = builder.CreatePtrToInt(pathArg, i64Ty, "sys_rl_gv_int");
+                        }
+                    } else if (pathArg->getType()->isPointerTy()) {
+                        llvm::StructType* asType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                        if (asType) {
+                            llvm::Value* strStruct = builder.CreateLoad(asType, pathArg, "sys_rl_str_struct");
+                            llvm::Value* dataPtr = builder.CreateExtractValue(strStruct, 0, "sys_rl_str_data");
+                            pathArg = builder.CreatePtrToInt(dataPtr, i64Ty, "sys_rl_strvar_int");
+                        } else {
+                            pathArg = builder.CreatePtrToInt(pathArg, i64Ty, "sys_rl_ptr_int");
+                        }
+                    }
+                    
+                    std::vector<llvm::Type*> rlParamTypes(4, i64Ty);
+                    llvm::FunctionType* rlAsmType = llvm::FunctionType::get(i64Ty, rlParamTypes, false);
+                    llvm::InlineAsm* rlAsm = llvm::InlineAsm::get(
+                        rlAsmType, "syscall",
+                        "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}",
+                        true, false, llvm::InlineAsm::AD_ATT);
+                    sysRawResult = builder.CreateCall(rlAsmType, rlAsm, {
+                        syscallNr, pathArg, bufPtr, bufSize
+                    }, "sys_readlink_ret");
+                }
+                
+                // Check syscall success
+                llvm::Value* sysIsErr = builder.CreateICmpSLT(sysRawResult, builder.getInt64(0), "sys_strbuf_err");
+                
+                llvm::BasicBlock* sysOkBB = llvm::BasicBlock::Create(context, "sys_strbuf_ok", currentFunc);
+                llvm::BasicBlock* sysErrBB = llvm::BasicBlock::Create(context, "sys_strbuf_syserr", currentFunc);
+                
+                builder.CreateCondBr(sysIsErr, sysErrBB, sysOkBB);
+                
+                // --- Syscall error path: munmap buffer + return error ---
+                builder.SetInsertPoint(sysErrBB);
+                {
+                    // munmap(buf, 4096) — syscall 11
+                    std::vector<llvm::Type*> munmapParamTypes(3, i64Ty);
+                    llvm::FunctionType* munmapAsmType = llvm::FunctionType::get(i64Ty, munmapParamTypes, false);
+                    llvm::InlineAsm* munmapAsm = llvm::InlineAsm::get(
+                        munmapAsmType, "syscall",
+                        "={rax},{rax},{rdi},{rsi},~{rcx},~{r11},~{memory}",
+                        true, false, llvm::InlineAsm::AD_ATT);
+                    builder.CreateCall(munmapAsmType, munmapAsm, {
+                        builder.getInt64(11), bufPtr, bufSize
+                    }, "sys_strbuf_munmap_err");
+                    
+                    // Build error Result<string>
+                    llvm::Constant* emptyStrData2 = builder.CreateGlobalStringPtr("", "sys_strbuf_empty2");
+                    llvm::Value* emptyStr2 = llvm::UndefValue::get(ariaStrType);
+                    emptyStr2 = builder.CreateInsertValue(emptyStr2, emptyStrData2, 0, "es2.data");
+                    emptyStr2 = builder.CreateInsertValue(emptyStr2, builder.getInt64(0), 1, "es2.len");
+                    llvm::Value* emptyStrPtr2 = builder.CreateCall(gcAlloc, {builder.getInt64(16)}, "es2_ptr");
+                    builder.CreateStore(emptyStr2, emptyStrPtr2);
+                    
+                    llvm::Value* negSys = builder.CreateNeg(sysRawResult, "sys_strbuf_neg_errno2");
+                    llvm::Value* errPtrSys = builder.CreateIntToPtr(negSys, ptrTy, "sys_strbuf_err_ptr2");
+                    
+                    llvm::Value* sysErrResult = llvm::UndefValue::get(resultStrTy);
+                    sysErrResult = builder.CreateInsertValue(sysErrResult, emptyStrPtr2, 0, "sys_strbuf_syserr.val");
+                    sysErrResult = builder.CreateInsertValue(sysErrResult, errPtrSys, 1, "sys_strbuf_syserr.err");
+                    sysErrResult = builder.CreateInsertValue(sysErrResult, llvm::ConstantInt::get(i8Ty, 1), 2, "sys_strbuf_syserr.flag");
+                    builder.CreateStore(sysErrResult, resultAlloca);
+                    builder.CreateBr(mergeBB);
+                }
+                
+                // --- Syscall success path: strdup buffer → Aria string, munmap buffer ---
+                builder.SetInsertPoint(sysOkBB);
+                {
+                    // Null-terminate: for READLINK, kernel doesn't null-terminate.
+                    // GETCWD does null-terminate. For safety, always null-terminate at count position.
+                    if (syscallId->name == "READLINK") {
+                        // buf[count] = '\0'
+                        llvm::Value* bufAddr = builder.CreateIntToPtr(bufPtr, ptrTy, "sys_rl_buf_addr");
+                        llvm::Value* endOffset = builder.CreateTrunc(sysRawResult, builder.getInt32Ty(), "sys_rl_off32");
+                        (void)endOffset;
+                        llvm::Value* endAddr = builder.CreateGEP(i8Ty, bufAddr, {sysRawResult}, "sys_rl_end");
+                        builder.CreateStore(builder.getInt8(0), endAddr);
+                    }
+                    
+                    // Convert buffer to Aria string via strdup (returns char*, FFI wraps to AriaString)
+                    // Declare strdup: char* strdup(const char*)
+                    llvm::FunctionCallee strdupFn = module->getOrInsertFunction("strdup",
+                        llvm::FunctionType::get(ptrTy, {ptrTy}, false));
+                    llvm::Value* bufAddrPtr = builder.CreateIntToPtr(bufPtr, ptrTy, "sys_strbuf_addr");
+                    llvm::Value* dupPtr = builder.CreateCall(strdupFn, {bufAddrPtr}, "sys_strbuf_dup");
+                    
+                    // Get string length via strlen
+                    llvm::FunctionCallee strlenFn = module->getOrInsertFunction("strlen",
+                        llvm::FunctionType::get(i64Ty, {ptrTy}, false));
+                    llvm::Value* strLen = builder.CreateCall(strlenFn, {dupPtr}, "sys_strbuf_len");
+                    
+                    // GC-allocate AriaString struct and copy data to GC memory
+                    llvm::Value* dataSz = builder.CreateAdd(strLen, builder.getInt64(1), "sys_strbuf_dsz");
+                    llvm::Value* gcData = builder.CreateCall(gcAlloc, {dataSz}, "sys_strbuf_gcdata");
+                    llvm::FunctionCallee memcpyFn = module->getOrInsertFunction("memcpy",
+                        llvm::FunctionType::get(ptrTy, {ptrTy, ptrTy, i64Ty}, false));
+                    builder.CreateCall(memcpyFn, {gcData, dupPtr, dataSz});
+                    
+                    // Free strdup allocation
+                    llvm::FunctionCallee freeFn = module->getOrInsertFunction("free",
+                        llvm::FunctionType::get(llvm::Type::getVoidTy(context), {ptrTy}, false));
+                    builder.CreateCall(freeFn, {dupPtr});
+                    
+                    // Build AriaString struct
+                    llvm::Value* ariaStr = llvm::UndefValue::get(ariaStrType);
+                    ariaStr = builder.CreateInsertValue(ariaStr, gcData, 0, "sys_strbuf_str.data");
+                    ariaStr = builder.CreateInsertValue(ariaStr, strLen, 1, "sys_strbuf_str.len");
+                    llvm::Value* ariaStrPtr = builder.CreateCall(gcAlloc, {builder.getInt64(16)}, "sys_strbuf_str_ptr");
+                    builder.CreateStore(ariaStr, ariaStrPtr);
+                    
+                    // munmap the buffer now
+                    std::vector<llvm::Type*> munmapParamTypes(3, i64Ty);
+                    llvm::FunctionType* munmapAsmType = llvm::FunctionType::get(i64Ty, munmapParamTypes, false);
+                    llvm::InlineAsm* munmapAsm = llvm::InlineAsm::get(
+                        munmapAsmType, "syscall",
+                        "={rax},{rax},{rdi},{rsi},~{rcx},~{r11},~{memory}",
+                        true, false, llvm::InlineAsm::AD_ATT);
+                    builder.CreateCall(munmapAsmType, munmapAsm, {
+                        builder.getInt64(11), bufPtr, bufSize
+                    }, "sys_strbuf_munmap_ok");
+                    
+                    // Build success Result<string>
+                    llvm::Value* okResult = llvm::UndefValue::get(resultStrTy);
+                    okResult = builder.CreateInsertValue(okResult, ariaStrPtr, 0, "sys_strbuf_ok.val");
+                    okResult = builder.CreateInsertValue(okResult, llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(ptrTy)), 1, "sys_strbuf_ok.err");
+                    okResult = builder.CreateInsertValue(okResult, llvm::ConstantInt::get(i8Ty, 0), 2, "sys_strbuf_ok.flag");
+                    builder.CreateStore(okResult, resultAlloca);
+                    builder.CreateBr(mergeBB);
+                }
+                
+                // --- Merge block: load Result<string> from alloca ---
+                builder.SetInsertPoint(mergeBB);
+                llvm::Value* finalResult = builder.CreateLoad(resultStrTy, resultAlloca, "sys_strbuf_final");
+                return finalResult;
+            }
+        }
+        
         // --- Evaluate and convert syscall arguments to i64 ---
         std::vector<llvm::Value*> syscallArgVals;
         for (size_t i = 1; i < numArgs; i++) {

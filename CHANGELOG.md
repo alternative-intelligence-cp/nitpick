@@ -1,5 +1,24 @@
 # Aria Language Changelog
 
+## [0.4.1] - March 2026
+
+### Added
+- **Typed sys() Returns** — `sys(GETCWD)` and `sys(READLINK, path)` now return `Result<string>` instead of `Result<int64>`. The compiler automatically allocates a buffer, issues the syscall, and converts the result to an Aria string.
+- **Syscall Return Type Registry** — Internal `SysReturnCategory` enum (`INT64`, `STRING_BUF`) with per-syscall mapping. Default remains `Result<int64>` for all other syscalls.
+- **Automatic Buffer Management** — STRING_BUF syscalls use compiler-managed mmap/munmap buffers (4096 bytes) with proper cleanup on all code paths (mmap fail, syscall fail, success).
+- **Argument Validation** — `sys(GETCWD)` rejects extra arguments; `sys(READLINK)` requires exactly one path argument. The compiler manages the buffer argument automatically.
+
+### Architecture
+- `type_checker.cpp` — `SysReturnCategory` enum + `syscallReturnTypes` registry; arg count validation for STRING_BUF syscalls; typed return type selection
+- `codegen_expr.cpp` — STRING_BUF codegen path: mmap → syscall → null-terminate (READLINK) → strdup → GC-copy → munmap → `Result<string>`. Uses alloca+store pattern for multi-path merge (LLVM mem2reg optimizes to PHI nodes).
+
+### Tests
+- `tests/sys/test_sys_typed.aria` — 4 tests: GETCWD returns string, READLINK returns string, CWD non-empty, EXE non-empty
+
+### Backward Compatibility
+- All existing `sys()` / `sys!!()` / `sys!!!()` usage unchanged — only GETCWD and READLINK return types changed
+- `sys!!!()` (raw tier) is unaffected — always returns bare `int64`
+
 ## [0.2.45] - March 2026
 
 ### Added

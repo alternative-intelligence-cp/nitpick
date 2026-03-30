@@ -1,0 +1,55 @@
+// test_sys_typed.aria — Test typed sys() returns (v0.4.1)
+// GETCWD and READLINK now return Result<string> instead of Result<int64>.
+
+func:failsafe = int32(tbb32:err) {
+    exit(1);
+};
+
+func:main = int32() {
+    // ================================================================
+    // Test 1: sys(GETCWD) → Result<string>
+    // Should return the current working directory as a string.
+    // ================================================================
+    Result<string>:cwd_r = sys(GETCWD);
+    string:cwd = cwd_r ?! "FAILED";
+
+    if (cwd != "FAILED") {
+        println("PASS: GETCWD returned a string");
+    } else {
+        println("FAIL: GETCWD failed");
+    }
+
+    // ================================================================
+    // Test 2: sys(READLINK, path) → Result<string>
+    // /proc/self/exe is always a valid symlink on Linux.
+    // ================================================================
+    Result<string>:exe_r = sys(READLINK, "/proc/self/exe");
+    string:exe = exe_r ?! "FAILED";
+
+    if (exe != "FAILED") {
+        println("PASS: READLINK returned a string");
+    } else {
+        println("FAIL: READLINK failed");
+    }
+
+    // ================================================================
+    // Test 3: Verify CWD is not empty string
+    // ================================================================
+    if (cwd != "") {
+        println("PASS: CWD is non-empty");
+    } else {
+        println("FAIL: CWD is empty");
+    }
+
+    // ================================================================
+    // Test 4: Verify EXE is not empty string
+    // ================================================================
+    if (exe != "") {
+        println("PASS: EXE is non-empty");
+    } else {
+        println("FAIL: EXE is empty");
+    }
+
+    println("All typed sys() tests completed!");
+    return 0;
+};
