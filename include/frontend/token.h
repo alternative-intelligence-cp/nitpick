@@ -70,6 +70,17 @@ enum class TokenType {
     TOKEN_KW_ATYPE,     // atype - query type tag of top stack item (keyword, no parens)
     
     // ========================================================================
+    // Keywords - User Hash Table (ahash)
+    // ========================================================================
+    TOKEN_KW_AHASH,     // ahash(cap) - create user hash table, returns handle
+    TOKEN_KW_AHSET,     // ahset(handle, key, val) - set key/value pair
+    TOKEN_KW_AHGET,     // ahget(handle, key) - get value by key
+    TOKEN_KW_AHCOUNT,   // ahcount(handle) - return entry count
+    TOKEN_KW_AHSIZE,    // ahsize(handle) - return current payload bytes used
+    TOKEN_KW_AHFITS,    // ahfits(handle, val) - check if value fits in capacity
+    TOKEN_KW_AHTYPE,    // ahtype(handle, key) - return type tag of value at key
+    
+    // ========================================================================
     // Keywords - Async/Await
     // ========================================================================
     TOKEN_KW_ASYNC,     // async

@@ -2928,7 +2928,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
             return builder.CreateNot(eq, "str.ne");
         }
         if (isFloat) {
-            return builder.CreateFCmpONE(left, right, "netmp");
+            return builder.CreateFCmpUNE(left, right, "netmp");
         } else {
             return builder.CreateICmpNE(left, right, "netmp");
         }
@@ -6403,6 +6403,356 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 func_name, module);
         }
         return builder.CreateCall(func, {handle}, "ustack_type");
+    }
+
+    // ====================================================================
+    // USER HASH TABLE BUILTINS (v0.4.5 — Explicit-Handle String-Keyed Hash)
+    // ====================================================================
+    // Unlike astack (hidden handle), ahash uses explicit handles.
+    // The handle is returned to the user and passed as first arg to all ops.
+    // Auto-cleanup: tracked via __aria_uhash_handle_N named_values entries.
+
+    // ahash(capacity) — create a new hash table, return handle
+    if (callee_ident->name == "ahash") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("ahash() requires exactly one argument (capacity_bytes)");
+        }
+
+        const char* func_name = uhash_fast_mode ? "aria_uhash_new_fast" : "aria_uhash_new";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+
+        llvm::Value* capacity = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!capacity->getType()->isIntegerTy(64)) {
+            capacity = builder.CreateSExtOrTrunc(capacity, builder.getInt64Ty());
+        }
+
+        llvm::Value* handle = builder.CreateCall(func, {capacity}, "uhash_handle");
+
+        // Track for auto-cleanup: store handle in a hidden alloca
+        int idx = 0;
+        if (uhash_handle_counter_ptr) {
+            idx = (*uhash_handle_counter_ptr)++;
+        }
+        std::string trackKey = "__aria_uhash_handle_" + std::to_string(idx);
+        llvm::AllocaInst* trackAlloca = builder.CreateAlloca(
+            builder.getInt64Ty(), nullptr, trackKey);
+        builder.CreateStore(handle, trackAlloca);
+        named_values[trackKey] = trackAlloca;
+
+        return handle;
+    }
+
+    // ahset(handle, key, value) — upsert key/value pair
+    if (callee_ident->name == "ahset") {
+        if (expr->arguments.size() != 3) {
+            throw std::runtime_error("ahset() requires exactly 3 arguments (handle, key, value)");
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        // Key: extract raw char* from AriaString (struct pointer or struct value)
+        llvm::Value* key = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (key->getType()->isPointerTy()) {
+            // Pointer to AriaString struct → load struct, extract data ptr
+            llvm::StructType* ast = llvm::StructType::getTypeByName(context, "struct.AriaString");
+            if (!ast) {
+                ast = llvm::StructType::create(context, {
+                    builder.getPtrTy(), builder.getInt64Ty()
+                }, "struct.AriaString");
+            }
+            llvm::Value* ss = builder.CreateLoad(ast, key, "uhash_key_struct");
+            key = builder.CreateExtractValue(ss, 0, "uhash_key_data");
+        } else if (key->getType()->isStructTy()) {
+            // AriaString by value → extract data ptr directly
+            key = builder.CreateExtractValue(key, 0, "uhash_key_data");
+        } else {
+            throw std::runtime_error("ahset() key argument must be a string");
+        }
+
+        // Value: box to i64  (same pattern as apush)
+        llvm::Value* rawVal = codegenExpressionNode(expr->arguments[2].get(), this);
+        llvm::Type* valTy = rawVal->getType();
+
+        llvm::Value* valAsI64 = nullptr;
+        if      (valTy->isIntegerTy(8))  { valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(16)) { valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(32)) { valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(64)) { valAsI64 = rawVal; }
+        else if (valTy->isFloatTy())     { valAsI64 = builder.CreateBitCast(builder.CreateFPExt(rawVal, builder.getDoubleTy()), builder.getInt64Ty()); }
+        else if (valTy->isDoubleTy())    { valAsI64 = builder.CreateBitCast(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(1))  { valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isPointerTy())   { valAsI64 = builder.CreatePtrToInt(rawVal, builder.getInt64Ty()); }
+        else {
+            if (valTy->isIntegerTy()) {
+                valAsI64 = builder.CreateZExtOrTrunc(rawVal, builder.getInt64Ty());
+            } else {
+                valAsI64 = builder.CreatePtrToInt(rawVal, builder.getInt64Ty());
+            }
+        }
+
+        // Type tag
+        int64_t typeTag = 3; // default: int64
+        if      (valTy->isIntegerTy(8))  { typeTag = 0; }
+        else if (valTy->isIntegerTy(16)) { typeTag = 1; }
+        else if (valTy->isIntegerTy(32)) { typeTag = 2; }
+        else if (valTy->isIntegerTy(64)) { typeTag = 3; }
+        else if (valTy->isFloatTy())     { typeTag = 4; }
+        else if (valTy->isDoubleTy())    { typeTag = 5; }
+        else if (valTy->isIntegerTy(1))  { typeTag = 6; }
+        else if (valTy->isPointerTy())   { typeTag = 7; }
+        else                             { typeTag = 8; }
+
+        // Value size (bytes) for capacity accounting
+        int64_t valueSize = 8; // default
+        if (valTy->isIntegerTy(8))       { valueSize = 1; }
+        else if (valTy->isIntegerTy(16)) { valueSize = 2; }
+        else if (valTy->isIntegerTy(32)) { valueSize = 4; }
+        else if (valTy->isIntegerTy(64)) { valueSize = 8; }
+        else if (valTy->isFloatTy())     { valueSize = 4; }
+        else if (valTy->isDoubleTy())    { valueSize = 8; }
+        else if (valTy->isIntegerTy(1))  { valueSize = 1; }
+        else if (valTy->isPointerTy())   { valueSize = 8; }
+
+        if (uhash_fast_mode) {
+            // Fast path — no type tag
+            llvm::Function* func = module->getFunction("aria_uhash_set_fast");
+            if (!func) {
+                llvm::FunctionType* ft = llvm::FunctionType::get(
+                    builder.getInt32Ty(),
+                    {builder.getInt64Ty(), builder.getPtrTy(),
+                     builder.getInt64Ty(), builder.getInt64Ty()},
+                    false);
+                func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                    "aria_uhash_set_fast", module);
+            }
+            llvm::Value* sizeVal = builder.getInt64(valueSize);
+            return builder.CreateCall(func, {handle, key, valAsI64, sizeVal}, "uhash_set");
+        } else {
+            // Regular path with tag
+            llvm::Function* func = module->getFunction("aria_uhash_set");
+            if (!func) {
+                llvm::FunctionType* ft = llvm::FunctionType::get(
+                    builder.getInt32Ty(),
+                    {builder.getInt64Ty(), builder.getPtrTy(),
+                     builder.getInt64Ty(), builder.getInt64Ty(), builder.getInt64Ty()},
+                    false);
+                func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                    "aria_uhash_set", module);
+            }
+            llvm::Value* tagVal = builder.getInt64(typeTag);
+            llvm::Value* sizeVal = builder.getInt64(valueSize);
+            return builder.CreateCall(func, {handle, key, valAsI64, tagVal, sizeVal}, "uhash_set");
+        }
+    }
+
+    // ahget(handle, key) — get value by key, type-checked against dest type
+    if (callee_ident->name == "ahget") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("ahget() requires exactly 2 arguments (handle, key)");
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        llvm::Value* key = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (key->getType()->isPointerTy()) {
+            llvm::StructType* ast = llvm::StructType::getTypeByName(context, "struct.AriaString");
+            if (!ast) {
+                ast = llvm::StructType::create(context, {
+                    builder.getPtrTy(), builder.getInt64Ty()
+                }, "struct.AriaString");
+            }
+            llvm::Value* ss = builder.CreateLoad(ast, key, "uhash_key_struct");
+            key = builder.CreateExtractValue(ss, 0, "uhash_key_data");
+        } else if (key->getType()->isStructTy()) {
+            key = builder.CreateExtractValue(key, 0, "uhash_key_data");
+        } else {
+            throw std::runtime_error("ahget() key argument must be a string");
+        }
+
+        llvm::Value* rawVal;
+        if (uhash_fast_mode) {
+            llvm::Function* func = module->getFunction("aria_uhash_get_fast");
+            if (!func) {
+                llvm::FunctionType* ft = llvm::FunctionType::get(
+                    builder.getInt64Ty(),
+                    {builder.getInt64Ty(), builder.getPtrTy()},
+                    false);
+                func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                    "aria_uhash_get_fast", module);
+            }
+            rawVal = builder.CreateCall(func, {handle, key}, "uhash_get");
+        } else {
+            llvm::Function* func = module->getFunction("aria_uhash_get");
+            if (!func) {
+                llvm::FunctionType* ft = llvm::FunctionType::get(
+                    builder.getInt64Ty(),
+                    {builder.getInt64Ty(), builder.getPtrTy(), builder.getInt64Ty()},
+                    false);
+                func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                    "aria_uhash_get", module);
+            }
+
+            // Determine expected type tag from destination type context
+            int64_t expectedTag = -1;
+            llvm::Type* destType = uhash_get_dest_type;
+            if (destType) {
+                if      (destType->isIntegerTy(8))  expectedTag = 0;
+                else if (destType->isIntegerTy(16)) expectedTag = 1;
+                else if (destType->isIntegerTy(32)) expectedTag = 2;
+                else if (destType->isIntegerTy(64)) expectedTag = 3;
+                else if (destType->isFloatTy())     expectedTag = 4;
+                else if (destType->isDoubleTy())    expectedTag = 5;
+                else if (destType->isIntegerTy(1))  expectedTag = 6;
+                else if (destType->isPointerTy())   expectedTag = 7;
+            }
+
+            llvm::Value* tag = builder.getInt64(expectedTag);
+            rawVal = builder.CreateCall(func, {handle, key, tag}, "uhash_get");
+        }
+
+        // Convert i64 result to destination type
+        llvm::Type* destType = uhash_get_dest_type;
+        if (destType && destType != builder.getInt64Ty()) {
+            if (destType->isIntegerTy()) {
+                rawVal = builder.CreateTrunc(rawVal, destType, "uhash_get_trunc");
+            } else if (destType->isFloatTy()) {
+                llvm::Value* asDouble = builder.CreateBitCast(rawVal, builder.getDoubleTy(), "uhash_get_d");
+                rawVal = builder.CreateFPTrunc(asDouble, destType, "uhash_get_f32");
+            } else if (destType->isDoubleTy()) {
+                rawVal = builder.CreateBitCast(rawVal, destType, "uhash_get_f64");
+            } else if (destType->isPointerTy()) {
+                rawVal = builder.CreateIntToPtr(rawVal, destType, "uhash_get_ptr");
+            }
+        }
+
+        return rawVal;
+    }
+
+    // ahcount(handle) — return entry count
+    if (callee_ident->name == "ahcount") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("ahcount() requires exactly 1 argument (handle)");
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        const char* func_name = uhash_fast_mode ? "aria_uhash_count_fast" : "aria_uhash_count";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+        return builder.CreateCall(func, {handle}, "uhash_keys");
+    }
+
+    // ahsize(handle) — return bytes used by stored values
+    if (callee_ident->name == "ahsize") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("ahsize() requires exactly 1 argument (handle)");
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        const char* func_name = uhash_fast_mode ? "aria_uhash_size_fast" : "aria_uhash_size";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+        return builder.CreateCall(func, {handle}, "uhash_size");
+    }
+
+    // ahfits(handle, value_size) — check if value_size bytes fit in remaining capacity
+    if (callee_ident->name == "ahfits") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("ahfits() requires exactly 2 arguments (handle, value_size)");
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        llvm::Value* vsize = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (!vsize->getType()->isIntegerTy(64)) {
+            vsize = builder.CreateSExtOrTrunc(vsize, builder.getInt64Ty());
+        }
+
+        const char* func_name = uhash_fast_mode ? "aria_uhash_fits_fast" : "aria_uhash_fits";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt64Ty(),
+                {builder.getInt64Ty(), builder.getInt64Ty()},
+                false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+        llvm::Value* result = builder.CreateCall(func, {handle, vsize}, "uhash_fits");
+        return builder.CreateTrunc(result, builder.getInt1Ty(), "uhash_fits_bool");
+    }
+
+    // ahtype(handle, key) — return type tag of value at key (-1 if not found)
+    if (callee_ident->name == "ahtype") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("ahtype() requires exactly 2 arguments (handle, key)");
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        llvm::Value* key = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (key->getType()->isPointerTy()) {
+            llvm::StructType* ast = llvm::StructType::getTypeByName(context, "struct.AriaString");
+            if (!ast) {
+                ast = llvm::StructType::create(context, {
+                    builder.getPtrTy(), builder.getInt64Ty()
+                }, "struct.AriaString");
+            }
+            llvm::Value* ss = builder.CreateLoad(ast, key, "uhash_key_struct");
+            key = builder.CreateExtractValue(ss, 0, "uhash_key_data");
+        } else if (key->getType()->isStructTy()) {
+            key = builder.CreateExtractValue(key, 0, "uhash_key_data");
+        } else {
+            throw std::runtime_error("ahtype() key argument must be a string");
+        }
+
+        // ahtype only has regular variant (no fast — fast tables have no type tags)
+        llvm::Function* func = module->getFunction("aria_uhash_type");
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt32Ty(),
+                {builder.getInt64Ty(), builder.getPtrTy()},
+                false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                "aria_uhash_type", module);
+        }
+        llvm::Value* result = builder.CreateCall(func, {handle, key}, "uhash_type");
+        return builder.CreateSExt(result, builder.getInt64Ty(), "uhash_type_i64");
     }
 
     // ====================================================================

@@ -2847,11 +2847,15 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
 
             // v0.4.3+: Check if this function has SMT-proven ustack optimization
             ustack_fast_mode = ustack_optimized_funcs.count(funcDecl->funcName) > 0;
+            // v0.4.5+: Check if this function has SMT-proven uhash optimization
+            uhash_fast_mode = uhash_optimized_funcs.count(funcDecl->funcName) > 0;
+            uhash_handle_counter = 0;  // Reset per-function handle counter
             
             // Skip generic functions (handled by monomorphization)
             if (!funcDecl->genericParams.empty()) {
                 current_func_decl = nullptr;
                 ustack_fast_mode = false;
+                uhash_fast_mode = false;
                 continue;
             }
             
@@ -4209,8 +4213,11 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 std::cerr << "[DEBUG IR_GEN] Variable '" << varDecl->varName << "' HAS initializer, generating..." << std::endl;
                 // v0.4.3: Set user stack pop/peek destination type context
                 ustack_pop_dest_type = varType;
+                // v0.4.5: Set user hash get destination type context
+                uhash_get_dest_type = varType;
                 llvm::Value* initVal = codegenExpression(varDecl->initializer.get());
                 ustack_pop_dest_type = nullptr;
+                uhash_get_dest_type = nullptr;
                 std::cerr << "[DEBUG IR_GEN] Initializer generated, value = " << (void*)initVal << std::endl;
                 if (initVal) {
                     // For optional types, need to construct the { i1, T } struct
@@ -6317,6 +6324,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             expr_codegen.ustack_pop_dest_type = ustack_pop_dest_type;
             // v0.4.3+: Propagate SMT-proven fast mode for user stack
             expr_codegen.ustack_fast_mode = ustack_fast_mode;
+            // v0.4.5: Propagate user hash get destination type context
+            expr_codegen.uhash_get_dest_type = uhash_get_dest_type;
+            // v0.4.5+: Propagate SMT-proven fast mode for user hash
+            expr_codegen.uhash_fast_mode = uhash_fast_mode;
+            expr_codegen.uhash_handle_counter_ptr = &uhash_handle_counter;
             return expr_codegen.codegenCall(call);
         }
         
@@ -8797,7 +8809,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             else
                                 L = builder.CreateFPExt(L, R->getType(), "ne_fpext");
                         }
-                        return builder.CreateFCmpONE(L, R, "netmp");
+                        return builder.CreateFCmpUNE(L, R, "netmp");
                     } else {
                         return builder.CreateICmpNE(L, R, "netmp");
                     }

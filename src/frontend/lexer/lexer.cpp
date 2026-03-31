@@ -58,6 +58,15 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"afits", TokenType::TOKEN_KW_AFITS},
     {"atype", TokenType::TOKEN_KW_ATYPE},
     
+    // User hash table
+    {"ahash", TokenType::TOKEN_KW_AHASH},
+    {"ahset", TokenType::TOKEN_KW_AHSET},
+    {"ahget", TokenType::TOKEN_KW_AHGET},
+    {"ahcount", TokenType::TOKEN_KW_AHCOUNT},
+    {"ahsize", TokenType::TOKEN_KW_AHSIZE},
+    {"ahfits", TokenType::TOKEN_KW_AHFITS},
+    {"ahtype", TokenType::TOKEN_KW_AHTYPE},
+    
     // Async
     {"async", TokenType::TOKEN_KW_ASYNC},
     {"await", TokenType::TOKEN_KW_AWAIT},

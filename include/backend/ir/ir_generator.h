@@ -161,10 +161,22 @@ private:
     std::set<std::string> ustack_optimized_funcs;
     bool ustack_fast_mode = false;  // Per-function flag, set at FUNC_DECL codegen start
 
+    // v0.4.5: User hash table get destination type context
+    llvm::Type* uhash_get_dest_type = nullptr;
+
+    // v0.4.5+: SMT-proven user hash table optimization
+    std::set<std::string> uhash_optimized_funcs;
+    bool uhash_fast_mode = false;
+    int uhash_handle_counter = 0;  // Per-function counter for handle tracking allocas
+
 public:
     /// Register functions whose user stacks are provably type-homogeneous (from Z3 phase)
     void setUStackOptimizedFuncs(const std::set<std::string>& funcs) {
         ustack_optimized_funcs = funcs;
+    }
+    /// Register functions whose user hashes are provably type-homogeneous (from Z3 phase)
+    void setUHashOptimizedFuncs(const std::set<std::string>& funcs) {
+        uhash_optimized_funcs = funcs;
     }
 private:
 

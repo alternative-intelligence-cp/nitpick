@@ -139,6 +139,17 @@ public:
         std::vector<VerifyOutcome>& outcomes,
         int line = 0, int column = 0);
 
+    // Phase 5: User Hash Type Homogeneity Verification (v0.4.5+)
+    // ================================================================
+
+    /// Verify that all ahset() value insertions use the same type tag.
+    /// If PROVEN, runtime type checks can be eliminated (SMT-optimized fast path).
+    VerifyResult verifyUHashHomogeneous(
+        const std::vector<int64_t>& setTypeTags,
+        int64_t expectedTag,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
     /// Get verification summary
     const VerifySummary& getSummary() const { return summary; }
 

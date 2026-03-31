@@ -1,0 +1,133 @@
+// test_ahash_basic.aria — Test user hash table (v0.4.5)
+// ahash / ahset / ahget / ahcount / ahsize / ahfits / ahtype
+
+func:failsafe = int32(tbb32:err) {
+    println("FAILSAFE triggered");
+    exit 1;
+};
+
+func:main = int32() {
+    // ================================================================
+    // Test 1: Create hash table and store/retrieve int64 values
+    // ================================================================
+    int64:ht = ahash(4096);
+
+    ahset(ht, "answer", 42i64);
+    ahset(ht, "year", 2026i64);
+
+    int64:v1 = ahget(ht, "answer");
+    int64:v2 = ahget(ht, "year");
+
+    if (v1 == 42i64) {
+        println("PASS: ahget returned 42 for 'answer'");
+    } else {
+        println("FAIL: ahget wrong value for 'answer'");
+    }
+
+    if (v2 == 2026i64) {
+        println("PASS: ahget returned 2026 for 'year'");
+    } else {
+        println("FAIL: ahget wrong value for 'year'");
+    }
+
+    // ================================================================
+    // Test 2: Upsert — overwrite existing key
+    // ================================================================
+    ahset(ht, "answer", 99i64);
+    int64:v3 = ahget(ht, "answer");
+
+    if (v3 == 99i64) {
+        println("PASS: upsert changed 'answer' to 99");
+    } else {
+        println("FAIL: upsert did not update value");
+    }
+
+    // ================================================================
+    // Test 3: ahcount returns entry count
+    // ================================================================
+    int64:count = ahcount(ht);
+
+    if (count == 2i64) {
+        println("PASS: ahcount returned 2 entries");
+    } else {
+        println("FAIL: ahcount wrong count");
+    }
+
+    // ================================================================
+    // Test 4: ahsize returns bytes used
+    // ================================================================
+    int64:bytes = ahsize(ht);
+
+    if (bytes > 0i64) {
+        println("PASS: ahsize reports non-zero bytes");
+    } else {
+        println("FAIL: ahsize reports 0 bytes");
+    }
+
+    // ================================================================
+    // Test 5: ahfits capacity check
+    // ================================================================
+    bool:fit = ahfits(ht, 8i64);
+
+    // 4096 byte budget minus ~16 bytes used = should fit
+    if (fit == true) {
+        println("PASS: ahfits says 8 bytes fit");
+    } else {
+        println("FAIL: ahfits returned false unexpectedly");
+    }
+
+    // ================================================================
+    // Test 6: ahtype returns correct type tag
+    // ================================================================
+    int64:tag = ahtype(ht, "answer");
+
+    // int64 type tag = 3
+    if (tag == 3i64) {
+        println("PASS: ahtype returned 3 (int64) for 'answer'");
+    } else {
+        println("FAIL: ahtype returned wrong tag");
+    }
+
+    // Missing key returns -1
+    int64:tag2 = ahtype(ht, "missing");
+
+    if (tag2 == -1i64) {
+        println("PASS: ahtype returned -1 for missing key");
+    } else {
+        println("FAIL: ahtype did not return -1 for missing key");
+    }
+
+    // ================================================================
+    // Test 7: Multiple hash tables in same scope
+    // ================================================================
+    int64:ht2 = ahash(1024);
+
+    ahset(ht2, "x", 100i64);
+    ahset(ht2, "y", 200i64);
+
+    int64:x = ahget(ht2, "x");
+    int64:y = ahget(ht2, "y");
+
+    if (x == 100i64) {
+        println("PASS: second table 'x' = 100");
+    } else {
+        println("FAIL: second table 'x' wrong");
+    }
+
+    if (y == 200i64) {
+        println("PASS: second table 'y' = 200");
+    } else {
+        println("FAIL: second table 'y' wrong");
+    }
+
+    // Ensure first table is still intact
+    int64:v4 = ahget(ht, "year");
+    if (v4 == 2026i64) {
+        println("PASS: first table still has 'year' = 2026");
+    } else {
+        println("FAIL: first table corrupted");
+    }
+
+    println("All ahash tests complete.");
+    return 0;
+};
