@@ -254,6 +254,7 @@ set(RUNTIME_SOURCES
     src/runtime/allocators/arena_builtins.cpp
     src/runtime/allocators/pool_builtins.cpp
     src/runtime/allocators/slab_builtins.cpp
+    src/runtime/allocators/mem_primitives.c
     src/runtime/panic/panic_handler.cpp
     src/runtime/format/locale_safe_format.cpp
     src/runtime/assembler/assembler.cpp

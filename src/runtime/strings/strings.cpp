@@ -1069,3 +1069,52 @@ int64_t aria_string_byte_at(const char* data, int64_t idx) {
     if (!data || idx < 0) return -1;
     return (int64_t)(unsigned char)data[idx];
 }
+
+// ── Conversion helpers (v0.3.0 — used by aria-libc) ──────────────────────────
+// Use "aria_conv_" prefix to avoid collisions with existing AriaResultPtr variants.
+
+extern "C" {
+
+// string → float (strtod wrapper)
+// extern func:aria_conv_to_float = flt64(string:s);
+double aria_conv_to_float(const char* s) {
+    if (!s) return 0.0;
+    char *endptr = NULL;
+    double val = strtod(s, &endptr);
+    if (endptr == s) return 0.0;   // no conversion performed
+    return val;
+}
+
+// float → string (snprintf wrapper)
+// extern func:aria_conv_from_float = string(flt64:val);
+AriaString aria_conv_from_float(double val) {
+    char buf[64];
+    int len = snprintf(buf, sizeof(buf), "%.17g", val);
+    if (len < 0) len = 0;
+    char *copy = (char *)malloc((size_t)len + 1);
+    AriaString r = { NULL, 0 };
+    if (copy) {
+        memcpy(copy, buf, (size_t)len + 1);
+        r.data   = copy;
+        r.length = (int64_t)len;
+    }
+    return r;
+}
+
+// int → string
+// extern func:aria_conv_from_int = string(int64:val);
+AriaString aria_conv_from_int(int64_t val) {
+    char buf[32];
+    int len = snprintf(buf, sizeof(buf), "%ld", (long)val);
+    if (len < 0) len = 0;
+    char *copy = (char *)malloc((size_t)len + 1);
+    AriaString r = { NULL, 0 };
+    if (copy) {
+        memcpy(copy, buf, (size_t)len + 1);
+        r.data   = copy;
+        r.length = (int64_t)len;
+    }
+    return r;
+}
+
+} // extern "C"

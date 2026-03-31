@@ -123,3 +123,19 @@ bool aria_math_is_inf(double x) {
 bool aria_math_is_finite(double x) {
     return std::isfinite(x);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Additional Functions (v0.3.0 — used by aria-libc)
+// ═══════════════════════════════════════════════════════════════════════
+
+extern "C" {
+
+double aria_math_fmod(double x, double y) {
+    return std::fmod(x, y);
+}
+
+int64_t aria_math_to_int(double x) {
+    return (int64_t)x;
+}
+
+} // extern "C"
