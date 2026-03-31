@@ -3,6 +3,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <cstring>
+#include <unistd.h>
 
 namespace aria {
 namespace lsp {
@@ -141,20 +142,27 @@ JsonRpcMessage Transport::parse_message(const std::string& content) {
 }
 
 void Transport::write(const json& message) {
-    // Thread-safe write to stdout (research_034 Section 3.2.1)
+    // Thread-safe write to stdout
     std::lock_guard<std::mutex> lock(write_mutex_);
     
     // Serialize JSON to string
     std::string content = message.dump();
     
-    // Write LSP headers
-    std::cout << "Content-Length: " << content.size() << "\r\n";
-    std::cout << "Content-Type: application/vscode-jsonrpc; charset=utf-8\r\n";
-    std::cout << "\r\n";
+    // Build entire LSP frame as one contiguous buffer
+    std::string frame = "Content-Length: " + std::to_string(content.size()) + "\r\n"
+                      + "Content-Type: application/vscode-jsonrpc; charset=utf-8\r\n"
+                      + "\r\n"
+                      + content;
     
-    // Write JSON payload
-    std::cout << content;
-    std::cout.flush(); // Critical: ensure immediate delivery
+    // Write atomically to fd 1 (stdout) — avoids iostream buffering issues
+    const char* ptr = frame.data();
+    size_t remaining = frame.size();
+    while (remaining > 0) {
+        ssize_t written = ::write(STDOUT_FILENO, ptr, remaining);
+        if (written <= 0) break;
+        ptr += written;
+        remaining -= written;
+    }
 }
 
 json Transport::makeResponse(const json& id, const json& result) {

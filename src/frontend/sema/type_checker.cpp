@@ -3707,6 +3707,116 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
 
         // ====================================================================
+        // USER HASH TABLE BUILTINS (v0.4.5 — Explicit-Handle String-Keyed Hash)
+        // ====================================================================
+        // ahash(capacity)        → int64  (creates table, returns handle)
+        // ahset(h, key, value)   → int32  (upsert, returns 0 or -1)
+        // ahget(h, key)          → T      (typed retrieve, context-dependent)
+        // ahcount(h)             → int64  (entry count)
+        // ahsize(h)              → int64  (bytes used by stored values)
+        // ahfits(h, size)        → bool   (capacity check)
+        // ahtype(h, key)         → int64  (type tag of value, -1 if missing)
+
+        // Builtin: ahash(capacity_bytes) -> int64 (handle)
+        if (idExpr->name == "ahash") {
+            if (expr->arguments.size() != 1) {
+                addError("ahash() requires exactly one argument (capacity_bytes)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // Builtin: ahset(handle, key, value) -> int32 (0=success, -1=overflow)
+        if (idExpr->name == "ahset") {
+            if (expr->arguments.size() != 3) {
+                addError("ahset() requires exactly 3 arguments (handle, key, value)", expr);
+                return typeSystem->getErrorType();
+            }
+            for (auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+
+        // Builtin: ahget(handle, key) -> T (type from assignment context)
+        if (idExpr->name == "ahget") {
+            if (expr->arguments.size() != 2) {
+                addError("ahget() requires exactly 2 arguments (handle, key)", expr);
+                return typeSystem->getErrorType();
+            }
+            for (auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            return typeSystem->getUnknownType();
+        }
+
+        // Builtin: ahcount(handle) -> int64 (entry count)
+        if (idExpr->name == "ahcount") {
+            if (expr->arguments.size() != 1) {
+                addError("ahcount() requires exactly 1 argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // Builtin: ahsize(handle) -> int64 (bytes used)
+        if (idExpr->name == "ahsize") {
+            if (expr->arguments.size() != 1) {
+                addError("ahsize() requires exactly 1 argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // Builtin: ahfits(handle, value_size) -> bool
+        if (idExpr->name == "ahfits") {
+            if (expr->arguments.size() != 2) {
+                addError("ahfits() requires exactly 2 arguments (handle, value_size)", expr);
+                return typeSystem->getErrorType();
+            }
+            for (auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+
+        // Builtin: ahtype(handle, key) -> int64 (type tag, -1 if missing)
+        if (idExpr->name == "ahtype") {
+            if (expr->arguments.size() != 2) {
+                addError("ahtype() requires exactly 2 arguments (handle, key)", expr);
+                return typeSystem->getErrorType();
+            }
+            for (auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // ====================================================================
         // WILD MEMORY BUILTINS (Phase 2.2 - Manual Memory Management)
         // ====================================================================
         // These are the primitive wild memory operations that the borrow checker

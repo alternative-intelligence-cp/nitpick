@@ -198,6 +198,19 @@ public:
     // Codegen uses aria_ustack_*_fast() functions (no tags, no bounds checks).
     bool ustack_fast_mode = false;
 
+    // v0.4.5: User hash table get destination type context
+    // Set by StmtCodegen before codegenning an initializer that may be ahget().
+    // The ahget codegen reads this to determine the expected type tag and
+    // convert the raw i64 to the correct LLVM type before returning.
+    llvm::Type* uhash_get_dest_type = nullptr;
+
+    // v0.4.5+: SMT-proven user hash fast mode
+    bool uhash_fast_mode = false;
+
+    // v0.4.5: Counter for uhash handle tracking (auto-cleanup)
+    // Points to ir_generator's counter; incremented each time ahash() is called.
+    int* uhash_handle_counter_ptr = nullptr;
+
     /**
      * Promote int64 literal to LBIM struct type (int128/256/512/1024/2048/4096)
      * Used when assigning literals to large integer variables

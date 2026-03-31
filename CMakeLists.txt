@@ -305,6 +305,7 @@ set(STDLIB_SOURCES
     src/runtime/collections/map.cpp
     src/runtime/collections/collection_helpers.cpp
     src/runtime/collections/ustack.cpp
+    src/runtime/collections/uhash.cpp
     src/runtime/strings/strings.cpp
     src/runtime/strings/string_helpers.cpp
     src/runtime/json/json_helpers.cpp

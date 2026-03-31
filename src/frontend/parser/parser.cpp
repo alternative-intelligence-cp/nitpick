@@ -1149,58 +1149,197 @@ ASTNodePtr Parser::parseUnary() {
         return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
     }
     
-    // apop — keyword form, no arguments
+    // apop — keyword or paren form, no arguments
     if (token.type == TokenType::TOKEN_KW_APOP) {
         advance(); // consume 'apop'
+        if (check(TokenType::TOKEN_LEFT_PAREN)) {
+            advance(); // consume '('
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after 'apop('");
+        }
         std::vector<ASTNodePtr> args;
         auto identExpr = std::make_shared<IdentifierExpr>("apop", token.line, token.column);
         return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
     }
     
-    // apeek — keyword form, no arguments
+    // apeek — keyword or paren form, no arguments
     if (token.type == TokenType::TOKEN_KW_APEEK) {
         advance(); // consume 'apeek'
+        if (check(TokenType::TOKEN_LEFT_PAREN)) {
+            advance(); // consume '('
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after 'apeek('");
+        }
         std::vector<ASTNodePtr> args;
         auto identExpr = std::make_shared<IdentifierExpr>("apeek", token.line, token.column);
         return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
     }
     
-    // acap — keyword form, no arguments (return stack capacity in bytes)
+    // acap — keyword or paren form, no arguments (return stack capacity in bytes)
     if (token.type == TokenType::TOKEN_KW_ACAP) {
         advance(); // consume 'acap'
+        if (check(TokenType::TOKEN_LEFT_PAREN)) {
+            advance(); // consume '('
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after 'acap('");
+        }
         std::vector<ASTNodePtr> args;
         auto identExpr = std::make_shared<IdentifierExpr>("acap", token.line, token.column);
         return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
     }
     
-    // asize — keyword form, no arguments (return bytes used on stack)
+    // asize — keyword or paren form, no arguments (return bytes used on stack)
     if (token.type == TokenType::TOKEN_KW_ASIZE) {
         advance(); // consume 'asize'
+        if (check(TokenType::TOKEN_LEFT_PAREN)) {
+            advance(); // consume '('
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after 'asize('");
+        }
         std::vector<ASTNodePtr> args;
         auto identExpr = std::make_shared<IdentifierExpr>("asize", token.line, token.column);
         return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
     }
     
-    // afits — keyword form, single argument (check if value fits on stack)
+    // afits — keyword or paren form, single argument (check if value fits on stack)
     if (token.type == TokenType::TOKEN_KW_AFITS) {
         advance(); // consume 'afits'
-        ASTNodePtr operand = parseUnary();
+        bool hasParen = check(TokenType::TOKEN_LEFT_PAREN);
+        if (hasParen) advance(); // consume '('
+        ASTNodePtr operand = parseExpression();
         if (!operand) {
             error("Expected expression after 'afits'");
             return nullptr;
         }
-        operand = parsePostfix(operand);
+        if (hasParen) {
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after afits argument");
+        }
         std::vector<ASTNodePtr> args;
         args.push_back(operand);
         auto identExpr = std::make_shared<IdentifierExpr>("afits", token.line, token.column);
         return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
     }
     
-    // atype — keyword form, no arguments (return type tag of top stack item)
+    // atype — keyword or paren form, no arguments (return type tag of top stack item)
     if (token.type == TokenType::TOKEN_KW_ATYPE) {
         advance(); // consume 'atype'
+        if (check(TokenType::TOKEN_LEFT_PAREN)) {
+            advance(); // consume '('
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after 'atype('");
+        }
         std::vector<ASTNodePtr> args;
         auto identExpr = std::make_shared<IdentifierExpr>("atype", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // ====================================================================
+    // ahash builtins — paren syntax: ahash(cap), ahset(h,k,v), etc.
+    // ====================================================================
+    
+    // ahash(cap) — create hash table, returns handle
+    if (token.type == TokenType::TOKEN_KW_AHASH) {
+        advance(); // consume 'ahash'
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'ahash'");
+        ASTNodePtr cap = parseExpression();
+        if (!cap) { error("Expected capacity expression in ahash()"); return nullptr; }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ahash argument");
+        std::vector<ASTNodePtr> args;
+        args.push_back(cap);
+        auto identExpr = std::make_shared<IdentifierExpr>("ahash", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // ahset(handle, key, val) — set key/value pair, returns int32 (0=ok, -1=overflow)
+    if (token.type == TokenType::TOKEN_KW_AHSET) {
+        advance(); // consume 'ahset'
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'ahset'");
+        ASTNodePtr handle = parseExpression();
+        if (!handle) { error("Expected handle in ahset()"); return nullptr; }
+        consume(TokenType::TOKEN_COMMA, "Expected ',' after handle in ahset()");
+        ASTNodePtr key = parseExpression();
+        if (!key) { error("Expected key in ahset()"); return nullptr; }
+        consume(TokenType::TOKEN_COMMA, "Expected ',' after key in ahset()");
+        ASTNodePtr val = parseExpression();
+        if (!val) { error("Expected value in ahset()"); return nullptr; }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ahset arguments");
+        std::vector<ASTNodePtr> args;
+        args.push_back(handle);
+        args.push_back(key);
+        args.push_back(val);
+        auto identExpr = std::make_shared<IdentifierExpr>("ahset", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // ahget(handle, key) — get value by key, type from receiving variable
+    if (token.type == TokenType::TOKEN_KW_AHGET) {
+        advance(); // consume 'ahget'
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'ahget'");
+        ASTNodePtr handle = parseExpression();
+        if (!handle) { error("Expected handle in ahget()"); return nullptr; }
+        consume(TokenType::TOKEN_COMMA, "Expected ',' after handle in ahget()");
+        ASTNodePtr key = parseExpression();
+        if (!key) { error("Expected key in ahget()"); return nullptr; }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ahget arguments");
+        std::vector<ASTNodePtr> args;
+        args.push_back(handle);
+        args.push_back(key);
+        auto identExpr = std::make_shared<IdentifierExpr>("ahget", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // ahcount(handle) — return entry count
+    if (token.type == TokenType::TOKEN_KW_AHCOUNT) {
+        advance(); // consume 'ahcount'
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'ahcount'");
+        ASTNodePtr handle = parseExpression();
+        if (!handle) { error("Expected handle in ahcount()"); return nullptr; }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ahcount argument");
+        std::vector<ASTNodePtr> args;
+        args.push_back(handle);
+        auto identExpr = std::make_shared<IdentifierExpr>("ahcount", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // ahsize(handle) — return current payload bytes used
+    if (token.type == TokenType::TOKEN_KW_AHSIZE) {
+        advance(); // consume 'ahsize'
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'ahsize'");
+        ASTNodePtr handle = parseExpression();
+        if (!handle) { error("Expected handle in ahsize()"); return nullptr; }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ahsize argument");
+        std::vector<ASTNodePtr> args;
+        args.push_back(handle);
+        auto identExpr = std::make_shared<IdentifierExpr>("ahsize", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // ahfits(handle, val) — check if value fits within remaining capacity
+    if (token.type == TokenType::TOKEN_KW_AHFITS) {
+        advance(); // consume 'ahfits'
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'ahfits'");
+        ASTNodePtr handle = parseExpression();
+        if (!handle) { error("Expected handle in ahfits()"); return nullptr; }
+        consume(TokenType::TOKEN_COMMA, "Expected ',' after handle in ahfits()");
+        ASTNodePtr val = parseExpression();
+        if (!val) { error("Expected value in ahfits()"); return nullptr; }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ahfits arguments");
+        std::vector<ASTNodePtr> args;
+        args.push_back(handle);
+        args.push_back(val);
+        auto identExpr = std::make_shared<IdentifierExpr>("ahfits", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // ahtype(handle, key) — return type tag of value at key (-1 if not found)
+    if (token.type == TokenType::TOKEN_KW_AHTYPE) {
+        advance(); // consume 'ahtype'
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'ahtype'");
+        ASTNodePtr handle = parseExpression();
+        if (!handle) { error("Expected handle in ahtype()"); return nullptr; }
+        consume(TokenType::TOKEN_COMMA, "Expected ',' after handle in ahtype()");
+        ASTNodePtr key = parseExpression();
+        if (!key) { error("Expected key in ahtype()"); return nullptr; }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ahtype arguments");
+        std::vector<ASTNodePtr> args;
+        args.push_back(handle);
+        args.push_back(key);
+        auto identExpr = std::make_shared<IdentifierExpr>("ahtype", token.line, token.column);
         return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
     }
     
@@ -5006,16 +5145,23 @@ ASTNodePtr Parser::parseExitStatement() {
         exitToken.line, exitToken.column);
 }
 
-// Parse apush statement: apush val;
+// Parse apush statement: apush val; OR apush(val);
 // Produces same AST as old apush(val) — CallExpr(IdentifierExpr("apush"), [val])
 ASTNodePtr Parser::parseApushStatement() {
     using namespace frontend;
     Token apushToken = previous(); // We already consumed 'apush'
 
+    bool hasParen = check(TokenType::TOKEN_LEFT_PAREN);
+    if (hasParen) advance(); // consume '('
+
     ASTNodePtr value = parseExpression();
     if (!value) {
         error("Expected value expression after 'apush'");
         return nullptr;
+    }
+
+    if (hasParen) {
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after apush argument");
     }
 
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after apush statement");
@@ -5028,16 +5174,23 @@ ASTNodePtr Parser::parseApushStatement() {
         apushToken.line, apushToken.column);
 }
 
-// Parse astack statement: astack size;
+// Parse astack statement: astack size; OR astack(size);
 // Produces same AST as old astack(size) — CallExpr(IdentifierExpr("astack"), [size])
 ASTNodePtr Parser::parseAstackStatement() {
     using namespace frontend;
     Token astackToken = previous(); // We already consumed 'astack'
 
+    bool hasParen = check(TokenType::TOKEN_LEFT_PAREN);
+    if (hasParen) advance(); // consume '('
+
     ASTNodePtr size = parseExpression();
     if (!size) {
         error("Expected size expression after 'astack'");
         return nullptr;
+    }
+
+    if (hasParen) {
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after astack argument");
     }
 
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after astack statement");

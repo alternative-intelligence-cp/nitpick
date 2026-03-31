@@ -675,12 +675,16 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
         // If the initializer is an apop()/apeek() call, the codegen needs
         // to know the destination type for tag checking and type conversion.
         expr_codegen->ustack_pop_dest_type = var_type;
+        // v0.4.5: Set user hash get destination type context
+        expr_codegen->uhash_get_dest_type = var_type;
 
         // Generate code for initializer expression
         llvm::Value* init_value = expr_codegen->codegenExpressionNode(stmt->initializer.get(), expr_codegen);
         
         // v0.4.3: Clear context after codegen
         expr_codegen->ustack_pop_dest_type = nullptr;
+        // v0.4.5: Clear hash context
+        expr_codegen->uhash_get_dest_type = nullptr;
         
         if (!init_value) {
             throw std::runtime_error("Failed to generate code for initializer expression");
@@ -990,6 +994,25 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
                 }
                 llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_cleanup");
                 builder.CreateCall(destroyFunc, {handle});
+            }
+        }
+
+        // v0.4.5: Auto-cleanup all user hash tables before fallthrough return
+        {
+            bool fast = expr_codegen && expr_codegen->uhash_fast_mode;
+            const char* dname = fast ? "aria_uhash_destroy_fast" : "aria_uhash_destroy";
+            for (auto& [key, val] : named_values) {
+                if (key.find("__aria_uhash_handle_") == 0) {
+                    llvm::Function* destroyFunc = module->getFunction(dname);
+                    if (!destroyFunc) {
+                        llvm::FunctionType* ft = llvm::FunctionType::get(
+                            builder.getVoidTy(), {builder.getInt64Ty()}, false);
+                        destroyFunc = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                            dname, module);
+                    }
+                    llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), val, "uhash_cleanup");
+                    builder.CreateCall(destroyFunc, {handle});
+                }
             }
         }
 
@@ -2580,6 +2603,25 @@ void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
             }
             llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_cleanup");
             builder.CreateCall(destroyFunc, {handle});
+        }
+    }
+    
+    // v0.4.5: Auto-cleanup all user hash tables before return
+    {
+        bool fast = expr_codegen && expr_codegen->uhash_fast_mode;
+        const char* dname = fast ? "aria_uhash_destroy_fast" : "aria_uhash_destroy";
+        for (auto& [key, val] : named_values) {
+            if (key.find("__aria_uhash_handle_") == 0) {
+                llvm::Function* destroyFunc = module->getFunction(dname);
+                if (!destroyFunc) {
+                    llvm::FunctionType* ft = llvm::FunctionType::get(
+                        builder.getVoidTy(), {builder.getInt64Ty()}, false);
+                    destroyFunc = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                        dname, module);
+                }
+                llvm::Value* h = builder.CreateLoad(builder.getInt64Ty(), val, "uhash_cleanup");
+                builder.CreateCall(destroyFunc, {h});
+            }
         }
     }
     

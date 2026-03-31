@@ -1267,4 +1267,87 @@ VerifyResult Z3Verifier::verifyUStackHomogeneous(
     return vr;
 }
 
+//
+// Phase 5: User Hash (ahash) Type Homogeneity Verification
+//
+// Mirrors ustack homogeneity but for ahset() value types.
+// Encoding:  NOT(forall i: tag_i == expected)  =  exists i: tag_i != expected
+// If UNSAT → no tag can differ → all match → PROVEN → eliminate runtime checks
+//
+VerifyResult Z3Verifier::verifyUHashHomogeneous(
+    const std::vector<int64_t>& setTypeTags,
+    int64_t expectedTag,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    static const char* tag_names[] = {
+        "int8", "int16", "int32", "int64",
+        "flt32", "flt64", "bool", "string", "pointer"
+    };
+
+    if (setTypeTags.empty()) {
+        VerifyOutcome out;
+        out.result = VerifyResult::UNKNOWN;
+        out.conditionText = "uhash type homogeneity";
+        out.detail = "no ahset() calls found in scope — cannot verify";
+        out.line = line;
+        out.column = column;
+        summary.unknown++;
+        outcomes.push_back(out);
+        return VerifyResult::UNKNOWN;
+    }
+
+    Z3_solver solver = makeSolver();
+    Z3_sort bv64 = Z3_mk_bv_sort(ctx, 64);
+
+    Z3_ast expected = Z3_mk_int64(ctx, expectedTag, bv64);
+
+    std::vector<Z3_ast> disjuncts;
+    for (int64_t tag : setTypeTags) {
+        Z3_ast tagAst = Z3_mk_int64(ctx, tag, bv64);
+        Z3_ast neq = Z3_mk_not(ctx, Z3_mk_eq(ctx, tagAst, expected));
+        disjuncts.push_back(neq);
+    }
+
+    Z3_ast anyDiffers;
+    if (disjuncts.size() == 1) {
+        anyDiffers = disjuncts[0];
+    } else {
+        anyDiffers = Z3_mk_or(ctx, static_cast<unsigned>(disjuncts.size()),
+                               disjuncts.data());
+    }
+
+    Z3_solver_assert(ctx, solver, anyDiffers);
+    Z3_lbool result = checkSat(solver);
+    deleteSolver(solver);
+
+    VerifyOutcome out;
+    out.conditionText = "uhash type homogeneity";
+    out.line = line;
+    out.column = column;
+
+    const char* expectedName = (expectedTag >= 0 && expectedTag <= 8)
+        ? tag_names[expectedTag] : "unknown";
+
+    if (result == Z3_L_FALSE) {
+        out.result = VerifyResult::PROVEN;
+        out.detail = std::string("all ") + std::to_string(setTypeTags.size()) +
+                     " ahset() calls proven type-homogeneous (" + expectedName +
+                     ") — runtime tag checks eliminated";
+        summary.proven++;
+    } else if (result == Z3_L_TRUE) {
+        out.result = VerifyResult::DISPROVEN;
+        out.detail = "mixed types found among ahset() calls — runtime tag checks retained";
+        summary.disproven++;
+    } else {
+        out.result = VerifyResult::UNKNOWN;
+        out.detail = "solver timeout on uhash homogeneity — runtime tag checks retained";
+        summary.unknown++;
+    }
+
+    VerifyResult vr = out.result;
+    outcomes.push_back(out);
+    return vr;
+}
+
 } // namespace aria

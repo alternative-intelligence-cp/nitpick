@@ -20,7 +20,7 @@ Server::Server(size_t worker_count)
     // Start with minimal capabilities
     // We'll enable more as we implement features
     capabilities_.textDocumentSync = 1; // Full sync for now
-    capabilities_.diagnosticProvider = true; // We can provide diagnostics!
+    capabilities_.diagnosticProvider = false; // We use push diagnostics (publishDiagnostics), not pull
     capabilities_.hoverProvider = true; // Show type info on hover
     capabilities_.definitionProvider = true; // Go to definition
     capabilities_.completionProvider = true; // Code completion
