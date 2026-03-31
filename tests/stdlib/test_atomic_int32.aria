@@ -7,11 +7,11 @@
  */
 
 // Memory ordering constants
-func:RELAXED = int32() { pass(0); };
-func:ACQUIRE = int32() { pass(1); };
-func:RELEASE = int32() { pass(2); };
-func:ACQ_REL = int32() { pass(3); };
-func:SEQ_CST = int32() { pass(4); };
+func:RELAXED = int32() { pass 0; };
+func:ACQUIRE = int32() { pass 1; };
+func:RELEASE = int32() { pass 2; };
+func:ACQ_REL = int32() { pass 3; };
+func:SEQ_CST = int32() { pass 4; };
 
 // ============================================================================
 // Extern Declarations (from stdlib/atomic/int32.aria)
@@ -33,27 +33,27 @@ struct atomic_int32 {
 pub func atomic_int32_new(int32:value) = atomic_int32 {
     atomic_int32:result;
     result.ptr = aria_atomic_int32_create(value);
-    pass(result);
+    pass result;
 };
 
 pub func atomic_int32_destroy(atomic_int32:self) = void {
     aria_atomic_int32_destroy(self.ptr);
-    pass();
+    pass;
 };
 
 pub func atomic_int32_store(atomic_int32:self, int32:value, int32:order) = void {
     aria_atomic_int32_store(self.ptr, value, order);
-    pass();
+    pass;
 };
 
 pub func atomic_int32_load(atomic_int32:self, int32:order) = int32 {
     int32:result = aria_atomic_int32_load(self.ptr, order);
-    pass(result);
+    pass result;
 };
 
 pub func atomic_int32_exchange(atomic_int32:self, int32:value, int32:order) = int32 {
     int32:result = aria_atomic_int32_exchange(self.ptr, value, order);
-    pass(result);
+    pass result;
 };
 
 pub func atomic_int32_compare_exchange_strong(
@@ -66,17 +66,17 @@ pub func atomic_int32_compare_exchange_strong(
     bool:result = aria_atomic_int32_compare_exchange_strong(
         self.ptr, expected, desired, success_order, failure_order
     );
-    pass(result);
+    pass result;
 };
 
 pub func atomic_int32_fetch_add(atomic_int32:self, int32:value, int32:order) = int32 {
     int32:result = aria_atomic_int32_fetch_add(self.ptr, value, order);
-    pass(result);
+    pass result;
 };
 
 pub func atomic_int32_fetch_sub(atomic_int32:self, int32:value, int32:order) = int32 {
     int32:result = aria_atomic_int32_fetch_sub(self.ptr, value, order);
-    pass(result);
+    pass result;
 };
 
 // ============================================================================
@@ -99,9 +99,9 @@ func:test_store_load = int32() {
     
     # Should read the stored value
     if value == 42 {
-        pass(0);  # SUCCESS
+        pass 0;  # SUCCESS
     } else {
-        pass(1);  # FAILURE
+        pass 1;  # FAILURE
     }
 };
 
@@ -120,9 +120,9 @@ func:test_exchange = int32() {
     atomic_int32_destroy(counter);
     
     if old == 10 && new_val == 20 {
-        pass(0);  # SUCCESS
+        pass 0;  # SUCCESS
     } else {
-        pass(1);  # FAILURE
+        pass 1;  # FAILURE
     }
 };
 
@@ -143,9 +143,9 @@ func:test_cas_success = int32() {
     
     # Should succeed: expected was 10, so store 20
     if swapped && value == 20 && expected == 10 {
-        pass(0);  # SUCCESS
+        pass 0;  # SUCCESS
     } else {
-        pass(1);  # FAILURE
+        pass 1;  # FAILURE
     }
 };
 
@@ -168,9 +168,9 @@ func:test_cas_failure = int32() {
     # expected should be updated to 10
     # value should still be 10 (not changed)
     if !swapped && expected == 10 && value == 10 {
-        pass(0);  # SUCCESS
+        pass 0;  # SUCCESS
     } else {
-        pass(1);  # FAILURE
+        pass 1;  # FAILURE
     }
 };
 
@@ -193,9 +193,9 @@ func:test_fetch_add = int32() {
     # old1 should be 10, current1 should be 15
     # old2 should be 15, current2 should be 18
     if old1 == 10 && current1 == 15 && old2 == 15 && current2 == 18 {
-        pass(0);  # SUCCESS
+        pass 0;  # SUCCESS
     } else {
-        pass(1);  # FAILURE
+        pass 1;  # FAILURE
     }
 };
 
@@ -218,9 +218,9 @@ func:test_fetch_sub = int32() {
     # old1 should be 100, current1 should be 90
     # old2 should be 90, current2 should be 85
     if old1 == 100 && current1 == 90 && old2 == 90 && current2 == 85 {
-        pass(0);  # SUCCESS
+        pass 0;  # SUCCESS
     } else {
-        pass(1);  # FAILURE
+        pass 1;  # FAILURE
     }
 };
 
@@ -238,9 +238,9 @@ func:test_relaxed_ordering = int32() {
     
     # Should still work (same thread)
     if value == 123 {
-        pass(0);  # SUCCESS
+        pass 0;  # SUCCESS
     } else {
-        pass(1);  # FAILURE
+        pass 1;  # FAILURE
     }
 };
 
@@ -262,14 +262,14 @@ func:main = int32() {
     # Report results
     if failures == 0 {
         # All tests passed!
-        exit(0);
+        exit 0;
     } else {
         # Some tests failed
-        pass(failures);
+        pass failures;
     }
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

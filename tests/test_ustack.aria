@@ -2,20 +2,20 @@
 // astack / apush / apop / apeek — no handles, per-scope, typed
 
 func:failsafe = int32(tbb32:err) {
-    exit(1);
+    exit 1;
 };
 
 func:main = int32() {
     // Initialize scope stack with 64 slots
-    astack(64i64);
+    astack 64i64;
 
     // ================================================================
     // Test 1: Push and pop int64 values (LIFO)
     // ================================================================
-    apush(42i64);
-    apush(99i64);
-    int64:val1 = apop();
-    int64:val2 = apop();
+    apush 42i64;
+    apush 99i64;
+    int64:val1 = apop;
+    int64:val2 = apop;
 
     if (val1 == 99i64) {
         println("PASS: pop returned 99 (LIFO order)");
@@ -32,9 +32,9 @@ func:main = int32() {
     // ================================================================
     // Test 2: Peek does not remove
     // ================================================================
-    apush(77i64);
-    int64:peeked = apeek();
-    int64:popped = apop();
+    apush 77i64;
+    int64:peeked = apeek;
+    int64:popped = apop;
 
     if (peeked == 77i64) {
         println("PASS: peek returned 77");
@@ -51,13 +51,13 @@ func:main = int32() {
     // ================================================================
     // Test 3: Push multiple, pop in correct LIFO order
     // ================================================================
-    apush(10i64);
-    apush(20i64);
-    apush(30i64);
+    apush 10i64;
+    apush 20i64;
+    apush 30i64;
 
-    int64:a = apop();
-    int64:b = apop();
-    int64:c = apop();
+    int64:a = apop;
+    int64:b = apop;
+    int64:c = apop;
 
     if (a == 30i64) {
         println("PASS: LIFO 30");
@@ -80,8 +80,8 @@ func:main = int32() {
     // ================================================================
     // Test 4: int8 push and pop (type-aware)
     // ================================================================
-    apush(5i8);
-    int8:d = apop();
+    apush 5i8;
+    int8:d = apop;
 
     if (d == 5i8) {
         println("PASS: int8 push/pop correct");
@@ -92,8 +92,8 @@ func:main = int32() {
     // ================================================================
     // Test 5: int32 push and pop (type-aware)
     // ================================================================
-    apush(256i32);
-    int32:e = apop();
+    apush 256i32;
+    int32:e = apop;
 
     if (e == 256i32) {
         println("PASS: int32 push/pop correct");
@@ -104,8 +104,8 @@ func:main = int32() {
     // ================================================================
     // Test 6: flt32 push and pop (type-aware with bitcast)
     // ================================================================
-    apush(3.14f32);
-    flt32:f = apop();
+    apush 3.14f32;
+    flt32:f = apop;
 
     // Float comparison: check within epsilon
     flt32:diff = f - 3.14f32;
@@ -118,8 +118,8 @@ func:main = int32() {
     // ================================================================
     // Test 7: flt64 push and pop
     // ================================================================
-    apush(2.71828f64);
-    flt64:g = apop();
+    apush 2.71828f64;
+    flt64:g = apop;
 
     flt64:diff2 = g - 2.71828f64;
     if (diff2 < 0.00001f64) {
@@ -131,13 +131,13 @@ func:main = int32() {
     // ================================================================
     // Test 8: Mixed types — push different, pop in LIFO with correct types
     // ================================================================
-    apush(5i8);
-    apush(456789i64);
-    apush(256i32);
+    apush 5i8;
+    apush 456789i64;
+    apush 256i32;
 
-    int32:mix_e = apop();
-    int64:mix_b = apop();
-    int8:mix_a = apop();
+    int32:mix_e = apop;
+    int64:mix_b = apop;
+    int8:mix_a = apop;
 
     if (mix_e == 256i32) {
         println("PASS: mixed pop int32 correct");

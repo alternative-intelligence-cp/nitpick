@@ -2,22 +2,22 @@
 
 func:simple_check = int32(bool:should_succeed) {
     if (should_succeed) {
-        pass(42i32);
+        pass 42i32;
     }
-    fail(1i32);
+    fail 1i32;
 };
 
 func:main = int32() {
     Result<int32>:r = simple_check(true);
     
     if (r.is_error) {
-        exit(0);
+        exit 0;
     }
     
-    pass(r.value);
+    pass r.value;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

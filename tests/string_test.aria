@@ -28,104 +28,104 @@ func:main = int32() {
 
     // T01: string_length
     int64:len1 = string_length("Hello");
-    if (len1 == 5i64) { drop(check(true, "T01 string_length(Hello) == 5")); passed = passed + 1i32;
-    } else { drop(check(false, "T01 string_length")); failed = failed + 1i32; }
+    if (len1 == 5i64) { drop check(true, "T01 string_length(Hello) == 5"); passed = passed + 1i32;
+    } else { drop check(false, "T01 string_length"); failed = failed + 1i32; }
 
     // T02: string_length empty
     int64:len2 = string_length("");
-    if (len2 == 0i64) { drop(check(true, "T02 string_length empty == 0")); passed = passed + 1i32;
-    } else { drop(check(false, "T02 string_length empty")); failed = failed + 1i32; }
+    if (len2 == 0i64) { drop check(true, "T02 string_length empty == 0"); passed = passed + 1i32;
+    } else { drop check(false, "T02 string_length empty"); failed = failed + 1i32; }
 
     // T03: string_is_empty
     bool:e1 = string_is_empty("");
     bool:e2 = string_is_empty("x");
     if (e1 == true) {
-        if (e2 == false) { drop(check(true, "T03 string_is_empty")); passed = passed + 1i32;
-        } else { drop(check(false, "T03 string_is_empty")); failed = failed + 1i32; }
-    } else { drop(check(false, "T03 string_is_empty")); failed = failed + 1i32; }
+        if (e2 == false) { drop check(true, "T03 string_is_empty"); passed = passed + 1i32;
+        } else { drop check(false, "T03 string_is_empty"); failed = failed + 1i32; }
+    } else { drop check(false, "T03 string_is_empty"); failed = failed + 1i32; }
 
     // T04: string_equals
     bool:eq1 = string_equals("abc", "abc");
     bool:eq2 = string_equals("abc", "def");
     if (eq1 == true) {
-        if (eq2 == false) { drop(check(true, "T04 string_equals")); passed = passed + 1i32;
-        } else { drop(check(false, "T04 string_equals")); failed = failed + 1i32; }
-    } else { drop(check(false, "T04 string_equals")); failed = failed + 1i32; }
+        if (eq2 == false) { drop check(true, "T04 string_equals"); passed = passed + 1i32;
+        } else { drop check(false, "T04 string_equals"); failed = failed + 1i32; }
+    } else { drop check(false, "T04 string_equals"); failed = failed + 1i32; }
 
     // T05: string_concat
     string:cat = string_concat("Hello", " World");
-    if (string_equals(cat, "Hello World")) { drop(check(true, "T05 string_concat")); passed = passed + 1i32;
-    } else { drop(check(false, "T05 string_concat")); failed = failed + 1i32; }
+    if (string_equals(cat, "Hello World")) { drop check(true, "T05 string_concat"); passed = passed + 1i32;
+    } else { drop check(false, "T05 string_concat"); failed = failed + 1i32; }
 
     // T06: string_contains
     bool:c1 = string_contains("hello world", "world");
     bool:c2 = string_contains("hello world", "xyz");
     if (c1 == true) {
-        if (c2 == false) { drop(check(true, "T06 string_contains")); passed = passed + 1i32;
-        } else { drop(check(false, "T06 string_contains")); failed = failed + 1i32; }
-    } else { drop(check(false, "T06 string_contains")); failed = failed + 1i32; }
+        if (c2 == false) { drop check(true, "T06 string_contains"); passed = passed + 1i32;
+        } else { drop check(false, "T06 string_contains"); failed = failed + 1i32; }
+    } else { drop check(false, "T06 string_contains"); failed = failed + 1i32; }
 
     // T07: string_starts_with / string_ends_with
     bool:sw = string_starts_with("hello", "hel");
     bool:ew = string_ends_with("hello", "llo");
     if (sw == true) {
-        if (ew == true) { drop(check(true, "T07 starts_with/ends_with")); passed = passed + 1i32;
-        } else { drop(check(false, "T07 starts_with/ends_with")); failed = failed + 1i32; }
-    } else { drop(check(false, "T07 starts_with/ends_with")); failed = failed + 1i32; }
+        if (ew == true) { drop check(true, "T07 starts_with/ends_with"); passed = passed + 1i32;
+        } else { drop check(false, "T07 starts_with/ends_with"); failed = failed + 1i32; }
+    } else { drop check(false, "T07 starts_with/ends_with"); failed = failed + 1i32; }
 
     // T08: string_index_of
     int64:idx1 = string_index_of("hello world", "world");
     int64:idx2 = string_index_of("hello world", "xyz");
     if (idx1 == 6i64) {
-        if (idx2 == -1i64) { drop(check(true, "T08 string_index_of")); passed = passed + 1i32;
-        } else { drop(check(false, "T08 string_index_of")); failed = failed + 1i32; }
-    } else { drop(check(false, "T08 string_index_of")); failed = failed + 1i32; }
+        if (idx2 == -1i64) { drop check(true, "T08 string_index_of"); passed = passed + 1i32;
+        } else { drop check(false, "T08 string_index_of"); failed = failed + 1i32; }
+    } else { drop check(false, "T08 string_index_of"); failed = failed + 1i32; }
 
     // T09: string_substring (start inclusive, end exclusive)
     int64:two = 2;
     int64:five = 5;
     string:sub = string_substring("hello", two, five);
-    if (string_equals(sub, "llo")) { drop(check(true, "T09 string_substring(2,5)")); passed = passed + 1i32;
-    } else { drop(check(false, "T09 string_substring")); failed = failed + 1i32; }
+    if (string_equals(sub, "llo")) { drop check(true, "T09 string_substring(2,5)"); passed = passed + 1i32;
+    } else { drop check(false, "T09 string_substring"); failed = failed + 1i32; }
 
     // T10: string_repeat
     int64:three = 3;
     string:rep = string_repeat("ab", three);
-    if (string_equals(rep, "ababab")) { drop(check(true, "T10 string_repeat")); passed = passed + 1i32;
-    } else { drop(check(false, "T10 string_repeat")); failed = failed + 1i32; }
+    if (string_equals(rep, "ababab")) { drop check(true, "T10 string_repeat"); passed = passed + 1i32;
+    } else { drop check(false, "T10 string_repeat"); failed = failed + 1i32; }
 
     // T11: string_trim
     string:trimmed = string_trim("  hello  ");
-    if (string_equals(trimmed, "hello")) { drop(check(true, "T11 string_trim")); passed = passed + 1i32;
-    } else { drop(check(false, "T11 string_trim")); failed = failed + 1i32; }
+    if (string_equals(trimmed, "hello")) { drop check(true, "T11 string_trim"); passed = passed + 1i32;
+    } else { drop check(false, "T11 string_trim"); failed = failed + 1i32; }
 
     // T12: string_trim_start / string_trim_end
     string:ts = string_trim_start("  hello  ");
     string:te = string_trim_end("  hello  ");
     if (string_equals(ts, "hello  ")) {
-        if (string_equals(te, "  hello")) { drop(check(true, "T12 trim_start/trim_end")); passed = passed + 1i32;
-        } else { drop(check(false, "T12 trim_start/trim_end")); failed = failed + 1i32; }
-    } else { drop(check(false, "T12 trim_start/trim_end")); failed = failed + 1i32; }
+        if (string_equals(te, "  hello")) { drop check(true, "T12 trim_start/trim_end"); passed = passed + 1i32;
+        } else { drop check(false, "T12 trim_start/trim_end"); failed = failed + 1i32; }
+    } else { drop check(false, "T12 trim_start/trim_end"); failed = failed + 1i32; }
 
     // T13: string_to_upper / string_to_lower
     string:up = string_to_upper("hello");
     string:lo = string_to_lower("HELLO");
     if (string_equals(up, "HELLO")) {
-        if (string_equals(lo, "hello")) { drop(check(true, "T13 to_upper/to_lower")); passed = passed + 1i32;
-        } else { drop(check(false, "T13 to_upper/to_lower")); failed = failed + 1i32; }
-    } else { drop(check(false, "T13 to_upper/to_lower")); failed = failed + 1i32; }
+        if (string_equals(lo, "hello")) { drop check(true, "T13 to_upper/to_lower"); passed = passed + 1i32;
+        } else { drop check(false, "T13 to_upper/to_lower"); failed = failed + 1i32; }
+    } else { drop check(false, "T13 to_upper/to_lower"); failed = failed + 1i32; }
 
     // T14: string_from_int
     int64:num42 = 42;
     string:s42 = string_from_int(num42);
-    if (string_equals(s42, "42")) { drop(check(true, "T14 string_from_int")); passed = passed + 1i32;
-    } else { drop(check(false, "T14 string_from_int")); failed = failed + 1i32; }
+    if (string_equals(s42, "42")) { drop check(true, "T14 string_from_int"); passed = passed + 1i32;
+    } else { drop check(false, "T14 string_from_int"); failed = failed + 1i32; }
 
     // T15: string_from_char
     int64:code_A = 65;
     string:charA = string_from_char(code_A);
-    if (string_equals(charA, "A")) { drop(check(true, "T15 string_from_char(65) == A")); passed = passed + 1i32;
-    } else { drop(check(false, "T15 string_from_char")); failed = failed + 1i32; }
+    if (string_equals(charA, "A")) { drop check(true, "T15 string_from_char(65) == A"); passed = passed + 1i32;
+    } else { drop check(false, "T15 string_from_char"); failed = failed + 1i32; }
 
     // ═════════════════════════════════════════════════════════════════════
     // Runtime string function tests (from stdlib/string.aria)
@@ -135,110 +135,110 @@ func:main = int32() {
     println("── Runtime String Functions ─────────────────────────────");
 
     // T16: str_replace — all occurrences
-    string:r1 = raw(str_replace("hello world hello", "hello", "hi"));
-    if (string_equals(r1, "hi world hi")) { drop(check(true, "T16 str_replace all")); passed = passed + 1i32;
-    } else { drop(check(false, "T16 str_replace all")); failed = failed + 1i32; }
+    string:r1 = raw str_replace("hello world hello", "hello", "hi");
+    if (string_equals(r1, "hi world hi")) { drop check(true, "T16 str_replace all"); passed = passed + 1i32;
+    } else { drop check(false, "T16 str_replace all"); failed = failed + 1i32; }
 
     // T17: str_replace — no match
-    string:r2 = raw(str_replace("hello", "xyz", "abc"));
-    if (string_equals(r2, "hello")) { drop(check(true, "T17 str_replace no match")); passed = passed + 1i32;
-    } else { drop(check(false, "T17 str_replace no match")); failed = failed + 1i32; }
+    string:r2 = raw str_replace("hello", "xyz", "abc");
+    if (string_equals(r2, "hello")) { drop check(true, "T17 str_replace no match"); passed = passed + 1i32;
+    } else { drop check(false, "T17 str_replace no match"); failed = failed + 1i32; }
 
     // T18: str_replace — empty old string
-    string:r3 = raw(str_replace("hello", "", "x"));
-    if (string_equals(r3, "hello")) { drop(check(true, "T18 str_replace empty old")); passed = passed + 1i32;
-    } else { drop(check(false, "T18 str_replace empty old")); failed = failed + 1i32; }
+    string:r3 = raw str_replace("hello", "", "x");
+    if (string_equals(r3, "hello")) { drop check(true, "T18 str_replace empty old"); passed = passed + 1i32;
+    } else { drop check(false, "T18 str_replace empty old"); failed = failed + 1i32; }
 
     // T19: str_replace — longer replacement
-    string:r4 = raw(str_replace("a-b-c", "-", "---"));
-    if (string_equals(r4, "a---b---c")) { drop(check(true, "T19 str_replace longer")); passed = passed + 1i32;
-    } else { drop(check(false, "T19 str_replace longer")); failed = failed + 1i32; }
+    string:r4 = raw str_replace("a-b-c", "-", "---");
+    if (string_equals(r4, "a---b---c")) { drop check(true, "T19 str_replace longer"); passed = passed + 1i32;
+    } else { drop check(false, "T19 str_replace longer"); failed = failed + 1i32; }
 
     // T20: str_replace_first
-    string:rf1 = raw(str_replace_first("aaa", "a", "b"));
-    if (string_equals(rf1, "baa")) { drop(check(true, "T20 str_replace_first")); passed = passed + 1i32;
-    } else { drop(check(false, "T20 str_replace_first")); failed = failed + 1i32; }
+    string:rf1 = raw str_replace_first("aaa", "a", "b");
+    if (string_equals(rf1, "baa")) { drop check(true, "T20 str_replace_first"); passed = passed + 1i32;
+    } else { drop check(false, "T20 str_replace_first"); failed = failed + 1i32; }
 
     // T21: str_replace_first — no match
-    string:rf2 = raw(str_replace_first("hello", "xyz", "abc"));
-    if (string_equals(rf2, "hello")) { drop(check(true, "T21 str_replace_first no match")); passed = passed + 1i32;
-    } else { drop(check(false, "T21 str_replace_first no match")); failed = failed + 1i32; }
+    string:rf2 = raw str_replace_first("hello", "xyz", "abc");
+    if (string_equals(rf2, "hello")) { drop check(true, "T21 str_replace_first no match"); passed = passed + 1i32;
+    } else { drop check(false, "T21 str_replace_first no match"); failed = failed + 1i32; }
 
     // T22: str_count
-    int64:cnt1 = raw(str_count("abcabcabc", "abc"));
-    if (cnt1 == 3i64) { drop(check(true, "T22 str_count(abcabcabc, abc) == 3")); passed = passed + 1i32;
-    } else { drop(check(false, "T22 str_count")); failed = failed + 1i32; }
+    int64:cnt1 = raw str_count("abcabcabc", "abc");
+    if (cnt1 == 3i64) { drop check(true, "T22 str_count(abcabcabc, abc) == 3"); passed = passed + 1i32;
+    } else { drop check(false, "T22 str_count"); failed = failed + 1i32; }
 
     // T23: str_count — no match
-    int64:cnt2 = raw(str_count("hello", "xyz"));
-    if (cnt2 == 0i64) { drop(check(true, "T23 str_count no match == 0")); passed = passed + 1i32;
-    } else { drop(check(false, "T23 str_count no match")); failed = failed + 1i32; }
+    int64:cnt2 = raw str_count("hello", "xyz");
+    if (cnt2 == 0i64) { drop check(true, "T23 str_count no match == 0"); passed = passed + 1i32;
+    } else { drop check(false, "T23 str_count no match"); failed = failed + 1i32; }
 
     // T24: str_count — single char
-    int64:cnt3 = raw(str_count("banana", "a"));
-    if (cnt3 == 3i64) { drop(check(true, "T24 str_count(banana, a) == 3")); passed = passed + 1i32;
-    } else { drop(check(false, "T24 str_count single char")); failed = failed + 1i32; }
+    int64:cnt3 = raw str_count("banana", "a");
+    if (cnt3 == 3i64) { drop check(true, "T24 str_count(banana, a) == 3"); passed = passed + 1i32;
+    } else { drop check(false, "T24 str_count single char"); failed = failed + 1i32; }
 
     // T25: str_byte_at
     int64:z = 0;
-    int64:b1 = raw(str_byte_at("Hello", z));
-    if (b1 == 72i64) { drop(check(true, "T25 str_byte_at(Hello,0) == 72 (H)")); passed = passed + 1i32;
-    } else { drop(check(false, "T25 str_byte_at")); failed = failed + 1i32; }
+    int64:b1 = raw str_byte_at("Hello", z);
+    if (b1 == 72i64) { drop check(true, "T25 str_byte_at(Hello,0) == 72 (H)"); passed = passed + 1i32;
+    } else { drop check(false, "T25 str_byte_at"); failed = failed + 1i32; }
 
     // T26: str_byte_at — last char
     int64:four = 4;
-    int64:b2 = raw(str_byte_at("Hello", four));
-    if (b2 == 111i64) { drop(check(true, "T26 str_byte_at(Hello,4) == 111 (o)")); passed = passed + 1i32;
-    } else { drop(check(false, "T26 str_byte_at last")); failed = failed + 1i32; }
+    int64:b2 = raw str_byte_at("Hello", four);
+    if (b2 == 111i64) { drop check(true, "T26 str_byte_at(Hello,4) == 111 (o)"); passed = passed + 1i32;
+    } else { drop check(false, "T26 str_byte_at last"); failed = failed + 1i32; }
 
     // T27: str_byte_at — out of bounds
     int64:ten = 10;
-    int64:b3 = raw(str_byte_at("Hello", ten));
-    if (b3 == -1i64) { drop(check(true, "T27 str_byte_at OOB == -1")); passed = passed + 1i32;
-    } else { drop(check(false, "T27 str_byte_at OOB")); failed = failed + 1i32; }
+    int64:b3 = raw str_byte_at("Hello", ten);
+    if (b3 == -1i64) { drop check(true, "T27 str_byte_at OOB == -1"); passed = passed + 1i32;
+    } else { drop check(false, "T27 str_byte_at OOB"); failed = failed + 1i32; }
 
     // T28: str_char_at
-    string:ch1 = raw(str_char_at("Hello", z));
-    if (string_equals(ch1, "H")) { drop(check(true, "T28 str_char_at(Hello,0) == H")); passed = passed + 1i32;
-    } else { drop(check(false, "T28 str_char_at")); failed = failed + 1i32; }
+    string:ch1 = raw str_char_at("Hello", z);
+    if (string_equals(ch1, "H")) { drop check(true, "T28 str_char_at(Hello,0) == H"); passed = passed + 1i32;
+    } else { drop check(false, "T28 str_char_at"); failed = failed + 1i32; }
 
     // T29: str_char_at — last
-    string:ch2 = raw(str_char_at("Hello", four));
-    if (string_equals(ch2, "o")) { drop(check(true, "T29 str_char_at(Hello,4) == o")); passed = passed + 1i32;
-    } else { drop(check(false, "T29 str_char_at last")); failed = failed + 1i32; }
+    string:ch2 = raw str_char_at("Hello", four);
+    if (string_equals(ch2, "o")) { drop check(true, "T29 str_char_at(Hello,4) == o"); passed = passed + 1i32;
+    } else { drop check(false, "T29 str_char_at last"); failed = failed + 1i32; }
 
     // T30: str_reverse
-    string:rev1 = raw(str_reverse("abcde"));
-    if (string_equals(rev1, "edcba")) { drop(check(true, "T30 str_reverse(abcde) == edcba")); passed = passed + 1i32;
-    } else { drop(check(false, "T30 str_reverse")); failed = failed + 1i32; }
+    string:rev1 = raw str_reverse("abcde");
+    if (string_equals(rev1, "edcba")) { drop check(true, "T30 str_reverse(abcde) == edcba"); passed = passed + 1i32;
+    } else { drop check(false, "T30 str_reverse"); failed = failed + 1i32; }
 
     // T31: str_reverse — single char
-    string:rev2 = raw(str_reverse("x"));
-    if (string_equals(rev2, "x")) { drop(check(true, "T31 str_reverse single char")); passed = passed + 1i32;
-    } else { drop(check(false, "T31 str_reverse single")); failed = failed + 1i32; }
+    string:rev2 = raw str_reverse("x");
+    if (string_equals(rev2, "x")) { drop check(true, "T31 str_reverse single char"); passed = passed + 1i32;
+    } else { drop check(false, "T31 str_reverse single"); failed = failed + 1i32; }
 
     // T32: str_reverse — empty
-    string:rev3 = raw(str_reverse(""));
-    if (string_equals(rev3, "")) { drop(check(true, "T32 str_reverse empty")); passed = passed + 1i32;
-    } else { drop(check(false, "T32 str_reverse empty")); failed = failed + 1i32; }
+    string:rev3 = raw str_reverse("");
+    if (string_equals(rev3, "")) { drop check(true, "T32 str_reverse empty"); passed = passed + 1i32;
+    } else { drop check(false, "T32 str_reverse empty"); failed = failed + 1i32; }
 
     // T33: str_to_int
     string:snum = "12345";
-    int64:parsed = raw(str_to_int(snum));
-    if (parsed == 12345i64) { drop(check(true, "T33 str_to_int(12345)")); passed = passed + 1i32;
-    } else { drop(check(false, "T33 str_to_int")); failed = failed + 1i32; }
+    int64:parsed = raw str_to_int(snum);
+    if (parsed == 12345i64) { drop check(true, "T33 str_to_int(12345)"); passed = passed + 1i32;
+    } else { drop check(false, "T33 str_to_int"); failed = failed + 1i32; }
 
     // T34: str_to_int negative
     string:sneg = "-99";
-    int64:pneg = raw(str_to_int(sneg));
-    if (pneg == -99i64) { drop(check(true, "T34 str_to_int(-99)")); passed = passed + 1i32;
-    } else { drop(check(false, "T34 str_to_int negative")); failed = failed + 1i32; }
+    int64:pneg = raw str_to_int(sneg);
+    if (pneg == -99i64) { drop check(true, "T34 str_to_int(-99)"); passed = passed + 1i32;
+    } else { drop check(false, "T34 str_to_int negative"); failed = failed + 1i32; }
 
     // T35: str_to_int — zero
     string:szero = "0";
-    int64:pzero = raw(str_to_int(szero));
-    if (pzero == 0i64) { drop(check(true, "T35 str_to_int(0)")); passed = passed + 1i32;
-    } else { drop(check(false, "T35 str_to_int zero")); failed = failed + 1i32; }
+    int64:pzero = raw str_to_int(szero);
+    if (pzero == 0i64) { drop check(true, "T35 str_to_int(0)"); passed = passed + 1i32;
+    } else { drop check(false, "T35 str_to_int zero"); failed = failed + 1i32; }
 
     // ── Split / Join ─────────────────────────────────────────────────────
 
@@ -246,80 +246,80 @@ func:main = int32() {
     println("── Split / Join ────────────────────────────────────────");
 
     // T36: str_split basic
-    wild int64->:sp1 = raw(str_split("a,b,c", ","));
-    int64:sp1_n = raw(str_split_count(sp1));
-    if (sp1_n == 3i64) { drop(check(true, "T36 str_split count == 3")); passed = passed + 1i32;
-    } else { drop(check(false, "T36 str_split count")); failed = failed + 1i32; }
+    wild int64->:sp1 = raw str_split("a,b,c", ",");
+    int64:sp1_n = raw str_split_count(sp1);
+    if (sp1_n == 3i64) { drop check(true, "T36 str_split count == 3"); passed = passed + 1i32;
+    } else { drop check(false, "T36 str_split count"); failed = failed + 1i32; }
 
     // T37: str_split_get parts
-    string:sp1_0 = raw(str_split_get(sp1, z));
+    string:sp1_0 = raw str_split_get(sp1, z);
     int64:one = 1;
-    string:sp1_1 = raw(str_split_get(sp1, one));
-    string:sp1_2 = raw(str_split_get(sp1, two));
+    string:sp1_1 = raw str_split_get(sp1, one);
+    string:sp1_2 = raw str_split_get(sp1, two);
     bool:t37a = string_equals(sp1_0, "a");
     bool:t37b = string_equals(sp1_1, "b");
     bool:t37c = string_equals(sp1_2, "c");
     if (t37a == true) {
         if (t37b == true) {
-            if (t37c == true) { drop(check(true, "T37 str_split_get parts a,b,c")); passed = passed + 1i32;
-            } else { drop(check(false, "T37 str_split_get c")); failed = failed + 1i32; }
-        } else { drop(check(false, "T37 str_split_get b")); failed = failed + 1i32; }
-    } else { drop(check(false, "T37 str_split_get a")); failed = failed + 1i32; }
+            if (t37c == true) { drop check(true, "T37 str_split_get parts a,b,c"); passed = passed + 1i32;
+            } else { drop check(false, "T37 str_split_get c"); failed = failed + 1i32; }
+        } else { drop check(false, "T37 str_split_get b"); failed = failed + 1i32; }
+    } else { drop check(false, "T37 str_split_get a"); failed = failed + 1i32; }
 
     // T38: str_join
-    string:joined1 = raw(str_join(sp1, " - "));
-    if (string_equals(joined1, "a - b - c")) { drop(check(true, "T38 str_join with ' - '")); passed = passed + 1i32;
-    } else { drop(check(false, "T38 str_join")); failed = failed + 1i32; }
+    string:joined1 = raw str_join(sp1, " - ");
+    if (string_equals(joined1, "a - b - c")) { drop check(true, "T38 str_join with ' - '"); passed = passed + 1i32;
+    } else { drop check(false, "T38 str_join"); failed = failed + 1i32; }
 
     // T39: str_join — empty delimiter
-    string:joined2 = raw(str_join(sp1, ""));
-    if (string_equals(joined2, "abc")) { drop(check(true, "T39 str_join empty delim")); passed = passed + 1i32;
-    } else { drop(check(false, "T39 str_join empty delim")); failed = failed + 1i32; }
+    string:joined2 = raw str_join(sp1, "");
+    if (string_equals(joined2, "abc")) { drop check(true, "T39 str_join empty delim"); passed = passed + 1i32;
+    } else { drop check(false, "T39 str_join empty delim"); failed = failed + 1i32; }
 
-    drop(str_split_free(sp1));
+    drop str_split_free(sp1);
 
     // T40: str_split — multi-char delimiter
-    wild int64->:sp2 = raw(str_split("one::two::three", "::"));
-    int64:sp2_n = raw(str_split_count(sp2));
-    if (sp2_n == 3i64) { drop(check(true, "T40 str_split multi-char delim count")); passed = passed + 1i32;
-    } else { drop(check(false, "T40 str_split multi-char delim")); failed = failed + 1i32; }
+    wild int64->:sp2 = raw str_split("one::two::three", "::");
+    int64:sp2_n = raw str_split_count(sp2);
+    if (sp2_n == 3i64) { drop check(true, "T40 str_split multi-char delim count"); passed = passed + 1i32;
+    } else { drop check(false, "T40 str_split multi-char delim"); failed = failed + 1i32; }
 
     // T41: str_split_get — multi-char delim parts
-    string:sp2_0 = raw(str_split_get(sp2, z));
-    string:sp2_2 = raw(str_split_get(sp2, two));
+    string:sp2_0 = raw str_split_get(sp2, z);
+    string:sp2_2 = raw str_split_get(sp2, two);
     bool:t41a = string_equals(sp2_0, "one");
     bool:t41b = string_equals(sp2_2, "three");
     if (t41a == true) {
-        if (t41b == true) { drop(check(true, "T41 split parts one/three")); passed = passed + 1i32;
-        } else { drop(check(false, "T41 split parts")); failed = failed + 1i32; }
-    } else { drop(check(false, "T41 split parts")); failed = failed + 1i32; }
-    drop(str_split_free(sp2));
+        if (t41b == true) { drop check(true, "T41 split parts one/three"); passed = passed + 1i32;
+        } else { drop check(false, "T41 split parts"); failed = failed + 1i32; }
+    } else { drop check(false, "T41 split parts"); failed = failed + 1i32; }
+    drop str_split_free(sp2);
 
     // T42: str_split — single element (no delimiter found)
-    wild int64->:sp3 = raw(str_split("hello", ","));
-    int64:sp3_n = raw(str_split_count(sp3));
-    if (sp3_n == 1i64) { drop(check(true, "T42 str_split no delim found == 1")); passed = passed + 1i32;
-    } else { drop(check(false, "T42 str_split no delim")); failed = failed + 1i32; }
+    wild int64->:sp3 = raw str_split("hello", ",");
+    int64:sp3_n = raw str_split_count(sp3);
+    if (sp3_n == 1i64) { drop check(true, "T42 str_split no delim found == 1"); passed = passed + 1i32;
+    } else { drop check(false, "T42 str_split no delim"); failed = failed + 1i32; }
 
     // T43: str_split_get — single element
-    string:sp3_0 = raw(str_split_get(sp3, z));
-    if (string_equals(sp3_0, "hello")) { drop(check(true, "T43 split single part == hello")); passed = passed + 1i32;
-    } else { drop(check(false, "T43 split single part")); failed = failed + 1i32; }
-    drop(str_split_free(sp3));
+    string:sp3_0 = raw str_split_get(sp3, z);
+    if (string_equals(sp3_0, "hello")) { drop check(true, "T43 split single part == hello"); passed = passed + 1i32;
+    } else { drop check(false, "T43 split single part"); failed = failed + 1i32; }
+    drop str_split_free(sp3);
 
     // T44: str_split — empty string
-    wild int64->:sp4 = raw(str_split("", ","));
-    int64:sp4_n = raw(str_split_count(sp4));
-    if (sp4_n == 0i64) { drop(check(true, "T44 str_split empty == 0 parts")); passed = passed + 1i32;
-    } else { drop(check(false, "T44 str_split empty")); failed = failed + 1i32; }
-    drop(str_split_free(sp4));
+    wild int64->:sp4 = raw str_split("", ",");
+    int64:sp4_n = raw str_split_count(sp4);
+    if (sp4_n == 0i64) { drop check(true, "T44 str_split empty == 0 parts"); passed = passed + 1i32;
+    } else { drop check(false, "T44 str_split empty"); failed = failed + 1i32; }
+    drop str_split_free(sp4);
 
     // T45: str_split + str_join roundtrip
-    wild int64->:sp5 = raw(str_split("x-y-z", "-"));
-    string:rt = raw(str_join(sp5, "-"));
-    if (string_equals(rt, "x-y-z")) { drop(check(true, "T45 split/join roundtrip")); passed = passed + 1i32;
-    } else { drop(check(false, "T45 split/join roundtrip")); failed = failed + 1i32; }
-    drop(str_split_free(sp5));
+    wild int64->:sp5 = raw str_split("x-y-z", "-");
+    string:rt = raw str_join(sp5, "-");
+    if (string_equals(rt, "x-y-z")) { drop check(true, "T45 split/join roundtrip"); passed = passed + 1i32;
+    } else { drop check(false, "T45 split/join roundtrip"); failed = failed + 1i32; }
+    drop str_split_free(sp5);
 
     // ── Summary ──────────────────────────────────────────────────────────
     println("");
@@ -332,14 +332,14 @@ func:main = int32() {
 
     if (failed == 0i32) {
         println("All 45 tests PASSED");
-        exit(0);
+        exit 0;
     } else {
         println("Some tests FAILED");
-        pass(1i32);
+        pass 1i32;
     }
 };
 
 func:failsafe = int32(tbb32:err) {
     println("FAILSAFE triggered");
-    exit(1);
+    exit 1;
 };

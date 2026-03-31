@@ -2,9 +2,9 @@
 // Validates get/set methods work correctly
 
 // External memory functions
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 extern func:malloc = wild int8*(int64:size);
 extern func:free = NIL(wild int8*:ptr);
@@ -15,7 +15,7 @@ extern func:int_array_set = NIL(wild int8*:buf, int32:idx, int32:val);
 
 Type:IntVec = {
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
     func:create = IntVec(int32:initial_capacity) {
         int64:bytes = 64i64;  // 16 int32s = 64 bytes
         wild int8->:buffer = malloc(bytes);
@@ -24,24 +24,24 @@ func:failsafe = int32(tbb32:err) { exit(1); };
             length: 0i32,
             capacity: initial_capacity
         };
-        pass(vec);
+        pass vec;
     };
     
     func:destroy = NIL(IntVec:self) {
         _ = free(int64_to_ptr(self.dataptr));
-        pass(NIL);
+        pass NIL;
     };
     
     func:get = int32(IntVec:self, int32:index) {
         wild int8->:buffer = int64_to_ptr(self.dataptr);
         int32:element = int_array_get(buffer, index);
-        pass(element);
+        pass element;
     };
     
     func:set = NIL(IntVec:self, int32:index, int32:value) {
         wild int8->:buffer = int64_to_ptr(self.dataptr);
         _ = int_array_set(buffer, index, value);
-        pass(NIL);
+        pass NIL;
     };
     
     struct:interface = {
@@ -53,7 +53,7 @@ func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     // Create vector
-    IntVec:vec = raw(instance<IntVec>(10i32));
+    IntVec:vec = raw instance<IntVec>(10i32);
     
     // Write test values
     _ = vec.set(0i32, 42i32);
@@ -62,10 +62,10 @@ func:main = int32() {
     _ = vec.set(3i32, 1000i32);
     
     // Read back and verify
-    int32:val0 = raw(vec.get(0i32));    // Should be 42
-    int32:val1 = raw(vec.get(1i32));    // Should be 100
-    int32:val2 = raw(vec.get(2i32));    // Should be 255
-    int32:val3 = raw(vec.get(3i32));    // Should be 1000
+    int32:val0 = raw vec.get(0i32);    // Should be 42
+    int32:val1 = raw vec.get(1i32);    // Should be 100
+    int32:val2 = raw vec.get(2i32);    // Should be 255
+    int32:val3 = raw vec.get(3i32);    // Should be 1000
     
     // Verification logic (42 + 100 + 255 + 1000 = 1397)
     int32:sum = val0 + val1 + val2 + val3;
@@ -79,5 +79,5 @@ func:main = int32() {
     
     // Return 0 for success, 1 for failure
     int32:result = 0i32;
-    pass(result);
+    pass result;
 };

@@ -2,7 +2,7 @@
 
 // Inline int64_toString for explicit conversion
 func:int64_toString = string(int64:value) {
-    if (value == 0) { pass("0"); }
+    if (value == 0) { pass "0"; }
     bool:is_negative = false;
     int64:work_value = value;
     if (value < 0) { is_negative = true; work_value = -value; }
@@ -25,7 +25,7 @@ func:int64_toString = string(int64:value) {
         result = string_concat(digit_char, result);
     }
     if (is_negative) { result = string_concat("-", result); }
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
@@ -43,38 +43,38 @@ func:main = int32() {
     
     // Check has
     if (map_has(m, @key1)) {
-        drop(println("Found key 42"));
+        drop println("Found key 42");
     }
     
     // Get values
     wild void->:result1 = map_get(m, @key1);
     if (result1 != NULL) {
         // Note: result is void*, need to cast
-        drop(println("Retrieved value for 42"));
+        drop println("Retrieved value for 42");
     }
     
     // Check length
     int64:len = map_length(m);
-    drop(print("Map has "));
-    string:len_str = raw(int64_toString(len));
-    drop(print(len_str));
-    drop(println(" entries"));
+    drop print("Map has ");
+    string:len_str = raw int64_toString(len);
+    drop print(len_str);
+    drop println(" entries");
     
     // Remove a key
     map_remove(m, @key1);
     
     int64:new_len = map_length(m);
-    drop(print("After remove, map has "));
-    string:new_len_str = raw(int64_toString(new_len));
-    drop(print(new_len_str));
-    drop(println(" entries"));
+    drop print("After remove, map has ");
+    string:new_len_str = raw int64_toString(new_len);
+    drop print(new_len_str);
+    drop println(" entries");
     
     // Free wild pointers before function exit
-    drop(result1);  // drop() handles NULL pointers
-    drop(m);
+    drop result1;  // drop() handles NULL pointers
+    drop m;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

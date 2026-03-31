@@ -11,11 +11,11 @@ func:test_int8 = int32() {
     int8:diff = b - a;
     
     // Comparisons (negative values to test signedness)
-    if (a > b) { int32:err = 1; pass(err); }  // 10 !> 20
-    if (b < a) { int32:err = 2; pass(err); }  // 20 !< 10
+    if (a > b) { int32:err = 1; pass err; }  // 10 !> 20
+    if (b < a) { int32:err = 2; pass err; }  // 20 !< 10
     
     int32:success = 0;
-    pass(success);
+    pass success;
 };
 
 func:test_uint8 = int32() {
@@ -28,25 +28,25 @@ func:test_uint8 = int32() {
     uint8:diff = x - y;
     
     // Comparisons
-    if (x < y) { int32:err = 1; pass(err); }   // 100 !< 50
-    if (y > x) { int32:err = 2; pass(err); }   // 50 !> 100
+    if (x < y) { int32:err = 1; pass err; }   // 100 !< 50
+    if (y > x) { int32:err = 2; pass err; }   // 50 !> 100
     
     int32:success = 0;
-    pass(success);
+    pass success;
 };
 
 func:main = int32() {
-    int32:result1 = raw(test_int8());
-    if (result1 != 0) { pass(result1); }
+    int32:result1 = raw test_int8();
+    if (result1 != 0) { pass result1; }
     
-    int32:result2 = raw(test_uint8());
-    if (result2 != 0) { pass(result2); }
+    int32:result2 = raw test_uint8();
+    if (result2 != 0) { pass result2; }
     
     int32:success = 0;
-    pass(success);
+    pass success;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

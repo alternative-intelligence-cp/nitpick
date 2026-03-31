@@ -1,7 +1,7 @@
 // Correctness test: nested structs (struct containing another struct)
 // Verifies: nested field write/read, multiple levels, independent instances
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 struct:Point2D = {
     int32:x;
@@ -27,10 +27,10 @@ func:main = int32() {
     r.size.x   = 800i32;
     r.size.y   = 600i32;
 
-    if (r.origin.x != 10i32)  { pass(1i32); }
-    if (r.origin.y != 20i32)  { pass(2i32); }
-    if (r.size.x   != 800i32) { pass(3i32); }
-    if (r.size.y   != 600i32) { pass(4i32); }
+    if (r.origin.x != 10i32)  { pass 1i32; }
+    if (r.origin.y != 20i32)  { pass 2i32; }
+    if (r.size.x   != 800i32) { pass 3i32; }
+    if (r.size.y   != 600i32) { pass 4i32; }
 
     // --- Test 2: Three-level nesting: Window contains Rect contains Point2D ---
     Window:win;
@@ -40,11 +40,11 @@ func:main = int32() {
     win.bounds.size.y   = 720i32;
     win.z_order         = 3i32;
 
-    if (win.bounds.origin.x != 100i32)  { pass(5i32); }
-    if (win.bounds.origin.y != 200i32)  { pass(6i32); }
-    if (win.bounds.size.x   != 1280i32) { pass(7i32); }
-    if (win.bounds.size.y   != 720i32)  { pass(8i32); }
-    if (win.z_order         != 3i32)    { pass(9i32); }
+    if (win.bounds.origin.x != 100i32)  { pass 5i32; }
+    if (win.bounds.origin.y != 200i32)  { pass 6i32; }
+    if (win.bounds.size.x   != 1280i32) { pass 7i32; }
+    if (win.bounds.size.y   != 720i32)  { pass 8i32; }
+    if (win.z_order         != 3i32)    { pass 9i32; }
 
     // --- Test 3: Two independent Rect instances don't share state ---
     Rect:r2;
@@ -54,16 +54,16 @@ func:main = int32() {
     r2.size.y   = 240i32;
 
     // r still has its old values
-    if (r.origin.x != 10i32)  { pass(10i32); }
-    if (r.origin.y != 20i32)  { pass(11i32); }
+    if (r.origin.x != 10i32)  { pass 10i32; }
+    if (r.origin.y != 20i32)  { pass 11i32; }
     // r2 has its own values
-    if (r2.origin.x != 0i32)  { pass(12i32); }
-    if (r2.size.x   != 320i32) { pass(13i32); }
+    if (r2.origin.x != 0i32)  { pass 12i32; }
+    if (r2.size.x   != 320i32) { pass 13i32; }
 
     // --- Test 4: Overwrite nested field; verify sibling unchanged ---
     r.origin.x = 99i32;
-    if (r.origin.x != 99i32) { pass(14i32); }
-    if (r.origin.y != 20i32) { pass(15i32); }  // sibling y unchanged
+    if (r.origin.x != 99i32) { pass 14i32; }
+    if (r.origin.y != 20i32) { pass 15i32; }  // sibling y unchanged
 
-    exit(0);
+    exit 0;
 };

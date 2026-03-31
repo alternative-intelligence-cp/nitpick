@@ -501,7 +501,7 @@ func:scan_char = void(wild int8->:st) {
 
 func:scan_type_suffix = string(wild int8->:st) {
     if (lex_is_alpha(lex_peek(st)) == 0i32) {
-        pass("");
+        pass "";
     }
     int64:suf_start = lex_get_current(st);
     while (lex_is_alnum(lex_peek(st)) == 1i32) {
@@ -510,7 +510,7 @@ func:scan_type_suffix = string(wild int8->:st) {
     int64:suf_end = lex_get_current(st);
     int64:suf_len = suf_end - suf_start;
     string:suf_text = lex_get_substr(st, suf_start, suf_len);
-    pass(suf_text);
+    pass suf_text;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -712,15 +712,15 @@ func:scan_nonary_lit = void(wild int8->:st) {
 
 // Dispatch special number bases (0x, 0b, 0o, 0t, 0n). Returns 1 if handled.
 func:dispatch_number_base = int32(wild int8->:st, int32:first) {
-    if (first != 48i32 || lex_at_end(st) == 1i32) { pass(0i32); }
+    if (first != 48i32 || lex_at_end(st) == 1i32) { pass 0i32; }
     int32:nx = lex_peek(st);
     if (nx == 120i32 || nx == 88i32) { scan_hex(st); }
     else if (nx == 98i32 || nx == 66i32) { scan_binary(st); }
     else if (nx == 111i32 || nx == 79i32) { scan_octal(st); }
     else if (nx == 116i32 || nx == 84i32) { scan_ternary_lit(st); }
     else if (nx == 110i32 || nx == 78i32) { scan_nonary_lit(st); }
-    else { pass(0i32); }
-    pass(1i32);
+    else { pass 0i32; }
+    pass 1i32;
 };
 
 func:scan_number = void(wild int8->:st) {
@@ -924,7 +924,7 @@ func:scan_template_literal = void(wild int8->:st) {
 func:is_at_cast = int32(wild int8->:st) {
     // Check if we're looking at "cast" or "cast_unchecked" after @
     if (lex_peek(st) != 99i32 || lex_peek_n(st, 1i32) != 97i32 || lex_peek_n(st, 2i32) != 115i32 || lex_peek_n(st, 3i32) != 116i32) {
-        pass(0i32);
+        pass 0i32;
     }
     // Got "cast" — check if rest is _unchecked or end of identifier
     int32:after = lex_peek_n(st, 4i32);
@@ -938,7 +938,7 @@ func:is_at_cast = int32(wild int8->:st) {
     else if (lex_is_alnum(after) == 0i32 || after == 0i32) {
         result = 1i32;
     }
-    pass(result);
+    pass result;
 };
 
 func:scan_cast_keyword = void(wild int8->:st) {
@@ -1124,8 +1124,8 @@ func:dispatch_punct = int32(wild int8->:st, int32:c) {
     else if (c == 126i32) { lex_add_token(st, TK_TILDE); }
     else if (c == 94i32) { lex_add_token(st, TK_CARET); }
     else if (c == 58i32) { lex_add_token(st, TK_COLON); }
-    else { pass(0i32); }
-    pass(1i32);
+    else { pass 0i32; }
+    pass 1i32;
 };
 
 // Dispatch: special starters (@cast, $, #, backtick, string, char)
@@ -1143,8 +1143,8 @@ func:dispatch_special = int32(wild int8->:st, int32:c) {
     else if (c == 96i32) { scan_template_literal(st); }
     else if (c == 34i32) { scan_string(st); }
     else if (c == 39i32) { scan_char(st); }
-    else { pass(0i32); }
-    pass(1i32);
+    else { pass 0i32; }
+    pass 1i32;
 };
 
 // Dispatch: multi-char operators
@@ -1162,8 +1162,8 @@ func:dispatch_ops = int32(wild int8->:st, int32:c) {
     else if (c == 124i32) { scan_bar(st); }
     else if (c == 63i32) { scan_question(st); }
     else if (c == 46i32) { scan_dot(st); }
-    else { pass(0i32); }
-    pass(1i32);
+    else { pass 0i32; }
+    pass 1i32;
 };
 
 func:scan_one_token = void(wild int8->:st) {
@@ -1202,5 +1202,5 @@ pub func:tokenize = wild int8->(string:source) {
     // Add EOF token
     lex_start_token(st);
     lex_add_token(st, TK_EOF);
-    pass(st);
+    pass st;
 };

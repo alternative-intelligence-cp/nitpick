@@ -4,7 +4,7 @@
 
 use "stdlib/collections.aria".*;
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Test runner
@@ -27,354 +27,354 @@ func:main = int32() {
     println("=== Vec (int64) Tests ===");
 
     // Test 1: Create and check empty
-    wild int8->:v = raw(Vec.new());
-    bool:empty1 = raw(Vec.is_empty(v));
-    drop(check(empty1, "T01 vec empty on create"));
+    wild int8->:v = raw Vec.new();
+    bool:empty1 = raw Vec.is_empty(v);
+    drop check(empty1, "T01 vec empty on create");
 
     // Test 2: Push and check length
-    drop(Vec.push(v, 10i64));
-    drop(Vec.push(v, 20i64));
-    drop(Vec.push(v, 30i64));
-    int64:vlen = raw(Vec.len(v));
-    drop(check(vlen == 3i64, "T02 vec length after push"));
+    drop Vec.push(v, 10i64);
+    drop Vec.push(v, 20i64);
+    drop Vec.push(v, 30i64);
+    int64:vlen = raw Vec.len(v);
+    drop check(vlen == 3i64, "T02 vec length after push");
 
     // Test 3: Get by index
-    int64:g0 = raw(Vec.get(v, 0i64));
-    drop(check(g0 == 10i64, "T03 vec get index 0"));
+    int64:g0 = raw Vec.get(v, 0i64);
+    drop check(g0 == 10i64, "T03 vec get index 0");
 
     // Test 4: Get last element
-    int64:g2 = raw(Vec.get(v, 2i64));
-    drop(check(g2 == 30i64, "T04 vec get last"));
+    int64:g2 = raw Vec.get(v, 2i64);
+    drop check(g2 == 30i64, "T04 vec get last");
 
     // Test 5: Set value at index
-    drop(Vec.set(v, 1i64, 999i64));
-    int64:s1 = raw(Vec.get(v, 1i64));
-    drop(check(s1 == 999i64, "T05 vec set index"));
+    drop Vec.set(v, 1i64, 999i64);
+    int64:s1 = raw Vec.get(v, 1i64);
+    drop check(s1 == 999i64, "T05 vec set index");
 
     // Test 6: Pop returns last element
-    int64:p1 = raw(Vec.pop(v));
-    drop(check(p1 == 30i64, "T06 vec pop returns last"));
+    int64:p1 = raw Vec.pop(v);
+    drop check(p1 == 30i64, "T06 vec pop returns last");
 
     // Test 7: Length after pop
-    int64:vlen2 = raw(Vec.len(v));
-    drop(check(vlen2 == 2i64, "T07 vec length after pop"));
+    int64:vlen2 = raw Vec.len(v);
+    drop check(vlen2 == 2i64, "T07 vec length after pop");
 
     // Test 8: Not empty after elements
-    bool:empty2 = raw(Vec.is_empty(v));
-    drop(check(empty2 == false, "T08 vec not empty"));
+    bool:empty2 = raw Vec.is_empty(v);
+    drop check(empty2 == false, "T08 vec not empty");
 
     // Test 9: Contains existing value
-    bool:has10 = raw(Vec.contains(v, 10i64));
-    drop(check(has10, "T09 vec contains existing"));
+    bool:has10 = raw Vec.contains(v, 10i64);
+    drop check(has10, "T09 vec contains existing");
 
     // Test 10: Contains missing value
-    bool:has777 = raw(Vec.contains(v, 777i64));
-    drop(check(has777 == false, "T10 vec contains missing"));
+    bool:has777 = raw Vec.contains(v, 777i64);
+    drop check(has777 == false, "T10 vec contains missing");
 
     // Test 11: Sum of elements (10 + 999 = 1009)
-    int64:total = raw(Vec.sum(v));
-    drop(check(total == 1009i64, "T11 vec sum"));
+    int64:total = raw Vec.sum(v);
+    drop check(total == 1009i64, "T11 vec sum");
 
     // Test 12: Push many elements
-    drop(Vec.push(v, 40i64));
-    drop(Vec.push(v, 50i64));
-    drop(Vec.push(v, 60i64));
-    drop(Vec.push(v, 70i64));
-    drop(Vec.push(v, 80i64));
-    int64:vlen3 = raw(Vec.len(v));
-    drop(check(vlen3 == 7i64, "T12 vec push many"));
+    drop Vec.push(v, 40i64);
+    drop Vec.push(v, 50i64);
+    drop Vec.push(v, 60i64);
+    drop Vec.push(v, 70i64);
+    drop Vec.push(v, 80i64);
+    int64:vlen3 = raw Vec.len(v);
+    drop check(vlen3 == 7i64, "T12 vec push many");
 
     // Test 13: Free doesn't crash
-    drop(Vec.free(v));
-    drop(check(true, "T13 vec free"));
+    drop Vec.free(v);
+    drop check(true, "T13 vec free");
 
     // ─── VecI32 tests ────────────────────────────────────────────────────
     println("=== VecI32 Tests ===");
 
     // Test 14: VecI32 basic push/get
-    wild int8->:vi = raw(VecI32.new());
-    drop(VecI32.push(vi, 100i32));
-    drop(VecI32.push(vi, 200i32));
-    int32:vi0 = raw(VecI32.get(vi, 0i64));
-    drop(check(vi0 == 100i32, "T14 vec_i32 push/get"));
+    wild int8->:vi = raw VecI32.new();
+    drop VecI32.push(vi, 100i32);
+    drop VecI32.push(vi, 200i32);
+    int32:vi0 = raw VecI32.get(vi, 0i64);
+    drop check(vi0 == 100i32, "T14 vec_i32 push/get");
 
     // Test 15: VecI32 pop
-    int32:vip = raw(VecI32.pop(vi));
-    drop(check(vip == 200i32, "T15 vec_i32 pop"));
+    int32:vip = raw VecI32.pop(vi);
+    drop check(vip == 200i32, "T15 vec_i32 pop");
 
     // Test 16: VecI32 length
-    int64:vilen = raw(VecI32.len(vi));
-    drop(check(vilen == 1i64, "T16 vec_i32 length"));
+    int64:vilen = raw VecI32.len(vi);
+    drop check(vilen == 1i64, "T16 vec_i32 length");
 
     // Test 17: VecI32 set
-    drop(VecI32.set(vi, 0i64, 42i32));
-    int32:vis = raw(VecI32.get(vi, 0i64));
-    drop(check(vis == 42i32, "T17 vec_i32 set"));
+    drop VecI32.set(vi, 0i64, 42i32);
+    int32:vis = raw VecI32.get(vi, 0i64);
+    drop check(vis == 42i32, "T17 vec_i32 set");
 
-    drop(VecI32.free(vi));
+    drop VecI32.free(vi);
 
     // ─── VecF64 tests ────────────────────────────────────────────────────
     println("=== VecF64 Tests ===");
 
     // Test 18: VecF64 push and get
-    wild int8->:vf = raw(VecF64.new());
-    drop(VecF64.push(vf, 3.14));
-    drop(VecF64.push(vf, 2.718));
-    flt64:vf0 = raw(VecF64.get(vf, 0i64));
+    wild int8->:vf = raw VecF64.new();
+    drop VecF64.push(vf, 3.14);
+    drop VecF64.push(vf, 2.718);
+    flt64:vf0 = raw VecF64.get(vf, 0i64);
     flt64:diff1 = vf0 - 3.14;
     if (diff1 < 0.0) { diff1 = 0.0 - diff1; }
-    drop(check(diff1 < 0.001, "T18 vec_f64 push/get"));
+    drop check(diff1 < 0.001, "T18 vec_f64 push/get");
 
     // Test 19: VecF64 pop
-    flt64:vfp = raw(VecF64.pop(vf));
+    flt64:vfp = raw VecF64.pop(vf);
     flt64:diff2 = vfp - 2.718;
     if (diff2 < 0.0) { diff2 = 0.0 - diff2; }
-    drop(check(diff2 < 0.001, "T19 vec_f64 pop"));
+    drop check(diff2 < 0.001, "T19 vec_f64 pop");
 
     // Test 20: VecF64 length after pop
-    int64:vflen = raw(VecF64.len(vf));
-    drop(check(vflen == 1i64, "T20 vec_f64 length"));
+    int64:vflen = raw VecF64.len(vf);
+    drop check(vflen == 1i64, "T20 vec_f64 length");
 
-    drop(VecF64.free(vf));
+    drop VecF64.free(vf);
 
     // ─── Map tests ───────────────────────────────────────────────────────
     println("=== Map (int64->int64) Tests ===");
 
     // Test 21: Create empty map
-    wild int8->:m = raw(Map.new());
-    bool:mempty1 = raw(Map.is_empty(m));
-    drop(check(mempty1, "T21 map empty on create"));
+    wild int8->:m = raw Map.new();
+    bool:mempty1 = raw Map.is_empty(m);
+    drop check(mempty1, "T21 map empty on create");
 
     // Test 22: Insert and check length
-    drop(Map.insert(m, 1i64, 100i64));
-    drop(Map.insert(m, 2i64, 200i64));
-    drop(Map.insert(m, 3i64, 300i64));
-    int64:mlen = raw(Map.len(m));
-    drop(check(mlen == 3i64, "T22 map length after insert"));
+    drop Map.insert(m, 1i64, 100i64);
+    drop Map.insert(m, 2i64, 200i64);
+    drop Map.insert(m, 3i64, 300i64);
+    int64:mlen = raw Map.len(m);
+    drop check(mlen == 3i64, "T22 map length after insert");
 
     // Test 23: Has existing key
-    bool:has1 = raw(Map.has(m, 1i64));
-    drop(check(has1, "T23 map has existing key"));
+    bool:has1 = raw Map.has(m, 1i64);
+    drop check(has1, "T23 map has existing key");
 
     // Test 24: Has missing key
-    bool:has99 = raw(Map.has(m, 99i64));
-    drop(check(has99 == false, "T24 map has missing key"));
+    bool:has99 = raw Map.has(m, 99i64);
+    drop check(has99 == false, "T24 map has missing key");
 
     // Test 25: Get value
-    int64:mv = raw(Map.get(m, 2i64));
-    drop(check(mv == 200i64, "T25 map get value"));
+    int64:mv = raw Map.get(m, 2i64);
+    drop check(mv == 200i64, "T25 map get value");
 
     // Test 26: Update existing key
-    drop(Map.insert(m, 2i64, 222i64));
-    int64:mv2 = raw(Map.get(m, 2i64));
-    drop(check(mv2 == 222i64, "T26 map update value"));
+    drop Map.insert(m, 2i64, 222i64);
+    int64:mv2 = raw Map.get(m, 2i64);
+    drop check(mv2 == 222i64, "T26 map update value");
 
     // Test 27: Length unchanged after update
-    int64:mlen2 = raw(Map.len(m));
-    drop(check(mlen2 == 3i64, "T27 map length unchanged"));
+    int64:mlen2 = raw Map.len(m);
+    drop check(mlen2 == 3i64, "T27 map length unchanged");
 
     // Test 28: Remove key
-    drop(Map.remove(m, 2i64));
-    int64:mlen3 = raw(Map.len(m));
-    drop(check(mlen3 == 2i64, "T28 map remove key"));
+    drop Map.remove(m, 2i64);
+    int64:mlen3 = raw Map.len(m);
+    drop check(mlen3 == 2i64, "T28 map remove key");
 
     // Test 29: Has returns false after remove
-    bool:has2 = raw(Map.has(m, 2i64));
-    drop(check(has2 == false, "T29 map has after remove"));
+    bool:has2 = raw Map.has(m, 2i64);
+    drop check(has2 == false, "T29 map has after remove");
 
     // Test 30: Clear all entries
-    drop(Map.clear(m));
-    int64:mlen4 = raw(Map.len(m));
-    drop(check(mlen4 == 0i64, "T30 map clear"));
+    drop Map.clear(m);
+    int64:mlen4 = raw Map.len(m);
+    drop check(mlen4 == 0i64, "T30 map clear");
 
     // Test 31: Is empty after clear
-    bool:mempty2 = raw(Map.is_empty(m));
-    drop(check(mempty2, "T31 map empty after clear"));
+    bool:mempty2 = raw Map.is_empty(m);
+    drop check(mempty2, "T31 map empty after clear");
 
     // Test 32: Re-insert after clear
-    drop(Map.insert(m, 42i64, 1000i64));
-    bool:has42 = raw(Map.has(m, 42i64));
-    drop(check(has42, "T32 map re-insert"));
+    drop Map.insert(m, 42i64, 1000i64);
+    bool:has42 = raw Map.has(m, 42i64);
+    drop check(has42, "T32 map re-insert");
 
     // Test 33: Get re-inserted value
-    int64:mv3 = raw(Map.get(m, 42i64));
-    drop(check(mv3 == 1000i64, "T33 map get re-inserted"));
+    int64:mv3 = raw Map.get(m, 42i64);
+    drop check(mv3 == 1000i64, "T33 map get re-inserted");
 
     // Test 34: Large key values
-    drop(Map.insert(m, 1000000i64, 9999999i64));
-    int64:mv4 = raw(Map.get(m, 1000000i64));
-    drop(check(mv4 == 9999999i64, "T34 map large key"));
+    drop Map.insert(m, 1000000i64, 9999999i64);
+    int64:mv4 = raw Map.get(m, 1000000i64);
+    drop check(mv4 == 9999999i64, "T34 map large key");
 
     // Test 35: Negative key values
-    drop(Map.insert(m, -5i64, -500i64));
-    int64:mv5 = raw(Map.get(m, -5i64));
-    drop(check(mv5 == -500i64, "T35 map negative key"));
+    drop Map.insert(m, -5i64, -500i64);
+    int64:mv5 = raw Map.get(m, -5i64);
+    drop check(mv5 == -500i64, "T35 map negative key");
 
     // Test 36: Free doesn't crash
-    drop(Map.free(m));
-    drop(check(true, "T36 map free"));
+    drop Map.free(m);
+    drop check(true, "T36 map free");
 
     // ─── Set tests ───────────────────────────────────────────────────────
     println("=== Set (int64) Tests ===");
 
     // Test 37: Create empty set
-    wild int8->:s = raw(Set.new());
-    bool:sempty = raw(Set.is_empty(s));
-    drop(check(sempty, "T37 set empty"));
+    wild int8->:s = raw Set.new();
+    bool:sempty = raw Set.is_empty(s);
+    drop check(sempty, "T37 set empty");
 
     // Test 38: Add element
-    drop(Set.add(s, 10i64));
-    bool:has10 = raw(Set.has(s, 10i64));
-    drop(check(has10, "T38 set add + has"));
+    drop Set.add(s, 10i64);
+    bool:has10 = raw Set.has(s, 10i64);
+    drop check(has10, "T38 set add + has");
 
     // Test 39: Length after add
-    int64:slen1 = raw(Set.len(s));
-    drop(check(slen1 == 1i64, "T39 set length 1"));
+    int64:slen1 = raw Set.len(s);
+    drop check(slen1 == 1i64, "T39 set length 1");
 
     // Test 40: Add more elements
-    drop(Set.add(s, 20i64));
-    drop(Set.add(s, 30i64));
-    int64:slen3 = raw(Set.len(s));
-    drop(check(slen3 == 3i64, "T40 set length 3"));
+    drop Set.add(s, 20i64);
+    drop Set.add(s, 30i64);
+    int64:slen3 = raw Set.len(s);
+    drop check(slen3 == 3i64, "T40 set length 3");
 
     // Test 41: Has returns false for missing
-    bool:has99 = raw(Set.has(s, 99i64));
-    drop(check(has99 == false, "T41 set has missing"));
+    bool:has99 = raw Set.has(s, 99i64);
+    drop check(has99 == false, "T41 set has missing");
 
     // Test 42: Duplicate add doesn't increase length
-    drop(Set.add(s, 10i64));
-    int64:slen_dup = raw(Set.len(s));
-    drop(check(slen_dup == 3i64, "T42 set duplicate add"));
+    drop Set.add(s, 10i64);
+    int64:slen_dup = raw Set.len(s);
+    drop check(slen_dup == 3i64, "T42 set duplicate add");
 
     // Test 43: Remove element
-    drop(Set.remove(s, 20i64));
-    bool:has20 = raw(Set.has(s, 20i64));
-    drop(check(has20 == false, "T43 set remove"));
+    drop Set.remove(s, 20i64);
+    bool:has20 = raw Set.has(s, 20i64);
+    drop check(has20 == false, "T43 set remove");
 
     // Test 44: Length after remove
-    int64:slen_rm = raw(Set.len(s));
-    drop(check(slen_rm == 2i64, "T44 set length after remove"));
+    int64:slen_rm = raw Set.len(s);
+    drop check(slen_rm == 2i64, "T44 set length after remove");
 
     // Test 45: Clear
-    drop(Set.clear(s));
-    bool:sempty2 = raw(Set.is_empty(s));
-    drop(check(sempty2, "T45 set clear"));
+    drop Set.clear(s);
+    bool:sempty2 = raw Set.is_empty(s);
+    drop check(sempty2, "T45 set clear");
 
     // Test 46: Add after clear
-    drop(Set.add(s, 100i64));
-    bool:has100 = raw(Set.has(s, 100i64));
-    drop(check(has100, "T46 set add after clear"));
+    drop Set.add(s, 100i64);
+    bool:has100 = raw Set.has(s, 100i64);
+    drop check(has100, "T46 set add after clear");
 
     // Test 47: Negative values
-    drop(Set.add(s, -42i64));
-    bool:has_neg = raw(Set.has(s, -42i64));
-    drop(check(has_neg, "T47 set negative value"));
+    drop Set.add(s, -42i64);
+    bool:has_neg = raw Set.has(s, -42i64);
+    drop check(has_neg, "T47 set negative value");
 
     // Test 48: Large values
-    drop(Set.add(s, 999999999i64));
-    bool:has_big = raw(Set.has(s, 999999999i64));
-    drop(check(has_big, "T48 set large value"));
+    drop Set.add(s, 999999999i64);
+    bool:has_big = raw Set.has(s, 999999999i64);
+    drop check(has_big, "T48 set large value");
 
     // Test 49: Free doesn't crash
-    drop(Set.free(s));
-    drop(check(true, "T49 set free"));
+    drop Set.free(s);
+    drop check(true, "T49 set free");
 
     // ─── Graph tests ─────────────────────────────────────────────────────
     println("=== Graph (directed) Tests ===");
 
     // Test 50: Create empty graph
-    wild int64->:g = raw(Graph.new());
-    int64:gnc0 = raw(Graph.node_count(g));
-    drop(check(gnc0 == 0i64, "T50 graph empty"));
+    wild int64->:g = raw Graph.new();
+    int64:gnc0 = raw Graph.node_count(g);
+    drop check(gnc0 == 0i64, "T50 graph empty");
 
     // Test 51: Add node
-    drop(Graph.add_node(g, 1i64));
-    int64:gnc1 = raw(Graph.node_count(g));
-    drop(check(gnc1 == 1i64, "T51 graph add node"));
+    drop Graph.add_node(g, 1i64);
+    int64:gnc1 = raw Graph.node_count(g);
+    drop check(gnc1 == 1i64, "T51 graph add node");
 
     // Test 52: Has node
-    bool:ghn1 = raw(Graph.has_node(g, 1i64));
-    drop(check(ghn1, "T52 graph has node"));
+    bool:ghn1 = raw Graph.has_node(g, 1i64);
+    drop check(ghn1, "T52 graph has node");
 
     // Test 53: Has node false for missing
-    bool:ghn99 = raw(Graph.has_node(g, 99i64));
-    drop(check(ghn99 == false, "T53 graph has node missing"));
+    bool:ghn99 = raw Graph.has_node(g, 99i64);
+    drop check(ghn99 == false, "T53 graph has node missing");
 
     // Test 54: Add edge (auto-creates nodes)
-    drop(Graph.add_edge(g, 1i64, 2i64));
-    int64:gnc2 = raw(Graph.node_count(g));
-    drop(check(gnc2 == 2i64, "T54 graph add edge auto-node"));
+    drop Graph.add_edge(g, 1i64, 2i64);
+    int64:gnc2 = raw Graph.node_count(g);
+    drop check(gnc2 == 2i64, "T54 graph add edge auto-node");
 
     // Test 55: Has edge
-    bool:ghe12 = raw(Graph.has_edge(g, 1i64, 2i64));
-    drop(check(ghe12, "T55 graph has edge"));
+    bool:ghe12 = raw Graph.has_edge(g, 1i64, 2i64);
+    drop check(ghe12, "T55 graph has edge");
 
     // Test 56: Edge is directed (reverse doesn't exist)
-    bool:ghe21 = raw(Graph.has_edge(g, 2i64, 1i64));
-    drop(check(ghe21 == false, "T56 graph directed edge"));
+    bool:ghe21 = raw Graph.has_edge(g, 2i64, 1i64);
+    drop check(ghe21 == false, "T56 graph directed edge");
 
     // Test 57: Edge count
-    int64:gec1 = raw(Graph.edge_count(g));
-    drop(check(gec1 == 1i64, "T57 graph edge count 1"));
+    int64:gec1 = raw Graph.edge_count(g);
+    drop check(gec1 == 1i64, "T57 graph edge count 1");
 
     // Test 58: Add more edges
-    drop(Graph.add_edge(g, 1i64, 3i64));
-    drop(Graph.add_edge(g, 2i64, 3i64));
-    int64:gec3 = raw(Graph.edge_count(g));
-    drop(check(gec3 == 3i64, "T58 graph edge count 3"));
+    drop Graph.add_edge(g, 1i64, 3i64);
+    drop Graph.add_edge(g, 2i64, 3i64);
+    int64:gec3 = raw Graph.edge_count(g);
+    drop check(gec3 == 3i64, "T58 graph edge count 3");
 
     // Test 59: Node count after edges
-    int64:gnc3 = raw(Graph.node_count(g));
-    drop(check(gnc3 == 3i64, "T59 graph node count 3"));
+    int64:gnc3 = raw Graph.node_count(g);
+    drop check(gnc3 == 3i64, "T59 graph node count 3");
 
     // Test 60: Degree (out-degree)
-    int64:deg1 = raw(Graph.degree(g, 1i64));
-    drop(check(deg1 == 2i64, "T60 graph degree node 1"));
+    int64:deg1 = raw Graph.degree(g, 1i64);
+    drop check(deg1 == 2i64, "T60 graph degree node 1");
 
     // Test 61: Degree of leaf node
-    int64:deg3 = raw(Graph.degree(g, 3i64));
-    drop(check(deg3 == 0i64, "T61 graph degree leaf node"));
+    int64:deg3 = raw Graph.degree(g, 3i64);
+    drop check(deg3 == 0i64, "T61 graph degree leaf node");
 
     // Test 62: Neighbor at
-    int64:n1_0 = raw(Graph.neighbor_at(g, 1i64, 0i64));
-    drop(check(n1_0 == 2i64, "T62 graph neighbor_at 0"));
+    int64:n1_0 = raw Graph.neighbor_at(g, 1i64, 0i64);
+    drop check(n1_0 == 2i64, "T62 graph neighbor_at 0");
 
     // Test 63: Neighbor at second
-    int64:n1_1 = raw(Graph.neighbor_at(g, 1i64, 1i64));
-    drop(check(n1_1 == 3i64, "T63 graph neighbor_at 1"));
+    int64:n1_1 = raw Graph.neighbor_at(g, 1i64, 1i64);
+    drop check(n1_1 == 3i64, "T63 graph neighbor_at 1");
 
     // Test 64: Remove edge
-    drop(Graph.remove_edge(g, 1i64, 2i64));
-    bool:ghe12b = raw(Graph.has_edge(g, 1i64, 2i64));
-    drop(check(ghe12b == false, "T64 graph remove edge"));
+    drop Graph.remove_edge(g, 1i64, 2i64);
+    bool:ghe12b = raw Graph.has_edge(g, 1i64, 2i64);
+    drop check(ghe12b == false, "T64 graph remove edge");
 
     // Test 65: Edge count after remove
-    int64:gec_rm = raw(Graph.edge_count(g));
-    drop(check(gec_rm == 2i64, "T65 graph edge count after remove"));
+    int64:gec_rm = raw Graph.edge_count(g);
+    drop check(gec_rm == 2i64, "T65 graph edge count after remove");
 
     // Test 66: Degree after remove
-    int64:deg1b = raw(Graph.degree(g, 1i64));
-    drop(check(deg1b == 1i64, "T66 graph degree after remove"));
+    int64:deg1b = raw Graph.degree(g, 1i64);
+    drop check(deg1b == 1i64, "T66 graph degree after remove");
 
     // Test 67: Remove nonexistent edge (no-op)
-    drop(Graph.remove_edge(g, 99i64, 100i64));
-    int64:gec_nop = raw(Graph.edge_count(g));
-    drop(check(gec_nop == 2i64, "T67 graph remove nonexistent"));
+    drop Graph.remove_edge(g, 99i64, 100i64);
+    int64:gec_nop = raw Graph.edge_count(g);
+    drop check(gec_nop == 2i64, "T67 graph remove nonexistent");
 
     // Test 68: Self loop
-    drop(Graph.add_edge(g, 5i64, 5i64));
-    bool:ghe55 = raw(Graph.has_edge(g, 5i64, 5i64));
-    drop(check(ghe55, "T68 graph self loop"));
+    drop Graph.add_edge(g, 5i64, 5i64);
+    bool:ghe55 = raw Graph.has_edge(g, 5i64, 5i64);
+    drop check(ghe55, "T68 graph self loop");
 
     // Test 69: Negative node IDs
-    drop(Graph.add_edge(g, -1i64, -2i64));
-    bool:ghe_neg = raw(Graph.has_edge(g, -1i64, -2i64));
-    drop(check(ghe_neg, "T69 graph negative node IDs"));
+    drop Graph.add_edge(g, -1i64, -2i64);
+    bool:ghe_neg = raw Graph.has_edge(g, -1i64, -2i64);
+    drop check(ghe_neg, "T69 graph negative node IDs");
 
     // Test 70: Free doesn't crash
-    drop(Graph.free(g));
-    drop(check(true, "T70 graph free"));
+    drop Graph.free(g);
+    drop check(true, "T70 graph free");
 
     println("=== All collections tests complete ===");
-    exit(0);
+    exit 0;
 };

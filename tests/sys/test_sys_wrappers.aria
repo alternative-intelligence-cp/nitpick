@@ -7,7 +7,7 @@
 func:sys_write = int64(int64:fd, string:buf, int64:len) {
     Result<int64>:r = sys(WRITE, fd, buf, len);
     int64:written = r ? -1i64;
-    pass(written);
+    pass written;
 };
 
 // ============================================================================
@@ -16,7 +16,7 @@ func:sys_write = int64(int64:fd, string:buf, int64:len) {
 func:sys_getpid = int64() {
     Result<int64>:r = sys(GETPID);
     int64:pid = r ? -1i64;
-    pass(pid);
+    pass pid;
 };
 
 // ============================================================================
@@ -25,11 +25,11 @@ func:sys_getpid = int64() {
 func:sys_close = int64(int64:fd) {
     Result<int64>:r = sys(CLOSE, fd);
     int64:ret = r ? -1i64;
-    pass(ret);
+    pass ret;
 };
 
 func:failsafe = int32(tbb32:err) {
-    exit(1);
+    exit 1;
 };
 
 func:main = int32() {
@@ -47,5 +47,5 @@ func:main = int32() {
     
     println("Proof-of-concept wrappers work!");
     
-    exit(0);
+    exit 0;
 };

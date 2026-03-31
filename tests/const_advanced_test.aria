@@ -10,7 +10,7 @@ const int64:TOTAL_SLOTS = ARRAY_SIZE * BUFFER_COUNT;
 func:test_array_size = int64() {
     int64[ARRAY_SIZE]:buffer;
     buffer[0] = 42;
-    pass(buffer[0]);
+    pass buffer[0];
 };
 
 // Test 2: Can we use const expressions?
@@ -19,7 +19,7 @@ func:test_const_expr = int64() {
     const int64:HALVED = ARRAY_SIZE / 2;
     
     int64:result = DOUBLED + HALVED;
-    pass(result);  // Should be 25 (20 + 5)
+    pass result;  // Should be 25 (20 + 5)
 };
 
 // Test 3: Can we use const in conditionals?
@@ -33,19 +33,19 @@ func:test_const_conditional = int64() {
         size = ARRAY_SIZE;
     }
     
-    pass(size);  // Should be 50
+    pass size;  // Should be 50
 };
 
 func:main = int32() {
-    int64:r1 = raw(test_array_size());
-    int64:r2 = raw(test_const_expr());
-    int64:r3 = raw(test_const_conditional());
+    int64:r1 = raw test_array_size();
+    int64:r2 = raw test_const_expr();
+    int64:r3 = raw test_const_conditional();
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

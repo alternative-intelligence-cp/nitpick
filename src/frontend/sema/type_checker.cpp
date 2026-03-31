@@ -465,6 +465,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         case ASTNode::NodeType::UNWRAP:
             return inferUnwrapExpr(static_cast<UnwrapExpr*>(expr));
         
+        case ASTNode::NodeType::DEFAULTS:
+            return inferDefaultsExpr(static_cast<DefaultsExpr*>(expr));
+        
         case ASTNode::NodeType::MOVE:
             return inferMoveExpr(static_cast<MoveExpr*>(expr));
         
@@ -1284,28 +1287,29 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         op == TokenType::TOKEN_CARET || op == TokenType::TOKEN_SHIFT_LEFT ||
         op == TokenType::TOKEN_SHIFT_RIGHT) {
         
-        // UNSIGNED MANDATE: Only unsigned types allowed
+        // Bitwise ops: require integer types (signed or unsigned, NOT float)
         PrimitiveType* leftPrim = dynamic_cast<PrimitiveType*>(leftType);
         PrimitiveType* rightPrim = dynamic_cast<PrimitiveType*>(rightType);
         
         if (!leftPrim || !rightPrim) {
-            addError("Bitwise operators require unsigned integer types", sourceNode);
+            addError("Bitwise operators require integer types", sourceNode);
             return typeSystem->getErrorType();
         }
         
         const std::string& leftName = leftPrim->getName();
         const std::string& rightName = rightPrim->getName();
         
-        // Check for unsigned prefix
-        if (leftName.find("uint") != 0 || rightName.find("uint") != 0) {
-            addError("Bitwise operators require unsigned types. Got '" + 
-                    leftName + "' and '" + rightName + "'. Cast to unsigned (uint*) to perform bit manipulation.", sourceNode);
+        // Reject float types
+        if (leftName.find("flt") == 0 || rightName.find("flt") == 0) {
+            addError("Bitwise operators require integer types, not floating-point. Got '" + 
+                    leftName + "' and '" + rightName + "'.", sourceNode);
             return typeSystem->getErrorType();
         }
         
-        // Result type is the common type (both must be same unsigned type)
+        // Both must be same integer type
         if (!leftType->equals(rightType)) {
-            addError("Bitwise operators require same unsigned type on both sides", sourceNode);
+            addError("Bitwise operators require same integer type on both sides. Got '" + 
+                    leftName + "' and '" + rightName + "'.", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1399,21 +1403,21 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         // Require compatible types
         if (!exoticIntLiteralComparison && !leftType->equals(rightType) && !canCoerce(leftType, rightType) && !canCoerce(rightType, leftType)) {
             // BUG-001: Give a specific, actionable message when one side is Result<T>
-            // and the other is its inner T — guide the user to use raw()
+            // and the other is its inner T — guide the user to use raw
             std::string msg;
             if (leftType->getKind() == TypeKind::RESULT) {
                 auto* resType = static_cast<ResultType*>(leftType);
                 if (resType->getValueType() && resType->getValueType()->equals(rightType)) {
                     msg = "Cannot compare Result<" + rightType->toString() + "> to " +
-                          rightType->toString() + " directly. Use raw() to unwrap: raw(expr) op " +
+                          rightType->toString() + " directly. Use 'raw' to unwrap: raw expr op " +
                           rightType->toString();
                 }
             } else if (rightType->getKind() == TypeKind::RESULT) {
                 auto* resType = static_cast<ResultType*>(rightType);
                 if (resType->getValueType() && resType->getValueType()->equals(leftType)) {
                     msg = "Cannot compare " + leftType->toString() + " to Result<" +
-                          leftType->toString() + "> directly. Use raw() to unwrap: " +
-                          leftType->toString() + " op raw(expr)";
+                          leftType->toString() + "> directly. Use 'raw' to unwrap: " +
+                          leftType->toString() + " op raw expr";
                 }
             }
             if (msg.empty()) {
@@ -1606,10 +1610,10 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType,
     // Bitwise NOT: ~
     // ========================================================================
     if (op == TokenType::TOKEN_TILDE) {
-        // Require unsigned type
-        if (!primType || primType->getName().find("uint") != 0) {
-            addError("Bitwise NOT requires unsigned type, got '" + 
-                    operandType->toString() + "'. Cast to unsigned (uint*) to perform bit manipulation.", sourceNode);
+        // BUG-3 fix: Allow signed integer types for bitwise NOT (reject only floats)
+        if (!primType || primType->getName().find("flt") == 0) {
+            addError("Bitwise NOT requires integer type, got '" + 
+                    operandType->toString() + "'. Cast to integer type to perform bit manipulation.", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -3001,7 +3005,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         // Example: int32:y = ok(x);  // "I know this might be unknown, that's OK"
         if (idExpr->name == "ok") {
             if (expr->arguments.size() != 1) {
-                addError("ok() requires exactly one argument (value to acknowledge)", expr);
+                addError("'ok' requires exactly one argument (value to acknowledge)", expr);
                 return typeSystem->getErrorType();
             }
             // Infer type of argument
@@ -3660,6 +3664,46 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             return typeSystem->getUnknownType();
+        }
+
+        // Builtin: acap() -> int64 (stack capacity in bytes)
+        if (idExpr->name == "acap") {
+            if (!expr->arguments.empty()) {
+                addError("acap() takes no arguments (uses implicit scope stack)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // Builtin: asize() -> int64 (bytes currently used on stack)
+        if (idExpr->name == "asize") {
+            if (!expr->arguments.empty()) {
+                addError("asize() takes no arguments (uses implicit scope stack)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // Builtin: afits(value) -> bool (true if value would fit without overflow)
+        if (idExpr->name == "afits") {
+            if (expr->arguments.size() != 1) {
+                addError("afits() requires exactly one argument (value to check)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* valueType = inferType(expr->arguments[0].get());
+            if (valueType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+
+        // Builtin: atype() -> int64 (type tag of top stack item, -1 if empty or fast mode)
+        if (idExpr->name == "atype") {
+            if (!expr->arguments.empty()) {
+                addError("atype() takes no arguments (uses implicit scope stack)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
         }
 
         // ====================================================================
@@ -5812,7 +5856,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         // Example: int8:val = raw(buffer_read(buf, idx));
         if (idExpr->name == "raw") {
             if (expr->arguments.size() != 1) {
-                addError("raw() requires exactly one argument (Result<T>)", expr);
+                addError("'raw' requires exactly one argument (Result<T>)", expr);
                 return typeSystem->getErrorType();
             }
             Type* argType = inferType(expr->arguments[0].get());
@@ -5820,9 +5864,9 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
             if (argType->getKind() != TypeKind::RESULT) {
-                addError("raw() argument must be Result<T> — got '" + argType->toString() + "'.\n"
-                         "  raw() extracts .value without an is_error check.\n"
-                         "  If you have a plain value already, raw() is not needed.",
+                addError("'raw' argument must be Result<T> — got '" + argType->toString() + "'.\n"
+                         "  'raw' extracts .value without an is_error check.\n"
+                         "  If you have a plain value already, 'raw' is not needed.",
                          expr);
                 return typeSystem->getErrorType();
             }
@@ -5834,7 +5878,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         // drop(wild T@) -> void - Free wild pointer
         if (idExpr->name == "drop") {
             if (expr->arguments.size() != 1) {
-                addError("drop() requires exactly one argument (wild pointer)", expr);
+                addError("'drop' requires exactly one argument (wild pointer)", expr);
                 return typeSystem->getErrorType();
             }
             Type* argType = inferType(expr->arguments[0].get());
@@ -5864,12 +5908,12 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         // Only valid in 'main' and 'failsafe' — the two program endpoints.
         if (idExpr->name == "exit") {
             if (currentFunctionName != "main" && currentFunctionName != "failsafe") {
-                addError("exit() can only be called from 'main' or 'failsafe'. "
-                         "Use pass()/fail() to return from regular functions.", expr);
+                addError("'exit' can only be called from 'main' or 'failsafe'. "
+                         "Use 'pass'/'fail' to return from regular functions.", expr);
                 return typeSystem->getErrorType();
             }
             if (expr->arguments.size() != 1) {
-                addError("exit() requires exactly one argument (exit code: int32)", expr);
+                addError("'exit' requires exactly one argument (exit code: int32)", expr);
                 return typeSystem->getErrorType();
             }
             Type* argType = inferType(expr->arguments[0].get());
@@ -5878,7 +5922,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             }
             PrimitiveType* argPrim = dynamic_cast<PrimitiveType*>(argType);
             if (!argPrim || argPrim->getName() != "int32") {
-                addError("exit() requires an int32 exit code, got '" + argType->toString() + "'", expr);
+                addError("'exit' requires an int32 exit code, got '" + argType->toString() + "'", expr);
                 return typeSystem->getErrorType();
             }
             // In failsafe, exit code must be > 0 (error path — exit(0) is wrong)
@@ -5888,7 +5932,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                     if (std::holds_alternative<int64_t>(lit->value)) {
                         int64_t val = std::get<int64_t>(lit->value);
                         if (val <= 0) {
-                            addError("exit() in failsafe must have a positive exit code (got " +
+                            addError("'exit' in failsafe must have a positive exit code (got " +
                                      std::to_string(val) + "). failsafe is an error path.", expr);
                         }
                     }
@@ -6700,10 +6744,16 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             
             // Pipeline operators automatically unwrap Result types
             // When Result<T> is passed where T is expected, we auto-unwrap
+            // v0.4.3: Emit warning — error will propagate to caller if result is ERR
             Type* effectiveArgType = argType;
             if (argType->getKind() == TypeKind::RESULT) {
                 ResultType* resultType = static_cast<ResultType*>(argType);
                 effectiveArgType = resultType->getValueType();
+                if (!expr->isPipelineCall) {
+                    addWarning("Result<" + effectiveArgType->toString() + 
+                              "> implicitly unwrapped in argument position — "
+                              "error will propagate to caller", expr->arguments[i].get());
+                }
             }
             
             // Check if argument type is assignable to parameter type
@@ -7292,6 +7342,66 @@ Type* TypeChecker::inferUnwrapExpr(UnwrapExpr* expr) {
     return valueType;
 }
 
+Type* TypeChecker::inferDefaultsExpr(DefaultsExpr* expr) {
+    // defaults / ?| — scoped expression fallback (v0.4.3)
+    // The sub-expression may produce Result<T> at any point during evaluation.
+    // If any intermediate ERR occurs, the whole expression short-circuits to the fallback.
+    // The return type is T (the unwrapped value type of the sub-expression).
+    
+    Type* exprType = inferType(expr->expr.get());
+    if (exprType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    Type* fallbackType = inferType(expr->fallback.get());
+    if (fallbackType->getKind() == TypeKind::ERROR) {
+        return typeSystem->getErrorType();
+    }
+    
+    // Enforce: fallback must be literal, variable, or unknown (parser already validates this,
+    // but double-check at the type checker level for safety)
+    ASTNode* fb = expr->fallback.get();
+    if (fb->type != ASTNode::NodeType::LITERAL && fb->type != ASTNode::NodeType::IDENTIFIER) {
+        addError("Fallback for 'defaults'/'?|' must be a literal, variable, or 'unknown' — "
+                 "not a function call or compound expression", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // Determine the effective value type — unwrap Result<T> if present
+    Type* valueType = exprType;
+    if (exprType->getKind() == TypeKind::RESULT) {
+        ResultType* resType = static_cast<ResultType*>(exprType);
+        valueType = resType->getValueType();
+    }
+    
+    // unknown fallback is always valid — it's the sentinel pattern
+    if (fallbackType->getKind() == TypeKind::UNKNOWN) {
+        return valueType;
+    }
+    
+    // Check that fallback type matches the value type (with literal retyping)
+    if (!fallbackType->isAssignableTo(valueType) && !canCoerce(fallbackType, valueType)) {
+        bool literalRetyped = false;
+        if (fb->type == ASTNode::NodeType::LITERAL) {
+            LiteralExpr* lit = static_cast<LiteralExpr*>(fb);
+            if (lit->explicit_type.empty() && std::holds_alternative<int64_t>(lit->value)) {
+                int64_t val = std::get<int64_t>(lit->value);
+                if (integerFitsInType(val, valueType->toString())) {
+                    fallbackType = valueType;
+                    literalRetyped = true;
+                }
+            }
+        }
+        if (!literalRetyped) {
+            addError("defaults/?| fallback type '" + fallbackType->toString() + 
+                    "' does not match expression type '" + valueType->toString() + "'", expr);
+            return typeSystem->getErrorType();
+        }
+    }
+    
+    return valueType;
+}
+
 
 Type* TypeChecker::inferMoveExpr(MoveExpr* expr) {
     // Move expression transfers ownership of a variable
@@ -7677,6 +7787,15 @@ void TypeChecker::addError(const std::string& message, ASTNode* node) {
     } else {
         addError(message, 0, 0);
     }
+}
+
+void TypeChecker::addWarning(const std::string& message, ASTNode* node) {
+    std::ostringstream oss;
+    if (node && node->line > 0) {
+        oss << "Line " << node->line << ", Column " << node->column << ": ";
+    }
+    oss << "warning: " << message;
+    warnings.push_back(oss.str());
 }
 
 // ============================================================================
@@ -9078,7 +9197,7 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                     addError("Cannot silently unwrap Result<" + declaredType->toString() + "> "
                             "into '" + stmt->varName + "' of type '" + declaredType->toString() + "'. "
                             "Declare as Result<" + declaredType->toString() + "> and check .is_error, "
-                            "or use raw(expr) to explicitly assert the call cannot fail.", stmt);
+                            "or use 'raw expr' to explicitly assert the call cannot fail.", stmt);
                     return;
                 }
             }
@@ -9364,7 +9483,7 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
         std::string returnTypeName = valueType->toString();
         if (returnTypeName != "int32") {
             addError("Function 'failsafe' must return 'int32', but returns '" +
-                     returnTypeName + "'. Use exit() to terminate, not pass().", stmt);
+                     returnTypeName + "'. Use 'exit' to terminate, not 'pass'.", stmt);
         }
 
         if (stmt->parameters.size() != 1) {
@@ -10543,16 +10662,26 @@ void TypeChecker::checkPassStmt(PassStmt* stmt) {
         return;
     }
 
-    // pass() is not allowed in main or failsafe — use exit() instead
+    // pass is not allowed in main or failsafe — use exit instead
     if (currentFunctionName == "main" || currentFunctionName == "failsafe") {
-        addError("pass() cannot be used in '" + currentFunctionName + "'. "
-                 "Use exit(code) to terminate program endpoints.", stmt);
+        addError("'pass' cannot be used in '" + currentFunctionName + "'. "
+                 "Use 'exit <code>' to terminate program endpoints.", stmt);
         return;
     }
     
     // Get the primitive type "NIL" for comparison
     Type* nilType = typeSystem->getPrimitiveType("NIL");
     bool isNilFunction = currentFunctionValueType->equals(nilType);
+    
+    // pass; (no value) — void return, only valid in NIL-returning functions
+    if (!stmt->value) {
+        if (!isNilFunction) {
+            addError("'pass;' (no value) can only be used in functions returning NIL. "
+                     "Function '" + currentFunctionName + "' returns " + 
+                     currentFunctionValueType->toString() + ".", stmt);
+        }
+        return;
+    }
     
     // Infer type of the pass value
     Type* valueType = inferType(stmt->value.get());
@@ -10616,10 +10745,10 @@ void TypeChecker::checkFailStmt(FailStmt* stmt) {
         return;
     }
     
-    // fail() is not allowed in main or failsafe — use exit() instead
+    // fail is not allowed in main or failsafe — use exit instead
     if (currentFunctionName == "main" || currentFunctionName == "failsafe") {
-        addError("fail() cannot be used in '" + currentFunctionName + "'. "
-                 "Use exit(code) to terminate program endpoints.", stmt);
+        addError("'fail' cannot be used in '" + currentFunctionName + "'. "
+                 "Use 'exit <code>' to terminate program endpoints.", stmt);
         return;
     }
     
@@ -11567,10 +11696,9 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                         if (!returnType || returnType->getKind() == TypeKind::ERROR) {
                             returnType = typeSystem->getPrimitiveType("void");
                         }
-                        // BUG-001 fix: Non-extern functions use pass() which wraps
+                        // Non-extern functions use pass() which wraps
                         // the return value in Result<T>. The export must mirror this
                         // so importers see Result<T>, not the raw declared type.
-                        // (Matches pre-registration pass at line ~11139)
                         if (funcDecl->body) {
                             returnType = new ResultType(returnType);
                         }
@@ -12469,7 +12597,7 @@ bool TypeChecker::validateFailsafeExists() {
     if (!failsafeSymbol) {
         addError("Every Aria program must define a 'func:failsafe = int32(tbb32:err)' function. "
                  "failsafe is one of two program endpoints (with main). "
-                 "It handles error exits via exit(code) where code > 0.", nullptr);
+                 "It handles error exits via 'exit <code>' where code > 0.", nullptr);
         return false;
     }
     
@@ -12492,7 +12620,7 @@ bool TypeChecker::validateMainExists() {
     if (!mainSymbol) {
         addError("Every Aria program must define a 'func:main = int32()' function. "
                  "main is one of two program endpoints (with failsafe). "
-                 "It is the entry point and must call exit(code) where code 0 = success.", nullptr);
+                 "It is the entry point and must call 'exit <code>' where code 0 = success.", nullptr);
         return false;
     }
     

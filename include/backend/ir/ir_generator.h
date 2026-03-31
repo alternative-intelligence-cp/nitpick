@@ -11,6 +11,7 @@
 #include "backend/ir/tbb_codegen.h"
 #include "backend/ir/ternary_codegen.h"
 #include <map>
+#include <set>
 #include <string>
 #include <memory>
 #include <vector>
@@ -153,6 +154,19 @@ private:
     // Set by VarDecl handler before generating initializer, so the CALL dispatcher
     // can propagate it to the fresh ExprCodegen instance for apop()/apeek().
     llvm::Type* ustack_pop_dest_type = nullptr;
+
+    // v0.4.3+: SMT-proven user stack optimization
+    // Functions where Z3 proved all apush() calls are type-homogeneous.
+    // When the current function is in this set, codegen uses unchecked fast variants.
+    std::set<std::string> ustack_optimized_funcs;
+    bool ustack_fast_mode = false;  // Per-function flag, set at FUNC_DECL codegen start
+
+public:
+    /// Register functions whose user stacks are provably type-homogeneous (from Z3 phase)
+    void setUStackOptimizedFuncs(const std::set<std::string>& funcs) {
+        ustack_optimized_funcs = funcs;
+    }
+private:
 
     /**
      * Map Aria type to LLVM type

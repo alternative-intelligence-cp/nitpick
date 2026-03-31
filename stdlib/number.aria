@@ -53,7 +53,7 @@ Type:Number = {
     /// Primary constructor — called by instance<Number>(val).
     /// Accepts a flt128 directly; use from_int / from_float for other types.
     func:create = Number(flt128:v) {
-        pass(Number{ _val: v });
+        pass Number{ _val: v };
     };
 
     /// Construct from a 64-bit signed integer.
@@ -61,14 +61,14 @@ Type:Number = {
     /// exactly representable; larger values up to ±2^113 remain exact.
     func:from_int = Number(int64:v) {
         flt128:f = v => flt128;
-        pass(Number{ _val: f });
+        pass Number{ _val: f };
     };
 
     /// Construct from a 64-bit float.
     /// The value is widened to flt128 — no precision is lost during construction.
     func:from_float = Number(flt64:v) {
         flt128:f = v => flt128;
-        pass(Number{ _val: f });
+        pass Number{ _val: f };
     };
 
     // =========================================================================
@@ -78,36 +78,36 @@ Type:Number = {
     /// Return self + other.
     func:add = Number(Number:self, Number:other) {
         flt128:r = self._val + other._val;
-        pass(Number{ _val: r });
+        pass Number{ _val: r };
     };
 
     /// Return self - other.
     func:sub = Number(Number:self, Number:other) {
         flt128:r = self._val - other._val;
-        pass(Number{ _val: r });
+        pass Number{ _val: r };
     };
 
     /// Return self * other.
     func:mul = Number(Number:self, Number:other) {
         flt128:r = self._val * other._val;
-        pass(Number{ _val: r });
+        pass Number{ _val: r };
     };
 
     /// Return self / other.  Returns error if divisor is zero.
     func:div = Number(Number:self, Number:other) {
         flt128:zero = 0 => flt128;
         if (other._val == zero) {
-            fail(1);
+            fail 1;
         }
         flt128:r = self._val / other._val;
-        pass(Number{ _val: r });
+        pass Number{ _val: r };
     };
 
     /// Return -self.
     func:neg = Number(Number:self) {
         flt128:zero = 0 => flt128;
         flt128:r = zero - self._val;
-        pass(Number{ _val: r });
+        pass Number{ _val: r };
     };
 
     // =========================================================================
@@ -115,23 +115,23 @@ Type:Number = {
     // =========================================================================
 
     func:eq = bool(Number:self, Number:other) {
-        pass(self._val == other._val);
+        pass self._val == other._val;
     };
 
     func:lt = bool(Number:self, Number:other) {
-        pass(self._val < other._val);
+        pass self._val < other._val;
     };
 
     func:gt = bool(Number:self, Number:other) {
-        pass(self._val > other._val);
+        pass self._val > other._val;
     };
 
     func:le = bool(Number:self, Number:other) {
-        pass(self._val <= other._val);
+        pass self._val <= other._val;
     };
 
     func:ge = bool(Number:self, Number:other) {
-        pass(self._val >= other._val);
+        pass self._val >= other._val;
     };
 
     // =========================================================================
@@ -140,18 +140,18 @@ Type:Number = {
 
     /// Extract as flt32.  May lose precision or range; always succeeds.
     func:to_flt32 = flt32(Number:self) {
-        pass(self._val => flt32);
+        pass self._val => flt32;
     };
 
     /// Extract as flt64 (double precision).
     /// Values requiring more than 53 bits of mantissa will lose precision.
     func:to_flt64 = flt64(Number:self) {
-        pass(self._val => flt64);
+        pass self._val => flt64;
     };
 
     /// Extract as flt128.  Lossless — same as the backing store type.
     func:to_flt128 = flt128(Number:self) {
-        pass(self._val);
+        pass self._val;
     };
 
     /// Extract as int64.  Truncates the fractional part (rounds toward zero).
@@ -160,12 +160,12 @@ Type:Number = {
         flt128:lo = -9223372036854775807 => flt128;
         flt128:hi = 9223372036854775807 => flt128;
         if (self._val < lo) {
-            fail(2);
+            fail 2;
         }
         if (self._val > hi) {
-            fail(3);
+            fail 3;
         }
-        pass(self._val => int64);
+        pass self._val => int64;
     };
 
     /// Extract as int32.  Truncates the fractional part (rounds toward zero).
@@ -174,12 +174,12 @@ Type:Number = {
         flt128:lo = -2147483648 => flt128;
         flt128:hi = 2147483647 => flt128;
         if (self._val < lo) {
-            fail(4);
+            fail 4;
         }
         if (self._val > hi) {
-            fail(5);
+            fail 5;
         }
-        pass(self._val => int32);
+        pass self._val => int32;
     };
 
     // =========================================================================

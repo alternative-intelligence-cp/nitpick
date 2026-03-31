@@ -7,7 +7,7 @@ func:test_slab_lifecycle = int32() {
     if (slab == 0) {
         print("ERROR: Slab creation failed\n");
         int32:err = 1;
-        pass(err);
+        pass err;
     }
     
     // Destroy slab
@@ -15,7 +15,7 @@ func:test_slab_lifecycle = int32() {
     
     print("SUCCESS: Slab lifecycle test passed\n");
     int32:res_ok = 0;
-    pass(res_ok);
+    pass res_ok;
 };
 
 func:test_slab_stats = int32() {
@@ -25,7 +25,7 @@ func:test_slab_stats = int32() {
     if (slab == 0) {
         print("ERROR: Slab creation failed\n");
         int32:err = 3;
-        pass(err);
+        pass err;
     }
     
     // TODO: Get stats when builtins available
@@ -38,7 +38,7 @@ func:test_slab_stats = int32() {
     
     print("SUCCESS: Slab stats test passed\n");
     int32:res_ok = 0;
-    pass(res_ok);
+    pass res_ok;
 };
 
 func:test_slab_multiple = int32() {
@@ -55,7 +55,7 @@ func:test_slab_multiple = int32() {
         if (slab2 != 0) { slab_destroy(slab2); }
         if (slab3 != 0) { slab_destroy(slab3); }
         int32:err = 4;
-        pass(err);
+        pass err;
     }
     
     // Destroy in reverse order
@@ -65,27 +65,27 @@ func:test_slab_multiple = int32() {
     
     print("SUCCESS: Multiple slabs test passed\n");
     int32:res_ok = 0;
-    pass(res_ok);
+    pass res_ok;
 };
 
 func:main = int32() {
     print("=== Slab Allocator Functional Tests ===\n\n");
     
-    int32:result1 = raw(test_slab_lifecycle());
-    if (result1 != 0) { pass(result1); }
+    int32:result1 = raw test_slab_lifecycle();
+    if (result1 != 0) { pass result1; }
     
-    int32:result2 = raw(test_slab_stats());
-    if (result2 != 0) { pass(result2); }
+    int32:result2 = raw test_slab_stats();
+    if (result2 != 0) { pass result2; }
     
-    int32:result3 = raw(test_slab_multiple());
-    if (result3 != 0) { pass(result3); }
+    int32:result3 = raw test_slab_multiple();
+    if (result3 != 0) { pass result3; }
     
     print("\n=== All Slab Tests PASSED ===\n");
     int32:success = 0;
-    pass(success);
+    pass success;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

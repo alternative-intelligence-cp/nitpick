@@ -7,7 +7,7 @@
 func:int64_toString = string(int64:value) {
     // Special case: zero
     if (value == 0) {
-        pass("0");
+        pass "0";
     }
     
     // Handle negative numbers
@@ -49,44 +49,44 @@ func:int64_toString = string(int64:value) {
         result = string_concat("-", result);
     }
     
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
     // Test zero
     int64:zero = 0;
-    string:zero_str = raw(int64_toString(zero));
-    drop(println(string_concat("Zero: ", zero_str)));
+    string:zero_str = raw int64_toString(zero);
+    drop println(string_concat("Zero: ", zero_str));
     
     // Test positive numbers
     int64:pos = 42;
-    string:pos_str = raw(int64_toString(pos));
-    drop(println(string_concat("Positive: ", pos_str)));
+    string:pos_str = raw int64_toString(pos);
+    drop println(string_concat("Positive: ", pos_str));
     
     // Test negative numbers
     int64:neg = -123;
-    string:neg_str = raw(int64_toString(neg));
-    drop(println(string_concat("Negative: ", neg_str)));
+    string:neg_str = raw int64_toString(neg);
+    drop println(string_concat("Negative: ", neg_str));
     
     // Test large number
     int64:large = 987654321;
-    string:large_str = raw(int64_toString(large));
-    drop(println(string_concat("Large: ", large_str)));
+    string:large_str = raw int64_toString(large);
+    drop println(string_concat("Large: ", large_str));
     
     // Test with ternary literals
     int64:tern_six = 0t1T0;  // 1*9 + (-1)*3 + 0*1 = 6
-    string:tern_str = raw(int64_toString(tern_six));
-    drop(println(string_concat("Ternary 0t1T0 = ", tern_str)));
+    string:tern_str = raw int64_toString(tern_six);
+    drop println(string_concat("Ternary 0t1T0 = ", tern_str));
     
     // Test with nonary literals
     int64:non_seventeen = 0n2A;  // 2*9 + (-1)*1 = 17
-    string:non_str = raw(int64_toString(non_seventeen));
-    drop(println(string_concat("Nonary 0n2A = ", non_str)));
+    string:non_str = raw int64_toString(non_seventeen);
+    drop println(string_concat("Nonary 0n2A = ", non_str));
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

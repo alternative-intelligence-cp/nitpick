@@ -7,9 +7,9 @@ func:test_tbb8_basic = int32() {
     
     bool:passed = (sum == expected);
     if (passed) {
-        pass(1);
+        pass 1;
     }
-    pass(0);
+    pass 0;
 };
 
 // Test TBB8 division by zero (should not crash)
@@ -21,7 +21,7 @@ func:test_tbb8_div_zero = int32() {
     tbb8:result = val / zero;
     
     // If we got here, test passed
-    pass(1);
+    pass 1;
 };
 
 // Test TBB8 overflow behavior
@@ -32,17 +32,17 @@ func:test_tbb8_overflow = int32() {
     
     // Can't easily test for ERR without knowing its value
     // But if we got here without crashing, partial pass
-    pass(1);
+    pass 1;
 };
 
 func:main = int32() {
-    int32:r1 = raw(test_tbb8_basic());
-    int32:r2 = raw(test_tbb8_div_zero());
-    int32:r3 = raw(test_tbb8_overflow());
-    pass(r1 + r2 + r3);
+    int32:r1 = raw test_tbb8_basic();
+    int32:r2 = raw test_tbb8_div_zero();
+    int32:r3 = raw test_tbb8_overflow();
+    pass r1 + r2 + r3;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

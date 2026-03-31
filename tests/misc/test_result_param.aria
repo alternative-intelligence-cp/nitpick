@@ -4,15 +4,15 @@
 func:result_as_param = int32(int32:result)
   requires result > 0
 {
-    pass(result * 2);
+    pass result * 2;
 };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     Result<int32>:r =result_as_param(5);
     if (r.is_error) {
-        pass(-1);
+        pass -1;
     }
-    pass(r.value);
+    pass r.value;
 };

@@ -7,28 +7,28 @@
 func:test_failsafe_on_pointer = int32() {
     ptr int32:p = nil;
     int32:result = p ?! 42;  // ERROR: Emphatic unwrap requires Result<T>, not ptr
-    pass(result);
+    pass result;
 }
 
 // ERROR TEST 2: Emphatic unwrap on optional (should fail to compile)
 func:test_failsafe_on_optional = int32() {
     int32?:opt = nil;
     int32:result = opt ?! 42;  // ERROR: Emphatic unwrap requires Result<T>, not Optional
-    pass(result);
+    pass result;
 }
 
 // ERROR TEST 3: Emphatic unwrap on regular value (should fail to compile)
 func:test_failsafe_on_int = int32() {
     int32:value = 10;
     int32:result = value ?! 42;  // ERROR: Emphatic unwrap requires Result<T>
-    pass(result);
+    pass result;
 }
 
 func:main = int32() {
-    exit(0);
+    exit 0;
 }
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

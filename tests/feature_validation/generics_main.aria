@@ -3,31 +3,31 @@
 
 // Test 1: Basic generic function declaration
 func<T>:identity = *T(*T:value) {
-    pass(value);
+    pass value;
 };
 
 // Test 2: Generic with multiple parameters
 func<T,U>:first_of_pair = *T(*T:a, *U:b) {
-    pass(a);
+    pass a;
 };
 
 // Test 3: Generic max (same type for both params)
 func<T>:max = *T(*T:a, *T:b) {
     // Note: Comparison of generic types may not work yet
     // Just return first arg for now
-    pass(a);
+    pass a;
 };
 
 // Test 4: Main function calling generics
 func:main = int32() {
     // Use typed literals so generics return base type directly (no Result wrapping)
-    int64:r1 = raw(identity(42i64));
-    int64:r2 = raw(first_of_pair(10i64, 3.14f64));
+    int64:r1 = raw identity(42i64);
+    int64:r2 = raw first_of_pair(10i64, 3.14f64);
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

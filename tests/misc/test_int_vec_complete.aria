@@ -13,29 +13,29 @@ Type:IntVec = {
         int64:bytes = 64i64;
         wild int8->:buffer = malloc(bytes);
         IntVec:vec = IntVec{dataptr: ptr_to_int64(buffer), length: 0i32, capacity: initial_capacity};
-        pass(vec);
+        pass vec;
     };
     
     func:destroy = NIL(IntVec:self) {
         _ = free(int64_to_ptr(self.dataptr));
-        pass(NIL);
+        pass NIL;
     };
     
-    func:len = int32(IntVec:self) { pass(self.length); };
-    func:capacity = int32(IntVec:self) { pass(self.capacity); };
-    func:isEmpty = bool(IntVec:self) { pass(self.length == 0i32); };
-    func:isFull = bool(IntVec:self) { pass(self.length == self.capacity); };
+    func:len = int32(IntVec:self) { pass self.length; };
+    func:capacity = int32(IntVec:self) { pass self.capacity; };
+    func:isEmpty = bool(IntVec:self) { pass self.length == 0i32; };
+    func:isFull = bool(IntVec:self) { pass self.length == self.capacity; };
     
     func:get = int32(IntVec:self, int32:index) {
         wild int8->:buffer = int64_to_ptr(self.dataptr);
         int32:element = int_array_get(buffer, index);
-        pass(element);
+        pass element;
     };
     
     func:set = NIL(IntVec:self, int32:index, int32:value) {
         wild int8->:buffer = int64_to_ptr(self.dataptr);
         _ = int_array_set(buffer, index, value);
-        pass(NIL);
+        pass NIL;
     };
     
     func:push = IntVec(IntVec:self, int32:value) {
@@ -43,23 +43,23 @@ Type:IntVec = {
         _ = int_array_set(buffer, self.length, value);
         int32:new_length = self.length + 1i32;
         IntVec:result = IntVec{dataptr: self.dataptr, length: new_length, capacity: self.capacity};
-        pass(result);
+        pass result;
     };
     
     func:pop = IntVec(IntVec:self) {
         int32:new_length = self.length - 1i32;
         IntVec:result = IntVec{dataptr: self.dataptr, length: new_length, capacity: self.capacity};
-        pass(result);
+        pass result;
     };
     
     func:clear = IntVec(IntVec:self) {
         IntVec:result = IntVec{dataptr: self.dataptr, length: 0i32, capacity: self.capacity};
-        pass(result);
+        pass result;
     };
     
     func:new = IntVec() {
-        IntVec:vec = raw(instance<IntVec>(16i32));
-        pass(vec);
+        IntVec:vec = raw instance<IntVec>(16i32);
+        pass vec;
     };
     
     struct:interface = {
@@ -70,25 +70,25 @@ Type:IntVec = {
 };
 
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     // Test 1: Push operations
-    IntVec:empty = raw(IntVec.new());
-    IntVec:one = raw(empty.push(100i32));
-    IntVec:two = raw(one.push(200i32));
-    IntVec:three = raw(two.push(300i32));
-    IntVec:four = raw(three.push(400i32));
+    IntVec:empty = raw IntVec.new();
+    IntVec:one = raw empty.push(100i32);
+    IntVec:two = raw one.push(200i32);
+    IntVec:three = raw two.push(300i32);
+    IntVec:four = raw three.push(400i32);
     
     // Validate length after pushes
-    int32:lenAfterPush = raw(four.len());
+    int32:lenAfterPush = raw four.len();
     bool:lengthCorrect = (lenAfterPush == 4i32);
     
     // Validate values
-    int32:val0 = raw(four.get(0i32));
-    int32:val1 = raw(four.get(1i32));
-    int32:val2 = raw(four.get(2i32));
-    int32:val3 = raw(four.get(3i32));
+    int32:val0 = raw four.get(0i32);
+    int32:val1 = raw four.get(1i32);
+    int32:val2 = raw four.get(2i32);
+    int32:val3 = raw four.get(3i32);
     
     bool:val0Correct = (val0 == 100i32);
     bool:val1Correct = (val1 == 200i32);
@@ -96,25 +96,25 @@ func:main = int32() {
     bool:val3Correct = (val3 == 400i32);
     
     // Test 2: Pop operation
-    int32:beforePop = raw(four.get(3i32));  // Should be 400
-    IntVec:afterPop = raw(four.pop());
-    int32:lenAfterPop = raw(afterPop.len());  // Should be 3
+    int32:beforePop = raw four.get(3i32);  // Should be 400
+    IntVec:afterPop = raw four.pop();
+    int32:lenAfterPop = raw afterPop.len();  // Should be 3
     bool:popLengthCorrect = (lenAfterPop == 3i32);
     
     // Verify data still accessible at valid indices
-    int32:stillThere = raw(afterPop.get(2i32));  // Should still be 300
+    int32:stillThere = raw afterPop.get(2i32);  // Should still be 300
     bool:dataIntact = (stillThere == 300i32);
     
     // Test 3: Clear operation
-    IntVec:cleared = raw(afterPop.clear());
-    int32:lenAfterClear = raw(cleared.len());  // Should be 0
+    IntVec:cleared = raw afterPop.clear();
+    int32:lenAfterClear = raw cleared.len();  // Should be 0
     bool:clearCorrect = (lenAfterClear == 0i32);
-    bool:isEmptyCorrect = raw(cleared.isEmpty());
+    bool:isEmptyCorrect = raw cleared.isEmpty();
     
     // Test 4: Push after clear
-    IntVec:pushedAgain = raw(cleared.push(999i32));
-    int32:finalLen = raw(pushedAgain.len());  // Should be 1
-    int32:finalVal = raw(pushedAgain.get(0i32));  // Should be 999
+    IntVec:pushedAgain = raw cleared.push(999i32);
+    int32:finalLen = raw pushedAgain.len();  // Should be 1
+    int32:finalVal = raw pushedAgain.get(0i32);  // Should be 999
     bool:pushAfterClearCorrect = ((finalLen == 1i32) == (finalVal == 999i32));
     
     // Cleanup
@@ -130,5 +130,5 @@ func:main = int32() {
     allTestsPass = (allTestsPass == clearCorrect);
     allTestsPass = (allTestsPass == isEmptyCorrect);
     
-    exit(0);
+    exit 0;
 };

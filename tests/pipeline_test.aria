@@ -21,7 +21,7 @@ extern func:ast_free = void(wild int8*:node);
 extern func:ast_node_type = int32(wild int8*:node);
 extern func:ast_node_child_count = int64(wild int8*:node);
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:check = NIL(bool:cond, string:msg) {
     if (cond) {
@@ -48,8 +48,8 @@ func:test_conversion = int32() {
     wild int8->:s01 = pipeline_convert(a01);
     string:ns01 = pipeline_native_to_string(s01);
     bool:ok01 = (ns01 != "(null)");
-    if (ok01) { drop(check(true, "T01 integer literal converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T01 integer literal converts")); failed = failed + 1i32; }
+    if (ok01) { drop check(true, "T01 integer literal converts"); passed = passed + 1i32; }
+    else { drop check(false, "T01 integer literal converts"); failed = failed + 1i32; }
     pipeline_free(s01);
     ast_free(a01);
 
@@ -58,8 +58,8 @@ func:test_conversion = int32() {
     wild int8->:s02 = pipeline_convert(a02);
     string:ns02 = pipeline_native_to_string(s02);
     bool:ok02 = (ns02 != "(null)");
-    if (ok02) { drop(check(true, "T02 string literal converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T02 string literal converts")); failed = failed + 1i32; }
+    if (ok02) { drop check(true, "T02 string literal converts"); passed = passed + 1i32; }
+    else { drop check(false, "T02 string literal converts"); failed = failed + 1i32; }
     pipeline_free(s02);
     ast_free(a02);
 
@@ -68,8 +68,8 @@ func:test_conversion = int32() {
     wild int8->:s03 = pipeline_convert(a03);
     string:ns03 = pipeline_native_to_string(s03);
     bool:ok03 = (ns03 != "(null)");
-    if (ok03) { drop(check(true, "T03 var decl converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T03 var decl converts")); failed = failed + 1i32; }
+    if (ok03) { drop check(true, "T03 var decl converts"); passed = passed + 1i32; }
+    else { drop check(false, "T03 var decl converts"); failed = failed + 1i32; }
     pipeline_free(s03);
     ast_free(a03);
 
@@ -78,8 +78,8 @@ func:test_conversion = int32() {
     wild int8->:s04 = pipeline_convert(a04);
     string:ns04 = pipeline_native_to_string(s04);
     bool:ok04 = (ns04 != "(null)");
-    if (ok04) { drop(check(true, "T04 binary expr converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T04 binary expr converts")); failed = failed + 1i32; }
+    if (ok04) { drop check(true, "T04 binary expr converts"); passed = passed + 1i32; }
+    else { drop check(false, "T04 binary expr converts"); failed = failed + 1i32; }
     pipeline_free(s04);
     ast_free(a04);
 
@@ -88,8 +88,8 @@ func:test_conversion = int32() {
     wild int8->:s05 = pipeline_convert(a05);
     string:ns05 = pipeline_native_to_string(s05);
     bool:ok05 = (ns05 != "(null)");
-    if (ok05) { drop(check(true, "T05 func decl converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T05 func decl converts")); failed = failed + 1i32; }
+    if (ok05) { drop check(true, "T05 func decl converts"); passed = passed + 1i32; }
+    else { drop check(false, "T05 func decl converts"); failed = failed + 1i32; }
     pipeline_free(s05);
     ast_free(a05);
 
@@ -98,8 +98,8 @@ func:test_conversion = int32() {
     wild int8->:s06 = pipeline_convert(a06);
     string:ns06 = pipeline_native_to_string(s06);
     bool:ok06 = (ns06 != "(null)");
-    if (ok06) { drop(check(true, "T06 if stmt converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T06 if stmt converts")); failed = failed + 1i32; }
+    if (ok06) { drop check(true, "T06 if stmt converts"); passed = passed + 1i32; }
+    else { drop check(false, "T06 if stmt converts"); failed = failed + 1i32; }
     pipeline_free(s06);
     ast_free(a06);
 
@@ -108,8 +108,8 @@ func:test_conversion = int32() {
     wild int8->:s07 = pipeline_convert(a07);
     string:ns07 = pipeline_native_to_string(s07);
     bool:ok07 = (ns07 != "(null)");
-    if (ok07) { drop(check(true, "T07 while loop converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T07 while loop converts")); failed = failed + 1i32; }
+    if (ok07) { drop check(true, "T07 while loop converts"); passed = passed + 1i32; }
+    else { drop check(false, "T07 while loop converts"); failed = failed + 1i32; }
     pipeline_free(s07);
     ast_free(a07);
 
@@ -118,8 +118,8 @@ func:test_conversion = int32() {
     wild int8->:s08 = pipeline_convert(a08);
     string:ns08 = pipeline_native_to_string(s08);
     bool:ok08 = (ns08 != "(null)");
-    if (ok08) { drop(check(true, "T08 func call converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T08 func call converts")); failed = failed + 1i32; }
+    if (ok08) { drop check(true, "T08 func call converts"); passed = passed + 1i32; }
+    else { drop check(false, "T08 func call converts"); failed = failed + 1i32; }
     pipeline_free(s08);
     ast_free(a08);
 
@@ -128,8 +128,8 @@ func:test_conversion = int32() {
     wild int8->:s09 = pipeline_convert(a09);
     string:ns09 = pipeline_native_to_string(s09);
     bool:ok09 = (ns09 != "(null)");
-    if (ok09) { drop(check(true, "T09 assignment converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T09 assignment converts")); failed = failed + 1i32; }
+    if (ok09) { drop check(true, "T09 assignment converts"); passed = passed + 1i32; }
+    else { drop check(false, "T09 assignment converts"); failed = failed + 1i32; }
     pipeline_free(s09);
     ast_free(a09);
 
@@ -138,8 +138,8 @@ func:test_conversion = int32() {
     wild int8->:s10 = pipeline_convert(a10);
     string:ns10 = pipeline_native_to_string(s10);
     bool:ok10 = (ns10 != "(null)");
-    if (ok10) { drop(check(true, "T10 struct decl converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T10 struct decl converts")); failed = failed + 1i32; }
+    if (ok10) { drop check(true, "T10 struct decl converts"); passed = passed + 1i32; }
+    else { drop check(false, "T10 struct decl converts"); failed = failed + 1i32; }
     pipeline_free(s10);
     ast_free(a10);
 
@@ -150,7 +150,7 @@ func:test_conversion = int32() {
     print(int32_toString(failed));
     println(" failed");
     println("");
-    pass(passed);
+    pass passed;
 };
 
 
@@ -166,71 +166,71 @@ func:test_validation = int32() {
     // T11: Integer literal — structural match
     wild int8->:a11 = parse(tokenize("42;"));
     int32:v11 = pipeline_validate("42;", a11);
-    if (v11 == 0i32) { drop(check(true, "T11 integer structural match")); passed = passed + 1i32; }
-    else { drop(check(false, "T11 integer structural match")); failed = failed + 1i32; }
+    if (v11 == 0i32) { drop check(true, "T11 integer structural match"); passed = passed + 1i32; }
+    else { drop check(false, "T11 integer structural match"); failed = failed + 1i32; }
     ast_free(a11);
 
     // T12: Variable declaration
     wild int8->:a12 = parse(tokenize("int32:x = 42i32;"));
     int32:v12 = pipeline_validate("int32:x = 42i32;", a12);
-    if (v12 == 0i32) { drop(check(true, "T12 var decl structural match")); passed = passed + 1i32; }
-    else { drop(check(false, "T12 var decl structural match")); failed = failed + 1i32; }
+    if (v12 == 0i32) { drop check(true, "T12 var decl structural match"); passed = passed + 1i32; }
+    else { drop check(false, "T12 var decl structural match"); failed = failed + 1i32; }
     ast_free(a12);
 
     // T13: Binary expression
     wild int8->:a13 = parse(tokenize("1i32 + 2i32;"));
     int32:v13 = pipeline_validate("1i32 + 2i32;", a13);
-    if (v13 == 0i32) { drop(check(true, "T13 binary expr structural match")); passed = passed + 1i32; }
-    else { drop(check(false, "T13 binary expr structural match")); failed = failed + 1i32; }
+    if (v13 == 0i32) { drop check(true, "T13 binary expr structural match"); passed = passed + 1i32; }
+    else { drop check(false, "T13 binary expr structural match"); failed = failed + 1i32; }
     ast_free(a13);
 
     // T14: Function declaration
     wild int8->:a14 = parse(tokenize("func:add = int32(int32:a, int32:b) { pass(a + b); };"));
     int32:v14 = pipeline_validate("func:add = int32(int32:a, int32:b) { pass(a + b); };", a14);
-    if (v14 == 0i32) { drop(check(true, "T14 func decl structural match")); passed = passed + 1i32; }
-    else { drop(check(false, "T14 func decl structural match")); failed = failed + 1i32; }
+    if (v14 == 0i32) { drop check(true, "T14 func decl structural match"); passed = passed + 1i32; }
+    else { drop check(false, "T14 func decl structural match"); failed = failed + 1i32; }
     ast_free(a14);
 
     // T15: If statement
     wild int8->:a15 = parse(tokenize("if (true) { 1i32; }"));
     int32:v15 = pipeline_validate("if (true) { 1i32; }", a15);
-    if (v15 == 0i32) { drop(check(true, "T15 if stmt structural match")); passed = passed + 1i32; }
-    else { drop(check(false, "T15 if stmt structural match")); failed = failed + 1i32; }
+    if (v15 == 0i32) { drop check(true, "T15 if stmt structural match"); passed = passed + 1i32; }
+    else { drop check(false, "T15 if stmt structural match"); failed = failed + 1i32; }
     ast_free(a15);
 
     // T16: While loop
     wild int8->:a16 = parse(tokenize("while (true) { 1i32; }"));
     int32:v16 = pipeline_validate("while (true) { 1i32; }", a16);
-    if (v16 == 0i32) { drop(check(true, "T16 while structural match")); passed = passed + 1i32; }
-    else { drop(check(false, "T16 while structural match")); failed = failed + 1i32; }
+    if (v16 == 0i32) { drop check(true, "T16 while structural match"); passed = passed + 1i32; }
+    else { drop check(false, "T16 while structural match"); failed = failed + 1i32; }
     ast_free(a16);
 
     // T17: Function call
     wild int8->:a17 = parse(tokenize("foo(1i32, 2i32);"));
     int32:v17 = pipeline_validate("foo(1i32, 2i32);", a17);
-    if (v17 == 0i32) { drop(check(true, "T17 func call structural match")); passed = passed + 1i32; }
-    else { drop(check(false, "T17 func call structural match")); failed = failed + 1i32; }
+    if (v17 == 0i32) { drop check(true, "T17 func call structural match"); passed = passed + 1i32; }
+    else { drop check(false, "T17 func call structural match"); failed = failed + 1i32; }
     ast_free(a17);
 
     // T18: Assignment
     wild int8->:a18 = parse(tokenize("x = 5i32;"));
     int32:v18 = pipeline_validate("x = 5i32;", a18);
-    if (v18 == 0i32) { drop(check(true, "T18 assignment structural match")); passed = passed + 1i32; }
-    else { drop(check(false, "T18 assignment structural match")); failed = failed + 1i32; }
+    if (v18 == 0i32) { drop check(true, "T18 assignment structural match"); passed = passed + 1i32; }
+    else { drop check(false, "T18 assignment structural match"); failed = failed + 1i32; }
     ast_free(a18);
 
     // T19: Struct declaration
     wild int8->:a19 = parse(tokenize("struct:Point = { int32:x; int32:y; };"));
     int32:v19 = pipeline_validate("struct:Point = { int32:x; int32:y; };", a19);
-    if (v19 == 0i32) { drop(check(true, "T19 struct structural match")); passed = passed + 1i32; }
-    else { drop(check(false, "T19 struct structural match")); failed = failed + 1i32; }
+    if (v19 == 0i32) { drop check(true, "T19 struct structural match"); passed = passed + 1i32; }
+    else { drop check(false, "T19 struct structural match"); failed = failed + 1i32; }
     ast_free(a19);
 
     // T20: String literal
     wild int8->:a20 = parse(tokenize("\"hello world\";"));
     int32:v20 = pipeline_validate("\"hello world\";", a20);
-    if (v20 == 0i32) { drop(check(true, "T20 string literal structural match")); passed = passed + 1i32; }
-    else { drop(check(false, "T20 string literal structural match")); failed = failed + 1i32; }
+    if (v20 == 0i32) { drop check(true, "T20 string literal structural match"); passed = passed + 1i32; }
+    else { drop check(false, "T20 string literal structural match"); failed = failed + 1i32; }
     ast_free(a20);
 
     println("");
@@ -240,7 +240,7 @@ func:test_validation = int32() {
     print(int32_toString(failed));
     println(" failed");
     println("");
-    pass(passed);
+    pass passed;
 };
 
 
@@ -256,71 +256,71 @@ func:test_deep_validation = int32() {
     // T21: Integer literal deep match
     wild int8->:a21 = parse(tokenize("42;"));
     int32:d21 = pipeline_validate_deep("42;", a21);
-    if (d21 == 1i32) { drop(check(true, "T21 integer deep match")); passed = passed + 1i32; }
-    else { drop(check(false, "T21 integer deep match")); failed = failed + 1i32; }
+    if (d21 == 1i32) { drop check(true, "T21 integer deep match"); passed = passed + 1i32; }
+    else { drop check(false, "T21 integer deep match"); failed = failed + 1i32; }
     ast_free(a21);
 
     // T22: Boolean literal
     wild int8->:a22 = parse(tokenize("true;"));
     int32:d22 = pipeline_validate_deep("true;", a22);
-    if (d22 == 1i32) { drop(check(true, "T22 boolean deep match")); passed = passed + 1i32; }
-    else { drop(check(false, "T22 boolean deep match")); failed = failed + 1i32; }
+    if (d22 == 1i32) { drop check(true, "T22 boolean deep match"); passed = passed + 1i32; }
+    else { drop check(false, "T22 boolean deep match"); failed = failed + 1i32; }
     ast_free(a22);
 
     // T23: Identifier
     wild int8->:a23 = parse(tokenize("x;"));
     int32:d23 = pipeline_validate_deep("x;", a23);
-    if (d23 == 1i32) { drop(check(true, "T23 identifier deep match")); passed = passed + 1i32; }
-    else { drop(check(false, "T23 identifier deep match")); failed = failed + 1i32; }
+    if (d23 == 1i32) { drop check(true, "T23 identifier deep match"); passed = passed + 1i32; }
+    else { drop check(false, "T23 identifier deep match"); failed = failed + 1i32; }
     ast_free(a23);
 
     // T24: Variable declaration
     wild int8->:a24 = parse(tokenize("int32:x = 10i32;"));
     int32:d24 = pipeline_validate_deep("int32:x = 10i32;", a24);
-    if (d24 == 1i32) { drop(check(true, "T24 var decl deep match")); passed = passed + 1i32; }
-    else { drop(check(false, "T24 var decl deep match")); failed = failed + 1i32; }
+    if (d24 == 1i32) { drop check(true, "T24 var decl deep match"); passed = passed + 1i32; }
+    else { drop check(false, "T24 var decl deep match"); failed = failed + 1i32; }
     ast_free(a24);
 
     // T25: Binary addition
     wild int8->:a25 = parse(tokenize("1i32 + 2i32;"));
     int32:d25 = pipeline_validate_deep("1i32 + 2i32;", a25);
-    if (d25 == 1i32) { drop(check(true, "T25 binary add deep match")); passed = passed + 1i32; }
-    else { drop(check(false, "T25 binary add deep match")); failed = failed + 1i32; }
+    if (d25 == 1i32) { drop check(true, "T25 binary add deep match"); passed = passed + 1i32; }
+    else { drop check(false, "T25 binary add deep match"); failed = failed + 1i32; }
     ast_free(a25);
 
     // T26: Function declaration
     wild int8->:a26 = parse(tokenize("func:foo = void() { };"));
     int32:d26 = pipeline_validate_deep("func:foo = void() { };", a26);
-    if (d26 == 1i32) { drop(check(true, "T26 func decl deep match")); passed = passed + 1i32; }
-    else { drop(check(false, "T26 func decl deep match")); failed = failed + 1i32; }
+    if (d26 == 1i32) { drop check(true, "T26 func decl deep match"); passed = passed + 1i32; }
+    else { drop check(false, "T26 func decl deep match"); failed = failed + 1i32; }
     ast_free(a26);
 
     // T27: If/else
     wild int8->:a27 = parse(tokenize("if (true) { 1i32; } else { 2i32; }"));
     int32:d27 = pipeline_validate_deep("if (true) { 1i32; } else { 2i32; }", a27);
-    if (d27 == 1i32) { drop(check(true, "T27 if/else deep match")); passed = passed + 1i32; }
-    else { drop(check(false, "T27 if/else deep match")); failed = failed + 1i32; }
+    if (d27 == 1i32) { drop check(true, "T27 if/else deep match"); passed = passed + 1i32; }
+    else { drop check(false, "T27 if/else deep match"); failed = failed + 1i32; }
     ast_free(a27);
 
     // T28: While loop
     wild int8->:a28 = parse(tokenize("while (true) { break; }"));
     int32:d28 = pipeline_validate_deep("while (true) { break; }", a28);
-    if (d28 == 1i32) { drop(check(true, "T28 while deep match")); passed = passed + 1i32; }
-    else { drop(check(false, "T28 while deep match")); failed = failed + 1i32; }
+    if (d28 == 1i32) { drop check(true, "T28 while deep match"); passed = passed + 1i32; }
+    else { drop check(false, "T28 while deep match"); failed = failed + 1i32; }
     ast_free(a28);
 
     // T29: Function call
     wild int8->:a29 = parse(tokenize("foo(x);"));
     int32:d29 = pipeline_validate_deep("foo(x);", a29);
-    if (d29 == 1i32) { drop(check(true, "T29 func call deep match")); passed = passed + 1i32; }
-    else { drop(check(false, "T29 func call deep match")); failed = failed + 1i32; }
+    if (d29 == 1i32) { drop check(true, "T29 func call deep match"); passed = passed + 1i32; }
+    else { drop check(false, "T29 func call deep match"); failed = failed + 1i32; }
     ast_free(a29);
 
     // T30: Pass statement
     wild int8->:a30 = parse(tokenize("pass(42i32);"));
     int32:d30 = pipeline_validate_deep("pass(42i32);", a30);
-    if (d30 == 1i32) { drop(check(true, "T30 pass stmt deep match")); passed = passed + 1i32; }
-    else { drop(check(false, "T30 pass stmt deep match")); failed = failed + 1i32; }
+    if (d30 == 1i32) { drop check(true, "T30 pass stmt deep match"); passed = passed + 1i32; }
+    else { drop check(false, "T30 pass stmt deep match"); failed = failed + 1i32; }
     ast_free(a30);
 
     println("");
@@ -330,7 +330,7 @@ func:test_deep_validation = int32() {
     print(int32_toString(failed));
     println(" failed");
     println("");
-    pass(passed);
+    pass passed;
 };
 
 
@@ -348,8 +348,8 @@ func:test_complex = int32() {
     wild int8->:s31 = pipeline_convert(a31);
     string:ns31 = pipeline_native_to_string(s31);
     bool:ok31 = (ns31 != "(null)");
-    if (ok31) { drop(check(true, "T31 multi-stmt converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T31 multi-stmt converts")); failed = failed + 1i32; }
+    if (ok31) { drop check(true, "T31 multi-stmt converts"); passed = passed + 1i32; }
+    else { drop check(false, "T31 multi-stmt converts"); failed = failed + 1i32; }
     pipeline_free(s31);
     ast_free(a31);
 
@@ -358,8 +358,8 @@ func:test_complex = int32() {
     wild int8->:s32 = pipeline_convert(a32);
     string:ns32 = pipeline_native_to_string(s32);
     bool:ok32 = (ns32 != "(null)");
-    if (ok32) { drop(check(true, "T32 func with body converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T32 func with body converts")); failed = failed + 1i32; }
+    if (ok32) { drop check(true, "T32 func with body converts"); passed = passed + 1i32; }
+    else { drop check(false, "T32 func with body converts"); failed = failed + 1i32; }
     pipeline_free(s32);
     ast_free(a32);
 
@@ -368,8 +368,8 @@ func:test_complex = int32() {
     wild int8->:s33 = pipeline_convert(a33);
     string:ns33 = pipeline_native_to_string(s33);
     bool:ok33 = (ns33 != "(null)");
-    if (ok33) { drop(check(true, "T33 nested if converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T33 nested if converts")); failed = failed + 1i32; }
+    if (ok33) { drop check(true, "T33 nested if converts"); passed = passed + 1i32; }
+    else { drop check(false, "T33 nested if converts"); failed = failed + 1i32; }
     pipeline_free(s33);
     ast_free(a33);
 
@@ -378,8 +378,8 @@ func:test_complex = int32() {
     wild int8->:s34 = pipeline_convert(a34);
     string:ns34 = pipeline_native_to_string(s34);
     bool:ok34 = (ns34 != "(null)");
-    if (ok34) { drop(check(true, "T34 unary expr converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T34 unary expr converts")); failed = failed + 1i32; }
+    if (ok34) { drop check(true, "T34 unary expr converts"); passed = passed + 1i32; }
+    else { drop check(false, "T34 unary expr converts"); failed = failed + 1i32; }
     pipeline_free(s34);
     ast_free(a34);
 
@@ -388,8 +388,8 @@ func:test_complex = int32() {
     wild int8->:s35 = pipeline_convert(a35);
     string:ns35 = pipeline_native_to_string(s35);
     bool:ok35 = (ns35 != "(null)");
-    if (ok35) { drop(check(true, "T35 struct 3 fields converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T35 struct 3 fields converts")); failed = failed + 1i32; }
+    if (ok35) { drop check(true, "T35 struct 3 fields converts"); passed = passed + 1i32; }
+    else { drop check(false, "T35 struct 3 fields converts"); failed = failed + 1i32; }
     pipeline_free(s35);
     ast_free(a35);
 
@@ -398,8 +398,8 @@ func:test_complex = int32() {
     wild int8->:s36 = pipeline_convert(a36);
     string:ns36 = pipeline_native_to_string(s36);
     bool:ok36 = (ns36 != "(null)");
-    if (ok36) { drop(check(true, "T36 bool var converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T36 bool var converts")); failed = failed + 1i32; }
+    if (ok36) { drop check(true, "T36 bool var converts"); passed = passed + 1i32; }
+    else { drop check(false, "T36 bool var converts"); failed = failed + 1i32; }
     pipeline_free(s36);
     ast_free(a36);
 
@@ -408,8 +408,8 @@ func:test_complex = int32() {
     wild int8->:s37 = pipeline_convert(a37);
     string:ns37 = pipeline_native_to_string(s37);
     bool:ok37 = (ns37 != "(null)");
-    if (ok37) { drop(check(true, "T37 return stmt converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T37 return stmt converts")); failed = failed + 1i32; }
+    if (ok37) { drop check(true, "T37 return stmt converts"); passed = passed + 1i32; }
+    else { drop check(false, "T37 return stmt converts"); failed = failed + 1i32; }
     pipeline_free(s37);
     ast_free(a37);
 
@@ -418,8 +418,8 @@ func:test_complex = int32() {
     wild int8->:s38 = pipeline_convert(a38);
     string:ns38 = pipeline_native_to_string(s38);
     bool:ok38 = (ns38 != "(null)");
-    if (ok38) { drop(check(true, "T38 compound expr converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T38 compound expr converts")); failed = failed + 1i32; }
+    if (ok38) { drop check(true, "T38 compound expr converts"); passed = passed + 1i32; }
+    else { drop check(false, "T38 compound expr converts"); failed = failed + 1i32; }
     pipeline_free(s38);
     ast_free(a38);
 
@@ -428,8 +428,8 @@ func:test_complex = int32() {
     wild int8->:s39 = pipeline_convert(a39);
     string:ns39 = pipeline_native_to_string(s39);
     bool:ok39 = (ns39 != "(null)");
-    if (ok39) { drop(check(true, "T39 null literal converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T39 null literal converts")); failed = failed + 1i32; }
+    if (ok39) { drop check(true, "T39 null literal converts"); passed = passed + 1i32; }
+    else { drop check(false, "T39 null literal converts"); failed = failed + 1i32; }
     pipeline_free(s39);
     ast_free(a39);
 
@@ -438,8 +438,8 @@ func:test_complex = int32() {
     wild int8->:s40 = pipeline_convert(a40);
     string:ns40 = pipeline_native_to_string(s40);
     bool:ok40 = (ns40 != "(null)");
-    if (ok40) { drop(check(true, "T40 extern func converts")); passed = passed + 1i32; }
-    else { drop(check(false, "T40 extern func converts")); failed = failed + 1i32; }
+    if (ok40) { drop check(true, "T40 extern func converts"); passed = passed + 1i32; }
+    else { drop check(false, "T40 extern func converts"); failed = failed + 1i32; }
     pipeline_free(s40);
     ast_free(a40);
 
@@ -450,7 +450,7 @@ func:test_complex = int32() {
     print(int32_toString(failed));
     println(" failed");
     println("");
-    pass(passed);
+    pass passed;
 };
 
 
@@ -464,10 +464,10 @@ func:main = int32() {
     println("════════════════════════════════════════════════════");
     println("");
 
-    int32:p1 = raw(test_conversion());
-    int32:p2 = raw(test_validation());
-    int32:p3 = raw(test_deep_validation());
-    int32:p4 = raw(test_complex());
+    int32:p1 = raw test_conversion();
+    int32:p2 = raw test_validation();
+    int32:p3 = raw test_deep_validation();
+    int32:p4 = raw test_complex();
 
     int32:total = p1 + p2 + p3 + p4;
     println("════════════════════════════════════════════════════");
@@ -476,5 +476,5 @@ func:main = int32() {
     println(" / 40");
     println("════════════════════════════════════════════════════");
 
-    exit(0);
+    exit 0;
 };

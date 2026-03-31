@@ -3,45 +3,45 @@
 
 use stdlib.dbug;
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     // Test 1: group starts disabled
     bool:e0 = dbug_is_enabled("test") ? false;
-    if (e0) { pass(1i32); }
+    if (e0) { pass 1i32; }
 
     // Test 2: enable a group
-    drop(dbug_enable("test"));
+    drop dbug_enable("test");
     bool:e1 = dbug_is_enabled("test") ? false;
-    if (!e1) { pass(2i32); }
+    if (!e1) { pass 2i32; }
 
     // Test 3: print runs without crash when group enabled
-    drop(dbug_print("test", "dbug_basic: group enabled - should print"));
+    drop dbug_print("test", "dbug_basic: group enabled - should print");
 
     // Test 4: labeled print
-    drop(dbug_print_labeled("test", "label", "dbug_basic: labeled message"));
+    drop dbug_print_labeled("test", "label", "dbug_basic: labeled message");
 
     // Test 5: disable group
-    drop(dbug_disable("test"));
+    drop dbug_disable("test");
     bool:e2 = dbug_is_enabled("test") ? false;
-    if (e2) { pass(5i32); }
+    if (e2) { pass 5i32; }
 
     // Test 6: print when disabled (should produce no output, no crash)
-    drop(dbug_print("test", "dbug_basic: this should not appear"));
+    drop dbug_print("test", "dbug_basic: this should not appear");
 
     // Test 7: check() with passing condition
-    drop(dbug_check("test", "should not fire", true));
+    drop dbug_check("test", "should not fire", true);
 
     // Test 8: separator, enter, exit (no crash)
-    drop(dbug_separator("test"));
-    drop(dbug_enter("test", "main"));
-    drop(dbug_exit("test", "main"));
+    drop dbug_separator("test");
+    drop dbug_enter("test", "main");
+    drop dbug_exit("test", "main");
 
     // Test 9: all group
-    drop(dbug_enable("all"));
+    drop dbug_enable("all");
     bool:e3 = dbug_is_enabled("anything") ? false;
-    if (!e3) { pass(9i32); }
-    drop(dbug_disable("all"));
+    if (!e3) { pass 9i32; }
+    drop dbug_disable("all");
 
-    exit(0);
+    exit 0;
 };

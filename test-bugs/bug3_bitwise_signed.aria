@@ -1,0 +1,37 @@
+// BUG-3 test: Bitwise ops on signed integers should work
+
+func:main = int32() {
+    int64:a = 0xFF;
+    int64:b = 0x0F;
+
+    // Bitwise AND (expect 15)
+    int64:and_result = a & b;
+    drop println(`and: &{and_result}`);
+
+    // Bitwise OR (expect 255)
+    int64:or_result = a | b;
+    drop println(`or: &{or_result}`);
+
+    // Bitwise XOR (expect 240)
+    int64:xor_result = a ^ b;
+    drop println(`xor: &{xor_result}`);
+
+    // Bitwise NOT (expect -256)
+    int64:not_result = ~a;
+    drop println(`not: &{not_result}`);
+
+    // Right shift - arithmetic for signed (expect -32)
+    int64:neg = -128;
+    int64:shr_result = neg >> 2;
+    drop println(`ashr: &{shr_result}`);
+
+    // Left shift (expect 4080)
+    int64:shl_result = a << 4;
+    drop println(`shl: &{shl_result}`);
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

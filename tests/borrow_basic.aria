@@ -8,7 +8,7 @@ func:test_immutable_borrows = int32() {
     int32$:ref3 = !$x;   // Third immutable borrow - should be OK
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 func:test_single_mutable_borrow = int32() {
@@ -17,7 +17,7 @@ func:test_single_mutable_borrow = int32() {
     int32$:mut_ref = $y;  // Mutable borrow - should be OK
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 // COMMENTED OUT: These functions are designed to test borrow checker errors
@@ -57,14 +57,14 @@ func:test_scope_releases_borrows = int32() {
     
     int32$:mut_ref = $a;  // Should be OK - no active borrows
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 func:main = int32() {
     // Run tests that should succeed
-    int32:result1 = raw(test_immutable_borrows());
-    int32:result2 = raw(test_single_mutable_borrow());
-    int32:result5 = raw(test_scope_releases_borrows());
+    int32:result1 = raw test_immutable_borrows();
+    int32:result2 = raw test_single_mutable_borrow();
+    int32:result5 = raw test_scope_releases_borrows();
     
     // Tests 3 and 4 should fail at compile time
     // Uncomment one at a time to test error reporting:
@@ -72,10 +72,10 @@ func:main = int32() {
     // int32:result4 = test_immutable_blocks_mutable();
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

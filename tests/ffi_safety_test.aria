@@ -3,7 +3,7 @@
 
 // Integer to string conversion for int64
 func:int64_toString = string(int64:value) {
-    if (value == 0) { pass("0"); }
+    if (value == 0) { pass "0"; }
     bool:is_negative = false;
     int64:work_value = value;
     if (value < 0) { is_negative = true; work_value = -value; }
@@ -26,14 +26,14 @@ func:int64_toString = string(int64:value) {
         result = string_concat(digit_char, result);
     }
     if (is_negative) { result = string_concat("-", result); }
-    pass(result);
+    pass result;
 };
 
 // int32_toString: Cast to int64 to avoid compiler int32 modulo bug
 func:int32_toString = string(int32:value) {
     int64:value64 = value;
-    string:result = raw(int64_toString(value64));
-    pass(result);
+    string:result = raw int64_toString(value64);
+    pass result;
 
 };
 
@@ -83,15 +83,15 @@ pub func:main = int32() {
     
     // Test large template literal - simplified to avoid wild memory issues
     int32:x = 42;
-    drop(print("Template test: "));
-    string:x_str = raw(int32_toString(x));
-    drop(println(x_str));
+    drop print("Template test: ");
+    string:x_str = raw int32_toString(x);
+    drop println(x_str);
     
-    drop(println("FFI safety tests passed!"));
-    exit(0);
+    drop println("FFI safety tests passed!");
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

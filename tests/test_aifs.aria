@@ -9,8 +9,8 @@ use "string_convert.aria".*;
 extern func:system = int32(string:cmd);
 
 func:failsafe = int32(tbb32:err) {
-    drop(println("FAILSAFE triggered"));
-    exit(1);
+    drop println("FAILSAFE triggered");
+    exit 1;
 };
 
 func:main = int32() {
@@ -20,257 +20,257 @@ func:main = int32() {
     // Create a temp directory and test files
     string:tmpdir = "/tmp/aria_aifs_test";
 
-    drop(system("rm -rf /tmp/aria_aifs_test"));
-    drop(system("mkdir -p /tmp/aria_aifs_test"));
+    drop system("rm -rf /tmp/aria_aifs_test");
+    drop system("mkdir -p /tmp/aria_aifs_test");
 
     // Create test files with known content
-    drop(system("echo 'test model data 12345' > /tmp/aria_aifs_test/model1.bin"));
-    drop(system("echo 'another model file' > /tmp/aria_aifs_test/model2.bin"));
-    drop(system("echo 'tensor weights here' > /tmp/aria_aifs_test/weights.bin"));
+    drop system("echo 'test model data 12345' > /tmp/aria_aifs_test/model1.bin");
+    drop system("echo 'another model file' > /tmp/aria_aifs_test/model2.bin");
+    drop system("echo 'tensor weights here' > /tmp/aria_aifs_test/weights.bin");
 
     // ========== Test 1: Set/get tensor dtype ==========
     string:f1 = "/tmp/aria_aifs_test/model1.bin";
-    int32:r1 = raw(AIFs.set_dtype(f1, "float32"));
+    int32:r1 = raw AIFs.set_dtype(f1, "float32");
     if (r1 == 0i32) {
-        drop(println("PASS: set_dtype returned 0"));
+        drop println("PASS: set_dtype returned 0");
         passed += 1i32;
     } else {
-        drop(println("FAIL: set_dtype"));
+        drop println("FAIL: set_dtype");
         failed += 1i32;
     }
 
-    string:dtype = raw(AIFs.get_dtype(f1));
+    string:dtype = raw AIFs.get_dtype(f1);
     if (dtype == "float32") {
-        drop(println("PASS: get_dtype = float32"));
+        drop println("PASS: get_dtype = float32");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: get_dtype = ", dtype)));
+        drop println(string_concat("FAIL: get_dtype = ", dtype));
         failed += 1i32;
     }
 
     // ========== Test 2: Set/get tensor shape ==========
-    int32:r2 = raw(AIFs.set_shape(f1, "3,224,224"));
+    int32:r2 = raw AIFs.set_shape(f1, "3,224,224");
     if (r2 == 0i32) {
-        drop(println("PASS: set_shape returned 0"));
+        drop println("PASS: set_shape returned 0");
         passed += 1i32;
     } else {
-        drop(println("FAIL: set_shape"));
+        drop println("FAIL: set_shape");
         failed += 1i32;
     }
 
-    string:shape = raw(AIFs.get_shape(f1));
+    string:shape = raw AIFs.get_shape(f1);
     if (shape == "3,224,224") {
-        drop(println("PASS: get_shape = 3,224,224"));
+        drop println("PASS: get_shape = 3,224,224");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: get_shape = ", shape)));
+        drop println(string_concat("FAIL: get_shape = ", shape));
         failed += 1i32;
     }
 
     // ========== Test 3: Checkpoint marking ==========
-    int32:r3 = raw(AIFs.set_checkpoint(f1, 1i32));
+    int32:r3 = raw AIFs.set_checkpoint(f1, 1i32);
     if (r3 == 0i32) {
-        drop(println("PASS: set_checkpoint returned 0"));
+        drop println("PASS: set_checkpoint returned 0");
         passed += 1i32;
     } else {
-        drop(println("FAIL: set_checkpoint"));
+        drop println("FAIL: set_checkpoint");
         failed += 1i32;
     }
 
-    int32:is_ckpt = raw(AIFs.is_checkpoint(f1));
+    int32:is_ckpt = raw AIFs.is_checkpoint(f1);
     if (is_ckpt == 1i32) {
-        drop(println("PASS: is_checkpoint = 1"));
+        drop println("PASS: is_checkpoint = 1");
         passed += 1i32;
     } else {
-        drop(println("FAIL: is_checkpoint"));
+        drop println("FAIL: is_checkpoint");
         failed += 1i32;
     }
 
     // ========== Test 4: File size ==========
-    int64:fsize = raw(AIFs.file_size(f1));
+    int64:fsize = raw AIFs.file_size(f1);
     if (fsize > 0i64) {
-        drop(println("PASS: file_size > 0"));
+        drop println("PASS: file_size > 0");
         passed += 1i32;
     } else {
-        drop(println("FAIL: file_size"));
+        drop println("FAIL: file_size");
         failed += 1i32;
     }
 
     // ========== Test 5: Set/get model format ==========
-    int32:r5 = raw(AIFs.set_format(f1, "pytorch"));
+    int32:r5 = raw AIFs.set_format(f1, "pytorch");
     if (r5 == 0i32) {
-        drop(println("PASS: set_format returned 0"));
+        drop println("PASS: set_format returned 0");
         passed += 1i32;
     } else {
-        drop(println("FAIL: set_format"));
+        drop println("FAIL: set_format");
         failed += 1i32;
     }
 
-    string:fmt = raw(AIFs.get_format(f1));
+    string:fmt = raw AIFs.get_format(f1);
     if (fmt == "pytorch") {
-        drop(println("PASS: get_format = pytorch"));
+        drop println("PASS: get_format = pytorch");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: get_format = ", fmt)));
+        drop println(string_concat("FAIL: get_format = ", fmt));
         failed += 1i32;
     }
 
     // ========== Test 6: Format detection (plain text = unknown) ==========
-    string:det = raw(AIFs.detect_format(f1));
+    string:det = raw AIFs.detect_format(f1);
     if (det == "unknown") {
-        drop(println("PASS: detect_format = unknown (plain text)"));
+        drop println("PASS: detect_format = unknown (plain text)");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: detect_format = ", det)));
+        drop println(string_concat("FAIL: detect_format = ", det));
         failed += 1i32;
     }
 
     // ========== Test 7: Compute + get checksum ==========
-    int32:r7 = raw(AIFs.compute_checksum(f1));
+    int32:r7 = raw AIFs.compute_checksum(f1);
     if (r7 == 0i32) {
-        drop(println("PASS: compute_checksum returned 0"));
+        drop println("PASS: compute_checksum returned 0");
         passed += 1i32;
     } else {
-        drop(println("FAIL: compute_checksum"));
+        drop println("FAIL: compute_checksum");
         failed += 1i32;
     }
 
-    string:cksum = raw(AIFs.get_checksum(f1));
+    string:cksum = raw AIFs.get_checksum(f1);
     // Check checksum is non-empty (SHA-256 = 64 hex chars)
     if (cksum != "") {
-        drop(println("PASS: get_checksum returned non-empty SHA-256"));
+        drop println("PASS: get_checksum returned non-empty SHA-256");
         passed += 1i32;
     } else {
-        drop(println("FAIL: get_checksum returned empty"));
+        drop println("FAIL: get_checksum returned empty");
         failed += 1i32;
     }
 
     // ========== Test 8: Verify checksum (should match) ==========
-    int32:ver = raw(AIFs.verify_checksum(f1));
+    int32:ver = raw AIFs.verify_checksum(f1);
     if (ver == 1i32) {
-        drop(println("PASS: verify_checksum = 1 (match)"));
+        drop println("PASS: verify_checksum = 1 (match)");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: verify_checksum = ", int32_toString(ver))));
+        drop println(string_concat("FAIL: verify_checksum = ", int32_toString(ver)));
         failed += 1i32;
     }
 
     // ========== Test 9: Verify checksum after modification (should fail) ==========
-    drop(system("echo 'corrupted!' >> /tmp/aria_aifs_test/model1.bin"));
-    int32:ver2 = raw(AIFs.verify_checksum(f1));
+    drop system("echo 'corrupted!' >> /tmp/aria_aifs_test/model1.bin");
+    int32:ver2 = raw AIFs.verify_checksum(f1);
     if (ver2 == 0i32) {
-        drop(println("PASS: verify_checksum = 0 (mismatch after modification)"));
+        drop println("PASS: verify_checksum = 0 (mismatch after modification)");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: verify after modify = ", int32_toString(ver2))));
+        drop println(string_concat("FAIL: verify after modify = ", int32_toString(ver2)));
         failed += 1i32;
     }
 
     // ========== Test 10: Sequential read ==========
-    int64:seq_fd = raw(AIFs.open_sequential(f1));
+    int64:seq_fd = raw AIFs.open_sequential(f1);
     if (seq_fd >= 0i64) {
-        drop(println("PASS: open_sequential >= 0"));
+        drop println("PASS: open_sequential >= 0");
         passed += 1i32;
     } else {
-        drop(println("FAIL: open_sequential"));
+        drop println("FAIL: open_sequential");
         failed += 1i32;
     }
 
-    int64:chunk = raw(AIFs.read_chunk(seq_fd, 1024i64));
+    int64:chunk = raw AIFs.read_chunk(seq_fd, 1024i64);
     if (chunk > 0i64) {
-        drop(println("PASS: read_chunk > 0 bytes"));
+        drop println("PASS: read_chunk > 0 bytes");
         passed += 1i32;
     } else {
-        drop(println("FAIL: read_chunk"));
+        drop println("FAIL: read_chunk");
         failed += 1i32;
     }
 
-    string:buf = raw(AIFs.get_read_buffer());
+    string:buf = raw AIFs.get_read_buffer();
     if (buf != "") {
-        drop(println("PASS: get_read_buffer has data"));
+        drop println("PASS: get_read_buffer has data");
         passed += 1i32;
     } else {
-        drop(println("FAIL: get_read_buffer empty"));
+        drop println("FAIL: get_read_buffer empty");
         failed += 1i32;
     }
-    raw(AIFs.close(seq_fd));
+    raw AIFs.close(seq_fd);
 
     // ========== Test 11: Custom metadata ==========
-    int32:r11 = raw(AIFs.set_meta(f1, "author", "aria-team"));
+    int32:r11 = raw AIFs.set_meta(f1, "author", "aria-team");
     if (r11 == 0i32) {
-        drop(println("PASS: set_meta returned 0"));
+        drop println("PASS: set_meta returned 0");
         passed += 1i32;
     } else {
-        drop(println("FAIL: set_meta"));
+        drop println("FAIL: set_meta");
         failed += 1i32;
     }
 
-    string:meta = raw(AIFs.get_meta(f1, "author"));
+    string:meta = raw AIFs.get_meta(f1, "author");
     if (meta == "aria-team") {
-        drop(println("PASS: get_meta = aria-team"));
+        drop println("PASS: get_meta = aria-team");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: get_meta = ", meta)));
+        drop println(string_concat("FAIL: get_meta = ", meta));
         failed += 1i32;
     }
 
     // ========== Test 12: Scan models (annotated files) ==========
     // model1.bin has metadata, model2.bin and weights.bin don't yet
-    string:scan = raw(AIFs.scan_models(tmpdir));
+    string:scan = raw AIFs.scan_models(tmpdir);
     if (scan != "") {
-        drop(println("PASS: scan_models returned data"));
+        drop println("PASS: scan_models returned data");
         passed += 1i32;
     } else {
-        drop(println("FAIL: scan_models empty"));
+        drop println("FAIL: scan_models empty");
         failed += 1i32;
     }
 
     // ========== Test 13: Seek ==========
-    int64:sf = raw(AIFs.open_sequential(f1));
-    int64:spos = raw(AIFs.seek(sf, 5i64));
+    int64:sf = raw AIFs.open_sequential(f1);
+    int64:spos = raw AIFs.seek(sf, 5i64);
     if (spos == 5i64) {
-        drop(println("PASS: seek to offset 5"));
+        drop println("PASS: seek to offset 5");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: seek = ", int64_toString(spos))));
+        drop println(string_concat("FAIL: seek = ", int64_toString(spos)));
         failed += 1i32;
     }
-    raw(AIFs.close(sf));
+    raw AIFs.close(sf);
 
     // ========== Test 14: Nonexistent file checksum ==========
-    int32:bad = raw(AIFs.compute_checksum("/tmp/aria_aifs_test/nonexistent.bin"));
+    int32:bad = raw AIFs.compute_checksum("/tmp/aria_aifs_test/nonexistent.bin");
     if (bad == 0i32 - 1i32) {
-        drop(println("PASS: compute_checksum nonexistent = -1"));
+        drop println("PASS: compute_checksum nonexistent = -1");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: nonexistent checksum = ", int32_toString(bad))));
+        drop println(string_concat("FAIL: nonexistent checksum = ", int32_toString(bad)));
         failed += 1i32;
     }
 
     // ========== Test 15: Get checksum on file without one ==========
-    string:nosum = raw(AIFs.get_checksum("/tmp/aria_aifs_test/model2.bin"));
+    string:nosum = raw AIFs.get_checksum("/tmp/aria_aifs_test/model2.bin");
     if (nosum == "") {
-        drop(println("PASS: get_checksum on unannotated file = empty"));
+        drop println("PASS: get_checksum on unannotated file = empty");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: get_checksum unannotated = ", nosum)));
+        drop println(string_concat("FAIL: get_checksum unannotated = ", nosum));
         failed += 1i32;
     }
 
     // ========== Cleanup ==========
-    drop(system("rm -rf /tmp/aria_aifs_test"));
+    drop system("rm -rf /tmp/aria_aifs_test");
 
     // ========== Summary ==========
-    drop(println(""));
+    drop println("");
     string:p = int32_toString(passed);
     string:f = int32_toString(failed);
     string:s1 = string_concat(p, " passed, ");
     string:s2 = string_concat(f, " failed");
     string:summary = string_concat(s1, s2);
-    drop(println(summary));
+    drop println(summary);
 
     if (failed > 0i32) {
-        pass(1i32);
+        pass 1i32;
     }
-    exit(0);
+    exit 0;
 };

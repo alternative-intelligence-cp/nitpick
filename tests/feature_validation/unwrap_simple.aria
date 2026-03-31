@@ -2,19 +2,19 @@
 
 // Helper: returns 42 (at call site it becomes Result<int32>)
 func:get_42 = int32() {
-    pass(42i32);
+    pass 42i32;
 };
 
 // Helper: returns 10 (at call site it becomes Result<int32>)
 func:get_10 = int32() {
-    pass(10i32);
+    pass 10i32;
 };
 
 // Test 1: Simple unwrap - call returns Result<int32>, unwrap with default 99
 func:test_unwrap = int32() {
     Result<int32>:r = get_42();
     int32:result = r ? 99i32;  // Should return 42 (success)
-    pass(result);
+    pass result;
 };
 
 // Test 2: Unwrap in expression context
@@ -26,9 +26,9 @@ func:test_unwrap_expr = int32() {
     int32:sum = x + five;      // Should be 10 + 5 = 15
     int32:expected_sum = 15i32;
     if (sum == expected_sum) {
-        pass(0i32);  // Success
+        pass 0i32;  // Success
     }
-    pass(1i32);  // Failure
+    pass 1i32;  // Failure
 };
 
 // Main function
@@ -41,14 +41,14 @@ func:main = int32() {
         Result<int32>:r2 = test_unwrap_expr();
         int32:result2 = r2 ? -1i32;
         if (result2 == 0i32) {
-            exit(0);  // All tests passed
+            exit 0;  // All tests passed
         }
     }
 
-    pass(1i32);  // Failed
+    pass 1i32;  // Failed
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

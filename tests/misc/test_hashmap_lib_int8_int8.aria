@@ -3,17 +3,17 @@
 
 use "stdlib/lib_hashmap_int8_int8.aria".*;
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 pub func:main = int32() {
     // TEST 1: Create new HashMap
     HashMap<int8, int8>:grades = HashMap_int8_int8_new();
 
     // Verify initial state
-    if (grades.capacity != 16i64) { pass(1i32); }
-    if (grades.length != 0i64) { pass(2i32); }
-    if (grades.key_size != 1i64) { pass(3i32); }
-    if (grades.value_size != 1i64) { pass(4i32); }
+    if (grades.capacity != 16i64) { pass 1i32; }
+    if (grades.length != 0i64) { pass 2i32; }
+    if (grades.key_size != 1i64) { pass 3i32; }
+    if (grades.value_size != 1i64) { pass 4i32; }
 
     // TEST 2: Insert grade mappings (ASCII letters -> grade points)
     HashMap_int8_int8_insert(grades.entries, 65i8, 4i8);
@@ -24,68 +24,68 @@ pub func:main = int32() {
 
     // Sync length
     grades.length = HashMap_int8_int8_length(grades.entries);
-    if (grades.length != 5i64) { pass(5i32); }
+    if (grades.length != 5i64) { pass 5i32; }
 
     // TEST 3: Check existence
-    if (HashMap_int8_int8_has(grades.entries, 65i8) != 1i32) { pass(6i32); }
-    if (HashMap_int8_int8_has(grades.entries, 66i8) != 1i32) { pass(7i32); }
-    if (HashMap_int8_int8_has(grades.entries, 90i8) != 0i32) { pass(8i32); }
+    if (HashMap_int8_int8_has(grades.entries, 65i8) != 1i32) { pass 6i32; }
+    if (HashMap_int8_int8_has(grades.entries, 66i8) != 1i32) { pass 7i32; }
+    if (HashMap_int8_int8_has(grades.entries, 90i8) != 0i32) { pass 8i32; }
 
     // TEST 4: Get values
     int8:value = 0i8;
 
-    if (HashMap_int8_int8_get(grades.entries, 65i8, @value) != 1i32) { pass(9i32); }
-    if (value != 4i8) { pass(10i32); }
+    if (HashMap_int8_int8_get(grades.entries, 65i8, @value) != 1i32) { pass 9i32; }
+    if (value != 4i8) { pass 10i32; }
 
-    if (HashMap_int8_int8_get(grades.entries, 66i8, @value) != 1i32) { pass(11i32); }
-    if (value != 3i8) { pass(12i32); }
+    if (HashMap_int8_int8_get(grades.entries, 66i8, @value) != 1i32) { pass 11i32; }
+    if (value != 3i8) { pass 12i32; }
 
-    if (HashMap_int8_int8_get(grades.entries, 70i8, @value) != 1i32) { pass(13i32); }
-    if (value != 0i8) { pass(14i32); }
+    if (HashMap_int8_int8_get(grades.entries, 70i8, @value) != 1i32) { pass 13i32; }
+    if (value != 0i8) { pass 14i32; }
 
-    if (HashMap_int8_int8_get(grades.entries, 90i8, @value) != 0i32) { pass(15i32); }
+    if (HashMap_int8_int8_get(grades.entries, 90i8, @value) != 0i32) { pass 15i32; }
 
     // TEST 5: Update value
     HashMap_int8_int8_insert(grades.entries, 65i8, 5i8);
 
-    if (HashMap_int8_int8_get(grades.entries, 65i8, @value) != 1i32) { pass(16i32); }
-    if (value != 5i8) { pass(17i32); }
+    if (HashMap_int8_int8_get(grades.entries, 65i8, @value) != 1i32) { pass 16i32; }
+    if (value != 5i8) { pass 17i32; }
 
     grades.length = HashMap_int8_int8_length(grades.entries);
-    if (grades.length != 5i64) { pass(18i32); }
+    if (grades.length != 5i64) { pass 18i32; }
 
     // TEST 6: Remove entry
-    if (HashMap_int8_int8_remove(grades.entries, 70i8) != 1i32) { pass(19i32); }
+    if (HashMap_int8_int8_remove(grades.entries, 70i8) != 1i32) { pass 19i32; }
 
     grades.length = HashMap_int8_int8_length(grades.entries);
-    if (grades.length != 4i64) { pass(20i32); }
-    if (HashMap_int8_int8_has(grades.entries, 70i8) != 0i32) { pass(21i32); }
+    if (grades.length != 4i64) { pass 20i32; }
+    if (HashMap_int8_int8_has(grades.entries, 70i8) != 0i32) { pass 21i32; }
 
-    if (HashMap_int8_int8_get(grades.entries, 70i8, @value) != 0i32) { pass(22i32); }
+    if (HashMap_int8_int8_get(grades.entries, 70i8, @value) != 0i32) { pass 22i32; }
 
     // TEST 7: Length function
     int64:current_length = HashMap_int8_int8_length(grades.entries);
-    if (current_length != 4i64) { pass(23i32); }
+    if (current_length != 4i64) { pass 23i32; }
 
     // TEST 8: Clear map
     HashMap_int8_int8_clear(grades.entries);
     grades.length = HashMap_int8_int8_length(grades.entries);
 
-    if (grades.length != 0i64) { pass(24i32); }
-    if (HashMap_int8_int8_get(grades.entries, 65i8, @value) != 0i32) { pass(25i32); }
+    if (grades.length != 0i64) { pass 24i32; }
+    if (HashMap_int8_int8_get(grades.entries, 65i8, @value) != 0i32) { pass 25i32; }
 
     // TEST 9: Insert after clear
     HashMap_int8_int8_insert(grades.entries, 1i8, 100i8);
     grades.length = HashMap_int8_int8_length(grades.entries);
 
-    if (grades.length != 1i64) { pass(26i32); }
-    if (HashMap_int8_int8_has(grades.entries, 1i8) != 1i32) { pass(27i32); }
-    if (HashMap_int8_int8_get(grades.entries, 1i8, @value) != 1i32) { pass(28i32); }
-    if (value != 100i8) { pass(29i32); }
+    if (grades.length != 1i64) { pass 26i32; }
+    if (HashMap_int8_int8_has(grades.entries, 1i8) != 1i32) { pass 27i32; }
+    if (HashMap_int8_int8_get(grades.entries, 1i8, @value) != 1i32) { pass 28i32; }
+    if (value != 100i8) { pass 29i32; }
 
     // TEST 10: Cleanup
     HashMap_int8_int8_free(grades.entries);
 
     // All tests passed!
-    exit(0);
+    exit 0;
 };

@@ -4,7 +4,7 @@
 // Mandatory failsafe function - global error handler
 func:failsafe = int32(tbb32:err) {
     // Critical error handling - this is the last line of defense
-    exit(1);
+    exit 1;
 };
 
 func:main = int32() {
@@ -17,10 +17,10 @@ func:main = int32() {
     if (!system_ok) {
         // GLOBAL FAILSAFE: !!! calls failsafe() for catastrophic errors
         // This is the "emergency button" that triggers the handler
-        int32:exit_code = raw(!!! 99i32);
-        pass(exit_code);
+        int32:exit_code = raw !!! 99i32;
+        pass exit_code;
     }
     
     // Normal operation
-    exit(0);
+    exit 0;
 };

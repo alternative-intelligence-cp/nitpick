@@ -6,14 +6,14 @@
 func:failsafe = int32(tbb32:err) {
     // In production: log error, cleanup resources, exit gracefully
     // For this test: just pass through the error code
-    exit(1);
+    exit 1;
 };
 
 // Simulate loading configuration
 func:loadConfig = Result<int32>() {
     // Simulate: could return ok OR error
     Result<int32>:r = err(404);  // Config file not found
-    pass(r);
+    pass r;
 };
 
 func:main = int32() {
@@ -27,9 +27,9 @@ func:main = int32() {
         // Everything is broken - trigger GLOBAL FAILSAFE
         // !!! is for "this is catastrophic, call the emergency handler"
         int32:exit_code = !!! 1i32;  // Critical error code
-        pass(exit_code);
+        pass exit_code;
     }
     
     // Normal operation
-    exit(0);
+    exit 0;
 };

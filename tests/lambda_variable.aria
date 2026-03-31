@@ -1,33 +1,33 @@
 // Test: Function pointer variable syntax (T)(T):name = lambda
 // Phase B: Lambda/function pointer variable support
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     // Test 1: identity-like function pointer with single int32 param
-    (int32)(int32):identity = int32(int32:x) { pass(x); };
+    (int32)(int32):identity = int32(int32:x) { pass x; };
     int32:r1 = identity(42i32) ? -1i32;
-    if (r1 != 42i32) { pass(1i32); }
+    if (r1 != 42i32) { pass 1i32; }
 
     // Test 2: doubling through function pointer
     (int32)(int32):double_val = int32(int32:x) {
         int32:result = x + x;
-        pass(result);
+        pass result;
     };
     int32:r2 = double_val(21i32) ? -1i32;
-    if (r2 != 42i32) { pass(2i32); }
+    if (r2 != 42i32) { pass 2i32; }
 
     // Test 3: multi-param function pointer
     (int32)(int32, int32):add = int32(int32:a, int32:b) {
         int32:sum = a + b;
-        pass(sum);
+        pass sum;
     };
     int32:r3 = add(10i32, 32i32) ? -1i32;
-    if (r3 != 42i32) { pass(3i32); }
+    if (r3 != 42i32) { pass 3i32; }
 
     // Test 4: chained calls through same function pointer
     int32:r4 = double_val(5i32) ? -1i32;
-    if (r4 != 10i32) { pass(4i32); }
+    if (r4 != 10i32) { pass 4i32; }
 
-    exit(0);
+    exit 0;
 };

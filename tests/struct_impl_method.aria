@@ -2,7 +2,7 @@
 // Verifies: method defined in impl block is reachable via obj.method() syntax,
 // and self parameter correctly accesses struct fields.
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 struct:Counter = {
     int32:value;
@@ -24,16 +24,16 @@ trait:Measurable = {
 
 impl:Gettable:for:Counter = {
     func:get_val = int32(Counter:self) {
-        pass(self.value);
+        pass self.value;
     };
 };
 
 impl:Measurable:for:Rect2D = {
     func:area = int32(Rect2D:self) {
-        pass(self.w * self.h);
+        pass self.w * self.h;
     };
     func:perimeter = int32(Rect2D:self) {
-        pass(2i32 * (self.w + self.h));
+        pass 2i32 * (self.w + self.h);
     };
 };
 
@@ -44,14 +44,14 @@ func:main = int32() {
     c.value = 42i32;
     Result<int32>:r1 = c.get_val();
     int32:v1 = r1 ? 999i32;
-    if (v1 != 42i32) { pass(1i32); }
+    if (v1 != 42i32) { pass 1i32; }
 
     // --- Test 2: Counter.get_val() with a different value ---
     Counter:c2;
     c2.value = 0i32;
     Result<int32>:r2 = c2.get_val();
     int32:v2 = r2 ? 999i32;
-    if (v2 != 0i32) { pass(2i32); }
+    if (v2 != 0i32) { pass 2i32; }
 
     // --- Test 3: Rect2D.area() ---
     Rect2D:rect;
@@ -59,18 +59,18 @@ func:main = int32() {
     rect.h = 5i32;
     Result<int32>:r3 = rect.area();
     int32:v3 = r3 ? 999i32;
-    if (v3 != 50i32) { pass(3i32); }
+    if (v3 != 50i32) { pass 3i32; }
 
     // --- Test 4: Rect2D.perimeter() ---
     Result<int32>:r4 = rect.perimeter();
     int32:v4 = r4 ? 999i32;
-    if (v4 != 30i32) { pass(4i32); }
+    if (v4 != 30i32) { pass 4i32; }
 
     // --- Test 5: mutation does not disturb method result ---
     c.value = 100i32;
     Result<int32>:r5 = c.get_val();
     int32:v5 = r5 ? 999i32;
-    if (v5 != 100i32) { pass(5i32); }
+    if (v5 != 100i32) { pass 5i32; }
 
-    exit(0);
+    exit 0;
 };

@@ -69,7 +69,7 @@ class AriaFullStackFuzzer:
             raise FileNotFoundError(f"Runtime library not found: {self.runtime_lib}")
     
     # --- Shared building blocks ---
-    FAILSAFE = "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+    FAILSAFE = "func:failsafe = int32(tbb32:err) { exit 1; };\n"
 
     def _rand_int32(self, lo: int = 1, hi: int = 100) -> str:
         return f"{random.randint(lo, hi)}i32"
@@ -86,7 +86,7 @@ class AriaFullStackFuzzer:
         v = self._rand_int32()
         return f"""{self.FAILSAFE}func:main = int32() {{
     int32:x = {v};
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_arithmetic(self) -> str:
@@ -98,7 +98,7 @@ class AriaFullStackFuzzer:
     int32:a = {a}i32;
     int32:b = {b}i32;
     int32:result = (a {op} b);
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_bitwise(self) -> str:
@@ -110,7 +110,7 @@ class AriaFullStackFuzzer:
     uint32:a = {a}u32;
     uint32:b = {b}u32;
     uint32:result = (a {op} b);
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_multi_type(self) -> str:
@@ -121,7 +121,7 @@ class AriaFullStackFuzzer:
     flt64:f = {random.uniform(0.1, 99.9):.4f}f64;
     bool:b = {random.choice(['true', 'false'])};
     string:s = "hello";
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_if_else(self) -> str:
@@ -137,7 +137,7 @@ class AriaFullStackFuzzer:
     }} else {{
         r = 2i32;
     }}
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_while_loop(self) -> str:
@@ -150,7 +150,7 @@ class AriaFullStackFuzzer:
         sum = (sum + i);
         i = (i + 1i32);
     }}
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_for_loop(self) -> str:
@@ -161,7 +161,7 @@ class AriaFullStackFuzzer:
     for (int32:i = 0i32; i < {limit}i32; i += 1i32) {{
         sum = (sum + i);
     }}
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_function_call(self) -> str:
@@ -169,31 +169,31 @@ class AriaFullStackFuzzer:
         a, b = random.randint(1, 50), random.randint(1, 50)
         return f"""{self.FAILSAFE}func:add = int32(int32:x, int32:y) {{
     int32:result = (x + y);
-    pass(result);
+    pass result;
 }};
 
 func:main = int32() {{
-    int32:val = raw(add({a}i32, {b}i32));
-    exit(0);
+    int32:val = raw add({a}i32, {b}i32);
+    exit 0;
 }};"""
 
     def generate_multi_function(self) -> str:
         """Several helper functions chained together."""
         return f"""{self.FAILSAFE}func:square = int64(int64:n) {{
     int64:r = (n * n);
-    pass(r);
+    pass r;
 }};
 
 func:add = int64(int64:a, int64:b) {{
     int64:r = (a + b);
-    pass(r);
+    pass r;
 }};
 
 func:main = int32() {{
-    int64:a = raw(square({random.randint(2,10)}i64));
-    int64:b = raw(square({random.randint(2,10)}i64));
-    int64:c = raw(add(a, b));
-    exit(0);
+    int64:a = raw square({random.randint(2,10)}i64);
+    int64:b = raw square({random.randint(2,10)}i64);
+    int64:c = raw add(a, b);
+    exit 0;
 }};"""
 
     def generate_struct_basic(self) -> str:
@@ -208,7 +208,7 @@ func:main = int32() {{
     Point:p = Point{{x: {x}, y: {y}}};
     int32:px = p.x;
     int32:py = p.y;
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_struct_mutation(self) -> str:
@@ -222,7 +222,7 @@ func:main = int32() {{
     Counter:c = Counter{{value: 0i32, cap: {random.randint(5,20)}i32}};
     c.value = (c.value + 1i32);
     c.value = (c.value + 1i32);
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_struct_return(self) -> str:
@@ -233,13 +233,13 @@ func:main = int32() {{
 }};
 
 func:make_pair = Pair(int32:a, int32:b) {{
-    pass(Pair{{first: a, second: b}});
+    pass Pair{{first: a, second: b}};
 }};
 
 func:main = int32() {{
-    Pair:p = raw(make_pair({self._rand_int32()}, {self._rand_int32()}));
+    Pair:p = raw make_pair({self._rand_int32()}, {self._rand_int32()});
     int32:f = p.first;
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_array_basic(self) -> str:
@@ -250,7 +250,7 @@ func:main = int32() {{
     int32:first = arr[0];
     int32:last  = arr[3];
     arr[1] = 99i32;
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_string_ops(self) -> str:
@@ -263,16 +263,16 @@ func:main = int32() {{
     int64:len_a = string_length(a);
     string:joined = string_concat(a, b);
     bool:has = string_contains(joined, a);
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_println(self) -> str:
         """Print / println calls (drop() needed for Result)."""
         return f"""{self.FAILSAFE}func:main = int32() {{
-    drop(println("fuzz test output"));
+    drop println("fuzz test output");
     int32:x = {self._rand_int32()};
-    drop(println(string_from_int({random.randint(1,999)}i64)));
-    exit(0);
+    drop println(string_from_int({random.randint(1,999)}i64));
+    exit 0;
 }};"""
 
     def generate_nested_if(self) -> str:
@@ -292,7 +292,7 @@ func:main = int32() {{
     }} else {{
         r = 3i32;
     }}
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_bool_logic(self) -> str:
@@ -304,7 +304,7 @@ func:main = int32() {{
     bool:lt = (x < y);
     bool:eq = (x == y);
     bool:gt = (x > y);
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_pick(self) -> str:
@@ -319,7 +319,7 @@ func:main = int32() {{
         (2) {{ r = 30i32; }},
         (*) {{ r = 99i32; }}
     }}
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_loop_construct(self) -> str:
@@ -331,7 +331,7 @@ func:main = int32() {{
     loop({start}, {lim}, 1) {{
         sum = (sum + $);
     }}
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_till_construct(self) -> str:
@@ -342,7 +342,7 @@ func:main = int32() {{
     till({lim}, 1) {{
         total = (total + $);
     }}
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_cast(self) -> str:
@@ -352,7 +352,7 @@ func:main = int32() {{
     int32:x = {v}i32;
     int64:y = @cast<int64>(x);
     flt64:z = @cast<flt64>(x);
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_struct_array_field(self) -> str:
@@ -370,7 +370,7 @@ func:main = int32() {{
     buf.data[2] = {self._rand_int32()};
     buf.data[3] = {self._rand_int32()};
     int32:first = buf.data[0];
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_complex_math(self) -> str:
@@ -383,7 +383,7 @@ func:main = int32() {{
     int64:r1 = ((a * b) + c);
     int64:r2 = ((a + b) * c);
     int64:r3 = ((a - b) + (c * 2i64));
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_recursive_func(self) -> str:
@@ -391,16 +391,16 @@ func:main = int32() {{
         n = random.randint(3, 10)
         return f"""{self.FAILSAFE}func:factorial = int64(int64:n) {{
     if (n <= 1i64) {{
-        pass(1i64);
+        pass 1i64;
     }}
-    int64:sub = raw(factorial((n - 1i64)));
+    int64:sub = raw factorial((n - 1i64));
     int64:result = (n * sub);
-    pass(result);
+    pass result;
 }};
 
 func:main = int32() {{
-    int64:r = raw(factorial({n}i64));
-    exit(0);
+    int64:r = raw factorial({n}i64);
+    exit 0;
 }};"""
 
     def generate_string_compare(self) -> str:
@@ -414,7 +414,7 @@ func:main = int32() {{
     bool:starts = string_starts_with(a, "{w1[0]}");
     bool:ends = string_ends_with(b, "{w2[-1]}");
     int64:idx = string_index_of(a, "{w1[:2]}");
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_const_literal(self) -> str:
@@ -424,7 +424,7 @@ func:main = int32() {{
     const int64:BIG = {self._rand_int64(100, 999)};
     const string:NAME = "fuzz";
     int32:x = LIMIT;
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_pointer_basic(self) -> str:
@@ -432,7 +432,7 @@ func:main = int32() {{
         return f"""{self.FAILSAFE}func:main = int32() {{
     stack int32:val = {self._rand_int32()};
     stack int32->:ptr = @val;
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_syscall(self) -> str:
@@ -446,7 +446,7 @@ func:main = int32() {{
 {self.FAILSAFE}func:main = int32() {{
     Result<int64>:r = sys({sc});
     int64:val = r ? -1i64;
-    exit(0);
+    exit 0;
 }};"""
         elif variant == 'safe_write':
             msg = f"fuzz{random.randint(0,9999)}"
@@ -454,14 +454,14 @@ func:main = int32() {{
 {self.FAILSAFE}func:main = int32() {{
     Result<int64>:w = sys(WRITE, 1i64, "{msg}\n", {len(msg)+1}i64);
     int64:bytes = w ? 0i64;
-    exit(0);
+    exit 0;
 }};"""
         elif variant == 'full':
             return f"""use "sys.aria".*;
 {self.FAILSAFE}func:main = int32() {{
     Result<int64>:r = sys!!({sc});
     int64:val = r ? -1i64;
-    exit(0);
+    exit 0;
 }};"""
         elif variant == 'raw':
             nr_map = {'GETPID': 39, 'GETPPID': 110, 'GETTID': 186,
@@ -470,19 +470,19 @@ func:main = int32() {{
             return f"""use "sys.aria".*;
 {self.FAILSAFE}func:main = int32() {{
     int64:val = sys!!!({nr}i64);
-    exit(0);
+    exit 0;
 }};"""
         else:  # wrapper
             return f"""use "sys.aria".*;
 func:get_val = int64() {{
     Result<int64>:r = sys({sc});
     int64:v = r ? -1i64;
-    pass(v);
+    pass v;
 }};
 {self.FAILSAFE}func:main = int32() {{
     Result<int64>:v = get_val();
     int64:result = v ? 0i64;
-    exit(0);
+    exit 0;
 }};"""
 
     def generate_drop_raw_shorthand(self) -> str:
@@ -492,33 +492,33 @@ func:get_val = int64() {{
         if variant == 'drop_print':
             return f"""{self.FAILSAFE}func:main = int32() {{
     _?println("fuzz drop {self._rand_int32()}");
-    exit(0);
+    exit 0;
 }};"""
         elif variant == 'raw_add':
             a, b = self._rand_int64(), self._rand_int64()
-            return f"""func:safe_add = Result<int64>(int64:a, int64:b) {{ pass(a + b); }};
+            return f"""func:safe_add = Result<int64>(int64:a, int64:b) {{ pass a + b; }};
 {self.FAILSAFE}func:main = int32() {{
     int64:x = _!safe_add({a}i64, {b}i64);
-    exit(0);
+    exit 0;
 }};"""
         elif variant == 'mixed':
             return f"""{self.FAILSAFE}func:main = int32() {{
-    drop(println("verbose"));
+    drop println("verbose");
     _?println("shorthand");
-    exit(0);
+    exit 0;
 }};"""
         elif variant == 'drop_func':
-            return f"""func:do_work = Result<int64>() {{ pass({self._rand_int64()}i64); }};
+            return f"""func:do_work = Result<int64>() {{ pass {self._rand_int64()}i64; }};
 {self.FAILSAFE}func:main = int32() {{
     _?do_work();
-    exit(0);
+    exit 0;
 }};"""
         else:  # raw_chain
             v = self._rand_int64()
-            return f"""func:safe_val = Result<int64>() {{ pass({v}i64); }};
+            return f"""func:safe_val = Result<int64>() {{ pass {v}i64; }};
 {self.FAILSAFE}func:main = int32() {{
     int64:x = _!safe_val() + 1i64;
-    exit(0);
+    exit 0;
 }};"""
 
     def test_program(self, source: str, run_executable: bool = False) -> TestResult:

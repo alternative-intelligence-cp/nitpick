@@ -3,17 +3,17 @@
 
 use "stdlib/lib_hashmap_int64_int64.aria".*;
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 pub func:main = int32() {
     // TEST 1: Create new HashMap
     HashMap<int64, int64>:counters = HashMap_int64_int64_new();
 
     // Verify initial state
-    if (counters.capacity != 16i64) { pass(1i32); }
-    if (counters.length != 0i64) { pass(2i32); }
-    if (counters.key_size != 8i64) { pass(3i32); }
-    if (counters.value_size != 8i64) { pass(4i32); }
+    if (counters.capacity != 16i64) { pass 1i32; }
+    if (counters.length != 0i64) { pass 2i32; }
+    if (counters.key_size != 8i64) { pass 3i32; }
+    if (counters.value_size != 8i64) { pass 4i32; }
 
     // TEST 2: Insert timestamp counters
     HashMap_int64_int64_insert(counters.entries, 1707926400i64, 5i64);
@@ -22,59 +22,59 @@ pub func:main = int32() {
 
     // Sync length
     counters.length = HashMap_int64_int64_length(counters.entries);
-    if (counters.length != 3i64) { pass(5i32); }
+    if (counters.length != 3i64) { pass 5i32; }
 
     // TEST 3: Check existence
-    if (HashMap_int64_int64_has(counters.entries, 1707926400i64) != 1i32) { pass(6i32); }
-    if (HashMap_int64_int64_has(counters.entries, 1707926401i64) != 1i32) { pass(7i32); }
-    if (HashMap_int64_int64_has(counters.entries, 9999999999i64) != 0i32) { pass(8i32); }
+    if (HashMap_int64_int64_has(counters.entries, 1707926400i64) != 1i32) { pass 6i32; }
+    if (HashMap_int64_int64_has(counters.entries, 1707926401i64) != 1i32) { pass 7i32; }
+    if (HashMap_int64_int64_has(counters.entries, 9999999999i64) != 0i32) { pass 8i32; }
 
     // TEST 4: Get values
     int64:count1 = 0i64;
     int64:count2 = 0i64;
     int64:count3 = 0i64;
 
-    if (HashMap_int64_int64_get(counters.entries, 1707926400i64, @count1) != 1i32) { pass(9i32); }
-    if (count1 != 5i64) { pass(10i32); }
+    if (HashMap_int64_int64_get(counters.entries, 1707926400i64, @count1) != 1i32) { pass 9i32; }
+    if (count1 != 5i64) { pass 10i32; }
 
-    if (HashMap_int64_int64_get(counters.entries, 1707926401i64, @count2) != 1i32) { pass(11i32); }
-    if (count2 != 12i64) { pass(12i32); }
+    if (HashMap_int64_int64_get(counters.entries, 1707926401i64, @count2) != 1i32) { pass 11i32; }
+    if (count2 != 12i64) { pass 12i32; }
 
-    if (HashMap_int64_int64_get(counters.entries, 1707926402i64, @count3) != 1i32) { pass(13i32); }
-    if (count3 != 8i64) { pass(14i32); }
+    if (HashMap_int64_int64_get(counters.entries, 1707926402i64, @count3) != 1i32) { pass 13i32; }
+    if (count3 != 8i64) { pass 14i32; }
 
     // TEST 5: Update values
     HashMap_int64_int64_insert(counters.entries, 1707926400i64, 10i64);
 
     int64:updated_count = 0i64;
-    if (HashMap_int64_int64_get(counters.entries, 1707926400i64, @updated_count) != 1i32) { pass(15i32); }
-    if (updated_count != 10i64) { pass(16i32); }
+    if (HashMap_int64_int64_get(counters.entries, 1707926400i64, @updated_count) != 1i32) { pass 15i32; }
+    if (updated_count != 10i64) { pass 16i32; }
 
     // TEST 6: Remove entry
-    if (HashMap_int64_int64_remove(counters.entries, 1707926401i64) != 1i32) { pass(17i32); }
+    if (HashMap_int64_int64_remove(counters.entries, 1707926401i64) != 1i32) { pass 17i32; }
 
     counters.length = HashMap_int64_int64_length(counters.entries);
-    if (counters.length != 2i64) { pass(18i32); }
+    if (counters.length != 2i64) { pass 18i32; }
 
     // TEST 7: Length function
     int64:current_length = HashMap_int64_int64_length(counters.entries);
-    if (current_length != 2i64) { pass(19i32); }
+    if (current_length != 2i64) { pass 19i32; }
 
     // TEST 8: Clear and reuse
     HashMap_int64_int64_clear(counters.entries);
     counters.length = HashMap_int64_int64_length(counters.entries);
 
-    if (counters.length != 0i64) { pass(20i32); }
+    if (counters.length != 0i64) { pass 20i32; }
 
     // Insert new data
     HashMap_int64_int64_insert(counters.entries, 1000i64, 999i64);
     counters.length = HashMap_int64_int64_length(counters.entries);
 
-    if (counters.length != 1i64) { pass(21i32); }
+    if (counters.length != 1i64) { pass 21i32; }
 
     // TEST 9: Cleanup
     HashMap_int64_int64_free(counters.entries);
 
     // All tests passed!
-    exit(0);
+    exit 0;
 };

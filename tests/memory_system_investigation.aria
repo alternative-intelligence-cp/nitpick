@@ -37,7 +37,7 @@ func:test_wild_alloc = int32() {
     free(buffer);
     
     println("  ✓ Wild allocation/free works");
-    pass(0);
+    pass 0;
 };
 
 // ============================================================================
@@ -58,7 +58,7 @@ func:test_multiple_alloc = int32() {
     free(buf3);
     
     println("  ✓ Multiple allocations work");
-    pass(0);
+    pass 0;
 };
 
 // ============================================================================
@@ -76,7 +76,7 @@ func:test_array_alloc = int32() {
     stack_array[9] = 10i32;
     
     println("  ✓ Stack arrays work");
-    pass(0);
+    pass 0;
 };
 
 // ============================================================================
@@ -96,7 +96,7 @@ func:test_string_alloc = int32() {
     // But for this test, just verify strings work
     
     println("  ✓ String allocations work");
-    pass(0);
+    pass 0;
 };
 
 // ============================================================================
@@ -119,7 +119,7 @@ func:test_struct_alloc = int32() {
     point.z = 30i64;
     
     println("  ✓ Struct allocations work");
-    pass(0);
+    pass 0;
 };
 
 // ============================================================================
@@ -141,7 +141,7 @@ func:test_alloc_loop = int32() {
     }
     
     println("  ✓ Allocation loop works (no leaks expected)");
-    pass(0);
+    pass 0;
 };
 
 // ============================================================================
@@ -158,7 +158,7 @@ func:test_zero_alloc = int32() {
     free(zero_buf);
     
     println("  ✓ Zero allocation handled gracefully");
-    pass(0);
+    pass 0;
 };
 
 // ============================================================================
@@ -176,7 +176,7 @@ func:test_large_alloc = int32() {
     free(large_buf);
     
     println("  ✓ Large allocation works");
-    pass(0);
+    pass 0;
 };
 
 // ============================================================================
@@ -196,7 +196,7 @@ func:test_interleaved = int32() {
     free(buf4);
     
     println("  ✓ Interleaved allocations work");
-    pass(0);
+    pass 0;
 };
 
 // ============================================================================
@@ -217,7 +217,7 @@ func:test_growing_alloc = int32() {
     }
     
     println("  ✓ Growing allocations work");
-    pass(0);
+    pass 0;
 };
 
 // ============================================================================
@@ -231,16 +231,16 @@ func:main = int32() {
     println("");
     
     // Run all tests
-    drop(test_wild_alloc());
-    drop(test_multiple_alloc());
-    drop(test_array_alloc());
-    drop(test_string_alloc());
-    drop(test_struct_alloc());
-    drop(test_alloc_loop());
-    drop(test_zero_alloc());
-    drop(test_large_alloc());
-    drop(test_interleaved());
-    drop(test_growing_alloc());
+    drop test_wild_alloc();
+    drop test_multiple_alloc();
+    drop test_array_alloc();
+    drop test_string_alloc();
+    drop test_struct_alloc();
+    drop test_alloc_loop();
+    drop test_zero_alloc();
+    drop test_large_alloc();
+    drop test_interleaved();
+    drop test_growing_alloc();
     
     println("");
     println("========================================");
@@ -254,11 +254,11 @@ func:main = int32() {
     println("4. Edge cases handled gracefully");
     println("");
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     println("FAILSAFE TRIGGERED!");
     println("Memory system investigation revealed an issue.");
-    exit(1);
+    exit 1;
 };

@@ -8,7 +8,7 @@ func:test_float_to_signed = int32() {
     flt64:f2 = 100.99f64;
     int64:i2 = @cast<int64>(f2);  // Truncates to 100
     
-    pass(0i32);
+    pass 0i32;
 };
 
 func:test_float_to_unsigned = int32() {
@@ -19,7 +19,7 @@ func:test_float_to_unsigned = int32() {
     flt64:f2 = 1000.0f64;
     uint32:u2 = @cast<uint32>(f2);  // 1000
     
-    pass(0i32);
+    pass 0i32;
 };
 
 func:test_float_to_int_unchecked = int32() {
@@ -27,17 +27,17 @@ func:test_float_to_int_unchecked = int32() {
     flt64:large = 1000000.5f64;
     int8:small = @cast_unchecked<int8>(large);  // Truncates/wraps
     
-    pass(0i32);
+    pass 0i32;
 };
 
 func:main = int32() {
-    int32:r1 = raw(test_float_to_signed());
-    int32:r2 = raw(test_float_to_unsigned());
-    int32:r3 = raw(test_float_to_int_unchecked());
-    exit(0);
+    int32:r1 = raw test_float_to_signed();
+    int32:r2 = raw test_float_to_unsigned();
+    int32:r3 = raw test_float_to_int_unchecked();
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

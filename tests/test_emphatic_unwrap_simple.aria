@@ -2,12 +2,12 @@
 
 // Helper: returns an error Result
 func:get_error = int32() {
-    fail(1);
+    fail 1;
 };
 
 // Helper: returns a success Result with value 10
 func:get_success = int32() {
-    pass(10i32);
+    pass 10i32;
 };
 
 func:main = int32() {
@@ -16,7 +16,7 @@ func:main = int32() {
     int32:val1 = err_result ?! 42i32;
     
     if (!(val1 == 42i32)) {
-        pass(1i32);  // Failure: error case should yield default
+        pass 1i32;  // Failure: error case should yield default
     }
     
     // Test 2: Success case should yield actual value
@@ -24,13 +24,13 @@ func:main = int32() {
     int32:val2 = ok_result ?! 99i32;
     
     if (!(val2 == 10i32)) {
-        pass(2i32);  // Failure: success case should yield unwrapped value
+        pass 2i32;  // Failure: success case should yield unwrapped value
     }
     
-    exit(0);  // All tests passed
+    exit 0;  // All tests passed
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

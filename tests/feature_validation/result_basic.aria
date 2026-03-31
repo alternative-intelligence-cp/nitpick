@@ -2,15 +2,15 @@
 
 // Test 1: Simple function returning int64
 func:get_value = int64() {
-    pass(42i64);
+    pass 42i64;
 };
 
 // Test 2: Conditional logic with fail
 func:safe_divide = int64(int64:a, int64:b) {
     if (b == 0i64) {
-        fail(1i32);
+        fail 1i32;
     }
-    pass(a);
+    pass a;
 };
 
 // Test 3: Result unwrapping with ? operator
@@ -20,18 +20,18 @@ func:test_unwrap = int32() {
     int64:val = r1 ? 0i64;  // Unwrap with default value 0
 
     if (val == 42i64) {
-        pass(0i32);  // Success
+        pass 0i32;  // Success
     }
-    pass(1i32);  // Failure
+    pass 1i32;  // Failure
 };
 
 func:main = int32() {
     Result<int32>:r = test_unwrap();
     int32:result = r ? -1i32;
-    pass(result);
+    pass result;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

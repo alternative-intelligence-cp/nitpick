@@ -18,14 +18,14 @@ func:test_point_creation = int64() {
     
     // Test 2: Access members
     if (p.x != 10) {
-        pass(1);  // ERROR: x field wrong
+        pass 1;  // ERROR: x field wrong
     }
     
     if (p.y != 20) {
-        pass(2);  // ERROR: y field wrong
+        pass 2;  // ERROR: y field wrong
     }
     
-    pass(0);  // Success
+    pass 0;  // Success
 };
 
 func:test_duration = int64() {
@@ -34,50 +34,50 @@ func:test_duration = int64() {
     
     // Test 4: Access nanos field
     if (d.nanos != 5000000000) {
-        pass(3);  // ERROR: nanos field wrong
+        pass 3;  // ERROR: nanos field wrong
     }
     
-    pass(0);  // Success
+    pass 0;  // Success
 };
 
 // Helper function - defined before use
 func:add_coords = int32(Point:p) {
-    pass(p.x + p.y);
+    pass p.x + p.y;
 };
 
 func:test_struct_in_function = int64() {
     // Test 5: Create struct and pass to function
     Point:origin = Point{ x: 0, y: 0 };
     
-    int32:sum = raw(add_coords(origin));
+    int32:sum = raw add_coords(origin);
     
     if (sum != 0) {
-        pass(5);  // ERROR: origin sum should be 0
+        pass 5;  // ERROR: origin sum should be 0
     }
     
-    pass(0);  // Success
+    pass 0;  // Success
 };
 
 func:main = int32() {
     int64:r1 = test_point_creation() ? -1i64;
     if (r1 != 0i64) {
-        pass(1i32);
+        pass 1i32;
     }
 
     int64:r2 = test_duration() ? -1i64;
     if (r2 != 0i64) {
-        pass(2i32);
+        pass 2i32;
     }
 
     int64:r3 = test_struct_in_function() ? -1i64;
     if (r3 != 0i64) {
-        pass(3i32);
+        pass 3i32;
     }
 
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

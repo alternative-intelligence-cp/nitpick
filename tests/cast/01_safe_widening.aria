@@ -14,7 +14,7 @@ func:test_int_widening = int32() {
     uint32:u_large = @cast<uint32>(u_medium);
     uint64:u_huge = @cast<uint64>(u_large);
     
-    pass(0i32);
+    pass 0i32;
 };
 
 func:test_float_widening = int32() {
@@ -22,16 +22,16 @@ func:test_float_widening = int32() {
     flt32:small_f = 3.14f32;
     flt64:large_f = @cast<flt64>(small_f);
     
-    pass(0i32);
+    pass 0i32;
 };
 
 func:main = int32() {
-    int32:result1 = raw(test_int_widening());
-    int32:result2 = raw(test_float_widening());
-    exit(0);
+    int32:result1 = raw test_int_widening();
+    int32:result2 = raw test_float_widening();
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

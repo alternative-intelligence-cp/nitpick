@@ -1,0 +1,17 @@
+// BUG-4 test (REVERTED): All body functions return Result<T> by design
+use "bug4_module.aria".*;
+
+func:main = int32() {
+    // Both functions return Result<T> - universal safety wrapping
+    int64:sum = raw pure_add(10i64, 20i64);
+    drop println(`pure_add(10, 20) = &{sum}`);
+
+    int64:doubled = raw risky_func(5i64);
+    drop println(`risky_func(5) = &{doubled}`);
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

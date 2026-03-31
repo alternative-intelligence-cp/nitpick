@@ -12,23 +12,23 @@ trait:Scalable = {
 
 impl:Summable:for:int32 = {
     func:get_sum = int32(int32:self) {
-        pass(self + 10);
+        pass self + 10;
     };
 };
 
 impl:Scalable:for:int32 = {
     func:scale = int32(int32:self, int32:factor) {
-        pass(self * factor);
+        pass self * factor;
     };
 };
 
 pub func:main = int32() {
     int32:x = 7;
     // Test both trait impls via UFCS
-    int32:sum = raw(x.get_sum());
-    int32:scaled = raw(x.scale(3));
+    int32:sum = raw x.get_sum();
+    int32:scaled = raw x.scale(3);
     // 7+10=17, 7*3=21, 17+21=38
-    pass(sum + scaled);
+    pass sum + scaled;
 };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };

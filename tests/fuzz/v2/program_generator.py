@@ -97,10 +97,10 @@ class AriaGenerator:
     def _gen_minimal(self) -> str:
         return (
             "func:main = int32() {\n"
-            "    exit(0);\n"
+            "    exit 0;\n"
             "};\n"
             "\n"
-            "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+            "func:failsafe = int32(tbb32:err) { exit 1; };\n"
         )
     
     def _gen_type_test(self, typ: PrimitiveType) -> str:
@@ -123,10 +123,10 @@ class AriaGenerator:
             else:
                 lines.append(f"    {typ.name}:{v} = (a {op.symbol} b);")
         
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
     
     def _gen_control_flow(self) -> str:
@@ -179,10 +179,10 @@ class AriaGenerator:
         lines.append("    }")
         lines.append("")
         
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
     
     def _gen_functions(self) -> str:
@@ -191,16 +191,16 @@ class AriaGenerator:
         lines = []
         
         lines.append(f"func:{fname} = int32(int32:x) {{")
-        lines.append(f"    if (x < 0i32) {{ fail(1i32); }}")
-        lines.append(f"    pass(x * 2i32);")
+        lines.append(f"    if (x < 0i32) {{ fail 1i32; }}")
+        lines.append(f"    pass x * 2i32;")
         lines.append("};")
         lines.append("")
         lines.append("func:main = int32() {")
         lines.append(f"    int32:v = {fname}(5i32) ? -1i32;")
-        lines.append(f"    exit(0);")
+        lines.append(f"    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
     
     def _gen_edge_case(self) -> str:
@@ -228,10 +228,10 @@ class AriaGenerator:
             if typ.category == TypeCategory.INTEGER and typ.min_value is not None and typ.min_value < 0:
                 lines.append(f"    {typ.name}:neg = -1{suf};")
         
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
     
     def _gen_pick(self) -> str:
@@ -246,11 +246,11 @@ class AriaGenerator:
         lines.append("        (3i32) { result = 30i32; },")
         lines.append("        (*) {}")
         lines.append("    }")
-        lines.append("    if (result != 20i32) { exit(1); }")
-        lines.append("    exit(0);")
+        lines.append("    if (result != 20i32) { exit 1; }")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
     
     def _gen_when(self) -> str:
@@ -266,11 +266,11 @@ class AriaGenerator:
         lines.append("    } end {")
         lines.append("        result = 2i32;  // condition was false from start")
         lines.append("    }")
-        lines.append("    if (result != 1i32) { exit(1); }")
-        lines.append("    exit(0);")
+        lines.append("    if (result != 1i32) { exit 1; }")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
     
     def _gen_defer(self) -> str:
@@ -281,27 +281,27 @@ class AriaGenerator:
         lines.append("    defer { x = x + 1i32; }")
         lines.append("    defer { x = x + 10i32; }")
         lines.append("    x = x + 100i32;")
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
     
     def _gen_result(self) -> str:
         """Result unwrap with ? default and raw()."""
         lines = []
         lines.append("func:might_fail = int32(int32:x) {")
-        lines.append("    if (x == 0i32) { fail(42i32); }")
-        lines.append("    pass(x + 1i32);")
+        lines.append("    if (x == 0i32) { fail 42i32; }")
+        lines.append("    pass x + 1i32;")
         lines.append("};")
         lines.append("")
         lines.append("func:main = int32() {")
         lines.append("    int32:val = might_fail(5i32) ? -1i32;")
-        lines.append("    int32:safe = raw(might_fail(3i32));")
-        lines.append("    exit(0);")
+        lines.append("    int32:safe = raw might_fail(3i32);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
     
     def _gen_cast(self) -> str:
@@ -312,26 +312,26 @@ class AriaGenerator:
         lines.append("    int64:big = small => int64;")
         lines.append("    int32:mid = big => int32;")
         lines.append("    flt64:f = mid => flt64;")
-        lines.append("    if (mid != 42i32) { exit(1); }")
-        lines.append("    exit(0);")
+        lines.append("    if (mid != 42i32) { exit 1; }")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
     
     def _gen_pipeline(self) -> str:
         """Forward |> and backward <| pipeline operators with raw()."""
         lines = []
-        lines.append("func:double = int32(int32:x) { pass(x * 2i32); };")
-        lines.append("func:inc    = int32(int32:x) { pass(x + 1i32); };")
+        lines.append("func:double = int32(int32:x) { pass x * 2i32; };")
+        lines.append("func:inc    = int32(int32:x) { pass x + 1i32; };")
         lines.append("")
         lines.append("func:main = int32() {")
-        lines.append("    int32:r = raw(5i32 |> double |> inc);")
-        lines.append("    if (r != 11i32) { exit(1); }")
-        lines.append("    exit(0);")
+        lines.append("    int32:r = raw 5i32 |> double |> inc;")
+        lines.append("    if (r != 11i32) { exit 1; }")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_struct(self) -> str:
@@ -367,10 +367,10 @@ class AriaGenerator:
         for ftype, fname in fields:
             v = self._var()
             lines.append(f"    {ftype}:{v} = s.{fname};")
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_enum(self) -> str:
@@ -394,10 +394,10 @@ class AriaGenerator:
             lines.append(f"        ({i}i32) {{ result = {(i+1)*10}i32; }},")
         lines.append(f"        (*) {{}}")
         lines.append(f"    }}")
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_array(self) -> str:
@@ -414,10 +414,10 @@ class AriaGenerator:
         # Also test direct literal index
         lines.append(f"    int32:first = arr[0];")
         lines.append(f"    int32:last = arr[{size-1}];")
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_pointer(self) -> str:
@@ -428,10 +428,10 @@ class AriaGenerator:
         lines.append(f"    int64:size = {size}i64;")
         lines.append("    wild int8->:ptr = alloc(size);")
         lines.append("    defer { free(ptr); }")
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_loop_range(self) -> str:
@@ -446,10 +446,10 @@ class AriaGenerator:
         lines.append(f"        int64:i = $;")
         lines.append(f"        total = total + i;")
         lines.append(f"    }}")
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_runtime_check(self) -> str:
@@ -476,9 +476,9 @@ class AriaGenerator:
                 f"func:main = int32() {{\n"
                 f"    int32:a = {a}i32;\n"
                 f"    int32:b = {b}i32;\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         elif variant == 'pipeline_chain':
@@ -487,13 +487,13 @@ class AriaGenerator:
             expected = start * 2 + 1
             prog = (
                 f"// EXPECT_EXIT: {expected}\n"
-                f"func:double = int32(int32:x) {{ pass(x * 2i32); }};\n"
-                f"func:inc = int32(int32:x) {{ pass(x + 1i32); }};\n\n"
+                f"func:double = int32(int32:x) {{ pass x * 2i32; }};\n"
+                f"func:inc = int32(int32:x) {{ pass x + 1i32; }};\n\n"
                 f"func:main = int32() {{\n"
-                f"    int32:r = raw({start}i32 |> double |> inc);\n"
-                f"    exit(0);\n"
+                f"    int32:r = raw {start}i32 |> double |> inc;\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         elif variant == 'cast_chain':
@@ -505,9 +505,9 @@ class AriaGenerator:
                 f"    int8:a = {val}i8;\n"
                 f"    int64:b = a => int64;\n"
                 f"    int32:c = b => int32;\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         elif variant == 'loop_sum':
@@ -520,9 +520,9 @@ class AriaGenerator:
                 f"    for (int32:i in 1..{n}) {{\n"
                 f"        sum = sum + i;\n"
                 f"    }}\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         elif variant == 'pick_value':
@@ -540,9 +540,9 @@ class AriaGenerator:
                 f"        (3i32) {{ result = 30i32; }},\n"
                 f"        (*) {{}}\n"
                 f"    }}\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         elif variant == 'conditional':
@@ -560,9 +560,9 @@ class AriaGenerator:
                 f"    }} else {{\n"
                 f"        result = b;\n"
                 f"    }}\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         return prog
@@ -590,9 +590,9 @@ class AriaGenerator:
                 f"func:main = int32() {{\n"
                 f"    Result<int64>:r = sys({sc});\n"
                 f"    int64:val = r ? -1i64;\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         elif variant == 'safe_write':
@@ -602,9 +602,9 @@ class AriaGenerator:
                 f"func:main = int32() {{\n"
                 f'    Result<int64>:w = sys(WRITE, 1i64, "{msg}\\n", {len(msg) + 1}i64);\n'
                 f"    int64:bytes = w ? 0i64;\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         elif variant == 'safe_multi':
@@ -617,9 +617,9 @@ class AriaGenerator:
                 f'use "sys.aria".*;\n\n'
                 f"func:main = int32() {{\n"
                 f"{body}"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         elif variant == 'full_noarg':
@@ -629,9 +629,9 @@ class AriaGenerator:
                 f"func:main = int32() {{\n"
                 f"    Result<int64>:r = sys!!({sc});\n"
                 f"    int64:val = r ? -1i64;\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         elif variant == 'raw_noarg':
@@ -646,9 +646,9 @@ class AriaGenerator:
                 f'use "sys.aria".*;\n\n'
                 f"func:main = int32() {{\n"
                 f"    int64:val = sys!!!({nr}i64);\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         elif variant == 'result_unwrap':
@@ -659,11 +659,11 @@ class AriaGenerator:
                 f"    Result<int64>:r = sys({sc});\n"
                 f"    int64:val = r ? -1i64;\n"
                 f"    if (val > 0i64) {{\n"
-                f'        drop(println("ok"));\n'
+                f'        drop println("ok");\n'
                 f"    }}\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         elif variant == 'wrapper_func':
@@ -673,14 +673,14 @@ class AriaGenerator:
                 f"func:get_val = int64() {{\n"
                 f"    Result<int64>:r = sys({sc});\n"
                 f"    int64:val = r ? -1i64;\n"
-                f"    pass(val);\n"
+                f"    pass val;\n"
                 f"}};\n\n"
                 f"func:main = int32() {{\n"
                 f"    Result<int64>:v = get_val();\n"
                 f"    int64:result = v ? 0i64;\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                f"func:failsafe = int32(tbb32:err) {{ exit(1); }};\n"
+                f"func:failsafe = int32(tbb32:err) {{ exit 1; }};\n"
             )
 
         return prog
@@ -745,10 +745,10 @@ class AriaGenerator:
             lines.append(f"    {tname}:p = a * b;")
             lines.append(f"    bool:cmp = (s > d);")
 
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_string_interp(self) -> str:
@@ -790,10 +790,10 @@ class AriaGenerator:
         elif variant == 'no_interp':
             lines.append("    println(`hello world`);")
 
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_multi_struct(self) -> str:
@@ -824,7 +824,7 @@ class AriaGenerator:
             lines.append(f"    {s2}:s = {{ {random.randint(1,100)}i32, {random.randint(1,100)}i32 }};")
             lines.append(f"    int32:area = s.w * s.h;")
             lines.append(f"    int32:dist = p.x + p.y;")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         elif variant == 'struct_in_func':
@@ -836,14 +836,14 @@ class AriaGenerator:
             lines.append(f"}}; ")
             lines.append("")
             lines.append(f"func:{fname} = int32({sname}:p) {{")
-            lines.append(f"    pass(p.a + p.b);")
+            lines.append(f"    pass p.a + p.b;")
             lines.append(f"}};")
             lines.append("")
             a, b = random.randint(1, 50), random.randint(1, 50)
             lines.append("func:main = int32() {")
             lines.append(f"    {sname}:pair = {{ {a}i32, {b}i32 }};")
             lines.append(f"    int32:result = {fname}(pair) ? -1i32;")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         elif variant == 'struct_return':
@@ -863,7 +863,7 @@ class AriaGenerator:
             lines.append(f"    int32:area = r.w * r.h;")
             lines.append(f"    int32:right = r.x + r.w;")
             lines.append(f"    int32:bottom = r.y + r.h;")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         elif variant == 'struct_array_field':
@@ -881,11 +881,11 @@ class AriaGenerator:
             lines.append(f"    till({size}, 1) {{")
             lines.append(f"        sum = sum + buf.data[$];")
             lines.append(f"    }}")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_combo(self) -> str:
@@ -929,14 +929,14 @@ class AriaGenerator:
             lines.append(f"        (3i32) {{ result = item.value + 300i32; }},")
             lines.append(f"        (*) {{ result = -1i32; }}")
             lines.append(f"    }}")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         elif combo == 'array_loop_result':
             fname = f"check_{self._func_name()}"
             lines.append(f"func:{fname} = int32(int32:x) {{")
-            lines.append(f"    if (x < 0i32) {{ fail(x); }}")
-            lines.append(f"    pass(x * 2i32);")
+            lines.append(f"    if (x < 0i32) {{ fail x; }}")
+            lines.append(f"    pass x * 2i32;")
             lines.append(f"}};")
             lines.append("")
             size = random.choice([3, 4, 5])
@@ -948,7 +948,7 @@ class AriaGenerator:
             lines.append(f"        int32:doubled = {fname}(arr[$]) ? 0i32;")
             lines.append(f"        total = total + doubled;")
             lines.append(f"    }}")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         elif combo == 'defer_cast_when':
@@ -965,7 +965,7 @@ class AriaGenerator:
             lines.append("    } end {")
             lines.append("        big = -1i32;")
             lines.append("    }")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         elif combo == 'pipeline_struct':
@@ -978,19 +978,19 @@ class AriaGenerator:
             lines.append(f"}}; ")
             lines.append("")
             lines.append(f"func:{fname1} = int32(int32:n) {{")
-            lines.append(f"    pass(n + 1i32);")
+            lines.append(f"    pass n + 1i32;")
             lines.append(f"}};")
             lines.append("")
             lines.append(f"func:{fname2} = int32(int32:n) {{")
-            lines.append(f"    pass(n * 2i32);")
+            lines.append(f"    pass n * 2i32;")
             lines.append(f"}};")
             lines.append("")
             val = random.randint(1, 20)
             lines.append("func:main = int32() {")
-            lines.append(f"    int32:a = raw({val}i32 |> {fname1} |> {fname2});")
+            lines.append(f"    int32:a = raw {val}i32 |> {fname1} |> {fname2};")
             lines.append(f"    {sname}:p = {{ a, a + 1i32 }};")
             lines.append(f"    int32:sum = p.x + p.y;")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         elif combo == 'array_pick_defer':
@@ -1007,13 +1007,13 @@ class AriaGenerator:
                 lines.append(f"        ({v}i32) {{ result = {v * 10}i32; }},")
             lines.append(f"        (*) {{ result = first; }}")
             lines.append(f"    }}")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         elif combo == 'func_cast_loop':
             fname = f"widen_{self._func_name()}"
             lines.append(f"func:{fname} = int64(int32:x) {{")
-            lines.append(f"    pass(x => int64);")
+            lines.append(f"    pass x => int64;")
             lines.append(f"}};")
             lines.append("")
             n = random.randint(3, 6)
@@ -1024,7 +1024,7 @@ class AriaGenerator:
             lines.append(f"        total = total + w;")
             lines.append(f"    }}")
             lines.append(f"    int32:result = total => int32;")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         elif combo == 'struct_array':
@@ -1043,14 +1043,14 @@ class AriaGenerator:
             lines.append(f"    till({size}, 1) {{")
             lines.append(f"        sum = sum + items[$];")
             lines.append(f"    }}")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         elif combo == 'when_result_cast':
             fname = f"safe_div_{self._func_name()}"
             lines.append(f"func:{fname} = int32(int32:a, int32:b) {{")
-            lines.append(f"    if (b == 0i32) {{ fail(-1i32); }}")
-            lines.append(f"    pass(a / b);")
+            lines.append(f"    if (b == 0i32) {{ fail -1i32; }}")
+            lines.append(f"    pass a / b;")
             lines.append(f"}};")
             lines.append("")
             lines.append("func:main = int32() {")
@@ -1064,7 +1064,7 @@ class AriaGenerator:
             lines.append(f"    }} end {{")
             lines.append(f"        wide = -1i64;")
             lines.append(f"    }}")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         elif combo == 'optional_coalesce_pick':
@@ -1079,28 +1079,28 @@ class AriaGenerator:
             lines.append(f"        (3i32) {{ result = 30i32; }},")
             lines.append(f"        (*) {{ result = -1i32; }}")
             lines.append(f"    }}")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         elif combo == 'loop_pipeline_defer':
             fname1 = f"inc_{self._func_name()}"
             fname2 = f"sq_{self._func_name()}"
-            lines.append(f"func:{fname1} = int32(int32:x) {{ pass(x + 1i32); }};")
-            lines.append(f"func:{fname2} = int32(int32:x) {{ pass(x * x); }};")
+            lines.append(f"func:{fname1} = int32(int32:x) {{ pass x + 1i32; }};")
+            lines.append(f"func:{fname2} = int32(int32:x) {{ pass x * x; }};")
             lines.append("")
             n = random.randint(3, 5)
             lines.append("func:main = int32() {")
             lines.append(f"    int32:sum = 0i32;")
             lines.append(f"    defer {{ sum = sum + 0i32; }}")
             lines.append(f"    for (int32:i in 1..{n}) {{")
-            lines.append(f"        int32:r = raw(i |> {fname1} |> {fname2});")
+            lines.append(f"        int32:r = raw i |> {fname1} |> {fname2};")
             lines.append(f"        sum = sum + r;")
             lines.append(f"    }}")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append(f"}};")
 
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_type_coercion(self) -> str:
@@ -1128,10 +1128,10 @@ class AriaGenerator:
             lines.append(f"    int32:result = v{last} => int32;")
         else:
             lines.append(f"    int32:result = v{last};")
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_large_type(self) -> str:
@@ -1157,10 +1157,10 @@ class AriaGenerator:
         lines.append(f"    bool:gt = (a > b);")
         # Chain: result = (a + b) - (a - b) = 2*b
         lines.append(f"    {tname}:chain = sum - diff;")
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_recursive(self) -> str:
@@ -1171,49 +1171,49 @@ class AriaGenerator:
         if variant == 'factorial':
             fname = f"fact_{self._func_name()}"
             lines.append(f"func:{fname} = int64(int64:n) {{")
-            lines.append(f"    if (n <= 1i64) {{ pass(1i64); }}")
+            lines.append(f"    if (n <= 1i64) {{ pass 1i64; }}")
             lines.append(f"    int64:sub = {fname}(n - 1i64) ? 1i64;")
-            lines.append(f"    pass(n * sub);")
+            lines.append(f"    pass n * sub;")
             lines.append(f"}};")
             lines.append("")
             n = random.randint(3, 10)
             lines.append("func:main = int32() {")
             lines.append(f"    int64:r = {fname}({n}i64) ? -1i64;")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         elif variant == 'fibonacci':
             fname = f"fib_{self._func_name()}"
             lines.append(f"func:{fname} = int64(int64:n) {{")
-            lines.append(f"    if (n <= 0i64) {{ pass(0i64); }}")
-            lines.append(f"    if (n == 1i64) {{ pass(1i64); }}")
+            lines.append(f"    if (n <= 0i64) {{ pass 0i64; }}")
+            lines.append(f"    if (n == 1i64) {{ pass 1i64; }}")
             lines.append(f"    int64:a = {fname}(n - 1i64) ? 0i64;")
             lines.append(f"    int64:b = {fname}(n - 2i64) ? 0i64;")
-            lines.append(f"    pass(a + b);")
+            lines.append(f"    pass a + b;")
             lines.append(f"}};")
             lines.append("")
             n = random.randint(3, 12)
             lines.append("func:main = int32() {")
             lines.append(f"    int64:r = {fname}({n}i64) ? -1i64;")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         elif variant == 'countdown':
             fname = f"count_{self._func_name()}"
             lines.append(f"func:{fname} = int32(int32:n) {{")
-            lines.append(f"    if (n <= 0i32) {{ exit(0); }}")
+            lines.append(f"    if (n <= 0i32) {{ exit 0; }}")
             lines.append(f"    int32:sub = {fname}(n - 1i32) ? 0i32;")
-            lines.append(f"    pass(sub + 1i32);")
+            lines.append(f"    pass sub + 1i32;")
             lines.append(f"}};")
             lines.append("")
             n = random.randint(5, 20)
             lines.append("func:main = int32() {")
             lines.append(f"    int32:r = {fname}({n}i32) ? -1i32;")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
 
     def _gen_negative(self) -> str:
@@ -1240,24 +1240,24 @@ class AriaGenerator:
             return (
                 "func:main = int32() {\n"
                 '    int32:x = "hello";\n'
-                "    exit(0);\n"
+                "    exit 0;\n"
                 "};\n\n"
-                "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+                "func:failsafe = int32(tbb32:err) { exit 1; };\n"
             )
 
         elif variant == 'undeclared_var':
             return (
                 "func:main = int32() {\n"
                 "    int32:x = never_declared + 1i32;\n"
-                "    exit(0);\n"
+                "    exit 0;\n"
                 "};\n\n"
-                "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+                "func:failsafe = int32(tbb32:err) { exit 1; };\n"
             )
 
         elif variant == 'missing_failsafe':
             return (
                 "func:main = int32() {\n"
-                "    exit(0);\n"
+                "    exit 0;\n"
                 "};\n"
             )
 
@@ -1265,34 +1265,34 @@ class AriaGenerator:
             fname = f"takes_one_{self._func_name()}"
             return (
                 f"func:{fname} = int32(int32:x) {{\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
                 f"func:main = int32() {{\n"
                 f"    int32:r = {fname}(1i32, 2i32) ? -1i32;\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+                "func:failsafe = int32(tbb32:err) { exit 1; };\n"
             )
 
         elif variant == 'wrong_arg_type':
             fname = f"wants_int_{self._func_name()}"
             return (
                 f"func:{fname} = int32(int32:x) {{\n"
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
                 f"func:main = int32() {{\n"
                 f'    int32:r = {fname}("oops") ? -1i32;\n'
-                f"    exit(0);\n"
+                f"    exit 0;\n"
                 f"}};\n\n"
-                "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+                "func:failsafe = int32(tbb32:err) { exit 1; };\n"
             )
 
         elif variant == 'bad_return_type':
             return (
                 "func:main = int32() {\n"
-                '    exit(0);\n'
+                '    exit 0;\n'
                 "};\n\n"
-                "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+                "func:failsafe = int32(tbb32:err) { exit 1; };\n"
             )
 
         elif variant == 'double_decl':
@@ -1300,9 +1300,9 @@ class AriaGenerator:
                 "func:main = int32() {\n"
                 "    int32:x = 1i32;\n"
                 "    int32:x = 2i32;\n"
-                "    exit(0);\n"
+                "    exit 0;\n"
                 "};\n\n"
-                "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+                "func:failsafe = int32(tbb32:err) { exit 1; };\n"
             )
 
         elif variant == 'bad_pick_type':
@@ -1310,12 +1310,12 @@ class AriaGenerator:
                 "func:main = int32() {\n"
                 '    string:s = "hello";\n'
                 "    pick (s) {\n"
-                "        (1i32) { exit(1); },\n"
+                "        (1i32) { exit 1; },\n"
                 "        (*) {}\n"
                 "    }\n"
-                "    exit(0);\n"
+                "    exit 0;\n"
                 "};\n\n"
-                "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+                "func:failsafe = int32(tbb32:err) { exit 1; };\n"
             )
 
         elif variant == 'bad_array_index':
@@ -1323,18 +1323,18 @@ class AriaGenerator:
                 "func:main = int32() {\n"
                 "    int32[3]:arr = [1i32, 2i32, 3i32];\n"
                 '    int32:x = arr["zero"];\n'
-                "    exit(0);\n"
+                "    exit 0;\n"
                 "};\n\n"
-                "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+                "func:failsafe = int32(tbb32:err) { exit 1; };\n"
             )
 
         elif variant == 'missing_semicolon':
             return (
                 "func:main = int32() {\n"
                 "    int32:x = 5i32\n"
-                "    exit(0);\n"
+                "    exit 0;\n"
                 "};\n\n"
-                "func:failsafe = int32(tbb32:err) { exit(1); };\n"
+                "func:failsafe = int32(tbb32:err) { exit 1; };\n"
             )
 
         return self._gen_minimal()  # fallback
@@ -1378,14 +1378,14 @@ class AriaGenerator:
             # Simplest crash trigger: declare optional with NIL
             lines.append("func:main = int32() {")
             lines.append(f"    {base_type}?:x = NIL;")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         elif variant == 'value_decl':
             # Optional with an actual value (may or may not crash)
             lines.append("func:main = int32() {")
             lines.append(f"    {base_type}?:x = {sample_val};")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         elif variant == 'coalesce':
@@ -1393,7 +1393,7 @@ class AriaGenerator:
             lines.append("func:main = int32() {")
             lines.append(f"    {base_type}?:maybe = NIL;")
             lines.append(f"    {base_type}:val = maybe ?? {sample_val};")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         elif variant == 'nil_compare':
@@ -1401,12 +1401,12 @@ class AriaGenerator:
             lines.append("func:main = int32() {")
             lines.append(f"    {base_type}?:opt = {sample_val};")
             lines.append(f"    if (opt == NIL) {{")
-            lines.append(f"        exit(1);")
+            lines.append(f"        exit 1;")
             lines.append(f"    }}")
             lines.append(f"    if (opt != NIL) {{")
-            lines.append(f"        exit(0);")
+            lines.append(f"        exit 0;")
             lines.append(f"    }}")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         elif variant == 'multi_optional':
@@ -1417,34 +1417,34 @@ class AriaGenerator:
                     lines.append(f"    {bt}?:opt_{i} = NIL;")
                 else:
                     lines.append(f"    {bt}?:opt_{i} = {sv};")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         elif variant == 'optional_param':
             # Function taking an optional parameter
             fname = f"takes_opt_{self._func_name()}"
             lines.append(f"func:{fname} = int32({base_type}?:x) {{")
-            lines.append(f"    if (x == NIL) {{ pass(-1i32); }}")
-            lines.append(f"    exit(0);")
+            lines.append(f"    if (x == NIL) {{ pass -1i32; }}")
+            lines.append(f"    exit 0;")
             lines.append("};")
             lines.append("")
             lines.append("func:main = int32() {")
             lines.append(f"    int32:r = {fname}(NIL) ? -1i32;")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         elif variant == 'optional_return':
             # Function returning an optional type
             fname = f"maybe_val_{self._func_name()}"
             lines.append(f"func:{fname} = {base_type}?(int32:flag) {{")
-            lines.append(f"    if (flag == 0i32) {{ pass(NIL); }}")
-            lines.append(f"    pass({sample_val});")
+            lines.append(f"    if (flag == 0i32) {{ pass NIL; }}")
+            lines.append(f"    pass {sample_val};")
             lines.append("};")
             lines.append("")
             lines.append("func:main = int32() {")
-            lines.append(f"    {base_type}?:result = raw({fname}(1i32));")
+            lines.append(f"    {base_type}?:result = raw {fname}(1i32);")
             lines.append(f"    {base_type}:val = result ?? {zero_val};")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         elif variant == 'optional_control':
@@ -1455,7 +1455,7 @@ class AriaGenerator:
             lines.append(f"    if (opt != NIL) {{")
             lines.append(f"        result = opt ?? {zero_val};")
             lines.append(f"    }}")
-            lines.append(f"    exit(0);")
+            lines.append(f"    exit 0;")
             lines.append("};")
 
         elif variant == 'reassign_nil':
@@ -1464,7 +1464,7 @@ class AriaGenerator:
             lines.append(f"    {base_type}?:x = {sample_val};")
             lines.append(f"    x = NIL;")
             lines.append(f"    {base_type}:val = x ?? {zero_val};")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         elif variant == 'coalesce_chain':
@@ -1474,11 +1474,11 @@ class AriaGenerator:
             lines.append(f"    {base_type}?:b = NIL;")
             lines.append(f"    {base_type}?:c = {sample_val};")
             lines.append(f"    {base_type}:val = a ?? b ?? c ?? {zero_val};")
-            lines.append("    exit(0);")
+            lines.append("    exit 0;")
             lines.append("};")
 
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
     
     # ------------------------------------------------------------------
@@ -1619,10 +1619,10 @@ class TypeExhaustiveGenerator:
         else:
             lines.append(f"    {typ.name}:result = (a {op.symbol} b);")
         
-        lines.append("    exit(0);")
+        lines.append("    exit 0;")
         lines.append("};")
         lines.append("")
-        lines.append("func:failsafe = int32(tbb32:err) { exit(1); };")
+        lines.append("func:failsafe = int32(tbb32:err) { exit 1; };")
         return '\n'.join(lines) + '\n'
     
     def _safe_lit(self, typ: PrimitiveType, val: int) -> str:

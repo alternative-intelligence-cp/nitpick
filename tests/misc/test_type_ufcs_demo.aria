@@ -2,33 +2,33 @@
 // This works around a current compiler limitation where struct fields 
 // cannot be accessed on function parameters.
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 Type:Counter = {
     // Constructor
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
     func:create = Counter(int32:initial) {
         Counter:c = Counter{value: initial};
-        pass(c);
+        pass c;
     };
     
     // Destructor
     func:destroy = NIL(Counter:self) {
         // No cleanup needed for int32
-        pass(NIL);
+        pass NIL;
     };
     
     // Methods that don't access fields - just demonstrate UFCS desugaring
     func:getConstant = int32(Counter:self) {
-        pass(99i32);  // Return constant without accessing self.value
+        pass 99i32;  // Return constant without accessing self.value
     };
     
     // Static method
     func:maxValue = int32() {
-        pass(2147483647i32);
+        pass 2147483647i32;
     };
     
     // Public interface
@@ -39,13 +39,13 @@ func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     // Test instance<T>() syntax → Counter_create(10i32)
-    Counter:c = raw(instance<Counter>(10i32));
+    Counter:c = raw instance<Counter>(10i32);
     
     // Test UFCS method call → Counter_getConstant(c)
-    int32:const_val = raw(c.getConstant());
+    int32:const_val = raw c.getConstant();
     
     // Test static method → Counter_maxValue()
-    int32:max_val = raw(Counter.maxValue());
+    int32:max_val = raw Counter.maxValue();
     
     // Test local field access (this works)
     int32:field_val = c.value;
@@ -55,8 +55,8 @@ func:main = int32() {
     
     // Verify: const should be 99, max should be 2147483647, field should be 10
     if (const_val == 99i32 && max_val == 2147483647i32 && field_val == 10i32) {
-        exit(0);  // SUCCESS
+        exit 0;  // SUCCESS
     } else {
-        pass(1i32);  // FAIL
+        pass 1i32;  // FAIL
     }
 };

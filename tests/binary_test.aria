@@ -3,7 +3,7 @@
 use "stdlib/binary.aria".*;
 use "stdlib/string_convert.aria".*;
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:check = NIL(bool:cond, string:msg) {
     if (cond) {
@@ -30,98 +30,98 @@ func:main = int32() {
     println("── Write/Read Round-trips ─────────────────────────────");
 
     // T01: int8 round-trip
-    wild int64->:b1 = raw(bin_new());
-    drop(bin_write_int8(b1, 42i32));
-    drop(bin_seek(b1, 0i64));
-    int32:v1 = raw(bin_read_int8(b1));
-    if (v1 == 42i32) { drop(check(true, "T01 int8 round-trip 42")); passed = passed + 1i32;
-    } else { drop(check(false, "T01 int8")); failed = failed + 1i32; }
-    drop(bin_free(b1));
+    wild int64->:b1 = raw bin_new();
+    drop bin_write_int8(b1, 42i32);
+    drop bin_seek(b1, 0i64);
+    int32:v1 = raw bin_read_int8(b1);
+    if (v1 == 42i32) { drop check(true, "T01 int8 round-trip 42"); passed = passed + 1i32;
+    } else { drop check(false, "T01 int8"); failed = failed + 1i32; }
+    drop bin_free(b1);
 
     // T02: int16 round-trip
-    wild int64->:b2 = raw(bin_new());
-    drop(bin_write_int16(b2, 1234i32));
-    drop(bin_seek(b2, 0i64));
-    int32:v2 = raw(bin_read_int16(b2));
-    if (v2 == 1234i32) { drop(check(true, "T02 int16 round-trip 1234")); passed = passed + 1i32;
-    } else { drop(check(false, "T02 int16")); failed = failed + 1i32; }
-    drop(bin_free(b2));
+    wild int64->:b2 = raw bin_new();
+    drop bin_write_int16(b2, 1234i32);
+    drop bin_seek(b2, 0i64);
+    int32:v2 = raw bin_read_int16(b2);
+    if (v2 == 1234i32) { drop check(true, "T02 int16 round-trip 1234"); passed = passed + 1i32;
+    } else { drop check(false, "T02 int16"); failed = failed + 1i32; }
+    drop bin_free(b2);
 
     // T03: int32 round-trip
-    wild int64->:b3 = raw(bin_new());
-    drop(bin_write_int32(b3, 70000i32));
-    drop(bin_seek(b3, 0i64));
-    int32:v3 = raw(bin_read_int32(b3));
-    if (v3 == 70000i32) { drop(check(true, "T03 int32 round-trip 70000")); passed = passed + 1i32;
-    } else { drop(check(false, "T03 int32")); failed = failed + 1i32; }
-    drop(bin_free(b3));
+    wild int64->:b3 = raw bin_new();
+    drop bin_write_int32(b3, 70000i32);
+    drop bin_seek(b3, 0i64);
+    int32:v3 = raw bin_read_int32(b3);
+    if (v3 == 70000i32) { drop check(true, "T03 int32 round-trip 70000"); passed = passed + 1i32;
+    } else { drop check(false, "T03 int32"); failed = failed + 1i32; }
+    drop bin_free(b3);
 
     // T04: int64 round-trip
-    wild int64->:b4 = raw(bin_new());
-    drop(bin_write_int64(b4, 123456789i64));
-    drop(bin_seek(b4, 0i64));
-    int64:v4 = raw(bin_read_int64(b4));
-    if (v4 == 123456789i64) { drop(check(true, "T04 int64 round-trip 123456789")); passed = passed + 1i32;
-    } else { drop(check(false, "T04 int64")); failed = failed + 1i32; }
-    drop(bin_free(b4));
+    wild int64->:b4 = raw bin_new();
+    drop bin_write_int64(b4, 123456789i64);
+    drop bin_seek(b4, 0i64);
+    int64:v4 = raw bin_read_int64(b4);
+    if (v4 == 123456789i64) { drop check(true, "T04 int64 round-trip 123456789"); passed = passed + 1i32;
+    } else { drop check(false, "T04 int64"); failed = failed + 1i32; }
+    drop bin_free(b4);
 
     // T05: flt64 round-trip
-    wild int64->:b5 = raw(bin_new());
-    drop(bin_write_flt64(b5, 3.14159));
-    drop(bin_seek(b5, 0i64));
-    flt64:v5 = raw(bin_read_flt64(b5));
+    wild int64->:b5 = raw bin_new();
+    drop bin_write_flt64(b5, 3.14159);
+    drop bin_seek(b5, 0i64);
+    flt64:v5 = raw bin_read_flt64(b5);
     if (v5 > 3.14) {
-        if (v5 < 3.15) { drop(check(true, "T05 flt64 round-trip 3.14159")); passed = passed + 1i32;
-        } else { drop(check(false, "T05 flt64 hi")); failed = failed + 1i32; }
-    } else { drop(check(false, "T05 flt64 lo")); failed = failed + 1i32; }
-    drop(bin_free(b5));
+        if (v5 < 3.15) { drop check(true, "T05 flt64 round-trip 3.14159"); passed = passed + 1i32;
+        } else { drop check(false, "T05 flt64 hi"); failed = failed + 1i32; }
+    } else { drop check(false, "T05 flt64 lo"); failed = failed + 1i32; }
+    drop bin_free(b5);
 
     // T06: flt32 round-trip (lossy)
-    wild int64->:b6 = raw(bin_new());
-    drop(bin_write_flt32(b6, 2.5));
-    drop(bin_seek(b6, 0i64));
-    flt64:v6 = raw(bin_read_flt32(b6));
+    wild int64->:b6 = raw bin_new();
+    drop bin_write_flt32(b6, 2.5);
+    drop bin_seek(b6, 0i64);
+    flt64:v6 = raw bin_read_flt32(b6);
     if (v6 > 2.49) {
-        if (v6 < 2.51) { drop(check(true, "T06 flt32 round-trip 2.5")); passed = passed + 1i32;
-        } else { drop(check(false, "T06 flt32 hi")); failed = failed + 1i32; }
-    } else { drop(check(false, "T06 flt32 lo")); failed = failed + 1i32; }
-    drop(bin_free(b6));
+        if (v6 < 2.51) { drop check(true, "T06 flt32 round-trip 2.5"); passed = passed + 1i32;
+        } else { drop check(false, "T06 flt32 hi"); failed = failed + 1i32; }
+    } else { drop check(false, "T06 flt32 lo"); failed = failed + 1i32; }
+    drop bin_free(b6);
 
     // T07: bool round-trip true
-    wild int64->:b7 = raw(bin_new());
-    drop(bin_write_bool(b7, 1i32));
-    drop(bin_seek(b7, 0i64));
-    int32:v7 = raw(bin_read_bool(b7));
-    if (v7 == 1i32) { drop(check(true, "T07 bool round-trip true")); passed = passed + 1i32;
-    } else { drop(check(false, "T07 bool true")); failed = failed + 1i32; }
-    drop(bin_free(b7));
+    wild int64->:b7 = raw bin_new();
+    drop bin_write_bool(b7, 1i32);
+    drop bin_seek(b7, 0i64);
+    int32:v7 = raw bin_read_bool(b7);
+    if (v7 == 1i32) { drop check(true, "T07 bool round-trip true"); passed = passed + 1i32;
+    } else { drop check(false, "T07 bool true"); failed = failed + 1i32; }
+    drop bin_free(b7);
 
     // T08: bool round-trip false
-    wild int64->:b8 = raw(bin_new());
-    drop(bin_write_bool(b8, 0i32));
-    drop(bin_seek(b8, 0i64));
-    int32:v8 = raw(bin_read_bool(b8));
-    if (v8 == 0i32) { drop(check(true, "T08 bool round-trip false")); passed = passed + 1i32;
-    } else { drop(check(false, "T08 bool false")); failed = failed + 1i32; }
-    drop(bin_free(b8));
+    wild int64->:b8 = raw bin_new();
+    drop bin_write_bool(b8, 0i32);
+    drop bin_seek(b8, 0i64);
+    int32:v8 = raw bin_read_bool(b8);
+    if (v8 == 0i32) { drop check(true, "T08 bool round-trip false"); passed = passed + 1i32;
+    } else { drop check(false, "T08 bool false"); failed = failed + 1i32; }
+    drop bin_free(b8);
 
     // T09: string round-trip
-    wild int64->:b9 = raw(bin_new());
-    drop(bin_write_str(b9, "Hello Aria!"));
-    drop(bin_seek(b9, 0i64));
-    string:v9 = raw(bin_read_str(b9));
-    if (string_equals(v9, "Hello Aria!")) { drop(check(true, "T09 string round-trip")); passed = passed + 1i32;
-    } else { drop(check(false, "T09 string")); failed = failed + 1i32; }
-    drop(bin_free(b9));
+    wild int64->:b9 = raw bin_new();
+    drop bin_write_str(b9, "Hello Aria!");
+    drop bin_seek(b9, 0i64);
+    string:v9 = raw bin_read_str(b9);
+    if (string_equals(v9, "Hello Aria!")) { drop check(true, "T09 string round-trip"); passed = passed + 1i32;
+    } else { drop check(false, "T09 string"); failed = failed + 1i32; }
+    drop bin_free(b9);
 
     // T10: empty string round-trip
-    wild int64->:b10 = raw(bin_new());
-    drop(bin_write_str(b10, ""));
-    drop(bin_seek(b10, 0i64));
-    string:v10 = raw(bin_read_str(b10));
-    if (string_equals(v10, "")) { drop(check(true, "T10 empty string round-trip")); passed = passed + 1i32;
-    } else { drop(check(false, "T10 empty string")); failed = failed + 1i32; }
-    drop(bin_free(b10));
+    wild int64->:b10 = raw bin_new();
+    drop bin_write_str(b10, "");
+    drop bin_seek(b10, 0i64);
+    string:v10 = raw bin_read_str(b10);
+    if (string_equals(v10, "")) { drop check(true, "T10 empty string round-trip"); passed = passed + 1i32;
+    } else { drop check(false, "T10 empty string"); failed = failed + 1i32; }
+    drop bin_free(b10);
 
     // ═════════════════════════════════════════════════════════════════════
     // Section 2: Buffer Metadata
@@ -131,61 +131,61 @@ func:main = int32() {
     println("── Buffer Metadata ─────────────────────────────────────");
 
     // T11: size after writes
-    wild int64->:b11 = raw(bin_new());
-    int64:s11a = raw(bin_size(b11));
-    drop(bin_write_int32(b11, 1i32));
-    int64:s11b = raw(bin_size(b11));
-    drop(bin_write_int64(b11, 2i64));
-    int64:s11c = raw(bin_size(b11));
+    wild int64->:b11 = raw bin_new();
+    int64:s11a = raw bin_size(b11);
+    drop bin_write_int32(b11, 1i32);
+    int64:s11b = raw bin_size(b11);
+    drop bin_write_int64(b11, 2i64);
+    int64:s11c = raw bin_size(b11);
     if (s11a == 0i64) {
         if (s11b == 4i64) {
-            if (s11c == 12i64) { drop(check(true, "T11 size: 0→4→12")); passed = passed + 1i32;
-            } else { drop(check(false, "T11 size 12")); failed = failed + 1i32; }
-        } else { drop(check(false, "T11 size 4")); failed = failed + 1i32; }
-    } else { drop(check(false, "T11 size 0")); failed = failed + 1i32; }
-    drop(bin_free(b11));
+            if (s11c == 12i64) { drop check(true, "T11 size: 0→4→12"); passed = passed + 1i32;
+            } else { drop check(false, "T11 size 12"); failed = failed + 1i32; }
+        } else { drop check(false, "T11 size 4"); failed = failed + 1i32; }
+    } else { drop check(false, "T11 size 0"); failed = failed + 1i32; }
+    drop bin_free(b11);
 
     // T12: pos after reads
-    wild int64->:b12 = raw(bin_new());
-    drop(bin_write_int8(b12, 1i32));
-    drop(bin_write_int32(b12, 2i32));
-    drop(bin_seek(b12, 0i64));
-    int64:p12a = raw(bin_pos(b12));
-    int32:dummy12a = raw(bin_read_int8(b12));
-    int64:p12b = raw(bin_pos(b12));
-    int32:dummy12b = raw(bin_read_int32(b12));
-    int64:p12c = raw(bin_pos(b12));
+    wild int64->:b12 = raw bin_new();
+    drop bin_write_int8(b12, 1i32);
+    drop bin_write_int32(b12, 2i32);
+    drop bin_seek(b12, 0i64);
+    int64:p12a = raw bin_pos(b12);
+    int32:dummy12a = raw bin_read_int8(b12);
+    int64:p12b = raw bin_pos(b12);
+    int32:dummy12b = raw bin_read_int32(b12);
+    int64:p12c = raw bin_pos(b12);
     if (p12a == 0i64) {
         if (p12b == 1i64) {
-            if (p12c == 5i64) { drop(check(true, "T12 pos: 0→1→5")); passed = passed + 1i32;
-            } else { drop(check(false, "T12 pos 5")); failed = failed + 1i32; }
-        } else { drop(check(false, "T12 pos 1")); failed = failed + 1i32; }
-    } else { drop(check(false, "T12 pos 0")); failed = failed + 1i32; }
-    drop(bin_free(b12));
+            if (p12c == 5i64) { drop check(true, "T12 pos: 0→1→5"); passed = passed + 1i32;
+            } else { drop check(false, "T12 pos 5"); failed = failed + 1i32; }
+        } else { drop check(false, "T12 pos 1"); failed = failed + 1i32; }
+    } else { drop check(false, "T12 pos 0"); failed = failed + 1i32; }
+    drop bin_free(b12);
 
     // T13: seek
-    wild int64->:b13 = raw(bin_new());
-    drop(bin_write_int32(b13, 100i32));
-    drop(bin_write_int32(b13, 200i32));
-    drop(bin_seek(b13, 4i64));
-    int32:v13 = raw(bin_read_int32(b13));
-    if (v13 == 200i32) { drop(check(true, "T13 seek to offset 4 read 200")); passed = passed + 1i32;
-    } else { drop(check(false, "T13 seek")); failed = failed + 1i32; }
-    drop(bin_free(b13));
+    wild int64->:b13 = raw bin_new();
+    drop bin_write_int32(b13, 100i32);
+    drop bin_write_int32(b13, 200i32);
+    drop bin_seek(b13, 4i64);
+    int32:v13 = raw bin_read_int32(b13);
+    if (v13 == 200i32) { drop check(true, "T13 seek to offset 4 read 200"); passed = passed + 1i32;
+    } else { drop check(false, "T13 seek"); failed = failed + 1i32; }
+    drop bin_free(b13);
 
     // T14: remaining
-    wild int64->:b14 = raw(bin_new());
-    drop(bin_write_int32(b14, 1i32));
-    drop(bin_write_int32(b14, 2i32));
-    drop(bin_seek(b14, 0i64));
-    int64:r14a = raw(bin_remaining(b14));
-    int32:dummy14 = raw(bin_read_int32(b14));
-    int64:r14b = raw(bin_remaining(b14));
+    wild int64->:b14 = raw bin_new();
+    drop bin_write_int32(b14, 1i32);
+    drop bin_write_int32(b14, 2i32);
+    drop bin_seek(b14, 0i64);
+    int64:r14a = raw bin_remaining(b14);
+    int32:dummy14 = raw bin_read_int32(b14);
+    int64:r14b = raw bin_remaining(b14);
     if (r14a == 8i64) {
-        if (r14b == 4i64) { drop(check(true, "T14 remaining: 8→4")); passed = passed + 1i32;
-        } else { drop(check(false, "T14 remaining")); failed = failed + 1i32; }
-    } else { drop(check(false, "T14 remaining")); failed = failed + 1i32; }
-    drop(bin_free(b14));
+        if (r14b == 4i64) { drop check(true, "T14 remaining: 8→4"); passed = passed + 1i32;
+        } else { drop check(false, "T14 remaining"); failed = failed + 1i32; }
+    } else { drop check(false, "T14 remaining"); failed = failed + 1i32; }
+    drop bin_free(b14);
 
     // ═════════════════════════════════════════════════════════════════════
     // Section 3: Sequential Multi-type
@@ -195,23 +195,23 @@ func:main = int32() {
     println("── Sequential Multi-type ──────────────────────────────");
 
     // T15: Write multiple types, read them back in order
-    wild int64->:b15 = raw(bin_new());
-    drop(bin_write_int8(b15, 7i32));
-    drop(bin_write_int16(b15, 256i32));
-    drop(bin_write_int32(b15, 65536i32));
-    drop(bin_write_int64(b15, 100000i64));
-    drop(bin_write_flt64(b15, 2.718));
-    drop(bin_write_bool(b15, 1i32));
-    drop(bin_write_str(b15, "multi"));
-    drop(bin_seek(b15, 0i64));
+    wild int64->:b15 = raw bin_new();
+    drop bin_write_int8(b15, 7i32);
+    drop bin_write_int16(b15, 256i32);
+    drop bin_write_int32(b15, 65536i32);
+    drop bin_write_int64(b15, 100000i64);
+    drop bin_write_flt64(b15, 2.718);
+    drop bin_write_bool(b15, 1i32);
+    drop bin_write_str(b15, "multi");
+    drop bin_seek(b15, 0i64);
 
-    int32:m15a = raw(bin_read_int8(b15));
-    int32:m15b = raw(bin_read_int16(b15));
-    int32:m15c = raw(bin_read_int32(b15));
-    int64:m15d = raw(bin_read_int64(b15));
-    flt64:m15e = raw(bin_read_flt64(b15));
-    int32:m15f = raw(bin_read_bool(b15));
-    string:m15g = raw(bin_read_str(b15));
+    int32:m15a = raw bin_read_int8(b15);
+    int32:m15b = raw bin_read_int16(b15);
+    int32:m15c = raw bin_read_int32(b15);
+    int64:m15d = raw bin_read_int64(b15);
+    flt64:m15e = raw bin_read_flt64(b15);
+    int32:m15f = raw bin_read_bool(b15);
+    string:m15g = raw bin_read_str(b15);
 
     if (m15a == 7i32) {
         if (m15b == 256i32) {
@@ -219,33 +219,33 @@ func:main = int32() {
                 if (m15d == 100000i64) {
                     if (m15e > 2.71) {
                         if (m15f == 1i32) {
-                            if (string_equals(m15g, "multi")) { drop(check(true, "T15 sequential multi-type read")); passed = passed + 1i32;
-                            } else { drop(check(false, "T15 multi str")); failed = failed + 1i32; }
-                        } else { drop(check(false, "T15 multi bool")); failed = failed + 1i32; }
-                    } else { drop(check(false, "T15 multi flt")); failed = failed + 1i32; }
-                } else { drop(check(false, "T15 multi i64")); failed = failed + 1i32; }
-            } else { drop(check(false, "T15 multi i32")); failed = failed + 1i32; }
-        } else { drop(check(false, "T15 multi i16")); failed = failed + 1i32; }
-    } else { drop(check(false, "T15 multi i8")); failed = failed + 1i32; }
-    drop(bin_free(b15));
+                            if (string_equals(m15g, "multi")) { drop check(true, "T15 sequential multi-type read"); passed = passed + 1i32;
+                            } else { drop check(false, "T15 multi str"); failed = failed + 1i32; }
+                        } else { drop check(false, "T15 multi bool"); failed = failed + 1i32; }
+                    } else { drop check(false, "T15 multi flt"); failed = failed + 1i32; }
+                } else { drop check(false, "T15 multi i64"); failed = failed + 1i32; }
+            } else { drop check(false, "T15 multi i32"); failed = failed + 1i32; }
+        } else { drop check(false, "T15 multi i16"); failed = failed + 1i32; }
+    } else { drop check(false, "T15 multi i8"); failed = failed + 1i32; }
+    drop bin_free(b15);
 
     // T16: Re-read with seek
-    wild int64->:b16 = raw(bin_new());
-    drop(bin_write_int32(b16, 111i32));
-    drop(bin_write_int32(b16, 222i32));
-    drop(bin_write_int32(b16, 333i32));
-    drop(bin_seek(b16, 0i64));
-    int32:v16a = raw(bin_read_int32(b16));
-    int32:v16b = raw(bin_read_int32(b16));
-    drop(bin_seek(b16, 0i64));
-    int32:v16c = raw(bin_read_int32(b16));
+    wild int64->:b16 = raw bin_new();
+    drop bin_write_int32(b16, 111i32);
+    drop bin_write_int32(b16, 222i32);
+    drop bin_write_int32(b16, 333i32);
+    drop bin_seek(b16, 0i64);
+    int32:v16a = raw bin_read_int32(b16);
+    int32:v16b = raw bin_read_int32(b16);
+    drop bin_seek(b16, 0i64);
+    int32:v16c = raw bin_read_int32(b16);
     if (v16a == 111i32) {
         if (v16b == 222i32) {
-            if (v16c == 111i32) { drop(check(true, "T16 re-read after seek(0)")); passed = passed + 1i32;
-            } else { drop(check(false, "T16 reread")); failed = failed + 1i32; }
-        } else { drop(check(false, "T16 reread")); failed = failed + 1i32; }
-    } else { drop(check(false, "T16 reread")); failed = failed + 1i32; }
-    drop(bin_free(b16));
+            if (v16c == 111i32) { drop check(true, "T16 re-read after seek(0)"); passed = passed + 1i32;
+            } else { drop check(false, "T16 reread"); failed = failed + 1i32; }
+        } else { drop check(false, "T16 reread"); failed = failed + 1i32; }
+    } else { drop check(false, "T16 reread"); failed = failed + 1i32; }
+    drop bin_free(b16);
 
     // ═════════════════════════════════════════════════════════════════════
     // Section 4: Negative values
@@ -255,42 +255,42 @@ func:main = int32() {
     println("── Negative Values ─────────────────────────────────────");
 
     // T17: Negative int8
-    wild int64->:b17 = raw(bin_new());
-    drop(bin_write_int8(b17, -5i32));
-    drop(bin_seek(b17, 0i64));
-    int32:v17 = raw(bin_read_int8(b17));
-    if (v17 == -5i32) { drop(check(true, "T17 negative int8 -5")); passed = passed + 1i32;
-    } else { drop(check(false, "T17 neg int8")); failed = failed + 1i32; }
-    drop(bin_free(b17));
+    wild int64->:b17 = raw bin_new();
+    drop bin_write_int8(b17, -5i32);
+    drop bin_seek(b17, 0i64);
+    int32:v17 = raw bin_read_int8(b17);
+    if (v17 == -5i32) { drop check(true, "T17 negative int8 -5"); passed = passed + 1i32;
+    } else { drop check(false, "T17 neg int8"); failed = failed + 1i32; }
+    drop bin_free(b17);
 
     // T18: Negative int16
-    wild int64->:b18 = raw(bin_new());
-    drop(bin_write_int16(b18, -1000i32));
-    drop(bin_seek(b18, 0i64));
-    int32:v18 = raw(bin_read_int16(b18));
-    if (v18 == -1000i32) { drop(check(true, "T18 negative int16 -1000")); passed = passed + 1i32;
-    } else { drop(check(false, "T18 neg int16")); failed = failed + 1i32; }
-    drop(bin_free(b18));
+    wild int64->:b18 = raw bin_new();
+    drop bin_write_int16(b18, -1000i32);
+    drop bin_seek(b18, 0i64);
+    int32:v18 = raw bin_read_int16(b18);
+    if (v18 == -1000i32) { drop check(true, "T18 negative int16 -1000"); passed = passed + 1i32;
+    } else { drop check(false, "T18 neg int16"); failed = failed + 1i32; }
+    drop bin_free(b18);
 
     // T19: Negative int64
-    wild int64->:b19 = raw(bin_new());
-    drop(bin_write_int64(b19, -999999i64));
-    drop(bin_seek(b19, 0i64));
-    int64:v19 = raw(bin_read_int64(b19));
-    if (v19 == -999999i64) { drop(check(true, "T19 negative int64 -999999")); passed = passed + 1i32;
-    } else { drop(check(false, "T19 neg int64")); failed = failed + 1i32; }
-    drop(bin_free(b19));
+    wild int64->:b19 = raw bin_new();
+    drop bin_write_int64(b19, -999999i64);
+    drop bin_seek(b19, 0i64);
+    int64:v19 = raw bin_read_int64(b19);
+    if (v19 == -999999i64) { drop check(true, "T19 negative int64 -999999"); passed = passed + 1i32;
+    } else { drop check(false, "T19 neg int64"); failed = failed + 1i32; }
+    drop bin_free(b19);
 
     // T20: Negative float
-    wild int64->:b20 = raw(bin_new());
-    drop(bin_write_flt64(b20, -1.5));
-    drop(bin_seek(b20, 0i64));
-    flt64:v20 = raw(bin_read_flt64(b20));
+    wild int64->:b20 = raw bin_new();
+    drop bin_write_flt64(b20, -1.5);
+    drop bin_seek(b20, 0i64);
+    flt64:v20 = raw bin_read_flt64(b20);
     if (v20 < -1.4) {
-        if (v20 > -1.6) { drop(check(true, "T20 negative flt64 -1.5")); passed = passed + 1i32;
-        } else { drop(check(false, "T20 neg flt")); failed = failed + 1i32; }
-    } else { drop(check(false, "T20 neg flt")); failed = failed + 1i32; }
-    drop(bin_free(b20));
+        if (v20 > -1.6) { drop check(true, "T20 negative flt64 -1.5"); passed = passed + 1i32;
+        } else { drop check(false, "T20 neg flt"); failed = failed + 1i32; }
+    } else { drop check(false, "T20 neg flt"); failed = failed + 1i32; }
+    drop bin_free(b20);
 
     // ═════════════════════════════════════════════════════════════════════
     // Section 5: File I/O
@@ -300,27 +300,27 @@ func:main = int32() {
     println("── File I/O ────────────────────────────────────────────");
 
     // T21: Write to file and read back
-    wild int64->:b21 = raw(bin_new());
-    drop(bin_write_int32(b21, 42i32));
-    drop(bin_write_str(b21, "file-test"));
-    drop(bin_write_flt64(b21, 6.28));
-    int32:ok21 = raw(bin_to_file(b21, "/tmp/aria_bin_test.bin"));
-    if (ok21 == 1i32) { drop(check(true, "T21 write to file ok")); passed = passed + 1i32;
-    } else { drop(check(false, "T21 write file")); failed = failed + 1i32; }
-    drop(bin_free(b21));
+    wild int64->:b21 = raw bin_new();
+    drop bin_write_int32(b21, 42i32);
+    drop bin_write_str(b21, "file-test");
+    drop bin_write_flt64(b21, 6.28);
+    int32:ok21 = raw bin_to_file(b21, "/tmp/aria_bin_test.bin");
+    if (ok21 == 1i32) { drop check(true, "T21 write to file ok"); passed = passed + 1i32;
+    } else { drop check(false, "T21 write file"); failed = failed + 1i32; }
+    drop bin_free(b21);
 
     // T22: Read from file
-    wild int64->:b22 = raw(bin_from_file("/tmp/aria_bin_test.bin"));
-    int32:v22a = raw(bin_read_int32(b22));
-    string:v22b = raw(bin_read_str(b22));
-    flt64:v22c = raw(bin_read_flt64(b22));
+    wild int64->:b22 = raw bin_from_file("/tmp/aria_bin_test.bin");
+    int32:v22a = raw bin_read_int32(b22);
+    string:v22b = raw bin_read_str(b22);
+    flt64:v22c = raw bin_read_flt64(b22);
     if (v22a == 42i32) {
         if (string_equals(v22b, "file-test")) {
-            if (v22c > 6.27) { drop(check(true, "T22 read from file: 42 + file-test + 6.28")); passed = passed + 1i32;
-            } else { drop(check(false, "T22 read file flt")); failed = failed + 1i32; }
-        } else { drop(check(false, "T22 read file str")); failed = failed + 1i32; }
-    } else { drop(check(false, "T22 read file int")); failed = failed + 1i32; }
-    drop(bin_free(b22));
+            if (v22c > 6.27) { drop check(true, "T22 read from file: 42 + file-test + 6.28"); passed = passed + 1i32;
+            } else { drop check(false, "T22 read file flt"); failed = failed + 1i32; }
+        } else { drop check(false, "T22 read file str"); failed = failed + 1i32; }
+    } else { drop check(false, "T22 read file int"); failed = failed + 1i32; }
+    drop bin_free(b22);
 
     // ═════════════════════════════════════════════════════════════════════
     // Section 6: Practical Example — Struct-like Serialization
@@ -330,86 +330,86 @@ func:main = int32() {
     println("── Practical: Struct Serialization ─────────────────────");
 
     // T23: Serialize a "Player" record
-    wild int64->:b23 = raw(bin_new());
-    drop(bin_write_str(b23, "Alice"));
-    drop(bin_write_int32(b23, 100i32));
-    drop(bin_write_flt64(b23, 45.5));
-    drop(bin_write_int64(b23, 1500i64));
-    drop(bin_write_bool(b23, 1i32));
-    drop(bin_seek(b23, 0i64));
+    wild int64->:b23 = raw bin_new();
+    drop bin_write_str(b23, "Alice");
+    drop bin_write_int32(b23, 100i32);
+    drop bin_write_flt64(b23, 45.5);
+    drop bin_write_int64(b23, 1500i64);
+    drop bin_write_bool(b23, 1i32);
+    drop bin_seek(b23, 0i64);
 
-    string:p23name = raw(bin_read_str(b23));
-    int32:p23hp = raw(bin_read_int32(b23));
-    flt64:p23x = raw(bin_read_flt64(b23));
-    int64:p23score = raw(bin_read_int64(b23));
-    int32:p23alive = raw(bin_read_bool(b23));
+    string:p23name = raw bin_read_str(b23);
+    int32:p23hp = raw bin_read_int32(b23);
+    flt64:p23x = raw bin_read_flt64(b23);
+    int64:p23score = raw bin_read_int64(b23);
+    int32:p23alive = raw bin_read_bool(b23);
 
     if (string_equals(p23name, "Alice")) {
         if (p23hp == 100i32) {
             if (p23x > 45.0) {
                 if (p23score == 1500i64) {
-                    if (p23alive == 1i32) { drop(check(true, "T23 Player struct round-trip")); passed = passed + 1i32;
-                    } else { drop(check(false, "T23 player alive")); failed = failed + 1i32; }
-                } else { drop(check(false, "T23 player score")); failed = failed + 1i32; }
-            } else { drop(check(false, "T23 player x")); failed = failed + 1i32; }
-        } else { drop(check(false, "T23 player hp")); failed = failed + 1i32; }
-    } else { drop(check(false, "T23 player name")); failed = failed + 1i32; }
-    drop(bin_free(b23));
+                    if (p23alive == 1i32) { drop check(true, "T23 Player struct round-trip"); passed = passed + 1i32;
+                    } else { drop check(false, "T23 player alive"); failed = failed + 1i32; }
+                } else { drop check(false, "T23 player score"); failed = failed + 1i32; }
+            } else { drop check(false, "T23 player x"); failed = failed + 1i32; }
+        } else { drop check(false, "T23 player hp"); failed = failed + 1i32; }
+    } else { drop check(false, "T23 player name"); failed = failed + 1i32; }
+    drop bin_free(b23);
 
     // T24: Multiple records
-    wild int64->:b24 = raw(bin_new());
-    drop(bin_write_int32(b24, 3i32));
-    drop(bin_write_str(b24, "A"));
-    drop(bin_write_int32(b24, 10i32));
-    drop(bin_write_str(b24, "B"));
-    drop(bin_write_int32(b24, 20i32));
-    drop(bin_write_str(b24, "C"));
-    drop(bin_write_int32(b24, 30i32));
-    drop(bin_seek(b24, 0i64));
+    wild int64->:b24 = raw bin_new();
+    drop bin_write_int32(b24, 3i32);
+    drop bin_write_str(b24, "A");
+    drop bin_write_int32(b24, 10i32);
+    drop bin_write_str(b24, "B");
+    drop bin_write_int32(b24, 20i32);
+    drop bin_write_str(b24, "C");
+    drop bin_write_int32(b24, 30i32);
+    drop bin_seek(b24, 0i64);
 
-    int32:count24 = raw(bin_read_int32(b24));
-    string:n24a = raw(bin_read_str(b24));
-    int32:s24a = raw(bin_read_int32(b24));
-    string:n24b = raw(bin_read_str(b24));
-    int32:s24b = raw(bin_read_int32(b24));
-    string:n24c = raw(bin_read_str(b24));
-    int32:s24c = raw(bin_read_int32(b24));
+    int32:count24 = raw bin_read_int32(b24);
+    string:n24a = raw bin_read_str(b24);
+    int32:s24a = raw bin_read_int32(b24);
+    string:n24b = raw bin_read_str(b24);
+    int32:s24b = raw bin_read_int32(b24);
+    string:n24c = raw bin_read_str(b24);
+    int32:s24c = raw bin_read_int32(b24);
 
     if (count24 == 3i32) {
         if (string_equals(n24a, "A")) {
             if (s24b == 20i32) {
-                if (string_equals(n24c, "C")) { drop(check(true, "T24 multiple records")); passed = passed + 1i32;
-                } else { drop(check(false, "T24 multi c")); failed = failed + 1i32; }
-            } else { drop(check(false, "T24 multi b")); failed = failed + 1i32; }
-        } else { drop(check(false, "T24 multi a")); failed = failed + 1i32; }
-    } else { drop(check(false, "T24 multi count")); failed = failed + 1i32; }
-    drop(bin_free(b24));
+                if (string_equals(n24c, "C")) { drop check(true, "T24 multiple records"); passed = passed + 1i32;
+                } else { drop check(false, "T24 multi c"); failed = failed + 1i32; }
+            } else { drop check(false, "T24 multi b"); failed = failed + 1i32; }
+        } else { drop check(false, "T24 multi a"); failed = failed + 1i32; }
+    } else { drop check(false, "T24 multi count"); failed = failed + 1i32; }
+    drop bin_free(b24);
 
     // T25: File round-trip with multiple records
-    wild int64->:b25w = raw(bin_new());
-    drop(bin_write_int32(b25w, 2i32));
-    drop(bin_write_str(b25w, "Record1"));
-    drop(bin_write_flt64(b25w, 1.11));
-    drop(bin_write_str(b25w, "Record2"));
-    drop(bin_write_flt64(b25w, 2.22));
-    int32:ok25 = raw(bin_to_file(b25w, "/tmp/aria_bin_records.bin"));
-    drop(bin_free(b25w));
+    wild int64->:b25w = raw bin_new();
+    drop bin_write_int32(b25w, 2i32);
+    drop bin_write_str(b25w, "Record1");
+    drop bin_write_flt64(b25w, 1.11);
+    drop bin_write_str(b25w, "Record2");
+    drop bin_write_flt64(b25w, 2.22);
+    int32:ok25 = raw bin_to_file(b25w, "/tmp/aria_bin_records.bin");
+    drop bin_free(b25w);
 
-    wild int64->:b25r = raw(bin_from_file("/tmp/aria_bin_records.bin"));
-    int32:cnt25 = raw(bin_read_int32(b25r));
-    string:r25a = raw(bin_read_str(b25r));
-    flt64:rv25a = raw(bin_read_flt64(b25r));
-    string:r25b = raw(bin_read_str(b25r));
-    flt64:rv25b = raw(bin_read_flt64(b25r));
+    wild int64->:b25r = raw bin_from_file("/tmp/aria_bin_records.bin");
+    int32:cnt25 = raw bin_read_int32(b25r);
+    string:r25a = raw bin_read_str(b25r);
+    flt64:rv25a = raw bin_read_flt64(b25r);
+    string:r25b = raw bin_read_str(b25r);
+    flt64:rv25b = raw bin_read_flt64(b25r);
     if (cnt25 == 2i32) {
         if (string_equals(r25a, "Record1")) {
             if (string_equals(r25b, "Record2")) {
-                if (rv25b > 2.21) { drop(check(true, "T25 file record round-trip")); passed = passed + 1i32;
-                } else { drop(check(false, "T25 file rt flt")); failed = failed + 1i32; }
-            } else { drop(check(false, "T25 file rt r2")); failed = failed + 1i32; }
-        } else { drop(check(false, "T25 file rt r1")); failed = failed + 1i32; }
-    } else { drop(check(false, "T25 file rt cnt")); failed = failed + 1i32; }
-    drop(bin_free(b25r));
+                if (rv25b > 2.21) { drop check(true, "T25 file record round-trip"); passed = passed + 1i32;
+                } else { drop check(false, "T25 file rt flt"); failed = failed + 1i32; }
+            } else { drop check(false, "T25 file rt r2"); failed = failed + 1i32; }
+        } else { drop check(false, "T25 file rt r1"); failed = failed + 1i32; }
+    } else { drop check(false, "T25 file rt cnt"); failed = failed + 1i32; }
+    drop bin_free(b25r);
 
     // ═════════════════════════════════════════════════════════════════════
     // Summary
@@ -424,5 +424,5 @@ func:main = int32() {
     println(" failed");
     println("═════════════════════════════════════════════════════════");
 
-    exit(0);
+    exit 0;
 };

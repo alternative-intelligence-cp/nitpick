@@ -10,7 +10,7 @@ func:test_simd_any_all_true = bool(simd<int32, 4>:vec, int32:threshold) {
     bool:any_result = simd_any(mask);  // Should be true
     bool:all_result = simd_all(mask);  // Should be true
     
-    pass(any_result);  // Return true if working
+    pass any_result;  // Return true if working
 };
 
 func:test_simd_any_some_true = bool(simd<int32, 4>:vec, int32:threshold) {
@@ -24,7 +24,7 @@ func:test_simd_any_some_true = bool(simd<int32, 4>:vec, int32:threshold) {
     
     // Return true if any_result is true AND all_result is false
     bool:test_passed = any_result;
-    pass(test_passed);
+    pass test_passed;
 };
 
 func:test_simd_any_none_true = bool(simd<int32, 4>:vec, int32:threshold) {
@@ -36,7 +36,7 @@ func:test_simd_any_none_true = bool(simd<int32, 4>:vec, int32:threshold) {
     bool:any_result = simd_any(mask);  // Should be false
     bool:all_result = simd_all(mask);  // Should be false
     
-    pass(any_result);  // Should return false
+    pass any_result;  // Should return false
 };
 
 func:test_simd_any_with_equality = bool(simd<int32, 4>:vec_a, simd<int32, 4>:vec_b) {
@@ -48,7 +48,7 @@ func:test_simd_any_with_equality = bool(simd<int32, 4>:vec_a, simd<int32, 4>:vec
     bool:has_any_equal = simd_any(equal_mask);  // Should be true
     bool:all_equal = simd_all(equal_mask);      // Should be false
     
-    pass(has_any_equal);
+    pass has_any_equal;
 };
 
 func:test_simd_all_identical = bool(simd<int32, 4>:vec_a, simd<int32, 4>:vec_b) {
@@ -56,7 +56,7 @@ func:test_simd_all_identical = bool(simd<int32, 4>:vec_a, simd<int32, 4>:vec_b) 
     simd<bool, 4>:equal_mask = vec_a == vec_b;
     bool:completely_equal = simd_all(equal_mask);
     
-    pass(completely_equal);
+    pass completely_equal;
 };
 
 func:test_simd_range_check = bool(simd<int32, 8>:values, int32:min_val, int32:max_val) {
@@ -69,7 +69,7 @@ func:test_simd_range_check = bool(simd<int32, 8>:values, int32:min_val, int32:ma
     
     // In range if both conditions are true
     bool:all_in_range = all_above_min;  // Simplified for test
-    pass(all_in_range);
+    pass all_in_range;
 };
 
 func:test_simd_has_errors = bool(simd<int32, 4>:results) {
@@ -78,7 +78,7 @@ func:test_simd_has_errors = bool(simd<int32, 4>:results) {
     simd<bool, 4>:error_mask = results == error_sentinel;
     
     bool:has_errors = simd_any(error_mask);
-    pass(has_errors);
+    pass has_errors;
 };
 
 func:test_simd_complex_condition = bool(simd<int32, 4>:vec) {
@@ -90,11 +90,11 @@ func:test_simd_complex_condition = bool(simd<int32, 4>:vec) {
     bool:some_ge_10 = simd_any(ge_10);
     bool:some_le_20 = simd_any(le_20);
     
-    pass(some_ge_10);
+    pass some_ge_10;
 };
 
 func:main = int32() {
-    exit(0);
+    exit 0;
 };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };

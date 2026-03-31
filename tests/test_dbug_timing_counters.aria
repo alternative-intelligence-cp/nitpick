@@ -13,9 +13,9 @@ use stdlib.dbug;
 // =============================================================================
 
 func:test_basic_timing = NIL() {
-    drop(println("\n=== TEST 1: Basic Timing ==="));
+    drop println("\n=== TEST 1: Basic Timing ===");
     
-    raw(dbug_enable("perf"));
+    raw dbug_enable("perf");
     
     // Time a simple loop
     int64:start = dbug_time_start("perf", "Simple loop");
@@ -29,11 +29,11 @@ func:test_basic_timing = NIL() {
     
     dbug_time_end("perf", "Simple loop", start);
     
-    drop(print("Result: "));
+    drop print("Result: ");
     printInt32(sum);
-    drop(println(""));
+    drop println("");
     
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -41,9 +41,9 @@ func:test_basic_timing = NIL() {
 // =============================================================================
 
 func:test_multiple_timings = NIL() {
-    drop(println("\n=== TEST 2: Multiple Timing Sections ==="));
+    drop println("\n=== TEST 2: Multiple Timing Sections ===");
     
-    raw(dbug_enable("perf"));
+    raw dbug_enable("perf");
     
     // Time initialization
     int64:t1 = dbug_time_start("perf", "Initialization");
@@ -65,7 +65,7 @@ func:test_multiple_timings = NIL() {
     buffer_size = 0;
     dbug_time_end("perf", "Cleanup", t3);
     
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -73,19 +73,19 @@ func:test_multiple_timings = NIL() {
 // =============================================================================
 
 func:test_timing_disabled = NIL() {
-    drop(println("\n=== TEST 3: Timing with Disabled Group ==="));
+    drop println("\n=== TEST 3: Timing with Disabled Group ===");
     
-    raw(dbug_disable("perf"));
+    raw dbug_disable("perf");
     
-    drop(println("Timing disabled group (should show no output)"));
+    drop println("Timing disabled group (should show no output)");
     
     int64:start = dbug_time_start("perf", "This won't print");
     int32:x = 42 + 13;
     dbug_time_end("perf", "This won't print", start);
     
-    drop(println("(Nothing should have printed above)"));
+    drop println("(Nothing should have printed above)");
     
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -93,11 +93,11 @@ func:test_timing_disabled = NIL() {
 // =============================================================================
 
 func:test_basic_counter = NIL() {
-    drop(println("\n=== TEST 4: Basic Counter ==="));
+    drop println("\n=== TEST 4: Basic Counter ===");
     
-    raw(dbug_enable("stats"));
+    raw dbug_enable("stats");
     
-    drop(println("Processing items with counter..."));
+    drop println("Processing items with counter...");
     
     int32:i = 0;
     while (i < 5) {
@@ -107,7 +107,7 @@ func:test_basic_counter = NIL() {
     
     dbug_count_show("stats", "items_processed");
     
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -115,9 +115,9 @@ func:test_basic_counter = NIL() {
 // =============================================================================
 
 func:test_multiple_counters = NIL() {
-    drop(println("\n=== TEST 5: Multiple Counters ==="));
+    drop println("\n=== TEST 5: Multiple Counters ===");
     
-    raw(dbug_enable("stats"));
+    raw dbug_enable("stats");
     
     // Simulate processing with success/error tracking
     int32:i = 0;
@@ -131,15 +131,15 @@ func:test_multiple_counters = NIL() {
         i = i + 1;
     }
     
-    drop(println("\nIndividual counters:"));
+    drop println("\nIndividual counters:");
     dbug_count_show("stats", "successes");
     dbug_count_show("stats", "errors");
     dbug_count_show("stats", "total_processed");
     
-    drop(println("\nAll counters at once:"));
+    drop println("\nAll counters at once:");
     dbug_count_show_all();
     
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -147,9 +147,9 @@ func:test_multiple_counters = NIL() {
 // =============================================================================
 
 func:test_counter_reset = NIL() {
-    drop(println("\n=== TEST 6: Counter Reset ==="));
+    drop println("\n=== TEST 6: Counter Reset ===");
     
-    raw(dbug_enable("stats"));
+    raw dbug_enable("stats");
     
     // Count some items
     int32:i = 0;
@@ -158,12 +158,12 @@ func:test_counter_reset = NIL() {
         i = i + 1;
     }
     
-    drop(println("Before reset:"));
+    drop println("Before reset:");
     dbug_count_show("stats", "resets_test");
     
     dbug_count_reset("stats", "resets_test");
     
-    drop(println("After reset:"));
+    drop println("After reset:");
     dbug_count_show("stats", "resets_test");
     
     // Count some more
@@ -173,10 +173,10 @@ func:test_counter_reset = NIL() {
         i = i + 1;
     }
     
-    drop(println("After adding 3 more:"));
+    drop println("After adding 3 more:");
     dbug_count_show("stats", "resets_test");
     
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -184,11 +184,11 @@ func:test_counter_reset = NIL() {
 // =============================================================================
 
 func:test_counter_disabled = NIL() {
-    drop(println("\n=== TEST 7: Counters with Disabled Group ==="));
+    drop println("\n=== TEST 7: Counters with Disabled Group ===");
     
-    raw(dbug_disable("stats"));
+    raw dbug_disable("stats");
     
-    drop(println("Counting with disabled group (should not show)"));
+    drop println("Counting with disabled group (should not show)");
     
     int32:i = 0;
     while (i < 10) {
@@ -198,9 +198,9 @@ func:test_counter_disabled = NIL() {
     
     dbug_count_show("stats", "invisible_counter");
     
-    drop(println("(Counter was incremented but show was suppressed)"));
+    drop println("(Counter was incremented but show was suppressed)");
     
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -215,14 +215,14 @@ func:process_file = bool(string:filename) {
         hash = hash + i;
         i = i + 1;
     }
-    pass(hash % 3 != 0);
+    pass hash % 3 != 0;
 };
 
 func:test_real_world_example = NIL() {
-    drop(println("\n=== TEST 8: Real-World File Processing Example ==="));
+    drop println("\n=== TEST 8: Real-World File Processing Example ===");
     
-    raw(dbug_enable("files"));
-    raw(dbug_enable("stats"));
+    raw dbug_enable("files");
+    raw dbug_enable("stats");
     
     int64:total_time = dbug_time_start("files", "Batch processing");
     
@@ -230,7 +230,7 @@ func:test_real_world_example = NIL() {
     while (file_num < 10) {
         int64:t = dbug_time_start("files", "Process single file");
         
-        bool:success = raw(process_file("file.txt"));
+        bool:success = raw process_file("file.txt");
         
         dbug_time_end("files", "Process single file", t);
         
@@ -246,10 +246,10 @@ func:test_real_world_example = NIL() {
     
     dbug_time_end("files", "Batch processing", total_time);
     
-    drop(println("\n=== Final Statistics ==="));
+    drop println("\n=== Final Statistics ===");
     dbug_count_show_all();
     
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -257,10 +257,10 @@ func:test_real_world_example = NIL() {
 // =============================================================================
 
 func:test_combined = NIL() {
-    drop(println("\n=== TEST 9: Combined Timing and Counters ==="));
+    drop println("\n=== TEST 9: Combined Timing and Counters ===");
     
-    raw(dbug_enable("perf"));
-    raw(dbug_enable("stats"));
+    raw dbug_enable("perf");
+    raw dbug_enable("stats");
     
     int64:start = dbug_time_start("perf", "Combined test");
     
@@ -282,12 +282,12 @@ func:test_combined = NIL() {
     
     dbug_time_end("perf", "Combined test", start);
     
-    drop(println("\nStatistics:"));
+    drop println("\nStatistics:");
     dbug_count_show("stats", "checkpoints");
     dbug_count_show("stats", "even_numbers");
     dbug_count_show("stats", "odd_numbers");
     
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -295,30 +295,30 @@ func:test_combined = NIL() {
 // =============================================================================
 
 func:main = int32() {
-    drop(println("========================================"));
-    drop(println("DBUG Timing and Counter Test Suite"));
-    drop(println("========================================"));
+    drop println("========================================");
+    drop println("DBUG Timing and Counter Test Suite");
+    drop println("========================================");
     
-    raw(test_basic_timing());
-    raw(test_multiple_timings());
-    raw(test_timing_disabled());
+    raw test_basic_timing();
+    raw test_multiple_timings();
+    raw test_timing_disabled();
     
-    raw(test_basic_counter());
-    raw(test_multiple_counters());
-    raw(test_counter_reset());
-    raw(test_counter_disabled());
+    raw test_basic_counter();
+    raw test_multiple_counters();
+    raw test_counter_reset();
+    raw test_counter_disabled();
     
-    raw(test_real_world_example());
-    raw(test_combined());
+    raw test_real_world_example();
+    raw test_combined();
     
-    drop(println("\n========================================"));
-    drop(println("All Tests Complete!"));
-    drop(println("========================================"));
+    drop println("\n========================================");
+    drop println("All Tests Complete!");
+    drop println("========================================");
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

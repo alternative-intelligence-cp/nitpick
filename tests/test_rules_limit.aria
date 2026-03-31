@@ -34,8 +34,8 @@ Rules:r_cascading = {
 };
 
 func:failsafe = int32(tbb32:err) {
-    drop(puts("FAILSAFE: limit violation detected!"));
-    exit(1);
+    drop puts("FAILSAFE: limit violation detected!");
+    exit 1;
 };
 
 func:main = int32() {
@@ -47,10 +47,10 @@ func:main = int32() {
     // ----------------------------------------------------------
     limit<r_lt_100> int32:a = 50;
     if (a == 50) {
-        drop(puts("PASS: Test 1 — basic limit valid value"));
+        drop puts("PASS: Test 1 — basic limit valid value");
         passed += 1i32;
     } else {
-        drop(puts("FAIL: Test 1 — basic limit valid value"));
+        drop puts("FAIL: Test 1 — basic limit valid value");
         failed += 1i32;
     }
 
@@ -59,10 +59,10 @@ func:main = int32() {
     // ----------------------------------------------------------
     limit<r_even> int32:b = 42;
     if (b == 42) {
-        drop(puts("PASS: Test 2 — even rule valid"));
+        drop puts("PASS: Test 2 — even rule valid");
         passed += 1i32;
     } else {
-        drop(puts("FAIL: Test 2 — even rule valid"));
+        drop puts("FAIL: Test 2 — even rule valid");
         failed += 1i32;
     }
 
@@ -71,10 +71,10 @@ func:main = int32() {
     // ----------------------------------------------------------
     limit<r_positive> int32:c = 10;
     if (c == 10) {
-        drop(puts("PASS: Test 3 — positive rule valid"));
+        drop puts("PASS: Test 3 — positive rule valid");
         passed += 1i32;
     } else {
-        drop(puts("FAIL: Test 3 — positive rule valid"));
+        drop puts("FAIL: Test 3 — positive rule valid");
         failed += 1i32;
     }
 
@@ -83,10 +83,10 @@ func:main = int32() {
     // ----------------------------------------------------------
     limit<r_special> int32:d = 4;
     if (d == 4) {
-        drop(puts("PASS: Test 4 — multi-condition valid"));
+        drop puts("PASS: Test 4 — multi-condition valid");
         passed += 1i32;
     } else {
-        drop(puts("FAIL: Test 4 — multi-condition valid"));
+        drop puts("FAIL: Test 4 — multi-condition valid");
         failed += 1i32;
     }
 
@@ -95,10 +95,10 @@ func:main = int32() {
     // ----------------------------------------------------------
     limit<r_cascading> int32:e = 42;
     if (e == 42) {
-        drop(puts("PASS: Test 5 — cascading rules valid"));
+        drop puts("PASS: Test 5 — cascading rules valid");
         passed += 1i32;
     } else {
-        drop(puts("FAIL: Test 5 — cascading rules valid"));
+        drop puts("FAIL: Test 5 — cascading rules valid");
         failed += 1i32;
     }
 
@@ -107,10 +107,10 @@ func:main = int32() {
     // ----------------------------------------------------------
     a = 99;
     if (a == 99) {
-        drop(puts("PASS: Test 6 — reassignment valid"));
+        drop puts("PASS: Test 6 — reassignment valid");
         passed += 1i32;
     } else {
-        drop(puts("FAIL: Test 6 — reassignment valid"));
+        drop puts("FAIL: Test 6 — reassignment valid");
         failed += 1i32;
     }
 
@@ -119,10 +119,10 @@ func:main = int32() {
     // ----------------------------------------------------------
     limit<r_even> int32:f = 0;
     if (f == 0) {
-        drop(puts("PASS: Test 7 — even zero valid"));
+        drop puts("PASS: Test 7 — even zero valid");
         passed += 1i32;
     } else {
-        drop(puts("FAIL: Test 7 — even zero valid"));
+        drop puts("FAIL: Test 7 — even zero valid");
         failed += 1i32;
     }
 
@@ -132,24 +132,24 @@ func:main = int32() {
     // ----------------------------------------------------------
     limit<r_special> int32:g = -2;
     if (g == -2) {
-        drop(puts("PASS: Test 8 — special negative valid"));
+        drop puts("PASS: Test 8 — special negative valid");
         passed += 1i32;
     } else {
-        drop(puts("FAIL: Test 8 — special negative valid"));
+        drop puts("FAIL: Test 8 — special negative valid");
         failed += 1i32;
     }
 
     // ----------------------------------------------------------
     // Summary
     // ----------------------------------------------------------
-    drop(puts(""));
-    drop(puts("=== Rules/Limit Test Results ==="));
+    drop puts("");
+    drop puts("=== Rules/Limit Test Results ===");
 
     if (failed == 0i32) {
-        drop(puts("All tests PASSED!"));
+        drop puts("All tests PASSED!");
     } else {
-        drop(puts("Some tests FAILED."));
+        drop puts("Some tests FAILED.");
     }
 
-    exit(0);
+    exit 0;
 };

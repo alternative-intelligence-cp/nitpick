@@ -11,8 +11,8 @@ Rules<Person>:r_adult = {
 };
 
 func:failsafe = int32(tbb32:err) {
-    drop(puts("FAILSAFE: age < 18 — limit violation caught!"));
-    exit(1);
+    drop puts("FAILSAFE: age < 18 — limit violation caught!");
+    exit 1;
 };
 
 func:main = int32() {
@@ -20,6 +20,6 @@ func:main = int32() {
     stack Person:kid = Person{age: 10, score: 90};
     limit<r_adult> Person:k = kid;
     // Should not reach here
-    drop(puts("FAIL: should have triggered failsafe"));
-    pass(1);
+    drop puts("FAIL: should have triggered failsafe");
+    pass 1;
 };

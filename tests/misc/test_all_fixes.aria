@@ -5,7 +5,7 @@
 
 use stdlib.wave;
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     println("=== Bug Fix Verification Suite ===");
@@ -23,7 +23,7 @@ func:main = int32() {
     // Fix 2: Module imports (stdlib.wave loaded without errors)
     println("");
     println("2. Testing module import system:");
-    Wave9:w_zero = raw(wave_zero());
+    Wave9:w_zero = raw wave_zero();
     println("   ✓ Imported and called wave_zero() from stdlib.wave");
     
     // Fix 3: Wave9 core functionality
@@ -33,32 +33,32 @@ func:main = int32() {
     Wave9:w1 = Wave9 { r: 1, s: 0, t: -1, u: 2, v: -2, w: 0, x: 3, y: -3, z: 1 };
     Wave9:w2 = Wave9 { r: -1, s: 1, t: 0, u: -1, v: 1, w: 0, x: -2, y: 2, z: 0 };
     
-    Wave9:interference = raw(wave_interfere(w1, w2));
+    Wave9:interference = raw wave_interfere(w1, w2);
     println("   ✓ Wave interference (superposition)");
     
-    Wave9:negated = raw(wave_negate(w1));
+    Wave9:negated = raw wave_negate(w1);
     println("   ✓ Wave negation (phase inversion)");
     
     nit:scale_factor = 2;
-    Wave9:scaled = raw(wave_scale(w1, scale_factor));
+    Wave9:scaled = raw wave_scale(w1, scale_factor);
     println("   ✓ Wave scaling");
     
-    int32:mag = raw(wave_magnitude_squared(w1));
+    int32:mag = raw wave_magnitude_squared(w1);
     println("   ✓ Magnitude calculation");
     
-    bool:eq = raw(wave_equals(w1, w1));
+    bool:eq = raw wave_equals(w1, w1);
     println("   ✓ Equality testing");
     
     nit:x = 3;
     nit:y = -2;
     nit:z = 1;
-    Wave9:spatial = raw(wave_from_spatial(x, y, z));
+    Wave9:spatial = raw wave_from_spatial(x, y, z);
     println("   ✓ Spatial wave creation");
     
     nit:u = 2;
     nit:v = -1;
     nit:w = 0;
-    Wave9:quantum = raw(wave_from_quantum(u, v, w));
+    Wave9:quantum = raw wave_from_quantum(u, v, w);
     println("   ✓ Quantum wave creation");
     
     println("");
@@ -66,5 +66,5 @@ func:main = int32() {
     println("ALL TESTS PASSED ✓");
     println("Wave9 system fully operational!");
     
-    exit(0);
+    exit 0;
 };

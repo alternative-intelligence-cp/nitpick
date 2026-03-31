@@ -24,50 +24,50 @@ Type:Thread = {
     // func must be a function with signature: func:name = NIL(int64:arg) { ... };
     // Returns thread handle (>= 0) on success, -1 on failure.
     func:spawn = int64(?->:func, int64:arg) {
-        pass(aria_shim_thread_spawn(func, arg));
+        pass aria_shim_thread_spawn(func, arg);
     };
 
     // Wait for thread to complete. Returns 0 on success, -1 on error.
     func:join = int32(int64:handle) {
-        pass(aria_shim_thread_join(handle));
+        pass aria_shim_thread_join(handle);
     };
 
     // Detach thread (auto-cleanup on exit). Returns 0 on success, -1 on error.
     func:detach = int32(int64:handle) {
-        pass(aria_shim_thread_detach(handle));
+        pass aria_shim_thread_detach(handle);
     };
 
     // Yield CPU to other threads.
     func:yield = NIL() {
         aria_shim_thread_yield();
-        pass(NIL);
+        pass NIL;
     };
 
     // Sleep for nanoseconds.
     func:sleep_ns = NIL(int64:ns) {
         aria_shim_thread_sleep_ns(ns);
-        pass(NIL);
+        pass NIL;
     };
 
     // Sleep for milliseconds.
     func:sleep_ms = NIL(int64:ms) {
         aria_shim_thread_sleep_ms(ms);
-        pass(NIL);
+        pass NIL;
     };
 
     // Set current thread's name (for debuggers, max 15 chars).
     func:set_name = NIL(string:name) {
         aria_shim_thread_set_name(name);
-        pass(NIL);
+        pass NIL;
     };
 
     // Get number of hardware threads / CPU cores.
     func:hardware_concurrency = int32() {
-        pass(aria_shim_thread_hardware_concurrency());
+        pass aria_shim_thread_hardware_concurrency();
     };
 
     // Get current thread's ID.
     func:current_id = int64() {
-        pass(aria_shim_thread_current_id());
+        pass aria_shim_thread_current_id();
     };
 };

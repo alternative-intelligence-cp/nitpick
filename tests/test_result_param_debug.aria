@@ -2,22 +2,22 @@
 // Test Result parameter access with debug output
 
 func:get_value = int32() {
-    pass(42i32);
+    pass 42i32;
 };
 
 func:extract_value = int32(wild Result<int32>:res) {
     // wild marker allows unchecked access for debugging
-    pass(raw(res));
+    pass raw res;
 };
 
 func:main = int32() {
     // Call get_value - it returns Result<int32> implicitly
     Result<int32>:r = get_value();
     int32:val = extract_value(r) ? 0i32;  // Unwrap the result
-    pass(val);
+    pass val;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

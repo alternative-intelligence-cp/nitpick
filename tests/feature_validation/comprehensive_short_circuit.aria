@@ -8,24 +8,24 @@ func:main = int32() {
     // =================================================================
     // false && false = false
     if ((1 == 0) && (2 == 0)) {
-        pass(1);  // Should not execute
+        pass 1;  // Should not execute
     }
     
     // false && true = false
     if ((1 == 0) && (1 == 1)) {
-        pass(2);  // Should not execute
+        pass 2;  // Should not execute
     }
     
     // true && false = false
     if ((1 == 1) && (1 == 0)) {
-        pass(3);  // Should not execute
+        pass 3;  // Should not execute
     }
     
     // true && true = true
     if ((1 == 1) && (2 == 2)) {
         // Should execute - this is correct
     } else {
-        pass(4);  // ERROR: Should have been true
+        pass 4;  // ERROR: Should have been true
     }
     
     // =================================================================
@@ -33,28 +33,28 @@ func:main = int32() {
     // =================================================================
     // false || false = false
     if ((1 == 0) || (2 == 0)) {
-        pass(5);  // Should not execute
+        pass 5;  // Should not execute
     }
     
     // false || true = true
     if ((1 == 0) || (1 == 1)) {
         // Should execute - this is correct
     } else {
-        pass(6);  // ERROR: Should have been true
+        pass 6;  // ERROR: Should have been true
     }
     
     // true || false = true
     if ((1 == 1) || (1 == 0)) {
         // Should execute - this is correct
     } else {
-        pass(7);  // ERROR: Should have been true
+        pass 7;  // ERROR: Should have been true
     }
     
     // true || true = true
     if ((1 == 1) || (2 == 2)) {
         // Should execute - this is correct
     } else {
-        pass(8);  // ERROR: Should have been true
+        pass 8;  // ERROR: Should have been true
     }
     
     // =================================================================
@@ -63,19 +63,19 @@ func:main = int32() {
     if ((1 == 1) && (2 == 2) && (3 == 3)) {
         // All true - should execute
     } else {
-        pass(9);  // ERROR
+        pass 9;  // ERROR
     }
     
     if ((1 == 0) && (2 == 2) && (3 == 3)) {
-        pass(10);  // First false - should not execute
+        pass 10;  // First false - should not execute
     }
     
     if ((1 == 1) && (2 == 0) && (3 == 3)) {
-        pass(11);  // Middle false - should not execute
+        pass 11;  // Middle false - should not execute
     }
     
     if ((1 == 1) && (2 == 2) && (3 == 0)) {
-        pass(12);  // Last false - should not execute
+        pass 12;  // Last false - should not execute
     }
     
     // =================================================================
@@ -84,23 +84,23 @@ func:main = int32() {
     if ((1 == 0) || (2 == 0) || (3 == 3)) {
         // Third is true - should execute
     } else {
-        pass(13);  // ERROR
+        pass 13;  // ERROR
     }
     
     if ((1 == 1) || (2 == 0) || (3 == 0)) {
         // First is true - should execute
     } else {
-        pass(14);  // ERROR
+        pass 14;  // ERROR
     }
     
     if ((1 == 0) || (2 == 2) || (3 == 0)) {
         // Middle is true - should execute
     } else {
-        pass(15);  // ERROR
+        pass 15;  // ERROR
     }
     
     if ((1 == 0) || (2 == 0) || (3 == 0)) {
-        pass(16);  // All false - should not execute
+        pass 16;  // All false - should not execute
     }
     
     // =================================================================
@@ -110,28 +110,28 @@ func:main = int32() {
     if (((1 == 1) && (2 == 2)) || (3 == 0)) {
         // Should execute
     } else {
-        pass(17);  // ERROR
+        pass 17;  // ERROR
     }
     
     // (false && true) || true
     if (((1 == 0) && (2 == 2)) || (3 == 3)) {
         // Should execute (right side of || is true)
     } else {
-        pass(18);  // ERROR
+        pass 18;  // ERROR
     }
     
     // true && (false || true)
     if ((1 == 1) && ((2 == 0) || (3 == 3))) {
         // Should execute
     } else {
-        pass(19);  // ERROR
+        pass 19;  // ERROR
     }
     
     // false || (true && true)
     if ((1 == 0) || ((2 == 2) && (3 == 3))) {
         // Should execute (right side of || is true)
     } else {
-        pass(20);  // ERROR
+        pass 20;  // ERROR
     }
     
     // =================================================================
@@ -140,30 +140,30 @@ func:main = int32() {
     if ((10 > 0) && (20 < 30)) {
         // true && true = true - should execute
     } else {
-        pass(21);  // ERROR
+        pass 21;  // ERROR
     }
     
     if ((10 > 20) && (20 < 30)) {
-        pass(22);  // false && true = false - should not execute
+        pass 22;  // false && true = false - should not execute
     }
     
     if ((10 > 0) || (20 > 30)) {
         // true || false = true - should execute
     } else {
-        pass(23);  // ERROR
+        pass 23;  // ERROR
     }
     
     if ((10 > 20) || (20 > 30)) {
-        pass(24);  // false || false = false - should not execute
+        pass 24;  // false || false = false - should not execute
     }
     
     // =================================================================
     // Success!
     // =================================================================
-    exit(0);  // All tests passed
+    exit 0;  // All tests passed
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

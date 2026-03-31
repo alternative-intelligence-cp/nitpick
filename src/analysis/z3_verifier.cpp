@@ -1176,4 +1176,95 @@ VerifyResult Z3Verifier::verifyNoOverflow(
     return vr;
 }
 
+// ============================================================================
+// Phase 4: User Stack Type Homogeneity Verification (v0.4.3+)
+// ============================================================================
+//
+// Given a set of compile-time type tags from all apush() calls in a scope,
+// prove that they are ALL identical to the expected pop tag.
+//
+// Encoding:  NOT(forall i: tag_i == expected)  =  exists i: tag_i != expected
+// If UNSAT → no tag can differ → all match → PROVEN → eliminate runtime checks
+//
+VerifyResult Z3Verifier::verifyUStackHomogeneous(
+    const std::vector<int64_t>& pushTypeTags,
+    int64_t expectedPopTag,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    static const char* tag_names[] = {
+        "int8", "int16", "int32", "int64",
+        "flt32", "flt64", "bool", "string", "pointer"
+    };
+
+    if (pushTypeTags.empty()) {
+        VerifyOutcome out;
+        out.result = VerifyResult::UNKNOWN;
+        out.conditionText = "ustack type homogeneity";
+        out.detail = "no apush() calls found in scope — cannot verify";
+        out.line = line;
+        out.column = column;
+        summary.unknown++;
+        outcomes.push_back(out);
+        return VerifyResult::UNKNOWN;
+    }
+
+    Z3_solver solver = makeSolver();
+    Z3_sort bv64 = Z3_mk_bv_sort(ctx, 64);
+
+    // Create the expected tag as a Z3 bitvector constant
+    Z3_ast expected = Z3_mk_int64(ctx, expectedPopTag, bv64);
+
+    // Build disjunction: (tag_0 != expected) OR (tag_1 != expected) OR ...
+    // This is the negation of "all tags equal expected"
+    std::vector<Z3_ast> disjuncts;
+    for (int64_t tag : pushTypeTags) {
+        Z3_ast tagAst = Z3_mk_int64(ctx, tag, bv64);
+        Z3_ast neq = Z3_mk_not(ctx, Z3_mk_eq(ctx, tagAst, expected));
+        disjuncts.push_back(neq);
+    }
+
+    Z3_ast anyDiffers;
+    if (disjuncts.size() == 1) {
+        anyDiffers = disjuncts[0];
+    } else {
+        anyDiffers = Z3_mk_or(ctx, static_cast<unsigned>(disjuncts.size()),
+                               disjuncts.data());
+    }
+
+    Z3_solver_assert(ctx, solver, anyDiffers);
+    Z3_lbool result = checkSat(solver);
+    deleteSolver(solver);
+
+    VerifyOutcome out;
+    out.conditionText = "ustack type homogeneity";
+    out.line = line;
+    out.column = column;
+
+    const char* expectedName = (expectedPopTag >= 0 && expectedPopTag <= 8)
+        ? tag_names[expectedPopTag] : "unknown";
+
+    if (result == Z3_L_FALSE) {
+        // UNSAT → NOT(all equal) has no solution → all ARE equal → PROVEN
+        out.result = VerifyResult::PROVEN;
+        out.detail = std::string("all ") + std::to_string(pushTypeTags.size()) +
+                     " apush() calls proven type-homogeneous (" + expectedName +
+                     ") — runtime tag checks eliminated";
+        summary.proven++;
+    } else if (result == Z3_L_TRUE) {
+        // SAT → at least one tag differs → cannot optimize
+        out.result = VerifyResult::DISPROVEN;
+        out.detail = "mixed types found among apush() calls — runtime tag checks retained";
+        summary.disproven++;
+    } else {
+        out.result = VerifyResult::UNKNOWN;
+        out.detail = "solver timeout on ustack homogeneity — runtime tag checks retained";
+        summary.unknown++;
+    }
+
+    VerifyResult vr = out.result;
+    outcomes.push_back(out);
+    return vr;
+}
+
 } // namespace aria

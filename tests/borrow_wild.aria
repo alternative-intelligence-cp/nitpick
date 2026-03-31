@@ -9,7 +9,7 @@ func:test_wild_alloc_free = int32() {
     // wild int8*:ptr = malloc(100);
     // free(ptr);
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 func:test_use_after_free = int32() {
@@ -19,7 +19,7 @@ func:test_use_after_free = int32() {
     // @ptr = 42;  // ERROR: Use after free
     
     int32:one = 1;
-    pass(one);
+    pass one;
 };
 
 func:test_double_free = int32() {
@@ -29,7 +29,7 @@ func:test_double_free = int32() {
     // free(ptr);  // ERROR: Double free
     
     int32:one = 1;
-    pass(one);
+    pass one;
 };
 
 func:test_leak_detection = int32() {
@@ -37,7 +37,7 @@ func:test_leak_detection = int32() {
     // wild int8*:ptr = malloc(100);
     // Forgot to free!
     int32:one = 1;
-    pass(one);
+    pass one;
 };
 
 func:test_conditional_free = int32() {
@@ -50,7 +50,7 @@ func:test_conditional_free = int32() {
     // ERROR: ptr not freed in else branch (implicit else)
     
     int32:one = 1;
-    pass(one);
+    pass one;
 };
 
 func:test_conditional_free_both_branches = int32() {
@@ -64,13 +64,13 @@ func:test_conditional_free_both_branches = int32() {
     // }
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 func:main = int32() {
     // Run tests that should succeed
-    int32:result1 = raw(test_wild_alloc_free());
-    int32:result6 = raw(test_conditional_free_both_branches());
+    int32:result1 = raw test_wild_alloc_free();
+    int32:result6 = raw test_conditional_free_both_branches();
     
     // Tests 2, 3, 4, 5 should fail at compile time
     // Uncomment one at a time to test error reporting:
@@ -80,10 +80,10 @@ func:main = int32() {
     // int32:result5 = test_conditional_free();
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

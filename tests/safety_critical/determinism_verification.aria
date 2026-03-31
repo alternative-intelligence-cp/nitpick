@@ -24,7 +24,7 @@ func:compute_physics_step = flt64(flt64:x, flt64:v, flt64:dt) {
     flt64:x_new = x + dt * v_half;
     flt64:ax_new = zero - x_new;
     flt64:v_new = v_half + half_dt * ax_new;
-    pass(x_new);
+    pass x_new;
 };
 
 func:compute_chain = flt64(flt64:seed) {
@@ -37,7 +37,7 @@ func:compute_chain = flt64(flt64:seed) {
     flt64:e = d / 1.4142135623730951;
     flt64:f = e + seed;
     flt64:g = f * 0.6180339887498949;  // Golden ratio - 1
-    pass(g);
+    pass g;
 };
 
 func:main = int32() {
@@ -49,10 +49,10 @@ func:main = int32() {
     // ========================================================================
     flt64:x0 = 1.0;
     flt64:v0 = 0.0;
-    flt64:result_1a = raw(compute_physics_step(x0, v0, dt));
+    flt64:result_1a = raw compute_physics_step(x0, v0, dt);
 
     till(10, 1) {
-        flt64:result_1b = raw(compute_physics_step(x0, v0, dt));
+        flt64:result_1b = raw compute_physics_step(x0, v0, dt);
         if (result_1b != result_1a) {
             print("FAIL: Physics step non-deterministic on repetition\n");
             failures = failures + 1;
@@ -63,10 +63,10 @@ func:main = int32() {
     // TEST 2: Arithmetic chain determinism
     // ========================================================================
     flt64:seed = 42.0;
-    flt64:chain_ref = raw(compute_chain(seed));
+    flt64:chain_ref = raw compute_chain(seed);
 
     till(10, 1) {
-        flt64:chain_test = raw(compute_chain(seed));
+        flt64:chain_test = raw compute_chain(seed);
         if (chain_test != chain_ref) {
             print("FAIL: Arithmetic chain non-deterministic\n");
             failures = failures + 1;
@@ -98,8 +98,8 @@ func:main = int32() {
     // TEST 4: Nested computation determinism
     // ========================================================================
     flt64:inputs = 7.5;
-    flt64:nested1 = raw(compute_chain(raw(compute_chain(inputs))));
-    flt64:nested2 = raw(compute_chain(raw(compute_chain(inputs))));
+    flt64:nested1 = raw compute_chain(raw compute_chain(inputs));
+    flt64:nested2 = raw compute_chain(raw compute_chain(inputs));
     if (nested1 != nested2) {
         print("FAIL: Nested function calls non-deterministic\n");
         failures = failures + 1;
@@ -159,12 +159,12 @@ func:main = int32() {
     // ========================================================================
     if (failures == 0) {
         print("DETERMINISM VERIFICATION: ALL TESTS PASSED\n");
-        exit(0);
+        exit 0;
     }
-    pass(1);
+    pass 1;
 };
 
 func:failsafe = int32(tbb32:err) {
     print("FAILSAFE triggered in determinism tests\n");
-    exit(1);
+    exit 1;
 };

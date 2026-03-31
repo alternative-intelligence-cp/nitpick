@@ -42,7 +42,7 @@ use "wave.aria".*;
  * @return Interfered nyte (component-wise nit addition)
  */
 pub func:nyte_interfere = nyte(nyte:a, nyte:b) {
-    pass(a + b);
+    pass a + b;
 };
 
 /**
@@ -62,7 +62,7 @@ pub func:nyte_phase_shift = nyte(nyte:wave, nit:phase) {
     nit:d2 = aria_nyte_get_nit(wave, 2) + phase;
     nit:d3 = aria_nyte_get_nit(wave, 3) + phase;
     nit:d4 = aria_nyte_get_nit(wave, 4) + phase;
-    pass(aria_pack_nyte(d0, d1, d2, d3, d4));
+    pass aria_pack_nyte(d0, d1, d2, d3, d4);
 };
 
 // ---------------------------------------------------------------------------
@@ -90,11 +90,11 @@ pub func:wave_kleene_and = Wave9(Wave9:a, Wave9:b) {
     nit:kx = nit_and(a.x, b.x);
     nit:ky = nit_and(a.y, b.y);
     nit:kz = nit_and(a.z, b.z);
-    pass(Wave9 {
+    pass Wave9 {
         r: kr, s: ks, t: kt,
         u: ku, v: kv, w: kw,
         x: kx, y: ky, z: kz
-    });
+    };
 };
 
 /**
@@ -117,11 +117,11 @@ pub func:wave_kleene_or = Wave9(Wave9:a, Wave9:b) {
     nit:kx = nit_or(a.x, b.x);
     nit:ky = nit_or(a.y, b.y);
     nit:kz = nit_or(a.z, b.z);
-    pass(Wave9 {
+    pass Wave9 {
         r: kr, s: ks, t: kt,
         u: ku, v: kv, w: kw,
         x: kx, y: ky, z: kz
-    });
+    };
 };
 
 // ---------------------------------------------------------------------------
@@ -140,8 +140,7 @@ pub func:wave_kleene_or = Wave9(Wave9:a, Wave9:b) {
  * @return true if any dimension is ERR, false if all are valid
  */
 pub func:wave_err_guard = bool(Wave9:w) {
-    pass(
-        nit_is_err(w.r) ||
+    pass nit_is_err(w.r) ||
         nit_is_err(w.s) ||
         nit_is_err(w.t) ||
         nit_is_err(w.u) ||
@@ -149,8 +148,7 @@ pub func:wave_err_guard = bool(Wave9:w) {
         nit_is_err(w.w) ||
         nit_is_err(w.x) ||
         nit_is_err(w.y) ||
-        nit_is_err(w.z)
-    );
+        nit_is_err(w.z);
 };
 
 /**
@@ -169,11 +167,9 @@ pub func:nyte_is_err = bool(nyte:n) {
     nit:n2 = aria_nyte_get_nit(n, 2);
     nit:n3 = aria_nyte_get_nit(n, 3);
     nit:n4 = aria_nyte_get_nit(n, 4);
-    pass(
-        nit_is_err(n0) ||
+    pass nit_is_err(n0) ||
         nit_is_err(n1) ||
         nit_is_err(n2) ||
         nit_is_err(n3) ||
-        nit_is_err(n4)
-    );
+        nit_is_err(n4);
 };

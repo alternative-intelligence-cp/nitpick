@@ -2,9 +2,9 @@
 // Demonstrates: atomic.load(order) → AtomicInt32_load(atomic, order)
 
 // Runtime extern functions (implemented in runtime/atomic.cpp)
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 extern func:aria_atomic_int32_create = wild int8*(int32:initial_value);
 extern func:aria_atomic_int32_destroy = NIL(wild int8*:atomic_ptr);
@@ -22,47 +22,47 @@ extern func:int64_to_ptr = wild int8*(int64:val);
 Type:AtomicInt32 = {
     // Constructor: Create atomic with initial value
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
     func:create = AtomicInt32(int32:initial) {
         wild int8->:raw_ptr = aria_atomic_int32_create(initial);
         AtomicInt32:atomic = AtomicInt32{ptr_val: ptr_to_int64(raw_ptr)};
-        pass(atomic);
+        pass atomic;
     };
     
     // Destructor: Free atomic resources
     func:destroy = NIL(AtomicInt32:self) {
         _ = aria_atomic_int32_destroy(int64_to_ptr(self.ptr_val));
-        pass(NIL);
+        pass NIL;
     };
     
     // Instance methods (UFCS: atomic.load(order) → AtomicInt32_load(atomic, order))
     func:load = int32(AtomicInt32:self, int32:order) {
-        pass(aria_atomic_int32_load(int64_to_ptr(self.ptr_val), order));
+        pass aria_atomic_int32_load(int64_to_ptr(self.ptr_val), order);
     };
     
     func:store = NIL(AtomicInt32:self, int32:value, int32:order) {
         _ = aria_atomic_int32_store(int64_to_ptr(self.ptr_val), value, order);
-        pass(NIL);
+        pass NIL;
     };
     
     func:add = int32(AtomicInt32:self, int32:value, int32:order) {
-        pass(aria_atomic_int32_fetch_add(int64_to_ptr(self.ptr_val), value, order));
+        pass aria_atomic_int32_fetch_add(int64_to_ptr(self.ptr_val), value, order);
     };
     
     func:sub = int32(AtomicInt32:self, int32:value, int32:order) {
-        pass(aria_atomic_int32_fetch_sub(int64_to_ptr(self.ptr_val), value, order));
+        pass aria_atomic_int32_fetch_sub(int64_to_ptr(self.ptr_val), value, order);
     };
     
     func:compareExchange = bool(AtomicInt32:self, int32->:expected, int32:desired, int32:order) {
-        pass(aria_atomic_int32_compare_exchange_strong(int64_to_ptr(self.ptr_val), expected, desired, order));
+        pass aria_atomic_int32_compare_exchange_strong(int64_to_ptr(self.ptr_val), expected, desired, order);
     };
     
     // Static methods for memory ordering constants (C11 memory_order)
-    func:RELAXED = int32() { pass(0i32); };
-    func:ACQUIRE = int32() { pass(2i32); };
-    func:RELEASE = int32() { pass(3i32); };
-    func:ACQ_REL = int32() { pass(4i32); };
-    func:SEQ_CST = int32() { pass(5i32); };
+    func:RELAXED = int32() { pass 0i32; };
+    func:ACQUIRE = int32() { pass 2i32; };
+    func:RELEASE = int32() { pass 3i32; };
+    func:ACQ_REL = int32() { pass 4i32; };
+    func:SEQ_CST = int32() { pass 5i32; };
     
     // Public interface - store pointer as int64 (workaround for pointer field limitation)
     struct:interface = {
@@ -72,27 +72,27 @@ func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     // Create atomic counter with initial value 0
-    AtomicInt32:counter = raw(instance<AtomicInt32>(0i32));
+    AtomicInt32:counter = raw instance<AtomicInt32>(0i32);
     
     // UFCS: counter.store(42, order) → AtomicInt32_store(counter, 42, order)
     _ = counter.store(42i32, 5i32);  // SEQ_CST = 5
     
     // UFCS: counter.load(order) → AtomicInt32_load(counter, order)
-    int32:value = raw(counter.load(5i32));
+    int32:value = raw counter.load(5i32);
     
     // Test atomic add
-    int32:old = raw(counter.add(10i32, 5i32));  // old=42, now=52
+    int32:old = raw counter.add(10i32, 5i32);  // old=42, now=52
     
     // Load again
-    int32:new_value = raw(counter.load(5i32));
+    int32:new_value = raw counter.load(5i32);
     
     // Clean up
     _ = counter.destroy();
     
     // Verify: value should be 42, old should be 42, new_value should be 52
     if (value == 42i32 && old == 42i32 && new_value == 52i32) {
-        exit(0);  // SUCCESS
+        exit 0;  // SUCCESS
     } else {
-        pass(1i32);  // FAIL
+        pass 1i32;  // FAIL
     }
 };

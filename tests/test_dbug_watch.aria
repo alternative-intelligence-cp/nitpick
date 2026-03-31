@@ -37,7 +37,7 @@ func:test_basic_watch = NIL() {
     dbug_watch_remove(counter_ptr);
     
     dbug_separator("watch");
-    pass();
+    pass;
 };
 
 /**
@@ -73,7 +73,7 @@ func:test_multiple_watches = NIL() {
     dbug_watch_clear_all();
     
     dbug_separator("watch");
-    pass();
+    pass;
 };
 
 /**
@@ -94,7 +94,7 @@ func:test_conditional_watch = NIL() {
     dbug_enable("important");
     dbug_disable("verbose");
     
-    drop(println("\n--- Only 'important' group enabled ---"));
+    drop println("\n--- Only 'important' group enabled ---");
     
     important = 42i64;
     verbose = 99i64;
@@ -102,7 +102,7 @@ func:test_conditional_watch = NIL() {
     // Should only see alert for 'important'
     dbug_watch_check_all();
     
-    drop(println("\n--- Now enable 'verbose' too ---"));
+    drop println("\n--- Now enable 'verbose' too ---");
     dbug_enable("verbose");
     
     important = 123i64;
@@ -113,7 +113,7 @@ func:test_conditional_watch = NIL() {
     
     dbug_watch_clear_all();
     dbug_separator("watch");
-    pass();
+    pass;
 };
 
 /**
@@ -137,26 +137,26 @@ func:test_state_machine_watch = NIL() {
     dbug_watch_int64("state", "retry_count", @retry_count);
     
     // Simulate state transitions
-    drop(println("\n1. Starting connection..."));
+    drop println("\n1. Starting connection...");
     current_state = STATE_CONNECTING;
     dbug_watch_check_all();
     
-    drop(println("\n2. Connection failed, retrying..."));
+    drop println("\n2. Connection failed, retrying...");
     current_state = STATE_ERROR;
     retry_count = retry_count + 1i64;
     dbug_watch_check_all();
     
-    drop(println("\n3. Retry attempt..."));
+    drop println("\n3. Retry attempt...");
     current_state = STATE_CONNECTING;
     dbug_watch_check_all();
     
-    drop(println("\n4. Successfully connected!"));
+    drop println("\n4. Successfully connected!");
     current_state = STATE_CONNECTED;
     dbug_watch_check_all();
     
     dbug_watch_clear_all();
     dbug_separator("state");
-    pass();
+    pass;
 };
 
 /**
@@ -169,77 +169,77 @@ func:test_strategic_checkpoints = NIL() {
     int64:balance = 1000i64;
     dbug_watch_int64("checkpoint", "account_balance", @balance);
     
-    drop(println("\nInitial balance: 1000"));
+    drop println("\nInitial balance: 1000");
     
     // Checkpoint 1: After deposit
-    drop(println("\nDeposit: +500"));
+    drop println("\nDeposit: +500");
     balance = balance + 500i64;
     dbug_watch_check_all();  // Shows balance changed
     
     // Checkpoint 2: After withdrawal
-    drop(println("\nWithdrawal: -200"));
+    drop println("\nWithdrawal: -200");
     balance = balance - 200i64;
     dbug_watch_check_all();  // Shows balance changed
     
     // Checkpoint 3: After interest
-    drop(println("\nInterest: +13"));
+    drop println("\nInterest: +13");
     balance = balance + 13i64;
     dbug_watch_check_all();  // Shows balance changed
     
-    drop(println("\nFinal balance check:"));
+    drop println("\nFinal balance check:");
     dbug_watch_check_all();  // No change (same as last check)
     
     dbug_watch_clear_all();
     dbug_separator("checkpoint");
-    pass();
+    pass;
 };
 
 /**
  * Main test harness.
  */
 func:main = int32() {
-    drop(println("=== DBUG Watchpoint System Test ===\n"));
+    drop println("=== DBUG Watchpoint System Test ===\n");
     
     // Enable watch and related groups
     dbug_enable("watch");
     dbug_enable("state");
     dbug_enable("checkpoint");
     
-    drop(println("=== Test 1: Basic Variable Watching ==="));
+    drop println("=== Test 1: Basic Variable Watching ===");
     test_basic_watch();
     
-    drop(println("\n=== Test 2: Multiple Variables ==="));
+    drop println("\n=== Test 2: Multiple Variables ===");
     test_multiple_watches();
     
-    drop(println("\n=== Test 3: Group-Based Filtering ==="));
+    drop println("\n=== Test 3: Group-Based Filtering ===");
     test_conditional_watch();
     
-    drop(println("\n=== Test 4: State Machine Tracking ==="));
+    drop println("\n=== Test 4: State Machine Tracking ===");
     test_state_machine_watch();
     
-    drop(println("\n=== Test 5: Strategic Checkpoints ==="));
+    drop println("\n=== Test 5: Strategic Checkpoints ===");
     test_strategic_checkpoints();
     
     // Summary
-    drop(println("\n=== ALL WATCHPOINT TESTS COMPLETE ===\n"));
-    drop(println("Key Takeaways:"));
-    drop(println("  ✓ Watchpoints track variable changes via pointers"));
-    drop(println("  ✓ dbug_watch_check_all() must be called manually"));
-    drop(println("  ✓ Place checks at loop ends, after operations, etc."));
-    drop(println("  ✓ Group filtering controls which changes are visible"));
-    drop(println("  ✓ Perfect for tracking counters, state, balances"));
-    drop(println(""));
-    drop(println("Limitation:"));
-    drop(println("  ⚠ NOT automatic - you control when checks happen"));
-    drop(println("  ⚠ Cannot detect changes between check calls"));
-    drop(println("  ⚠ Currently only supports int64 variables"));
-    drop(println(""));
-    drop(println("Future: Add dbug_watch_int32, dbug_watch_float64, etc."));
+    drop println("\n=== ALL WATCHPOINT TESTS COMPLETE ===\n");
+    drop println("Key Takeaways:");
+    drop println("  ✓ Watchpoints track variable changes via pointers");
+    drop println("  ✓ dbug_watch_check_all() must be called manually");
+    drop println("  ✓ Place checks at loop ends, after operations, etc.");
+    drop println("  ✓ Group filtering controls which changes are visible");
+    drop println("  ✓ Perfect for tracking counters, state, balances");
+    drop println("");
+    drop println("Limitation:");
+    drop println("  ⚠ NOT automatic - you control when checks happen");
+    drop println("  ⚠ Cannot detect changes between check calls");
+    drop println("  ⚠ Currently only supports int64 variables");
+    drop println("");
+    drop println("Future: Add dbug_watch_int32, dbug_watch_float64, etc.");
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

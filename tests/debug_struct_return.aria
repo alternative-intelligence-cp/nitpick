@@ -5,19 +5,19 @@ struct:TestResult = {
 };
 
 func:test1 = TestResult() {
-   pass(TestResult { id: "TEST-01", passed: true });
+   pass TestResult { id: "TEST-01", passed: true };
 };
 
 func:test2 = TestResult() {
-   pass(TestResult { id: "TEST-02", passed: false });
+   pass TestResult { id: "TEST-02", passed: false };
 };
 
 func:main = int32() {
-    TestResult:r1 = raw(test1());
-    TestResult:r2 = raw(test2());
-    exit(0);
+    TestResult:r1 = raw test1();
+    TestResult:r2 = raw test2();
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
-    exit(1);
+    exit 1;
 };

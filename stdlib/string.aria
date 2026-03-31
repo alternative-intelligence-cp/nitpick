@@ -72,11 +72,11 @@ func:str_match_at = bool(string:haystack, int64:pos, string:needle, int64:h_len,
         int64:hb = sh_byte_at(haystack, pos + i);
         int64:nb = sh_byte_at(needle, i);
         if (hb != nb) {
-            pass(false);
+            pass false;
         }
         i = i + 1i64;
     }
-    pass(true);
+    pass true;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -85,14 +85,14 @@ func:str_match_at = bool(string:haystack, int64:pos, string:needle, int64:h_len,
 func:str_count = int64(string:haystack, string:needle) {
     int64:h_len = sh_strlen(haystack);
     int64:n_len = sh_strlen(needle);
-    if (n_len == 0i64) { pass(0i64); }
-    if (n_len > h_len) { pass(0i64); }
+    if (n_len == 0i64) { pass 0i64; }
+    if (n_len > h_len) { pass 0i64; }
 
     int64:count = 0i64;
     int64:i = 0i64;
     int64:limit = h_len - n_len;
     while (i <= limit) {
-        bool:m = raw(str_match_at(haystack, i, needle, h_len, n_len));
+        bool:m = raw str_match_at(haystack, i, needle, h_len, n_len);
         if (m == true) {
             count = count + 1i64;
             i = i + n_len;
@@ -100,7 +100,7 @@ func:str_count = int64(string:haystack, string:needle) {
             i = i + 1i64;
         }
     }
-    pass(count);
+    pass count;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -114,14 +114,14 @@ func:str_replace = string(string:src, string:old_s, string:new_s) {
     if (old_len == 0i64) {
         // Empty pattern: return copy of source
         string:copy = sh_make_str_direct(src, 0i64, src_len);
-        pass(copy);
+        pass copy;
     }
 
     // Count occurrences to know result size
-    int64:count = raw(str_count(src, old_s));
+    int64:count = raw str_count(src, old_s);
     if (count == 0i64) {
         string:copy = sh_make_str_direct(src, 0i64, src_len);
-        pass(copy);
+        pass copy;
     }
 
     // Allocate result buffer
@@ -134,7 +134,7 @@ func:str_replace = string(string:src, string:old_s, string:new_s) {
     int64:limit = src_len - old_len;
     while (i < src_len) {
         if (i <= limit) {
-            bool:m = raw(str_match_at(src, i, old_s, src_len, old_len));
+            bool:m = raw str_match_at(src, i, old_s, src_len, old_len);
             if (m == true) {
                 // Copy replacement
                 if (new_len > 0i64) {
@@ -162,7 +162,7 @@ func:str_replace = string(string:src, string:old_s, string:new_s) {
     string:result = sh_make_str(buf, 0i64, result_len);
     sh_free_buf(buf);
     free(buf);
-    pass(result);
+    pass result;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -175,7 +175,7 @@ func:str_replace_first = string(string:src, string:old_s, string:new_s) {
 
     if (old_len == 0i64) {
         string:copy = sh_make_str_direct(src, 0i64, src_len);
-        pass(copy);
+        pass copy;
     }
 
     // Find first occurrence
@@ -183,7 +183,7 @@ func:str_replace_first = string(string:src, string:old_s, string:new_s) {
     int64:limit = src_len - old_len;
     int64:i = 0i64;
     while (i <= limit) {
-        bool:m = raw(str_match_at(src, i, old_s, src_len, old_len));
+        bool:m = raw str_match_at(src, i, old_s, src_len, old_len);
         if (m == true) {
             found = i;
             i = limit + 1i64;  // break
@@ -194,7 +194,7 @@ func:str_replace_first = string(string:src, string:old_s, string:new_s) {
 
     if (found == -1i64) {
         string:copy = sh_make_str_direct(src, 0i64, src_len);
-        pass(copy);
+        pass copy;
     }
 
     // Build result: prefix + new_s + suffix
@@ -221,7 +221,7 @@ func:str_replace_first = string(string:src, string:old_s, string:new_s) {
     string:result = sh_make_str(buf, 0i64, result_len);
     sh_free_buf(buf);
     free(buf);
-    pass(result);
+    pass result;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -229,9 +229,9 @@ func:str_replace_first = string(string:src, string:old_s, string:new_s) {
 // ═══════════════════════════════════════════════════════════════════════
 func:str_byte_at = int64(string:s, int64:idx) {
     int64:len = sh_strlen(s);
-    if (idx < 0i64) { pass(-1i64); }
-    if (idx >= len) { pass(-1i64); }
-    pass(sh_byte_at(s, idx));
+    if (idx < 0i64) { pass -1i64; }
+    if (idx >= len) { pass -1i64; }
+    pass sh_byte_at(s, idx);
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -239,10 +239,10 @@ func:str_byte_at = int64(string:s, int64:idx) {
 // ═══════════════════════════════════════════════════════════════════════
 func:str_char_at = string(string:s, int64:idx) {
     int64:len = sh_strlen(s);
-    if (idx < 0i64) { string:e = sh_empty_str(); pass(e); }
-    if (idx >= len) { string:e = sh_empty_str(); pass(e); }
+    if (idx < 0i64) { string:e = sh_empty_str(); pass e; }
+    if (idx >= len) { string:e = sh_empty_str(); pass e; }
     string:ch = sh_make_str_direct(s, idx, 1i64);
-    pass(ch);
+    pass ch;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -252,7 +252,7 @@ func:str_reverse = string(string:s) {
     int64:len = sh_strlen(s);
     if (len <= 1i64) {
         string:copy = sh_make_str_direct(s, 0i64, len);
-        pass(copy);
+        pass copy;
     }
 
     wild int64->:buf = malloc(8i64);
@@ -269,14 +269,14 @@ func:str_reverse = string(string:s) {
     string:result = sh_make_str(buf, 0i64, len);
     sh_free_buf(buf);
     free(buf);
-    pass(result);
+    pass result;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
 // str_to_int — parse string to int64
 // ═══════════════════════════════════════════════════════════════════════
 func:str_to_int = int64(string:s) {
-    pass(sh_parse_int(s));
+    pass sh_parse_int(s);
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -297,7 +297,7 @@ func:str_split = wild int64->(string:s, string:delim) {
 
     // Empty string → 0 parts
     if (s_len == 0i64) {
-        pass(h);
+        pass h;
     }
 
     // Empty delimiter → split into individual chars
@@ -308,7 +308,7 @@ func:str_split = wild int64->(string:s, string:delim) {
             sh_split_set(h, i, s, i, 1i64);
             i = i + 1i64;
         }
-        pass(h);
+        pass h;
     }
 
     // Count occurrences of delimiter to find number of parts
@@ -316,7 +316,7 @@ func:str_split = wild int64->(string:s, string:delim) {
     int64:i = 0i64;
     int64:limit = s_len - d_len;
     while (i <= limit) {
-        bool:m = raw(str_match_at(s, i, delim, s_len, d_len));
+        bool:m = raw str_match_at(s, i, delim, s_len, d_len);
         if (m == true) {
             count = count + 1i64;
             i = i + d_len;
@@ -333,7 +333,7 @@ func:str_split = wild int64->(string:s, string:delim) {
     int64:start = 0i64;
     i = 0i64;
     while (i <= limit) {
-        bool:m = raw(str_match_at(s, i, delim, s_len, d_len));
+        bool:m = raw str_match_at(s, i, delim, s_len, d_len);
         if (m == true) {
             sh_split_set(h, part_idx, s, start, i - start);
             part_idx = part_idx + 1i64;
@@ -346,14 +346,14 @@ func:str_split = wild int64->(string:s, string:delim) {
     // Final part
     sh_split_set(h, part_idx, s, start, s_len - start);
 
-    pass(h);
+    pass h;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
 // str_split_count — number of parts in split handle
 // ═══════════════════════════════════════════════════════════════════════
 func:str_split_count = int64(int64->:h) {
-    pass(h[1i64]);
+    pass h[1i64];
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -361,7 +361,7 @@ func:str_split_count = int64(int64->:h) {
 // ═══════════════════════════════════════════════════════════════════════
 func:str_split_get = string(int64->:h, int64:idx) {
     string:result = sh_split_get(h, idx);
-    pass(result);
+    pass result;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -369,7 +369,7 @@ func:str_split_get = string(int64->:h, int64:idx) {
 // ═══════════════════════════════════════════════════════════════════════
 func:str_split_free = NIL(wild int64->:h) {
     free(h);
-    drop(NIL);
+    drop NIL;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -380,7 +380,7 @@ func:str_join = string(int64->:h, string:delim) {
 
     if (count == 0i64) {
         string:e = sh_empty_str();
-        pass(e);
+        pass e;
     }
 
     int64:d_len = sh_strlen(delim);
@@ -419,5 +419,5 @@ func:str_join = string(int64->:h, string:delim) {
     string:result = sh_make_str(buf, 0i64, total);
     sh_free_buf(buf);
     free(buf);
-    pass(result);
+    pass result;
 };

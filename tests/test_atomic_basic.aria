@@ -16,7 +16,7 @@ func:test_atomic_int = int32() {
     int32:val = counter.load();
     if (val != 0i32) {
         println("  FAIL: Initial value should be 0");
-        pass(-1i32);
+        pass -1i32;
     }
     
     // Test store
@@ -24,47 +24,47 @@ func:test_atomic_int = int32() {
     int32:val2 = counter.load();
     if (val2 != 42i32) {
         println("  FAIL: Store/load should preserve value");
-        pass(-2i32);
+        pass -2i32;
     }
     
     // Test swap
     int32:old = counter.swap(100i32);
     if (old != 42i32) {
         println("  FAIL: Swap should return old value");
-        pass(-3i32);
+        pass -3i32;
     }
     int32:val3 = counter.load();
     if (val3 != 100i32) {
         println("  FAIL: Swap should set new value");
-        pass(-4i32);
+        pass -4i32;
     }
     
     // Test fetch_add
     int32:old2 = counter.fetch_add(5i32);
     if (old2 != 100i32) {
         println("  FAIL: fetch_add should return old value");
-        pass(-5i32);
+        pass -5i32;
     }
     int32:val4 = counter.load();
     if (val4 != 105i32) {
         println("  FAIL: fetch_add should increment");
-        pass(-6i32);
+        pass -6i32;
     }
     
     // Test fetch_sub
     int32:old3 = counter.fetch_sub(5i32);
     if (old3 != 105i32) {
         println("  FAIL: fetch_sub should return old value");
-        pass(-7i32);
+        pass -7i32;
     }
     int32:val5 = counter.load();
     if (val5 != 100i32) {
         println("  FAIL: fetch_sub should decrement");
-        pass(-8i32);
+        pass -8i32;
     }
     
     println("  PASS: All atomic int operations work");
-    pass(0i32);
+    pass 0i32;
 };
 
 // Test 2: Compare-and-swap (CAS) for lock-free algorithms
@@ -78,12 +78,12 @@ func:test_atomic_cas = int32() {
     bool:success = value.compare_exchange(expected, 20i32);
     if (!success) {
         println("  FAIL: CAS should succeed when expected matches");
-        pass(-1i32);
+        pass -1i32;
     }
     int32:val = value.load();
     if (val != 20i32) {
         println("  FAIL: CAS should update value on success");
-        pass(-2i32);
+        pass -2i32;
     }
     
     // Failed CAS (expected doesn't match)
@@ -91,20 +91,20 @@ func:test_atomic_cas = int32() {
     bool:success2 = value.compare_exchange(expected2, 30i32);
     if (success2) {
         println("  FAIL: CAS should fail when expected doesn't match");
-        pass(-3i32);
+        pass -3i32;
     }
     if (expected2 != 20i32) {
         println("  FAIL: CAS should update expected on failure");
-        pass(-4i32);
+        pass -4i32;
     }
     int32:val2 = value.load();
     if (val2 != 20i32) {
         println("  FAIL: CAS should not update value on failure");
-        pass(-5i32);
+        pass -5i32;
     }
     
     println("  PASS: CAS operations work correctly");
-    pass(0i32);
+    pass 0i32;
 };
 
 // Test 3: Atomic with TBB type (error sentinel support)
@@ -117,7 +117,7 @@ func:test_atomic_tbb = int32() {
     tbb32:val = safe_value.load();
     if (val != 42tbb32) {
         println("  FAIL: TBB load should work");
-        pass(-1i32);
+        pass -1i32;
     }
     
     // Store ERR sentinel
@@ -125,23 +125,23 @@ func:test_atomic_tbb = int32() {
     tbb32:val2 = safe_value.load();
     if (val2 != ERR_tbb32) {
         println("  FAIL: TBB should preserve ERR sentinel");
-        pass(-2i32);
+        pass -2i32;
     }
     
     // Operations on ERR propagate
     tbb32:old = safe_value.fetch_add(10tbb32);
     if (old != ERR_tbb32) {
         println("  FAIL: fetch_add on ERR should return ERR");
-        pass(-3i32);
+        pass -3i32;
     }
     tbb32:val3 = safe_value.load();
     if (val3 != ERR_tbb32) {
         println("  FAIL: fetch_add on ERR should keep ERR");
-        pass(-4i32);
+        pass -4i32;
     }
     
     println("  PASS: Atomic TBB error handling works");
-    pass(0i32);
+    pass 0i32;
 };
 
 // Test 4: Atomic counter (thread-safe without locks)
@@ -151,17 +151,17 @@ struct:Counter = {
 
 func:counter_new = Counter() {
     Counter:c = {value: atomic_new(0i64)};
-    pass(c);
+    pass c;
 };
 
 func:counter_increment = int64(Counter@:c) {
     int64:old = c->value.fetch_add(1i64);
-    pass(old + 1i64);
+    pass old + 1i64;
 };
 
 func:counter_get = int64(Counter@:c) {
     int64:val = c->value.load();
-    pass(val);
+    pass val;
 };
 
 func:test_atomic_counter = int32() {
@@ -170,7 +170,7 @@ func:test_atomic_counter = int32() {
     Result<Counter>:c_res = counter_new();
     if (c_res.is_error) {
         println("  FAIL: Counter creation failed");
-        pass(-1i32);
+        pass -1i32;
     }
     Counter:counter = c_res.value;
     
@@ -183,26 +183,26 @@ func:test_atomic_counter = int32() {
     
     if (v1.is_error || v2.is_error || v3.is_error || v4.is_error || v5.is_error) {
         println("  FAIL: Counter increment failed");
-        pass(-2i32);
+        pass -2i32;
     }
     
     // Check final value
     Result<int64>:final_res = counter_get(&counter);
     if (final_res.is_error) {
         println("  FAIL: Counter get failed");
-        pass(-3i32);
+        pass -3i32;
     }
     if (final_res.value != 5i64) {
         println("  FAIL: Counter should be 5");
-        pass(-4i32);
+        pass -4i32;
     }
     
     println("  PASS: Atomic counter pattern works");
-    pass(0i32);
+    pass 0i32;
 };
 
 // Main test runner
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     println("=== Atomic<T> Capability Test ===");
@@ -211,28 +211,28 @@ func:main = int32() {
     Result<int32>:r1 = test_atomic_int();
     if (r1.is_error || r1.value != 0i32) {
         println("ABORT: Test 1 failed");
-        pass(r1.value);
+        pass r1.value;
     }
     
     Result<int32>:r2 = test_atomic_cas();
     if (r2.is_error || r2.value != 0i32) {
         println("ABORT: Test 2 failed");
-        pass(r2.value);
+        pass r2.value;
     }
     
     Result<int32>:r3 = test_atomic_tbb();
     if (r3.is_error || r3.value != 0i32) {
         println("ABORT: Test 3 failed");
-        pass(r3.value);
+        pass r3.value;
     }
     
     Result<int32>:r4 = test_atomic_counter();
     if (r4.is_error || r4.value != 0i32) {
         println("ABORT: Test 4 failed");
-        pass(r4.value);
+        pass r4.value;
     }
     
     println("");
     println("=== ALL ATOMIC TESTS PASSED ===");
-    exit(0);
+    exit 0;
 };

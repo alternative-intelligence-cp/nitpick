@@ -3,7 +3,7 @@
 
 // Inline int64_toString for explicit conversion
 func:int64_toString = string(int64:value) {
-    if (value == 0) { pass("0"); }
+    if (value == 0) { pass "0"; }
     bool:is_negative = false;
     int64:work_value = value;
     if (value < 0) { is_negative = true; work_value = -value; }
@@ -26,7 +26,7 @@ func:int64_toString = string(int64:value) {
         result = string_concat(digit_char, result);
     }
     if (is_negative) { result = string_concat("-", result); }
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
@@ -38,19 +38,19 @@ func:main = int32() {
     // These will create range structs
     // TODO: Add for loop support to actually iterate
     
-    drop(println("Range operators test:"));
-    drop(print("Start: "));
-    string:start_str = raw(int64_toString(start));
-    drop(println(start_str));
-    drop(print("Finish: "));
-    string:finish_str = raw(int64_toString(finish));
-    drop(println(finish_str));
-    drop(println("Basic test passed!"));
+    drop println("Range operators test:");
+    drop print("Start: ");
+    string:start_str = raw int64_toString(start);
+    drop println(start_str);
+    drop print("Finish: ");
+    string:finish_str = raw int64_toString(finish);
+    drop println(finish_str);
+    drop println("Basic test passed!");
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

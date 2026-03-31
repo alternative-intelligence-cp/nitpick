@@ -80,6 +80,11 @@ private:
     size_t expr_depth_ = 0;
     static constexpr size_t MAX_EXPR_DEPTH = 500;
     
+    // v0.4.3: Defaults fallback block stack for ?|/defaults scoped expression fallback.
+    // When non-empty, Result ERR checks in arg auto-unwrap branch to the top
+    // fallback block instead of returning ERR to the caller.
+    std::vector<llvm::BasicBlock*> defaults_fallback_stack_;
+    
     // ARIA-026: String interning pool (Gemini Safety Audit Fix #5)
     // Prevents OOM crashes from duplicate string literals in Teacher system
     std::map<std::string, llvm::GlobalVariable*> string_pool_;
@@ -187,6 +192,11 @@ public:
     // The apop/apeek codegen reads this to determine the expected type tag and
     // convert the raw i64 to the correct LLVM type before returning.
     llvm::Type* ustack_pop_dest_type = nullptr;
+
+    // v0.4.3+: SMT-proven user stack fast mode
+    // When true, Z3 has proven all pushes in this function are type-homogeneous.
+    // Codegen uses aria_ustack_*_fast() functions (no tags, no bounds checks).
+    bool ustack_fast_mode = false;
 
     /**
      * Promote int64 literal to LBIM struct type (int128/256/512/1024/2048/4096)

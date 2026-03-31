@@ -7,12 +7,12 @@
 
 use "stdlib/wavemech.aria".*;
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     // All wave.aria symbols should be available via wavemech's re-export chain
     Wave9:z = wave_zero();
-    if (z.x != 0) { pass(1i32); }
+    if (z.x != 0) { pass 1i32; }
 
     // Test nyte_interfere
     nit:n0 = 1;
@@ -25,14 +25,14 @@ func:main = int32() {
     nyte:combined = nyte_interfere(packA, packB);
     // combined should not be ERR (values: 3, 3, -2, 3, 3 - all in [-4,4])
     bool:noErr = !nyte_is_err(combined);
-    if (!noErr) { pass(2i32); }
+    if (!noErr) { pass 2i32; }
 
     // Test nyte_phase_shift
     nit:phase = 1;
     nyte:shifted = nyte_phase_shift(packA, phase);
     // shifted[0] = 1+1=2, should be valid
     bool:shiftOk = !nyte_is_err(shifted);
-    if (!shiftOk) { pass(3i32); }
+    if (!shiftOk) { pass 3i32; }
 
     // Test wave_kleene_and (elementwise min)
     nit:ax = 2;
@@ -45,20 +45,20 @@ func:main = int32() {
     Wave9:wb = wave_from_spatial(bx, by, bz);
     Wave9:wand = wave_kleene_and(wa, wb);
     // min(2,1)=1, min(-1,2)=-1, min(3,-2)=-2
-    if (wand.x != 1)  { pass(4i32); }
-    if (wand.y != -1) { pass(5i32); }
-    if (wand.z != -2) { pass(6i32); }
+    if (wand.x != 1)  { pass 4i32; }
+    if (wand.y != -1) { pass 5i32; }
+    if (wand.z != -2) { pass 6i32; }
 
     // Test wave_kleene_or (elementwise max)
     Wave9:wor = wave_kleene_or(wa, wb);
     // max(2,1)=2, max(-1,2)=2, max(3,-2)=3
-    if (wor.x != 2) { pass(7i32); }
-    if (wor.y != 2) { pass(8i32); }
-    if (wor.z != 3) { pass(9i32); }
+    if (wor.x != 2) { pass 7i32; }
+    if (wor.y != 2) { pass 8i32; }
+    if (wor.z != 3) { pass 9i32; }
 
     // Test wave_err_guard (no ERR in valid wave)
     bool:noWaveErr = !wave_err_guard(wa);
-    if (!noWaveErr) { pass(10i32); }
+    if (!noWaveErr) { pass 10i32; }
 
-    exit(0);
+    exit 0;
 };

@@ -13,9 +13,9 @@ func:test_int1024_basic = int32() {
     
     bool:passed = (sum == expected);
     if (passed) {
-        pass(1);
+        pass 1;
     }
-    pass(0);
+    pass 0;
 };
 
 // Test int1024 division by zero (should not crash)
@@ -27,7 +27,7 @@ func:test_int1024_div_zero = int32() {
     int1024:result = num / den;
     
     // If we got here without crashing, test passed
-    pass(1);
+    pass 1;
 };
 
 // Test int1024 bit shifts
@@ -38,9 +38,9 @@ func:test_int1024_shifts = int32() {
     
     bool:not_zero = (shifted != 0u1024);
     if (not_zero) {
-        pass(1);
+        pass 1;
     }
-    pass(0);
+    pass 0;
 };
 
 // Test TBB8 basic arithmetic
@@ -52,9 +52,9 @@ func:test_tbb8_basic = int32() {
     
     bool:passed = (sum == expected);
     if (passed) {
-        pass(1);
+        pass 1;
     }
-    pass(0);
+    pass 0;
 };
 
 // Test TBB8 division by zero (should not crash)
@@ -66,7 +66,7 @@ func:test_tbb8_div_zero = int32() {
     tbb8:result = val / zero;
     
     // If we got here, test passed
-    pass(1);
+    pass 1;
 };
 
 // Test TBB8 overflow behavior
@@ -77,7 +77,7 @@ func:test_tbb8_overflow = int32() {
     
     // Can't easily test for ERR without knowing its value
     // But if we got here without crashing, partial pass
-    pass(1);
+    pass 1;
 };
 
 // Main test runner
@@ -87,39 +87,39 @@ func:main = int32() {
     
     // Run int1024 tests
     total = total + 1;
-    int32:r1 = raw(test_int1024_basic());
+    int32:r1 = raw test_int1024_basic();
     passed = passed + r1;
     
     total = total + 1;
-    int32:r2 = raw(test_int1024_div_zero());
+    int32:r2 = raw test_int1024_div_zero();
     passed = passed + r2;
     
     total = total + 1;
-    int32:r3 = raw(test_int1024_shifts());
+    int32:r3 = raw test_int1024_shifts();
     passed = passed + r3;
     
     // Run TBB tests
     total = total + 1;
-    int32:r4 = raw(test_tbb8_basic());
+    int32:r4 = raw test_tbb8_basic();
     passed = passed + r4;
     
     total = total + 1;
-    int32:r5 = raw(test_tbb8_div_zero());
+    int32:r5 = raw test_tbb8_div_zero();
     passed = passed + r5;
     
     total = total + 1;
-    int32:r6 = raw(test_tbb8_overflow());
+    int32:r6 = raw test_tbb8_overflow();
     passed = passed + r6;
     
     // Return success if all passed
     bool:all_passed = (passed == total);
     if (all_passed) {
-        exit(0);
+        exit 0;
     }
-    pass(1);
+    pass 1;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

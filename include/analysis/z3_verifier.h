@@ -126,6 +126,19 @@ public:
                                   std::vector<VerifyOutcome>& outcomes,
                                   int line = 0, int column = 0);
 
+    // ================================================================
+    // Phase 4: User Stack Type Homogeneity Verification (v0.4.3+)
+    // ================================================================
+
+    /// Verify that all pushes to a user stack in a scope use the same type.
+    /// pushTypeTags contains the compile-time type tag for each apush() call.
+    /// If PROVEN, runtime type checks can be eliminated (SMT-optimized fast path).
+    VerifyResult verifyUStackHomogeneous(
+        const std::vector<int64_t>& pushTypeTags,
+        int64_t expectedPopTag,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
     /// Get verification summary
     const VerifySummary& getSummary() const { return summary; }
 

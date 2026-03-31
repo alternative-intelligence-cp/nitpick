@@ -85,6 +85,7 @@ private:
     ConstEvaluator* constEvaluator;  // Phase 2.2: Compile-time evaluation
     ModuleLoader* moduleLoader;       // Module loading and import resolution
     std::vector<std::string> errors;  // Accumulated type errors
+    std::vector<std::string> warnings;  // Accumulated type warnings (v0.4.3)
     
     // Module tracking: maps module symbol names to their LoadedModule
     std::unordered_map<std::string, LoadedModule*> loadedModules;
@@ -285,6 +286,12 @@ private:
      * - Full result type checking will be added when result types are implemented
      */
     Type* inferUnwrapExpr(UnwrapExpr* expr);
+    
+    /**
+     * Infer the type of a defaults expression (v0.4.3)
+     * Syntax: expr ?| fallback   OR   expr defaults fallback
+     */
+    Type* inferDefaultsExpr(DefaultsExpr* expr);
     
     /**
      * Infer the type of a move expression
@@ -573,6 +580,7 @@ private:
     
     void addError(const std::string& message, int line, int column);
     void addError(const std::string& message, ASTNode* node);
+    void addWarning(const std::string& message, ASTNode* node);
     
 public:
     TypeChecker(TypeSystem* typeSystem, SymbolTable* symbolTable,
@@ -999,6 +1007,11 @@ public:
      */
     const std::vector<std::string>& getErrors() const { return errors; }
     
+    /**
+     * Get accumulated type warnings (v0.4.3)
+     */
+    const std::vector<std::string>& getWarnings() const { return warnings; }
+
     /**
      * Check if type checking has errors
      */

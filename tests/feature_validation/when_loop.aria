@@ -13,7 +13,7 @@ func:test_when_completes = int64() {
         result = 2;  // Not executed
     }
     
-    pass(0i32);  // was: pass(result)  // Should be 1
+    pass 0i32;  // was: pass(result)  // Should be 1
 };
 
 func:test_when_fails = int64() {
@@ -28,15 +28,15 @@ func:test_when_fails = int64() {
         result = 2;  // Executed because condition was initially false
     }
     
-    pass(0i32);  // was: pass(result)  // Should be 2
+    pass 0i32;  // was: pass(result)  // Should be 2
 };
 
 func:main = int32() {
-    int64:result = raw(test_when_completes());
-    exit(0);  // was: pass(result)
+    int64:result = raw test_when_completes();
+    exit 0;  // was: pass(result)
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

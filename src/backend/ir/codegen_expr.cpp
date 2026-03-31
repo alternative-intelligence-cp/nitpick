@@ -2388,6 +2388,77 @@ llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* code
             
             return phi;
         }
+        case ASTNode::NodeType::DEFAULTS: {
+            // Defaults operator: expr ?| fallback (v0.4.3)
+            // Wraps the sub-expression. If any Result in the sub-expression produces ERR,
+            // the whole chain short-circuits to the fallback value.
+            DefaultsExpr* defExpr = static_cast<DefaultsExpr*>(node);
+            
+            llvm::Function* currentFunc = codegen->builder.GetInsertBlock()->getParent();
+            
+            // Create fallback and merge blocks
+            llvm::BasicBlock* fallbackBlock = llvm::BasicBlock::Create(codegen->context, "defaults_fallback", currentFunc);
+            llvm::BasicBlock* mergeBlock = llvm::BasicBlock::Create(codegen->context, "defaults_merge", currentFunc);
+            
+            // Push fallback block onto the stack — arg auto-unwrap ERR checks will branch here
+            codegen->defaults_fallback_stack_.push_back(fallbackBlock);
+            
+            // Generate the sub-expression (may contain function calls that produce Result)
+            llvm::Value* exprVal = codegenExpressionNode(defExpr->expr.get(), codegen);
+            if (!exprVal) return nullptr;
+            
+            // Pop the fallback block
+            codegen->defaults_fallback_stack_.pop_back();
+            
+            // If the sub-expression itself returned a Result struct, unwrap it
+            llvm::Value* successVal = exprVal;
+            if (exprVal->getType()->isStructTy()) {
+                llvm::StructType* st = llvm::cast<llvm::StructType>(exprVal->getType());
+                if (st->getNumElements() == 3 &&
+                    st->getElementType(1)->isPointerTy() &&
+                    st->getElementType(2)->isIntegerTy(8)) {
+                    // Check is_error on the final result
+                    llvm::Value* isError = codegen->builder.CreateExtractValue(exprVal, 2, "defaults_final_err");
+                    llvm::Value* isErr = codegen->builder.CreateICmpNE(isError,
+                        llvm::ConstantInt::get(llvm::Type::getInt8Ty(codegen->context), 0), "defaults_err_check");
+                    
+                    llvm::BasicBlock* successBlock = llvm::BasicBlock::Create(codegen->context, "defaults_ok", currentFunc);
+                    codegen->builder.CreateCondBr(isErr, fallbackBlock, successBlock);
+                    
+                    codegen->builder.SetInsertPoint(successBlock);
+                    successVal = codegen->builder.CreateExtractValue(exprVal, 0, "defaults_unwrap");
+                }
+            }
+            
+            // Record the success end block (may have changed due to above unwrap)
+            llvm::BasicBlock* successEndBlock = codegen->builder.GetInsertBlock();
+            codegen->builder.CreateBr(mergeBlock);
+            
+            // Fallback block: generate the fallback value
+            codegen->builder.SetInsertPoint(fallbackBlock);
+            llvm::Value* fallbackVal = codegenExpressionNode(defExpr->fallback.get(), codegen);
+            if (!fallbackVal) return nullptr;
+            
+            // Type-match the fallback to the success value if needed
+            if (fallbackVal->getType() != successVal->getType()) {
+                if (fallbackVal->getType()->isIntegerTy() && successVal->getType()->isIntegerTy()) {
+                    fallbackVal = codegen->builder.CreateSExtOrTrunc(fallbackVal, successVal->getType(), "defaults_cast");
+                } else if (fallbackVal->getType()->isFloatingPointTy() && successVal->getType()->isFloatingPointTy()) {
+                    fallbackVal = codegen->builder.CreateFPCast(fallbackVal, successVal->getType(), "defaults_fcast");
+                }
+            }
+            
+            llvm::BasicBlock* fallbackEndBlock = codegen->builder.GetInsertBlock();
+            codegen->builder.CreateBr(mergeBlock);
+            
+            // Merge block: PHI node
+            codegen->builder.SetInsertPoint(mergeBlock);
+            llvm::PHINode* phi = codegen->builder.CreatePHI(successVal->getType(), 2, "defaults_result");
+            phi->addIncoming(successVal, successEndBlock);
+            phi->addIncoming(fallbackVal, fallbackEndBlock);
+            
+            return phi;
+        }
         default:
             std::cerr << "[ERROR] Unhandled NodeType: " << static_cast<int>(node->type) << std::endl;
             throw std::runtime_error("Unsupported expression node type in operation");
@@ -3113,9 +3184,27 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     if (op == TokenType::TOKEN_SHIFT_RIGHT) {
-        // Bug #20 fix: always use logical shift right for >>.
-        // The type checker rejects >> on signed types ("bitwise requires unsigned types"),
-        // so any >> that reaches codegen has unsigned operands and must fill with 0s.
+        // Determine signedness from Aria type to pick arithmetic vs logical shift right.
+        // Signed types use AShr (sign-extends), unsigned use LShr (zero-fills).
+        bool isSigned = false;
+        if (expr->left->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr->left.get());
+            auto it = var_aria_types.find(ident->name);
+            if (it != var_aria_types.end()) {
+                const std::string& typeName = it->second;
+                // Signed types: int8, int16, int32, int64, nit (NOT uint*)
+                isSigned = (typeName.find("int") == 0 || typeName == "nit");
+            }
+        } else if (expr->left->type == ASTNode::NodeType::LITERAL) {
+            // Literal type suffix determines signedness
+            LiteralExpr* lit = static_cast<LiteralExpr*>(expr->left.get());
+            if (!lit->explicit_type.empty()) {
+                isSigned = (lit->explicit_type.find("int") == 0 || lit->explicit_type == "nit");
+            }
+        }
+        if (isSigned) {
+            return builder.CreateAShr(left, right, "ashrtmp");
+        }
         return builder.CreateLShr(left, right, "shrtmp");
     }
     
@@ -4830,14 +4919,14 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 argVal = builder.CreateZExt(argVal, builder.getInt64Ty(), "sys_arg_zext");
             } else if (llvm::isa<llvm::GlobalVariable>(argVal)) {
                 // String literal: GlobalVariable pointing to struct.AriaString
-                // Extract the char* data field via GEP + Load
+                // Load the struct and extract the char* data field
                 llvm::GlobalVariable* gv = llvm::cast<llvm::GlobalVariable>(argVal);
                 llvm::Type* gvType = gv->getValueType();
                 if (gvType->isStructTy()) {
-                    llvm::Value* dataGep = builder.CreateStructGEP(
-                        gvType, argVal, 0, "sys_str_data_ptr");
-                    llvm::Value* dataPtr = builder.CreateLoad(
-                        llvm::PointerType::get(context, 0), dataGep, "sys_str_data");
+                    llvm::Value* strStruct = builder.CreateLoad(
+                        gvType, argVal, "sys_str_struct");
+                    llvm::Value* dataPtr = builder.CreateExtractValue(
+                        strStruct, 0, "sys_str_data");
                     argVal = builder.CreatePtrToInt(dataPtr, builder.getInt64Ty(), "sys_str_int");
                 } else {
                     argVal = builder.CreatePtrToInt(argVal, builder.getInt64Ty(), "sys_gv_int");
@@ -5973,12 +6062,14 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("astack() takes 0 or 1 arguments (optional capacity)");
         }
 
-        llvm::Function* func = module->getFunction("aria_ustack_new");
+        // v0.4.3+: Use fast (SMT-optimized) or regular variant
+        const char* func_name = ustack_fast_mode ? "aria_ustack_new_fast" : "aria_ustack_new";
+        llvm::Function* func = module->getFunction(func_name);
         if (!func) {
             llvm::FunctionType* ft = llvm::FunctionType::get(
                 builder.getInt64Ty(), {builder.getInt64Ty()}, false);
             func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
-                "aria_ustack_new", module);
+                func_name, module);
         }
 
         // Capacity: user-specified or default (256 slots = 1 page)
@@ -6017,36 +6108,20 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_h");
 
-        llvm::Function* func = module->getFunction("aria_ustack_push");
-        if (!func) {
-            llvm::FunctionType* ft = llvm::FunctionType::get(
-                builder.getVoidTy(),
-                {builder.getInt64Ty(), builder.getInt64Ty(), builder.getInt64Ty()},
-                false);
-            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
-                "aria_ustack_push", module);
-        }
-
         llvm::Value* rawVal = codegenExpressionNode(expr->arguments[0].get(), this);
 
-        // Determine type tag and convert value to i64
-        int64_t typeTag = 3; // default: int64
+        // Convert value to i64
         llvm::Value* valAsI64 = nullptr;
-
         llvm::Type* valTy = rawVal->getType();
-        if (valTy->isIntegerTy(8))       { typeTag = 0; valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
-        else if (valTy->isIntegerTy(16))  { typeTag = 1; valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
-        else if (valTy->isIntegerTy(32))  { typeTag = 2; valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
-        else if (valTy->isIntegerTy(64))  { typeTag = 3; valAsI64 = rawVal; }
-        else if (valTy->isFloatTy())      { typeTag = 4; valAsI64 = builder.CreateBitCast(builder.CreateFPExt(rawVal, builder.getDoubleTy()), builder.getInt64Ty()); }
-        else if (valTy->isDoubleTy())     { typeTag = 5; valAsI64 = builder.CreateBitCast(rawVal, builder.getInt64Ty()); }
-        else if (valTy->isIntegerTy(1))   { typeTag = 6; valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
-        else if (valTy->isPointerTy()) {
-            typeTag = 7; // string/pointer
-            valAsI64 = builder.CreatePtrToInt(rawVal, builder.getInt64Ty());
-        }
+        if (valTy->isIntegerTy(8))       { valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(16))  { valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(32))  { valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(64))  { valAsI64 = rawVal; }
+        else if (valTy->isFloatTy())      { valAsI64 = builder.CreateBitCast(builder.CreateFPExt(rawVal, builder.getDoubleTy()), builder.getInt64Ty()); }
+        else if (valTy->isDoubleTy())     { valAsI64 = builder.CreateBitCast(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isIntegerTy(1))   { valAsI64 = builder.CreateZExt(rawVal, builder.getInt64Ty()); }
+        else if (valTy->isPointerTy())    { valAsI64 = builder.CreatePtrToInt(rawVal, builder.getInt64Ty()); }
         else {
-            typeTag = 8; // unknown
             if (valTy->isIntegerTy()) {
                 valAsI64 = builder.CreateZExtOrTrunc(rawVal, builder.getInt64Ty());
             } else {
@@ -6054,8 +6129,45 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             }
         }
 
-        llvm::Value* tagVal = builder.getInt64(typeTag);
-        builder.CreateCall(func, {handle, valAsI64, tagVal});
+        if (ustack_fast_mode) {
+            // v0.4.3+: SMT-optimized fast push — no type tag
+            llvm::Function* func = module->getFunction("aria_ustack_push_fast");
+            if (!func) {
+                llvm::FunctionType* ft = llvm::FunctionType::get(
+                    builder.getVoidTy(),
+                    {builder.getInt64Ty(), builder.getInt64Ty()},
+                    false);
+                func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                    "aria_ustack_push_fast", module);
+            }
+            builder.CreateCall(func, {handle, valAsI64});
+        } else {
+            // Regular tagged push
+            llvm::Function* func = module->getFunction("aria_ustack_push");
+            if (!func) {
+                llvm::FunctionType* ft = llvm::FunctionType::get(
+                    builder.getVoidTy(),
+                    {builder.getInt64Ty(), builder.getInt64Ty(), builder.getInt64Ty()},
+                    false);
+                func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                    "aria_ustack_push", module);
+            }
+
+            // Determine type tag
+            int64_t typeTag = 3; // default: int64
+            if (valTy->isIntegerTy(8))       { typeTag = 0; }
+            else if (valTy->isIntegerTy(16))  { typeTag = 1; }
+            else if (valTy->isIntegerTy(32))  { typeTag = 2; }
+            else if (valTy->isIntegerTy(64))  { typeTag = 3; }
+            else if (valTy->isFloatTy())      { typeTag = 4; }
+            else if (valTy->isDoubleTy())     { typeTag = 5; }
+            else if (valTy->isIntegerTy(1))   { typeTag = 6; }
+            else if (valTy->isPointerTy())    { typeTag = 7; }
+            else                              { typeTag = 8; }
+
+            llvm::Value* tagVal = builder.getInt64(typeTag);
+            builder.CreateCall(func, {handle, valAsI64, tagVal});
+        }
 
         // Return a dummy int64 zero (push is effectively void; value is discarded)
         return builder.getInt64(0);
@@ -6074,36 +6186,50 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_h");
 
-        llvm::Function* func = module->getFunction("aria_ustack_pop");
-        if (!func) {
-            llvm::FunctionType* ft = llvm::FunctionType::get(
-                builder.getInt64Ty(),
-                {builder.getInt64Ty(), builder.getInt64Ty()},
-                false);
-            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
-                "aria_ustack_pop", module);
+        llvm::Value* rawVal;
+        if (ustack_fast_mode) {
+            // v0.4.3+: SMT-optimized fast pop — no type check
+            llvm::Function* func = module->getFunction("aria_ustack_pop_fast");
+            if (!func) {
+                llvm::FunctionType* ft = llvm::FunctionType::get(
+                    builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+                func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                    "aria_ustack_pop_fast", module);
+            }
+            rawVal = builder.CreateCall(func, {handle}, "ustack_pop");
+        } else {
+            // Regular tagged pop
+            llvm::Function* func = module->getFunction("aria_ustack_pop");
+            if (!func) {
+                llvm::FunctionType* ft = llvm::FunctionType::get(
+                    builder.getInt64Ty(),
+                    {builder.getInt64Ty(), builder.getInt64Ty()},
+                    false);
+                func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                    "aria_ustack_pop", module);
+            }
+
+            // Determine expected type tag from destination type context
+            int64_t expectedTag = -1;
+            llvm::Type* destType = ustack_pop_dest_type;
+
+            if (destType) {
+                if (destType->isIntegerTy(8))       expectedTag = 0;
+                else if (destType->isIntegerTy(16)) expectedTag = 1;
+                else if (destType->isIntegerTy(32)) expectedTag = 2;
+                else if (destType->isIntegerTy(64)) expectedTag = 3;
+                else if (destType->isFloatTy())     expectedTag = 4;
+                else if (destType->isDoubleTy())    expectedTag = 5;
+                else if (destType->isIntegerTy(1))  expectedTag = 6;
+                else if (destType->isPointerTy())   expectedTag = 7;
+            }
+
+            llvm::Value* tag = builder.getInt64(expectedTag);
+            rawVal = builder.CreateCall(func, {handle, tag}, "ustack_pop");
         }
-
-        // Determine expected type tag from destination type context
-        // (set by StmtCodegen before codegenning the initializer/RHS)
-        int64_t expectedTag = -1;
-        llvm::Type* destType = ustack_pop_dest_type;
-
-        if (destType) {
-            if (destType->isIntegerTy(8))       expectedTag = 0;
-            else if (destType->isIntegerTy(16)) expectedTag = 1;
-            else if (destType->isIntegerTy(32)) expectedTag = 2;
-            else if (destType->isIntegerTy(64)) expectedTag = 3;
-            else if (destType->isFloatTy())     expectedTag = 4;
-            else if (destType->isDoubleTy())    expectedTag = 5;
-            else if (destType->isIntegerTy(1))  expectedTag = 6;
-            else if (destType->isPointerTy())   expectedTag = 7;
-        }
-
-        llvm::Value* tag = builder.getInt64(expectedTag);
-        llvm::Value* rawVal = builder.CreateCall(func, {handle, tag}, "ustack_pop");
 
         // Convert i64 to destination type
+        llvm::Type* destType = ustack_pop_dest_type;
         if (destType && destType != builder.getInt64Ty()) {
             if (destType->isIntegerTy()) {
                 rawVal = builder.CreateTrunc(rawVal, destType, "ustack_pop_trunc");
@@ -6133,35 +6259,49 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_h");
 
-        llvm::Function* func = module->getFunction("aria_ustack_peek");
-        if (!func) {
-            llvm::FunctionType* ft = llvm::FunctionType::get(
-                builder.getInt64Ty(),
-                {builder.getInt64Ty(), builder.getInt64Ty()},
-                false);
-            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
-                "aria_ustack_peek", module);
+        llvm::Value* rawVal;
+        if (ustack_fast_mode) {
+            // v0.4.3+: SMT-optimized fast peek — no type check
+            llvm::Function* func = module->getFunction("aria_ustack_peek_fast");
+            if (!func) {
+                llvm::FunctionType* ft = llvm::FunctionType::get(
+                    builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+                func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                    "aria_ustack_peek_fast", module);
+            }
+            rawVal = builder.CreateCall(func, {handle}, "ustack_peek");
+        } else {
+            // Regular tagged peek
+            llvm::Function* func = module->getFunction("aria_ustack_peek");
+            if (!func) {
+                llvm::FunctionType* ft = llvm::FunctionType::get(
+                    builder.getInt64Ty(),
+                    {builder.getInt64Ty(), builder.getInt64Ty()},
+                    false);
+                func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                    "aria_ustack_peek", module);
+            }
+
+            int64_t expectedTag = -1;
+            llvm::Type* destType = ustack_pop_dest_type;
+
+            if (destType) {
+                if (destType->isIntegerTy(8))       expectedTag = 0;
+                else if (destType->isIntegerTy(16)) expectedTag = 1;
+                else if (destType->isIntegerTy(32)) expectedTag = 2;
+                else if (destType->isIntegerTy(64)) expectedTag = 3;
+                else if (destType->isFloatTy())     expectedTag = 4;
+                else if (destType->isDoubleTy())    expectedTag = 5;
+                else if (destType->isIntegerTy(1))  expectedTag = 6;
+                else if (destType->isPointerTy())   expectedTag = 7;
+            }
+
+            llvm::Value* tag = builder.getInt64(expectedTag);
+            rawVal = builder.CreateCall(func, {handle, tag}, "ustack_peek");
         }
-
-        // Determine expected type tag from destination type context
-        int64_t expectedTag = -1;
-        llvm::Type* destType = ustack_pop_dest_type;
-
-        if (destType) {
-            if (destType->isIntegerTy(8))       expectedTag = 0;
-            else if (destType->isIntegerTy(16)) expectedTag = 1;
-            else if (destType->isIntegerTy(32)) expectedTag = 2;
-            else if (destType->isIntegerTy(64)) expectedTag = 3;
-            else if (destType->isFloatTy())     expectedTag = 4;
-            else if (destType->isDoubleTy())    expectedTag = 5;
-            else if (destType->isIntegerTy(1))  expectedTag = 6;
-            else if (destType->isPointerTy())   expectedTag = 7;
-        }
-
-        llvm::Value* tag = builder.getInt64(expectedTag);
-        llvm::Value* rawVal = builder.CreateCall(func, {handle, tag}, "ustack_peek");
 
         // Convert i64 to destination type
+        llvm::Type* destType = ustack_pop_dest_type;
         if (destType && destType != builder.getInt64Ty()) {
             if (destType->isIntegerTy()) {
                 rawVal = builder.CreateTrunc(rawVal, destType, "ustack_peek_trunc");
@@ -6176,6 +6316,93 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
 
         return rawVal;
+    }
+
+    // acap() — return stack capacity in bytes
+    if (callee_ident->name == "acap") {
+        auto it = named_values.find("__aria_ustack_handle");
+        if (it == named_values.end()) {
+            throw std::runtime_error("acap() called without astack() in scope");
+        }
+        llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_h");
+
+        // Same function for both regular and fast mode — both structs store data_bytes
+        const char* func_name = "aria_ustack_capacity_bytes";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+        return builder.CreateCall(func, {handle}, "ustack_cap");
+    }
+
+    // asize() — return bytes currently used on stack
+    if (callee_ident->name == "asize") {
+        auto it = named_values.find("__aria_ustack_handle");
+        if (it == named_values.end()) {
+            throw std::runtime_error("asize() called without astack() in scope");
+        }
+        llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_h");
+
+        // Regular: size * 16 (value + tag per slot), Fast: size * 8 (value only)
+        const char* func_name = ustack_fast_mode ? "aria_ustack_bytes_used_fast" : "aria_ustack_bytes_used";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+        return builder.CreateCall(func, {handle}, "ustack_used");
+    }
+
+    // afits(val) — check if value would fit on stack without overflow
+    if (callee_ident->name == "afits") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("afits() requires exactly one argument (value to check)");
+        }
+
+        // Evaluate the argument for side effects, discard the value
+        codegenExpressionNode(expr->arguments[0].get(), this);
+
+        auto it = named_values.find("__aria_ustack_handle");
+        if (it == named_values.end()) {
+            throw std::runtime_error("afits() called without astack() in scope");
+        }
+        llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_h");
+
+        // Same function for both modes — both structs have size/capacity at same offsets
+        const char* func_name = "aria_ustack_fits";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+        llvm::Value* result = builder.CreateCall(func, {handle}, "ustack_fits");
+        return builder.CreateTrunc(result, builder.getInt1Ty(), "ustack_fits_bool");
+    }
+
+    // atype() — return type tag of top stack item (-1 if empty or fast mode)
+    if (callee_ident->name == "atype") {
+        auto it = named_values.find("__aria_ustack_handle");
+        if (it == named_values.end()) {
+            throw std::runtime_error("atype() called without astack() in scope");
+        }
+        llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_h");
+
+        const char* func_name = ustack_fast_mode ? "aria_ustack_top_type_fast" : "aria_ustack_top_type";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt64Ty(), {builder.getInt64Ty()}, false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+        return builder.CreateCall(func, {handle}, "ustack_type");
     }
 
     // ====================================================================
@@ -10387,6 +10614,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 // Auto-unwrap Result<T> → T when passing a function-call result directly
                 // as an argument to a function expecting the raw type.
                 // Aria result structs are { T, ptr, i8 } (3-element, ptr at index 1, i8 at index 2).
+                // v0.4.3: Check is_error first — if ERR, propagate to caller via early return.
                 if (arg_value->getType() != param_type &&
                     arg_value->getType()->isStructTy()) {
                     llvm::StructType* arg_struct = llvm::cast<llvm::StructType>(arg_value->getType());
@@ -10394,6 +10622,47 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                         arg_struct->getElementType(1)->isPointerTy() &&
                         arg_struct->getElementType(2)->isIntegerTy(8) &&
                         arg_struct->getElementType(0) == param_type) {
+                        // Extract is_error flag (field 2)
+                        llvm::Value* isError = builder.CreateExtractValue(arg_value, 2, "arg_is_error");
+                        // Compare: is_error != 0
+                        llvm::Value* isErr = builder.CreateICmpNE(isError,
+                            llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 0), "arg_err_check");
+
+                        llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                        llvm::BasicBlock* errBlock = llvm::BasicBlock::Create(context, "arg_err_prop", currentFunc);
+                        llvm::BasicBlock* okBlock = llvm::BasicBlock::Create(context, "arg_ok", currentFunc);
+
+                        builder.CreateCondBr(isErr, errBlock, okBlock);
+
+                        // Error block: propagate error to caller (or jump to defaults fallback)
+                        builder.SetInsertPoint(errBlock);
+                        if (!defaults_fallback_stack_.empty()) {
+                            // Inside a defaults/?| scope — jump to the fallback block
+                            builder.CreateBr(defaults_fallback_stack_.back());
+                        } else {
+                            // No defaults scope — propagate ERR to caller via early return
+                            llvm::Type* retType = currentFunc->getReturnType();
+                            if (retType->isStructTy()) {
+                                llvm::StructType* retStruct = llvm::cast<llvm::StructType>(retType);
+                                llvm::Value* errResult = llvm::UndefValue::get(retStruct);
+                                // Field 0: zero value
+                                errResult = builder.CreateInsertValue(errResult,
+                                    llvm::Constant::getNullValue(retStruct->getElementType(0)), 0, "prop.val");
+                                // Field 1: forward the error pointer from the arg
+                                llvm::Value* errPtr = builder.CreateExtractValue(arg_value, 1, "prop.err_ptr");
+                                errResult = builder.CreateInsertValue(errResult, errPtr, 1, "prop.err");
+                                // Field 2: is_error = 1
+                                errResult = builder.CreateInsertValue(errResult,
+                                    llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 1), 2, "prop.is_error");
+                                builder.CreateRet(errResult);
+                            } else {
+                                // Non-Result return type — return zero/null
+                                builder.CreateRet(llvm::Constant::getNullValue(retType));
+                            }
+                        }
+
+                        // OK block: extract the value and continue
+                        builder.SetInsertPoint(okBlock);
                         arg_value = builder.CreateExtractValue(arg_value, {0}, "arg_unwrap");
                     }
                 }

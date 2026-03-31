@@ -6,20 +6,20 @@ func:clamp = int32(int32:value, int32:min, int32:max)
           result <= max
 {
     if (value < min) {
-        pass(min);
+        pass min;
     }
     if (value > max) {
-        pass(max);
+        pass max;
     }
-    pass(value);
+    pass value;
 };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     Result<int32>:r = clamp(5, 0, 10);
     if (r.is_error) {
-        pass(-1);
+        pass -1;
     }
-    pass(r.value);
+    pass r.value;
 };

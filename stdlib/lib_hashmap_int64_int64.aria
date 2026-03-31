@@ -27,7 +27,7 @@ pub func:HashMap_int64_int64_new = HashMap<int64, int64>() {
     map.key_size = 8i64;
     map.value_size = 8i64;
     map.load_factor = 0.75f32;
-    pass(map);
+    pass map;
 };
 
 pub func:HashMap_int64_int64_insert = nil(wild int8->:entries, int64:key, int64:value) {
@@ -37,27 +37,27 @@ pub func:HashMap_int64_int64_insert = nil(wild int8->:entries, int64:key, int64:
 pub func:HashMap_int64_int64_get = int32(wild int8->:entries, int64:key, int64->:out_value) {
     int32:found = map_i64_has(entries, key);
     if (found == 0i32) {
-        pass(0i32);
+        pass 0i32;
     }
     out_value[0] = map_i64_get(entries, key);
-    pass(1i32);
+    pass 1i32;
 };
 
 pub func:HashMap_int64_int64_has = int32(wild int8->:entries, int64:key) {
-    pass(map_i64_has(entries, key));
+    pass map_i64_has(entries, key);
 };
 
 pub func:HashMap_int64_int64_remove = int32(wild int8->:entries, int64:key) {
     int32:found = map_i64_has(entries, key);
     if (found == 0i32) {
-        pass(0i32);
+        pass 0i32;
     }
     map_i64_remove(entries, key);
-    pass(1i32);
+    pass 1i32;
 };
 
 pub func:HashMap_int64_int64_length = int64(wild int8->:entries) {
-    pass(map_i64_length(entries));
+    pass map_i64_length(entries);
 };
 
 pub func:HashMap_int64_int64_clear = nil(wild int8->:entries) {

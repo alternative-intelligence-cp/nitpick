@@ -62,7 +62,7 @@ pub func<T>:q3_create = Q3<T>(T:a, T:b, trit:c) {
     q.a = a;
     q.b = b;
     q.c = c;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -71,21 +71,21 @@ pub func<T>:q3_create = Q3<T>(T:a, T:b, trit:c) {
  * Convenience constructor for starting with zero confidence.
  */
 pub func<T>:q3_unknown = Q3<T>(T:a, T:b) {
-    pass(q3_create(a, b, 0));
+    pass q3_create(a, b, 0);
 };
 
 /**
  * Create Q3<T> leaning toward hypothesis A (c = -1).
  */
 pub func<T>:q3_lean_a = Q3<T>(T:a, T:b) {
-    pass(q3_create(a, b, -1));
+    pass q3_create(a, b, -1);
 };
 
 /**
  * Create Q3<T> leaning toward hypothesis B (c = +1).
  */
 pub func<T>:q3_lean_b = Q3<T>(T:a, T:b) {
-    pass(q3_create(a, b, 1));
+    pass q3_create(a, b, 1);
 };
 
 // =============================================================================
@@ -104,7 +104,7 @@ pub func<T>:q3_lean_b = Q3<T>(T:a, T:b) {
 pub func<T>:q3_add = Q3<T>(Q3<T>:q, T:value) {
     q.a = q.a + value;
     q.b = q.b + value;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -113,7 +113,7 @@ pub func<T>:q3_add = Q3<T>(Q3<T>:q, T:value) {
 pub func<T>:q3_sub = Q3<T>(Q3<T>:q, T:value) {
     q.a = q.a - value;
     q.b = q.b - value;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -122,7 +122,7 @@ pub func<T>:q3_sub = Q3<T>(Q3<T>:q, T:value) {
 pub func<T>:q3_mul = Q3<T>(Q3<T>:q, T:value) {
     q.a = q.a * value;
     q.b = q.b * value;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -134,7 +134,7 @@ pub func<T>:q3_mul = Q3<T>(Q3<T>:q, T:value) {
 pub func<T>:q3_div = Q3<T>(Q3<T>:q, T:value) {
     q.a = q.a / value;
     q.b = q.b / value;
-    pass(q);
+    pass q;
 };
 
 // =============================================================================
@@ -157,20 +157,20 @@ pub func<T>:q3_div = Q3<T>(Q3<T>:q, T:value) {
  */
 pub func<T>:q3_crystallize = T(Q3<T>:q) {
     if (q.c < 0) {
-        pass(q.a);
+        pass q.a;
     }
     if (q.c > 0) {
-        pass(q.b);
+        pass q.b;
     }
     // c == 0: unknown
-    pass(unknown);
+    pass unknown;
 };
 
 /**
  * Check if Q3<T> can crystallize (has non-zero confidence).
  */
 pub func<T>:q3_can_crystallize = bool(Q3<T>:q) {
-    pass(q.c != 0);
+    pass q.c != 0;
 };
 
 /**
@@ -181,9 +181,9 @@ pub func<T>:q3_can_crystallize = bool(Q3<T>:q) {
  */
 pub func<T>:q3_peek = T(Q3<T>:q) {
     if (q.c <= 0) {
-        pass(q.a);
+        pass q.a;
     }
-    pass(q.b);
+    pass q.b;
 };
 
 // =============================================================================
@@ -201,7 +201,7 @@ pub func<T>:q3_shift_to_a = Q3<T>(Q3<T>:q) {
     if (q.c > -1) {
         q.c = q.c - 1;
     }
-    pass(q);
+    pass q;
 };
 
 /**
@@ -211,7 +211,7 @@ pub func<T>:q3_shift_to_b = Q3<T>(Q3<T>:q) {
     if (q.c < 1) {
         q.c = q.c + 1;
     }
-    pass(q);
+    pass q;
 };
 
 /**
@@ -219,7 +219,7 @@ pub func<T>:q3_shift_to_b = Q3<T>(Q3<T>:q) {
  */
 pub func<T>:q3_reset_confidence = Q3<T>(Q3<T>:q) {
     q.c = 0;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -227,7 +227,7 @@ pub func<T>:q3_reset_confidence = Q3<T>(Q3<T>:q) {
  */
 pub func<T>:q3_flip_confidence = Q3<T>(Q3<T>:q) {
     q.c = 0 - q.c;
-    pass(q);
+    pass q;
 };
 
 // =============================================================================
@@ -327,7 +327,7 @@ pub func<T>:q9_create = Q9<T>(T:a, T:b, nit:c) {
     q.a = a;
     q.b = b;
     q.c = c;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -338,7 +338,7 @@ pub func<T>:q9_unknown = Q9<T>(T:a, T:b) {
     q.a = a;
     q.b = b;
     q.c = 0;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -349,7 +349,7 @@ pub func<T>:q9_strong_a = Q9<T>(T:a, T:b) {
     q.a = a;
     q.b = b;
     q.c = -4;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -360,7 +360,7 @@ pub func<T>:q9_strong_b = Q9<T>(T:a, T:b) {
     q.a = a;
     q.b = b;
     q.c = 4;
-    pass(q);
+    pass q;
 };
 
 // =============================================================================
@@ -374,7 +374,7 @@ pub func<T>:q9_strong_b = Q9<T>(T:a, T:b) {
 pub func<T>:q9_add = Q9<T>(Q9<T>:q, T:value) {
     q.a = q.a + value;
     q.b = q.b + value;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -383,7 +383,7 @@ pub func<T>:q9_add = Q9<T>(Q9<T>:q, T:value) {
 pub func<T>:q9_sub = Q9<T>(Q9<T>:q, T:value) {
     q.a = q.a - value;
     q.b = q.b - value;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -392,7 +392,7 @@ pub func<T>:q9_sub = Q9<T>(Q9<T>:q, T:value) {
 pub func<T>:q9_mul = Q9<T>(Q9<T>:q, T:value) {
     q.a = q.a * value;
     q.b = q.b * value;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -401,7 +401,7 @@ pub func<T>:q9_mul = Q9<T>(Q9<T>:q, T:value) {
 pub func<T>:q9_div = Q9<T>(Q9<T>:q, T:value) {
     q.a = q.a / value;
     q.b = q.b / value;
-    pass(q);
+    pass q;
 };
 
 // =============================================================================
@@ -420,20 +420,20 @@ pub func<T>:q9_div = Q9<T>(Q9<T>:q, T:value) {
  */
 pub func<T>:q9_crystallize = T(Q9<T>:q) {
     if (q.c <= -3) {
-        pass(q.a);
+        pass q.a;
     }
     if (q.c >= 3) {
-        pass(q.b);
+        pass q.b;
     }
     // Insufficient confidence
-    pass(unknown);
+    pass unknown;
 };
 
 /**
  * Check if Q9<T> can crystallize (has sufficient confidence).
  */
 pub func<T>:q9_can_crystallize = bool(Q9<T>:q) {
-    pass(q.c <= -3 || q.c >= 3);
+    pass q.c <= -3 || q.c >= 3;
 };
 
 /**
@@ -441,9 +441,9 @@ pub func<T>:q9_can_crystallize = bool(Q9<T>:q) {
  */
 pub func<T>:q9_peek = T(Q9<T>:q) {
     if (q.c <= 0) {
-        pass(q.a);
+        pass q.a;
     }
-    pass(q.b);
+    pass q.b;
 };
 
 // =============================================================================
@@ -457,7 +457,7 @@ pub func<T>:q9_shift_to_a = Q9<T>(Q9<T>:q) {
     if (q.c > -4) {
         q.c = q.c - 1;
     }
-    pass(q);
+    pass q;
 };
 
 /**
@@ -467,7 +467,7 @@ pub func<T>:q9_shift_to_b = Q9<T>(Q9<T>:q) {
     if (q.c < 4) {
         q.c = q.c + 1;
     }
-    pass(q);
+    pass q;
 };
 
 /**
@@ -475,7 +475,7 @@ pub func<T>:q9_shift_to_b = Q9<T>(Q9<T>:q) {
  */
 pub func<T>:q9_reset_confidence = Q9<T>(Q9<T>:q) {
     q.c = 0;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -483,7 +483,7 @@ pub func<T>:q9_reset_confidence = Q9<T>(Q9<T>:q) {
  */
 pub func<T>:q9_flip_confidence = Q9<T>(Q9<T>:q) {
     q.c = 0 - q.c;
-    pass(q);
+    pass q;
 };
 
 // =============================================================================
@@ -531,7 +531,7 @@ pub func<T>:q21_create = Q21<T>(T:a, T:b, tbb8:c) {
     q.a = a;
     q.b = b;
     q.c = c;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -543,7 +543,7 @@ pub func<T>:q21_unknown = Q21<T>(T:a, T:b) {
     q.a = a;
     q.b = b;
     q.c = c0;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -555,7 +555,7 @@ pub func<T>:q21_certain_a = Q21<T>(T:a, T:b) {
     q.a = a;
     q.b = b;
     q.c = c_neg10;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -567,7 +567,7 @@ pub func<T>:q21_certain_b = Q21<T>(T:a, T:b) {
     q.a = a;
     q.b = b;
     q.c = c10;
-    pass(q);
+    pass q;
 };
 
 // =============================================================================
@@ -580,7 +580,7 @@ pub func<T>:q21_certain_b = Q21<T>(T:a, T:b) {
 pub func<T>:q21_add = Q21<T>(Q21<T>:q, T:value) {
     q.a = q.a + value;
     q.b = q.b + value;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -589,7 +589,7 @@ pub func<T>:q21_add = Q21<T>(Q21<T>:q, T:value) {
 pub func<T>:q21_sub = Q21<T>(Q21<T>:q, T:value) {
     q.a = q.a - value;
     q.b = q.b - value;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -598,7 +598,7 @@ pub func<T>:q21_sub = Q21<T>(Q21<T>:q, T:value) {
 pub func<T>:q21_mul = Q21<T>(Q21<T>:q, T:value) {
     q.a = q.a * value;
     q.b = q.b * value;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -607,7 +607,7 @@ pub func<T>:q21_mul = Q21<T>(Q21<T>:q, T:value) {
 pub func<T>:q21_div = Q21<T>(Q21<T>:q, T:value) {
     q.a = q.a / value;
     q.b = q.b / value;
-    pass(q);
+    pass q;
 };
 
 // =============================================================================
@@ -629,12 +629,12 @@ pub func<T>:q21_crystallize = T(Q21<T>:q) {
     tbb8:pos8 = 8;
     
     if (q.c <= neg8) {
-        pass(q.a);
+        pass q.a;
     }
     if (q.c >= pos8) {
-        pass(q.b);
+        pass q.b;
     }
-    pass(unknown);
+    pass unknown;
 };
 
 /**
@@ -643,7 +643,7 @@ pub func<T>:q21_crystallize = T(Q21<T>:q) {
 pub func<T>:q21_can_crystallize = bool(Q21<T>:q) {
     tbb8:neg8 = -8;
     tbb8:pos8 = 8;
-    pass(q.c <= neg8 || q.c >= pos8);
+    pass q.c <= neg8 || q.c >= pos8;
 };
 
 /**
@@ -652,9 +652,9 @@ pub func<T>:q21_can_crystallize = bool(Q21<T>:q) {
 pub func<T>:q21_peek = T(Q21<T>:q) {
     tbb8:c0 = 0;
     if (q.c <= c0) {
-        pass(q.a);
+        pass q.a;
     }
-    pass(q.b);
+    pass q.b;
 };
 
 // =============================================================================
@@ -670,7 +670,7 @@ pub func<T>:q21_shift_to_a = Q21<T>(Q21<T>:q) {
     if (q.c > neg10) {
         q.c = q.c - one;
     }
-    pass(q);
+    pass q;
 };
 
 /**
@@ -682,7 +682,7 @@ pub func<T>:q21_shift_to_b = Q21<T>(Q21<T>:q) {
     if (q.c < pos10) {
         q.c = q.c + one;
     }
-    pass(q);
+    pass q;
 };
 
 /**
@@ -691,7 +691,7 @@ pub func<T>:q21_shift_to_b = Q21<T>(Q21<T>:q) {
 pub func<T>:q21_reset_confidence = Q21<T>(Q21<T>:q) {
     tbb8:c0 = 0;
     q.c = c0;
-    pass(q);
+    pass q;
 };
 
 /**
@@ -700,5 +700,5 @@ pub func<T>:q21_reset_confidence = Q21<T>(Q21<T>:q) {
 pub func<T>:q21_flip_confidence = Q21<T>(Q21<T>:q) {
     tbb8:c0 = 0;
     q.c = c0 - q.c;
-    pass(q);
+    pass q;
 };

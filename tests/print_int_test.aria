@@ -4,7 +4,7 @@
 
 // Inline int64_toString until module system is implemented
 func:int64_toString = string(int64:value) {
-    if (value == 0) { pass("0"); }
+    if (value == 0) { pass "0"; }
     
     bool:is_negative = false;
     int64:work_value = value;
@@ -39,18 +39,18 @@ func:int64_toString = string(int64:value) {
         result = string_concat("-", result);
     }
     
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
     int64:x = 42;
     // Explicit conversion - no implicit type coercion
-    string:x_str = raw(int64_toString(x));
-    drop(print(x_str));
-    pass(42);
+    string:x_str = raw int64_toString(x);
+    drop print(x_str);
+    pass 42;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

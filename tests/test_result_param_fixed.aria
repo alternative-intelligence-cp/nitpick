@@ -2,24 +2,24 @@
 // Simple test of Result parameter passing
 
 func:get42 = int32() {
-    pass(42i32);
+    pass 42i32;
 };
 
 func:extract = int32(Result<int32>:r) {
     // Properly check error before accessing value
     if (r.is_error) {
-        pass(0i32);
+        pass 0i32;
     }
-    pass(r.value);
+    pass r.value;
 };
 
 func:main = int32() {
     Result<int32>:result = get42();
     int32:value = extract(result) ? 0i32;
-    pass(value);  // Should return 42
+    pass value;  // Should return 42
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

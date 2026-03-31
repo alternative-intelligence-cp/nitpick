@@ -1,21 +1,21 @@
 func:failsafe = int32(tbb32:err) {
     print("ERROR");
-    exit(1);
+    exit 1;
 };
 
 func:add_ten_direct = int32(int32:x) {
-    pass(x + 10);
+    pass x + 10;
 };
 
 func:double_it_direct = int32(int32:x) {
-    pass(x * 2);
+    pass x * 2;
 };
 
 func:main = int32() {
     print("Testing pipeline operators");
     
     int32:value = 5;
-    int32:result1 = raw(value |> add_ten_direct |> double_it_direct);
+    int32:result1 = raw value |> add_ten_direct |> double_it_direct;
     
     // Test many possibilities
     if (result1 == 0) { print("result = 0"); }
@@ -27,5 +27,5 @@ func:main = int32() {
     if (result1 == 30) { print("result = 30 CORRECT!"); }
     if (result1 == 2147483647) { print("result = INT32_MAX (unknown)"); }
     
-    exit(0);
+    exit 0;
 };

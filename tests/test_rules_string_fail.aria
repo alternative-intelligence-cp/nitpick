@@ -6,13 +6,13 @@ Rules<string>:str_non_empty = {
 };
 
 func:failsafe = int32(tbb32:err) {
-    drop(puts("FAILSAFE: empty strings not allowed!"));
-    exit(1);
+    drop puts("FAILSAFE: empty strings not allowed!");
+    exit 1;
 };
 
 func:main = int32() {
     // Empty string should trigger failsafe
     limit<str_non_empty> string:empty = "";
-    drop(puts("FAIL: should have triggered failsafe"));
-    pass(1);
+    drop puts("FAIL: should have triggered failsafe");
+    pass 1;
 };

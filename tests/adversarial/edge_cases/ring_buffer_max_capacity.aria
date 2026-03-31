@@ -4,7 +4,7 @@
 // overwrites old entries, and indices cycle back to zero. Tests the exact
 // boundary conditions that occur in aria-decision-t and aria-entangled.
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 extern func:aria_alloc = wild int64*(int64:size);
 extern func:aria_free  = void(wild int64*:ptr);
@@ -30,25 +30,25 @@ pub func:ring_write = int64(wild int64->:buf, wild int64->:meta, int64:value) {
         if (new_head >= cap) { new_head = 0i64; }
         meta[0i64] = new_head;
     }
-    pass(0i64);
+    pass 0i64;
 };
 
 pub func:ring_read = int64(wild int64->:buf, wild int64->:meta, int64:index) {
     int64:head = meta[0i64];
     int64:count = meta[1i64];
     int64:cap = meta[2i64];
-    if (index >= count) { pass(0i64 - 1i64); }
+    if (index >= count) { pass 0i64 - 1i64; }
     int64:slot = head + index;
     while (slot >= cap) { slot = slot - cap; }
-    pass(buf[slot]);
+    pass buf[slot];
 };
 
 func:main = int32() {
     int64:passed = 0i64;
     int64:failed = 0i64;
 
-    drop(println("edge_cases/ring_buffer_max_capacity"));
-    drop(println("===================================="));
+    drop println("edge_cases/ring_buffer_max_capacity");
+    drop println("====================================");
 
     int64:cap = 4i64;
     wild int64->:buf  = aria_alloc(cap * 8i64);
@@ -60,108 +60,108 @@ func:main = int32() {
     meta[2i64] = cap;
 
     // T01: write first element
-    drop(raw(ring_write(buf, meta, 10i64)));
-    int64:v1 = raw(ring_read(buf, meta, 0i64));
+    drop raw ring_write(buf, meta, 10i64);
+    int64:v1 = raw ring_read(buf, meta, 0i64);
     if (v1 == 10i64 && meta[1i64] == 1i64) {
-        drop(println("[PASS] T01 first write: buf[0]=10, count=1"));
+        drop println("[PASS] T01 first write: buf[0]=10, count=1");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T01 first write"));
+        drop println("[FAIL] T01 first write");
         failed = failed + 1i64;
     }
 
     // T02: fill to capacity
-    drop(raw(ring_write(buf, meta, 20i64)));
-    drop(raw(ring_write(buf, meta, 30i64)));
-    drop(raw(ring_write(buf, meta, 40i64)));
+    drop raw ring_write(buf, meta, 20i64);
+    drop raw ring_write(buf, meta, 30i64);
+    drop raw ring_write(buf, meta, 40i64);
     if (meta[1i64] == 4i64 && meta[0i64] == 0i64) {
-        drop(println("[PASS] T02 filled: count=4, head=0"));
+        drop println("[PASS] T02 filled: count=4, head=0");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T02 fill to capacity"));
+        drop println("[FAIL] T02 fill to capacity");
         failed = failed + 1i64;
     }
 
     // T03: read all 4 elements in order
-    int64:r0 = raw(ring_read(buf, meta, 0i64));
-    int64:r1 = raw(ring_read(buf, meta, 1i64));
-    int64:r2 = raw(ring_read(buf, meta, 2i64));
-    int64:r3 = raw(ring_read(buf, meta, 3i64));
+    int64:r0 = raw ring_read(buf, meta, 0i64);
+    int64:r1 = raw ring_read(buf, meta, 1i64);
+    int64:r2 = raw ring_read(buf, meta, 2i64);
+    int64:r3 = raw ring_read(buf, meta, 3i64);
     if (r0 == 10i64 && r1 == 20i64 && r2 == 30i64 && r3 == 40i64) {
-        drop(println("[PASS] T03 read all: 10 20 30 40"));
+        drop println("[PASS] T03 read all: 10 20 30 40");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T03 read all 4 elements"));
+        drop println("[FAIL] T03 read all 4 elements");
         failed = failed + 1i64;
     }
 
     // T04: overwrite oldest (wrap around)
-    drop(raw(ring_write(buf, meta, 50i64)));
+    drop raw ring_write(buf, meta, 50i64);
     // head should now be 1, oldest (10) overwritten with 50
     if (meta[0i64] == 1i64 && meta[1i64] == 4i64) {
-        drop(println("[PASS] T04 wrap: head=1, count=4"));
+        drop println("[PASS] T04 wrap: head=1, count=4");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T04 wrap metadata"));
+        drop println("[FAIL] T04 wrap metadata");
         failed = failed + 1i64;
     }
 
     // T05: read after wrap — oldest is now 20 (index 0 = head=1 → buf[1])
-    int64:w0 = raw(ring_read(buf, meta, 0i64));
-    int64:w1 = raw(ring_read(buf, meta, 1i64));
-    int64:w2 = raw(ring_read(buf, meta, 2i64));
-    int64:w3 = raw(ring_read(buf, meta, 3i64));
+    int64:w0 = raw ring_read(buf, meta, 0i64);
+    int64:w1 = raw ring_read(buf, meta, 1i64);
+    int64:w2 = raw ring_read(buf, meta, 2i64);
+    int64:w3 = raw ring_read(buf, meta, 3i64);
     if (w0 == 20i64 && w1 == 30i64 && w2 == 40i64 && w3 == 50i64) {
-        drop(println("[PASS] T05 read after wrap: 20 30 40 50"));
+        drop println("[PASS] T05 read after wrap: 20 30 40 50");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T05 read after wrap"));
+        drop println("[FAIL] T05 read after wrap");
         failed = failed + 1i64;
     }
 
     // T06: overwrite 3 more — full cycle
-    drop(raw(ring_write(buf, meta, 60i64)));  // overwrites buf[1] (20), head→2
-    drop(raw(ring_write(buf, meta, 70i64)));  // overwrites buf[2] (30), head→3
-    drop(raw(ring_write(buf, meta, 80i64)));  // overwrites buf[3] (40), head→0
+    drop raw ring_write(buf, meta, 60i64);  // overwrites buf[1] (20), head→2
+    drop raw ring_write(buf, meta, 70i64);  // overwrites buf[2] (30), head→3
+    drop raw ring_write(buf, meta, 80i64);  // overwrites buf[3] (40), head→0
     if (meta[0i64] == 0i64 && meta[1i64] == 4i64) {
-        drop(println("[PASS] T06 full cycle: head=0, count=4"));
+        drop println("[PASS] T06 full cycle: head=0, count=4");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T06 full cycle metadata"));
+        drop println("[FAIL] T06 full cycle metadata");
         failed = failed + 1i64;
     }
 
     // T07: read after full cycle — should be 50 60 70 80
-    int64:fc0 = raw(ring_read(buf, meta, 0i64));
-    int64:fc1 = raw(ring_read(buf, meta, 1i64));
-    int64:fc2 = raw(ring_read(buf, meta, 2i64));
-    int64:fc3 = raw(ring_read(buf, meta, 3i64));
+    int64:fc0 = raw ring_read(buf, meta, 0i64);
+    int64:fc1 = raw ring_read(buf, meta, 1i64);
+    int64:fc2 = raw ring_read(buf, meta, 2i64);
+    int64:fc3 = raw ring_read(buf, meta, 3i64);
     if (fc0 == 50i64 && fc1 == 60i64 && fc2 == 70i64 && fc3 == 80i64) {
-        drop(println("[PASS] T07 full cycle read: 50 60 70 80"));
+        drop println("[PASS] T07 full cycle read: 50 60 70 80");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T07 full cycle read"));
+        drop println("[FAIL] T07 full cycle read");
         failed = failed + 1i64;
     }
 
     // T08: out-of-range read returns -1
-    int64:oor = raw(ring_read(buf, meta, 4i64));
+    int64:oor = raw ring_read(buf, meta, 4i64);
     if (oor == 0i64 - 1i64) {
-        drop(println("[PASS] T08 out-of-range read = -1"));
+        drop println("[PASS] T08 out-of-range read = -1");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T08 out-of-range read"));
+        drop println("[FAIL] T08 out-of-range read");
         failed = failed + 1i64;
     }
 
     aria_free(buf);
     aria_free(meta);
 
-    drop(println("---"));
+    drop println("---");
     if (failed == 0i64) {
-        drop(println("PASS: all 8 ring_buffer tests passed"));
-        exit(0);
+        drop println("PASS: all 8 ring_buffer tests passed");
+        exit 0;
     }
-    drop(println("FAIL: some ring_buffer tests failed"));
-    pass(1i32);
+    drop println("FAIL: some ring_buffer tests failed");
+    pass 1i32;
 };

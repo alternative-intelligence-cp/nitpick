@@ -119,6 +119,9 @@ private:
     ASTNodePtr parseWhenStatement();
     ASTNodePtr parsePickStatement();
     ASTNodePtr parseFallStatement();
+    ASTNodePtr parseExitStatement();
+    ASTNodePtr parseApushStatement();
+    ASTNodePtr parseAstackStatement();
     bool isTypeKeyword(frontend::TokenType type) const;
     
     // Generic type arguments parsing (Phase 3.4 Part 5)

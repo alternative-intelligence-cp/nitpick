@@ -5,7 +5,7 @@
 // the Result<T> write-overhead bug (Bug #1.6) where 9 extra bytes were
 // written past each float64 store, corrupting adjacent elements.
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 extern func:aria_alloc = wild float64*(int64:size);
 extern func:aria_free  = void(wild float64*:ptr);
@@ -13,15 +13,15 @@ extern func:malloc     = wild int64*(int64:size);
 extern func:free       = void(wild int64*:ptr);
 
 pub func:store_val = float64(float64:v) {
-    pass(v);
+    pass v;
 };
 
 func:main = int32() {
     int64:passed = 0i64;
     int64:failed = 0i64;
 
-    drop(println("edge_cases/wild_array_last_elements"));
-    drop(println("===================================="));
+    drop println("edge_cases/wild_array_last_elements");
+    drop println("====================================");
 
     // ── float64 wild array tests (via aria_alloc) ────────────────────────
 
@@ -40,50 +40,50 @@ func:main = int32() {
     float64:d1b = farr[7i64] - 7.5;
     if (d1b < 0.0) { d1b = 0.0 - d1b; }
     if (d1a < 0.001 && d1b < 0.001) {
-        drop(println("[PASS] T01 wild float64[8] last elements: 6.5, 7.5"));
+        drop println("[PASS] T01 wild float64[8] last elements: 6.5, 7.5");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T01 wild float64[8] last elements wrong"));
+        drop println("[FAIL] T01 wild float64[8] last elements wrong");
         failed = failed + 1i64;
     }
 
     // T02: write via pub func result (the pattern that triggered Bug #1.6)
-    farr[6i64] = raw(store_val(66.6));
-    farr[7i64] = raw(store_val(77.7));
+    farr[6i64] = raw store_val(66.6);
+    farr[7i64] = raw store_val(77.7);
     float64:d2a = farr[6i64] - 66.6;
     if (d2a < 0.0) { d2a = 0.0 - d2a; }
     float64:d2b = farr[7i64] - 77.7;
     if (d2b < 0.0) { d2b = 0.0 - d2b; }
     if (d2a < 0.001 && d2b < 0.001) {
-        drop(println("[PASS] T02 pub func result to last elements: 66.6, 77.7"));
+        drop println("[PASS] T02 pub func result to last elements: 66.6, 77.7");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T02 pub func result to last elements"));
+        drop println("[FAIL] T02 pub func result to last elements");
         failed = failed + 1i64;
     }
 
     // T03: verify earlier elements not corrupted by last-element writes
     farr[0i64] = 100.0;
     farr[1i64] = 200.0;
-    farr[6i64] = raw(store_val(600.0));
-    farr[7i64] = raw(store_val(700.0));
+    farr[6i64] = raw store_val(600.0);
+    farr[7i64] = raw store_val(700.0);
     // Check that farr[0] and farr[1] are still correct
     float64:d3a = farr[0i64] - 100.0;
     if (d3a < 0.0) { d3a = 0.0 - d3a; }
     float64:d3b = farr[1i64] - 200.0;
     if (d3b < 0.0) { d3b = 0.0 - d3b; }
     if (d3a < 0.001 && d3b < 0.001) {
-        drop(println("[PASS] T03 earlier elements not corrupted after last-element write"));
+        drop println("[PASS] T03 earlier elements not corrupted after last-element write");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T03 earlier elements corrupted by last-element write"));
+        drop println("[FAIL] T03 earlier elements corrupted by last-element write");
         failed = failed + 1i64;
     }
 
     // T04: interleaved writes — pub func stores to adjacent slots
-    farr[4i64] = raw(store_val(44.4));
-    farr[5i64] = raw(store_val(55.5));
-    farr[6i64] = raw(store_val(66.6));
+    farr[4i64] = raw store_val(44.4);
+    farr[5i64] = raw store_val(55.5);
+    farr[6i64] = raw store_val(66.6);
     float64:d4a = farr[4i64] - 44.4;
     if (d4a < 0.0) { d4a = 0.0 - d4a; }
     float64:d4b = farr[5i64] - 55.5;
@@ -91,10 +91,10 @@ func:main = int32() {
     float64:d4c = farr[6i64] - 66.6;
     if (d4c < 0.0) { d4c = 0.0 - d4c; }
     if (d4a < 0.001 && d4b < 0.001 && d4c < 0.001) {
-        drop(println("[PASS] T04 adjacent pub func stores: 44.4, 55.5, 66.6"));
+        drop println("[PASS] T04 adjacent pub func stores: 44.4, 55.5, 66.6");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T04 adjacent pub func stores corrupted"));
+        drop println("[FAIL] T04 adjacent pub func stores corrupted");
         failed = failed + 1i64;
     }
 
@@ -110,10 +110,10 @@ func:main = int32() {
     iarr[4i64] = 4000i64;
     iarr[5i64] = 5000i64;
     if (iarr[4i64] == 4000i64 && iarr[5i64] == 5000i64 && iarr[0i64] == 1000i64) {
-        drop(println("[PASS] T05 wild int64[6] last elements: 4000, 5000"));
+        drop println("[PASS] T05 wild int64[6] last elements: 4000, 5000");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T05 wild int64[6] last elements"));
+        drop println("[FAIL] T05 wild int64[6] last elements");
         failed = failed + 1i64;
     }
 
@@ -125,20 +125,20 @@ func:main = int32() {
     }
     // Check last element and first element
     if (iarr[0i64] == 0i64 && iarr[5i64] == 555i64) {
-        drop(println("[PASS] T06 fill int64[6]: first=0, last=555"));
+        drop println("[PASS] T06 fill int64[6]: first=0, last=555");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T06 fill int64[6] boundary values"));
+        drop println("[FAIL] T06 fill int64[6] boundary values");
         failed = failed + 1i64;
     }
 
     free(iarr);
 
-    drop(println("---"));
+    drop println("---");
     if (failed == 0i64) {
-        drop(println("PASS: all 6 wild_array_last_elements tests passed"));
-        exit(0);
+        drop println("PASS: all 6 wild_array_last_elements tests passed");
+        exit 0;
     }
-    drop(println("FAIL: some wild_array_last_elements tests failed"));
-    pass(1i32);
+    drop println("FAIL: some wild_array_last_elements tests failed");
+    pass 1i32;
 };

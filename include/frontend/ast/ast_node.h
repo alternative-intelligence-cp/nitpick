@@ -33,6 +33,7 @@ public:
         NULL_COALESCE,        // Null coalescing: value ?? default
         PIPELINE,             // Pipeline operators: |>, <|
         UNWRAP,               // Unwrap operator: result?
+        DEFAULTS,             // Defaults operator: expr ?| fallback, expr defaults fallback
         ARRAY_LITERAL,        // Array literal: [1, 2, 3]
         OBJECT_LITERAL,       // Object literal: { key: value }
         AWAIT,                // Await expression: await future (async/await)

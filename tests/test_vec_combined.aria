@@ -23,7 +23,7 @@ func:Vec_int8_new = Vec<int8>() {
     vec.element_size = 1i64;
     vec.type_id = 1i32;
     
-    pass(vec);
+    pass vec;
 };
 
 // Vec<int8> push method - simplified to take data pointer directly
@@ -42,13 +42,13 @@ func:Vec_int8_pop = int8(wild int8->:data) {
     // Call runtime pop directly
     aria_array_pop_simple(data, @result);
     
-    pass(result);
+    pass result;
 };
 
 // Vec<int8> update length helper -  takes data pointer directly
 // Gets the actual length from runtime
 func:Vec_int8_update_length = int64(wild int8->:data) {
-    pass(aria_array_length(data));
+    pass aria_array_length(data);
 };
 // Vec<T> Phase 3: Method Syntax Test  
 // Goal: Clean, ergonomic Vec API for Nikola
@@ -57,11 +57,11 @@ func:Vec_int8_update_length = int64(wild int8->:data) {
 // Test Vec<int8> with static method syntax
 func:main = int32() {
     // Create new Vec<int8>
-    Vec<int8>:numbers = raw(Vec_int8_new());
+    Vec<int8>:numbers = raw Vec_int8_new();
     
     // Check initial state
     if (numbers.length != 0i64) {
-        pass(1i32);  // FAIL: Initial length should be 0
+        pass 1i32;  // FAIL: Initial length should be 0
     }
     
     // Push some values (passing data pointer directly)
@@ -74,34 +74,34 @@ func:main = int32() {
     
     // Verify length
     if (numbers.length != 3i64) {
-        pass(2i32);  // FAIL: Length should be 3 after pushes
+        pass 2i32;  // FAIL: Length should be 3 after pushes
     }
     
     // Pop values (passing data pointer directly)
-    int8:val3 = raw(Vec_int8_pop(numbers.data));
+    int8:val3 = raw Vec_int8_pop(numbers.data);
     if (val3 != 123i8) {
-        pass(3i32);  // FAIL: Popped value should be 123
+        pass 3i32;  // FAIL: Popped value should be 123
     }
     
-    int8:val2 = raw(Vec_int8_pop(numbers.data));
+    int8:val2 = raw Vec_int8_pop(numbers.data);
     if (val2 != 99i8) {
-        pass(4i32);  // FAIL: Popped value should be 99
+        pass 4i32;  // FAIL: Popped value should be 99
     }
     
-    int8:val1 = raw(Vec_int8_pop(numbers.data));
+    int8:val1 = raw Vec_int8_pop(numbers.data);
     if (val1 != 42i8) {
-        pass(5i32);  // FAIL: Popped value should be 42
+        pass 5i32;  // FAIL: Popped value should be 42
     }
     
     // Update and check final length
     numbers.length = Vec_int8_update_length(numbers.data) ? 0i64;
     if (numbers.length != 0i64) {
-        pass(6i32);  // FAIL: Length should be 0 after popping all
+        pass 6i32;  // FAIL: Length should be 0 after popping all
     }
     
-    exit(0);  // SUCCESS!
+    exit 0;  // SUCCESS!
 };
 
 func:failsafe = int32(tbb32:err) {
-    exit(1);
+    exit 1;
 };

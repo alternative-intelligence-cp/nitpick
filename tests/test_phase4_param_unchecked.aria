@@ -4,28 +4,28 @@
 
 func:divide = int32(int32:a, int32:b) {
     if (b == 0i32) {
-        fail(1i32);
+        fail 1i32;
     }
-    pass(a / b);
+    pass a / b;
 };
 
 // BAD: This should fail - can't access r.value without checking
 // Even though main() checked it before passing
 func:helper_bad = int32(Result<int32>:r) {
-    pass(raw(r));  // ERROR: Result parameter not checked!
+    pass raw r;  // ERROR: Result parameter not checked!
 };
 
 func:main = int32() {
     Result<int32>:r = divide(10i32, 2i32);
     if (r.is_error) {
-        fail(1i32);
+        fail 1i32;
     }
     // r is checked here in main, but helper doesn't know that
-    int32:x = raw(helper_bad(r));
-    pass(x);
+    int32:x = raw helper_bad(r);
+    pass x;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

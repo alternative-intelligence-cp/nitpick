@@ -9,14 +9,14 @@
 // Simple function that returns int64 via pass/fail
 func:divide = int64(int64:a, int64:b) {
     if (b == 0i64) {
-        fail(1i64);
+        fail 1i64;
     }
-    pass(a);
+    pass a;
 };
 
 func:main = int32() {
     // Function returns Result{value, error, is_error}
-    int64:r = raw(divide(10i64, 2i64));
+    int64:r = raw divide(10i64, 2i64);
     
     // ❌ BAD: In future, direct access to r should require checking .is_error first
     // For now, we get int64 return which is either value or error code
@@ -30,10 +30,10 @@ func:main = int32() {
     //   }
     
     print("Test demonstrates current lack of Result<T> enforcement");
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

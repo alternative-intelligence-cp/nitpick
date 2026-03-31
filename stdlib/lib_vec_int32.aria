@@ -23,7 +23,7 @@ func:Vec_int8_new = Vec<int8>() {
     vec.element_size = 1i64;
     vec.type_id = 1i32;
     
-    pass(vec);
+    pass vec;
 };
 
 // Vec<int8> push method - simplified to take data pointer directly
@@ -42,11 +42,11 @@ func:Vec_int8_pop = int8(wild int8->:data) {
     // Call runtime pop directly
     aria_array_pop_simple(data, @result);
     
-    pass(result);
+    pass result;
 };
 
 // Vec<int8> update length helper -  takes data pointer directly
 // Gets the actual length from runtime
 func:Vec_int8_update_length = int64(wild int8->:data) {
-    pass(aria_array_length(data));
+    pass aria_array_length(data);
 };

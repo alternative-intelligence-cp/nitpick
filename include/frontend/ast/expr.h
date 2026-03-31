@@ -460,6 +460,30 @@ public:
 };
 
 /**
+ * Defaults expression node — scoped expression fallback (v0.4.3)
+ * Represents: expr ?| fallback, expr defaults fallback
+ *
+ * Wraps the *entire* preceding sub-expression. If any intermediate Result
+ * in that sub-expression produces ERR during evaluation, the whole chain
+ * short-circuits to the fallback value.
+ *
+ * The fallback must be a literal, variable, or `unknown` — NOT a function call.
+ */
+class DefaultsExpr : public ASTNode {
+public:
+    ASTNodePtr expr;          // The sub-expression that may produce ERR at any point
+    ASTNodePtr fallback;      // The fallback value (literal/variable/unknown only)
+    
+    DefaultsExpr(ASTNodePtr expression, ASTNodePtr fallbackVal, int line = 0, int column = 0)
+        : ASTNode(NodeType::DEFAULTS, line, column),
+          expr(std::move(expression)), fallback(std::move(fallbackVal)) {}
+    
+    std::string toString() const override {
+        return "Defaults(" + expr->toString() + " ?| " + fallback->toString() + ")";
+    }
+};
+
+/**
  * Vector constructor expression node
  * Represents: vec2(x, y), vec3(x, y, z), vec9(c0, c1, ..., c8)
  * 

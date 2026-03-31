@@ -4,22 +4,22 @@
 
 // Define generic identity function inline
 func<T>:identity = T(T:value) {
-    pass(value);
+    pass value;
 };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     // Test turbofish syntax ::<Type>
     Result<int64>:result = identity::<int64>(42);
     
     if (result.is_error) {
-        pass(1);  // Should not fail
+        pass 1;  // Should not fail
     }
     
     if (result.value != 42) {
-        pass(2);  // Value should be 42
+        pass 2;  // Value should be 42
     }
     
-    exit(0);  // Success!
+    exit 0;  // Success!
 };

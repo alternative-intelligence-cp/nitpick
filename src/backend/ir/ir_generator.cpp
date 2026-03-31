@@ -2465,6 +2465,20 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     initVal = strGV;
                 }
             }
+        } else if (varDecl->initializer && varDecl->initializer->type == ASTNode::NodeType::UNARY_OP) {
+            // Handle negated literals: -100i64 is parsed as UnaryExpr(MINUS, Literal(100))
+            UnaryExpr* unary = static_cast<UnaryExpr*>(varDecl->initializer.get());
+            if (unary->op.type == TokenType::TOKEN_MINUS
+                && unary->operand && unary->operand->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* lit = static_cast<LiteralExpr*>(unary->operand.get());
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    int64_t val = -std::get<int64_t>(lit->value);
+                    initVal = llvm::ConstantInt::get(varType, (uint64_t)val, true);
+                } else if (std::holds_alternative<double>(lit->value)) {
+                    double val = -std::get<double>(lit->value);
+                    initVal = llvm::ConstantFP::get(varType, val);
+                }
+            }
         }
         if (!initVal) {
             initVal = llvm::Constant::getNullValue(varType);
@@ -2791,6 +2805,20 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         initVal = strGV;  // ptr to global AriaString
                     }
                 }
+            } else if (varDecl->initializer && varDecl->initializer->type == ASTNode::NodeType::UNARY_OP) {
+                // Handle negated literals: -100i64 is parsed as UnaryExpr(MINUS, Literal(100))
+                UnaryExpr* unary = static_cast<UnaryExpr*>(varDecl->initializer.get());
+                if (unary->op.type == TokenType::TOKEN_MINUS
+                    && unary->operand && unary->operand->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* lit = static_cast<LiteralExpr*>(unary->operand.get());
+                    if (std::holds_alternative<int64_t>(lit->value)) {
+                        int64_t val = -std::get<int64_t>(lit->value);
+                        initVal = llvm::ConstantInt::get(varType, (uint64_t)val, true);
+                    } else if (std::holds_alternative<double>(lit->value)) {
+                        double val = -std::get<double>(lit->value);
+                        initVal = llvm::ConstantFP::get(varType, val);
+                    }
+                }
             }
             if (!initVal) {
                 initVal = llvm::Constant::getNullValue(varType);
@@ -2816,10 +2844,14 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             
             // P1-4: Track current function declaration for contract checking
             current_func_decl = funcDecl;
+
+            // v0.4.3+: Check if this function has SMT-proven ustack optimization
+            ustack_fast_mode = ustack_optimized_funcs.count(funcDecl->funcName) > 0;
             
             // Skip generic functions (handled by monomorphization)
             if (!funcDecl->genericParams.empty()) {
                 current_func_decl = nullptr;
+                ustack_fast_mode = false;
                 continue;
             }
             
@@ -5115,6 +5147,19 @@ skip_comparison:
             // Execute all defer blocks (LIFO order) before returning
             executeFunctionDefers();
             
+            // pass; (no value) — void return from NIL-returning function
+            if (!passStmt->value) {
+                llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                llvm::Type* returnType = currentFunc->getReturnType();
+                if (returnType->isVoidTy()) {
+                    builder.CreateRetVoid();
+                } else {
+                    // NIL function with Result<NIL> return
+                    builder.CreateRet(llvm::UndefValue::get(returnType));
+                }
+                return nullptr;
+            }
+            
             // Generate code for the value expression
             llvm::Value* value = codegenExpression(passStmt->value.get());
             if (value) {
@@ -6270,6 +6315,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             expr_codegen.setTraitMethodOrder(&trait_method_order);
             // v0.4.3: Propagate user stack pop/peek destination type context
             expr_codegen.ustack_pop_dest_type = ustack_pop_dest_type;
+            // v0.4.3+: Propagate SMT-proven fast mode for user stack
+            expr_codegen.ustack_fast_mode = ustack_fast_mode;
             return expr_codegen.codegenCall(call);
         }
         
@@ -9249,11 +9296,23 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     return builder.CreateXor(L, R, "xortmp");
                 case frontend::TokenType::TOKEN_SHIFT_LEFT:
                     return builder.CreateShl(L, R, "shltmp");
-                case frontend::TokenType::TOKEN_SHIFT_RIGHT:
-                    // Bug #20 fix: use logical shift right (lshr).
-                    // The type checker rejects >> on signed types, so any >>
-                    // that reaches codegen has unsigned operands; fill with 0s.
+                case frontend::TokenType::TOKEN_SHIFT_RIGHT: {
+                    // BUG-3 fix: signed types now reach codegen, need arithmetic shift.
+                    // Determine signedness from Aria type to pick AShr vs LShr.
+                    bool shiftSigned = false;
+                    if (binop->left && binop->left->type == ASTNode::NodeType::IDENTIFIER) {
+                        auto* ident = static_cast<IdentifierExpr*>(binop->left.get());
+                        auto it = var_aria_types.find(ident->name);
+                        if (it != var_aria_types.end()) {
+                            const std::string& tn = it->second;
+                            shiftSigned = (tn.find("int") == 0 || tn == "nit");
+                        }
+                    }
+                    if (shiftSigned) {
+                        return builder.CreateAShr(L, R, "ashrtmp");
+                    }
                     return builder.CreateLShr(L, R, "lshrtmp");
+                }
                 
                 default:
                     return nullptr;
@@ -9484,6 +9543,68 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 return phi;
             }
+        }
+        
+        case ASTNode::NodeType::DEFAULTS: {
+            // Defaults operator: expr ?| fallback  OR  expr defaults fallback (v0.4.3)
+            // Wraps the sub-expression. If any Result ERR is detected, short-circuit to fallback.
+            DefaultsExpr* defExpr = static_cast<DefaultsExpr*>(expr);
+            
+            llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+            llvm::BasicBlock* fallbackBlock = llvm::BasicBlock::Create(context, "defaults_fallback", currentFunc);
+            llvm::BasicBlock* mergeBlock = llvm::BasicBlock::Create(context, "defaults_merge", currentFunc);
+            
+            // Generate the sub-expression
+            llvm::Value* exprVal = codegenExpression(defExpr->expr.get());
+            if (!exprVal) return nullptr;
+            
+            // If the sub-expression returned a Result struct, unwrap it  
+            llvm::Value* successVal = exprVal;
+            if (exprVal->getType()->isStructTy()) {
+                llvm::StructType* st = llvm::cast<llvm::StructType>(exprVal->getType());
+                if (st->getNumElements() == 3 &&
+                    st->getElementType(1)->isPointerTy() &&
+                    st->getElementType(2)->isIntegerTy(8)) {
+                    // Check is_error on the final result
+                    llvm::Value* isError = builder.CreateExtractValue(exprVal, 2, "defaults_final_err");
+                    llvm::Value* isErr = builder.CreateICmpNE(isError,
+                        llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), 0), "defaults_err_check");
+                    
+                    llvm::BasicBlock* successBlock = llvm::BasicBlock::Create(context, "defaults_ok", currentFunc);
+                    builder.CreateCondBr(isErr, fallbackBlock, successBlock);
+                    
+                    builder.SetInsertPoint(successBlock);
+                    successVal = builder.CreateExtractValue(exprVal, 0, "defaults_unwrap");
+                }
+            }
+            
+            llvm::BasicBlock* successEndBlock = builder.GetInsertBlock();
+            builder.CreateBr(mergeBlock);
+            
+            // Fallback block: generate the fallback value
+            builder.SetInsertPoint(fallbackBlock);
+            llvm::Value* fallbackVal = codegenExpression(defExpr->fallback.get());
+            if (!fallbackVal) return nullptr;
+            
+            // Type-match fallback to success value
+            if (fallbackVal->getType() != successVal->getType()) {
+                if (fallbackVal->getType()->isIntegerTy() && successVal->getType()->isIntegerTy()) {
+                    fallbackVal = builder.CreateSExtOrTrunc(fallbackVal, successVal->getType(), "defaults_cast");
+                } else if (fallbackVal->getType()->isFloatingPointTy() && successVal->getType()->isFloatingPointTy()) {
+                    fallbackVal = builder.CreateFPCast(fallbackVal, successVal->getType(), "defaults_fcast");
+                }
+            }
+            
+            llvm::BasicBlock* fallbackEndBlock = builder.GetInsertBlock();
+            builder.CreateBr(mergeBlock);
+            
+            // Merge
+            builder.SetInsertPoint(mergeBlock);
+            llvm::PHINode* phi = builder.CreatePHI(successVal->getType(), 2, "defaults_result");
+            phi->addIncoming(successVal, successEndBlock);
+            phi->addIncoming(fallbackVal, fallbackEndBlock);
+            
+            return phi;
         }
         
         case ASTNode::NodeType::OBJECT_LITERAL: {

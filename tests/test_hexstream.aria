@@ -1,46 +1,46 @@
 use "hexstream.aria".*;
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     println("=== Hexstream Tests ===");
 
     // Test 1: Init hexstream (opens FDs 3-5 to /dev/null if needed)
-    int32:init_ok = raw(Hexstream.init());
+    int32:init_ok = raw Hexstream.init();
     if (init_ok == 0i32) { println(" [PASS] hexstream init"); }
     if (init_ok != 0i32) { println(" [FAIL] hexstream init"); }
 
     // Test 2: Check FD 3 is open
-    int32:dbg_open = raw(Hexstream.is_open(3i32));
+    int32:dbg_open = raw Hexstream.is_open(3i32);
     if (dbg_open == 1i32) { println(" [PASS] stddbg (fd 3) is open"); }
     if (dbg_open != 1i32) { println(" [FAIL] stddbg (fd 3) not open"); }
 
     // Test 3: Check FD 4 is open
-    int32:dati_open = raw(Hexstream.is_open(4i32));
+    int32:dati_open = raw Hexstream.is_open(4i32);
     if (dati_open == 1i32) { println(" [PASS] stddati (fd 4) is open"); }
     if (dati_open != 1i32) { println(" [FAIL] stddati (fd 4) not open"); }
 
     // Test 4: Check FD 5 is open
-    int32:dato_open = raw(Hexstream.is_open(5i32));
+    int32:dato_open = raw Hexstream.is_open(5i32);
     if (dato_open == 1i32) { println(" [PASS] stddato (fd 5) is open"); }
     if (dato_open != 1i32) { println(" [FAIL] stddato (fd 5) not open"); }
 
     // Test 5: fd() name lookup
-    int32:dbg_fd = raw(Hexstream.fd("stddbg"));
+    int32:dbg_fd = raw Hexstream.fd("stddbg");
     if (dbg_fd == 3i32) { println(" [PASS] fd('stddbg') == 3"); }
     if (dbg_fd != 3i32) { println(" [FAIL] fd('stddbg') != 3"); }
 
     // Test 6: Redirect stddbg to a file and write to it
-    raw(Hexstream.redirect_to_file(3i32, "/tmp/hexstream_test_dbg.txt"));
-    raw(Hexstream.dbg("hello from stddbg"));
-    raw(Hexstream.send(3i32, "second line\n"));
+    raw Hexstream.redirect_to_file(3i32, "/tmp/hexstream_test_dbg.txt");
+    raw Hexstream.dbg("hello from stddbg");
+    raw Hexstream.send(3i32, "second line\n");
     println(" [PASS] debug write to file");
 
     // Test 7: Write int64 to stddato and read from stddati via file
-    raw(Hexstream.redirect_to_file(5i32, "/tmp/hexstream_test_data.bin"));
-    raw(Hexstream.write_int64(5i32, 12345i64));
+    raw Hexstream.redirect_to_file(5i32, "/tmp/hexstream_test_data.bin");
+    raw Hexstream.write_int64(5i32, 12345i64);
     println(" [PASS] write_int64 to stddato");
 
     println("=== Hexstream Tests Done ===");
-    exit(0);
+    exit 0;
 };

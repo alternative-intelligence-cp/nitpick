@@ -1,0 +1,115 @@
+// Test: defaults/?| operator and implicit Result propagation (v0.4.3)
+
+// Helper: always succeeds, returns the value
+func:succeed = int32(int32:x) {
+    pass x;
+};
+
+// Helper: always fails with error code 1
+func:fail_always = int32() {
+    fail 1i32;
+};
+
+// ============================================================================
+// Test 1: Basic defaults with ?| shorthand — success path
+// succeed(5) returns Ok(5), so defaults should not trigger
+// ============================================================================
+func:test_defaults_success = int32() {
+    int32:a = succeed(5i32) ?| 99i32;
+    if (a == 5i32) {
+        pass 0i32;
+    }
+    pass 1i32;
+};
+
+// ============================================================================
+// Test 2: Basic defaults with ?| shorthand — failure path
+// fail_always() returns ERR, so defaults should kick in and give us 99
+// ============================================================================
+func:test_defaults_failure = int32() {
+    int32:a = fail_always() ?| 99i32;
+    if (a == 99i32) {
+        pass 0i32;
+    }
+    pass 1i32;
+};
+
+// ============================================================================
+// Test 3: defaults with 'defaults' longform keyword — failure path
+// ============================================================================
+func:test_defaults_keyword = int32() {
+    int32:a = fail_always() defaults 42i32;
+    if (a == 42i32) {
+        pass 0i32;
+    }
+    pass 1i32;
+};
+
+// ============================================================================
+// Test 4: defaults in function argument position
+// succeed() takes int32, fail_always() returns Result<int32>
+// With defaults, the ERR should give us 10, which is then passed to succeed
+// ============================================================================
+func:test_defaults_in_arg = int32() {
+    int32:a = succeed(fail_always() ?| 10i32) ? 0i32;
+    if (a == 10i32) {
+        pass 0i32;
+    }
+    pass 1i32;
+};
+
+// ============================================================================
+// Test 5: Implicit propagation — no defaults, Result passes through
+// succeed(fail_always()) — fail_always returns ERR, should propagate to caller
+// The function returns an error Result since implicit propagation does early ret
+// ============================================================================
+func:test_implicit_propagation = int32() {
+    Result<int32>:r = succeed(fail_always());
+    // If error propagated, we never reach here — function returned ERR early
+    pass 77i32;
+};
+
+// Main
+func:main = int32() {
+    // Test 1: defaults success path
+    Result<int32>:r1 = test_defaults_success();
+    int32:v1 = r1 ? -1i32;
+    if (v1 != 0i32) {
+        exit 1;
+    }
+
+    // Test 2: defaults failure path
+    Result<int32>:r2 = test_defaults_failure();
+    int32:v2 = r2 ? -1i32;
+    if (v2 != 0i32) {
+        exit 2;
+    }
+
+    // Test 3: defaults longform keyword
+    Result<int32>:r3 = test_defaults_keyword();
+    int32:v3 = r3 ? -1i32;
+    if (v3 != 0i32) {
+        exit 3;
+    }
+
+    // Test 4: defaults in function argument
+    Result<int32>:r4 = test_defaults_in_arg();
+    int32:v4 = r4 ? -1i32;
+    if (v4 != 0i32) {
+        exit 4;
+    }
+
+    // Test 5: implicit propagation — error should propagate to us
+    Result<int32>:r5 = test_implicit_propagation();
+    int32:v5 = r5 ? -1i32;
+    // Propagated error means unwrap gives us -1, not 77
+    if (v5 != -1i32) {
+        exit 5;
+    }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

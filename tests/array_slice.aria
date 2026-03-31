@@ -3,7 +3,7 @@
 
 // Inline int64_toString for explicit conversion
 func:int64_toString = string(int64:value) {
-    if (value == 0) { pass("0"); }
+    if (value == 0) { pass "0"; }
     bool:is_negative = false;
     int64:work_value = value;
     if (value < 0) { is_negative = true; work_value = -value; }
@@ -26,52 +26,52 @@ func:int64_toString = string(int64:value) {
         result = string_concat(digit_char, result);
     }
     if (is_negative) { result = string_concat("-", result); }
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
-    drop(println("Testing array slicing:"));
+    drop println("Testing array slicing:");
     
     // Create an array
     int64[10]:nums = [1i64, 2i64, 3i64, 4i64, 5i64, 6i64, 7i64, 8i64, 9i64, 10i64];
     
     // Test inclusive slice
-    drop(println("Original array (first 5 elements):"));
+    drop println("Original array (first 5 elements):");
     for (i in 0..4) {
-        string:n_str = raw(int64_toString(nums[i]));
-        drop(println(n_str));
+        string:n_str = raw int64_toString(nums[i]);
+        drop println(n_str);
     }
     
     // Slice with inclusive range
-    drop(println("Slice [0..4] (inclusive):"));
+    drop println("Slice [0..4] (inclusive):");
     int64[]:slice1 = nums[0..4];
     for (i in 0..4) {
         string:s1_str = int64_toString(slice1[i]);
-        drop(println(s1_str));
+        drop println(s1_str);
     }
     
     // Slice with exclusive range
-    drop(println("Slice [2...7] (exclusive):"));
+    drop println("Slice [2...7] (exclusive):");
     int64[]:slice2 = nums[2...7];
     for (i in 0..4) {
         string:s2_str = int64_toString(slice2[i]);
-        drop(println(s2_str));
+        drop println(s2_str);
     }
     
     // Slice with variables
-    drop(println("Slice with variables [3..6]:"));
+    drop println("Slice with variables [3..6]:");
     int64:start = 3;
     int64:finish = 6;
     int64[]:slice3 = nums[start..finish];
     for (i in 0..3) {
         string:s3_str = int64_toString(slice3[i]);
-        drop(println(s3_str));
+        drop println(s3_str);
     }
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

@@ -3,7 +3,7 @@
 func:int64_toString = string(int64:value) {
     // Special case: zero
     if (value == 0) {
-        pass("0");
+        pass "0";
     }
     
     // Build result string by extracting digits
@@ -25,18 +25,18 @@ func:int64_toString = string(int64:value) {
         result = string_concat(digit_char, result);
     }
     
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
     // Test with just one call
     int64:zero = 0;
-    string:zero_str = raw(int64_toString(zero));
+    string:zero_str = raw int64_toString(zero);
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

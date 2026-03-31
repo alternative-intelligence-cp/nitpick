@@ -4,7 +4,7 @@
 func:failsafe = int32(tbb32:err) {
     // In a real program, this would log, cleanup, and exit gracefully
     // For this test, just return the error code
-    exit(1);
+    exit 1;
 };
 
 func:main = int32() {
@@ -14,7 +14,7 @@ func:main = int32() {
     // Use !!! to call failsafe(critical_error)
     // This desugars to: failsafe(critical_error)
     // The failsafe function will run and return exit code
-    int32:result = raw(!!! critical_error);
+    int32:result = raw !!! critical_error;
     
-    pass(result);
+    pass result;
 };

@@ -5,7 +5,7 @@ func:test_valid_lifetime = int32() {
     int32:outer = 42;
     int32$:ref = !$outer;
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 // COMMENTED OUT: Designed to test lifetime error
@@ -34,7 +34,7 @@ func:test_nested_scopes_valid = int32() {
     }
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 // COMMENTED OUT: Designed to test assignment error
@@ -61,14 +61,14 @@ func:test_assignment_after_borrow_scope = int32() {
     
     x = 20;  // OK: no active borrows
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 func:main = int32() {
     // Run tests that should succeed
-    int32:result1 = raw(test_valid_lifetime());
-    int32:result3 = raw(test_nested_scopes_valid());
-    int32:result5 = raw(test_assignment_after_borrow_scope());
+    int32:result1 = raw test_valid_lifetime();
+    int32:result3 = raw test_nested_scopes_valid();
+    int32:result5 = raw test_assignment_after_borrow_scope();
     
     // Tests 2 and 4 should fail at compile time
     // Uncomment one at a time to test error reporting:
@@ -76,10 +76,10 @@ func:main = int32() {
     // int32:result4 = test_assignment_while_borrowed();
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

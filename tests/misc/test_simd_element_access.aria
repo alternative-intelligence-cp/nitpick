@@ -11,7 +11,7 @@ func:test_simd_read = int32(simd<int32, 4>:vec) {
     // Use extracted values
     int32:sum = elem0 + elem1 + elem2 + elem3;
     
-    pass(sum);
+    pass sum;
 };
 
 func:test_simd_write = simd<int32, 4>(int32:val) {
@@ -24,7 +24,7 @@ func:test_simd_write = simd<int32, 4>(int32:val) {
     vec[2i32] = val + 2i32;
     vec[3i32] = val + 3i32;
     
-    pass(vec);
+    pass vec;
 };
 
 func:test_simd_modify = simd<int32, 4>(simd<int32, 4>:vec) {
@@ -34,13 +34,13 @@ func:test_simd_modify = simd<int32, 4>(simd<int32, 4>:vec) {
     vec[3i32] = temp;
     
     // Swap elements 0 and 3
-    pass(vec);
+    pass vec;
 };
 
 func:test_simd_variable_index = int32(simd<int32, 8>:vec, int32:idx) {
     // Test with variable index (runtime value)
     int32:value = vec[idx];
-    pass(value);
+    pass value;
 };
 
 func:test_simd_compound_assignment = simd<int32, 4>(simd<int32, 4>:vec) {
@@ -55,7 +55,7 @@ func:test_simd_compound_assignment = simd<int32, 4>(simd<int32, 4>:vec) {
     int32:second = result[1i32];
     result[1i32] = second + 10i32;
     
-    pass(result);
+    pass result;
 };
 
 func:test_simd_mixed_types = int64(simd<int64, 2>:vec64) {
@@ -63,7 +63,7 @@ func:test_simd_mixed_types = int64(simd<int64, 2>:vec64) {
     int64:a = vec64[0i32];
     int64:b = vec64[1i32];
     
-    pass(a + b);
+    pass a + b;
 };
 
 func:main = int32() {
@@ -72,5 +72,5 @@ func:main = int32() {
 
 func:failsafe = int32(tbb32:err) {
     // Error handling stub
-    exit(1);
+    exit 1;
 };

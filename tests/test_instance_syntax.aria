@@ -3,21 +3,21 @@
 
 // Define the functions that instance<> and Type.MEMBER desugar to
 func:Counter_create = int32(int32:initial) {
-    pass(initial);
+    pass initial;
 };
 
 func:Counter_nextId = int32() {
-    pass(42i32);
+    pass 42i32;
 };
 
 func:main = int32() {
     // Test instance<T>() syntax - should desugar to Counter_create(10i32)
-    int32:c = raw(instance<Counter>(10i32));
+    int32:c = raw instance<Counter>(10i32);
     
     // Test Type.MEMBER static access - should desugar to Counter_nextId()
-    int32:id = raw(Counter.nextId());
+    int32:id = raw Counter.nextId();
     
-    exit(0);
+    exit 0;
 };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };

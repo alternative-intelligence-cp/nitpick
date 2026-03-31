@@ -11,11 +11,11 @@ func:test_int4 = int32() {
     int4:diff = b - a;         // 1
     
     // Test int4 comparisons
-    if (a > b) { int32:err = 1; pass(err); }  // 3 !> 4
-    if (b < a) { int32:err = 2; pass(err); }  // 4 !< 3
+    if (a > b) { int32:err = 1; pass err; }  // 3 !> 4
+    if (b < a) { int32:err = 2; pass err; }  // 4 !< 3
     
     int32:success = 0;
-    pass(success);
+    pass success;
 };
 
 func:test_uint4 = int32() {
@@ -27,25 +27,25 @@ func:test_uint4 = int32() {
     uint4:sum = x + y;   // Wraps
     
     // Comparisons
-    if (x > y) { int32:err = 1; pass(err); }  // 9 !> 15
-    if (y < x) { int32:err = 2; pass(err); }  // 15 !< 9
+    if (x > y) { int32:err = 1; pass err; }  // 9 !> 15
+    if (y < x) { int32:err = 2; pass err; }  // 15 !< 9
     
     int32:success = 0;
-    pass(success);
+    pass success;
 };
 
 func:main = int32() {
-    int32:result1 = raw(test_int4());
-    if (result1 != 0) { pass(result1); }
+    int32:result1 = raw test_int4();
+    if (result1 != 0) { pass result1; }
     
-    int32:result2 = raw(test_uint4());
-    if (result2 != 0) { pass(result2); }
+    int32:result2 = raw test_uint4();
+    if (result2 != 0) { pass result2; }
     
     int32:success = 0;
-    pass(success);
+    pass success;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

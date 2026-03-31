@@ -2,7 +2,7 @@
 
 func:int64_toString = string(int64:value) {
     if (value == 0) {
-        pass("0");
+        pass "0";
     }
     
     string:result = "";
@@ -27,19 +27,19 @@ func:int64_toString = string(int64:value) {
         result = string_concat(digit_char, result);
     }
     
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
     // Test just the toString output
     int64:pos = 42;
-    string:pos_str = raw(int64_toString(pos));
-    drop(println(pos_str));
+    string:pos_str = raw int64_toString(pos);
+    drop println(pos_str);
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

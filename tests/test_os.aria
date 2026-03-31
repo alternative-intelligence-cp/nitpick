@@ -4,7 +4,7 @@ use "shm.aria".*;
 use "signal.aria".*;
 use "process.aria".*;
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     println("=== OS Component Tests ===");
@@ -15,102 +15,102 @@ func:main = int32() {
     // ---- Arena Tests ----
     println("--- Arena Tests ---");
 
-    int64:a = raw(Arena.create(4096i64));
+    int64:a = raw Arena.create(4096i64);
     if (a >= 0i64) { println(" [PASS] arena create"); pass_count = pass_count + 1; }
     if (a < 0i64) { println(" [FAIL] arena create"); fail_count = fail_count + 1; }
 
-    int64:off1 = raw(Arena.alloc(a, 8i64));
+    int64:off1 = raw Arena.alloc(a, 8i64);
     if (off1 >= 0i64) { println(" [PASS] arena alloc offset >= 0"); pass_count = pass_count + 1; }
     if (off1 < 0i64) { println(" [FAIL] arena alloc offset >= 0"); fail_count = fail_count + 1; }
 
-    raw(Arena.write_int64(a, off1, 42i64));
-    int64:val = raw(Arena.read_int64(a, off1));
+    raw Arena.write_int64(a, off1, 42i64);
+    int64:val = raw Arena.read_int64(a, off1);
     if (val == 42i64) { println(" [PASS] arena write/read int64"); pass_count = pass_count + 1; }
     if (val != 42i64) { println(" [FAIL] arena write/read int64"); fail_count = fail_count + 1; }
 
-    int64:used = raw(Arena.used(a));
+    int64:used = raw Arena.used(a);
     if (used > 0i64) { println(" [PASS] arena used > 0"); pass_count = pass_count + 1; }
     if (used <= 0i64) { println(" [FAIL] arena used > 0"); fail_count = fail_count + 1; }
 
-    int64:rem = raw(Arena.remaining(a));
+    int64:rem = raw Arena.remaining(a);
     if (rem < 4096i64) { println(" [PASS] arena remaining < capacity"); pass_count = pass_count + 1; }
     if (rem >= 4096i64) { println(" [FAIL] arena remaining < capacity"); fail_count = fail_count + 1; }
 
-    raw(Arena.reset(a));
-    int64:used2 = raw(Arena.used(a));
+    raw Arena.reset(a);
+    int64:used2 = raw Arena.used(a);
     if (used2 == 0i64) { println(" [PASS] arena reset clears used"); pass_count = pass_count + 1; }
     if (used2 != 0i64) { println(" [FAIL] arena reset clears used"); fail_count = fail_count + 1; }
 
-    raw(Arena.destroy(a));
+    raw Arena.destroy(a);
 
     // ---- Pool Allocator Tests ----
     println("--- Pool Allocator Tests ---");
 
-    int64:pool = raw(PoolAlloc.create(64i64, 16i64));
+    int64:pool = raw PoolAlloc.create(64i64, 16i64);
     if (pool >= 0i64) { println(" [PASS] pool create"); pass_count = pass_count + 1; }
     if (pool < 0i64) { println(" [FAIL] pool create"); fail_count = fail_count + 1; }
 
-    int64:blk = raw(PoolAlloc.get(pool));
+    int64:blk = raw PoolAlloc.get(pool);
     if (blk >= 0i64) { println(" [PASS] pool get block"); pass_count = pass_count + 1; }
     if (blk < 0i64) { println(" [FAIL] pool get block"); fail_count = fail_count + 1; }
 
-    raw(PoolAlloc.write_int64(pool, blk, 0i64, 999i64));
-    int64:pval = raw(PoolAlloc.read_int64(pool, blk, 0i64));
+    raw PoolAlloc.write_int64(pool, blk, 0i64, 999i64);
+    int64:pval = raw PoolAlloc.read_int64(pool, blk, 0i64);
     if (pval == 999i64) { println(" [PASS] pool write/read int64"); pass_count = pass_count + 1; }
     if (pval != 999i64) { println(" [FAIL] pool write/read int64"); fail_count = fail_count + 1; }
 
-    int32:put_ok = raw(PoolAlloc.put(pool, blk));
+    int32:put_ok = raw PoolAlloc.put(pool, blk);
     if (put_ok == 0i32) { println(" [PASS] pool put returns 0"); pass_count = pass_count + 1; }
     if (put_ok != 0i32) { println(" [FAIL] pool put returns 0"); fail_count = fail_count + 1; }
 
-    int64:avail = raw(PoolAlloc.available(pool));
+    int64:avail = raw PoolAlloc.available(pool);
     if (avail == 16i64) { println(" [PASS] pool available == 16 after put"); pass_count = pass_count + 1; }
     if (avail != 16i64) { println(" [FAIL] pool available == 16 after put"); fail_count = fail_count + 1; }
 
-    raw(PoolAlloc.destroy(pool));
+    raw PoolAlloc.destroy(pool);
 
     // ---- SharedMemory Tests ----
     println("--- SharedMemory Tests ---");
 
-    int64:shm = raw(SharedMemory.create(4096i64));
+    int64:shm = raw SharedMemory.create(4096i64);
     if (shm >= 0i64) { println(" [PASS] shm create"); pass_count = pass_count + 1; }
     if (shm < 0i64) { println(" [FAIL] shm create"); fail_count = fail_count + 1; }
 
-    raw(SharedMemory.write_int64(shm, 0i64, 1234i64));
-    int64:sval = raw(SharedMemory.read_int64(shm, 0i64));
+    raw SharedMemory.write_int64(shm, 0i64, 1234i64);
+    int64:sval = raw SharedMemory.read_int64(shm, 0i64);
     if (sval == 1234i64) { println(" [PASS] shm write/read int64"); pass_count = pass_count + 1; }
     if (sval != 1234i64) { println(" [FAIL] shm write/read int64"); fail_count = fail_count + 1; }
 
-    int64:ssize = raw(SharedMemory.size(shm));
+    int64:ssize = raw SharedMemory.size(shm);
     if (ssize == 4096i64) { println(" [PASS] shm size == 4096"); pass_count = pass_count + 1; }
     if (ssize != 4096i64) { println(" [FAIL] shm size == 4096"); fail_count = fail_count + 1; }
 
-    raw(SharedMemory.destroy(shm));
+    raw SharedMemory.destroy(shm);
 
     // ---- Signal Tests ----
     println("--- Signal Tests ---");
 
-    int32:sreg = raw(Signal.register(10i32));
+    int32:sreg = raw Signal.register(10i32);
     if (sreg == 0i32) { println(" [PASS] signal register SIGUSR1"); pass_count = pass_count + 1; }
     if (sreg != 0i32) { println(" [FAIL] signal register SIGUSR1"); fail_count = fail_count + 1; }
 
-    int32:sp1 = raw(Signal.pending(10i32));
+    int32:sp1 = raw Signal.pending(10i32);
     if (sp1 == 0i32) { println(" [PASS] signal not pending before raise"); pass_count = pass_count + 1; }
     if (sp1 != 0i32) { println(" [FAIL] signal not pending before raise"); fail_count = fail_count + 1; }
 
     // ---- Process Tests ----
     println("--- Process Tests ---");
 
-    int64:pid = raw(Process.getpid());
+    int64:pid = raw Process.getpid();
     if (pid > 0i64) { println(" [PASS] getpid > 0"); pass_count = pass_count + 1; }
     if (pid <= 0i64) { println(" [FAIL] getpid > 0"); fail_count = fail_count + 1; }
 
-    int64:ppid = raw(Process.getppid());
+    int64:ppid = raw Process.getppid();
     if (ppid > 0i64) { println(" [PASS] getppid > 0"); pass_count = pass_count + 1; }
     if (ppid <= 0i64) { println(" [FAIL] getppid > 0"); fail_count = fail_count + 1; }
 
     // Summary
     println("");
     println("=== OS Tests Complete ===");
-    exit(0);
+    exit 0;
 };

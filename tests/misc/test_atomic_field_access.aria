@@ -3,28 +3,28 @@
 // This tests the struct parameter field access bug fix
 
 // Simplified inline implementation to test field access
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 Type:TestAtomic = {
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
     func:create = TestAtomic(int32:value) {
         TestAtomic:a = TestAtomic{my_value: value};
-        pass(a);
+        pass a;
     };
     
     // This method tests self.field access (the bug we just fixed)
     func:getValue = int32(TestAtomic:self) {
-        pass(self.my_value);  // Should return actual value, not 0
+        pass self.my_value;  // Should return actual value, not 0
     };
     
     func:setValue = NIL(TestAtomic:self, int32:new_val) {
         // Note: Can't mutate struct fields directly yet
         // This is just to test field access
         int32:val = self.my_value;
-        pass(NIL);
+        pass NIL;
     };
     
     struct:interface = {
@@ -34,11 +34,11 @@ func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     // Create atomic with value 42
-    TestAtomic:atomic = raw(instance<TestAtomic>(42i32));
+    TestAtomic:atomic = raw instance<TestAtomic>(42i32);
     
     // Load value - should return 42, not 0
-    int32:loaded = raw(atomic.getValue());
+    int32:loaded = raw atomic.getValue();
     
     // Test: Should be 42 (exit 0 for success, 1 for failure)
-    pass(loaded);  // Will return 42 if working, 0 if broken
+    pass loaded;  // Will return 42 if working, 0 if broken
 };

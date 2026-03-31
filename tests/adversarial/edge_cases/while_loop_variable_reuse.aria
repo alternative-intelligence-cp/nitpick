@@ -4,7 +4,7 @@
 // while loops and then used after loop exit. Tests that the post-loop
 // value is correct (final iteration's assignment, not the initial value).
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 pub func:sum_to_n = int64(int64:n) {
     int64:acc = 0i64;
@@ -13,7 +13,7 @@ pub func:sum_to_n = int64(int64:n) {
         acc = acc + i;
         i = i + 1i64;
     }
-    pass(acc);
+    pass acc;
 };
 
 pub func:countdown = int64(int64:start) {
@@ -21,7 +21,7 @@ pub func:countdown = int64(int64:start) {
     while (v > 0i64) {
         v = v - 1i64;
     }
-    pass(v);
+    pass v;
 };
 
 pub func:double_loop = int64(int64:n) {
@@ -40,44 +40,44 @@ pub func:double_loop = int64(int64:n) {
         i = i + 1i64;
     }
     // total should be n*1 + n*2 = 3*n, saved should be n
-    pass(total + saved);
+    pass total + saved;
 };
 
 func:main = int32() {
     int64:passed = 0i64;
     int64:failed = 0i64;
 
-    drop(println("edge_cases/while_loop_variable_reuse"));
-    drop(println("====================================="));
+    drop println("edge_cases/while_loop_variable_reuse");
+    drop println("=====================================");
 
     // T01: simple accumulator loop
-    int64:s1 = raw(sum_to_n(10i64));
+    int64:s1 = raw sum_to_n(10i64);
     if (s1 == 55i64) {
-        drop(println("[PASS] T01 sum_to_n(10) = 55"));
+        drop println("[PASS] T01 sum_to_n(10) = 55");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T01 sum_to_n(10) != 55"));
+        drop println("[FAIL] T01 sum_to_n(10) != 55");
         failed = failed + 1i64;
     }
 
     // T02: loop to zero
-    int64:s2 = raw(countdown(100i64));
+    int64:s2 = raw countdown(100i64);
     if (s2 == 0i64) {
-        drop(println("[PASS] T02 countdown(100) = 0"));
+        drop println("[PASS] T02 countdown(100) = 0");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T02 countdown(100) != 0"));
+        drop println("[FAIL] T02 countdown(100) != 0");
         failed = failed + 1i64;
     }
 
     // T03: double loop with counter reuse
-    int64:s3 = raw(double_loop(5i64));
+    int64:s3 = raw double_loop(5i64);
     // total = 5*1 + 5*2 = 15, saved = 5, result = 20
     if (s3 == 20i64) {
-        drop(println("[PASS] T03 double_loop(5) = 20"));
+        drop println("[PASS] T03 double_loop(5) = 20");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T03 double_loop(5) != 20"));
+        drop println("[FAIL] T03 double_loop(5) != 20");
         failed = failed + 1i64;
     }
 
@@ -90,10 +90,10 @@ func:main = int32() {
     }
     // last_val should be 6*6 = 36 (last iteration k=6)
     if (last_val == 36i64) {
-        drop(println("[PASS] T04 k*k after loop (k=0..6) = 36"));
+        drop println("[PASS] T04 k*k after loop (k=0..6) = 36");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T04 k*k after loop != 36"));
+        drop println("[FAIL] T04 k*k after loop != 36");
         failed = failed + 1i64;
     }
 
@@ -110,10 +110,10 @@ func:main = int32() {
     }
     // 3 * 4 = 12
     if (total5 == 12i64) {
-        drop(println("[PASS] T05 nested 3x4 loops = 12"));
+        drop println("[PASS] T05 nested 3x4 loops = 12");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T05 nested 3x4 loops != 12"));
+        drop println("[FAIL] T05 nested 3x4 loops != 12");
         failed = failed + 1i64;
     }
 
@@ -128,18 +128,18 @@ func:main = int32() {
     float64:fd6 = fsum - 7.5;
     if (fd6 < 0.0) { fd6 = 0.0 - fd6; }
     if (fd6 < 0.001) {
-        drop(println("[PASS] T06 float64 sum in loop = 7.5"));
+        drop println("[PASS] T06 float64 sum in loop = 7.5");
         passed = passed + 1i64;
     } else {
-        drop(println("[FAIL] T06 float64 sum in loop != 7.5"));
+        drop println("[FAIL] T06 float64 sum in loop != 7.5");
         failed = failed + 1i64;
     }
 
-    drop(println("---"));
+    drop println("---");
     if (failed == 0i64) {
-        drop(println("PASS: all 6 while_loop_variable_reuse tests passed"));
-        exit(0);
+        drop println("PASS: all 6 while_loop_variable_reuse tests passed");
+        exit 0;
     }
-    drop(println("FAIL: some while_loop_variable_reuse tests failed"));
-    pass(1i32);
+    drop println("FAIL: some while_loop_variable_reuse tests failed");
+    pass 1i32;
 };

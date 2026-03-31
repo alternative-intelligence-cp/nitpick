@@ -19,8 +19,8 @@ Rules<int32>:valid_positive = {
 };
 
 func:failsafe = int32(tbb32:err) {
-    drop(puts("FAILSAFE: null/nil rule violation!"));
-    exit(1);
+    drop puts("FAILSAFE: null/nil rule violation!");
+    exit 1;
 };
 
 func:main = int32() {
@@ -32,10 +32,10 @@ func:main = int32() {
     // ----------------------------------------------------------
     limit<not_nil> int32:a = 42;
     if (a == 42) {
-        drop(puts("PASS: Test 1 — Rules $ != NIL with non-zero int32"));
+        drop puts("PASS: Test 1 — Rules $ != NIL with non-zero int32");
         passed += 1i32;
     } else {
-        drop(puts("FAIL: Test 1"));
+        drop puts("FAIL: Test 1");
         failed += 1i32;
     }
 
@@ -44,10 +44,10 @@ func:main = int32() {
     // ----------------------------------------------------------
     limit<not_zero> int64:b = 100;
     if (b == 100) {
-        drop(puts("PASS: Test 2 — Rules $ != 0 with non-zero int64"));
+        drop puts("PASS: Test 2 — Rules $ != 0 with non-zero int64");
         passed += 1i32;
     } else {
-        drop(puts("FAIL: Test 2"));
+        drop puts("FAIL: Test 2");
         failed += 1i32;
     }
 
@@ -56,10 +56,10 @@ func:main = int32() {
     // ----------------------------------------------------------
     limit<valid_positive> int32:c = 500;
     if (c == 500) {
-        drop(puts("PASS: Test 3 — Rules $ != NIL + range"));
+        drop puts("PASS: Test 3 — Rules $ != NIL + range");
         passed += 1i32;
     } else {
-        drop(puts("FAIL: Test 3"));
+        drop puts("FAIL: Test 3");
         failed += 1i32;
     }
 
@@ -67,9 +67,9 @@ func:main = int32() {
     // Results
     // ----------------------------------------------------------
     if (failed > 0i32) {
-        drop(puts("SOME TESTS FAILED"));
-        pass(1);
+        drop puts("SOME TESTS FAILED");
+        pass 1;
     }
-    drop(puts("All null/nil rules tests passed!"));
-    exit(0);
+    drop puts("All null/nil rules tests passed!");
+    exit 0;
 };

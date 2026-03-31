@@ -3,14 +3,14 @@
  * Issue: Template literal crashes when preceded by plain println
  */
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     int32:x = 42;
     
     // This order causes SEGFAULT:
-    drop(println("Test 1: Plain text"));       // OK
-    drop(println(`Test 2: x = &{x}`));          // SEGFAULT
+    drop println("Test 1: Plain text");       // OK
+    drop println(`Test 2: x = &{x}`);          // SEGFAULT
     
-    exit(0);
+    exit 0;
 };

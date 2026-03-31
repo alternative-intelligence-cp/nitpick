@@ -18,8 +18,8 @@ Rules<string>:str_has_at = {
 };
 
 func:failsafe = int32(tbb32:err) {
-    drop(puts("FAILSAFE: string rule violation!"));
-    exit(1);
+    drop puts("FAILSAFE: string rule violation!");
+    exit 1;
 };
 
 func:main = int32() {
@@ -30,33 +30,33 @@ func:main = int32() {
     // Test 1: Rules<string> $.length > 0 with non-empty string
     // ----------------------------------------------------------
     limit<str_non_empty> string:greeting = "Hello, world!";
-    drop(puts(greeting));
-    drop(puts("PASS: Test 1 — Rules<string> $.length > 0"));
+    drop puts(greeting);
+    drop puts("PASS: Test 1 — Rules<string> $.length > 0");
     passed += 1i32;
 
     // ----------------------------------------------------------
     // Test 2: Rules<string> multiple $.length conditions
     // ----------------------------------------------------------
     limit<str_short> string:name = "Aria";
-    drop(puts(name));
-    drop(puts("PASS: Test 2 — Rules<string> $.length bounded"));
+    drop puts(name);
+    drop puts("PASS: Test 2 — Rules<string> $.length bounded");
     passed += 1i32;
 
     // ----------------------------------------------------------
     // Test 3: Rules<string> $.contains("@") — email-like check
     // ----------------------------------------------------------
     limit<str_has_at> string:email = "user@example.com";
-    drop(puts(email));
-    drop(puts("PASS: Test 3 — Rules<string> $.contains()"));
+    drop puts(email);
+    drop puts("PASS: Test 3 — Rules<string> $.contains()");
     passed += 1i32;
 
     // ----------------------------------------------------------
     // Results
     // ----------------------------------------------------------
     if (failed > 0i32) {
-        drop(puts("SOME TESTS FAILED"));
-        pass(1);
+        drop puts("SOME TESTS FAILED");
+        pass 1;
     }
-    drop(puts("All string rules tests passed!"));
-    exit(0);
+    drop puts("All string rules tests passed!");
+    exit 0;
 };

@@ -6,10 +6,10 @@ func:test1 = int32() {
     
     pick(x) {
         (unknown) {
-            pass(1i32);
+            pass 1i32;
         },
         (*) {
-            pass(100i32);  // FAIL marker
+            pass 100i32;  // FAIL marker
         }
     }
 };
@@ -19,13 +19,13 @@ func:test2 = int32() {
     
     pick(y) {
         (unknown) {
-            pass(200i32);  // FAIL marker - shouldn't match unknown
+            pass 200i32;  // FAIL marker - shouldn't match unknown
         },
         (42i32) {
-            pass(2i32);
+            pass 2i32;
         },
         (*) {
-            pass(201i32);  // FAIL marker
+            pass 201i32;  // FAIL marker
         }
     }
 };
@@ -35,10 +35,10 @@ func:test3 = int32() {
     
     pick(z) {
         (unknown) {
-            pass(3i32);
+            pass 3i32;
         },
         (*) {
-            pass(300i32);  // FAIL marker
+            pass 300i32;  // FAIL marker
         }
     }
 };
@@ -48,33 +48,33 @@ func:test4 = int32() {
     
     pick(w) {
         (0i32) {
-            pass(400i32);  // FAIL marker
+            pass 400i32;  // FAIL marker
         },
         (unknown) {
-            pass(4i32);
+            pass 4i32;
         },
         (100i32) {
-            pass(401i32);  // FAIL marker
+            pass 401i32;  // FAIL marker
         },
         (*) {
-            pass(402i32);  // FAIL marker
+            pass 402i32;  // FAIL marker
         }
     }
 };
 
 func:main = int32() {
     // Run each test individually to see results
-    int32:result1 = raw(test1());
-    int32:result2 = raw(test2());
-    int32:result3 = raw(test3());
-    int32:result4 = raw(test4());
+    int32:result1 = raw test1();
+    int32:result2 = raw test2();
+    int32:result3 = raw test3();
+    int32:result4 = raw test4();
     
     // Return sum - should be 10 if all pass
     // Any value >= 100 indicates which test failed
-    pass(result1 + result2 + result3 + result4);
+    pass result1 + result2 + result3 + result4;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };
