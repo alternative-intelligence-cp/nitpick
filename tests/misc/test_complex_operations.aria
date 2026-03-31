@@ -11,7 +11,7 @@ pub func<T>:complex_new = complex<*T>(*T:real, *T:imag) {
     complex<*T>:result;
     result.real = real;
     result.imag = imag;
-    pass(result);
+    pass result;
 };
 
 // Arithmetic operations
@@ -19,14 +19,14 @@ pub func<T>:complex_add = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     complex<*T>:result;
     result.real = z1.real + z2.real;
     result.imag = z1.imag + z2.imag;
-    pass(result);
+    pass result;
 };
 
 pub func<T>:complex_sub = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     complex<*T>:result;
     result.real = z1.real - z2.real;
     result.imag = z1.imag - z2.imag;
-    pass(result);
+    pass result;
 };
 
 pub func<T>:complex_mul = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
@@ -38,42 +38,42 @@ pub func<T>:complex_mul = complex<*T>(complex<*T>:z1, complex<*T>:z2) {
     complex<*T>:result;
     result.real = k1 - k2;
     result.imag = k1 + k3;
-    pass(result);
+    pass result;
 };
 
 pub func<T>:complex_conjugate = complex<*T>(complex<*T>:z) {
     complex<*T>:result;
     result.real = z.real;
     result.imag = 0i32 - z.imag;
-    pass(result);
+    pass result;
 };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     // Test 1: complex<int32> basic operations
-    complex<int32>:z1 = raw(complex_new(3i32, 4i32));
-    complex<int32>:z2 = raw(complex_new(1i32, 2i32));
+    complex<int32>:z1 = raw complex_new(3i32, 4i32);
+    complex<int32>:z2 = raw complex_new(1i32, 2i32);
 
-    complex<int32>:sum = raw(complex_add(z1, z2));       // (4 + 6i)
-    complex<int32>:diff = raw(complex_sub(z1, z2));      // (2 + 2i)
-    complex<int32>:prod = raw(complex_mul(z1, z2));      // (-5 + 10i)
-    complex<int32>:conj = raw(complex_conjugate(z1));    // (3 - 4i)
+    complex<int32>:sum = raw complex_add(z1, z2);       // (4 + 6i)
+    complex<int32>:diff = raw complex_sub(z1, z2);      // (2 + 2i)
+    complex<int32>:prod = raw complex_mul(z1, z2);      // (-5 + 10i)
+    complex<int32>:conj = raw complex_conjugate(z1);    // (3 - 4i)
 
     // Test 2: complex<int64> for larger values
-    complex<int64>:w1 = raw(complex_new(1000000i64, 2000000i64));
-    complex<int64>:w2 = raw(complex_new(500000i64, 750000i64));
+    complex<int64>:w1 = raw complex_new(1000000i64, 2000000i64);
+    complex<int64>:w2 = raw complex_new(500000i64, 750000i64);
 
-    complex<int64>:w_sum = raw(complex_add(w1, w2));
-    complex<int64>:w_diff = raw(complex_sub(w1, w2));
+    complex<int64>:w_sum = raw complex_add(w1, w2);
+    complex<int64>:w_diff = raw complex_sub(w1, w2);
 
     // Test 3: complex<flt64> for floating point
-    complex<flt64>:x1 = raw(complex_new(3.14, 2.71));
-    complex<flt64>:x2 = raw(complex_new(1.41, 1.73));
+    complex<flt64>:x1 = raw complex_new(3.14, 2.71);
+    complex<flt64>:x2 = raw complex_new(1.41, 1.73);
 
-    complex<flt64>:x_sum = raw(complex_add(x1, x2));
-    complex<flt64>:x_prod = raw(complex_mul(x1, x2));
+    complex<flt64>:x_sum = raw complex_add(x1, x2);
+    complex<flt64>:x_prod = raw complex_mul(x1, x2);
 
     println("complex operations: all tests passed");
-    exit(0);
+    exit 0;
 };

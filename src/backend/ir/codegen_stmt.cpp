@@ -978,12 +978,15 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
         {
             auto it = named_values.find("__aria_ustack_handle");
             if (it != named_values.end()) {
-                llvm::Function* destroyFunc = module->getFunction("aria_ustack_destroy");
+                // v0.4.3+: Use fast destroy if SMT-optimized
+                bool fast = expr_codegen && expr_codegen->ustack_fast_mode;
+                const char* dname = fast ? "aria_ustack_destroy_fast" : "aria_ustack_destroy";
+                llvm::Function* destroyFunc = module->getFunction(dname);
                 if (!destroyFunc) {
                     llvm::FunctionType* ft = llvm::FunctionType::get(
                         builder.getVoidTy(), {builder.getInt64Ty()}, false);
                     destroyFunc = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
-                        "aria_ustack_destroy", module);
+                        dname, module);
                 }
                 llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_cleanup");
                 builder.CreateCall(destroyFunc, {handle});
@@ -2565,12 +2568,15 @@ void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
     {
         auto it = named_values.find("__aria_ustack_handle");
         if (it != named_values.end()) {
-            llvm::Function* destroyFunc = module->getFunction("aria_ustack_destroy");
+            // v0.4.3+: Use fast destroy if SMT-optimized
+            bool fast = expr_codegen && expr_codegen->ustack_fast_mode;
+            const char* dname = fast ? "aria_ustack_destroy_fast" : "aria_ustack_destroy";
+            llvm::Function* destroyFunc = module->getFunction(dname);
             if (!destroyFunc) {
                 llvm::FunctionType* ft = llvm::FunctionType::get(
                     builder.getVoidTy(), {builder.getInt64Ty()}, false);
                 destroyFunc = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
-                    "aria_ustack_destroy", module);
+                    dname, module);
             }
             llvm::Value* handle = builder.CreateLoad(builder.getInt64Ty(), it->second, "ustack_cleanup");
             builder.CreateCall(destroyFunc, {handle});

@@ -2,7 +2,7 @@
 // Just test that .is_error, .value, .error compile
 
 func:get_ok = int64() {
-    pass(42);
+    pass 42;
 };
 
 func:main = int32() {
@@ -13,19 +13,19 @@ func:main = int32() {
         (false) {
             // KNOWN_SUCCESS — safe to access .value
             int64:val = r.value;
-            drop(val);
+            drop val;
             // .error is null on success
             int64:errptr = r.error;
-            drop(errptr);
-            exit(0);
+            drop errptr;
+            exit 0;
         },
         (true) {
-            pass(1i32);
+            pass 1i32;
         }
     }
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

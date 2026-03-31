@@ -3,7 +3,7 @@
 
 // Inline int64_toString for explicit conversion
 func:int64_toString = string(int64:value) {
-    if (value == 0) { pass("0"); }
+    if (value == 0) { pass "0"; }
     bool:is_negative = false;
     int64:work_value = value;
     if (value < 0) { is_negative = true; work_value = -value; }
@@ -26,7 +26,7 @@ func:int64_toString = string(int64:value) {
         result = string_concat(digit_char, result);
     }
     if (is_negative) { result = string_concat("-", result); }
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
@@ -39,25 +39,25 @@ func:main = int32() {
     // For now, just verify that range syntax parses
     // Range expressions will be fully useful when for loops support them
     
-    drop(println("Testing range syntax:"));
-    drop(println("Creating inclusive range 1..10"));
-    drop(println("Creating exclusive range 1...10"));
+    drop println("Testing range syntax:");
+    drop println("Creating inclusive range 1..10");
+    drop println("Creating exclusive range 1...10");
     
     // Basic arithmetic with range bounds
     int64:inclusive_count = b - a + 1;  // 10 - 1 + 1 = 10 elements
     int64:exclusive_count = b - a;      // 10 - 1 = 9 elements
     
-    drop(println("Inclusive range would have:"));
-    string:inclusive_str = raw(int64_toString(inclusive_count));
-    drop(println(inclusive_str));
-    drop(println("Exclusive range would have:"));
-    string:exclusive_str = raw(int64_toString(exclusive_count));
-    drop(println(exclusive_str));
+    drop println("Inclusive range would have:");
+    string:inclusive_str = raw int64_toString(inclusive_count);
+    drop println(inclusive_str);
+    drop println("Exclusive range would have:");
+    string:exclusive_str = raw int64_toString(exclusive_count);
+    drop println(exclusive_str);
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

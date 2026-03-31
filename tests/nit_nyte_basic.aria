@@ -11,10 +11,10 @@
  *   18:    nit function parameter round-trip
  */
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:nit_double = nit(nit:x) {
-    pass(x + x);
+    pass x + x;
 };
 
 func:main = int32() {
@@ -23,63 +23,63 @@ func:main = int32() {
 
     // Test 1: assignment and equality vs literal
     nit:a = 3;
-    if (a != 3) { pass(1i32); }
+    if (a != 3) { pass 1i32; }
 
     // Test 2: negative assignment
     nit:b = -2;
-    if (b != -2) { pass(2i32); }
+    if (b != -2) { pass 2i32; }
 
     // Test 3: addition within range
     nit:c = 1;
     nit:d = 2;
     nit:sum = c + d;
-    if (sum != 3) { pass(3i32); }
+    if (sum != 3) { pass 3i32; }
 
     // Test 4: subtraction within range
     nit:e = 4;
     nit:f = 2;
     nit:diff = e - f;
-    if (diff != 2) { pass(4i32); }
+    if (diff != 2) { pass 4i32; }
 
     // Test 5: negation
     nit:g = 3;
     nit:neg = -g;
-    if (neg != -3) { pass(5i32); }
+    if (neg != -3) { pass 5i32; }
 
     // Test 6: max boundary
     nit:max_nit = 4;
-    if (max_nit != 4) { pass(6i32); }
+    if (max_nit != 4) { pass 6i32; }
 
     // Test 7: min boundary
     nit:min_nit = -4;
-    if (min_nit != -4) { pass(7i32); }
+    if (min_nit != -4) { pass 7i32; }
 
     // Test 8: overflow → ERR sentinel (-128)
     nit:big1 = 4;
     nit:big2 = 4;
     nit:overflow = big1 + big2;  // 8 is out of [-4,4], becomes ERR
     nit:nit_err = -128;
-    if (overflow != nit_err) { pass(8i32); }
+    if (overflow != nit_err) { pass 8i32; }
 
     // ── nit builtins ─────────────────────────────────────────────────────────
 
     // Test 9: nit_from_int round-trip
     nit:n = nit_from_int(3);
-    if (n != 3) { pass(9i32); }
+    if (n != 3) { pass 9i32; }
 
     // Test 10: nit_is_err — valid value is NOT err
     bool:valid_is_err = nit_is_err(n);
-    if (valid_is_err) { pass(10i32); }
+    if (valid_is_err) { pass 10i32; }
 
     // Test 11: nit_and (Kleene min)
     nit:x = 2;
     nit:y = -1;
     nit:and_r = nit_and(x, y);
-    if (and_r != -1) { pass(11i32); }
+    if (and_r != -1) { pass 11i32; }
 
     // Test 12: nit_or (Kleene max)
     nit:or_r = nit_or(x, y);
-    if (or_r != 2) { pass(12i32); }
+    if (or_r != 2) { pass 12i32; }
 
     // ── nyt basic ─────────────────────────────────────────────────────────────
 
@@ -87,21 +87,21 @@ func:main = int32() {
     nyte:p = 200;
     nyte:q = 100;
     nyte:nyte_sum = p + q;
-    if (nyte_sum != 300) { pass(13i32); }
+    if (nyte_sum != 300) { pass 13i32; }
 
     // Test 14: nyte sub
     nyte:nyte_diff = p - q;
-    if (nyte_diff != 100) { pass(14i32); }
+    if (nyte_diff != 100) { pass 14i32; }
 
     // Test 15: nyte mul
     nyte:small = 50;
     nyte:factor = 3;
     nyte:nyte_prod = small * factor;
-    if (nyte_prod != 150) { pass(15i32); }
+    if (nyte_prod != 150) { pass 15i32; }
 
     // Test 16: nyte literal comparison
     nyte:ny = 12345;
-    if (ny != 12345) { pass(16i32); }
+    if (ny != 12345) { pass 16i32; }
 
     // Test 17: nyte overflow → ERR sentinel; ERR is sticky (ERR + anything = ERR)
     nyte:big3 = 20000;
@@ -110,12 +110,12 @@ func:main = int32() {
     nyte:one = 1;
     nyte:nyte_still_err = nyte_overflow + one;  // ERR is sticky
     // Both should be the same ERR sentinel — prove by comparing to each other
-    if (nyte_overflow != nyte_still_err) { pass(17i32); }
+    if (nyte_overflow != nyte_still_err) { pass 17i32; }
 
     // Test 18: nit function parameter round-trip
     nit:two = 2;
     nit:doubled = nit_double(two) ? two;
-    if (doubled != 4) { pass(18i32); }
+    if (doubled != 4) { pass 18i32; }
 
-    exit(0);
+    exit 0;
 };

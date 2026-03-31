@@ -80,11 +80,64 @@ int64_t aria_ustack_peek(int64_t handle, int64_t expected_tag);
 int64_t aria_ustack_size(int64_t handle);
 
 /**
+ * Return stack capacity in bytes.
+ * Works for both regular and fast stacks (reads data_bytes field).
+ *
+ * @param handle  Stack handle
+ * @return Capacity in bytes, or 0 if handle is invalid
+ */
+int64_t aria_ustack_capacity_bytes(int64_t handle);
+
+/**
+ * Return number of bytes currently used on the stack.
+ * Regular mode: size * 16 (8-byte value + 8-byte tag per slot).
+ *
+ * @param handle  Stack handle
+ * @return Bytes used, or 0 if handle is invalid
+ */
+int64_t aria_ustack_bytes_used(int64_t handle);
+
+/**
+ * Check if one more value can be pushed without overflow.
+ * Works for both regular and fast stacks.
+ *
+ * @param handle  Stack handle
+ * @return 1 if fits, 0 if full or handle is invalid
+ */
+int64_t aria_ustack_fits(int64_t handle);
+
+/**
+ * Return the type tag of the top stack item.
+ * Regular mode only.
+ *
+ * @param handle  Stack handle
+ * @return Type tag (ARIA_USTACK_TAG_*), or -1 if empty/invalid
+ */
+int64_t aria_ustack_top_type(int64_t handle);
+
+/**
  * Destroy the user stack and free its memory.
  *
  * @param handle  Stack handle (safe to call with 0)
  */
 void aria_ustack_destroy(int64_t handle);
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * SMT-Optimized Fast Variants (v0.4.3+)
+ *
+ * When the Z3 solver proves all pushes to a scope's stack use the same
+ * type, the compiler can eliminate type tags entirely.  These "fast"
+ * functions use 8 bytes/slot (no tag), no bounds checking, and no type
+ * validation — the SMT proof guarantees safety at compile time.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+int64_t aria_ustack_new_fast(int64_t capacity);
+void    aria_ustack_destroy_fast(int64_t handle);
+void    aria_ustack_push_fast(int64_t handle, int64_t value);
+int64_t aria_ustack_pop_fast(int64_t handle);
+int64_t aria_ustack_peek_fast(int64_t handle);
+int64_t aria_ustack_bytes_used_fast(int64_t handle);
+int64_t aria_ustack_top_type_fast(int64_t handle);
 
 #ifdef __cplusplus
 }

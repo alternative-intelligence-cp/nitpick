@@ -88,11 +88,11 @@ struct:Wave9 = {
  * @return Wave9 with all coordinates set to 0
  */
 pub func:wave_zero = Wave9() {
-    pass(Wave9 {
+    pass Wave9 {
         r: 0, s: 0, t: 0,
         u: 0, v: 0, w: 0,
         x: 0, y: 0, z: 0
-    });
+    };
 };
 
 /**
@@ -124,11 +124,11 @@ pub func:wave_interfere = Wave9(Wave9:a, Wave9:b) {
     nit:i_x = a.x + b.x;
     nit:i_y = a.y + b.y;
     nit:i_z = a.z + b.z;
-    pass(Wave9 {
+    pass Wave9 {
         r: i_r, s: i_s, t: i_t,
         u: i_u, v: i_v, w: i_w,
         x: i_x, y: i_y, z: i_z
-    });
+    };
 };
 
 /**
@@ -154,11 +154,11 @@ pub func:wave_negate = Wave9(Wave9:wv) {
     nit:nx = -wv.x;
     nit:ny = -wv.y;
     nit:nz = -wv.z;
-    pass(Wave9 {
+    pass Wave9 {
         r: nr, s: ns, t: nt,
         u: nu, v: nv, w: nw,
         x: nx, y: ny, z: nz
-    });
+    };
 };
 
 /**
@@ -183,11 +183,11 @@ pub func:wave_scale = Wave9(Wave9:wv, nit:factor) {
     nit:sx = wv.x * factor;
     nit:sy = wv.y * factor;
     nit:sz = wv.z * factor;
-    pass(Wave9 {
+    pass Wave9 {
         r: sr, s: ss, t: st,
         u: su, v: sv, w: sw,
         x: sx, y: sy, z: sz
-    });
+    };
 };
 
 /**
@@ -229,7 +229,7 @@ pub func:wave_magnitude_squared = int32(Wave9:w) {
     int32:y2 = y_val * y_val;
     int32:z2 = z_val * z_val;
     
-    pass(r2 + s2 + t2 + u2 + v2 + w2 + x2 + y2 + z2);
+    pass r2 + s2 + t2 + u2 + v2 + w2 + x2 + y2 + z2;
 };
 
 /**
@@ -240,8 +240,7 @@ pub func:wave_magnitude_squared = int32(Wave9:w) {
  * @return true if all components match, false otherwise
  */
 pub func:wave_equals = bool(Wave9:a, Wave9:b) {
-    pass(
-        (a.r == b.r) &&
+    pass (a.r == b.r) &&
         (a.s == b.s) &&
         (a.t == b.t) &&
         (a.u == b.u) &&
@@ -249,8 +248,7 @@ pub func:wave_equals = bool(Wave9:a, Wave9:b) {
         (a.w == b.w) &&
         (a.x == b.x) &&
         (a.y == b.y) &&
-        (a.z == b.z)
-    );
+        (a.z == b.z);
 };
 
 /**
@@ -283,7 +281,7 @@ pub func:wave_equals = bool(Wave9:a, Wave9:b) {
 pub func:nyte_from_wave = nyte(Wave9:w) {
     // Priority encoding: x, y, z (spatial) > u (quantum) > r (state)
     // Dimensions s, t, v, w are discarded in this 5D projection.
-    pass(aria_pack_nyte(w.x, w.y, w.z, w.u, w.r));
+    pass aria_pack_nyte(w.x, w.y, w.z, w.u, w.r);
 };
 
 /**
@@ -325,11 +323,11 @@ pub func:wave_from_nyte = Wave9(nyte:encoded) {
     nit:n3 = aria_nyte_get_nit(encoded, 3);  // u (quantum U)
     nit:n4 = aria_nyte_get_nit(encoded, 4);  // r (state R)
     nit:zero = 0;
-    pass(Wave9 {
+    pass Wave9 {
         r: n4, s: zero, t: zero,
         u: n3, v: zero, w: zero,
         x: n0, y: n1, z: n2
-    });
+    };
 };
 
 /**
@@ -346,11 +344,11 @@ pub func:wave_from_nyte = Wave9(nyte:encoded) {
  * @return Wave9 with only spatial components
  */
 pub func:wave_from_spatial = Wave9(nit:x, nit:y, nit:z) {
-    pass(Wave9 {
+    pass Wave9 {
         r: 0, s: 0, t: 0,
         u: 0, v: 0, w: 0,
         x: x, y: y, z: z
-    });
+    };
 };
 
 /**
@@ -363,15 +361,15 @@ pub func:wave_from_spatial = Wave9(nit:x, nit:y, nit:z) {
  * @return Spatial coordinates as (x, y, z) - TODO: Need tuple type
  */
 pub func:wave_spatial_x = nit(Wave9:w) {
-    pass(w.x);
+    pass w.x;
 };
 
 pub func:wave_spatial_y = nit(Wave9:w) {
-    pass(w.y);
+    pass w.y;
 };
 
 pub func:wave_spatial_z = nit(Wave9:w) {
-    pass(w.z);
+    pass w.z;
 };
 
 /**
@@ -389,22 +387,22 @@ pub func:wave_spatial_z = nit(Wave9:w) {
  */
 pub func:wave_from_quantum = Wave9(nit:u, nit:v, nit:w) {
     nit:zero = 0;
-    pass(Wave9 {
+    pass Wave9 {
         r: zero, s: zero, t: zero,
         u: u, v: v, w: w,
         x: zero, y: zero, z: zero
-    });
+    };
 };
 
 /**
  * Create Wave9 from all 9 dimensions (full constructor)
  */
 pub func:wave_from_full = Wave9(nit:r, nit:s, nit:t, nit:u, nit:v, nit:w, nit:x, nit:y, nit:z) {
-    pass(Wave9 {
+    pass Wave9 {
         r: r, s: s, t: t,
         u: u, v: v, w: w,
         x: x, y: y, z: z
-    });
+    };
 };
 
 /**
@@ -415,11 +413,11 @@ pub func:wave_from_full = Wave9(nit:r, nit:s, nit:t, nit:u, nit:v, nit:w, nit:x,
  */
 pub func:wave_from_state = Wave9(nit:r, nit:s) {
     nit:zero = 0;
-    pass(Wave9 {
+    pass Wave9 {
         r: r, s: s, t: zero,
         u: zero, v: zero, w: zero,
         x: zero, y: zero, z: zero
-    });
+    };
 };
 
 /**
@@ -444,7 +442,7 @@ pub func:wave_dot = int32(Wave9:a, Wave9:b) {
     int32:x1 = @cast<int32>(a.x);  int32:x2 = @cast<int32>(b.x);
     int32:y1 = @cast<int32>(a.y);  int32:y2 = @cast<int32>(b.y);
     int32:z1 = @cast<int32>(a.z);  int32:z2 = @cast<int32>(b.z);
-    pass(r1*r2 + s1*s2 + t1*t2 + u1*u2 + v1*v2 + w1*w2 + x1*x2 + y1*y2 + z1*z2);
+    pass r1*r2 + s1*s2 + t1*t2 + u1*u2 + v1*v2 + w1*w2 + x1*x2 + y1*y2 + z1*z2;
 };
 
 /**
@@ -469,7 +467,7 @@ pub func:wave_distance_squared = int32(Wave9:a, Wave9:b) {
     int32:dx = @cast<int32>(a.x) - @cast<int32>(b.x);
     int32:dy = @cast<int32>(a.y) - @cast<int32>(b.y);
     int32:dz = @cast<int32>(a.z) - @cast<int32>(b.z);
-    pass(dr*dr + ds*ds + dt*dt + du*du + dv*dv + dw*dw + dx*dx + dy*dy + dz*dz);
+    pass dr*dr + ds*ds + dt*dt + du*du + dv*dv + dw*dw + dx*dx + dy*dy + dz*dz;
 };
 
 /**
@@ -495,7 +493,7 @@ pub func:wave_lerp = Wave9(Wave9:a, Wave9:b, int32:t) {
     nit:lx = aria_lerp_component(@cast<int32>(a.x), @cast<int32>(b.x), t);
     nit:ly = aria_lerp_component(@cast<int32>(a.y), @cast<int32>(b.y), t);
     nit:lz = aria_lerp_component(@cast<int32>(a.z), @cast<int32>(b.z), t);
-    pass(Wave9 { r: lr, s: ls, t: lt, u: lu, v: lv, w: lw, x: lx, y: ly, z: lz });
+    pass Wave9 { r: lr, s: ls, t: lt, u: lu, v: lv, w: lw, x: lx, y: ly, z: lz };
 };
 
 /**
@@ -521,7 +519,7 @@ pub func:nyte_toString = string(nyte:encoded) {
     result = string_concat(result, ",");
     result = string_concat(result, string_from_int(@cast<int32>(n4)));
     result = string_concat(result, ")");
-    pass(result);
+    pass result;
 };
 
 /**
@@ -550,7 +548,7 @@ pub func:wave9_toString = string(Wave9:w) {
     result = string_concat(result, ",");
     result = string_concat(result, string_from_int(@cast<int32>(w.z)));
     result = string_concat(result, ")");
-    pass(result);
+    pass result;
 };
 
 // TODO (lower priority):

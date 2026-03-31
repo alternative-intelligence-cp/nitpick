@@ -6,8 +6,8 @@ use "stdlib/mutex.aria".*;
 use "stdlib/string_convert.aria".*;
 
 func:failsafe = int32(tbb32:err) {
-    drop(println("FAILSAFE triggered"));
-    exit(1);
+    drop println("FAILSAFE triggered");
+    exit 1;
 };
 
 func:main = int32() {
@@ -15,81 +15,81 @@ func:main = int32() {
     int32:failed = 0i32;
 
     // Test 1: Hardware concurrency
-    int32:cores = raw(Thread.hardware_concurrency());
+    int32:cores = raw Thread.hardware_concurrency();
     if (cores > 0i32) {
-        drop(println(string_concat("PASS: hardware_concurrency = ", int32_toString(cores))));
+        drop println(string_concat("PASS: hardware_concurrency = ", int32_toString(cores)));
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: hardware_concurrency = ", int32_toString(cores))));
+        drop println(string_concat("FAIL: hardware_concurrency = ", int32_toString(cores)));
         failed += 1i32;
     }
 
     // Test 2: Thread current ID
-    int64:tid = raw(Thread.current_id());
+    int64:tid = raw Thread.current_id();
     if (tid > 0i64) {
-        drop(println(string_concat("PASS: current_id = ", int64_toString(tid))));
+        drop println(string_concat("PASS: current_id = ", int64_toString(tid)));
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: current_id = ", int64_toString(tid))));
+        drop println(string_concat("FAIL: current_id = ", int64_toString(tid)));
         failed += 1i32;
     }
 
     // Test 3: Mutex create/destroy
-    int64:mtx = raw(Mutex.create());
+    int64:mtx = raw Mutex.create();
     if (mtx >= 0i64) {
-        drop(println(string_concat("PASS: mutex create handle = ", int64_toString(mtx))));
+        drop println(string_concat("PASS: mutex create handle = ", int64_toString(mtx)));
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: mutex create = ", int64_toString(mtx))));
+        drop println(string_concat("FAIL: mutex create = ", int64_toString(mtx)));
         failed += 1i32;
     }
 
     // Test 4: Mutex lock/unlock
-    int32:lock_result = raw(Mutex.lock(mtx));
+    int32:lock_result = raw Mutex.lock(mtx);
     if (lock_result == 0i32) {
-        drop(println("PASS: mutex lock"));
+        drop println("PASS: mutex lock");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: mutex lock = ", int32_toString(lock_result))));
+        drop println(string_concat("FAIL: mutex lock = ", int32_toString(lock_result)));
         failed += 1i32;
     }
 
-    int32:unlock_result = raw(Mutex.unlock(mtx));
+    int32:unlock_result = raw Mutex.unlock(mtx);
     if (unlock_result == 0i32) {
-        drop(println("PASS: mutex unlock"));
+        drop println("PASS: mutex unlock");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: mutex unlock = ", int32_toString(unlock_result))));
+        drop println(string_concat("FAIL: mutex unlock = ", int32_toString(unlock_result)));
         failed += 1i32;
     }
 
     // Test 5: Mutex destroy
-    int32:destroy_result = raw(Mutex.destroy(mtx));
+    int32:destroy_result = raw Mutex.destroy(mtx);
     if (destroy_result == 0i32) {
-        drop(println("PASS: mutex destroy"));
+        drop println("PASS: mutex destroy");
         passed += 1i32;
     } else {
-        drop(println(string_concat("FAIL: mutex destroy = ", int32_toString(destroy_result))));
+        drop println(string_concat("FAIL: mutex destroy = ", int32_toString(destroy_result)));
         failed += 1i32;
     }
 
     // Test 6: Thread sleep (10ms)
-    drop(println("Sleeping 10ms..."));
-    raw(Thread.sleep_ms(10i64));
-    drop(println("PASS: sleep_ms returned"));
+    drop println("Sleeping 10ms...");
+    raw Thread.sleep_ms(10i64);
+    drop println("PASS: sleep_ms returned");
     passed += 1i32;
 
     // Summary
-    drop(println(""));
+    drop println("");
     string:p = int32_toString(passed);
     string:f = int32_toString(failed);
     string:s1 = string_concat(p, " passed, ");
     string:s2 = string_concat(f, " failed");
     string:summary = string_concat(s1, s2);
-    drop(println(summary));
+    drop println(summary);
 
     if (failed > 0i32) {
-        pass(1i32);
+        pass 1i32;
     }
-    exit(0);
+    exit 0;
 };

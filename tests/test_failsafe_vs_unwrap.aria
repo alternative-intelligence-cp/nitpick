@@ -10,11 +10,11 @@
 
 // Helpers to create Results
 func:make_ok_result = int32() {
-    pass(10i32);
+    pass 10i32;
 };
 
 func:make_err_result = int32() {
-    fail(1);
+    fail 1;
 };
 
 // Test: Both operators behave identically
@@ -27,7 +27,7 @@ func:test_identical_behavior = int32() {
     int32:failsafe_ok = ok_result ?! 42i32;
     
     if (!(unwrap_ok == failsafe_ok && unwrap_ok == 10i32)) {
-        pass(1i32);  // Ok case differs
+        pass 1i32;  // Ok case differs
     }
     
     // Test with Err result
@@ -35,10 +35,10 @@ func:test_identical_behavior = int32() {
     int32:failsafe_err = err_result ?! 42i32;
     
     if (!(unwrap_err == failsafe_err && unwrap_err == 42i32)) {
-        pass(2i32);  // Err case differs
+        pass 2i32;  // Err case differs
     }
     
-    pass(0i32);  // All behaviors match
+    pass 0i32;  // All behaviors match
 };
 
 // Demonstration: When to use ? vs ?!
@@ -60,10 +60,10 @@ func:test_identical_behavior = int32() {
 func:main = int32() {
     Result<int32>:t = test_identical_behavior();
     int32:result = t ? 1i32;
-    pass(result);
+    pass result;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

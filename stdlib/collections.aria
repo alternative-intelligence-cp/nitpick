@@ -78,7 +78,7 @@ Type:Vec = {
 
     func:new = wild int8->() {
         wild int8->:handle = vec_i64_new();
-        pass(handle);
+        pass handle;
     };
 
     func:push = NIL(wild int8->:v, int64:val) {
@@ -86,11 +86,11 @@ Type:Vec = {
     };
 
     func:pop = int64(wild int8->:v) {
-        pass(vec_i64_pop(v));
+        pass vec_i64_pop(v);
     };
 
     func:get = int64(wild int8->:v, int64:i) {
-        pass(vec_i64_get(v, i));
+        pass vec_i64_get(v, i);
     };
 
     func:set = NIL(wild int8->:v, int64:i, int64:val) {
@@ -98,7 +98,7 @@ Type:Vec = {
     };
 
     func:len = int64(wild int8->:v) {
-        pass(vec_i64_length(v));
+        pass vec_i64_length(v);
     };
 
     func:free = NIL(wild int8->:v) {
@@ -110,10 +110,10 @@ Type:Vec = {
         int64:idx = 0i64;
         while (idx < n) {
             int64:elem = vec_i64_get(v, idx);
-            if (elem == target) { pass(true); }
+            if (elem == target) { pass true; }
             idx = idx + 1i64;
         }
-        pass(false);
+        pass false;
     };
 
     func:sum = int64(wild int8->:v) {
@@ -124,13 +124,13 @@ Type:Vec = {
             total = total + vec_i64_get(v, idx);
             idx = idx + 1i64;
         }
-        pass(total);
+        pass total;
     };
 
     func:is_empty = bool(wild int8->:v) {
         int64:n = vec_i64_length(v);
-        if (n == 0i64) { pass(true); }
-        pass(false);
+        if (n == 0i64) { pass true; }
+        pass false;
     };
 };
 
@@ -141,7 +141,7 @@ Type:VecI32 = {
 
     func:new = wild int8->() {
         wild int8->:handle = vec_i32_new();
-        pass(handle);
+        pass handle;
     };
 
     func:push = NIL(wild int8->:v, int32:val) {
@@ -149,11 +149,11 @@ Type:VecI32 = {
     };
 
     func:pop = int32(wild int8->:v) {
-        pass(vec_i32_pop(v));
+        pass vec_i32_pop(v);
     };
 
     func:get = int32(wild int8->:v, int64:i) {
-        pass(vec_i32_get(v, i));
+        pass vec_i32_get(v, i);
     };
 
     func:set = NIL(wild int8->:v, int64:i, int32:val) {
@@ -161,7 +161,7 @@ Type:VecI32 = {
     };
 
     func:len = int64(wild int8->:v) {
-        pass(vec_i32_length(v));
+        pass vec_i32_length(v);
     };
 
     func:free = NIL(wild int8->:v) {
@@ -176,7 +176,7 @@ Type:VecF64 = {
 
     func:new = wild int8->() {
         wild int8->:handle = vec_f64_new();
-        pass(handle);
+        pass handle;
     };
 
     func:push = NIL(wild int8->:v, flt64:val) {
@@ -184,11 +184,11 @@ Type:VecF64 = {
     };
 
     func:pop = flt64(wild int8->:v) {
-        pass(vec_f64_pop(v));
+        pass vec_f64_pop(v);
     };
 
     func:get = flt64(wild int8->:v, int64:i) {
-        pass(vec_f64_get(v, i));
+        pass vec_f64_get(v, i);
     };
 
     func:set = NIL(wild int8->:v, int64:i, flt64:val) {
@@ -196,7 +196,7 @@ Type:VecF64 = {
     };
 
     func:len = int64(wild int8->:v) {
-        pass(vec_f64_length(v));
+        pass vec_f64_length(v);
     };
 
     func:free = NIL(wild int8->:v) {
@@ -211,7 +211,7 @@ Type:Map = {
 
     func:new = wild int8->() {
         wild int8->:handle = map_i64_new();
-        pass(handle);
+        pass handle;
     };
 
     func:insert = NIL(wild int8->:m, int64:key, int64:val) {
@@ -219,13 +219,13 @@ Type:Map = {
     };
 
     func:get = int64(wild int8->:m, int64:key) {
-        pass(map_i64_get(m, key));
+        pass map_i64_get(m, key);
     };
 
     func:has = bool(wild int8->:m, int64:key) {
         int32:result = map_i64_has(m, key);
-        if (result == 1i32) { pass(true); }
-        pass(false);
+        if (result == 1i32) { pass true; }
+        pass false;
     };
 
     func:remove = NIL(wild int8->:m, int64:key) {
@@ -233,7 +233,7 @@ Type:Map = {
     };
 
     func:len = int64(wild int8->:m) {
-        pass(map_i64_length(m));
+        pass map_i64_length(m);
     };
 
     func:clear = NIL(wild int8->:m) {
@@ -246,8 +246,8 @@ Type:Map = {
 
     func:is_empty = bool(wild int8->:m) {
         int64:n = map_i64_length(m);
-        if (n == 0i64) { pass(true); }
-        pass(false);
+        if (n == 0i64) { pass true; }
+        pass false;
     };
 };
 
@@ -261,7 +261,7 @@ Type:Set = {
 
     func:new = wild int8->() {
         wild int8->:handle = map_i64_new();
-        pass(handle);
+        pass handle;
     };
 
     func:add = NIL(wild int8->:s, int64:val) {
@@ -270,8 +270,8 @@ Type:Set = {
 
     func:has = bool(wild int8->:s, int64:val) {
         int32:result = map_i64_has(s, val);
-        if (result == 1i32) { pass(true); }
-        pass(false);
+        if (result == 1i32) { pass true; }
+        pass false;
     };
 
     func:remove = NIL(wild int8->:s, int64:val) {
@@ -279,7 +279,7 @@ Type:Set = {
     };
 
     func:len = int64(wild int8->:s) {
-        pass(map_i64_length(s));
+        pass map_i64_length(s);
     };
 
     func:clear = NIL(wild int8->:s) {
@@ -292,8 +292,8 @@ Type:Set = {
 
     func:is_empty = bool(wild int8->:s) {
         int64:n = map_i64_length(s);
-        if (n == 0i64) { pass(true); }
-        pass(false);
+        if (n == 0i64) { pass true; }
+        pass false;
     };
 };
 
@@ -317,7 +317,7 @@ Type:Graph = {
         h[0i64] = ch_ptr_to_int(adj);
         h[1i64] = ch_ptr_to_int(nodes);
         h[2i64] = 0i64;
-        pass(h);
+        pass h;
     };
 
     func:add_node = NIL(wild int64->:g, int64:id) {
@@ -335,8 +335,8 @@ Type:Graph = {
     func:has_node = bool(wild int64->:g, int64:id) {
         wild int8->:adj = ch_int_to_ptr(g[0i64]);
         int32:result = map_i64_has(adj, id);
-        if (result == 1i32) { pass(true); }
-        pass(false);
+        if (result == 1i32) { pass true; }
+        pass false;
     };
 
     func:add_edge = NIL(wild int64->:g, int64:from, int64:to) {
@@ -368,42 +368,42 @@ Type:Graph = {
     func:has_edge = bool(wild int64->:g, int64:from, int64:to) {
         wild int8->:adj = ch_int_to_ptr(g[0i64]);
         int32:from_exists = map_i64_has(adj, from);
-        if (from_exists == 0i32) { pass(false); }
+        if (from_exists == 0i32) { pass false; }
         int64:nbr_val = map_i64_get(adj, from);
         wild int8->:neighbors = ch_int_to_ptr(nbr_val);
         int64:len = vec_i64_length(neighbors);
         int64:i = 0i64;
         while (i < len) {
             int64:elem = vec_i64_get(neighbors, i);
-            if (elem == to) { pass(true); }
+            if (elem == to) { pass true; }
             i = i + 1i64;
         }
-        pass(false);
+        pass false;
     };
 
     func:degree = int64(wild int64->:g, int64:id) {
         wild int8->:adj = ch_int_to_ptr(g[0i64]);
         int32:exists = map_i64_has(adj, id);
-        if (exists == 0i32) { pass(0i64); }
+        if (exists == 0i32) { pass 0i64; }
         int64:nbr_val = map_i64_get(adj, id);
         wild int8->:neighbors = ch_int_to_ptr(nbr_val);
-        pass(vec_i64_length(neighbors));
+        pass vec_i64_length(neighbors);
     };
 
     func:neighbor_at = int64(wild int64->:g, int64:id, int64:i) {
         wild int8->:adj = ch_int_to_ptr(g[0i64]);
         int64:nbr_val = map_i64_get(adj, id);
         wild int8->:neighbors = ch_int_to_ptr(nbr_val);
-        pass(vec_i64_get(neighbors, i));
+        pass vec_i64_get(neighbors, i);
     };
 
     func:node_count = int64(wild int64->:g) {
         wild int8->:adj = ch_int_to_ptr(g[0i64]);
-        pass(map_i64_length(adj));
+        pass map_i64_length(adj);
     };
 
     func:edge_count = int64(wild int64->:g) {
-        pass(g[2i64]);
+        pass g[2i64];
     };
 
     func:remove_edge = NIL(wild int64->:g, int64:from, int64:to) {

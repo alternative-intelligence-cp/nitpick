@@ -15,7 +15,7 @@ func:main = int32() {{
     int256:x = {a};
     int256:y = {b};
     int256:z = x * y;
-    pass(0);
+    pass 0;
 }};
 """
     

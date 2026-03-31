@@ -13,7 +13,7 @@ func:test_arena_lifecycle = int32() {
     if (arena == 0) {
         print("ERROR: Arena creation failed\n");
         int32:err = 1;
-        pass(err);
+        pass err;
     }
     
     // Reset arena
@@ -24,7 +24,7 @@ func:test_arena_lifecycle = int32() {
     
     print("SUCCESS: Arena lifecycle test passed\n");
     int32:res_ok = 0;
-    pass(res_ok);
+    pass res_ok;
 };
 
 func:test_arena_stats = int32() {
@@ -34,7 +34,7 @@ func:test_arena_stats = int32() {
     if (arena == 0) {
         print("ERROR: Arena creation failed\n");
         int32:err = 3;
-        pass(err);
+        pass err;
     }
     
     // TODO: Get stats when builtins available
@@ -47,7 +47,7 @@ func:test_arena_stats = int32() {
     
     print("SUCCESS: Arena stats test passed\n");
     int32:res_ok = 0;
-    pass(res_ok);
+    pass res_ok;
 };
 
 func:test_arena_multiple = int32() {
@@ -64,7 +64,7 @@ func:test_arena_multiple = int32() {
         if (arena2 != 0) { arena_destroy(arena2); }
         if (arena3 != 0) { arena_destroy(arena3); }
         int32:err = 4;
-        pass(err);
+        pass err;
     }
     
     // Destroy in reverse order
@@ -74,33 +74,33 @@ func:test_arena_multiple = int32() {
     
     print("SUCCESS: Multiple arenas test passed\n");
     int32:res_ok = 0;
-    pass(res_ok);
+    pass res_ok;
 };
 
 func:main = int32() {
     print("=== Arena Allocator Functional Tests ===\n\n");
     
-    int32:result1 = raw(test_arena_lifecycle());
+    int32:result1 = raw test_arena_lifecycle();
     if (result1 != 0) {
-        pass(result1);
+        pass result1;
     }
     
-    int32:result2 = raw(test_arena_stats());
+    int32:result2 = raw test_arena_stats();
     if (result2 != 0) {
-        pass(result2);
+        pass result2;
     }
     
-    int32:result3 = raw(test_arena_multiple());
+    int32:result3 = raw test_arena_multiple();
     if (result3 != 0) {
-        pass(result3);
+        pass result3;
     }
     
     print("\n=== All Arena Tests PASSED ===\n");
     int32:success = 0;
-    pass(success);
+    pass success;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

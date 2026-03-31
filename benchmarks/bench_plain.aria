@@ -1,0 +1,66 @@
+// bench_plain.aria — Baseline: plain variables, no stack at all
+//
+// Task: N iterations of store-two-values, retrieve-two-values, accumulate.
+// This is the "just use variables" approach — zero overhead from any stack.
+
+extern func:bench_nanos = int64();
+extern func:bench_peak_rss_kb = int64();
+
+func:failsafe = int32(tbb32:err) {
+    exit(1);
+};
+
+func:main = int32() {
+    int64:N = 10000000i64;
+    int64:sum = 0i64;
+    int64:i = 0i64;
+
+    // Warm up
+    int64:warmup = 0i64;
+    while (warmup < 1000i64) {
+        int64:wa = warmup * 3i64 + 1i64;
+        int64:wb = warmup * 7i64 + 2i64;
+        sum = sum + wa + wb;
+        warmup = warmup + 1i64;
+    }
+    sum = 0i64;
+
+    int64:rss_before = bench_peak_rss_kb();
+    int64:t_start = bench_nanos();
+
+    while (i < N) {
+        // Store two computed values
+        int64:a = i * 3i64 + 1i64;
+        int64:b = i * 7i64 + 2i64;
+
+        // Retrieve and accumulate (trivially — they're already in variables)
+        sum = sum + b + a;
+
+        i = i + 1i64;
+    }
+
+    int64:t_end = bench_nanos();
+    int64:rss_after = bench_peak_rss_kb();
+
+    int64:elapsed_ns = t_end - t_start;
+    int64:elapsed_ms = elapsed_ns / 1000000i64;
+    int64:rss_delta = rss_after - rss_before;
+
+    println("=== PLAIN VARIABLES ===");
+    print("  iterations: ");
+    println(string_from_int(N));
+    print("  sum: ");
+    println(string_from_int(sum));
+    print("  elapsed_ms: ");
+    println(string_from_int(elapsed_ms));
+    print("  elapsed_ns: ");
+    println(string_from_int(elapsed_ns));
+    print("  rss_before_kb: ");
+    println(string_from_int(rss_before));
+    print("  rss_after_kb: ");
+    println(string_from_int(rss_after));
+    print("  rss_delta_kb: ");
+    println(string_from_int(rss_delta));
+
+    return 0;
+};

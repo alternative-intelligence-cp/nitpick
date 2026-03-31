@@ -13,15 +13,15 @@
 
 func:failsafe = int32(tbb32:err) {
     print("Test failed with error");
-    exit(1);
+    exit 1;
 };
 
 func:returns_nil = int64?() {
-    pass(NIL);
+    pass NIL;
 };
 
 func:returns_value = int64?() {
-    pass(42);
+    pass 42;
 };
 
 func:main = int32() {
@@ -84,8 +84,8 @@ func:main = int32() {
     // VALID: Function Returns
     // =========================================
     print("\n5. Function Returns with NIL");
-    int64?:result1 = raw(returns_nil());
-    int64?:result2 = raw(returns_value());
+    int64?:result1 = raw returns_nil();
+    int64?:result2 = raw returns_value();
     
     int64:r1 = result1 ?? -1;  // Should be -1 (NIL)
     int64:r2 = result2 ?? -1;  // Should be 42 (value)
@@ -126,5 +126,5 @@ func:main = int32() {
     print("\n=== All NIL vs NULL tests passed ===");
     print("NIL and NULL are properly distinguished and type-safe!");
     
-    exit(0);
+    exit 0;
 };

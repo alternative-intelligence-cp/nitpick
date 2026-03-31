@@ -45,57 +45,57 @@ Type:FileStream = {
     func:open = FileStream(string:path, string:mode) {
         int64:handle = aria_open_file(path, mode);
         FileStream:s = FileStream{handle: handle};
-        pass(s);
+        pass s;
     };
 
     // close() - close the stream and release resources
     func:close = NIL(FileStream:self) {
         _ = aria_stream_close(self.handle);
-        pass(NIL);
+        pass NIL;
     };
 
     // write(content) - write a string to the stream
     // Returns number of bytes written, or -1 on error
     func:write = int64(FileStream:self, string:content) {
-        pass(aria_stream_write(self.handle, content));
+        pass aria_stream_write(self.handle, content);
     };
 
     // readLine() - read one line from the stream (includes trailing newline)
     // Returns empty string at EOF
     func:readLine = string(FileStream:self) {
         string:line = aria_stream_read_line_string(self.handle);
-        pass(line);
+        pass line;
     };
 
     // eof() - check whether the stream has reached end-of-file
     // Returns 1 if at EOF, 0 otherwise
     func:eof = int8(FileStream:self) {
-        pass(aria_stream_eof(self.handle));
+        pass aria_stream_eof(self.handle);
     };
 
     // flush() - flush buffered output to disk
     // Returns 0 on success, -1 on error
     func:flush = int32(FileStream:self) {
-        pass(aria_stream_flush(self.handle));
+        pass aria_stream_flush(self.handle);
     };
 
     // seek(offset, whence) - seek to a position in the file
     // whence: 0 = SEEK_SET, 1 = SEEK_CUR, 2 = SEEK_END
     // Returns 0 on success, -1 on error
     func:seek = int32(FileStream:self, int64:offset, int32:whence) {
-        pass(aria_stream_seek(self.handle, offset, whence));
+        pass aria_stream_seek(self.handle, offset, whence);
     };
 
     // tell() - get current byte position in the file
     // Returns position, or -1 on error
     func:tell = int64(FileStream:self) {
-        pass(aria_stream_tell(self.handle));
+        pass aria_stream_tell(self.handle);
     };
 
     // Seek origin constants
-    func:SEEK_SET = int32() { pass(0i32); };
-    func:SEEK_CUR = int32() { pass(1i32); };
-    func:SEEK_END = int32() { pass(2i32); };
+    func:SEEK_SET = int32() { pass 0i32; };
+    func:SEEK_CUR = int32() { pass 1i32; };
+    func:SEEK_END = int32() { pass 2i32; };
 
     // Public interface - the opaque stream handle (stored as int64 to
     // avoid codegen optional-wrapper bug with pointer types in structs)

@@ -3,7 +3,7 @@
 
 // Inline int64_toString until module system is implemented
 func:int64_toString = string(int64:value) {
-    if (value == 0) { pass("0"); }
+    if (value == 0) { pass "0"; }
     bool:is_negative = false;
     int64:work_value = value;
     if (value < 0) { is_negative = true; work_value = -value; }
@@ -26,7 +26,7 @@ func:int64_toString = string(int64:value) {
         result = string_concat(digit_char, result);
     }
     if (is_negative) { result = string_concat("-", result); }
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
@@ -51,42 +51,42 @@ func:main = int32() {
     int64:result2 = 0t10 - 0t1;   // 3 - 1 = 2
     
     // All prints use explicit int64_toString conversion with temp variables
-    drop(println("Edge cases:"));
-    string:zero_str = raw(int64_toString(zero));
-    drop(println(zero_str));
-    string:pos_small_str = raw(int64_toString(pos_small));
-    drop(println(pos_small_str));
-    string:neg_small_str = raw(int64_toString(neg_small));
-    drop(println(neg_small_str));
+    drop println("Edge cases:");
+    string:zero_str = raw int64_toString(zero);
+    drop println(zero_str);
+    string:pos_small_str = raw int64_toString(pos_small);
+    drop println(pos_small_str);
+    string:neg_small_str = raw int64_toString(neg_small);
+    drop println(neg_small_str);
     
-    drop(println("Larger values:"));
-    string:six_str = raw(int64_toString(six));
-    drop(println(six_str));
-    string:seven_str = raw(int64_toString(seven));
-    drop(println(seven_str));
-    string:eight_str = raw(int64_toString(eight));
-    drop(println(eight_str));
-    string:nine_str = raw(int64_toString(nine));
-    drop(println(nine_str));
+    drop println("Larger values:");
+    string:six_str = raw int64_toString(six);
+    drop println(six_str);
+    string:seven_str = raw int64_toString(seven);
+    drop println(seven_str);
+    string:eight_str = raw int64_toString(eight);
+    drop println(eight_str);
+    string:nine_str = raw int64_toString(nine);
+    drop println(nine_str);
     
-    drop(println("Negative values:"));
-    string:neg_two_str = raw(int64_toString(neg_two));
-    drop(println(neg_two_str));
-    string:neg_three_str = raw(int64_toString(neg_three));
-    drop(println(neg_three_str));
-    string:neg_four_str = raw(int64_toString(neg_four));
-    drop(println(neg_four_str));
+    drop println("Negative values:");
+    string:neg_two_str = raw int64_toString(neg_two);
+    drop println(neg_two_str);
+    string:neg_three_str = raw int64_toString(neg_three);
+    drop println(neg_three_str);
+    string:neg_four_str = raw int64_toString(neg_four);
+    drop println(neg_four_str);
     
-    drop(println("Mixed operations:"));
-    string:result1_str = raw(int64_toString(result1));
-    drop(println(result1_str));
-    string:result2_str = raw(int64_toString(result2));
-    drop(println(result2_str));
+    drop println("Mixed operations:");
+    string:result1_str = raw int64_toString(result1);
+    drop println(result1_str);
+    string:result2_str = raw int64_toString(result2);
+    drop println(result2_str);
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

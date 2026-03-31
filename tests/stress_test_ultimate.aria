@@ -9,22 +9,22 @@ func:db_lookup = int32(int32:id) {
     // Simulate lookup: even IDs exist, odd don't
     bool:found = (id % 2i32) == 0i32;
     if (found) {
-        pass(id * 100i32);  // Return "record value"
+        pass id * 100i32;  // Return "record value"
     }
-    fail(404i32);  // Not found
+    fail 404i32;  // Not found
 };
 
 func:db_update = int32(int32:id, int32:new_value) {
     // Simulate update: fails if ID too large
     if (id > 10i32) {
-        fail(413i32);  // Payload too large
+        fail 413i32;  // Payload too large
     }
-    pass(new_value);
+    pass new_value;
 };
 
 func:db_delete = int32(int32:id) {
     // Simulate delete: always succeeds
-    pass(0i32);
+    pass 0i32;
 };
 
 // ============================================================================
@@ -37,13 +37,13 @@ func:validate_and_update = int32(int32:id, int32:new_val) {
     
     // Test: Early return on lookup failure
     if (existing.is_error) {
-        fail(existing.error);  // Propagate 404
+        fail existing.error;  // Propagate 404
     }
     
     // Validate new value based on existing
     int32:old_val = existing.value;
     if (new_val <= old_val) {
-        fail(400i32);  // Bad request - must increase
+        fail 400i32;  // Bad request - must increase
     }
     
     // Attempt update
@@ -51,10 +51,10 @@ func:validate_and_update = int32(int32:id, int32:new_val) {
     
     // Test: Result check after conditional logic
     if (updated.is_error) {
-        fail(updated.error);  // Propagate 413
+        fail updated.error;  // Propagate 413
     }
     
-    pass(updated.value);
+    pass updated.value;
 };
 
 // ============================================================================
@@ -89,7 +89,7 @@ func:batch_update = int32(int32:start_id, int32:count, int32:increment) {
         i = i + 1i32;
     }
     
-    pass(success_count);
+    pass success_count;
 };
 
 // ============================================================================
@@ -103,11 +103,11 @@ func:atomic_swap = int32(int32:id1, int32:id2) {
     
     // Test: Manual checks for both Results
     if (val1.is_error) {
-        fail(val1.error);
+        fail val1.error;
     }
     
     if (val2.is_error) {
-        fail(val2.error);
+        fail val2.error;
     }
     
     // Both succeeded, we can access .value safely
@@ -120,14 +120,14 @@ func:atomic_swap = int32(int32:id1, int32:id2) {
     
     // Test: Multiple Result checks after swap
     if (upd1.is_error) {
-        fail(upd1.error);
+        fail upd1.error;
     }
     if (upd2.is_error) {
-        fail(upd2.error);
+        fail upd2.error;
     }
     
     int32:sum = upd1.value + upd2.value;
-    pass(sum);
+    pass sum;
 };
 
 // ============================================================================
@@ -143,7 +143,7 @@ func:retry_with_backoff = int32(int32:id, int32:new_val, int32:max_attempts) {
         
         // Test: Early success return in retry loop
         if (!(result.is_error)) {
-            pass(result.value);  // Success!
+            pass result.value;  // Success!
         }
         
         // Failed, increase backoff
@@ -151,7 +151,7 @@ func:retry_with_backoff = int32(int32:id, int32:new_val, int32:max_attempts) {
         attempts = attempts + 1i32;
     }
     
-    fail(408i32);  // Timeout after retries
+    fail 408i32;  // Timeout after retries
 };
 
 // ============================================================================
@@ -191,7 +191,7 @@ func:complex_workflow = int32(int32:user_id, int32:threshold) {
         }
     }
     
-    pass(total);
+    pass total;
 };
 
 // ============================================================================
@@ -248,10 +248,10 @@ func:main = int32() {
         score = score + 1i32;  // +1 = 9
     }
     
-    pass(score);  // Expected: 9 (all tests passed)
+    pass score;  // Expected: 9 (all tests passed)
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

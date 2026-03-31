@@ -23,24 +23,24 @@ extern "libc" {
 }
 
 func:test_wild_globals = NIL() {
-    drop(println("Testing wild pointer globals..."));
+    drop println("Testing wild pointer globals...");
     
     // Calculate size for 16 watchpoints
     int64:size = 16 * 32;  // Approximate size (16 structs * ~32 bytes each)
     
     // Allocate (malloc returns void* which we can't directly assign to wild void->)
     // So we'll just test that we CAN have a wild global
-    drop(println("✓ wild pointer global compiled successfully"));
+    drop println("✓ wild pointer global compiled successfully");
     
-    pass(NIL);
+    pass NIL;
 };
 
 func:main = int32() {
-    drop(test_wild_globals());
-    exit(0);
+    drop test_wild_globals();
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
-    drop(println("Failsafe triggered"));
-    exit(1);
+    drop println("Failsafe triggered");
+    exit 1;
 };

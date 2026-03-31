@@ -1,26 +1,26 @@
 // Test SIMD builtins: reduction and broadcast
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 // Test SIMD reduction with simd_sum
 func:test_reduction = int32(simd<int32, 4>:vec) {
     int32:sum = simd_sum(vec);
-    pass(sum);
+    pass sum;
 };
 
 // Test SIMD broadcast and arithmetic
 func:test_broadcast_and_sum = int32() {
     simd<int32, 4>:vec = simd_broadcast(10i32, 4);
     int32:total = simd_sum(vec);
-    pass(total);
+    pass total;
 };
 
 // Test SIMD product reduction
 func:test_product = int32(simd<int32, 4>:vec) {
     int32:product = simd_product(vec);
-    pass(product);
+    pass product;
 };
 
 func:main = int32() {
-    exit(0);
+    exit 0;
 };

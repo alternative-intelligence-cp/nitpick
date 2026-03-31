@@ -17,7 +17,7 @@ func:StringBuilder_new = StringBuilder(int64:initial_capacity) {
         false
     };
     
-    pass(sb);
+    pass sb;
 };
 
 // Append a string to the builder (simplified - just tracks length)
@@ -32,21 +32,21 @@ func:StringBuilder_append = StringBuilder(StringBuilder:sb, string:str) {
         sb.finalized
     };
     
-    pass(result);
+    pass result;
 };
 
 // Build the final string (simplified - returns placeholder)
 // TODO: Implement actual string construction from accumulated pieces
 func:StringBuilder_build = string(StringBuilder:sb) {
     string:result = "StringBuilder MVP result";
-    pass(result);
+    pass result;
 };
 
 // Free the StringBuilder's resources (currently a no-op)
 // TODO: Implement actual buffer deallocation when memory mgmt added
 func:StringBuilder_free = NIL(StringBuilder:sb) {
     // No-op in MVP since we're not allocating memory yet
-    pass(NIL);
+    pass NIL;
 };
 
 // Test StringBuilder with UFCS method chaining
@@ -63,10 +63,10 @@ func:main = int32() {
     
     // Build final result
     string:result = sb.build() ? "default";
-    drop(print(result));
+    drop print(result);
     
     // Clean up
-    drop(sb.free());
+    drop sb.free();
     
-    pass(0i32);
+    pass 0i32;
 };

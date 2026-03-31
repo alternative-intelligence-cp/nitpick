@@ -3,7 +3,7 @@
 
 use "wave.aria".*;
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 /**
  * Test 1: Wave9 struct creation
@@ -21,21 +21,21 @@ func:test_wave9_creation = int32() {
     // Verify field access
     if (w.x != 3) {
         println("  ✗ FAILED: x coordinate incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (w.y != -3) {
         println("  ✗ FAILED: y coordinate incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (w.z != 4) {
         println("  ✗ FAILED: z coordinate incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -51,11 +51,11 @@ func:test_wave_zero = int32() {
         zero.u != 0 || zero.v != 0 || zero.w != 0 ||
         zero.x != 0 || zero.y != 0 || zero.z != 0) {
         println("  ✗ FAILED: wave_zero not at origin");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -82,31 +82,31 @@ func:test_wave_interfere = int32() {
     // Check superposition: a + b
     if (result.r != 0) {  // 1 + (-1) = 0
         println("  ✗ FAILED: r coordinate interference incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (result.s != 3) {  // 2 + 1 = 3
         println("  ✗ FAILED: s coordinate interference incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (result.x != 3) {  // 2 + 1 = 3
         println("  ✗ FAILED: x coordinate interference incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (result.y != 3) {  // 0 + 3 = 3
         println("  ✗ FAILED: y coordinate interference incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (result.z != 1) {  // -1 + 2 = 1
         println("  ✗ FAILED: z coordinate interference incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -127,36 +127,36 @@ func:test_wave_negate = int32() {
     // Check that all signs are flipped
     if (negated.r != -2) {
         println("  ✗ FAILED: r not negated correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (negated.s != 3) {
         println("  ✗ FAILED: s not negated correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (negated.t != 0) {  // -0 = 0
         println("  ✗ FAILED: t not negated correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (negated.x != 2) {
         println("  ✗ FAILED: x not negated correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (negated.y != -3) {
         println("  ✗ FAILED: y not negated correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (negated.z != 4) {
         println("  ✗ FAILED: z not negated correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -180,11 +180,11 @@ func:test_destructive_interference = int32() {
         result.u != 0 || result.v != 0 || result.w != 0 ||
         result.x != 0 || result.y != 0 || result.z != 0) {
         println("  ✗ FAILED: Destructive interference didn't produce zero");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -206,26 +206,26 @@ func:test_wave_scale = int32() {
     // Check that all components are doubled
     if (scaled.r != 2) {
         println("  ✗ FAILED: r not scaled correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (scaled.s != 4) {
         println("  ✗ FAILED: s not scaled correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (scaled.x != 4) {
         println("  ✗ FAILED: x not scaled correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (scaled.y != -4) {
         println("  ✗ FAILED: y not scaled correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -245,7 +245,7 @@ func:test_wave_magnitude = int32() {
     int32:mag_sq = wave_magnitude_squared(unit_x);
     if (mag_sq != 1) {  // 1² = 1
         println("  ✗ FAILED: Unit vector magnitude incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     // Test case: (2, 2, 0, 0, 0, 0, 0, 0, 0)
@@ -258,11 +258,11 @@ func:test_wave_magnitude = int32() {
     int32:mag2 = wave_magnitude_squared(w2);
     if (mag2 != 8) {  // 2² + 2² = 8
         println("  ✗ FAILED: Magnitude calculation incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -292,16 +292,16 @@ func:test_wave_equals = int32() {
     
     if (!wave_equals(a, b)) {
         println("  ✗ FAILED: Equal waves not detected");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (wave_equals(a, c)) {
         println("  ✗ FAILED: Unequal waves detected as equal");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -320,18 +320,18 @@ func:test_spatial_wave = int32() {
     // Check spatial components are set
     if (spatial.x != 3 || spatial.y != -2 || spatial.z != 4) {
         println("  ✗ FAILED: Spatial components not set correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     // Check other dimensions are zero
     if (spatial.r != 0 || spatial.s != 0 || spatial.t != 0 ||
         spatial.u != 0 || spatial.v != 0 || spatial.w != 0) {
         println("  ✗ FAILED: Non-spatial dimensions not zeroed");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -353,21 +353,21 @@ func:test_spatial_extraction = int32() {
     
     if (x != -3) {
         println("  ✗ FAILED: X extraction incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (y != 2) {
         println("  ✗ FAILED: Y extraction incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (z != 1) {
         println("  ✗ FAILED: Z extraction incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -386,18 +386,18 @@ func:test_quantum_wave = int32() {
     // Check quantum components are set
     if (quantum.u != 2 || quantum.v != -3 || quantum.w != 1) {
         println("  ✗ FAILED: Quantum components not set correctly");
-        pass(1i32);
+        pass 1i32;
     }
     
     // Check other dimensions are zero
     if (quantum.r != 0 || quantum.s != 0 || quantum.t != 0 ||
         quantum.x != 0 || quantum.y != 0 || quantum.z != 0) {
         println("  ✗ FAILED: Non-quantum dimensions not zeroed");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -419,26 +419,26 @@ func:test_complex_interference = int32() {
     // Verify specific components
     if (combined.r != 0) {  // 1 + 0 + (-1) = 0
         println("  ✗ FAILED: Complex r interference incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (combined.u != 1) {  // 2 + (-1) + 0 = 1
         println("  ✗ FAILED: Complex u interference incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (combined.x != 3) {  // 3 + (-1) + 1 = 3
         println("  ✗ FAILED: Complex x interference incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     if (combined.y != 2) {  // 1 + 2 + (-1) = 2
         println("  ✗ FAILED: Complex y interference incorrect");
-        pass(1i32);
+        pass 1i32;
     }
     
     println("  ✓ PASSED");
-    pass(0i32);
+    pass 0i32;
 };
 
 /**
@@ -454,18 +454,18 @@ func:main = int32() {
     
     int32:failures = 0i32;
     
-    failures = failures + raw(test_wave9_creation());
-    failures = failures + raw(test_wave_zero());
-    failures = failures + raw(test_wave_interfere());
-    failures = failures + raw(test_wave_negate());
-    failures = failures + raw(test_destructive_interference());
-    failures = failures + raw(test_wave_scale());
-    failures = failures + raw(test_wave_magnitude());
-    failures = failures + raw(test_wave_equals());
-    failures = failures + raw(test_spatial_wave());
-    failures = failures + raw(test_spatial_extraction());
-    failures = failures + raw(test_quantum_wave());
-    failures = failures + raw(test_complex_interference());
+    failures = failures + raw test_wave9_creation();
+    failures = failures + raw test_wave_zero();
+    failures = failures + raw test_wave_interfere();
+    failures = failures + raw test_wave_negate();
+    failures = failures + raw test_destructive_interference();
+    failures = failures + raw test_wave_scale();
+    failures = failures + raw test_wave_magnitude();
+    failures = failures + raw test_wave_equals();
+    failures = failures + raw test_spatial_wave();
+    failures = failures + raw test_spatial_extraction();
+    failures = failures + raw test_quantum_wave();
+    failures = failures + raw test_complex_interference();
     
     println("");
     println("========================================");
@@ -477,5 +477,5 @@ func:main = int32() {
     }
     println("========================================");
     
-    pass(failures);
+    pass failures;
 };

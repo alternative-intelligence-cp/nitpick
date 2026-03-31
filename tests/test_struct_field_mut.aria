@@ -14,24 +14,24 @@ func:create_vec = Vec<int8>() {
         type_id: 0i32
     };
     
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
     // Test 1: Create a Vec using constructor that returns a value
-    Vec<int8>:v = raw(create_vec());
+    Vec<int8>:v = raw create_vec();
     
     // Test 2: Mutate a field (THIS is what we fixed!)
     v.length = 42i64;
     
     // Test 3: Verify mutation persisted
     if (v.length != 42i64) {
-        pass(1i32);  // FAIL
+        pass 1i32;  // FAIL
     }
     
-    exit(0);  // SUCCESS
+    exit 0;  // SUCCESS
 };
 
 func:failsafe = int32(tbb32:err) {
-    exit(1);
+    exit 1;
 };

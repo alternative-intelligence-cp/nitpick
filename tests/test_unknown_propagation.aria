@@ -2,7 +2,7 @@
 // Layer 1 Safety: Unknown values propagate until checked
 
 func:failsafe = int32(tbb32:err) {
-    exit(1);
+    exit 1;
 };
 
 func:main = int32() {
@@ -16,21 +16,21 @@ func:main = int32() {
     int32:result3 = result1 - 5i32;   // (Unknown) - 5 = still Unknown
     
     // Check that all results are Unknown
-    if (ok(unk_val) == 0i32 && 
-        ok(result1) == 0i32 && 
-        ok(result2) == 0i32 && 
-        ok(result3) == 0i32) {
+    if (ok unk_val == 0i32 && 
+        ok result1 == 0i32 && 
+        ok result2 == 0i32 && 
+        ok result3 == 0i32) {
         // Success: Unknown propagated correctly
-        exit(0);
+        exit 0;
     }
     
     // Normal values should still work
     int32:normal = 5i32 + 3i32;  // 8
-    if (ok(normal) == 1i32) {
+    if (ok normal == 1i32) {
         // Success: normal values are valid
-        exit(0);
+        exit 0;
     }
     
     // Test failed
-    pass(1i32);
+    pass 1i32;
 };

@@ -6,27 +6,27 @@ trait:Describable = {
 
 impl:Describable:for:int32 = {
     func:describe = int32(int32:self) {
-        pass(self + 100);
+        pass self + 100;
     };
 };
 
 // Function accepting dyn trait object — receives fat pointer {data_ptr, vtable_ptr}
 func:process = int32(dyn Describable:item) {
     // Dynamic dispatch: calls describe via vtable
-    pass(item.describe());
+    pass item.describe();
 };
 
 pub func:main = int32() {
     int32:x = 5i32;
 
     // Test 1: Static dispatch (UFCS) still works
-    int32:result1 = raw(int32_describe(x));
+    int32:result1 = raw int32_describe(x);
 
     // Test 2: Dyn coercion + dynamic dispatch — calls describe() via vtable
-    int32:result2 = raw(process(x));
+    int32:result2 = raw process(x);
 
     // Return sum: 105 + 105 = 210
-    pass(result1 + result2);
+    pass result1 + result2;
 };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };

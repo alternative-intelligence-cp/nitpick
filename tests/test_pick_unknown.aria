@@ -6,10 +6,10 @@ func:test_unknown_pattern = int32() {
     
     pick(x) {
         (unknown) {
-            pass(1i32);  // Should match
+            pass 1i32;  // Should match
         },
         (*) {
-            pass(0i32);  // Should not reach
+            pass 0i32;  // Should not reach
         }
     }
 };
@@ -19,13 +19,13 @@ func:test_known_value = int32() {
     
     pick(y) {
         (unknown) {
-            pass(0i32);  // Should not match
+            pass 0i32;  // Should not match
         },
         (42i32) {
-            pass(2i32);  // Should match
+            pass 2i32;  // Should match
         },
         (*) {
-            pass(0i32);  // Should not reach
+            pass 0i32;  // Should not reach
         }
     }
 };
@@ -36,10 +36,10 @@ func:test_priority_order = int32() {
     
     pick(z) {
         (unknown) {
-            pass(3i32);  // Should match (unknown checked first)
+            pass 3i32;  // Should match (unknown checked first)
         },
         (*) {
-            pass(0i32);  // Should not reach
+            pass 0i32;  // Should not reach
         }
     }
 };
@@ -50,36 +50,36 @@ func:test_mixed_patterns = int32() {
     
     pick(sensor) {
         (0i32) {
-            pass(0i32);  // Not unknown
+            pass 0i32;  // Not unknown
         },
         (unknown) {
-            pass(4i32);  // Should match
+            pass 4i32;  // Should match
         },
         (100i32) {
-            pass(0i32);  // Not reached
+            pass 0i32;  // Not reached
         },
         (*) {
-            pass(0i32);  // Not reached
+            pass 0i32;  // Not reached
         }
     }
 };
 
 func:main = int32() {
-    int32:test1 = raw(test_unknown_pattern());    // Should be 1
-    int32:test2 = raw(test_known_value());        // Should be 2
-    int32:test3 = raw(test_priority_order());     // Should be 3
-    int32:test4 = raw(test_mixed_patterns());     // Should be 4
+    int32:test1 = raw test_unknown_pattern();    // Should be 1
+    int32:test2 = raw test_known_value();        // Should be 2
+    int32:test3 = raw test_priority_order();     // Should be 3
+    int32:test4 = raw test_mixed_patterns();     // Should be 4
     
     int32:total = test1 + test2 + test3 + test4;
     
     if (total == 10i32) {
-        pass(42i32);  // All tests passed!
+        pass 42i32;  // All tests passed!
     } else {
-        pass(total);  // Return partial sum (debug)
+        pass total;  // Return partial sum (debug)
     }
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

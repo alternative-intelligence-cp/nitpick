@@ -7,9 +7,9 @@ func:test_int1024_basic = int32() {
     
     bool:passed = (sum == expected);
     if (passed) {
-        pass(1);
+        pass 1;
     }
-    pass(0);
+    pass 0;
 };
 
 // Test TBB8 basic arithmetic
@@ -21,18 +21,18 @@ func:test_tbb8_basic = int32() {
     
     bool:passed = (sum == expected);
     if (passed) {
-        pass(1);
+        pass 1;
     }
-    pass(0);
+    pass 0;
 };
 
 func:main = int32() {
-    int32:r1 = raw(test_int1024_basic());
-    int32:r2 = raw(test_tbb8_basic());
-    pass(r1 + r2);
+    int32:r1 = raw test_int1024_basic();
+    int32:r2 = raw test_tbb8_basic();
+    pass r1 + r2;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

@@ -1,32 +1,32 @@
 // Comprehensive Type system test
 // Demonstrates all Type features: create, destroy, methods, structs, instance<T>, Type.MEMBER
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 Type:Counter = {
     // Constructor
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
     func:create = Counter(int32:initial) {
         Counter:c = Counter{value: initial, id: 0i32};
-        pass(c);
+        pass c;
     };
     
     // Destructor  
     func:destroy = NIL(Counter:self) {
-        pass(NIL);
+        pass NIL;
     };
     
     // Instance method - will use UFCS: counter.increment() → Counter_increment(counter)
     func:increment = NIL(Counter:self) {
-        pass(NIL);
+        pass NIL;
     };
     
     // Static method/getter
     func:nextId = int32() {
-        pass(99i32);
+        pass 99i32;
     };
     
     // Private members
@@ -47,12 +47,12 @@ func:failsafe = int32(tbb32:err) { exit(1); };
 
 func:main = int32() {
     // Test instance<T>() syntax → Counter_create(10i32)
-    Counter:c = raw(instance<Counter>(10i32));
+    Counter:c = raw instance<Counter>(10i32);
     
     // Test UFCS method call → Counter_increment(c)
     // c.increment();
     
     // No tests for static access yet - compiler complains about unused result
     
-    exit(0);
+    exit 0;
 };

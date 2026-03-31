@@ -3,15 +3,15 @@
 func:divide = int32(int32:a, int32:b)
   requires b != 0
 {
-    pass(a / b);
+    pass a / b;
 };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     Result<int32>:r = divide(10, 2);
     if (r.is_error) {
-        pass(-1);
+        pass -1;
     }
-    pass(r.value);
+    pass r.value;
 };

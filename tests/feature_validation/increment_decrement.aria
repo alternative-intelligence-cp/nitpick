@@ -6,7 +6,7 @@ func:test_increment = int32() {
     x += 1;         // 6 (equivalent to ++x)
     x += 1;         // 7
     x += 1;         // 8
-    pass(x);
+    pass x;
 };
 
 func:test_decrement = int32() {
@@ -14,7 +14,7 @@ func:test_decrement = int32() {
     y -= 1;         // 9 (equivalent to --y)
     y -= 1;         // 8
     y -= 1;         // 7
-    pass(y);
+    pass y;
 };
 
 func:test_mixed = int32() {
@@ -25,17 +25,17 @@ func:test_mixed = int32() {
     z -= 1;         // 2
     z += 1;         // 3
     z += 1;         // 4
-    pass(z);
+    pass z;
 };
 
 func:main = int32() {
-    int32:a = raw(test_increment());   // 8
-    int32:b = raw(test_decrement());   // 7
-    int32:c = raw(test_mixed());       // 4
-    pass(a + b + c);              // 8 + 7 + 4 = 19
+    int32:a = raw test_increment();   // 8
+    int32:b = raw test_decrement();   // 7
+    int32:c = raw test_mixed();       // 4
+    pass a + b + c;              // 8 + 7 + 4 = 19
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

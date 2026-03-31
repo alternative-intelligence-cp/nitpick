@@ -1,0 +1,21 @@
+// Test new no-parenthesis syntax for builtins
+func:add = int64(int64:a, int64:b) {
+    pass a + b;
+};
+
+func:main = int32() {
+    // raw expr (no parens)
+    int64:sum = raw add(1i64, 2i64);
+    
+    // drop expr (no parens)
+    drop add(3i64, 4i64);
+    
+    drop println(`sum = &{sum}`);
+    
+    // exit code (no parens)
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

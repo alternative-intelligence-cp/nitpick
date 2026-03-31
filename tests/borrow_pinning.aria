@@ -9,7 +9,7 @@ func:test_basic_pinning = int32() {
     int32:result = gc_var;        // Access original value
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 // COMMENTED OUT: Designed to test pinned assignment error
@@ -50,7 +50,7 @@ func:test_pin_lifetime = int32() {
     
     x = 20;  // OK: no longer pinned
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 // COMMENTED OUT: Designed to test pin lifetime error
@@ -77,7 +77,7 @@ func:test_borrow_pinned_immutable = int32() {
     int32$:ref = !$x;  // Should be OK - immutable borrow of pinned var
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 // COMMENTED OUT: Designed to test mutable borrow of pinned variable error
@@ -96,9 +96,9 @@ func:test_borrow_pinned_mutable = int32() {
 
 func:main = int32() {
     // Run tests that should succeed
-    int32:result1 = raw(test_basic_pinning());
-    int32:result4 = raw(test_pin_lifetime());
-    int32:result6 = raw(test_borrow_pinned_immutable());
+    int32:result1 = raw test_basic_pinning();
+    int32:result4 = raw test_pin_lifetime();
+    int32:result6 = raw test_borrow_pinned_immutable();
     
     // Tests 2, 3, 5, 7 should fail at compile time
     // Uncomment one at a time to test error reporting:
@@ -108,10 +108,10 @@ func:main = int32() {
     // int32:result7 = test_borrow_pinned_mutable();
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

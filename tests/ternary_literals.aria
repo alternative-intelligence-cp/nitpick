@@ -3,7 +3,7 @@
 
 // Inline int64_toString until module system is implemented
 func:int64_toString = string(int64:value) {
-    if (value == 0) { pass("0"); }
+    if (value == 0) { pass "0"; }
     bool:is_negative = false;
     int64:work_value = value;
     if (value < 0) { is_negative = true; work_value = -value; }
@@ -26,7 +26,7 @@ func:int64_toString = string(int64:value) {
         result = string_concat(digit_char, result);
     }
     if (is_negative) { result = string_concat("-", result); }
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
@@ -42,40 +42,40 @@ func:main = int32() {
     int64:five = 0t1TT;      // 1*9 + (-1)*3 + (-1)*1 = 5
     
     // Test with explicit string conversion for all prints
-    drop(println("Testing balanced ternary literals:"));
+    drop println("Testing balanced ternary literals:");
     
-    drop(print("0t0 = "));
-    string:zero_str = raw(int64_toString(zero));
-    drop(println(zero_str));
+    drop print("0t0 = ");
+    string:zero_str = raw int64_toString(zero);
+    drop println(zero_str);
     
-    drop(print("0t1 = "));
-    string:one_str = raw(int64_toString(one));
-    drop(println(one_str));
+    drop print("0t1 = ");
+    string:one_str = raw int64_toString(one);
+    drop println(one_str);
     
-    drop(print("0tT = "));
-    string:neg_one_str = raw(int64_toString(neg_one));
-    drop(println(neg_one_str));
+    drop print("0tT = ");
+    string:neg_one_str = raw int64_toString(neg_one);
+    drop println(neg_one_str);
     
-    drop(print("0t1T = "));
-    string:two_str = raw(int64_toString(two));
-    drop(println(two_str));
+    drop print("0t1T = ");
+    string:two_str = raw int64_toString(two);
+    drop println(two_str);
     
-    drop(print("0t10 = "));
-    string:three_str = raw(int64_toString(three));
-    drop(println(three_str));
+    drop print("0t10 = ");
+    string:three_str = raw int64_toString(three);
+    drop println(three_str);
     
-    drop(print("0t11 = "));
-    string:four_str = raw(int64_toString(four));
-    drop(println(four_str));
+    drop print("0t11 = ");
+    string:four_str = raw int64_toString(four);
+    drop println(four_str);
     
-    drop(print("0t1TT = "));
-    string:five_str = raw(int64_toString(five));
-    drop(println(five_str));
+    drop print("0t1TT = ");
+    string:five_str = raw int64_toString(five);
+    drop println(five_str);
     
-    pass(42);
+    pass 42;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

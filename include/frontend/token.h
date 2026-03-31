@@ -49,12 +49,25 @@ enum class TokenType {
     TOKEN_KW_THEN,      // then - when success branch
     TOKEN_KW_END,       // end - when failure branch
     TOKEN_KW_PICK,      // pick - switch/match statement
-    TOKEN_KW_FALL,      // fall() - explicit fallthrough in pick
+    TOKEN_KW_FALL,      // fall - explicit fallthrough in pick (keyword, no parens)
     TOKEN_KW_BREAK,     // break
     TOKEN_KW_CONTINUE,  // continue
     TOKEN_KW_RETURN,    // return (legacy, use pass/fail)
-    TOKEN_KW_PASS,      // pass() - successful return
-    TOKEN_KW_FAIL,      // fail() - error return
+    TOKEN_KW_PASS,      // pass - successful return (keyword, no parens)
+    TOKEN_KW_FAIL,      // fail - error return (keyword, no parens)
+    TOKEN_KW_EXIT,      // exit - terminate program (keyword, no parens)
+    TOKEN_KW_RAW,       // raw - unwrap Result bypassing safety (keyword, no parens)
+    TOKEN_KW_DROP,      // drop - discard Result (keyword, no parens)
+    TOKEN_KW_OK,        // ok - check if value is valid (keyword, no parens)
+    TOKEN_KW_DEFAULTS,  // defaults - scoped expression fallback (keyword, no parens)
+    TOKEN_KW_APOP,      // apop - pop from user stack (keyword, no parens)
+    TOKEN_KW_APUSH,     // apush - push to user stack (keyword, no parens)
+    TOKEN_KW_APEEK,     // apeek - peek user stack (keyword, no parens)
+    TOKEN_KW_ASTACK,    // astack - set user stack size (keyword, no parens)
+    TOKEN_KW_ACAP,      // acap - query user stack capacity in bytes (keyword, no parens)
+    TOKEN_KW_ASIZE,     // asize - query user stack bytes used (keyword, no parens)
+    TOKEN_KW_AFITS,     // afits - check if value fits on user stack (keyword, no parens)
+    TOKEN_KW_ATYPE,     // atype - query type tag of top stack item (keyword, no parens)
     
     // ========================================================================
     // Keywords - Async/Await
@@ -289,6 +302,7 @@ enum class TokenType {
     TOKEN_FAT_ARROW,    // => - cast/coerce operator  (expr => TargetType)
     TOKEN_SAFE_NAV,     // ?. - safe navigation
     TOKEN_NULL_COALESCE,// ?? - null coalescing
+    TOKEN_QUESTION_PIPE,// ?| - defaults shorthand (scoped expression fallback)
     TOKEN_QUESTION,     // ? - unwrap operator
     TOKEN_PIPE_RIGHT,   // |> - pipeline forward
     TOKEN_PIPE_LEFT,    // <| - pipeline backward

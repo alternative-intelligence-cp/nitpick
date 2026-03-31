@@ -4,7 +4,7 @@
 
 // Inline int64_toString for explicit conversion
 func:int64_toString = string(int64:value) {
-    if (value == 0) { pass("0"); }
+    if (value == 0) { pass "0"; }
     bool:is_negative = false;
     int64:work_value = value;
     if (value < 0) { is_negative = true; work_value = -value; }
@@ -27,50 +27,50 @@ func:int64_toString = string(int64:value) {
         result = string_concat(digit_char, result);
     }
     if (is_negative) { result = string_concat("-", result); }
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
-    drop(println("Simple slice test:"));
+    drop println("Simple slice test:");
     
     // Create array with known values
     int64[5]:nums = [10i64, 20i64, 30i64, 40i64, 50i64];
     
     // Print original array
-    drop(println("Original:"));
-    string:n0 = raw(int64_toString(nums[0]));
-    drop(println(n0));  // Should be 10
-    string:n1 = raw(int64_toString(nums[1]));
-    drop(println(n1));  // Should be 20
-    string:n2 = raw(int64_toString(nums[2]));
-    drop(println(n2));  // Should be 30
-    string:n3 = raw(int64_toString(nums[3]));
-    drop(println(n3));  // Should be 40
-    string:n4 = raw(int64_toString(nums[4]));
-    drop(println(n4));  // Should be 50
+    drop println("Original:");
+    string:n0 = raw int64_toString(nums[0]);
+    drop println(n0);  // Should be 10
+    string:n1 = raw int64_toString(nums[1]);
+    drop println(n1);  // Should be 20
+    string:n2 = raw int64_toString(nums[2]);
+    drop println(n2);  // Should be 30
+    string:n3 = raw int64_toString(nums[3]);
+    drop println(n3);  // Should be 40
+    string:n4 = raw int64_toString(nums[4]);
+    drop println(n4);  // Should be 50
     
     // Try a simple inclusive slice
-    drop(println("Slice [1..3] (should be 20, 30, 40):"));
+    drop println("Slice [1..3] (should be 20, 30, 40):");
     int64[]:slice = nums[1..3];
     string:s0 = int64_toString(slice[0]);
-    drop(println(s0));  // Should be 20
+    drop println(s0);  // Should be 20
     string:s1 = int64_toString(slice[1]);
-    drop(println(s1));  // Should be 30
+    drop println(s1);  // Should be 30
     string:s2 = int64_toString(slice[2]);
-    drop(println(s2));  // Should be 40
+    drop println(s2);  // Should be 40
     
     // Try an exclusive slice
-    drop(println("Slice [0...2] (should be 10, 20):"));
+    drop println("Slice [0...2] (should be 10, 20):");
     int64[]:slice2 = nums[0...2];
     string:s2_0 = int64_toString(slice2[0]);
-    drop(println(s2_0));  // Should be 10
+    drop println(s2_0);  // Should be 10
     string:s2_1 = int64_toString(slice2[1]);
-    drop(println(s2_1));  // Should be 20
+    drop println(s2_1);  // Should be 20
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

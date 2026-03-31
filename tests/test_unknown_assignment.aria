@@ -7,9 +7,9 @@ func:test_unknown_assignment = int32() {
     
     // Test comparison with unknown
     if (x == unknown) {
-        pass(42i32);
+        pass 42i32;
     } else {
-        pass(99i32);
+        pass 99i32;
     }
 };
 
@@ -18,21 +18,21 @@ func:test_unknown_vs_regular = int32() {
     int32:y = 5i32;
     
     if (y == unknown) {
-        pass(1i32);
+        pass 1i32;
     } else {
-        pass(2i32);
+        pass 2i32;
     }
 };
 
 func:main = int32() {
-    int32:a = raw(test_unknown_assignment());  // Should be 42
-    int32:b = raw(test_unknown_vs_regular());  // Should be 2
+    int32:a = raw test_unknown_assignment();  // Should be 42
+    int32:b = raw test_unknown_vs_regular();  // Should be 2
     
     // Return 42 + 2 = 44
-    pass(a + b);
+    pass a + b;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

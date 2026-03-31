@@ -2,33 +2,33 @@
 // Verifies: pass() and fail() in async functions store Result to promise,
 //           await extracts Result from promise via llvm.coro.promise
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 // Async function that succeeds
 async func:get_value = int32() {
-    pass(42i32);
+    pass 42i32;
 };
 
 // Async function that fails
 async func:get_error = int32() {
-    fail(99i32);
+    fail 99i32;
 };
 
 // Runner: calls async functions and checks results via await
 async func:run_tests = int32() {
     // Test 1: await a successful async function, unwrap with raw()
-    int32:result = raw(await get_value());
-    if (result != 42i32) { pass(1i32); }
+    int32:result = raw await get_value();
+    if (result != 42i32) { pass 1i32; }
 
     // Test 2: await a failing async function and check error
     Result<int32>:err_result = await get_error();
-    if (err_result.is_error == false) { pass(2i32); }
+    if (err_result.is_error == false) { pass 2i32; }
 
-    pass(0i32);
+    pass 0i32;
 };
 
 func:main = int32() {
     // Call async runner via drop (coroutine starts but we can't await from main)
-    drop(run_tests());
-    exit(0);
+    drop run_tests();
+    exit 0;
 };

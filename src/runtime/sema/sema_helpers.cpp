@@ -962,13 +962,13 @@ void* tc_check_binary_op(void* state, int32_t op_token,
     }
 
     if (is_bitwise) {
-        // UNSIGNED MANDATE: bitwise ops require unsigned types
+        // Bitwise ops require integer types (signed or unsigned, NOT float)
         if (lt->kind != TK::PRIMITIVE || rt->kind != TK::PRIMITIVE) {
-            tc_add_error(state, "Bitwise operators require unsigned integer types");
+            tc_add_error(state, "Bitwise operators require integer types");
             return tc_get_error_type(state);
         }
-        if (lt->is_signed || rt->is_signed || lt->is_floating || rt->is_floating) {
-            tc_add_error(state, "Bitwise operators require unsigned integer types");
+        if (lt->is_floating || rt->is_floating) {
+            tc_add_error(state, "Bitwise operators require integer types, not floating-point");
             return tc_get_error_type(state);
         }
         if (!tc_types_equal(lt, rt)) {
@@ -1009,10 +1009,10 @@ void* tc_check_unary_op(void* state, int32_t op_token, void* operand_type) {
     }
 
     if (op_token == TK_TILDE) {
-        // Bitwise NOT: must be unsigned integer
-        if (ot->kind == TK::PRIMITIVE && !ot->is_signed && !ot->is_floating && ot->bit_width > 0)
+        // Bitwise NOT: must be integer (signed or unsigned, NOT float)
+        if (ot->kind == TK::PRIMITIVE && !ot->is_floating && ot->bit_width > 0)
             return ot;
-        tc_add_error(state, "Bitwise NOT requires unsigned integer type");
+        tc_add_error(state, "Bitwise NOT requires integer type");
         return tc_get_error_type(state);
     }
 

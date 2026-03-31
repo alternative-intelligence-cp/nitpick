@@ -1,0 +1,84 @@
+// bench_libstack.aria — Third-party library stack (no compiler builtins)
+//
+// Task: N iterations of push-two-values, pop-two-values, accumulate.
+// Uses extern C library functions — what a real package author would ship.
+// Caller must manage handles and type tags manually.
+
+extern func:bench_nanos = int64();
+extern func:bench_peak_rss_kb = int64();
+
+extern func:libstack_new = int64(int64:capacity);
+extern func:libstack_push = int64(int64:handle, int64:value, int64:tag);
+extern func:libstack_pop = int64(int64:handle, int64:expected_tag);
+extern func:libstack_destroy = int64(int64:handle);
+
+func:failsafe = int32(tbb32:err) {
+    exit(1);
+};
+
+func:main = int32() {
+    int64:N = 10000000i64;
+    int64:sum = 0i64;
+    int64:i = 0i64;
+
+    // Tag constant for int64 (matches the builtin scheme: int64 = tag 3)
+    int64:TAG_INT64 = 3i64;
+
+    // Create a library stack with same capacity as the builtin benchmark
+    int64:stk = libstack_new(256i64);
+
+    // Warm up
+    int64:warmup = 0i64;
+    while (warmup < 1000i64) {
+        int64:_p1 = libstack_push(stk, warmup * 3i64 + 1i64, TAG_INT64);
+        int64:_p2 = libstack_push(stk, warmup * 7i64 + 2i64, TAG_INT64);
+        int64:wb = libstack_pop(stk, TAG_INT64);
+        int64:wa = libstack_pop(stk, TAG_INT64);
+        sum = sum + wa + wb;
+        warmup = warmup + 1i64;
+    }
+    sum = 0i64;
+
+    int64:rss_before = bench_peak_rss_kb();
+    int64:t_start = bench_nanos();
+
+    while (i < N) {
+        // Push two computed values with explicit type tag
+        int64:_p1 = libstack_push(stk, i * 3i64 + 1i64, TAG_INT64);
+        int64:_p2 = libstack_push(stk, i * 7i64 + 2i64, TAG_INT64);
+
+        // Pop in LIFO order and accumulate
+        int64:b = libstack_pop(stk, TAG_INT64);
+        int64:a = libstack_pop(stk, TAG_INT64);
+        sum = sum + b + a;
+
+        i = i + 1i64;
+    }
+
+    int64:t_end = bench_nanos();
+    int64:rss_after = bench_peak_rss_kb();
+
+    int64:_d = libstack_destroy(stk);
+
+    int64:elapsed_ns = t_end - t_start;
+    int64:elapsed_ms = elapsed_ns / 1000000i64;
+    int64:rss_delta = rss_after - rss_before;
+
+    println("=== LIBRARY STACK ===");
+    print("  iterations: ");
+    println(string_from_int(N));
+    print("  sum: ");
+    println(string_from_int(sum));
+    print("  elapsed_ms: ");
+    println(string_from_int(elapsed_ms));
+    print("  elapsed_ns: ");
+    println(string_from_int(elapsed_ns));
+    print("  rss_before_kb: ");
+    println(string_from_int(rss_before));
+    print("  rss_after_kb: ");
+    println(string_from_int(rss_after));
+    print("  rss_delta_kb: ");
+    println(string_from_int(rss_delta));
+
+    return 0;
+};

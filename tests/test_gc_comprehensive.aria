@@ -18,7 +18,7 @@
 
 func:failsafe = int32(tbb32:err) {
     println("[FAILSAFE] GC test triggered failsafe!");
-    exit(1);
+    exit 1;
 };
 
 // ============================================================================
@@ -43,7 +43,7 @@ func:test_gc_basic = int32() {
     // GC should reclaim it eventually
     
     println("  ✓ GC allocation works");
-    pass(0i32);
+    pass 0i32;
 };
 
 // ============================================================================
@@ -65,7 +65,7 @@ func:test_gc_multiple = int32() {
     // All should be tracked independently
     
     println("  ✓ Multiple GC allocations work");
-    pass(0i32);
+    pass 0i32;
 };
 
 // ============================================================================
@@ -88,7 +88,7 @@ func:test_gc_loop = int32() {
     
     // If GC works, this shouldn't OOM
     println("  ✓ GC handles high allocation rate");
-    pass(0i32);
+    pass 0i32;
 };
 
 // ============================================================================
@@ -109,7 +109,7 @@ func:test_gc_nested = int32() {
     c.value = 42i32;
     
     println("  ✓ Nested GC objects work");
-    pass(0i32);
+    pass 0i32;
 };
 
 // ============================================================================
@@ -128,7 +128,7 @@ func:test_gc_array = int32() {
     // GC should track entire array
     
     println("  ✓ GC array allocations work");
-    pass(0i32);
+    pass 0i32;
 };
 
 // ============================================================================
@@ -157,7 +157,7 @@ func:test_gc_generations = int32() {
     // Global should survive, short-lived should be collected
     
     println("  ✓ Generational GC works");
-    pass(0i32);
+    pass 0i32;
 };
 
 // ============================================================================
@@ -187,7 +187,7 @@ func:test_gc_pressure = int32() {
     // GC should trigger automatic collection
     
     println("  ✓ GC handles memory pressure");
-    pass(0i32);
+    pass 0i32;
 };
 
 // ============================================================================
@@ -214,7 +214,7 @@ func:test_gc_survival = int32() {
     outer.y = 88i32;
     
     println("  ✓ Objects survive correctly across scopes");
-    pass(0i32);
+    pass 0i32;
 };
 
 // ============================================================================
@@ -243,7 +243,7 @@ func:test_gc_mixed = int32() {
     gc_obj2.x = 20i32;
     
     println("  ✓ GC and wild pointers coexist safely");
-    pass(0i32);
+    pass 0i32;
 };
 
 // ============================================================================
@@ -264,7 +264,7 @@ func:test_gc_stress = int32() {
     }
     
     println("  ✓ GC survives stress test");
-    pass(0i32);
+    pass 0i32;
 };
 
 // ============================================================================
@@ -278,16 +278,16 @@ func:main = int32() {
     println("");
     
     // Run all GC tests
-    drop(test_gc_basic());
-    drop(test_gc_multiple());
-    drop(test_gc_loop());
-    drop(test_gc_nested());
-    drop(test_gc_array());
-    drop(test_gc_generations());
-    drop(test_gc_pressure());
-    drop(test_gc_survival());
-    drop(test_gc_mixed());
-    drop(test_gc_stress());
+    drop test_gc_basic();
+    drop test_gc_multiple();
+    drop test_gc_loop();
+    drop test_gc_nested();
+    drop test_gc_array();
+    drop test_gc_generations();
+    drop test_gc_pressure();
+    drop test_gc_survival();
+    drop test_gc_mixed();
+    drop test_gc_stress();
     
     println("");
     println("========================================");
@@ -309,5 +309,5 @@ func:main = int32() {
     println("CONCLUSION: GC system is OPERATIONAL ✓");
     println("");
     
-    exit(0);
+    exit 0;
 };

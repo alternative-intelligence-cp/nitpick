@@ -22,18 +22,18 @@ func:nit_new = Nit(int32:v) {
         clamped = 4i32;
     }
     Nit:result = {value: clamped};
-    pass(result);
+    pass result;
 };
 
 func:nit_add = Nit(Nit:a, Nit:b) {
     int32:sum = a.value + b.value;
     Result<Nit>:res = nit_new(sum);
-    if (res.is_error) { fail(1i32); }
-    pass(res.value);
+    if (res.is_error) { fail 1i32; }
+    pass res.value;
 };
 
 func:nit_eq = bool(Nit:a, Nit:b) {
-    pass(a.value == b.value);
+    pass a.value == b.value;
 };
 
 // ============================================================================
@@ -49,7 +49,7 @@ func<T>:complex_add = Complex<T>(Complex<T>:a, Complex<T>:b) {
     Complex<T>:result;
     result.real = a.real + b.real;
     result.imag = a.imag + b.imag;
-    pass(result);
+    pass result;
 };
 
 func<T>:complex_mul = Complex<T>(Complex<T>:a, Complex<T>:b) {
@@ -59,7 +59,7 @@ func<T>:complex_mul = Complex<T>(Complex<T>:a, Complex<T>:b) {
     T:bc = a.imag * b.real;
     
     Complex<T>:result = {real: ac - bd, imag: ad + bc};
-    pass(result);
+    pass result;
 };
 
 // ============================================================================
@@ -68,12 +68,12 @@ func<T>:complex_mul = Complex<T>(Complex<T>:a, Complex<T>:b) {
 
 func:classify_nit = int32(Nit:n) {
     if (n.value < 0) {
-        pass(1);  // Negative
+        pass 1;  // Negative
     }
     if (n.value == 0) {
-        pass(0);  // Zero
+        pass 0;  // Zero
     }
-    pass(2);  // Positive
+    pass 2;  // Positive
 };
 
 // ============================================================================
@@ -82,9 +82,9 @@ func:classify_nit = int32(Nit:n) {
 
 func:safe_divide = int32(int32:a, int32:b) {
     if (b == 0) {
-        fail(1);  // Error code
+        fail 1;  // Error code
     }
-    pass(a / b);
+    pass a / b;
 };
 
 // ============================================================================
@@ -92,7 +92,7 @@ func:safe_divide = int32(int32:a, int32:b) {
 // ============================================================================
 
 func:failsafe = int32(tbb32:err) {
-    exit(1);
+    exit 1;
 };
 
 func:main = int32() {
@@ -103,44 +103,44 @@ func:main = int32() {
     println("[TEST 1] Custom Numeric Type - Nit");
     
     Result<Nit>:n1_res = nit_new(3i32);
-    if (n1_res.is_error) { println("  FAIL: nit_new(3) failed"); pass(-10i32); }
+    if (n1_res.is_error) { println("  FAIL: nit_new(3) failed"); pass -10i32; }
     Nit:n1 = n1_res.value;
     
     Result<Nit>:n2_res = nit_new(-2i32);
-    if (n2_res.is_error) { println("  FAIL: nit_new(-2) failed"); pass(-11i32); }
+    if (n2_res.is_error) { println("  FAIL: nit_new(-2) failed"); pass -11i32; }
     Nit:n2 = n2_res.value;
     
     // Test addition: 3 + (-2) = 1
     Result<Nit>:sum_res = nit_add(n1, n2);
-    if (sum_res.is_error) { println("  FAIL: nit_add failed"); pass(-12i32); }
+    if (sum_res.is_error) { println("  FAIL: nit_add failed"); pass -12i32; }
     Nit:sum = sum_res.value;
     if (sum.value != 1i32) {
         println("  FAIL: Nit addition");
-        pass(-1i32);
+        pass -1i32;
     }
     println("  PASS: Addition works (3 + -2 = 1)");
     
     // Test saturation
     Result<Nit>:saturated_res = nit_new(10i32);
-    if (saturated_res.is_error) { println("  FAIL: nit_new(10) failed"); pass(-15i32); }
+    if (saturated_res.is_error) { println("  FAIL: nit_new(10) failed"); pass -15i32; }
     Nit:saturated = saturated_res.value;
     if (saturated.value != 4i32) {
         println("  FAIL: Nit saturation (expected 4 from 10)");
-        pass(-2i32);
+        pass -2i32;
     }
     println("  PASS: Saturation works");
     
     // Test equality
     Result<Nit>:n3_res = nit_new(3i32);
-    if (n3_res.is_error) { println("  FAIL: nit_new(3) for equality failed"); pass(-14i32); }
+    if (n3_res.is_error) { println("  FAIL: nit_new(3) for equality failed"); pass -14i32; }
     Nit:n3 = n3_res.value;
     Result<bool>:eq_result = nit_eq(n1, n3);
     if (eq_result.is_error){        println("  FAIL: Equality returned error");
-        pass(-3i32);
+        pass -3i32;
     }
     if (!eq_result.value) {
         println("  FAIL: Nit equality");
-        pass(-4i32);
+        pass -4i32;
     }
     println("  PASS: Equality works");
     
@@ -158,7 +158,7 @@ func:main = int32() {
     
     if (z_sum.real != 4 || z_sum.imag != 6) {
         println("  FAIL: Complex addition");
-        pass(-5);
+        pass -5;
     }
     println("  PASS: Complex addition works (3+4i + 1+2i = 4+6i)");
     
@@ -172,7 +172,7 @@ func:main = int32() {
     
     if (z_prod.real != -5 || z_prod.imag != 10) {
         println("  FAIL: Complex multiplication");
-        pass(-6);
+        pass -6;
     }
     println("  PASS: Complex multiplication works (3+4i * 1+2i = -5+10i)");
     
@@ -184,7 +184,7 @@ func:main = int32() {
     
     if (w_sum.real != 15 || w_sum.imag != 35) {
         println("  FAIL: Complex<int64> addition");
-        pass(-7);
+        pass -7;
     }
     println("  PASS: Generic instantiation works (Complex<int32> and Complex<int64>)");
     
@@ -193,17 +193,17 @@ func:main = int32() {
     // TEST 3: Pattern Matching
     println("[TEST 3] Pattern Matching");
     
-    Nit:neg = raw(nit_new(-3));
-    Nit:zero = raw(nit_new(0));
-    Nit:pos = raw(nit_new(2));
+    Nit:neg = raw nit_new(-3);
+    Nit:zero = raw nit_new(0);
+    Nit:pos = raw nit_new(2);
     
-    int32:class_neg = raw(classify_nit(neg));
-    int32:class_zero = raw(classify_nit(zero));
-    int32:class_pos = raw(classify_nit(pos));
+    int32:class_neg = raw classify_nit(neg);
+    int32:class_zero = raw classify_nit(zero);
+    int32:class_pos = raw classify_nit(pos);
     
     if (class_neg != 1 || class_zero != 0 || class_pos != 2) {
         println("  FAIL: Pattern matching classification");
-        pass(-7);
+        pass -7;
     }
     println("  PASS: Pattern matching works");
     
@@ -215,23 +215,23 @@ func:main = int32() {
     Result<int32>:good_div = safe_divide(10, 2);
     if (good_div.is_error) {
         println("  FAIL: Valid division returned error");
-        pass(-11);
+        pass -11;
     }
     if (good_div.value != 5) {
         println("  FAIL: Division result incorrect");
-        pass(-12);
+        pass -12;
     }
     println("  PASS: Successful Result works");
     
     Result<int32>:bad_div = safe_divide(10, 0);
     if (!bad_div.is_error) {
         println("  FAIL: Division by zero should return error");
-        pass(-13);
+        pass -13;
     }
     println("  PASS: Error Result works (division by zero detected)");
     
     println("");
     println("=== ALL TESTS PASSED ===");
     
-    exit(0);
+    exit 0;
 };

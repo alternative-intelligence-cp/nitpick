@@ -40,8 +40,8 @@ enum:Singleton = {
 };
 
 func:failsafe = int32(tbb32:err) {
-    drop(puts("FAILSAFE triggered"));
-    exit(1);
+    drop puts("FAILSAFE triggered");
+    exit 1;
 };
 
 func:main = int32() {
@@ -56,26 +56,26 @@ func:main = int32() {
     int64:b = Color.BLUE;
 
     if (r == 0) {
-        drop(println("PASS: Color.RED == 0"));
+        drop println("PASS: Color.RED == 0");
         passed += 1i32;
     } else {
-        drop(println("FAIL: Color.RED != 0"));
+        drop println("FAIL: Color.RED != 0");
         failed += 1i32;
     }
 
     if (g == 1) {
-        drop(println("PASS: Color.GREEN == 1"));
+        drop println("PASS: Color.GREEN == 1");
         passed += 1i32;
     } else {
-        drop(println("FAIL: Color.GREEN != 1"));
+        drop println("FAIL: Color.GREEN != 1");
         failed += 1i32;
     }
 
     if (b == 2) {
-        drop(println("PASS: Color.BLUE == 2"));
+        drop println("PASS: Color.BLUE == 2");
         passed += 1i32;
     } else {
-        drop(println("FAIL: Color.BLUE != 2"));
+        drop println("FAIL: Color.BLUE != 2");
         failed += 1i32;
     }
 
@@ -87,26 +87,26 @@ func:main = int32() {
     int64:se_val = HttpStatus.SERVER_ERROR;
 
     if (ok_val == 200) {
-        drop(println("PASS: HttpStatus.OK == 200"));
+        drop println("PASS: HttpStatus.OK == 200");
         passed += 1i32;
     } else {
-        drop(println("FAIL: HttpStatus.OK != 200"));
+        drop println("FAIL: HttpStatus.OK != 200");
         failed += 1i32;
     }
 
     if (nf_val == 404) {
-        drop(println("PASS: HttpStatus.NOT_FOUND == 404"));
+        drop println("PASS: HttpStatus.NOT_FOUND == 404");
         passed += 1i32;
     } else {
-        drop(println("FAIL: HttpStatus.NOT_FOUND != 404"));
+        drop println("FAIL: HttpStatus.NOT_FOUND != 404");
         failed += 1i32;
     }
 
     if (se_val == 500) {
-        drop(println("PASS: HttpStatus.SERVER_ERROR == 500"));
+        drop println("PASS: HttpStatus.SERVER_ERROR == 500");
         passed += 1i32;
     } else {
-        drop(println("FAIL: HttpStatus.SERVER_ERROR != 500"));
+        drop println("FAIL: HttpStatus.SERVER_ERROR != 500");
         failed += 1i32;
     }
 
@@ -119,34 +119,34 @@ func:main = int32() {
     int64:crit = Priority.CRITICAL;
 
     if (low == 0) {
-        drop(println("PASS: Priority.LOW == 0"));
+        drop println("PASS: Priority.LOW == 0");
         passed += 1i32;
     } else {
-        drop(println("FAIL: Priority.LOW != 0"));
+        drop println("FAIL: Priority.LOW != 0");
         failed += 1i32;
     }
 
     if (med == 1) {
-        drop(println("PASS: Priority.MEDIUM == 1"));
+        drop println("PASS: Priority.MEDIUM == 1");
         passed += 1i32;
     } else {
-        drop(println("FAIL: Priority.MEDIUM != 1"));
+        drop println("FAIL: Priority.MEDIUM != 1");
         failed += 1i32;
     }
 
     if (high == 10) {
-        drop(println("PASS: Priority.HIGH == 10"));
+        drop println("PASS: Priority.HIGH == 10");
         passed += 1i32;
     } else {
-        drop(println("FAIL: Priority.HIGH != 10"));
+        drop println("FAIL: Priority.HIGH != 10");
         failed += 1i32;
     }
 
     if (crit == 11) {
-        drop(println("PASS: Priority.CRITICAL == 11"));
+        drop println("PASS: Priority.CRITICAL == 11");
         passed += 1i32;
     } else {
-        drop(println("FAIL: Priority.CRITICAL != 11"));
+        drop println("FAIL: Priority.CRITICAL != 11");
         failed += 1i32;
     }
 
@@ -155,10 +155,10 @@ func:main = int32() {
     // ----------------------------------------------------------
     int64:only = Singleton.ONLY;
     if (only == 42) {
-        drop(println("PASS: Singleton.ONLY == 42"));
+        drop println("PASS: Singleton.ONLY == 42");
         passed += 1i32;
     } else {
-        drop(println("FAIL: Singleton.ONLY != 42"));
+        drop println("FAIL: Singleton.ONLY != 42");
         failed += 1i32;
     }
 
@@ -168,10 +168,10 @@ func:main = int32() {
     Color:my_color = Color.RED;
     int64:cv = my_color;
     if (cv == 0) {
-        drop(println("PASS: Color:my_color = Color.RED holds 0"));
+        drop println("PASS: Color:my_color = Color.RED holds 0");
         passed += 1i32;
     } else {
-        drop(println("FAIL: Color:my_color value wrong"));
+        drop println("FAIL: Color:my_color value wrong");
         failed += 1i32;
     }
 
@@ -181,33 +181,33 @@ func:main = int32() {
     Color:a = Color.RED;
     Color:b2 = Color.BLUE;
     if (a != b2) {
-        drop(println("PASS: Color.RED != Color.BLUE"));
+        drop println("PASS: Color.RED != Color.BLUE");
         passed += 1i32;
     } else {
-        drop(println("FAIL: Color.RED == Color.BLUE"));
+        drop println("FAIL: Color.RED == Color.BLUE");
         failed += 1i32;
     }
 
     Color:c = Color.GREEN;
     Color:d = Color.GREEN;
     if (c == d) {
-        drop(println("PASS: Color.GREEN == Color.GREEN"));
+        drop println("PASS: Color.GREEN == Color.GREEN");
         passed += 1i32;
     } else {
-        drop(println("FAIL: Color.GREEN != Color.GREEN"));
+        drop println("FAIL: Color.GREEN != Color.GREEN");
         failed += 1i32;
     }
 
     // ----------------------------------------------------------
     // Summary
     // ----------------------------------------------------------
-    drop(println(""));
-    drop(println("=== Enum Test Results ==="));
+    drop println("");
+    drop println("=== Enum Test Results ===");
 
     if (failed == 0i32) {
-        drop(println("ALL TESTS PASSED"));
+        drop println("ALL TESTS PASSED");
     } else {
-        drop(println("SOME TESTS FAILED"));
+        drop println("SOME TESTS FAILED");
     }
 
     return failed;

@@ -6,24 +6,24 @@ func:test_read_int32 = int32(simd<int32, 4>:vec) {
     int32:e1 = vec[1i32];
     int32:e2 = vec[2i32];
     int32:e3 = vec[3i32];
-    pass(e0 + e1 + e2 + e3);
+    pass e0 + e1 + e2 + e3;
 };
 
 func:test_read_float32 = float32(simd<float32, 4>:vec) {
     float32:a = vec[0i32];
     float32:b = vec[1i32];
-    pass(a + b);
+    pass a + b;
 };
 
 func:test_arithmetic_result = int32(simd<int32, 4>:a, simd<int32, 4>:b) {
     simd<int32, 4>:sum = a + b;
-    pass(sum[0i32] + sum[3i32]);
+    pass sum[0i32] + sum[3i32];
 };
 
 func:main = int32() {
     // Test with broadcast
     simd<int32, 4>:v = simd_broadcast(10i32, 4i32);
-    int32:result = raw(test_read_int32(v));
+    int32:result = raw test_read_int32(v);
     // Should be 40
     
     return 0i32;
@@ -31,5 +31,5 @@ func:main = int32() {
 
 func:failsafe = int32(tbb32:err) {
     // Error handling stub
-    exit(1);
+    exit 1;
 };

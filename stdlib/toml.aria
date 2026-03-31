@@ -98,7 +98,7 @@ extern func:toml_free = void(wild int8*:h);
 // ═══════════════════════════════════════════════════════════════════════
 func:te_needs_quote = int32(string:key) {
     int64:slen = th_strlen(key);
-    if (slen == 0i64) { pass(1i32); }
+    if (slen == 0i64) { pass 1i32; }
     int64:i = 0i64;
     while (i < slen) {
         int32:c = th_byte_at(key, i);
@@ -108,17 +108,17 @@ func:te_needs_quote = int32(string:key) {
         if (c >= 48i32) { if (c <= 57i32) { bk = true; } }
         if (c == 95i32) { bk = true; }
         if (c == 45i32) { bk = true; }
-        if (bk == false) { pass(1i32); }
+        if (bk == false) { pass 1i32; }
         i = i + 1i64;
     }
-    pass(0i32);
+    pass 0i32;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
 // Internal: Encoder — write key (quoted or bare)
 // ═══════════════════════════════════════════════════════════════════════
 func:te_encode_key = NIL(wild int8->:buf, string:key) {
-    int32:nq = raw(te_needs_quote(key));
+    int32:nq = raw te_needs_quote(key);
     if (nq == 1i32) {
         th_buf_char(buf, 34i32);
         int64:klen = th_strlen(key);
@@ -161,13 +161,13 @@ func:te_encode_string = NIL(wild int8->:buf, string:s) {
 // ═══════════════════════════════════════════════════════════════════════
 func:te_build_path = string(string:prefix, string:key) {
     int64:plen = th_strlen(prefix);
-    if (plen == 0i64) { pass(key); }
+    if (plen == 0i64) { pass key; }
     wild int8->:pb = th_buf_new();
     th_buf_str(pb, prefix);
     th_buf_char(pb, 46i32);
     th_buf_str(pb, key);
     string:result = th_buf_to_string(pb);
-    pass(result);
+    pass result;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -177,7 +177,7 @@ func:te_encode_inline_value = NIL(wild int8->:buf, wild int8->:v) {
     int32:t = th_type(v);
     if (t == 0i32) {
         string:sv = th_get_string(v);
-        drop(te_encode_string(buf, sv));
+        drop te_encode_string(buf, sv);
     }
     else if (t == 1i32) {
         string:ns = th_int_to_cstr(th_get_int(v));
@@ -199,10 +199,10 @@ func:te_encode_inline_value = NIL(wild int8->:buf, wild int8->:v) {
         while (ti < tlen) {
             if (ti > 0i64) { th_buf_str(buf, ", "); }
             string:tk = th_tbl_key_at(v, ti);
-            drop(te_encode_key(buf, tk));
+            drop te_encode_key(buf, tk);
             th_buf_str(buf, " = ");
             wild int8->:tv = th_tbl_val_at(v, ti);
-            drop(te_encode_inline_value(buf, tv));
+            drop te_encode_inline_value(buf, tv);
             ti = ti + 1i64;
         }
         th_buf_char(buf, 125i32);
@@ -214,7 +214,7 @@ func:te_encode_inline_value = NIL(wild int8->:buf, wild int8->:v) {
         while (ai < alen) {
             if (ai > 0i64) { th_buf_str(buf, ", "); }
             wild int8->:av = th_arr_get(v, ai);
-            drop(te_encode_inline_value(buf, av));
+            drop te_encode_inline_value(buf, av);
             ai = ai + 1i64;
         }
         th_buf_char(buf, 93i32);
@@ -242,9 +242,9 @@ func:te_encode_table = NIL(wild int8->:buf, wild int8->:tbl, string:prefix) {
         }
         if (skip1 == false) {
             string:k1 = th_tbl_key_at(tbl, p1);
-            drop(te_encode_key(buf, k1));
+            drop te_encode_key(buf, k1);
             th_buf_str(buf, " = ");
-            drop(te_encode_inline_value(buf, v1));
+            drop te_encode_inline_value(buf, v1);
             th_buf_char(buf, 10i32);
         }
         p1 = p1 + 1i64;
@@ -256,12 +256,12 @@ func:te_encode_table = NIL(wild int8->:buf, wild int8->:tbl, string:prefix) {
         wild int8->:v2 = th_tbl_val_at(tbl, p2);
         if (th_type(v2) == 4i32) {
             string:k2 = th_tbl_key_at(tbl, p2);
-            string:fk2 = raw(te_build_path(prefix, k2));
+            string:fk2 = raw te_build_path(prefix, k2);
             th_buf_char(buf, 10i32);
             th_buf_char(buf, 91i32);
             th_buf_str(buf, fk2);
             th_buf_str(buf, "]\n");
-            drop(te_encode_table(buf, v2, fk2));
+            drop te_encode_table(buf, v2, fk2);
         }
         p2 = p2 + 1i64;
     }
@@ -275,7 +275,7 @@ func:te_encode_table = NIL(wild int8->:buf, wild int8->:tbl, string:prefix) {
                 wild int8->:f3 = th_arr_get(v3, 0i64);
                 if (th_type(f3) == 4i32) {
                     string:k3 = th_tbl_key_at(tbl, p3);
-                    string:fk3 = raw(te_build_path(prefix, k3));
+                    string:fk3 = raw te_build_path(prefix, k3);
                     int64:ai3 = 0i64;
                     while (ai3 < th_arr_len(v3)) {
                         th_buf_char(buf, 10i32);
@@ -283,7 +283,7 @@ func:te_encode_table = NIL(wild int8->:buf, wild int8->:tbl, string:prefix) {
                         th_buf_str(buf, fk3);
                         th_buf_str(buf, "]]\n");
                         wild int8->:ae3 = th_arr_get(v3, ai3);
-                        drop(te_encode_table(buf, ae3, fk3));
+                        drop te_encode_table(buf, ae3, fk3);
                         ai3 = ai3 + 1i64;
                     }
                 }
@@ -298,7 +298,7 @@ func:te_encode_table = NIL(wild int8->:buf, wild int8->:tbl, string:prefix) {
 // ═══════════════════════════════════════════════════════════════════════
 func:toml_encode = string(wild int8->:h) {
     wild int8->:buf = th_buf_new();
-    drop(te_encode_table(buf, h, ""));
+    drop te_encode_table(buf, h, "");
     string:result = th_buf_to_string(buf);
-    pass(result);
+    pass result;
 };

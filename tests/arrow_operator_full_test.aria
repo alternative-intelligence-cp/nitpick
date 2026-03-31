@@ -25,7 +25,7 @@ func:test_arrow_basic = int32() {
     int32:x_val = ptr->x;  // -> to follow pointer to member
     int32:y_val = ptr->y;
     
-    pass(0);
+    pass 0;
 };
 
 /// Test 2: Modify through arrow operator
@@ -46,7 +46,7 @@ func:test_arrow_modify = int32() {
     int32:check_age = person.age;  // Should be 26
     int32:check_id = person.id;    // Should be 1002
     
-    pass(0);
+    pass 0;
 };
 
 /// Test 3: Read, modify, read again through pointer
@@ -67,18 +67,18 @@ func:test_arrow_cycle = int32() {
     // Read again
     int32:new_x = ptr->x;  // 100
     
-    pass(0);
+    pass 0;
 };
 
 func:main = int32() {
-    int32:r1 = raw(test_arrow_basic());
-    int32:r2 = raw(test_arrow_modify());
-    int32:r3 = raw(test_arrow_cycle());
+    int32:r1 = raw test_arrow_basic();
+    int32:r2 = raw test_arrow_modify();
+    int32:r3 = raw test_arrow_cycle();
     
-    exit(0);
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

@@ -4,7 +4,7 @@
 
 // Inline int64_toString until module system is implemented
 func:int64_toString = string(int64:value) {
-    if (value == 0) { pass("0"); }
+    if (value == 0) { pass "0"; }
     bool:is_negative = false;
     int64:work_value = value;
     if (value < 0) { is_negative = true; work_value = -value; }
@@ -27,17 +27,17 @@ func:int64_toString = string(int64:value) {
         result = string_concat(digit_char, result);
     }
     if (is_negative) { result = string_concat("-", result); }
-    pass(result);
+    pass result;
 };
 
 func:main = int32() {
     // Test string printing (native)
-    drop(print("Testing print functionality"));
+    drop print("Testing print functionality");
     
     // Test integer printing with explicit conversion
     int64:a = 42;
-    string:a_str = raw(int64_toString(a));
-    drop(print(a_str));
+    string:a_str = raw int64_toString(a);
+    drop print(a_str);
     
     // TODO: TBB and trit toString functions not yet implemented
     // Commenting out until stdlib has these converters
@@ -50,13 +50,13 @@ func:main = int32() {
     // drop(print(c_str));
     
     // Test multiple prints
-    drop(print("Value: "));
-    drop(print(a_str));  // Reuse a_str
+    drop print("Value: ");
+    drop print(a_str);  // Reuse a_str
     
-    pass(42);
+    pass 42;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

@@ -1,0 +1,10 @@
+// BUG-4 module: has both fallible and non-fallible functions
+
+pub func:pure_add = int64(int64:x, int64:y) {
+    pass x + y;
+};
+
+pub func:risky_func = int64(int64:x) {
+    drop sys(WRITE, 1, "side effect\n", 12);
+    pass x * 2;
+};

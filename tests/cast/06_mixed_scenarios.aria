@@ -9,7 +9,7 @@ func:test_chain_casts = int64() {
     int16:step4 = @cast<int16>(step3);
     int64:result = @cast<int64>(step4);
     
-    pass(result);
+    pass result;
 };
 
 func:test_expression_casts = int32() {
@@ -22,23 +22,23 @@ func:test_expression_casts = int32() {
     int32:y = 3i32;
     flt32:ratio = @cast<flt32>(x);  // Can use for division
     
-    pass(0i32);
+    pass 0i32;
 };
 
 func:test_return_cast = uint8() {
     // Cast in return expression
     int32:value = 200i32;
-    pass(@cast<uint8>(value));
+    pass @cast<uint8>(value);
 };
 
 func:main = int32() {
-    int64:r1 = raw(test_chain_casts());
-    int32:r2 = raw(test_expression_casts());
-    uint8:r3 = raw(test_return_cast());
-    exit(0);
+    int64:r1 = raw test_chain_casts();
+    int32:r2 = raw test_expression_casts();
+    uint8:r3 = raw test_return_cast();
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

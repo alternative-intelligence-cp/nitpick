@@ -38,12 +38,12 @@ func:init_watches = NIL() {
     }
     
     _watch_count = 0;
-    pass(NIL);
+    pass NIL;
 };
 
 func:add_watch = bool(string:group, string:label, wild int64->:ptr) {
     if (_watch_count >= MAX_WATCHES) {
-        pass(false);
+        pass false;
     }
     
     int32:idx = _watch_count;
@@ -53,12 +53,12 @@ func:add_watch = bool(string:group, string:label, wild int64->:ptr) {
     _watches[idx].active = true;
     _watch_count = _watch_count + 1;
     
-    pass(true);
+    pass true;
 };
 
 func:cleanup_watches = NIL() {
     free(_watches);
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -85,16 +85,16 @@ func:init_counters = NIL() {
     arena_result:res = new_arena(8192);
     if (!is_ok(res)) {
         // Error handling
-        drop(println("[ERROR] Failed to create counter arena"));
-        pass(NIL);
+        drop println("[ERROR] Failed to create counter arena");
+        pass NIL;
     }
     _counter_arena = unwrap(res);
     
     // Allocate counter array from arena
     alloc_result<DbugCounter>:alloc_res = arena_alloc_array<DbugCounter>(_counter_arena, MAX_COUNTERS);
     if (!is_ok(alloc_res)) {
-        drop(println("[ERROR] Failed to allocate counters"));
-        pass(NIL);
+        drop println("[ERROR] Failed to allocate counters");
+        pass NIL;
     }
     
     _counters = unwrap(alloc_res);
@@ -110,12 +110,12 @@ func:init_counters = NIL() {
     }
     
     _counter_count = 0;
-    pass(NIL);
+    pass NIL;
 };
 
 func:add_counter = bool(string:group, string:label) {
     if (_counter_count >= MAX_COUNTERS) {
-        pass(false);
+        pass false;
     }
     
     int32:idx = _counter_count;
@@ -125,12 +125,12 @@ func:add_counter = bool(string:group, string:label) {
     _counters[idx].active = true;
     _counter_count = _counter_count + 1;
     
-    pass(true);
+    pass true;
 };
 
 func:cleanup_counters = NIL() {
     destroy(_counter_arena);
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -138,43 +138,43 @@ func:cleanup_counters = NIL() {
 // =============================================================================
 
 func:main = int32() {
-    drop(println("=== Testing Global Array Workarounds ==="));
+    drop println("=== Testing Global Array Workarounds ===");
     
-    drop(println("\n[Test 1] Wild pointer + alloc_array"));
+    drop println("\n[Test 1] Wild pointer + alloc_array");
     init_watches();
     
     wild int64->:test_var = alloc<int64>();
     <-test_var = 42i64;
     
     if (add_watch("test", "my_variable", test_var)) {
-        drop(println("✓ Added watch successfully"));
-        drop(print("  Watch 0: "));
-        drop(println(_watches[0].label));
+        drop println("✓ Added watch successfully");
+        drop print("  Watch 0: ");
+        drop println(_watches[0].label);
     } else {
-        drop(println("✗ Failed to add watch"));
+        drop println("✗ Failed to add watch");
     }
     
     cleanup_watches();
     free(test_var);
     
-    drop(println("\n[Test 2] Arena allocator"));
+    drop println("\n[Test 2] Arena allocator");
     init_counters();
     
     if (add_counter("stats", "requests")) {
-        drop(println("✓ Added counter successfully"));
-        drop(print("  Counter 0: "));
-        drop(println(_counters[0].label));
+        drop println("✓ Added counter successfully");
+        drop print("  Counter 0: ");
+        drop println(_counters[0].label);
     } else {
-        drop(println("✗ Failed to add counter"));
+        drop println("✗ Failed to add counter");
     }
     
     cleanup_counters();
     
-    drop(println("\n=== All tests completed ==="));
-    exit(0);
+    drop println("\n=== All tests completed ===");
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

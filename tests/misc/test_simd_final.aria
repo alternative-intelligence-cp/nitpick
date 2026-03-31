@@ -1,12 +1,12 @@
 // Final SIMD validation test
 // Tests: element access, arithmetic, comparisons, intrinsics
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:test_element_access = int32() {
     simd<int32, 4>:v1 = simd_broadcast(42i32, 4);
     int32:elem = v1[0i32];
-    pass(elem);  // 42
+    pass elem;  // 42
 };
 
 func:test_arithmetic = int32() {
@@ -14,7 +14,7 @@ func:test_arithmetic = int32() {
     simd<int32, 4>:b = simd_broadcast(20i32, 4);
     simd<int32, 4>:sum = a + b;
     int32:first = sum[0i32];
-    pass(first);  // 30
+    pass first;  // 30
 };
 
 func:test_comparison = int32() {
@@ -22,9 +22,9 @@ func:test_comparison = int32() {
     simd<int32, 4>:b = simd_broadcast(20i32, 4);
     simd<bool, 4>:gt = b > a;
     bool:check = simd_all(gt);
-    pass(1i32);  // 1 (all true)
+    pass 1i32;  // 1 (all true)
 };
 
 func:main = int32() {
-    exit(0);
+    exit 0;
 };

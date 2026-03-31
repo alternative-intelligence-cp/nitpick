@@ -23,8 +23,8 @@ func:main = int32() {
     println("=== stdlib/io.aria FileStream Test Suite ===");
 
     // ── T01: Open for write + write + close ──────────────────────────────
-    FileStream:writer = raw(FileStream.open(test_path, "w"));
-    int64:bytes_w = raw(writer.write("Hello from Aria streams!\n"));
+    FileStream:writer = raw FileStream.open(test_path, "w");
+    int64:bytes_w = raw writer.write("Hello from Aria streams!\n");
     if (bytes_w > 0i64) {
         println("[PASS] T01 stream write");
         passed = passed + 1i32;
@@ -32,21 +32,21 @@ func:main = int32() {
         println("[FAIL] T01 write returned 0 bytes");
         failed = failed + 1i32;
     }
-    drop(writer.close());
+    drop writer.close();
 
     // ── T02: Open for read + readLine ────────────────────────────────────
-    FileStream:reader = raw(FileStream.open(test_path, "r"));
-    string:line = raw(reader.readLine());
+    FileStream:reader = raw FileStream.open(test_path, "r");
+    string:line = raw reader.readLine();
     print("[PASS] T02 readLine: ");
     print(line);
     passed = passed + 1i32;
-    drop(reader.close());
+    drop reader.close();
 
     // ── T03: tell + seek ─────────────────────────────────────────────────
-    FileStream:seeker = raw(FileStream.open(test_path, "r"));
+    FileStream:seeker = raw FileStream.open(test_path, "r");
 
     // Initial position should be 0
-    int64:pos = raw(seeker.tell());
+    int64:pos = raw seeker.tell();
     if (pos == 0i64) {
         println("[PASS] T03a tell at start = 0");
         passed = passed + 1i32;
@@ -56,7 +56,7 @@ func:main = int32() {
     }
 
     // Seek to offset 5 from start
-    int32:seek_ret = raw(seeker.seek(5i64, 0i32));
+    int32:seek_ret = raw seeker.seek(5i64, 0i32);
     if (seek_ret == 0i32) {
         println("[PASS] T03b seek to offset 5");
         passed = passed + 1i32;
@@ -66,7 +66,7 @@ func:main = int32() {
     }
 
     // tell should now report 5
-    int64:pos2 = raw(seeker.tell());
+    int64:pos2 = raw seeker.tell();
     if (pos2 == 5i64) {
         println("[PASS] T03c tell after seek = 5");
         passed = passed + 1i32;
@@ -75,12 +75,12 @@ func:main = int32() {
         failed = failed + 1i32;
     }
 
-    drop(seeker.close());
+    drop seeker.close();
 
     // ── T04: flush ───────────────────────────────────────────────────────
-    FileStream:flusher = raw(FileStream.open("/tmp/aria_io_flush_test.txt", "w"));
-    drop(flusher.write("flush test data\n"));
-    int32:flush_ret = raw(flusher.flush());
+    FileStream:flusher = raw FileStream.open("/tmp/aria_io_flush_test.txt", "w");
+    drop flusher.write("flush test data\n");
+    int32:flush_ret = raw flusher.flush();
     if (flush_ret == 0i32) {
         println("[PASS] T04 flush");
         passed = passed + 1i32;
@@ -88,20 +88,20 @@ func:main = int32() {
         println("[FAIL] T04 flush returned non-zero");
         failed = failed + 1i32;
     }
-    drop(flusher.close());
+    drop flusher.close();
 
     // ── T05: Multi-line write/read round-trip ────────────────────────────
-    FileStream:mwriter = raw(FileStream.open("/tmp/aria_io_multiline.txt", "w"));
-    drop(mwriter.write("line one\n"));
-    drop(mwriter.write("line two\n"));
-    drop(mwriter.write("line three\n"));
-    drop(mwriter.close());
+    FileStream:mwriter = raw FileStream.open("/tmp/aria_io_multiline.txt", "w");
+    drop mwriter.write("line one\n");
+    drop mwriter.write("line two\n");
+    drop mwriter.write("line three\n");
+    drop mwriter.close();
 
     // Read back
-    FileStream:mreader = raw(FileStream.open("/tmp/aria_io_multiline.txt", "r"));
-    string:l1 = raw(mreader.readLine());
-    string:l2 = raw(mreader.readLine());
-    string:l3 = raw(mreader.readLine());
+    FileStream:mreader = raw FileStream.open("/tmp/aria_io_multiline.txt", "r");
+    string:l1 = raw mreader.readLine();
+    string:l2 = raw mreader.readLine();
+    string:l3 = raw mreader.readLine();
 
     // Verify we got non-empty lines
     print("[INFO] T05 line1: ");
@@ -112,12 +112,12 @@ func:main = int32() {
     print(l3);
     println("[PASS] T05 multi-line round-trip (3 lines)");
     passed = passed + 1i32;
-    drop(mreader.close());
+    drop mreader.close();
 
     // ── T06: Stream write, builtin read (interop) ────────────────────────
-    bool:interop_ok = raw(fileExists(test_path));
+    bool:interop_ok = raw fileExists(test_path);
     if (interop_ok) {
-        string:content = raw(readFile(test_path));
+        string:content = raw readFile(test_path);
         print("[PASS] T06 interop: builtin readFile got: ");
         print(content);
         passed = passed + 1i32;
@@ -127,9 +127,9 @@ func:main = int32() {
     }
 
     // ── T07: Seek constants ──────────────────────────────────────────────
-    int32:ss = raw(FileStream.SEEK_SET());
-    int32:sc = raw(FileStream.SEEK_CUR());
-    int32:se = raw(FileStream.SEEK_END());
+    int32:ss = raw FileStream.SEEK_SET();
+    int32:sc = raw FileStream.SEEK_CUR();
+    int32:se = raw FileStream.SEEK_END();
     if (ss == 0i32) {
         if (sc == 1i32) {
             if (se == 2i32) {
@@ -149,12 +149,12 @@ func:main = int32() {
     }
 
     // ── T08: eof detection ───────────────────────────────────────────────
-    FileStream:eof_reader = raw(FileStream.open(test_path, "r"));
+    FileStream:eof_reader = raw FileStream.open(test_path, "r");
     // Read the only line
-    string:eof_line = raw(eof_reader.readLine());
+    string:eof_line = raw eof_reader.readLine();
     // Try reading past end
-    string:eof_line2 = raw(eof_reader.readLine());
-    int8:at_eof = raw(eof_reader.eof());
+    string:eof_line2 = raw eof_reader.readLine();
+    int8:at_eof = raw eof_reader.eof();
     if (at_eof != 0i8) {
         println("[PASS] T08 eof detection");
         passed = passed + 1i32;
@@ -162,12 +162,12 @@ func:main = int32() {
         println("[FAIL] T08 eof not detected");
         failed = failed + 1i32;
     }
-    drop(eof_reader.close());
+    drop eof_reader.close();
 
     // ── T09: Cleanup test files ──────────────────────────────────────────
-    int64:del1 = raw(deleteFile(test_path));
-    int64:del2 = raw(deleteFile("/tmp/aria_io_flush_test.txt"));
-    int64:del3 = raw(deleteFile("/tmp/aria_io_multiline.txt"));
+    int64:del1 = raw deleteFile(test_path);
+    int64:del2 = raw deleteFile("/tmp/aria_io_flush_test.txt");
+    int64:del3 = raw deleteFile("/tmp/aria_io_multiline.txt");
     println("[PASS] T09 cleanup");
     passed = passed + 1i32;
 
@@ -177,14 +177,14 @@ func:main = int32() {
 
     if (failed == 0i32) {
         println("All tests PASSED");
-        exit(0);
+        exit 0;
     } else {
         println("Some tests FAILED");
-        pass(1i32);
+        pass 1i32;
     }
 };
 
 func:failsafe = int32(tbb32:err) {
     println("FAILSAFE triggered");
-    exit(1);
+    exit 1;
 };

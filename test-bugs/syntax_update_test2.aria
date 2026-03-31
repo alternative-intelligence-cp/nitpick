@@ -1,0 +1,29 @@
+// Test pass/fail without parens, and all new keyword builtins
+func:risky = int64(int64:x) {
+    if (x < 0i64) {
+        fail 1i64;
+    }
+    pass x * 2i64;
+};
+
+func:main = int32() {
+    // raw with expression - unwraps Result
+    int64:a = raw risky(5i64);
+    drop println(`a = &{a}`);
+    
+    // ok check - strips unknown taint, returns same type
+    int32:zero = 0i32;
+    int32:unk = 5i32 / zero;       // creates Unknown
+    int32:checked = ok unk;          // ok without parens
+    drop println(`ok(unk) = &{checked}`);
+    
+    int32:normal = 8i32;
+    int32:valid = ok normal;
+    drop println(`ok(8) = &{valid}`);
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

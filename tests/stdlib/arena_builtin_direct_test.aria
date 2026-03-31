@@ -13,22 +13,22 @@ func:test_arena_basic = int32() {
     if (handle == 0) {
         print("Arena creation failed\n");
         int32:fail_code = 1;
-        pass(fail_code);
+        pass fail_code;
     }
     
     print("Arena created successfully\n");
     arena_destroy(handle);
     
     int32:success = 0;
-    pass(success);
+    pass success;
 };
 
 func:main = int32() {
-    int32:result = raw(test_arena_basic());
-    pass(result);
+    int32:result = raw test_arena_basic();
+    pass result;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

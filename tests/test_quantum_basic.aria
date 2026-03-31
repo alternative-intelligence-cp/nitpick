@@ -7,11 +7,11 @@
 use stdlib.quantum;
 
 func:failsafe = int32(tbb32:err) {
-    exit(1);
+    exit 1;
 };
 
 func:main = int32() {
-    drop(println("=== Q3<T> Module Import Test ===\n"));
+    drop println("=== Q3<T> Module Import Test ===\n");
     
     // Declare trit confidence levels
     trit:conf_unknown = 0;
@@ -19,79 +19,79 @@ func:main = int32() {
     trit:conf_b = 1;
     
     // Test 1: Create Q3<int32> with unknown confidence
-    drop(println("Test 1: Q3<int32> - Unknown Confidence"));
+    drop println("Test 1: Q3<int32> - Unknown Confidence");
     Q3<int32>:temp = {a: 20, b: 25, c: conf_unknown};
-    drop(println(`  Hypothesis A: &{temp.a}`));
-    drop(println(`  Hypothesis B: &{temp.b}`));
-    drop(println(`  Confidence:   &{temp.c}`));
+    drop println(`  Hypothesis A: &{temp.a}`);
+    drop println(`  Hypothesis B: &{temp.b}`);
+    drop println(`  Confidence:   &{temp.c}`);
     
     if (temp.a != 20 || temp.b != 25 || temp.c != 0) {
-        drop(println("❌ FAIL: Field values incorrect"));
-        pass(1);
+        drop println("❌ FAIL: Field values incorrect");
+        pass 1;
     }
-    drop(println("  ✅ PASS\n"));
+    drop println("  ✅ PASS\n");
     
     // Test 2: Manually evolve both hypotheses (simulates operations)
-    drop(println("Test 2: Manual Hypothesis Evolution"));
+    drop println("Test 2: Manual Hypothesis Evolution");
     temp.a = temp.a + 5;
     temp.b = temp.b + 5;
-    drop(println(`  After +5: a=&{temp.a}, b=&{temp.b}`));
+    drop println(`  After +5: a=&{temp.a}, b=&{temp.b}`);
     
     if (temp.a != 25 || temp.b != 30) {
-        drop(println("❌ FAIL: Evolution incorrect"));
-        pass(2);
+        drop println("❌ FAIL: Evolution incorrect");
+        pass 2;
     }
-    drop(println("  ✅ PASS\n"));
+    drop println("  ✅ PASS\n");
     
     // Test 3: Add evidence (shift confidence)
-    drop(println("Test 3: Evidence Accumulation"));
-    drop(println(`  Initial confidence: &{temp.c}`));
+    drop println("Test 3: Evidence Accumulation");
+    drop println(`  Initial confidence: &{temp.c}`);
     temp.c = conf_b;  // Evidence favors hypothesis B
-    drop(println(`  After evidence for B: &{temp.c}`));
+    drop println(`  After evidence for B: &{temp.c}`);
     
     if (temp.c != 1) {
-        drop(println("❌ FAIL: Confidence not updated"));
-        pass(3);
+        drop println("❌ FAIL: Confidence not updated");
+        pass 3;
     }
-    drop(println("  ✅ PASS\n"));
+    drop println("  ✅ PASS\n");
     
     // Test 4: Manual crystallization
-    drop(println("Test 4: Manual Crystallization"));
+    drop println("Test 4: Manual Crystallization");
     int32:final_value = 0;
     if (temp.c < 0) {
         final_value = temp.a;  // Hypothesis A
-        drop(println("  Crystallized to hypothesis A"));
+        drop println("  Crystallized to hypothesis A");
     }
     if (temp.c > 0) {
         final_value = temp.b;  // Hypothesis B
-        drop(println("  Crystallized to hypothesis B"));
+        drop println("  Crystallized to hypothesis B");
     }
     if (temp.c == 0) {
-        drop(println("  Insufficient confidence to crystallize"));
+        drop println("  Insufficient confidence to crystallize");
     }
     
-    drop(println(`  Final value: &{final_value}`));
+    drop println(`  Final value: &{final_value}`);
     
     if (final_value != 30) {
-        drop(println("❌ FAIL: Crystallization incorrect"));
-        pass(4);
+        drop println("❌ FAIL: Crystallization incorrect");
+        pass 4;
     }
-    drop(println("  ✅ PASS\n"));
+    drop println("  ✅ PASS\n");
     
     // Test 5: Create with high confidence
-    drop(println("Test 5: High Confidence Scenario"));
+    drop println("Test 5: High Confidence Scenario");
     Q3<int32>:certain = {a: 100, b: 200, c: conf_b};
-    drop(println(`  Confident in B: c=&{certain.c}, value=&{certain.b}`));
+    drop println(`  Confident in B: c=&{certain.c}, value=&{certain.b}`);
     
     if (certain.c <= 0) {
-        drop(println("❌ FAIL: Confidence should lean toward B"));
-        pass(5);
+        drop println("❌ FAIL: Confidence should lean toward B");
+        pass 5;
     }
-    drop(println("  ✅ PASS\n"));
+    drop println("  ✅ PASS\n");
     
-    drop(println("========================================"));
-    drop(println("✅ ALL Q3<T> MODULE TESTS PASSED!"));
-    drop(println("========================================\n"));
+    drop println("========================================");
+    drop println("✅ ALL Q3<T> MODULE TESTS PASSED!");
+    drop println("========================================\n");
     
-    exit(0);
+    exit 0;
 };

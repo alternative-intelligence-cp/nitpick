@@ -25,24 +25,24 @@ func:parse_int = int32(int32:line_number) {
     
     if (is_even) {
         int32:value = line_number * 10i32;  // Simulated parsed value
-        pass(value);
+        pass value;
     }
     
     // Error case - error code 2 (invalid format)
-    fail(2i32);
+    fail 2i32;
 };
 
 // Validate that a parsed int is in range [0, 100]
 func:validate_range = int32(int32:value) {
     if (value < 0i32) {
-        fail(3i32);  // Error code 3 (out of range)
+        fail 3i32;  // Error code 3 (out of range)
     }
     
     if (value > 100i32) {
-        fail(3i32);  // Error code 3 (out of range)
+        fail 3i32;  // Error code 3 (out of range)
     }
     
-    pass(value);  // Success
+    pass value;  // Success
 };
 
 // ============================================================================
@@ -55,17 +55,17 @@ func:parse_and_validate = int32(int32:line) {
     
     // Test: check if parse succeeded
     if (parsed.is_error) {
-        fail(2i32);  // Propagate parse error
+        fail 2i32;  // Propagate parse error
     }
     
     // Test: pass unwrapped value to validation, return that Result
     Result<int32>:validated = validate_range(parsed.value);
     
     if (validated.is_error) {
-        fail(validated.error);
+        fail validated.error;
     }
     
-    pass(validated.value);
+    pass validated.value;
 };
 
 // Try multiple lines until we find a valid config value
@@ -79,14 +79,14 @@ func:find_valid_config = int32(int32:start_line, int32:max_attempts) {
         
         // Test: early return with success
         if (!(result.is_error)) {
-            pass(result.value);  // Found valid config!
+            pass result.value;  // Found valid config!
         }
         
         attempts = attempts + 1i32;
     }
     
     // Test: error return after exhausting attempts
-    fail(1i32);  // Error code 1 (not found)
+    fail 1i32;  // Error code 1 (not found)
 };
 
 // ============================================================================
@@ -103,7 +103,7 @@ func:load_config_with_fallback = int32(int32:preferred_line, int32:fallback_line
         (false) {
             // Success path - use primary value
             int32:val = primary.value;
-            pass(val);
+            pass val;
         },
         (true) {
             // Error path - try fallback
@@ -111,11 +111,11 @@ func:load_config_with_fallback = int32(int32:preferred_line, int32:fallback_line
             
             // Test: nested Result check in pick branch
             if (!(fallback.is_error)) {
-                pass(fallback.value);
+                pass fallback.value;
             }
             
             // Both failed - use hardcoded default
-            pass(999i32);
+            pass 999i32;
         }
     }
 };
@@ -135,11 +135,11 @@ func:get_or_default = int32(int32:line) {
         
         // Test: is ternary operator - if error is "not found" (1), return 42
         int32:default_val = is (err_code == 1i64) : 42i32 : 0i32;
-        pass(default_val);
+        pass default_val;
     }
     
     // Success - return the value
-    pass(result.value);
+    pass result.value;
 };
 
 // Batch process multiple config lines
@@ -159,7 +159,7 @@ func:sum_valid_configs = int32(int32:start, int32:count) {
         i = i + 1i32;
     }
     
-    pass(sum);
+    pass sum;
 };
 
 // ============================================================================
@@ -183,15 +183,15 @@ func:ultimate_stress_test = int32() {
     score = score + (r3 ? 0i32);  // Should add 20 or 40
     
     // Test 4: Fallback logic
-    int32:fallback_val = raw(load_config_with_fallback(1i32, 2i32));  // 1 fails, 2 succeeds
+    int32:fallback_val = raw load_config_with_fallback(1i32, 2i32);  // 1 fails, 2 succeeds
     score = score + fallback_val;  // Should add 20
     
     // Test 5: Error-based defaults
-    int32:default_val = raw(get_or_default(1i32));  // Fails, returns default
+    int32:default_val = raw get_or_default(1i32);  // Fails, returns default
     score = score + default_val;  // Should add 42
     
     // Test 6: Batch processing
-    int32:batch_sum = raw(sum_valid_configs(0i32, 6i32));  // Lines 0,2,4 succeed (0,20,40)
+    int32:batch_sum = raw sum_valid_configs(0i32, 6i32);  // Lines 0,2,4 succeed (0,20,40)
     score = score + batch_sum;  // Should add 60
     
     // Test 7: Pick with nested Results
@@ -205,7 +205,7 @@ func:ultimate_stress_test = int32() {
         }
     }
     
-    pass(score);  // Expected: 20 + 1 + 20 + 20 + 42 + 60 + 40 = 203
+    pass score;  // Expected: 20 + 1 + 20 + 20 + 42 + 60 + 40 = 203
 };
 
 // ============================================================================
@@ -213,11 +213,11 @@ func:ultimate_stress_test = int32() {
 // ============================================================================
 
 func:main = int32() {
-    int32:result = raw(ultimate_stress_test());
-    pass(result);
+    int32:result = raw ultimate_stress_test();
+    pass result;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

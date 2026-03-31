@@ -191,7 +191,7 @@ func:json_encode_value = NIL(wild int8->:buf, wild int8->:v) {
     }
     else if (t == 4i32) {
         string:sv = jh_get_string(v);
-        drop(json_encode_string(buf, sv));
+        drop json_encode_string(buf, sv);
     }
     else if (t == 5i32) {
         jh_buf_char(buf, 91i32);
@@ -200,7 +200,7 @@ func:json_encode_value = NIL(wild int8->:buf, wild int8->:v) {
         while (ai < alen) {
             if (ai > 0i64) { jh_buf_char(buf, 44i32); }
             wild int8->:aitem = jh_arr_get(v, ai);
-            drop(json_encode_value(buf, aitem));
+            drop json_encode_value(buf, aitem);
             ai = ai + 1i64;
         }
         jh_buf_char(buf, 93i32);
@@ -212,10 +212,10 @@ func:json_encode_value = NIL(wild int8->:buf, wild int8->:v) {
         while (oi < olen) {
             if (oi > 0i64) { jh_buf_char(buf, 44i32); }
             string:okey = jh_obj_key_at(v, oi);
-            drop(json_encode_string(buf, okey));
+            drop json_encode_string(buf, okey);
             jh_buf_char(buf, 58i32);
             wild int8->:oval = jh_obj_val_at(v, oi);
-            drop(json_encode_value(buf, oval));
+            drop json_encode_value(buf, oval);
             oi = oi + 1i64;
         }
         jh_buf_char(buf, 125i32);
@@ -229,9 +229,9 @@ func:json_encode_value = NIL(wild int8->:buf, wild int8->:v) {
 
 func:json_encode = string(wild int8->:h) {
     wild int8->:buf = jh_buf_new();
-    drop(json_encode_value(buf, h));
+    drop json_encode_value(buf, h);
     string:result = jh_buf_to_string(buf);
-    pass(result);
+    pass result;
 };
 
 // ═══════════════════════════════════════════════════════════════════════

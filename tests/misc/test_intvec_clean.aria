@@ -1,9 +1,9 @@
 // IntVec with CLEAN reassignment using ? unwrap operator!
 // No more vecA, vecB, vecC... just reassign vec!
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 extern func:malloc = wild int8*(int64:size);
 extern func:free = NIL(wild int8*:ptr);
@@ -14,17 +14,17 @@ extern func:int_array_set = NIL(wild int8*:buf, int32:idx, int32:val);
 
 Type:IntVec = {
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
     func:new = IntVec() {
         wild int8->:buffer = malloc(40i64);
         int64:ptr_as_int = ptr_to_int64(buffer);
         IntVec:result = IntVec{dataptr: ptr_as_int, length: 0i32, capacity: 10i32};
-        pass(result);
+        pass result;
     };
     
     func:destroy = NIL(IntVec:self) {
         _ = free(int64_to_ptr(self.dataptr));
-        pass(NIL);
+        pass NIL;
     };
     
     func:push = IntVec(IntVec:self, int32:value) {
@@ -36,17 +36,17 @@ func:failsafe = int32(tbb32:err) { exit(1); };
             length: new_length,
             capacity: self.capacity
         };
-        pass(result);
+        pass result;
     };
     
     func:get = int32(IntVec:self, int32:index) {
         wild int8->:buffer = int64_to_ptr(self.dataptr);
         int32:val = int_array_get(buffer, index);
-        pass(val);
+        pass val;
     };
     
     func:len = int32(IntVec:self) {
-        pass(self.length);
+        pass self.length;
     };
     
     struct:interface = {
@@ -79,5 +79,5 @@ func:main = int32() {
     _ = vec.destroy() ? NIL;
     
     // Return 1000 if it all worked!
-    pass(sum);
+    pass sum;
 };

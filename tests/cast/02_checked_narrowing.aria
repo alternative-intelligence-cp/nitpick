@@ -12,7 +12,7 @@ func:test_safe_narrowing = int32() {
     int16:c = 25i16;
     int8:d = @cast<int8>(c);    // 25 fits in i8
     
-    pass(0i32);
+    pass 0i32;
 };
 
 func:test_unsigned_narrowing = int32() {
@@ -26,16 +26,16 @@ func:test_unsigned_narrowing = int32() {
     uint16:s = 75u16;
     uint8:tiny = @cast<uint8>(s);
     
-    pass(0i32);
+    pass 0i32;
 };
 
 func:main = int32() {
-    int32:r1 = raw(test_safe_narrowing());
-    int32:r2 = raw(test_unsigned_narrowing());
-    exit(0);
+    int32:r1 = raw test_safe_narrowing();
+    int32:r2 = raw test_unsigned_narrowing();
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

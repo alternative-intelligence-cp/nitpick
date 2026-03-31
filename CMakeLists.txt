@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(aria VERSION 0.3.4 LANGUAGES C CXX)
+project(aria VERSION 0.4.4 LANGUAGES C CXX)
 
 # C++17 standard required
 set(CMAKE_CXX_STANDARD 17)
@@ -254,6 +254,7 @@ set(RUNTIME_SOURCES
     src/runtime/allocators/arena_builtins.cpp
     src/runtime/allocators/pool_builtins.cpp
     src/runtime/allocators/slab_builtins.cpp
+    src/runtime/allocators/mem_primitives.c
     src/runtime/panic/panic_handler.cpp
     src/runtime/format/locale_safe_format.cpp
     src/runtime/assembler/assembler.cpp

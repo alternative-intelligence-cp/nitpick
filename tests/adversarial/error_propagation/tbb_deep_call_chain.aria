@@ -9,19 +9,19 @@
 
 func:level3 = tbb32(tbb32:x) {
     tbb32:result = tbb32_mul(x, tbb32_from_int(2));  // ERR * 2 → ERR
-    pass(result);
+    pass result;
 };
 
 func:level2 = tbb32(tbb32:x) {
     tbb32:temp = tbb32_add(x, tbb32_from_int(10));  // ERR + 10 → ERR
-    tbb32:result = raw(level3(temp));
-    pass(result);
+    tbb32:result = raw level3(temp);
+    pass result;
 };
 
 func:level1 = tbb32(tbb32:x) {
     tbb32:temp = tbb32_sub(x, tbb32_from_int(5));  // ERR - 5 → ERR
-    tbb32:result = raw(level2(temp));
-    pass(result);
+    tbb32:result = raw level2(temp);
+    pass result;
 };
 
 func:main = int32() {
@@ -29,7 +29,7 @@ func:main = int32() {
     tbb32:sensor = tbb32_div(tbb32_from_int(10), tbb32_from_int(0));  // Returns ERR
 
     // ERR must propagate through: level1 → level2 → level3 → result
-    tbb32:result = raw(level1(sensor));
+    tbb32:result = raw level1(sensor);
 
     // At runtime: tbb32_is_err(result) must be true
     bool:still_err = tbb32_is_err(result);
@@ -39,5 +39,5 @@ func:main = int32() {
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

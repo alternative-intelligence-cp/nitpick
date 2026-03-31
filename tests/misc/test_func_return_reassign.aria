@@ -1,14 +1,14 @@
 // Test function return reassignment for primitives
 
 func:get_number = int32(int32:val) {
-    pass(val);
+    pass val;
 };
 
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
-    int32:x = raw(get_number(10i32));  // Initial assignment
-    x = raw(get_number(20i32));  // Reassignment - does this work?
-    pass(x);  // Should return 20
+    int32:x = raw get_number(10i32);  // Initial assignment
+    x = raw get_number(20i32);  // Reassignment - does this work?
+    pass x;  // Should return 20
 };

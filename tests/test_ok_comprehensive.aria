@@ -4,55 +4,55 @@
 func:test_ok_passthrough = int32() {
     // ok() should pass through the value unchanged
     int32:x = unknown;
-    int32:y = ok(x);
+    int32:y = ok x;
     
     if (y == unknown) {
-        pass(1i32);  // Success
+        pass 1i32;  // Success
     } else {
-        pass(0i32);  // Failure
+        pass 0i32;  // Failure
     }
 };
 
 func:test_ok_with_known_value = int32() {
     // ok() should also work with known values (no-op)
     int32:x = 42i32;
-    int32:y = ok(x);
+    int32:y = ok x;
     
     if (y == 42i32) {
-        pass(2i32);  // Success
+        pass 2i32;  // Success
     } else {
-        pass(0i32);  // Failure
+        pass 0i32;  // Failure
     }
 };
 
 func:test_ok_chain = int32() {
     // ok() can be chained
     int32:x = unknown;
-    int32:y = ok(ok(ok(x)));
+    int32:y = ok ok ok x;
     
     if (y == unknown) {
-        pass(3i32);  // Success
+        pass 3i32;  // Success
     } else {
-        pass(0i32);  // Failure
+        pass 0i32;  // Failure
     }
 };
 
 func:main = int32() {
-    int32:test1 = raw(test_ok_passthrough());        // Should be 1
-    int32:test2 = raw(test_ok_with_known_value());   // Should be 2
-    int32:test3 = raw(test_ok_chain());              // Should be 3
+    int32:test1 = raw test_ok_passthrough();        // Should be 1
+    int32:test2 = raw test_ok_with_known_value();   // Should be 2
+    int32:test3 = raw test_ok_chain();              // Should be 3
     
     // Sum should be 6 if all tests pass
     int32:total = test1 + test2 + test3;
     
     if (total == 6i32) {
-        pass(42i32);  // All tests passed!
+        pass 42i32;  // All tests passed!
     } else {
-        pass(total);  // Return which test failed
+        pass total;  // Return which test failed
     }
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

@@ -170,3 +170,102 @@ extern "C" int64_t aria_ustack_size(int64_t handle) {
     AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
     return stk->size;
 }
+
+extern "C" int64_t aria_ustack_capacity_bytes(int64_t handle) {
+    if (handle == 0) return 0;
+    AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
+    return stk->data_bytes;
+}
+
+extern "C" int64_t aria_ustack_bytes_used(int64_t handle) {
+    if (handle == 0) return 0;
+    AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
+    return stk->size * 16;  /* 16 bytes per slot (value + tag) */
+}
+
+extern "C" int64_t aria_ustack_fits(int64_t handle) {
+    if (handle == 0) return 0;
+    AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
+    return (stk->size < stk->capacity) ? 1 : 0;
+}
+
+extern "C" int64_t aria_ustack_top_type(int64_t handle) {
+    if (handle == 0) return -1;
+    AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
+    if (stk->size <= 0) return -1;
+    int64_t idx = (stk->size - 1) * 2;
+    return stk->data[idx + 1];  /* tag is second int64 in each slot */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * SMT-Optimized Fast Variants (v0.4.3+)
+ *
+ * When Z3 proves type homogeneity for all pushes in a scope, the compiler
+ * emits these instead of the tagged versions.  Layout: 8 bytes/slot
+ * (values only, no tag array).  No bounds checking, no type validation.
+ * The proof guarantees safety.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+struct AriaUStackFast {
+    int64_t* data;       /* Values only — no tag interleaving */
+    int64_t  capacity;
+    int64_t  size;
+    int64_t  data_bytes; /* mmap region size for munmap */
+};
+
+extern "C" int64_t aria_ustack_new_fast(int64_t capacity) {
+    if (capacity <= 0) return 0;
+
+    AriaUStackFast* stk = static_cast<AriaUStackFast*>(malloc(sizeof(AriaUStackFast)));
+    if (!stk) return 0;
+
+    int64_t data_bytes = capacity * 8;  /* 8 bytes per slot (no tags) */
+    void* region = mmap(nullptr, static_cast<size_t>(data_bytes),
+                        PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (region == MAP_FAILED) {
+        free(stk);
+        return 0;
+    }
+
+    stk->data       = static_cast<int64_t*>(region);
+    stk->capacity   = capacity;
+    stk->size       = 0;
+    stk->data_bytes = data_bytes;
+
+    return reinterpret_cast<int64_t>(stk);
+}
+
+extern "C" void aria_ustack_destroy_fast(int64_t handle) {
+    if (handle == 0) return;
+    AriaUStackFast* stk = reinterpret_cast<AriaUStackFast*>(handle);
+    if (stk->data) {
+        munmap(stk->data, static_cast<size_t>(stk->data_bytes));
+    }
+    free(stk);
+}
+
+extern "C" void aria_ustack_push_fast(int64_t handle, int64_t value) {
+    AriaUStackFast* stk = reinterpret_cast<AriaUStackFast*>(handle);
+    stk->data[stk->size++] = value;
+}
+
+extern "C" int64_t aria_ustack_pop_fast(int64_t handle) {
+    AriaUStackFast* stk = reinterpret_cast<AriaUStackFast*>(handle);
+    return stk->data[--stk->size];
+}
+
+extern "C" int64_t aria_ustack_peek_fast(int64_t handle) {
+    AriaUStackFast* stk = reinterpret_cast<AriaUStackFast*>(handle);
+    return stk->data[stk->size - 1];
+}
+
+extern "C" int64_t aria_ustack_bytes_used_fast(int64_t handle) {
+    AriaUStackFast* stk = reinterpret_cast<AriaUStackFast*>(handle);
+    return stk->size * 8;  /* 8 bytes per slot (value only, no tag) */
+}
+
+extern "C" int64_t aria_ustack_top_type_fast(int64_t handle) {
+    (void)handle;
+    return -1;  /* Fast mode has no type tags — Z3 proved homogeneity */
+}

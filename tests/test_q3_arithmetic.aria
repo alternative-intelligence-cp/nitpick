@@ -7,58 +7,58 @@
 use stdlib.quantum;
 
 func:failsafe = int32(tbb32:err) {
-    exit(1);
+    exit 1;
 };
 
 func:main = int32() {
-    drop(println("=== Q3 Arithmetic Test ==="));
+    drop println("=== Q3 Arithmetic Test ===");
     
     // Test 1: Addition with scalar
-    drop(println("Test 1: q3_add"));
+    drop println("Test 1: q3_add");
     trit:c0 = 0;
     Q3<int32>:q1 = {a: 10, b: 20, c: c0};
     
     Q3<int32>:sum = q3_add(q1, 5);
     
     if (sum.a == 15 && sum.b == 25 && sum.c == 0) {
-        drop(println("  PASS: Addition correct - {a:15, b:25, c:0}"));
+        drop println("  PASS: Addition correct - {a:15, b:25, c:0}");
     }
     
     // Test 2: Subtraction with scalar
-    drop(println("Test 2: q3_sub"));
+    drop println("Test 2: q3_sub");
     Q3<int32>:diff = q3_sub(q1, 3);
     
     if (diff.a == 7 && diff.b == 17 && diff.c == 0) {
-        drop(println("  PASS: Subtraction correct - {a:7, b:17, c:0}"));
+        drop println("  PASS: Subtraction correct - {a:7, b:17, c:0}");
     }
     
     // Test 3: Multiplication with scalar
-    drop(println("Test 3: q3_mul"));
+    drop println("Test 3: q3_mul");
     Q3<int32>:prod = q3_mul(q1, 2);
     
     if (prod.a == 20 && prod.b == 40 && prod.c == 0) {
-        drop(println("  PASS: Multiplication correct - {a:20, b:40, c:0}"));
+        drop println("  PASS: Multiplication correct - {a:20, b:40, c:0}");
     }
     
     // Test 4: Division with scalar
-    drop(println("Test 4: q3_div"));
+    drop println("Test 4: q3_div");
     Q3<int32>:quot = q3_div(q1, 2);
     
     if (quot.a == 5 && quot.b == 10 && quot.c == 0) {
-        drop(println("  PASS: Division correct - {a:5, b:10, c:0}"));
+        drop println("  PASS: Division correct - {a:5, b:10, c:0}");
     }
     
     // Test 5: Confidence preservation through operations
-    drop(println("Test 5: Confidence preservation"));
+    drop println("Test 5: Confidence preservation");
     trit:c_lean = 1;
     Q3<int32>:q_confident = {a: 100, b: 50, c: c_lean};
     
     Q3<int32>:result = q3_add(q_confident, 10);
     
     if (result.c == 1 && result.a == 110 && result.b == 60) {
-        drop(println("  PASS: Confidence preserved - {a:110, b:60, c:1}"));
+        drop println("  PASS: Confidence preserved - {a:110, b:60, c:1}");
     }
     
-    drop(println("=== All Arithmetic Tests Complete ==="));
-    exit(0);
+    drop println("=== All Arithmetic Tests Complete ===");
+    exit 0;
 };

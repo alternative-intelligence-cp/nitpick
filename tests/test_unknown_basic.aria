@@ -8,23 +8,23 @@ func:test_unknown_literal = int32() {
     // Test unknown in pick pattern (already supported by exhaustiveness checker)
     pick(x) {
         (unknown) {
-            pass(1i32);
+            pass 1i32;
         },
         (5i32) {
-            pass(2i32);
+            pass 2i32;
         },
         (*) {
-            pass(3i32);
+            pass 3i32;
         }
     }
 };
 
 func:main = int32() {
-    int32:result = raw(test_unknown_literal());
-    pass(result);
+    int32:result = raw test_unknown_literal();
+    pass result;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

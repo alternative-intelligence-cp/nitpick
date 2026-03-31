@@ -16,12 +16,12 @@ func:Vec_int8_new = Vec<int8>() {
     vec.element_size = 1i64;
     vec.type_id = 0i32;
     
-    pass(vec);
+    pass vec;
 };
 
 func:main = int32() {
     // Create Vec<int8> struct using constructor
-    Vec<int8>:numbers = raw(Vec_int8_new());
+    Vec<int8>:numbers = raw Vec_int8_new();
     
     // Push 3 values
     int8:v1 = 42i8;
@@ -38,13 +38,13 @@ func:main = int32() {
     
     // Verify it worked!
     if (numbers.length != 3i64) {
-        pass(1i32);  // FAIL: Field mutation didn't persist
+        pass 1i32;  // FAIL: Field mutation didn't persist
     }
     
     aria_array_free(numbers.data);
-    exit(0);  // SUCCESS!
+    exit 0;  // SUCCESS!
 };
 
 func:failsafe = int32(tbb32:err) {
-    exit(1);
+    exit 1;
 };

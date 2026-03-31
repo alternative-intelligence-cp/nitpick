@@ -12,7 +12,7 @@ func:test_simple_break = int32() {
         }
     }
     
-    pass(count);  // Returns 10
+    pass count;  // Returns 10
 };
 
 // Test 2: Continue skips loop iteration
@@ -30,7 +30,7 @@ func:test_simple_continue = int32() {
         sum += i;  // Only adds odd numbers: 1+3+5+7+9 = 25
     }
     
-    pass(sum);  // Returns 25
+    pass sum;  // Returns 25
 };
 
 // Test 3: Break in nested condition
@@ -47,7 +47,7 @@ func:test_conditional_break = int32() {
         }
     }
     
-    pass(total);  // Returns 55 (1+2+...+10)
+    pass total;  // Returns 55 (1+2+...+10)
 };
 
 // Test 4: Multiple continues in same loop
@@ -69,7 +69,7 @@ func:test_multiple_continues = int32() {
         count += 1;  // Only counts 5-15 (11 numbers)
     }
     
-    pass(count);  // Returns 11
+    pass count;  // Returns 11
 };
 
 // Test 5: Break immediately at loop start
@@ -81,7 +81,7 @@ func:test_immediate_break = int32() {
         executed = 1;  // This should never execute
     }
     
-    pass(executed);  // Returns 0
+    pass executed;  // Returns 0
 };
 
 // Test 6: Continue at end of loop (no effect)
@@ -95,16 +95,16 @@ func:test_continue_at_end = int32() {
         continue;  // Continue at end has no effect
     }
     
-    pass(count);  // Returns 5
+    pass count;  // Returns 5
 };
 
 func:main = int32() {
-    int32:r1 = raw(test_simple_break());       // Should be 10
-    int32:r2 = raw(test_simple_continue());    // Should be 25
-    int32:r3 = raw(test_conditional_break());  // Should be 55
-    int32:r4 = raw(test_multiple_continues()); // Should be 11
-    int32:r5 = raw(test_immediate_break());    // Should be 0
-    int32:r6 = raw(test_continue_at_end());    // Should be 5
+    int32:r1 = raw test_simple_break();       // Should be 10
+    int32:r2 = raw test_simple_continue();    // Should be 25
+    int32:r3 = raw test_conditional_break();  // Should be 55
+    int32:r4 = raw test_multiple_continues(); // Should be 11
+    int32:r5 = raw test_immediate_break();    // Should be 0
+    int32:r6 = raw test_continue_at_end();    // Should be 5
     
     // Return sum as validation: 10 + 25 + 55 + 11 + 0 + 5 = 106
     int32:total = r1 + r2;
@@ -113,10 +113,10 @@ func:main = int32() {
     total += r5;
     total += r6;
     
-    pass(total);
+    pass total;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

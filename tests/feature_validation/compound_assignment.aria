@@ -5,7 +5,7 @@ func:test_compound = int32() {
     x = x + 5;      // 15
     x = x * 2;      // 30
     x = x - 10;     // 20
-    pass(x);
+    pass x;
 };
 
 func:test_compound_ops = int32() {
@@ -15,16 +15,16 @@ func:test_compound_ops = int32() {
     y *= 2;         // 240
     y /= 4;         // 60
     y %= 7;         // 4
-    pass(y);
+    pass y;
 };
 
 func:main = int32() {
-    int32:a = raw(test_compound());
-    int32:b = raw(test_compound_ops());
-    pass(a + b);    // 20 + 4 = 24
+    int32:a = raw test_compound();
+    int32:b = raw test_compound_ops();
+    pass a + b;    // 20 + 4 = 24
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

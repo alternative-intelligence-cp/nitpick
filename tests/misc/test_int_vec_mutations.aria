@@ -31,46 +31,46 @@ Type:IntVec = {
             length: 0i32,
             capacity: initial_capacity
         };
-        pass(vec);
+        pass vec;
     };
     
     // Destructor: Free vector memory
     func:destroy = NIL(IntVec:self) {
         _ = free(int64_to_ptr(self.dataptr));
-        pass(NIL);
+        pass NIL;
     };
     
     // Accessor methods
     func:len = int32(IntVec:self) {
-        pass(self.length);
+        pass self.length;
     };
     
     func:capacity = int32(IntVec:self) {
-        pass(self.capacity);
+        pass self.capacity;
     };
     
     func:isEmpty = bool(IntVec:self) {
         bool:empty = (self.length == 0i32);
-        pass(empty);
+        pass empty;
     };
     
     func:isFull = bool(IntVec:self) {
         bool:full = (self.length == self.capacity);
-        pass(full);
+        pass full;
     };
     
     // Get element at index (unsafe - no bounds checking)
     func:get = int32(IntVec:self, int32:index) {
         wild int8->:buffer = int64_to_ptr(self.dataptr);
         int32:element = int_array_get(buffer, index);
-        pass(element);
+        pass element;
     };
     
     // Set element at index (unsafe - no bounds checking)
     func:set = NIL(IntVec:self, int32:index, int32:value) {
         wild int8->:buffer = int64_to_ptr(self.dataptr);
         _ = int_array_set(buffer, index, value);
-        pass(NIL);
+        pass NIL;
     };
     
     // Push element to end (returns new IntVec with updated length)
@@ -89,7 +89,7 @@ Type:IntVec = {
             length: new_length,
             capacity: self.capacity
         };
-        pass(result);
+        pass result;
     };
     
     // Pop element from end (returns new IntVec with updated length)
@@ -105,7 +105,7 @@ Type:IntVec = {
             length: new_length,
             capacity: self.capacity
         };
-        pass(result);
+        pass result;
     };
     
     // Clear all elements (reset length to 0)
@@ -115,18 +115,18 @@ Type:IntVec = {
             length: 0i32,
             capacity: self.capacity
         };
-        pass(result);
+        pass result;
     };
     
     // Static factory methods
     func:new = IntVec() {
-        IntVec:vec = raw(instance<IntVec>(16i32));
-        pass(vec);
+        IntVec:vec = raw instance<IntVec>(16i32);
+        pass vec;
     };
     
     func:withCapacity = IntVec(int32:cap) {
-        IntVec:vec = raw(instance<IntVec>(cap));
-        pass(vec);
+        IntVec:vec = raw instance<IntVec>(cap);
+        pass vec;
     };
     
     // Public interface
@@ -138,41 +138,41 @@ Type:IntVec = {
 };
 
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     // Create empty vector
-    IntVec:vec = raw(IntVec.new());
+    IntVec:vec = raw IntVec.new();
     
     // Push some elements (functional style - returns new IntVec)
-    IntVec:vecA = raw(vec.push(10i32));
-    IntVec:vecB = raw(vecA.push(20i32));
-    IntVec:vecC = raw(vecB.push(30i32));
-    IntVec:vecD = raw(vecC.push(40i32));
+    IntVec:vecA = raw vec.push(10i32);
+    IntVec:vecB = raw vecA.push(20i32);
+    IntVec:vecC = raw vecB.push(30i32);
+    IntVec:vecD = raw vecC.push(40i32);
     
     // Check length
-    int32:len = raw(vecD.len());  // Should be 4
+    int32:len = raw vecD.len();  // Should be 4
     
     // Read values
-    int32:first = raw(vecD.get(0i32));   // 10
-    int32:second = raw(vecD.get(1i32));  // 20
-    int32:third = raw(vecD.get(2i32));   // 30
-    int32:fourth = raw(vecD.get(3i32));  // 40
+    int32:first = raw vecD.get(0i32);   // 10
+    int32:second = raw vecD.get(1i32);  // 20
+    int32:third = raw vecD.get(2i32);   // 30
+    int32:fourth = raw vecD.get(3i32);  // 40
     
     // Verify: 10 + 20 + 30 + 40 = 100
     int32:sum = first + second + third + fourth;
     
     // Pop an element
-    int32:last = raw(vecD.get(3i32));  // Get last value before pop
-    IntVec:vecE = raw(vecD.pop());
-    int32:new_len = raw(vecE.len());  // Should be 3
+    int32:last = raw vecD.get(3i32);  // Get last value before pop
+    IntVec:vecE = raw vecD.pop();
+    int32:new_len = raw vecE.len();  // Should be 3
     
     // Clear vector
-    IntVec:vecF = raw(vecE.clear());
-    bool:empty = raw(vecF.isEmpty());  // Should be true
+    IntVec:vecF = raw vecE.clear();
+    bool:empty = raw vecF.isEmpty();  // Should be true
     
     // Clean up
     _ = vecF.destroy();
     
-    exit(0);
+    exit 0;
 };

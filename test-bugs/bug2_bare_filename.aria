@@ -1,0 +1,13 @@
+// BUG-2 test: Bare filename string literals in sys() should work
+
+func:main = int32() {
+    // Before BUG-2 fix, bare filenames like "myfile.txt" (no path separator)
+    // would produce a malformed pointer in sys() string arg codegen.
+    drop sys(WRITE, 1, "hello from bare literal\n", 24);
+    drop sys(WRITE, 1, "myfile.txt\n", 11);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

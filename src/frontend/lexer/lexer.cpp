@@ -44,6 +44,19 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"return", TokenType::TOKEN_KW_RETURN},
     {"pass", TokenType::TOKEN_KW_PASS},
     {"fail", TokenType::TOKEN_KW_FAIL},
+    {"exit", TokenType::TOKEN_KW_EXIT},
+    {"raw", TokenType::TOKEN_KW_RAW},
+    {"drop", TokenType::TOKEN_KW_DROP},
+    {"ok", TokenType::TOKEN_KW_OK},
+    {"defaults", TokenType::TOKEN_KW_DEFAULTS},
+    {"apop", TokenType::TOKEN_KW_APOP},
+    {"apush", TokenType::TOKEN_KW_APUSH},
+    {"apeek", TokenType::TOKEN_KW_APEEK},
+    {"astack", TokenType::TOKEN_KW_ASTACK},
+    {"acap", TokenType::TOKEN_KW_ACAP},
+    {"asize", TokenType::TOKEN_KW_ASIZE},
+    {"afits", TokenType::TOKEN_KW_AFITS},
+    {"atype", TokenType::TOKEN_KW_ATYPE},
     
     // Async
     {"async", TokenType::TOKEN_KW_ASYNC},
@@ -504,6 +517,8 @@ void Lexer::scanToken() {
                 addToken(TokenType::TOKEN_NULL_COALESCE);
             } else if (match('!')) {
                 addToken(TokenType::TOKEN_QUESTION_BANG);  // ?! emphatic unwrap
+            } else if (match('|')) {
+                addToken(TokenType::TOKEN_QUESTION_PIPE);  // ?| defaults shorthand
             } else {
                 addToken(TokenType::TOKEN_QUESTION);
             }

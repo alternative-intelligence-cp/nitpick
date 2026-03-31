@@ -1,0 +1,14 @@
+// BUG-1 test: Negative constants should not be zeroed on import
+use "bug1_module.aria".*;
+
+func:main = int32() {
+    int64:ni = raw get_neg_int();
+    flt64:nf = raw get_neg_flt();
+    drop println(`NEG_INT = &{ni}`);
+    drop println(`NEG_FLT = &{nf}`);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

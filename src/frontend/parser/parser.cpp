@@ -23,6 +23,10 @@ const std::unordered_map<TokenType, int> Parser::precedence = {
     // Ternary
     {TokenType::TOKEN_KW_IS, 1},
     
+    // Defaults / scoped expression fallback (v0.4.3)
+    {TokenType::TOKEN_QUESTION_PIPE, 1},
+    {TokenType::TOKEN_KW_DEFAULTS, 1},
+    
     // Null coalescing
     {TokenType::TOKEN_NULL_COALESCE, 2},
     
@@ -368,6 +372,35 @@ ASTNodePtr Parser::parseExpression(int minPrecedence) {
                 auto pipeCall = std::make_shared<CallExpr>(left, args, op.line, op.column);
                 pipeCall->isPipelineCall = true;
                 left = pipeCall;
+                continue;
+            }
+            
+            // Special case: Defaults operator (?| or defaults keyword)
+            // Scoped expression fallback (v0.4.3) — wraps entire preceding sub-expression.
+            if (op.type == TokenType::TOKEN_QUESTION_PIPE || op.type == TokenType::TOKEN_KW_DEFAULTS) {
+                // Parse restricted fallback: only literals, identifiers, or 'unknown'
+                Token fallbackToken = peek();
+                ASTNodePtr fallback = nullptr;
+                
+                if (fallbackToken.type == TokenType::TOKEN_KW_UNKNOWN) {
+                    fallback = parsePrimary();
+                } else if (fallbackToken.isLiteral() || fallbackToken.type == TokenType::TOKEN_IDENTIFIER ||
+                           fallbackToken.type == TokenType::TOKEN_KW_ERR ||
+                           fallbackToken.type == TokenType::TOKEN_KW_TRUE ||
+                           fallbackToken.type == TokenType::TOKEN_KW_FALSE) {
+                    fallback = parsePrimary();
+                } else {
+                    error("Fallback for 'defaults'/'?|' must be a literal, variable, or 'unknown' — "
+                          "not a function call or compound expression");
+                    return nullptr;
+                }
+                
+                if (!fallback) {
+                    error("Expected fallback value after '?|' / 'defaults'");
+                    return nullptr;
+                }
+                
+                left = std::make_shared<DefaultsExpr>(left, std::move(fallback), op.line, op.column);
                 continue;
             }
             
@@ -1068,6 +1101,106 @@ ASTNodePtr Parser::parseUnary() {
         std::vector<ASTNodePtr> args;
         args.push_back(operand);
         auto identExpr = std::make_shared<IdentifierExpr>("raw", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // raw expr — keyword form (same as _! shorthand)
+    if (token.type == TokenType::TOKEN_KW_RAW) {
+        advance(); // consume 'raw'
+        ASTNodePtr operand = parseUnary();
+        if (!operand) {
+            error("Expected expression after 'raw'");
+            return nullptr;
+        }
+        operand = parsePostfix(operand);
+        std::vector<ASTNodePtr> args;
+        args.push_back(operand);
+        auto identExpr = std::make_shared<IdentifierExpr>("raw", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // drop expr — keyword form (same as _? shorthand)
+    if (token.type == TokenType::TOKEN_KW_DROP) {
+        advance(); // consume 'drop'
+        ASTNodePtr operand = parseUnary();
+        if (!operand) {
+            error("Expected expression after 'drop'");
+            return nullptr;
+        }
+        operand = parsePostfix(operand);
+        std::vector<ASTNodePtr> args;
+        args.push_back(operand);
+        auto identExpr = std::make_shared<IdentifierExpr>("drop", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // ok expr — keyword form, returns bool
+    if (token.type == TokenType::TOKEN_KW_OK) {
+        advance(); // consume 'ok'
+        ASTNodePtr operand = parseUnary();
+        if (!operand) {
+            error("Expected expression after 'ok'");
+            return nullptr;
+        }
+        operand = parsePostfix(operand);
+        std::vector<ASTNodePtr> args;
+        args.push_back(operand);
+        auto identExpr = std::make_shared<IdentifierExpr>("ok", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // apop — keyword form, no arguments
+    if (token.type == TokenType::TOKEN_KW_APOP) {
+        advance(); // consume 'apop'
+        std::vector<ASTNodePtr> args;
+        auto identExpr = std::make_shared<IdentifierExpr>("apop", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // apeek — keyword form, no arguments
+    if (token.type == TokenType::TOKEN_KW_APEEK) {
+        advance(); // consume 'apeek'
+        std::vector<ASTNodePtr> args;
+        auto identExpr = std::make_shared<IdentifierExpr>("apeek", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // acap — keyword form, no arguments (return stack capacity in bytes)
+    if (token.type == TokenType::TOKEN_KW_ACAP) {
+        advance(); // consume 'acap'
+        std::vector<ASTNodePtr> args;
+        auto identExpr = std::make_shared<IdentifierExpr>("acap", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // asize — keyword form, no arguments (return bytes used on stack)
+    if (token.type == TokenType::TOKEN_KW_ASIZE) {
+        advance(); // consume 'asize'
+        std::vector<ASTNodePtr> args;
+        auto identExpr = std::make_shared<IdentifierExpr>("asize", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // afits — keyword form, single argument (check if value fits on stack)
+    if (token.type == TokenType::TOKEN_KW_AFITS) {
+        advance(); // consume 'afits'
+        ASTNodePtr operand = parseUnary();
+        if (!operand) {
+            error("Expected expression after 'afits'");
+            return nullptr;
+        }
+        operand = parsePostfix(operand);
+        std::vector<ASTNodePtr> args;
+        args.push_back(operand);
+        auto identExpr = std::make_shared<IdentifierExpr>("afits", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+    
+    // atype — keyword form, no arguments (return type tag of top stack item)
+    if (token.type == TokenType::TOKEN_KW_ATYPE) {
+        advance(); // consume 'atype'
+        std::vector<ASTNodePtr> args;
+        auto identExpr = std::make_shared<IdentifierExpr>("atype", token.line, token.column);
         return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
     }
     
@@ -2430,6 +2563,21 @@ ASTNodePtr Parser::parseStatement() {
     
     if (match(TokenType::TOKEN_KW_FALL)) {
         return parseFallStatement();
+    }
+    
+    // exit code; — terminate program
+    if (match(TokenType::TOKEN_KW_EXIT)) {
+        return parseExitStatement();
+    }
+    
+    // apush val; — push to user stack
+    if (match(TokenType::TOKEN_KW_APUSH)) {
+        return parseApushStatement();
+    }
+    
+    // astack size; — set user stack size
+    if (match(TokenType::TOKEN_KW_ASTACK)) {
+        return parseAstackStatement();
     }
     
     // Check for block
@@ -4230,16 +4378,20 @@ ASTNodePtr Parser::parsePassStatement() {
 
     Token passToken = previous(); // We already consumed 'pass'
 
-    // Parse: pass(expr);
-    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'pass'");
+    // pass; (no argument — void return)
+    if (check(TokenType::TOKEN_SEMICOLON)) {
+        advance(); // consume ';'
+        // Create PassStmt with nullptr value → void pass
+        return std::make_shared<PassStmt>(nullptr, passToken.line, passToken.column);
+    }
 
+    // Parse: pass expr;
     ASTNodePtr value = parseExpression();
     if (!value) {
-        error("Expected expression in pass statement");
+        error("Expected expression after 'pass'");
         return nullptr;
     }
 
-    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after pass value");
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after pass statement");
 
     // Create PassStmt - type checker and IR generator handle Result building
@@ -4251,16 +4403,13 @@ ASTNodePtr Parser::parseFailStatement() {
 
     Token failToken = previous(); // We already consumed 'fail'
 
-    // Parse: fail(error_code);
-    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'fail'");
-
+    // Parse: fail error_code;
     ASTNodePtr errorCode = parseExpression();
     if (!errorCode) {
-        error("Expected error code expression in fail statement");
+        error("Expected error code expression after 'fail'");
         return nullptr;
     }
 
-    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after fail error code");
     consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after fail statement");
 
     // Create FailStmt - type checker and IR generator handle Result building
@@ -4817,26 +4966,14 @@ ASTNodePtr Parser::parseFallStatement() {
     using namespace frontend;
     Token fallToken = previous();
     
-    // Expect '(' after 'fall'
-    if (!match(TokenType::TOKEN_LEFT_PAREN)) {
-        error("Expected '(' after 'fall'");
-        return nullptr;
-    }
-    
-    // Expect label identifier
+    // Parse: fall label;
     if (!check(TokenType::TOKEN_IDENTIFIER)) {
-        error("Expected label identifier in fall statement");
+        error("Expected label identifier after 'fall'");
         return nullptr;
     }
     
     Token labelToken = advance();
     std::string label = labelToken.lexeme;
-    
-    // Expect ')' after label
-    if (!match(TokenType::TOKEN_RIGHT_PAREN)) {
-        error("Expected ')' after fall label");
-        return nullptr;
-    }
     
     // Expect ';' to end statement
     if (!match(TokenType::TOKEN_SEMICOLON)) {
@@ -4845,6 +4982,72 @@ ASTNodePtr Parser::parseFallStatement() {
     }
     
     return std::make_shared<FallStmt>(label, fallToken.line, fallToken.column);
+}
+
+// Parse exit statement: exit code;
+// Produces same AST as old exit(code) — CallExpr(IdentifierExpr("exit"), [code])
+ASTNodePtr Parser::parseExitStatement() {
+    using namespace frontend;
+    Token exitToken = previous(); // We already consumed 'exit'
+
+    ASTNodePtr code = parseExpression();
+    if (!code) {
+        error("Expected exit code expression after 'exit'");
+        return nullptr;
+    }
+
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after exit statement");
+
+    auto callee = std::make_shared<IdentifierExpr>("exit", exitToken.line, exitToken.column);
+    std::vector<ASTNodePtr> args;
+    args.push_back(code);
+    return std::make_shared<ExpressionStmt>(
+        std::make_shared<CallExpr>(callee, args, exitToken.line, exitToken.column),
+        exitToken.line, exitToken.column);
+}
+
+// Parse apush statement: apush val;
+// Produces same AST as old apush(val) — CallExpr(IdentifierExpr("apush"), [val])
+ASTNodePtr Parser::parseApushStatement() {
+    using namespace frontend;
+    Token apushToken = previous(); // We already consumed 'apush'
+
+    ASTNodePtr value = parseExpression();
+    if (!value) {
+        error("Expected value expression after 'apush'");
+        return nullptr;
+    }
+
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after apush statement");
+
+    auto callee = std::make_shared<IdentifierExpr>("apush", apushToken.line, apushToken.column);
+    std::vector<ASTNodePtr> args;
+    args.push_back(value);
+    return std::make_shared<ExpressionStmt>(
+        std::make_shared<CallExpr>(callee, args, apushToken.line, apushToken.column),
+        apushToken.line, apushToken.column);
+}
+
+// Parse astack statement: astack size;
+// Produces same AST as old astack(size) — CallExpr(IdentifierExpr("astack"), [size])
+ASTNodePtr Parser::parseAstackStatement() {
+    using namespace frontend;
+    Token astackToken = previous(); // We already consumed 'astack'
+
+    ASTNodePtr size = parseExpression();
+    if (!size) {
+        error("Expected size expression after 'astack'");
+        return nullptr;
+    }
+
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after astack statement");
+
+    auto callee = std::make_shared<IdentifierExpr>("astack", astackToken.line, astackToken.column);
+    std::vector<ASTNodePtr> args;
+    args.push_back(size);
+    return std::make_shared<ExpressionStmt>(
+        std::make_shared<CallExpr>(callee, args, astackToken.line, astackToken.column),
+        astackToken.line, astackToken.column);
 }
 
 void Parser::collectEnumNames() {

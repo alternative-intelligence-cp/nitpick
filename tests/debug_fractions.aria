@@ -7,18 +7,18 @@ func:test_fractions = int32() {
     tfp32:pi = {1, 14159};      // TFP: exponent, mantissa
     tfp64:e = {1, 71828};       // TFP: exponent, mantissa
     
-    pass(0i32);
+    pass 0i32;
 };
 
 func:main = int32() {
     Result<int32>:r = test_fractions();
     pick(r.is_error) {
-        (false) { pass(r.value); },
-        (true) { pass(1i32); }
+        (false) { pass r.value; },
+        (true) { pass 1i32; }
     }
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

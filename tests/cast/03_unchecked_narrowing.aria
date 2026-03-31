@@ -10,7 +10,7 @@ func:test_unchecked_truncation = int32() {
     uint64:big_val = 500u64;
     uint8:small_val = @cast_unchecked<uint8>(big_val);
     
-    pass(0i32);
+    pass 0i32;
 };
 
 func:test_unchecked_multi_step = int32() {
@@ -20,16 +20,16 @@ func:test_unchecked_multi_step = int32() {
     int16:z = @cast_unchecked<int16>(y);
     int8:w = @cast_unchecked<int8>(z);
     
-    pass(0i32);
+    pass 0i32;
 };
 
 func:main = int32() {
-    int32:r1 = raw(test_unchecked_truncation());
-    int32:r2 = raw(test_unchecked_multi_step());
-    exit(0);
+    int32:r1 = raw test_unchecked_truncation();
+    int32:r2 = raw test_unchecked_multi_step();
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

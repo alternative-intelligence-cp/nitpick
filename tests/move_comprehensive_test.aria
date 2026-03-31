@@ -8,7 +8,7 @@ func:test_basic_move = int32() {
     int32:y = move(x);  // Transfer ownership from x to y
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 // Test 2: Use-after-move (should FAIL)
@@ -18,7 +18,7 @@ func:test_use_after_move = int32() {
     int32:z = x;         // ERROR: Use of moved variable
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 // Test 3: Double move (should FAIL)
@@ -28,7 +28,7 @@ func:test_double_move = int32() {
     int32:z = move(x);  // ERROR: Cannot move already-moved variable
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 // Test 4: Move type preservation
@@ -37,7 +37,7 @@ func:test_move_type_preservation = int32() {
     int64:b = move(a);  // Type should be preserved
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 // Entry point
@@ -46,10 +46,10 @@ func:main = int32() {
     // Others should fail at compile time
     
     int32:zero = 0;
-    pass(zero);
+    pass zero;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

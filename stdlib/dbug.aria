@@ -50,7 +50,7 @@ bool:_dbug_all_enabled = false;
  * Get enabled group by index (0-7).
  */
 func:_dbug_get_group = string(int32:index) {
-    pass(_dbug_state.groups[index]);
+    pass _dbug_state.groups[index];
 };
 
 /**
@@ -58,7 +58,7 @@ func:_dbug_get_group = string(int32:index) {
  */
 func:_dbug_set_group = NIL(int32:index, string:value) {
     _dbug_state.groups[index] = value;
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -89,12 +89,12 @@ pub func:dbug_enable = NIL(string:group) {
                 _dbug_set_group(_dbug_enabled_count, group) ? NIL;
                 _dbug_enabled_count = _dbug_enabled_count + 1;
             } else {
-                drop(println("[DBUG WARNING] Max groups reached (8), cannot enable more"));
+                drop println("[DBUG WARNING] Max groups reached (8), cannot enable more");
             }
         }
     }
     
-    pass(NIL);
+    pass NIL;
 };
 
 /**
@@ -124,7 +124,7 @@ pub func:dbug_disable = NIL(string:group) {
         }
     }
     
-    pass(NIL);
+    pass NIL;
 };
 
 /**
@@ -147,7 +147,7 @@ pub func:dbug_is_enabled = bool(string:group) {
         }
     }
     
-    pass(enabled);
+    pass enabled;
 };
 
 /**
@@ -155,20 +155,20 @@ pub func:dbug_is_enabled = bool(string:group) {
  */
 pub func:dbug_list_enabled = NIL() {
     if (_dbug_all_enabled) {
-        drop(println("[DBUG] All groups enabled"));
+        drop println("[DBUG] All groups enabled");
     } else if (_dbug_enabled_count == 0) {
-        drop(println("[DBUG] No groups enabled"));
+        drop println("[DBUG] No groups enabled");
     } else {
-        drop(println("[DBUG] Enabled groups:"));
+        drop println("[DBUG] Enabled groups:");
         int32:i = 0;
         while (i < _dbug_enabled_count) {
-            drop(print("  - "));
-            drop(println(_dbug_get_group(i) ? ""));
+            drop print("  - ");
+            drop println(_dbug_get_group(i) ? "");
             i = i + 1;
         }
     }
     
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -180,12 +180,12 @@ pub func:dbug_list_enabled = NIL() {
  */
 pub func:dbug_print = NIL(string:group, string:message) {
     if (dbug_is_enabled(group) ? false) {
-        drop(print("[DBUG:"));
-        drop(print(group));
-        drop(print("] "));
-        drop(println(message));
+        drop print("[DBUG:");
+        drop print(group);
+        drop print("] ");
+        drop println(message);
     }
-    pass(NIL);
+    pass NIL;
 };
 
 /**
@@ -193,14 +193,14 @@ pub func:dbug_print = NIL(string:group, string:message) {
  */
 pub func:dbug_print_labeled = NIL(string:group, string:label, string:message) {
     if (dbug_is_enabled(group) ? false) {
-        drop(print("[DBUG:"));
-        drop(print(group));
-        drop(print("] "));
-        drop(print(label));
-        drop(print(": "));
-        drop(println(message));
+        drop print("[DBUG:");
+        drop print(group);
+        drop print("] ");
+        drop print(label);
+        drop print(": ");
+        drop println(message);
     }
-    pass(NIL);
+    pass NIL;
 };
 
 /**
@@ -209,23 +209,23 @@ pub func:dbug_print_labeled = NIL(string:group, string:label, string:message) {
 pub func:dbug_check = NIL(string:group, string:message, bool:condition) {
     if (!condition) {
         // Assertion failed - print error
-        drop(print("X ASSERTION FAILED ["));
-        drop(print(group));
-        drop(print("]: "));
-        drop(println(message));
+        drop print("X ASSERTION FAILED [");
+        drop print(group);
+        drop print("]: ");
+        drop println(message);
         
         // If group is enabled, print additional context
         if (dbug_is_enabled(group) ? false) {
-            drop(println("  (Debug group enabled for more context)"));
+            drop println("  (Debug group enabled for more context)");
         }
         
         // Halt execution (infinite loop until abort/exit is available)
-        drop(println("  [Program halted due to assertion failure]"));
+        drop println("  [Program halted due to assertion failure]");
         while (true) {
             // Spin forever
         }
     }
-    pass(NIL);
+    pass NIL;
 };
 
 /**
@@ -233,16 +233,16 @@ pub func:dbug_check = NIL(string:group, string:message, bool:condition) {
  */
 pub func:dbug_warn = NIL(string:group, string:message, bool:condition) {
     if (!condition) {
-        drop(print("! WARNING ["));
-        drop(print(group));
-        drop(print("]: "));
-        drop(println(message));
+        drop print("! WARNING [");
+        drop print(group);
+        drop print("]: ");
+        drop println(message);
         
         if (dbug_is_enabled(group) ? false) {
-            drop(println("  (Enable debug group for more details)"));
+            drop println("  (Enable debug group for more details)");
         }
     }
-    pass(NIL);
+    pass NIL;
 };
 
 // =============================================================================
@@ -254,11 +254,11 @@ pub func:dbug_warn = NIL(string:group, string:message, bool:condition) {
  */
 pub func:dbug_separator = NIL(string:group) {
     if (dbug_is_enabled(group) ? false) {
-        drop(print("[DBUG:"));
-        drop(print(group));
-        drop(println("] ========================================"));
+        drop print("[DBUG:");
+        drop print(group);
+        drop println("] ========================================");
     }
-    pass(NIL);
+    pass NIL;
 };
 
 /**
@@ -266,12 +266,12 @@ pub func:dbug_separator = NIL(string:group) {
  */
 pub func:dbug_enter = NIL(string:group, string:function_name) {
     if (dbug_is_enabled(group) ? false) {
-        drop(print("[DBUG:"));
-        drop(print(group));
-        drop(print("] -> Entering: "));
-        drop(println(function_name));
+        drop print("[DBUG:");
+        drop print(group);
+        drop print("] -> Entering: ");
+        drop println(function_name);
     }
-    pass(NIL);
+    pass NIL;
 };
 
 /**
@@ -279,10 +279,10 @@ pub func:dbug_enter = NIL(string:group, string:function_name) {
  */
 pub func:dbug_exit = NIL(string:group, string:function_name) {
     if (dbug_is_enabled(group) ? false) {
-        drop(print("[DBUG:"));
-        drop(print(group));
-        drop(print("] <- Exiting: "));
-        drop(println(function_name));
+        drop print("[DBUG:");
+        drop print(group);
+        drop print("] <- Exiting: ");
+        drop println(function_name);
     }
-    pass(NIL);
+    pass NIL;
 };

@@ -1,6 +1,6 @@
 // Test if variable reassignment actually works in Aria
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 extern func:malloc = wild int8*(int64:size);
 extern func:ptr_to_int64 = int64(wild int8*:ptr);
@@ -18,7 +18,7 @@ Type:IntVec = {
         wild int8->:buffer = malloc(40i64); // 10 * 4 bytes
         int64:ptr_as_int = ptr_to_int64(buffer);
         IntVec:vec = IntVec{dataptr: ptr_as_int, length: 0i32, capacity: 10i32};
-        pass(vec);
+        pass vec;
     };
     
     func:push = IntVec(IntVec:self, int32:value) {
@@ -30,7 +30,7 @@ Type:IntVec = {
             length: new_length,
             capacity: self.capacity
         };
-        pass(result);
+        pass result;
     };
 };
 
@@ -38,20 +38,20 @@ func:main = int32() {
     // Test 1: Simple reassignment
     int32:x = 10i32;
     x = 20i32;  // Does this work?
-    drop(println("✓ Simple reassignment works!"));
+    drop println("✓ Simple reassignment works!");
     
     // Test 2: Reassignment in a loop-like pattern
     int32:counter = 0i32;
     counter = counter + 1i32;
     counter = counter + 1i32;
     counter = counter + 1i32;
-    drop(println("✓ Incremental reassignment works!"));
+    drop println("✓ Incremental reassignment works!");
     
     // Test 3: Struct reassignment
-    IntVec:vec = raw(IntVec.new());
-    vec = raw(vec.push(42i32));  // The key test - does THIS work?
-    vec = raw(vec.push(100i32));
-    drop(println("✓ Struct reassignment works - we don't need functional style!"));
+    IntVec:vec = raw IntVec.new();
+    vec = raw vec.push(42i32);  // The key test - does THIS work?
+    vec = raw vec.push(100i32);
+    drop println("✓ Struct reassignment works - we don't need functional style!");
     
-    exit(0);
+    exit 0;
 };

@@ -3,7 +3,7 @@
 use "stdlib/net.aria".*;
 use "stdlib/string_convert.aria".*;
 
-func:failsafe = int32(tbb32:err) { exit(1); };
+func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:check = NIL(bool:cond, string:msg) {
     if (cond) {
@@ -32,55 +32,55 @@ func:main = int32() {
     // T01: Create server on loopback port
     wild int8->:srv = net_listen(19876i32, 4i32);
     int32:srv_ok = net_valid(srv);
-    if (srv_ok == 1i32) { drop(check(true, "T01 server listen on 19876")); passed = passed + 1i32;
-    } else { drop(check(false, "T01 server listen")); failed = failed + 1i32; }
+    if (srv_ok == 1i32) { drop check(true, "T01 server listen on 19876"); passed = passed + 1i32;
+    } else { drop check(false, "T01 server listen"); failed = failed + 1i32; }
 
     // T02: Connect client to server
     wild int8->:cli = net_connect("127.0.0.1", 19876i32);
     int32:cli_ok = net_valid(cli);
-    if (cli_ok == 1i32) { drop(check(true, "T02 client connected")); passed = passed + 1i32;
-    } else { drop(check(false, "T02 client connect")); failed = failed + 1i32; }
+    if (cli_ok == 1i32) { drop check(true, "T02 client connected"); passed = passed + 1i32;
+    } else { drop check(false, "T02 client connect"); failed = failed + 1i32; }
 
     // T03: Accept connection on server side
     wild int8->:peer = net_accept(srv);
     int32:peer_ok = net_valid(peer);
-    if (peer_ok == 1i32) { drop(check(true, "T03 server accepted")); passed = passed + 1i32;
-    } else { drop(check(false, "T03 server accept")); failed = failed + 1i32; }
+    if (peer_ok == 1i32) { drop check(true, "T03 server accepted"); passed = passed + 1i32;
+    } else { drop check(false, "T03 server accept"); failed = failed + 1i32; }
 
     // T04: is_connected
     int32:conn4 = net_is_connected(cli);
-    if (conn4 == 1i32) { drop(check(true, "T04 client is_connected=1")); passed = passed + 1i32;
-    } else { drop(check(false, "T04 is_connected")); failed = failed + 1i32; }
+    if (conn4 == 1i32) { drop check(true, "T04 client is_connected=1"); passed = passed + 1i32;
+    } else { drop check(false, "T04 is_connected"); failed = failed + 1i32; }
 
     // T05: Send from client
     int64:sent5 = net_send(cli, "Hello Server!");
-    if (sent5 == 13i64) { drop(check(true, "T05 client sent 13 bytes")); passed = passed + 1i32;
-    } else { drop(check(false, "T05 client send")); failed = failed + 1i32; }
+    if (sent5 == 13i64) { drop check(true, "T05 client sent 13 bytes"); passed = passed + 1i32;
+    } else { drop check(false, "T05 client send"); failed = failed + 1i32; }
 
     // T06: Receive on server peer
     string:recv6 = net_recv(peer, 1024i64);
-    if (string_equals(recv6, "Hello Server!")) { drop(check(true, "T06 server received Hello Server!")); passed = passed + 1i32;
-    } else { drop(check(false, "T06 server recv")); failed = failed + 1i32; }
+    if (string_equals(recv6, "Hello Server!")) { drop check(true, "T06 server received Hello Server!"); passed = passed + 1i32;
+    } else { drop check(false, "T06 server recv"); failed = failed + 1i32; }
 
     // T07: Send response from server
     int64:sent7 = net_send(peer, "Hello Client!");
-    if (sent7 == 13i64) { drop(check(true, "T07 server sent 13 bytes")); passed = passed + 1i32;
-    } else { drop(check(false, "T07 server send")); failed = failed + 1i32; }
+    if (sent7 == 13i64) { drop check(true, "T07 server sent 13 bytes"); passed = passed + 1i32;
+    } else { drop check(false, "T07 server send"); failed = failed + 1i32; }
 
     // T08: Receive response on client
     string:recv8 = net_recv(cli, 1024i64);
-    if (string_equals(recv8, "Hello Client!")) { drop(check(true, "T08 client received Hello Client!")); passed = passed + 1i32;
-    } else { drop(check(false, "T08 client recv")); failed = failed + 1i32; }
+    if (string_equals(recv8, "Hello Client!")) { drop check(true, "T08 client received Hello Client!"); passed = passed + 1i32;
+    } else { drop check(false, "T08 client recv"); failed = failed + 1i32; }
 
     // T09: peer_addr
     string:addr9 = net_peer_addr(peer);
-    if (string_equals(addr9, "127.0.0.1")) { drop(check(true, "T09 peer_addr=127.0.0.1")); passed = passed + 1i32;
-    } else { drop(check(false, "T09 peer_addr")); failed = failed + 1i32; }
+    if (string_equals(addr9, "127.0.0.1")) { drop check(true, "T09 peer_addr=127.0.0.1"); passed = passed + 1i32;
+    } else { drop check(false, "T09 peer_addr"); failed = failed + 1i32; }
 
     // T10: peer_port is non-zero
     int32:port10 = net_peer_port(peer);
-    if (port10 > 0i32) { drop(check(true, "T10 peer_port > 0")); passed = passed + 1i32;
-    } else { drop(check(false, "T10 peer_port")); failed = failed + 1i32; }
+    if (port10 > 0i32) { drop check(true, "T10 peer_port > 0"); passed = passed + 1i32;
+    } else { drop check(false, "T10 peer_port"); failed = failed + 1i32; }
 
     // T11: Multi-message send/recv (sequential)
     int64:sent11a = net_send(cli, "msg1");
@@ -88,14 +88,14 @@ func:main = int32() {
     int64:sent11b = net_send(cli, "msg2");
     string:recv11b = net_recv(peer, 1024i64);
     if (string_contains(recv11a, "msg1")) {
-        if (string_contains(recv11b, "msg2")) { drop(check(true, "T11 multi-message send")); passed = passed + 1i32;
-        } else { drop(check(false, "T11 multi msg2")); failed = failed + 1i32; }
-    } else { drop(check(false, "T11 multi msg1")); failed = failed + 1i32; }
+        if (string_contains(recv11b, "msg2")) { drop check(true, "T11 multi-message send"); passed = passed + 1i32;
+        } else { drop check(false, "T11 multi msg2"); failed = failed + 1i32; }
+    } else { drop check(false, "T11 multi msg1"); failed = failed + 1i32; }
 
     // T12: recv_timeout (no data, should return empty)
     string:recv12 = net_recv_timeout(cli, 1024i64, 100i32);
-    if (string_equals(recv12, "")) { drop(check(true, "T12 recv_timeout returns empty on no data")); passed = passed + 1i32;
-    } else { drop(check(true, "T12 recv_timeout returned data")); passed = passed + 1i32; }
+    if (string_equals(recv12, "")) { drop check(true, "T12 recv_timeout returns empty on no data"); passed = passed + 1i32;
+    } else { drop check(true, "T12 recv_timeout returned data"); passed = passed + 1i32; }
 
     // Cleanup
     net_close(cli);
@@ -116,14 +116,14 @@ func:main = int32() {
 
     int64:sent13 = net_send(cli2, "lifecycle-test");
     string:recv13 = net_recv(peer2, 1024i64);
-    if (string_equals(recv13, "lifecycle-test")) { drop(check(true, "T13 lifecycle send/recv")); passed = passed + 1i32;
-    } else { drop(check(false, "T13 lifecycle")); failed = failed + 1i32; }
+    if (string_equals(recv13, "lifecycle-test")) { drop check(true, "T13 lifecycle send/recv"); passed = passed + 1i32;
+    } else { drop check(false, "T13 lifecycle"); failed = failed + 1i32; }
 
     // T14: Close client, server detects
     net_close(cli2);
     string:recv14 = net_recv_timeout(peer2, 1024i64, 100i32);
-    if (string_equals(recv14, "")) { drop(check(true, "T14 recv after client close = empty")); passed = passed + 1i32;
-    } else { drop(check(false, "T14 after close")); failed = failed + 1i32; }
+    if (string_equals(recv14, "")) { drop check(true, "T14 recv after client close = empty"); passed = passed + 1i32;
+    } else { drop check(false, "T14 after close"); failed = failed + 1i32; }
 
     net_close(peer2);
     net_server_close(srv2);
@@ -133,10 +133,10 @@ func:main = int32() {
     wild int8->:cli3 = net_connect("localhost", 19878i32);
     int32:c15 = net_valid(cli3);
     if (c15 == 1i32) {
-        drop(check(true, "T15 connect via localhost")); passed = passed + 1i32;
+        drop check(true, "T15 connect via localhost"); passed = passed + 1i32;
         wild int8->:peer3 = net_accept(srv3);
         net_close(peer3);
-    } else { drop(check(false, "T15 localhost")); failed = failed + 1i32; }
+    } else { drop check(false, "T15 localhost"); failed = failed + 1i32; }
     net_close(cli3);
     net_server_close(srv3);
 
@@ -153,5 +153,5 @@ func:main = int32() {
     println(" failed");
     println("═════════════════════════════════════════════════════════");
 
-    exit(0);
+    exit 0;
 };

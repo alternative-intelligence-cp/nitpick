@@ -10,7 +10,7 @@ func:test_till_up = int64() {
         sum = sum + 1;
     }
     
-    pass(0i32);  // was: pass(sum)  // Should be 11 (0 through 10 inclusive)
+    pass 0i32;  // was: pass(sum)  // Should be 11 (0 through 10 inclusive)
 };
 
 func:test_till_down = int64() {
@@ -21,15 +21,15 @@ func:test_till_down = int64() {
         count = count + 1;
     }
     
-    pass(0i32);  // was: pass(count)  // Should be 101 (100 through 0 inclusive)
+    pass 0i32;  // was: pass(count)  // Should be 101 (100 through 0 inclusive)
 };
 
 func:main = int32() {
-    int64:result = raw(test_till_up());
-    exit(0);  // was: pass(result)
+    int64:result = raw test_till_up();
+    exit 0;  // was: pass(result)
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

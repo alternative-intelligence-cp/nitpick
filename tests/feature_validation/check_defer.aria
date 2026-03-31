@@ -15,7 +15,7 @@ func:main = int32() {
     // After scope exit, defer should have executed: counter = 12
     
     if (counter != 12) {
-        pass(counter);  // ERROR: defer didn't execute properly - will exit with actual value
+        pass counter;  // ERROR: defer didn't execute properly - will exit with actual value
     }
     
     // Test 2: Multiple defers (LIFO order - last in, first out)
@@ -37,7 +37,7 @@ func:main = int32() {
     // 3. counter + 1 = 111
     
     if (counter != 111) {
-        pass(2);  // ERROR: multiple defers didn't execute in LIFO order
+        pass 2;  // ERROR: multiple defers didn't execute in LIFO order
     }
     
     // Test 3: Defer in nested scopes
@@ -62,7 +62,7 @@ func:main = int32() {
     // Outer scope exits, outer defer runs: counter = 114
     
     if (counter != 114) {
-        pass(3);  // ERROR: nested defer didn't work
+        pass 3;  // ERROR: nested defer didn't work
     }
     
     // Test 4: Defer with early return (defers still execute)
@@ -75,15 +75,15 @@ func:main = int32() {
         
         if (2 == 2) {
             // Early return - defer should still execute
-            pass(42);  // Success!
+            pass 42;  // Success!
         }
     }
     
     // Should never reach here
-    pass(99);
+    pass 99;
 };
 
 func:failsafe = int32(tbb32:err) {
     // Error handling
-    exit(1);
+    exit 1;
 };

@@ -21,6 +21,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <set>
 #include <cstdlib>
 #include <cerrno>   // For errno
 #include <cstring>  // For strerror
@@ -88,9 +89,9 @@ extern "C" {
 
 // Version information
 #define ARIA_VERSION_MAJOR 0
-#define ARIA_VERSION_MINOR 3
+#define ARIA_VERSION_MINOR 4
 #define ARIA_VERSION_PATCH 4
-#define ARIA_VERSION "0.3.4"
+#define ARIA_VERSION "0.4.4"
 
 // Compiler options
 struct CompilerOptions {
@@ -133,6 +134,7 @@ struct CompilerOptions {
     bool verify_report = false;       // --verify-report: Emit detailed proof results
     bool verify_contracts = false;    // --verify-contracts: Verify requires/ensures contracts
     bool verify_overflow = false;     // --verify-overflow: Verify integer arithmetic overflow
+    bool smt_opt = false;             // --smt-opt: Enable SMT-guided optimizations (ustack fast path)
 };
 
 /**
@@ -194,7 +196,8 @@ void print_help() {
     std::cout << "  --verify          Enable Z3 static verification of Rules/limit constraints\n";
     std::cout << "  --verify-contracts Verify requires/ensures function contracts\n";
     std::cout << "  --verify-overflow  Verify integer arithmetic cannot overflow\n";
-    std::cout << "  --verify-report   Emit detailed proof results (implies --verify)\n\n";
+    std::cout << "  --verify-report   Emit detailed proof results (implies --verify)\n";
+    std::cout << "  --smt-opt         Enable SMT-guided optimizations (eliminates proven-safe checks)\n\n";
     std::cout << "GPU Target Options (NVIDIA CUDA/PTX):\n";
     std::cout << "  --emit-ptx        Emit PTX assembly for GPU execution\n";
     std::cout << "  --target=<arch>   Target architecture (cpu, gpu, gpu+cpu)\n";
@@ -333,6 +336,9 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
         } else if (arg == "--verify-overflow") {
             opts.verify = true;
             opts.verify_overflow = true;
+        } else if (arg == "--smt-opt") {
+            opts.smt_opt = true;
+            opts.verify = true;  // SMT optimization implies verification
         } else if (arg == "--ast-dump") {
             opts.dump_ast = true;
         } else if (arg == "--tokens") {
@@ -772,6 +778,11 @@ llvm::Module* compile_to_module(
         return nullptr;
     }
     
+    // Print type checker warnings (v0.4.3) — non-fatal
+    for (const auto& warn : type_checker.getWarnings()) {
+        diags.warning(aria::SourceLocation(filename, 0, 0), warn);
+    }
+    
     // Validate that the mandatory failsafe() function exists
     // Every Aria executable must define failsafe(int32) for error handling accountability
     // Libraries (-c flag) are exempt as they're components, not final programs
@@ -832,6 +843,7 @@ llvm::Module* compile_to_module(
     
 #ifdef ARIA_HAS_Z3
     // Phase 3.25: Z3 SMT Verification (static contract verification)
+    std::set<std::string> ustack_opt_funcs;  // Functions eligible for SMT-optimized user stack
     if (opts.verify) {
         if (opts.verbose) {
             std::cout << "Phase 3.25: Z3 SMT verification...\n";
@@ -1129,6 +1141,214 @@ llvm::Module* compile_to_module(
             
             walkOverflow(program);
         }
+
+        // Phase 4: SMT-guided user stack optimization (v0.4.3+)
+        // Walk functions to find those with type-homogeneous apush() calls.
+        // When Z3 proves all pushes use the same type, codegen uses unchecked fast variants.
+        if (opts.smt_opt && program) {
+            if (opts.verbose) {
+                std::cout << "  Phase 4: SMT user stack optimization analysis...\n";
+            }
+
+            // Map Aria type name → ustack tag
+            auto ariaTypeToTag = [](const std::string& t) -> int64_t {
+                if (t == "int8")   return 0;
+                if (t == "int16")  return 1;
+                if (t == "int32")  return 2;
+                if (t == "int" || t == "int64") return 3;
+                if (t == "flt32")  return 4;
+                if (t == "flt64" || t == "flt") return 5;
+                if (t == "bool")   return 6;
+                if (t == "string") return 7;
+                return -1;  // unknown
+            };
+
+            // Per-function: collect variable types, find apush calls, determine tags
+            std::function<void(aria::ASTNode*, std::map<std::string, std::string>&,
+                              std::vector<int64_t>&, bool&)>
+            collectPushTags = [&](aria::ASTNode* node,
+                                  std::map<std::string, std::string>& varTypes,
+                                  std::vector<int64_t>& tags,
+                                  bool& hasAstack) {
+                if (!node) return;
+
+                // Track variable declarations
+                if (node->type == aria::ASTNode::NodeType::VAR_DECL) {
+                    auto* var = static_cast<aria::VarDeclStmt*>(node);
+                    if (!var->typeName.empty()) {
+                        varTypes[var->varName] = var->typeName;
+                    }
+                    if (var->initializer) collectPushTags(var->initializer.get(), varTypes, tags, hasAstack);
+                    return;
+                }
+
+                // Check for astack()/apush() calls
+                if (node->type == aria::ASTNode::NodeType::CALL) {
+                    auto* call = static_cast<aria::CallExpr*>(node);
+                    if (call->callee && call->callee->type == aria::ASTNode::NodeType::IDENTIFIER) {
+                        auto* ident = static_cast<aria::IdentifierExpr*>(call->callee.get());
+                        if (ident->name == "astack") {
+                            hasAstack = true;
+                        } else if (ident->name == "apush" && call->arguments.size() == 1) {
+                            auto* arg = call->arguments[0].get();
+                            int64_t tag = -1;
+
+                            // Literal argument
+                            if (arg->type == aria::ASTNode::NodeType::LITERAL) {
+                                auto* lit = static_cast<aria::LiteralExpr*>(arg);
+                                if (std::holds_alternative<int64_t>(lit->value)) tag = 3; // int64
+                                else if (std::holds_alternative<double>(lit->value)) tag = 5; // flt64
+                                else if (std::holds_alternative<bool>(lit->value)) tag = 6; // bool
+                                else if (std::holds_alternative<std::string>(lit->value)) tag = 7; // string
+                            }
+                            // Variable reference
+                            else if (arg->type == aria::ASTNode::NodeType::IDENTIFIER) {
+                                auto* varRef = static_cast<aria::IdentifierExpr*>(arg);
+                                auto vit = varTypes.find(varRef->name);
+                                if (vit != varTypes.end()) {
+                                    tag = ariaTypeToTag(vit->second);
+                                }
+                            }
+                            // Binary expression — recursively find a typed variable
+                            else if (arg->type == aria::ASTNode::NodeType::BINARY_OP) {
+                                // Walk leftmost chain to find an identifier whose type we know
+                                std::function<int64_t(aria::ASTNode*)> inferBinType = [&](aria::ASTNode* n) -> int64_t {
+                                    if (!n) return -1;
+                                    if (n->type == aria::ASTNode::NodeType::IDENTIFIER) {
+                                        auto* id = static_cast<aria::IdentifierExpr*>(n);
+                                        auto vit = varTypes.find(id->name);
+                                        if (vit != varTypes.end()) return ariaTypeToTag(vit->second);
+                                    } else if (n->type == aria::ASTNode::NodeType::LITERAL) {
+                                        auto* lit = static_cast<aria::LiteralExpr*>(n);
+                                        if (std::holds_alternative<int64_t>(lit->value)) return 3;
+                                        if (std::holds_alternative<double>(lit->value)) return 5;
+                                    } else if (n->type == aria::ASTNode::NodeType::BINARY_OP) {
+                                        auto* bin = static_cast<aria::BinaryExpr*>(n);
+                                        int64_t lt = inferBinType(bin->left.get());
+                                        if (lt >= 0) return lt;
+                                        return inferBinType(bin->right.get());
+                                    }
+                                    return -1;
+                                };
+                                tag = inferBinType(arg);
+                            }
+
+                            if (tag >= 0) {
+                                tags.push_back(tag);
+                            } else {
+                                tags.push_back(-1); // unknown → cannot optimize
+                            }
+                        }
+                    }
+                    // Recurse into call arguments
+                    for (const auto& a : call->arguments) {
+                        collectPushTags(a.get(), varTypes, tags, hasAstack);
+                    }
+                    return;
+                }
+
+                // Recurse into containers
+                if (node->type == aria::ASTNode::NodeType::BLOCK) {
+                    auto* block = static_cast<aria::BlockStmt*>(node);
+                    for (const auto& s : block->statements) {
+                        collectPushTags(s.get(), varTypes, tags, hasAstack);
+                    }
+                } else if (node->type == aria::ASTNode::NodeType::EXPRESSION_STMT) {
+                    auto* es = static_cast<aria::ExpressionStmt*>(node);
+                    if (es->expression) collectPushTags(es->expression.get(), varTypes, tags, hasAstack);
+                } else if (node->type == aria::ASTNode::NodeType::WHILE) {
+                    auto* ws = static_cast<aria::WhileStmt*>(node);
+                    if (ws->condition) collectPushTags(ws->condition.get(), varTypes, tags, hasAstack);
+                    if (ws->body) collectPushTags(ws->body.get(), varTypes, tags, hasAstack);
+                } else if (node->type == aria::ASTNode::NodeType::IF) {
+                    auto* is = static_cast<aria::IfStmt*>(node);
+                    if (is->condition) collectPushTags(is->condition.get(), varTypes, tags, hasAstack);
+                    if (is->thenBranch) collectPushTags(is->thenBranch.get(), varTypes, tags, hasAstack);
+                    if (is->elseBranch) collectPushTags(is->elseBranch.get(), varTypes, tags, hasAstack);
+                } else if (node->type == aria::ASTNode::NodeType::RETURN) {
+                    auto* ret = static_cast<aria::ReturnStmt*>(node);
+                    if (ret->value) collectPushTags(ret->value.get(), varTypes, tags, hasAstack);
+                } else if (node->type == aria::ASTNode::NodeType::FOR) {
+                    auto* fs = static_cast<aria::ForStmt*>(node);
+                    if (fs->initializer) collectPushTags(fs->initializer.get(), varTypes, tags, hasAstack);
+                    if (fs->condition) collectPushTags(fs->condition.get(), varTypes, tags, hasAstack);
+                    if (fs->update) collectPushTags(fs->update.get(), varTypes, tags, hasAstack);
+                    if (fs->body) collectPushTags(fs->body.get(), varTypes, tags, hasAstack);
+                }
+            };
+
+            // Walk top-level functions (including main)
+            std::function<void(aria::ASTNode*)> walkUStack = [&](aria::ASTNode* node) {
+                if (!node) return;
+                if (node->type == aria::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<aria::FuncDeclStmt*>(node);
+                    if (!func->body) return;
+
+                    std::map<std::string, std::string> varTypes;
+                    // Seed with parameter types
+                    for (const auto& param : func->parameters) {
+                        auto* pnode = static_cast<aria::ParameterNode*>(param.get());
+                        if (pnode->typeNode) {
+                            varTypes[pnode->paramName] = pnode->typeNode->toString();
+                        }
+                    }
+
+                    std::vector<int64_t> pushTags;
+                    bool hasAstack = false;
+                    collectPushTags(func->body.get(), varTypes, pushTags, hasAstack);
+
+                    if (hasAstack && !pushTags.empty()) {
+                        // Check if all tags are known and identical
+                        bool allKnown = true;
+                        int64_t firstTag = pushTags[0];
+                        for (int64_t t : pushTags) {
+                            if (t < 0) { allKnown = false; break; }
+                            if (t != firstTag) { allKnown = false; break; }
+                        }
+
+                        if (allKnown) {
+                            // Ask Z3 to formally verify homogeneity
+                            std::vector<aria::VerifyOutcome> outcomes;
+                            aria::VerifyResult result = z3v.verifyUStackHomogeneous(
+                                pushTags, firstTag, outcomes,
+                                func->line, func->column);
+
+                            if (result == aria::VerifyResult::PROVEN) {
+                                ustack_opt_funcs.insert(func->funcName);
+                                if (opts.verbose || opts.verify_report) {
+                                    std::cout << "  [z3-smt-opt] " << func->funcName
+                                              << "(): user stack proven homogeneous (tag "
+                                              << firstTag << ") — fast path enabled\n";
+                                }
+                            }
+                            for (const auto& out : outcomes) {
+                                if (opts.verify_report) {
+                                    diags.note(aria::SourceLocation(filename, out.line, out.column),
+                                               "[z3-smt-opt] " + out.detail);
+                                }
+                            }
+                        }
+                    }
+                } else if (node->type == aria::ASTNode::NodeType::PROGRAM) {
+                    auto* prog = static_cast<aria::ProgramNode*>(node);
+                    for (const auto& decl : prog->declarations) {
+                        walkUStack(decl.get());
+                    }
+                } else if (node->type == aria::ASTNode::NodeType::TYPE_DECL) {
+                    auto* typeDecl = static_cast<aria::TypeDeclStmt*>(node);
+                    for (const auto& method : typeDecl->methods) {
+                        walkUStack(method.get());
+                    }
+                }
+            };
+
+            walkUStack(program);
+
+            if (opts.verbose && !ustack_opt_funcs.empty()) {
+                std::cout << "  SMT optimization: " << ustack_opt_funcs.size()
+                          << " function(s) eligible for fast user stack\n";
+            }
+        }
         
         // Print verification summary
         const auto& sum = z3v.getSummary();
@@ -1201,6 +1421,13 @@ llvm::Module* compile_to_module(
     
     // Pass TypeSystem to IR generator for struct type lookups
     ir_gen.setTypeSystem(&type_system);
+
+#ifdef ARIA_HAS_Z3
+    // Pass SMT-proven ustack optimization set to IR generator
+    if (!ustack_opt_funcs.empty()) {
+        ir_gen.setUStackOptimizedFuncs(ustack_opt_funcs);
+    }
+#endif
     
     // Initialize debug info if -g flag is set
     if (opts.debug_info) {
