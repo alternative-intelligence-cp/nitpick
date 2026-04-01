@@ -362,6 +362,12 @@ llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
         }
     }
     
+    // Pointer types with @ suffix (e.g., "int8@", "string@", "int64@")
+    // Wild/native Aria pointers — map to LLVM opaque pointer
+    if (!typeName.empty() && typeName.back() == '@') {
+        return llvm::PointerType::get(context, 0);
+    }
+
     // Unknown type - throw error instead of defaulting
     throw std::runtime_error("Unknown Aria type: " + typeName);
 }

@@ -208,6 +208,12 @@ llvm::Type* StmtCodegen::getLLVMTypeFromString(const std::string& type_name) {
         return llvm::PointerType::get(aria_string_type, 0);
     }
     
+    // Pointer types with @ suffix (e.g., "int8@", "string@", "int64@")
+    // Wild/native Aria pointers — map to LLVM opaque pointer
+    if (!type_name.empty() && type_name.back() == '@') {
+        return llvm::PointerType::get(context, 0);
+    }
+
     // Default to i32 for unknown types (will be handled by semantic analysis)
     return llvm::Type::getInt32Ty(context);
 }
