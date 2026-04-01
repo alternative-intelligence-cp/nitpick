@@ -115,9 +115,11 @@ enum class TokenType {
     // ========================================================================
     // Keywords - Design by Contract (P1-4 Formal Verification)
     // ========================================================================
-    TOKEN_KW_REQUIRES,  // requires - function precondition
-    TOKEN_KW_ENSURES,   // ensures - function postcondition
-    TOKEN_KW_INVARIANT, // invariant - loop/struct invariant
+    TOKEN_KW_REQUIRES,      // requires - function precondition
+    TOKEN_KW_ENSURES,       // ensures - function postcondition
+    TOKEN_KW_INVARIANT,     // invariant - loop/struct invariant
+    TOKEN_KW_PROVE,         // prove - compile-time Z3 assertion (erased if proven)
+    TOKEN_KW_ASSERT_STATIC, // assert_static - compile-time assertion (runtime fallback)
     
     // ========================================================================
     // Type Keywords - Integers (Signed)

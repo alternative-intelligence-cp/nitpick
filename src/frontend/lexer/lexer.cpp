@@ -45,6 +45,8 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"pass", TokenType::TOKEN_KW_PASS},
     {"fail", TokenType::TOKEN_KW_FAIL},
     {"exit", TokenType::TOKEN_KW_EXIT},
+    {"prove", TokenType::TOKEN_KW_PROVE},
+    {"assert_static", TokenType::TOKEN_KW_ASSERT_STATIC},
     {"raw", TokenType::TOKEN_KW_RAW},
     {"drop", TokenType::TOKEN_KW_DROP},
     {"ok", TokenType::TOKEN_KW_OK},

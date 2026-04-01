@@ -836,6 +836,9 @@ public:
      */
     void checkFailStmt(FailStmt* stmt);
     
+    void checkProveStmt(ProveStmt* stmt);
+    void checkAssertStaticStmt(AssertStaticStmt* stmt);
+    
     /**
      * Check if statement
      * 

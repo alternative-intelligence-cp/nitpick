@@ -2660,6 +2660,14 @@ ASTNodePtr Parser::parseStatement() {
         return parseFailStatement();
     }
     
+    if (match(TokenType::TOKEN_KW_PROVE)) {
+        return parseProveStatement();
+    }
+    
+    if (match(TokenType::TOKEN_KW_ASSERT_STATIC)) {
+        return parseAssertStaticStatement();
+    }
+    
     if (match(TokenType::TOKEN_KW_IF)) {
         return parseIfStatement();
     }
@@ -4555,6 +4563,40 @@ ASTNodePtr Parser::parseFailStatement() {
     return std::make_shared<FailStmt>(errorCode, failToken.line, failToken.column);
 }
 
+ASTNodePtr Parser::parseProveStatement() {
+    using namespace frontend;
+
+    Token proveToken = previous(); // We already consumed 'prove'
+
+    // Parse: prove(expr); or prove expr;
+    ASTNodePtr condition = parseExpression();
+    if (!condition) {
+        error("Expected boolean expression after 'prove'");
+        return nullptr;
+    }
+
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after prove statement");
+
+    return std::make_shared<ProveStmt>(std::move(condition), proveToken.line, proveToken.column);
+}
+
+ASTNodePtr Parser::parseAssertStaticStatement() {
+    using namespace frontend;
+
+    Token assertToken = previous(); // We already consumed 'assert_static'
+
+    // Parse: assert_static(expr); or assert_static expr;
+    ASTNodePtr condition = parseExpression();
+    if (!condition) {
+        error("Expected boolean expression after 'assert_static'");
+        return nullptr;
+    }
+
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after assert_static statement");
+
+    return std::make_shared<AssertStaticStmt>(std::move(condition), assertToken.line, assertToken.column);
+}
+
 // Parse if statement: if (condition) thenBranch [else elseBranch]
 // thenBranch and elseBranch can be blocks or single statements
 ASTNodePtr Parser::parseIfStatement() {
@@ -4624,6 +4666,19 @@ ASTNodePtr Parser::parseWhileStatement() {
     
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after while condition");
     
+    // Parse optional invariant clauses (v0.5.2)
+    std::vector<ASTNodePtr> invariants;
+    if (match(TokenType::TOKEN_KW_INVARIANT)) {
+        do {
+            ASTNodePtr inv = parseExpression();
+            if (!inv) {
+                error("Expected expression after 'invariant'");
+                return nullptr;
+            }
+            invariants.push_back(inv);
+        } while (match(TokenType::TOKEN_COMMA));
+    }
+    
     // Parse body (can be block or single statement)
     ASTNodePtr body = nullptr;
     if (match(TokenType::TOKEN_LEFT_BRACE)) {
@@ -4637,7 +4692,9 @@ ASTNodePtr Parser::parseWhileStatement() {
         return nullptr;
     }
     
-    return std::make_shared<WhileStmt>(condition, body, whileToken.line, whileToken.column);
+    auto stmt = std::make_shared<WhileStmt>(condition, body, whileToken.line, whileToken.column);
+    stmt->invariants = std::move(invariants);
+    return stmt;
 }
 
 // Parse for statement: for (init; condition; update) body
@@ -4704,6 +4761,19 @@ ASTNodePtr Parser::parseForStatement() {
         
         consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after range expression");
         
+        // Parse optional invariant clauses (v0.5.2)
+        std::vector<ASTNodePtr> invariants;
+        if (match(TokenType::TOKEN_KW_INVARIANT)) {
+            do {
+                ASTNodePtr inv = parseExpression();
+                if (!inv) {
+                    error("Expected expression after 'invariant'");
+                    return nullptr;
+                }
+                invariants.push_back(inv);
+            } while (match(TokenType::TOKEN_COMMA));
+        }
+        
         // Parse body
         ASTNodePtr body = nullptr;
         if (match(TokenType::TOKEN_LEFT_BRACE)) {
@@ -4717,8 +4787,10 @@ ASTNodePtr Parser::parseForStatement() {
             return nullptr;
         }
         
-        return ForStmt::createRangeBased(iteratorName, iteratorType, rangeExpr, body,
+        auto rangeFor = ForStmt::createRangeBased(iteratorName, iteratorType, rangeExpr, body,
                                           forToken.line, forToken.column);
+        rangeFor->invariants = std::move(invariants);
+        return rangeFor;
     }
     
     // Parse C-style for loop: for (init; cond; update)
@@ -4751,6 +4823,19 @@ ASTNodePtr Parser::parseForStatement() {
     }
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after for clauses");
     
+    // Parse optional invariant clauses (v0.5.2)
+    std::vector<ASTNodePtr> invariants;
+    if (match(TokenType::TOKEN_KW_INVARIANT)) {
+        do {
+            ASTNodePtr inv = parseExpression();
+            if (!inv) {
+                error("Expected expression after 'invariant'");
+                return nullptr;
+            }
+            invariants.push_back(inv);
+        } while (match(TokenType::TOKEN_COMMA));
+    }
+    
     // Parse body (can be block or single statement)
     ASTNodePtr body = nullptr;
     if (match(TokenType::TOKEN_LEFT_BRACE)) {
@@ -4764,7 +4849,9 @@ ASTNodePtr Parser::parseForStatement() {
         return nullptr;
     }
     
-    return std::make_shared<ForStmt>(initializer, condition, update, body, forToken.line, forToken.column);
+    auto forStmt = std::make_shared<ForStmt>(initializer, condition, update, body, forToken.line, forToken.column);
+    forStmt->invariants = std::move(invariants);
+    return forStmt;
 }
 
 ASTNodePtr Parser::parseBreakStatement() {
@@ -4851,6 +4938,19 @@ ASTNodePtr Parser::parseTillStatement() {
     
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after till parameters");
     
+    // Parse optional invariant clauses (v0.5.2)
+    std::vector<ASTNodePtr> invariants;
+    if (match(TokenType::TOKEN_KW_INVARIANT)) {
+        do {
+            ASTNodePtr inv = parseExpression();
+            if (!inv) {
+                error("Expected expression after 'invariant'");
+                return nullptr;
+            }
+            invariants.push_back(inv);
+        } while (match(TokenType::TOKEN_COMMA));
+    }
+    
     // Parse body (must be a block with braces)
     if (!match(TokenType::TOKEN_LEFT_BRACE)) {
         error("Expected '{' after till parameters");
@@ -4863,7 +4963,9 @@ ASTNodePtr Parser::parseTillStatement() {
         return nullptr;
     }
     
-    return std::make_shared<TillStmt>(limit, step, body, tillToken.line, tillToken.column);
+    auto tillStmt = std::make_shared<TillStmt>(limit, step, body, tillToken.line, tillToken.column);
+    tillStmt->invariants = std::move(invariants);
+    return tillStmt;
 }
 
 ASTNodePtr Parser::parseLoopStatement() {
@@ -4901,6 +5003,19 @@ ASTNodePtr Parser::parseLoopStatement() {
     
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after loop parameters");
     
+    // Parse optional invariant clauses (v0.5.2)
+    std::vector<ASTNodePtr> invariants;
+    if (match(TokenType::TOKEN_KW_INVARIANT)) {
+        do {
+            ASTNodePtr inv = parseExpression();
+            if (!inv) {
+                error("Expected expression after 'invariant'");
+                return nullptr;
+            }
+            invariants.push_back(inv);
+        } while (match(TokenType::TOKEN_COMMA));
+    }
+    
     // Parse body (must be a block with braces)
     if (!match(TokenType::TOKEN_LEFT_BRACE)) {
         error("Expected '{' after loop parameters");
@@ -4913,7 +5028,9 @@ ASTNodePtr Parser::parseLoopStatement() {
         return nullptr;
     }
     
-    return std::make_shared<LoopStmt>(start, limit, step, body, loopToken.line, loopToken.column);
+    auto loopStmt = std::make_shared<LoopStmt>(start, limit, step, body, loopToken.line, loopToken.column);
+    loopStmt->invariants = std::move(invariants);
+    return loopStmt;
 }
 
 ASTNodePtr Parser::parseWhenStatement() {
@@ -4932,6 +5049,19 @@ ASTNodePtr Parser::parseWhenStatement() {
     }
     
     consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after when condition");
+    
+    // Parse optional invariant clauses (v0.5.2)
+    std::vector<ASTNodePtr> invariants;
+    if (match(TokenType::TOKEN_KW_INVARIANT)) {
+        do {
+            ASTNodePtr inv = parseExpression();
+            if (!inv) {
+                error("Expected expression after 'invariant'");
+                return nullptr;
+            }
+            invariants.push_back(inv);
+        } while (match(TokenType::TOKEN_COMMA));
+    }
     
     // Parse body (must be a block)
     if (!match(TokenType::TOKEN_LEFT_BRACE)) {
@@ -4973,8 +5103,10 @@ ASTNodePtr Parser::parseWhenStatement() {
         }
     }
     
-    return std::make_shared<WhenStmt>(condition, body, then_block, end_block, 
+    auto whenStmt = std::make_shared<WhenStmt>(condition, body, then_block, end_block, 
                                       whenToken.line, whenToken.column);
+    whenStmt->invariants = std::move(invariants);
+    return whenStmt;
 }
 
 // Parse pick statement: pick(selector) { case1, case2, ... }

@@ -1,0 +1,69 @@
+// bench_smt_contracts.aria — Contract verification benchmark
+// Measures compile-time: --verify-contracts vs no contracts
+// Workload: Functions with requires/ensures exercised in tight loops.
+
+extern func:bench_nanos = int64();
+
+func:failsafe = int32(tbb32:err) {
+    drop println("FAILSAFE");
+    exit 1;
+};
+
+func:safe_divide = int64(int64:num, int64:den)
+    requires den != 0i64
+    ensures result >= 0i64
+{
+    if (num < 0i64) {
+        pass (0i64 - num) / den;
+    }
+    pass num / den;
+};
+
+func:clamp = int32(int32:val, int32:lo, int32:hi)
+    requires lo <= hi
+{
+    if (val < lo) {
+        pass lo;
+    }
+    if (val > hi) {
+        pass hi;
+    }
+    pass val;
+};
+
+func:abs_val = int64(int64:x)
+    ensures result >= 0i64
+{
+    if (x < 0i64) {
+        pass 0i64 - x;
+    }
+    pass x;
+};
+
+func:main = int32() {
+    int64:N = 5000000i64;
+    int64:sum = 0i64;
+    int64:i = 1i64;
+
+    int64:t_start = bench_nanos();
+
+    while (i <= N) {
+        int64:d = raw safe_divide(i * 7i64, i);
+        int32:c = raw clamp((i => int32) % 200i32, 10i32, 190i32);
+        int64:a = raw abs_val(i - (N / 2i64));
+        sum = sum + d + (c => int64) + a;
+        i = i + 1i64;
+    }
+
+    int64:t_end = bench_nanos();
+    int64:elapsed_ms = (t_end - t_start) / 1000000i64;
+
+    drop println("=== CONTRACT VERIFICATION BENCHMARK ===");
+    drop print("  iterations: ");
+    drop println(string_from_int(N));
+    drop print("  sum: ");
+    drop println(string_from_int(sum));
+    drop print("  elapsed_ms: ");
+    drop println(string_from_int(elapsed_ms));
+    exit 0;
+};

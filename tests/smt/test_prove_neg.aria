@@ -1,0 +1,19 @@
+// Negative test: prove() should fail when assertion is not provable
+// This tests counterexample reporting.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+Rules:Percentage = { $ >= 0, $ <= 100 };
+
+func:check_bad = NIL(int32:x) {
+    limit<Percentage> int32:pct = x;
+    // This is WRONG — Percentage allows 0, but we're claiming > 0
+    prove(pct > 0);
+    pass(NIL);
+};
+
+func:main = int32() {
+    exit 0;
+};

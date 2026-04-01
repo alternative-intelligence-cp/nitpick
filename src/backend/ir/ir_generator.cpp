@@ -5526,6 +5526,59 @@ skip_comparison:
             return nullptr;
         }
         
+        case ASTNode::NodeType::PROVE: {
+            // prove(condition) — compile-time only, emit nothing
+            // The Z3 verification happens in main.cpp Phase 6.
+            // If we get here, the proof either succeeded (erased) or
+            // Z3 is not available (no-op).
+            return nullptr;
+        }
+        
+        case ASTNode::NodeType::ASSERT_STATIC: {
+            // assert_static(condition) — emit runtime guard if proof failed
+            // If Z3 proved it, this set will contain the node and we skip codegen.
+            // Otherwise emit: if (!condition) exit(1);
+            if (assert_static_proven.count(stmt)) {
+                // Z3 proved it at compile time — emit nothing
+                return nullptr;
+            }
+            
+            auto* assertStmt = static_cast<AssertStaticStmt*>(stmt);
+            llvm::Value* condVal = codegenExpression(assertStmt->condition.get());
+            if (!condVal) return nullptr;
+            
+            // Ensure boolean
+            if (condVal->getType() != llvm::Type::getInt1Ty(context)) {
+                condVal = builder.CreateICmpNE(condVal,
+                    llvm::ConstantInt::get(condVal->getType(), 0), "assert_cond");
+            }
+            
+            llvm::Function* func = builder.GetInsertBlock()->getParent();
+            llvm::BasicBlock* failBB = llvm::BasicBlock::Create(context, "assert_fail", func);
+            llvm::BasicBlock* passBB = llvm::BasicBlock::Create(context, "assert_pass", func);
+            
+            builder.CreateCondBr(condVal, passBB, failBB);
+            
+            // Fail path: call exit(1)
+            builder.SetInsertPoint(failBB);
+            llvm::Function* exitFn = module->getFunction("exit");
+            if (!exitFn) {
+                llvm::FunctionType* exitTy = llvm::FunctionType::get(
+                    llvm::Type::getVoidTy(context),
+                    {llvm::Type::getInt32Ty(context)}, false);
+                exitFn = llvm::Function::Create(exitTy,
+                    llvm::Function::ExternalLinkage, "exit", module.get());
+                exitFn->addFnAttr(llvm::Attribute::NoReturn);
+            }
+            builder.CreateCall(exitFn, {llvm::ConstantInt::get(
+                llvm::Type::getInt32Ty(context), 1)});
+            builder.CreateUnreachable();
+            
+            // Continue on pass path
+            builder.SetInsertPoint(passBB);
+            return nullptr;
+        }
+        
         case ASTNode::NodeType::TILL: {
             // Till loop: till(limit, step) { body }
             TillStmt* tillStmt = static_cast<TillStmt*>(stmt);

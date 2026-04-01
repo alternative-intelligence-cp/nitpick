@@ -1,0 +1,26 @@
+// Test: Rules<T> transitivity proofs (v0.5.3, Phase 12)
+// Verify that passing a wider-Rules-constrained argument to a function
+// expecting narrower Rules is valid (caller ⊇ callee).
+
+Rules<int32>:Positive = { $ > 0 };
+Rules<int32>:SmallPositive = { $ > 0, $ < 100 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Function that constrains its parameter with Positive
+func:needs_positive = int32(int32:x) {
+    limit<Positive> int32:safe_x = x;
+    int32:result = safe_x * 2;
+    pass result;
+};
+
+func:main = int32() {
+    // SmallPositive ⊇ Positive (1..99 satisfies > 0)
+    // Should verify that caller's constraint subsumes callee's
+    limit<SmallPositive> int32:val = 42;
+    int32:doubled = raw needs_positive(val);
+
+    exit 0;
+};

@@ -1,0 +1,78 @@
+// bench_smt_rules.aria — Rules/limit verification benchmark
+// Measures compile-time: --verify vs no flags
+// Measures runtime: --smt-opt (eliminates proven-safe checks) vs baseline
+//
+// Workload: 10M iterations of constrained arithmetic using Rules types.
+
+extern func:bench_nanos = int64();
+extern func:bench_peak_rss_kb = int64();
+
+Rules<int32>:r_bounded = {
+    $ >= 0,
+    $ <= 1000
+};
+
+Rules<int32>:r_positive = {
+    $ > 0,
+    $ <= 500
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop println("FAILSAFE");
+    exit 1;
+};
+
+func:constrained_add = int32(int32:a, int32:b) {
+    limit<r_bounded> int32:sa = a;
+    limit<r_bounded> int32:sb = b;
+    int32:sum = sa + sb;
+    if (sum > 1000i32) {
+        pass 1000i32;
+    }
+    pass sum;
+};
+
+func:constrained_mul = int32(int32:a, int32:b) {
+    limit<r_positive> int32:sa = a;
+    limit<r_positive> int32:sb = b;
+    int32:product = sa * sb;
+    if (product > 500i32) {
+        pass 500i32;
+    }
+    pass product;
+};
+
+func:main = int32() {
+    int64:N = 10000000i64;
+    int64:sum = 0i64;
+    int64:i = 0i64;
+
+    int64:rss_before = bench_peak_rss_kb();
+    int64:t_start = bench_nanos();
+
+    while (i < N) {
+        int32:a = ((i => int32) % 500i32) + 1i32;
+        int32:b = ((i => int32) % 500i32) + 1i32;
+        int32:r1 = raw constrained_add(a, b);
+        int32:r2 = raw constrained_mul(a, b);
+        sum = sum + (r1 => int64) + (r2 => int64);
+        i = i + 1i64;
+    }
+
+    int64:t_end = bench_nanos();
+    int64:rss_after = bench_peak_rss_kb();
+
+    int64:elapsed_ns = t_end - t_start;
+    int64:elapsed_ms = elapsed_ns / 1000000i64;
+
+    drop println("=== RULES/LIMIT BENCHMARK ===");
+    drop print("  iterations: ");
+    drop println(string_from_int(N));
+    drop print("  sum: ");
+    drop println(string_from_int(sum));
+    drop print("  elapsed_ms: ");
+    drop println(string_from_int(elapsed_ms));
+    drop print("  rss_delta_kb: ");
+    drop println(string_from_int(rss_after - rss_before));
+    exit 0;
+};

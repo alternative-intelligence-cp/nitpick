@@ -311,6 +311,38 @@ public:
 };
 
 /**
+ * Prove statement node (compile-time Z3 assertion)
+ * Represents: prove(condition); or prove condition;
+ * If Z3 proves it, the statement is erased (zero runtime cost).
+ * If not, compiler error with counterexample.
+ */
+class ProveStmt : public ASTNode {
+public:
+    ASTNodePtr condition;  // Boolean expression to prove
+    
+    ProveStmt(ASTNodePtr cond, int line = 0, int column = 0)
+        : ASTNode(NodeType::PROVE, line, column), condition(std::move(cond)) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * Assert_static statement node (compile-time assertion with runtime fallback)
+ * Represents: assert_static(condition); or assert_static condition;
+ * If Z3 proves it, the statement is erased. If not, emits a warning
+ * and keeps a runtime assert as fallback.
+ */
+class AssertStaticStmt : public ASTNode {
+public:
+    ASTNodePtr condition;  // Boolean expression to assert
+    
+    AssertStaticStmt(ASTNodePtr cond, int line = 0, int column = 0)
+        : ASTNode(NodeType::ASSERT_STATIC, line, column), condition(std::move(cond)) {}
+    
+    std::string toString() const override;
+};
+
+/**
  * If statement node
  * Represents: if (condition) { thenBlock } else { elseBlock }
  */
@@ -336,6 +368,7 @@ class WhileStmt : public ASTNode {
 public:
     ASTNodePtr condition;
     ASTNodePtr body;
+    std::vector<ASTNodePtr> invariants;  // loop invariant clauses (v0.5.2)
     
     WhileStmt(ASTNodePtr cond, ASTNodePtr bodyBlock, int line = 0, int column = 0)
         : ASTNode(NodeType::WHILE, line, column),
@@ -355,6 +388,7 @@ public:
     ASTNodePtr condition;
     ASTNodePtr update;
     ASTNodePtr body;
+    std::vector<ASTNodePtr> invariants;  // loop invariant clauses (v0.5.2)
     
     // Range-based for loop: for (var in range) { body }
     bool isRangeBased;        // true if range-based for loop
@@ -440,6 +474,7 @@ public:
     ASTNodePtr limit;  // Iteration limit
     ASTNodePtr step;   // Step value (direction determined by sign)
     ASTNodePtr body;   // Loop body
+    std::vector<ASTNodePtr> invariants;  // loop invariant clauses (v0.5.2)
     
     TillStmt(ASTNodePtr lim, ASTNodePtr st, ASTNodePtr b, int line = 0, int column = 0)
         : ASTNode(NodeType::TILL, line, column), limit(lim), step(st), body(b) {}
@@ -459,6 +494,7 @@ public:
     ASTNodePtr limit;  // Limit value
     ASTNodePtr step;   // Step value (always positive magnitude)
     ASTNodePtr body;   // Loop body
+    std::vector<ASTNodePtr> invariants;  // loop invariant clauses (v0.5.2)
     
     LoopStmt(ASTNodePtr st, ASTNodePtr lim, ASTNodePtr step_val, ASTNodePtr b, 
              int line = 0, int column = 0)
@@ -479,6 +515,7 @@ public:
     ASTNodePtr body;          // Loop body
     ASTNodePtr then_block;    // Executed on normal completion (optional)
     ASTNodePtr end_block;     // Executed on break or no execution (optional)
+    std::vector<ASTNodePtr> invariants;  // loop invariant clauses (v0.5.2)
     
     WhenStmt(ASTNodePtr cond, ASTNodePtr b, ASTNodePtr then_blk, ASTNodePtr end_blk,
              int line = 0, int column = 0)

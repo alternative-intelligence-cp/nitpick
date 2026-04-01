@@ -1,0 +1,59 @@
+// bench_smt_overflow.aria — Overflow verification benchmark
+// Measures compile-time: --verify-overflow vs baseline
+// Workload: Intensive integer arithmetic in tight loops.
+
+extern func:bench_nanos = int64();
+
+Rules<int32>:r_safe_range = {
+    $ >= 0,
+    $ <= 10000
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop println("FAILSAFE");
+    exit 1;
+};
+
+func:triangle_number = int64(int32:n) {
+    limit<r_safe_range> int32:safe_n = n;
+    int64:ln = safe_n => int64;
+    pass (ln * (ln + 1i64)) / 2i64;
+};
+
+func:dot_product = int64(int32:a1, int32:a2, int32:b1, int32:b2) {
+    limit<r_safe_range> int32:sa1 = a1;
+    limit<r_safe_range> int32:sa2 = a2;
+    limit<r_safe_range> int32:sb1 = b1;
+    limit<r_safe_range> int32:sb2 = b2;
+    int64:p1 = (sa1 => int64) * (sb1 => int64);
+    int64:p2 = (sa2 => int64) * (sb2 => int64);
+    pass p1 + p2;
+};
+
+func:main = int32() {
+    int64:N = 5000000i64;
+    int64:sum = 0i64;
+    int64:i = 0i64;
+
+    int64:t_start = bench_nanos();
+
+    while (i < N) {
+        int32:idx = (i => int32) % 9997i32;
+        int64:tri = raw triangle_number(idx);
+        int64:dot = raw dot_product(idx, idx + 1i32, idx + 2i32, idx + 3i32);
+        sum = sum + tri + dot;
+        i = i + 1i64;
+    }
+
+    int64:t_end = bench_nanos();
+    int64:elapsed_ms = (t_end - t_start) / 1000000i64;
+
+    drop println("=== OVERFLOW VERIFICATION BENCHMARK ===");
+    drop print("  iterations: ");
+    drop println(string_from_int(N));
+    drop print("  sum: ");
+    drop println(string_from_int(sum));
+    drop print("  elapsed_ms: ");
+    drop println(string_from_int(elapsed_ms));
+    exit 0;
+};

@@ -1,0 +1,28 @@
+// Test: Ensures propagation across calls (v0.5.2)
+// When a function has ensures result > 0, and its return is assigned
+// to a variable, that variable should satisfy requires clauses elsewhere.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// A function that guarantees its result is positive
+func:make_positive = int32(int32:x) requires x >= 0 ensures result > 0 {
+    pass(x + 1);
+};
+
+// A function that requires a positive argument
+func:need_positive = int32(int32:a) requires a > 0 {
+    pass(a * 2);
+};
+
+// Caller that chains: make_positive ensures result > 0,
+// so the returned value should satisfy need_positive's requires a > 0
+func:chain_ensures = int32(int32:n) requires n >= 0 {
+    int32:y = raw make_positive(n);
+    pass(raw need_positive(y));
+};
+
+func:main = int32() {
+    exit 0;
+};

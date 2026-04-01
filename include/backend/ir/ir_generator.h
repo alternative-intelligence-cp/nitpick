@@ -206,6 +206,9 @@ private:
     // fallback path is dead because the sub-expression is provably infallible.
     std::set<ASTNode*> defaults_safe;  // DefaultsExpr nodes with dead fallback
 
+    // v0.5.1: assert_static nodes that Z3 proved at compile time (emit nothing)
+    std::set<ASTNode*> assert_static_proven;
+
 public:
     /// Register functions whose user stacks are provably type-homogeneous (from Z3 phase)
     void setUStackOptimizedFuncs(const std::set<std::string>& funcs) {
@@ -254,6 +257,10 @@ public:
     /// Register DefaultsExpr nodes whose fallback is proven dead (infallible sub-expression)
     void setDefaultsSafe(const std::set<ASTNode*>& nodes) {
         defaults_safe = nodes;
+    }
+    /// Register assert_static nodes that Z3 proved at compile time
+    void setAssertStaticProven(const std::set<ASTNode*>& nodes) {
+        assert_static_proven = nodes;
     }
 private:
 

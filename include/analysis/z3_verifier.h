@@ -58,6 +58,7 @@ struct VerifySummary {
 class Z3Verifier {
 public:
     Z3Verifier();
+    explicit Z3Verifier(int timeout_ms);
     ~Z3Verifier();
 
     // Non-copyable (Z3 context is not safely copyable)
@@ -112,6 +113,29 @@ public:
                                          const std::vector<ASTNode*>& args,
                                          std::vector<VerifyOutcome>& outcomes,
                                          int line = 0, int column = 0);
+
+    /// Cross-function contract propagation (v0.5.2): verify that a call site
+    /// satisfies the callee's requires clauses, using the caller's own
+    /// constraints (requires clauses + Rules on args + ensures-derived facts)
+    /// as assumptions.
+    /// ensuresFacts: variable name → FuncDeclStmt whose ensures apply to that var
+    VerifyResult verifyCallSiteContract(
+        FuncDeclStmt* callee,
+        FuncDeclStmt* caller,
+        const std::vector<ASTNode*>& args,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& callerVarRules,
+        const std::vector<std::pair<std::string, FuncDeclStmt*>>& ensuresFacts,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    /// Loop invariant verification (v0.5.2): verify that a loop invariant
+    /// is consistent with the function's preconditions.
+    /// Checks that the invariant is satisfiable given caller constraints.
+    VerifyResult verifyLoopInvariant(
+        FuncDeclStmt* enclosingFunc,
+        const std::vector<ASTNode*>& invariants,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
 
     // ================================================================
     // Phase 3: Arithmetic Overflow Verification
@@ -252,6 +276,162 @@ public:
         const std::string& callerRulesName,
         const std::string& calleeRulesName,
         const std::string& typeName,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    /// Prove a user assertion (prove/assert_static statement).
+    /// Translates the boolean expression to Z3 under the current scope's
+    /// variable constraints (Rules<T> on local variables) and checks validity.
+    /// Returns PROVEN if the assertion always holds, DISPROVEN with
+    /// counterexample if a violation exists, or UNKNOWN if the solver
+    /// can't determine.
+    VerifyResult proveUserAssertion(
+        ASTNode* condition,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 12: Rules<T> Transitivity — Call-site narrowing (v0.5.3)
+    // ================================================================
+
+    /// Verify Rules narrowing at a call site: for each callee parameter that
+    /// has a Rules constraint (type name matches rules_table), check if the
+    /// caller's argument constraint subsumes the callee's requirement.
+    /// Reports DISPROVEN if narrowing is invalid (caller range doesn't cover
+    /// callee range), PROVEN if valid, UNKNOWN if can't decide.
+    VerifyResult verifyRulesNarrowing(
+        FuncDeclStmt* callee,
+        const std::vector<ASTNode*>& args,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& callerVarRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 13: Pattern Exhaustiveness via SMT (v0.5.3)
+    // ================================================================
+
+    /// Prove that a pick statement's cases exhaustively cover the selector's
+    /// domain. If the selector variable has Rules constraints, uses them to
+    /// bound the domain. Encodes each case pattern as a Z3 disjunct, then
+    /// checks if NOT(any pattern matches) is UNSAT under the Rules constraints.
+    /// Returns PROVEN if exhaustive, DISPROVEN with counterexample if there's
+    /// an uncovered value.
+    VerifyResult provePickExhaustiveness(
+        ASTNode* selector,
+        const std::vector<ASTNode*>& patterns,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 14: Rules + Null Interaction (v0.5.3)
+    // ================================================================
+
+    /// Prove that a variable's Rules constraints exclude NIL (null/zero).
+    /// If the Rules conditions on a variable entail $ != 0 (the NIL
+    /// representation), returns PROVEN. Useful for proving Optional values
+    /// are never null when constrained by Rules.
+    VerifyResult proveRulesExcludesNull(
+        const std::string& rulesName,
+        const std::string& typeName,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 15: Automatic Rules Widening/Narrowing (v0.5.3)
+    // ================================================================
+
+    /// Infer the tightest integer bounds on a function's return value given
+    /// its parameter Rules constraints. Uses Z3 optimization (minimize/maximize)
+    /// to find the min and max possible return values.
+    /// Returns PROVEN if bounds could be computed, with the inferred range
+    /// in the outcome detail string. Stores inferred bounds in outMin/outMax.
+    VerifyResult inferReturnBounds(
+        FuncDeclStmt* func,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& paramRules,
+        int64_t& outMin, int64_t& outMax,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 16: Data Race Detection (v0.5.4)
+    // ================================================================
+
+    /// Represents a variable access in a specific thread context.
+    struct ThreadAccess {
+        std::string varName;       // Variable being accessed
+        bool isWrite;              // true = write, false = read
+        std::string threadFunc;    // Function running in the thread
+        bool isProtected;          // true if access is inside lock/unlock
+        int line;
+        int column;
+    };
+
+    /// Verify that shared variables accessed across thread boundaries are
+    /// properly synchronized. Walks the spawning function and each spawned
+    /// thread function to collect variable accesses, then uses Z3 to check
+    /// if any conflicting accesses (read+write or write+write on the same
+    /// variable) can occur without mutex protection.
+    VerifyResult verifyDataRaceFreedom(
+        FuncDeclStmt* spawner,
+        const std::vector<FuncDeclStmt*>& threadFuncs,
+        const std::map<std::string, FuncDeclStmt*>& allFuncs,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 17: Deadlock Freedom (v0.5.4)
+    // ================================================================
+
+    /// Represents a lock acquisition in a function's call path.
+    struct LockAcquisition {
+        std::string lockVar;       // Variable name of the mutex/rwlock
+        std::string funcName;      // Function where lock is acquired
+        int line;
+        int column;
+    };
+
+    /// Verify that lock acquisition order is consistent across all functions.
+    /// Uses Z3 to assign integer ordinals to locks and prove that all
+    /// acquisition sequences are strictly ascending (or compatible).
+    /// Detects potential deadlocks from cyclic lock ordering.
+    VerifyResult verifyDeadlockFreedom(
+        const std::map<std::string, FuncDeclStmt*>& allFuncs,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 18: Use-After-Free Proofs via SMT (v0.5.4)
+    // ================================================================
+
+    /// Strengthen the borrow checker's WildState analysis with Z3 for cases
+    /// where control flow makes the state uncertain (MAY_FREED).
+    /// Encodes the control flow conditions as Z3 formulas and proves whether
+    /// a variable is ALWAYS freed or NEVER freed at a given program point.
+    /// Returns PROVEN if variable cannot be used after free, DISPROVEN if
+    /// a use-after-free path exists.
+    VerifyResult proveNoUseAfterFree(
+        FuncDeclStmt* func,
+        const std::string& varName,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 19: Stack Overflow Prediction (v0.5.4)
+    // ================================================================
+
+    /// Prove that a recursive function's recursion depth is bounded.
+    /// Identifies recursive calls and the "decreasing" argument, then uses
+    /// Z3 to verify that: (1) the argument strictly decreases on each call,
+    /// and (2) there is a base case that terminates recursion.
+    /// If the function's parameter has Rules constraints, those bound the
+    /// initial depth. Returns PROVEN with the max depth if bounded.
+    VerifyResult proveRecursionBounded(
+        FuncDeclStmt* func,
+        const std::map<std::string, FuncDeclStmt*>& allFuncs,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& paramRules,
         std::vector<VerifyOutcome>& outcomes,
         int line = 0, int column = 0);
 

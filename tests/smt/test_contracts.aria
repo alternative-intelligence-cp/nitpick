@@ -1,0 +1,25 @@
+// Test: Cross-function contract propagation (v0.5.2)
+// Verifies that call sites satisfy callee requires clauses.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// A function with a requires clause
+func:add_positive = int32(int32:a, int32:b) requires a > 0, b > 0 {
+    pass(a + b);
+};
+
+// Caller with its own requires that implies callee's requires
+func:double_it = int32(int32:x) requires x > 0 {
+    pass(add_positive(x, x));
+};
+
+// Caller with literal args that satisfy requires
+func:call_with_literals = int32() {
+    pass(add_positive(5, 10));
+};
+
+func:main = int32() {
+    exit 0;
+};

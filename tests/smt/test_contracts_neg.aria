@@ -1,0 +1,19 @@
+// Test: Cross-function contract violation (v0.5.2)
+// Call site passes -1 to a function requiring positive args.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:add_positive = int32(int32:a, int32:b) requires a > 0, b > 0 {
+    pass(a + b);
+};
+
+// Literal violation: -1 does not satisfy a > 0
+func:bad_call = int32() {
+    pass(add_positive(-1, 5));
+};
+
+func:main = int32() {
+    exit 0;
+};
