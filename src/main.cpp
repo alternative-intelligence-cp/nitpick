@@ -92,8 +92,8 @@ extern "C" {
 // Version information
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 7
-#define ARIA_VERSION_PATCH 0
-#define ARIA_VERSION "0.7.0"
+#define ARIA_VERSION_PATCH 1
+#define ARIA_VERSION "0.7.1"
 
 // Compiler options
 struct CompilerOptions {
@@ -144,6 +144,8 @@ struct CompilerOptions {
     bool borrow_dump = false;         // --borrow-dump: Dump borrow state visualization after analysis
     bool wild_stats = false;          // --wild-stats: Print wild memory stats at program exit
     bool guard_pages = false;         // --guard-pages: Enable guard pages around wild allocations
+    bool wildx_audit = false;         // --wildx-audit: Log WildX alloc/seal/exec/free events
+    bool wildx_guard_pages = false;   // --wildx-guard-pages: Guard pages around exec regions
     int smt_timeout = 5000;           // --smt-timeout=N: Per-query Z3 solver timeout in ms (default: 5000)
 };
 
@@ -215,7 +217,9 @@ void print_help() {
     std::cout << "  --borrow-debug    Emit borrow checker debug diagnostics to stderr\n";
     std::cout << "  --borrow-dump     Dump borrow state visualization after analysis\n";
     std::cout << "  --wild-stats      Print wild memory statistics at program exit\n";
-    std::cout << "  --guard-pages     Enable guard pages around wild allocations (debug)\n\n";
+    std::cout << "  --guard-pages     Enable guard pages around wild allocations (debug)\n";
+    std::cout << "  --wildx-audit     Log WildX alloc/seal/exec/free events to stderr\n";
+    std::cout << "  --wildx-guard-pages Enable guard pages around executable regions\n\n";
     std::cout << "GPU Target Options (NVIDIA CUDA/PTX):\n";
     std::cout << "  --emit-ptx        Emit PTX assembly for GPU execution\n";
     std::cout << "  --target=<arch>   Target architecture (cpu, gpu, gpu+cpu)\n";
@@ -374,6 +378,10 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.wild_stats = true;
         } else if (arg == "--guard-pages") {
             opts.guard_pages = true;
+        } else if (arg == "--wildx-audit") {
+            opts.wildx_audit = true;
+        } else if (arg == "--wildx-guard-pages") {
+            opts.wildx_guard_pages = true;
         } else if (arg.substr(0, 14) == "--smt-timeout=") {
             opts.smt_timeout = std::stoi(arg.substr(14));
             if (opts.smt_timeout < 0) opts.smt_timeout = 5000;
@@ -4652,9 +4660,9 @@ llvm::Module* compile_to_module(
         ir_gen.finalizeDebugInfo();
     }
 
-    // v0.7.0: Inject wild memory flags into main() entry block
+    // v0.7.0+: Inject wild/wildx memory flags into main() entry block
     llvm::Module* mod = ir_gen.getModule();
-    if (mod && (opts.wild_stats || opts.guard_pages)) {
+    if (mod && (opts.wild_stats || opts.guard_pages || opts.wildx_audit || opts.wildx_guard_pages)) {
         llvm::Function* main_func = mod->getFunction("main");
         if (main_func && !main_func->empty()) {
             llvm::BasicBlock& entry = main_func->getEntryBlock();
@@ -4702,6 +4710,16 @@ llvm::Module* compile_to_module(
                 llvm::FunctionCallee enable_guards = mod->getOrInsertFunction(
                     "aria_wild_enable_guard_pages", void_bool_ty);
                 inject_builder.CreateCall(enable_guards, {inject_builder.getInt8(1)});
+            }
+            if (opts.wildx_audit) {
+                llvm::FunctionCallee enable_audit = mod->getOrInsertFunction(
+                    "aria_wildx_enable_audit", void_bool_ty);
+                inject_builder.CreateCall(enable_audit, {inject_builder.getInt8(1)});
+            }
+            if (opts.wildx_guard_pages) {
+                llvm::FunctionCallee enable_wildx_guards = mod->getOrInsertFunction(
+                    "aria_wildx_enable_guard_pages", void_bool_ty);
+                inject_builder.CreateCall(enable_wildx_guards, {inject_builder.getInt8(1)});
             }
         }
     }

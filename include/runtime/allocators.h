@@ -196,9 +196,11 @@ typedef enum {
  */
 typedef struct {
     void* ptr;              // Memory pointer (page-aligned)
-    size_t size;            // Allocation size (bytes)
+    size_t size;            // Allocation size (bytes, user-requested rounded to page)
+    size_t map_size;        // Total mmap size (includes guard pages if enabled)
     WildXState state;       // Current state in W⊕X machine
     bool sealed;            // Has seal() been called?
+    uint64_t code_hash;     // v0.7.1: FNV-1a hash of code at seal time (0 = unset)
 } WildXGuard;
 
 /**
@@ -284,6 +286,7 @@ typedef struct {
     size_t num_wild_allocations;      // Active wild allocations
     size_t num_wild_frees;            // Total wild frees (v0.7.0)
     size_t num_wildx_allocations;     // Active wildx allocations
+    size_t num_wildx_frees;           // Total wildx frees (v0.7.1)
     size_t peak_wild_usage;           // Peak wild memory
     size_t peak_wildx_usage;          // Peak wildx memory
 } AllocatorStats;
@@ -325,6 +328,36 @@ size_t aria_alloc_get_size(void* ptr);
  * after main() returns (via __attribute__((destructor))).
  */
 void aria_wild_enable_stats_at_exit(bool enable);
+
+// =============================================================================
+// v0.7.1: WildX Security Hardening
+// =============================================================================
+
+/**
+ * Enable guard pages (PROT_NONE sentinels) around WildX executable regions.
+ * Buffer overflow/underflow in JIT code triggers immediate SIGSEGV.
+ * Linux only; no-op on other platforms.
+ */
+void aria_wildx_enable_guard_pages(bool enable);
+
+/**
+ * Enable WildX audit logging to stderr.
+ * Logs ALLOC, SEAL, EXEC, FREE, TAMPER events with pointers, sizes, hashes.
+ */
+void aria_wildx_enable_audit(bool enable);
+
+/**
+ * Set the WildX executable memory quota in bytes (default: 64MB).
+ * Allocations that would exceed the quota return a failed guard.
+ */
+void aria_wildx_set_quota(size_t bytes);
+
+/**
+ * Compute and return the FNV-1a hash of a WildX guard's code region.
+ * Useful for manual integrity verification.
+ * Returns 0 if guard is invalid or freed.
+ */
+uint64_t aria_wildx_verify_hash(WildXGuard* guard);
 
 #ifdef __cplusplus
 }
