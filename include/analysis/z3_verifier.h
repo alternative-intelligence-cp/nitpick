@@ -150,6 +150,111 @@ public:
         std::vector<VerifyOutcome>& outcomes,
         int line = 0, int column = 0);
 
+    // Phase 6: Dead Branch Elimination (v0.5.0+)
+    // ================================================================
+
+    /// Prove whether a branch condition is always true or always false given
+    /// Rules constraints on the variables involved. Used for dead branch
+    /// elimination: if ALWAYS_TRUE, the else branch is dead; if ALWAYS_FALSE,
+    /// the then branch is dead.
+    ///
+    /// @param condition   The if-condition AST expression
+    /// @param varRules    Map of variable name → (Rules pointer, base type name)
+    /// @param outcomes    Verification outcomes appended here
+    /// @param line,column Source location for diagnostics
+    /// @return PROVEN = always true, DISPROVEN = always false, UNKNOWN = can't decide
+    VerifyResult proveDeadBranch(
+        ASTNode* condition,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // Phase 7: Bounds Check Elimination (v0.5.0+)
+    // ================================================================
+
+    /// Prove that an array index expression is always within [0, arraySize)
+    /// given Rules constraints on the variables involved. If PROVEN, the
+    /// runtime bounds check can be skipped.
+    ///
+    /// @param indexExpr   The index expression AST node
+    /// @param arraySize   Compile-time known array size (N for T[N])
+    /// @param varRules    Map of variable name → (Rules pointer, base type name)
+    /// @param outcomes    Verification outcomes appended here
+    /// @param line,column Source location for diagnostics
+    /// @return PROVEN = always in bounds, UNKNOWN = can't decide
+    VerifyResult proveBoundsInRange(
+        ASTNode* indexExpr,
+        int64_t arraySize,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // Phase 8: Overflow Check Elimination (v0.5.0+)
+    // ================================================================
+
+    /// Prove that an integer arithmetic operation (+, -, *) cannot overflow
+    /// given Rules constraints on the operand variables. If PROVEN, the
+    /// runtime overflow check (generateSafeAdd/Sub/Mul) can be replaced
+    /// with a plain add/sub/mul.
+    ///
+    /// @param op          '+', '-', or '*'
+    /// @param lhsExpr     Left operand AST node
+    /// @param rhsExpr     Right operand AST node
+    /// @param varRules    Map of variable name → (Rules pointer, base type name)
+    /// @param outcomes    Verification outcomes appended here
+    /// @param line,column Source location for diagnostics
+    /// @return PROVEN = no overflow possible, UNKNOWN = can't decide
+    VerifyResult proveNoOverflowFromRules(
+        char op,
+        ASTNode* lhsExpr,
+        ASTNode* rhsExpr,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // Phase 9: Null Check Elimination (v0.5.0+)
+    // ================================================================
+
+    /// Prove that an expression is never null/zero/None given Rules constraints
+    /// on the variables involved. If PROVEN, the null check in ?? / ?| / ?
+    /// operators can be skipped — codegen uses the value directly.
+    ///
+    /// For integers: proves the value is never 0 (NIL sentinel).
+    /// For optionals: proves hasValue is always true.
+    /// For pointers: proves pointer is never null.
+    ///
+    /// @param expr        The expression being null-checked
+    /// @param varRules    Map of variable name → (Rules pointer, base type name)
+    /// @param outcomes    Verification outcomes appended here
+    /// @param line,column Source location for diagnostics
+    /// @return PROVEN = never null, UNKNOWN = can't decide
+    VerifyResult proveNonNullFromRules(
+        ASTNode* expr,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // Phase 10: Rules<T> Propagation (v0.5.0+)
+    // ================================================================
+
+    /// Prove that one set of Rules constraints subsumes another:
+    /// ∀x. callerRules(x) → calleeRules(x)
+    /// If PROVEN, the callee's limit check can be skipped when the caller
+    /// has already validated the argument under callerRules.
+    ///
+    /// @param callerRulesName  Rules already satisfied by the caller's argument
+    /// @param calleeRulesName  Rules the callee wants to check
+    /// @param typeName         Base type name (for sort resolution)
+    /// @param outcomes         Verification outcomes appended here
+    /// @param line,column      Source location for diagnostics
+    /// @return PROVEN = caller constraints subsume callee, UNKNOWN = can't decide
+    VerifyResult proveRulesSubsumption(
+        const std::string& callerRulesName,
+        const std::string& calleeRulesName,
+        const std::string& typeName,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
     /// Get verification summary
     const VerifySummary& getSummary() const { return summary; }
 

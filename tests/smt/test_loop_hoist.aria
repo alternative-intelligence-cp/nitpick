@@ -1,0 +1,39 @@
+// Test: Loop invariant hoisting (Phase 5.25)
+// Declarations whose initializers don't depend on modified variables
+// or the loop counter should be hoisted before the loop entry.
+
+Rules:Positive = { $ > 0 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    // Test 1: Hoist computation from loop() — base and factor are not modified
+    limit<Positive> int32:base = 10;
+    limit<Positive> int32:factor = 3;
+    int32:sum = 0;
+
+    loop(0, 5, 1) {
+        int32:product = base * factor;
+        sum = sum + product;
+    }
+
+    // Test 2: Hoist from till() — offset is not modified inside the loop
+    int32:offset = 7;
+    int32:total = 0;
+
+    till(3, 1) {
+        int32:adjusted = offset + 1;
+        total = total + adjusted;
+    }
+
+    // Test 3: NOT hoistable — val depends on $, which changes each iteration
+    int32:counter = 0;
+    loop(0, 4, 1) {
+        int64:val = $ + 1;
+        counter = counter + 1;
+    }
+
+    exit 0;
+};

@@ -1,0 +1,28 @@
+Rules:Positive = { $ > 0 };
+
+func:failsafe = int32(tbb32:err) {
+    exit(1);
+};
+
+func:main = int32() {
+    // Test 1: Optional initialized from non-NIL literal → always Some
+    // The ?? null check should be eliminated (dataflow proof)
+    int32?:opt_val = 42i32;
+    int32:safe_val = opt_val ?? 0i32;
+
+    // Test 2: Pointer from address-of → always non-null
+    // The ?? null check should be eliminated (dataflow proof)
+    int32:source = 100i32;
+    int32->:ptr = @source;
+    int32:deref_val = ptr ?? 0i32;
+
+    // Test 3: Optional initialized from Rules-constrained variable → always Some
+    // (non-null because limit<Positive> guarantees non-zero, tracked as non-null var)
+    limit<Positive> int32:score = 7i32;
+    int32?:opt_score = score;
+    int32:safe_score = opt_score ?? 0i32;
+
+    int32:total = (safe_val + deref_val + safe_score);
+
+    exit(0);
+};

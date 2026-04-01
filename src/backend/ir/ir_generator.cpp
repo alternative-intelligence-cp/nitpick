@@ -2539,7 +2539,9 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
         } else {
             std::string rstr = fd->returnType ? fd->returnType->toString() : "void";
             llvm::Type* inner = mapTypeFromName(rstr);
-            if (!fd->body || fd->funcName == "main" || fd->isAsync || inner->isVoidTy()) {
+            // v0.5.0: Result elision — infallible functions return raw type
+            bool elide_result = result_elide_funcs.count(fd->funcName) > 0;
+            if (!fd->body || fd->funcName == "main" || fd->isAsync || inner->isVoidTy() || elide_result) {
                 pre_ret = fd->isAsync
                     ? llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)
                     : inner;
@@ -2850,12 +2852,15 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             // v0.4.5+: Check if this function has SMT-proven uhash optimization
             uhash_fast_mode = uhash_optimized_funcs.count(funcDecl->funcName) > 0;
             uhash_handle_counter = 0;  // Reset per-function handle counter
+            // v0.5.0: Check if this function is proven infallible (Result elision)
+            result_elide_mode = result_elide_funcs.count(funcDecl->funcName) > 0;
             
             // Skip generic functions (handled by monomorphization)
             if (!funcDecl->genericParams.empty()) {
                 current_func_decl = nullptr;
                 ustack_fast_mode = false;
                 uhash_fast_mode = false;
+                result_elide_mode = false;
                 continue;
             }
             
@@ -2892,9 +2897,10 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             // 1. extern functions (no body)
             // 2. main function (C ABI compatibility)
             // 3. void functions (void type should only exist in extern, but legacy code uses it)
+            // 4. v0.5.0: infallible functions (proven by static analysis, Result elision)
             llvm::Type* actual_return_type;
-            if (!funcDecl->body || funcDecl->funcName == "main" || value_type->isVoidTy()) {
-                // Extern functions, main, and void functions return raw type
+            if (!funcDecl->body || funcDecl->funcName == "main" || value_type->isVoidTy() || result_elide_mode) {
+                // Extern functions, main, void functions, and infallible elided functions return raw type
                 actual_return_type = value_type;
             } else {
                 // Regular functions return Result{value, error*, is_error}
@@ -3391,8 +3397,8 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         );
                         builder.CreateRet(zero_result);
                     } else {
-                        // Integer/pointer return type
-                        builder.CreateRet(llvm::ConstantInt::get(actual_return_type, 0));
+                        // Non-struct return type (primitives, pointers, or Result-elided returns)
+                        builder.CreateRet(llvm::Constant::getNullValue(actual_return_type));
                     }
                 }
             }
@@ -3912,6 +3918,11 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
         }
         
         case ASTNode::NodeType::VAR_DECL: {
+            // Skip hoisted declarations in loop body (already emitted before loop)
+            if (!emitting_hoisted && loop_hoisted_set.count(stmt)) {
+                return nullptr;
+            }
+
             // Variable declaration
             VarDeclStmt* varDecl = static_cast<VarDeclStmt*>(stmt);
 
@@ -4446,9 +4457,13 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             if (!varDecl->limitRulesName.empty()) {
                 var_limit_rules[varDecl->varName] = varDecl->limitRulesName;
                 
-                // Emit runtime checks for non-constant initializers
-                // (Constant violations are caught at compile time by the type checker)
-                if (varDecl->initializer) {
+                // v0.5.0: Skip limit check if Rules propagation proved it redundant
+                // (all callers already satisfy this constraint transitively)
+                if (limit_check_safe.count(stmt)) {
+                    // Constraint already validated by caller — skip runtime check
+                } else if (varDecl->initializer) {
+                    // Emit runtime checks for non-constant initializers
+                    // (Constant violations are caught at compile time by the type checker)
                     llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
                     llvm::Value* loadedVal = builder.CreateLoad(alloca->getAllocatedType(), alloca, "limit.val");
                     emitLimitChecks(varDecl->limitRulesName, loadedVal, currentFunc);
@@ -4462,6 +4477,23 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // If statement with optional else
             IfStmt* ifStmt = static_cast<IfStmt*>(stmt);
             
+            // v0.5.0: Dead branch elimination — if Z3 proved condition always true/false,
+            // skip the dead branch entirely (no condition eval, no dead code emission).
+            if (dead_branch_always_true.count(ifStmt)) {
+                // Condition is always true → only emit then branch
+                std::cerr << "[DEBUG IF] Dead branch elimination: condition always true, skipping else" << std::endl;
+                codegenStatement(ifStmt->thenBranch.get());
+                return nullptr;
+            }
+            if (dead_branch_always_false.count(ifStmt)) {
+                // Condition is always false → only emit else branch (if present)
+                std::cerr << "[DEBUG IF] Dead branch elimination: condition always false, skipping then" << std::endl;
+                if (ifStmt->elseBranch) {
+                    codegenStatement(ifStmt->elseBranch.get());
+                }
+                return nullptr;
+            }
+
             std::cerr << "[DEBUG IF] Generating IF statement" << std::endl;
             llvm::Value* condVal = codegenExpression(ifStmt->condition.get());
             if (!condVal) {
@@ -4521,6 +4553,18 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
         case ASTNode::NodeType::WHILE: {
             // While loop
             WhileStmt* whileStmt = static_cast<WhileStmt*>(stmt);
+
+            // Hoist loop-invariant declarations before loop entry
+            {
+                auto hoist_it = loop_hoist_map.find(stmt);
+                if (hoist_it != loop_hoist_map.end()) {
+                    emitting_hoisted = true;
+                    for (auto* decl : hoist_it->second) {
+                        codegenStatement(decl);
+                    }
+                    emitting_hoisted = false;
+                }
+            }
             
             llvm::Function* function = builder.GetInsertBlock()->getParent();
             
@@ -4567,6 +4611,18 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
         
         case ASTNode::NodeType::FOR: {
             ForStmt* forStmt = static_cast<ForStmt*>(stmt);
+
+            // Hoist loop-invariant declarations before loop entry
+            {
+                auto hoist_it = loop_hoist_map.find(stmt);
+                if (hoist_it != loop_hoist_map.end()) {
+                    emitting_hoisted = true;
+                    for (auto* decl : hoist_it->second) {
+                        codegenStatement(decl);
+                    }
+                    emitting_hoisted = false;
+                }
+            }
             
             if (forStmt->isRangeBased) {
                 // Range-based for loop: for (var in range) { body }
@@ -5170,6 +5226,25 @@ skip_comparison:
             // Generate code for the value expression
             llvm::Value* value = codegenExpression(passStmt->value.get());
             if (value) {
+                // v0.5.0: Result elision — infallible functions return raw T, no wrapping
+                if (result_elide_mode) {
+                    llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                    llvm::Type* returnType = currentFunc->getReturnType();
+                    if (value->getType() != returnType) {
+                        if (value->getType()->isIntegerTy() && returnType->isIntegerTy()) {
+                            llvm::IntegerType* valIntTy = llvm::cast<llvm::IntegerType>(value->getType());
+                            llvm::IntegerType* retIntTy = llvm::cast<llvm::IntegerType>(returnType);
+                            if (valIntTy->getBitWidth() < retIntTy->getBitWidth()) {
+                                value = builder.CreateSExt(value, returnType, "elide_sext");
+                            } else if (valIntTy->getBitWidth() > retIntTy->getBitWidth()) {
+                                value = builder.CreateTrunc(value, returnType, "elide_trunc");
+                            }
+                        }
+                    }
+                    builder.CreateRet(value);
+                    return nullptr;
+                }
+
                 // Phase 4.6: Async functions store Result to promise and branch to suspend
                 if (current_func_is_async && current_async_promise && current_async_result_type) {
                     llvm::StructType* resultStruct = llvm::cast<llvm::StructType>(current_async_result_type);
@@ -5454,6 +5529,18 @@ skip_comparison:
         case ASTNode::NodeType::TILL: {
             // Till loop: till(limit, step) { body }
             TillStmt* tillStmt = static_cast<TillStmt*>(stmt);
+
+            // Hoist loop-invariant declarations before loop entry
+            {
+                auto hoist_it = loop_hoist_map.find(stmt);
+                if (hoist_it != loop_hoist_map.end()) {
+                    emitting_hoisted = true;
+                    for (auto* decl : hoist_it->second) {
+                        codegenStatement(decl);
+                    }
+                    emitting_hoisted = false;
+                }
+            }
             
             // Evaluate limit and step
             llvm::Value* limitVal = codegenExpression(tillStmt->limit.get());
@@ -5535,6 +5622,18 @@ skip_comparison:
         case ASTNode::NodeType::LOOP: {
             // Loop: loop(start, limit, step) { body }
             LoopStmt* loopStmt = static_cast<LoopStmt*>(stmt);
+
+            // Hoist loop-invariant declarations before loop entry
+            {
+                auto hoist_it = loop_hoist_map.find(stmt);
+                if (hoist_it != loop_hoist_map.end()) {
+                    emitting_hoisted = true;
+                    for (auto* decl : hoist_it->second) {
+                        codegenStatement(decl);
+                    }
+                    emitting_hoisted = false;
+                }
+            }
             
             // Evaluate start, limit, and step
             llvm::Value* startVal = codegenExpression(loopStmt->start.get());
@@ -5616,6 +5715,18 @@ skip_comparison:
         case ASTNode::NodeType::WHEN: {
             // When loop: when(cond) { body } then { } end { }
             WhenStmt* whenStmt = static_cast<WhenStmt*>(stmt);
+
+            // Hoist loop-invariant declarations before loop entry
+            {
+                auto hoist_it = loop_hoist_map.find(stmt);
+                if (hoist_it != loop_hoist_map.end()) {
+                    emitting_hoisted = true;
+                    for (auto* decl : hoist_it->second) {
+                        codegenStatement(decl);
+                    }
+                    emitting_hoisted = false;
+                }
+            }
             
             llvm::Function* function = builder.GetInsertBlock()->getParent();
             
@@ -6329,6 +6440,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // v0.4.5+: Propagate SMT-proven fast mode for user hash
             expr_codegen.uhash_fast_mode = uhash_fast_mode;
             expr_codegen.uhash_handle_counter_ptr = &uhash_handle_counter;
+            // v0.5.0: Propagate defaults fallback elimination set
+            expr_codegen.defaults_safe_ptr = &defaults_safe;
             return expr_codegen.codegenCall(call);
         }
         
@@ -7511,6 +7624,19 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // NULL COALESCING OPERATOR (??) with short-circuit evaluation
             // Pattern: optional ?? default returns value if has value, otherwise default
             if (binop->op.type == frontend::TokenType::TOKEN_NULL_COALESCE) {
+                // Phase 5.0: Null check elimination — if Z3 proved the left side is
+                // never null/zero, skip the branch and use the value directly.
+                if (null_check_safe.count(expr)) {
+                    llvm::Value* leftVal = codegenExpression(binop->left.get());
+                    if (!leftVal) return nullptr;
+                    if (leftVal->getType()->isStructTy()) {
+                        // Optional type proven always-Some: extract value directly
+                        return builder.CreateExtractValue(leftVal, {1}, "opt.elided");
+                    }
+                    // Integer/pointer proven non-null: use directly
+                    return leftVal;
+                }
+
                 llvm::Function* function = builder.GetInsertBlock()->getParent();
                 
                 // Create blocks for conditional evaluation
@@ -8060,6 +8186,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     // Layer 1 Safety: Safe addition returns Unknown on overflow
+                    if (overflow_check_safe.count(expr)) {
+                        std::cerr << "[SMT-OPT] Overflow check eliminated for addition at line "
+                                  << expr->line << std::endl;
+                        return builder.CreateAdd(L, R, "addtmp");
+                    }
                     return generateSafeAdd(L, R, "addtmp");
                 case frontend::TokenType::TOKEN_MINUS:
                     // Check if either operand is a vector
@@ -8175,6 +8306,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateFSub(L, R, "fsubtmp");
                     }
                     // Layer 1 Safety: Safe subtraction returns Unknown on overflow
+                    if (overflow_check_safe.count(expr)) {
+                        std::cerr << "[SMT-OPT] Overflow check eliminated for subtraction at line "
+                                  << expr->line << std::endl;
+                        return builder.CreateSub(L, R, "subtmp");
+                    }
                     return generateSafeSub(L, R, "subtmp");
                 case frontend::TokenType::TOKEN_STAR:
                     // Check if either operand is a vector
@@ -8296,6 +8432,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return builder.CreateMul(L, R, "multmp");
                     }
                     // Layer 1 Safety: Safe multiplication returns Unknown on overflow
+                    if (overflow_check_safe.count(expr)) {
+                        std::cerr << "[SMT-OPT] Overflow check eliminated for multiplication at line "
+                                  << expr->line << std::endl;
+                        return builder.CreateMul(L, R, "multmp");
+                    }
                     return generateSafeMul(L, R, "multmp");
                 case frontend::TokenType::TOKEN_SLASH:
                     // Check if either operand is a vector
@@ -9409,6 +9550,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
                 
                 if (isOptionalUnwrap) {
+                    // Phase 5.0: Null check elimination — skip Optional None check
+                    if (null_check_safe.count(expr)) {
+                        return builder.CreateExtractValue(leftVal, 1, "opt.elided");
+                    }
+
                     // Optional<T>: { i1 hasValue, T value }
                     llvm::Value* hasValue = builder.CreateExtractValue(leftVal, 0, "opt.hasValue");
                     llvm::Value* isNone = builder.CreateNot(hasValue, "opt.isNone");
@@ -9496,6 +9642,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             else {
                 // ?? operator: Null coalescing for Optional types and pointers
                 
+                // Phase 5.0: Null check elimination — if Z3 proved expression is never
+                // null/zero under Rules constraints, skip the branch entirely.
+                if (null_check_safe.count(expr)) {
+                    if (leftVal->getType()->isStructTy()) {
+                        // Optional type proven always-Some: extract value directly
+                        return builder.CreateExtractValue(leftVal, 1, "opt.elided");
+                    } else {
+                        // Integer/pointer proven non-null: use value directly
+                        return leftVal;
+                    }
+                }
+
                 llvm::Value* isNull;
                 llvm::Value* unwrappedValue;
                 llvm::Value* defaultVal = codegenExpression(unwrap->defaultValue.get());
@@ -9561,7 +9719,24 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Defaults operator: expr ?| fallback  OR  expr defaults fallback (v0.4.3)
             // Wraps the sub-expression. If any Result ERR is detected, short-circuit to fallback.
             DefaultsExpr* defExpr = static_cast<DefaultsExpr*>(expr);
-            
+
+            // v0.5.0: If the sub-expression is provably infallible, skip fallback entirely
+            if (defaults_safe.count(expr)) {
+                llvm::Value* exprVal = codegenExpression(defExpr->expr.get());
+                if (!exprVal) return nullptr;
+                // If it's still a Result struct (possible if callee not yet elided),
+                // extract the value — the error path is dead.
+                if (exprVal->getType()->isStructTy()) {
+                    llvm::StructType* st = llvm::cast<llvm::StructType>(exprVal->getType());
+                    if (st->getNumElements() == 3 &&
+                        st->getElementType(1)->isPointerTy() &&
+                        st->getElementType(2)->isIntegerTy(8)) {
+                        return builder.CreateExtractValue(exprVal, 0, "defaults_unwrap_safe");
+                    }
+                }
+                return exprVal;
+            }
+
             llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
             llvm::BasicBlock* fallbackBlock = llvm::BasicBlock::Create(context, "defaults_fallback", currentFunc);
             llvm::BasicBlock* mergeBlock = llvm::BasicBlock::Create(context, "defaults_merge", currentFunc);
@@ -10573,11 +10748,55 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Properly-typed fixed-size array [N x T] — use two-index GEP
                     auto* arrTy = llvm::cast<llvm::ArrayType>(alloc_ty);
                     elem_type = arrTy->getElementType();
+                    uint64_t arrSize = arrTy->getNumElements();
                     // Cast index to i64 for GEP
                     if (!index_value->getType()->isIntegerTy(64)) {
                         index_value = builder.CreateSExtOrTrunc(index_value,
                                           builder.getInt64Ty(), "idx.i64");
                     }
+
+                    // v0.5.0: Runtime bounds check — skip if Z3 proved always in-bounds
+                    if (bounds_check_safe.count(expr) == 0) {
+                        // Emit bounds check: 0 <= index < N
+                        llvm::Value* sizeConst = llvm::ConstantInt::get(builder.getInt64Ty(), arrSize);
+                        llvm::Value* zeroConst = llvm::ConstantInt::get(builder.getInt64Ty(), 0);
+                        llvm::Value* cmpLo = builder.CreateICmpSLT(index_value, zeroConst, "bounds.lo");
+                        llvm::Value* cmpHi = builder.CreateICmpSGE(index_value, sizeConst, "bounds.hi");
+                        llvm::Value* outOfBounds = builder.CreateOr(cmpLo, cmpHi, "bounds.oob");
+
+                        llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
+                        llvm::BasicBlock* oobBB = llvm::BasicBlock::Create(context, "bounds.fail", currentFunc);
+                        llvm::BasicBlock* okBB = llvm::BasicBlock::Create(context, "bounds.ok", currentFunc);
+
+                        builder.CreateCondBr(outOfBounds, oobBB, okBB);
+
+                        // OOB block: call failsafe and exit
+                        builder.SetInsertPoint(oobBB);
+                        llvm::Function* failsafeFunc = module->getFunction("failsafe");
+                        if (failsafeFunc) {
+                            if (failsafeFunc->getFunctionType()->getNumParams() > 0) {
+                                llvm::Value* errCode = llvm::ConstantInt::get(
+                                    failsafeFunc->getFunctionType()->getParamType(0), 99);
+                                builder.CreateCall(failsafeFunc, {errCode});
+                            } else {
+                                builder.CreateCall(failsafeFunc, {});
+                            }
+                        }
+                        llvm::FunctionType* exitFT = llvm::FunctionType::get(
+                            llvm::Type::getVoidTy(context),
+                            {llvm::Type::getInt32Ty(context)}, false);
+                        llvm::FunctionCallee exitFn = module->getOrInsertFunction("exit", exitFT);
+                        builder.CreateCall(exitFn, {llvm::ConstantInt::get(
+                            llvm::Type::getInt32Ty(context), 99)});
+                        builder.CreateUnreachable();
+
+                        // Continue in OK block
+                        builder.SetInsertPoint(okBB);
+                    } else {
+                        std::cerr << "[DEBUG BOUNDS] Bounds check eliminated for index at line "
+                                  << expr->line << std::endl;
+                    }
+
                     std::vector<llvm::Value*> gep_indices = {
                         llvm::ConstantInt::get(builder.getInt64Ty(), 0),
                         index_value

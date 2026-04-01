@@ -169,6 +169,43 @@ private:
     bool uhash_fast_mode = false;
     int uhash_handle_counter = 0;  // Per-function counter for handle tracking allocas
 
+    // v0.5.0: Result<T> elision — functions proven infallible (no fail, no sys, no calls to fallible)
+    // These return raw T instead of Result{T, ptr, i8}, avoiding wrapping/unwrapping overhead.
+    std::set<std::string> result_elide_funcs;
+    bool result_elide_mode = false;  // Per-function flag, set at FUNC_DECL codegen start
+
+    // v0.5.0: Dead branch elimination — IF nodes proven always-true or always-false
+    // under Rules constraints. Codegen skips the dead branch entirely.
+    std::set<ASTNode*> dead_branch_always_true;   // Condition always true → skip else
+    std::set<ASTNode*> dead_branch_always_false;  // Condition always false → skip then
+
+    // v0.5.0: Bounds check elimination — INDEX nodes proven always in-bounds
+    // under Rules constraints. Codegen skips the runtime bounds check.
+    std::set<ASTNode*> bounds_check_safe;  // Index always in [0, N)
+
+    // v0.5.0: Overflow check elimination — BINARY_OP nodes proven overflow-free
+    // under Rules constraints. Codegen uses plain add/sub/mul instead of safe variants.
+    std::set<ASTNode*> overflow_check_safe;  // Arithmetic cannot overflow
+
+    // v0.5.0: Null check elimination — UNWRAP/NULL_COALESCE nodes proven non-null
+    // under Rules constraints. Codegen skips the null/None branch entirely.
+    std::set<ASTNode*> null_check_safe;  // Expression is never null/zero
+
+    // v0.5.0: Loop invariant hoisting — VarDecl nodes inside loops proven
+    // loop-invariant (initializer doesn't reference modified vars or loop counter).
+    // Codegen emits them before the loop header and skips them in the body.
+    std::map<ASTNode*, std::vector<ASTNode*>> loop_hoist_map;  // loop → hoistable VarDecls
+    std::set<ASTNode*> loop_hoisted_set;  // All hoisted VarDecl nodes (skip in body)
+    bool emitting_hoisted = false;  // Guard: true while emitting hoisted decls (don't skip)
+
+    // v0.5.0: Rules<T> propagation — VarDecl nodes where the limit check can be
+    // skipped because all callers already satisfy the constraint transitively.
+    std::set<ASTNode*> limit_check_safe;  // VarDecl limit checks proven redundant
+
+    // v0.5.0: Defaults/?| fallback elimination — DefaultsExpr nodes where the
+    // fallback path is dead because the sub-expression is provably infallible.
+    std::set<ASTNode*> defaults_safe;  // DefaultsExpr nodes with dead fallback
+
 public:
     /// Register functions whose user stacks are provably type-homogeneous (from Z3 phase)
     void setUStackOptimizedFuncs(const std::set<std::string>& funcs) {
@@ -177,6 +214,46 @@ public:
     /// Register functions whose user hashes are provably type-homogeneous (from Z3 phase)
     void setUHashOptimizedFuncs(const std::set<std::string>& funcs) {
         uhash_optimized_funcs = funcs;
+    }
+    /// Register functions proven infallible for Result<T> elision (from static analysis phase)
+    void setResultElideFuncs(const std::set<std::string>& funcs) {
+        result_elide_funcs = funcs;
+    }
+    /// Register IF nodes with provably always-true conditions (dead else branch)
+    void setDeadBranchTrue(const std::set<ASTNode*>& nodes) {
+        dead_branch_always_true = nodes;
+    }
+    /// Register IF nodes with provably always-false conditions (dead then branch)
+    void setDeadBranchFalse(const std::set<ASTNode*>& nodes) {
+        dead_branch_always_false = nodes;
+    }
+    /// Register INDEX nodes with provably always-in-bounds index (skip bounds check)
+    void setBoundsCheckSafe(const std::set<ASTNode*>& nodes) {
+        bounds_check_safe = nodes;
+    }
+    /// Register BINARY_OP nodes with provably no overflow (use plain arithmetic)
+    void setOverflowCheckSafe(const std::set<ASTNode*>& nodes) {
+        overflow_check_safe = nodes;
+    }
+    /// Register UNWRAP/NULL_COALESCE nodes with provably non-null expression (skip null check)
+    void setNullCheckSafe(const std::set<ASTNode*>& nodes) {
+        null_check_safe = nodes;
+    }
+    /// Register loop-invariant VarDecl nodes to hoist before their enclosing loop
+    void setLoopHoistMap(const std::map<ASTNode*, std::vector<ASTNode*>>& m) {
+        loop_hoist_map = m;
+        loop_hoisted_set.clear();
+        for (const auto& [loop, decls] : loop_hoist_map) {
+            for (auto* d : decls) loop_hoisted_set.insert(d);
+        }
+    }
+    /// Register VarDecl nodes whose limit checks are proven redundant (Rules propagation)
+    void setLimitCheckSafe(const std::set<ASTNode*>& nodes) {
+        limit_check_safe = nodes;
+    }
+    /// Register DefaultsExpr nodes whose fallback is proven dead (infallible sub-expression)
+    void setDefaultsSafe(const std::set<ASTNode*>& nodes) {
+        defaults_safe = nodes;
     }
 private:
 

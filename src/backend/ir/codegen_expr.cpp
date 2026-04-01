@@ -2393,7 +2393,23 @@ llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* code
             // Wraps the sub-expression. If any Result in the sub-expression produces ERR,
             // the whole chain short-circuits to the fallback value.
             DefaultsExpr* defExpr = static_cast<DefaultsExpr*>(node);
-            
+
+            // v0.5.0: If the sub-expression is provably infallible, skip fallback entirely
+            if (codegen->defaults_safe_ptr && codegen->defaults_safe_ptr->count(node)) {
+                llvm::Value* exprVal = codegenExpressionNode(defExpr->expr.get(), codegen);
+                if (!exprVal) return nullptr;
+                // If it's still a Result struct, extract the value — error path is dead
+                if (exprVal->getType()->isStructTy()) {
+                    llvm::StructType* st = llvm::cast<llvm::StructType>(exprVal->getType());
+                    if (st->getNumElements() == 3 &&
+                        st->getElementType(1)->isPointerTy() &&
+                        st->getElementType(2)->isIntegerTy(8)) {
+                        return codegen->builder.CreateExtractValue(exprVal, 0, "defaults_unwrap_safe");
+                    }
+                }
+                return exprVal;
+            }
+
             llvm::Function* currentFunc = codegen->builder.GetInsertBlock()->getParent();
             
             // Create fallback and merge blocks
