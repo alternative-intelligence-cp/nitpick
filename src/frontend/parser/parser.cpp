@@ -1400,6 +1400,7 @@ ASTNodePtr Parser::parseUnary() {
         // Set borrow checker annotations for $ and # operators
         if (token.type == TokenType::TOKEN_DOLLAR) {
             unaryExpr->creates_loan = true;
+            unaryExpr->is_mutable_loan = true;  // $x = mutable borrow
             // Extract target variable name from operand if it's an identifier
             if (operand && operand->type == ASTNode::NodeType::IDENTIFIER) {
                 auto identExpr = std::static_pointer_cast<IdentifierExpr>(operand);

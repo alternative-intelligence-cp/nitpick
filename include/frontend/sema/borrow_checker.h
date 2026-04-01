@@ -519,6 +519,43 @@ struct BorrowError {
 };
 
 // ============================================================================
+// Function Borrow Summary (v0.6.0: Inter-Procedural Analysis)
+// ============================================================================
+
+/**
+ * ParamOwnership - How a function parameter interacts with the borrow system
+ */
+enum class ParamOwnership {
+    COPY,       // Parameter is passed by value (default for non-borrow types)
+    BORROW_IMM, // Parameter is an immutable borrow ($$i)
+    BORROW_MUT, // Parameter is a mutable borrow ($$m)
+    MOVE        // Parameter takes ownership (wild pointer passed by value)
+};
+
+/**
+ * FunctionBorrowSummary - Cached summary of a function's borrow semantics
+ *
+ * Built during initial pass over all function declarations.
+ * Used at call sites to check ownership transfer and borrow validity.
+ */
+struct FunctionBorrowSummary {
+    std::string func_name;
+    
+    // Per-parameter ownership info (indexed by parameter position)
+    std::vector<ParamOwnership> param_ownership;
+    std::vector<std::string> param_names;
+    
+    // Return type borrow info
+    bool returns_borrow_imm = false;  // Function returns $$i reference
+    bool returns_borrow_mut = false;  // Function returns $$m reference
+    bool returns_wild = false;        // Function returns wild pointer
+    
+    // Line of declaration (for diagnostics)
+    int decl_line = 0;
+    int decl_column = 0;
+};
+
+// ============================================================================
 // Borrow Checker Class
 // ============================================================================
 
@@ -526,6 +563,39 @@ class BorrowChecker {
 private:
     LifetimeContext ctx;
     std::vector<BorrowError> errors;
+    
+    // ========================================================================
+    // Function Summary Registry (v0.6.0: Inter-Procedural Analysis)
+    // ========================================================================
+    
+    // Maps function name -> borrow summary (populated during collectFunctionSummaries)
+    std::unordered_map<std::string, FunctionBorrowSummary> func_summaries;
+    
+    // Name of the function currently being analyzed (empty if global scope)
+    std::string current_function;
+    
+    /**
+     * First-pass: collect borrow summaries for all function declarations
+     * Walks the AST without doing full analysis, just extracts signatures.
+     */
+    void collectFunctionSummaries(ASTNode* ast);
+    
+    /**
+     * Build a FunctionBorrowSummary from a FuncDeclStmt
+     */
+    FunctionBorrowSummary buildSummary(FuncDeclStmt* func);
+    
+    /**
+     * Register function parameters as variables in the current scope
+     * Also records borrows for $$i/$$m parameters
+     */
+    void registerFunctionParams(FuncDeclStmt* func);
+    
+    /**
+     * At a call site, check argument ownership against callee summary
+     * Enforces: move semantics, borrow rules, mutability requirements
+     */
+    void checkCallOwnership(CallExpr* expr, const FunctionBorrowSummary& summary);
     
     // ========================================================================
     // Lifetime Tracking (Phase 3.3.1)
