@@ -394,6 +394,467 @@ void aria_asm_cmp_r64_r64(Assembler* asm_ctx, AsmRegister left, AsmRegister righ
 }
 
 // =============================================================================
+// Extended Integer Instructions (v0.7.2)
+// =============================================================================
+
+void aria_asm_add_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value) {
+    int reg = (int)dst;
+    // ADD r64, imm32: REX.W + 81 /0 id
+    emit_rex(asm_ctx->buffer, true, 0, reg);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x81);
+    emit_modrm(asm_ctx->buffer, 0x03, 0, reg);  // /0
+    aria_asm_emit_i32(asm_ctx->buffer, value);
+}
+
+void aria_asm_sub_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value) {
+    int reg = (int)dst;
+    // SUB r64, imm32: REX.W + 81 /5 id
+    emit_rex(asm_ctx->buffer, true, 0, reg);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x81);
+    emit_modrm(asm_ctx->buffer, 0x03, 5, reg);  // /5
+    aria_asm_emit_i32(asm_ctx->buffer, value);
+}
+
+void aria_asm_xor_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+    int dst_reg = (int)dst;
+    int src_reg = (int)src;
+    // XOR r64, r64: REX.W + 31 /r
+    emit_rex(asm_ctx->buffer, true, src_reg, dst_reg);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x31);
+    emit_modrm(asm_ctx->buffer, 0x03, src_reg, dst_reg);
+}
+
+void aria_asm_and_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+    int dst_reg = (int)dst;
+    int src_reg = (int)src;
+    // AND r64, r64: REX.W + 21 /r
+    emit_rex(asm_ctx->buffer, true, src_reg, dst_reg);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x21);
+    emit_modrm(asm_ctx->buffer, 0x03, src_reg, dst_reg);
+}
+
+void aria_asm_or_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+    int dst_reg = (int)dst;
+    int src_reg = (int)src;
+    // OR r64, r64: REX.W + 09 /r
+    emit_rex(asm_ctx->buffer, true, src_reg, dst_reg);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x09);
+    emit_modrm(asm_ctx->buffer, 0x03, src_reg, dst_reg);
+}
+
+void aria_asm_not_r64(Assembler* asm_ctx, AsmRegister reg) {
+    int r = (int)reg;
+    // NOT r64: REX.W + F7 /2
+    emit_rex(asm_ctx->buffer, true, 0, r);
+    aria_asm_emit_byte(asm_ctx->buffer, 0xF7);
+    emit_modrm(asm_ctx->buffer, 0x03, 2, r);  // /2
+}
+
+void aria_asm_neg_r64(Assembler* asm_ctx, AsmRegister reg) {
+    int r = (int)reg;
+    // NEG r64: REX.W + F7 /3
+    emit_rex(asm_ctx->buffer, true, 0, r);
+    aria_asm_emit_byte(asm_ctx->buffer, 0xF7);
+    emit_modrm(asm_ctx->buffer, 0x03, 3, r);  // /3
+}
+
+void aria_asm_shl_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count) {
+    int r = (int)reg;
+    // SHL r64, imm8: REX.W + C1 /4 ib
+    emit_rex(asm_ctx->buffer, true, 0, r);
+    aria_asm_emit_byte(asm_ctx->buffer, 0xC1);
+    emit_modrm(asm_ctx->buffer, 0x03, 4, r);  // /4
+    aria_asm_emit_byte(asm_ctx->buffer, count);
+}
+
+void aria_asm_shr_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count) {
+    int r = (int)reg;
+    // SHR r64, imm8: REX.W + C1 /5 ib
+    emit_rex(asm_ctx->buffer, true, 0, r);
+    aria_asm_emit_byte(asm_ctx->buffer, 0xC1);
+    emit_modrm(asm_ctx->buffer, 0x03, 5, r);  // /5
+    aria_asm_emit_byte(asm_ctx->buffer, count);
+}
+
+void aria_asm_sar_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count) {
+    int r = (int)reg;
+    // SAR r64, imm8: REX.W + C1 /7 ib
+    emit_rex(asm_ctx->buffer, true, 0, r);
+    aria_asm_emit_byte(asm_ctx->buffer, 0xC1);
+    emit_modrm(asm_ctx->buffer, 0x03, 7, r);  // /7
+    aria_asm_emit_byte(asm_ctx->buffer, count);
+}
+
+void aria_asm_cmp_r64_imm32(Assembler* asm_ctx, AsmRegister reg, int32_t value) {
+    int r = (int)reg;
+    // CMP r64, imm32: REX.W + 81 /7 id
+    emit_rex(asm_ctx->buffer, true, 0, r);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x81);
+    emit_modrm(asm_ctx->buffer, 0x03, 7, r);  // /7
+    aria_asm_emit_i32(asm_ctx->buffer, value);
+}
+
+// =============================================================================
+// Extended Conditional Jumps (v0.7.2)
+// =============================================================================
+
+// Helper: emit a conditional jump with 0F xx opcode
+static void emit_jcc_rel32(Assembler* asm_ctx, uint8_t cc_opcode, int label_id, const char* mnemonic) {
+    if (label_id < 0 || label_id >= (int)asm_ctx->label_count) {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Invalid label ID for %s", mnemonic);
+        set_error(asm_ctx, msg);
+        return;
+    }
+
+    AsmLabel* label = &asm_ctx->labels[label_id];
+
+    // Jcc rel32: 0F xx cd
+    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    aria_asm_emit_byte(asm_ctx->buffer, cc_opcode);
+
+    if (aria_asm_label_is_bound(label)) {
+        uint32_t current = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
+        int32_t offset = label->position - (int32_t)(current + 4);
+        aria_asm_emit_i32(asm_ctx->buffer, offset);
+    } else {
+        if (label->num_patches >= MAX_PATCH_SITES) {
+            set_error(asm_ctx, "Too many forward references to label");
+            return;
+        }
+        label->patch_sites[label->num_patches++] = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
+        aria_asm_emit_i32(asm_ctx->buffer, 0);
+    }
+}
+
+void aria_asm_jl(Assembler* asm_ctx, int label_id)  { emit_jcc_rel32(asm_ctx, 0x8C, label_id, "JL"); }
+void aria_asm_jle(Assembler* asm_ctx, int label_id) { emit_jcc_rel32(asm_ctx, 0x8E, label_id, "JLE"); }
+void aria_asm_jg(Assembler* asm_ctx, int label_id)  { emit_jcc_rel32(asm_ctx, 0x8F, label_id, "JG"); }
+void aria_asm_jge(Assembler* asm_ctx, int label_id) { emit_jcc_rel32(asm_ctx, 0x8D, label_id, "JGE"); }
+void aria_asm_jb(Assembler* asm_ctx, int label_id)  { emit_jcc_rel32(asm_ctx, 0x82, label_id, "JB"); }
+void aria_asm_jbe(Assembler* asm_ctx, int label_id) { emit_jcc_rel32(asm_ctx, 0x86, label_id, "JBE"); }
+void aria_asm_ja(Assembler* asm_ctx, int label_id)  { emit_jcc_rel32(asm_ctx, 0x87, label_id, "JA"); }
+void aria_asm_jae(Assembler* asm_ctx, int label_id) { emit_jcc_rel32(asm_ctx, 0x83, label_id, "JAE"); }
+
+// =============================================================================
+// Memory Operations (v0.7.2)
+// =============================================================================
+
+/**
+ * Emit ModR/M + optional SIB + displacement for [base + offset] addressing.
+ * Handles special cases: RSP/R12 need SIB byte, RBP/R13 need explicit disp8=0.
+ */
+static void emit_mem_operand(CodeBuffer* buf, int reg, int base, int32_t offset) {
+    int base_lo = base & 0x07;
+
+    // Determine mod field
+    uint8_t mod;
+    if (offset == 0 && base_lo != 5) {  // RBP/R13 always need displacement
+        mod = 0x00;
+    } else if (offset >= -128 && offset <= 127) {
+        mod = 0x01;  // disp8
+    } else {
+        mod = 0x02;  // disp32
+    }
+
+    if (base_lo == 4) {
+        // RSP/R12: need SIB byte (base=RSP, index=none, scale=1)
+        emit_modrm(buf, mod, reg, 4);    // r/m=100 means SIB follows
+        aria_asm_emit_byte(buf, 0x24);    // SIB: scale=00, index=100(none), base=100(RSP)
+    } else {
+        emit_modrm(buf, mod, reg, base_lo);
+    }
+
+    // Emit displacement
+    if (mod == 0x01) {
+        aria_asm_emit_byte(buf, (uint8_t)(offset & 0xFF));
+    } else if (mod == 0x02) {
+        aria_asm_emit_i32(buf, offset);
+    }
+}
+
+void aria_asm_mov_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
+    int dst_reg = (int)dst;
+    int base_reg = (int)base;
+
+    // MOV r64, [base + offset]: REX.W + 8B /r
+    emit_rex(asm_ctx->buffer, true, dst_reg, base_reg);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x8B);
+    emit_mem_operand(asm_ctx->buffer, dst_reg, base_reg, offset);
+}
+
+void aria_asm_mov_mem_r64(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src) {
+    int src_reg = (int)src;
+    int base_reg = (int)base;
+
+    // MOV [base + offset], r64: REX.W + 89 /r
+    emit_rex(asm_ctx->buffer, true, src_reg, base_reg);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x89);
+    emit_mem_operand(asm_ctx->buffer, src_reg, base_reg, offset);
+}
+
+void aria_asm_lea_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
+    int dst_reg = (int)dst;
+    int base_reg = (int)base;
+
+    // LEA r64, [base + offset]: REX.W + 8D /r
+    emit_rex(asm_ctx->buffer, true, dst_reg, base_reg);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x8D);
+    emit_mem_operand(asm_ctx->buffer, dst_reg, base_reg, offset);
+}
+
+// =============================================================================
+// Stack Frame & Local Variables (v0.7.2)
+// =============================================================================
+
+void aria_asm_store_local(Assembler* asm_ctx, uint32_t slot_offset, AsmRegister src) {
+    // MOV [RBP - slot_offset], src
+    aria_asm_mov_mem_r64(asm_ctx, REG_RBP, -(int32_t)slot_offset, src);
+}
+
+void aria_asm_load_local(Assembler* asm_ctx, AsmRegister dst, uint32_t slot_offset) {
+    // MOV dst, [RBP - slot_offset]
+    aria_asm_mov_r64_mem(asm_ctx, dst, REG_RBP, -(int32_t)slot_offset);
+}
+
+// =============================================================================
+// CALL Instructions (v0.7.2)
+// =============================================================================
+
+void aria_asm_call_r64(Assembler* asm_ctx, AsmRegister target) {
+    int reg = (int)target;
+
+    // CALL r64: FF /2 (ModR/M mod=11, reg=010)
+    if (reg >= 8) {
+        emit_rex(asm_ctx->buffer, false, 0, reg);  // REX.B for extended regs
+    }
+    aria_asm_emit_byte(asm_ctx->buffer, 0xFF);
+    emit_modrm(asm_ctx->buffer, 0x03, 2, reg);  // mod=11, /2
+}
+
+void aria_asm_call_label(Assembler* asm_ctx, int label_id) {
+    if (label_id < 0 || label_id >= (int)asm_ctx->label_count) {
+        set_error(asm_ctx, "Invalid label ID for CALL");
+        return;
+    }
+
+    AsmLabel* label = &asm_ctx->labels[label_id];
+
+    // CALL rel32: E8 cd
+    aria_asm_emit_byte(asm_ctx->buffer, 0xE8);
+
+    if (aria_asm_label_is_bound(label)) {
+        uint32_t current = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
+        int32_t offset = label->position - (int32_t)(current + 4);
+        aria_asm_emit_i32(asm_ctx->buffer, offset);
+    } else {
+        if (label->num_patches >= MAX_PATCH_SITES) {
+            set_error(asm_ctx, "Too many forward references to label");
+            return;
+        }
+        label->patch_sites[label->num_patches++] = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
+        aria_asm_emit_i32(asm_ctx->buffer, 0);
+    }
+}
+
+void aria_asm_call_abs(Assembler* asm_ctx, void* func_ptr) {
+    // MOV R11, <64-bit address>
+    aria_asm_mov_r64_imm64(asm_ctx, REG_R11, (int64_t)(uintptr_t)func_ptr);
+    // CALL R11
+    aria_asm_call_r64(asm_ctx, REG_R11);
+}
+
+// =============================================================================
+// SSE2 Floating-Point Instructions (v0.7.2)
+// =============================================================================
+
+// Helper: get XMM register number (0-15)
+static int xmm_num(AsmRegister reg) {
+    return (int)reg - 64;  // REG_XMM0 = 64
+}
+
+// Helper: emit REX prefix for SSE instructions (only needed for XMM8-15)
+static void emit_rex_sse(CodeBuffer* buf, int xmm_reg, int xmm_rm) {
+    uint8_t rex = 0x40;
+    if (xmm_reg >= 8) rex |= 0x04;  // REX.R
+    if (xmm_rm >= 8)  rex |= 0x01;  // REX.B
+    if (rex != 0x40) {
+        aria_asm_emit_byte(buf, rex);
+    }
+}
+
+// Helper: emit REX for SSE memory operands (reg + base addressing)
+static void emit_rex_sse_mem(CodeBuffer* buf, int xmm_reg, int base_gpr) {
+    uint8_t rex = 0x40;
+    if (xmm_reg >= 8) rex |= 0x04;  // REX.R
+    if (base_gpr >= 8) rex |= 0x01;  // REX.B
+    if (rex != 0x40) {
+        aria_asm_emit_byte(buf, rex);
+    }
+}
+
+void aria_asm_movsd_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+    int d = xmm_num(dst);
+    int s = xmm_num(src);
+    // MOVSD xmm1, xmm2: F2 0F 10 /r
+    aria_asm_emit_byte(asm_ctx->buffer, 0xF2);
+    emit_rex_sse(asm_ctx->buffer, d, s);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x10);
+    emit_modrm(asm_ctx->buffer, 0x03, d, s);
+}
+
+void aria_asm_movsd_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
+    int d = xmm_num(dst);
+    int b = (int)base;
+    // MOVSD xmm, [base+offset]: F2 [REX] 0F 10 /r mem
+    aria_asm_emit_byte(asm_ctx->buffer, 0xF2);
+    emit_rex_sse_mem(asm_ctx->buffer, d, b);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x10);
+    emit_mem_operand(asm_ctx->buffer, d, b, offset);
+}
+
+void aria_asm_movsd_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src) {
+    int s = xmm_num(src);
+    int b = (int)base;
+    // MOVSD [base+offset], xmm: F2 [REX] 0F 11 /r mem
+    aria_asm_emit_byte(asm_ctx->buffer, 0xF2);
+    emit_rex_sse_mem(asm_ctx->buffer, s, b);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x11);
+    emit_mem_operand(asm_ctx->buffer, s, b, offset);
+}
+
+// Helper: emit SSE2 scalar double arithmetic (F2 0F <op> /r)
+static void emit_sse2_sd_rr(Assembler* asm_ctx, uint8_t opcode, AsmRegister dst, AsmRegister src) {
+    int d = xmm_num(dst);
+    int s = xmm_num(src);
+    aria_asm_emit_byte(asm_ctx->buffer, 0xF2);
+    emit_rex_sse(asm_ctx->buffer, d, s);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    aria_asm_emit_byte(asm_ctx->buffer, opcode);
+    emit_modrm(asm_ctx->buffer, 0x03, d, s);
+}
+
+void aria_asm_addsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+    emit_sse2_sd_rr(asm_ctx, 0x58, dst, src);
+}
+
+void aria_asm_subsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+    emit_sse2_sd_rr(asm_ctx, 0x5C, dst, src);
+}
+
+void aria_asm_mulsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+    emit_sse2_sd_rr(asm_ctx, 0x59, dst, src);
+}
+
+void aria_asm_divsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+    emit_sse2_sd_rr(asm_ctx, 0x5E, dst, src);
+}
+
+void aria_asm_ucomisd(Assembler* asm_ctx, AsmRegister left, AsmRegister right) {
+    int l = xmm_num(left);
+    int r = xmm_num(right);
+    // UCOMISD: 66 0F 2E /r
+    aria_asm_emit_byte(asm_ctx->buffer, 0x66);
+    emit_rex_sse(asm_ctx->buffer, l, r);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x2E);
+    emit_modrm(asm_ctx->buffer, 0x03, l, r);
+}
+
+// =============================================================================
+// SSE Packed Float Instructions (v0.7.2)
+// =============================================================================
+
+void aria_asm_movaps_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+    int d = xmm_num(dst);
+    int s = xmm_num(src);
+    // MOVAPS xmm, xmm: [REX] 0F 28 /r
+    emit_rex_sse(asm_ctx->buffer, d, s);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x28);
+    emit_modrm(asm_ctx->buffer, 0x03, d, s);
+}
+
+void aria_asm_movaps_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
+    int d = xmm_num(dst);
+    int b = (int)base;
+    // MOVAPS xmm, [mem]: [REX] 0F 28 /r mem
+    emit_rex_sse_mem(asm_ctx->buffer, d, b);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x28);
+    emit_mem_operand(asm_ctx->buffer, d, b, offset);
+}
+
+void aria_asm_movaps_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src) {
+    int s = xmm_num(src);
+    int b = (int)base;
+    // MOVAPS [mem], xmm: [REX] 0F 29 /r mem
+    emit_rex_sse_mem(asm_ctx->buffer, s, b);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x29);
+    emit_mem_operand(asm_ctx->buffer, s, b, offset);
+}
+
+// Helper: emit packed single arithmetic ([REX] 0F <op> /r)
+static void emit_sse_ps_rr(Assembler* asm_ctx, uint8_t opcode, AsmRegister dst, AsmRegister src) {
+    int d = xmm_num(dst);
+    int s = xmm_num(src);
+    emit_rex_sse(asm_ctx->buffer, d, s);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    aria_asm_emit_byte(asm_ctx->buffer, opcode);
+    emit_modrm(asm_ctx->buffer, 0x03, d, s);
+}
+
+void aria_asm_addps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+    emit_sse_ps_rr(asm_ctx, 0x58, dst, src);
+}
+
+void aria_asm_mulps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+    emit_sse_ps_rr(asm_ctx, 0x59, dst, src);
+}
+
+// =============================================================================
+// Floating-Point Execution Variants (v0.7.2)
+// =============================================================================
+
+double aria_asm_execute_f64(WildXGuard* guard) {
+    if (!guard || !guard->ptr || guard->state != WILDX_STATE_EXECUTABLE) {
+        return 0.0;
+    }
+
+    if (guard->code_hash != 0) {
+        uint64_t current = aria_wildx_verify_hash(guard);
+        if (current != guard->code_hash) {
+            return 0.0;  // Tampered
+        }
+    }
+
+    typedef double (*func_t)(void);
+    func_t func = (func_t)guard->ptr;
+    return func();
+}
+
+double aria_asm_execute_f64_f64(WildXGuard* guard, double arg1) {
+    if (!guard || !guard->ptr || guard->state != WILDX_STATE_EXECUTABLE) {
+        return 0.0;
+    }
+
+    if (guard->code_hash != 0) {
+        uint64_t current = aria_wildx_verify_hash(guard);
+        if (current != guard->code_hash) {
+            return 0.0;  // Tampered
+        }
+    }
+
+    typedef double (*func_t)(double);
+    func_t func = (func_t)guard->ptr;
+    return func(arg1);
+}
+
+// =============================================================================
 // High-Level Code Generation
 // =============================================================================
 
