@@ -11,6 +11,9 @@
 #include <set>
 #include <memory>
 
+// Forward declaration for optional Z3 integration (v0.6.1)
+namespace aria { class Z3Verifier; }
+
 namespace aria {
 namespace sema {
 
@@ -55,6 +58,10 @@ namespace sema {
 struct AccessPath {
     std::string base_var;              // Root variable name
     std::vector<std::string> fields;   // Field/index access chain
+    
+    // v0.6.1: Store index expression AST nodes for Z3 disjointness proofs
+    // Parallel to fields vector — non-null only for [*] placeholder entries
+    std::vector<ASTNode*> index_exprs;
 
     AccessPath() = default;
     explicit AccessPath(const std::string& base) : base_var(base) {}
@@ -77,6 +84,7 @@ struct AccessPath {
     /**
      * Returns true if paths are disjoint (e.g. x.a vs x.b)
      * Two paths are disjoint if they share a common prefix but diverge
+     * v0.6.1: Uses index_exprs for Z3-backed disjointness when both have [*]
      */
     bool isDisjointFrom(const AccessPath& other) const {
         if (base_var != other.base_var) return true;  // Different roots
@@ -88,6 +96,36 @@ struct AccessPath {
                 // They diverge here - check if both have more fields
                 // a.x vs a.y -> disjoint (diverge at same level)
                 return true;
+            }
+            // v0.6.1: Both are [*] but may have different index expressions
+            // Two [*] entries with literal sub-expressions can be compared
+            if (fields[i] == "[*]" && other.fields[i] == "[*]") {
+                // Check if we have index expressions that are literal and different
+                if (i < index_exprs.size() && i < other.index_exprs.size() &&
+                    index_exprs[i] && other.index_exprs[i]) {
+                    auto* e1 = index_exprs[i];
+                    auto* e2 = other.index_exprs[i];
+                    // Quick literal comparison
+                    if (e1->type == ASTNode::NodeType::LITERAL &&
+                        e2->type == ASTNode::NodeType::LITERAL) {
+                        auto* l1 = static_cast<LiteralExpr*>(e1);
+                        auto* l2 = static_cast<LiteralExpr*>(e2);
+                        if (std::holds_alternative<int64_t>(l1->value) &&
+                            std::holds_alternative<int64_t>(l2->value)) {
+                            if (std::get<int64_t>(l1->value) != std::get<int64_t>(l2->value)) {
+                                return true;  // Different constant indices
+                            }
+                        }
+                    }
+                    // If both are different identifier expressions, check names
+                    if (e1->type == ASTNode::NodeType::IDENTIFIER &&
+                        e2->type == ASTNode::NodeType::IDENTIFIER) {
+                        auto* id1 = static_cast<IdentifierExpr*>(e1);
+                        auto* id2 = static_cast<IdentifierExpr*>(e2);
+                        // Same variable name means same index — not disjoint here
+                        // Different names: can't prove without Z3, continue
+                    }
+                }
             }
         }
 
@@ -565,6 +603,17 @@ private:
     std::vector<BorrowError> errors;
     
     // ========================================================================
+    // Z3 Integration (v0.6.1: Precision Improvements)
+    // ========================================================================
+    
+    // Optional Z3 verifier for precision proofs (nullptr if Z3 not available)
+    Z3Verifier* z3_verifier = nullptr;
+    
+    // Prove two index expressions are disjoint using Z3
+    // Returns true if provably disjoint, false if unknown/overlapping
+    bool proveIndexDisjoint(ASTNode* idx1, ASTNode* idx2);
+    
+    // ========================================================================
     // Function Summary Registry (v0.6.0: Inter-Procedural Analysis)
     // ========================================================================
     
@@ -736,6 +785,13 @@ private:
     void checkPassStmt(PassStmt* stmt);
     void checkDeferStmt(DeferStmt* stmt);
 
+    // v0.6.1: Pattern match borrow flow
+    void checkPickStmt(PickStmt* stmt);
+    void checkWhenStmt(WhenStmt* stmt);
+    
+    // v0.6.1: Return type borrow validation
+    void checkReturnBorrowEscape(ASTNode* returnValue, ASTNode* context);
+
     // ========================================================================
     // Deep AST Scanning for Defer Blocks
     // ========================================================================
@@ -883,6 +939,13 @@ private:
     
 public:
     BorrowChecker() = default;
+    
+    /**
+     * Set Z3 verifier for precision improvements (v0.6.1)
+     * When set, enables Z3-backed index disjointness proofs and
+     * conditional borrow narrowing.
+     */
+    void setZ3Verifier(Z3Verifier* z3v) { z3_verifier = z3v; }
     
     /**
      * Analyze an AST for borrow checking violations

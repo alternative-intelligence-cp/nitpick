@@ -28,6 +28,7 @@
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/expr.h"
 #include "frontend/token.h"
+#include <algorithm>
 #include <functional>
 #include <iostream>
 #include <set>
