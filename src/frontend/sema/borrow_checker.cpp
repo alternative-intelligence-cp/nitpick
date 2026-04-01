@@ -1060,6 +1060,14 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
         case ASTNode::NodeType::BINARY_OP:
             checkBinaryExpr(static_cast<BinaryExpr*>(stmt));
             break;
+
+        case ASTNode::NodeType::PICK:
+            checkPickStmt(static_cast<PickStmt*>(stmt));
+            break;
+
+        case ASTNode::NodeType::WHEN:
+            checkWhenStmt(static_cast<WhenStmt*>(stmt));
+            break;
             
         default:
             // Other statement types don't require borrow checking
@@ -1512,6 +1520,252 @@ void BorrowChecker::checkForStmt(ForStmt* stmt) {
     ctx.exitScope();
 }
 
+// ============================================================================
+// v0.6.1: Pick Statement Borrow Flow
+// ============================================================================
+
+void BorrowChecker::checkPickStmt(PickStmt* stmt) {
+    if (!stmt) return;
+
+    // Check selector expression (may create borrows)
+    checkExpression(stmt->selector.get());
+
+    // Snapshot state before branching into cases
+    auto pre_pick_state = ctx.snapshot();
+
+    // Track states from each case arm
+    std::vector<LifetimeContext> arm_states;
+    bool has_wildcard = false;
+
+    for (const auto& case_node : stmt->cases) {
+        auto* pick_case = static_cast<PickCase*>(case_node.get());
+        if (!pick_case) continue;
+
+        // Skip unreachable arms
+        if (pick_case->is_unreachable) continue;
+
+        // Check if this is the wildcard (*) case
+        if (!pick_case->pattern) {
+            has_wildcard = true;
+        }
+
+        // Restore to pre-branch state for each arm
+        ctx.restore(pre_pick_state);
+
+        // Check pattern expression (may reference variables)
+        if (pick_case->pattern) {
+            checkExpression(pick_case->pattern.get());
+        }
+
+        // Check arm body in its own scope
+        ctx.enterScope();
+        if (pick_case->body) {
+            checkStatement(pick_case->body.get());
+        }
+        ctx.exitScope();
+
+        // Capture post-arm state
+        arm_states.push_back(ctx.snapshot());
+    }
+
+    // Merge all arm states (conservative: union of all possible borrow states)
+    if (!arm_states.empty()) {
+        // Start with the first arm state
+        ctx.restore(arm_states[0]);
+
+        // Merge remaining arms pairwise
+        for (size_t i = 1; i < arm_states.size(); ++i) {
+            auto current = ctx.snapshot();
+            ctx.merge(current, arm_states[i]);
+        }
+    }
+
+    // If no wildcard and no cases, restore pre-pick state
+    // (the pick might not execute any arm)
+    if (!has_wildcard && !arm_states.empty()) {
+        auto merged = ctx.snapshot();
+        ctx.merge(merged, pre_pick_state);
+    }
+}
+
+// ============================================================================
+// v0.6.1: When Statement (Loop) Borrow Flow
+// ============================================================================
+
+void BorrowChecker::checkWhenStmt(WhenStmt* stmt) {
+    if (!stmt) return;
+
+    // when(condition) { body } then { } end { }
+    // 'when' is a conditional loop: body executes while condition is true
+    // Uses fixpoint iteration like while/for
+
+    LifetimeContext entry_state = ctx.snapshot();
+    LifetimeContext loop_head_state = entry_state;
+
+    bool changed = true;
+    int iterations = 0;
+
+    // Fixpoint loop
+    while (changed && iterations < MAX_FIXPOINT_ITERATIONS) {
+        changed = false;
+        iterations++;
+
+        ctx.restore(loop_head_state);
+
+        // Check condition
+        checkExpression(stmt->condition.get());
+
+        // Check body in its own scope
+        ctx.enterScope();
+        if (stmt->body) {
+            checkStatement(stmt->body.get());
+        }
+        LifetimeContext back_edge_state = ctx.snapshot();
+        ctx.exitScope();
+
+        // Merge back-edge into header
+        if (loop_head_state.mergeLoopBackEdge(back_edge_state)) {
+            changed = true;
+        }
+
+        // Widening safeguard
+        if (iterations >= WIDENING_THRESHOLD && changed) {
+            loop_head_state.widen();
+            if (iterations >= MAX_FIXPOINT_ITERATIONS - 1) {
+                changed = false;
+            }
+        }
+    }
+
+    // Final state: the fixed point
+    ctx.restore(loop_head_state);
+
+    // Check for loop-carried borrow conflicts
+    for (const auto& [host, loans] : ctx.active_loans) {
+        int mutable_count = 0;
+        const Loan* first_mutable = nullptr;
+        for (const auto& loan : loans) {
+            if (loan.is_mutable) {
+                mutable_count++;
+                if (!first_mutable) first_mutable = &loan;
+            }
+        }
+        if (mutable_count > 1) {
+            addError("Loop-carried borrow conflict: '" + host +
+                    "' is mutably borrowed multiple times across when-loop iterations",
+                    stmt,
+                    "First mutable borrow here",
+                    first_mutable->creation_line, first_mutable->creation_column);
+        }
+    }
+
+    // Check 'then' block (executes on normal completion)
+    if (stmt->then_block) {
+        ctx.enterScope();
+        checkStatement(stmt->then_block.get());
+        ctx.exitScope();
+    }
+
+    // Check 'end' block (executes on break or no execution)
+    // For borrow analysis, merge then-path and end-path
+    if (stmt->end_block) {
+        auto then_state = ctx.snapshot();
+        ctx.restore(loop_head_state);
+        ctx.enterScope();
+        checkStatement(stmt->end_block.get());
+        ctx.exitScope();
+        auto end_state = ctx.snapshot();
+        ctx.merge(then_state, end_state);
+    }
+}
+
+// ============================================================================
+// v0.6.1: Return Type Borrow Validation
+// ============================================================================
+
+void BorrowChecker::checkReturnBorrowEscape(ASTNode* returnValue, ASTNode* context) {
+    if (!returnValue) return;
+
+    // Check if the return value is a borrow expression ($ or !$)
+    if (returnValue->type == ASTNode::NodeType::UNARY_OP) {
+        auto* unary = static_cast<UnaryExpr*>(returnValue);
+        if (unary->creates_loan && unary->operand) {
+            // This is returning a borrow — check if the source is local
+            AccessPath path = extractAccessPath(unary->operand.get());
+            if (!path.base_var.empty()) {
+                // Check if the borrowed variable is local to this function
+                int depth = getVariableDepth(path.base_var);
+                if (depth > 1) {  // depth 1 = function params, > 1 = local
+                    addError("Cannot return borrow of local variable '" + path.base_var +
+                            "' — it will be destroyed when the function returns",
+                            context,
+                            "'" + path.base_var + "' declared here with scope depth " +
+                            std::to_string(depth),
+                            returnValue->line, returnValue->column);
+                }
+            }
+        }
+    }
+
+    // Also check if returning a variable that's itself a borrow
+    if (returnValue->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* ident = static_cast<IdentifierExpr*>(returnValue);
+        // Check if this variable holds a borrow that would escape
+        auto it = ctx.loan_origins.find(ident->name);
+        if (it != ctx.loan_origins.end()) {
+            for (const auto& origin : it->second) {
+                int origin_depth = getVariableDepth(origin);
+                if (origin_depth > 1) {
+                    addError("Cannot return '" + ident->name +
+                            "' — it borrows from local variable '" + origin +
+                            "' which will be destroyed when the function returns",
+                            context,
+                            "'" + origin + "' is local to this function",
+                            returnValue->line, returnValue->column);
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// v0.6.1: Z3-Backed Index Disjointness
+// ============================================================================
+
+bool BorrowChecker::proveIndexDisjoint(ASTNode* idx1, ASTNode* idx2) {
+    if (!z3_verifier || !idx1 || !idx2) return false;
+
+    // If both indices are identifiers, check if they're different variables
+    // with known distinct values (quick check before Z3)
+    if (idx1->type == ASTNode::NodeType::IDENTIFIER &&
+        idx2->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* id1 = static_cast<IdentifierExpr*>(idx1);
+        auto* id2 = static_cast<IdentifierExpr*>(idx2);
+        if (id1->name != id2->name) {
+            // Different variable names don't guarantee disjointness
+            // but if they're loop counters with different names, likely disjoint
+            // For now, return false — need Z3 for real proof
+        }
+    }
+
+    // If both are literals, trivially check
+    if (idx1->type == ASTNode::NodeType::LITERAL &&
+        idx2->type == ASTNode::NodeType::LITERAL) {
+        auto* lit1 = static_cast<LiteralExpr*>(idx1);
+        auto* lit2 = static_cast<LiteralExpr*>(idx2);
+        if (std::holds_alternative<int64_t>(lit1->value) &&
+            std::holds_alternative<int64_t>(lit2->value)) {
+            return std::get<int64_t>(lit1->value) != std::get<int64_t>(lit2->value);
+        }
+    }
+
+    // Z3 proof: assert idx1 == idx2 and check if UNSAT
+    // If UNSAT, they're provably disjoint
+    // TODO: Full Z3 integration when borrow checker has access to Rules constraints
+    // For now, we use the literal fast-path above and return false for symbolic indices
+    return false;
+}
+
 void BorrowChecker::checkBlockStmt(BlockStmt* stmt) {
     if (!stmt) return;
     
@@ -1563,6 +1817,11 @@ void BorrowChecker::checkReturnStmt(ReturnStmt* stmt) {
         // ARIA-017: Check that returned references don't point to local variables
         // This prevents dangling references from escaping function scope
         checkReferenceEscape(stmt->value.get(), stmt);
+
+        // v0.6.1: Validate return borrow doesn't escape local lifetime
+        if (!current_function.empty()) {
+            checkReturnBorrowEscape(stmt->value.get(), stmt);
+        }
     }
 }
 
@@ -1576,6 +1835,11 @@ void BorrowChecker::checkPassStmt(PassStmt* stmt) {
         // ARIA-017: Check that passed references don't point to local variables
         // This prevents dangling references from escaping function scope
         checkReferenceEscape(stmt->value.get(), stmt);
+
+        // v0.6.1: Validate pass borrow doesn't escape local lifetime
+        if (!current_function.empty()) {
+            checkReturnBorrowEscape(stmt->value.get(), stmt);
+        }
     }
 }
 
@@ -2635,13 +2899,16 @@ AccessPath BorrowChecker::extractAccessPath(ASTNode* expr) {
                 // Try to extract integer value from the variant
                 if (std::holds_alternative<int64_t>(lit->value)) {
                     base.fields.push_back("[" + std::to_string(std::get<int64_t>(lit->value)) + "]");
+                    base.index_exprs.push_back(index->index.get());
                 } else {
                     // Non-integer literal - use placeholder
                     base.fields.push_back("[*]");
+                    base.index_exprs.push_back(index->index.get());
                 }
             } else {
-                // Non-constant index - use placeholder
+                // Non-constant index - use placeholder, store expr for Z3
                 base.fields.push_back("[*]");
+                base.index_exprs.push_back(index->index ? index->index.get() : nullptr);
             }
             return base;
         }
