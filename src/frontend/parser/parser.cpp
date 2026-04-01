@@ -3589,6 +3589,17 @@ ASTNodePtr Parser::parseTraitDecl() {
                 continue;
             }
 
+            // v0.6.2: Parse $$i/$$m borrow qualifiers on trait method params
+            bool paramIsBorrowImm = false;
+            bool paramIsBorrowMut = false;
+            if (check(TokenType::TOKEN_KW_BORROW_IMM)) {
+                paramIsBorrowImm = true;
+                advance(); // consume $$i
+            } else if (check(TokenType::TOKEN_KW_BORROW_MUT)) {
+                paramIsBorrowMut = true;
+                advance(); // consume $$m
+            }
+
             // Parse parameter type
             ASTNodePtr paramTypeNode = parseType();
 
@@ -3598,7 +3609,10 @@ ASTNodePtr Parser::parseTraitDecl() {
             // Parse parameter name
             Token paramName = consumeName("parameter");
 
-            params.emplace_back(paramTypeNode, paramName.lexeme, nullptr, paramName.line, paramName.column);
+            ParameterNode pnode(paramTypeNode, paramName.lexeme, nullptr, paramName.line, paramName.column);
+            pnode.isBorrowImm = paramIsBorrowImm;
+            pnode.isBorrowMut = paramIsBorrowMut;
+            params.push_back(std::move(pnode));
 
             // Safety: if no progress was made, break to avoid infinite loop
             if (current == paramPosBefore) {

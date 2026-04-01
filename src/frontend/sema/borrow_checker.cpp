@@ -464,6 +464,10 @@ std::vector<BorrowError> BorrowChecker::analyze(ASTNode* ast) {
     ctx = LifetimeContext();
     func_summaries.clear();
     current_function.clear();
+    trait_methods.clear();
+    type_traits.clear();
+    copyable_types.clear();
+    droppable_types.clear();
     
     // Phase 1: Collect function borrow summaries (signatures only)
     collectFunctionSummaries(ast);
@@ -488,6 +492,44 @@ void BorrowChecker::collectFunctionSummaries(ASTNode* ast) {
                 auto* func = static_cast<FuncDeclStmt*>(decl.get());
                 FunctionBorrowSummary summary = buildSummary(func);
                 func_summaries[summary.func_name] = std::move(summary);
+            }
+            // v0.6.2: Collect trait method signatures and impl method summaries
+            else if (decl && decl->type == ASTNode::NodeType::TRAIT_DECL) {
+                auto* traitDecl = static_cast<TraitDeclStmt*>(decl.get());
+                trait_methods[traitDecl->traitName] = traitDecl->methods;
+            }
+            else if (decl && decl->type == ASTNode::NodeType::IMPL_DECL) {
+                auto* implDecl = static_cast<ImplDeclStmt*>(decl.get());
+                // Register trait implementation
+                type_traits[implDecl->typeName].insert(implDecl->traitName);
+                // Track Copyable/Droppable types
+                if (implDecl->traitName == "Copyable") {
+                    copyable_types.insert(implDecl->typeName);
+                } else if (implDecl->traitName == "Droppable") {
+                    droppable_types.insert(implDecl->typeName);
+                }
+                // Collect summaries for each impl method (mangled name: Type_method)
+                for (const auto& methodNode : implDecl->methods) {
+                    if (methodNode && methodNode->type == ASTNode::NodeType::FUNC_DECL) {
+                        auto* func = static_cast<FuncDeclStmt*>(methodNode.get());
+                        FunctionBorrowSummary summary = buildSummary(func);
+                        // Mangle the name: TypeName_methodName
+                        std::string mangledName = implDecl->typeName + "_" + func->funcName;
+                        summary.func_name = mangledName;
+                        summary.is_trait_method = true;
+                        summary.impl_type = implDecl->typeName;
+                        summary.trait_name = implDecl->traitName;
+                        // Identify self parameter
+                        for (size_t i = 0; i < summary.param_names.size(); ++i) {
+                            if (summary.param_names[i] == "self") {
+                                summary.self_param_index = static_cast<int>(i);
+                                summary.self_ownership = summary.param_ownership[i];
+                                break;
+                            }
+                        }
+                        func_summaries[mangledName] = std::move(summary);
+                    }
+                }
             }
         }
     } else if (ast->type == ASTNode::NodeType::FUNC_DECL) {
@@ -1067,6 +1109,19 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
 
         case ASTNode::NodeType::WHEN:
             checkWhenStmt(static_cast<WhenStmt*>(stmt));
+            break;
+
+        case ASTNode::NodeType::TRAIT_DECL:
+            checkTraitDeclStmt(static_cast<TraitDeclStmt*>(stmt));
+            break;
+
+        case ASTNode::NodeType::IMPL_DECL:
+            checkImplDeclStmt(static_cast<ImplDeclStmt*>(stmt));
+            break;
+
+        case ASTNode::NodeType::STRUCT_DECL:
+            // Struct declarations don't need borrow checking themselves,
+            // but we acknowledge them so they don't fall through to default
             break;
             
         default:
@@ -1676,6 +1731,192 @@ void BorrowChecker::checkWhenStmt(WhenStmt* stmt) {
         ctx.exitScope();
         auto end_state = ctx.snapshot();
         ctx.merge(then_state, end_state);
+    }
+}
+
+// ============================================================================
+// v0.6.2: Trait Integration — Trait and Impl Borrow Checking
+// ============================================================================
+
+void BorrowChecker::checkTraitDeclStmt(TraitDeclStmt* stmt) {
+    if (!stmt) return;
+
+    // Validate trait method signatures for borrow consistency.
+    // Each method that takes Self must declare consistent borrow qualifiers:
+    //   - Self:self      = takes ownership (move)
+    //   - $$i Self:self  = immutable borrow (reads only)
+    //   - $$m Self:self  = mutable borrow (can modify)
+    // A method with no self parameter is a static/associated function.
+
+    for (const auto& method : stmt->methods) {
+        bool has_self = false;
+        bool self_is_borrow_imm = false;
+        bool self_is_borrow_mut = false;
+
+        for (const auto& param : method.parameters) {
+            if (param.paramName == "self") {
+                has_self = true;
+                self_is_borrow_imm = param.isBorrowImm;
+                self_is_borrow_mut = param.isBorrowMut;
+
+                // Cannot be both $$i and $$m
+                if (self_is_borrow_imm && self_is_borrow_mut) {
+                    addError("Trait '" + stmt->traitName + "' method '" + method.name +
+                             "': self parameter cannot be both $$i (immutable) and $$m (mutable)",
+                             stmt);
+                }
+                break;
+            }
+        }
+
+        // Methods that mutate should use $$m self, read-only methods should use $$i self.
+        // Not enforced as error — just tracked for impl validation.
+        (void)has_self;
+    }
+}
+
+void BorrowChecker::checkImplDeclStmt(ImplDeclStmt* stmt) {
+    if (!stmt) return;
+
+    // Validate trait method signatures match if this implements a known trait
+    auto trait_it = trait_methods.find(stmt->traitName);
+
+    // Check each method in the impl block
+    for (const auto& methodNode : stmt->methods) {
+        if (!methodNode || methodNode->type != ASTNode::NodeType::FUNC_DECL) continue;
+        auto* func = static_cast<FuncDeclStmt*>(methodNode.get());
+
+        // v0.6.2: Validate self parameter borrow qualifiers match trait declaration
+        if (trait_it != trait_methods.end()) {
+            for (const auto& traitMethod : trait_it->second) {
+                if (traitMethod.name != func->funcName) continue;
+
+                // Find self in trait method signature
+                bool trait_self_imm = false;
+                bool trait_self_mut = false;
+                bool trait_has_self = false;
+                for (const auto& tp : traitMethod.parameters) {
+                    if (tp.paramName == "self") {
+                        trait_has_self = true;
+                        trait_self_imm = tp.isBorrowImm;
+                        trait_self_mut = tp.isBorrowMut;
+                        break;
+                    }
+                }
+
+                // Find self in impl method signature
+                bool impl_self_imm = false;
+                bool impl_self_mut = false;
+                bool impl_has_self = false;
+                for (const auto& param : func->parameters) {
+                    if (!param || param->type != ASTNode::NodeType::PARAMETER) continue;
+                    auto* p = static_cast<ParameterNode*>(param.get());
+                    if (p->paramName == "self") {
+                        impl_has_self = true;
+                        impl_self_imm = p->isBorrowImm;
+                        impl_self_mut = p->isBorrowMut;
+                        break;
+                    }
+                }
+
+                // Mismatch: trait says $$i, impl says $$m (or other combinations)
+                if (trait_has_self && impl_has_self) {
+                    if (trait_self_imm != impl_self_imm || trait_self_mut != impl_self_mut) {
+                        std::string trait_qual = trait_self_mut ? "$$m" : (trait_self_imm ? "$$i" : "owned");
+                        std::string impl_qual = impl_self_mut ? "$$m" : (impl_self_imm ? "$$i" : "owned");
+                        addError("Method '" + func->funcName + "' in impl " + stmt->traitName +
+                                 " for " + stmt->typeName + ": self borrow qualifier mismatch — "
+                                 "trait declares " + trait_qual + " but impl uses " + impl_qual,
+                                 methodNode.get());
+                    }
+                } else if (trait_has_self && !impl_has_self) {
+                    addError("Method '" + func->funcName + "' in impl " + stmt->traitName +
+                             " for " + stmt->typeName + ": trait requires self parameter but impl omits it",
+                             methodNode.get());
+                }
+                break;
+            }
+        }
+
+        // Borrow-check the method body with self-awareness
+        // We analyze each impl method like a normal function, but register
+        // 'self' as a variable of the impl type with appropriate borrow mode
+        std::string prev_function = current_function;
+        std::string mangledName = stmt->typeName + "_" + func->funcName;
+        current_function = mangledName;
+
+        if (func->body) {
+            LifetimeContext saved_ctx = ctx.snapshot();
+            ctx = LifetimeContext();  // Fresh context for this method
+            ctx.enterScope();
+
+            // Register parameters, with special handling for 'self'
+            for (const auto& param : func->parameters) {
+                if (!param || param->type != ASTNode::NodeType::PARAMETER) continue;
+                auto* p = static_cast<ParameterNode*>(param.get());
+
+                registerVariable(p->paramName, param.get());
+
+                if (p->paramName == "self") {
+                    // 'self' is the receiver — track borrow mode
+                    if (p->isBorrowImm) {
+                        // $$i self: immutable borrow from caller
+                        std::string synthetic_host = "__caller_self";
+                        ctx.var_depths[synthetic_host] = ctx.current_depth - 1;
+                        recordBorrow(synthetic_host, "self", false, param.get());
+                    } else if (p->isBorrowMut) {
+                        // $$m self: mutable borrow from caller
+                        std::string synthetic_host = "__caller_self";
+                        ctx.var_depths[synthetic_host] = ctx.current_depth - 1;
+                        recordBorrow(synthetic_host, "self", true, param.get());
+                    }
+                    // else: owned self — move semantics, no borrow recorded
+                } else if (p->isBorrowImm || p->isBorrowMut) {
+                    std::string synthetic_host = "__caller_" + p->paramName;
+                    ctx.var_depths[synthetic_host] = ctx.current_depth - 1;
+                    recordBorrow(synthetic_host, p->paramName, p->isBorrowMut, param.get());
+                }
+
+                if (p->isWild || p->isWildx) {
+                    ctx.wild_states[p->paramName] = WildState::ALLOCATED;
+                }
+            }
+
+            checkStatement(func->body.get());
+            ctx.exitScope();
+            ctx.restore(saved_ctx);
+        }
+
+        current_function = prev_function;
+    }
+
+    // v0.6.2: If this type implements Droppable, validate the drop/finalize method
+    if (stmt->traitName == "Droppable") {
+        bool has_finalize = false;
+        for (const auto& methodNode : stmt->methods) {
+            if (!methodNode || methodNode->type != ASTNode::NodeType::FUNC_DECL) continue;
+            auto* func = static_cast<FuncDeclStmt*>(methodNode.get());
+            if (func->funcName == "finalize" || func->funcName == "drop") {
+                has_finalize = true;
+                // The drop/finalize method should take $$m self (mutable borrow)
+                // so it can clean up internal state
+                for (const auto& param : func->parameters) {
+                    if (!param || param->type != ASTNode::NodeType::PARAMETER) continue;
+                    auto* p = static_cast<ParameterNode*>(param.get());
+                    if (p->paramName == "self" && !p->isBorrowMut) {
+                        addWarning("Droppable finalize/drop method for '" + stmt->typeName +
+                                   "' should take $$m self (mutable borrow) to clean up internal state",
+                                   methodNode.get(),
+                                   "Change to: func:finalize = NIL($$m " + stmt->typeName + ":self)");
+                    }
+                }
+            }
+        }
+        if (!has_finalize && !stmt->methods.empty()) {
+            addWarning("Type '" + stmt->typeName + "' implements Droppable but has no "
+                       "finalize/drop method — custom destructor will not run",
+                       stmt);
+        }
     }
 }
 
@@ -2358,6 +2599,106 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
         auto summary_it = func_summaries.find(callee->name);
         if (summary_it != func_summaries.end()) {
             checkCallOwnership(expr, summary_it->second);
+        }
+    }
+
+    // v0.6.2: UFCS method call — obj.method(args) desugars to Type_method(obj, args)
+    // Look up the mangled name and enforce self borrow semantics
+    if (expr->callee && expr->callee->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        auto* memberExpr = static_cast<MemberAccessExpr*>(expr->callee.get());
+        const std::string& methodName = memberExpr->member;
+
+        // Extract object name for borrow checking
+        std::string obj_name;
+        if (memberExpr->object && memberExpr->object->type == ASTNode::NodeType::IDENTIFIER) {
+            obj_name = static_cast<IdentifierExpr*>(memberExpr->object.get())->name;
+        }
+
+        // Try to find a matching Type_method summary
+        // We search all summaries for trait methods matching this method name
+        for (const auto& [name, summary] : func_summaries) {
+            if (!summary.is_trait_method) continue;
+            // Check if this summary's un-mangled method name matches
+            std::string expected_suffix = "_" + methodName;
+            if (name.length() > expected_suffix.length() &&
+                name.substr(name.length() - expected_suffix.length()) == expected_suffix) {
+
+                // Found a trait method — enforce self borrow rules
+                if (summary.self_param_index >= 0 && !obj_name.empty()) {
+                    switch (summary.self_ownership) {
+                        case ParamOwnership::BORROW_IMM: {
+                            // Method takes $$i self — auto-borrow obj immutably
+                            // Check: must not be already mutably borrowed
+                            auto loans_it = ctx.active_loans.find(obj_name);
+                            if (loans_it != ctx.active_loans.end()) {
+                                for (const auto& loan : loans_it->second) {
+                                    if (loan.is_mutable && loan.isActive()) {
+                                        addError("Cannot call method '" + methodName +
+                                                 "' on '" + obj_name +
+                                                 "' — it is currently mutably borrowed by '" +
+                                                 loan.borrower + "'",
+                                                 expr,
+                                                 "Mutable borrow was created here",
+                                                 loan.creation_line, loan.creation_column);
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                        case ParamOwnership::BORROW_MUT: {
+                            // Method takes $$m self — auto-borrow obj mutably
+                            // Check: must not have ANY active borrows
+                            auto loans_it = ctx.active_loans.find(obj_name);
+                            if (loans_it != ctx.active_loans.end() &&
+                                !loans_it->second.empty()) {
+                                const Loan& loan = loans_it->second.front();
+                                addError("Cannot call mutating method '" + methodName +
+                                         "' on '" + obj_name +
+                                         "' — it is currently borrowed by '" +
+                                         loan.borrower + "'",
+                                         expr,
+                                         "Active borrow was created here",
+                                         loan.creation_line, loan.creation_column);
+                            }
+                            // Check: must not be already moved
+                            if (ctx.moved_variables.count(obj_name)) {
+                                addError("Cannot call method '" + methodName +
+                                         "' on '" + obj_name + "' — it has been moved",
+                                         expr);
+                            }
+                            break;
+                        }
+                        case ParamOwnership::MOVE: {
+                            // Method takes owned self — consume the object
+                            if (ctx.moved_variables.count(obj_name)) {
+                                addError("Cannot call consuming method '" + methodName +
+                                         "' on '" + obj_name + "' — it has already been moved",
+                                         expr);
+                            }
+                            auto loans_it = ctx.active_loans.find(obj_name);
+                            if (loans_it != ctx.active_loans.end() &&
+                                !loans_it->second.empty()) {
+                                const Loan& loan = loans_it->second.front();
+                                addError("Cannot consume '" + obj_name +
+                                         "' in method '" + methodName +
+                                         "' — it is currently borrowed by '" +
+                                         loan.borrower + "'",
+                                         expr,
+                                         "Active borrow was created here",
+                                         loan.creation_line, loan.creation_column);
+                            }
+                            ctx.moved_variables.insert(obj_name);
+                            break;
+                        }
+                        default:
+                            break;
+                    }
+                }
+
+                // Also check non-self arguments via normal ownership checking
+                checkCallOwnership(expr, summary);
+                break;  // Found matching method
+            }
         }
     }
 }

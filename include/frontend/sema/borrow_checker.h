@@ -588,6 +588,13 @@ struct FunctionBorrowSummary {
     bool returns_borrow_mut = false;  // Function returns $$m reference
     bool returns_wild = false;        // Function returns wild pointer
     
+    // v0.6.2: Trait method receiver info
+    bool is_trait_method = false;     // True if this is an impl method
+    std::string impl_type;            // Type name for impl methods (e.g. "Circle")
+    std::string trait_name;           // Trait name (e.g. "Drawable")
+    int self_param_index = -1;        // Index of self parameter (-1 if none)
+    ParamOwnership self_ownership = ParamOwnership::COPY;  // How self is passed
+    
     // Line of declaration (for diagnostics)
     int decl_line = 0;
     int decl_column = 0;
@@ -622,6 +629,22 @@ private:
     
     // Name of the function currently being analyzed (empty if global scope)
     std::string current_function;
+
+    // ========================================================================
+    // Trait Registry (v0.6.2: Trait Integration)
+    // ========================================================================
+    
+    // Maps trait name -> list of method signatures (for validation)
+    std::unordered_map<std::string, std::vector<TraitMethod>> trait_methods;
+    
+    // Maps type name -> set of implemented trait names
+    std::unordered_map<std::string, std::unordered_set<std::string>> type_traits;
+    
+    // Types that implement Copyable are exempt from move semantics
+    std::unordered_set<std::string> copyable_types;
+    
+    // Types that implement Droppable have custom destructors
+    std::unordered_set<std::string> droppable_types;
     
     /**
      * First-pass: collect borrow summaries for all function declarations
@@ -791,6 +814,10 @@ private:
     
     // v0.6.1: Return type borrow validation
     void checkReturnBorrowEscape(ASTNode* returnValue, ASTNode* context);
+
+    // v0.6.2: Trait Integration
+    void checkTraitDeclStmt(TraitDeclStmt* stmt);
+    void checkImplDeclStmt(ImplDeclStmt* stmt);
 
     // ========================================================================
     // Deep AST Scanning for Defer Blocks
