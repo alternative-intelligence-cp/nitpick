@@ -621,6 +621,7 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
                             "' parameter '" + param_name + "' (already moved)",
                             arg.get(),
                             "hint: a variable can only be moved once — clone it before the first move if needed");
+                        tagCode("ARIA-019");
                         break;
                     }
                     // Check not borrowed
@@ -632,6 +633,7 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
                                  loan.borrower + "'",
                                  arg.get(),
                                  "Variable was borrowed here", loan.creation_line, loan.creation_column);
+                        tagCode("ARIA-019");
                         break;
                     }
                     // Mark as moved
@@ -671,12 +673,14 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
                         param_name + "' requires a mutable borrow ($$m), but an immutable borrow was passed",
                         arg.get(),
                         "hint: use mutable borrow ($x) instead of immutable (!$x)");
+                    tagCode("ARIA-020");
                 } else if (!found_borrow && !arg_var.empty()) {
                     addErrorWithSuggestion(
                         "Function '" + summary.func_name + "' parameter '" +
                         param_name + "' expects a mutable borrow ($$m), but '" + arg_var + "' was passed by value",
                         arg.get(),
                         "hint: pass a mutable borrow: $" + arg_var);
+                    tagCode("ARIA-020");
                 }
                 break;
             }
@@ -757,6 +761,7 @@ bool BorrowChecker::validateLifetime(const std::string& host, const std::string&
     if (host_depth > ref_depth) {
         addError("Reference '" + reference + "' cannot outlive host '" + host + "' " +
                 "(host declared in inner scope)", node);
+        tagCode("ARIA-017");
         return false;
     }
     
@@ -792,6 +797,7 @@ bool BorrowChecker::checkBorrowRules(const std::string& host, bool is_mutable, A
     if (isPinned(host)) {
         if (is_mutable) {
             addError("Cannot borrow pinned variable '" + host + "' as mutable", node);
+            tagCode("ARIA-016");
             return false;
         }
     }
@@ -816,6 +822,7 @@ bool BorrowChecker::checkBorrowRules(const std::string& host, bool is_mutable, A
                 " borrow by '" + first.borrower + "' created here",
                 first.creation_line, first.creation_column,
                 "hint: consider borrowing immutably with '$" + host + "', or limit the existing borrow's scope");
+        tagCode("ARIA-023");
         return false;
     } else {
         // Requesting immutable borrow
@@ -827,6 +834,7 @@ bool BorrowChecker::checkBorrowRules(const std::string& host, bool is_mutable, A
                         "Mutable borrow by '" + loan.borrower + "' created here",
                         loan.creation_line, loan.creation_column,
                         "hint: end the mutable borrow before creating an immutable one, or clone the value");
+                tagCode("ARIA-023");
                 return false;
             }
         }
@@ -869,6 +877,7 @@ void BorrowChecker::recordPin(const std::string& host, const std::string& pin_re
     if (isPinned(host)) {
         addError("Variable '" + host + "' is already pinned by '" + 
                 ctx.active_pins[host] + "'", node);
+        tagCode("ARIA-016");
         return;
     }
     
@@ -922,17 +931,20 @@ void BorrowChecker::recordWildFree(const std::string& var, ASTNode* node) {
     auto it = ctx.wild_states.find(var);
     if (it == ctx.wild_states.end()) {
         addError("Cannot free undefined variable '" + var + "'", node);
+        tagCode("ARIA-022");
         return;
     }
     
     if (it->second == WildState::FREED) {
         addErrorWithSuggestion("Double free of variable '" + var + "' (already freed)", node,
                 "hint: remove the duplicate free(), or set '" + var + "' to null after the first free");
+        tagCode("ARIA-022");
         return;
     }
     
     if (it->second == WildState::MOVED) {
         addError("Cannot free moved variable '" + var + "'", node);
+        tagCode("ARIA-022");
         return;
     }
     
@@ -957,26 +969,31 @@ bool BorrowChecker::checkWildUse(const std::string& var, ASTNode* node) {
         case WildState::FREED:
             addErrorWithSuggestion("Use after free: variable '" + var + "' was already freed", node,
                 "hint: do not use '" + var + "' after calling free() on it");
+            tagCode("ARIA-022");
             return false;
 
         case WildState::MOVED:
             addErrorWithSuggestion("Use after move: variable '" + var + "' was moved", node,
                 "hint: clone the value before moving if you need it afterward");
+            tagCode("ARIA-019");
             return false;
 
         case WildState::UNINITIALIZED:
             addErrorWithSuggestion("Use of uninitialized wild pointer '" + var + "'", node,
                 "hint: allocate memory for '" + var + "' before using it");
+            tagCode("ARIA-022");
             return false;
 
         case WildState::UNKNOWN:
             addError("Use of wild pointer '" + var + "' with unknown state " +
                     "(may have been freed or moved in a branch)", node);
+            tagCode("ARIA-022");
             return false;
 
         case WildState::MAY_FREED:
             addError("Use of wild pointer '" + var + "' that may have been freed " +
                     "in a previous loop iteration", node);
+            tagCode("ARIA-022");
             return false;
 
         case WildState::ALLOCATED:
@@ -991,21 +1008,23 @@ void BorrowChecker::recordWildRealloc(const std::string& var, ASTNode* node, con
     auto it = ctx.wild_states.find(var);
     if (it == ctx.wild_states.end()) {
         addError("Cannot realloc undefined variable '" + var + "'", node);
+        tagCode("ARIA-022");
         return;
     }
 
     if (it->second == WildState::FREED) {
         addErrorWithSuggestion("Cannot realloc freed variable '" + var + "'", node,
                 "hint: allocate new memory with alloc() instead of realloc on freed pointer");
+        tagCode("ARIA-022");
         return;
     }
 
     if (it->second == WildState::MOVED) {
         addError("Cannot realloc moved variable '" + var + "'", node);
+        tagCode("ARIA-022");
         return;
     }
 
-    // Invalidate all active borrows from this variable
     // realloc may move the allocation, making all existing pointers dangling
     auto loans_it = ctx.active_loans.find(var);
     if (loans_it != ctx.active_loans.end() && !loans_it->second.empty()) {
@@ -1015,6 +1034,7 @@ void BorrowChecker::recordWildRealloc(const std::string& var, ASTNode* node, con
                  node,
                  "Active borrow by '" + loan.borrower + "' was created here",
                  loan.creation_line, loan.creation_column);
+        tagCode("ARIA-022");
         return;
     }
 
@@ -1027,6 +1047,7 @@ void BorrowChecker::recordWildRealloc(const std::string& var, ASTNode* node, con
                      node,
                      "Path borrow was created here",
                      loan.creation_line, loan.creation_column);
+            tagCode("ARIA-022");
             return;
         }
     }
@@ -1054,6 +1075,7 @@ void BorrowChecker::checkForLeaks() {
             if (ctx.pending_wild_frees.count(var) > 0) {
                 BorrowError err(1, 1, "Memory leak: wild variable '" + var + "' was not freed before scope exit",
                         "hint: add 'defer { free(" + var + "); }' after allocation, or free before end of scope");
+                err.code = "ARIA-014";
                 errors.push_back(err);
             }
         }
@@ -1090,6 +1112,7 @@ void BorrowChecker::verifyDeferObligations() {
                     addError("Safety Violation: Wild allocation '" + var +
                             "' is missing a mandatory 'defer free(" + var + ")' statement",
                             1, 1);
+                    tagCode("ARIA-014");
                 }
             }
         }
@@ -1121,6 +1144,9 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 // Register parameters so borrows of params are tracked
                 registerFunctionParams(funcDecl);
                 checkStatement(funcDecl->body.get());
+                if (borrow_dump_enabled) {
+                    dumpBorrowState(std::cerr, funcDecl->funcName);
+                }
                 ctx.exitScope();
                 ctx.restore(saved_ctx);
             }
@@ -1413,6 +1439,7 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
         if (isPinned(target->name)) {
             addErrorWithSuggestion("Cannot assign to pinned variable '" + target->name + "'", expr,
                 "hint: unpin the variable first, or work with a copy");
+            tagCode("ARIA-016");
             return;
         }
 
@@ -1424,6 +1451,7 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
                     expr,
                     "Borrowed by '" + loan.borrower + "' here",
                     loan.creation_line, loan.creation_column);
+            tagCode("ARIA-026");
             return;
         }
 
@@ -1455,6 +1483,7 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
                              existing.borrower + "'",
                              expr->right.get(),
                              "Mutable borrow was created here", existing.creation_line, existing.creation_column);
+                    tagCode("ARIA-023");
                     return;
                 } else if (is_mutable) {
                     const Loan& existing = loans_it->second.front();
@@ -1462,6 +1491,7 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
                              expr->right.get(),
                              "Existing borrow by '" + existing.borrower + "' created here",
                              existing.creation_line, existing.creation_column);
+                    tagCode("ARIA-023");
                     return;
                 }
             }
@@ -1677,6 +1707,7 @@ void BorrowChecker::checkForStmt(ForStmt* stmt) {
                     stmt,
                     "First mutable borrow here",
                     first_mutable->creation_line, first_mutable->creation_column);
+            tagCode("ARIA-025");
         }
     }
 
@@ -1820,6 +1851,7 @@ void BorrowChecker::checkWhenStmt(WhenStmt* stmt) {
                     stmt,
                     "First mutable borrow here",
                     first_mutable->creation_line, first_mutable->creation_column);
+            tagCode("ARIA-025");
         }
     }
 
@@ -1873,6 +1905,7 @@ void BorrowChecker::checkTraitDeclStmt(TraitDeclStmt* stmt) {
                     addError("Trait '" + stmt->traitName + "' method '" + method.name +
                              "': self parameter cannot be both $$i (immutable) and $$m (mutable)",
                              stmt);
+                    tagCode("ARIA-024");
                 }
                 break;
             }
@@ -1937,11 +1970,13 @@ void BorrowChecker::checkImplDeclStmt(ImplDeclStmt* stmt) {
                                  " for " + stmt->typeName + ": self borrow qualifier mismatch — "
                                  "trait declares " + trait_qual + " but impl uses " + impl_qual,
                                  methodNode.get());
+                        tagCode("ARIA-024");
                     }
                 } else if (trait_has_self && !impl_has_self) {
                     addError("Method '" + func->funcName + "' in impl " + stmt->traitName +
                              " for " + stmt->typeName + ": trait requires self parameter but impl omits it",
                              methodNode.get());
+                    tagCode("ARIA-024");
                 }
                 break;
             }
@@ -2017,6 +2052,7 @@ void BorrowChecker::checkImplDeclStmt(ImplDeclStmt* stmt) {
                                    "' should take $$m self (mutable borrow) to clean up internal state",
                                    methodNode.get(),
                                    "Change to: func:finalize = NIL($$m " + stmt->typeName + ":self)");
+                        tagCode("ARIA-024");
                     }
                 }
             }
@@ -2025,6 +2061,7 @@ void BorrowChecker::checkImplDeclStmt(ImplDeclStmt* stmt) {
             addWarning("Type '" + stmt->typeName + "' implements Droppable but has no "
                        "finalize/drop method — custom destructor will not run",
                        stmt);
+            tagCode("ARIA-024");
         }
     }
 }
@@ -2052,6 +2089,7 @@ void BorrowChecker::checkReturnBorrowEscape(ASTNode* returnValue, ASTNode* conte
                             "'" + path.base_var + "' declared here with scope depth " +
                             std::to_string(depth),
                             returnValue->line, returnValue->column);
+                    tagCode("ARIA-017");
                 }
             }
         }
@@ -2072,6 +2110,7 @@ void BorrowChecker::checkReturnBorrowEscape(ASTNode* returnValue, ASTNode* conte
                             context,
                             "'" + origin + "' is local to this function",
                             returnValue->line, returnValue->column);
+                    tagCode("ARIA-017");
                 }
             }
         }
@@ -2147,6 +2186,7 @@ void BorrowChecker::checkBlockStmt(BlockStmt* stmt) {
                     if (ref_depth >= 0 && ref_depth < ctx.current_depth) {
                         addError("Reference '" + ref + "' outlives its host '" + var + "'",
                                 1, 1);  // Line info not available at scope exit
+                        tagCode("ARIA-017");
                     }
                 }
             }
@@ -2253,6 +2293,7 @@ void BorrowChecker::checkReferenceEscape(ASTNode* value, ASTNode* context) {
                              "'. The reference would become invalid when the function returns.",
                              context,
                              "hint: return the value by copy instead, or move it to the caller's scope");
+                    tagCode("ARIA-017");
                 }
             }
         }
@@ -2605,10 +2646,9 @@ void BorrowChecker::checkIdentifier(IdentifierExpr* expr) {
     if (ctx.moved_variables.find(expr->name) != ctx.moved_variables.end()) {
         addErrorWithSuggestion("Use after move: variable '" + expr->name + "' was moved", expr,
                 "hint: clone the value before moving if you need it afterward");
+        tagCode("ARIA-019");
         return;
     }
-    
-    // Check for use-after-free on wild pointers
     checkWildUse(expr->name, expr);
 }
 
@@ -2635,6 +2675,7 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                          "' by value. Pinned objects must remain at a stable address. "
                          "Use a reference ($" + ident->name + ") instead.",
                          arg.get());
+                tagCode("ARIA-016");
             }
 
             // ARIA-019: Check if argument is a borrowed variable being passed by value
@@ -2646,6 +2687,7 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                          "' because it is currently borrowed by '" + loan.borrower + "'",
                          arg.get(),
                          "Variable was borrowed here", loan.creation_line, loan.creation_column);
+                tagCode("ARIA-019");
             }
         }
 
@@ -2664,6 +2706,7 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                     addError("Cannot borrow '" + target + "' multiple times in the same function call. "
                              "This would create aliasing references to the same variable.",
                              arg.get());
+                    tagCode("ARIA-020");
                 } else {
                     borrow_targets[target] = i;
                 }
@@ -2677,6 +2720,7 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                              loan.borrower + "'",
                              arg.get(),
                              "Previous borrow was created here", loan.creation_line, loan.creation_column);
+                    tagCode("ARIA-020");
                 }
             }
         }
@@ -2773,6 +2817,7 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                                                  expr,
                                                  "Mutable borrow was created here",
                                                  loan.creation_line, loan.creation_column);
+                                        tagCode("ARIA-020");
                                     }
                                 }
                             }
@@ -2792,12 +2837,14 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                                          expr,
                                          "Active borrow was created here",
                                          loan.creation_line, loan.creation_column);
+                                tagCode("ARIA-020");
                             }
                             // Check: must not be already moved
                             if (ctx.moved_variables.count(obj_name)) {
                                 addError("Cannot call method '" + methodName +
                                          "' on '" + obj_name + "' — it has been moved",
                                          expr);
+                                tagCode("ARIA-019");
                             }
                             break;
                         }
@@ -2807,6 +2854,7 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                                 addError("Cannot call consuming method '" + methodName +
                                          "' on '" + obj_name + "' — it has already been moved",
                                          expr);
+                                tagCode("ARIA-019");
                             }
                             auto loans_it = ctx.active_loans.find(obj_name);
                             if (loans_it != ctx.active_loans.end() &&
@@ -2819,6 +2867,7 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                                          expr,
                                          "Active borrow was created here",
                                          loan.creation_line, loan.creation_column);
+                                tagCode("ARIA-019");
                             }
                             ctx.moved_variables.insert(obj_name);
                             break;
@@ -2845,6 +2894,7 @@ void BorrowChecker::checkMoveExpr(MoveExpr* expr) {
     if (ctx.moved_variables.find(varName) != ctx.moved_variables.end()) {
         addErrorWithSuggestion("Cannot move variable '" + varName + "' (already moved)", expr,
                 "hint: a variable can only be moved once — clone it before the first move if needed");
+        tagCode("ARIA-019");
         return;
     }
 
@@ -2855,6 +2905,7 @@ void BorrowChecker::checkMoveExpr(MoveExpr* expr) {
                  "' because it is currently pinned. Pinned objects must remain "
                  "at a stable address while wild pointers reference them.", expr,
                  "hint: unpin the variable before moving, or work with a copy");
+        tagCode("ARIA-016");
         return;
     }
 
@@ -2866,6 +2917,7 @@ void BorrowChecker::checkMoveExpr(MoveExpr* expr) {
                  "' because it is currently borrowed by '" + loan.borrower + "'", expr,
                  "Variable was borrowed here", loan.creation_line, loan.creation_column,
                  "hint: ensure all borrows of '" + varName + "' have ended before moving");
+        tagCode("ARIA-019");
         return;
     }
 
@@ -2886,6 +2938,12 @@ void BorrowChecker::checkMoveExpr(MoveExpr* expr) {
 // ============================================================================
 // Error Reporting
 // ============================================================================
+
+void BorrowChecker::tagCode(const std::string& code) {
+    if (!errors.empty()) {
+        errors.back().code = code;
+    }
+}
 
 void BorrowChecker::addError(const std::string& message, ASTNode* node) {
     if (node) {
@@ -3439,11 +3497,11 @@ bool BorrowChecker::checkBorrowRulesWithPath(const AccessPath& path, bool is_mut
     if (isPinned(path.base_var)) {
         if (is_mutable) {
             addError("Cannot borrow pinned variable '" + path.base_var + "' as mutable", node);
+            tagCode("ARIA-016");
             return false;
         }
     }
 
-    // Check for conflicts using path-based analysis
     const Loan* conflict = ctx.checkPathConflict(path, is_mutable);
     if (conflict) {
         if (is_mutable) {
@@ -3452,16 +3510,129 @@ bool BorrowChecker::checkBorrowRulesWithPath(const AccessPath& path, bool is_mut
                     "Existing " + std::string(conflict->is_mutable ? "mutable" : "immutable") +
                     " borrow by '" + conflict->borrower + "' of '" + conflict->path.toString() + "'",
                     conflict->creation_line, conflict->creation_column);
+            tagCode("ARIA-023");
         } else {
             addError("Cannot borrow '" + path.toString() + "' as immutable because it is already borrowed as mutable",
                     node,
                     "Mutable borrow by '" + conflict->borrower + "' of '" + conflict->path.toString() + "'",
                     conflict->creation_line, conflict->creation_column);
+            tagCode("ARIA-023");
         }
         return false;
     }
 
     return true;
+}
+
+// v0.6.4: --borrow-dump visualization
+void BorrowChecker::dumpBorrowState(std::ostream& out, const std::string& func_name) const {
+    out << "=== Borrow State Dump";
+    if (!func_name.empty()) {
+        out << " [" << func_name << "]";
+    }
+    out << " ===\n";
+
+    // Active loans
+    if (!ctx.active_loans.empty()) {
+        out << "Active Loans:\n";
+        for (const auto& [host, loans] : ctx.active_loans) {
+            for (const auto& loan : loans) {
+                out << "  " << host << " -> " << loan.borrower
+                    << " (" << (loan.is_mutable ? "mut" : "immut") << ")"
+                    << " [line " << loan.creation_line << "]\n";
+            }
+        }
+        out << "\n";
+    }
+
+    // Path-based loans
+    if (!ctx.path_loans.empty()) {
+        out << "Path Loans:\n";
+        for (const auto& [path, loans] : ctx.path_loans) {
+            for (const auto& loan : loans) {
+                out << "  " << path.toString() << " -> " << loan.borrower
+                    << " (" << (loan.is_mutable ? "mut" : "immut") << ")"
+                    << " [line " << loan.creation_line << "]\n";
+            }
+        }
+        out << "\n";
+    }
+
+    // Pinned variables
+    if (!ctx.active_pins.empty()) {
+        out << "Pinned Variables:\n";
+        for (const auto& [host, pin_ref] : ctx.active_pins) {
+            out << "  " << host << " pinned by " << pin_ref << "\n";
+        }
+        out << "\n";
+    }
+
+    // Wild pointer states
+    if (!ctx.wild_states.empty()) {
+        out << "Wild Pointer States:\n";
+        for (const auto& [var, state] : ctx.wild_states) {
+            out << "  " << var << " = ";
+            switch (state) {
+                case WildState::ALLOCATED: out << "ALLOCATED"; break;
+                case WildState::FREED: out << "FREED"; break;
+                case WildState::MOVED: out << "MOVED"; break;
+                case WildState::UNINITIALIZED: out << "UNINITIALIZED"; break;
+                case WildState::UNKNOWN: out << "UNKNOWN"; break;
+                case WildState::MAY_FREED: out << "MAY_FREED"; break;
+            }
+            auto size_it = ctx.wild_alloc_sizes.find(var);
+            if (size_it != ctx.wild_alloc_sizes.end()) {
+                out << " (size: " << size_it->second << ")";
+            }
+            out << "\n";
+        }
+        out << "\n";
+    }
+
+    // Moved variables
+    if (!ctx.moved_variables.empty()) {
+        out << "Moved Variables:\n";
+        for (const auto& var : ctx.moved_variables) {
+            out << "  " << var << "\n";
+        }
+        out << "\n";
+    }
+
+    // Pending wild frees (leak candidates)
+    if (!ctx.pending_wild_frees.empty()) {
+        out << "Pending Wild Frees (leak candidates):\n";
+        for (const auto& var : ctx.pending_wild_frees) {
+            out << "  " << var << "\n";
+        }
+        out << "\n";
+    }
+
+    // Loan origins
+    if (!ctx.loan_origins.empty()) {
+        out << "Loan Origins:\n";
+        for (const auto& [ref, origins] : ctx.loan_origins) {
+            out << "  " << ref << " <- {";
+            bool first = true;
+            for (const auto& origin : origins) {
+                if (!first) out << ", ";
+                out << origin;
+                first = false;
+            }
+            out << "}\n";
+        }
+        out << "\n";
+    }
+
+    // Variable depths
+    if (!ctx.var_depths.empty()) {
+        out << "Variable Depths:\n";
+        for (const auto& [var, depth] : ctx.var_depths) {
+            out << "  " << var << " @ depth " << depth << "\n";
+        }
+        out << "\n";
+    }
+
+    out << "=== End Borrow Dump ===\n";
 }
 
 } // namespace sema

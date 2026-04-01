@@ -3574,7 +3574,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     std::vector<llvm::Type*> result_fields = {
                         inner_return_type,
                         llvm::PointerType::get(context, 0),
-                        llvm::Type::getInt1Ty(context)
+                        builder.getInt8Ty()
                     };
                     result_struct_type = llvm::StructType::get(context, result_fields);
                     return_type = result_struct_type;
@@ -3976,11 +3976,11 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     if (innerRet->isVoidTy()) {
                         actualRet = innerRet;
                     } else {
-                        // Result<T>: { T, i8*, i1 }
+                        // Result<T>: { T, i8*, i8 }
                         actualRet = llvm::StructType::get(context, {
                             innerRet,
                             llvm::PointerType::get(context, 0),
-                            llvm::Type::getInt1Ty(context)
+                            builder.getInt8Ty()
                         });
                     }
 

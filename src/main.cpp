@@ -93,7 +93,7 @@ extern "C" {
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 6
 #define ARIA_VERSION_PATCH 3
-#define ARIA_VERSION "0.6.3"
+#define ARIA_VERSION "0.6.4"
 
 // Compiler options
 struct CompilerOptions {
@@ -141,6 +141,7 @@ struct CompilerOptions {
     bool smt_opt = false;             // --smt-opt: Enable SMT-guided optimizations (ustack fast path)
     bool prove_report = false;        // --prove-report: Emit report of prove/assert_static outcomes
     bool borrow_debug = false;        // --borrow-debug: Emit borrow checker debug diagnostics to stderr
+    bool borrow_dump = false;         // --borrow-dump: Dump borrow state visualization after analysis
     int smt_timeout = 5000;           // --smt-timeout=N: Per-query Z3 solver timeout in ms (default: 5000)
 };
 
@@ -209,7 +210,8 @@ void print_help() {
     std::cout << "  --smt-opt         Enable SMT-guided optimizations (eliminates proven-safe checks)\n";
     std::cout << "  --smt-timeout=N   Per-query Z3 solver timeout in ms (default: 5000)\n";
     std::cout << "  --prove-report    Emit report of prove/assert_static outcomes (implies --verify)\n";
-    std::cout << "  --borrow-debug    Emit borrow checker debug diagnostics to stderr\n\n";
+    std::cout << "  --borrow-debug    Emit borrow checker debug diagnostics to stderr\n";
+    std::cout << "  --borrow-dump     Dump borrow state visualization after analysis\n\n";
     std::cout << "GPU Target Options (NVIDIA CUDA/PTX):\n";
     std::cout << "  --emit-ptx        Emit PTX assembly for GPU execution\n";
     std::cout << "  --target=<arch>   Target architecture (cpu, gpu, gpu+cpu)\n";
@@ -362,6 +364,8 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.verify = true;  // prove-report implies verification
         } else if (arg == "--borrow-debug") {
             opts.borrow_debug = true;
+        } else if (arg == "--borrow-dump") {
+            opts.borrow_dump = true;
         } else if (arg.substr(0, 14) == "--smt-timeout=") {
             opts.smt_timeout = std::stoi(arg.substr(14));
             if (opts.smt_timeout < 0) opts.smt_timeout = 5000;
@@ -3890,22 +3894,26 @@ llvm::Module* compile_to_module(
     if (opts.borrow_debug) {
         borrow_checker.setBorrowDebug(true);
     }
+    if (opts.borrow_dump) {
+        borrow_checker.setBorrowDump(true);
+    }
     auto borrow_errors = borrow_checker.analyze(module_node.get());
     
     if (!borrow_errors.empty()) {
         bool has_errors = false;
         for (const auto& err : borrow_errors) {
             aria::SourceLocation loc(filename, err.line, err.column);
+            std::string msg = err.code.empty() ? err.message : "[" + err.code + "] " + err.message;
             
             switch (err.severity) {
                 case aria::sema::BorrowSeverity::WARNING:
-                    diags.warning(loc, err.message);
+                    diags.warning(loc, msg);
                     break;
                 case aria::sema::BorrowSeverity::HINT:
-                    diags.note(loc, err.message);
+                    diags.note(loc, msg);
                     break;
                 default:
-                    diags.error(loc, err.message);
+                    diags.error(loc, msg);
                     has_errors = true;
                     break;
             }

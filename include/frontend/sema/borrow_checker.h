@@ -540,6 +540,9 @@ struct BorrowError {
     std::string message;
     BorrowSeverity severity = BorrowSeverity::ERROR;
     
+    // Diagnostic code (e.g., "ARIA-014")
+    std::string code;
+    
     // Optional: Location of the conflicting borrow/definition
     int related_line;
     int related_column;
@@ -616,6 +619,9 @@ private:
     
     // v0.6.3: Debug instrumentation flag (--borrow-debug)
     bool borrow_debug = false;
+    
+    // v0.6.4: Borrow dump flag (--borrow-dump)
+    bool borrow_dump_enabled = false;
     
     // ========================================================================
     // Z3 Integration (v0.6.1: Precision Improvements)
@@ -964,6 +970,7 @@ private:
     // Error Reporting
     // ========================================================================
     
+    void tagCode(const std::string& code);  // Tag last error with diagnostic code
     void addError(const std::string& message, ASTNode* node);
     void addError(const std::string& message, int line, int column);
     void addError(const std::string& message, ASTNode* node,
@@ -992,6 +999,13 @@ public:
      * Prints allocation/free/realloc/borrow events to stderr
      */
     void setBorrowDebug(bool enabled) { borrow_debug = enabled; }
+    void setBorrowDump(bool enabled) { borrow_dump_enabled = enabled; }
+    
+    /**
+     * v0.6.4: Dump borrow state visualization (--borrow-dump)
+     * Outputs per-function summary: active loans, pins, wild state, moves
+     */
+    void dumpBorrowState(std::ostream& out, const std::string& func_name = "") const;
     
     /**
      * Analyze an AST for borrow checking violations

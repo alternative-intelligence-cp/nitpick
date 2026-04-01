@@ -10829,11 +10829,11 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                     } else {
                         llvm::Type* inner_type = getLLVMTypeFromString(ret_str);
                         if (inner_type) {
-                            // Wrap in Result<T>: { T, i8*, i1 } matching module-level functions
+                            // Wrap in Result<T>: { T, i8*, i8 } matching module-level functions
                             return_type = llvm::StructType::get(context, {
                                 inner_type,
                                 llvm::PointerType::get(context, 0),
-                                llvm::Type::getInt1Ty(context)
+                                llvm::Type::getInt8Ty(context)
                             });
                         }
                     }
@@ -10881,11 +10881,11 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             if (expr->isPipelineCall && arg_value->getType()->isStructTy()) {
                 llvm::StructType* arg_struct = llvm::cast<llvm::StructType>(arg_value->getType());
                 
-                // Result types are structs with 3 fields: {T val, error* err, i1 is_error}
+                // Result types are structs with 3 fields: {T val, error* err, i8 is_error}
                 // Check if this looks like a Result type by field count and types
                 if (arg_struct->getNumElements() == 3 &&
                     arg_struct->getElementType(1)->isPointerTy() &&
-                    arg_struct->getElementType(2)->isIntegerTy(1)) {
+                    (arg_struct->getElementType(2)->isIntegerTy(8) || arg_struct->getElementType(2)->isIntegerTy(1))) {
                     
                     // Extract the value field (field 0) from Result
                     arg_value = builder.CreateExtractValue(arg_value, 0, "pipeline_unwrap");
@@ -11209,11 +11209,11 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         if (expr->isPipelineCall && return_type->isStructTy()) {
             llvm::StructType* return_struct = llvm::cast<llvm::StructType>(return_type);
             
-            // Result types are structs with 3 fields: {T val, error* err, i1 is_error}
+            // Result types are structs with 3 fields: {T val, error* err, i8 is_error}
             // Check if this looks like a Result type by field count and types
             if (return_struct->getNumElements() == 3 &&
                 return_struct->getElementType(1)->isPointerTy() &&
-                return_struct->getElementType(2)->isIntegerTy(1)) {
+                (return_struct->getElementType(2)->isIntegerTy(8) || return_struct->getElementType(2)->isIntegerTy(1))) {
                 
                 // Extract the value field (field 0) from Result
                 call_result = builder.CreateExtractValue(call_result, 0, "pipeline_result_unwrap");
