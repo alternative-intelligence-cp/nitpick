@@ -58,6 +58,7 @@ struct VerifySummary {
 class Z3Verifier {
 public:
     Z3Verifier();
+    explicit Z3Verifier(int timeout_ms);
     ~Z3Verifier();
 
     // Non-copyable (Z3 context is not safely copyable)

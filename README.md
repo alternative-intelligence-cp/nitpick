@@ -1,4 +1,4 @@
-# Aria Programming Language v0.3.4
+# Aria Programming Language v0.5.5
 
 ![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -10,24 +10,24 @@
 
 ---
 
-## Current Status (March 2026)
+## Current Status (April 2026)
 
-**v0.3.4 — Z3 SMT Formal Verification, 102 Packages, Safety-Critical Tooling**
+**v0.5.5 — SMT Solver Deep Dive Complete, Formal Verification, Benchmarks & Polish**
 
-The Aria compiler now includes **Z3 SMT solver integration** for static formal verification of function contracts (`requires`/`ensures`), integer overflow proofs, and refinement type constraints — placing Aria alongside Ada/SPARK as one of the few languages with built-in compile-time formal verification for safety-critical systems.
+The Aria compiler's Z3 SMT integration is now comprehensive: **7 verification flags** covering contracts, overflow, concurrency (data race + deadlock detection), and memory safety (use-after-free), plus user-facing `prove`/`assert_static` builtins, SMT-guided optimizations (`--smt-opt`), and configurable solver timeout (`--smt-timeout`). Benchmark suite shows 16–25% runtime speedup from eliminated checks.
 
-**v0.3.x highlights:**
-- **v0.3.4** — Z3 SMT Phase 2+3: `requires`/`ensures` contract verification, integer overflow proofs via bitvector analysis, `--verify-contracts` and `--verify-overflow` flags
-- **v0.3.3** — Safety showcase & tooling polish: 860 lines dead code removed, 118 debug prints gated, CI badges, comprehensive doc fixes (695+)
-- **v0.3.2** — 101 packages: aria-stats, aria-matrix, aria-mock, aria-bigdecimal + SDL3, wxWidgets, WebKitGTK wrappers
-- **v0.3.1** — Version bump, package ecosystem expansion
-- **v0.3.0** — `--static` flag, fuzzer rewrite (27 generators, 100% compile rate), BUG-001 through BUG-004 fixes, 92 packages
-- **v0.2.45** — Z3 SMT Phase 1: Rules/limit constraint verification with bitvector-accurate proofs, counterexample reporting
+**v0.5.x highlights:**
+- **v0.5.5** — Benchmark suite, configurable `--smt-timeout`, `--prove-report`, documentation, specialist corpus v7
+- **v0.5.4** — Concurrency verification (`--verify-concurrency`: data race + deadlock) and memory safety (`--verify-memory`: use-after-free)
+- **v0.5.3** — Refinement type integration: Rules narrowing/transitivity, pick exhaustiveness, null interaction, return bounds inference
+- **v0.5.2** — Function contracts: cross-function propagation, `ensures` postconditions, loop invariants
+- **v0.5.1** — User-facing `prove(expr)` and `assert_static(expr)` builtins
+- **v0.5.0** — Compiler-internal SMT optimizations: overflow elimination, null check elimination, loop hoisting, defaults elimination, Rules propagation
 
-**Key capabilities:**
+**v0.3.x–v0.4.x highlights:**
 - **102 ecosystem packages**, all passing — utility, graphics/game, server, database, AI/ML tiers
-- **Z3 formal verification** — Compile-time mathematical proofs of contract compliance and arithmetic safety
-- **50 stdlib modules** (12.5K lines)
+- Z3 Phase 1–3: Rules/limit, contracts, overflow proofs
+- AriaX kernel mods, Ubuntu integration, Docker/VM images
 
 ---
 
@@ -41,13 +41,13 @@ The Aria compiler now includes **Z3 SMT solver integration** for static formal v
 | `aria-doc` | ✅ Fixed | Documentation generator — 435 unique HTML pages from ecosystem |
 | `aria-mcp` | ✅ Improved | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Improved | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
-| Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow proofs, Rules/limit constraints |
+| Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
 | `aria-dap` | ✅ Working | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Working | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
 | Fuzzer V2 | ✅ Active | 27 generators, 100% compile rate, zero unresolved crashes |
-| Specialist model | ✅ V6 | Qwen 7B LoRA, v6 corpus covering v0.2.3 additions |
-| Debian package | ✅ Built | `aria_0.3.4-1_amd64.deb`, tested on Mint 22.3 |
+| Specialist model | ✅ V6+SMT | Qwen 7B LoRA, v6 corpus + v7 SMT verification examples |
+| Debian package | ✅ Built | `aria_0.5.5-1_amd64.deb`, tested on Mint 22.3 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
 | `aria_packages` | ✅ Active | 102 packages (utility, graphics/game, server, database, AI/ML tiers), all passing |
 
@@ -71,7 +71,7 @@ The Aria compiler now includes **Z3 SMT solver integration** for static formal v
 - **Control flow** — `if/else`, `pick` (exhaustive match), `break`, `continue`, `fall`
 - **Module system** — `use`, `mod`, `pub`, `extern`
 - **Closures** — First-class functions with capture
-- **Z3 Formal Verification** — SMT-based compile-time proofs: `requires`/`ensures` contracts, integer overflow, Rules/limit constraints (`--verify`, `--verify-contracts`, `--verify-overflow`)
+- **Z3 Formal Verification** — SMT-based compile-time proofs: contracts (`requires`/`ensures`), overflow elimination, data race detection, deadlock detection, use-after-free proofs, `prove`/`assert_static` builtins, `--smt-opt` optimizations, configurable `--smt-timeout`
 - **Borrow checker** — Compile-time memory safety analysis
 - **Arrays in structs** — Fixed-size scalar and struct array fields with nested member access
 - **SIMD types** — Vector arithmetic via LLVM intrinsics

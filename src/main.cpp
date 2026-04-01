@@ -93,7 +93,7 @@ extern "C" {
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 5
 #define ARIA_VERSION_PATCH 3
-#define ARIA_VERSION "0.5.4"
+#define ARIA_VERSION "0.5.5"
 
 // Compiler options
 struct CompilerOptions {
@@ -140,6 +140,7 @@ struct CompilerOptions {
     bool verify_memory = false;       // --verify-memory: Verify use-after-free & recursion bounds
     bool smt_opt = false;             // --smt-opt: Enable SMT-guided optimizations (ustack fast path)
     bool prove_report = false;        // --prove-report: Emit report of prove/assert_static outcomes
+    int smt_timeout = 5000;           // --smt-timeout=N: Per-query Z3 solver timeout in ms (default: 5000)
 };
 
 /**
@@ -202,7 +203,10 @@ void print_help() {
     std::cout << "  --verify-contracts Verify requires/ensures function contracts\n";
     std::cout << "  --verify-overflow  Verify integer arithmetic cannot overflow\n";
     std::cout << "  --verify-report   Emit detailed proof results (implies --verify)\n";
+    std::cout << "  --verify-concurrency Verify data race & deadlock freedom\n";
+    std::cout << "  --verify-memory   Verify use-after-free & recursion bounds\n";
     std::cout << "  --smt-opt         Enable SMT-guided optimizations (eliminates proven-safe checks)\n";
+    std::cout << "  --smt-timeout=N   Per-query Z3 solver timeout in ms (default: 5000)\n";
     std::cout << "  --prove-report    Emit report of prove/assert_static outcomes (implies --verify)\n\n";
     std::cout << "GPU Target Options (NVIDIA CUDA/PTX):\n";
     std::cout << "  --emit-ptx        Emit PTX assembly for GPU execution\n";
@@ -354,6 +358,9 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
         } else if (arg == "--prove-report") {
             opts.prove_report = true;
             opts.verify = true;  // prove-report implies verification
+        } else if (arg.substr(0, 14) == "--smt-timeout=") {
+            opts.smt_timeout = std::stoi(arg.substr(14));
+            if (opts.smt_timeout < 0) opts.smt_timeout = 5000;
         } else if (arg == "--ast-dump") {
             opts.dump_ast = true;
         } else if (arg == "--tokens") {
@@ -887,7 +894,7 @@ llvm::Module* compile_to_module(
             std::cout << "Phase 3.25: Z3 SMT verification...\n";
         }
         
-        aria::Z3Verifier z3v;
+        aria::Z3Verifier z3v(opts.smt_timeout);
         z3v.setTypeSystem(&type_system);
         z3v.setVerbose(opts.verbose);
         

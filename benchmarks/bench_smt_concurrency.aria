@@ -1,0 +1,58 @@
+// bench_smt_concurrency.aria — Concurrency verification benchmark
+// Measures compile-time: --verify-concurrency vs baseline
+// Uses mutex-protected shared state to exercise data race and deadlock analysis.
+
+extern func:bench_nanos = int64();
+extern func:aria_shim_mutex_create = int64();
+extern func:aria_shim_mutex_lock = int32(int64:mtx);
+extern func:aria_shim_mutex_unlock = int32(int64:mtx);
+extern func:aria_shim_mutex_destroy = int32(int64:mtx);
+extern func:aria_shim_thread_spawn = int64(string:func_name);
+extern func:aria_shim_thread_join = int32(int64:tid);
+
+func:failsafe = int32(tbb32:err) {
+    drop println("FAILSAFE");
+    exit 1;
+};
+
+int64:shared_counter = 0i64;
+int64:work_mtx = 0i64;
+
+func:worker_safe = NIL() {
+    int64:i = 0i64;
+    while (i < 100000i64) {
+        drop aria_shim_mutex_lock(work_mtx);
+        shared_counter = shared_counter + 1i64;
+        drop aria_shim_mutex_unlock(work_mtx);
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
+func:main = int32() {
+    work_mtx = aria_shim_mutex_create();
+
+    int64:t_start = bench_nanos();
+
+    int64:t1 = aria_shim_thread_spawn("worker_safe");
+    int64:t2 = aria_shim_thread_spawn("worker_safe");
+    int64:t3 = aria_shim_thread_spawn("worker_safe");
+    int64:t4 = aria_shim_thread_spawn("worker_safe");
+
+    drop aria_shim_thread_join(t1);
+    drop aria_shim_thread_join(t2);
+    drop aria_shim_thread_join(t3);
+    drop aria_shim_thread_join(t4);
+
+    int64:t_end = bench_nanos();
+    int64:elapsed_ms = (t_end - t_start) / 1000000i64;
+
+    drop aria_shim_mutex_destroy(work_mtx);
+
+    drop println("=== CONCURRENCY VERIFICATION BENCHMARK ===");
+    drop print("  counter: ");
+    drop println(string_from_int(shared_counter));
+    drop print("  elapsed_ms: ");
+    drop println(string_from_int(elapsed_ms));
+    exit 0;
+};

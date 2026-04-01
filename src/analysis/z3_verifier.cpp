@@ -88,6 +88,14 @@ Z3Verifier::Z3Verifier() {
     Z3_del_config(cfg);
 }
 
+Z3Verifier::Z3Verifier(int timeout_ms) {
+    Z3_config cfg = Z3_mk_config();
+    std::string timeout_str = std::to_string(timeout_ms > 0 ? timeout_ms : 5000);
+    Z3_set_param_value(cfg, "timeout", timeout_str.c_str());
+    ctx = Z3_mk_context(cfg);
+    Z3_del_config(cfg);
+}
+
 Z3Verifier::~Z3Verifier() {
     if (ctx) {
         Z3_del_context(ctx);
