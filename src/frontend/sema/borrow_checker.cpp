@@ -462,11 +462,214 @@ std::vector<BorrowError> BorrowChecker::analyze(ASTNode* ast) {
     // Reset state
     errors.clear();
     ctx = LifetimeContext();
+    func_summaries.clear();
+    current_function.clear();
     
-    // Analyze the AST
+    // Phase 1: Collect function borrow summaries (signatures only)
+    collectFunctionSummaries(ast);
+    
+    // Phase 2: Full borrow analysis with inter-procedural awareness
     checkStatement(ast);
     
     return errors;
+}
+
+// ============================================================================
+// Inter-Procedural Analysis (v0.6.0)
+// ============================================================================
+
+void BorrowChecker::collectFunctionSummaries(ASTNode* ast) {
+    if (!ast) return;
+    
+    if (ast->type == ASTNode::NodeType::PROGRAM) {
+        auto* program = static_cast<ProgramNode*>(ast);
+        for (const auto& decl : program->declarations) {
+            if (decl && decl->type == ASTNode::NodeType::FUNC_DECL) {
+                auto* func = static_cast<FuncDeclStmt*>(decl.get());
+                FunctionBorrowSummary summary = buildSummary(func);
+                func_summaries[summary.func_name] = std::move(summary);
+            }
+        }
+    } else if (ast->type == ASTNode::NodeType::FUNC_DECL) {
+        auto* func = static_cast<FuncDeclStmt*>(ast);
+        FunctionBorrowSummary summary = buildSummary(func);
+        func_summaries[summary.func_name] = std::move(summary);
+    }
+}
+
+FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
+    FunctionBorrowSummary summary;
+    summary.func_name = func->funcName;
+    summary.decl_line = func->line;
+    summary.decl_column = func->column;
+    summary.returns_borrow_imm = func->returnIsBorrowImm;
+    summary.returns_borrow_mut = func->returnIsBorrowMut;
+    summary.returns_wild = func->returnIsWild;
+    
+    for (const auto& param : func->parameters) {
+        if (!param || param->type != ASTNode::NodeType::PARAMETER) continue;
+        auto* p = static_cast<ParameterNode*>(param.get());
+        
+        ParamOwnership ownership = ParamOwnership::COPY;
+        if (p->isBorrowImm) {
+            ownership = ParamOwnership::BORROW_IMM;
+        } else if (p->isBorrowMut) {
+            ownership = ParamOwnership::BORROW_MUT;
+        } else if (p->isWild) {
+            // Wild pointer passed by value = ownership transfer (move)
+            ownership = ParamOwnership::MOVE;
+        }
+        
+        summary.param_ownership.push_back(ownership);
+        summary.param_names.push_back(p->paramName);
+    }
+    
+    return summary;
+}
+
+void BorrowChecker::registerFunctionParams(FuncDeclStmt* func) {
+    for (const auto& param : func->parameters) {
+        if (!param || param->type != ASTNode::NodeType::PARAMETER) continue;
+        auto* p = static_cast<ParameterNode*>(param.get());
+        
+        // Register the parameter variable in the current scope
+        registerVariable(p->paramName, param.get());
+        
+        // If the parameter is a borrow, record an active loan
+        // The "host" is an implicit caller variable (we use a synthetic name)
+        if (p->isBorrowImm || p->isBorrowMut) {
+            std::string synthetic_host = "__caller_" + p->paramName;
+            ctx.var_depths[synthetic_host] = ctx.current_depth - 1;  // Caller scope
+            recordBorrow(synthetic_host, p->paramName, p->isBorrowMut, param.get());
+        }
+        
+        // If the parameter is wild, track it
+        if (p->isWild || p->isWildx) {
+            ctx.wild_states[p->paramName] = WildState::ALLOCATED;
+        }
+    }
+}
+
+void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSummary& summary) {
+    size_t num_params = summary.param_ownership.size();
+    
+    for (size_t i = 0; i < expr->arguments.size() && i < num_params; ++i) {
+        const auto& arg = expr->arguments[i];
+        if (!arg) continue;
+        
+        ParamOwnership expected = summary.param_ownership[i];
+        const std::string& param_name = summary.param_names[i];
+        
+        // Extract the argument variable name if it's an identifier
+        std::string arg_var;
+        if (arg->type == ASTNode::NodeType::IDENTIFIER) {
+            arg_var = static_cast<IdentifierExpr*>(arg.get())->name;
+        }
+        
+        switch (expected) {
+            case ParamOwnership::MOVE: {
+                // Callee takes ownership — argument must be movable
+                if (!arg_var.empty()) {
+                    // Check not already moved
+                    if (ctx.moved_variables.count(arg_var)) {
+                        addErrorWithSuggestion(
+                            "Cannot pass '" + arg_var + "' to '" + summary.func_name +
+                            "' parameter '" + param_name + "' (already moved)",
+                            arg.get(),
+                            "hint: a variable can only be moved once — clone it before the first move if needed");
+                        break;
+                    }
+                    // Check not borrowed
+                    auto loans_it = ctx.active_loans.find(arg_var);
+                    if (loans_it != ctx.active_loans.end() && !loans_it->second.empty()) {
+                        const Loan& loan = loans_it->second.front();
+                        addError("Cannot move '" + arg_var + "' into '" + summary.func_name +
+                                 "' parameter '" + param_name + "' — it is currently borrowed by '" +
+                                 loan.borrower + "'",
+                                 arg.get(),
+                                 "Variable was borrowed here", loan.creation_line, loan.creation_column);
+                        break;
+                    }
+                    // Mark as moved
+                    ctx.moved_variables.insert(arg_var);
+                    auto wit = ctx.wild_states.find(arg_var);
+                    if (wit != ctx.wild_states.end()) {
+                        ctx.wild_states[arg_var] = WildState::MOVED;
+                        ctx.pending_wild_frees.erase(arg_var);
+                    }
+                }
+                break;
+            }
+                
+            case ParamOwnership::BORROW_MUT: {
+                // Callee expects $$m — argument should be a mutable borrow ($x)
+                // Detect borrow expression: $x (direct) or !$x (immutable — wrong)
+                bool found_borrow = false;
+                bool is_mutable = false;
+                if (arg->type == ASTNode::NodeType::UNARY_OP) {
+                    auto* unary = static_cast<UnaryExpr*>(arg.get());
+                    if (unary->creates_loan) {
+                        found_borrow = true;
+                        is_mutable = unary->is_mutable_loan;
+                    } else if (unary->op.type == frontend::TokenType::TOKEN_BANG &&
+                               unary->operand && unary->operand->type == ASTNode::NodeType::UNARY_OP) {
+                        // !$x pattern — immutable borrow
+                        auto* inner = static_cast<UnaryExpr*>(unary->operand.get());
+                        if (inner->creates_loan) {
+                            found_borrow = true;
+                            is_mutable = false;  // ! negates mutability
+                        }
+                    }
+                }
+                if (found_borrow && !is_mutable) {
+                    addErrorWithSuggestion(
+                        "Function '" + summary.func_name + "' parameter '" +
+                        param_name + "' requires a mutable borrow ($$m), but an immutable borrow was passed",
+                        arg.get(),
+                        "hint: use mutable borrow ($x) instead of immutable (!$x)");
+                } else if (!found_borrow && !arg_var.empty()) {
+                    addErrorWithSuggestion(
+                        "Function '" + summary.func_name + "' parameter '" +
+                        param_name + "' expects a mutable borrow ($$m), but '" + arg_var + "' was passed by value",
+                        arg.get(),
+                        "hint: pass a mutable borrow: $" + arg_var);
+                }
+                break;
+            }
+                
+            case ParamOwnership::BORROW_IMM: {
+                // Callee expects $$i — passing mutable borrow works but is a warning
+                bool found_borrow = false;
+                bool is_mutable = false;
+                if (arg->type == ASTNode::NodeType::UNARY_OP) {
+                    auto* unary = static_cast<UnaryExpr*>(arg.get());
+                    if (unary->creates_loan) {
+                        found_borrow = true;
+                        is_mutable = unary->is_mutable_loan;
+                    } else if (unary->op.type == frontend::TokenType::TOKEN_BANG &&
+                               unary->operand && unary->operand->type == ASTNode::NodeType::UNARY_OP) {
+                        auto* inner = static_cast<UnaryExpr*>(unary->operand.get());
+                        if (inner->creates_loan) {
+                            found_borrow = true;
+                            is_mutable = false;
+                        }
+                    }
+                }
+                if (found_borrow && is_mutable) {
+                    addWarning(
+                        "Function '" + summary.func_name + "' parameter '" +
+                        param_name + "' expects immutable borrow ($$i), but mutable borrow was passed",
+                        arg.get(),
+                        "hint: this works but grants more access than needed — consider using !$x instead of $x");
+                }
+                break;
+            }
+                
+            case ParamOwnership::COPY:
+                // Default — no special ownership requirements
+                break;
+        }
+    }
 }
 
 // ============================================================================
@@ -790,13 +993,22 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
             break;
         
         case ASTNode::NodeType::FUNC_DECL: {
-            // Check function body
+            // Check function body with parameter awareness
+            // Each function gets an isolated borrow context (no cross-function leakage)
             auto* funcDecl = static_cast<FuncDeclStmt*>(stmt);
+            std::string prev_function = current_function;
+            current_function = funcDecl->funcName;
             if (funcDecl->body) {
+                LifetimeContext saved_ctx = ctx.snapshot();
+                ctx = LifetimeContext();  // Fresh context for this function
                 ctx.enterScope();
+                // Register parameters so borrows of params are tracked
+                registerFunctionParams(funcDecl);
                 checkStatement(funcDecl->body.get());
                 ctx.exitScope();
+                ctx.restore(saved_ctx);
             }
+            current_function = prev_function;
             break;
         }
         
@@ -1875,9 +2087,15 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
         }
     }
 
-    // TODO: Check function signature for ownership transfer
-    // Some functions may take ownership (move) of arguments
-    // This requires function signature analysis
+    // v0.6.0: Check function signature for ownership transfer
+    // Look up callee summary and enforce move/borrow semantics at call site
+    if (expr->callee && expr->callee->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* callee = static_cast<IdentifierExpr*>(expr->callee.get());
+        auto summary_it = func_summaries.find(callee->name);
+        if (summary_it != func_summaries.end()) {
+            checkCallOwnership(expr, summary_it->second);
+        }
+    }
 }
 
 void BorrowChecker::checkMoveExpr(MoveExpr* expr) {
