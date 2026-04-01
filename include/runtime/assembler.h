@@ -58,6 +58,24 @@ typedef enum {
     REG_EBP = 32 + 5,
     REG_ESI = 32 + 6,
     REG_EDI = 32 + 7,
+    
+    // SSE2 XMM Registers (128-bit)
+    REG_XMM0  = 64,
+    REG_XMM1  = 65,
+    REG_XMM2  = 66,
+    REG_XMM3  = 67,
+    REG_XMM4  = 68,
+    REG_XMM5  = 69,
+    REG_XMM6  = 70,
+    REG_XMM7  = 71,
+    REG_XMM8  = 72,
+    REG_XMM9  = 73,
+    REG_XMM10 = 74,
+    REG_XMM11 = 75,
+    REG_XMM12 = 76,
+    REG_XMM13 = 77,
+    REG_XMM14 = 78,
+    REG_XMM15 = 79,
 } AsmRegister;
 
 // =============================================================================
@@ -292,7 +310,265 @@ void aria_asm_jne(Assembler* asm_ctx, int label_id);
 void aria_asm_cmp_r64_r64(Assembler* asm_ctx, AsmRegister left, AsmRegister right);
 
 // =============================================================================
-// High-Level Code Generation
+// Extended Integer Instructions (v0.7.2)
+// =============================================================================
+
+/**
+ * ADD reg64, imm32 - Add sign-extended 32-bit immediate to register
+ * Encoding: REX.W + 81 /0 id
+ */
+void aria_asm_add_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value);
+
+/**
+ * SUB reg64, imm32 - Subtract sign-extended 32-bit immediate from register
+ * Encoding: REX.W + 81 /5 id
+ */
+void aria_asm_sub_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value);
+
+/**
+ * XOR reg64, reg64 - Bitwise exclusive OR
+ * Encoding: REX.W + 31 /r
+ */
+void aria_asm_xor_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+
+/**
+ * AND reg64, reg64 - Bitwise AND
+ * Encoding: REX.W + 21 /r
+ */
+void aria_asm_and_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+
+/**
+ * OR reg64, reg64 - Bitwise OR
+ * Encoding: REX.W + 09 /r
+ */
+void aria_asm_or_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+
+/**
+ * NOT reg64 - Bitwise complement
+ * Encoding: REX.W + F7 /2
+ */
+void aria_asm_not_r64(Assembler* asm_ctx, AsmRegister reg);
+
+/**
+ * NEG reg64 - Two's complement negation
+ * Encoding: REX.W + F7 /3
+ */
+void aria_asm_neg_r64(Assembler* asm_ctx, AsmRegister reg);
+
+/**
+ * SHL reg64, imm8 - Shift left by immediate
+ * Encoding: REX.W + C1 /4 ib
+ */
+void aria_asm_shl_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count);
+
+/**
+ * SHR reg64, imm8 - Logical shift right by immediate
+ * Encoding: REX.W + C1 /5 ib
+ */
+void aria_asm_shr_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count);
+
+/**
+ * SAR reg64, imm8 - Arithmetic shift right by immediate
+ * Encoding: REX.W + C1 /7 ib
+ */
+void aria_asm_sar_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count);
+
+/**
+ * CMP reg64, imm32 - Compare register with sign-extended 32-bit immediate
+ * Encoding: REX.W + 81 /7 id
+ */
+void aria_asm_cmp_r64_imm32(Assembler* asm_ctx, AsmRegister reg, int32_t value);
+
+// Extended conditional jumps (v0.7.2)
+
+/** JL label - Jump if less (SF≠OF). Encoding: 0F 8C cd */
+void aria_asm_jl(Assembler* asm_ctx, int label_id);
+
+/** JLE label - Jump if less or equal (ZF=1 or SF≠OF). Encoding: 0F 8E cd */
+void aria_asm_jle(Assembler* asm_ctx, int label_id);
+
+/** JG label - Jump if greater (ZF=0 and SF=OF). Encoding: 0F 8F cd */
+void aria_asm_jg(Assembler* asm_ctx, int label_id);
+
+/** JGE label - Jump if greater or equal (SF=OF). Encoding: 0F 8D cd */
+void aria_asm_jge(Assembler* asm_ctx, int label_id);
+
+/** JB label - Jump if below (unsigned, CF=1). Encoding: 0F 82 cd */
+void aria_asm_jb(Assembler* asm_ctx, int label_id);
+
+/** JBE label - Jump if below or equal (unsigned, CF=1 or ZF=1). Encoding: 0F 86 cd */
+void aria_asm_jbe(Assembler* asm_ctx, int label_id);
+
+/** JA label - Jump if above (unsigned, CF=0 and ZF=0). Encoding: 0F 87 cd */
+void aria_asm_ja(Assembler* asm_ctx, int label_id);
+
+/** JAE label - Jump if above or equal (unsigned, CF=0). Encoding: 0F 83 cd */
+void aria_asm_jae(Assembler* asm_ctx, int label_id);
+
+// =============================================================================
+// Memory Operations (v0.7.2)
+// =============================================================================
+
+/**
+ * MOV reg64, [base + offset] - Load 64-bit value from memory
+ * Encoding: REX.W + 8B /r with ModR/M + optional SIB
+ * offset=0: mod=00, nonzero: mod=01 (disp8) or mod=10 (disp32)
+ */
+void aria_asm_mov_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
+
+/**
+ * MOV [base + offset], reg64 - Store 64-bit value to memory
+ * Encoding: REX.W + 89 /r with ModR/M + optional SIB
+ */
+void aria_asm_mov_mem_r64(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src);
+
+/**
+ * LEA reg64, [base + offset] - Load effective address
+ * Encoding: REX.W + 8D /r with ModR/M + optional SIB
+ */
+void aria_asm_lea_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
+
+// =============================================================================
+// Stack Frame & Local Variables (v0.7.2)
+// =============================================================================
+
+/**
+ * Store register to local variable slot on stack.
+ * Emits MOV [RBP - slot_offset], reg
+ * slot_offset should be positive (e.g., 8 for first local at [RBP-8])
+ */
+void aria_asm_store_local(Assembler* asm_ctx, uint32_t slot_offset, AsmRegister src);
+
+/**
+ * Load register from local variable slot on stack.
+ * Emits MOV reg, [RBP - slot_offset]
+ */
+void aria_asm_load_local(Assembler* asm_ctx, AsmRegister dst, uint32_t slot_offset);
+
+// =============================================================================
+// CALL Instructions (v0.7.2)
+// =============================================================================
+
+/**
+ * CALL indirect - Call function at address in register
+ * Encoding: FF /2 with ModR/M mod=11
+ * For R8-R15: REX.B prefix
+ */
+void aria_asm_call_r64(Assembler* asm_ctx, AsmRegister target);
+
+/**
+ * CALL label - Call function at label (rel32)
+ * Encoding: E8 cd
+ */
+void aria_asm_call_label(Assembler* asm_ctx, int label_id);
+
+/**
+ * Load absolute 64-bit address into register then CALL it.
+ * Convenience: MOV reg, addr; CALL reg
+ * Uses R11 (caller-saved scratch) as target register.
+ */
+void aria_asm_call_abs(Assembler* asm_ctx, void* func_ptr);
+
+// =============================================================================
+// SSE2 Floating-Point Instructions (v0.7.2)
+// =============================================================================
+
+/**
+ * MOVSD xmm, xmm - Move scalar double
+ * Encoding: F2 0F 10 /r (reg-to-reg)
+ */
+void aria_asm_movsd_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+
+/**
+ * MOVSD xmm, [base + offset] - Load scalar double from memory
+ * Encoding: F2 0F 10 /r with ModR/M
+ */
+void aria_asm_movsd_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
+
+/**
+ * MOVSD [base + offset], xmm - Store scalar double to memory
+ * Encoding: F2 0F 11 /r with ModR/M
+ */
+void aria_asm_movsd_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src);
+
+/**
+ * ADDSD xmm, xmm - Add scalar double
+ * Encoding: F2 0F 58 /r
+ */
+void aria_asm_addsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+
+/**
+ * SUBSD xmm, xmm - Subtract scalar double
+ * Encoding: F2 0F 5C /r
+ */
+void aria_asm_subsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+
+/**
+ * MULSD xmm, xmm - Multiply scalar double
+ * Encoding: F2 0F 59 /r
+ */
+void aria_asm_mulsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+
+/**
+ * DIVSD xmm, xmm - Divide scalar double
+ * Encoding: F2 0F 5E /r
+ */
+void aria_asm_divsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+
+/**
+ * UCOMISD xmm, xmm - Unordered compare scalar double (sets EFLAGS)
+ * Encoding: 66 0F 2E /r
+ * Use JA/JAE/JB/JBE for unsigned comparisons after this.
+ */
+void aria_asm_ucomisd(Assembler* asm_ctx, AsmRegister left, AsmRegister right);
+
+// =============================================================================
+// SSE Packed Float Instructions (v0.7.2)
+// =============================================================================
+
+/**
+ * MOVAPS xmm, xmm - Move aligned packed single (128-bit)
+ * Encoding: 0F 28 /r
+ */
+void aria_asm_movaps_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+
+/**
+ * MOVAPS xmm, [base + offset] - Load aligned packed single from memory
+ * Encoding: 0F 28 /r with ModR/M
+ * Memory address MUST be 16-byte aligned.
+ */
+void aria_asm_movaps_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
+
+/**
+ * MOVAPS [base + offset], xmm - Store aligned packed single to memory
+ * Encoding: 0F 29 /r with ModR/M
+ * Memory address MUST be 16-byte aligned.
+ */
+void aria_asm_movaps_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src);
+
+/**
+ * ADDPS xmm, xmm - Add packed single (4x float32)
+ * Encoding: 0F 58 /r
+ */
+void aria_asm_addps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+
+/**
+ * MULPS xmm, xmm - Multiply packed single (4x float32)
+ * Encoding: 0F 59 /r
+ */
+void aria_asm_mulps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+
+/**
+ * Execution variant: JIT function returning double via XMM0
+ * Signature: double func(void)
+ */
+double aria_asm_execute_f64(WildXGuard* guard);
+
+/**
+ * Execution variant: JIT function taking double arg (XMM0), returning double
+ * Signature: double func(double)
+ */
+double aria_asm_execute_f64_f64(WildXGuard* guard, double arg1);
 // =============================================================================
 
 /**

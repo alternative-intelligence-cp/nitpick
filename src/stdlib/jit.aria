@@ -32,11 +32,73 @@ extern "C" func:aria_asm_sub_reg_reg = void(wild void@:asm_ctx, int32:dst_reg, i
 extern "C" func:aria_asm_ret = void(wild void@:asm_ctx);
 extern "C" func:aria_asm_jmp = void(wild void@:asm_ctx, int32:label_id);
 
+// Extended Integer Instructions (v0.7.2)
+extern "C" func:aria_asm_add_r64_imm32 = void(wild void@:asm_ctx, int32:dst, int32:value);
+extern "C" func:aria_asm_sub_r64_imm32 = void(wild void@:asm_ctx, int32:dst, int32:value);
+extern "C" func:aria_asm_xor_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_and_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_or_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_not_r64 = void(wild void@:asm_ctx, int32:reg);
+extern "C" func:aria_asm_neg_r64 = void(wild void@:asm_ctx, int32:reg);
+extern "C" func:aria_asm_shl_r64_imm8 = void(wild void@:asm_ctx, int32:reg, int32:count);
+extern "C" func:aria_asm_shr_r64_imm8 = void(wild void@:asm_ctx, int32:reg, int32:count);
+extern "C" func:aria_asm_sar_r64_imm8 = void(wild void@:asm_ctx, int32:reg, int32:count);
+extern "C" func:aria_asm_cmp_r64_imm32 = void(wild void@:asm_ctx, int32:reg, int32:value);
+extern "C" func:aria_asm_imul_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_cmp_r64_r64 = void(wild void@:asm_ctx, int32:left, int32:right);
+
+// Extended Conditional Jumps (v0.7.2)
+extern "C" func:aria_asm_je = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:aria_asm_jne = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:aria_asm_jl = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:aria_asm_jle = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:aria_asm_jg = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:aria_asm_jge = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:aria_asm_jb = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:aria_asm_jbe = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:aria_asm_ja = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:aria_asm_jae = void(wild void@:asm_ctx, int32:label_id);
+
+// Memory Operations (v0.7.2)
+extern "C" func:aria_asm_mov_r64_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
+extern "C" func:aria_asm_mov_mem_r64 = void(wild void@:asm_ctx, int32:base, int32:offset, int32:src);
+extern "C" func:aria_asm_lea_r64_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
+extern "C" func:aria_asm_store_local = void(wild void@:asm_ctx, int32:slot_offset, int32:src);
+extern "C" func:aria_asm_load_local = void(wild void@:asm_ctx, int32:dst, int32:slot_offset);
+
+// CALL Instructions (v0.7.2)
+extern "C" func:aria_asm_call_r64 = void(wild void@:asm_ctx, int32:target);
+extern "C" func:aria_asm_call_label = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:aria_asm_call_abs = void(wild void@:asm_ctx, wild void@:func_ptr);
+
+// Function Prologue/Epilogue
+extern "C" func:aria_asm_prologue = void(wild void@:asm_ctx, int64:stack_size);
+extern "C" func:aria_asm_epilogue = void(wild void@:asm_ctx);
+
+// SSE2 Floating-Point (v0.7.2)
+extern "C" func:aria_asm_movsd_xmm_xmm = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_movsd_xmm_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
+extern "C" func:aria_asm_movsd_mem_xmm = void(wild void@:asm_ctx, int32:base, int32:offset, int32:src);
+extern "C" func:aria_asm_addsd = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_subsd = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_mulsd = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_divsd = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_ucomisd = void(wild void@:asm_ctx, int32:left, int32:right);
+
+// SSE Packed Float (v0.7.2)
+extern "C" func:aria_asm_movaps_xmm_xmm = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_movaps_xmm_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
+extern "C" func:aria_asm_movaps_mem_xmm = void(wild void@:asm_ctx, int32:base, int32:offset, int32:src);
+extern "C" func:aria_asm_addps = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_mulps = void(wild void@:asm_ctx, int32:dst, int32:src);
+
 // Finalization and Execution
 extern "C" func:aria_asm_finalize = wildx void@(wild void@:asm_ctx);
 extern "C" func:aria_asm_execute = int64(wildx void@:guard);
 extern "C" func:aria_asm_execute_i64 = int64(wildx void@:guard, int64:arg1);
 extern "C" func:aria_asm_execute_i64_i64 = int64(wildx void@:guard, int64:arg1, int64:arg2);
+extern "C" func:aria_asm_execute_f64 = flt64(wildx void@:guard);
+extern "C" func:aria_asm_execute_f64_f64 = flt64(wildx void@:guard, flt64:arg1);
 
 // =============================================================================
 // Register Constants (x86-64)
@@ -58,6 +120,39 @@ int32:REG_R12 = 12;
 int32:REG_R13 = 13;
 int32:REG_R14 = 14;
 int32:REG_R15 = 15;
+
+// XMM Registers (SSE2, v0.7.2)
+int32:REG_XMM0  = 64;
+int32:REG_XMM1  = 65;
+int32:REG_XMM2  = 66;
+int32:REG_XMM3  = 67;
+int32:REG_XMM4  = 68;
+int32:REG_XMM5  = 69;
+int32:REG_XMM6  = 70;
+int32:REG_XMM7  = 71;
+int32:REG_XMM8  = 72;
+int32:REG_XMM9  = 73;
+int32:REG_XMM10 = 74;
+int32:REG_XMM11 = 75;
+int32:REG_XMM12 = 76;
+int32:REG_XMM13 = 77;
+int32:REG_XMM14 = 78;
+int32:REG_XMM15 = 79;
+
+// System V AMD64 ABI constants
+int32:ABI_ARG1     = 7;   // RDI
+int32:ABI_ARG2     = 6;   // RSI
+int32:ABI_ARG3     = 2;   // RDX
+int32:ABI_ARG4     = 1;   // RCX
+int32:ABI_ARG5     = 8;   // R8
+int32:ABI_ARG6     = 9;   // R9
+int32:ABI_RETURN   = 0;   // RAX
+int32:ABI_SCRATCH1 = 10;  // R10 (caller-saved)
+int32:ABI_SCRATCH2 = 11;  // R11 (caller-saved)
+int32:ABI_FP_ARG1  = 64;  // XMM0 (first FP arg + return)
+int32:ABI_FP_ARG2  = 65;  // XMM1
+int32:ABI_FP_ARG3  = 66;  // XMM2
+int32:ABI_FP_ARG4  = 67;  // XMM3
 
 // =============================================================================
 // High-Level Assembler Wrapper
