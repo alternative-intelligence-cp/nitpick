@@ -6555,7 +6555,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     auto it = named_values.find(ident->name);
                     if (it != named_values.end()) {
                         llvm::Value* ptrAlloca = it->second;
-                        if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(ptrAlloca)) {
+                        if (llvm::isa<llvm::AllocaInst>(ptrAlloca)) {
                             // The alloca holds a pointer, get what that pointer points to
                             // For a variable like "int32->:ptr", the alloca type is "ptr"
                             // We need to look at the Aria type system to know what it points to
@@ -10244,12 +10244,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 // Find the field in the inner struct
                 int opt_field_idx = -1;
-                Type* opt_field_type = nullptr;
                 const auto& opt_fields = inner_struct->getFields();
                 for (size_t i = 0; i < opt_fields.size(); ++i) {
                     if (opt_fields[i].name == member->member) {
                         opt_field_idx = static_cast<int>(i);
-                        opt_field_type = opt_fields[i].type;
                         break;
                     }
                 }
