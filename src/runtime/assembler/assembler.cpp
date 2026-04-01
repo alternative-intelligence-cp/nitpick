@@ -430,16 +430,17 @@ void aria_asm_epilogue(Assembler* asm_ctx) {
 // =============================================================================
 
 WildXGuard aria_asm_finalize(Assembler* asm_ctx) {
+    WildXGuard empty = {nullptr, 0, 0, WILDX_STATE_UNINITIALIZED, false, 0};
     // Check for errors
     if (asm_ctx->error) {
-        return {nullptr, 0, WILDX_STATE_UNINITIALIZED, false};
+        return empty;
     }
     
     // Verify all labels are bound
     for (uint32_t i = 0; i < asm_ctx->label_count; ++i) {
         if (!aria_asm_label_is_bound(&asm_ctx->labels[i])) {
             set_error(asm_ctx, "Unbound label detected at finalization");
-            return {nullptr, 0, WILDX_STATE_UNINITIALIZED, false};
+            return empty;
         }
     }
     
@@ -447,17 +448,17 @@ WildXGuard aria_asm_finalize(Assembler* asm_ctx) {
     WildXGuard guard = aria_alloc_exec(asm_ctx->buffer->size);
     if (!guard.ptr) {
         set_error(asm_ctx, "Failed to allocate WildX memory");
-        return {nullptr, 0, WILDX_STATE_UNINITIALIZED, false};
+        return empty;
     }
     
     // Copy code to WildX memory
     memcpy(guard.ptr, asm_ctx->buffer->data, asm_ctx->buffer->size);
     
-    // Seal memory (RW → RX)
+    // Seal memory (RW → RX) — also computes code hash (v0.7.1)
     if (aria_mem_protect_exec(&guard) != 0) {
         aria_free_exec(&guard);
         set_error(asm_ctx, "Failed to seal WildX memory");
-        return {nullptr, 0, WILDX_STATE_UNINITIALIZED, false};
+        return empty;
     }
     
     return guard;
@@ -466,6 +467,14 @@ WildXGuard aria_asm_finalize(Assembler* asm_ctx) {
 int64_t aria_asm_execute(WildXGuard* guard) {
     if (!guard || !guard->ptr || guard->state != WILDX_STATE_EXECUTABLE) {
         return -1;
+    }
+    
+    // v0.7.1: Verify code integrity before execution
+    if (guard->code_hash != 0) {
+        uint64_t current = aria_wildx_verify_hash(guard);
+        if (current != guard->code_hash) {
+            return -1; // Tampered
+        }
     }
     
     // Cast to function pointer: int64_t (*)(void)
@@ -480,6 +489,14 @@ int64_t aria_asm_execute_i64(WildXGuard* guard, int64_t arg1) {
         return -1;
     }
     
+    // v0.7.1: Verify code integrity before execution
+    if (guard->code_hash != 0) {
+        uint64_t current = aria_wildx_verify_hash(guard);
+        if (current != guard->code_hash) {
+            return -1; // Tampered
+        }
+    }
+    
     // Cast to function pointer: int64_t (*)(int64_t)
     typedef int64_t (*func_t)(int64_t);
     func_t func = (func_t)guard->ptr;
@@ -490,6 +507,14 @@ int64_t aria_asm_execute_i64(WildXGuard* guard, int64_t arg1) {
 int64_t aria_asm_execute_i64_i64(WildXGuard* guard, int64_t arg1, int64_t arg2) {
     if (!guard || !guard->ptr || guard->state != WILDX_STATE_EXECUTABLE) {
         return -1;
+    }
+    
+    // v0.7.1: Verify code integrity before execution
+    if (guard->code_hash != 0) {
+        uint64_t current = aria_wildx_verify_hash(guard);
+        if (current != guard->code_hash) {
+            return -1; // Tampered
+        }
     }
     
     // Cast to function pointer: int64_t (*)(int64_t, int64_t)

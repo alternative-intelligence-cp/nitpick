@@ -486,6 +486,7 @@ AriaAllocResult aria_alloc_buffer_result(size_t size, size_t alignment, bool zer
 extern std::atomic<size_t> g_wildx_total_allocated;
 extern std::atomic<size_t> g_wildx_num_allocations;
 extern std::atomic<size_t> g_wildx_peak_usage;
+extern std::atomic<size_t> g_wildx_total_frees;
 
 void aria_allocator_get_stats(AllocatorStats* stats) {
     if (!stats) {
@@ -501,6 +502,7 @@ void aria_allocator_get_stats(AllocatorStats* stats) {
     // WildX stats (wildx_alloc.cpp)
     stats->total_wildx_allocated = g_wildx_total_allocated.load();
     stats->num_wildx_allocations = g_wildx_num_allocations.load();
+    stats->num_wildx_frees = g_wildx_total_frees.load();
     stats->peak_wildx_usage = g_wildx_peak_usage.load();
 }
 
