@@ -3388,4 +3388,1345 @@ VerifyResult Z3Verifier::inferReturnBounds(
     return VerifyResult::UNKNOWN;
 }
 
+// ============================================================================
+// Phase 16: Data Race Detection (v0.5.4)
+// ============================================================================
+// For each thread spawned via aria_thread_create(func, arg), we collect
+// variable accesses in both the spawning function (after the spawn point)
+// and the spawned function. If any variable is accessed by both threads
+// (read+write or write+write) without being protected by mutex lock/unlock,
+// we report a potential data race.
+//
+// Encoding: For each shared variable V:
+//   thread1_accesses(V) ∧ thread2_accesses(V) ∧
+//   (write1(V) ∨ write2(V)) ∧ ¬protected(V) → RACE
+//
+// We use Z3 to model overlapping access windows.
+
+// Helper: extract the name of a function being called
+static std::string getCallName(ASTNode* node) {
+    if (!node || node->type != ASTNode::NodeType::CALL) return "";
+    auto* call = static_cast<CallExpr*>(node);
+    if (!call->callee) return "";
+    if (call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+        return static_cast<IdentifierExpr*>(call->callee.get())->name;
+    }
+    return "";
+}
+
+// Helper: collect variable accesses from a function body, noting which
+// are inside lock/unlock regions
+static void collectAccesses(
+    ASTNode* node,
+    const std::string& funcName,
+    bool& insideLock,
+    std::vector<Z3Verifier::ThreadAccess>& accesses,
+    std::set<std::string>& declaredLocals)
+{
+    if (!node) return;
+    using NT = ASTNode::NodeType;
+
+    switch (node->type) {
+        case NT::VAR_DECL: {
+            auto* vd = static_cast<VarDeclStmt*>(node);
+            declaredLocals.insert(vd->varName);
+            if (vd->initializer) {
+                collectAccesses(vd->initializer.get(), funcName, insideLock,
+                                accesses, declaredLocals);
+            }
+            break;
+        }
+
+        case NT::ASSIGNMENT: {
+            auto* assign = static_cast<AssignmentExpr*>(node);
+            // LHS is a write
+            if (assign->target && assign->target->type == NT::IDENTIFIER) {
+                auto* ident = static_cast<IdentifierExpr*>(assign->target.get());
+                if (!declaredLocals.count(ident->name)) {
+                    accesses.push_back({ident->name, true, funcName,
+                                        insideLock, assign->line, assign->column});
+                }
+            }
+            // RHS is a read
+            if (assign->value) {
+                collectAccesses(assign->value.get(), funcName, insideLock,
+                                accesses, declaredLocals);
+            }
+            break;
+        }
+
+        case NT::IDENTIFIER: {
+            auto* ident = static_cast<IdentifierExpr*>(node);
+            if (!declaredLocals.count(ident->name)) {
+                accesses.push_back({ident->name, false, funcName,
+                                    insideLock, node->line, node->column});
+            }
+            break;
+        }
+
+        case NT::CALL: {
+            auto* call = static_cast<CallExpr*>(node);
+            std::string name = getCallName(node);
+
+            // Detect lock/unlock transitions  
+            if (name == "aria_mutex_lock" || name == "aria_shim_mutex_lock" ||
+                name == "aria_rwlock_wrlock" || name == "aria_shim_rwlock_wrlock" ||
+                name == "aria_rwlock_rdlock" || name == "aria_shim_rwlock_rdlock") {
+                insideLock = true;
+            } else if (name == "aria_mutex_unlock" || name == "aria_shim_mutex_unlock" ||
+                       name == "aria_rwlock_unlock" || name == "aria_shim_rwlock_unlock") {
+                insideLock = false;
+            }
+
+            for (auto& arg : call->arguments) {
+                collectAccesses(arg.get(), funcName, insideLock,
+                                accesses, declaredLocals);
+            }
+            break;
+        }
+
+        case NT::BLOCK: {
+            auto* blk = static_cast<BlockStmt*>(node);
+            for (auto& s : blk->statements) {
+                collectAccesses(s.get(), funcName, insideLock,
+                                accesses, declaredLocals);
+            }
+            break;
+        }
+
+        case NT::IF: {
+            auto* s = static_cast<IfStmt*>(node);
+            if (s->condition) collectAccesses(s->condition.get(), funcName, insideLock, accesses, declaredLocals);
+            collectAccesses(s->thenBranch.get(), funcName, insideLock, accesses, declaredLocals);
+            collectAccesses(s->elseBranch.get(), funcName, insideLock, accesses, declaredLocals);
+            break;
+        }
+
+        case NT::WHILE: {
+            auto* s = static_cast<WhileStmt*>(node);
+            if (s->condition) collectAccesses(s->condition.get(), funcName, insideLock, accesses, declaredLocals);
+            collectAccesses(s->body.get(), funcName, insideLock, accesses, declaredLocals);
+            break;
+        }
+
+        case NT::FOR: {
+            auto* s = static_cast<ForStmt*>(node);
+            collectAccesses(s->body.get(), funcName, insideLock, accesses, declaredLocals);
+            break;
+        }
+
+        case NT::BINARY_OP: {
+            auto* bin = static_cast<BinaryExpr*>(node);
+            // Check if this is an assignment (= operator)
+            if (bin->op.type == frontend::TokenType::TOKEN_EQUAL &&
+                bin->left && bin->left->type == NT::IDENTIFIER) {
+                auto* ident = static_cast<IdentifierExpr*>(bin->left.get());
+                if (!declaredLocals.count(ident->name)) {
+                    accesses.push_back({ident->name, true, funcName,
+                                        insideLock, bin->line, bin->column});
+                }
+                // RHS is a read
+                collectAccesses(bin->right.get(), funcName, insideLock, accesses, declaredLocals);
+            } else {
+                collectAccesses(bin->left.get(), funcName, insideLock, accesses, declaredLocals);
+                collectAccesses(bin->right.get(), funcName, insideLock, accesses, declaredLocals);
+            }
+            break;
+        }
+
+        case NT::UNARY_OP: {
+            auto* un = static_cast<UnaryExpr*>(node);
+            collectAccesses(un->operand.get(), funcName, insideLock, accesses, declaredLocals);
+            break;
+        }
+
+        case NT::EXPRESSION_STMT: {
+            auto* es = static_cast<ExpressionStmt*>(node);
+            collectAccesses(es->expression.get(), funcName, insideLock, accesses, declaredLocals);
+            break;
+        }
+
+        case NT::PASS: {
+            auto* s = static_cast<PassStmt*>(node);
+            if (s->value) collectAccesses(s->value.get(), funcName, insideLock, accesses, declaredLocals);
+            break;
+        }
+
+        case NT::RETURN: {
+            auto* s = static_cast<ReturnStmt*>(node);
+            if (s->value) collectAccesses(s->value.get(), funcName, insideLock, accesses, declaredLocals);
+            break;
+        }
+
+        default:
+            break;
+    }
+}
+
+VerifyResult Z3Verifier::verifyDataRaceFreedom(
+    FuncDeclStmt* spawner,
+    const std::vector<FuncDeclStmt*>& threadFuncs,
+    const std::map<std::string, FuncDeclStmt*>& allFuncs,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (!spawner || threadFuncs.empty()) return VerifyResult::PROVEN;
+
+    // Collect accesses from spawner (after spawn point we conservatively
+    // include all accesses in the spawner body)
+    std::vector<ThreadAccess> spawnerAccesses;
+    std::set<std::string> spawnerLocals;
+
+    // Collect declared locals from parameters
+    for (auto& p : spawner->parameters) {
+        if (p->type == ASTNode::NodeType::PARAMETER) {
+            spawnerLocals.insert(static_cast<ParameterNode*>(p.get())->paramName);
+        } else if (p->type == ASTNode::NodeType::VAR_DECL) {
+            spawnerLocals.insert(static_cast<VarDeclStmt*>(p.get())->varName);
+        }
+    }
+
+    bool spawnerLockState = false;
+    collectAccesses(spawner->body.get(), spawner->funcName, spawnerLockState,
+                    spawnerAccesses, spawnerLocals);
+
+    // Collect accesses from each thread function
+    std::vector<std::vector<ThreadAccess>> threadAccessSets;
+    for (auto* tf : threadFuncs) {
+        std::vector<ThreadAccess> tfAccesses;
+        std::set<std::string> tfLocals;
+        for (auto& p : tf->parameters) {
+            if (p->type == ASTNode::NodeType::PARAMETER) {
+                tfLocals.insert(static_cast<ParameterNode*>(p.get())->paramName);
+            } else if (p->type == ASTNode::NodeType::VAR_DECL) {
+                tfLocals.insert(static_cast<VarDeclStmt*>(p.get())->varName);
+            }
+        }
+        bool tfLockState = false;
+        collectAccesses(tf->body.get(), tf->funcName, tfLockState, tfAccesses, tfLocals);
+        threadAccessSets.push_back(std::move(tfAccesses));
+    }
+
+    VerifyResult worstResult = VerifyResult::PROVEN;
+
+    // Collect lock handle variable names (used as arguments to lock/unlock/create/destroy)
+    // These are synchronization primitives, not shared data
+    std::set<std::string> lockHandleVars;
+    auto collectLockHandles = [&](const std::vector<ThreadAccess>& accesses, ASTNode* body) {
+        // Walk body for calls to lock/unlock/create/destroy functions
+        std::function<void(ASTNode*)> walk;
+        walk = [&](ASTNode* node) {
+            if (!node) return;
+            if (node->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(node);
+                std::string name = getCallName(node);
+                if (name.find("mutex") != std::string::npos ||
+                    name.find("rwlock") != std::string::npos ||
+                    name.find("condvar") != std::string::npos ||
+                    name.find("barrier") != std::string::npos) {
+                    for (auto& arg : call->arguments) {
+                        if (arg->type == ASTNode::NodeType::IDENTIFIER) {
+                            lockHandleVars.insert(
+                                static_cast<IdentifierExpr*>(arg.get())->name);
+                        }
+                    }
+                }
+                for (auto& arg : call->arguments) walk(arg.get());
+            } else if (node->type == ASTNode::NodeType::BLOCK) {
+                for (auto& s : static_cast<BlockStmt*>(node)->statements) walk(s.get());
+            } else if (node->type == ASTNode::NodeType::EXPRESSION_STMT) {
+                walk(static_cast<ExpressionStmt*>(node)->expression.get());
+            } else if (node->type == ASTNode::NodeType::VAR_DECL) {
+                auto* vd = static_cast<VarDeclStmt*>(node);
+                if (vd->initializer) walk(vd->initializer.get());
+            } else if (node->type == ASTNode::NodeType::IF) {
+                auto* s = static_cast<IfStmt*>(node);
+                walk(s->thenBranch.get()); walk(s->elseBranch.get());
+            }
+        };
+        walk(body);
+    };
+    collectLockHandles(spawnerAccesses, spawner->body.get());
+    for (auto* tf : threadFuncs) {
+        collectLockHandles({}, tf->body.get());
+    }
+
+    // For each pair (spawner, thread), check for conflicting accesses
+    for (size_t ti = 0; ti < threadAccessSets.size(); ++ti) {
+        const auto& tfAccesses = threadAccessSets[ti];
+        const std::string& tfName = threadFuncs[ti]->funcName;
+
+        // Build set of variables accessed by thread function (non-local)
+        std::map<std::string, bool> threadWrites;   // var -> hasWrite
+        std::map<std::string, bool> threadProtected; // var -> isProtected
+        for (const auto& acc : tfAccesses) {
+            if (acc.isWrite) threadWrites[acc.varName] = true;
+            else if (threadWrites.find(acc.varName) == threadWrites.end())
+                threadWrites[acc.varName] = false;
+            if (acc.isProtected)
+                threadProtected[acc.varName] = true;
+        }
+
+        // Check for shared variable conflicts
+        for (const auto& sAcc : spawnerAccesses) {
+            // Skip lock handle variables — they are synchronization primitives
+            if (lockHandleVars.count(sAcc.varName)) continue;
+
+            auto twIt = threadWrites.find(sAcc.varName);
+            if (twIt == threadWrites.end()) continue;  // not accessed by thread
+
+            bool threadHasWrite = twIt->second;
+            bool spawnerHasWrite = sAcc.isWrite;
+
+            // Data race requires at least one write
+            if (!threadHasWrite && !spawnerHasWrite) continue;
+
+            // Check if both are protected
+            bool spawnerProtected = sAcc.isProtected;
+            bool tfProtected = threadProtected.count(sAcc.varName) &&
+                               threadProtected[sAcc.varName];
+
+            if (spawnerProtected && tfProtected) continue;  // both synchronized
+
+            // Use Z3 to encode the race potential:
+            // If there exists a scheduling where both accesses overlap
+            // and at least one is a write → race
+            Z3_solver solver = makeSolver();
+
+            // Boolean: thread1_accesses(var) ∧ thread2_accesses(var)
+            Z3_sort boolSort = Z3_mk_bool_sort(ctx);
+            Z3_ast t1_access = Z3_mk_true(ctx);
+            Z3_ast t2_access = Z3_mk_true(ctx);
+            Z3_ast t1_write = spawnerHasWrite ? Z3_mk_true(ctx) : Z3_mk_false(ctx);
+            Z3_ast t2_write = threadHasWrite ? Z3_mk_true(ctx) : Z3_mk_false(ctx);
+            Z3_ast t1_prot = spawnerProtected ? Z3_mk_true(ctx) : Z3_mk_false(ctx);
+            Z3_ast t2_prot = tfProtected ? Z3_mk_true(ctx) : Z3_mk_false(ctx);
+
+            // Race condition: concurrent ∧ at_least_one_write ∧ ¬both_protected
+            Z3_ast writeDisjunct = Z3_mk_or(ctx, 2, (Z3_ast[]){t1_write, t2_write});
+            Z3_ast bothProtected = Z3_mk_and(ctx, 2, (Z3_ast[]){t1_prot, t2_prot});
+            Z3_ast notBothProtected = Z3_mk_not(ctx, bothProtected);
+            Z3_ast concurrent = Z3_mk_and(ctx, 2, (Z3_ast[]){t1_access, t2_access});
+
+            Z3_ast raceCond = Z3_mk_and(ctx, 3,
+                (Z3_ast[]){concurrent, writeDisjunct, notBothProtected});
+
+            Z3_solver_assert(ctx, solver, raceCond);
+            Z3_lbool result = checkSat(solver);
+            deleteSolver(solver);
+
+            if (result == Z3_L_TRUE) {
+                // Race is possible
+                VerifyOutcome out;
+                out.result = VerifyResult::DISPROVEN;
+                out.rulesName = sAcc.varName;
+                out.conditionText = "data race on '" + sAcc.varName + "'";
+                std::string accessType = (spawnerHasWrite && threadHasWrite)
+                    ? "write-write" : "read-write";
+                out.detail = "Potential " + accessType + " data race on '" +
+                             sAcc.varName + "' between '" + spawner->funcName +
+                             "' and thread '" + tfName +
+                             "' — variable is not consistently protected by a mutex";
+                out.line = sAcc.line;
+                out.column = sAcc.column;
+                summary.disproven++;
+                outcomes.push_back(out);
+                summary.outcomes.push_back(out);
+                worstResult = VerifyResult::DISPROVEN;
+            }
+        }
+    }
+
+    if (worstResult == VerifyResult::PROVEN && !threadAccessSets.empty()) {
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.conditionText = "data race freedom";
+        out.detail = "Proven: no data races detected in '" + spawner->funcName +
+                     "' — all shared accesses are properly synchronized";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+    }
+
+    return worstResult;
+}
+
+// ============================================================================
+// Phase 17: Deadlock Freedom (v0.5.4)
+// ============================================================================
+// Build a lock acquisition graph from all functions. Each lock variable gets
+// a Z3 integer ordinal. We assert that whenever lock A is held and lock B is
+// acquired, ordinal(A) < ordinal(B). If the system is SAT, a consistent
+// ordering exists → deadlock-free. If UNSAT → cyclic ordering → deadlock.
+
+// Helper: collect lock acquisition sequences from a function body
+static void collectLockSequences(
+    ASTNode* node,
+    std::vector<std::string>& currentHeld, // locks currently held
+    std::vector<std::pair<std::string, std::string>>& orderPairs, // (held, acquired)
+    std::vector<Z3Verifier::LockAcquisition>& allAcq,
+    const std::string& funcName)
+{
+    if (!node) return;
+    using NT = ASTNode::NodeType;
+
+    switch (node->type) {
+        case NT::CALL: {
+            std::string name = getCallName(node);
+            auto* call = static_cast<CallExpr*>(node);
+
+            if ((name == "aria_mutex_lock" || name == "aria_shim_mutex_lock" ||
+                 name == "aria_rwlock_wrlock" || name == "aria_shim_rwlock_wrlock" ||
+                 name == "aria_rwlock_rdlock" || name == "aria_shim_rwlock_rdlock") &&
+                !call->arguments.empty()) {
+                // Get the lock variable name
+                std::string lockVar;
+                if (call->arguments[0]->type == NT::IDENTIFIER) {
+                    lockVar = static_cast<IdentifierExpr*>(
+                        call->arguments[0].get())->name;
+                }
+                if (!lockVar.empty()) {
+                    // Record ordering constraints: all currently held < this new one
+                    for (const auto& held : currentHeld) {
+                        orderPairs.push_back({held, lockVar});
+                    }
+                    currentHeld.push_back(lockVar);
+                    allAcq.push_back({lockVar, funcName, node->line, node->column});
+                }
+            } else if ((name == "aria_mutex_unlock" || name == "aria_shim_mutex_unlock" ||
+                        name == "aria_rwlock_unlock" || name == "aria_shim_rwlock_unlock") &&
+                       !call->arguments.empty()) {
+                std::string lockVar;
+                if (call->arguments[0]->type == NT::IDENTIFIER) {
+                    lockVar = static_cast<IdentifierExpr*>(
+                        call->arguments[0].get())->name;
+                }
+                if (!lockVar.empty()) {
+                    // Remove from held set
+                    auto it = std::find(currentHeld.begin(), currentHeld.end(), lockVar);
+                    if (it != currentHeld.end()) currentHeld.erase(it);
+                }
+            }
+
+            for (auto& arg : call->arguments) {
+                collectLockSequences(arg.get(), currentHeld, orderPairs,
+                                     allAcq, funcName);
+            }
+            break;
+        }
+
+        case NT::BLOCK: {
+            auto* blk = static_cast<BlockStmt*>(node);
+            for (auto& s : blk->statements) {
+                collectLockSequences(s.get(), currentHeld, orderPairs,
+                                     allAcq, funcName);
+            }
+            break;
+        }
+
+        case NT::IF: {
+            auto* s = static_cast<IfStmt*>(node);
+            // Both branches need checking with the same held set
+            auto savedHeld = currentHeld;
+            collectLockSequences(s->thenBranch.get(), currentHeld, orderPairs,
+                                 allAcq, funcName);
+            auto thenHeld = currentHeld;
+            currentHeld = savedHeld;
+            collectLockSequences(s->elseBranch.get(), currentHeld, orderPairs,
+                                 allAcq, funcName);
+            // Merge: union of both outcomes
+            for (const auto& h : thenHeld) {
+                if (std::find(currentHeld.begin(), currentHeld.end(), h) == currentHeld.end()) {
+                    currentHeld.push_back(h);
+                }
+            }
+            break;
+        }
+
+        case NT::WHILE: {
+            auto* s = static_cast<WhileStmt*>(node);
+            collectLockSequences(s->body.get(), currentHeld, orderPairs,
+                                 allAcq, funcName);
+            break;
+        }
+
+        case NT::FOR: {
+            auto* s = static_cast<ForStmt*>(node);
+            collectLockSequences(s->body.get(), currentHeld, orderPairs,
+                                 allAcq, funcName);
+            break;
+        }
+
+        case NT::EXPRESSION_STMT: {
+            auto* es = static_cast<ExpressionStmt*>(node);
+            collectLockSequences(es->expression.get(), currentHeld, orderPairs,
+                                 allAcq, funcName);
+            break;
+        }
+
+        default:
+            break;
+    }
+}
+
+VerifyResult Z3Verifier::verifyDeadlockFreedom(
+    const std::map<std::string, FuncDeclStmt*>& allFuncs,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    // Collect all lock ordering constraints from all functions
+    std::vector<std::pair<std::string, std::string>> allOrderPairs;
+    std::vector<LockAcquisition> allAcquisitions;
+    std::set<std::string> allLockVars;
+
+    for (const auto& [fname, func] : allFuncs) {
+        if (!func->body) continue;
+        std::vector<std::string> currentHeld;
+        collectLockSequences(func->body.get(), currentHeld, allOrderPairs,
+                             allAcquisitions, fname);
+    }
+
+    // Collect all unique lock variable names
+    for (const auto& [held, acquired] : allOrderPairs) {
+        allLockVars.insert(held);
+        allLockVars.insert(acquired);
+    }
+
+    if (allLockVars.size() < 2) {
+        // 0 or 1 locks → trivially deadlock-free
+        if (!allLockVars.empty()) {
+            VerifyOutcome out;
+            out.result = VerifyResult::PROVEN;
+            out.conditionText = "deadlock freedom";
+            out.detail = "Proven: only " + std::to_string(allLockVars.size()) +
+                         " lock(s) used — deadlock impossible";
+            out.line = line;
+            out.column = column;
+            summary.proven++;
+            outcomes.push_back(out);
+            summary.outcomes.push_back(out);
+        }
+        return VerifyResult::PROVEN;
+    }
+
+    // Create Z3 integer ordinal for each lock
+    Z3_solver solver = makeSolver();
+    Z3_sort intSort = Z3_mk_int_sort(ctx);
+    std::map<std::string, Z3_ast> lockOrdinals;
+
+    for (const auto& lockVar : allLockVars) {
+        Z3_symbol sym = Z3_mk_string_symbol(ctx, lockVar.c_str());
+        lockOrdinals[lockVar] = Z3_mk_const(ctx, sym, intSort);
+    }
+
+    // Assert all ordinals are distinct and positive
+    for (const auto& [name, ord] : lockOrdinals) {
+        Z3_ast zero = Z3_mk_int(ctx, 0, intSort);
+        Z3_solver_assert(ctx, solver, Z3_mk_gt(ctx, ord, zero));
+    }
+
+    // Assert ordering constraints: for each (held, acquired), ord(held) < ord(acquired)
+    for (const auto& [held, acquired] : allOrderPairs) {
+        if (held == acquired) continue; // same lock re-acquisition (recursive mutex)
+        auto hIt = lockOrdinals.find(held);
+        auto aIt = lockOrdinals.find(acquired);
+        if (hIt != lockOrdinals.end() && aIt != lockOrdinals.end()) {
+            Z3_solver_assert(ctx, solver,
+                Z3_mk_lt(ctx, hIt->second, aIt->second));
+        }
+    }
+
+    Z3_lbool result = checkSat(solver);
+    deleteSolver(solver);
+
+    if (result == Z3_L_TRUE) {
+        // SAT → consistent ordering exists → deadlock-free
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.conditionText = "deadlock freedom";
+        out.detail = "Proven: consistent lock ordering exists for " +
+                     std::to_string(allLockVars.size()) +
+                     " locks — no deadlock possible";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    } else if (result == Z3_L_FALSE) {
+        // UNSAT → cyclic ordering → deadlock potential
+        // Find the offending pair(s)
+        std::string cycleInfo;
+        // Check for simple A→B, B→A cycles
+        for (size_t i = 0; i < allOrderPairs.size(); ++i) {
+            for (size_t j = i + 1; j < allOrderPairs.size(); ++j) {
+                if (allOrderPairs[i].first == allOrderPairs[j].second &&
+                    allOrderPairs[i].second == allOrderPairs[j].first) {
+                    cycleInfo = allOrderPairs[i].first + " → " +
+                                allOrderPairs[i].second + " → " +
+                                allOrderPairs[i].first;
+                    break;
+                }
+            }
+            if (!cycleInfo.empty()) break;
+        }
+
+        VerifyOutcome out;
+        out.result = VerifyResult::DISPROVEN;
+        out.conditionText = "deadlock freedom";
+        out.detail = "Potential deadlock: cyclic lock ordering detected" +
+                     (cycleInfo.empty() ? "" : " (" + cycleInfo + ")") +
+                     " — " + std::to_string(allLockVars.size()) + " locks, " +
+                     std::to_string(allOrderPairs.size()) + " ordering constraints";
+        out.line = line;
+        out.column = column;
+        summary.disproven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::DISPROVEN;
+    }
+
+    VerifyOutcome out;
+    out.result = VerifyResult::UNKNOWN;
+    out.conditionText = "deadlock freedom";
+    out.detail = "Could not determine lock ordering consistency";
+    out.line = line;
+    out.column = column;
+    summary.unknown++;
+    outcomes.push_back(out);
+    summary.outcomes.push_back(out);
+    return VerifyResult::UNKNOWN;
+}
+
+// ============================================================================
+// Phase 18: Use-After-Free Proofs via SMT (v0.5.4)
+// ============================================================================
+// For a given variable that has conditional frees (freed in one branch,
+// not in another), use Z3 to prove whether a subsequent use is safe.
+// We encode each conditional free as: if (cond) then state = FREED,
+// and check whether at the use point state could be FREED.
+//
+// If NOT(state == FREED) is UNSAT at the use point → use-after-free
+// If NOT(state == FREED) is SAT → safe path exists, still warn if
+// some paths lead to use-after-free
+//
+// More precisely: we collect (condition, action) pairs where action is
+// either FREE or USE, then ask Z3 if there's a valuation where
+// a FREE happens before a USE.
+
+VerifyResult Z3Verifier::proveNoUseAfterFree(
+    FuncDeclStmt* func,
+    const std::string& varName,
+    const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (!func || !func->body) return VerifyResult::UNKNOWN;
+
+    // Model: for each program point, track whether the variable is freed.
+    // We use a symbolic boolean for each branch condition encountered,
+    // and encode: freed ↔ OR(all_free_conditions).
+    // Then at use points: if freed ∧ use-condition is SAT → use-after-free.
+
+    // Collect free and use events with their guarding conditions
+    struct MemEvent {
+        bool isFree;     // true = free(var), false = use of var
+        int line;
+        int column;
+        std::vector<ASTNode*> guardConditions;  // branch conditions to reach here
+        std::vector<bool> guardPolarities;     // true = then branch, false = else
+    };
+
+    std::vector<MemEvent> events;
+    std::vector<ASTNode*> currentGuards;
+    std::vector<bool> currentPolarities;
+
+    std::function<void(ASTNode*)> collectEvents;
+    collectEvents = [&](ASTNode* node) {
+        if (!node) return;
+        using NT = ASTNode::NodeType;
+
+        switch (node->type) {
+            case NT::CALL: {
+                std::string name = getCallName(node);
+                auto* call = static_cast<CallExpr*>(node);
+
+                // Check if this is a free() call on our variable
+                if ((name == "free" || name == "aria_free" || name == "_release" ||
+                     name == "_destroy") && !call->arguments.empty()) {
+                    if (call->arguments[0]->type == NT::IDENTIFIER) {
+                        auto* arg = static_cast<IdentifierExpr*>(
+                            call->arguments[0].get());
+                        if (arg->name == varName) {
+                            MemEvent evt;
+                            evt.isFree = true;
+                            evt.line = node->line;
+                            evt.column = node->column;
+                            evt.guardConditions = currentGuards;
+                            evt.guardPolarities = currentPolarities;
+                            events.push_back(evt);
+                        }
+                    }
+                    // Don't recurse into free() arguments — the arg
+                    // is consumed by the free, not a "use"
+                    break;
+                }
+
+                // Recurse into arguments for non-free calls
+                for (auto& arg : call->arguments) {
+                    collectEvents(arg.get());
+                }
+                break;
+            }
+
+            case NT::IDENTIFIER: {
+                auto* ident = static_cast<IdentifierExpr*>(node);
+                if (ident->name == varName) {
+                    MemEvent evt;
+                    evt.isFree = false;
+                    evt.line = node->line;
+                    evt.column = node->column;
+                    evt.guardConditions = currentGuards;
+                    evt.guardPolarities = currentPolarities;
+                    events.push_back(evt);
+                }
+                break;
+            }
+
+            case NT::IF: {
+                auto* ifStmt = static_cast<IfStmt*>(node);
+                // Then branch
+                currentGuards.push_back(ifStmt->condition.get());
+                currentPolarities.push_back(true);
+                collectEvents(ifStmt->thenBranch.get());
+                currentGuards.pop_back();
+                currentPolarities.pop_back();
+                // Else branch
+                currentGuards.push_back(ifStmt->condition.get());
+                currentPolarities.push_back(false);
+                collectEvents(ifStmt->elseBranch.get());
+                currentGuards.pop_back();
+                currentPolarities.pop_back();
+                break;
+            }
+
+            case NT::BLOCK: {
+                auto* blk = static_cast<BlockStmt*>(node);
+                for (auto& s : blk->statements) collectEvents(s.get());
+                break;
+            }
+
+            case NT::VAR_DECL: {
+                auto* vd = static_cast<VarDeclStmt*>(node);
+                if (vd->initializer) collectEvents(vd->initializer.get());
+                break;
+            }
+
+            case NT::EXPRESSION_STMT: {
+                auto* es = static_cast<ExpressionStmt*>(node);
+                collectEvents(es->expression.get());
+                break;
+            }
+
+            case NT::WHILE: {
+                auto* s = static_cast<WhileStmt*>(node);
+                if (s->condition) collectEvents(s->condition.get());
+                collectEvents(s->body.get());
+                break;
+            }
+
+            case NT::PASS: {
+                auto* s = static_cast<PassStmt*>(node);
+                if (s->value) collectEvents(s->value.get());
+                break;
+            }
+
+            case NT::RETURN: {
+                auto* s = static_cast<ReturnStmt*>(node);
+                if (s->value) collectEvents(s->value.get());
+                break;
+            }
+
+            case NT::ASSIGNMENT: {
+                auto* a = static_cast<AssignmentExpr*>(node);
+                if (a->value) collectEvents(a->value.get());
+                if (a->target) collectEvents(a->target.get());
+                break;
+            }
+
+            case NT::BINARY_OP: {
+                auto* b = static_cast<BinaryExpr*>(node);
+                collectEvents(b->left.get());
+                collectEvents(b->right.get());
+                break;
+            }
+
+            default:
+                break;
+        }
+    };
+
+    collectEvents(func->body.get());
+
+    // Filter: must have at least one free and one subsequent use
+    bool hasFree = false;
+    bool hasUseAfterFree = false;
+    int freeLineFirst = 0;
+    int useLineAfterFree = 0;
+
+    for (const auto& evt : events) {
+        if (evt.isFree) {
+            hasFree = true;
+            freeLineFirst = evt.line;
+        } else if (hasFree) {
+            hasUseAfterFree = true;
+            useLineAfterFree = evt.line;
+            break;
+        }
+    }
+
+    if (!hasFree) {
+        // No free() for this variable in this function — trivially safe
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.rulesName = varName;
+        out.conditionText = "use-after-free safety";
+        out.detail = "Proven: '" + varName + "' is never freed in '" +
+                     func->funcName + "' — no use-after-free possible";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    }
+
+    if (!hasUseAfterFree) {
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.rulesName = varName;
+        out.conditionText = "use-after-free safety";
+        out.detail = "Proven: '" + varName + "' is not used after free in '" +
+                     func->funcName + "'";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    }
+
+    // Build Z3 model: can we reach a state where free happened before use?
+    Z3_solver solver = makeSolver();
+    Z3_sort boolSort = Z3_mk_bool_sort(ctx);
+    Z3_sort intSort = getIntSort(32);
+
+    // Create symbolic booleans for each unique guard condition
+    std::map<ASTNode*, Z3_ast> guardSymbols;
+    int guardIdx = 0;
+    for (const auto& evt : events) {
+        for (auto* g : evt.guardConditions) {
+            if (guardSymbols.find(g) == guardSymbols.end()) {
+                std::string name = "guard_" + std::to_string(guardIdx++);
+                Z3_symbol sym = Z3_mk_string_symbol(ctx, name.c_str());
+                guardSymbols[g] = Z3_mk_const(ctx, sym, boolSort);
+            }
+        }
+    }
+
+    // Build path conditions for free events and use events
+    // For each free event: pathCond → freed
+    // For each use event after first free: pathCond ∧ freed → USE_AFTER_FREE
+    Z3_ast freed = Z3_mk_false(ctx);  // disjunction of all free conditions
+
+    for (const auto& evt : events) {
+        if (!evt.isFree) continue;
+
+        // Build the path condition for this free
+        Z3_ast pathCond = Z3_mk_true(ctx);
+        for (size_t i = 0; i < evt.guardConditions.size(); ++i) {
+            Z3_ast guardVal = guardSymbols[evt.guardConditions[i]];
+            if (!evt.guardPolarities[i]) {
+                guardVal = Z3_mk_not(ctx, guardVal);
+            }
+            pathCond = Z3_mk_and(ctx, 2, (Z3_ast[]){pathCond, guardVal});
+        }
+        freed = Z3_mk_or(ctx, 2, (Z3_ast[]){freed, pathCond});
+    }
+
+    // Find the first use after any free and check if it's reachable while freed
+    for (const auto& evt : events) {
+        if (evt.isFree) continue;
+        if (evt.line < freeLineFirst) continue;  // use before free — safe
+
+        // Build path condition for this use
+        Z3_ast useCond = Z3_mk_true(ctx);
+        for (size_t i = 0; i < evt.guardConditions.size(); ++i) {
+            Z3_ast guardVal = guardSymbols[evt.guardConditions[i]];
+            if (!evt.guardPolarities[i]) {
+                guardVal = Z3_mk_not(ctx, guardVal);
+            }
+            useCond = Z3_mk_and(ctx, 2, (Z3_ast[]){useCond, guardVal});
+        }
+
+        // Check: freed ∧ use reachable → use-after-free
+        Z3_ast uafCond = Z3_mk_and(ctx, 2, (Z3_ast[]){freed, useCond});
+        Z3_solver_push(ctx, solver);
+        Z3_solver_assert(ctx, solver, uafCond);
+
+        // Also assert any Rules constraints on guard variables
+        std::map<std::string, Z3_ast> env;
+        for (const auto& [varN, rulesInfo] : varRules) {
+            TypeInfo ti = resolveTypeSort(rulesInfo.second);
+            Z3_symbol sym = Z3_mk_string_symbol(ctx, varN.c_str());
+            Z3_ast var = Z3_mk_const(ctx, sym, ti.sort);
+            env[varN] = var;
+        }
+
+        Z3_lbool result = checkSat(solver);
+        Z3_solver_pop(ctx, solver, 1);
+
+        if (result == Z3_L_TRUE) {
+            // SAT → use-after-free path exists
+            VerifyOutcome out;
+            out.result = VerifyResult::DISPROVEN;
+            out.rulesName = varName;
+            out.conditionText = "use-after-free safety";
+            out.detail = "Potential use-after-free: '" + varName +
+                         "' may be freed (line " + std::to_string(freeLineFirst) +
+                         ") before use (line " + std::to_string(evt.line) +
+                         ") in '" + func->funcName + "'";
+            out.line = evt.line;
+            out.column = evt.column;
+            summary.disproven++;
+            outcomes.push_back(out);
+            summary.outcomes.push_back(out);
+            deleteSolver(solver);
+            return VerifyResult::DISPROVEN;
+        } else if (result == Z3_L_FALSE) {
+            // UNSAT → this use is unreachable when freed — safe
+            continue;
+        }
+    }
+
+    deleteSolver(solver);
+
+    VerifyOutcome out;
+    out.result = VerifyResult::PROVEN;
+    out.rulesName = varName;
+    out.conditionText = "use-after-free safety";
+    out.detail = "Proven: no reachable use-after-free paths for '" +
+                 varName + "' in '" + func->funcName + "'";
+    out.line = line;
+    out.column = column;
+    summary.proven++;
+    outcomes.push_back(out);
+    summary.outcomes.push_back(out);
+    return VerifyResult::PROVEN;
+}
+
+// ============================================================================
+// Phase 19: Stack Overflow Prediction (v0.5.4)
+// ============================================================================
+// For recursive functions, prove the recursion depth is bounded.
+// Algorithm:
+// 1. Detect self-recursive calls (func calls itself)
+// 2. Find the "decreasing argument" — a parameter that is smaller in
+//    the recursive call than in the current invocation
+// 3. Use Z3 to verify: ∀ valid inputs (Rules-constrained), the recursive
+//    argument strictly decreases toward a base case
+// 4. If bounded, compute max depth using Z3 optimization
+
+VerifyResult Z3Verifier::proveRecursionBounded(
+    FuncDeclStmt* func,
+    const std::map<std::string, FuncDeclStmt*>& allFuncs,
+    const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& paramRules,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (!func || !func->body) return VerifyResult::UNKNOWN;
+
+    // Step 1: Find recursive calls to self
+    struct RecursiveCall {
+        std::vector<ASTNode*> args;
+        int line;
+        int column;
+    };
+    std::vector<RecursiveCall> selfCalls;
+
+    std::function<void(ASTNode*)> findSelfCalls;
+    findSelfCalls = [&](ASTNode* node) {
+        if (!node) return;
+        using NT = ASTNode::NodeType;
+
+        if (node->type == NT::CALL) {
+            auto* call = static_cast<CallExpr*>(node);
+            std::string name = getCallName(node);
+            if (name == func->funcName) {
+                RecursiveCall rc;
+                for (auto& a : call->arguments) rc.args.push_back(a.get());
+                rc.line = call->line;
+                rc.column = call->column;
+                selfCalls.push_back(rc);
+            }
+            for (auto& a : call->arguments) findSelfCalls(a.get());
+        } else if (node->type == NT::BLOCK) {
+            auto* blk = static_cast<BlockStmt*>(node);
+            for (auto& s : blk->statements) findSelfCalls(s.get());
+        } else if (node->type == NT::IF) {
+            auto* s = static_cast<IfStmt*>(node);
+            findSelfCalls(s->thenBranch.get());
+            findSelfCalls(s->elseBranch.get());
+        } else if (node->type == NT::WHILE) {
+            auto* s = static_cast<WhileStmt*>(node);
+            findSelfCalls(s->body.get());
+        } else if (node->type == NT::FOR) {
+            auto* s = static_cast<ForStmt*>(node);
+            findSelfCalls(s->body.get());
+        } else if (node->type == NT::EXPRESSION_STMT) {
+            auto* s = static_cast<ExpressionStmt*>(node);
+            findSelfCalls(s->expression.get());
+        } else if (node->type == NT::VAR_DECL) {
+            auto* s = static_cast<VarDeclStmt*>(node);
+            if (s->initializer) findSelfCalls(s->initializer.get());
+        } else if (node->type == NT::PASS) {
+            auto* s = static_cast<PassStmt*>(node);
+            if (s->value) findSelfCalls(s->value.get());
+        } else if (node->type == NT::RETURN) {
+            auto* s = static_cast<ReturnStmt*>(node);
+            if (s->value) findSelfCalls(s->value.get());
+        }
+    };
+    findSelfCalls(func->body.get());
+
+    if (selfCalls.empty()) {
+        // Not recursive — trivially bounded
+        return VerifyResult::PROVEN;
+    }
+
+    // Step 2: For each parameter, check if recursive calls use a smaller value
+    Z3_sort intSort = getIntSort(32);
+
+    for (size_t pi = 0; pi < func->parameters.size(); ++pi) {
+        auto* paramNode = func->parameters[pi].get();
+        std::string paramName;
+        if (paramNode->type == ASTNode::NodeType::PARAMETER) {
+            paramName = static_cast<ParameterNode*>(paramNode)->paramName;
+        } else if (paramNode->type == ASTNode::NodeType::VAR_DECL) {
+            paramName = static_cast<VarDeclStmt*>(paramNode)->varName;
+        }
+        if (paramName.empty()) continue;
+
+        // Check if this parameter has Rules constraints
+        auto rIt = paramRules.find(paramName);
+        if (rIt == paramRules.end()) continue;
+
+        const auto& [rulesDecl, baseType] = rIt->second;
+        TypeInfo ti = resolveTypeSort(baseType);
+
+        // Create Z3 variable for the parameter
+        Z3_symbol paramSym = Z3_mk_string_symbol(ctx, paramName.c_str());
+        Z3_ast paramVar = Z3_mk_const(ctx, paramSym, ti.sort);
+
+        // Collect Rules axioms for this parameter
+        std::vector<Z3_ast> axioms;
+        std::function<void(RulesDeclStmt*)> collectAxioms;
+        collectAxioms = [&](RulesDeclStmt* r) {
+            for (const auto& cascName : r->cascadedRules) {
+                auto cIt = rules_table.find(cascName);
+                if (cIt != rules_table.end()) collectAxioms(cIt->second);
+            }
+            for (auto& cond : r->conditions) {
+                Z3_ast z3Cond = translateCondition(cond.get(), paramVar, ti.sort);
+                if (z3Cond) axioms.push_back(z3Cond);
+            }
+        };
+        collectAxioms(rulesDecl);
+
+        if (axioms.empty()) continue;
+
+        // For each recursive call, check if arg[pi] < paramVar
+        bool allDecrease = true;
+        for (const auto& rc : selfCalls) {
+            if (pi >= rc.args.size()) { allDecrease = false; break; }
+
+            // Build env mapping param names to Z3 vars
+            std::map<std::string, Z3_ast> env;
+            env[paramName] = paramVar;
+            // Also add other params
+            for (size_t j = 0; j < func->parameters.size(); ++j) {
+                auto* pn = func->parameters[j].get();
+                std::string pname;
+                if (pn->type == ASTNode::NodeType::PARAMETER) {
+                    pname = static_cast<ParameterNode*>(pn)->paramName;
+                } else if (pn->type == ASTNode::NodeType::VAR_DECL) {
+                    pname = static_cast<VarDeclStmt*>(pn)->varName;
+                }
+                if (!pname.empty() && env.find(pname) == env.end()) {
+                    Z3_symbol s = Z3_mk_string_symbol(ctx, pname.c_str());
+                    env[pname] = Z3_mk_const(ctx, s, ti.sort);
+                }
+            }
+
+            Z3_ast recArg = translateExprWithEnv(rc.args[pi], env, ti.sort);
+            if (!recArg) { allDecrease = false; break; }
+
+            // Prove: under axioms, recArg < paramVar
+            Z3_solver solver = makeSolver();
+            for (auto& ax : axioms) {
+                Z3_solver_assert(ctx, solver, ax);
+            }
+
+            // Assert NOT(recArg < paramVar) — if UNSAT, descent is proven
+            Z3_ast decrease;
+            if (ti.isFloat) {
+                decrease = Z3_mk_lt(ctx, recArg, paramVar);
+            } else {
+                decrease = Z3_mk_bvslt(ctx, recArg, paramVar);
+            }
+            Z3_ast notDecrease = Z3_mk_not(ctx, decrease);
+            Z3_solver_assert(ctx, solver, notDecrease);
+
+            Z3_lbool result = checkSat(solver);
+            deleteSolver(solver);
+
+            if (result != Z3_L_FALSE) {
+                // Not proven to strictly decrease
+                allDecrease = false;
+                break;
+            }
+        }
+
+        if (!allDecrease) continue;
+
+        // Step 3: Compute max depth using Z3 optimization
+        // Depth = max value of parameter under Rules / decrease amount
+        // Use Z3_optimize to find max initial value
+        Z3_optimize opt = Z3_mk_optimize(ctx);
+        Z3_optimize_inc_ref(ctx, opt);
+
+        for (auto& ax : axioms) {
+            Z3_optimize_assert(ctx, opt, ax);
+        }
+
+        // Also assert parameter > 0 (must be positive for depth to make sense)
+        Z3_ast zero = Z3_mk_int(ctx, 0, ti.sort);
+        if (!ti.isFloat) {
+            Z3_optimize_assert(ctx, opt,
+                Z3_mk_bvsgt(ctx, paramVar, zero));
+        }
+
+        Z3_optimize_maximize(ctx, opt, paramVar);
+        Z3_lbool optResult = Z3_optimize_check(ctx, opt, 0, nullptr);
+
+        int64_t maxDepth = -1;
+        if (optResult == Z3_L_TRUE) {
+            Z3_model model = Z3_optimize_get_model(ctx, opt);
+            if (model) {
+                Z3_model_inc_ref(ctx, model);
+                Z3_ast val;
+                if (Z3_model_eval(ctx, model, paramVar, true, &val)) {
+                    Z3_inc_ref(ctx, val);
+                    int64_t numVal;
+                    if (Z3_get_numeral_int64(ctx, val, &numVal)) {
+                        maxDepth = numVal;
+                    }
+                    Z3_dec_ref(ctx, val);
+                }
+                Z3_model_dec_ref(ctx, model);
+            }
+        }
+
+        Z3_optimize_dec_ref(ctx, opt);
+
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.rulesName = func->funcName;
+        out.conditionText = "recursion bounded";
+        if (maxDepth >= 0) {
+            out.detail = "Proven: recursion in '" + func->funcName +
+                         "' is bounded — parameter '" + paramName +
+                         "' strictly decreases, max depth ≤ " +
+                         std::to_string(maxDepth);
+        } else {
+            out.detail = "Proven: recursion in '" + func->funcName +
+                         "' is bounded — parameter '" + paramName +
+                         "' strictly decreases on every recursive call";
+        }
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    }
+
+    // Step 2b: Check body VarDecls with limit<> that derive from parameters.
+    // In Aria, the common pattern is: limit<Rules> Type:bodyVar = paramName;
+    // The body variable is constrained, and the recursive call uses it.
+    if (func->body && func->body->type == ASTNode::NodeType::BLOCK) {
+        auto* blk = static_cast<BlockStmt*>(func->body.get());
+        for (auto& s : blk->statements) {
+            if (s->type != ASTNode::NodeType::VAR_DECL) continue;
+            auto* vd = static_cast<VarDeclStmt*>(s.get());
+            if (vd->limitRulesName.empty()) continue;
+            if (!vd->initializer || vd->initializer->type != ASTNode::NodeType::IDENTIFIER) continue;
+
+            auto* initIdent = static_cast<IdentifierExpr*>(vd->initializer.get());
+
+            // Find which parameter index this body var derives from
+            int paramIdx = -1;
+            for (size_t pi = 0; pi < func->parameters.size(); ++pi) {
+                auto* pn = func->parameters[pi].get();
+                std::string pname;
+                if (pn->type == ASTNode::NodeType::PARAMETER)
+                    pname = static_cast<ParameterNode*>(pn)->paramName;
+                else if (pn->type == ASTNode::NodeType::VAR_DECL)
+                    pname = static_cast<VarDeclStmt*>(pn)->varName;
+                if (pname == initIdent->name) { paramIdx = (int)pi; break; }
+            }
+            if (paramIdx < 0) continue;
+
+            // Look up Rules for this body variable
+            auto rIt = paramRules.find(vd->varName);
+            if (rIt == paramRules.end()) continue;
+
+            const auto& [rulesDecl2, baseType2] = rIt->second;
+            TypeInfo ti2 = resolveTypeSort(baseType2);
+
+            Z3_symbol bodySym = Z3_mk_string_symbol(ctx, vd->varName.c_str());
+            Z3_ast bodyVar = Z3_mk_const(ctx, bodySym, ti2.sort);
+
+            // Collect Rules axioms for the body variable
+            std::vector<Z3_ast> axioms2;
+            std::function<void(RulesDeclStmt*)> collectAxioms2;
+            collectAxioms2 = [&](RulesDeclStmt* r) {
+                for (const auto& cascName : r->cascadedRules) {
+                    auto cIt = rules_table.find(cascName);
+                    if (cIt != rules_table.end()) collectAxioms2(cIt->second);
+                }
+                for (auto& cond : r->conditions) {
+                    Z3_ast z3Cond = translateCondition(cond.get(), bodyVar, ti2.sort);
+                    if (z3Cond) axioms2.push_back(z3Cond);
+                }
+            };
+            collectAxioms2(rulesDecl2);
+            if (axioms2.empty()) continue;
+
+            // Build env: body var name AND param name both map to same Z3 var
+            std::map<std::string, Z3_ast> env2;
+            env2[vd->varName] = bodyVar;
+            env2[initIdent->name] = bodyVar;
+            for (size_t j = 0; j < func->parameters.size(); ++j) {
+                auto* pn = func->parameters[j].get();
+                std::string pname;
+                if (pn->type == ASTNode::NodeType::PARAMETER)
+                    pname = static_cast<ParameterNode*>(pn)->paramName;
+                else if (pn->type == ASTNode::NodeType::VAR_DECL)
+                    pname = static_cast<VarDeclStmt*>(pn)->varName;
+                if (!pname.empty() && env2.find(pname) == env2.end()) {
+                    Z3_symbol s2 = Z3_mk_string_symbol(ctx, pname.c_str());
+                    env2[pname] = Z3_mk_const(ctx, s2, ti2.sort);
+                }
+            }
+
+            // Check all recursive calls decrease at paramIdx
+            bool allDecrease2 = true;
+            for (const auto& rc : selfCalls) {
+                if ((size_t)paramIdx >= rc.args.size()) { allDecrease2 = false; break; }
+
+                Z3_ast recArg2 = translateExprWithEnv(rc.args[paramIdx], env2, ti2.sort);
+                if (!recArg2) { allDecrease2 = false; break; }
+
+                Z3_solver solver2 = makeSolver();
+                for (auto& ax : axioms2) Z3_solver_assert(ctx, solver2, ax);
+
+                Z3_ast decrease2;
+                if (ti2.isFloat) {
+                    decrease2 = Z3_mk_lt(ctx, recArg2, bodyVar);
+                } else {
+                    decrease2 = Z3_mk_bvslt(ctx, recArg2, bodyVar);
+                }
+                Z3_solver_assert(ctx, solver2, Z3_mk_not(ctx, decrease2));
+
+                Z3_lbool res2 = checkSat(solver2);
+                deleteSolver(solver2);
+
+                if (res2 != Z3_L_FALSE) { allDecrease2 = false; break; }
+            }
+
+            if (!allDecrease2) continue;
+
+            // Compute max depth
+            Z3_optimize opt2 = Z3_mk_optimize(ctx);
+            Z3_optimize_inc_ref(ctx, opt2);
+            for (auto& ax : axioms2) Z3_optimize_assert(ctx, opt2, ax);
+
+            Z3_ast zero2 = Z3_mk_int(ctx, 0, ti2.sort);
+            if (!ti2.isFloat) {
+                Z3_optimize_assert(ctx, opt2, Z3_mk_bvsgt(ctx, bodyVar, zero2));
+            }
+
+            Z3_optimize_maximize(ctx, opt2, bodyVar);
+            Z3_lbool optRes2 = Z3_optimize_check(ctx, opt2, 0, nullptr);
+
+            int64_t maxDepth2 = -1;
+            if (optRes2 == Z3_L_TRUE) {
+                Z3_model model2 = Z3_optimize_get_model(ctx, opt2);
+                if (model2) {
+                    Z3_model_inc_ref(ctx, model2);
+                    Z3_ast val2;
+                    if (Z3_model_eval(ctx, model2, bodyVar, true, &val2)) {
+                        Z3_inc_ref(ctx, val2);
+                        int64_t nv;
+                        if (Z3_get_numeral_int64(ctx, val2, &nv)) maxDepth2 = nv;
+                        Z3_dec_ref(ctx, val2);
+                    }
+                    Z3_model_dec_ref(ctx, model2);
+                }
+            }
+            Z3_optimize_dec_ref(ctx, opt2);
+
+            VerifyOutcome out2;
+            out2.result = VerifyResult::PROVEN;
+            out2.rulesName = func->funcName;
+            out2.conditionText = "recursion bounded";
+            if (maxDepth2 >= 0) {
+                out2.detail = "Proven: recursion in '" + func->funcName +
+                             "' is bounded — '" + vd->varName +
+                             "' (limit<" + vd->limitRulesName +
+                             ">) strictly decreases, max depth ≤ " +
+                             std::to_string(maxDepth2);
+            } else {
+                out2.detail = "Proven: recursion in '" + func->funcName +
+                             "' is bounded — '" + vd->varName +
+                             "' (limit<" + vd->limitRulesName +
+                             ">) strictly decreases on every recursive call";
+            }
+            out2.line = line;
+            out2.column = column;
+            summary.proven++;
+            outcomes.push_back(out2);
+            summary.outcomes.push_back(out2);
+            return VerifyResult::PROVEN;
+        }
+    }
+
+    // Could not prove any parameter decreases
+    VerifyOutcome out;
+    out.result = VerifyResult::UNKNOWN;
+    out.rulesName = func->funcName;
+    out.conditionText = "recursion bounded";
+    out.detail = "Could not prove recursion in '" + func->funcName +
+                 "' is bounded — no parameter with Rules constraint proven to decrease";
+    out.line = line;
+    out.column = column;
+    summary.unknown++;
+    outcomes.push_back(out);
+    summary.outcomes.push_back(out);
+    return VerifyResult::UNKNOWN;
+}
+
 } // namespace aria

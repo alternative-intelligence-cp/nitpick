@@ -93,7 +93,7 @@ extern "C" {
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 5
 #define ARIA_VERSION_PATCH 3
-#define ARIA_VERSION "0.5.3"
+#define ARIA_VERSION "0.5.4"
 
 // Compiler options
 struct CompilerOptions {
@@ -136,6 +136,8 @@ struct CompilerOptions {
     bool verify_report = false;       // --verify-report: Emit detailed proof results
     bool verify_contracts = false;    // --verify-contracts: Verify requires/ensures contracts
     bool verify_overflow = false;     // --verify-overflow: Verify integer arithmetic overflow
+    bool verify_concurrency = false;  // --verify-concurrency: Verify data race & deadlock freedom
+    bool verify_memory = false;       // --verify-memory: Verify use-after-free & recursion bounds
     bool smt_opt = false;             // --smt-opt: Enable SMT-guided optimizations (ustack fast path)
     bool prove_report = false;        // --prove-report: Emit report of prove/assert_static outcomes
 };
@@ -340,6 +342,12 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
         } else if (arg == "--verify-overflow") {
             opts.verify = true;
             opts.verify_overflow = true;
+        } else if (arg == "--verify-concurrency") {
+            opts.verify = true;
+            opts.verify_concurrency = true;
+        } else if (arg == "--verify-memory") {
+            opts.verify = true;
+            opts.verify_memory = true;
         } else if (arg == "--smt-opt") {
             opts.smt_opt = true;
             opts.verify = true;  // SMT optimization implies verification
@@ -1493,6 +1501,244 @@ llvm::Module* compile_to_module(
             }
         }
         
+        // Phase 2d: Data race detection & Deadlock freedom (v0.5.4)
+        // Walk each function for aria_thread_create calls, verify shared
+        // variable accesses are properly synchronized; build lock acquisition
+        // graph and verify consistent ordering.
+        if (opts.verify_concurrency && program) {
+            if (opts.verbose) {
+                std::cout << "  Phase 2d: Concurrency verification (data race & deadlock)...\n";
+            }
+
+            // Build function lookup
+            std::map<std::string, aria::FuncDeclStmt*> all_funcs_2d;
+            for (const auto& decl : program->declarations) {
+                if (decl->type == aria::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                    all_funcs_2d[func->funcName] = func;
+                }
+            }
+
+            // Scan for thread spawns and verify data race freedom
+            for (const auto& [fname, func] : all_funcs_2d) {
+                if (!func->body) continue;
+
+                // Find aria_thread_create calls in this function
+                std::vector<aria::FuncDeclStmt*> threadFuncs;
+                std::function<void(aria::ASTNode*)> findSpawns;
+                findSpawns = [&](aria::ASTNode* node) {
+                    if (!node) return;
+                    if (node->type == aria::ASTNode::NodeType::CALL) {
+                        auto* call = static_cast<aria::CallExpr*>(node);
+                        if (call->callee && call->callee->type == aria::ASTNode::NodeType::IDENTIFIER) {
+                            auto* ident = static_cast<aria::IdentifierExpr*>(call->callee.get());
+                            if ((ident->name == "aria_thread_create" ||
+                                 ident->name == "aria_shim_thread_spawn") &&
+                                !call->arguments.empty()) {
+                                // First argument is the thread function
+                                if (call->arguments[0]->type == aria::ASTNode::NodeType::IDENTIFIER) {
+                                    auto* tfIdent = static_cast<aria::IdentifierExpr*>(call->arguments[0].get());
+                                    auto tfIt = all_funcs_2d.find(tfIdent->name);
+                                    if (tfIt != all_funcs_2d.end()) {
+                                        threadFuncs.push_back(tfIt->second);
+                                    }
+                                }
+                            }
+                        }
+                        for (auto& arg : call->arguments) findSpawns(arg.get());
+                    } else if (node->type == aria::ASTNode::NodeType::BLOCK) {
+                        auto* blk = static_cast<aria::BlockStmt*>(node);
+                        for (auto& s : blk->statements) findSpawns(s.get());
+                    } else if (node->type == aria::ASTNode::NodeType::IF) {
+                        auto* s = static_cast<aria::IfStmt*>(node);
+                        findSpawns(s->thenBranch.get());
+                        findSpawns(s->elseBranch.get());
+                    } else if (node->type == aria::ASTNode::NodeType::EXPRESSION_STMT) {
+                        auto* s = static_cast<aria::ExpressionStmt*>(node);
+                        findSpawns(s->expression.get());
+                    } else if (node->type == aria::ASTNode::NodeType::VAR_DECL) {
+                        auto* s = static_cast<aria::VarDeclStmt*>(node);
+                        if (s->initializer) findSpawns(s->initializer.get());
+                    } else if (node->type == aria::ASTNode::NodeType::WHILE) {
+                        auto* s = static_cast<aria::WhileStmt*>(node);
+                        findSpawns(s->body.get());
+                    } else if (node->type == aria::ASTNode::NodeType::FOR) {
+                        auto* s = static_cast<aria::ForStmt*>(node);
+                        findSpawns(s->body.get());
+                    }
+                };
+                findSpawns(func->body.get());
+
+                if (!threadFuncs.empty()) {
+                    std::vector<aria::VerifyOutcome> raceOutcomes;
+                    z3v.verifyDataRaceFreedom(
+                        func, threadFuncs, all_funcs_2d,
+                        raceOutcomes, func->line, func->column);
+
+                    for (const auto& out : raceOutcomes) {
+                        if (out.result == aria::VerifyResult::DISPROVEN) {
+                            std::cerr << "  [race] " << out.detail << " (line "
+                                      << out.line << ")\n";
+                        } else if (opts.verify_report || opts.verbose) {
+                            std::cout << "  [race] " << out.detail << "\n";
+                        }
+                    }
+                }
+            }
+
+            // Verify deadlock freedom across all functions
+            std::vector<aria::VerifyOutcome> dlOutcomes;
+            z3v.verifyDeadlockFreedom(all_funcs_2d, dlOutcomes, 0, 0);
+
+            for (const auto& out : dlOutcomes) {
+                if (out.result == aria::VerifyResult::DISPROVEN) {
+                    std::cerr << "  [deadlock] " << out.detail << "\n";
+                } else if (opts.verify_report || opts.verbose) {
+                    std::cout << "  [deadlock] " << out.detail << "\n";
+                }
+            }
+        }
+
+        // Phase 2e: Use-after-free proofs & Recursion bounding (v0.5.4)
+        // For variables with wild pointers, prove no use-after-free.
+        // For recursive functions with Rules constraints, prove bounded depth.
+        if (opts.verify_memory && program) {
+            if (opts.verbose) {
+                std::cout << "  Phase 2e: Memory safety verification (UAF & recursion bounds)...\n";
+            }
+
+            for (const auto& decl : program->declarations) {
+                if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (!func->body) continue;
+
+                // Build paramRules for this function
+                std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>> paramRules;
+                std::map<std::string, aria::FuncDeclStmt*> funcMap;
+
+                for (const auto& d : program->declarations) {
+                    if (d->type == aria::ASTNode::NodeType::FUNC_DECL) {
+                        auto* f = static_cast<aria::FuncDeclStmt*>(d.get());
+                        funcMap[f->funcName] = f;
+                    }
+                }
+
+                for (auto& param : func->parameters) {
+                    if (param->type == aria::ASTNode::NodeType::PARAMETER) {
+                        auto* pn = static_cast<aria::ParameterNode*>(param.get());
+                        if (pn->typeNode) {
+                            std::string tname = pn->typeNode->toString();
+                            auto it = rules_table.find(tname);
+                            if (it != rules_table.end()) {
+                                paramRules[pn->paramName] = {it->second, tname};
+                            }
+                        }
+                    }
+                    if (param->type == aria::ASTNode::NodeType::VAR_DECL) {
+                        auto* vd = static_cast<aria::VarDeclStmt*>(param.get());
+                        if (!vd->limitRulesName.empty()) {
+                            auto it = rules_table.find(vd->limitRulesName);
+                            if (it != rules_table.end()) {
+                                paramRules[vd->varName] = {it->second, vd->typeName};
+                            }
+                        }
+                    }
+                }
+
+                // Also scan function body for limit<> VarDecls referencing parameters
+                std::set<std::string> paramNameSet2e;
+                for (auto& param : func->parameters) {
+                    if (param->type == aria::ASTNode::NodeType::PARAMETER) {
+                        paramNameSet2e.insert(static_cast<aria::ParameterNode*>(param.get())->paramName);
+                    }
+                    if (param->type == aria::ASTNode::NodeType::VAR_DECL) {
+                        paramNameSet2e.insert(static_cast<aria::VarDeclStmt*>(param.get())->varName);
+                    }
+                }
+                if (func->body && func->body->type == aria::ASTNode::NodeType::BLOCK) {
+                    auto* blk = static_cast<aria::BlockStmt*>(func->body.get());
+                    for (auto& s : blk->statements) {
+                        if (s->type == aria::ASTNode::NodeType::VAR_DECL) {
+                            auto* vd = static_cast<aria::VarDeclStmt*>(s.get());
+                            if (!vd->limitRulesName.empty()) {
+                                auto it = rules_table.find(vd->limitRulesName);
+                                if (it != rules_table.end()) {
+                                    paramRules[vd->varName] = {it->second, vd->typeName};
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Phase 18: Use-after-free — scan for wild pointers in this function
+                // Look for variables that are freed and then possibly used
+                std::set<std::string> freedVars;
+                std::function<void(aria::ASTNode*)> findFrees;
+                findFrees = [&](aria::ASTNode* node) {
+                    if (!node) return;
+                    if (node->type == aria::ASTNode::NodeType::CALL) {
+                        auto* call = static_cast<aria::CallExpr*>(node);
+                        if (call->callee && call->callee->type == aria::ASTNode::NodeType::IDENTIFIER) {
+                            auto* ident = static_cast<aria::IdentifierExpr*>(call->callee.get());
+                            if ((ident->name == "free" || ident->name == "aria_free" ||
+                                 ident->name == "_release" || ident->name == "_destroy") &&
+                                !call->arguments.empty() &&
+                                call->arguments[0]->type == aria::ASTNode::NodeType::IDENTIFIER) {
+                                auto* arg = static_cast<aria::IdentifierExpr*>(call->arguments[0].get());
+                                freedVars.insert(arg->name);
+                            }
+                        }
+                        for (auto& arg : call->arguments) findFrees(arg.get());
+                    } else if (node->type == aria::ASTNode::NodeType::BLOCK) {
+                        auto* blk = static_cast<aria::BlockStmt*>(node);
+                        for (auto& s : blk->statements) findFrees(s.get());
+                    } else if (node->type == aria::ASTNode::NodeType::IF) {
+                        auto* s = static_cast<aria::IfStmt*>(node);
+                        findFrees(s->thenBranch.get());
+                        findFrees(s->elseBranch.get());
+                    } else if (node->type == aria::ASTNode::NodeType::EXPRESSION_STMT) {
+                        auto* s = static_cast<aria::ExpressionStmt*>(node);
+                        findFrees(s->expression.get());
+                    }
+                };
+                findFrees(func->body.get());
+
+                for (const auto& varName : freedVars) {
+                    std::vector<aria::VerifyOutcome> uafOutcomes;
+                    z3v.proveNoUseAfterFree(
+                        func, varName, paramRules,
+                        uafOutcomes, func->line, func->column);
+
+                    for (const auto& out : uafOutcomes) {
+                        if (out.result == aria::VerifyResult::DISPROVEN) {
+                            std::cerr << "  [uaf] " << out.detail << " (line "
+                                      << out.line << ")\n";
+                        } else if (opts.verify_report || opts.verbose) {
+                            std::cout << "  [uaf] " << out.detail << "\n";
+                        }
+                    }
+                }
+
+                // Phase 19: Recursion bounding
+                if (!paramRules.empty()) {
+                    std::vector<aria::VerifyOutcome> recOutcomes;
+                    z3v.proveRecursionBounded(
+                        func, funcMap, paramRules,
+                        recOutcomes, func->line, func->column);
+
+                    for (const auto& out : recOutcomes) {
+                        if (out.result == aria::VerifyResult::UNKNOWN) {
+                            if (opts.verbose) {
+                                std::cout << "  [recursion] " << out.detail << "\n";
+                            }
+                        } else if (opts.verify_report || opts.verbose) {
+                            std::cout << "  [recursion] " << out.detail << "\n";
+                        }
+                    }
+                }
+            }
+        }
+
         // Phase 3: Verify integer arithmetic overflow (v0.3.4)
         if (opts.verify_overflow && program) {
             if (opts.verbose) {

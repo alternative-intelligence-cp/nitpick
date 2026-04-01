@@ -353,6 +353,87 @@ public:
         std::vector<VerifyOutcome>& outcomes,
         int line = 0, int column = 0);
 
+    // ================================================================
+    // Phase 16: Data Race Detection (v0.5.4)
+    // ================================================================
+
+    /// Represents a variable access in a specific thread context.
+    struct ThreadAccess {
+        std::string varName;       // Variable being accessed
+        bool isWrite;              // true = write, false = read
+        std::string threadFunc;    // Function running in the thread
+        bool isProtected;          // true if access is inside lock/unlock
+        int line;
+        int column;
+    };
+
+    /// Verify that shared variables accessed across thread boundaries are
+    /// properly synchronized. Walks the spawning function and each spawned
+    /// thread function to collect variable accesses, then uses Z3 to check
+    /// if any conflicting accesses (read+write or write+write on the same
+    /// variable) can occur without mutex protection.
+    VerifyResult verifyDataRaceFreedom(
+        FuncDeclStmt* spawner,
+        const std::vector<FuncDeclStmt*>& threadFuncs,
+        const std::map<std::string, FuncDeclStmt*>& allFuncs,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 17: Deadlock Freedom (v0.5.4)
+    // ================================================================
+
+    /// Represents a lock acquisition in a function's call path.
+    struct LockAcquisition {
+        std::string lockVar;       // Variable name of the mutex/rwlock
+        std::string funcName;      // Function where lock is acquired
+        int line;
+        int column;
+    };
+
+    /// Verify that lock acquisition order is consistent across all functions.
+    /// Uses Z3 to assign integer ordinals to locks and prove that all
+    /// acquisition sequences are strictly ascending (or compatible).
+    /// Detects potential deadlocks from cyclic lock ordering.
+    VerifyResult verifyDeadlockFreedom(
+        const std::map<std::string, FuncDeclStmt*>& allFuncs,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 18: Use-After-Free Proofs via SMT (v0.5.4)
+    // ================================================================
+
+    /// Strengthen the borrow checker's WildState analysis with Z3 for cases
+    /// where control flow makes the state uncertain (MAY_FREED).
+    /// Encodes the control flow conditions as Z3 formulas and proves whether
+    /// a variable is ALWAYS freed or NEVER freed at a given program point.
+    /// Returns PROVEN if variable cannot be used after free, DISPROVEN if
+    /// a use-after-free path exists.
+    VerifyResult proveNoUseAfterFree(
+        FuncDeclStmt* func,
+        const std::string& varName,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 19: Stack Overflow Prediction (v0.5.4)
+    // ================================================================
+
+    /// Prove that a recursive function's recursion depth is bounded.
+    /// Identifies recursive calls and the "decreasing" argument, then uses
+    /// Z3 to verify that: (1) the argument strictly decreases on each call,
+    /// and (2) there is a base case that terminates recursion.
+    /// If the function's parameter has Rules constraints, those bound the
+    /// initial depth. Returns PROVEN with the max depth if bounded.
+    VerifyResult proveRecursionBounded(
+        FuncDeclStmt* func,
+        const std::map<std::string, FuncDeclStmt*>& allFuncs,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& paramRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
     /// Get verification summary
     const VerifySummary& getSummary() const { return summary; }
 

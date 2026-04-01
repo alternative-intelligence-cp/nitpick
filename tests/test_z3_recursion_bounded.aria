@@ -1,0 +1,57 @@
+// test_z3_recursion_bounded.aria — v0.5.4 Recursion Bounding Tests
+// Compile with: ariac test_z3_recursion_bounded.aria --verify-memory --verify-report
+//
+// Tests Z3 proof that recursive functions with Rules constraints terminate.
+
+extern func:puts = int32(string:s);
+
+// Rules for bounded depth
+Rules<int32>:r_depth = {
+    $ >= 0,
+    $ <= 20
+};
+
+// Rules for positive integers
+Rules<int32>:r_positive = {
+    $ > 0,
+    $ <= 100
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE");
+    exit 1;
+};
+
+// ============================================================
+// Test 1: BOUNDED — factorial with decreasing Rules parameter
+// Z3 should prove recursion is bounded (max depth 100)
+// ============================================================
+func:bounded_factorial = int64(int32:n) {
+    limit<r_positive> int32:safe_n = n;
+    if (safe_n <= 1i32) {
+        pass 1i64;
+    }
+    int64:sub_result = raw bounded_factorial(safe_n - 1i32);
+    pass sub_result * (safe_n => int64);
+};
+
+// ============================================================
+// Test 2: BOUNDED — countdown with depth Rules
+// ============================================================
+func:countdown = int32(int32:depth) {
+    limit<r_depth> int32:safe_depth = depth;
+    if (safe_depth == 0i32) {
+        pass 0i32;
+    }
+    pass raw countdown(safe_depth - 1i32);
+};
+
+func:main = int32() {
+    drop puts("=== Recursion Bounding Tests ===");
+
+    int64:result1 = raw bounded_factorial(5i32);
+    int32:result2 = raw countdown(10i32);
+
+    drop puts("=== Done ===");
+    exit 0;
+};

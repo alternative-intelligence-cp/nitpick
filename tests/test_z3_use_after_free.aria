@@ -1,0 +1,70 @@
+// test_z3_use_after_free.aria — v0.5.4 Use-After-Free Proof Tests
+// Compile with: ariac test_z3_use_after_free.aria --verify-memory --verify-report
+//
+// Tests Z3 proofs of use-after-free safety via symbolic path analysis.
+
+extern func:puts = int32(string:s);
+extern func:malloc = wild ?*(int64:size);
+extern func:free = void(wild ?*:ptr);
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE");
+    exit 1;
+};
+
+// ============================================================
+// Test 1: UNSAFE — Use after free (unconditional)
+// Should detect use-after-free
+// ============================================================
+func:test_uaf_unconditional = NIL() {
+    wild ?->:buf = malloc(64i64);
+    free(buf);
+    // BUG: using buf after free
+    wild ?->:alias = buf;
+};
+
+// ============================================================
+// Test 2: SAFE — No use after free
+// Should prove safe
+// ============================================================
+func:test_no_uaf = NIL() {
+    wild ?->:buf = malloc(64i64);
+    wild ?->:alias = buf;
+    free(buf);
+    // No use of buf after free
+};
+
+// ============================================================
+// Test 3: UNSAFE — Conditional use-after-free
+// Should detect possible UAF on conditional path
+// ============================================================
+func:test_uaf_conditional = NIL(int32:flag) {
+    wild ?->:buf = malloc(64i64);
+    if (flag > 0i32) {
+        free(buf);
+    }
+    // BUG: buf might be freed if flag > 0
+    wild ?->:use_ptr = buf;
+};
+
+// ============================================================
+// Test 4: SAFE — Conditional free, no use after
+// Should prove safe
+// ============================================================
+func:test_conditional_safe = NIL(int32:flag) {
+    wild ?->:buf = malloc(64i64);
+    if (flag > 0i32) {
+        free(buf);
+    }
+    // No use of buf after the if block
+};
+
+func:main = int32() {
+    drop puts("=== Use-After-Free Tests ===");
+    drop test_uaf_unconditional();
+    drop test_no_uaf();
+    drop test_uaf_conditional(1i32);
+    drop test_conditional_safe(1i32);
+    drop puts("=== Done ===");
+    exit 0;
+};
