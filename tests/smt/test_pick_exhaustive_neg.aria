@@ -1,0 +1,27 @@
+// Test: Pick non-exhaustiveness detection (v0.5.3, Phase 13 negative)
+// Verify that pick missing a case in a Rules domain is detected.
+
+Rules<int32>:SmallRange = { $ >= 1, $ <= 5 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:classify = int32(int32:x) {
+    limit<SmallRange> int32:val = x;
+    int32:out = 0;
+    // Missing case 5! Should be DISPROVEN with counterexample val = 5
+    pick(val) {
+        (1) { out = 10; },
+        (2) { out = 20; },
+        (3) { out = 30; },
+        (4) { out = 40; }
+    }
+    pass out;
+};
+
+func:main = int32() {
+    limit<SmallRange> int32:val = 3;
+    int32:result = raw classify(val);
+    exit 0;
+};

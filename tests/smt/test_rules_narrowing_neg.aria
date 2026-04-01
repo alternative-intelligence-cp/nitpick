@@ -1,0 +1,26 @@
+// Test: Rules<T> narrowing failure (v0.5.3, Phase 12 negative test)
+// Verify that passing a wider Rules argument to a function expecting
+// narrower Rules correctly detects the mismatch.
+
+Rules<int32>:Positive = { $ > 0 };
+Rules<int32>:BigPositive = { $ > 100 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Function that constrains its parameter with BigPositive
+func:needs_big = int32(int32:x) {
+    limit<BigPositive> int32:safe_x = x;
+    int32:result = safe_x * 2;
+    pass result;
+};
+
+func:main = int32() {
+    // Positive does NOT subsume BigPositive (e.g., 1 is > 0 but not > 100)
+    // Phase 10 should not add this to limit_check_safe_set
+    limit<Positive> int32:val = 42;
+    int32:doubled = raw needs_big(val);
+
+    exit 0;
+};

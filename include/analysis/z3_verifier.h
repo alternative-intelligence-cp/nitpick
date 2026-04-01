@@ -290,6 +290,69 @@ public:
         std::vector<VerifyOutcome>& outcomes,
         int line = 0, int column = 0);
 
+    // ================================================================
+    // Phase 12: Rules<T> Transitivity — Call-site narrowing (v0.5.3)
+    // ================================================================
+
+    /// Verify Rules narrowing at a call site: for each callee parameter that
+    /// has a Rules constraint (type name matches rules_table), check if the
+    /// caller's argument constraint subsumes the callee's requirement.
+    /// Reports DISPROVEN if narrowing is invalid (caller range doesn't cover
+    /// callee range), PROVEN if valid, UNKNOWN if can't decide.
+    VerifyResult verifyRulesNarrowing(
+        FuncDeclStmt* callee,
+        const std::vector<ASTNode*>& args,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& callerVarRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 13: Pattern Exhaustiveness via SMT (v0.5.3)
+    // ================================================================
+
+    /// Prove that a pick statement's cases exhaustively cover the selector's
+    /// domain. If the selector variable has Rules constraints, uses them to
+    /// bound the domain. Encodes each case pattern as a Z3 disjunct, then
+    /// checks if NOT(any pattern matches) is UNSAT under the Rules constraints.
+    /// Returns PROVEN if exhaustive, DISPROVEN with counterexample if there's
+    /// an uncovered value.
+    VerifyResult provePickExhaustiveness(
+        ASTNode* selector,
+        const std::vector<ASTNode*>& patterns,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 14: Rules + Null Interaction (v0.5.3)
+    // ================================================================
+
+    /// Prove that a variable's Rules constraints exclude NIL (null/zero).
+    /// If the Rules conditions on a variable entail $ != 0 (the NIL
+    /// representation), returns PROVEN. Useful for proving Optional values
+    /// are never null when constrained by Rules.
+    VerifyResult proveRulesExcludesNull(
+        const std::string& rulesName,
+        const std::string& typeName,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    // ================================================================
+    // Phase 15: Automatic Rules Widening/Narrowing (v0.5.3)
+    // ================================================================
+
+    /// Infer the tightest integer bounds on a function's return value given
+    /// its parameter Rules constraints. Uses Z3 optimization (minimize/maximize)
+    /// to find the min and max possible return values.
+    /// Returns PROVEN if bounds could be computed, with the inferred range
+    /// in the outcome detail string. Stores inferred bounds in outMin/outMax.
+    VerifyResult inferReturnBounds(
+        FuncDeclStmt* func,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& paramRules,
+        int64_t& outMin, int64_t& outMax,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
     /// Get verification summary
     const VerifySummary& getSummary() const { return summary; }
 

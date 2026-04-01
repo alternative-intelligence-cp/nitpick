@@ -2511,4 +2511,881 @@ VerifyResult Z3Verifier::proveUserAssertion(
     return VerifyResult::UNKNOWN;
 }
 
+// ============================================================================
+// Phase 12: Rules<T> Transitivity — Call-site narrowing (v0.5.3)
+// ============================================================================
+// When a caller passes a Rules-constrained argument to a callee that expects
+// a different Rules on that parameter, verify narrowing is valid:
+//   ∀x. callerRules(x) → calleeRules(x)
+
+VerifyResult Z3Verifier::verifyRulesNarrowing(
+    FuncDeclStmt* callee,
+    const std::vector<ASTNode*>& args,
+    const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& callerVarRules,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (!callee) return VerifyResult::PROVEN;
+
+    VerifyResult worstResult = VerifyResult::PROVEN;
+
+    // Build a set of callee parameter names for quick lookup
+    std::set<std::string> paramNames;
+    for (auto& p : callee->parameters) {
+        if (p->type == ASTNode::NodeType::PARAMETER) {
+            paramNames.insert(static_cast<ParameterNode*>(p.get())->paramName);
+        } else if (p->type == ASTNode::NodeType::VAR_DECL) {
+            paramNames.insert(static_cast<VarDeclStmt*>(p.get())->varName);
+        }
+    }
+
+    // Scan callee body for limit<> VarDecls that reference parameter names.
+    // e.g. limit<Positive> int32:safe_x = x;  →  param "x" requires Positive
+    std::map<std::string, std::string> paramRulesFromBody;  // param_name → Rules name
+    if (callee->body && callee->body->type == ASTNode::NodeType::BLOCK) {
+        auto* blk = static_cast<BlockStmt*>(callee->body.get());
+        for (auto& s : blk->statements) {
+            if (s->type == ASTNode::NodeType::VAR_DECL) {
+                auto* vd = static_cast<VarDeclStmt*>(s.get());
+                if (!vd->limitRulesName.empty() && vd->initializer &&
+                    vd->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+                    auto* init = static_cast<IdentifierExpr*>(vd->initializer.get());
+                    if (paramNames.count(init->name)) {
+                        paramRulesFromBody[init->name] = vd->limitRulesName;
+                    }
+                }
+            }
+        }
+    }
+
+    for (size_t i = 0; i < callee->parameters.size() && i < args.size(); ++i) {
+        // Get callee parameter info
+        ASTNode* paramNode = callee->parameters[i].get();
+        if (!paramNode) continue;
+
+        std::string calleeParamType;
+        std::string calleeParamName;
+
+        if (paramNode->type == ASTNode::NodeType::PARAMETER) {
+            auto* pn = static_cast<ParameterNode*>(paramNode);
+            calleeParamType = pn->typeNode ? pn->typeNode->toString() : "";
+            calleeParamName = pn->paramName;
+        } else if (paramNode->type == ASTNode::NodeType::VAR_DECL) {
+            auto* vd = static_cast<VarDeclStmt*>(paramNode);
+            calleeParamType = vd->limitRulesName.empty() ? vd->typeName : vd->limitRulesName;
+            calleeParamName = vd->varName;
+        }
+
+        if (calleeParamName.empty()) continue;
+
+        // Determine the callee's Rules constraint for this parameter:
+        // 1. Direct: parameter type is a Rules name (e.g. VarDecl param with limit<>)
+        // 2. Body: callee body has limit<Rules> T:var = paramName;
+        std::string calleeRulesName;
+        auto directIt = rules_table.find(calleeParamType);
+        if (directIt != rules_table.end()) {
+            calleeRulesName = calleeParamType;
+        } else {
+            auto bodyIt = paramRulesFromBody.find(calleeParamName);
+            if (bodyIt != paramRulesFromBody.end()) {
+                calleeRulesName = bodyIt->second;
+            }
+        }
+
+        if (calleeRulesName.empty()) continue;
+
+        // Check if Rules exists in table
+        auto calleeRulesIt = rules_table.find(calleeRulesName);
+        if (calleeRulesIt == rules_table.end()) continue;
+
+        // We have a callee parameter with Rules constraint — check the argument
+        ASTNode* arg = args[i];
+        if (!arg || arg->type != ASTNode::NodeType::IDENTIFIER) continue;
+
+        auto* ident = static_cast<IdentifierExpr*>(arg);
+        auto callerIt = callerVarRules.find(ident->name);
+        if (callerIt == callerVarRules.end()) {
+            // Caller arg has no Rules constraint — can't narrow
+            VerifyOutcome out;
+            out.result = VerifyResult::UNKNOWN;
+            out.rulesName = calleeRulesName;
+            out.conditionText = ident->name + " → " + calleeParamName + ": " + calleeRulesName;
+            out.detail = "Cannot verify narrowing: argument '" + ident->name +
+                         "' has no Rules constraint, but callee parameter '" +
+                         calleeParamName + "' requires " + calleeRulesName;
+            out.line = line;
+            out.column = column;
+            summary.unknown++;
+            outcomes.push_back(out);
+            summary.outcomes.push_back(out);
+            if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
+            continue;
+        }
+
+        const auto& [callerRules, callerBaseType] = callerIt->second;
+        std::string callerRulesName = callerRules->rulesName;
+
+        // Same Rules — trivially valid
+        if (callerRulesName == calleeRulesName) continue;
+
+        // Different Rules — check subsumption
+        std::vector<VerifyOutcome> subOutcomes;
+        VerifyResult subResult = proveRulesSubsumption(
+            callerRulesName, calleeRulesName, callerBaseType,
+            subOutcomes, line, column);
+
+        if (subResult == VerifyResult::PROVEN) {
+            VerifyOutcome out;
+            out.result = VerifyResult::PROVEN;
+            out.rulesName = calleeRulesName;
+            out.conditionText = callerRulesName + " ⊇ " + calleeRulesName;
+            out.detail = "Proven: narrowing " + callerRulesName + " → " +
+                         calleeRulesName + " for parameter '" + calleeParamName +
+                         "' in call to '" + callee->funcName + "'";
+            out.line = line;
+            out.column = column;
+            summary.proven++;
+            outcomes.push_back(out);
+            summary.outcomes.push_back(out);
+        } else {
+            VerifyOutcome out;
+            out.result = VerifyResult::DISPROVEN;
+            out.rulesName = calleeRulesName;
+            out.conditionText = callerRulesName + " ⊇ " + calleeRulesName;
+            out.detail = "Invalid narrowing: '" + callerRulesName +
+                         "' does not subsume '" + calleeRulesName +
+                         "' for parameter '" + calleeParamName +
+                         "' in call to '" + callee->funcName + "'";
+            out.line = line;
+            out.column = column;
+            summary.disproven++;
+            outcomes.push_back(out);
+            summary.outcomes.push_back(out);
+            worstResult = VerifyResult::DISPROVEN;
+        }
+    }
+
+    return worstResult;
+}
+
+// ============================================================================
+// Phase 13: Pattern Exhaustiveness via SMT (v0.5.3)
+// ============================================================================
+// For pick(selector) { cases... }, prove the cases cover the entire domain
+// under the selector's Rules constraints.
+// Encoding: assert Rules constraints on selector, then assert NOT(any pattern
+// matches), check UNSAT → exhaustive.
+
+VerifyResult Z3Verifier::provePickExhaustiveness(
+    ASTNode* selector,
+    const std::vector<ASTNode*>& patterns,
+    const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (patterns.empty()) {
+        VerifyOutcome out;
+        out.result = VerifyResult::UNKNOWN;
+        out.conditionText = "pick exhaustiveness";
+        out.detail = "No patterns to check";
+        out.line = line;
+        out.column = column;
+        summary.unknown++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::UNKNOWN;
+    }
+
+    // Check for wildcard (*) — always exhaustive
+    for (auto* pat : patterns) {
+        if (!pat) continue;
+        if (pat->type == ASTNode::NodeType::IDENTIFIER) {
+            auto* ident = static_cast<IdentifierExpr*>(pat);
+            if (ident->name == "*") {
+                VerifyOutcome out;
+                out.result = VerifyResult::PROVEN;
+                out.conditionText = "pick exhaustiveness";
+                out.detail = "Proven: wildcard (*) case present — exhaustive";
+                out.line = line;
+                out.column = column;
+                summary.proven++;
+                outcomes.push_back(out);
+                summary.outcomes.push_back(out);
+                return VerifyResult::PROVEN;
+            }
+        }
+        // Also check for LiteralExpr("*") pattern
+        if (pat->type == ASTNode::NodeType::LITERAL) {
+            auto* lit = static_cast<LiteralExpr*>(pat);
+            if (std::holds_alternative<std::string>(lit->value) &&
+                std::get<std::string>(lit->value) == "*") {
+                VerifyOutcome out;
+                out.result = VerifyResult::PROVEN;
+                out.conditionText = "pick exhaustiveness";
+                out.detail = "Proven: wildcard (*) case present — exhaustive";
+                out.line = line;
+                out.column = column;
+                summary.proven++;
+                outcomes.push_back(out);
+                summary.outcomes.push_back(out);
+                return VerifyResult::PROVEN;
+            }
+        }
+    }
+
+    // Determine selector sort from Rules constraints
+    Z3_sort sort = getIntSort(32);  // default
+    std::string rulesName;
+    std::vector<Z3_ast> rulesAxioms;
+
+    if (selector && selector->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* ident = static_cast<IdentifierExpr*>(selector);
+        auto rIt = varRules.find(ident->name);
+        if (rIt != varRules.end()) {
+            const auto& [rulesDecl, typeName] = rIt->second;
+            rulesName = rulesDecl->rulesName;
+            TypeInfo ti = resolveTypeSort(typeName);
+            sort = ti.sort;
+
+            // Create symbolic variable for selector
+            Z3_symbol sym = Z3_mk_string_symbol(ctx, ident->name.c_str());
+            Z3_ast selVar = Z3_mk_const(ctx, sym, sort);
+
+            // Collect all Rules axioms (including cascaded)
+            std::function<void(RulesDeclStmt*)> collectAxioms;
+            collectAxioms = [&](RulesDeclStmt* r) {
+                for (const auto& cascName : r->cascadedRules) {
+                    auto cIt = rules_table.find(cascName);
+                    if (cIt != rules_table.end()) collectAxioms(cIt->second);
+                }
+                for (auto& cond : r->conditions) {
+                    Z3_ast z3Cond = translateCondition(cond.get(), selVar, sort);
+                    if (z3Cond) rulesAxioms.push_back(z3Cond);
+                }
+            };
+            collectAxioms(rulesDecl);
+        } else {
+            // No Rules on selector — can't bound domain without wildcard
+            VerifyOutcome out;
+            out.result = VerifyResult::UNKNOWN;
+            out.conditionText = "pick exhaustiveness";
+            out.detail = "Cannot verify: selector '" + ident->name +
+                         "' has no Rules constraint and no wildcard (*) case";
+            out.line = line;
+            out.column = column;
+            summary.unknown++;
+            outcomes.push_back(out);
+            summary.outcomes.push_back(out);
+            return VerifyResult::UNKNOWN;
+        }
+    } else {
+        // Non-identifier selector — can't analyze
+        VerifyOutcome out;
+        out.result = VerifyResult::UNKNOWN;
+        out.conditionText = "pick exhaustiveness";
+        out.detail = "Cannot verify: selector is not a simple variable";
+        out.line = line;
+        out.column = column;
+        summary.unknown++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::UNKNOWN;
+    }
+
+    if (rulesAxioms.empty()) {
+        return VerifyResult::UNKNOWN;
+    }
+
+    // Build selector Z3 variable
+    auto* selIdent = static_cast<IdentifierExpr*>(selector);
+    Z3_symbol selSym = Z3_mk_string_symbol(ctx, selIdent->name.c_str());
+    Z3_ast selVar = Z3_mk_const(ctx, selSym, sort);
+
+    // Encode each pattern as a disjunct: sel matches pattern_i
+    std::vector<Z3_ast> patternMatches;
+    for (auto* pat : patterns) {
+        if (!pat) continue;
+
+        if (pat->type == ASTNode::NodeType::LITERAL) {
+            auto* lit = static_cast<LiteralExpr*>(pat);
+            if (std::holds_alternative<int64_t>(lit->value)) {
+                int64_t val = std::get<int64_t>(lit->value);
+                Z3_ast litVal = Z3_mk_numeral(ctx, std::to_string(val).c_str(), sort);
+                patternMatches.push_back(Z3_mk_eq(ctx, selVar, litVal));
+            } else if (std::holds_alternative<double>(lit->value)) {
+                double val = std::get<double>(lit->value);
+                Z3_ast litVal = Z3_mk_numeral(ctx, std::to_string(val).c_str(), sort);
+                patternMatches.push_back(Z3_mk_eq(ctx, selVar, litVal));
+            }
+        } else if (pat->type == ASTNode::NodeType::BINARY_OP) {
+            auto* bin = static_cast<BinaryExpr*>(pat);
+
+            Z3_sort_kind sk = Z3_get_sort_kind(ctx, sort);
+            bool isBV = (sk == Z3_BV_SORT);
+
+            if (bin->op.type == frontend::TokenType::TOKEN_DOT_DOT ||
+                bin->op.type == frontend::TokenType::TOKEN_DOT_DOT_DOT) {
+                // Range pattern: start..end (inclusive) or start...end (exclusive)
+                Z3_ast startVal = translateExprWithEnv(bin->left.get(), {}, sort);
+                Z3_ast endVal = translateExprWithEnv(bin->right.get(), {}, sort);
+                if (startVal && endVal) {
+                    Z3_ast geStart = isBV ? Z3_mk_bvsge(ctx, selVar, startVal)
+                                          : Z3_mk_ge(ctx, selVar, startVal);
+                    Z3_ast cmpEnd;
+                    if (bin->op.type == frontend::TokenType::TOKEN_DOT_DOT) {
+                        cmpEnd = isBV ? Z3_mk_bvsle(ctx, selVar, endVal)
+                                      : Z3_mk_le(ctx, selVar, endVal);
+                    } else {
+                        cmpEnd = isBV ? Z3_mk_bvslt(ctx, selVar, endVal)
+                                      : Z3_mk_lt(ctx, selVar, endVal);
+                    }
+                    Z3_ast rangeArgs[2] = {geStart, cmpEnd};
+                    patternMatches.push_back(Z3_mk_and(ctx, 2, rangeArgs));
+                }
+            } else {
+                // Comparison pattern: (< 10), (> 20), etc.
+                // The binary expr has the comparison value on the right
+                Z3_ast compVal = translateExprWithEnv(bin->right.get(), {}, sort);
+                if (compVal) {
+                    Z3_ast cmp = nullptr;
+                    switch (bin->op.type) {
+                        case frontend::TokenType::TOKEN_LESS:
+                            cmp = isBV ? Z3_mk_bvslt(ctx, selVar, compVal)
+                                       : Z3_mk_lt(ctx, selVar, compVal);
+                            break;
+                        case frontend::TokenType::TOKEN_LESS_EQUAL:
+                            cmp = isBV ? Z3_mk_bvsle(ctx, selVar, compVal)
+                                       : Z3_mk_le(ctx, selVar, compVal);
+                            break;
+                        case frontend::TokenType::TOKEN_GREATER:
+                            cmp = isBV ? Z3_mk_bvsgt(ctx, selVar, compVal)
+                                       : Z3_mk_gt(ctx, selVar, compVal);
+                            break;
+                        case frontend::TokenType::TOKEN_GREATER_EQUAL:
+                            cmp = isBV ? Z3_mk_bvsge(ctx, selVar, compVal)
+                                       : Z3_mk_ge(ctx, selVar, compVal);
+                            break;
+                        case frontend::TokenType::TOKEN_EQUAL_EQUAL:
+                            cmp = Z3_mk_eq(ctx, selVar, compVal);
+                            break;
+                        case frontend::TokenType::TOKEN_BANG_EQUAL: {
+                            Z3_ast eq = Z3_mk_eq(ctx, selVar, compVal);
+                            cmp = Z3_mk_not(ctx, eq);
+                            break;
+                        }
+                        default: break;
+                    }
+                    if (cmp) patternMatches.push_back(cmp);
+                }
+            }
+        }
+    }
+
+    if (patternMatches.empty()) {
+        VerifyOutcome out;
+        out.result = VerifyResult::UNKNOWN;
+        out.conditionText = "pick exhaustiveness";
+        out.detail = "Cannot verify: no translatable patterns";
+        out.line = line;
+        out.column = column;
+        summary.unknown++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::UNKNOWN;
+    }
+
+    // Build: NOT(pattern_1 OR pattern_2 OR ... OR pattern_n)
+    Z3_ast anyMatch;
+    if (patternMatches.size() == 1) {
+        anyMatch = patternMatches[0];
+    } else {
+        anyMatch = Z3_mk_or(ctx, static_cast<unsigned>(patternMatches.size()),
+                            patternMatches.data());
+    }
+    Z3_ast noMatch = Z3_mk_not(ctx, anyMatch);
+
+    // Assert Rules constraints + NOT(any match) and check UNSAT
+    Z3_solver solver = makeSolver();
+    for (auto ax : rulesAxioms) {
+        Z3_solver_assert(ctx, solver, ax);
+    }
+    Z3_solver_assert(ctx, solver, noMatch);
+
+    Z3_lbool result = checkSat(solver);
+
+    if (result == Z3_L_FALSE) {
+        // UNSAT — no value in the Rules domain is uncovered → exhaustive
+        deleteSolver(solver);
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.conditionText = "pick exhaustiveness";
+        out.detail = "Proven: pick cases are exhaustive over " + rulesName + " domain";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    } else if (result == Z3_L_TRUE) {
+        // SAT — there exists an uncovered value
+        std::string counterexample;
+        Z3_model model = Z3_solver_get_model(ctx, solver);
+        if (model) {
+            Z3_model_inc_ref(ctx, model);
+            Z3_ast val = nullptr;
+            if (Z3_model_eval(ctx, model, selVar, true, &val) && val) {
+                Z3_sort valSort = Z3_get_sort(ctx, val);
+                Z3_sort_kind sk2 = Z3_get_sort_kind(ctx, valSort);
+                if (sk2 == Z3_BV_SORT) {
+                    uint64_t uval = 0;
+                    if (Z3_get_numeral_uint64(ctx, val, &uval)) {
+                        unsigned bw = Z3_get_bv_sort_size(ctx, valSort);
+                        if (bw < 64 && (uval & (1ULL << (bw - 1)))) {
+                            int64_t sval = static_cast<int64_t>(uval) - (1LL << bw);
+                            counterexample = std::to_string(sval);
+                        } else {
+                            counterexample = std::to_string(static_cast<int64_t>(uval));
+                        }
+                    } else {
+                        counterexample = Z3_ast_to_string(ctx, val);
+                    }
+                } else {
+                    counterexample = Z3_ast_to_string(ctx, val);
+                }
+            }
+            Z3_model_dec_ref(ctx, model);
+        }
+        deleteSolver(solver);
+
+        VerifyOutcome out;
+        out.result = VerifyResult::DISPROVEN;
+        out.conditionText = "pick exhaustiveness";
+        out.detail = "Non-exhaustive: pick does not cover all values in " +
+                     rulesName + " domain";
+        if (!counterexample.empty()) {
+            out.detail += " (uncovered value: " + selIdent->name + " = " +
+                          counterexample + ")";
+        }
+        out.line = line;
+        out.column = column;
+        summary.disproven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::DISPROVEN;
+    }
+
+    // UNKNOWN
+    deleteSolver(solver);
+    VerifyOutcome out;
+    out.result = VerifyResult::UNKNOWN;
+    out.conditionText = "pick exhaustiveness";
+    out.detail = "Cannot verify pick exhaustiveness (solver timeout or too complex)";
+    out.line = line;
+    out.column = column;
+    summary.unknown++;
+    outcomes.push_back(out);
+    summary.outcomes.push_back(out);
+    return VerifyResult::UNKNOWN;
+}
+
+// ============================================================================
+// Phase 14: Rules + Null Interaction (v0.5.3)
+// ============================================================================
+// Prove that a Rules constraint excludes NIL (represented as 0).
+// If Rules conditions on a variable entail $ != 0, the variable can never be
+// null, so Optional null checks can be skipped.
+
+VerifyResult Z3Verifier::proveRulesExcludesNull(
+    const std::string& rulesName,
+    const std::string& typeName,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    auto it = rules_table.find(rulesName);
+    if (it == rules_table.end()) return VerifyResult::UNKNOWN;
+
+    RulesDeclStmt* rules = it->second;
+    TypeInfo ti = resolveTypeSort(typeName);
+    Z3_sort sort = ti.sort;
+
+    // Create symbolic variable $
+    Z3_symbol sym = Z3_mk_string_symbol(ctx, "$");
+    Z3_ast dollar = Z3_mk_const(ctx, sym, sort);
+
+    // Collect all Rules axioms (including cascaded)
+    std::vector<Z3_ast> axioms;
+    std::function<void(RulesDeclStmt*)> collectAxioms;
+    collectAxioms = [&](RulesDeclStmt* r) {
+        for (const auto& cascName : r->cascadedRules) {
+            auto cIt = rules_table.find(cascName);
+            if (cIt != rules_table.end()) collectAxioms(cIt->second);
+        }
+        for (auto& cond : r->conditions) {
+            Z3_ast z3Cond = translateCondition(cond.get(), dollar, sort);
+            if (z3Cond) axioms.push_back(z3Cond);
+        }
+    };
+    collectAxioms(rules);
+
+    if (axioms.empty()) {
+        VerifyOutcome out;
+        out.result = VerifyResult::UNKNOWN;
+        out.rulesName = rulesName;
+        out.conditionText = rulesName + " excludes NIL";
+        out.detail = "Cannot verify: no conditions in Rules '" + rulesName + "'";
+        out.line = line;
+        out.column = column;
+        summary.unknown++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::UNKNOWN;
+    }
+
+    // Prove $ != 0 under Rules axioms:
+    // Assert axioms AND $ == 0, check UNSAT → Rules excludes null
+    Z3_ast zero = Z3_mk_numeral(ctx, "0", sort);
+    Z3_ast eqZero = Z3_mk_eq(ctx, dollar, zero);
+
+    Z3_solver solver = makeSolver();
+    for (auto ax : axioms) {
+        Z3_solver_assert(ctx, solver, ax);
+    }
+    Z3_solver_assert(ctx, solver, eqZero);
+
+    Z3_lbool result = checkSat(solver);
+    deleteSolver(solver);
+
+    if (result == Z3_L_FALSE) {
+        // UNSAT — 0 is excluded by Rules → never null
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.rulesName = rulesName;
+        out.conditionText = rulesName + " excludes NIL";
+        out.detail = "Proven: Rules '" + rulesName +
+                     "' excludes NIL (0) — variable is never null";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    } else if (result == Z3_L_TRUE) {
+        // SAT — 0 is a valid value under Rules → could be null
+        VerifyOutcome out;
+        out.result = VerifyResult::DISPROVEN;
+        out.rulesName = rulesName;
+        out.conditionText = rulesName + " excludes NIL";
+        out.detail = "Disproven: Rules '" + rulesName +
+                     "' allows NIL (0) — variable could be null";
+        out.line = line;
+        out.column = column;
+        summary.disproven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::DISPROVEN;
+    }
+
+    VerifyOutcome out;
+    out.result = VerifyResult::UNKNOWN;
+    out.rulesName = rulesName;
+    out.conditionText = rulesName + " excludes NIL";
+    out.detail = "Unknown: cannot determine if Rules excludes NIL";
+    out.line = line;
+    out.column = column;
+    summary.unknown++;
+    outcomes.push_back(out);
+    summary.outcomes.push_back(out);
+    return VerifyResult::UNKNOWN;
+}
+
+// ============================================================================
+// Phase 15: Automatic Rules Widening/Narrowing (v0.5.3)
+// ============================================================================
+// Infer the tightest min/max bounds on a function's return value given its
+// parameter Rules constraints. Walks the function body for pass/return
+// expressions, translates them to Z3, and uses optimize (minimize/maximize)
+// to find the range.
+
+VerifyResult Z3Verifier::inferReturnBounds(
+    FuncDeclStmt* func,
+    const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& paramRules,
+    int64_t& outMin, int64_t& outMax,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (!func || !func->body) return VerifyResult::UNKNOWN;
+
+    // Collect all PASS and RETURN value expressions from the function body.
+    // Also track local variable definitions so we can resolve identifiers
+    // (e.g. pass result; where result = safe_x * 2).
+    std::vector<ASTNode*> returnExprs;
+    std::map<std::string, ASTNode*> localDefs;  // var_name → initializer expr
+    std::function<void(ASTNode*)> collectReturns;
+    collectReturns = [&](ASTNode* node) {
+        if (!node) return;
+        using NT = ASTNode::NodeType;
+        switch (node->type) {
+            case NT::VAR_DECL: {
+                auto* vd = static_cast<VarDeclStmt*>(node);
+                if (vd->initializer) {
+                    localDefs[vd->varName] = vd->initializer.get();
+                }
+                break;
+            }
+            case NT::PASS: {
+                auto* s = static_cast<PassStmt*>(node);
+                if (s->value) {
+                    returnExprs.push_back(s->value.get());
+                }
+                break;
+            }
+            case NT::RETURN: {
+                auto* s = static_cast<ReturnStmt*>(node);
+                if (s->value) returnExprs.push_back(s->value.get());
+                break;
+            }
+            case NT::BLOCK: {
+                auto* blk = static_cast<BlockStmt*>(node);
+                for (auto& st : blk->statements) collectReturns(st.get());
+                break;
+            }
+            case NT::IF: {
+                auto* s = static_cast<IfStmt*>(node);
+                collectReturns(s->thenBranch.get());
+                collectReturns(s->elseBranch.get());
+                break;
+            }
+            default: break;
+        }
+    };
+    collectReturns(func->body.get());
+
+    // Resolve return expressions that are just identifier references to locals.
+    // e.g. "pass result;" where result = safe_x * 2 → use safe_x * 2.
+    for (auto& expr : returnExprs) {
+        if (expr->type == ASTNode::NodeType::IDENTIFIER) {
+            auto* ident = static_cast<IdentifierExpr*>(expr);
+            auto dIt = localDefs.find(ident->name);
+            if (dIt != localDefs.end()) {
+                expr = dIt->second;
+            }
+        }
+    }
+
+    if (returnExprs.empty()) {
+        VerifyOutcome out;
+        out.result = VerifyResult::UNKNOWN;
+        out.rulesName = func->funcName;
+        out.conditionText = "return bounds inference";
+        out.detail = "No return expressions found in '" + func->funcName + "'";
+        out.line = line;
+        out.column = column;
+        summary.unknown++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::UNKNOWN;
+    }
+
+    // Build parameter environment
+    Z3_sort defaultSort = getIntSort(32);
+    std::map<std::string, Z3_ast> env;
+    std::vector<Z3_ast> paramAxioms;
+
+    for (const auto& p : func->parameters) {
+        if (p->type != ASTNode::NodeType::PARAMETER) continue;
+        auto* param = static_cast<ParameterNode*>(p.get());
+        std::string tname = param->typeNode ? param->typeNode->toString() : "int32";
+        TypeInfo ti = resolveTypeSort(tname);
+
+        Z3_symbol sym = Z3_mk_string_symbol(ctx, param->paramName.c_str());
+        Z3_ast var = Z3_mk_const(ctx, sym, ti.sort);
+        env[param->paramName] = var;
+
+        // If this parameter has Rules constraints, collect axioms
+        auto rIt = paramRules.find(param->paramName);
+        if (rIt != paramRules.end()) {
+            const auto& [rulesDecl, baseType] = rIt->second;
+            std::function<void(RulesDeclStmt*)> collectAxioms;
+            collectAxioms = [&](RulesDeclStmt* r) {
+                for (const auto& cascName : r->cascadedRules) {
+                    auto cIt = rules_table.find(cascName);
+                    if (cIt != rules_table.end()) collectAxioms(cIt->second);
+                }
+                for (auto& cond : r->conditions) {
+                    Z3_ast z3Cond = translateCondition(cond.get(), var, ti.sort);
+                    if (z3Cond) paramAxioms.push_back(z3Cond);
+                }
+            };
+            collectAxioms(rulesDecl);
+        }
+    }
+
+    // Also add limit<> body variables (e.g. limit<Rules> T:var = param)
+    // that appear in paramRules but aren't parameter names.
+    // These are needed because return expressions reference the limit<> variable.
+    for (const auto& [varName, rulesInfo] : paramRules) {
+        if (env.count(varName)) continue;  // already in env as a parameter
+        const auto& [rulesDecl, baseType] = rulesInfo;
+        TypeInfo ti = resolveTypeSort(baseType);
+        Z3_symbol sym = Z3_mk_string_symbol(ctx, varName.c_str());
+        Z3_ast var = Z3_mk_const(ctx, sym, ti.sort);
+        env[varName] = var;
+
+        // Collect Rules axioms for this variable
+        std::function<void(RulesDeclStmt*)> collectAxioms;
+        collectAxioms = [&](RulesDeclStmt* r) {
+            for (const auto& cascName : r->cascadedRules) {
+                auto cIt = rules_table.find(cascName);
+                if (cIt != rules_table.end()) collectAxioms(cIt->second);
+            }
+            for (auto& cond : r->conditions) {
+                Z3_ast z3Cond = translateCondition(cond.get(), var, ti.sort);
+                if (z3Cond) paramAxioms.push_back(z3Cond);
+            }
+        };
+        collectAxioms(rulesDecl);
+    }
+
+    if (paramAxioms.empty()) {
+        VerifyOutcome out;
+        out.result = VerifyResult::UNKNOWN;
+        out.rulesName = func->funcName;
+        out.conditionText = "return bounds inference";
+        out.detail = "No parameter constraints for '" + func->funcName + "'";
+        out.line = line;
+        out.column = column;
+        summary.unknown++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::UNKNOWN;
+    }
+
+    // Try to translate return expressions to Z3
+    // Use the first translatable expression for bounds inference
+    Z3_ast returnZ3 = nullptr;
+    for (auto* expr : returnExprs) {
+        returnZ3 = translateExprWithEnv(expr, env, defaultSort);
+        if (returnZ3) break;
+    }
+
+    if (!returnZ3) {
+        VerifyOutcome out;
+        out.result = VerifyResult::UNKNOWN;
+        out.rulesName = func->funcName;
+        out.conditionText = "return bounds inference";
+        out.detail = "Could not encode return value of '" + func->funcName + "' for Z3";
+        out.line = line;
+        out.column = column;
+        summary.unknown++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::UNKNOWN;
+    }
+
+    // Use Z3 optimizer to find min and max return values
+    Z3_optimize opt = Z3_mk_optimize(ctx);
+    Z3_optimize_inc_ref(ctx, opt);
+
+    // Assert parameter constraints
+    for (auto ax : paramAxioms) {
+        Z3_optimize_assert(ctx, opt, ax);
+    }
+
+    // Find minimum
+    Z3_optimize_minimize(ctx, opt, returnZ3);
+    Z3_lbool minResult = Z3_optimize_check(ctx, opt, 0, nullptr);
+
+    bool gotMin = false, gotMax = false;
+    if (minResult == Z3_L_TRUE) {
+        Z3_model model = Z3_optimize_get_model(ctx, opt);
+        if (model) {
+            Z3_model_inc_ref(ctx, model);
+            Z3_ast val = nullptr;
+            if (Z3_model_eval(ctx, model, returnZ3, true, &val) && val) {
+                uint64_t uval = 0;
+                if (Z3_get_numeral_uint64(ctx, val, &uval)) {
+                    Z3_sort valSort = Z3_get_sort(ctx, val);
+                    unsigned bw = 32;
+                    if (Z3_get_sort_kind(ctx, valSort) == Z3_BV_SORT) {
+                        bw = Z3_get_bv_sort_size(ctx, valSort);
+                    }
+                    if (bw < 64 && (uval & (1ULL << (bw - 1)))) {
+                        outMin = static_cast<int64_t>(uval) - (1LL << bw);
+                    } else {
+                        outMin = static_cast<int64_t>(uval);
+                    }
+                    gotMin = true;
+                }
+            }
+            Z3_model_dec_ref(ctx, model);
+        }
+    }
+
+    // Reset optimizer for maximization
+    Z3_optimize_dec_ref(ctx, opt);
+    opt = Z3_mk_optimize(ctx);
+    Z3_optimize_inc_ref(ctx, opt);
+    for (auto ax : paramAxioms) {
+        Z3_optimize_assert(ctx, opt, ax);
+    }
+
+    Z3_optimize_maximize(ctx, opt, returnZ3);
+    Z3_lbool maxResult = Z3_optimize_check(ctx, opt, 0, nullptr);
+
+    if (maxResult == Z3_L_TRUE) {
+        Z3_model model = Z3_optimize_get_model(ctx, opt);
+        if (model) {
+            Z3_model_inc_ref(ctx, model);
+            Z3_ast val = nullptr;
+            if (Z3_model_eval(ctx, model, returnZ3, true, &val) && val) {
+                uint64_t uval = 0;
+                if (Z3_get_numeral_uint64(ctx, val, &uval)) {
+                    Z3_sort valSort = Z3_get_sort(ctx, val);
+                    unsigned bw = 32;
+                    if (Z3_get_sort_kind(ctx, valSort) == Z3_BV_SORT) {
+                        bw = Z3_get_bv_sort_size(ctx, valSort);
+                    }
+                    if (bw < 64 && (uval & (1ULL << (bw - 1)))) {
+                        outMax = static_cast<int64_t>(uval) - (1LL << bw);
+                    } else {
+                        outMax = static_cast<int64_t>(uval);
+                    }
+                    gotMax = true;
+                }
+            }
+            Z3_model_dec_ref(ctx, model);
+        }
+    }
+
+    Z3_optimize_dec_ref(ctx, opt);
+
+    if (gotMin && gotMax) {
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.rulesName = func->funcName;
+        out.conditionText = "return bounds: [" + std::to_string(outMin) +
+                            ", " + std::to_string(outMax) + "]";
+        out.detail = "Inferred: '" + func->funcName + "' returns values in [" +
+                     std::to_string(outMin) + ", " + std::to_string(outMax) + "]";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    }
+
+    VerifyOutcome out;
+    out.result = VerifyResult::UNKNOWN;
+    out.rulesName = func->funcName;
+    out.conditionText = "return bounds inference";
+    out.detail = "Could not infer return bounds for '" + func->funcName + "'";
+    out.line = line;
+    out.column = column;
+    summary.unknown++;
+    outcomes.push_back(out);
+    summary.outcomes.push_back(out);
+    return VerifyResult::UNKNOWN;
+}
+
 } // namespace aria

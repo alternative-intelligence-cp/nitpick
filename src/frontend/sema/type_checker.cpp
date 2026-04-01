@@ -12421,12 +12421,26 @@ void TypeChecker::checkPickStmt(PickStmt* stmt) {
     
     // Only perform exhaustiveness checking if selector type is valid
     if (selectorType->getKind() != TypeKind::ERROR) {
-        // Check exhaustiveness
-        ExhaustivenessAnalyzer::Analysis result = ExhaustivenessAnalyzer::analyze(stmt, selectorType);
-        
-        // Report error if not exhaustive
-        if (!result.isExhaustive) {
-            addError(result.errorMessage, stmt);
+        // v0.5.3: If the selector is a limit<> variable, defer exhaustiveness
+        // checking to the SMT-based Phase 2b (provePickExhaustiveness).
+        // The Rules constraint bounds the domain, so infinite-domain rejection
+        // does not apply.
+        bool selectorHasRules = false;
+        if (stmt->selector && stmt->selector->type == ASTNode::NodeType::IDENTIFIER) {
+            auto* ident = static_cast<IdentifierExpr*>(stmt->selector.get());
+            if (limitedVariables.count(ident->name)) {
+                selectorHasRules = true;
+            }
+        }
+
+        if (!selectorHasRules) {
+            // Check exhaustiveness
+            ExhaustivenessAnalyzer::Analysis result = ExhaustivenessAnalyzer::analyze(stmt, selectorType);
+            
+            // Report error if not exhaustive
+            if (!result.isExhaustive) {
+                addError(result.errorMessage, stmt);
+            }
         }
     }
     
