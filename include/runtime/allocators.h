@@ -282,12 +282,49 @@ typedef struct {
     size_t total_wild_allocated;      // Total wild heap usage
     size_t total_wildx_allocated;     // Total executable memory
     size_t num_wild_allocations;      // Active wild allocations
+    size_t num_wild_frees;            // Total wild frees (v0.7.0)
     size_t num_wildx_allocations;     // Active wildx allocations
     size_t peak_wild_usage;           // Peak wild memory
     size_t peak_wildx_usage;          // Peak wildx memory
 } AllocatorStats;
 
 void aria_allocator_get_stats(AllocatorStats* stats);
+
+/**
+ * v0.7.0: Enable/disable guard pages around wild allocations
+ * 
+ * When enabled, each aria_alloc() call places PROT_NONE guard pages
+ * before and after the data region. Any buffer overflow/underflow
+ * immediately triggers SIGSEGV instead of silent corruption.
+ * 
+ * Overhead: ~8KB per allocation (2 guard pages). Use for debugging only.
+ * Linux only; no-op on other platforms.
+ */
+void aria_wild_enable_guard_pages(bool enable);
+
+/**
+ * v0.7.0: Print wild memory statistics dashboard to stderr
+ * 
+ * Shows current/peak usage, active allocations, leak count, quota.
+ * Designed to be called at program exit via --wild-stats flag.
+ */
+void aria_wild_print_stats(void);
+
+/**
+ * v0.7.0: Get the allocation size of a wild pointer
+ * 
+ * Uses the hidden header to retrieve the user-requested size.
+ * Returns 0 if ptr is NULL or not a valid wild allocation.
+ */
+size_t aria_alloc_get_size(void* ptr);
+
+/**
+ * v0.7.0: Enable automatic stats printing at program exit
+ * 
+ * When enabled, aria_wild_print_stats() is called automatically
+ * after main() returns (via __attribute__((destructor))).
+ */
+void aria_wild_enable_stats_at_exit(bool enable);
 
 #ifdef __cplusplus
 }
