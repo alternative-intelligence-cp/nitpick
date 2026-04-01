@@ -1,0 +1,29 @@
+// Test: Rules<T> propagation — negative case (Phase 5.5)
+// One call site passes an unconstrained argument, so the callee's
+// limit check must NOT be eliminated.
+
+Rules:Positive = { $ > 0 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// This function's limit check should NOT be eliminated because
+// not all callers constrain the argument.
+func:use_positive = int32(int32:x) {
+    limit<Positive> int32:safe_x = x;
+    int32:result = safe_x + 1;
+    pass result;
+};
+
+func:main = int32() {
+    // Call 1: constrained — satisfies Positive
+    limit<Positive> int32:a = 5;
+    int32:r1 = raw use_positive(a);
+
+    // Call 2: NOT constrained — plain int32
+    int32:b = 10;
+    int32:r2 = raw use_positive(b);
+
+    exit 0;
+};

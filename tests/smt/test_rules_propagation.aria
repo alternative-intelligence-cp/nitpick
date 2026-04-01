@@ -1,0 +1,29 @@
+// Test: Rules<T> propagation (Phase 5.5)
+// When ALL callers pass arguments already constrained by the same (or stronger)
+// Rules, the limit check inside the callee is proven redundant.
+
+Rules:Positive = { $ > 0 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Non-pub helper: receives an int32 and applies limit<Positive>
+// Since ALL callers pass constrained arguments, this check is redundant.
+func:double_positive = int32(int32:x) {
+    limit<Positive> int32:safe_x = x;
+    int32:result = safe_x * 2;
+    pass result;
+};
+
+func:main = int32() {
+    // Caller constrains val with Positive before passing it
+    limit<Positive> int32:val = 42;
+    int32:doubled = raw double_positive(val);
+
+    // Second call site — also constrained
+    limit<Positive> int32:val2 = 7;
+    int32:doubled2 = raw double_positive(val2);
+
+    exit 0;
+};

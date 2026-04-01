@@ -28,7 +28,9 @@
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/expr.h"
 #include "frontend/token.h"
+#include <functional>
 #include <iostream>
+#include <set>
 
 namespace aria {
 
@@ -1348,6 +1350,590 @@ VerifyResult Z3Verifier::verifyUHashHomogeneous(
     VerifyResult vr = out.result;
     outcomes.push_back(out);
     return vr;
+}
+
+// ============================================================================
+// Phase 6: Dead Branch Elimination (v0.5.0)
+// Prove an if-condition is always true or always false under Rules constraints.
+// ============================================================================
+
+VerifyResult Z3Verifier::proveDeadBranch(
+    ASTNode* condition,
+    const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (!condition || varRules.empty()) return VerifyResult::UNKNOWN;
+
+    // Determine the common sort — use the widest integer type among constrained vars.
+    // If any float is involved, use real sort.
+    bool hasFloat = false;
+    int maxBitWidth = 32;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        const auto& baseType = rulesInfo.second;
+        TypeInfo ti = resolveTypeSort(baseType);
+        if (ti.isFloat) hasFloat = true;
+        if (ti.bitWidth > maxBitWidth) maxBitWidth = ti.bitWidth;
+    }
+
+    Z3_sort sort = hasFloat ? getRealSort() : getIntSort(maxBitWidth);
+
+    // Create Z3 symbolic variables for each constrained variable
+    std::map<std::string, Z3_ast> env;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        Z3_symbol sym = Z3_mk_string_symbol(ctx, varName.c_str());
+        Z3_ast var = Z3_mk_const(ctx, sym, sort);
+        env[varName] = var;
+    }
+
+    // Collect all Rules constraint assertions
+    std::vector<Z3_ast> axioms;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        RulesDeclStmt* rules = rulesInfo.first;
+        Z3_ast dollar = env[varName];  // The Z3 variable stands in for $ in Rules conditions
+
+        // Process rules and cascaded rules using a worklist
+        std::vector<RulesDeclStmt*> worklist = {rules};
+        std::set<std::string> visited;
+        while (!worklist.empty()) {
+            RulesDeclStmt* r = worklist.back();
+            worklist.pop_back();
+            if (!visited.insert(r->rulesName).second) continue;  // Skip already-visited
+
+            for (const auto& cascadedName : r->cascadedRules) {
+                auto it = rules_table.find(cascadedName);
+                if (it != rules_table.end()) {
+                    worklist.push_back(it->second);
+                }
+            }
+            for (size_t i = 0; i < r->conditions.size(); ++i) {
+                Z3_ast z3cond = translateCondition(r->conditions[i].get(), dollar, sort);
+                if (z3cond) axioms.push_back(z3cond);
+            }
+        }
+    }
+
+    if (axioms.empty()) return VerifyResult::UNKNOWN;
+
+    // Translate the IF condition using the variable environment
+    Z3_ast z3Cond = translateExprWithEnv(condition, env, sort);
+    if (!z3Cond) return VerifyResult::UNKNOWN;
+
+    // Test 1: Is the condition always TRUE?
+    // Assert axioms AND NOT(condition). If UNSAT → condition always true.
+    {
+        Z3_solver solver = makeSolver();
+        for (auto ax : axioms) Z3_solver_assert(ctx, solver, ax);
+        Z3_solver_assert(ctx, solver, Z3_mk_not(ctx, z3Cond));
+        Z3_lbool result = checkSat(solver);
+        deleteSolver(solver);
+
+        if (result == Z3_L_FALSE) {
+            // Condition is always true given Rules
+            VerifyOutcome out;
+            out.result = VerifyResult::PROVEN;
+            out.conditionText = condition->toString();
+            out.detail = "condition proven always true under Rules constraints — else branch dead";
+            out.line = line;
+            out.column = column;
+            summary.proven++;
+            outcomes.push_back(out);
+            return VerifyResult::PROVEN;
+        }
+    }
+
+    // Test 2: Is the condition always FALSE?
+    // Assert axioms AND condition. If UNSAT → condition always false.
+    {
+        Z3_solver solver = makeSolver();
+        for (auto ax : axioms) Z3_solver_assert(ctx, solver, ax);
+        Z3_solver_assert(ctx, solver, z3Cond);
+        Z3_lbool result = checkSat(solver);
+        deleteSolver(solver);
+
+        if (result == Z3_L_FALSE) {
+            // Condition is always false given Rules
+            VerifyOutcome out;
+            out.result = VerifyResult::DISPROVEN;
+            out.conditionText = condition->toString();
+            out.detail = "condition proven always false under Rules constraints — then branch dead";
+            out.line = line;
+            out.column = column;
+            summary.proven++;  // It's a proven optimization, not a "disproven" violation
+            outcomes.push_back(out);
+            return VerifyResult::DISPROVEN;
+        }
+    }
+
+    return VerifyResult::UNKNOWN;
+}
+
+// ============================================================================
+// Phase 7: Bounds Check Elimination — proveBoundsInRange
+// ============================================================================
+// Prove that an index expression is always in [0, arraySize) given Rules
+// constraints on the variables involved. Uses the same axiom-collection
+// pattern as proveDeadBranch.
+
+VerifyResult Z3Verifier::proveBoundsInRange(
+    ASTNode* indexExpr,
+    int64_t arraySize,
+    const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (!indexExpr || varRules.empty() || arraySize <= 0) return VerifyResult::UNKNOWN;
+
+    // Determine sort from constrained variable types
+    bool hasFloat = false;
+    int maxBitWidth = 32;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        const auto& baseType = rulesInfo.second;
+        TypeInfo ti = resolveTypeSort(baseType);
+        if (ti.isFloat) hasFloat = true;
+        if (ti.bitWidth > maxBitWidth) maxBitWidth = ti.bitWidth;
+    }
+
+    Z3_sort sort = hasFloat ? getRealSort() : getIntSort(maxBitWidth);
+
+    // Create Z3 symbolic variables for each constrained variable
+    std::map<std::string, Z3_ast> env;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        Z3_symbol sym = Z3_mk_string_symbol(ctx, varName.c_str());
+        Z3_ast var = Z3_mk_const(ctx, sym, sort);
+        env[varName] = var;
+    }
+
+    // Collect all Rules constraint axioms
+    std::vector<Z3_ast> axioms;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        RulesDeclStmt* rules = rulesInfo.first;
+        Z3_ast dollar = env[varName];
+
+        std::vector<RulesDeclStmt*> worklist = {rules};
+        std::set<std::string> visited;
+        while (!worklist.empty()) {
+            RulesDeclStmt* r = worklist.back();
+            worklist.pop_back();
+            if (!visited.insert(r->rulesName).second) continue;
+
+            for (const auto& cascadedName : r->cascadedRules) {
+                auto it = rules_table.find(cascadedName);
+                if (it != rules_table.end()) {
+                    worklist.push_back(it->second);
+                }
+            }
+            for (size_t i = 0; i < r->conditions.size(); ++i) {
+                Z3_ast z3cond = translateCondition(r->conditions[i].get(), dollar, sort);
+                if (z3cond) axioms.push_back(z3cond);
+            }
+        }
+    }
+
+    if (axioms.empty()) return VerifyResult::UNKNOWN;
+
+    // Translate the index expression using the variable environment
+    Z3_ast z3Index = translateExprWithEnv(indexExpr, env, sort);
+    if (!z3Index) return VerifyResult::UNKNOWN;
+
+    // Build the bounds condition: index >= 0 AND index < arraySize
+    Z3_ast zero = Z3_mk_numeral(ctx, "0", sort);
+    Z3_ast size = Z3_mk_numeral(ctx, std::to_string(arraySize).c_str(), sort);
+
+    Z3_ast geZero;
+    Z3_ast ltSize;
+    if (hasFloat) {
+        geZero = Z3_mk_ge(ctx, z3Index, zero);
+        ltSize = Z3_mk_lt(ctx, z3Index, size);
+    } else {
+        // BitVec sort — use signed comparisons
+        geZero = Z3_mk_bvsge(ctx, z3Index, zero);
+        ltSize = Z3_mk_bvslt(ctx, z3Index, size);
+    }
+
+    // We need to prove BOTH: index >= 0 AND index < arraySize
+    // Equivalently: prove NOT(index >= 0 AND index < arraySize) is UNSAT under axioms
+    Z3_ast inBounds_args[2] = {geZero, ltSize};
+    Z3_ast inBounds = Z3_mk_and(ctx, 2, inBounds_args);
+    Z3_ast outOfBounds = Z3_mk_not(ctx, inBounds);
+
+    // Assert axioms AND NOT(inBounds). If UNSAT → always in bounds.
+    Z3_solver solver = makeSolver();
+    for (auto ax : axioms) Z3_solver_assert(ctx, solver, ax);
+    Z3_solver_assert(ctx, solver, outOfBounds);
+    Z3_lbool result = checkSat(solver);
+    deleteSolver(solver);
+
+    if (result == Z3_L_FALSE) {
+        // Index is provably always in [0, arraySize)
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.conditionText = indexExpr->toString();
+        out.detail = "index proven always in [0, " + std::to_string(arraySize)
+                   + ") under Rules constraints — bounds check eliminated";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    }
+
+    return VerifyResult::UNKNOWN;
+}
+
+// ============================================================================
+// Phase 8: Overflow Check Elimination — proveNoOverflowFromRules
+// ============================================================================
+// Prove that an arithmetic operation (+, -, *) cannot overflow given Rules
+// constraints on the operand variables. Uses the same axiom-collection
+// pattern as proveBoundsInRange + Z3 native overflow predicates.
+
+VerifyResult Z3Verifier::proveNoOverflowFromRules(
+    char op,
+    ASTNode* lhsExpr,
+    ASTNode* rhsExpr,
+    const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (!lhsExpr || !rhsExpr || varRules.empty()) return VerifyResult::UNKNOWN;
+    if (op != '+' && op != '-' && op != '*') return VerifyResult::UNKNOWN;
+
+    // Determine sort from constrained variable types
+    bool hasFloat = false;
+    int maxBitWidth = 32;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        const auto& baseType = rulesInfo.second;
+        TypeInfo ti = resolveTypeSort(baseType);
+        if (ti.isFloat) hasFloat = true;
+        if (ti.bitWidth > maxBitWidth) maxBitWidth = ti.bitWidth;
+    }
+
+    // Overflow checking only applies to integer types
+    if (hasFloat) return VerifyResult::UNKNOWN;
+
+    Z3_sort sort = getIntSort(maxBitWidth);
+
+    // Create Z3 symbolic variables for each constrained variable
+    std::map<std::string, Z3_ast> env;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        Z3_symbol sym = Z3_mk_string_symbol(ctx, varName.c_str());
+        Z3_ast var = Z3_mk_const(ctx, sym, sort);
+        env[varName] = var;
+    }
+
+    // Collect all Rules constraint axioms
+    std::vector<Z3_ast> axioms;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        RulesDeclStmt* rules = rulesInfo.first;
+        Z3_ast dollar = env[varName];
+
+        std::vector<RulesDeclStmt*> worklist = {rules};
+        std::set<std::string> visited;
+        while (!worklist.empty()) {
+            RulesDeclStmt* r = worklist.back();
+            worklist.pop_back();
+            if (!visited.insert(r->rulesName).second) continue;
+
+            for (const auto& cascadedName : r->cascadedRules) {
+                auto it = rules_table.find(cascadedName);
+                if (it != rules_table.end()) {
+                    worklist.push_back(it->second);
+                }
+            }
+            for (size_t i = 0; i < r->conditions.size(); ++i) {
+                Z3_ast z3cond = translateCondition(r->conditions[i].get(), dollar, sort);
+                if (z3cond) axioms.push_back(z3cond);
+            }
+        }
+    }
+
+    if (axioms.empty()) return VerifyResult::UNKNOWN;
+
+    // Translate operand expressions using the variable environment
+    Z3_ast z3Lhs = translateExprWithEnv(lhsExpr, env, sort);
+    Z3_ast z3Rhs = translateExprWithEnv(rhsExpr, env, sort);
+    if (!z3Lhs || !z3Rhs) return VerifyResult::UNKNOWN;
+
+    // Build overflow condition using Z3 native overflow predicates
+    std::string opStr;
+    Z3_ast overflowCond;
+    bool isSigned = true;  // Aria signed integers use safe ops
+
+    switch (op) {
+        case '+': {
+            opStr = "addition";
+            Z3_ast noOverflow = Z3_mk_bvadd_no_overflow(ctx, z3Lhs, z3Rhs, isSigned);
+            Z3_ast noUnderflow = Z3_mk_bvadd_no_underflow(ctx, z3Lhs, z3Rhs);
+            Z3_ast safe[2] = {noOverflow, noUnderflow};
+            Z3_ast allSafe = Z3_mk_and(ctx, 2, safe);
+            overflowCond = Z3_mk_not(ctx, allSafe);
+            break;
+        }
+        case '-': {
+            opStr = "subtraction";
+            Z3_ast noOverflow = Z3_mk_bvsub_no_overflow(ctx, z3Lhs, z3Rhs);
+            Z3_ast noUnderflow = Z3_mk_bvsub_no_underflow(ctx, z3Lhs, z3Rhs, isSigned);
+            Z3_ast safe[2] = {noOverflow, noUnderflow};
+            Z3_ast allSafe = Z3_mk_and(ctx, 2, safe);
+            overflowCond = Z3_mk_not(ctx, allSafe);
+            break;
+        }
+        case '*': {
+            opStr = "multiplication";
+            Z3_ast noOverflow = Z3_mk_bvmul_no_overflow(ctx, z3Lhs, z3Rhs, isSigned);
+            Z3_ast noUnderflow = Z3_mk_bvmul_no_underflow(ctx, z3Lhs, z3Rhs);
+            Z3_ast safe[2] = {noOverflow, noUnderflow};
+            Z3_ast allSafe = Z3_mk_and(ctx, 2, safe);
+            overflowCond = Z3_mk_not(ctx, allSafe);
+            break;
+        }
+        default:
+            return VerifyResult::UNKNOWN;
+    }
+
+    // Assert axioms AND overflow. If UNSAT → overflow impossible under constraints.
+    Z3_solver solver = makeSolver();
+    for (auto ax : axioms) Z3_solver_assert(ctx, solver, ax);
+    Z3_solver_assert(ctx, solver, overflowCond);
+    Z3_lbool result = checkSat(solver);
+    deleteSolver(solver);
+
+    if (result == Z3_L_FALSE) {
+        // UNSAT → no overflow possible under Rules constraints
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.conditionText = opStr + " overflow check";
+        out.detail = "Proven: " + opStr + " cannot overflow under Rules constraints"
+                   + " (int" + std::to_string(maxBitWidth) + ")"
+                   + " — overflow check eliminated";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    }
+
+    return VerifyResult::UNKNOWN;
+}
+
+// ============================================================================
+// Phase 9: Null Check Elimination — proveNonNullFromRules
+// ============================================================================
+// Prove that an expression is never null/zero/None given Rules constraints.
+// For integer variables checked via ?? or ? operators, if Rules guarantee
+// the value is never 0 (e.g., $ > 0, $ != 0), the null check is dead.
+// Uses same axiom-collection pattern as proveBoundsInRange/proveNoOverflowFromRules.
+
+VerifyResult Z3Verifier::proveNonNullFromRules(
+    ASTNode* expr,
+    const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (!expr || varRules.empty()) return VerifyResult::UNKNOWN;
+
+    // Determine sort from constrained variable types
+    int maxBitWidth = 32;
+    bool hasFloat = false;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        const auto& baseType = rulesInfo.second;
+        TypeInfo ti = resolveTypeSort(baseType);
+        if (ti.isFloat) hasFloat = true;
+        if (ti.bitWidth > maxBitWidth) maxBitWidth = ti.bitWidth;
+    }
+
+    // Null check elimination on floats doesn't apply (no NIL sentinel)
+    if (hasFloat) return VerifyResult::UNKNOWN;
+
+    Z3_sort sort = getIntSort(maxBitWidth);
+
+    // Create Z3 symbolic variables for each constrained variable
+    std::map<std::string, Z3_ast> env;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        Z3_symbol sym = Z3_mk_string_symbol(ctx, varName.c_str());
+        Z3_ast var = Z3_mk_const(ctx, sym, sort);
+        env[varName] = var;
+    }
+
+    // Collect all Rules constraint axioms
+    std::vector<Z3_ast> axioms;
+    for (const auto& [varName, rulesInfo] : varRules) {
+        RulesDeclStmt* rules = rulesInfo.first;
+        Z3_ast dollar = env[varName];
+
+        std::vector<RulesDeclStmt*> worklist = {rules};
+        std::set<std::string> visited;
+        while (!worklist.empty()) {
+            RulesDeclStmt* r = worklist.back();
+            worklist.pop_back();
+            if (!visited.insert(r->rulesName).second) continue;
+
+            for (const auto& cascadedName : r->cascadedRules) {
+                auto it = rules_table.find(cascadedName);
+                if (it != rules_table.end()) {
+                    worklist.push_back(it->second);
+                }
+            }
+            for (size_t i = 0; i < r->conditions.size(); ++i) {
+                Z3_ast z3cond = translateCondition(r->conditions[i].get(), dollar, sort);
+                if (z3cond) axioms.push_back(z3cond);
+            }
+        }
+    }
+
+    if (axioms.empty()) return VerifyResult::UNKNOWN;
+
+    // Translate the expression being null-checked
+    Z3_ast z3Expr = translateExprWithEnv(expr, env, sort);
+    if (!z3Expr) return VerifyResult::UNKNOWN;
+
+    // Build null condition: expr == 0 (the NIL sentinel for integers)
+    Z3_ast zero = Z3_mk_numeral(ctx, "0", sort);
+    Z3_ast isZero = Z3_mk_eq(ctx, z3Expr, zero);
+
+    // Assert axioms AND (expr == 0). If UNSAT → value is never null under constraints.
+    Z3_solver solver = makeSolver();
+    for (auto ax : axioms) Z3_solver_assert(ctx, solver, ax);
+    Z3_solver_assert(ctx, solver, isZero);
+    Z3_lbool result = checkSat(solver);
+    deleteSolver(solver);
+
+    if (result == Z3_L_FALSE) {
+        // UNSAT → value is never null/zero under Rules constraints
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.conditionText = "null check";
+        out.detail = "Proven: expression is never null/zero under Rules constraints"
+                   " (int" + std::to_string(maxBitWidth) + ")"
+                   " — null check eliminated";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    }
+
+    return VerifyResult::UNKNOWN;
+}
+
+// ============================================================================
+// Phase 10: Rules<T> Propagation — proveRulesSubsumption
+// ============================================================================
+// Proves ∀x. callerRules(x) → calleeRules(x)
+// Method: assert all callerRules conditions, then for each calleeRules condition
+// assert its NEGATION and check UNSAT. If UNSAT for all → subsumption proven.
+
+VerifyResult Z3Verifier::proveRulesSubsumption(
+    const std::string& callerRulesName,
+    const std::string& calleeRulesName,
+    const std::string& typeName,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column) {
+
+    // Trivial case: same rules
+    if (callerRulesName == calleeRulesName) {
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.conditionText = callerRulesName + " ⊇ " + calleeRulesName;
+        out.detail = "Trivially proven: same Rules name";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    }
+
+    // Look up both rules
+    auto callerIt = rules_table.find(callerRulesName);
+    auto calleeIt = rules_table.find(calleeRulesName);
+    if (callerIt == rules_table.end() || calleeIt == rules_table.end()) {
+        return VerifyResult::UNKNOWN;
+    }
+
+    RulesDeclStmt* callerRules = callerIt->second;
+    RulesDeclStmt* calleeRules = calleeIt->second;
+
+    // Resolve type sort
+    TypeInfo ti = resolveTypeSort(typeName);
+    Z3_sort sort = ti.sort;
+
+    // Create symbolic variable $
+    Z3_symbol sym = Z3_mk_string_symbol(ctx, "$");
+    Z3_ast dollar = Z3_mk_const(ctx, sym, sort);
+
+    // Collect caller axioms (all conditions of caller rules + cascaded)
+    std::vector<Z3_ast> callerAxioms;
+    std::function<void(RulesDeclStmt*)> collectCallerAxioms;
+    collectCallerAxioms = [&](RulesDeclStmt* r) {
+        for (const auto& cascName : r->cascadedRules) {
+            auto cIt = rules_table.find(cascName);
+            if (cIt != rules_table.end()) collectCallerAxioms(cIt->second);
+        }
+        for (auto& cond : r->conditions) {
+            Z3_ast z3Cond = translateCondition(cond.get(), dollar, sort);
+            if (z3Cond) callerAxioms.push_back(z3Cond);
+        }
+    };
+    collectCallerAxioms(callerRules);
+
+    if (callerAxioms.empty()) return VerifyResult::UNKNOWN;
+
+    // Collect callee conditions (all conditions of callee rules + cascaded)
+    std::vector<Z3_ast> calleeConditions;
+    std::function<void(RulesDeclStmt*)> collectCalleeConditions;
+    collectCalleeConditions = [&](RulesDeclStmt* r) {
+        for (const auto& cascName : r->cascadedRules) {
+            auto cIt = rules_table.find(cascName);
+            if (cIt != rules_table.end()) collectCalleeConditions(cIt->second);
+        }
+        for (auto& cond : r->conditions) {
+            Z3_ast z3Cond = translateCondition(cond.get(), dollar, sort);
+            if (z3Cond) calleeConditions.push_back(z3Cond);
+        }
+    };
+    collectCalleeConditions(calleeRules);
+
+    if (calleeConditions.empty()) {
+        // No callee conditions → trivially subsumed
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.conditionText = callerRulesName + " ⊇ " + calleeRulesName;
+        out.detail = "Trivially proven: callee has no conditions";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    }
+
+    // For each callee condition, prove it holds under caller axioms:
+    // Assert callerAxioms AND ¬calleeCondition[i], check UNSAT
+    for (auto& calleeCond : calleeConditions) {
+        Z3_solver solver = makeSolver();
+        for (auto ax : callerAxioms) Z3_solver_assert(ctx, solver, ax);
+        Z3_ast negCond = Z3_mk_not(ctx, calleeCond);
+        Z3_solver_assert(ctx, solver, negCond);
+        Z3_lbool result = checkSat(solver);
+        deleteSolver(solver);
+
+        if (result != Z3_L_FALSE) {
+            // SAT or UNKNOWN → can't prove this condition
+            return VerifyResult::UNKNOWN;
+        }
+    }
+
+    // All callee conditions proven to hold under caller axioms
+    VerifyOutcome out;
+    out.result = VerifyResult::PROVEN;
+    out.conditionText = callerRulesName + " ⊇ " + calleeRulesName;
+    out.detail = "Proven: caller Rules '" + callerRulesName
+               + "' subsumes callee Rules '" + calleeRulesName + "'";
+    out.line = line;
+    out.column = column;
+    summary.proven++;
+    outcomes.push_back(out);
+    return VerifyResult::PROVEN;
 }
 
 } // namespace aria

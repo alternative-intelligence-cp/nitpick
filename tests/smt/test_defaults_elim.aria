@@ -1,0 +1,32 @@
+// Test: Defaults/?| fallback elimination (Phase 5.75)
+// When the sub-expression of ?| only calls infallible functions,
+// the fallback path is dead code and can be eliminated.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Infallible helper — no fail, no sys calls
+func:double_it = int32(int32:x) {
+    int32:result = x * 2;
+    pass result;
+};
+
+// Another infallible helper
+func:add_ten = int32(int32:x) {
+    int32:result = x + 10;
+    pass result;
+};
+
+func:main = int32() {
+    // Test 1: ?| with infallible function — fallback should be eliminated
+    int32:a = double_it(5i32) ?| 99i32;
+
+    // Test 2: Chain of infallible calls — both calls infallible
+    int32:b = add_ten(double_it(3i32) ?| 0i32) ?| 0i32;
+
+    // Test 3: defaults keyword form — same optimization
+    int32:c = double_it(7i32) defaults 0i32;
+
+    exit 0;
+};

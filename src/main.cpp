@@ -22,6 +22,7 @@
 #include <string>
 #include <memory>
 #include <set>
+#include <map>
 #include <cstdlib>
 #include <cerrno>   // For errno
 #include <cstring>  // For strerror
@@ -39,6 +40,7 @@
 #include "frontend/sema/generic_resolver.h"
 #include "frontend/sema/borrow_checker.h"
 #include "frontend/sema/module_loader.h"  // Module system
+#include "frontend/ast/type.h"            // ArrayType AST node (for bounds check elimination)
 #include "frontend/diagnostics.h"
 #include "frontend/warnings.h"
 #include "backend/ir/ir_generator.h"
@@ -89,9 +91,9 @@ extern "C" {
 
 // Version information
 #define ARIA_VERSION_MAJOR 0
-#define ARIA_VERSION_MINOR 4
-#define ARIA_VERSION_PATCH 4
-#define ARIA_VERSION "0.4.4"
+#define ARIA_VERSION_MINOR 5
+#define ARIA_VERSION_PATCH 0
+#define ARIA_VERSION "0.5.0"
 
 // Compiler options
 struct CompilerOptions {
@@ -841,6 +843,28 @@ llvm::Module* compile_to_module(
         }
     }
     
+    // Dead branch elimination sets — declared outside #ifdef so they're available to codegen
+    std::set<aria::ASTNode*> dead_branch_true_set;
+    std::set<aria::ASTNode*> dead_branch_false_set;
+
+    // Bounds check elimination set — declared outside #ifdef so it's available to codegen
+    std::set<aria::ASTNode*> bounds_safe_set;
+
+    // Overflow check elimination set — declared outside #ifdef so it's available to codegen
+    std::set<aria::ASTNode*> overflow_safe_set;
+
+    // Null check elimination set — declared outside #ifdef so it's available to codegen
+    std::set<aria::ASTNode*> null_check_safe_set;
+
+    // Loop invariant hoisting map — declared outside #ifdef so it's available to codegen
+    std::map<aria::ASTNode*, std::vector<aria::ASTNode*>> loop_hoist_map;
+
+    // Limit check elimination set — declared outside #ifdef so it's available to codegen
+    std::set<aria::ASTNode*> limit_check_safe_set;
+
+    // Defaults fallback elimination set — declared outside #ifdef so it's available to codegen
+    std::set<aria::ASTNode*> defaults_safe_set;
+
 #ifdef ARIA_HAS_Z3
     // Phase 3.25: Z3 SMT Verification (static contract verification)
     std::set<std::string> ustack_opt_funcs;  // Functions eligible for SMT-optimized user stack
@@ -1536,7 +1560,1382 @@ llvm::Module* compile_to_module(
                           << " function(s) eligible for fast user hash\n";
             }
         }
-        
+
+        // Phase 4.25: Dead Branch Elimination (Z3-powered)
+        // For each IF statement whose condition involves Rules-constrained variables,
+        // use Z3 to prove whether the condition is always true or always false.
+        if (opts.smt_opt) {
+            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            if (program) {
+                if (opts.verbose) {
+                    std::cout << "Phase 4.25: Dead branch elimination analysis...\n";
+                }
+
+                // Collect all Rules declarations (name → RulesDeclStmt*)
+                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                for (const auto& decl : program->declarations) {
+                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                        all_rules[rules->rulesName] = rules;
+                    }
+                }
+
+                if (!all_rules.empty()) {
+                    using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+
+                    // Recursive walker: collect constrained var decls, probe IF conditions
+                    std::function<void(aria::ASTNode*, VarRulesMap&)> walkForDeadBranches;
+                    walkForDeadBranches = [&](aria::ASTNode* node, VarRulesMap& varRules) {
+                        if (!node) return;
+                        using NT = aria::ASTNode::NodeType;
+
+                        switch (node->type) {
+                            case NT::VAR_DECL: {
+                                auto* var = static_cast<aria::VarDeclStmt*>(node);
+                                if (!var->limitRulesName.empty()) {
+                                    auto it = all_rules.find(var->limitRulesName);
+                                    if (it != all_rules.end()) {
+                                        varRules[var->varName] = {it->second, var->typeName};
+                                    }
+                                }
+                                walkForDeadBranches(var->initializer.get(), varRules);
+                                break;
+                            }
+
+                            case NT::IF: {
+                                auto* ifStmt = static_cast<aria::IfStmt*>(node);
+                                if (!varRules.empty() && ifStmt->condition) {
+                                    std::vector<aria::VerifyOutcome> outcomes;
+                                    auto result = z3v.proveDeadBranch(
+                                        ifStmt->condition.get(), varRules, outcomes,
+                                        ifStmt->line, ifStmt->column);
+                                    if (result == aria::VerifyResult::PROVEN) {
+                                        dead_branch_true_set.insert(ifStmt);
+                                    } else if (result == aria::VerifyResult::DISPROVEN) {
+                                        dead_branch_false_set.insert(ifStmt);
+                                    }
+                                }
+                                walkForDeadBranches(ifStmt->condition.get(), varRules);
+                                walkForDeadBranches(ifStmt->thenBranch.get(), varRules);
+                                walkForDeadBranches(ifStmt->elseBranch.get(), varRules);
+                                break;
+                            }
+
+                            case NT::BLOCK: {
+                                auto* block = static_cast<aria::BlockStmt*>(node);
+                                for (auto& stmt : block->statements)
+                                    walkForDeadBranches(stmt.get(), varRules);
+                                break;
+                            }
+
+                            case NT::WHILE: {
+                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                walkForDeadBranches(s->condition.get(), varRules);
+                                walkForDeadBranches(s->body.get(), varRules);
+                                break;
+                            }
+
+                            case NT::FOR: {
+                                auto* s = static_cast<aria::ForStmt*>(node);
+                                walkForDeadBranches(s->initializer.get(), varRules);
+                                walkForDeadBranches(s->condition.get(), varRules);
+                                walkForDeadBranches(s->update.get(), varRules);
+                                walkForDeadBranches(s->body.get(), varRules);
+                                walkForDeadBranches(s->rangeExpr.get(), varRules);
+                                break;
+                            }
+
+                            case NT::LOOP: {
+                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                walkForDeadBranches(s->start.get(), varRules);
+                                walkForDeadBranches(s->limit.get(), varRules);
+                                walkForDeadBranches(s->step.get(), varRules);
+                                walkForDeadBranches(s->body.get(), varRules);
+                                break;
+                            }
+
+                            case NT::TILL: {
+                                auto* s = static_cast<aria::TillStmt*>(node);
+                                walkForDeadBranches(s->limit.get(), varRules);
+                                walkForDeadBranches(s->step.get(), varRules);
+                                walkForDeadBranches(s->body.get(), varRules);
+                                break;
+                            }
+
+                            case NT::WHEN: {
+                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                walkForDeadBranches(s->condition.get(), varRules);
+                                walkForDeadBranches(s->body.get(), varRules);
+                                walkForDeadBranches(s->then_block.get(), varRules);
+                                walkForDeadBranches(s->end_block.get(), varRules);
+                                break;
+                            }
+
+                            case NT::PICK: {
+                                auto* s = static_cast<aria::PickStmt*>(node);
+                                walkForDeadBranches(s->selector.get(), varRules);
+                                for (auto& c : s->cases) {
+                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    walkForDeadBranches(pc->pattern.get(), varRules);
+                                    walkForDeadBranches(pc->body.get(), varRules);
+                                }
+                                break;
+                            }
+
+                            case NT::DEFER: {
+                                auto* s = static_cast<aria::DeferStmt*>(node);
+                                walkForDeadBranches(s->block.get(), varRules);
+                                break;
+                            }
+
+                            case NT::EXPRESSION_STMT: {
+                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                walkForDeadBranches(s->expression.get(), varRules);
+                                break;
+                            }
+
+                            default:
+                                break;
+                        }
+                    };
+
+                    for (const auto& decl : program->declarations) {
+                        if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
+                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        if (!func->body) continue;
+
+                        VarRulesMap varRules;
+                        walkForDeadBranches(func->body.get(), varRules);
+                    }
+
+                    int total_dead = dead_branch_true_set.size() + dead_branch_false_set.size();
+                    if (opts.verbose && total_dead > 0) {
+                        std::cout << "  Dead branch elimination: " << total_dead
+                                  << " branch(es) proven dead\n";
+                        if (!dead_branch_true_set.empty())
+                            std::cout << "    - " << dead_branch_true_set.size()
+                                      << " always-true condition(s) (else branch dead)\n";
+                        if (!dead_branch_false_set.empty())
+                            std::cout << "    - " << dead_branch_false_set.size()
+                                      << " always-false condition(s) (then branch dead)\n";
+                    }
+                }
+            }
+        }
+
+        // Phase 4.5: Bounds Check Elimination (Z3-powered)
+        // For each array index expression where the index variable has Rules constraints
+        // and the array has a compile-time known size, use Z3 to prove the index is
+        // always in [0, N). If proven, the runtime bounds check is skipped.
+        if (opts.smt_opt) {
+            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            if (program) {
+                if (opts.verbose) {
+                    std::cout << "Phase 4.5: Bounds check elimination analysis...\n";
+                }
+
+                // Collect all Rules declarations
+                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                for (const auto& decl : program->declarations) {
+                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                        all_rules[rules->rulesName] = rules;
+                    }
+                }
+
+                if (!all_rules.empty()) {
+                    using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+
+                    // Map variable names to their array sizes (for fixed-size arrays)
+                    using ArraySizeMap = std::map<std::string, int64_t>;
+
+                    // Recursive walker: collect constrained vars + array decls, probe INDEX exprs
+                    std::function<void(aria::ASTNode*, VarRulesMap&, ArraySizeMap&)> walkForBoundsCheck;
+                    walkForBoundsCheck = [&](aria::ASTNode* node, VarRulesMap& varRules, ArraySizeMap& arraySizes) {
+                        if (!node) return;
+                        using NT = aria::ASTNode::NodeType;
+
+                        switch (node->type) {
+                            case NT::VAR_DECL: {
+                                auto* var = static_cast<aria::VarDeclStmt*>(node);
+                                // Track Rules-constrained variables
+                                if (!var->limitRulesName.empty()) {
+                                    auto it = all_rules.find(var->limitRulesName);
+                                    if (it != all_rules.end()) {
+                                        varRules[var->varName] = {it->second, var->typeName};
+                                    }
+                                }
+                                // Track fixed-size array declarations
+                                if (var->typeNode && var->typeNode->type == NT::ARRAY_TYPE) {
+                                    auto* arrType = static_cast<aria::ArrayType*>(var->typeNode.get());
+                                    if (!arrType->isDynamic && arrType->sizeExpr) {
+                                        if (arrType->sizeExpr->type == NT::LITERAL) {
+                                            auto* lit = static_cast<aria::LiteralExpr*>(arrType->sizeExpr.get());
+                                            if (auto* intVal = std::get_if<int64_t>(&lit->value)) {
+                                                arraySizes[var->varName] = *intVal;
+                                            }
+                                        }
+                                    }
+                                }
+                                // Also detect arrays from array literal initializers
+                                if (var->initializer && var->initializer->type == NT::ARRAY_LITERAL) {
+                                    auto* arrLit = static_cast<aria::ArrayLiteralExpr*>(var->initializer.get());
+                                    arraySizes[var->varName] = static_cast<int64_t>(arrLit->elements.size());
+                                }
+                                walkForBoundsCheck(var->initializer.get(), varRules, arraySizes);
+                                break;
+                            }
+
+                            case NT::INDEX: {
+                                auto* indexExpr = static_cast<aria::IndexExpr*>(node);
+                                // Check if array is known fixed-size and index involves Rules vars
+                                if (indexExpr->array->type == NT::IDENTIFIER && !varRules.empty()) {
+                                    auto* ident = static_cast<aria::IdentifierExpr*>(indexExpr->array.get());
+                                    auto sizeIt = arraySizes.find(ident->name);
+                                    if (sizeIt != arraySizes.end()) {
+                                        std::vector<aria::VerifyOutcome> outcomes;
+                                        auto result = z3v.proveBoundsInRange(
+                                            indexExpr->index.get(), sizeIt->second,
+                                            varRules, outcomes,
+                                            indexExpr->line, indexExpr->column);
+                                        if (result == aria::VerifyResult::PROVEN) {
+                                            bounds_safe_set.insert(indexExpr);
+                                        }
+                                    }
+                                }
+                                walkForBoundsCheck(indexExpr->array.get(), varRules, arraySizes);
+                                walkForBoundsCheck(indexExpr->index.get(), varRules, arraySizes);
+                                break;
+                            }
+
+                            case NT::IF: {
+                                auto* ifStmt = static_cast<aria::IfStmt*>(node);
+                                walkForBoundsCheck(ifStmt->condition.get(), varRules, arraySizes);
+                                walkForBoundsCheck(ifStmt->thenBranch.get(), varRules, arraySizes);
+                                walkForBoundsCheck(ifStmt->elseBranch.get(), varRules, arraySizes);
+                                break;
+                            }
+
+                            case NT::BLOCK: {
+                                auto* block = static_cast<aria::BlockStmt*>(node);
+                                for (auto& stmt : block->statements)
+                                    walkForBoundsCheck(stmt.get(), varRules, arraySizes);
+                                break;
+                            }
+
+                            case NT::WHILE: {
+                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                walkForBoundsCheck(s->condition.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->body.get(), varRules, arraySizes);
+                                break;
+                            }
+
+                            case NT::FOR: {
+                                auto* s = static_cast<aria::ForStmt*>(node);
+                                walkForBoundsCheck(s->initializer.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->condition.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->update.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->body.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->rangeExpr.get(), varRules, arraySizes);
+                                break;
+                            }
+
+                            case NT::LOOP: {
+                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                walkForBoundsCheck(s->start.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->limit.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->step.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->body.get(), varRules, arraySizes);
+                                break;
+                            }
+
+                            case NT::TILL: {
+                                auto* s = static_cast<aria::TillStmt*>(node);
+                                walkForBoundsCheck(s->limit.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->step.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->body.get(), varRules, arraySizes);
+                                break;
+                            }
+
+                            case NT::WHEN: {
+                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                walkForBoundsCheck(s->condition.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->body.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->then_block.get(), varRules, arraySizes);
+                                walkForBoundsCheck(s->end_block.get(), varRules, arraySizes);
+                                break;
+                            }
+
+                            case NT::PICK: {
+                                auto* s = static_cast<aria::PickStmt*>(node);
+                                walkForBoundsCheck(s->selector.get(), varRules, arraySizes);
+                                for (auto& c : s->cases) {
+                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    walkForBoundsCheck(pc->pattern.get(), varRules, arraySizes);
+                                    walkForBoundsCheck(pc->body.get(), varRules, arraySizes);
+                                }
+                                break;
+                            }
+
+                            case NT::DEFER: {
+                                auto* s = static_cast<aria::DeferStmt*>(node);
+                                walkForBoundsCheck(s->block.get(), varRules, arraySizes);
+                                break;
+                            }
+
+                            case NT::EXPRESSION_STMT: {
+                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                walkForBoundsCheck(s->expression.get(), varRules, arraySizes);
+                                break;
+                            }
+
+                            default:
+                                break;
+                        }
+                    };
+
+                    for (const auto& decl : program->declarations) {
+                        if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
+                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        if (!func->body) continue;
+
+                        VarRulesMap varRules;
+                        ArraySizeMap arraySizes;
+                        walkForBoundsCheck(func->body.get(), varRules, arraySizes);
+                    }
+
+                    if (opts.verbose && !bounds_safe_set.empty()) {
+                        std::cout << "  Bounds check elimination: " << bounds_safe_set.size()
+                                  << " array access(es) proven always in-bounds\n";
+                    }
+                }
+            }
+        }
+
+        // Phase 4.75: Overflow Check Elimination (Z3-powered)
+        // For each integer arithmetic operation (+, -, *) where the operands have
+        // Rules constraints, use Z3 to prove no overflow is possible. If proven,
+        // codegen uses plain add/sub/mul instead of generateSafeAdd/Sub/Mul.
+        if (opts.smt_opt) {
+            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            if (program) {
+                if (opts.verbose) {
+                    std::cout << "Phase 4.75: Overflow check elimination analysis...\n";
+                }
+
+                // Collect all Rules declarations
+                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                for (const auto& decl : program->declarations) {
+                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                        all_rules[rules->rulesName] = rules;
+                    }
+                }
+
+                if (!all_rules.empty()) {
+                    using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+
+                    std::function<void(aria::ASTNode*, VarRulesMap&)> walkForOverflowCheck;
+                    walkForOverflowCheck = [&](aria::ASTNode* node, VarRulesMap& varRules) {
+                        if (!node) return;
+                        using NT = aria::ASTNode::NodeType;
+
+                        switch (node->type) {
+                            case NT::VAR_DECL: {
+                                auto* var = static_cast<aria::VarDeclStmt*>(node);
+                                if (!var->limitRulesName.empty()) {
+                                    auto it = all_rules.find(var->limitRulesName);
+                                    if (it != all_rules.end()) {
+                                        varRules[var->varName] = {it->second, var->typeName};
+                                    }
+                                }
+                                walkForOverflowCheck(var->initializer.get(), varRules);
+                                break;
+                            }
+
+                            case NT::BINARY_OP: {
+                                auto* binary = static_cast<aria::BinaryExpr*>(node);
+                                char op = 0;
+                                switch (binary->op.type) {
+                                    case aria::frontend::TokenType::TOKEN_PLUS:  op = '+'; break;
+                                    case aria::frontend::TokenType::TOKEN_MINUS: op = '-'; break;
+                                    case aria::frontend::TokenType::TOKEN_STAR:  op = '*'; break;
+                                    default: break;
+                                }
+                                if (op != 0 && !varRules.empty()) {
+                                    std::vector<aria::VerifyOutcome> outcomes;
+                                    auto result = z3v.proveNoOverflowFromRules(
+                                        op, binary->left.get(), binary->right.get(),
+                                        varRules, outcomes,
+                                        binary->line, binary->column);
+                                    if (result == aria::VerifyResult::PROVEN) {
+                                        overflow_safe_set.insert(binary);
+                                    }
+                                }
+                                walkForOverflowCheck(binary->left.get(), varRules);
+                                walkForOverflowCheck(binary->right.get(), varRules);
+                                break;
+                            }
+
+                            case NT::IF: {
+                                auto* ifStmt = static_cast<aria::IfStmt*>(node);
+                                walkForOverflowCheck(ifStmt->condition.get(), varRules);
+                                walkForOverflowCheck(ifStmt->thenBranch.get(), varRules);
+                                walkForOverflowCheck(ifStmt->elseBranch.get(), varRules);
+                                break;
+                            }
+
+                            case NT::BLOCK: {
+                                auto* block = static_cast<aria::BlockStmt*>(node);
+                                for (auto& stmt : block->statements)
+                                    walkForOverflowCheck(stmt.get(), varRules);
+                                break;
+                            }
+
+                            case NT::WHILE: {
+                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                walkForOverflowCheck(s->condition.get(), varRules);
+                                walkForOverflowCheck(s->body.get(), varRules);
+                                break;
+                            }
+
+                            case NT::FOR: {
+                                auto* s = static_cast<aria::ForStmt*>(node);
+                                walkForOverflowCheck(s->initializer.get(), varRules);
+                                walkForOverflowCheck(s->condition.get(), varRules);
+                                walkForOverflowCheck(s->update.get(), varRules);
+                                walkForOverflowCheck(s->body.get(), varRules);
+                                walkForOverflowCheck(s->rangeExpr.get(), varRules);
+                                break;
+                            }
+
+                            case NT::LOOP: {
+                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                walkForOverflowCheck(s->start.get(), varRules);
+                                walkForOverflowCheck(s->limit.get(), varRules);
+                                walkForOverflowCheck(s->step.get(), varRules);
+                                walkForOverflowCheck(s->body.get(), varRules);
+                                break;
+                            }
+
+                            case NT::TILL: {
+                                auto* s = static_cast<aria::TillStmt*>(node);
+                                walkForOverflowCheck(s->limit.get(), varRules);
+                                walkForOverflowCheck(s->step.get(), varRules);
+                                walkForOverflowCheck(s->body.get(), varRules);
+                                break;
+                            }
+
+                            case NT::WHEN: {
+                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                walkForOverflowCheck(s->condition.get(), varRules);
+                                walkForOverflowCheck(s->body.get(), varRules);
+                                walkForOverflowCheck(s->then_block.get(), varRules);
+                                walkForOverflowCheck(s->end_block.get(), varRules);
+                                break;
+                            }
+
+                            case NT::PICK: {
+                                auto* s = static_cast<aria::PickStmt*>(node);
+                                walkForOverflowCheck(s->selector.get(), varRules);
+                                for (auto& c : s->cases) {
+                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    walkForOverflowCheck(pc->pattern.get(), varRules);
+                                    walkForOverflowCheck(pc->body.get(), varRules);
+                                }
+                                break;
+                            }
+
+                            case NT::DEFER: {
+                                auto* s = static_cast<aria::DeferStmt*>(node);
+                                walkForOverflowCheck(s->block.get(), varRules);
+                                break;
+                            }
+
+                            case NT::EXPRESSION_STMT: {
+                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                walkForOverflowCheck(s->expression.get(), varRules);
+                                break;
+                            }
+
+                            case NT::RETURN: {
+                                auto* s = static_cast<aria::ReturnStmt*>(node);
+                                walkForOverflowCheck(s->value.get(), varRules);
+                                break;
+                            }
+
+                            case NT::PASS: {
+                                auto* s = static_cast<aria::PassStmt*>(node);
+                                walkForOverflowCheck(s->value.get(), varRules);
+                                break;
+                            }
+
+                            default:
+                                break;
+                        }
+                    };
+
+                    for (const auto& decl : program->declarations) {
+                        if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
+                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        if (!func->body) continue;
+
+                        VarRulesMap varRules;
+                        walkForOverflowCheck(func->body.get(), varRules);
+                    }
+
+                    if (opts.verbose && !overflow_safe_set.empty()) {
+                        std::cout << "  Overflow check elimination: " << overflow_safe_set.size()
+                                  << " arithmetic op(s) proven overflow-free\n";
+                    }
+                }
+            }
+        }
+
+        // Phase 5.0: Null Check Elimination (Z3-powered + dataflow)
+        // Two types of proofs:
+        // 1. Z3: If Rules constraints on a variable prove it's never 0/null,
+        //    ?? / ? null checks on that variable are dead.
+        // 2. Dataflow: If an Optional/pointer variable is initialized from a
+        //    provably non-null source (non-NIL literal, address-of, Rules-
+        //    constrained variable), subsequent ?? checks are dead.
+        if (opts.smt_opt) {
+            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            if (program) {
+                if (opts.verbose) {
+                    std::cout << "Phase 5.0: Null check elimination analysis...\n";
+                }
+
+                // Collect all Rules declarations
+                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                for (const auto& decl : program->declarations) {
+                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                        all_rules[rules->rulesName] = rules;
+                    }
+                }
+
+                using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+
+                // Track variables provably non-null via dataflow
+                // (initialized from non-NIL literal, address-of, or Rules-constrained source)
+                std::set<std::string> non_null_vars;
+
+                // Helper: check if an expression is provably non-null
+                auto isNonNullExpr = [&](aria::ASTNode* expr) -> bool {
+                    if (!expr) return false;
+                    using NT = aria::ASTNode::NodeType;
+
+                    // Literal (non-NIL, non-NULL, non-unknown) → non-null
+                    if (expr->type == NT::LITERAL) {
+                        auto* lit = static_cast<aria::LiteralExpr*>(expr);
+                        // Check it's not a zero integer literal
+                        if (std::holds_alternative<int64_t>(lit->value)) {
+                            return std::get<int64_t>(lit->value) != 0;
+                        }
+                        // Non-zero float, string, bool → non-null
+                        return true;
+                    }
+
+                    // NIL/NULL identifier → null
+                    if (expr->type == NT::IDENTIFIER) {
+                        auto* ident = static_cast<aria::IdentifierExpr*>(expr);
+                        if (ident->name == "NIL" || ident->name == "NULL"
+                            || ident->name == "unknown") return false;
+                        // Variable previously proven non-null → non-null
+                        if (non_null_vars.count(ident->name)) return true;
+                        return false;
+                    }
+
+                    // Address-of (@) always produces non-null pointer
+                    if (expr->type == NT::UNARY_OP) {
+                        auto* unary = static_cast<aria::UnaryExpr*>(expr);
+                        if (unary->op.type == aria::frontend::TokenType::TOKEN_AT) {
+                            return true;  // @ always non-null
+                        }
+                    }
+
+                    // Function call → unknown (could return error/None)
+                    return false;
+                };
+
+                std::function<void(aria::ASTNode*, VarRulesMap&)> walkForNullCheck;
+                walkForNullCheck = [&](aria::ASTNode* node, VarRulesMap& varRules) {
+                    if (!node) return;
+                    using NT = aria::ASTNode::NodeType;
+
+                    switch (node->type) {
+                        case NT::VAR_DECL: {
+                            auto* var = static_cast<aria::VarDeclStmt*>(node);
+                            // Track Rules-constrained variables (for Z3 proofs)
+                            if (!var->limitRulesName.empty()) {
+                                auto it = all_rules.find(var->limitRulesName);
+                                if (it != all_rules.end()) {
+                                    varRules[var->varName] = {it->second, var->typeName};
+                                    non_null_vars.insert(var->varName);
+                                }
+                            }
+                            // Track variables initialized from provably non-null expressions
+                            if (var->initializer && isNonNullExpr(var->initializer.get())) {
+                                non_null_vars.insert(var->varName);
+                            }
+                            // Track Optional/pointer variables from @ or non-NIL
+                            if (var->initializer) {
+                                bool isOptOrPtr = (var->typeName.back() == '?' ||
+                                                   (var->typeName.size() > 1 &&
+                                                    var->typeName.substr(var->typeName.size()-2) == "->"));
+                                if (isOptOrPtr && isNonNullExpr(var->initializer.get())) {
+                                    non_null_vars.insert(var->varName);
+                                }
+                            }
+                            walkForNullCheck(var->initializer.get(), varRules);
+                            break;
+                        }
+
+                        case NT::UNWRAP: {
+                            auto* unwrap = static_cast<aria::UnwrapExpr*>(node);
+
+                            // Dataflow proof: if the result expression is a known non-null variable
+                            if (unwrap->result && unwrap->result->type == NT::IDENTIFIER) {
+                                auto* ident = static_cast<aria::IdentifierExpr*>(unwrap->result.get());
+                                if (non_null_vars.count(ident->name)) {
+                                    null_check_safe_set.insert(node);
+                                    walkForNullCheck(unwrap->result.get(), varRules);
+                                    walkForNullCheck(unwrap->defaultValue.get(), varRules);
+                                    break;
+                                }
+                            }
+
+                            // Dataflow proof: if result is address-of (@), always non-null
+                            if (unwrap->result && unwrap->result->type == NT::UNARY_OP) {
+                                auto* unary = static_cast<aria::UnaryExpr*>(unwrap->result.get());
+                                if (unary->op.type == aria::frontend::TokenType::TOKEN_AT) {
+                                    null_check_safe_set.insert(node);
+                                    walkForNullCheck(unwrap->result.get(), varRules);
+                                    walkForNullCheck(unwrap->defaultValue.get(), varRules);
+                                    break;
+                                }
+                            }
+
+                            // Z3 proof: if source expression involves Rules-constrained variables
+                            if (unwrap->result && !varRules.empty()) {
+                                std::vector<aria::VerifyOutcome> outcomes;
+                                auto result = z3v.proveNonNullFromRules(
+                                    unwrap->result.get(),
+                                    varRules, outcomes,
+                                    unwrap->line, unwrap->column);
+                                if (result == aria::VerifyResult::PROVEN) {
+                                    null_check_safe_set.insert(node);
+                                }
+                            }
+                            walkForNullCheck(unwrap->result.get(), varRules);
+                            walkForNullCheck(unwrap->defaultValue.get(), varRules);
+                            break;
+                        }
+
+                        case NT::BINARY_OP: {
+                            auto* binary = static_cast<aria::BinaryExpr*>(node);
+                            // Check NULL_COALESCE binary op (?? token)
+                            if (binary->op.type == aria::frontend::TokenType::TOKEN_NULL_COALESCE) {
+                                // Dataflow proof: known non-null variable
+                                if (binary->left && binary->left->type == NT::IDENTIFIER) {
+                                    auto* ident = static_cast<aria::IdentifierExpr*>(binary->left.get());
+                                    if (non_null_vars.count(ident->name)) {
+                                        null_check_safe_set.insert(node);
+                                    }
+                                }
+                                // Dataflow proof: address-of (@)
+                                else if (binary->left && binary->left->type == NT::UNARY_OP) {
+                                    auto* unary = static_cast<aria::UnaryExpr*>(binary->left.get());
+                                    if (unary->op.type == aria::frontend::TokenType::TOKEN_AT) {
+                                        null_check_safe_set.insert(node);
+                                    }
+                                }
+                                // Z3 proof
+                                else if (!varRules.empty()) {
+                                    std::vector<aria::VerifyOutcome> outcomes;
+                                    auto result = z3v.proveNonNullFromRules(
+                                        binary->left.get(),
+                                        varRules, outcomes,
+                                        binary->line, binary->column);
+                                    if (result == aria::VerifyResult::PROVEN) {
+                                        null_check_safe_set.insert(node);
+                                    }
+                                }
+                            }
+                            walkForNullCheck(binary->left.get(), varRules);
+                            walkForNullCheck(binary->right.get(), varRules);
+                            break;
+                        }
+
+                        case NT::IF: {
+                            auto* ifStmt = static_cast<aria::IfStmt*>(node);
+                            walkForNullCheck(ifStmt->condition.get(), varRules);
+                            walkForNullCheck(ifStmt->thenBranch.get(), varRules);
+                            walkForNullCheck(ifStmt->elseBranch.get(), varRules);
+                            break;
+                        }
+
+                        case NT::BLOCK: {
+                            auto* block = static_cast<aria::BlockStmt*>(node);
+                            for (auto& stmt : block->statements)
+                                walkForNullCheck(stmt.get(), varRules);
+                            break;
+                        }
+
+                        case NT::WHILE: {
+                            auto* s = static_cast<aria::WhileStmt*>(node);
+                            walkForNullCheck(s->condition.get(), varRules);
+                            walkForNullCheck(s->body.get(), varRules);
+                            break;
+                        }
+
+                        case NT::FOR: {
+                            auto* s = static_cast<aria::ForStmt*>(node);
+                            walkForNullCheck(s->initializer.get(), varRules);
+                            walkForNullCheck(s->condition.get(), varRules);
+                            walkForNullCheck(s->update.get(), varRules);
+                            walkForNullCheck(s->body.get(), varRules);
+                            walkForNullCheck(s->rangeExpr.get(), varRules);
+                            break;
+                        }
+
+                        case NT::LOOP: {
+                            auto* s = static_cast<aria::LoopStmt*>(node);
+                            walkForNullCheck(s->start.get(), varRules);
+                            walkForNullCheck(s->limit.get(), varRules);
+                            walkForNullCheck(s->step.get(), varRules);
+                            walkForNullCheck(s->body.get(), varRules);
+                            break;
+                        }
+
+                        case NT::TILL: {
+                            auto* s = static_cast<aria::TillStmt*>(node);
+                            walkForNullCheck(s->limit.get(), varRules);
+                            walkForNullCheck(s->step.get(), varRules);
+                            walkForNullCheck(s->body.get(), varRules);
+                            break;
+                        }
+
+                        case NT::WHEN: {
+                            auto* s = static_cast<aria::WhenStmt*>(node);
+                            walkForNullCheck(s->condition.get(), varRules);
+                            walkForNullCheck(s->body.get(), varRules);
+                            walkForNullCheck(s->then_block.get(), varRules);
+                            walkForNullCheck(s->end_block.get(), varRules);
+                            break;
+                        }
+
+                        case NT::PICK: {
+                            auto* s = static_cast<aria::PickStmt*>(node);
+                            walkForNullCheck(s->selector.get(), varRules);
+                            for (auto& c : s->cases) {
+                                auto* pc = static_cast<aria::PickCase*>(c.get());
+                                walkForNullCheck(pc->pattern.get(), varRules);
+                                walkForNullCheck(pc->body.get(), varRules);
+                            }
+                            break;
+                        }
+
+                        case NT::DEFER: {
+                            auto* s = static_cast<aria::DeferStmt*>(node);
+                            walkForNullCheck(s->block.get(), varRules);
+                            break;
+                        }
+
+                        case NT::EXPRESSION_STMT: {
+                            auto* s = static_cast<aria::ExpressionStmt*>(node);
+                            walkForNullCheck(s->expression.get(), varRules);
+                            break;
+                        }
+
+                        case NT::RETURN: {
+                            auto* s = static_cast<aria::ReturnStmt*>(node);
+                            walkForNullCheck(s->value.get(), varRules);
+                            break;
+                        }
+
+                        case NT::PASS: {
+                            auto* s = static_cast<aria::PassStmt*>(node);
+                            walkForNullCheck(s->value.get(), varRules);
+                            break;
+                        }
+
+                        default:
+                            break;
+                    }
+                };
+
+                for (const auto& decl : program->declarations) {
+                    if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
+                    auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                    if (!func->body) continue;
+
+                    VarRulesMap varRules;
+                    non_null_vars.clear();  // Reset per function
+                    walkForNullCheck(func->body.get(), varRules);
+                }
+
+                if (opts.verbose && !null_check_safe_set.empty()) {
+                    std::cout << "  Null check elimination: " << null_check_safe_set.size()
+                              << " null check(s) proven unnecessary\n";
+                }
+            }
+        }
+
+        // Phase 5.25: Loop invariant hoisting
+        // Identify VarDecl statements inside loops whose initializers don't reference
+        // any variable modified within the loop body or the loop counter.
+        // These are hoisted before the loop entry in codegen.
+        if (opts.smt_opt) {
+            if (opts.verbose) {
+                std::cout << "  Phase 5.25: Loop invariant hoisting analysis...\n";
+            }
+
+            // Helper: collect all variables modified (assigned to) inside a subtree
+            std::function<void(aria::ASTNode*, std::set<std::string>&)> collectModifiedVars;
+            collectModifiedVars = [&](aria::ASTNode* node, std::set<std::string>& modified) {
+                if (!node) return;
+                using NT = aria::ASTNode::NodeType;
+                switch (node->type) {
+                    case NT::ASSIGNMENT: {
+                        auto* assign = static_cast<aria::AssignmentExpr*>(node);
+                        if (assign->target && assign->target->type == NT::IDENTIFIER) {
+                            auto* ident = static_cast<aria::IdentifierExpr*>(assign->target.get());
+                            modified.insert(ident->name);
+                        }
+                        collectModifiedVars(assign->value.get(), modified);
+                        break;
+                    }
+                    case NT::BLOCK: {
+                        auto* block = static_cast<aria::BlockStmt*>(node);
+                        for (auto& s : block->statements)
+                            collectModifiedVars(s.get(), modified);
+                        break;
+                    }
+                    case NT::EXPRESSION_STMT: {
+                        auto* s = static_cast<aria::ExpressionStmt*>(node);
+                        collectModifiedVars(s->expression.get(), modified);
+                        break;
+                    }
+                    case NT::IF: {
+                        auto* s = static_cast<aria::IfStmt*>(node);
+                        collectModifiedVars(s->condition.get(), modified);
+                        collectModifiedVars(s->thenBranch.get(), modified);
+                        collectModifiedVars(s->elseBranch.get(), modified);
+                        break;
+                    }
+                    case NT::VAR_DECL: {
+                        auto* var = static_cast<aria::VarDeclStmt*>(node);
+                        collectModifiedVars(var->initializer.get(), modified);
+                        break;
+                    }
+                    case NT::WHILE: {
+                        auto* s = static_cast<aria::WhileStmt*>(node);
+                        collectModifiedVars(s->condition.get(), modified);
+                        collectModifiedVars(s->body.get(), modified);
+                        break;
+                    }
+                    case NT::FOR: {
+                        auto* s = static_cast<aria::ForStmt*>(node);
+                        collectModifiedVars(s->initializer.get(), modified);
+                        collectModifiedVars(s->condition.get(), modified);
+                        collectModifiedVars(s->update.get(), modified);
+                        collectModifiedVars(s->body.get(), modified);
+                        collectModifiedVars(s->rangeExpr.get(), modified);
+                        break;
+                    }
+                    case NT::LOOP: {
+                        auto* s = static_cast<aria::LoopStmt*>(node);
+                        collectModifiedVars(s->start.get(), modified);
+                        collectModifiedVars(s->limit.get(), modified);
+                        collectModifiedVars(s->step.get(), modified);
+                        collectModifiedVars(s->body.get(), modified);
+                        break;
+                    }
+                    case NT::TILL: {
+                        auto* s = static_cast<aria::TillStmt*>(node);
+                        collectModifiedVars(s->limit.get(), modified);
+                        collectModifiedVars(s->step.get(), modified);
+                        collectModifiedVars(s->body.get(), modified);
+                        break;
+                    }
+                    case NT::WHEN: {
+                        auto* s = static_cast<aria::WhenStmt*>(node);
+                        collectModifiedVars(s->condition.get(), modified);
+                        collectModifiedVars(s->body.get(), modified);
+                        collectModifiedVars(s->then_block.get(), modified);
+                        collectModifiedVars(s->end_block.get(), modified);
+                        break;
+                    }
+                    case NT::BINARY_OP: {
+                        auto* s = static_cast<aria::BinaryExpr*>(node);
+                        collectModifiedVars(s->left.get(), modified);
+                        collectModifiedVars(s->right.get(), modified);
+                        break;
+                    }
+                    case NT::UNARY_OP: {
+                        auto* s = static_cast<aria::UnaryExpr*>(node);
+                        collectModifiedVars(s->operand.get(), modified);
+                        break;
+                    }
+                    case NT::CALL: {
+                        auto* s = static_cast<aria::CallExpr*>(node);
+                        collectModifiedVars(s->callee.get(), modified);
+                        for (auto& arg : s->arguments)
+                            collectModifiedVars(arg.get(), modified);
+                        break;
+                    }
+                    case NT::RETURN: {
+                        auto* s = static_cast<aria::ReturnStmt*>(node);
+                        collectModifiedVars(s->value.get(), modified);
+                        break;
+                    }
+                    case NT::PASS: {
+                        auto* s = static_cast<aria::PassStmt*>(node);
+                        collectModifiedVars(s->value.get(), modified);
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            };
+
+            // Helper: check if an expression is loop-invariant
+            // (all referenced identifiers are NOT in the modified set)
+            std::function<bool(aria::ASTNode*, const std::set<std::string>&)> isLoopInvariantExpr;
+            isLoopInvariantExpr = [&](aria::ASTNode* expr,
+                                      const std::set<std::string>& modified) -> bool {
+                if (!expr) return true;
+                using NT = aria::ASTNode::NodeType;
+                switch (expr->type) {
+                    case NT::LITERAL: return true;
+                    case NT::IDENTIFIER: {
+                        auto* ident = static_cast<aria::IdentifierExpr*>(expr);
+                        return modified.count(ident->name) == 0;
+                    }
+                    case NT::BINARY_OP: {
+                        auto* bin = static_cast<aria::BinaryExpr*>(expr);
+                        return isLoopInvariantExpr(bin->left.get(), modified) &&
+                               isLoopInvariantExpr(bin->right.get(), modified);
+                    }
+                    case NT::UNARY_OP: {
+                        auto* un = static_cast<aria::UnaryExpr*>(expr);
+                        return isLoopInvariantExpr(un->operand.get(), modified);
+                    }
+                    case NT::UNWRAP: {
+                        auto* uw = static_cast<aria::UnwrapExpr*>(expr);
+                        return isLoopInvariantExpr(uw->result.get(), modified) &&
+                               isLoopInvariantExpr(uw->defaultValue.get(), modified);
+                    }
+                    // Conservative: calls, member access, indexing etc. are NOT invariant
+                    default: return false;
+                }
+            };
+
+            // Process a loop: collect modified vars, find hoistable VarDecls
+            auto processLoop = [&](aria::ASTNode* loopNode, aria::ASTNode* body,
+                                   const std::set<std::string>& extraModified) {
+                // Collect variables modified inside the loop body
+                std::set<std::string> modified = extraModified;
+                collectModifiedVars(body, modified);
+
+                // Walk direct body statements to find hoistable VarDecls
+                if (body && body->type == aria::ASTNode::NodeType::BLOCK) {
+                    auto* block = static_cast<aria::BlockStmt*>(body);
+                    for (auto& stmt : block->statements) {
+                        if (stmt->type == aria::ASTNode::NodeType::VAR_DECL) {
+                            auto* var = static_cast<aria::VarDeclStmt*>(stmt.get());
+                            if (var->initializer &&
+                                isLoopInvariantExpr(var->initializer.get(), modified)) {
+                                loop_hoist_map[loopNode].push_back(stmt.get());
+                            }
+                        }
+                    }
+                }
+            };
+
+            // Walk function bodies to find loops
+            std::function<void(aria::ASTNode*)> walkForLoopHoist;
+            walkForLoopHoist = [&](aria::ASTNode* node) {
+                if (!node) return;
+                using NT = aria::ASTNode::NodeType;
+
+                switch (node->type) {
+                    case NT::WHILE: {
+                        auto* s = static_cast<aria::WhileStmt*>(node);
+                        std::set<std::string> extra;
+                        processLoop(node, s->body.get(), extra);
+                        walkForLoopHoist(s->body.get());
+                        break;
+                    }
+                    case NT::FOR: {
+                        auto* s = static_cast<aria::ForStmt*>(node);
+                        std::set<std::string> extra;
+                        if (s->isRangeBased) {
+                            extra.insert(s->iteratorName);
+                        }
+                        processLoop(node, s->body.get(), extra);
+                        walkForLoopHoist(s->body.get());
+                        break;
+                    }
+                    case NT::LOOP: {
+                        auto* s = static_cast<aria::LoopStmt*>(node);
+                        std::set<std::string> extra;
+                        extra.insert("$");
+                        processLoop(node, s->body.get(), extra);
+                        walkForLoopHoist(s->body.get());
+                        break;
+                    }
+                    case NT::TILL: {
+                        auto* s = static_cast<aria::TillStmt*>(node);
+                        std::set<std::string> extra;
+                        extra.insert("$");
+                        processLoop(node, s->body.get(), extra);
+                        walkForLoopHoist(s->body.get());
+                        break;
+                    }
+                    case NT::WHEN: {
+                        auto* s = static_cast<aria::WhenStmt*>(node);
+                        std::set<std::string> extra;
+                        processLoop(node, s->body.get(), extra);
+                        walkForLoopHoist(s->body.get());
+                        break;
+                    }
+                    case NT::BLOCK: {
+                        auto* block = static_cast<aria::BlockStmt*>(node);
+                        for (auto& s : block->statements)
+                            walkForLoopHoist(s.get());
+                        break;
+                    }
+                    case NT::IF: {
+                        auto* s = static_cast<aria::IfStmt*>(node);
+                        walkForLoopHoist(s->thenBranch.get());
+                        walkForLoopHoist(s->elseBranch.get());
+                        break;
+                    }
+                    case NT::DEFER: {
+                        auto* s = static_cast<aria::DeferStmt*>(node);
+                        walkForLoopHoist(s->block.get());
+                        break;
+                    }
+                    case NT::PICK: {
+                        auto* s = static_cast<aria::PickStmt*>(node);
+                        for (auto& c : s->cases) {
+                            auto* pc = static_cast<aria::PickCase*>(c.get());
+                            walkForLoopHoist(pc->body.get());
+                        }
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            };
+
+            for (const auto& decl : program->declarations) {
+                if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (!func->body) continue;
+                walkForLoopHoist(func->body.get());
+            }
+
+            size_t total_hoisted = 0;
+            for (const auto& [loop, decls] : loop_hoist_map)
+                total_hoisted += decls.size();
+
+            if (opts.verbose && total_hoisted > 0) {
+                std::cout << "  Loop invariant hoisting: " << total_hoisted
+                          << " declaration(s) hoisted out of loops\n";
+            }
+        }
+
+        // Phase 5.5: Rules<T> Propagation (inter-procedural limit check elimination)
+        // If a non-pub function has `limit<R> Type:var = param` and ALL callers
+        // pass arguments already constrained by Rules that subsume R, the limit
+        // check inside the callee is proven redundant.
+        if (opts.smt_opt) {
+            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            if (program) {
+                if (opts.verbose) {
+                    std::cout << "Phase 5.5: Rules<T> propagation analysis...\n";
+                }
+
+                // Collect all Rules declarations
+                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                for (const auto& decl : program->declarations) {
+                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                        all_rules[rules->rulesName] = rules;
+                    }
+                }
+
+                // Collect all function declarations
+                std::map<std::string, aria::FuncDeclStmt*> all_funcs;
+                for (const auto& decl : program->declarations) {
+                    if (decl->type == aria::ASTNode::NodeType::FUNC_DECL) {
+                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        all_funcs[func->funcName] = func;
+                    }
+                }
+
+                // Callee requirement: a limit<R> check on a parameter inside a function
+                struct CalleeReq {
+                    size_t paramIndex;
+                    std::string rulesName;
+                    std::string typeName;
+                    aria::VarDeclStmt* varDecl;
+                };
+
+                // funcName → vector of requirements (limit checks tied to parameters)
+                std::map<std::string, std::vector<CalleeReq>> callee_reqs;
+
+                // Build callee requirements: scan non-pub function bodies for
+                // limit<R> Type:var = paramName patterns
+                for (const auto& [funcName, func] : all_funcs) {
+                    if (func->isPublic || func->isExtern || !func->body) continue;
+
+                    // Map parameter names → indices
+                    std::map<std::string, size_t> paramNameToIndex;
+                    for (size_t i = 0; i < func->parameters.size(); ++i) {
+                        auto* param = static_cast<aria::ParameterNode*>(
+                            func->parameters[i].get());
+                        paramNameToIndex[param->paramName] = i;
+                    }
+
+                    // Walk top-level statements in function body
+                    auto* block = dynamic_cast<aria::BlockStmt*>(func->body.get());
+                    if (!block) continue;
+
+                    for (const auto& stmt : block->statements) {
+                        if (stmt->type != aria::ASTNode::NodeType::VAR_DECL) continue;
+                        auto* var = static_cast<aria::VarDeclStmt*>(stmt.get());
+                        if (var->limitRulesName.empty()) continue;
+                        if (!var->initializer) continue;
+
+                        // Check if initializer is a bare identifier referencing a parameter
+                        if (var->initializer->type != aria::ASTNode::NodeType::IDENTIFIER)
+                            continue;
+                        auto* ident = static_cast<aria::IdentifierExpr*>(
+                            var->initializer.get());
+                        auto pIt = paramNameToIndex.find(ident->name);
+                        if (pIt == paramNameToIndex.end()) continue;
+
+                        CalleeReq req;
+                        req.paramIndex = pIt->second;
+                        req.rulesName = var->limitRulesName;
+                        req.typeName = var->typeName;
+                        req.varDecl = var;
+                        callee_reqs[funcName].push_back(req);
+                    }
+                }
+
+                if (!callee_reqs.empty()) {
+                    // Track constraints: variable name → Rules name
+                    using VarConstraintMap = std::map<std::string, std::string>;
+
+                    // Info about a call site's argument constraints
+                    struct CallSiteInfo {
+                        std::map<size_t, std::string> argConstraints;
+                        int line;
+                        int column;
+                    };
+
+                    // callee funcName → all observed call sites
+                    std::map<std::string, std::vector<CallSiteInfo>> call_sites;
+
+                    // Recursive walker to find call sites and track variable constraints
+                    std::function<void(aria::ASTNode*, VarConstraintMap&)> findCallSites;
+                    findCallSites = [&](aria::ASTNode* node, VarConstraintMap& varConstraints) {
+                        if (!node) return;
+                        using NT = aria::ASTNode::NodeType;
+
+                        switch (node->type) {
+                            case NT::VAR_DECL: {
+                                auto* var = static_cast<aria::VarDeclStmt*>(node);
+                                if (!var->limitRulesName.empty()) {
+                                    varConstraints[var->varName] = var->limitRulesName;
+                                }
+                                findCallSites(var->initializer.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::CALL: {
+                                auto* call = static_cast<aria::CallExpr*>(node);
+                                if (call->callee && call->callee->type == NT::IDENTIFIER) {
+                                    auto* callee = static_cast<aria::IdentifierExpr*>(
+                                        call->callee.get());
+                                    if (callee_reqs.count(callee->name)) {
+                                        CallSiteInfo info;
+                                        info.line = call->line;
+                                        info.column = call->column;
+                                        for (size_t i = 0; i < call->arguments.size(); ++i) {
+                                            if (call->arguments[i]->type == NT::IDENTIFIER) {
+                                                auto* argIdent = static_cast<aria::IdentifierExpr*>(
+                                                    call->arguments[i].get());
+                                                auto cIt = varConstraints.find(argIdent->name);
+                                                if (cIt != varConstraints.end()) {
+                                                    info.argConstraints[i] = cIt->second;
+                                                }
+                                            }
+                                        }
+                                        call_sites[callee->name].push_back(info);
+                                    }
+                                }
+                                for (auto& arg : call->arguments)
+                                    findCallSites(arg.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::BLOCK: {
+                                auto* b = static_cast<aria::BlockStmt*>(node);
+                                for (auto& s : b->statements)
+                                    findCallSites(s.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::EXPRESSION_STMT: {
+                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                findCallSites(s->expression.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::IF: {
+                                auto* s = static_cast<aria::IfStmt*>(node);
+                                findCallSites(s->condition.get(), varConstraints);
+                                findCallSites(s->thenBranch.get(), varConstraints);
+                                findCallSites(s->elseBranch.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::WHILE: {
+                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                findCallSites(s->condition.get(), varConstraints);
+                                findCallSites(s->body.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::FOR: {
+                                auto* s = static_cast<aria::ForStmt*>(node);
+                                findCallSites(s->initializer.get(), varConstraints);
+                                findCallSites(s->condition.get(), varConstraints);
+                                findCallSites(s->update.get(), varConstraints);
+                                findCallSites(s->body.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::LOOP: {
+                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                findCallSites(s->start.get(), varConstraints);
+                                findCallSites(s->limit.get(), varConstraints);
+                                findCallSites(s->step.get(), varConstraints);
+                                findCallSites(s->body.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::TILL: {
+                                auto* s = static_cast<aria::TillStmt*>(node);
+                                findCallSites(s->limit.get(), varConstraints);
+                                findCallSites(s->step.get(), varConstraints);
+                                findCallSites(s->body.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::WHEN: {
+                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                findCallSites(s->condition.get(), varConstraints);
+                                findCallSites(s->body.get(), varConstraints);
+                                findCallSites(s->then_block.get(), varConstraints);
+                                findCallSites(s->end_block.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::PICK: {
+                                auto* s = static_cast<aria::PickStmt*>(node);
+                                findCallSites(s->selector.get(), varConstraints);
+                                for (auto& c : s->cases) {
+                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    findCallSites(pc->pattern.get(), varConstraints);
+                                    findCallSites(pc->body.get(), varConstraints);
+                                }
+                                break;
+                            }
+
+                            case NT::DEFER: {
+                                auto* s = static_cast<aria::DeferStmt*>(node);
+                                findCallSites(s->block.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::RETURN: {
+                                auto* s = static_cast<aria::ReturnStmt*>(node);
+                                findCallSites(s->value.get(), varConstraints);
+                                break;
+                            }
+
+                            case NT::PASS: {
+                                auto* s = static_cast<aria::PassStmt*>(node);
+                                findCallSites(s->value.get(), varConstraints);
+                                break;
+                            }
+
+                            default:
+                                break;
+                        }
+                    };
+
+                    // Walk every function body to collect call sites
+                    for (const auto& decl : program->declarations) {
+                        if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
+                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        if (!func->body) continue;
+                        VarConstraintMap varConstraints;
+                        findCallSites(func->body.get(), varConstraints);
+                    }
+
+                    // For each callee requirement, check if ALL call sites satisfy it
+                    for (const auto& [funcName, reqs] : callee_reqs) {
+                        auto csIt = call_sites.find(funcName);
+                        if (csIt == call_sites.end()) continue;
+                        const auto& sites = csIt->second;
+                        if (sites.empty()) continue;
+
+                        for (const auto& req : reqs) {
+                            bool allSatisfied = true;
+                            for (const auto& site : sites) {
+                                auto argIt = site.argConstraints.find(req.paramIndex);
+                                if (argIt == site.argConstraints.end()) {
+                                    allSatisfied = false;
+                                    break;
+                                }
+
+                                const std::string& callerRules = argIt->second;
+                                if (callerRules == req.rulesName) continue;
+
+                                // Different Rules names — Z3 subsumption check
+                                std::vector<aria::VerifyOutcome> outcomes;
+                                auto result = z3v.proveRulesSubsumption(
+                                    callerRules, req.rulesName, req.typeName,
+                                    outcomes, site.line, site.column);
+                                if (result != aria::VerifyResult::PROVEN) {
+                                    allSatisfied = false;
+                                    break;
+                                }
+                            }
+
+                            if (allSatisfied) {
+                                limit_check_safe_set.insert(req.varDecl);
+                            }
+                        }
+                    }
+                }
+
+                if (opts.verbose && !limit_check_safe_set.empty()) {
+                    std::cout << "  Rules propagation: " << limit_check_safe_set.size()
+                              << " limit check(s) proven redundant via caller constraints\n";
+                }
+            }
+        }
+
         // Print verification summary
         const auto& sum = z3v.getSummary();
         if (sum.total() > 0) {
@@ -1601,6 +3000,546 @@ llvm::Module* compile_to_module(
         if (has_errors) return nullptr;
     }
 
+    // Phase 3.75: Result<T> Elision Analysis (static, no Z3 required)
+    // Identifies functions that can never fail (no fail/sys calls, all callees infallible).
+    // These functions return raw T instead of Result{T, ptr, i8}, eliminating wrapping overhead.
+    std::set<std::string> result_elide_set;  // Declare outside smt_opt block for use in Phase 4
+    if (opts.smt_opt) {
+        if (opts.verbose) {
+            std::cout << "Phase 3.75: Result<T> elision analysis...\n";
+        }
+
+        auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+        if (program) {
+            // Per-function analysis data
+            struct FuncInfo {
+                bool has_fail = false;
+                bool has_sys_call = false;
+                std::set<std::string> called_user_funcs;
+            };
+
+            // Step 1: Identify all user-defined functions (with bodies, excluding main/failsafe)
+            std::set<std::string> user_func_names;
+            for (const auto& decl : program->declarations) {
+                if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (!func->body || func->funcName == "main" || func->funcName == "failsafe") continue;
+                if (!func->genericParams.empty()) continue;
+                user_func_names.insert(func->funcName);
+            }
+
+            // Step 2: Recursive AST walker to detect fail/sys/calls
+            std::function<void(aria::ASTNode*, FuncInfo&)> analyzeNode;
+            analyzeNode = [&](aria::ASTNode* node, FuncInfo& info) {
+                if (!node) return;
+                // Early exit: already proven fallible on both axes
+                if (info.has_fail && info.has_sys_call) return;
+
+                using NT = aria::ASTNode::NodeType;
+                switch (node->type) {
+                    case NT::FAIL:
+                        info.has_fail = true;
+                        return;
+
+                    case NT::CALL: {
+                        auto* call = static_cast<aria::CallExpr*>(node);
+                        if (auto* ident = dynamic_cast<aria::IdentifierExpr*>(call->callee.get())) {
+                            if (ident->name == "sys" || ident->name == "sys!!" || ident->name == "sys!!!") {
+                                info.has_sys_call = true;
+                            } else if (user_func_names.count(ident->name)) {
+                                info.called_user_funcs.insert(ident->name);
+                            }
+                        }
+                        // Recurse into callee (for member access chains) and arguments
+                        analyzeNode(call->callee.get(), info);
+                        for (auto& arg : call->arguments) analyzeNode(arg.get(), info);
+                        return;
+                    }
+
+                    case NT::BLOCK: {
+                        auto* block = static_cast<aria::BlockStmt*>(node);
+                        for (auto& stmt : block->statements) analyzeNode(stmt.get(), info);
+                        return;
+                    }
+
+                    case NT::IF: {
+                        auto* s = static_cast<aria::IfStmt*>(node);
+                        analyzeNode(s->condition.get(), info);
+                        analyzeNode(s->thenBranch.get(), info);
+                        analyzeNode(s->elseBranch.get(), info);
+                        return;
+                    }
+
+                    case NT::WHILE: {
+                        auto* s = static_cast<aria::WhileStmt*>(node);
+                        analyzeNode(s->condition.get(), info);
+                        analyzeNode(s->body.get(), info);
+                        return;
+                    }
+
+                    case NT::FOR: {
+                        auto* s = static_cast<aria::ForStmt*>(node);
+                        analyzeNode(s->initializer.get(), info);
+                        analyzeNode(s->condition.get(), info);
+                        analyzeNode(s->update.get(), info);
+                        analyzeNode(s->body.get(), info);
+                        analyzeNode(s->rangeExpr.get(), info);
+                        return;
+                    }
+
+                    case NT::LOOP: {
+                        auto* s = static_cast<aria::LoopStmt*>(node);
+                        analyzeNode(s->start.get(), info);
+                        analyzeNode(s->limit.get(), info);
+                        analyzeNode(s->step.get(), info);
+                        analyzeNode(s->body.get(), info);
+                        return;
+                    }
+
+                    case NT::TILL: {
+                        auto* s = static_cast<aria::TillStmt*>(node);
+                        analyzeNode(s->limit.get(), info);
+                        analyzeNode(s->step.get(), info);
+                        analyzeNode(s->body.get(), info);
+                        return;
+                    }
+
+                    case NT::WHEN: {
+                        auto* s = static_cast<aria::WhenStmt*>(node);
+                        analyzeNode(s->condition.get(), info);
+                        analyzeNode(s->body.get(), info);
+                        analyzeNode(s->then_block.get(), info);
+                        analyzeNode(s->end_block.get(), info);
+                        return;
+                    }
+
+                    case NT::PICK: {
+                        auto* s = static_cast<aria::PickStmt*>(node);
+                        analyzeNode(s->selector.get(), info);
+                        for (auto& c : s->cases) {
+                            auto* pc = static_cast<aria::PickCase*>(c.get());
+                            analyzeNode(pc->pattern.get(), info);
+                            analyzeNode(pc->body.get(), info);
+                        }
+                        return;
+                    }
+
+                    case NT::DEFER: {
+                        auto* s = static_cast<aria::DeferStmt*>(node);
+                        analyzeNode(s->block.get(), info);
+                        return;
+                    }
+
+                    case NT::EXPRESSION_STMT: {
+                        auto* s = static_cast<aria::ExpressionStmt*>(node);
+                        analyzeNode(s->expression.get(), info);
+                        return;
+                    }
+
+                    case NT::VAR_DECL: {
+                        auto* s = static_cast<aria::VarDeclStmt*>(node);
+                        analyzeNode(s->initializer.get(), info);
+                        return;
+                    }
+
+                    case NT::RETURN: {
+                        auto* s = static_cast<aria::ReturnStmt*>(node);
+                        analyzeNode(s->value.get(), info);
+                        return;
+                    }
+
+                    case NT::PASS: {
+                        auto* s = static_cast<aria::PassStmt*>(node);
+                        analyzeNode(s->value.get(), info);
+                        return;
+                    }
+
+                    case NT::BINARY_OP: {
+                        auto* s = static_cast<aria::BinaryExpr*>(node);
+                        analyzeNode(s->left.get(), info);
+                        analyzeNode(s->right.get(), info);
+                        return;
+                    }
+
+                    case NT::UNARY_OP: {
+                        auto* s = static_cast<aria::UnaryExpr*>(node);
+                        analyzeNode(s->operand.get(), info);
+                        return;
+                    }
+
+                    case NT::LAMBDA: {
+                        auto* s = static_cast<aria::LambdaExpr*>(node);
+                        analyzeNode(s->body.get(), info);
+                        return;
+                    }
+
+                    case NT::INDEX: {
+                        auto* s = static_cast<aria::IndexExpr*>(node);
+                        analyzeNode(s->array.get(), info);
+                        analyzeNode(s->index.get(), info);
+                        return;
+                    }
+
+                    case NT::ASSIGNMENT: {
+                        auto* s = static_cast<aria::AssignmentExpr*>(node);
+                        analyzeNode(s->target.get(), info);
+                        analyzeNode(s->value.get(), info);
+                        return;
+                    }
+
+                    case NT::TERNARY: {
+                        auto* s = static_cast<aria::TernaryExpr*>(node);
+                        analyzeNode(s->condition.get(), info);
+                        analyzeNode(s->trueValue.get(), info);
+                        analyzeNode(s->falseValue.get(), info);
+                        return;
+                    }
+
+                    case NT::MEMBER_ACCESS:
+                    case NT::POINTER_MEMBER: {
+                        auto* s = static_cast<aria::MemberAccessExpr*>(node);
+                        analyzeNode(s->object.get(), info);
+                        return;
+                    }
+
+                    case NT::TEMPLATE_LITERAL: {
+                        auto* s = static_cast<aria::TemplateLiteralExpr*>(node);
+                        for (auto& interp : s->interpolations) analyzeNode(interp.get(), info);
+                        return;
+                    }
+
+                    case NT::ARRAY_LITERAL: {
+                        auto* s = static_cast<aria::ArrayLiteralExpr*>(node);
+                        for (auto& elem : s->elements) analyzeNode(elem.get(), info);
+                        return;
+                    }
+
+                    case NT::OBJECT_LITERAL: {
+                        auto* s = static_cast<aria::ObjectLiteralExpr*>(node);
+                        for (auto& field : s->fields) analyzeNode(field.value.get(), info);
+                        return;
+                    }
+
+                    case NT::CAST: {
+                        auto* s = static_cast<aria::CastExpr*>(node);
+                        analyzeNode(s->expression.get(), info);
+                        return;
+                    }
+
+                    case NT::AWAIT: {
+                        auto* s = static_cast<aria::AwaitExpr*>(node);
+                        analyzeNode(s->operand.get(), info);
+                        return;
+                    }
+
+                    case NT::DEFAULTS: {
+                        auto* s = static_cast<aria::DefaultsExpr*>(node);
+                        analyzeNode(s->expr.get(), info);
+                        analyzeNode(s->fallback.get(), info);
+                        return;
+                    }
+
+                    default:
+                        return;  // Leaf nodes (LITERAL, IDENTIFIER, BREAK, CONTINUE, etc.)
+                }
+            };
+
+            // Step 3: Analyze each user function
+            std::map<std::string, FuncInfo> func_info;
+            for (const auto& decl : program->declarations) {
+                if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (!func->body || func->funcName == "main" || func->funcName == "failsafe") continue;
+                if (!func->genericParams.empty()) continue;
+
+                FuncInfo info;
+                analyzeNode(func->body.get(), info);
+                func_info[func->funcName] = info;
+            }
+
+            // Step 4: Fixed-point iteration to resolve transitive call dependencies
+            // A function is infallible iff: no fail, no sys, and all callees are infallible
+            std::set<std::string> can_fail_set;
+            bool changed = true;
+            while (changed) {
+                changed = false;
+                for (auto& [name, info] : func_info) {
+                    if (result_elide_set.count(name) || can_fail_set.count(name)) continue;
+
+                    // Direct fail/sys → immediately fallible
+                    if (info.has_fail || info.has_sys_call) {
+                        can_fail_set.insert(name);
+                        changed = true;
+                        continue;
+                    }
+
+                    // Check all called user functions
+                    bool all_infallible = true;
+                    bool has_unresolved = false;
+                    for (const auto& callee : info.called_user_funcs) {
+                        if (can_fail_set.count(callee)) {
+                            all_infallible = false;
+                            break;
+                        }
+                        if (!result_elide_set.count(callee)) {
+                            has_unresolved = true;
+                        }
+                    }
+
+                    if (!all_infallible) {
+                        can_fail_set.insert(name);
+                        changed = true;
+                    } else if (!has_unresolved) {
+                        result_elide_set.insert(name);
+                        changed = true;
+                    }
+                }
+            }
+
+            if (opts.verbose && !result_elide_set.empty()) {
+                std::cout << "  Result<T> elision: " << result_elide_set.size()
+                         << " infallible function(s)\n";
+                for (const auto& name : result_elide_set) {
+                    std::cout << "    - " << name << "\n";
+                }
+            }
+        }
+    }
+
+    // Phase 5.75: Defaults/?| fallback elimination
+    // If the sub-expression of a DefaultsExpr only calls infallible functions
+    // (those in result_elide_set), the fallback path is dead code.
+    if (!result_elide_set.empty()) {
+        auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+        if (program) {
+            if (opts.verbose) {
+                std::cout << "Phase 5.75: Defaults fallback elimination...\n";
+            }
+
+            // Check if an expression tree contains only infallible calls
+            std::function<bool(aria::ASTNode*)> isInfallibleExpr;
+            isInfallibleExpr = [&](aria::ASTNode* node) -> bool {
+                if (!node) return true;
+                using NT = aria::ASTNode::NodeType;
+
+                switch (node->type) {
+                    case NT::CALL: {
+                        auto* call = static_cast<aria::CallExpr*>(node);
+                        // Check callee name
+                        if (call->callee && call->callee->type == NT::IDENTIFIER) {
+                            auto* ident = static_cast<aria::IdentifierExpr*>(
+                                call->callee.get());
+                            if (!result_elide_set.count(ident->name)) {
+                                return false;  // Fallible call
+                            }
+                        } else {
+                            return false;  // Indirect call — assume fallible
+                        }
+                        // Check all arguments recursively
+                        for (auto& arg : call->arguments) {
+                            if (!isInfallibleExpr(arg.get())) return false;
+                        }
+                        return true;
+                    }
+
+                    case NT::BINARY_OP: {
+                        auto* bin = static_cast<aria::BinaryExpr*>(node);
+                        return isInfallibleExpr(bin->left.get()) &&
+                               isInfallibleExpr(bin->right.get());
+                    }
+
+                    case NT::UNARY_OP: {
+                        auto* un = static_cast<aria::UnaryExpr*>(node);
+                        return isInfallibleExpr(un->operand.get());
+                    }
+
+                    // Leaf nodes: always infallible
+                    case NT::LITERAL:
+                    case NT::IDENTIFIER:
+                        return true;
+
+                    // DefaultsExpr always produces a value (expr or fallback)
+                    case NT::DEFAULTS:
+                        return true;
+
+                    case NT::INDEX: {
+                        auto* idx = static_cast<aria::IndexExpr*>(node);
+                        return isInfallibleExpr(idx->array.get()) &&
+                               isInfallibleExpr(idx->index.get());
+                    }
+
+                    case NT::MEMBER_ACCESS: {
+                        auto* mem = static_cast<aria::MemberAccessExpr*>(node);
+                        return isInfallibleExpr(mem->object.get());
+                    }
+
+                    default:
+                        return false;  // Unknown — assume may fail
+                }
+            };
+
+            // Walk AST to find DefaultsExpr nodes
+            std::function<void(aria::ASTNode*)> findDefaults;
+            findDefaults = [&](aria::ASTNode* node) {
+                if (!node) return;
+                using NT = aria::ASTNode::NodeType;
+
+                switch (node->type) {
+                    case NT::DEFAULTS: {
+                        auto* def = static_cast<aria::DefaultsExpr*>(node);
+                        if (isInfallibleExpr(def->expr.get())) {
+                            defaults_safe_set.insert(node);
+                        }
+                        findDefaults(def->expr.get());
+                        findDefaults(def->fallback.get());
+                        break;
+                    }
+
+                    case NT::VAR_DECL: {
+                        auto* var = static_cast<aria::VarDeclStmt*>(node);
+                        findDefaults(var->initializer.get());
+                        break;
+                    }
+
+                    case NT::BLOCK: {
+                        auto* blk = static_cast<aria::BlockStmt*>(node);
+                        for (auto& s : blk->statements)
+                            findDefaults(s.get());
+                        break;
+                    }
+
+                    case NT::EXPRESSION_STMT: {
+                        auto* s = static_cast<aria::ExpressionStmt*>(node);
+                        findDefaults(s->expression.get());
+                        break;
+                    }
+
+                    case NT::IF: {
+                        auto* s = static_cast<aria::IfStmt*>(node);
+                        findDefaults(s->condition.get());
+                        findDefaults(s->thenBranch.get());
+                        findDefaults(s->elseBranch.get());
+                        break;
+                    }
+
+                    case NT::WHILE: {
+                        auto* s = static_cast<aria::WhileStmt*>(node);
+                        findDefaults(s->condition.get());
+                        findDefaults(s->body.get());
+                        break;
+                    }
+
+                    case NT::FOR: {
+                        auto* s = static_cast<aria::ForStmt*>(node);
+                        findDefaults(s->initializer.get());
+                        findDefaults(s->condition.get());
+                        findDefaults(s->update.get());
+                        findDefaults(s->body.get());
+                        break;
+                    }
+
+                    case NT::LOOP: {
+                        auto* s = static_cast<aria::LoopStmt*>(node);
+                        findDefaults(s->start.get());
+                        findDefaults(s->limit.get());
+                        findDefaults(s->step.get());
+                        findDefaults(s->body.get());
+                        break;
+                    }
+
+                    case NT::TILL: {
+                        auto* s = static_cast<aria::TillStmt*>(node);
+                        findDefaults(s->limit.get());
+                        findDefaults(s->step.get());
+                        findDefaults(s->body.get());
+                        break;
+                    }
+
+                    case NT::WHEN: {
+                        auto* s = static_cast<aria::WhenStmt*>(node);
+                        findDefaults(s->condition.get());
+                        findDefaults(s->body.get());
+                        findDefaults(s->then_block.get());
+                        findDefaults(s->end_block.get());
+                        break;
+                    }
+
+                    case NT::PICK: {
+                        auto* s = static_cast<aria::PickStmt*>(node);
+                        findDefaults(s->selector.get());
+                        for (auto& c : s->cases) {
+                            auto* pc = static_cast<aria::PickCase*>(c.get());
+                            findDefaults(pc->pattern.get());
+                            findDefaults(pc->body.get());
+                        }
+                        break;
+                    }
+
+                    case NT::DEFER: {
+                        auto* s = static_cast<aria::DeferStmt*>(node);
+                        findDefaults(s->block.get());
+                        break;
+                    }
+
+                    case NT::RETURN: {
+                        auto* s = static_cast<aria::ReturnStmt*>(node);
+                        findDefaults(s->value.get());
+                        break;
+                    }
+
+                    case NT::PASS: {
+                        auto* s = static_cast<aria::PassStmt*>(node);
+                        findDefaults(s->value.get());
+                        break;
+                    }
+
+                    case NT::CALL: {
+                        auto* call = static_cast<aria::CallExpr*>(node);
+                        findDefaults(call->callee.get());
+                        for (auto& arg : call->arguments)
+                            findDefaults(arg.get());
+                        break;
+                    }
+
+                    case NT::BINARY_OP: {
+                        auto* bin = static_cast<aria::BinaryExpr*>(node);
+                        findDefaults(bin->left.get());
+                        findDefaults(bin->right.get());
+                        break;
+                    }
+
+                    case NT::UNARY_OP: {
+                        auto* un = static_cast<aria::UnaryExpr*>(node);
+                        findDefaults(un->operand.get());
+                        break;
+                    }
+
+                    case NT::UNWRAP: {
+                        auto* uw = static_cast<aria::UnwrapExpr*>(node);
+                        findDefaults(uw->result.get());
+                        findDefaults(uw->defaultValue.get());
+                        break;
+                    }
+
+                    default:
+                        break;
+                }
+            };
+
+            for (const auto& decl : program->declarations) {
+                if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (!func->body) continue;
+                findDefaults(func->body.get());
+            }
+
+            if (opts.verbose && !defaults_safe_set.empty()) {
+                std::cout << "  Defaults fallback elimination: " << defaults_safe_set.size()
+                          << " fallback path(s) proven dead\n";
+            }
+        }
+    }
+
     // Phase 4: IR Generation
     if (opts.verbose) {
         std::cout << "Phase 4: IR generation...\n";
@@ -1619,6 +3558,49 @@ llvm::Module* compile_to_module(
         ir_gen.setUHashOptimizedFuncs(uhash_opt_funcs);
     }
 #endif
+
+    // Pass Result<T> elision set to IR generator (static analysis, no Z3 needed)
+    if (!result_elide_set.empty()) {
+        ir_gen.setResultElideFuncs(result_elide_set);
+    }
+
+    // Pass dead branch sets to IR generator (Z3-proven dead branches)
+    if (!dead_branch_true_set.empty()) {
+        ir_gen.setDeadBranchTrue(dead_branch_true_set);
+    }
+    if (!dead_branch_false_set.empty()) {
+        ir_gen.setDeadBranchFalse(dead_branch_false_set);
+    }
+
+    // Pass bounds-safe set to IR generator (Z3-proven always-in-bounds array accesses)
+    if (!bounds_safe_set.empty()) {
+        ir_gen.setBoundsCheckSafe(bounds_safe_set);
+    }
+
+    // Pass overflow-safe set to IR generator (Z3-proven overflow-free arithmetic)
+    if (!overflow_safe_set.empty()) {
+        ir_gen.setOverflowCheckSafe(overflow_safe_set);
+    }
+
+    // Pass null-check-safe set to IR generator (Z3-proven non-null expressions)
+    if (!null_check_safe_set.empty()) {
+        ir_gen.setNullCheckSafe(null_check_safe_set);
+    }
+
+    // Pass loop-hoist map to IR generator (loop-invariant declarations to hoist)
+    if (!loop_hoist_map.empty()) {
+        ir_gen.setLoopHoistMap(loop_hoist_map);
+    }
+
+    // Pass limit-check-safe set to IR generator (Rules propagation)
+    if (!limit_check_safe_set.empty()) {
+        ir_gen.setLimitCheckSafe(limit_check_safe_set);
+    }
+
+    // Pass defaults-safe set to IR generator (fallback elimination)
+    if (!defaults_safe_set.empty()) {
+        ir_gen.setDefaultsSafe(defaults_safe_set);
+    }
     
     // Initialize debug info if -g flag is set
     if (opts.debug_info) {

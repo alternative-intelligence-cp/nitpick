@@ -8,6 +8,7 @@
 #include "backend/ir/tbb_codegen.h"
 #include "backend/ir/ternary_codegen.h"
 #include <map>
+#include <set>
 #include <string>
 #include <unordered_map>
 
@@ -210,6 +211,10 @@ public:
     // v0.4.5: Counter for uhash handle tracking (auto-cleanup)
     // Points to ir_generator's counter; incremented each time ahash() is called.
     int* uhash_handle_counter_ptr = nullptr;
+
+    // v0.5.0: Pointer to the set of DefaultsExpr nodes whose fallback is proven dead.
+    // Set from IRGenerator::defaults_safe when creating ExprCodegen for CALL delegation.
+    const std::set<ASTNode*>* defaults_safe_ptr = nullptr;
 
     /**
      * Promote int64 literal to LBIM struct type (int128/256/512/1024/2048/4096)
