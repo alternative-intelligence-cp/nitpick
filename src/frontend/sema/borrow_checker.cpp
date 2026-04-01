@@ -33,6 +33,7 @@ LifetimeContext LifetimeContext::snapshot() const {
     snap.active_pins = this->active_pins;
     snap.pending_wild_frees = this->pending_wild_frees;
     snap.wild_states = this->wild_states;
+    snap.wild_alloc_sizes = this->wild_alloc_sizes;
     snap.moved_variables = this->moved_variables;
     snap.current_depth = this->current_depth;
     snap.scope_stack = this->scope_stack;
@@ -46,6 +47,7 @@ void LifetimeContext::restore(const LifetimeContext& snap) {
     this->active_pins = snap.active_pins;
     this->pending_wild_frees = snap.pending_wild_frees;
     this->wild_states = snap.wild_states;
+    this->wild_alloc_sizes = snap.wild_alloc_sizes;
     this->moved_variables = snap.moved_variables;
     this->current_depth = snap.current_depth;
     this->scope_stack = snap.scope_stack;
@@ -902,9 +904,17 @@ void BorrowChecker::releasePin(const std::string& var) {
 // Wild Memory Safety (Phase 3.3.3)
 // ============================================================================
 
-void BorrowChecker::recordWildAlloc(const std::string& var, ASTNode* node) {
+void BorrowChecker::recordWildAlloc(const std::string& var, ASTNode* node, const std::string& size_expr) {
     ctx.pending_wild_frees.insert(var);
     ctx.wild_states[var] = WildState::ALLOCATED;
+    if (!size_expr.empty()) {
+        ctx.wild_alloc_sizes[var] = size_expr;
+    }
+    if (borrow_debug) {
+        int line = node ? node->line : 0;
+        fprintf(stderr, "[borrow-debug] ALLOC '%s' size=%s at line %d\n",
+                var.c_str(), size_expr.empty() ? "unknown" : size_expr.c_str(), line);
+    }
 }
 
 void BorrowChecker::recordWildFree(const std::string& var, ASTNode* node) {
@@ -929,6 +939,11 @@ void BorrowChecker::recordWildFree(const std::string& var, ASTNode* node) {
     // Mark as freed
     ctx.wild_states[var] = WildState::FREED;
     ctx.pending_wild_frees.erase(var);
+    ctx.wild_alloc_sizes.erase(var);
+    if (borrow_debug) {
+        int line = node ? node->line : 0;
+        fprintf(stderr, "[borrow-debug] FREE '%s' at line %d\n", var.c_str(), line);
+    }
 }
 
 bool BorrowChecker::checkWildUse(const std::string& var, ASTNode* node) {
@@ -969,6 +984,65 @@ bool BorrowChecker::checkWildUse(const std::string& var, ASTNode* node) {
     }
 
     return true;
+}
+
+// v0.6.3: Realloc invalidation — realloc may move memory, invalidating all borrows
+void BorrowChecker::recordWildRealloc(const std::string& var, ASTNode* node, const std::string& new_size_expr) {
+    auto it = ctx.wild_states.find(var);
+    if (it == ctx.wild_states.end()) {
+        addError("Cannot realloc undefined variable '" + var + "'", node);
+        return;
+    }
+
+    if (it->second == WildState::FREED) {
+        addErrorWithSuggestion("Cannot realloc freed variable '" + var + "'", node,
+                "hint: allocate new memory with alloc() instead of realloc on freed pointer");
+        return;
+    }
+
+    if (it->second == WildState::MOVED) {
+        addError("Cannot realloc moved variable '" + var + "'", node);
+        return;
+    }
+
+    // Invalidate all active borrows from this variable
+    // realloc may move the allocation, making all existing pointers dangling
+    auto loans_it = ctx.active_loans.find(var);
+    if (loans_it != ctx.active_loans.end() && !loans_it->second.empty()) {
+        const Loan& loan = loans_it->second.front();
+        addError("Cannot realloc '" + var + "' because it has active borrows. "
+                 "realloc may move memory, invalidating all references",
+                 node,
+                 "Active borrow by '" + loan.borrower + "' was created here",
+                 loan.creation_line, loan.creation_column);
+        return;
+    }
+
+    // Also check path-based loans
+    for (const auto& [path, loans] : ctx.path_loans) {
+        if (!loans.empty() && path.base_var == var) {
+            const Loan& loan = loans.front();
+            addError("Cannot realloc '" + var + "' because a sub-path is borrowed by '" +
+                     loan.borrower + "'",
+                     node,
+                     "Path borrow was created here",
+                     loan.creation_line, loan.creation_column);
+            return;
+        }
+    }
+
+    // Update allocation size for diagnostic purposes
+    // The old pointer is consumed by realloc (MOVE semantics in checkCallOwnership)
+    // The new pointer (return value) will be tracked as a fresh wild allocation
+    if (!new_size_expr.empty()) {
+        ctx.wild_alloc_sizes[var] = new_size_expr;
+    }
+
+    if (borrow_debug) {
+        int line = node ? node->line : 0;
+        fprintf(stderr, "[borrow-debug] REALLOC '%s' new_size=%s at line %d\n",
+                var.c_str(), new_size_expr.empty() ? "unknown" : new_size_expr.c_str(), line);
+    }
 }
 
 void BorrowChecker::checkForLeaks() {
@@ -1286,7 +1360,42 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     if (is_wild_type && stmt->initializer && !stmt->is_pinned_shadow) {
         // This is an actual wild allocation (e.g., wild int8@:ptr = alloc(...))
         stmt->requires_drop = true;
-        recordWildAlloc(stmt->varName, stmt);
+
+        // v0.6.3: Extract allocation size from alloc(size) call
+        std::string alloc_size_expr;
+        if (stmt->initializer->type == ASTNode::NodeType::CALL) {
+            auto* call = static_cast<CallExpr*>(stmt->initializer.get());
+            if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* callee = static_cast<IdentifierExpr*>(call->callee.get());
+                if ((callee->name == "alloc" || callee->name == "aria_alloc" ||
+                     callee->name == "malloc") &&
+                    !call->arguments.empty()) {
+                    ASTNode* sizeArg = call->arguments[0].get();
+                    if (sizeArg && sizeArg->type == ASTNode::NodeType::LITERAL) {
+                        auto* lit = static_cast<LiteralExpr*>(sizeArg);
+                        alloc_size_expr = lit->raw_value_string.empty()
+                            ? std::to_string(std::get<int64_t>(lit->value))
+                            : lit->raw_value_string;
+                    } else if (sizeArg && sizeArg->type == ASTNode::NodeType::IDENTIFIER) {
+                        alloc_size_expr = static_cast<IdentifierExpr*>(sizeArg)->name;
+                    }
+                }
+                // v0.6.3: Also extract size from realloc(ptr, new_size)
+                if ((callee->name == "realloc" || callee->name == "aria_realloc") &&
+                    call->arguments.size() >= 2) {
+                    ASTNode* sizeArg = call->arguments[1].get();
+                    if (sizeArg && sizeArg->type == ASTNode::NodeType::LITERAL) {
+                        auto* lit = static_cast<LiteralExpr*>(sizeArg);
+                        alloc_size_expr = lit->raw_value_string.empty()
+                            ? std::to_string(std::get<int64_t>(lit->value))
+                            : lit->raw_value_string;
+                    } else if (sizeArg && sizeArg->type == ASTNode::NodeType::IDENTIFIER) {
+                        alloc_size_expr = static_cast<IdentifierExpr*>(sizeArg)->name;
+                    }
+                }
+            }
+        }
+        recordWildAlloc(stmt->varName, stmt, alloc_size_expr);
     }
 }
 
@@ -2587,6 +2696,30 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                 // names happen to end in _close/_free/_destroy are not deallocations.
                 if (ctx.wild_states.find(argIdent->name) != ctx.wild_states.end()) {
                     recordWildFree(argIdent->name, expr);
+                }
+            }
+        }
+
+        // v0.6.3: Realloc borrow invalidation
+        // realloc(ptr, new_size) may move memory — invalidate all borrows of ptr
+        if ((callee->name == "realloc" || callee->name == "aria_realloc") &&
+            expr->arguments.size() >= 2) {
+            ASTNode* ptrArg = expr->arguments[0].get();
+            if (ptrArg && ptrArg->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* ptrIdent = static_cast<IdentifierExpr*>(ptrArg);
+                if (ctx.wild_states.find(ptrIdent->name) != ctx.wild_states.end()) {
+                    // Extract new size expression for tracking
+                    std::string new_size_expr;
+                    ASTNode* sizeArg = expr->arguments[1].get();
+                    if (sizeArg && sizeArg->type == ASTNode::NodeType::LITERAL) {
+                        auto* lit = static_cast<LiteralExpr*>(sizeArg);
+                        new_size_expr = lit->raw_value_string.empty()
+                            ? std::to_string(std::get<int64_t>(lit->value))
+                            : lit->raw_value_string;
+                    } else if (sizeArg && sizeArg->type == ASTNode::NodeType::IDENTIFIER) {
+                        new_size_expr = static_cast<IdentifierExpr*>(sizeArg)->name;
+                    }
+                    recordWildRealloc(ptrIdent->name, expr, new_size_expr);
                 }
             }
         }

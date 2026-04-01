@@ -368,6 +368,11 @@ struct LifetimeContext {
     // Tracks the state of wild pointers (allocated, freed, moved)
     std::unordered_map<std::string, WildState> wild_states;
 
+    // v0.6.3: Per-allocation size tracking for bounds checking
+    // Maps wild variable name -> allocation size (string expression from source)
+    // Updated on alloc() and realloc(), cleared on free()
+    std::unordered_map<std::string, std::string> wild_alloc_sizes;
+
     // Tracks all variables that have been moved (not just wild)
     // Used to detect use-after-move for all types
     std::unordered_set<std::string> moved_variables;
@@ -609,6 +614,9 @@ private:
     LifetimeContext ctx;
     std::vector<BorrowError> errors;
     
+    // v0.6.3: Debug instrumentation flag (--borrow-debug)
+    bool borrow_debug = false;
+    
     // ========================================================================
     // Z3 Integration (v0.6.1: Precision Improvements)
     // ========================================================================
@@ -753,7 +761,7 @@ private:
     /**
      * Record allocation of wild memory
      */
-    void recordWildAlloc(const std::string& var, ASTNode* node);
+    void recordWildAlloc(const std::string& var, ASTNode* node, const std::string& size_expr = "");
     
     /**
      * Record deallocation of wild memory
@@ -765,6 +773,11 @@ private:
      */
     bool checkWildUse(const std::string& var, ASTNode* node);
     
+    /**
+     * v0.6.3: Record reallocation — invalidates existing borrows, updates size
+     */
+    void recordWildRealloc(const std::string& var, ASTNode* node, const std::string& new_size_expr);
+
     /**
      * Detect memory leaks (wild memory not freed before scope exit)
      */
@@ -973,6 +986,12 @@ public:
      * conditional borrow narrowing.
      */
     void setZ3Verifier(Z3Verifier* z3v) { z3_verifier = z3v; }
+    
+    /**
+     * v0.6.3: Enable borrow debug diagnostics (--borrow-debug)
+     * Prints allocation/free/realloc/borrow events to stderr
+     */
+    void setBorrowDebug(bool enabled) { borrow_debug = enabled; }
     
     /**
      * Analyze an AST for borrow checking violations
