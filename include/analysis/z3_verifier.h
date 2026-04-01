@@ -113,6 +113,29 @@ public:
                                          std::vector<VerifyOutcome>& outcomes,
                                          int line = 0, int column = 0);
 
+    /// Cross-function contract propagation (v0.5.2): verify that a call site
+    /// satisfies the callee's requires clauses, using the caller's own
+    /// constraints (requires clauses + Rules on args + ensures-derived facts)
+    /// as assumptions.
+    /// ensuresFacts: variable name → FuncDeclStmt whose ensures apply to that var
+    VerifyResult verifyCallSiteContract(
+        FuncDeclStmt* callee,
+        FuncDeclStmt* caller,
+        const std::vector<ASTNode*>& args,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& callerVarRules,
+        const std::vector<std::pair<std::string, FuncDeclStmt*>>& ensuresFacts,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    /// Loop invariant verification (v0.5.2): verify that a loop invariant
+    /// is consistent with the function's preconditions.
+    /// Checks that the invariant is satisfiable given caller constraints.
+    VerifyResult verifyLoopInvariant(
+        FuncDeclStmt* enclosingFunc,
+        const std::vector<ASTNode*>& invariants,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
     // ================================================================
     // Phase 3: Arithmetic Overflow Verification
     // ================================================================
@@ -252,6 +275,18 @@ public:
         const std::string& callerRulesName,
         const std::string& calleeRulesName,
         const std::string& typeName,
+        std::vector<VerifyOutcome>& outcomes,
+        int line = 0, int column = 0);
+
+    /// Prove a user assertion (prove/assert_static statement).
+    /// Translates the boolean expression to Z3 under the current scope's
+    /// variable constraints (Rules<T> on local variables) and checks validity.
+    /// Returns PROVEN if the assertion always holds, DISPROVEN with
+    /// counterexample if a violation exists, or UNKNOWN if the solver
+    /// can't determine.
+    VerifyResult proveUserAssertion(
+        ASTNode* condition,
+        const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
         std::vector<VerifyOutcome>& outcomes,
         int line = 0, int column = 0);
 

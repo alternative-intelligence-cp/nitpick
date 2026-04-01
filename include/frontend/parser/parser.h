@@ -108,6 +108,8 @@ private:
     ASTNodePtr parseReturn();
     ASTNodePtr parsePassStatement();
     ASTNodePtr parseFailStatement();
+    ASTNodePtr parseProveStatement();
+    ASTNodePtr parseAssertStaticStatement();
     ASTNodePtr parseIfStatement();
     ASTNodePtr parseWhileStatement();
     ASTNodePtr parseForStatement();

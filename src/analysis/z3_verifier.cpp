@@ -34,6 +34,52 @@
 
 namespace aria {
 
+// Human-readable expression pretty-printer for contract diagnostics (v0.5.2)
+static std::string prettyExpr(ASTNode* node) {
+    if (!node) return "?";
+    using NT = ASTNode::NodeType;
+    switch (node->type) {
+        case NT::IDENTIFIER: {
+            auto* id = static_cast<IdentifierExpr*>(node);
+            return id->name;
+        }
+        case NT::LITERAL: {
+            auto* lit = static_cast<LiteralExpr*>(node);
+            if (lit->hasRawValue()) return lit->getRawValue();
+            if (std::holds_alternative<int64_t>(lit->value))
+                return std::to_string(std::get<int64_t>(lit->value));
+            if (std::holds_alternative<double>(lit->value)) {
+                std::string s = std::to_string(std::get<double>(lit->value));
+                // Trim trailing zeros
+                size_t dot = s.find('.');
+                if (dot != std::string::npos) {
+                    size_t last = s.find_last_not_of('0');
+                    if (last != std::string::npos && last > dot) s = s.substr(0, last + 1);
+                    else if (last == dot) s = s.substr(0, dot + 2);
+                }
+                return s;
+            }
+            if (std::holds_alternative<bool>(lit->value))
+                return std::get<bool>(lit->value) ? "true" : "false";
+            if (std::holds_alternative<std::string>(lit->value))
+                return "\"" + std::get<std::string>(lit->value) + "\"";
+            return lit->toString();
+        }
+        case NT::BINARY_OP: {
+            auto* bin = static_cast<BinaryExpr*>(node);
+            return prettyExpr(bin->left.get()) + " " + bin->op.lexeme + " " +
+                   prettyExpr(bin->right.get());
+        }
+        case NT::UNARY_OP: {
+            auto* un = static_cast<UnaryExpr*>(node);
+            if (un->isPostfix) return prettyExpr(un->operand.get()) + un->op.lexeme;
+            return un->op.lexeme + prettyExpr(un->operand.get());
+        }
+        default:
+            return node->toString();
+    }
+}
+
 Z3Verifier::Z3Verifier() {
     Z3_config cfg = Z3_mk_config();
     // Set a reasonable timeout (5 seconds per query)
@@ -799,7 +845,7 @@ VerifyResult Z3Verifier::verifyFunctionContract(
                 VerifyOutcome out;
                 out.result = VerifyResult::UNKNOWN;
                 out.rulesName = func->funcName;
-                out.conditionText = func->preconditions[i]->toString();
+                out.conditionText = prettyExpr(func->preconditions[i].get());
                 out.detail = "Could not encode requires clause for SMT verification";
                 out.line = func->line;
                 out.column = func->column;
@@ -868,7 +914,7 @@ VerifyResult Z3Verifier::verifyFunctionContract(
                 VerifyOutcome out;
                 out.result = VerifyResult::UNKNOWN;
                 out.rulesName = func->funcName;
-                out.conditionText = func->postconditions[i]->toString();
+                out.conditionText = prettyExpr(func->postconditions[i].get());
                 out.detail = "Could not encode ensures clause for SMT verification";
                 out.line = func->line;
                 out.column = func->column;
@@ -887,7 +933,7 @@ VerifyResult Z3Verifier::verifyFunctionContract(
             Z3_lbool result = checkSat(solver);
             VerifyOutcome out;
             out.rulesName = func->funcName;
-            out.conditionText = func->postconditions[i]->toString();
+            out.conditionText = prettyExpr(func->postconditions[i].get());
             out.line = func->line;
             out.column = func->column;
 
@@ -984,7 +1030,7 @@ VerifyResult Z3Verifier::verifyCallSiteRequires(
             VerifyOutcome out;
             out.result = VerifyResult::UNKNOWN;
             out.rulesName = callee->funcName;
-            out.conditionText = callee->preconditions[i]->toString();
+            out.conditionText = prettyExpr(callee->preconditions[i].get());
             out.detail = "Could not encode requires clause at call site";
             out.line = line;
             out.column = column;
@@ -1002,7 +1048,7 @@ VerifyResult Z3Verifier::verifyCallSiteRequires(
         Z3_lbool result = checkSat(solver);
         VerifyOutcome out;
         out.rulesName = callee->funcName;
-        out.conditionText = callee->preconditions[i]->toString();
+        out.conditionText = prettyExpr(callee->preconditions[i].get());
         out.line = line;
         out.column = column;
 
@@ -1036,6 +1082,353 @@ VerifyResult Z3Verifier::verifyCallSiteRequires(
         }
 
         outcomes.push_back(out);
+        deleteSolver(solver);
+    }
+
+    return worstResult;
+}
+
+// ============================================================================
+// Phase 2b: Cross-function contract propagation (v0.5.2)
+// ============================================================================
+
+VerifyResult Z3Verifier::verifyCallSiteContract(
+    FuncDeclStmt* callee,
+    FuncDeclStmt* caller,
+    const std::vector<ASTNode*>& args,
+    const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& callerVarRules,
+    const std::vector<std::pair<std::string, FuncDeclStmt*>>& ensuresFacts,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (!callee || callee->preconditions.empty()) {
+        return VerifyResult::PROVEN;
+    }
+
+    VerifyResult worstResult = VerifyResult::PROVEN;
+
+    // Build two Z3 environments:
+    // calleeEnv: callee param names → Z3 vars (for translating callee requires)
+    // callerEnv: caller variable names → Z3 vars (for translating caller requires)
+    // Shared Z3 vars link the two where args bridge caller→callee.
+    std::map<std::string, Z3_ast> calleeEnv;
+    std::map<std::string, Z3_ast> callerEnv;
+    std::vector<Z3_ast> assumptions;
+    Z3_sort defaultSort = getIntSort(32);
+
+    for (size_t i = 0; i < callee->parameters.size() && i < args.size(); ++i) {
+        auto* param = static_cast<ParameterNode*>(callee->parameters[i].get());
+        if (!param) continue;
+
+        std::string tname = param->typeNode ? param->typeNode->toString() : "int32";
+        TypeInfo ti = resolveTypeSort(tname);
+        if (i == 0) defaultSort = ti.sort;
+
+        ASTNode* arg = args[i];
+        if (!arg) continue;
+
+        if (arg->type == ASTNode::NodeType::LITERAL) {
+            auto* lit = static_cast<LiteralExpr*>(arg);
+            if (std::holds_alternative<int64_t>(lit->value)) {
+                int64_t val = std::get<int64_t>(lit->value);
+                calleeEnv[param->paramName] = Z3_mk_numeral(ctx,
+                    std::to_string(val).c_str(), ti.sort);
+            } else if (std::holds_alternative<double>(lit->value)) {
+                double val = std::get<double>(lit->value);
+                calleeEnv[param->paramName] = Z3_mk_numeral(ctx,
+                    std::to_string(val).c_str(), ti.sort);
+            }
+        } else if (arg->type == ASTNode::NodeType::UNARY_OP) {
+            auto* unary = static_cast<UnaryExpr*>(arg);
+            if (unary->op.type == frontend::TokenType::TOKEN_MINUS &&
+                unary->operand && unary->operand->type == ASTNode::NodeType::LITERAL) {
+                auto* lit = static_cast<LiteralExpr*>(unary->operand.get());
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    int64_t val = -std::get<int64_t>(lit->value);
+                    calleeEnv[param->paramName] = Z3_mk_numeral(ctx,
+                        std::to_string(val).c_str(), ti.sort);
+                }
+            }
+        } else {
+            // Symbolic — check if this arg identifier already has a Z3 var
+            // (handles case where same variable is passed to multiple params)
+            Z3_ast var = nullptr;
+            if (arg->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* ident = static_cast<IdentifierExpr*>(arg);
+                auto eIt = callerEnv.find(ident->name);
+                if (eIt != callerEnv.end()) {
+                    var = eIt->second;  // Reuse existing Z3 var
+                }
+            }
+
+            if (!var) {
+                Z3_symbol sym = Z3_mk_string_symbol(ctx, param->paramName.c_str());
+                var = Z3_mk_const(ctx, sym, ti.sort);
+            }
+            calleeEnv[param->paramName] = var;
+
+            // If arg is an identifier, alias it in callerEnv for constraint propagation
+            if (arg->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* ident = static_cast<IdentifierExpr*>(arg);
+                if (callerEnv.find(ident->name) == callerEnv.end()) {
+                    callerEnv[ident->name] = var;
+                }
+
+                // If this arg has Rules constraints, assert them as assumptions
+                auto rIt = callerVarRules.find(ident->name);
+                if (rIt != callerVarRules.end()) {
+                    const auto& [rulesDecl, typeName] = rIt->second;
+                    std::function<void(RulesDeclStmt*)> collectAxioms;
+                    collectAxioms = [&](RulesDeclStmt* r) {
+                        for (const auto& cascName : r->cascadedRules) {
+                            auto cIt = rules_table.find(cascName);
+                            if (cIt != rules_table.end()) collectAxioms(cIt->second);
+                        }
+                        for (auto& cond : r->conditions) {
+                            Z3_ast z3Cond = translateCondition(cond.get(), var, ti.sort);
+                            if (z3Cond) assumptions.push_back(z3Cond);
+                        }
+                    };
+                    collectAxioms(rulesDecl);
+                }
+            }
+        }
+    }
+
+    // Create Z3 vars for any caller parameters not yet in callerEnv
+    if (caller) {
+        for (const auto& p : caller->parameters) {
+            if (p->type != ASTNode::NodeType::PARAMETER) continue;
+            auto* cp = static_cast<ParameterNode*>(p.get());
+            if (callerEnv.find(cp->paramName) == callerEnv.end()) {
+                std::string tname = cp->typeNode ? cp->typeNode->toString() : "int32";
+                TypeInfo ti = resolveTypeSort(tname);
+                Z3_symbol sym = Z3_mk_string_symbol(ctx, cp->paramName.c_str());
+                callerEnv[cp->paramName] = Z3_mk_const(ctx, sym, ti.sort);
+            }
+        }
+
+        // Assert caller's requires clauses as assumptions
+        for (const auto& pre : caller->preconditions) {
+            Z3_ast z3Pre = translateExprWithEnv(pre.get(), callerEnv, defaultSort);
+            if (z3Pre) assumptions.push_back(z3Pre);
+        }
+    }
+
+    // Assert ensures-derived facts as assumptions (v0.5.2)
+    // If a local variable was assigned from a function with ensures clauses,
+    // translate those ensures (with result → variable) as known facts.
+    for (const auto& [varName, ensurer] : ensuresFacts) {
+        auto vIt = callerEnv.find(varName);
+        if (vIt == callerEnv.end()) continue;
+
+        // Build env with "result" mapped to the assigned variable's Z3 var
+        // (postcondition AST uses "result" as the identifier name)
+        std::map<std::string, Z3_ast> ensuresEnv = callerEnv;
+        ensuresEnv["result"] = vIt->second;
+        ensuresEnv["$result"] = vIt->second;  // also map $result for safety
+
+        for (const auto& post : ensurer->postconditions) {
+            Z3_ast z3Post = translateExprWithEnv(post.get(), ensuresEnv, defaultSort);
+            if (z3Post) assumptions.push_back(z3Post);
+        }
+    }
+
+    // Verify each callee requires clause under caller assumptions
+    for (size_t i = 0; i < callee->preconditions.size(); ++i) {
+        Z3_ast z3pre = translateExprWithEnv(
+            callee->preconditions[i].get(), calleeEnv, defaultSort);
+        if (!z3pre) {
+            VerifyOutcome out;
+            out.result = VerifyResult::UNKNOWN;
+            out.rulesName = callee->funcName;
+            out.conditionText = prettyExpr(callee->preconditions[i].get());
+            out.detail = "Could not encode requires clause at call site";
+            out.line = line;
+            out.column = column;
+            outcomes.push_back(out);
+            summary.outcomes.push_back(out);
+            summary.unknown++;
+            if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
+            continue;
+        }
+
+        Z3_solver solver = makeSolver();
+
+        // Assert all caller assumptions (requires + Rules)
+        for (auto ax : assumptions) {
+            Z3_solver_assert(ctx, solver, ax);
+        }
+
+        // Assert NOT(callee requires) — UNSAT means the requires always holds
+        Z3_ast negated = Z3_mk_not(ctx, z3pre);
+        Z3_solver_assert(ctx, solver, negated);
+
+        Z3_lbool result = checkSat(solver);
+        VerifyOutcome out;
+        out.rulesName = callee->funcName;
+        out.conditionText = prettyExpr(callee->preconditions[i].get());
+        out.line = line;
+        out.column = column;
+
+        if (result == Z3_L_FALSE) {
+            out.result = VerifyResult::PROVEN;
+            out.detail = "Proven: call to '" + callee->funcName +
+                         "' satisfies requires '" + out.conditionText + "'";
+            summary.proven++;
+        } else if (result == Z3_L_TRUE) {
+            out.result = VerifyResult::DISPROVEN;
+            Z3_model model = Z3_solver_get_model(ctx, solver);
+            std::string counterexample;
+            if (model) {
+                Z3_model_inc_ref(ctx, model);
+                bool first = true;
+                for (const auto& [varName, varAst] : callerEnv) {
+                    Z3_ast val = nullptr;
+                    if (Z3_model_eval(ctx, model, varAst, true, &val) && val) {
+                        if (!first) counterexample += ", ";
+                        std::string valStr;
+                        Z3_sort valSort = Z3_get_sort(ctx, val);
+                        Z3_sort_kind sk = Z3_get_sort_kind(ctx, valSort);
+                        if (sk == Z3_BV_SORT) {
+                            uint64_t uval = 0;
+                            if (Z3_get_numeral_uint64(ctx, val, &uval)) {
+                                unsigned bw = Z3_get_bv_sort_size(ctx, valSort);
+                                if (bw < 64 && (uval & (1ULL << (bw - 1)))) {
+                                    int64_t sval = static_cast<int64_t>(uval) -
+                                        (1LL << bw);
+                                    valStr = std::to_string(sval);
+                                } else {
+                                    valStr = std::to_string(static_cast<int64_t>(uval));
+                                }
+                            } else {
+                                valStr = Z3_ast_to_string(ctx, val);
+                            }
+                        } else {
+                            valStr = Z3_ast_to_string(ctx, val);
+                        }
+                        counterexample += varName + " = " + valStr;
+                        first = false;
+                    }
+                }
+                Z3_model_dec_ref(ctx, model);
+            }
+            out.detail = "Violation: call to '" + callee->funcName +
+                         "' may violate requires '" + out.conditionText + "'";
+            if (!counterexample.empty()) {
+                out.detail += " when " + counterexample;
+            }
+            summary.disproven++;
+            worstResult = VerifyResult::DISPROVEN;
+        } else {
+            out.result = VerifyResult::UNKNOWN;
+            out.detail = "Could not determine if call satisfies requires clause";
+            summary.unknown++;
+            if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
+        }
+
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        deleteSolver(solver);
+    }
+
+    return worstResult;
+}
+
+// ============================================================================
+// Phase 2c: Loop Invariant Verification (v0.5.2)
+// ============================================================================
+
+VerifyResult Z3Verifier::verifyLoopInvariant(
+    FuncDeclStmt* enclosingFunc,
+    const std::vector<ASTNode*>& invariants,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column)
+{
+    if (invariants.empty()) return VerifyResult::PROVEN;
+
+    VerifyResult worstResult = VerifyResult::PROVEN;
+    Z3_sort defaultSort = getIntSort(32);
+
+    // Build environment from function parameters
+    std::map<std::string, Z3_ast> env;
+    for (size_t i = 0; i < enclosingFunc->parameters.size(); ++i) {
+        const auto& p = enclosingFunc->parameters[i];
+        if (p->type != ASTNode::NodeType::PARAMETER) continue;
+        auto* param = static_cast<ParameterNode*>(p.get());
+        std::string tname = param->typeNode ? param->typeNode->toString() : "int32";
+        TypeInfo ti = resolveTypeSort(tname);
+        Z3_symbol sym = Z3_mk_string_symbol(ctx, param->paramName.c_str());
+        env[param->paramName] = Z3_mk_const(ctx, sym, ti.sort);
+        if (i == 0) defaultSort = ti.sort;
+    }
+
+    // Assert function preconditions as assumptions
+    std::vector<Z3_ast> assumptions;
+    for (const auto& pre : enclosingFunc->preconditions) {
+        Z3_ast z3Pre = translateExprWithEnv(pre.get(), env, defaultSort);
+        if (z3Pre) assumptions.push_back(z3Pre);
+    }
+
+    // Check each invariant clause for consistency under preconditions
+    for (size_t i = 0; i < invariants.size(); ++i) {
+        Z3_ast z3Inv = translateExprWithEnv(invariants[i], env, defaultSort);
+        if (!z3Inv) {
+            VerifyOutcome out;
+            out.result = VerifyResult::UNKNOWN;
+            out.rulesName = enclosingFunc->funcName;
+            out.conditionText = prettyExpr(invariants[i]);
+            out.detail = "Could not encode invariant clause";
+            out.line = line;
+            out.column = column;
+            outcomes.push_back(out);
+            summary.outcomes.push_back(out);
+            summary.unknown++;
+            if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
+            continue;
+        }
+
+        Z3_solver solver = makeSolver();
+
+        // Assert function preconditions as assumptions
+        for (Z3_ast assumption : assumptions) {
+            Z3_solver_assert(ctx, solver, assumption);
+        }
+
+        // Assert negation of invariant — if UNSAT, invariant is implied by preconditions
+        Z3_ast negInv = Z3_mk_not(ctx, z3Inv);
+        Z3_solver_assert(ctx, solver, negInv);
+
+        Z3_lbool result = Z3_solver_check(ctx, solver);
+
+        VerifyOutcome out;
+        out.rulesName = enclosingFunc->funcName;
+        out.conditionText = prettyExpr(invariants[i]);
+        out.line = line;
+        out.column = column;
+
+        if (result == Z3_L_FALSE) {
+            // UNSAT: invariant is provably true at entry
+            out.result = VerifyResult::PROVEN;
+            out.detail = "Invariant proven consistent with preconditions";
+            summary.proven++;
+        } else if (result == Z3_L_TRUE) {
+            // SAT: invariant is not guaranteed by preconditions alone
+            // This is expected — invariant may depend on loop body establishing it
+            // Report as "consistent" (not contradictory), not as disproven
+            out.result = VerifyResult::UNKNOWN;
+            out.detail = "Invariant not implied by preconditions alone (may still be valid)";
+            summary.unknown++;
+            if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
+        } else {
+            out.result = VerifyResult::UNKNOWN;
+            out.detail = "Solver timeout on invariant";
+            summary.unknown++;
+            if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
+        }
+
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
         deleteSolver(solver);
     }
 
@@ -1934,6 +2327,188 @@ VerifyResult Z3Verifier::proveRulesSubsumption(
     summary.proven++;
     outcomes.push_back(out);
     return VerifyResult::PROVEN;
+}
+
+// ============================================================================
+// Phase 11: User Assertions — prove(expr) and assert_static(expr)
+// ============================================================================
+
+VerifyResult Z3Verifier::proveUserAssertion(
+    ASTNode* condition,
+    const std::map<std::string, std::pair<RulesDeclStmt*, std::string>>& varRules,
+    std::vector<VerifyOutcome>& outcomes,
+    int line, int column) {
+
+    if (!condition) return VerifyResult::UNKNOWN;
+
+    // Build Z3 variable environment from Rules-constrained variables
+    std::map<std::string, Z3_ast> env;
+    std::vector<Z3_ast> axioms;  // Rules constraints as axioms
+
+    for (const auto& [varName, rulesPair] : varRules) {
+        const auto& [rulesDecl, typeName] = rulesPair;
+        TypeInfo ti = resolveTypeSort(typeName);
+        Z3_sort sort = ti.sort;
+
+        Z3_symbol sym = Z3_mk_string_symbol(ctx, varName.c_str());
+        Z3_ast var = Z3_mk_const(ctx, sym, sort);
+        env[varName] = var;
+
+        // Assert all Rules conditions for this variable
+        std::function<void(RulesDeclStmt*)> collectAxioms;
+        collectAxioms = [&](RulesDeclStmt* r) {
+            for (const auto& cascName : r->cascadedRules) {
+                auto cIt = rules_table.find(cascName);
+                if (cIt != rules_table.end()) collectAxioms(cIt->second);
+            }
+            for (auto& cond : r->conditions) {
+                Z3_ast z3Cond = translateCondition(cond.get(), var, sort);
+                if (z3Cond) axioms.push_back(z3Cond);
+            }
+        };
+        collectAxioms(rulesDecl);
+    }
+
+    // Also create Z3 constants for any free variables in the expression
+    // that don't have Rules constraints (they remain unconstrained)
+    std::function<void(ASTNode*)> collectFreeVars;
+    collectFreeVars = [&](ASTNode* node) {
+        if (!node) return;
+        if (node->type == ASTNode::NodeType::IDENTIFIER) {
+            auto* ident = static_cast<IdentifierExpr*>(node);
+            if (env.find(ident->name) == env.end()) {
+                // Use int32 (32-bit bitvector) as default sort for unconstrained vars
+                Z3_sort defaultSort = getIntSort(32);
+                Z3_symbol sym = Z3_mk_string_symbol(ctx, ident->name.c_str());
+                Z3_ast var = Z3_mk_const(ctx, sym, defaultSort);
+                env[ident->name] = var;
+            }
+        } else if (node->type == ASTNode::NodeType::BINARY_OP) {
+            auto* bin = static_cast<BinaryExpr*>(node);
+            collectFreeVars(bin->left.get());
+            collectFreeVars(bin->right.get());
+        } else if (node->type == ASTNode::NodeType::UNARY_OP) {
+            auto* un = static_cast<UnaryExpr*>(node);
+            collectFreeVars(un->operand.get());
+        }
+    };
+    collectFreeVars(condition);
+
+    // Determine the sort to use for translation
+    Z3_sort defaultSort = getIntSort(32);
+    if (!env.empty()) {
+        // Use the sort of the first variable
+        Z3_ast firstVar = env.begin()->second;
+        defaultSort = Z3_get_sort(ctx, firstVar);
+    }
+
+    // Translate condition to Z3
+    Z3_ast z3Cond = translateExprWithEnv(condition, env, defaultSort);
+    if (!z3Cond) {
+        VerifyOutcome out;
+        out.result = VerifyResult::UNKNOWN;
+        out.conditionText = condition->toString();
+        out.detail = "Could not translate expression to Z3";
+        out.line = line;
+        out.column = column;
+        summary.unknown++;
+        outcomes.push_back(out);
+        return VerifyResult::UNKNOWN;
+    }
+
+    // To prove: condition always holds under axioms
+    // Method: assert axioms AND ¬condition, check UNSAT
+    Z3_solver solver = makeSolver();
+    for (auto ax : axioms) Z3_solver_assert(ctx, solver, ax);
+    Z3_ast negCond = Z3_mk_not(ctx, z3Cond);
+    Z3_solver_assert(ctx, solver, negCond);
+
+    Z3_lbool result = checkSat(solver);
+
+    if (result == Z3_L_FALSE) {
+        // UNSAT → condition always holds → PROVEN
+        deleteSolver(solver);
+        VerifyOutcome out;
+        out.result = VerifyResult::PROVEN;
+        out.conditionText = condition->toString();
+        out.detail = "Proven: assertion always holds under given constraints";
+        out.line = line;
+        out.column = column;
+        summary.proven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::PROVEN;
+    }
+
+    if (result == Z3_L_TRUE) {
+        // SAT → found counterexample → DISPROVEN
+        // Extract counterexample from the model
+        std::string counterexample;
+        Z3_model model = Z3_solver_get_model(ctx, solver);
+        if (model) {
+            Z3_model_inc_ref(ctx, model);
+            bool first = true;
+            for (const auto& [varName, varAst] : env) {
+                Z3_ast val = nullptr;
+                if (Z3_model_eval(ctx, model, varAst, true, &val) && val) {
+                    if (!first) counterexample += ", ";
+                    // Convert Z3 value to human-readable form
+                    std::string valStr;
+                    Z3_sort valSort = Z3_get_sort(ctx, val);
+                    Z3_sort_kind sk = Z3_get_sort_kind(ctx, valSort);
+                    if (sk == Z3_BV_SORT) {
+                        // Bitvector → extract as signed integer
+                        uint64_t uval = 0;
+                        if (Z3_get_numeral_uint64(ctx, val, &uval)) {
+                            unsigned bw = Z3_get_bv_sort_size(ctx, valSort);
+                            // Interpret as signed
+                            if (bw < 64 && (uval & (1ULL << (bw - 1)))) {
+                                int64_t sval = static_cast<int64_t>(uval) -
+                                    (1LL << bw);
+                                valStr = std::to_string(sval);
+                            } else {
+                                valStr = std::to_string(static_cast<int64_t>(uval));
+                            }
+                        } else {
+                            valStr = Z3_ast_to_string(ctx, val);
+                        }
+                    } else {
+                        valStr = Z3_ast_to_string(ctx, val);
+                    }
+                    counterexample += varName + " = " + valStr;
+                    first = false;
+                }
+            }
+            Z3_model_dec_ref(ctx, model);
+        }
+        deleteSolver(solver);
+
+        VerifyOutcome out;
+        out.result = VerifyResult::DISPROVEN;
+        out.conditionText = condition->toString();
+        out.detail = counterexample.empty()
+            ? "Disproven: counterexample exists"
+            : "Disproven: fails when " + counterexample;
+        out.line = line;
+        out.column = column;
+        summary.disproven++;
+        outcomes.push_back(out);
+        summary.outcomes.push_back(out);
+        return VerifyResult::DISPROVEN;
+    }
+
+    // UNKNOWN
+    deleteSolver(solver);
+    VerifyOutcome out;
+    out.result = VerifyResult::UNKNOWN;
+    out.conditionText = condition->toString();
+    out.detail = "Unknown: solver could not determine (timeout or too complex)";
+    out.line = line;
+    out.column = column;
+    summary.unknown++;
+    outcomes.push_back(out);
+    summary.outcomes.push_back(out);
+    return VerifyResult::UNKNOWN;
 }
 
 } // namespace aria

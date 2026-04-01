@@ -54,6 +54,8 @@ public:
         RETURN,               // return statement
         PASS,                 // pass statement (result success)
         FAIL,                 // fail statement (result error)
+        PROVE,                // prove statement (compile-time Z3 assertion)
+        ASSERT_STATIC,        // assert_static statement (compile-time assertion, runtime fallback)
         BREAK,                // break statement
         CONTINUE,             // continue statement
         DEFER,                // defer statement (RAII cleanup)

@@ -216,6 +216,14 @@ std::string FailStmt::toString() const {
     return "Fail(" + errorCode->toString() + ")";
 }
 
+std::string ProveStmt::toString() const {
+    return "Prove(" + condition->toString() + ")";
+}
+
+std::string AssertStaticStmt::toString() const {
+    return "AssertStatic(" + condition->toString() + ")";
+}
+
 std::string IfStmt::toString() const {
     std::string result = "If(" + condition->toString() + ", " + thenBranch->toString();
     if (elseBranch) {

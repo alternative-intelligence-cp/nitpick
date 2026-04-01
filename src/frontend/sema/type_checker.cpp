@@ -7962,6 +7962,14 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkFailStmt(static_cast<FailStmt*>(stmt));
             break;
         
+        case ASTNode::NodeType::PROVE:
+            checkProveStmt(static_cast<ProveStmt*>(stmt));
+            break;
+        
+        case ASTNode::NodeType::ASSERT_STATIC:
+            checkAssertStaticStmt(static_cast<AssertStaticStmt*>(stmt));
+            break;
+        
         case ASTNode::NodeType::IF:
             checkIfStmt(static_cast<IfStmt*>(stmt));
             break;
@@ -10880,6 +10888,34 @@ void TypeChecker::checkFailStmt(FailStmt* stmt) {
     PrimitiveType* primType = static_cast<PrimitiveType*>(errorType);
     if (!isStandardIntType(primType)) {
         addError("Fail error code must be an integer type, got '" + errorType->toString() + "'", stmt);
+    }
+}
+
+void TypeChecker::checkProveStmt(ProveStmt* stmt) {
+    Type* condType = inferType(stmt->condition.get());
+    
+    if (condType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Condition must be bool
+    PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
+    if (!condPrim || condPrim->getName() != "bool") {
+        addError("prove condition must be 'bool' type, got '" + condType->toString() + "'", stmt);
+    }
+}
+
+void TypeChecker::checkAssertStaticStmt(AssertStaticStmt* stmt) {
+    Type* condType = inferType(stmt->condition.get());
+    
+    if (condType->getKind() == TypeKind::ERROR) {
+        return;
+    }
+    
+    // Condition must be bool
+    PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
+    if (!condPrim || condPrim->getName() != "bool") {
+        addError("assert_static condition must be 'bool' type, got '" + condType->toString() + "'", stmt);
     }
 }
 

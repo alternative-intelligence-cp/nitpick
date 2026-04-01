@@ -169,6 +169,8 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_RETURN: return "RETURN";
         case TokenType::TOKEN_KW_PASS: return "PASS";
         case TokenType::TOKEN_KW_FAIL: return "FAIL";
+        case TokenType::TOKEN_KW_PROVE: return "PROVE";
+        case TokenType::TOKEN_KW_ASSERT_STATIC: return "ASSERT_STATIC";
         
         // Async
         case TokenType::TOKEN_KW_ASYNC: return "ASYNC";
