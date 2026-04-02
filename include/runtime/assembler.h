@@ -146,12 +146,165 @@ bool aria_asm_label_is_bound(const AsmLabel* label);
 
 #define MAX_LABELS 128
 
+// =============================================================================
+// Register Allocator IR (v0.7.3)
+// =============================================================================
+
+/** Register classes for virtual register allocation */
+typedef enum {
+    REG_CLASS_GPR = 0,   // General-purpose (RAX-R15, excluding RSP/RBP)
+    REG_CLASS_XMM = 1,   // SSE/floating-point (XMM0-XMM15)
+} RegClass;
+
+/** Virtual register ID ranges:
+ *  0-79: physical registers (AsmRegister enum values)
+ *  256-511: virtual GPRs
+ *  512-767: virtual XMMs
+ */
+#define VREG_GPR_BASE  256
+#define VREG_XMM_BASE  512
+#define VREG_MAX       768
+#define MAX_VREGS      256   // per class
+#define MAX_IR_INSNS   4096
+
+/** Check if a register ID is virtual */
+#define IS_VREG(r) ((r) >= VREG_GPR_BASE)
+#define IS_VREG_GPR(r) ((r) >= VREG_GPR_BASE && (r) < VREG_XMM_BASE)
+#define IS_VREG_XMM(r) ((r) >= VREG_XMM_BASE && (r) < VREG_MAX)
+
+/** JIT IR opcodes — internal representation of all assembler instructions */
+typedef enum {
+    // Integer register-register
+    JIT_OP_MOV_IMM64,     // dst = imm64
+    JIT_OP_MOV_RR,        // dst = src
+    JIT_OP_ADD_RR,        // dst += src
+    JIT_OP_SUB_RR,        // dst -= src
+    JIT_OP_IMUL_RR,       // dst *= src
+    JIT_OP_XOR_RR,        // dst ^= src
+    JIT_OP_AND_RR,        // dst &= src
+    JIT_OP_OR_RR,         // dst |= src
+
+    // Integer unary
+    JIT_OP_NOT,           // dst = ~dst
+    JIT_OP_NEG,           // dst = -dst
+
+    // Integer immediate
+    JIT_OP_ADD_IMM32,     // dst += imm32
+    JIT_OP_SUB_IMM32,     // dst -= imm32
+    JIT_OP_CMP_IMM32,     // cmp dst, imm32
+    JIT_OP_SHL_IMM8,      // dst <<= imm8
+    JIT_OP_SHR_IMM8,      // dst >>= imm8 (logical)
+    JIT_OP_SAR_IMM8,      // dst >>= imm8 (arithmetic)
+
+    // Compare
+    JIT_OP_CMP_RR,        // cmp left, right
+
+    // Memory
+    JIT_OP_MOV_LOAD,      // dst = [base + offset]
+    JIT_OP_MOV_STORE,     // [base + offset] = src
+    JIT_OP_LEA,           // dst = base + offset
+    JIT_OP_STORE_LOCAL,   // [RBP - slot] = src
+    JIT_OP_LOAD_LOCAL,    // dst = [RBP - slot]
+
+    // Stack
+    JIT_OP_PUSH,          // push reg
+    JIT_OP_POP,           // pop reg
+
+    // Control flow
+    JIT_OP_RET,
+    JIT_OP_JMP,           // jmp label
+    JIT_OP_JE,            // je label
+    JIT_OP_JNE,           // jne label
+    JIT_OP_JL,
+    JIT_OP_JLE,
+    JIT_OP_JG,
+    JIT_OP_JGE,
+    JIT_OP_JB,
+    JIT_OP_JBE,
+    JIT_OP_JA,
+    JIT_OP_JAE,
+    JIT_OP_LABEL,         // pseudo: bind label
+
+    // Call
+    JIT_OP_CALL_REG,      // call reg
+    JIT_OP_CALL_LABEL,    // call label
+    JIT_OP_CALL_ABS,      // call absolute address
+
+    // Prologue/Epilogue
+    JIT_OP_PROLOGUE,      // stack_size in imm64
+    JIT_OP_EPILOGUE,
+
+    // SSE2 scalar double
+    JIT_OP_MOVSD_RR,      // xmm = xmm
+    JIT_OP_MOVSD_LOAD,    // xmm = [base + offset]
+    JIT_OP_MOVSD_STORE,   // [base + offset] = xmm
+    JIT_OP_ADDSD,
+    JIT_OP_SUBSD,
+    JIT_OP_MULSD,
+    JIT_OP_DIVSD,
+    JIT_OP_UCOMISD,
+
+    // SSE packed single
+    JIT_OP_MOVAPS_RR,
+    JIT_OP_MOVAPS_LOAD,
+    JIT_OP_MOVAPS_STORE,
+    JIT_OP_ADDPS,
+    JIT_OP_MULPS,
+} JitOpcode;
+
+/** Single IR instruction */
+typedef struct {
+    JitOpcode opcode;
+    int32_t dst;        // destination register (phys or vreg)
+    int32_t src1;       // source 1 / base register
+    int32_t src2;       // source 2 (for store ops)
+    int32_t offset;     // memory offset or label_id or imm8
+    int64_t imm64;      // 64-bit immediate or absolute address
+} JitIR;
+
+/** Live range for a virtual register */
+typedef struct {
+    int32_t vreg;       // virtual register ID
+    int32_t start;      // first instruction index (def)
+    int32_t end;        // last instruction index (use)
+    int32_t phys;       // assigned physical register (-1 if spilled)
+    int32_t spill_slot; // stack spill offset (-1 if not spilled)
+    RegClass reg_class; // GPR or XMM
+} LiveRange;
+
+#define MAX_LIVE_RANGES 512
+#define MAX_SPILL_SLOTS 64
+
+/** Register allocator state (attached to Assembler when vregs are used) */
+typedef struct {
+    JitIR* ir;                          // instruction queue
+    int32_t ir_count;                   // number of queued instructions
+    int32_t ir_capacity;                // allocated capacity
+
+    int32_t next_gpr_vreg;             // next GPR vreg ID to allocate
+    int32_t next_xmm_vreg;            // next XMM vreg ID to allocate
+    bool has_vregs;                     // true if any vreg has been allocated
+
+    LiveRange ranges[MAX_LIVE_RANGES]; // live ranges
+    int32_t range_count;
+
+    int32_t spill_count;               // number of spill slots used
+    int32_t extra_stack_size;          // additional stack bytes for spills
+
+    uint16_t reserved_gprs;            // bitmask: physical GPRs used directly in IR
+    uint16_t reserved_xmms;            // bitmask: physical XMMs used directly in IR
+    bool auto_frame;                   // true if auto-prologue/epilogue needed
+    uint8_t csr_save_count;           // number of callee-saved regs to save
+    int32_t csr_save_regs[5];         // callee-saved regs to push/pop (RBX,R12-R15)
+} RegAllocState;
+
 typedef struct {
     CodeBuffer* buffer;              // Instruction buffer
     AsmLabel labels[MAX_LABELS];     // Label table
     uint32_t label_count;            // Active labels
     bool error;                      // Error flag
     char error_msg[256];             // Error description
+    RegAllocState* regalloc;         // Register allocator (NULL if not used)
 } Assembler;
 
 /**
@@ -645,6 +798,40 @@ int64_t aria_asm_execute_i64(WildXGuard* guard, int64_t arg1);
  * @return Function return value (RAX)
  */
 int64_t aria_asm_execute_i64_i64(WildXGuard* guard, int64_t arg1, int64_t arg2);
+
+// =============================================================================
+// Virtual Register API (v0.7.3 — Register Allocator)
+// =============================================================================
+
+/**
+ * Allocate a new virtual GPR register.
+ * Returns vreg ID >= VREG_GPR_BASE. Pass this to any instruction
+ * that takes AsmRegister — the allocator resolves it at finalize time.
+ *
+ * Enables IR-buffered mode: subsequent instructions are queued
+ * instead of directly emitted, and register allocation runs at finalize.
+ *
+ * @return Virtual register ID, or -1 on error
+ */
+int aria_asm_vreg_new_gpr(Assembler* asm_ctx);
+
+/**
+ * Allocate a new virtual XMM register (for SSE2/SIMD).
+ * Returns vreg ID >= VREG_XMM_BASE.
+ *
+ * @return Virtual register ID, or -1 on error
+ */
+int aria_asm_vreg_new_xmm(Assembler* asm_ctx);
+
+/**
+ * Query how many virtual registers have been allocated.
+ */
+int aria_asm_vreg_count(const Assembler* asm_ctx);
+
+/**
+ * Query how many spill slots were needed (available after finalize).
+ */
+int aria_asm_spill_count(const Assembler* asm_ctx);
 
 #ifdef __cplusplus
 }

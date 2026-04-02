@@ -93,7 +93,7 @@ extern "C" {
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 7
 #define ARIA_VERSION_PATCH 2
-#define ARIA_VERSION "0.7.2"
+#define ARIA_VERSION "0.7.3"
 
 // Compiler options
 struct CompilerOptions {
