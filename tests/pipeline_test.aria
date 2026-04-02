@@ -44,7 +44,7 @@ func:test_conversion = int32() {
     println("-- AST Conversion ----------------------------------");
 
     // T01: Integer literal
-    wild int8->:a01 = parse(tokenize("42;"));
+    wild int8->:a01 = raw parse(raw tokenize("42;"));
     wild int8->:s01 = pipeline_convert(a01);
     string:ns01 = pipeline_native_to_string(s01);
     bool:ok01 = (ns01 != "(null)");
@@ -54,7 +54,7 @@ func:test_conversion = int32() {
     ast_free(a01);
 
     // T02: String literal
-    wild int8->:a02 = parse(tokenize("\"hello\";"));
+    wild int8->:a02 = raw parse(raw tokenize("\"hello\";"));
     wild int8->:s02 = pipeline_convert(a02);
     string:ns02 = pipeline_native_to_string(s02);
     bool:ok02 = (ns02 != "(null)");
@@ -64,7 +64,7 @@ func:test_conversion = int32() {
     ast_free(a02);
 
     // T03: Variable declaration
-    wild int8->:a03 = parse(tokenize("int32:x = 42i32;"));
+    wild int8->:a03 = raw parse(raw tokenize("int32:x = 42i32;"));
     wild int8->:s03 = pipeline_convert(a03);
     string:ns03 = pipeline_native_to_string(s03);
     bool:ok03 = (ns03 != "(null)");
@@ -74,7 +74,7 @@ func:test_conversion = int32() {
     ast_free(a03);
 
     // T04: Binary expression
-    wild int8->:a04 = parse(tokenize("1i32 + 2i32;"));
+    wild int8->:a04 = raw parse(raw tokenize("1i32 + 2i32;"));
     wild int8->:s04 = pipeline_convert(a04);
     string:ns04 = pipeline_native_to_string(s04);
     bool:ok04 = (ns04 != "(null)");
@@ -84,7 +84,7 @@ func:test_conversion = int32() {
     ast_free(a04);
 
     // T05: Function declaration
-    wild int8->:a05 = parse(tokenize("func:add = int32(int32:a, int32:b) { pass(a + b); };"));
+    wild int8->:a05 = raw parse(raw tokenize("func:add = int32(int32:a, int32:b) { pass(a + b); };"));
     wild int8->:s05 = pipeline_convert(a05);
     string:ns05 = pipeline_native_to_string(s05);
     bool:ok05 = (ns05 != "(null)");
@@ -94,7 +94,7 @@ func:test_conversion = int32() {
     ast_free(a05);
 
     // T06: If statement
-    wild int8->:a06 = parse(tokenize("if (true) { 1i32; }"));
+    wild int8->:a06 = raw parse(raw tokenize("if (true) { 1i32; }"));
     wild int8->:s06 = pipeline_convert(a06);
     string:ns06 = pipeline_native_to_string(s06);
     bool:ok06 = (ns06 != "(null)");
@@ -104,7 +104,7 @@ func:test_conversion = int32() {
     ast_free(a06);
 
     // T07: While loop
-    wild int8->:a07 = parse(tokenize("while (true) { 1i32; }"));
+    wild int8->:a07 = raw parse(raw tokenize("while (true) { 1i32; }"));
     wild int8->:s07 = pipeline_convert(a07);
     string:ns07 = pipeline_native_to_string(s07);
     bool:ok07 = (ns07 != "(null)");
@@ -114,7 +114,7 @@ func:test_conversion = int32() {
     ast_free(a07);
 
     // T08: Function call
-    wild int8->:a08 = parse(tokenize("foo(1i32, 2i32);"));
+    wild int8->:a08 = raw parse(raw tokenize("foo(1i32, 2i32);"));
     wild int8->:s08 = pipeline_convert(a08);
     string:ns08 = pipeline_native_to_string(s08);
     bool:ok08 = (ns08 != "(null)");
@@ -124,7 +124,7 @@ func:test_conversion = int32() {
     ast_free(a08);
 
     // T09: Assignment
-    wild int8->:a09 = parse(tokenize("x = 5i32;"));
+    wild int8->:a09 = raw parse(raw tokenize("x = 5i32;"));
     wild int8->:s09 = pipeline_convert(a09);
     string:ns09 = pipeline_native_to_string(s09);
     bool:ok09 = (ns09 != "(null)");
@@ -134,7 +134,7 @@ func:test_conversion = int32() {
     ast_free(a09);
 
     // T10: Struct declaration
-    wild int8->:a10 = parse(tokenize("struct:Point = { int32:x; int32:y; };"));
+    wild int8->:a10 = raw parse(raw tokenize("struct:Point = { int32:x; int32:y; };"));
     wild int8->:s10 = pipeline_convert(a10);
     string:ns10 = pipeline_native_to_string(s10);
     bool:ok10 = (ns10 != "(null)");
@@ -164,70 +164,70 @@ func:test_validation = int32() {
     println("-- Pipeline Validation (structural) ----------------");
 
     // T11: Integer literal — structural match
-    wild int8->:a11 = parse(tokenize("42;"));
+    wild int8->:a11 = raw parse(raw tokenize("42;"));
     int32:v11 = pipeline_validate("42;", a11);
     if (v11 == 0i32) { drop check(true, "T11 integer structural match"); passed = passed + 1i32; }
     else { drop check(false, "T11 integer structural match"); failed = failed + 1i32; }
     ast_free(a11);
 
     // T12: Variable declaration
-    wild int8->:a12 = parse(tokenize("int32:x = 42i32;"));
+    wild int8->:a12 = raw parse(raw tokenize("int32:x = 42i32;"));
     int32:v12 = pipeline_validate("int32:x = 42i32;", a12);
     if (v12 == 0i32) { drop check(true, "T12 var decl structural match"); passed = passed + 1i32; }
     else { drop check(false, "T12 var decl structural match"); failed = failed + 1i32; }
     ast_free(a12);
 
     // T13: Binary expression
-    wild int8->:a13 = parse(tokenize("1i32 + 2i32;"));
+    wild int8->:a13 = raw parse(raw tokenize("1i32 + 2i32;"));
     int32:v13 = pipeline_validate("1i32 + 2i32;", a13);
     if (v13 == 0i32) { drop check(true, "T13 binary expr structural match"); passed = passed + 1i32; }
     else { drop check(false, "T13 binary expr structural match"); failed = failed + 1i32; }
     ast_free(a13);
 
     // T14: Function declaration
-    wild int8->:a14 = parse(tokenize("func:add = int32(int32:a, int32:b) { pass(a + b); };"));
+    wild int8->:a14 = raw parse(raw tokenize("func:add = int32(int32:a, int32:b) { pass(a + b); };"));
     int32:v14 = pipeline_validate("func:add = int32(int32:a, int32:b) { pass(a + b); };", a14);
     if (v14 == 0i32) { drop check(true, "T14 func decl structural match"); passed = passed + 1i32; }
     else { drop check(false, "T14 func decl structural match"); failed = failed + 1i32; }
     ast_free(a14);
 
     // T15: If statement
-    wild int8->:a15 = parse(tokenize("if (true) { 1i32; }"));
+    wild int8->:a15 = raw parse(raw tokenize("if (true) { 1i32; }"));
     int32:v15 = pipeline_validate("if (true) { 1i32; }", a15);
     if (v15 == 0i32) { drop check(true, "T15 if stmt structural match"); passed = passed + 1i32; }
     else { drop check(false, "T15 if stmt structural match"); failed = failed + 1i32; }
     ast_free(a15);
 
     // T16: While loop
-    wild int8->:a16 = parse(tokenize("while (true) { 1i32; }"));
+    wild int8->:a16 = raw parse(raw tokenize("while (true) { 1i32; }"));
     int32:v16 = pipeline_validate("while (true) { 1i32; }", a16);
     if (v16 == 0i32) { drop check(true, "T16 while structural match"); passed = passed + 1i32; }
     else { drop check(false, "T16 while structural match"); failed = failed + 1i32; }
     ast_free(a16);
 
     // T17: Function call
-    wild int8->:a17 = parse(tokenize("foo(1i32, 2i32);"));
+    wild int8->:a17 = raw parse(raw tokenize("foo(1i32, 2i32);"));
     int32:v17 = pipeline_validate("foo(1i32, 2i32);", a17);
     if (v17 == 0i32) { drop check(true, "T17 func call structural match"); passed = passed + 1i32; }
     else { drop check(false, "T17 func call structural match"); failed = failed + 1i32; }
     ast_free(a17);
 
     // T18: Assignment
-    wild int8->:a18 = parse(tokenize("x = 5i32;"));
+    wild int8->:a18 = raw parse(raw tokenize("x = 5i32;"));
     int32:v18 = pipeline_validate("x = 5i32;", a18);
     if (v18 == 0i32) { drop check(true, "T18 assignment structural match"); passed = passed + 1i32; }
     else { drop check(false, "T18 assignment structural match"); failed = failed + 1i32; }
     ast_free(a18);
 
     // T19: Struct declaration
-    wild int8->:a19 = parse(tokenize("struct:Point = { int32:x; int32:y; };"));
+    wild int8->:a19 = raw parse(raw tokenize("struct:Point = { int32:x; int32:y; };"));
     int32:v19 = pipeline_validate("struct:Point = { int32:x; int32:y; };", a19);
     if (v19 == 0i32) { drop check(true, "T19 struct structural match"); passed = passed + 1i32; }
     else { drop check(false, "T19 struct structural match"); failed = failed + 1i32; }
     ast_free(a19);
 
     // T20: String literal
-    wild int8->:a20 = parse(tokenize("\"hello world\";"));
+    wild int8->:a20 = raw parse(raw tokenize("\"hello world\";"));
     int32:v20 = pipeline_validate("\"hello world\";", a20);
     if (v20 == 0i32) { drop check(true, "T20 string literal structural match"); passed = passed + 1i32; }
     else { drop check(false, "T20 string literal structural match"); failed = failed + 1i32; }
@@ -254,70 +254,70 @@ func:test_deep_validation = int32() {
     println("-- Pipeline Validation (deep) ----------------------");
 
     // T21: Integer literal deep match
-    wild int8->:a21 = parse(tokenize("42;"));
+    wild int8->:a21 = raw parse(raw tokenize("42;"));
     int32:d21 = pipeline_validate_deep("42;", a21);
     if (d21 == 1i32) { drop check(true, "T21 integer deep match"); passed = passed + 1i32; }
     else { drop check(false, "T21 integer deep match"); failed = failed + 1i32; }
     ast_free(a21);
 
     // T22: Boolean literal
-    wild int8->:a22 = parse(tokenize("true;"));
+    wild int8->:a22 = raw parse(raw tokenize("true;"));
     int32:d22 = pipeline_validate_deep("true;", a22);
     if (d22 == 1i32) { drop check(true, "T22 boolean deep match"); passed = passed + 1i32; }
     else { drop check(false, "T22 boolean deep match"); failed = failed + 1i32; }
     ast_free(a22);
 
     // T23: Identifier
-    wild int8->:a23 = parse(tokenize("x;"));
+    wild int8->:a23 = raw parse(raw tokenize("x;"));
     int32:d23 = pipeline_validate_deep("x;", a23);
     if (d23 == 1i32) { drop check(true, "T23 identifier deep match"); passed = passed + 1i32; }
     else { drop check(false, "T23 identifier deep match"); failed = failed + 1i32; }
     ast_free(a23);
 
     // T24: Variable declaration
-    wild int8->:a24 = parse(tokenize("int32:x = 10i32;"));
+    wild int8->:a24 = raw parse(raw tokenize("int32:x = 10i32;"));
     int32:d24 = pipeline_validate_deep("int32:x = 10i32;", a24);
     if (d24 == 1i32) { drop check(true, "T24 var decl deep match"); passed = passed + 1i32; }
     else { drop check(false, "T24 var decl deep match"); failed = failed + 1i32; }
     ast_free(a24);
 
     // T25: Binary addition
-    wild int8->:a25 = parse(tokenize("1i32 + 2i32;"));
+    wild int8->:a25 = raw parse(raw tokenize("1i32 + 2i32;"));
     int32:d25 = pipeline_validate_deep("1i32 + 2i32;", a25);
     if (d25 == 1i32) { drop check(true, "T25 binary add deep match"); passed = passed + 1i32; }
     else { drop check(false, "T25 binary add deep match"); failed = failed + 1i32; }
     ast_free(a25);
 
     // T26: Function declaration
-    wild int8->:a26 = parse(tokenize("func:foo = void() { };"));
+    wild int8->:a26 = raw parse(raw tokenize("func:foo = void() { };"));
     int32:d26 = pipeline_validate_deep("func:foo = void() { };", a26);
     if (d26 == 1i32) { drop check(true, "T26 func decl deep match"); passed = passed + 1i32; }
     else { drop check(false, "T26 func decl deep match"); failed = failed + 1i32; }
     ast_free(a26);
 
     // T27: If/else
-    wild int8->:a27 = parse(tokenize("if (true) { 1i32; } else { 2i32; }"));
+    wild int8->:a27 = raw parse(raw tokenize("if (true) { 1i32; } else { 2i32; }"));
     int32:d27 = pipeline_validate_deep("if (true) { 1i32; } else { 2i32; }", a27);
     if (d27 == 1i32) { drop check(true, "T27 if/else deep match"); passed = passed + 1i32; }
     else { drop check(false, "T27 if/else deep match"); failed = failed + 1i32; }
     ast_free(a27);
 
     // T28: While loop
-    wild int8->:a28 = parse(tokenize("while (true) { break; }"));
+    wild int8->:a28 = raw parse(raw tokenize("while (true) { break; }"));
     int32:d28 = pipeline_validate_deep("while (true) { break; }", a28);
     if (d28 == 1i32) { drop check(true, "T28 while deep match"); passed = passed + 1i32; }
     else { drop check(false, "T28 while deep match"); failed = failed + 1i32; }
     ast_free(a28);
 
     // T29: Function call
-    wild int8->:a29 = parse(tokenize("foo(x);"));
+    wild int8->:a29 = raw parse(raw tokenize("foo(x);"));
     int32:d29 = pipeline_validate_deep("foo(x);", a29);
     if (d29 == 1i32) { drop check(true, "T29 func call deep match"); passed = passed + 1i32; }
     else { drop check(false, "T29 func call deep match"); failed = failed + 1i32; }
     ast_free(a29);
 
     // T30: Pass statement
-    wild int8->:a30 = parse(tokenize("pass(42i32);"));
+    wild int8->:a30 = raw parse(raw tokenize("pass(42i32);"));
     int32:d30 = pipeline_validate_deep("pass(42i32);", a30);
     if (d30 == 1i32) { drop check(true, "T30 pass stmt deep match"); passed = passed + 1i32; }
     else { drop check(false, "T30 pass stmt deep match"); failed = failed + 1i32; }
@@ -344,7 +344,7 @@ func:test_complex = int32() {
     println("-- Complex Programs --------------------------------");
 
     // T31: Multiple statements
-    wild int8->:a31 = parse(tokenize("int32:x = 1i32; int32:y = 2i32;"));
+    wild int8->:a31 = raw parse(raw tokenize("int32:x = 1i32; int32:y = 2i32;"));
     wild int8->:s31 = pipeline_convert(a31);
     string:ns31 = pipeline_native_to_string(s31);
     bool:ok31 = (ns31 != "(null)");
@@ -354,7 +354,7 @@ func:test_complex = int32() {
     ast_free(a31);
 
     // T32: Function with parameters and body
-    wild int8->:a32 = parse(tokenize("func:max = int32(int32:a, int32:b) { if (a > b) { pass(a); } pass(b); };"));
+    wild int8->:a32 = raw parse(raw tokenize("func:max = int32(int32:a, int32:b) { if (a > b) { pass(a); } pass(b); };"));
     wild int8->:s32 = pipeline_convert(a32);
     string:ns32 = pipeline_native_to_string(s32);
     bool:ok32 = (ns32 != "(null)");
@@ -364,7 +364,7 @@ func:test_complex = int32() {
     ast_free(a32);
 
     // T33: Nested if/else
-    wild int8->:a33 = parse(tokenize("if (true) { if (false) { 1i32; } else { 2i32; } }"));
+    wild int8->:a33 = raw parse(raw tokenize("if (true) { if (false) { 1i32; } else { 2i32; } }"));
     wild int8->:s33 = pipeline_convert(a33);
     string:ns33 = pipeline_native_to_string(s33);
     bool:ok33 = (ns33 != "(null)");
@@ -374,7 +374,7 @@ func:test_complex = int32() {
     ast_free(a33);
 
     // T34: Unary expression
-    wild int8->:a34 = parse(tokenize("-42i32;"));
+    wild int8->:a34 = raw parse(raw tokenize("-42i32;"));
     wild int8->:s34 = pipeline_convert(a34);
     string:ns34 = pipeline_native_to_string(s34);
     bool:ok34 = (ns34 != "(null)");
@@ -384,7 +384,7 @@ func:test_complex = int32() {
     ast_free(a34);
 
     // T35: Struct with multiple fields
-    wild int8->:a35 = parse(tokenize("struct:Vec3 = { flt32:x; flt32:y; flt32:z; };"));
+    wild int8->:a35 = raw parse(raw tokenize("struct:Vec3 = { flt32:x; flt32:y; flt32:z; };"));
     wild int8->:s35 = pipeline_convert(a35);
     string:ns35 = pipeline_native_to_string(s35);
     bool:ok35 = (ns35 != "(null)");
@@ -394,7 +394,7 @@ func:test_complex = int32() {
     ast_free(a35);
 
     // T36: Boolean literal true/false
-    wild int8->:a36 = parse(tokenize("bool:flag = true;"));
+    wild int8->:a36 = raw parse(raw tokenize("bool:flag = true;"));
     wild int8->:s36 = pipeline_convert(a36);
     string:ns36 = pipeline_native_to_string(s36);
     bool:ok36 = (ns36 != "(null)");
@@ -404,7 +404,7 @@ func:test_complex = int32() {
     ast_free(a36);
 
     // T37: Return statement
-    wild int8->:a37 = parse(tokenize("return 0i32;"));
+    wild int8->:a37 = raw parse(raw tokenize("return 0i32;"));
     wild int8->:s37 = pipeline_convert(a37);
     string:ns37 = pipeline_native_to_string(s37);
     bool:ok37 = (ns37 != "(null)");
@@ -414,7 +414,7 @@ func:test_complex = int32() {
     ast_free(a37);
 
     // T38: Compound expression
-    wild int8->:a38 = parse(tokenize("1i32 + 2i32 * 3i32;"));
+    wild int8->:a38 = raw parse(raw tokenize("1i32 + 2i32 * 3i32;"));
     wild int8->:s38 = pipeline_convert(a38);
     string:ns38 = pipeline_native_to_string(s38);
     bool:ok38 = (ns38 != "(null)");
@@ -424,7 +424,7 @@ func:test_complex = int32() {
     ast_free(a38);
 
     // T39: Null literal
-    wild int8->:a39 = parse(tokenize("NIL;"));
+    wild int8->:a39 = raw parse(raw tokenize("NIL;"));
     wild int8->:s39 = pipeline_convert(a39);
     string:ns39 = pipeline_native_to_string(s39);
     bool:ok39 = (ns39 != "(null)");
@@ -434,7 +434,7 @@ func:test_complex = int32() {
     ast_free(a39);
 
     // T40: Extern function declaration
-    wild int8->:a40 = parse(tokenize("extern func:puts = int32(wild int8*:s);"));
+    wild int8->:a40 = raw parse(raw tokenize("extern func:puts = int32(wild int8*:s);"));
     wild int8->:s40 = pipeline_convert(a40);
     string:ns40 = pipeline_native_to_string(s40);
     bool:ok40 = (ns40 != "(null)");

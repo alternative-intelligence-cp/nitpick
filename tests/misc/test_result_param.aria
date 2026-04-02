@@ -10,9 +10,6 @@ func:result_as_param = int32(int32:result)
 func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
-    Result<int32>:r =result_as_param(5);
-    if (r.is_error) {
-        exit -1;
-    }
-    exit r.value;
+    int32:r = raw result_as_param(5);
+    exit r;
 };

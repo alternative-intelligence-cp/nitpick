@@ -9,12 +9,12 @@ func:failsafe = int32(tbb32:err) {
 
 func:main = int32() {
     // Simulate a critical error scenario
-    int32:critical_error = 5i32;
+    tbb32:critical_error = 5tbb32;
     
     // Use !!! to call failsafe(critical_error)
     // This desugars to: failsafe(critical_error)
     // The failsafe function will run and return exit code
     int32:result = raw !!! critical_error;
     
-    pass result;
+    exit result;
 };

@@ -622,6 +622,16 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
             return typeSystem->getUnknownType();  // Will be resolved in context
         }
         
+        if (expr->explicit_type == "UNKNOWN") {
+            // unknown keyword sentinel: represents indeterminate value
+            return typeSystem->getUnknownType();
+        }
+        
+        if (expr->explicit_type == "ERR") {
+            // ERR keyword sentinel: represents TBB error value
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+        
         // Convert type suffix to type system name
         std::string type_name = typeSuffixToSystemName(expr->explicit_type);
         
@@ -5615,10 +5625,11 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         
         // ====================================================================
         // NIT ARITHMETIC INTRINSICS
+        // Skip if user has defined their own function with this name
         // ====================================================================
         
         // nit_add(nit, nit) -> nit
-        if (idExpr->name == "nit_add") {
+        if (idExpr->name == "nit_add" && !symbolTable->resolveSymbol("nit_add")) {
             if (expr->arguments.size() != 2) {
                 addError("nit_add() requires exactly two arguments", expr);
                 return typeSystem->getErrorType();
@@ -5627,7 +5638,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
         
         // nit_sub(nit, nit) -> nit
-        if (idExpr->name == "nit_sub") {
+        if (idExpr->name == "nit_sub" && !symbolTable->resolveSymbol("nit_sub")) {
             if (expr->arguments.size() != 2) {
                 addError("nit_sub() requires exactly two arguments", expr);
                 return typeSystem->getErrorType();
@@ -5636,7 +5647,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
         
         // nit_mul(nit, nit) -> nit
-        if (idExpr->name == "nit_mul") {
+        if (idExpr->name == "nit_mul" && !symbolTable->resolveSymbol("nit_mul")) {
             if (expr->arguments.size() != 2) {
                 addError("nit_mul() requires exactly two arguments", expr);
                 return typeSystem->getErrorType();
@@ -5645,7 +5656,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
         
         // nit_div(nit, nit) -> nit
-        if (idExpr->name == "nit_div") {
+        if (idExpr->name == "nit_div" && !symbolTable->resolveSymbol("nit_div")) {
             if (expr->arguments.size() != 2) {
                 addError("nit_div() requires exactly two arguments", expr);
                 return typeSystem->getErrorType();
@@ -5654,7 +5665,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
         
         // nit_neg(nit) -> nit
-        if (idExpr->name == "nit_neg") {
+        if (idExpr->name == "nit_neg" && !symbolTable->resolveSymbol("nit_neg")) {
             if (expr->arguments.size() != 1) {
                 addError("nit_neg() requires exactly one argument", expr);
                 return typeSystem->getErrorType();
@@ -5663,7 +5674,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
         
         // nit_abs(nit) -> nit
-        if (idExpr->name == "nit_abs") {
+        if (idExpr->name == "nit_abs" && !symbolTable->resolveSymbol("nit_abs")) {
             if (expr->arguments.size() != 1) {
                 addError("nit_abs() requires exactly one argument", expr);
                 return typeSystem->getErrorType();
@@ -12722,6 +12733,37 @@ bool TypeChecker::branchAlwaysReturns(ASTNode* branch) {
         return false;
     }
     
+    // Helper lambda to check if a single statement is a terminator
+    auto isTerminator = [](ASTNode* node) -> bool {
+        if (!node) return false;
+        
+        // Direct terminator node types
+        if (node->type == ASTNode::NodeType::RETURN ||
+            node->type == ASTNode::NodeType::PASS ||
+            node->type == ASTNode::NodeType::FAIL ||
+            node->type == ASTNode::NodeType::BREAK ||
+            node->type == ASTNode::NodeType::CONTINUE) {
+            return true;
+        }
+        
+        // exit is parsed as ExpressionStmt(CallExpr("exit", [code]))
+        if (node->type == ASTNode::NodeType::EXPRESSION_STMT) {
+            auto* exprStmt = static_cast<ExpressionStmt*>(node);
+            if (exprStmt->expression && 
+                exprStmt->expression->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(exprStmt->expression.get());
+                if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                    auto* ident = static_cast<IdentifierExpr*>(call->callee.get());
+                    if (ident->name == "exit") {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        return false;
+    };
+    
     // Check block statements
     if (branch->type == ASTNode::NodeType::BLOCK) {
         BlockStmt* block = static_cast<BlockStmt*>(branch);
@@ -12729,21 +12771,12 @@ bool TypeChecker::branchAlwaysReturns(ASTNode* branch) {
             return false;
         }
         
-        // Check if last statement is return/pass/fail/break/continue
-        ASTNode* last = block->statements.back().get();
-        return last->type == ASTNode::NodeType::RETURN ||
-               last->type == ASTNode::NodeType::PASS ||
-               last->type == ASTNode::NodeType::FAIL ||
-               last->type == ASTNode::NodeType::BREAK ||
-               last->type == ASTNode::NodeType::CONTINUE;
+        // Check if last statement is a terminator
+        return isTerminator(block->statements.back().get());
     }
     
     // Single statement (no block)
-    return branch->type == ASTNode::NodeType::RETURN ||
-           branch->type == ASTNode::NodeType::PASS ||
-           branch->type == ASTNode::NodeType::FAIL ||
-           branch->type == ASTNode::NodeType::BREAK ||
-           branch->type == ASTNode::NodeType::CONTINUE;
+    return isTerminator(branch);
 }
 
 // ============================================================================

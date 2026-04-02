@@ -14,19 +14,19 @@ func:failsafe = int32(tbb32:err) { exit 1; };
 func:main = int32() {
     // Test 1: wave_zero creates an all-zero Wave9
     Wave9:z = raw wave_zero();
-    if (z.x != 0) { pass 1i32; }
-    if (z.y != 0) { pass 2i32; }
-    if (z.z != 0) { pass 3i32; }
+    if (z.x != 0) { exit 1i32; }
+    if (z.y != 0) { exit 2i32; }
+    if (z.z != 0) { exit 3i32; }
 
     // Test 2: wave_from_spatial
     nit:sx = 2;
     nit:sy = -1;
     nit:sz = 3;
-    Wave9:s = wave_from_spatial(sx, sy, sz);
-    if (s.x != 2) { pass 4i32; }
-    if (s.y != -1) { pass 5i32; }
-    if (s.z != 3) { pass 6i32; }
-    if (s.r != 0) { pass 7i32; }
+    Wave9:s = raw wave_from_spatial(sx, sy, sz);
+    if (s.x != 2) { exit 4i32; }
+    if (s.y != -1) { exit 5i32; }
+    if (s.z != 3) { exit 6i32; }
+    if (s.r != 0) { exit 7i32; }
 
     // Test 3: wave_interfere (superposition)
     nit:ax = 1;
@@ -35,56 +35,56 @@ func:main = int32() {
     nit:bx = 2;
     nit:by = -1;
     nit:bz = 0;
-    Wave9:a = wave_from_spatial(ax, ay, az);
-    Wave9:b = wave_from_spatial(bx, by, bz);
-    Wave9:c = wave_interfere(a, b);
-    if (c.x != 3) { pass 8i32; }
-    if (c.y != 0) { pass 9i32; }
-    if (c.z != 1) { pass 10i32; }
+    Wave9:a = raw wave_from_spatial(ax, ay, az);
+    Wave9:b = raw wave_from_spatial(bx, by, bz);
+    Wave9:c = raw wave_interfere(a, b);
+    if (c.x != 3) { exit 8i32; }
+    if (c.y != 0) { exit 9i32; }
+    if (c.z != 1) { exit 10i32; }
 
     // Test 4: wave_magnitude_squared
-    // wave_from_spatial(3, 0, 4) -> mag2 = 9 + 0 + 16 = 25
+    // raw wave_from_spatial(3, 0, 4) -> mag2 = 9 + 0 + 16 = 25
     nit:mx = 3;
     nit:my = 0;
     nit:mz = 4;
-    Wave9:m = wave_from_spatial(mx, my, mz);
-    int32:mag2 = wave_magnitude_squared(m);
-    if (mag2 != 25i32) { pass 11i32; }
+    Wave9:m = raw wave_from_spatial(mx, my, mz);
+    int32:mag2 = raw wave_magnitude_squared(m);
+    if (mag2 != 25i32) { exit 11i32; }
 
     // Test 5: wave_equals
     nit:e1 = 1;
     nit:e2 = 2;
     nit:e3 = 3;
     nit:e4 = 4;
-    Wave9:p = wave_from_spatial(e1, e2, e3);
-    Wave9:q = wave_from_spatial(e1, e2, e3);
-    Wave9:r2 = wave_from_spatial(e1, e2, e4);
-    bool:eq1 = wave_equals(p, q);
-    bool:eq2 = wave_equals(p, r2);
-    if (!eq1) { pass 12i32; }
-    if (eq2) { pass 13i32; }
+    Wave9:p = raw wave_from_spatial(e1, e2, e3);
+    Wave9:q = raw wave_from_spatial(e1, e2, e3);
+    Wave9:r2 = raw wave_from_spatial(e1, e2, e4);
+    bool:eq1 = raw wave_equals(p, q);
+    bool:eq2 = raw wave_equals(p, r2);
+    if (!eq1) { exit 12i32; }
+    if (eq2) { exit 13i32; }
 
     // Test 6: wave_negate
     nit:nx = 2;
     nit:ny = -3;
     nit:nz2 = 1;
-    Wave9:orig = wave_from_spatial(nx, ny, nz2);
-    Wave9:neg = wave_negate(orig);
-    if (neg.x != -2) { pass 14i32; }
-    if (neg.y != 3)  { pass 15i32; }
-    if (neg.z != -1) { pass 16i32; }
+    Wave9:orig = raw wave_from_spatial(nx, ny, nz2);
+    Wave9:neg = raw wave_negate(orig);
+    if (neg.x != -2) { exit 14i32; }
+    if (neg.y != 3)  { exit 15i32; }
+    if (neg.z != -1) { exit 16i32; }
 
     // Test 7: nyte compression round-trip
     nit:wkx = 1;
     nit:wky = -2;
     nit:wkz = 3;
-    Wave9:w7 = wave_from_spatial(wkx, wky, wkz);
-    nyte:enc = nyte_from_wave(w7);
-    Wave9:dec = wave_from_nyte(enc);
+    Wave9:w7 = raw wave_from_spatial(wkx, wky, wkz);
+    nyte:enc = raw nyte_from_wave(w7);
+    Wave9:dec = raw wave_from_nyte(enc);
     // x, y, z should survive round-trip (priority encoding preserves them)
-    if (dec.x != 1)  { pass 17i32; }
-    if (dec.y != -2) { pass 18i32; }
-    if (dec.z != 3)  { pass 19i32; }
+    if (dec.x != 1)  { exit 17i32; }
+    if (dec.y != -2) { exit 18i32; }
+    if (dec.z != 3)  { exit 19i32; }
 
     exit 0;
 };

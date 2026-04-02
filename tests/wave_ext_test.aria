@@ -83,8 +83,8 @@ func:main = int32() {
     // t=0 gives a, t=100 gives b
     Wave9:lerp0   = raw wave_lerp(wave_zero(), wfull, 0);
     Wave9:lerp100 = raw wave_lerp(wave_zero(), wfull, 100);
-    if (!(wave_equals(lerp0, wave_zero()))) { println("FAIL: wave_lerp t=0");   failures = failures + 1; }
-    if (!(wave_equals(lerp100, wfull)))     { println("FAIL: wave_lerp t=100"); failures = failures + 1; }
+    if (!(raw wave_equals(lerp0, raw wave_zero()))) { println("FAIL: wave_lerp t=0");   failures = failures + 1; }
+    if (!(raw wave_equals(lerp100, wfull)))           { println("FAIL: wave_lerp t=100"); failures = failures + 1; }
 
     // ── nyte_toString ────────────────────────────────────────────────────────
     // nyte_from_wave stores: x, y, z, u, r → N5(nx,ny,nz,nu,nr)
@@ -111,6 +111,6 @@ func:main = int32() {
         println("ALL WAVE EXT TESTS PASSED");
     }
 
-    pass failures;
+    exit failures;
 };
 

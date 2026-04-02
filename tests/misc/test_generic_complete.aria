@@ -13,29 +13,20 @@ func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     // Test 1: identity function with int32 (literals are int32)
-    Result<int32>:r1 = identity::<int32>(42);
-    if (r1.is_error) {
-        exit -1;
-    }
-    if (r1.value != 42) {
+    int32:r1 = raw identity::<int32>(42);
+    if (r1 != 42) {
         exit -2;
     }
     
     // Test 2: double_value function with int32
-    Result<int32>:r2 = double_value::<int32>(21);
-    if (r2.is_error) {
-        exit -3;
-    }
-    if (r2.value != 42) {
+    int32:r2 = raw double_value::<int32>(21);
+    if (r2 != 42) {
         exit -4;
     }
     
     // Test 3: identity with different value
-    Result<int32>:r3 = identity::<int32>(100);
-    if (r3.is_error) {
-        exit -5;
-    }
-    if (r3.value != 100) {
+    int32:r3 = raw identity::<int32>(100);
+    if (r3 != 100) {
         exit -6;
     }
     

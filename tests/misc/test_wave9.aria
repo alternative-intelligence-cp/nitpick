@@ -290,12 +290,12 @@ func:test_wave_equals = int32() {
         x: 0, y: 1, z: 3  // Different z
     };
     
-    if (!wave_equals(a, b)) {
+    if (!raw wave_equals(a, b)) {
         println("  ✗ FAILED: Equal waves not detected");
         pass 1i32;
     }
     
-    if (wave_equals(a, c)) {
+    if (raw wave_equals(a, c)) {
         println("  ✗ FAILED: Unequal waves detected as equal");
         pass 1i32;
     }
@@ -315,7 +315,7 @@ func:test_spatial_wave = int32() {
     nit:y = -2;
     nit:z = 4;
     
-    Wave9:spatial = wave_from_spatial(x, y, z);
+    Wave9:spatial = raw wave_from_spatial(x, y, z);
     
     // Check spatial components are set
     if (spatial.x != 3 || spatial.y != -2 || spatial.z != 4) {
@@ -381,7 +381,7 @@ func:test_quantum_wave = int32() {
     nit:v = -3;
     nit:w = 1;
     
-    Wave9:quantum = wave_from_quantum(u, v, w);
+    Wave9:quantum = raw wave_from_quantum(u, v, w);
     
     // Check quantum components are set
     if (quantum.u != 2 || quantum.v != -3 || quantum.w != 1) {
@@ -477,5 +477,5 @@ func:main = int32() {
     }
     println("========================================");
     
-    pass failures;
+    exit failures;
 };

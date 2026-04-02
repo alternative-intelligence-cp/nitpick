@@ -37,7 +37,7 @@ func:test_literals = int32() {
     println("-- Literals ----------------------------------------");
 
     // T01: Integer literal — program[0]=expr_stmt, expr_stmt[0]=literal(kind=LIT_INT=1)
-    wild int8->:a01 = parse(tokenize("42;"));
+    wild int8->:a01 = raw parse(raw tokenize("42;"));
     int32:et01 = ast_child2_type(a01, 0i64, 0i64);
     int32:ek01 = ast_child2_bool(a01, 0i64, 0i64);
     if (et01 == 0i32 && ek01 == 1i32) {
@@ -46,7 +46,7 @@ func:test_literals = int32() {
     ast_free(a01);
 
     // T02: String literal (LIT_STRING=3)
-    wild int8->:a02 = parse(tokenize("\"hello\";"));
+    wild int8->:a02 = raw parse(raw tokenize("\"hello\";"));
     int32:et02 = ast_child2_type(a02, 0i64, 0i64);
     int32:ek02 = ast_child2_bool(a02, 0i64, 0i64);
     if (et02 == 0i32 && ek02 == 3i32) {
@@ -55,7 +55,7 @@ func:test_literals = int32() {
     ast_free(a02);
 
     // T03: Bool true (LIT_BOOL=4, val=1)
-    wild int8->:a03 = parse(tokenize("true;"));
+    wild int8->:a03 = raw parse(raw tokenize("true;"));
     int32:ek03 = ast_child2_bool(a03, 0i64, 0i64);
     int64:ev03 = ast_child2_int(a03, 0i64, 0i64);
     if (ek03 == 4i32 && ev03 == 1i64) {
@@ -64,7 +64,7 @@ func:test_literals = int32() {
     ast_free(a03);
 
     // T04: Bool false (val=0)
-    wild int8->:a04 = parse(tokenize("false;"));
+    wild int8->:a04 = raw parse(raw tokenize("false;"));
     int32:ek04 = ast_child2_bool(a04, 0i64, 0i64);
     int64:ev04 = ast_child2_int(a04, 0i64, 0i64);
     if (ek04 == 4i32 && ev04 == 0i64) {
@@ -73,7 +73,7 @@ func:test_literals = int32() {
     ast_free(a04);
 
     // T05: Null literal (LIT_NULL=5)
-    wild int8->:a05 = parse(tokenize("NULL;"));
+    wild int8->:a05 = raw parse(raw tokenize("NULL;"));
     int32:ek05 = ast_child2_bool(a05, 0i64, 0i64);
     if (ek05 == 5i32) {
         drop check(true, "T05 null literal"); passed = passed + 1i32;
@@ -81,7 +81,7 @@ func:test_literals = int32() {
     ast_free(a05);
 
     // T06: Char literal (LIT_CHAR=6)
-    wild int8->:a06 = parse(tokenize("'A';"));
+    wild int8->:a06 = raw parse(raw tokenize("'A';"));
     int32:ek06 = ast_child2_bool(a06, 0i64, 0i64);
     if (ek06 == 6i32) {
         drop check(true, "T06 char literal"); passed = passed + 1i32;
@@ -89,7 +89,7 @@ func:test_literals = int32() {
     ast_free(a06);
 
     // T07: Identifier (NT_IDENTIFIER=1)
-    wild int8->:a07 = parse(tokenize("x;"));
+    wild int8->:a07 = raw parse(raw tokenize("x;"));
     int32:et07 = ast_child2_type(a07, 0i64, 0i64);
     if (et07 == 1i32) {
         drop check(true, "T07 identifier x"); passed = passed + 1i32;
@@ -105,7 +105,7 @@ func:test_binary = int32() {
     println("-- Binary & Unary Expressions ----------------------");
 
     // T08: Addition (NT_BINARY_EXPR=2)
-    wild int8->:a08 = parse(tokenize("1 + 2;"));
+    wild int8->:a08 = raw parse(raw tokenize("1 + 2;"));
     int32:et08 = ast_child2_type(a08, 0i64, 0i64);
     int64:ek08 = ast_child2_child_count(a08, 0i64, 0i64);
     if (et08 == 2i32 && ek08 == 2i64) {
@@ -114,7 +114,7 @@ func:test_binary = int32() {
     ast_free(a08);
 
     // T09: Precedence — + at root, * on right child
-    wild int8->:a09 = parse(tokenize("1 + 2 * 3;"));
+    wild int8->:a09 = raw parse(raw tokenize("1 + 2 * 3;"));
     int32:et09 = ast_child2_type(a09, 0i64, 0i64);
     int32:r09 = ast_child3_type(a09, 0i64, 0i64, 1i64);
     if (et09 == 2i32 && r09 == 2i32) {
@@ -123,7 +123,7 @@ func:test_binary = int32() {
     ast_free(a09);
 
     // T10: Comparison
-    wild int8->:a10 = parse(tokenize("a == b;"));
+    wild int8->:a10 = raw parse(raw tokenize("a == b;"));
     int32:et10 = ast_child2_type(a10, 0i64, 0i64);
     if (et10 == 2i32) {
         drop check(true, "T10 comparison"); passed = passed + 1i32;
@@ -131,7 +131,7 @@ func:test_binary = int32() {
     ast_free(a10);
 
     // T11: Logical AND
-    wild int8->:a11 = parse(tokenize("a && b;"));
+    wild int8->:a11 = raw parse(raw tokenize("a && b;"));
     int32:et11 = ast_child2_type(a11, 0i64, 0i64);
     if (et11 == 2i32) {
         drop check(true, "T11 logical AND"); passed = passed + 1i32;
@@ -139,7 +139,7 @@ func:test_binary = int32() {
     ast_free(a11);
 
     // T12: Unary negation (NT_UNARY_EXPR=3)
-    wild int8->:a12 = parse(tokenize("-x;"));
+    wild int8->:a12 = raw parse(raw tokenize("-x;"));
     int32:et12 = ast_child2_type(a12, 0i64, 0i64);
     if (et12 == 3i32) {
         drop check(true, "T12 unary -x"); passed = passed + 1i32;
@@ -147,7 +147,7 @@ func:test_binary = int32() {
     ast_free(a12);
 
     // T13: Logical NOT
-    wild int8->:a13 = parse(tokenize("!x;"));
+    wild int8->:a13 = raw parse(raw tokenize("!x;"));
     int32:et13 = ast_child2_type(a13, 0i64, 0i64);
     if (et13 == 3i32) {
         drop check(true, "T13 logical NOT"); passed = passed + 1i32;
@@ -155,7 +155,7 @@ func:test_binary = int32() {
     ast_free(a13);
 
     // T14: Grouped (a + b)
-    wild int8->:a14 = parse(tokenize("(a + b);"));
+    wild int8->:a14 = raw parse(raw tokenize("(a + b);"));
     int32:et14 = ast_child2_type(a14, 0i64, 0i64);
     if (et14 == 2i32) {
         drop check(true, "T14 grouped (a+b)"); passed = passed + 1i32;
@@ -171,7 +171,7 @@ func:test_calls = int32() {
     println("-- Function Calls & Access -------------------------");
 
     // T15: No-arg call (NT_CALL_EXPR=4)
-    wild int8->:a15 = parse(tokenize("foo();"));
+    wild int8->:a15 = raw parse(raw tokenize("foo();"));
     int32:et15 = ast_child2_type(a15, 0i64, 0i64);
     if (et15 == 4i32) {
         drop check(true, "T15 call foo()"); passed = passed + 1i32;
@@ -179,7 +179,7 @@ func:test_calls = int32() {
     ast_free(a15);
 
     // T16: Call with 3 args (callee + 3 = 4 kids)
-    wild int8->:a16 = parse(tokenize("foo(1, 2, 3);"));
+    wild int8->:a16 = raw parse(raw tokenize("foo(1, 2, 3);"));
     int32:et16 = ast_child2_type(a16, 0i64, 0i64);
     int64:ek16 = ast_child2_child_count(a16, 0i64, 0i64);
     if (et16 == 4i32 && ek16 == 4i64) {
@@ -188,7 +188,7 @@ func:test_calls = int32() {
     ast_free(a16);
 
     // T17: Nested call
-    wild int8->:a17 = parse(tokenize("foo(bar(1));"));
+    wild int8->:a17 = raw parse(raw tokenize("foo(bar(1));"));
     int32:et17 = ast_child2_type(a17, 0i64, 0i64);
     int32:inner17 = ast_child3_type(a17, 0i64, 0i64, 1i64);
     if (et17 == 4i32 && inner17 == 4i32) {
@@ -197,7 +197,7 @@ func:test_calls = int32() {
     ast_free(a17);
 
     // T18: Member access (NT_MEMBER_ACCESS=6)
-    wild int8->:a18 = parse(tokenize("myobj.field;"));
+    wild int8->:a18 = raw parse(raw tokenize("myobj.field;"));
     int32:et18 = ast_child2_type(a18, 0i64, 0i64);
     if (et18 == 6i32) {
         drop check(true, "T18 member myobj.field"); passed = passed + 1i32;
@@ -205,7 +205,7 @@ func:test_calls = int32() {
     ast_free(a18);
 
     // T19: Array index (NT_INDEX_EXPR=5)
-    wild int8->:a19 = parse(tokenize("arr[0];"));
+    wild int8->:a19 = raw parse(raw tokenize("arr[0];"));
     int32:et19 = ast_child2_type(a19, 0i64, 0i64);
     if (et19 == 5i32) {
         drop check(true, "T19 index arr[0]"); passed = passed + 1i32;
@@ -213,7 +213,7 @@ func:test_calls = int32() {
     ast_free(a19);
 
     // T20: Chained a.b.c
-    wild int8->:a20 = parse(tokenize("a.b.c;"));
+    wild int8->:a20 = raw parse(raw tokenize("a.b.c;"));
     int32:et20 = ast_child2_type(a20, 0i64, 0i64);
     if (et20 == 6i32) {
         drop check(true, "T20 chain a.b.c"); passed = passed + 1i32;
@@ -229,7 +229,7 @@ func:test_decls = int32() {
     println("-- Declarations ------------------------------------");
 
     // T21: Var decl (NT_VAR_DECL=22)
-    wild int8->:a21 = parse(tokenize("int32:x = 5;"));
+    wild int8->:a21 = raw parse(raw tokenize("int32:x = 5;"));
     int32:et21 = ast_child_type(a21, 0i64);
     if (et21 == 22i32) {
         drop check(true, "T21 var int32:x"); passed = passed + 1i32;
@@ -237,7 +237,7 @@ func:test_decls = int32() {
     ast_free(a21);
 
     // T22: Func decl (NT_FUNC_DECL=23)
-    wild int8->:a22 = parse(tokenize("func:add = int32(int32:a, int32:b) { pass(a); };"));
+    wild int8->:a22 = raw parse(raw tokenize("func:add = int32(int32:a, int32:b) { pass(a); };"));
     int32:et22 = ast_child_type(a22, 0i64);
     if (et22 == 23i32) {
         drop check(true, "T22 func:add"); passed = passed + 1i32;
@@ -245,7 +245,7 @@ func:test_decls = int32() {
     ast_free(a22);
 
     // T23: Void func
-    wild int8->:a23 = parse(tokenize("func:greet = NIL() { return; };"));
+    wild int8->:a23 = raw parse(raw tokenize("func:greet = NIL() { return; };"));
     int32:et23 = ast_child_type(a23, 0i64);
     if (et23 == 23i32) {
         drop check(true, "T23 NIL func"); passed = passed + 1i32;
@@ -253,7 +253,7 @@ func:test_decls = int32() {
     ast_free(a23);
 
     // T24: Extern func (FLAG_EXTERN=16)
-    wild int8->:a24 = parse(tokenize("extern func:puts = int32(string:s);"));
+    wild int8->:a24 = raw parse(raw tokenize("extern func:puts = int32(string:s);"));
     int32:et24 = ast_child_type(a24, 0i64);
     int32:fl24 = ast_child_flags(a24, 0i64);
     if (et24 == 23i32 && fl24 == 16i32) {
@@ -262,7 +262,7 @@ func:test_decls = int32() {
     ast_free(a24);
 
     // T25: Struct (NT_STRUCT_DECL=24)
-    wild int8->:a25 = parse(tokenize("struct Point { int32:x; int32:y; };"));
+    wild int8->:a25 = raw parse(raw tokenize("struct Point { int32:x; int32:y; };"));
     int32:et25 = ast_child_type(a25, 0i64);
     if (et25 == 24i32) {
         drop check(true, "T25 struct Point"); passed = passed + 1i32;
@@ -270,7 +270,7 @@ func:test_decls = int32() {
     ast_free(a25);
 
     // T26: Enum (NT_ENUM_DECL=25)
-    wild int8->:a26 = parse(tokenize("enum Color { RED, GREEN, BLUE };"));
+    wild int8->:a26 = raw parse(raw tokenize("enum Color { RED, GREEN, BLUE };"));
     int32:et26 = ast_child_type(a26, 0i64);
     if (et26 == 25i32) {
         drop check(true, "T26 enum Color"); passed = passed + 1i32;
@@ -286,7 +286,7 @@ func:test_control = int32() {
     println("-- Control Flow ------------------------------------");
 
     // T27: If (NT_IF=39)
-    wild int8->:a27 = parse(tokenize("if (x == 1) { y; }"));
+    wild int8->:a27 = raw parse(raw tokenize("if (x == 1) { y; }"));
     int32:et27 = ast_child_type(a27, 0i64);
     if (et27 == 39i32) {
         drop check(true, "T27 if stmt"); passed = passed + 1i32;
@@ -294,7 +294,7 @@ func:test_control = int32() {
     ast_free(a27);
 
     // T28: If-else (3 children: cond, then, else)
-    wild int8->:a28 = parse(tokenize("if (a) { b; } else { c; }"));
+    wild int8->:a28 = raw parse(raw tokenize("if (a) { b; } else { c; }"));
     int32:et28 = ast_child_type(a28, 0i64);
     int64:cc28 = ast_child_child_count(a28, 0i64);
     if (et28 == 39i32 && cc28 == 3i64) {
@@ -303,7 +303,7 @@ func:test_control = int32() {
     ast_free(a28);
 
     // T29: While (NT_WHILE=40)
-    wild int8->:a29 = parse(tokenize("while (x > 0) { x; }"));
+    wild int8->:a29 = raw parse(raw tokenize("while (x > 0) { x; }"));
     int32:et29 = ast_child_type(a29, 0i64);
     if (et29 == 40i32) {
         drop check(true, "T29 while"); passed = passed + 1i32;
@@ -311,7 +311,7 @@ func:test_control = int32() {
     ast_free(a29);
 
     // T30: For (NT_FOR=41)
-    wild int8->:a30 = parse(tokenize("for (item in items) { item; }"));
+    wild int8->:a30 = raw parse(raw tokenize("for (item in items) { item; }"));
     int32:et30 = ast_child_type(a30, 0i64);
     if (et30 == 41i32) {
         drop check(true, "T30 for loop"); passed = passed + 1i32;
@@ -319,7 +319,7 @@ func:test_control = int32() {
     ast_free(a30);
 
     // T31: Return (NT_RETURN=30)
-    wild int8->:a31 = parse(tokenize("return;"));
+    wild int8->:a31 = raw parse(raw tokenize("return;"));
     int32:et31 = ast_child_type(a31, 0i64);
     if (et31 == 30i32) {
         drop check(true, "T31 return"); passed = passed + 1i32;
@@ -327,7 +327,7 @@ func:test_control = int32() {
     ast_free(a31);
 
     // T32: Pass (NT_PASS=31)
-    wild int8->:a32 = parse(tokenize("pass(42);"));
+    wild int8->:a32 = raw parse(raw tokenize("pass(42);"));
     int32:et32 = ast_child_type(a32, 0i64);
     if (et32 == 31i32) {
         drop check(true, "T32 pass(42)"); passed = passed + 1i32;
@@ -335,7 +335,7 @@ func:test_control = int32() {
     ast_free(a32);
 
     // T33: Break (NT_BREAK=33)
-    wild int8->:a33 = parse(tokenize("break;"));
+    wild int8->:a33 = raw parse(raw tokenize("break;"));
     int32:et33 = ast_child_type(a33, 0i64);
     if (et33 == 33i32) {
         drop check(true, "T33 break"); passed = passed + 1i32;
@@ -343,7 +343,7 @@ func:test_control = int32() {
     ast_free(a33);
 
     // T34: Continue (NT_CONTINUE=34)
-    wild int8->:a34 = parse(tokenize("continue;"));
+    wild int8->:a34 = raw parse(raw tokenize("continue;"));
     int32:et34 = ast_child_type(a34, 0i64);
     if (et34 == 34i32) {
         drop check(true, "T34 continue"); passed = passed + 1i32;
@@ -359,7 +359,7 @@ func:test_misc = int32() {
     println("-- Arrays, Use, Multi, Empty ----------------------");
 
     // T35: Empty array (NT_ARRAY_LITERAL=16)
-    wild int8->:a35 = parse(tokenize("[];"));
+    wild int8->:a35 = raw parse(raw tokenize("[];"));
     int32:et35 = ast_child2_type(a35, 0i64, 0i64);
     int64:cc35 = ast_child2_child_count(a35, 0i64, 0i64);
     if (et35 == 16i32 && cc35 == 0i64) {
@@ -368,7 +368,7 @@ func:test_misc = int32() {
     ast_free(a35);
 
     // T36: Array with elements
-    wild int8->:a36 = parse(tokenize("[1, 2, 3];"));
+    wild int8->:a36 = raw parse(raw tokenize("[1, 2, 3];"));
     int32:et36 = ast_child2_type(a36, 0i64, 0i64);
     int64:cc36 = ast_child2_child_count(a36, 0i64, 0i64);
     if (et36 == 16i32 && cc36 == 3i64) {
@@ -377,7 +377,7 @@ func:test_misc = int32() {
     ast_free(a36);
 
     // T37: Two declarations
-    wild int8->:a37 = parse(tokenize("int32:x = 1; int32:y = 2;"));
+    wild int8->:a37 = raw parse(raw tokenize("int32:x = 1; int32:y = 2;"));
     int64:cc37 = ast_child_count(a37);
     if (cc37 == 2i64) {
         drop check(true, "T37 two decls"); passed = passed + 1i32;
@@ -385,7 +385,7 @@ func:test_misc = int32() {
     ast_free(a37);
 
     // T38: Use declaration (NT_USE_DECL=55)
-    wild int8->:a38 = parse(tokenize("use \"stdlib/test.aria\".*;"));
+    wild int8->:a38 = raw parse(raw tokenize("use \"stdlib/test.aria\".*;"));
     int32:et38 = ast_child_type(a38, 0i64);
     if (et38 == 55i32) {
         drop check(true, "T38 use decl"); passed = passed + 1i32;
@@ -393,7 +393,7 @@ func:test_misc = int32() {
     ast_free(a38);
 
     // T39: Empty program (NT_PROGRAM=58)
-    wild int8->:a39 = parse(tokenize(""));
+    wild int8->:a39 = raw parse(raw tokenize(""));
     int32:et39 = ast_get_type(a39);
     int64:cc39 = ast_child_count(a39);
     if (et39 == 58i32 && cc39 == 0i64) {
@@ -402,7 +402,7 @@ func:test_misc = int32() {
     ast_free(a39);
 
     // T40: Loop (NT_LOOP=42)
-    wild int8->:a40 = parse(tokenize("loop { x; }"));
+    wild int8->:a40 = raw parse(raw tokenize("loop { x; }"));
     int32:et40 = ast_child_type(a40, 0i64);
     if (et40 == 42i32) {
         drop check(true, "T40 loop"); passed = passed + 1i32;

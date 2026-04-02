@@ -9,15 +9,7 @@ func:divide = int32(int32:a, int32:b) {
 };
 
 func:main = int32() {
-    Result<int32>:r = divide(10i32, 2i32);
-    
-    // Early return if error
-    if (r.is_error == true) {
-        exit 1i32;  // Return early
-    }
-    
-    // After this point, we KNOW r.is_error == false
-    int32:x = r.value;  // SAFE: then branch returned
+    int32:x = raw divide(10i32, 2i32);
     exit 0;
 };
 

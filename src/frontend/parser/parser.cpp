@@ -651,7 +651,9 @@ ASTNodePtr Parser::parsePrimary() {
         // The semantic analyzer will handle type-specific ERR values
         // (e.g., -128 for tbb8, -32768 for tbb16, etc.)
         // IMPORTANT: Use std::string() constructor to avoid bool conversion!
-        return std::make_shared<LiteralExpr>(std::string("ERR"), line, col);
+        auto lit = std::make_shared<LiteralExpr>(std::string("ERR"), line, col);
+        lit->explicit_type = "ERR";  // Mark as keyword sentinel, not string literal
+        return lit;
     }
     
     // unknown literal (indeterminate value)
@@ -662,7 +664,9 @@ ASTNodePtr Parser::parsePrimary() {
         // unknown is represented as a special literal
         // Similar to ERR but semantically different: unknown = indeterminate/not-yet-known
         // The semantic analyzer will handle type-specific unknown values
-        return std::make_shared<LiteralExpr>(std::string("unknown"), line, col);
+        auto lit = std::make_shared<LiteralExpr>(std::string("unknown"), line, col);
+        lit->explicit_type = "UNKNOWN";  // Mark as keyword sentinel, not string literal
+        return lit;
     }
     
     // Comptime expression: comptime(expr) — evaluate at compile time

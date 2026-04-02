@@ -41,7 +41,7 @@ bool TernaryCodegen::isCompositeType(Type* type) const {
     return (typeName == "tryte" || typeName == "nyte");
 }
 
-llvm::Function* TernaryCodegen::getOrDeclareIntrinsic(const std::string& name, bool isBinaryOp) {
+llvm::Function* TernaryCodegen::getOrDeclareIntrinsic(const std::string& name, bool isBinaryOp, bool isAtomic) {
     if (!module) {
         return nullptr;  // Module not set, cannot declare intrinsics
     }
@@ -51,16 +51,14 @@ llvm::Function* TernaryCodegen::getOrDeclareIntrinsic(const std::string& name, b
         return existing;
     }
 
-    // Declare the intrinsic
-    llvm::Type* i16 = llvm::Type::getInt16Ty(context);
+    // Declare the intrinsic — trit/nit use i8, tryte/nyte use i16
+    llvm::Type* elemTy = isAtomic ? llvm::Type::getInt8Ty(context) : llvm::Type::getInt16Ty(context);
 
     llvm::FunctionType* funcType;
     if (isBinaryOp) {
-        // Binary operation: (i16, i16) -> i16
-        funcType = llvm::FunctionType::get(i16, {i16, i16}, false);
+        funcType = llvm::FunctionType::get(elemTy, {elemTy, elemTy}, false);
     } else {
-        // Unary operation: (i16) -> i16
-        funcType = llvm::FunctionType::get(i16, {i16}, false);
+        funcType = llvm::FunctionType::get(elemTy, {elemTy}, false);
     }
 
     llvm::Function* func = llvm::Function::Create(
@@ -133,12 +131,12 @@ llvm::Value* TernaryCodegen::generateAdd(llvm::Value* lhs, llvm::Value* rhs, Typ
     llvm::Function* addFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_add) {
-            fn_trit_add = getOrDeclareIntrinsic("aria_trit_add", true);
+            fn_trit_add = getOrDeclareIntrinsic("aria_trit_add", true, true);
         }
         addFn = fn_trit_add;
     } else if (typeName == "nit") {
         if (!fn_nit_add) {
-            fn_nit_add = getOrDeclareIntrinsic("aria_nit_add", true);
+            fn_nit_add = getOrDeclareIntrinsic("aria_nit_add", true, true);
         }
         addFn = fn_nit_add;
     }
@@ -193,12 +191,12 @@ llvm::Value* TernaryCodegen::generateSub(llvm::Value* lhs, llvm::Value* rhs, Typ
     llvm::Function* subFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_sub) {
-            fn_trit_sub = getOrDeclareIntrinsic("aria_trit_sub", true);
+            fn_trit_sub = getOrDeclareIntrinsic("aria_trit_sub", true, true);
         }
         subFn = fn_trit_sub;
     } else if (typeName == "nit") {
         if (!fn_nit_sub) {
-            fn_nit_sub = getOrDeclareIntrinsic("aria_nit_sub", true);
+            fn_nit_sub = getOrDeclareIntrinsic("aria_nit_sub", true, true);
         }
         subFn = fn_nit_sub;
     }
@@ -253,12 +251,12 @@ llvm::Value* TernaryCodegen::generateMul(llvm::Value* lhs, llvm::Value* rhs, Typ
     llvm::Function* mulFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_mul) {
-            fn_trit_mul = getOrDeclareIntrinsic("aria_trit_mul", true);
+            fn_trit_mul = getOrDeclareIntrinsic("aria_trit_mul", true, true);
         }
         mulFn = fn_trit_mul;
     } else if (typeName == "nit") {
         if (!fn_nit_mul) {
-            fn_nit_mul = getOrDeclareIntrinsic("aria_nit_mul", true);
+            fn_nit_mul = getOrDeclareIntrinsic("aria_nit_mul", true, true);
         }
         mulFn = fn_nit_mul;
     }
@@ -414,12 +412,12 @@ llvm::Value* TernaryCodegen::generateNeg(llvm::Value* operand, Type* type) {
     llvm::Function* negFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_not) {  // Note: aria_trit_not is same as aria_trit_neg
-            fn_trit_not = getOrDeclareIntrinsic("aria_trit_neg", false);
+            fn_trit_not = getOrDeclareIntrinsic("aria_trit_neg", false, true);
         }
         negFn = fn_trit_not;
     } else if (typeName == "nit") {
         if (!fn_nit_neg) {
-            fn_nit_neg = getOrDeclareIntrinsic("aria_nit_neg", false);
+            fn_nit_neg = getOrDeclareIntrinsic("aria_nit_neg", false, true);
         }
         negFn = fn_nit_neg;
     }
@@ -445,12 +443,12 @@ llvm::Value* TernaryCodegen::generateAnd(llvm::Value* lhs, llvm::Value* rhs, Typ
     llvm::Function* andFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_and) {
-            fn_trit_and = getOrDeclareIntrinsic("aria_trit_and", true);
+            fn_trit_and = getOrDeclareIntrinsic("aria_trit_and", true, true);
         }
         andFn = fn_trit_and;
     } else if (typeName == "nit") {
         if (!fn_nit_and) {
-            fn_nit_and = getOrDeclareIntrinsic("aria_nit_and", true);
+            fn_nit_and = getOrDeclareIntrinsic("aria_nit_and", true, true);
         }
         andFn = fn_nit_and;
     }
@@ -479,12 +477,12 @@ llvm::Value* TernaryCodegen::generateOr(llvm::Value* lhs, llvm::Value* rhs, Type
     llvm::Function* orFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_or) {
-            fn_trit_or = getOrDeclareIntrinsic("aria_trit_or", true);
+            fn_trit_or = getOrDeclareIntrinsic("aria_trit_or", true, true);
         }
         orFn = fn_trit_or;
     } else if (typeName == "nit") {
         if (!fn_nit_or) {
-            fn_nit_or = getOrDeclareIntrinsic("aria_nit_or", true);
+            fn_nit_or = getOrDeclareIntrinsic("aria_nit_or", true, true);
         }
         orFn = fn_nit_or;
     }
@@ -513,7 +511,7 @@ llvm::Value* TernaryCodegen::generateNot(llvm::Value* operand, Type* type) {
     llvm::Function* notFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_not) {
-            fn_trit_not = getOrDeclareIntrinsic("aria_trit_not", false);
+            fn_trit_not = getOrDeclareIntrinsic("aria_trit_not", false, true);
         }
         notFn = fn_trit_not;
     } else if (typeName == "nit") {

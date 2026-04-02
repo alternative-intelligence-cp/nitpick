@@ -16,163 +16,163 @@ func:main = int32() {
 
     // Test 1: wave_zero
     Wave9:z = raw wave_zero();
-    if (z.r != N0) { pass 1i32; }
-    if (z.x != N0) { pass 1i32; }
-    if (z.z != N0) { pass 1i32; }
+    if (z.r != N0) { exit 1i32; }
+    if (z.x != N0) { exit 1i32; }
+    if (z.z != N0) { exit 1i32; }
 
     // Test 2: wave_from_spatial
     Wave9:spatial = raw wave_from_spatial(N3, N_2, N1);
-    if (spatial.x != N3)  { pass 2i32; }
-    if (spatial.y != N_2) { pass 2i32; }
-    if (spatial.z != N1)  { pass 2i32; }
+    if (spatial.x != N3)  { exit 2i32; }
+    if (spatial.y != N_2) { exit 2i32; }
+    if (spatial.z != N1)  { exit 2i32; }
 
     // Test 3: wave_interfere (addition)
     Wave9:wa = raw wave_from_spatial(N2, N_1, N3);
     Wave9:wb = raw wave_from_spatial(N1, N2, N_2);
     Wave9:wi = raw wave_interfere(wa, wb);
-    if (wi.x != N3) { pass 3i32; }
-    if (wi.y != N1) { pass 3i32; }
-    if (wi.z != N1) { pass 3i32; }
+    if (wi.x != N3) { exit 3i32; }
+    if (wi.y != N1) { exit 3i32; }
+    if (wi.z != N1) { exit 3i32; }
 
     // Test 4: wave_negate
     Wave9:wn = raw wave_negate(wa);
-    if (wn.x != N_2) { pass 4i32; }
-    if (wn.y != N1)  { pass 4i32; }
-    if (wn.z != N_3) { pass 4i32; }
+    if (wn.x != N_2) { exit 4i32; }
+    if (wn.y != N1)  { exit 4i32; }
+    if (wn.z != N_3) { exit 4i32; }
 
     // Test 5: destructive interference (wave + negate = zero)
     Wave9:cancel = raw wave_interfere(wa, wn);
-    if (cancel.x != N0) { pass 5i32; }
-    if (cancel.y != N0) { pass 5i32; }
-    if (cancel.z != N0) { pass 5i32; }
+    if (cancel.x != N0) { exit 5i32; }
+    if (cancel.y != N0) { exit 5i32; }
+    if (cancel.z != N0) { exit 5i32; }
 
     // Test 6: wave_scale
     Wave9:ws = raw wave_scale(wave_from_spatial(N2, N_1, N1), N2);
-    if (ws.x != N4) { pass 6i32; }
-    if (ws.y != N_2) { pass 6i32; }
-    if (ws.z != N2) { pass 6i32; }
+    if (ws.x != N4) { exit 6i32; }
+    if (ws.y != N_2) { exit 6i32; }
+    if (ws.z != N2) { exit 6i32; }
 
     // Test 7: wave_magnitude_squared
     Wave9:wm = raw wave_from_full(N1, N0, N0, N0, N0, N0, N2, N_1, N3);
     int32:mag2 = raw wave_magnitude_squared(wm);
-    if (mag2 != 15i32) { pass 7i32; }
+    if (mag2 != 15i32) { exit 7i32; }
 
     // Test 8: wave_equals
     bool:eq = raw wave_equals(wa, wa);
-    if (!eq) { pass 8i32; }
+    if (!eq) { exit 8i32; }
     bool:neq = raw wave_equals(wa, wb);
-    if (neq) { pass 8i32; }
+    if (neq) { exit 8i32; }
 
     // Test 9: wave_dot
     int32:dot = raw wave_dot(wa, wb);
     int32:expected_dot = -6i32;
-    if (dot != expected_dot) { pass 9i32; }
+    if (dot != expected_dot) { exit 9i32; }
 
     // Test 10: wave_distance_squared
     int32:dist2 = raw wave_distance_squared(wa, wb);
     int32:expected_dist = 35i32;
-    if (dist2 != expected_dist) { pass 10i32; }
+    if (dist2 != expected_dist) { exit 10i32; }
 
     // Test 11: wave_lerp at t=0 returns src
     Wave9:lerp0 = raw wave_lerp(wa, wb, 0i32);
-    if (lerp0.x != N2) { pass 11i32; }
-    if (lerp0.y != N_1) { pass 11i32; }
+    if (lerp0.x != N2) { exit 11i32; }
+    if (lerp0.y != N_1) { exit 11i32; }
 
     // Test 12: wave_lerp at t=100 returns dst
     Wave9:lerp100 = raw wave_lerp(wa, wb, 100i32);
-    if (lerp100.x != N1) { pass 12i32; }
-    if (lerp100.y != N2) { pass 12i32; }
+    if (lerp100.x != N1) { exit 12i32; }
+    if (lerp100.y != N2) { exit 12i32; }
 
     // Test 13: nyte encoding roundtrip
     Wave9:enc_src = raw wave_from_spatial(N1, N_1, N2);
     nyte:encoded = raw nyte_from_wave(enc_src);
     Wave9:dec = raw wave_from_nyte(encoded);
-    if (dec.x != N1) { pass 13i32; }
-    if (dec.y != N_1) { pass 13i32; }
-    if (dec.z != N2) { pass 13i32; }
+    if (dec.x != N1) { exit 13i32; }
+    if (dec.y != N_1) { exit 13i32; }
+    if (dec.z != N2) { exit 13i32; }
 
     // Test 14: nyte_phase_shift
     nyte:base_nyte = raw nyte_from_wave(wave_from_spatial(N1, N0, N0));
     nyte:shifted = raw nyte_phase_shift(base_nyte, N1);
     bool:shiftErr = nyte_is_err(shifted);
-    if (shiftErr) { pass 14i32; }
+    if (shiftErr) { exit 14i32; }
 
     // Test 15: wave_kleene_and = min(a,b)
     Wave9:ka = raw wave_from_spatial(N2, N_1, N3);
     Wave9:kb = raw wave_from_spatial(N1, N2, N_2);
     Wave9:kand = raw wave_kleene_and(ka, kb);
-    if (kand.x != N1) { pass 15i32; }
-    if (kand.y != N_1) { pass 15i32; }
-    if (kand.z != N_2) { pass 15i32; }
+    if (kand.x != N1) { exit 15i32; }
+    if (kand.y != N_1) { exit 15i32; }
+    if (kand.z != N_2) { exit 15i32; }
 
     // Test 16: wave_kleene_or = max(a,b)
     Wave9:kor = raw wave_kleene_or(ka, kb);
-    if (kor.x != N2) { pass 16i32; }
-    if (kor.y != N2) { pass 16i32; }
-    if (kor.z != N3) { pass 16i32; }
+    if (kor.x != N2) { exit 16i32; }
+    if (kor.y != N2) { exit 16i32; }
+    if (kor.z != N3) { exit 16i32; }
 
     // Test 17: wave_err_guard on valid wave (should return false = no ERR)
     bool:hasErr17 = raw wave_err_guard(wa);
-    if (hasErr17) { pass 17i32; }
+    if (hasErr17) { exit 17i32; }
 
     // Test 18: ERR generation via overflow
     nit:overflow = N4 + N4;
     bool:isOvfErr = nit_is_err(overflow);
-    if (!isOvfErr) { pass 18i32; }
+    if (!isOvfErr) { exit 18i32; }
 
     // Test 19: ERR propagation in addition
     nit:add_err = overflow + N1;
     bool:isAddErr = nit_is_err(add_err);
-    if (!isAddErr) { pass 19i32; }
+    if (!isAddErr) { exit 19i32; }
 
     // Test 20: ERR propagation in negation
     nit:neg_err = -overflow;
     bool:isNegErr = nit_is_err(neg_err);
-    if (!isNegErr) { pass 20i32; }
+    if (!isNegErr) { exit 20i32; }
 
     // Test 21: ERR propagation in multiplication
     nit:mul_err = overflow * N2;
     bool:isMulErr = nit_is_err(mul_err);
-    if (!isMulErr) { pass 21i32; }
+    if (!isMulErr) { exit 21i32; }
 
     // Test 22: wave_err_guard on ERR wave (should return true = ERR found)
     Wave9:err_wave = raw wave_from_spatial(overflow, N1, N0);
     bool:errGuard = raw wave_err_guard(err_wave);
-    if (!errGuard) { pass 22i32; }
+    if (!errGuard) { exit 22i32; }
 
     // Test 23: ERR wave through negate (ERR should propagate)
     Wave9:neg_err_wave = raw wave_negate(err_wave);
     bool:negErrGuard = raw wave_err_guard(neg_err_wave);
-    if (!negErrGuard) { pass 23i32; }
+    if (!negErrGuard) { exit 23i32; }
 
     // Test 24: ERR wave through interfere (ERR should propagate)
     Wave9:iw = raw wave_interfere(err_wave, wa);
     bool:iwGuard = raw wave_err_guard(iw);
-    if (!iwGuard) { pass 24i32; }
+    if (!iwGuard) { exit 24i32; }
 
     // Test 25: wave_from_quantum
     Wave9:qw = raw wave_from_quantum(N2, N_3, N4);
-    if (qw.u != N2) { pass 25i32; }
-    if (qw.v != N_3) { pass 25i32; }
-    if (qw.w != N4) { pass 25i32; }
+    if (qw.u != N2) { exit 25i32; }
+    if (qw.v != N_3) { exit 25i32; }
+    if (qw.w != N4) { exit 25i32; }
 
     // Test 26: wave_from_state (2 args: r, s)
     Wave9:sw = raw wave_from_state(N_4, N3);
-    if (sw.r != N_4) { pass 26i32; }
-    if (sw.s != N3) { pass 26i32; }
+    if (sw.r != N_4) { exit 26i32; }
+    if (sw.s != N3) { exit 26i32; }
 
     // Test 27: spatial accessors (return nit)
     nit:sx = raw wave_spatial_x(wa);
     nit:sy = raw wave_spatial_y(wa);
     nit:sz = raw wave_spatial_z(wa);
-    if (sx != N2) { pass 27i32; }
-    if (sy != N_1) { pass 27i32; }
-    if (sz != N3) { pass 27i32; }
+    if (sx != N2) { exit 27i32; }
+    if (sy != N_1) { exit 27i32; }
+    if (sz != N3) { exit 27i32; }
 
     // Test 28: nyte_is_err on valid nyte
     nyte:good_nyte = raw nyte_from_wave(wave_from_spatial(N1, N0, N0));
     bool:goodNyteErr = nyte_is_err(good_nyte);
-    if (goodNyteErr) { pass 28i32; }
+    if (goodNyteErr) { exit 28i32; }
 
     // Test 29: wave9_toString produces output
     string:wstr = raw wave9_toString(wa);

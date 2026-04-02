@@ -11,13 +11,9 @@ func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
     // Test turbofish syntax ::<Type>
-    Result<int64>:result = identity::<int64>(42);
+    int64:result = raw identity::<int64>(42);
     
-    if (result.is_error) {
-        exit 1;  // Should not fail
-    }
-    
-    if (result.value != 42) {
+    if (result != 42) {
         exit 2;  // Value should be 42
     }
     

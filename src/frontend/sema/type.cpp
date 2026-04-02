@@ -1135,6 +1135,12 @@ StructType* TypeSystem::createStructType(const std::string& name, const std::vec
     return ptr;
 }
 
+void TypeSystem::registerStructAlias(const std::string& alias, StructType* type) {
+    if (type && structCache.find(alias) == structCache.end()) {
+        structCache[alias] = type;
+    }
+}
+
 UnionType* TypeSystem::getUnionType(const std::string& name) {
     auto it = unionCache.find(name);
     if (it != unionCache.end()) {
