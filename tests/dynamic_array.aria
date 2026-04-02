@@ -12,30 +12,30 @@ func:main = int32() {
 
     // Verify length is 3
     int64:len = array_length(arr);
-    if (len != 3i64) { pass 1i32; }
+    if (len != 3i64) { exit 1i32; }
 
     // Read back elements via byte pointer (little-endian: low byte = value for val < 128)
     int8->:p0 = array_get(arr, 0i64);
     int8:v0 = <-p0;
-    if (v0 != 10i8) { pass 2i32; }
+    if (v0 != 10i8) { exit 2i32; }
 
     int8->:p1 = array_get(arr, 1i64);
     int8:v1 = <-p1;
-    if (v1 != 20i8) { pass 3i32; }
+    if (v1 != 20i8) { exit 3i32; }
 
     int8->:p2 = array_get(arr, 2i64);
     int8:v2 = <-p2;
-    if (v2 != 30i8) { pass 4i32; }
+    if (v2 != 30i8) { exit 4i32; }
 
     // Push a fourth element and verify new length
     array_push(arr, 42i32);
     int64:len2 = array_length(arr);
-    if (len2 != 4i64) { pass 5i32; }
+    if (len2 != 4i64) { exit 5i32; }
 
     // Verify the fourth element
     int8->:p3 = array_get(arr, 3i64);
     int8:v3 = <-p3;
-    if (v3 != 42i8) { pass 6i32; }
+    if (v3 != 42i8) { exit 6i32; }
 
     exit 0;
 };

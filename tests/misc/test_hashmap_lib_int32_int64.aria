@@ -7,7 +7,7 @@ func:failsafe = int32(tbb32:err) { exit 1; };
 
 pub func:main = int32() {
     // TEST 1: Create new HashMap
-    HashMap<int32, int64>:scores = HashMap_int32_int64_new();
+    HashMap<int32, int64>:scores = raw HashMap_int32_int64_new();
 
     // Verify initial state
     if (scores.capacity != 16i64) { pass 1i32; }
@@ -16,9 +16,9 @@ pub func:main = int32() {
     if (scores.value_size != 8i64) { pass 4i32; }
 
     // TEST 2: Insert student scores
-    HashMap_int32_int64_insert(scores.entries, 1001i32, 95i64);
-    HashMap_int32_int64_insert(scores.entries, 1002i32, 88i64);
-    HashMap_int32_int64_insert(scores.entries, 1003i32, 92i64);
+    raw HashMap_int32_int64_insert(scores.entries, 1001i32, 95i64);
+    raw HashMap_int32_int64_insert(scores.entries, 1002i32, 88i64);
+    raw HashMap_int32_int64_insert(scores.entries, 1003i32, 92i64);
 
     // Sync length from runtime
     scores.length = HashMap_int32_int64_length(scores.entries);
@@ -48,7 +48,7 @@ pub func:main = int32() {
     if (HashMap_int32_int64_get(scores.entries, 9999i32, @score_missing) != 0i32) { pass 16i32; }
 
     // TEST 5: Update existing value
-    HashMap_int32_int64_insert(scores.entries, 1001i32, 98i64);
+    raw HashMap_int32_int64_insert(scores.entries, 1001i32, 98i64);
 
     int64:updated_score = 0i64;
     if (HashMap_int32_int64_get(scores.entries, 1001i32, @updated_score) != 1i32) { pass 17i32; }
@@ -67,18 +67,18 @@ pub func:main = int32() {
     if (HashMap_int32_int64_remove(scores.entries, 9999i32) != 0i32) { pass 23i32; }
 
     // TEST 7: Length function
-    int64:current_length = HashMap_int32_int64_length(scores.entries);
+    int64:current_length = raw HashMap_int32_int64_length(scores.entries);
     if (current_length != 2i64) { pass 24i32; }
 
     // TEST 8: Clear map
-    HashMap_int32_int64_clear(scores.entries);
+    raw HashMap_int32_int64_clear(scores.entries);
     scores.length = HashMap_int32_int64_length(scores.entries);
 
     if (scores.length != 0i64) { pass 25i32; }
     if (HashMap_int32_int64_has(scores.entries, 1001i32) != 0i32) { pass 26i32; }
 
     // TEST 9: Insert after clear
-    HashMap_int32_int64_insert(scores.entries, 2001i32, 100i64);
+    raw HashMap_int32_int64_insert(scores.entries, 2001i32, 100i64);
     scores.length = HashMap_int32_int64_length(scores.entries);
 
     if (scores.length != 1i64) { pass 27i32; }
@@ -88,7 +88,7 @@ pub func:main = int32() {
     if (new_score != 100i64) { pass 29i32; }
 
     // TEST 10: Cleanup
-    HashMap_int32_int64_free(scores.entries);
+    raw HashMap_int32_int64_free(scores.entries);
 
     exit 0;
 };

@@ -1,8 +1,6 @@
 // Minimal atomic test
 func:failsafe = int32(tbb32:err) { exit 1; };
 
-func:failsafe = int32(tbb32:err) { exit 1; };
-
 extern func:aria_atomic_int32_create = wild int8*(int32:initial_value);
 extern func:aria_atomic_int32_destroy = NIL(wild int8*:atomic_ptr);
 extern func:aria_atomic_int32_store = NIL(wild int8*:atomic_ptr, int32:value, int32:order);
@@ -12,7 +10,6 @@ extern func:int64_to_ptr = wild int8*(int64:val);
 
 Type:AtomicInt32 = {
 
-func:failsafe = int32(tbb32:err) { exit 1; };
     func:create = AtomicInt32(int32:initial) {
         wild int8->:raw_ptr = aria_atomic_int32_create(initial);
         AtomicInt32:atomic = AtomicInt32{ptr_val: ptr_to_int64(raw_ptr)};
@@ -36,8 +33,6 @@ func:failsafe = int32(tbb32:err) { exit 1; };
         pass result;
     };
 
-
-    
     struct:interface = {
         int64:ptr_val;
     };

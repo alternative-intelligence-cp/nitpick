@@ -28,13 +28,13 @@ func:main = int32() {
     
     // Check if array creation failed
     if (array_ptr == NULL) {
-        pass 99i32;  // FAIL: Array creation returned NULL
+        exit 99i32;  // FAIL: Array creation returned NULL
     }
     
     // Check length is 0
     int64:len = aria_array_length(array_ptr);
     if (len != 0i64) {
-        pass 1i32;  // FAIL: Initial length should be 0 (got: len)
+        exit 1i32;  // FAIL: Initial length should be 0 (got: len)
     }
     
     // Clean up (no-op for GC, but satisfies borrow checker)

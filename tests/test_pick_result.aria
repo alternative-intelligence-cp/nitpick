@@ -16,12 +16,12 @@ func:main = int32() {
         (false) {
             // In this branch, we KNOW r.is_error == false
             // So we can access r.value without further checking
-            pass r.value;  // Should be allowed - KNOWN_SUCCESS
+            exit r.value;  // Should be allowed - KNOWN_SUCCESS
         },
         (true) {
             // In this branch, we KNOW r.is_error == true
             // So we can access r.error without checking
-            pass 1i32;  // Just return error code
+            exit 1i32;  // Just return error code
         }
     }
 };

@@ -16,8 +16,8 @@ use stdlib.dbug;
  * Simulates a loop where we want to track a counter.
  */
 func:test_basic_watch = NIL() {
-    dbug_separator("watch");
-    dbug_print("watch", "TEST: Basic variable watching");
+    raw dbug_separator("watch");
+    raw dbug_print("watch", "TEST: Basic variable watching");
     
     int64:counter = 0i64;
     
@@ -36,7 +36,7 @@ func:test_basic_watch = NIL() {
     // Clean up
     dbug_watch_remove(counter_ptr);
     
-    dbug_separator("watch");
+    raw dbug_separator("watch");
     pass;
 };
 
@@ -44,8 +44,8 @@ func:test_basic_watch = NIL() {
  * Simulates tracking multiple variables simultaneously.
  */
 func:test_multiple_watches = NIL() {
-    dbug_separator("watch");
-    dbug_print("watch", "TEST: Multiple variable tracking");
+    raw dbug_separator("watch");
+    raw dbug_print("watch", "TEST: Multiple variable tracking");
     
     int64:x = 0i64;
     int64:y = 0i64;
@@ -72,7 +72,7 @@ func:test_multiple_watches = NIL() {
     // Clean up all at once
     dbug_watch_clear_all();
     
-    dbug_separator("watch");
+    raw dbug_separator("watch");
     pass;
 };
 
@@ -80,8 +80,8 @@ func:test_multiple_watches = NIL() {
  * Demonstrates conditional watching (only enabled groups alert).
  */
 func:test_conditional_watch = NIL() {
-    dbug_separator("watch");
-    dbug_print("watch", "TEST: Conditional watching with groups");
+    raw dbug_separator("watch");
+    raw dbug_print("watch", "TEST: Conditional watching with groups");
     
     int64:important = 0i64;
     int64:verbose = 0i64;
@@ -91,8 +91,8 @@ func:test_conditional_watch = NIL() {
     dbug_watch_int64("verbose", "verbose_var", @verbose);
     
     // Only enable "important" group
-    dbug_enable("important");
-    dbug_disable("verbose");
+    raw dbug_enable("important");
+    raw dbug_disable("verbose");
     
     drop println("\n--- Only 'important' group enabled ---");
     
@@ -103,7 +103,7 @@ func:test_conditional_watch = NIL() {
     dbug_watch_check_all();
     
     drop println("\n--- Now enable 'verbose' too ---");
-    dbug_enable("verbose");
+    raw dbug_enable("verbose");
     
     important = 123i64;
     verbose = 456i64;
@@ -112,7 +112,7 @@ func:test_conditional_watch = NIL() {
     dbug_watch_check_all();
     
     dbug_watch_clear_all();
-    dbug_separator("watch");
+    raw dbug_separator("watch");
     pass;
 };
 
@@ -120,8 +120,8 @@ func:test_conditional_watch = NIL() {
  * Demonstrates watching in a complex scenario: state machine.
  */
 func:test_state_machine_watch = NIL() {
-    dbug_separator("state");
-    dbug_print("state", "TEST: State machine variable tracking");
+    raw dbug_separator("state");
+    raw dbug_print("state", "TEST: State machine variable tracking");
     
     // State machine states (simple enum simulation)
     int64:STATE_IDLE = 0i64;
@@ -155,7 +155,7 @@ func:test_state_machine_watch = NIL() {
     dbug_watch_check_all();
     
     dbug_watch_clear_all();
-    dbug_separator("state");
+    raw dbug_separator("state");
     pass;
 };
 
@@ -163,8 +163,8 @@ func:test_state_machine_watch = NIL() {
  * Demonstrates the manual checkpoint pattern.
  */
 func:test_strategic_checkpoints = NIL() {
-    dbug_separator("checkpoint");
-    dbug_print("checkpoint", "TEST: Strategic checkpoint placement");
+    raw dbug_separator("checkpoint");
+    raw dbug_print("checkpoint", "TEST: Strategic checkpoint placement");
     
     int64:balance = 1000i64;
     dbug_watch_int64("checkpoint", "account_balance", @balance);
@@ -190,7 +190,7 @@ func:test_strategic_checkpoints = NIL() {
     dbug_watch_check_all();  // No change (same as last check)
     
     dbug_watch_clear_all();
-    dbug_separator("checkpoint");
+    raw dbug_separator("checkpoint");
     pass;
 };
 
@@ -201,24 +201,24 @@ func:main = int32() {
     drop println("=== DBUG Watchpoint System Test ===\n");
     
     // Enable watch and related groups
-    dbug_enable("watch");
-    dbug_enable("state");
-    dbug_enable("checkpoint");
+    raw dbug_enable("watch");
+    raw dbug_enable("state");
+    raw dbug_enable("checkpoint");
     
     drop println("=== Test 1: Basic Variable Watching ===");
-    test_basic_watch();
+    raw test_basic_watch();
     
     drop println("\n=== Test 2: Multiple Variables ===");
-    test_multiple_watches();
+    raw test_multiple_watches();
     
     drop println("\n=== Test 3: Group-Based Filtering ===");
-    test_conditional_watch();
+    raw test_conditional_watch();
     
     drop println("\n=== Test 4: State Machine Tracking ===");
-    test_state_machine_watch();
+    raw test_state_machine_watch();
     
     drop println("\n=== Test 5: Strategic Checkpoints ===");
-    test_strategic_checkpoints();
+    raw test_strategic_checkpoints();
     
     // Summary
     drop println("\n=== ALL WATCHPOINT TESTS COMPLETE ===\n");

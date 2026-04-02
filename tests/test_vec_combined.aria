@@ -61,7 +61,7 @@ func:main = int32() {
     
     // Check initial state
     if (numbers.length != 0i64) {
-        pass 1i32;  // FAIL: Initial length should be 0
+        exit 1i32;  // FAIL: Initial length should be 0
     }
     
     // Push some values (passing data pointer directly)
@@ -74,29 +74,29 @@ func:main = int32() {
     
     // Verify length
     if (numbers.length != 3i64) {
-        pass 2i32;  // FAIL: Length should be 3 after pushes
+        exit 2i32;  // FAIL: Length should be 3 after pushes
     }
     
     // Pop values (passing data pointer directly)
     int8:val3 = raw Vec_int8_pop(numbers.data);
     if (val3 != 123i8) {
-        pass 3i32;  // FAIL: Popped value should be 123
+        exit 3i32;  // FAIL: Popped value should be 123
     }
     
     int8:val2 = raw Vec_int8_pop(numbers.data);
     if (val2 != 99i8) {
-        pass 4i32;  // FAIL: Popped value should be 99
+        exit 4i32;  // FAIL: Popped value should be 99
     }
     
     int8:val1 = raw Vec_int8_pop(numbers.data);
     if (val1 != 42i8) {
-        pass 5i32;  // FAIL: Popped value should be 42
+        exit 5i32;  // FAIL: Popped value should be 42
     }
     
     // Update and check final length
     numbers.length = Vec_int8_update_length(numbers.data) ? 0i64;
     if (numbers.length != 0i64) {
-        pass 6i32;  // FAIL: Length should be 0 after popping all
+        exit 6i32;  // FAIL: Length should be 0 after popping all
     }
     
     exit 0;  // SUCCESS!

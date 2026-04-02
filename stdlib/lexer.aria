@@ -334,8 +334,8 @@ extern func:lex_add_token = void(wild int8*:state, int32:typ);
 extern func:lex_add_token_int = void(wild int8*:state, int32:typ, int64:val);
 extern func:lex_add_token_float = void(wild int8*:state, int32:typ, flt64:val);
 extern func:lex_add_token_str = void(wild int8*:state, int32:typ, string:val);
-extern func:lex_add_token_int_raw = void(wild int8*:state, int32:typ, int64:val, string:raw);
-extern func:lex_add_token_float_raw = void(wild int8*:state, int32:typ, flt64:val, string:raw);
+extern func:lex_add_token_int_raw = void(wild int8*:state, int32:typ, int64:val, string:raw_text);
+extern func:lex_add_token_float_raw = void(wild int8*:state, int32:typ, flt64:val, string:raw_text);
 extern func:lex_push_token = void(wild int8*:state, int32:typ, string:lexeme, int32:line, int32:col);
 extern func:lex_push_token_str = void(wild int8*:state, int32:typ, string:lexeme, int32:line, int32:col, string:str_val);
 
@@ -766,8 +766,8 @@ func:scan_number = void(wild int8->:st) {
     int64:start_pos = lex_get_start(st);
     int64:cur_pos = lex_get_current(st);
     int64:num_len = cur_pos - start_pos;
-    string:raw = lex_get_substr(st, start_pos, num_len);
-    string:cleaned = lex_strip_underscores(raw);
+    string:raw_text = lex_get_substr(st, start_pos, num_len);
+    string:cleaned = lex_strip_underscores(raw_text);
 
     // Scan type suffix
     string:suffix = scan_type_suffix(st);

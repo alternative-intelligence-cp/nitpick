@@ -90,8 +90,8 @@ func:str_count = int64(string:haystack, string:needle) {
 
     int64:count = 0i64;
     int64:i = 0i64;
-    int64:limit = h_len - n_len;
-    while (i <= limit) {
+    int64:lim = h_len - n_len;
+    while (i <= lim) {
         bool:m = raw str_match_at(haystack, i, needle, h_len, n_len);
         if (m == true) {
             count = count + 1i64;
@@ -131,9 +131,9 @@ func:str_replace = string(string:src, string:old_s, string:new_s) {
 
     int64:pos = 0i64;
     int64:i = 0i64;
-    int64:limit = src_len - old_len;
+    int64:lim = src_len - old_len;
     while (i < src_len) {
-        if (i <= limit) {
+        if (i <= lim) {
             bool:m = raw str_match_at(src, i, old_s, src_len, old_len);
             if (m == true) {
                 // Copy replacement
@@ -150,7 +150,7 @@ func:str_replace = string(string:src, string:old_s, string:new_s) {
                 i = i + 1i64;
             }
         } else {
-            // Past limit, just copy remaining bytes
+            // Past lim, just copy remaining bytes
             int64:b = sh_byte_at(src, i);
             sh_set_byte(buf, pos, @cast<int32>(b));
             pos = pos + 1i64;
@@ -180,13 +180,13 @@ func:str_replace_first = string(string:src, string:old_s, string:new_s) {
 
     // Find first occurrence
     int64:found = -1i64;
-    int64:limit = src_len - old_len;
+    int64:lim = src_len - old_len;
     int64:i = 0i64;
-    while (i <= limit) {
+    while (i <= lim) {
         bool:m = raw str_match_at(src, i, old_s, src_len, old_len);
         if (m == true) {
             found = i;
-            i = limit + 1i64;  // break
+            i = lim + 1i64;  // break
         } else {
             i = i + 1i64;
         }
@@ -314,8 +314,8 @@ func:str_split = wild int64->(string:s, string:delim) {
     // Count occurrences of delimiter to find number of parts
     int64:count = 1i64;
     int64:i = 0i64;
-    int64:limit = s_len - d_len;
-    while (i <= limit) {
+    int64:lim = s_len - d_len;
+    while (i <= lim) {
         bool:m = raw str_match_at(s, i, delim, s_len, d_len);
         if (m == true) {
             count = count + 1i64;
@@ -332,7 +332,7 @@ func:str_split = wild int64->(string:s, string:delim) {
     int64:part_idx = 0i64;
     int64:start = 0i64;
     i = 0i64;
-    while (i <= limit) {
+    while (i <= lim) {
         bool:m = raw str_match_at(s, i, delim, s_len, d_len);
         if (m == true) {
             sh_split_set(h, part_idx, s, start, i - start);
