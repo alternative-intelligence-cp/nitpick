@@ -1,5 +1,5 @@
 // stdlib/math.aria
-// Extended Mathematics Module
+// Extended Mathematics Module (v0.9.1 — ported to aria-libc)
 //
 // Higher-level math functions built on top of compiler builtins.
 // No import needed for: sin, cos, tan, asin, acos, atan, atan2,
@@ -9,17 +9,20 @@
 // This module adds: fmod, hypot, copysign, sign, clamp, lerp,
 //   inverse_lerp, map_range, smoothstep, smootherstep, deg_to_rad,
 //   rad_to_deg, is_nan, is_inf, is_finite, wrap, gcd, lcm, factorial
+//
+// v0.9.1: Ported from inline extern func to aria-libc shims.
+//         0 direct extern calls; backed by libaria_libc_math.so
 
-// ── External libm functions not available as builtins ────────────────────────
-extern func:fmod = flt64(flt64:x, flt64:y);
-extern func:hypot = flt64(flt64:x, flt64:y);
-extern func:copysign = flt64(flt64:magnitude, flt64:sign_val);
-extern func:fma = flt64(flt64:x, flt64:y, flt64:z);
-
-// ── C runtime float classification (Aria's fcmp one can't detect NaN) ────────
-extern func:aria_math_is_nan = bool(flt64:x);
-extern func:aria_math_is_inf = bool(flt64:x);
-extern func:aria_math_is_finite = bool(flt64:x);
+// ── aria-libc math shim (replaces direct libm / runtime externs) ─────────────
+extern "aria_libc_math" {
+    func:aria_libc_math_fmod     = flt64(flt64:x, flt64:y);
+    func:aria_libc_math_hypot    = flt64(flt64:x, flt64:y);
+    func:aria_libc_math_copysign = flt64(flt64:mag, flt64:sgn);
+    func:aria_libc_math_fma      = flt64(flt64:a, flt64:b, flt64:c);
+    func:aria_libc_math_isnan    = int32(flt64:x);
+    func:aria_libc_math_isinf    = int32(flt64:x);
+    func:aria_libc_math_isfinite = int32(flt64:x);
+}
 
 // ── Type:Math — static math utilities ────────────────────────────────────────
 Type:Math = {
@@ -27,20 +30,26 @@ Type:Math = {
     // ── Floating-point classification ────────────────────────────────────
 
     // is_nan(x) — true if x is NaN
-    // Uses C runtime because Aria's != uses fcmp one, which returns
-    // false for NaN operands (can't detect NaN via self-comparison)
+    // Uses aria-libc math shim (C isnan) because Aria's != with
+    // fcmp une still has edge cases for signaling NaN
     func:is_nan = bool(flt64:x) {
-        pass aria_math_is_nan(x);
+        int32:r = aria_libc_math_isnan(x);
+        if (r != 0i32) { pass true; }
+        pass false;
     };
 
     // is_inf(x) — true if x is +/- infinity
     func:is_inf = bool(flt64:x) {
-        pass aria_math_is_inf(x);
+        int32:r = aria_libc_math_isinf(x);
+        if (r != 0i32) { pass true; }
+        pass false;
     };
 
     // is_finite(x) — true if x is neither NaN nor infinity
     func:is_finite = bool(flt64:x) {
-        pass aria_math_is_finite(x);
+        int32:r = aria_libc_math_isfinite(x);
+        if (r != 0i32) { pass true; }
+        pass false;
     };
 
     // ── Value manipulation ───────────────────────────────────────────────
@@ -115,7 +124,7 @@ Type:Math = {
 
     // wrap(value, max_val) — wrap value into [0, max_val)
     func:wrap = flt64(flt64:value, flt64:max_val) {
-        flt64:result = fmod(value, max_val);
+        flt64:result = aria_libc_math_fmod(value, max_val);
         if (result < 0.0) { pass result + max_val; }
         pass result;
     };
@@ -159,22 +168,26 @@ Type:Math = {
 
     // fmod(x, y) — floating-point remainder
     func:fmod_f64 = flt64(flt64:x, flt64:y) {
-        pass fmod(x, y);
+        flt64:r = aria_libc_math_fmod(x, y);
+        pass r;
     };
 
     // hypot(x, y) — sqrt(x*x + y*y) without overflow
     func:hypot_f64 = flt64(flt64:x, flt64:y) {
-        pass hypot(x, y);
+        flt64:r = aria_libc_math_hypot(x, y);
+        pass r;
     };
 
     // copysign(magnitude, sign) — magnitude with sign's sign bit
     func:copysign_f64 = flt64(flt64:magnitude, flt64:sign_val) {
-        pass copysign(magnitude, sign_val);
+        flt64:r = aria_libc_math_copysign(magnitude, sign_val);
+        pass r;
     };
 
     // fma(x, y, z) — fused multiply-add: x*y + z (single rounding)
     func:fma_f64 = flt64(flt64:x, flt64:y, flt64:z) {
-        pass fma(x, y, z);
+        flt64:r = aria_libc_math_fma(x, y, z);
+        pass r;
     };
 
     struct:interface = {};
