@@ -17,9 +17,6 @@ func:clamp = int32(int32:value, int32:min, int32:max)
 func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
-    Result<int32>:r = clamp(5, 0, 10);
-    if (r.is_error) {
-        exit -1;
-    }
-    exit r.value;
+    int32:r = raw clamp(5, 0, 10);
+    exit r;
 };

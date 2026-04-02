@@ -382,17 +382,17 @@ func:_inc = int32(int32:x) {
 
 func:test_pipeline_forward = int32() {
     // 5 |> _double  =>  _double(5)  = 10
-    int32:r = raw 5i32 |> _double;
+    int32:r = raw (5i32 |> _double);
     if (r != 10i32) { pass 1i32; }
     // Chain: 5 |> _double |> _inc  =>  _inc(_double(5))  = 11
-    int32:chained = raw 5i32 |> _double |> _inc;
+    int32:chained = raw (5i32 |> _double |> _inc);
     if (chained != 11i32) { pass 1i32; }
     pass 0i32;
 };
 
 func:test_pipeline_backward = int32() {
     // _double <| 5  =>  _double(5)  = 10
-    int32:r = raw _double <| 5i32;
+    int32:r = raw (_double <| 5i32);
     if (r != 10i32) { pass 1i32; }
     pass 0i32;
 };
@@ -855,7 +855,7 @@ func:main = int32() {
     // --- Const ---
     { int32:r = raw test_const(); if (r != 0i32) { print("FAIL: const declaration\n"); failures = 1i32; } }
 
-    pass failures;
+    exit failures;
 };
 
 func:failsafe = int32(tbb32:err) {

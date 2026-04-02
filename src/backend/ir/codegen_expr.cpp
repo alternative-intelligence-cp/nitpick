@@ -7042,6 +7042,21 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         llvm::Value* str1_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
         llvm::Value* str2_ptr = codegenExpressionNode(expr->arguments[1].get(), this);
 
+        // Auto-unwrap Result<string> = { ptr, ptr, i8 } from function calls like int32_toString()
+        auto unwrapResultPtr = [&](llvm::Value* val) -> llvm::Value* {
+            if (val->getType()->isStructTy()) {
+                llvm::StructType* st = llvm::cast<llvm::StructType>(val->getType());
+                if (st->getNumElements() == 3 &&
+                    st->getElementType(1)->isPointerTy() &&
+                    st->getElementType(2)->isIntegerTy(8)) {
+                    return builder.CreateExtractValue(val, {0}, "unwrap_result_str");
+                }
+            }
+            return val;
+        };
+        str1_ptr = unwrapResultPtr(str1_ptr);
+        str2_ptr = unwrapResultPtr(str2_ptr);
+
         return builder.CreateCall(func, {str1_ptr, str2_ptr}, "concat_str");
     }
     

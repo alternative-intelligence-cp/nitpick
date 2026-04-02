@@ -559,8 +559,9 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
             ownership = ParamOwnership::BORROW_IMM;
         } else if (p->isBorrowMut) {
             ownership = ParamOwnership::BORROW_MUT;
-        } else if (p->isWild) {
+        } else if (p->isWild && !func->isExtern) {
             // Wild pointer passed by value = ownership transfer (move)
+            // But NOT for extern functions — C functions don't take Aria ownership
             ownership = ParamOwnership::MOVE;
         }
         
@@ -1052,9 +1053,13 @@ void BorrowChecker::recordWildRealloc(const std::string& var, ASTNode* node, con
         }
     }
 
+    // realloc() consumes the old pointer — mark it as moved/consumed
+    // so the caller is NOT responsible for freeing the old pointer.
+    // The new pointer (return value) will be tracked as a fresh wild allocation.
+    ctx.wild_states[var] = WildState::MOVED;
+    ctx.pending_wild_frees.erase(var);
+
     // Update allocation size for diagnostic purposes
-    // The old pointer is consumed by realloc (MOVE semantics in checkCallOwnership)
-    // The new pointer (return value) will be tracked as a fresh wild allocation
     if (!new_size_expr.empty()) {
         ctx.wild_alloc_sizes[var] = new_size_expr;
     }

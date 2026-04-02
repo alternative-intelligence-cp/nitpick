@@ -34,8 +34,8 @@ func:test_basic_inference = int32() {
     println("-- Basic Type Inference ----------------------------");
 
     // T01: Integer variable declaration — no errors
-    wild int8->:a01 = parse(tokenize("int32:x = 42i32;"));
-    wild int8->:tc01 = type_check(a01);
+    wild int8->:a01 = raw parse(raw tokenize("int32:x = 42i32;"));
+    wild int8->:tc01 = raw type_check(a01);
     ast_free(a01);
     int64:e01 = tc_error_count(tc01);
     if (e01 == 0i64) {
@@ -44,8 +44,8 @@ func:test_basic_inference = int32() {
     tc_free(tc01);
 
     // T02: String variable declaration
-    wild int8->:a02 = parse(tokenize("string:s = \"hello\";"));
-    wild int8->:tc02 = type_check(a02);
+    wild int8->:a02 = raw parse(raw tokenize("string:s = \"hello\";"));
+    wild int8->:tc02 = raw type_check(a02);
     ast_free(a02);
     int64:e02 = tc_error_count(tc02);
     if (e02 == 0i64) {
@@ -54,8 +54,8 @@ func:test_basic_inference = int32() {
     tc_free(tc02);
 
     // T03: Bool variable declaration
-    wild int8->:a03 = parse(tokenize("bool:flag = true;"));
-    wild int8->:tc03 = type_check(a03);
+    wild int8->:a03 = raw parse(raw tokenize("bool:flag = true;"));
+    wild int8->:tc03 = raw type_check(a03);
     ast_free(a03);
     int64:e03 = tc_error_count(tc03);
     if (e03 == 0i64) {
@@ -64,8 +64,8 @@ func:test_basic_inference = int32() {
     tc_free(tc03);
 
     // T04: Float variable declaration
-    wild int8->:a04 = parse(tokenize("flt64:pi = 3.14;"));
-    wild int8->:tc04 = type_check(a04);
+    wild int8->:a04 = raw parse(raw tokenize("flt64:pi = 3.14;"));
+    wild int8->:tc04 = raw type_check(a04);
     ast_free(a04);
     int64:e04 = tc_error_count(tc04);
     if (e04 == 0i64) {
@@ -74,8 +74,8 @@ func:test_basic_inference = int32() {
     tc_free(tc04);
 
     // T05: uint32 variable
-    wild int8->:a05 = parse(tokenize("uint32:u = 100u32;"));
-    wild int8->:tc05 = type_check(a05);
+    wild int8->:a05 = raw parse(raw tokenize("uint32:u = 100u32;"));
+    wild int8->:tc05 = raw type_check(a05);
     ast_free(a05);
     int64:e05 = tc_error_count(tc05);
     if (e05 == 0i64) {
@@ -84,8 +84,8 @@ func:test_basic_inference = int32() {
     tc_free(tc05);
 
     // T06: Type mismatch — string assigned to int32
-    wild int8->:a06 = parse(tokenize("int32:x = \"hello\";"));
-    wild int8->:tc06 = type_check(a06);
+    wild int8->:a06 = raw parse(raw tokenize("int32:x = \"hello\";"));
+    wild int8->:tc06 = raw type_check(a06);
     ast_free(a06);
     int64:e06 = tc_error_count(tc06);
     if (e06 > 0i64) {
@@ -94,8 +94,8 @@ func:test_basic_inference = int32() {
     tc_free(tc06);
 
     // T07: Undefined identifier
-    wild int8->:a07 = parse(tokenize("int32:y = undefined_var;"));
-    wild int8->:tc07 = type_check(a07);
+    wild int8->:a07 = raw parse(raw tokenize("int32:y = undefined_var;"));
+    wild int8->:tc07 = raw type_check(a07);
     ast_free(a07);
     int64:e07 = tc_error_count(tc07);
     if (e07 > 0i64) {
@@ -104,8 +104,8 @@ func:test_basic_inference = int32() {
     tc_free(tc07);
 
     // T08: Multiple declarations, second uses first
-    wild int8->:a08 = parse(tokenize("int32:a = 1i32; int32:b = a;"));
-    wild int8->:tc08 = type_check(a08);
+    wild int8->:a08 = raw parse(raw tokenize("int32:a = 1i32; int32:b = a;"));
+    wild int8->:tc08 = raw type_check(a08);
     ast_free(a08);
     int64:e08 = tc_error_count(tc08);
     if (e08 == 0i64) {
@@ -136,8 +136,8 @@ func:test_binary_ops = int32() {
     println("-- Binary Operations --------------------------------");
 
     // T09: int32 + int32 — no error
-    wild int8->:a09 = parse(tokenize("int32:a = 1i32; int32:b = 2i32; int32:c = a + b;"));
-    wild int8->:tc09 = type_check(a09);
+    wild int8->:a09 = raw parse(raw tokenize("int32:a = 1i32; int32:b = 2i32; int32:c = a + b;"));
+    wild int8->:tc09 = raw type_check(a09);
     ast_free(a09);
     int64:e09 = tc_error_count(tc09);
     if (e09 == 0i64) {
@@ -146,8 +146,8 @@ func:test_binary_ops = int32() {
     tc_free(tc09);
 
     // T10: bool == bool — comparison
-    wild int8->:a10 = parse(tokenize("bool:a = true; bool:b = false; bool:c = a == b;"));
-    wild int8->:tc10 = type_check(a10);
+    wild int8->:a10 = raw parse(raw tokenize("bool:a = true; bool:b = false; bool:c = a == b;"));
+    wild int8->:tc10 = raw type_check(a10);
     ast_free(a10);
     int64:e10 = tc_error_count(tc10);
     if (e10 == 0i64) {
@@ -156,8 +156,8 @@ func:test_binary_ops = int32() {
     tc_free(tc10);
 
     // T11: bool && bool — logical
-    wild int8->:a11 = parse(tokenize("bool:a = true; bool:b = false; bool:c = a && b;"));
-    wild int8->:tc11 = type_check(a11);
+    wild int8->:a11 = raw parse(raw tokenize("bool:a = true; bool:b = false; bool:c = a && b;"));
+    wild int8->:tc11 = raw type_check(a11);
     ast_free(a11);
     int64:e11 = tc_error_count(tc11);
     if (e11 == 0i64) {
@@ -166,8 +166,8 @@ func:test_binary_ops = int32() {
     tc_free(tc11);
 
     // T12: string + string — concatenation
-    wild int8->:a12 = parse(tokenize("string:a = \"foo\"; string:b = \"bar\"; string:c = a + b;"));
-    wild int8->:tc12 = type_check(a12);
+    wild int8->:a12 = raw parse(raw tokenize("string:a = \"foo\"; string:b = \"bar\"; string:c = a + b;"));
+    wild int8->:tc12 = raw type_check(a12);
     ast_free(a12);
     int64:e12 = tc_error_count(tc12);
     if (e12 == 0i64) {
@@ -198,8 +198,8 @@ func:test_functions = int32() {
     println("-- Function Declarations ----------------------------");
 
     // T13: Simple function declaration
-    wild int8->:a13 = parse(tokenize("func:add = int32(int32:a, int32:b) { pass(a + b); };"));
-    wild int8->:tc13 = type_check(a13);
+    wild int8->:a13 = raw parse(raw tokenize("func:add = int32(int32:a, int32:b) { pass(a + b); };"));
+    wild int8->:tc13 = raw type_check(a13);
     ast_free(a13);
     int64:e13 = tc_error_count(tc13);
     if (e13 == 0i64) {
@@ -208,8 +208,8 @@ func:test_functions = int32() {
     tc_free(tc13);
 
     // T14: Forward function call — caller uses callee defined later
-    wild int8->:a14 = parse(tokenize("func:caller = int32() { int32:r = raw(callee()); pass(r); }; func:callee = int32() { pass(42i32); };"));
-    wild int8->:tc14 = type_check(a14);
+    wild int8->:a14 = raw parse(raw tokenize("func:caller = int32() { int32:r = raw(callee()); pass(r); }; func:callee = int32() { pass(42i32); };"));
+    wild int8->:tc14 = raw type_check(a14);
     ast_free(a14);
     int64:e14 = tc_error_count(tc14);
     if (e14 == 0i64) {
@@ -218,8 +218,8 @@ func:test_functions = int32() {
     tc_free(tc14);
 
     // T15: Extern function — valid
-    wild int8->:a15 = parse(tokenize("extern func:cfunc = int32(int32:x);"));
-    wild int8->:tc15 = type_check(a15);
+    wild int8->:a15 = raw parse(raw tokenize("extern func:cfunc = int32(int32:x);"));
+    wild int8->:tc15 = raw type_check(a15);
     ast_free(a15);
     int64:e15 = tc_error_count(tc15);
     if (e15 == 0i64) {
@@ -228,8 +228,8 @@ func:test_functions = int32() {
     tc_free(tc15);
 
     // T16: Calling function with wrong number of args
-    wild int8->:a16 = parse(tokenize("func:take_two = int32(int32:a, int32:b) { pass(a); }; func:caller = int32() { int32:r = raw(take_two(1i32)); pass(r); };"));
-    wild int8->:tc16 = type_check(a16);
+    wild int8->:a16 = raw parse(raw tokenize("func:take_two = int32(int32:a, int32:b) { pass(a); }; func:caller = int32() { int32:r = raw(take_two(1i32)); pass(r); };"));
+    wild int8->:tc16 = raw type_check(a16);
     ast_free(a16);
     int64:e16 = tc_error_count(tc16);
     if (e16 > 0i64) {
@@ -260,8 +260,8 @@ func:test_scope = int32() {
     println("-- Scope & Symbol Table -----------------------------");
 
     // T17: Variable visible in inner block
-    wild int8->:a17 = parse(tokenize("int32:x = 1i32; if (true) { int32:y = x; }"));
-    wild int8->:tc17 = type_check(a17);
+    wild int8->:a17 = raw parse(raw tokenize("int32:x = 1i32; if (true) { int32:y = x; }"));
+    wild int8->:tc17 = raw type_check(a17);
     ast_free(a17);
     int64:e17 = tc_error_count(tc17);
     if (e17 == 0i64) {
@@ -270,8 +270,8 @@ func:test_scope = int32() {
     tc_free(tc17);
 
     // T18: Inner scope not visible outside
-    wild int8->:a18 = parse(tokenize("func:f = NIL() { int32:inner = 5i32; }; int32:z = inner;"));
-    wild int8->:tc18 = type_check(a18);
+    wild int8->:a18 = raw parse(raw tokenize("func:f = NIL() { int32:inner = 5i32; }; int32:z = inner;"));
+    wild int8->:tc18 = raw type_check(a18);
     ast_free(a18);
     int64:e18 = tc_error_count(tc18);
     if (e18 > 0i64) {
@@ -280,8 +280,8 @@ func:test_scope = int32() {
     tc_free(tc18);
 
     // T19: Redefinition in same scope — error
-    wild int8->:a19 = parse(tokenize("int32:dup = 1i32; int32:dup = 2i32;"));
-    wild int8->:tc19 = type_check(a19);
+    wild int8->:a19 = raw parse(raw tokenize("int32:dup = 1i32; int32:dup = 2i32;"));
+    wild int8->:tc19 = raw type_check(a19);
     ast_free(a19);
     int64:e19 = tc_error_count(tc19);
     if (e19 > 0i64) {
@@ -290,8 +290,8 @@ func:test_scope = int32() {
     tc_free(tc19);
 
     // T20: Parameters visible within function body
-    wild int8->:a20 = parse(tokenize("func:use_param = int32(int32:val) { pass(val); };"));
-    wild int8->:tc20 = type_check(a20);
+    wild int8->:a20 = raw parse(raw tokenize("func:use_param = int32(int32:val) { pass(val); };"));
+    wild int8->:tc20 = raw type_check(a20);
     ast_free(a20);
     int64:e20 = tc_error_count(tc20);
     if (e20 == 0i64) {
@@ -322,8 +322,8 @@ func:test_control_flow = int32() {
     println("-- Control Flow ------------------------------------");
 
     // T21: If statement with bool condition — valid
-    wild int8->:a21 = parse(tokenize("bool:cond = true; if (cond) { int32:x = 1i32; }"));
-    wild int8->:tc21 = type_check(a21);
+    wild int8->:a21 = raw parse(raw tokenize("bool:cond = true; if (cond) { int32:x = 1i32; }"));
+    wild int8->:tc21 = raw type_check(a21);
     ast_free(a21);
     int64:e21 = tc_error_count(tc21);
     if (e21 == 0i64) {
@@ -332,8 +332,8 @@ func:test_control_flow = int32() {
     tc_free(tc21);
 
     // T22: While loop with bool condition — valid
-    wild int8->:a22 = parse(tokenize("bool:running = true; while (running) { running = false; }"));
-    wild int8->:tc22 = type_check(a22);
+    wild int8->:a22 = raw parse(raw tokenize("bool:running = true; while (running) { running = false; }"));
+    wild int8->:tc22 = raw type_check(a22);
     ast_free(a22);
     int64:e22 = tc_error_count(tc22);
     if (e22 == 0i64) {
@@ -342,8 +342,8 @@ func:test_control_flow = int32() {
     tc_free(tc22);
 
     // T23: If with non-bool condition — error
-    wild int8->:a23 = parse(tokenize("int32:x = 1i32; if (x) { int32:y = 2i32; }"));
-    wild int8->:tc23 = type_check(a23);
+    wild int8->:a23 = raw parse(raw tokenize("int32:x = 1i32; if (x) { int32:y = 2i32; }"));
+    wild int8->:tc23 = raw type_check(a23);
     ast_free(a23);
     int64:e23 = tc_error_count(tc23);
     if (e23 > 0i64) {
@@ -352,8 +352,8 @@ func:test_control_flow = int32() {
     tc_free(tc23);
 
     // T24: If-else with both branches
-    wild int8->:a24 = parse(tokenize("bool:c = true; if (c) { int32:a = 1i32; } else { int32:b = 2i32; }"));
-    wild int8->:tc24 = type_check(a24);
+    wild int8->:a24 = raw parse(raw tokenize("bool:c = true; if (c) { int32:a = 1i32; } else { int32:b = 2i32; }"));
+    wild int8->:tc24 = raw type_check(a24);
     ast_free(a24);
     int64:e24 = tc_error_count(tc24);
     if (e24 == 0i64) {
@@ -384,8 +384,8 @@ func:test_structs = int32() {
     println("-- Struct Types ------------------------------------");
 
     // T25: Simple struct declaration
-    wild int8->:a25 = parse(tokenize("struct:Point { int32:x; int32:y; }"));
-    wild int8->:tc25 = type_check(a25);
+    wild int8->:a25 = raw parse(raw tokenize("struct:Point { int32:x; int32:y; }"));
+    wild int8->:tc25 = raw type_check(a25);
     ast_free(a25);
     int64:e25 = tc_error_count(tc25);
     if (e25 == 0i64) {
@@ -394,8 +394,8 @@ func:test_structs = int32() {
     tc_free(tc25);
 
     // T26: Struct with fields
-    wild int8->:a26 = parse(tokenize("struct:Pair { int32:first; int32:second; }"));
-    wild int8->:tc26 = type_check(a26);
+    wild int8->:a26 = raw parse(raw tokenize("struct:Pair { int32:first; int32:second; }"));
+    wild int8->:tc26 = raw type_check(a26);
     ast_free(a26);
     int64:e26 = tc_error_count(tc26);
     if (e26 == 0i64) {
@@ -426,8 +426,8 @@ func:test_type_features = int32() {
     println("-- Type System Features ----------------------------");
 
     // T27: Multiple int32 declarations
-    wild int8->:a27 = parse(tokenize("int32:a = 1i32; int32:b = 2i32;"));
-    wild int8->:tc27 = type_check(a27);
+    wild int8->:a27 = raw parse(raw tokenize("int32:a = 1i32; int32:b = 2i32;"));
+    wild int8->:tc27 = raw type_check(a27);
     ast_free(a27);
     int64:e27 = tc_error_count(tc27);
     if (e27 == 0i64) {
@@ -436,8 +436,8 @@ func:test_type_features = int32() {
     tc_free(tc27);
 
     // T28: Unary negation on signed type
-    wild int8->:a28 = parse(tokenize("int32:x = 5i32; int32:y = -x;"));
-    wild int8->:tc28 = type_check(a28);
+    wild int8->:a28 = raw parse(raw tokenize("int32:x = 5i32; int32:y = -x;"));
+    wild int8->:tc28 = raw type_check(a28);
     ast_free(a28);
     int64:e28 = tc_error_count(tc28);
     if (e28 == 0i64) {
@@ -446,8 +446,8 @@ func:test_type_features = int32() {
     tc_free(tc28);
 
     // T29: Logical NOT on bool
-    wild int8->:a29 = parse(tokenize("bool:a = true; bool:b = !a;"));
-    wild int8->:tc29 = type_check(a29);
+    wild int8->:a29 = raw parse(raw tokenize("bool:a = true; bool:b = !a;"));
+    wild int8->:tc29 = raw type_check(a29);
     ast_free(a29);
     int64:e29 = tc_error_count(tc29);
     if (e29 == 0i64) {
@@ -456,8 +456,8 @@ func:test_type_features = int32() {
     tc_free(tc29);
 
     // T30: int64 widening from int32 — should coerce
-    wild int8->:a30 = parse(tokenize("int32:x = 1i32; int64:y = x;"));
-    wild int8->:tc30 = type_check(a30);
+    wild int8->:a30 = raw parse(raw tokenize("int32:x = 1i32; int64:y = x;"));
+    wild int8->:tc30 = raw type_check(a30);
     ast_free(a30);
     int64:e30 = tc_error_count(tc30);
     if (e30 == 0i64) {
@@ -466,8 +466,8 @@ func:test_type_features = int32() {
     tc_free(tc30);
 
     // T31: flt64 cannot be assigned to int32
-    wild int8->:a31 = parse(tokenize("int32:x = 3.14;"));
-    wild int8->:tc31 = type_check(a31);
+    wild int8->:a31 = raw parse(raw tokenize("int32:x = 3.14;"));
+    wild int8->:tc31 = raw type_check(a31);
     ast_free(a31);
     int64:e31 = tc_error_count(tc31);
     if (e31 > 0i64) {
@@ -476,8 +476,8 @@ func:test_type_features = int32() {
     tc_free(tc31);
 
     // T32: Unknown type in declaration — error
-    wild int8->:a32 = parse(tokenize("Nonexistent:x = 42i32;"));
-    wild int8->:tc32 = type_check(a32);
+    wild int8->:a32 = raw parse(raw tokenize("Nonexistent:x = 42i32;"));
+    wild int8->:tc32 = raw type_check(a32);
     ast_free(a32);
     int64:e32 = tc_error_count(tc32);
     if (e32 > 0i64) {
@@ -486,8 +486,8 @@ func:test_type_features = int32() {
     tc_free(tc32);
 
     // T33: flt32 variable
-    wild int8->:a33 = parse(tokenize("flt32:f = 1.0f32;"));
-    wild int8->:tc33 = type_check(a33);
+    wild int8->:a33 = raw parse(raw tokenize("flt32:f = 1.0f32;"));
+    wild int8->:tc33 = raw type_check(a33);
     ast_free(a33);
     int64:e33 = tc_error_count(tc33);
     if (e33 == 0i64) {
@@ -496,8 +496,8 @@ func:test_type_features = int32() {
     tc_free(tc33);
 
     // T34: int8 variable
-    wild int8->:a34 = parse(tokenize("int8:b = 10i8;"));
-    wild int8->:tc34 = type_check(a34);
+    wild int8->:a34 = raw parse(raw tokenize("int8:b = 10i8;"));
+    wild int8->:tc34 = raw type_check(a34);
     ast_free(a34);
     int64:e34 = tc_error_count(tc34);
     if (e34 == 0i64) {
@@ -506,8 +506,8 @@ func:test_type_features = int32() {
     tc_free(tc34);
 
     // T35: int64 variable
-    wild int8->:a35 = parse(tokenize("int64:big = 999i64;"));
-    wild int8->:tc35 = type_check(a35);
+    wild int8->:a35 = raw parse(raw tokenize("int64:big = 999i64;"));
+    wild int8->:tc35 = raw type_check(a35);
     ast_free(a35);
     int64:e35 = tc_error_count(tc35);
     if (e35 == 0i64) {
@@ -538,8 +538,8 @@ func:test_error_reporting = int32() {
     println("-- Error Reporting ---------------------------------");
 
     // T36: Error count is accurate for multiple errors
-    wild int8->:a36 = parse(tokenize("int32:a = undefined1; int32:b = undefined2;"));
-    wild int8->:tc36 = type_check(a36);
+    wild int8->:a36 = raw parse(raw tokenize("int32:a = undefined1; int32:b = undefined2;"));
+    wild int8->:tc36 = raw type_check(a36);
     ast_free(a36);
     int64:e36 = tc_error_count(tc36);
     if (e36 >= 2i64) {
@@ -548,8 +548,8 @@ func:test_error_reporting = int32() {
     tc_free(tc36);
 
     // T37: Error for undefined reference
-    wild int8->:a37 = parse(tokenize("int32:myvar = missing_name;"));
-    wild int8->:tc37 = type_check(a37);
+    wild int8->:a37 = raw parse(raw tokenize("int32:myvar = missing_name;"));
+    wild int8->:tc37 = raw type_check(a37);
     ast_free(a37);
     int64:e37 = tc_error_count(tc37);
     if (e37 > 0i64) {
@@ -558,8 +558,8 @@ func:test_error_reporting = int32() {
     tc_free(tc37);
 
     // T38: No errors on valid program
-    wild int8->:a38 = parse(tokenize("int32:x = 1i32; int32:y = 2i32; int32:z = x + y;"));
-    wild int8->:tc38 = type_check(a38);
+    wild int8->:a38 = raw parse(raw tokenize("int32:x = 1i32; int32:y = 2i32; int32:z = x + y;"));
+    wild int8->:tc38 = raw type_check(a38);
     ast_free(a38);
     int64:e38 = tc_error_count(tc38);
     if (e38 == 0i64) {
@@ -568,8 +568,8 @@ func:test_error_reporting = int32() {
     tc_free(tc38);
 
     // T39: Empty program — no errors
-    wild int8->:a39 = parse(tokenize(""));
-    wild int8->:tc39 = type_check(a39);
+    wild int8->:a39 = raw parse(raw tokenize(""));
+    wild int8->:tc39 = raw type_check(a39);
     ast_free(a39);
     int64:e39 = tc_error_count(tc39);
     if (e39 == 0i64) {
@@ -578,8 +578,8 @@ func:test_error_reporting = int32() {
     tc_free(tc39);
 
     // T40: Single valid statement
-    wild int8->:a40 = parse(tokenize("bool:done = false;"));
-    wild int8->:tc40 = type_check(a40);
+    wild int8->:a40 = raw parse(raw tokenize("bool:done = false;"));
+    wild int8->:tc40 = raw type_check(a40);
     ast_free(a40);
     int64:e40 = tc_error_count(tc40);
     if (e40 == 0i64) {

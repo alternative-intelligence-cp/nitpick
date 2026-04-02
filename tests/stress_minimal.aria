@@ -8,13 +8,8 @@ func:simple_check = int32(bool:should_succeed) {
 };
 
 func:main = int32() {
-    Result<int32>:r = simple_check(true);
-    
-    if (r.is_error) {
-        exit 0;
-    }
-    
-    exit r.value;
+    int32:r = raw simple_check(true);
+    exit r;
 };
 
 func:failsafe = int32(tbb32:err) {

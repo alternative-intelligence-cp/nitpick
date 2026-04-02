@@ -7546,6 +7546,15 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     llvm::Value* rhs = codegenExpression(binop->right.get());
                     if (!rhs) return nullptr;
                     
+                    // Coerce RHS to match LHS type for compound assignment
+                    if (rhs->getType() != currentVal->getType()) {
+                        if (rhs->getType()->isIntegerTy() && currentVal->getType()->isIntegerTy()) {
+                            rhs = builder.CreateIntCast(rhs, currentVal->getType(), true, "compound_cast");
+                        } else if (rhs->getType()->isFloatingPointTy() && currentVal->getType()->isFloatingPointTy()) {
+                            rhs = builder.CreateFPCast(rhs, currentVal->getType(), "compound_fpcast");
+                        }
+                    }
+                    
                     // Perform operation
                     // BUG-002: Float compound assignments must use FAdd/FSub/FMul/FDiv.
                     // Safe-overflow intrinsics only apply to integers.

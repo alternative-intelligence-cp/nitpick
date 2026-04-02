@@ -18,11 +18,11 @@ func:helper_bad = int32(Result<int32>:r) {
 func:main = int32() {
     Result<int32>:r = divide(10i32, 2i32);
     if (r.is_error) {
-        fail 1i32;
+        exit 1i32;
     }
     // r is checked here in main, but helper doesn't know that
     int32:x = raw helper_bad(r);
-    pass x;
+    exit x;
 };
 
 func:failsafe = int32(tbb32:err) {

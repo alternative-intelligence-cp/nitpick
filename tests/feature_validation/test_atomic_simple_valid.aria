@@ -15,8 +15,8 @@ func:test_valid_atomics = int32() {
 func:main = int32() {
     Result<int32>:r = test_valid_atomics();
     pick(r.is_error) {
-        (false) { pass r.value; },
-        (true) { pass 1i32; }
+        (false) { exit r.value; },
+        (true) { exit 1i32; }
     }
 };
 

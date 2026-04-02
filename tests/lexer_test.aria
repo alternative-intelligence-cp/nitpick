@@ -29,56 +29,56 @@ func:main = int32() {
     println("── Single Character Tokens ─────────────────────");
 
     // T01: Parentheses
-    wild int8->:t01 = tokenize("( )");
+    wild int8->:t01 = raw tokenize("( )");
     if (lex_token_type(t01, 0i64) == TK_LEFT_PAREN && lex_token_type(t01, 1i64) == TK_RIGHT_PAREN) {
         drop check(true, "T01 parentheses ( )"); passed = passed + 1i32;
     } else { drop check(false, "T01 parentheses"); failed = failed + 1i32; }
     lex_free(t01);
 
     // T02: Braces
-    wild int8->:t02 = tokenize("{ }");
+    wild int8->:t02 = raw tokenize("{ }");
     if (lex_token_type(t02, 0i64) == TK_LEFT_BRACE && lex_token_type(t02, 1i64) == TK_RIGHT_BRACE) {
         drop check(true, "T02 braces { }"); passed = passed + 1i32;
     } else { drop check(false, "T02 braces"); failed = failed + 1i32; }
     lex_free(t02);
 
     // T03: Brackets
-    wild int8->:t03 = tokenize("[ ]");
+    wild int8->:t03 = raw tokenize("[ ]");
     if (lex_token_type(t03, 0i64) == TK_LEFT_BRACKET && lex_token_type(t03, 1i64) == TK_RIGHT_BRACKET) {
         drop check(true, "T03 brackets [ ]"); passed = passed + 1i32;
     } else { drop check(false, "T03 brackets"); failed = failed + 1i32; }
     lex_free(t03);
 
     // T04: Semicolon, comma, colon
-    wild int8->:t04 = tokenize("; , :");
+    wild int8->:t04 = raw tokenize("; , :");
     if (lex_token_type(t04, 0i64) == TK_SEMICOLON && lex_token_type(t04, 1i64) == TK_COMMA && lex_token_type(t04, 2i64) == TK_COLON) {
         drop check(true, "T04 ; , :"); passed = passed + 1i32;
     } else { drop check(false, "T04 semicolon/comma/colon"); failed = failed + 1i32; }
     lex_free(t04);
 
     // T05: Tilde, caret, dot
-    wild int8->:t05 = tokenize("~ ^ .");
+    wild int8->:t05 = raw tokenize("~ ^ .");
     if (lex_token_type(t05, 0i64) == TK_TILDE && lex_token_type(t05, 1i64) == TK_CARET && lex_token_type(t05, 2i64) == TK_DOT) {
         drop check(true, "T05 ~ ^ ."); passed = passed + 1i32;
     } else { drop check(false, "T05 tilde/caret/dot"); failed = failed + 1i32; }
     lex_free(t05);
 
     // T06: @ $ #
-    wild int8->:t06 = tokenize("@ $ #");
+    wild int8->:t06 = raw tokenize("@ $ #");
     if (lex_token_type(t06, 0i64) == TK_AT && lex_token_type(t06, 1i64) == TK_DOLLAR && lex_token_type(t06, 2i64) == TK_HASH) {
         drop check(true, "T06 @ $ #"); passed = passed + 1i32;
     } else { drop check(false, "T06 @/$/#"); failed = failed + 1i32; }
     lex_free(t06);
 
     // T07: Token count (includes EOF)
-    wild int8->:t07 = tokenize("( ) ;");
+    wild int8->:t07 = raw tokenize("( ) ;");
     if (lex_token_count(t07) == 4i64) {
         drop check(true, "T07 token count = 4 (3 + EOF)"); passed = passed + 1i32;
     } else { drop check(false, "T07 token count"); failed = failed + 1i32; }
     lex_free(t07);
 
     // T08: EOF token
-    wild int8->:t08 = tokenize("");
+    wild int8->:t08 = raw tokenize("");
     if (lex_token_type(t08, 0i64) == TK_EOF) {
         drop check(true, "T08 empty input → EOF"); passed = passed + 1i32;
     } else { drop check(false, "T08 EOF"); failed = failed + 1i32; }
@@ -91,84 +91,84 @@ func:main = int32() {
     println("── Multi-Character Operators ───────────────────────");
 
     // T09: Arithmetic operators
-    wild int8->:t09 = tokenize("+ - * / %");
+    wild int8->:t09 = raw tokenize("+ - * / %");
     if (lex_token_type(t09, 0i64) == TK_PLUS && lex_token_type(t09, 1i64) == TK_MINUS && lex_token_type(t09, 2i64) == TK_STAR && lex_token_type(t09, 3i64) == TK_SLASH && lex_token_type(t09, 4i64) == TK_PERCENT) {
         drop check(true, "T09 + - * / %"); passed = passed + 1i32;
     } else { drop check(false, "T09 arithmetic ops"); failed = failed + 1i32; }
     lex_free(t09);
 
     // T10: Increment/decrement
-    wild int8->:t10 = tokenize("++ --");
+    wild int8->:t10 = raw tokenize("++ --");
     if (lex_token_type(t10, 0i64) == TK_PLUS_PLUS && lex_token_type(t10, 1i64) == TK_MINUS_MINUS) {
         drop check(true, "T10 ++ --"); passed = passed + 1i32;
     } else { drop check(false, "T10 inc/dec"); failed = failed + 1i32; }
     lex_free(t10);
 
     // T11: Compound assignment
-    wild int8->:t11 = tokenize("+= -= *= /= %=");
+    wild int8->:t11 = raw tokenize("+= -= *= /= %=");
     if (lex_token_type(t11, 0i64) == TK_PLUS_EQUAL && lex_token_type(t11, 1i64) == TK_MINUS_EQUAL && lex_token_type(t11, 2i64) == TK_STAR_EQUAL && lex_token_type(t11, 3i64) == TK_SLASH_EQUAL && lex_token_type(t11, 4i64) == TK_PERCENT_EQUAL) {
         drop check(true, "T11 += -= *= /= %="); passed = passed + 1i32;
     } else { drop check(false, "T11 compound assign"); failed = failed + 1i32; }
     lex_free(t11);
 
     // T12: Comparison operators
-    wild int8->:t12 = tokenize("== != < <= > >=");
+    wild int8->:t12 = raw tokenize("== != < <= > >=");
     if (lex_token_type(t12, 0i64) == TK_EQUAL_EQUAL && lex_token_type(t12, 1i64) == TK_BANG_EQUAL && lex_token_type(t12, 2i64) == TK_LESS && lex_token_type(t12, 3i64) == TK_LESS_EQUAL && lex_token_type(t12, 4i64) == TK_GREATER && lex_token_type(t12, 5i64) == TK_GREATER_EQUAL) {
         drop check(true, "T12 == != < <= > >="); passed = passed + 1i32;
     } else { drop check(false, "T12 comparisons"); failed = failed + 1i32; }
     lex_free(t12);
 
     // T13: Arrow operators
-    wild int8->:t13 = tokenize("-> <- =>");
+    wild int8->:t13 = raw tokenize("-> <- =>");
     if (lex_token_type(t13, 0i64) == TK_ARROW && lex_token_type(t13, 1i64) == TK_LEFT_ARROW && lex_token_type(t13, 2i64) == TK_FAT_ARROW) {
         drop check(true, "T13 -> <- =>"); passed = passed + 1i32;
     } else { drop check(false, "T13 arrows"); failed = failed + 1i32; }
     lex_free(t13);
 
     // T14: Logical operators
-    wild int8->:t14 = tokenize("&& || !");
+    wild int8->:t14 = raw tokenize("&& || !");
     if (lex_token_type(t14, 0i64) == TK_AND_AND && lex_token_type(t14, 1i64) == TK_OR_OR && lex_token_type(t14, 2i64) == TK_BANG) {
         drop check(true, "T14 && || !"); passed = passed + 1i32;
     } else { drop check(false, "T14 logical ops"); failed = failed + 1i32; }
     lex_free(t14);
 
     // T15: Bitwise shifts
-    wild int8->:t15 = tokenize("<< >>");
+    wild int8->:t15 = raw tokenize("<< >>");
     if (lex_token_type(t15, 0i64) == TK_SHIFT_LEFT && lex_token_type(t15, 1i64) == TK_SHIFT_RIGHT) {
         drop check(true, "T15 << >>"); passed = passed + 1i32;
     } else { drop check(false, "T15 shifts"); failed = failed + 1i32; }
     lex_free(t15);
 
     // T16: Spaceship operator
-    wild int8->:t16 = tokenize("<=>");
+    wild int8->:t16 = raw tokenize("<=>");
     if (lex_token_type(t16, 0i64) == TK_SPACESHIP) {
         drop check(true, "T16 <=>"); passed = passed + 1i32;
     } else { drop check(false, "T16 spaceship"); failed = failed + 1i32; }
     lex_free(t16);
 
     // T17: Pipeline operators
-    wild int8->:t17 = tokenize("|> <|");
+    wild int8->:t17 = raw tokenize("|> <|");
     if (lex_token_type(t17, 0i64) == TK_PIPE_RIGHT && lex_token_type(t17, 1i64) == TK_PIPE_LEFT) {
         drop check(true, "T17 |> <|"); passed = passed + 1i32;
     } else { drop check(false, "T17 pipelines"); failed = failed + 1i32; }
     lex_free(t17);
 
     // T18: Special operators ?. ?? ?!
-    wild int8->:t18 = tokenize("?. ?? ?!");
+    wild int8->:t18 = raw tokenize("?. ?? ?!");
     if (lex_token_type(t18, 0i64) == TK_SAFE_NAV && lex_token_type(t18, 1i64) == TK_NULL_COALESCE && lex_token_type(t18, 2i64) == TK_QUESTION_BANG) {
         drop check(true, "T18 ?. ?? ?!"); passed = passed + 1i32;
     } else { drop check(false, "T18 special ops"); failed = failed + 1i32; }
     lex_free(t18);
 
     // T19: Range operators
-    wild int8->:t19 = tokenize(".. ...");
+    wild int8->:t19 = raw tokenize(".. ...");
     if (lex_token_type(t19, 0i64) == TK_DOT_DOT && lex_token_type(t19, 1i64) == TK_DOT_DOT_DOT) {
         drop check(true, "T19 .. ..."); passed = passed + 1i32;
     } else { drop check(false, "T19 ranges"); failed = failed + 1i32; }
     lex_free(t19);
 
     // T20: Failsafe call !!!
-    wild int8->:t20 = tokenize("!!!");
+    wild int8->:t20 = raw tokenize("!!!");
     if (lex_token_type(t20, 0i64) == TK_BANG_BANG_BANG) {
         drop check(true, "T20 !!!"); passed = passed + 1i32;
     } else { drop check(false, "T20 failsafe"); failed = failed + 1i32; }
@@ -181,49 +181,49 @@ func:main = int32() {
     println("── Keywords ────────────────────────────────────");
 
     // T21: Control flow keywords
-    wild int8->:t21 = tokenize("if else while for");
+    wild int8->:t21 = raw tokenize("if else while for");
     if (lex_token_type(t21, 0i64) == TK_KW_IF && lex_token_type(t21, 1i64) == TK_KW_ELSE && lex_token_type(t21, 2i64) == TK_KW_WHILE && lex_token_type(t21, 3i64) == TK_KW_FOR) {
         drop check(true, "T21 if else while for"); passed = passed + 1i32;
     } else { drop check(false, "T21 control flow kw"); failed = failed + 1i32; }
     lex_free(t21);
 
     // T22: Declaration keywords
-    wild int8->:t22 = tokenize("func struct enum use pub extern const");
+    wild int8->:t22 = raw tokenize("func struct enum use pub extern const");
     if (lex_token_type(t22, 0i64) == TK_KW_FUNC && lex_token_type(t22, 1i64) == TK_KW_STRUCT && lex_token_type(t22, 2i64) == TK_KW_ENUM && lex_token_type(t22, 3i64) == TK_KW_USE && lex_token_type(t22, 4i64) == TK_KW_PUB && lex_token_type(t22, 5i64) == TK_KW_EXTERN && lex_token_type(t22, 6i64) == TK_KW_CONST) {
         drop check(true, "T22 func struct enum use pub extern const"); passed = passed + 1i32;
     } else { drop check(false, "T22 decl kw"); failed = failed + 1i32; }
     lex_free(t22);
 
     // T23: Type keywords
-    wild int8->:t23 = tokenize("int32 uint64 flt64 bool string");
+    wild int8->:t23 = raw tokenize("int32 uint64 flt64 bool string");
     if (lex_token_type(t23, 0i64) == TK_KW_INT32 && lex_token_type(t23, 1i64) == TK_KW_UINT64 && lex_token_type(t23, 2i64) == TK_KW_FLT64 && lex_token_type(t23, 3i64) == TK_KW_BOOL && lex_token_type(t23, 4i64) == TK_KW_STRING) {
         drop check(true, "T23 int32 uint64 flt64 bool string"); passed = passed + 1i32;
     } else { drop check(false, "T23 type kw"); failed = failed + 1i32; }
     lex_free(t23);
 
     // T24: Memory qualifiers
-    wild int8->:t24 = tokenize("wild stack gc defer move");
+    wild int8->:t24 = raw tokenize("wild stack gc defer move");
     if (lex_token_type(t24, 0i64) == TK_KW_WILD && lex_token_type(t24, 1i64) == TK_KW_STACK && lex_token_type(t24, 2i64) == TK_KW_GC && lex_token_type(t24, 3i64) == TK_KW_DEFER && lex_token_type(t24, 4i64) == TK_KW_MOVE) {
         drop check(true, "T24 wild stack gc defer move"); passed = passed + 1i32;
     } else { drop check(false, "T24 memory kw"); failed = failed + 1i32; }
     lex_free(t24);
 
     // T25: Special literals
-    wild int8->:t25 = tokenize("true false NULL NIL ERR unknown");
+    wild int8->:t25 = raw tokenize("true false NULL NIL ERR unknown");
     if (lex_token_type(t25, 0i64) == TK_KW_TRUE && lex_token_type(t25, 1i64) == TK_KW_FALSE && lex_token_type(t25, 2i64) == TK_KW_NULL && lex_token_type(t25, 3i64) == TK_KW_NIL && lex_token_type(t25, 4i64) == TK_KW_ERR && lex_token_type(t25, 5i64) == TK_KW_UNKNOWN) {
         drop check(true, "T25 true false NULL NIL ERR unknown"); passed = passed + 1i32;
     } else { drop check(false, "T25 special literals"); failed = failed + 1i32; }
     lex_free(t25);
 
     // T26: Identifier (not keyword)
-    wild int8->:t26 = tokenize("myVar _foo x123");
+    wild int8->:t26 = raw tokenize("myVar _foo x123");
     if (lex_token_type(t26, 0i64) == TK_IDENTIFIER && lex_token_type(t26, 1i64) == TK_IDENTIFIER && lex_token_type(t26, 2i64) == TK_IDENTIFIER) {
         drop check(true, "T26 identifiers myVar _foo x123"); passed = passed + 1i32;
     } else { drop check(false, "T26 identifiers"); failed = failed + 1i32; }
     lex_free(t26);
 
     // T27: TBB keywords
-    wild int8->:t27 = tokenize("tbb8 tbb16 tbb32 tbb64");
+    wild int8->:t27 = raw tokenize("tbb8 tbb16 tbb32 tbb64");
     if (lex_token_type(t27, 0i64) == TK_KW_TBB8 && lex_token_type(t27, 1i64) == TK_KW_TBB16 && lex_token_type(t27, 2i64) == TK_KW_TBB32 && lex_token_type(t27, 3i64) == TK_KW_TBB64) {
         drop check(true, "T27 tbb8 tbb16 tbb32 tbb64"); passed = passed + 1i32;
     } else { drop check(false, "T27 TBB kw"); failed = failed + 1i32; }
@@ -236,77 +236,77 @@ func:main = int32() {
     println("── Numeric Literals ────────────────────────────");
 
     // T28: Decimal integer
-    wild int8->:t28 = tokenize("42");
+    wild int8->:t28 = raw tokenize("42");
     if (lex_token_type(t28, 0i64) == TK_INTEGER && lex_token_int_val(t28, 0i64) == 42i64) {
         drop check(true, "T28 decimal 42"); passed = passed + 1i32;
     } else { drop check(false, "T28 decimal"); failed = failed + 1i32; }
     lex_free(t28);
 
     // T29: Typed integer u32
-    wild int8->:t29 = tokenize("100u32");
+    wild int8->:t29 = raw tokenize("100u32");
     if (lex_token_type(t29, 0i64) == TK_INTEGER_U32 && lex_token_int_val(t29, 0i64) == 100i64) {
         drop check(true, "T29 100u32"); passed = passed + 1i32;
     } else { drop check(false, "T29 typed u32"); failed = failed + 1i32; }
     lex_free(t29);
 
     // T30: Typed integer i64
-    wild int8->:t30 = tokenize("999i64");
+    wild int8->:t30 = raw tokenize("999i64");
     if (lex_token_type(t30, 0i64) == TK_INTEGER_I64 && lex_token_int_val(t30, 0i64) == 999i64) {
         drop check(true, "T30 999i64"); passed = passed + 1i32;
     } else { drop check(false, "T30 typed i64"); failed = failed + 1i32; }
     lex_free(t30);
 
     // T31: Hex literal
-    wild int8->:t31 = tokenize("0xFF");
+    wild int8->:t31 = raw tokenize("0xFF");
     if (lex_token_type(t31, 0i64) == TK_INTEGER && lex_token_int_val(t31, 0i64) == 255i64) {
         drop check(true, "T31 hex 0xFF = 255"); passed = passed + 1i32;
     } else { drop check(false, "T31 hex"); failed = failed + 1i32; }
     lex_free(t31);
 
     // T32: Binary literal
-    wild int8->:t32 = tokenize("0b1010");
+    wild int8->:t32 = raw tokenize("0b1010");
     if (lex_token_type(t32, 0i64) == TK_INTEGER && lex_token_int_val(t32, 0i64) == 10i64) {
         drop check(true, "T32 binary 0b1010 = 10"); passed = passed + 1i32;
     } else { drop check(false, "T32 binary"); failed = failed + 1i32; }
     lex_free(t32);
 
     // T33: Octal literal
-    wild int8->:t33 = tokenize("0o17");
+    wild int8->:t33 = raw tokenize("0o17");
     if (lex_token_type(t33, 0i64) == TK_INTEGER && lex_token_int_val(t33, 0i64) == 15i64) {
         drop check(true, "T33 octal 0o17 = 15"); passed = passed + 1i32;
     } else { drop check(false, "T33 octal"); failed = failed + 1i32; }
     lex_free(t33);
 
     // T34: Float literal
-    wild int8->:t34 = tokenize("3.14");
+    wild int8->:t34 = raw tokenize("3.14");
     if (lex_token_type(t34, 0i64) == TK_FLOAT) {
         drop check(true, "T34 float 3.14"); passed = passed + 1i32;
     } else { drop check(false, "T34 float"); failed = failed + 1i32; }
     lex_free(t34);
 
     // T35: Typed float f64
-    wild int8->:t35 = tokenize("2.718f64");
+    wild int8->:t35 = raw tokenize("2.718f64");
     if (lex_token_type(t35, 0i64) == TK_FLOAT_F64) {
         drop check(true, "T35 2.718f64"); passed = passed + 1i32;
     } else { drop check(false, "T35 typed f64"); failed = failed + 1i32; }
     lex_free(t35);
 
     // T36: Scientific notation
-    wild int8->:t36 = tokenize("1e10");
+    wild int8->:t36 = raw tokenize("1e10");
     if (lex_token_type(t36, 0i64) == TK_FLOAT) {
         drop check(true, "T36 scientific 1e10"); passed = passed + 1i32;
     } else { drop check(false, "T36 scientific"); failed = failed + 1i32; }
     lex_free(t36);
 
     // T37: Underscore separators
-    wild int8->:t37 = tokenize("1_000_000");
+    wild int8->:t37 = raw tokenize("1_000_000");
     if (lex_token_type(t37, 0i64) == TK_INTEGER && lex_token_int_val(t37, 0i64) == 1000000i64) {
         drop check(true, "T37 1_000_000 = 1000000"); passed = passed + 1i32;
     } else { drop check(false, "T37 underscores"); failed = failed + 1i32; }
     lex_free(t37);
 
     // T38: TBB typed literal
-    wild int8->:t38 = tokenize("42tbb8");
+    wild int8->:t38 = raw tokenize("42tbb8");
     if (lex_token_type(t38, 0i64) == TK_INTEGER_TBB8 && lex_token_int_val(t38, 0i64) == 42i64) {
         drop check(true, "T38 42tbb8"); passed = passed + 1i32;
     } else { drop check(false, "T38 tbb literal"); failed = failed + 1i32; }
@@ -319,28 +319,28 @@ func:main = int32() {
     println("── String & Character Literals ─────────────────────");
 
     // T39: Simple string
-    wild int8->:t39 = tokenize("\"hello\"");
+    wild int8->:t39 = raw tokenize("\"hello\"");
     if (lex_token_type(t39, 0i64) == TK_LIT_STRING) {
         drop check(true, "T39 string \"hello\""); passed = passed + 1i32;
     } else { drop check(false, "T39 string"); failed = failed + 1i32; }
     lex_free(t39);
 
     // T40: String with escapes
-    wild int8->:t40 = tokenize("\"hello\\nworld\"");
+    wild int8->:t40 = raw tokenize("\"hello\\nworld\"");
     if (lex_token_type(t40, 0i64) == TK_LIT_STRING) {
         drop check(true, "T40 string with \\n"); passed = passed + 1i32;
     } else { drop check(false, "T40 string escapes"); failed = failed + 1i32; }
     lex_free(t40);
 
     // T41: Character literal
-    wild int8->:t41 = tokenize("'a'");
+    wild int8->:t41 = raw tokenize("'a'");
     if (lex_token_type(t41, 0i64) == TK_CHAR) {
         drop check(true, "T41 char 'a'"); passed = passed + 1i32;
     } else { drop check(false, "T41 char"); failed = failed + 1i32; }
     lex_free(t41);
 
     // T42: Char with escape
-    wild int8->:t42 = tokenize("'\\n'");
+    wild int8->:t42 = raw tokenize("'\\n'");
     if (lex_token_type(t42, 0i64) == TK_CHAR) {
         drop check(true, "T42 char '\\n'"); passed = passed + 1i32;
     } else { drop check(false, "T42 char escape"); failed = failed + 1i32; }
@@ -353,21 +353,21 @@ func:main = int32() {
     println("── Comments & Whitespace ───────────────────────────");
 
     // T43: Line comment skipped
-    wild int8->:t43 = tokenize("42 // comment\n7");
+    wild int8->:t43 = raw tokenize("42 // comment\n7");
     if (lex_token_count(t43) == 3i64 && lex_token_type(t43, 0i64) == TK_INTEGER && lex_token_type(t43, 1i64) == TK_INTEGER) {
         drop check(true, "T43 line comment skipped"); passed = passed + 1i32;
     } else { drop check(false, "T43 line comment"); failed = failed + 1i32; }
     lex_free(t43);
 
     // T44: Block comment skipped
-    wild int8->:t44 = tokenize("1 /* block */ 2");
+    wild int8->:t44 = raw tokenize("1 /* block */ 2");
     if (lex_token_count(t44) == 3i64 && lex_token_type(t44, 0i64) == TK_INTEGER && lex_token_type(t44, 1i64) == TK_INTEGER) {
         drop check(true, "T44 block comment skipped"); passed = passed + 1i32;
     } else { drop check(false, "T44 block comment"); failed = failed + 1i32; }
     lex_free(t44);
 
     // T45: Whitespace only → just EOF
-    wild int8->:t45 = tokenize("   \n\t  ");
+    wild int8->:t45 = raw tokenize("   \n\t  ");
     if (lex_token_count(t45) == 1i64 && lex_token_type(t45, 0i64) == TK_EOF) {
         drop check(true, "T45 whitespace only → EOF"); passed = passed + 1i32;
     } else { drop check(false, "T45 whitespace"); failed = failed + 1i32; }
@@ -380,21 +380,21 @@ func:main = int32() {
     println("── @cast Keywords ─────────────────────────────────");
 
     // T46: @cast
-    wild int8->:t46 = tokenize("@cast");
+    wild int8->:t46 = raw tokenize("@cast");
     if (lex_token_type(t46, 0i64) == TK_KW_CAST) {
         drop check(true, "T46 @cast"); passed = passed + 1i32;
     } else { drop check(false, "T46 @cast"); failed = failed + 1i32; }
     lex_free(t46);
 
     // T47: @cast_unchecked
-    wild int8->:t47 = tokenize("@cast_unchecked");
+    wild int8->:t47 = raw tokenize("@cast_unchecked");
     if (lex_token_type(t47, 0i64) == TK_KW_CAST_UNCHECKED) {
         drop check(true, "T47 @cast_unchecked"); passed = passed + 1i32;
     } else { drop check(false, "T47 @cast_unchecked"); failed = failed + 1i32; }
     lex_free(t47);
 
     // T48: @ alone (not followed by cast)
-    wild int8->:t48 = tokenize("@foo");
+    wild int8->:t48 = raw tokenize("@foo");
     if (lex_token_type(t48, 0i64) == TK_AT && lex_token_type(t48, 1i64) == TK_IDENTIFIER) {
         drop check(true, "T48 @foo → AT + IDENTIFIER"); passed = passed + 1i32;
     } else { drop check(false, "T48 @ not cast"); failed = failed + 1i32; }
@@ -407,7 +407,7 @@ func:main = int32() {
     println("── Lexeme & Position Tracking ─────────────────────");
 
     // T49: Lexeme text
-    wild int8->:t49 = tokenize("hello");
+    wild int8->:t49 = raw tokenize("hello");
     string:t49_lex = lex_token_lexeme(t49, 0i64);
     if (t49_lex == "hello") {
         drop check(true, "T49 lexeme = \"hello\""); passed = passed + 1i32;
@@ -415,14 +415,14 @@ func:main = int32() {
     lex_free(t49);
 
     // T50: Line tracking
-    wild int8->:t50 = tokenize("a\nb");
+    wild int8->:t50 = raw tokenize("a\nb");
     if (lex_token_line(t50, 0i64) == 1i32 && lex_token_line(t50, 1i64) == 2i32) {
         drop check(true, "T50 line tracking: a=L1 b=L2"); passed = passed + 1i32;
     } else { drop check(false, "T50 line tracking"); failed = failed + 1i32; }
     lex_free(t50);
 
     // T51: Column tracking
-    wild int8->:t51 = tokenize("ab cd");
+    wild int8->:t51 = raw tokenize("ab cd");
     if (lex_token_col(t51, 0i64) == 1i32 && lex_token_col(t51, 1i64) == 4i32) {
         drop check(true, "T51 col tracking: ab=C1 cd=C4"); passed = passed + 1i32;
     } else { drop check(false, "T51 col tracking"); failed = failed + 1i32; }
@@ -435,21 +435,21 @@ func:main = int32() {
     println("── Complex Expressions ─────────────────────────────");
 
     // T52: Variable declaration
-    wild int8->:t52 = tokenize("int32:x = 42i32;");
+    wild int8->:t52 = raw tokenize("int32:x = 42i32;");
     if (lex_token_type(t52, 0i64) == TK_KW_INT32 && lex_token_type(t52, 1i64) == TK_COLON && lex_token_type(t52, 2i64) == TK_IDENTIFIER && lex_token_type(t52, 3i64) == TK_EQUAL && lex_token_type(t52, 4i64) == TK_INTEGER_I32 && lex_token_type(t52, 5i64) == TK_SEMICOLON) {
         drop check(true, "T52 int32:x = 42i32;"); passed = passed + 1i32;
     } else { drop check(false, "T52 var decl"); failed = failed + 1i32; }
     lex_free(t52);
 
     // T53: Function signature
-    wild int8->:t53 = tokenize("func:main = int32()");
+    wild int8->:t53 = raw tokenize("func:main = int32()");
     if (lex_token_type(t53, 0i64) == TK_KW_FUNC && lex_token_type(t53, 1i64) == TK_COLON && lex_token_type(t53, 2i64) == TK_IDENTIFIER && lex_token_type(t53, 3i64) == TK_EQUAL && lex_token_type(t53, 4i64) == TK_KW_INT32 && lex_token_type(t53, 5i64) == TK_LEFT_PAREN && lex_token_type(t53, 6i64) == TK_RIGHT_PAREN) {
         drop check(true, "T53 func:main = int32()"); passed = passed + 1i32;
     } else { drop check(false, "T53 func sig"); failed = failed + 1i32; }
     lex_free(t53);
 
     // T54: Pointer operation
-    wild int8->:t54 = tokenize("wild int8->:ptr");
+    wild int8->:t54 = raw tokenize("wild int8->:ptr");
     if (lex_token_type(t54, 0i64) == TK_KW_WILD && lex_token_type(t54, 1i64) == TK_KW_INT8 && lex_token_type(t54, 2i64) == TK_ARROW && lex_token_type(t54, 3i64) == TK_COLON && lex_token_type(t54, 4i64) == TK_IDENTIFIER) {
         drop check(true, "T54 wild int8->:ptr"); passed = passed + 1i32;
     } else { drop check(false, "T54 pointer"); failed = failed + 1i32; }
@@ -469,35 +469,35 @@ func:main = int32() {
     println("── Error Cases ─────────────────────────────────────");
 
     // T56: Unterminated string
-    wild int8->:t56 = tokenize("\"hello");
+    wild int8->:t56 = raw tokenize("\"hello");
     if (lex_error_count(t56) > 0i64) {
         drop check(true, "T56 unterminated string → error"); passed = passed + 1i32;
     } else { drop check(false, "T56 unterminated string"); failed = failed + 1i32; }
     lex_free(t56);
 
     // T57: Multiple tokens in sequence
-    wild int8->:t57 = tokenize("1i32 + 2i32");
+    wild int8->:t57 = raw tokenize("1i32 + 2i32");
     if (lex_token_count(t57) == 4i64 && lex_token_type(t57, 0i64) == TK_INTEGER_I32 && lex_token_type(t57, 1i64) == TK_PLUS && lex_token_type(t57, 2i64) == TK_INTEGER_I32) {
         drop check(true, "T57 1i32 + 2i32 → 3 tokens + EOF"); passed = passed + 1i32;
     } else { drop check(false, "T57 expression"); failed = failed + 1i32; }
     lex_free(t57);
 
     // T58: Zero literal
-    wild int8->:t58 = tokenize("0");
+    wild int8->:t58 = raw tokenize("0");
     if (lex_token_type(t58, 0i64) == TK_INTEGER && lex_token_int_val(t58, 0i64) == 0i64) {
         drop check(true, "T58 zero literal"); passed = passed + 1i32;
     } else { drop check(false, "T58 zero"); failed = failed + 1i32; }
     lex_free(t58);
 
     // T59: Assignment operator
-    wild int8->:t59 = tokenize("=");
+    wild int8->:t59 = raw tokenize("=");
     if (lex_token_type(t59, 0i64) == TK_EQUAL) {
         drop check(true, "T59 = (assignment)"); passed = passed + 1i32;
     } else { drop check(false, "T59 equal"); failed = failed + 1i32; }
     lex_free(t59);
 
     // T60: Question mark
-    wild int8->:t60 = tokenize("?");
+    wild int8->:t60 = raw tokenize("?");
     if (lex_token_type(t60, 0i64) == TK_QUESTION) {
         drop check(true, "T60 ?"); passed = passed + 1i32;
     } else { drop check(false, "T60 question"); failed = failed + 1i32; }
