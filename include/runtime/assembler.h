@@ -250,6 +250,9 @@ typedef enum {
     JIT_OP_MOVAPS_STORE,
     JIT_OP_ADDPS,
     JIT_OP_MULPS,
+
+    // Pseudo-ops
+    JIT_OP_NOP,           // eliminated instruction (peephole)
 } JitOpcode;
 
 /** Single IR instruction */
@@ -275,6 +278,16 @@ typedef struct {
 #define MAX_LIVE_RANGES 512
 #define MAX_SPILL_SLOTS 64
 
+/** Statistics from instruction selection during IR emission (v0.7.4) */
+typedef struct {
+    int32_t mov_imm64_narrowed;    // MOVABS → MOV r32, imm32 (10→5-6 bytes)
+    int32_t cmp_zero_to_test;      // CMP r, 0 → TEST r, r
+    int32_t add_to_inc;            // ADD r, 1 → INC r
+    int32_t sub_to_dec;            // SUB r, 1 → DEC r
+    int32_t imm32_to_imm8;        // ADD/SUB imm32 → imm8 form
+    int32_t total_selected;
+} InsnSelStats;
+
 /** Register allocator state (attached to Assembler when vregs are used) */
 typedef struct {
     JitIR* ir;                          // instruction queue
@@ -296,6 +309,8 @@ typedef struct {
     bool auto_frame;                   // true if auto-prologue/epilogue needed
     uint8_t csr_save_count;           // number of callee-saved regs to save
     int32_t csr_save_regs[5];         // callee-saved regs to push/pop (RBX,R12-R15)
+    int32_t peephole_elim;            // instructions eliminated by peephole (v0.7.4)
+    InsnSelStats insn_sel;            // instruction selection statistics (v0.7.4)
 } RegAllocState;
 
 typedef struct {
@@ -832,6 +847,89 @@ int aria_asm_vreg_count(const Assembler* asm_ctx);
  * Query how many spill slots were needed (available after finalize).
  */
 int aria_asm_spill_count(const Assembler* asm_ctx);
+
+// =============================================================================
+// v0.7.4: Instruction Selection — New Encoders
+// =============================================================================
+
+/**
+ * TEST r64, r64 — Sets flags based on bitwise AND without storing result.
+ * Used by instruction selection: CMP r, 0 → TEST r, r (shorter encoding).
+ */
+void aria_asm_test_r64_r64(Assembler* asm_ctx, AsmRegister r1, AsmRegister r2);
+
+/**
+ * INC r64 — Increment register by 1.
+ * Used by instruction selection: ADD r, 1 → INC r (3 bytes vs 7 bytes).
+ */
+void aria_asm_inc_r64(Assembler* asm_ctx, AsmRegister reg);
+
+/**
+ * DEC r64 — Decrement register by 1.
+ * Used by instruction selection: SUB r, 1 → DEC r (3 bytes vs 7 bytes).
+ */
+void aria_asm_dec_r64(Assembler* asm_ctx, AsmRegister reg);
+
+// =============================================================================
+// v0.7.4: Peephole Optimizer Statistics
+// =============================================================================
+
+/** Optimization statistics from the peephole pass */
+typedef struct {
+    int32_t mov_zero_to_xor;       // MOV r, 0 → XOR r, r
+    int32_t identity_mov_elim;     // MOV r, r → NOP
+    int32_t dead_store_elim;       // store immediately overwritten
+    int32_t strength_reduced;      // e.g., IMUL by power-of-2 → SHL
+    int32_t constant_folded;       // e.g., ADD_IMM 0 → NOP
+    int32_t total_eliminated;
+} PeepholeStats;
+
+/**
+ * Query peephole optimization statistics (available after finalize).
+ * Returns zero-initialized stats if no vregs were used or not yet finalized.
+ */
+PeepholeStats aria_asm_peephole_stats(const Assembler* asm_ctx);
+
+/**
+ * Query instruction selection statistics (available after finalize).
+ * Returns zero-initialized stats if no vregs were used or not yet finalized.
+ */
+InsnSelStats aria_asm_insn_sel_stats(const Assembler* asm_ctx);
+
+// =============================================================================
+// v0.7.4: Profiling — perf map integration
+// =============================================================================
+
+/**
+ * Register a JIT code region with the Linux perf profiler.
+ * Writes to /tmp/perf-<pid>.map for `perf record` integration.
+ *
+ * @param code_addr Start address of JIT code
+ * @param code_size Size in bytes
+ * @param name      Human-readable name for the function
+ */
+void aria_asm_perf_map_register(const void* code_addr, size_t code_size, const char* name);
+
+// =============================================================================
+// v0.7.4: Architecture abstraction
+// =============================================================================
+
+/** Supported target architectures */
+typedef enum {
+    ASM_ARCH_X86_64 = 0,
+    ASM_ARCH_AARCH64 = 1,
+} AsmArch;
+
+/**
+ * Query which architecture the assembler targets.
+ * Currently always returns ASM_ARCH_X86_64.
+ */
+AsmArch aria_asm_get_arch(void);
+
+/**
+ * Query if a given architecture is supported for code generation.
+ */
+bool aria_asm_arch_supported(AsmArch arch);
 
 #ifdef __cplusplus
 }

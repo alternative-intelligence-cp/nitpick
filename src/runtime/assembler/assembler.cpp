@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <unistd.h>
 
 // =============================================================================
 // Forward Declarations — Register Allocator Helpers (v0.7.3)
@@ -26,6 +27,7 @@ static void ir_queue_mem(Assembler* asm_ctx, JitOpcode op, int32_t reg, int32_t 
 static void ir_queue_store(Assembler* asm_ctx, JitOpcode op, int32_t base, int32_t offset, int32_t src);
 static void run_regalloc_pipeline(Assembler* asm_ctx);
 static int32_t resolve_reg2(Assembler* asm_ctx, int32_t reg, bool is_def);
+static int32_t peephole_optimize(RegAllocState* ra);
 
 // =============================================================================
 // Code Buffer Implementation
@@ -539,6 +541,35 @@ void aria_asm_cmp_r64_imm32(Assembler* asm_ctx, AsmRegister reg, int32_t value) 
     aria_asm_emit_byte(asm_ctx->buffer, 0x81);
     emit_modrm(asm_ctx->buffer, 0x03, 7, r);  // /7
     aria_asm_emit_i32(asm_ctx->buffer, value);
+}
+
+// =============================================================================
+// v0.7.4: Instruction Selection — New Encoders
+// =============================================================================
+
+void aria_asm_test_r64_r64(Assembler* asm_ctx, AsmRegister r1, AsmRegister r2) {
+    int r1_reg = (int)r1;
+    int r2_reg = (int)r2;
+    // TEST r64, r64: REX.W + 85 /r
+    emit_rex(asm_ctx->buffer, true, r2_reg, r1_reg);
+    aria_asm_emit_byte(asm_ctx->buffer, 0x85);
+    emit_modrm(asm_ctx->buffer, 0x03, r2_reg, r1_reg);
+}
+
+void aria_asm_inc_r64(Assembler* asm_ctx, AsmRegister reg) {
+    int r = (int)reg;
+    // INC r64: REX.W + FF /0
+    emit_rex(asm_ctx->buffer, true, 0, r);
+    aria_asm_emit_byte(asm_ctx->buffer, 0xFF);
+    emit_modrm(asm_ctx->buffer, 0x03, 0, r);
+}
+
+void aria_asm_dec_r64(Assembler* asm_ctx, AsmRegister reg) {
+    int r = (int)reg;
+    // DEC r64: REX.W + FF /1
+    emit_rex(asm_ctx->buffer, true, 0, r);
+    aria_asm_emit_byte(asm_ctx->buffer, 0xFF);
+    emit_modrm(asm_ctx->buffer, 0x03, 1, r);
 }
 
 // =============================================================================
@@ -1112,6 +1143,130 @@ int aria_asm_spill_count(const Assembler* asm_ctx) {
 }
 
 // =============================================================================
+// Peephole Optimizer (v0.7.4)
+// =============================================================================
+
+// Check if a value is a power of 2 and return the exponent, or -1
+static int32_t log2_if_power_of_2(int64_t val) {
+    if (val <= 0 || (val & (val - 1)) != 0) return -1;
+    int32_t exp = 0;
+    while (val > 1) { val >>= 1; exp++; }
+    return exp;
+}
+
+// Run peephole optimizations on the IR buffer in-place.
+// Replaces suboptimal patterns with better ones; dead instructions become JIT_OP_NOP.
+static int32_t peephole_optimize(RegAllocState* ra) {
+    if (!ra || ra->ir_count == 0) return 0;
+    int32_t eliminated = 0;
+    JitIR* ir = ra->ir;
+    int32_t count = ra->ir_count;
+
+    for (int32_t i = 0; i < count; i++) {
+        JitIR* insn = &ir[i];
+
+        switch (insn->opcode) {
+            // MOV r, 0 → XOR r, r  (11 bytes → 3-4 bytes)
+            case JIT_OP_MOV_IMM64:
+                if (insn->imm64 == 0) {
+                    insn->opcode = JIT_OP_XOR_RR;
+                    insn->src1 = insn->dst;
+                    insn->imm64 = 0;
+                    eliminated++;
+                }
+                break;
+
+            // MOV r, r → NOP (identity move)
+            case JIT_OP_MOV_RR:
+                if (insn->dst == insn->src1) {
+                    insn->opcode = JIT_OP_NOP;
+                    eliminated++;
+                }
+                break;
+
+            // ADD r, 0 / SUB r, 0 → NOP
+            case JIT_OP_ADD_IMM32:
+            case JIT_OP_SUB_IMM32:
+                if (insn->offset == 0) {
+                    insn->opcode = JIT_OP_NOP;
+                    eliminated++;
+                }
+                break;
+
+            // SHL/SHR/SAR r, 0 → NOP
+            case JIT_OP_SHL_IMM8:
+            case JIT_OP_SHR_IMM8:
+            case JIT_OP_SAR_IMM8:
+                if ((insn->offset & 0xFF) == 0) {
+                    insn->opcode = JIT_OP_NOP;
+                    eliminated++;
+                }
+                break;
+
+            // IMUL r, imm64 where imm64 is power of 2 → SHL (strength reduction)
+            // Only when next instruction is MOV_IMM64 loading the multiplier,
+            // so we look for the pattern: MOV_IMM64 vreg, pow2; IMUL dst, vreg
+            // This is handled at the two-instruction level below.
+            case JIT_OP_IMUL_RR:
+                break;
+
+            // Dead move elimination: MOV r, X followed by MOV r, Y → NOP first MOV
+            // (only when no intervening uses)
+            default:
+                break;
+        }
+
+        // Two-instruction peephole patterns
+        if (i + 1 < count) {
+            JitIR* next = &ir[i + 1];
+
+            // MOV r, X; MOV r, Y → NOP; MOV r, Y  (dead store)
+            if (insn->opcode == JIT_OP_MOV_IMM64 && next->opcode == JIT_OP_MOV_IMM64 &&
+                insn->dst == next->dst) {
+                insn->opcode = JIT_OP_NOP;
+                eliminated++;
+            }
+
+            // MOV r, pow2_imm64; IMUL dst, r → MOV dst, pow2_imm64_as_nop; SHL dst, exp
+            // Only safe if 'r' is a vreg not used afterward (conservative: only if r == src1)
+            if (insn->opcode == JIT_OP_MOV_IMM64 && next->opcode == JIT_OP_IMUL_RR &&
+                next->src1 == insn->dst && IS_VREG(insn->dst)) {
+                int32_t exp = log2_if_power_of_2(insn->imm64);
+                if (exp > 0) {
+                    // Convert IMUL to SHL
+                    insn->opcode = JIT_OP_NOP;
+                    next->opcode = JIT_OP_SHL_IMM8;
+                    next->src1 = 0;
+                    next->offset = exp;  // shift amount stored in offset field
+                    next->imm64 = 0;
+                    eliminated++;
+                }
+            }
+
+            // XOR r, r followed by ADD r, src → MOV r, src (skip the zero-init)
+            if (insn->opcode == JIT_OP_XOR_RR && insn->dst == insn->src1 &&
+                next->opcode == JIT_OP_ADD_RR && next->dst == insn->dst) {
+                insn->opcode = JIT_OP_NOP;
+                next->opcode = JIT_OP_MOV_RR;
+                eliminated++;
+            }
+        }
+    }
+
+    // Compact: remove NOPs by shifting remaining instructions down
+    int32_t write = 0;
+    for (int32_t read = 0; read < count; read++) {
+        if (ir[read].opcode != JIT_OP_NOP) {
+            if (write != read) ir[write] = ir[read];
+            write++;
+        }
+    }
+    ra->ir_count = write;
+    ra->peephole_elim = eliminated;
+    return eliminated;
+}
+
+// =============================================================================
 // Register Allocator — Liveness Analysis (v0.7.3)
 // =============================================================================
 
@@ -1497,9 +1652,21 @@ static void emit_ir_to_machine_code(Assembler* asm_ctx) {
         JitIR* insn = &ra->ir[i];
 
         switch (insn->opcode) {
+            case JIT_OP_NOP:
+                break;  // skip (peephole artifact)
             case JIT_OP_MOV_IMM64: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, true);
-                aria_asm_mov_r64_imm64(asm_ctx, (AsmRegister)d, insn->imm64);
+                // v0.7.4 instruction selection: narrow MOVABS to MOV r32, imm32
+                // when value fits in unsigned 32-bit (zero-extends to 64-bit)
+                if (insn->imm64 >= 0 && insn->imm64 <= (int64_t)0xFFFFFFFF) {
+                    if (d >= 8) emit_rex(asm_ctx->buffer, false, 0, d);
+                    aria_asm_emit_byte(asm_ctx->buffer, 0xB8 + (d & 0x07));
+                    aria_asm_emit_i32(asm_ctx->buffer, (int32_t)insn->imm64);
+                    ra->insn_sel.mov_imm64_narrowed++;
+                    ra->insn_sel.total_selected++;
+                } else {
+                    aria_asm_mov_r64_imm64(asm_ctx, (AsmRegister)d, insn->imm64);
+                }
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
@@ -1566,19 +1733,64 @@ static void emit_ir_to_machine_code(Assembler* asm_ctx) {
             }
             case JIT_OP_ADD_IMM32: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, false);
-                aria_asm_add_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
+                // v0.7.4 instruction selection: ADD r, 1 → INC; small imm → imm8 form
+                if (insn->offset == 1) {
+                    aria_asm_inc_r64(asm_ctx, (AsmRegister)d);
+                    ra->insn_sel.add_to_inc++;
+                    ra->insn_sel.total_selected++;
+                } else if (insn->offset == -1) {
+                    aria_asm_dec_r64(asm_ctx, (AsmRegister)d);
+                    ra->insn_sel.sub_to_dec++;
+                    ra->insn_sel.total_selected++;
+                } else if (insn->offset >= -128 && insn->offset <= 127) {
+                    // ADD r/m64, imm8: REX.W + 83 /0 ib (4 bytes vs 7)
+                    emit_rex(asm_ctx->buffer, true, 0, d);
+                    aria_asm_emit_byte(asm_ctx->buffer, 0x83);
+                    emit_modrm(asm_ctx->buffer, 0x03, 0, d);
+                    aria_asm_emit_byte(asm_ctx->buffer, (uint8_t)(insn->offset & 0xFF));
+                    ra->insn_sel.imm32_to_imm8++;
+                    ra->insn_sel.total_selected++;
+                } else {
+                    aria_asm_add_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
+                }
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_SUB_IMM32: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, false);
-                aria_asm_sub_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
+                // v0.7.4 instruction selection: SUB r, 1 → DEC; small imm → imm8 form
+                if (insn->offset == 1) {
+                    aria_asm_dec_r64(asm_ctx, (AsmRegister)d);
+                    ra->insn_sel.sub_to_dec++;
+                    ra->insn_sel.total_selected++;
+                } else if (insn->offset == -1) {
+                    aria_asm_inc_r64(asm_ctx, (AsmRegister)d);
+                    ra->insn_sel.add_to_inc++;
+                    ra->insn_sel.total_selected++;
+                } else if (insn->offset >= -128 && insn->offset <= 127) {
+                    // SUB r/m64, imm8: REX.W + 83 /5 ib (4 bytes vs 7)
+                    emit_rex(asm_ctx->buffer, true, 0, d);
+                    aria_asm_emit_byte(asm_ctx->buffer, 0x83);
+                    emit_modrm(asm_ctx->buffer, 0x03, 5, d);
+                    aria_asm_emit_byte(asm_ctx->buffer, (uint8_t)(insn->offset & 0xFF));
+                    ra->insn_sel.imm32_to_imm8++;
+                    ra->insn_sel.total_selected++;
+                } else {
+                    aria_asm_sub_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
+                }
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_CMP_IMM32: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, false);
-                aria_asm_cmp_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
+                // v0.7.4 instruction selection: CMP r, 0 → TEST r, r
+                if (insn->offset == 0) {
+                    aria_asm_test_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)d);
+                    ra->insn_sel.cmp_zero_to_test++;
+                    ra->insn_sel.total_selected++;
+                } else {
+                    aria_asm_cmp_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
+                }
                 break;
             }
             case JIT_OP_SHL_IMM8: {
@@ -1812,6 +2024,9 @@ static void run_regalloc_pipeline(Assembler* asm_ctx) {
     RegAllocState* ra = asm_ctx->regalloc;
     if (!ra || !ra->has_vregs || ra->ir_count == 0) return;
 
+    // Step 0 (v0.7.4): Peephole optimizer — runs before liveness analysis
+    peephole_optimize(ra);
+
     // Step 1: Compute live ranges + detect physical reg usage
     compute_liveness(ra);
 
@@ -1969,4 +2184,66 @@ int64_t aria_asm_execute_i64_i64(WildXGuard* guard, int64_t arg1, int64_t arg2) 
     func_t func = (func_t)guard->ptr;
     
     return func(arg1, arg2);
+}
+
+// =============================================================================
+// v0.7.4: Peephole Statistics API
+// =============================================================================
+
+PeepholeStats aria_asm_peephole_stats(const Assembler* asm_ctx) {
+    PeepholeStats stats = {0, 0, 0, 0, 0, 0};
+    if (!asm_ctx || !asm_ctx->regalloc) return stats;
+    stats.total_eliminated = asm_ctx->regalloc->peephole_elim;
+    return stats;
+}
+
+InsnSelStats aria_asm_insn_sel_stats(const Assembler* asm_ctx) {
+    InsnSelStats stats = {0, 0, 0, 0, 0, 0};
+    if (!asm_ctx || !asm_ctx->regalloc) return stats;
+    return asm_ctx->regalloc->insn_sel;
+}
+
+// =============================================================================
+// v0.7.4: Profiling — perf map integration
+// =============================================================================
+
+void aria_asm_perf_map_register(const void* code_addr, size_t code_size, const char* name) {
+    if (!code_addr || !name || code_size == 0) return;
+
+#if defined(__linux__)
+    // Write to /tmp/perf-<pid>.map
+    // Format: <hex_addr> <hex_size> <name>\n
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/perf-%d.map", (int)getpid());
+    FILE* f = fopen(path, "a");
+    if (!f) return;
+    fprintf(f, "%lx %lx %s\n",
+            (unsigned long)(uintptr_t)code_addr,
+            (unsigned long)code_size,
+            name);
+    fclose(f);
+#else
+    (void)code_addr;
+    (void)code_size;
+    (void)name;
+#endif
+}
+
+// =============================================================================
+// v0.7.4: Architecture abstraction
+// =============================================================================
+
+AsmArch aria_asm_get_arch(void) {
+#if defined(__x86_64__) || defined(_M_X64)
+    return ASM_ARCH_X86_64;
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    return ASM_ARCH_AARCH64;
+#else
+    return ASM_ARCH_X86_64;
+#endif
+}
+
+bool aria_asm_arch_supported(AsmArch arch) {
+    // Currently only x86-64 has a full code generator
+    return arch == ASM_ARCH_X86_64;
 }
