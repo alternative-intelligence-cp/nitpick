@@ -92,6 +92,12 @@ extern "C" func:aria_asm_movaps_mem_xmm = void(wild void@:asm_ctx, int32:base, i
 extern "C" func:aria_asm_addps = void(wild void@:asm_ctx, int32:dst, int32:src);
 extern "C" func:aria_asm_mulps = void(wild void@:asm_ctx, int32:dst, int32:src);
 
+// Virtual Register Allocator (v0.7.3)
+extern "C" func:aria_asm_vreg_new_gpr = int32(wild void@:asm_ctx);
+extern "C" func:aria_asm_vreg_new_xmm = int32(wild void@:asm_ctx);
+extern "C" func:aria_asm_vreg_count = int32(wild void@:asm_ctx);
+extern "C" func:aria_asm_spill_count = int32(wild void@:asm_ctx);
+
 // Finalization and Execution
 extern "C" func:aria_asm_finalize = wildx void@(wild void@:asm_ctx);
 extern "C" func:aria_asm_execute = int64(wildx void@:guard);
@@ -153,6 +159,10 @@ int32:ABI_FP_ARG1  = 64;  // XMM0 (first FP arg + return)
 int32:ABI_FP_ARG2  = 65;  // XMM1
 int32:ABI_FP_ARG3  = 66;  // XMM2
 int32:ABI_FP_ARG4  = 67;  // XMM3
+
+// Virtual Register Constants (v0.7.3)
+int32:VREG_GPR_BASE = 256;  // First virtual GPR ID
+int32:VREG_XMM_BASE = 512;  // First virtual XMM ID
 
 // =============================================================================
 // High-Level Assembler Wrapper
