@@ -98,6 +98,18 @@ extern "C" func:aria_asm_vreg_new_xmm = int32(wild void@:asm_ctx);
 extern "C" func:aria_asm_vreg_count = int32(wild void@:asm_ctx);
 extern "C" func:aria_asm_spill_count = int32(wild void@:asm_ctx);
 
+// Optimization & Architecture (v0.7.4)
+extern "C" func:aria_asm_test_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:aria_asm_inc_r64 = void(wild void@:asm_ctx, int32:reg);
+extern "C" func:aria_asm_dec_r64 = void(wild void@:asm_ctx, int32:reg);
+extern "C" func:aria_asm_perf_map_register = void(wild void@:name, wildx void@:guard, int64:code_size);
+extern "C" func:aria_asm_get_arch = int32();
+extern "C" func:aria_asm_arch_supported = bool(int32:arch);
+
+// Architecture Constants (v0.7.4)
+int32:ARCH_X86_64  = 0;
+int32:ARCH_AARCH64 = 1;
+
 // Finalization and Execution
 extern "C" func:aria_asm_finalize = wildx void@(wild void@:asm_ctx);
 extern "C" func:aria_asm_execute = int64(wildx void@:guard);
@@ -319,4 +331,58 @@ func:asm_call_i64_i64 = int64(wildx void@:guard, int64:a, int64:b) {
 func:asm_free = NIL(wildx void@:guard) {
     aria_free_exec(guard);
     pass(NIL);
+};
+
+// =============================================================================
+// Optimization & Architecture Helpers (v0.7.4)
+// =============================================================================
+
+/**
+ * Emit TEST instruction: performs bitwise AND, sets flags, discards result
+ * Commonly used instead of CMP r, 0 (shorter encoding)
+ */
+func:asm_test = NIL(Assembler:asm, int32:dst, int32:src) {
+    aria_asm_test_r64_r64(asm.ctx, dst, src);
+    pass(NIL);
+};
+
+/**
+ * Emit INC instruction: reg += 1
+ * Shorter encoding than ADD reg, 1
+ */
+func:asm_inc = NIL(Assembler:asm, int32:reg) {
+    aria_asm_inc_r64(asm.ctx, reg);
+    pass(NIL);
+};
+
+/**
+ * Emit DEC instruction: reg -= 1
+ * Shorter encoding than SUB reg, 1
+ */
+func:asm_dec = NIL(Assembler:asm, int32:reg) {
+    aria_asm_dec_r64(asm.ctx, reg);
+    pass(NIL);
+};
+
+/**
+ * Register JIT code with perf map for profiling
+ * Creates /tmp/perf-<pid>.map entry on Linux
+ */
+func:asm_perf_register = NIL(wild void@:name, wildx void@:guard, int64:code_size) {
+    aria_asm_perf_map_register(name, guard, code_size);
+    pass(NIL);
+};
+
+/**
+ * Get current architecture (ARCH_X86_64 or ARCH_AARCH64)
+ */
+func:asm_arch = int32() {
+    pass(aria_asm_get_arch());
+};
+
+/**
+ * Check if an architecture is supported on this build
+ */
+func:asm_arch_ok = bool(int32:arch) {
+    pass(aria_asm_arch_supported(arch));
 };

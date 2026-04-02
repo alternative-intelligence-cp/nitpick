@@ -1,4 +1,4 @@
-# Aria Programming Language v0.5.5
+# Aria Programming Language v0.7.4
 
 ![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -10,11 +10,18 @@
 
 ---
 
-## Current Status (April 2026)
+## Current Status (July 2026)
 
-**v0.5.5 — SMT Solver Deep Dive Complete, Formal Verification, Benchmarks & Polish**
+**v0.7.4 — JIT Optimization & Multi-Architecture (v0.7.x series complete)**
 
-The Aria compiler's Z3 SMT integration is now comprehensive: **7 verification flags** covering contracts, overflow, concurrency (data race + deadlock detection), and memory safety (use-after-free), plus user-facing `prove`/`assert_static` builtins, SMT-guided optimizations (`--smt-opt`), and configurable solver timeout (`--smt-timeout`). Benchmark suite shows 16–25% runtime speedup from eliminated checks.
+The v0.7.x series transformed Aria's JIT from a basic 12-instruction encoder into a production-grade runtime code generator with **45+ x86-64 instructions**, a **linear scan register allocator**, **peephole optimizer**, **instruction selection**, WildX security hardening, and multi-architecture abstraction. JIT-generated code benchmarks at **0.66x native C -O2** for integer workloads.
+
+**v0.7.x highlights:**
+- **v0.7.4** — Peephole optimizer (7 patterns + strength reduction), instruction selection (MOV narrowing, TEST, INC/DEC, imm8 forms), AArch64 backend stub, perf profiling hooks, architecture abstraction
+- **v0.7.3** — Linear scan register allocator: 12 GPR + 14 XMM allocatable, automatic spill/reload, auto prologue/epilogue, mixed physical+virtual registers
+- **v0.7.2** — JIT instruction expansion: 12→45+ instructions, FP/SSE2, SIMD/SSE, memory ops, CALL, stack frames, extended jumps
+- **v0.7.1** — WildX security: ASLR for JIT pages, guard pages, FNV-1a code signing, 64MB quota, audit logging
+- **v0.7.0** — Wild memory improvements: per-allocation size tracking, guard pages, statistics dashboard
 
 **v0.5.x highlights:**
 - **v0.5.5** — Benchmark suite, configurable `--smt-timeout`, `--prove-report`, documentation, specialist corpus v7
@@ -25,7 +32,7 @@ The Aria compiler's Z3 SMT integration is now comprehensive: **7 verification fl
 - **v0.5.0** — Compiler-internal SMT optimizations: overflow elimination, null check elimination, loop hoisting, defaults elimination, Rules propagation
 
 **v0.3.x–v0.4.x highlights:**
-- **102 ecosystem packages**, all passing — utility, graphics/game, server, database, AI/ML tiers
+- **103 ecosystem packages**, all passing — utility, graphics/game, server, database, AI/ML tiers
 - Z3 Phase 1–3: Rules/limit, contracts, overflow proofs
 - AriaX kernel mods, Ubuntu integration, Docker/VM images
 
@@ -37,7 +44,7 @@ The Aria compiler's Z3 SMT integration is now comprehensive: **7 verification fl
 |---|---|---|
 | `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
 | `aria-ls` | ✅ Improved | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
-| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 102 packages verified |
+| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 103 packages verified |
 | `aria-doc` | ✅ Fixed | Documentation generator — 435 unique HTML pages from ecosystem |
 | `aria-mcp` | ✅ Improved | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Improved | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
@@ -49,7 +56,7 @@ The Aria compiler's Z3 SMT integration is now comprehensive: **7 verification fl
 | Specialist model | ✅ V6+SMT | Qwen 7B LoRA, v6 corpus + v7 SMT verification examples |
 | Debian package | ✅ Built | `aria_0.5.5-1_amd64.deb`, tested on Mint 22.3 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 102 packages (utility, graphics/game, server, database, AI/ML tiers), all passing |
+| `aria_packages` | ✅ Active | 103 packages (utility, graphics/game, server, database, AI/ML tiers), all passing |
 
 ---
 
