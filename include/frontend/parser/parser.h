@@ -90,14 +90,16 @@ private:
     ASTNodePtr parseTypeDecl();      // Parse Type:Name = { func/struct declarations };
     ASTNodePtr parseTraitDecl();     // WP 005: Parse trait:Name = { methods };
     ASTNodePtr parseImplDecl();      // WP 005: Parse impl:Trait:for:Type = { methods };
+    ASTNodePtr parseMacroDecl();     // v0.8.3: Parse macro:name = (params) { body };
     ASTNodePtr parseBlock();
     
     // Phase 3.4: Generic syntax parsing
     std::vector<GenericParamInfo> parseGenericParams();  // Parse <T: Trait, U>
     bool isGenericTypeReference() const;            // Check for *T syntax
     
-    // P0: Attribute parsing for #[align(N)], etc.
+    // P0: Attribute parsing for #[align(N)], #[derive(...)], #[inline], etc.
     uint64_t parseAlignmentAttribute();  // Returns 0 if no #[align] present
+    std::vector<Attribute> parseAttributes();  // v0.8.3: Parse all #[...] attributes
     
     // Phase 2.5: Type and module parsing
     ASTNodePtr parseType();

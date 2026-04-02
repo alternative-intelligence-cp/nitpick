@@ -6328,6 +6328,12 @@ skip_comparison:
             return nullptr;
         }
 
+        case ASTNode::NodeType::MACRO_DECL: {
+            // Macro declarations are processed at the type-checker level.
+            // No IR emission needed.
+            return nullptr;
+        }
+
         default:
             // Other statement types not yet implemented
             return nullptr;
@@ -11403,6 +11409,43 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 if (!llvmType) llvmType = builder.getInt64Ty();
                 return llvm::ConstantInt::get(llvmType, comptimeExpr->intResult, /*isSigned=*/true);
             }
+        }
+
+        case ASTNode::NodeType::MACRO_INVOCATION: {
+            // Macro invocations are expanded during type checking.
+            // The expandedAST field contains the expansion result — codegen that.
+            MacroInvocationExpr* macroExpr = static_cast<MacroInvocationExpr*>(expr);
+            if (macroExpr->expandedAST) {
+                ASTNode* expanded = macroExpr->expandedAST.get();
+                
+                if (expanded->isExpression()) {
+                    return codegenExpression(expanded);
+                }
+                
+                // If it's a block, codegen all statements and return the value
+                // of the last expression statement
+                if (expanded->type == ASTNode::NodeType::BLOCK) {
+                    BlockStmt* block = static_cast<BlockStmt*>(expanded);
+                    llvm::Value* lastVal = nullptr;
+                    for (const auto& s : block->statements) {
+                        if (s->isExpression()) {
+                            lastVal = codegenExpression(s.get());
+                        } else if (s->type == ASTNode::NodeType::EXPRESSION_STMT) {
+                            ExpressionStmt* exprStmt = static_cast<ExpressionStmt*>(s.get());
+                            lastVal = codegenExpression(exprStmt->expression.get());
+                        } else {
+                            codegenStatement(s.get());
+                        }
+                    }
+                    return lastVal;
+                }
+                
+                codegenStatement(expanded);
+                return nullptr;
+            }
+            std::cerr << "[ERROR] Macro invocation '" << macroExpr->macroName 
+                      << "' was not expanded during type checking" << std::endl;
+            return nullptr;
         }
 
         default:

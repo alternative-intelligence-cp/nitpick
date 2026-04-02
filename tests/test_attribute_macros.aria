@@ -1,0 +1,27 @@
+// Test attribute macros (v0.8.3)
+// Tests: #[inline], #[noinline] on functions, #[align(N)] on structs
+
+#[align(16)]
+struct:AlignedPoint = {
+    flt64:x;
+    flt64:y;
+};
+
+#[inline]
+func:add_values = int32(int32:a, int32:b) {
+    pass a + b;
+};
+
+#[noinline]
+func:multiply = int32(int32:a, int32:b) {
+    pass a * b;
+};
+
+pub func:main = int32() {
+    int32:sum = raw add_values(3i32, 4i32);
+    int32:prod = raw multiply(sum, 2i32);
+    // (3 + 4) * 2 = 14
+    exit prod;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

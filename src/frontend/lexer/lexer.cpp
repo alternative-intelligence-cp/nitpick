@@ -85,6 +85,8 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"comptime", TokenType::TOKEN_KW_COMPTIME},
     {"inline", TokenType::TOKEN_KW_INLINE},
     {"noinline", TokenType::TOKEN_KW_NOINLINE},
+    {"macro", TokenType::TOKEN_KW_MACRO},
+    {"derive", TokenType::TOKEN_KW_DERIVE},
     
     // Type declaration
     {"struct", TokenType::TOKEN_KW_STRUCT},

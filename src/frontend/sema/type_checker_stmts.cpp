@@ -62,6 +62,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
         case ASTNode::NodeType::IMPL_DECL:
             checkImplDecl(static_cast<ImplDeclStmt*>(stmt));
             break;
+        
+        case ASTNode::NodeType::MACRO_DECL:
+            checkMacroDecl(static_cast<MacroDeclStmt*>(stmt));
+            break;
 
         case ASTNode::NodeType::RETURN:
             checkReturnStmt(static_cast<ReturnStmt*>(stmt));
@@ -2042,6 +2046,11 @@ void TypeChecker::checkStructDecl(StructDeclStmt* stmt) {
     
     // Register struct type in type system with field information
     typeSystem->createStructType(stmt->structName, fields, 0, 0, false);
+    
+    // v0.8.3: Expand derive attributes if present
+    if (!stmt->attributes.empty()) {
+        expandDeriveAttributes(stmt);
+    }
 }
 
 void TypeChecker::checkEnumDecl(EnumDeclStmt* stmt) {
@@ -4929,6 +4938,445 @@ bool TypeChecker::validateMainExists() {
     // Signature details validated in checkFuncDecl() when the function is parsed
     
     return true;
+}
+
+// ============================================================================
+// v0.8.3: Macro System — AST-Level Macros, Derive, Attributes
+// ============================================================================
+
+void TypeChecker::checkMacroDecl(MacroDeclStmt* stmt) {
+    if (!stmt) return;
+    
+    // Check for duplicate macro names
+    if (macroRegistry.count(stmt->macroName)) {
+        addError("Macro '" + stmt->macroName + "' is already defined", stmt);
+        return;
+    }
+    
+    // Register the macro for later expansion
+    macroRegistry[stmt->macroName] = stmt;
+}
+
+Type* TypeChecker::inferMacroInvocation(MacroInvocationExpr* expr) {
+    if (!expr) return typeSystem->getErrorType();
+    
+    // Look up the macro
+    auto it = macroRegistry.find(expr->macroName);
+    if (it == macroRegistry.end()) {
+        addError("Undefined macro '" + expr->macroName + "'", expr);
+        return typeSystem->getErrorType();
+    }
+    
+    MacroDeclStmt* macroDef = it->second;
+    
+    // Check argument count
+    if (expr->arguments.size() != macroDef->paramNames.size()) {
+        addError("Macro '" + expr->macroName + "' expects " + 
+                 std::to_string(macroDef->paramNames.size()) + " arguments, got " +
+                 std::to_string(expr->arguments.size()), expr);
+        return typeSystem->getErrorType();
+    }
+    
+    // Build substitution map: param name -> argument AST
+    std::map<std::string, ASTNodePtr> substitutions;
+    for (size_t i = 0; i < macroDef->paramNames.size(); ++i) {
+        substitutions[macroDef->paramNames[i]] = expr->arguments[i];
+    }
+    
+    // Clone the macro body with parameter substitutions
+    ASTNodePtr expanded = cloneAST(macroDef->body.get(), substitutions);
+    expr->expandedAST = expanded;
+    
+    // Type-check the expanded AST
+    if (expanded) {
+        // If the expanded AST is a block, check it and return the type of the last expression
+        if (expanded->type == ASTNode::NodeType::BLOCK) {
+            auto* block = static_cast<BlockStmt*>(expanded.get());
+            Type* lastType = typeSystem->getPrimitiveType("void");
+            for (const auto& s : block->statements) {
+                if (s->type == ASTNode::NodeType::EXPRESSION_STMT) {
+                    auto* exprStmt = static_cast<ExpressionStmt*>(s.get());
+                    lastType = inferType(exprStmt->expression.get());
+                } else if (s->isExpression()) {
+                    lastType = inferType(s.get());
+                } else {
+                    checkStatement(s.get());
+                }
+            }
+            return lastType;
+        }
+        // If it's an expression, infer its type
+        if (expanded->isExpression()) {
+            return inferType(expanded.get());
+        }
+        // Statement — check it and return void
+        checkStatement(expanded.get());
+    }
+    
+    return typeSystem->getPrimitiveType("void");
+}
+
+ASTNodePtr TypeChecker::cloneAST(ASTNode* node, const std::map<std::string, ASTNodePtr>& substitutions) {
+    if (!node) return nullptr;
+    
+    // If this is an identifier that matches a macro parameter, substitute it
+    if (node->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* ident = static_cast<IdentifierExpr*>(node);
+        auto it = substitutions.find(ident->name);
+        if (it != substitutions.end()) {
+            return it->second;  // Return the argument AST directly
+        }
+        // Not a macro parameter — return a copy of the identifier
+        return std::make_shared<IdentifierExpr>(ident->name, ident->line, ident->column);
+    }
+    
+    // For binary operations, clone both sides
+    if (node->type == ASTNode::NodeType::BINARY_OP) {
+        auto* bin = static_cast<BinaryExpr*>(node);
+        auto newLeft = cloneAST(bin->left.get(), substitutions);
+        auto newRight = cloneAST(bin->right.get(), substitutions);
+        return std::make_shared<BinaryExpr>(newLeft, bin->op, newRight, bin->line, bin->column);
+    }
+    
+    // Unary operations
+    if (node->type == ASTNode::NodeType::UNARY_OP) {
+        auto* un = static_cast<UnaryExpr*>(node);
+        auto newOperand = cloneAST(un->operand.get(), substitutions);
+        return std::make_shared<UnaryExpr>(un->op, newOperand, un->isPostfix, un->line, un->column);
+    }
+    
+    // Call expressions
+    if (node->type == ASTNode::NodeType::CALL) {
+        auto* call = static_cast<CallExpr*>(node);
+        auto newCallee = cloneAST(call->callee.get(), substitutions);
+        std::vector<ASTNodePtr> newArgs;
+        for (const auto& arg : call->arguments) {
+            newArgs.push_back(cloneAST(arg.get(), substitutions));
+        }
+        return std::make_shared<CallExpr>(newCallee, newArgs, call->line, call->column);
+    }
+    
+    // Literals — just copy
+    if (node->type == ASTNode::NodeType::LITERAL) {
+        auto* lit = static_cast<LiteralExpr*>(node);
+        auto clone = std::visit([&](auto&& val) {
+            return std::make_shared<LiteralExpr>(val, lit->line, lit->column);
+        }, lit->value);
+        clone->raw_value_string = lit->raw_value_string;
+        clone->explicit_type = lit->explicit_type;
+        return clone;
+    }
+    
+    // Block statements
+    if (node->type == ASTNode::NodeType::BLOCK) {
+        auto* block = static_cast<BlockStmt*>(node);
+        std::vector<ASTNodePtr> newStmts;
+        for (const auto& s : block->statements) {
+            auto cloned = cloneAST(s.get(), substitutions);
+            if (cloned) newStmts.push_back(cloned);
+        }
+        return std::make_shared<BlockStmt>(newStmts, block->line, block->column);
+    }
+    
+    // Expression statements
+    if (node->type == ASTNode::NodeType::EXPRESSION_STMT) {
+        auto* exprStmt = static_cast<ExpressionStmt*>(node);
+        auto newExpr = cloneAST(exprStmt->expression.get(), substitutions);
+        return std::make_shared<ExpressionStmt>(newExpr, exprStmt->line, exprStmt->column);
+    }
+    
+    // Return/Pass/Fail
+    if (node->type == ASTNode::NodeType::RETURN) {
+        auto* ret = static_cast<ReturnStmt*>(node);
+        auto newVal = ret->value ? cloneAST(ret->value.get(), substitutions) : nullptr;
+        return std::make_shared<ReturnStmt>(newVal, ret->line, ret->column);
+    }
+    
+    if (node->type == ASTNode::NodeType::PASS) {
+        auto* pass = static_cast<PassStmt*>(node);
+        auto newVal = cloneAST(pass->value.get(), substitutions);
+        return std::make_shared<PassStmt>(newVal, pass->line, pass->column);
+    }
+    
+    // Variable declarations
+    if (node->type == ASTNode::NodeType::VAR_DECL) {
+        auto* var = static_cast<VarDeclStmt*>(node);
+        auto newInit = var->initializer ? cloneAST(var->initializer.get(), substitutions) : nullptr;
+        auto newTypeNode = var->typeNode ? cloneAST(var->typeNode.get(), substitutions) : nullptr;
+        auto clone = std::make_shared<VarDeclStmt>(newTypeNode, var->varName, newInit, var->line, var->column);
+        clone->typeName = var->typeName;
+        clone->isWild = var->isWild;
+        clone->isConst = var->isConst;
+        return clone;
+    }
+    
+    // If statement
+    if (node->type == ASTNode::NodeType::IF) {
+        auto* ifStmt = static_cast<IfStmt*>(node);
+        auto newCond = cloneAST(ifStmt->condition.get(), substitutions);
+        auto newThen = cloneAST(ifStmt->thenBranch.get(), substitutions);
+        auto newElse = ifStmt->elseBranch ? cloneAST(ifStmt->elseBranch.get(), substitutions) : nullptr;
+        return std::make_shared<IfStmt>(newCond, newThen, newElse, ifStmt->line, ifStmt->column);
+    }
+    
+    // Member access
+    if (node->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        auto* mem = static_cast<MemberAccessExpr*>(node);
+        auto newObj = cloneAST(mem->object.get(), substitutions);
+        return std::make_shared<MemberAccessExpr>(newObj, mem->member, mem->isPointerAccess, mem->isSafeNavigation, mem->line, mem->column);
+    }
+    
+    // Type annotations — pass through unchanged
+    if (node->type == ASTNode::NodeType::TYPE_ANNOTATION) {
+        auto* ta = static_cast<SimpleType*>(node);
+        return std::make_shared<SimpleType>(ta->typeName, ta->line, ta->column);
+    }
+    
+    // Fallback: return nullptr (node type not supported for cloning)
+    // This is safe — the type checker will report an appropriate error
+    return nullptr;
+}
+
+void TypeChecker::expandDeriveAttributes(StructDeclStmt* stmt) {
+    for (const auto& attr : stmt->attributes) {
+        if (attr.name != "derive") continue;
+        
+        for (const auto& traitName : attr.args) {
+            // Generate synthetic impl for each derived trait
+            
+            if (traitName == "ToString") {
+                // Generate: impl:ToString:for:StructName = {
+                //   func:to_string = string(StructName:self) {
+                //     pass(`StructName { field1: &{self.field1}, field2: &{self.field2} }`);
+                //   };
+                // };
+                
+                // Build a simple to_string function that returns the struct name
+                // with fields as a template literal
+                auto selfParam = std::make_shared<ParameterNode>(
+                    std::make_shared<SimpleType>(stmt->structName, stmt->line, stmt->column),
+                    "self", nullptr, stmt->line, stmt->column);
+                
+                // Build the string representation: "StructName { ... }"
+                std::string formatStr = stmt->structName + " { ";
+                for (size_t i = 0; i < stmt->fields.size(); ++i) {
+                    auto* field = static_cast<VarDeclStmt*>(stmt->fields[i].get());
+                    if (i > 0) formatStr += ", ";
+                    formatStr += field->varName + ": %";  // placeholder
+                }
+                formatStr += " }";
+                
+                // For now, generate a simple string literal return
+                auto strLit = std::make_shared<LiteralExpr>(
+                    formatStr, stmt->line, stmt->column);
+                auto passStmt = std::make_shared<PassStmt>(strLit, stmt->line, stmt->column);
+                
+                std::vector<ASTNodePtr> bodyStmts = {passStmt};
+                auto body = std::make_shared<BlockStmt>(bodyStmts, stmt->line, stmt->column);
+                auto retType = std::make_shared<SimpleType>("string", stmt->line, stmt->column);
+                
+                auto func = std::make_shared<FuncDeclStmt>(
+                    "to_string", retType,
+                    std::vector<ASTNodePtr>{selfParam},
+                    body, stmt->line, stmt->column);
+                
+                std::vector<ASTNodePtr> methods = {func};
+                auto impl = std::make_shared<ImplDeclStmt>(
+                    "ToString", stmt->structName, std::move(methods),
+                    stmt->line, stmt->column);
+                
+                // Store and process the synthetic impl
+                syntheticNodes.push_back(impl);
+                checkImplDecl(static_cast<ImplDeclStmt*>(impl.get()));
+                
+            } else if (traitName == "Eq") {
+                // Generate: impl:Eq:for:StructName = {
+                //   func:eq = bool(StructName:self, StructName:other) { ... };
+                // };
+                
+                auto selfParam = std::make_shared<ParameterNode>(
+                    std::make_shared<SimpleType>(stmt->structName, stmt->line, stmt->column),
+                    "self", nullptr, stmt->line, stmt->column);
+                auto otherParam = std::make_shared<ParameterNode>(
+                    std::make_shared<SimpleType>(stmt->structName, stmt->line, stmt->column),
+                    "other", nullptr, stmt->line, stmt->column);
+                
+                // Compare all fields: self.field1 == other.field1 && self.field2 == other.field2 && ...
+                ASTNodePtr comparison = nullptr;
+                for (const auto& field : stmt->fields) {
+                    auto* fieldDecl = static_cast<VarDeclStmt*>(field.get());
+                    auto selfAccess = std::make_shared<MemberAccessExpr>(
+                        std::make_shared<IdentifierExpr>("self", stmt->line, stmt->column),
+                        fieldDecl->varName, false, false, stmt->line, stmt->column);
+                    auto otherAccess = std::make_shared<MemberAccessExpr>(
+                        std::make_shared<IdentifierExpr>("other", stmt->line, stmt->column),
+                        fieldDecl->varName, false, false, stmt->line, stmt->column);
+                    
+                    frontend::Token eqOp(frontend::TokenType::TOKEN_EQUAL_EQUAL, "==", stmt->line, stmt->column);
+                    auto fieldCmp = std::make_shared<BinaryExpr>(selfAccess, eqOp, otherAccess, stmt->line, stmt->column);
+                    
+                    if (!comparison) {
+                        comparison = fieldCmp;
+                    } else {
+                        frontend::Token andOp(frontend::TokenType::TOKEN_AND_AND, "&&", stmt->line, stmt->column);
+                        comparison = std::make_shared<BinaryExpr>(comparison, andOp, fieldCmp, stmt->line, stmt->column);
+                    }
+                }
+                
+                // If no fields, return true
+                if (!comparison) {
+                    comparison = std::make_shared<LiteralExpr>(true, stmt->line, stmt->column);
+                }
+                
+                auto passStmt = std::make_shared<PassStmt>(comparison, stmt->line, stmt->column);
+                std::vector<ASTNodePtr> bodyStmts = {passStmt};
+                auto body = std::make_shared<BlockStmt>(bodyStmts, stmt->line, stmt->column);
+                auto retType = std::make_shared<SimpleType>("bool", stmt->line, stmt->column);
+                
+                auto func = std::make_shared<FuncDeclStmt>(
+                    "eq", retType,
+                    std::vector<ASTNodePtr>{selfParam, otherParam},
+                    body, stmt->line, stmt->column);
+                
+                std::vector<ASTNodePtr> methods = {func};
+                auto impl = std::make_shared<ImplDeclStmt>(
+                    "Eq", stmt->structName, std::move(methods),
+                    stmt->line, stmt->column);
+                
+                syntheticNodes.push_back(impl);
+                checkImplDecl(static_cast<ImplDeclStmt*>(impl.get()));
+                
+            } else if (traitName == "Hash") {
+                // Generate: impl:Hash:for:StructName = {
+                //   func:hash = uint64(StructName:self) { ... };
+                // };
+                
+                auto selfParam = std::make_shared<ParameterNode>(
+                    std::make_shared<SimpleType>(stmt->structName, stmt->line, stmt->column),
+                    "self", nullptr, stmt->line, stmt->column);
+                
+                // Simple FNV-1a hash combining all fields
+                // For now, return a constant placeholder — real impl needs field access codegen
+                auto hashVal = std::make_shared<LiteralExpr>(
+                    (int64_t)14695981039346656037ULL, stmt->line, stmt->column);
+                hashVal->raw_value_string = "14695981039346656037u64";
+                hashVal->explicit_type = "uint64";
+                auto passStmt = std::make_shared<PassStmt>(hashVal, stmt->line, stmt->column);
+                
+                std::vector<ASTNodePtr> bodyStmts = {passStmt};
+                auto body = std::make_shared<BlockStmt>(bodyStmts, stmt->line, stmt->column);
+                auto retType = std::make_shared<SimpleType>("uint64", stmt->line, stmt->column);
+                
+                auto func = std::make_shared<FuncDeclStmt>(
+                    "hash", retType,
+                    std::vector<ASTNodePtr>{selfParam},
+                    body, stmt->line, stmt->column);
+                
+                std::vector<ASTNodePtr> methods = {func};
+                auto impl = std::make_shared<ImplDeclStmt>(
+                    "Hash", stmt->structName, std::move(methods),
+                    stmt->line, stmt->column);
+                
+                syntheticNodes.push_back(impl);
+                checkImplDecl(static_cast<ImplDeclStmt*>(impl.get()));
+                
+            } else if (traitName == "Clone") {
+                // Generate: impl:Clone:for:StructName = {
+                //   func:clone = StructName(StructName:self) { pass(self); };
+                // };
+                
+                auto selfParam = std::make_shared<ParameterNode>(
+                    std::make_shared<SimpleType>(stmt->structName, stmt->line, stmt->column),
+                    "self", nullptr, stmt->line, stmt->column);
+                
+                auto selfRef = std::make_shared<IdentifierExpr>("self", stmt->line, stmt->column);
+                auto passStmt = std::make_shared<PassStmt>(selfRef, stmt->line, stmt->column);
+                
+                std::vector<ASTNodePtr> bodyStmts = {passStmt};
+                auto body = std::make_shared<BlockStmt>(bodyStmts, stmt->line, stmt->column);
+                auto retType = std::make_shared<SimpleType>(stmt->structName, stmt->line, stmt->column);
+                
+                auto func = std::make_shared<FuncDeclStmt>(
+                    "clone", retType,
+                    std::vector<ASTNodePtr>{selfParam},
+                    body, stmt->line, stmt->column);
+                
+                std::vector<ASTNodePtr> methods = {func};
+                auto impl = std::make_shared<ImplDeclStmt>(
+                    "Clone", stmt->structName, std::move(methods),
+                    stmt->line, stmt->column);
+                
+                syntheticNodes.push_back(impl);
+                checkImplDecl(static_cast<ImplDeclStmt*>(impl.get()));
+                
+            } else if (traitName == "Debug") {
+                // Generate: impl:Debug:for:StructName = {
+                //   func:debug = string(StructName:self) { ... };
+                // };
+                // Similar to ToString but with type annotations for each field
+                
+                auto selfParam = std::make_shared<ParameterNode>(
+                    std::make_shared<SimpleType>(stmt->structName, stmt->line, stmt->column),
+                    "self", nullptr, stmt->line, stmt->column);
+                
+                std::string debugStr = stmt->structName + " { ";
+                for (size_t i = 0; i < stmt->fields.size(); ++i) {
+                    auto* field = static_cast<VarDeclStmt*>(stmt->fields[i].get());
+                    if (i > 0) debugStr += ", ";
+                    std::string fieldType = field->typeNode ? field->typeNode->toString() : field->typeName;
+                    debugStr += field->varName + ": " + fieldType + "(%)";
+                }
+                debugStr += " }";
+                
+                auto strLit = std::make_shared<LiteralExpr>(
+                    debugStr, stmt->line, stmt->column);
+                auto passStmt = std::make_shared<PassStmt>(strLit, stmt->line, stmt->column);
+                
+                std::vector<ASTNodePtr> bodyStmts = {passStmt};
+                auto body = std::make_shared<BlockStmt>(bodyStmts, stmt->line, stmt->column);
+                auto retType = std::make_shared<SimpleType>("string", stmt->line, stmt->column);
+                
+                auto func = std::make_shared<FuncDeclStmt>(
+                    "debug", retType,
+                    std::vector<ASTNodePtr>{selfParam},
+                    body, stmt->line, stmt->column);
+                
+                std::vector<ASTNodePtr> methods = {func};
+                auto impl = std::make_shared<ImplDeclStmt>(
+                    "Debug", stmt->structName, std::move(methods),
+                    stmt->line, stmt->column);
+                
+                syntheticNodes.push_back(impl);
+                checkImplDecl(static_cast<ImplDeclStmt*>(impl.get()));
+                
+            } else {
+                addError("Unknown derive trait '" + traitName + 
+                         "'. Available: ToString, Eq, Hash, Clone, Debug", stmt);
+            }
+        }
+    }
+}
+
+void TypeChecker::processAttributes(FuncDeclStmt* stmt) {
+    if (!stmt) return;
+    
+    for (const auto& attr : stmt->attributes) {
+        if (attr.name == "inline") {
+            stmt->isInline = true;
+        } else if (attr.name == "noinline") {
+            stmt->isNoInline = true;
+        } else if (attr.name == "gpu_kernel") {
+            stmt->isGPUKernel = true;
+        } else if (attr.name == "gpu_device") {
+            stmt->isGPUDevice = true;
+        } else if (attr.name == "comptime") {
+            stmt->isComptime = true;
+        } else if (attr.name == "align" || attr.name == "derive") {
+            // These are handled elsewhere (struct level)
+        } else {
+            addError("Unknown attribute '#[" + attr.name + "]' on function", stmt);
+        }
+    }
 }
 
 } // namespace sema

@@ -303,6 +303,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
 
         case ASTNode::NodeType::COMPTIME_EXPR:
             return inferComptimeExpr(static_cast<ComptimeExpr*>(expr));
+        
+        case ASTNode::NodeType::MACRO_INVOCATION:
+            return inferMacroInvocation(static_cast<MacroInvocationExpr*>(expr));
 
         case ASTNode::NodeType::LAMBDA: {
             // Lambda expression used as a function pointer initializer.

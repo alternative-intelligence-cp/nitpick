@@ -76,6 +76,10 @@ std::string ASTNode::nodeTypeToString(NodeType type) {
         case NodeType::COMPTIME_BLOCK: return "COMPTIME_BLOCK";
         case NodeType::COMPTIME_EXPR: return "COMPTIME_EXPR";
         
+        // Macro system (v0.8.3)
+        case NodeType::MACRO_DECL: return "MACRO_DECL";
+        case NodeType::MACRO_INVOCATION: return "MACRO_INVOCATION";
+        
         // Special
         case NodeType::ASSIGNMENT: return "ASSIGNMENT";
         case NodeType::PARAMETER: return "PARAMETER";
@@ -87,13 +91,15 @@ std::string ASTNode::nodeTypeToString(NodeType type) {
 
 bool ASTNode::isExpression() const {
     return (type >= NodeType::LITERAL && type <= NodeType::CAST) ||
-           type == NodeType::COMPTIME_EXPR;
+           type == NodeType::COMPTIME_EXPR ||
+           type == NodeType::MACRO_INVOCATION;
 }
 
 bool ASTNode::isStatement() const {
     return (type >= NodeType::VAR_DECL && type <= NodeType::EXPRESSION_STMT) ||
            (type >= NodeType::IF && type <= NodeType::PICK_CASE) ||
-           type == NodeType::COMPTIME_BLOCK;
+           type == NodeType::COMPTIME_BLOCK ||
+           type == NodeType::MACRO_DECL;
 }
 
 bool ASTNode::isType() const {

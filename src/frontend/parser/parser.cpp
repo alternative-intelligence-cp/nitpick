@@ -693,6 +693,24 @@ ASTNodePtr Parser::parsePrimary() {
         int col = token.column;
         advance();
         
+        // v0.8.3: Check for macro invocation: name!(args)
+        if (check(TokenType::TOKEN_BANG) && 
+            current + 1 < tokens.size() && tokens[current + 1].type == TokenType::TOKEN_LEFT_PAREN) {
+            advance();  // consume !
+            advance();  // consume (
+            
+            std::vector<ASTNodePtr> arguments;
+            if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+                do {
+                    ASTNodePtr arg = parseExpression();
+                    if (arg) arguments.push_back(arg);
+                } while (match(TokenType::TOKEN_COMMA));
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after macro arguments");
+            return std::make_shared<MacroInvocationExpr>(lexeme, arguments, line, col);
+        }
+        
         // Check for instance<T>(...) constructor syntax
         if (lexeme == "instance" && check(TokenType::TOKEN_LESS)) {
             advance(); // consume '<'
@@ -2181,14 +2199,45 @@ ASTNodePtr Parser::parseStatement() {
         return parseExternStatement();
     }
     
+    // v0.8.3: Parse #[...] attributes before declarations
+    // Attributes can appear before struct, func, enum, trait, impl
+    std::vector<Attribute> pendingAttrs;
+    if (check(TokenType::TOKEN_HASH)) {
+        // Save position — might not be an attribute (could be # pin operator)
+        size_t savedForAttr = current;
+        if (current + 1 < tokens.size() && tokens[current + 1].type == TokenType::TOKEN_LEFT_BRACKET) {
+            pendingAttrs = parseAttributes();
+            // If we parsed attributes but no declaration follows, restore
+            if (pendingAttrs.empty()) {
+                current = savedForAttr;
+            }
+        }
+    }
+    
     // Check for struct declarations
     if (match(TokenType::TOKEN_KW_STRUCT)) {
-        return parseStructDecl();
+        auto structDecl = parseStructDecl();
+        if (structDecl && !pendingAttrs.empty()) {
+            auto* sd = static_cast<StructDeclStmt*>(structDecl.get());
+            sd->attributes = std::move(pendingAttrs);
+            // Extract alignment from #[align(N)] attribute
+            for (const auto& attr : sd->attributes) {
+                if (attr.name == "align" && !attr.args.empty()) {
+                    try { sd->alignment = std::stoull(attr.args[0]); } catch (...) {}
+                }
+            }
+        }
+        return structDecl;
     }
     
     // Check for enum declarations
     if (match(TokenType::TOKEN_KW_ENUM)) {
-        return parseEnumDecl();
+        auto enumDecl = parseEnumDecl();
+        if (enumDecl && !pendingAttrs.empty()) {
+            auto* ed = static_cast<EnumDeclStmt*>(enumDecl.get());
+            ed->attributes = std::move(pendingAttrs);
+        }
+        return enumDecl;
     }
 
     // Check for Rules declarations (refinement types)
@@ -2209,6 +2258,11 @@ ASTNodePtr Parser::parseStatement() {
     // Check for impl declarations
     if (match(TokenType::TOKEN_KW_IMPL)) {
         return parseImplDecl();
+    }
+    
+    // v0.8.3: Check for AST-level macro declarations
+    if (match(TokenType::TOKEN_KW_MACRO)) {
+        return parseMacroDecl();
     }
 
     // Check for limit<> variable declarations (refinement types)
@@ -2644,7 +2698,20 @@ ASTNodePtr Parser::parseStatement() {
             // It's a function declaration: func:name = ... or func<T>:name = ...
             current = saved; // reset position
             match(TokenType::TOKEN_KW_FUNC); // consume it properly
-            return parseFuncDecl();
+            auto funcDecl = parseFuncDecl();
+            // v0.8.3: Attach any pending attributes
+            if (funcDecl && !pendingAttrs.empty()) {
+                auto* fd = static_cast<FuncDeclStmt*>(funcDecl.get());
+                fd->attributes = std::move(pendingAttrs);
+                // Apply well-known attribute effects
+                for (const auto& attr : fd->attributes) {
+                    if (attr.name == "inline") fd->isInline = true;
+                    else if (attr.name == "noinline") fd->isNoInline = true;
+                    else if (attr.name == "gpu_kernel") fd->isGPUKernel = true;
+                    else if (attr.name == "gpu_device") fd->isGPUDevice = true;
+                }
+            }
+            return funcDecl;
         } else {
             // It's a function call or expression, restore position
             current = saved;
@@ -3073,7 +3140,10 @@ ASTNodePtr Parser::parseFuncDecl() {
 ASTNodePtr Parser::parseStructDecl() {
     using namespace frontend;
     
-    // P0: Parse #[align(N)] attribute for entire struct if present
+    // v0.8.3: Parse all #[...] attributes (including #[align(N)], #[derive(...)])
+    // NOTE: parseAlignmentAttribute was called before 'struct' was consumed.
+    // Now attributes are parsed before the 'struct' keyword match in parseStatement().
+    // The alignment is extracted from the attributes vector if #[align(N)] is present.
     uint64_t structAlignment = parseAlignmentAttribute();
     
     Token structToken = previous(); // 'struct' keyword
@@ -3765,6 +3835,54 @@ ASTNodePtr Parser::parseImplDecl() {
         std::move(methods),
         implToken.line,
         implToken.column
+    );
+}
+
+// v0.8.3: Parse AST-level macro declaration
+// Syntax: macro:name = (param1, param2) { body };
+ASTNodePtr Parser::parseMacroDecl() {
+    using namespace frontend;
+    
+    Token macroToken = previous();  // 'macro' keyword
+    
+    // Consume colon before macro name (consistent with func:name syntax)
+    consume(TokenType::TOKEN_COLON, "Expected ':' after 'macro' keyword");
+    
+    // Get macro name
+    Token nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected macro name");
+    
+    // Consume equals sign
+    consume(TokenType::TOKEN_EQUAL, "Expected '=' after macro name");
+    
+    // Parse parameter list: (param1, param2, ...)
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' for macro parameters");
+    
+    std::vector<std::string> paramNames;
+    while (!check(TokenType::TOKEN_RIGHT_PAREN) && !isAtEnd()) {
+        Token paramToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
+        paramNames.push_back(paramToken.lexeme);
+        
+        if (check(TokenType::TOKEN_COMMA)) {
+            advance();  // consume comma
+        }
+    }
+    
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after macro parameters");
+    
+    // Parse macro body: { ... }
+    consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' for macro body");
+    ASTNodePtr body = parseBlock();
+    
+    // Consume semicolon after macro declaration
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after macro declaration");
+    
+    return std::make_shared<MacroDeclStmt>(
+        nameToken.lexeme,
+        paramNames,
+        body,
+        false,  // statement macro by default
+        macroToken.line,
+        macroToken.column
     );
 }
 
@@ -5492,6 +5610,84 @@ uint64_t Parser::parseAlignmentAttribute() {
     consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after attribute");
     
     return alignment;
+}
+
+std::vector<Attribute> Parser::parseAttributes() {
+    using namespace frontend;
+    std::vector<Attribute> attrs;
+    
+    // Parse zero or more #[name(args)] attributes
+    while (check(TokenType::TOKEN_HASH)) {
+        size_t saved = current;
+        advance();  // consume #
+        
+        if (!check(TokenType::TOKEN_LEFT_BRACKET)) {
+            current = saved;  // Not an attribute, restore
+            break;
+        }
+        advance();  // consume [
+        
+        // Parse attribute name (identifier or keyword like 'derive', 'inline')
+        std::string attrName;
+        int attrLine = peek().line;
+        int attrCol = peek().column;
+        
+        if (check(TokenType::TOKEN_IDENTIFIER)) {
+            attrName = peek().lexeme;
+            advance();
+        } else if (check(TokenType::TOKEN_KW_DERIVE)) {
+            attrName = "derive";
+            advance();
+        } else if (check(TokenType::TOKEN_KW_INLINE)) {
+            attrName = "inline";
+            advance();
+        } else if (check(TokenType::TOKEN_KW_NOINLINE)) {
+            attrName = "noinline";
+            advance();
+        } else {
+            error("Expected attribute name after '#['");
+            current = saved;
+            break;
+        }
+        
+        // Parse optional arguments: (arg1, arg2, ...)
+        std::vector<std::string> args;
+        if (check(TokenType::TOKEN_LEFT_PAREN)) {
+            advance();  // consume (
+            
+            while (!check(TokenType::TOKEN_RIGHT_PAREN) && !isAtEnd()) {
+                // Arguments can be identifiers, keywords, or integer literals
+                if (check(TokenType::TOKEN_IDENTIFIER)) {
+                    args.push_back(peek().lexeme);
+                    advance();
+                } else if (check(TokenType::TOKEN_INTEGER)) {
+                    args.push_back(peek().lexeme);
+                    advance();
+                } else if (peek().type >= TokenType::TOKEN_KW_INT1 && 
+                           peek().type <= TokenType::TOKEN_KW_UINT4096) {
+                    // Type keywords as arguments
+                    args.push_back(peek().lexeme);
+                    advance();
+                } else {
+                    // Try consuming as an identifier-like token
+                    args.push_back(peek().lexeme);
+                    advance();
+                }
+                
+                if (check(TokenType::TOKEN_COMMA)) {
+                    advance();  // consume comma
+                }
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after attribute arguments");
+        }
+        
+        consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after attribute");
+        
+        attrs.emplace_back(attrName, args, attrLine, attrCol);
+    }
+    
+    return attrs;
 }
 
 std::vector<GenericParamInfo> Parser::parseGenericParams() {
