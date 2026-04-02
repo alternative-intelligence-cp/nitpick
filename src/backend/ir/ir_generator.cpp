@@ -2034,7 +2034,7 @@ llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
     if (node->type == ASTNode::NodeType::PROGRAM) {
         ProgramNode* program = static_cast<ProgramNode*>(node);
         
-        // Process all declarations recursively (handles nested modules)
+// Process all declarations recursively (handles nested modules)
         processModuleDeclarations(program->declarations, "");
     }
     
@@ -2629,7 +2629,6 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
     // -------------------------------------------------------------------------
     // MAIN PASS: Generate full function bodies (declarations already exist)
     // -------------------------------------------------------------------------
-
     for (const auto& decl : declarations) {
         if (!decl) continue;
         

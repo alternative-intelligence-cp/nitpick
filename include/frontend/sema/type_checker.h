@@ -1097,6 +1097,10 @@ private:
     
     // v0.8.3: Clone an AST subtree with parameter substitution
     ASTNodePtr cloneAST(ASTNode* node, const std::map<std::string, ASTNodePtr>& substitutions);
+
+public:
+    // v0.8.4: Return synthetic nodes (derive-generated impls) for IR injection
+    const std::vector<ASTNodePtr>& getSyntheticNodes() const { return syntheticNodes; }
 };
 
 } // namespace sema

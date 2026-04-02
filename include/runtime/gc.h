@@ -377,6 +377,24 @@ void aria_gc_enable_concurrent(uint8_t enable);
  */
 void aria_gc_safepoint(void);
 
+/**
+ * v0.8.4: Register a JIT-allocated root for GC tracking.
+ * JIT-compiled code may hold references to GC objects in global/static storage.
+ * These roots must be registered so the GC can scan them during collection.
+ * 
+ * @param root_addr Address of a pointer variable that may point to a GC object.
+ *                  The GC will read *root_addr during mark phase.
+ */
+void aria_gc_register_jit_root(void** root_addr);
+
+/**
+ * v0.8.4: Unregister a JIT-allocated root.
+ * Call when the JIT module is unloaded or the root is no longer needed.
+ * 
+ * @param root_addr Address previously registered with aria_gc_register_jit_root.
+ */
+void aria_gc_unregister_jit_root(void** root_addr);
+
 #ifdef __cplusplus
 }
 #endif

@@ -15,6 +15,7 @@
  */
 
 #include "gc_internal.h"
+#include "runtime/async/gc_integration.h"
 #include <algorithm>
 #include <iostream>
 #include <cstring>
@@ -298,6 +299,47 @@ void GCState::minor_gc() {
     // Worklist for Cheney-style breadth-first evacuation
     std::vector<void*> worklist;
     
+    // v0.8.4: Scan suspended coroutine frames for GC roots
+    GCCoroAllocator* coro_alloc = get_global_coro_allocator();
+    if (coro_alloc) {
+        coro_alloc->scan_frames([&](void* obj_ptr) {
+            if (!obj_ptr || !nursery->contains(obj_ptr)) return;
+            ObjHeader* header = get_header(obj_ptr);
+            if (!header) return;
+            if (header->pinned_bit) {
+                header->color = GC_COLOR_BLACK;
+                worklist.push_back(obj_ptr);
+            } else {
+                void* new_ptr = evacuate_object(obj_ptr);
+                if (new_ptr) {
+                    worklist.push_back(new_ptr);
+                }
+            }
+        });
+    }
+    
+    // v0.8.4: Scan JIT roots for nursery references
+    {
+        std::lock_guard<std::mutex> jlock(jit_roots_mutex);
+        for (void** jit_root : jit_roots) {
+            if (!jit_root) continue;
+            void* obj_ptr = *jit_root;
+            if (!obj_ptr || !nursery->contains(obj_ptr)) continue;
+            ObjHeader* header = get_header(obj_ptr);
+            if (!header) continue;
+            if (header->pinned_bit) {
+                header->color = GC_COLOR_BLACK;
+                worklist.push_back(obj_ptr);
+            } else {
+                void* new_ptr = evacuate_object(obj_ptr);
+                if (new_ptr) {
+                    *jit_root = new_ptr;  // Update JIT root to new location
+                    worklist.push_back(new_ptr);
+                }
+            }
+        }
+    }
+    
     for (void** root_addr : roots) {
         void* obj_ptr = *root_addr;
         
@@ -518,6 +560,34 @@ void GCState::major_gc() {
                 }
             }
             
+            // v0.8.4: Snapshot coroutine frame roots into gray worklist
+            GCCoroAllocator* coro_alloc_conc = get_global_coro_allocator();
+            if (coro_alloc_conc) {
+                coro_alloc_conc->scan_frames([this](void* obj_ptr) {
+                    if (!obj_ptr || nursery->contains(obj_ptr)) return;
+                    ObjHeader* header = get_header(obj_ptr);
+                    if (header && header->color == GC_COLOR_WHITE) {
+                        header->color = GC_COLOR_GRAY;
+                        gray_worklist.push_back(obj_ptr);
+                    }
+                });
+            }
+            
+            // v0.8.4: Snapshot JIT roots into gray worklist
+            {
+                std::lock_guard<std::mutex> jlock(jit_roots_mutex);
+                for (void** jit_root : jit_roots) {
+                    if (!jit_root) continue;
+                    void* obj_ptr = *jit_root;
+                    if (!obj_ptr || nursery->contains(obj_ptr)) continue;
+                    ObjHeader* header = get_header(obj_ptr);
+                    if (header && header->color == GC_COLOR_WHITE) {
+                        header->color = GC_COLOR_GRAY;
+                        gray_worklist.push_back(obj_ptr);
+                    }
+                }
+            }
+            
             record_pause(stw_start);
         }
         
@@ -562,6 +632,24 @@ void GCState::major_gc() {
             void* obj_ptr = *root_addr;
             if (obj_ptr) {
                 mark_object(obj_ptr);
+            }
+        }
+        
+        // v0.8.4: Mark coroutine frame roots
+        GCCoroAllocator* coro_alloc_stw = get_global_coro_allocator();
+        if (coro_alloc_stw) {
+            coro_alloc_stw->scan_frames([this](void* obj_ptr) {
+                mark_object(obj_ptr);
+            });
+        }
+        
+        // v0.8.4: Mark JIT roots
+        {
+            std::lock_guard<std::mutex> jlock(jit_roots_mutex);
+            for (void** jit_root : jit_roots) {
+                if (jit_root && *jit_root) {
+                    mark_object(*jit_root);
+                }
             }
         }
         
@@ -1000,6 +1088,25 @@ void GCState::record_pause(std::chrono::high_resolution_clock::time_point start)
     if (ns > stats.max_pause_time_ns) {
         stats.max_pause_time_ns = ns;
     }
+}
+
+// =============================================================================
+// v0.8.4: JIT Root Tracking
+// =============================================================================
+
+void GCState::register_jit_root(void** root_addr) {
+    if (!root_addr) return;
+    std::lock_guard<std::mutex> lock(jit_roots_mutex);
+    jit_roots.push_back(root_addr);
+}
+
+void GCState::unregister_jit_root(void** root_addr) {
+    if (!root_addr) return;
+    std::lock_guard<std::mutex> lock(jit_roots_mutex);
+    jit_roots.erase(
+        std::remove(jit_roots.begin(), jit_roots.end(), root_addr),
+        jit_roots.end()
+    );
 }
 
 } // namespace runtime

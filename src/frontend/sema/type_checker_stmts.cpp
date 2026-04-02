@@ -5138,6 +5138,20 @@ ASTNodePtr TypeChecker::cloneAST(ASTNode* node, const std::map<std::string, ASTN
 }
 
 void TypeChecker::expandDeriveAttributes(StructDeclStmt* stmt) {
+    // Auto-register built-in derive traits if not yet declared
+    static const std::vector<std::string> builtinDeriveTraits = {
+        "ToString", "Eq", "Hash", "Clone", "Debug", "Ord"
+    };
+    for (const auto& bt : builtinDeriveTraits) {
+        if (!symbolTable->lookupSymbol(bt)) {
+            // Create a synthetic empty trait declaration
+            auto syntheticTrait = std::make_shared<TraitDeclStmt>(
+                bt, std::vector<TraitMethod>{}, stmt->line, stmt->column);
+            syntheticNodes.push_back(syntheticTrait);
+            checkTraitDecl(static_cast<TraitDeclStmt*>(syntheticTrait.get()));
+        }
+    }
+
     for (const auto& attr : stmt->attributes) {
         if (attr.name != "derive") continue;
         
@@ -5349,9 +5363,91 @@ void TypeChecker::expandDeriveAttributes(StructDeclStmt* stmt) {
                 syntheticNodes.push_back(impl);
                 checkImplDecl(static_cast<ImplDeclStmt*>(impl.get()));
                 
+            } else if (traitName == "Ord") {
+                // Generate: impl:Ord:for:StructName = {
+                //   func:less_than = bool(StructName:self, StructName:other) { ... };
+                // };
+                // Lexicographic field-by-field comparison using <
+                
+                auto selfParam = std::make_shared<ParameterNode>(
+                    std::make_shared<SimpleType>(stmt->structName, stmt->line, stmt->column),
+                    "self", nullptr, stmt->line, stmt->column);
+                auto otherParam = std::make_shared<ParameterNode>(
+                    std::make_shared<SimpleType>(stmt->structName, stmt->line, stmt->column),
+                    "other", nullptr, stmt->line, stmt->column);
+                
+                // Lexicographic ordering: for each field, if self.f < other.f return true,
+                // if other.f < self.f return false, else continue to next field.
+                // Final: return false (all fields equal).
+                std::vector<ASTNodePtr> bodyStmts;
+                
+                for (const auto& field : stmt->fields) {
+                    auto* fieldDecl = static_cast<VarDeclStmt*>(field.get());
+                    auto selfAccess = std::make_shared<MemberAccessExpr>(
+                        std::make_shared<IdentifierExpr>("self", stmt->line, stmt->column),
+                        fieldDecl->varName, false, false, stmt->line, stmt->column);
+                    auto otherAccess = std::make_shared<MemberAccessExpr>(
+                        std::make_shared<IdentifierExpr>("other", stmt->line, stmt->column),
+                        fieldDecl->varName, false, false, stmt->line, stmt->column);
+                    
+                    // if self.field < other.field { pass(true); };
+                    frontend::Token ltOp(frontend::TokenType::TOKEN_LESS, "<", stmt->line, stmt->column);
+                    auto ltCmp = std::make_shared<BinaryExpr>(selfAccess, ltOp, otherAccess, stmt->line, stmt->column);
+                    
+                    auto passTrue = std::make_shared<PassStmt>(
+                        std::make_shared<LiteralExpr>(true, stmt->line, stmt->column),
+                        stmt->line, stmt->column);
+                    auto ltBody = std::make_shared<BlockStmt>(
+                        std::vector<ASTNodePtr>{passTrue}, stmt->line, stmt->column);
+                    auto ltIf = std::make_shared<IfStmt>(
+                        ltCmp, ltBody, nullptr, stmt->line, stmt->column);
+                    bodyStmts.push_back(ltIf);
+                    
+                    // if other.field < self.field { pass(false); };
+                    auto selfAccess2 = std::make_shared<MemberAccessExpr>(
+                        std::make_shared<IdentifierExpr>("self", stmt->line, stmt->column),
+                        fieldDecl->varName, false, false, stmt->line, stmt->column);
+                    auto otherAccess2 = std::make_shared<MemberAccessExpr>(
+                        std::make_shared<IdentifierExpr>("other", stmt->line, stmt->column),
+                        fieldDecl->varName, false, false, stmt->line, stmt->column);
+                    
+                    auto gtCmp = std::make_shared<BinaryExpr>(otherAccess2, ltOp, selfAccess2, stmt->line, stmt->column);
+                    
+                    auto passFalse = std::make_shared<PassStmt>(
+                        std::make_shared<LiteralExpr>(false, stmt->line, stmt->column),
+                        stmt->line, stmt->column);
+                    auto gtBody = std::make_shared<BlockStmt>(
+                        std::vector<ASTNodePtr>{passFalse}, stmt->line, stmt->column);
+                    auto gtIf = std::make_shared<IfStmt>(
+                        gtCmp, gtBody, nullptr, stmt->line, stmt->column);
+                    bodyStmts.push_back(gtIf);
+                }
+                
+                // All fields equal — return false
+                auto passFinal = std::make_shared<PassStmt>(
+                    std::make_shared<LiteralExpr>(false, stmt->line, stmt->column),
+                    stmt->line, stmt->column);
+                bodyStmts.push_back(passFinal);
+                
+                auto body = std::make_shared<BlockStmt>(bodyStmts, stmt->line, stmt->column);
+                auto retType = std::make_shared<SimpleType>("bool", stmt->line, stmt->column);
+                
+                auto func = std::make_shared<FuncDeclStmt>(
+                    "less_than", retType,
+                    std::vector<ASTNodePtr>{selfParam, otherParam},
+                    body, stmt->line, stmt->column);
+                
+                std::vector<ASTNodePtr> methods = {func};
+                auto impl = std::make_shared<ImplDeclStmt>(
+                    "Ord", stmt->structName, std::move(methods),
+                    stmt->line, stmt->column);
+                
+                syntheticNodes.push_back(impl);
+                checkImplDecl(static_cast<ImplDeclStmt*>(impl.get()));
+                
             } else {
                 addError("Unknown derive trait '" + traitName + 
-                         "'. Available: ToString, Eq, Hash, Clone, Debug", stmt);
+                         "'. Available: ToString, Eq, Hash, Clone, Debug, Ord", stmt);
             }
         }
     }

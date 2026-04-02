@@ -242,6 +242,10 @@ public:
     void enable_concurrent(bool enable);
     void safepoint();  // Mutator safepoint poll
     
+    // v0.8.4: JIT root tracking
+    void register_jit_root(void** root_addr);
+    void unregister_jit_root(void** root_addr);
+    
     // Queries
     bool is_heap_pointer(void* ptr) const;
     ObjHeader* get_header(void* ptr) const;
@@ -305,6 +309,10 @@ private:
     bool sweep_in_progress;                 // Incremental sweep active
     size_t sweep_cursor;                    // Current position in old_gen.objects
     size_t sweep_bytes_freed;               // Bytes freed in current sweep cycle
+    
+    // v0.8.4: JIT root tracking
+    std::vector<void**> jit_roots;          // Roots from JIT-compiled code
+    std::mutex jit_roots_mutex;             // Protects jit_roots
     
     // Pause time tracking
     std::chrono::high_resolution_clock::time_point pause_start;

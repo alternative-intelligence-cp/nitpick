@@ -101,8 +101,8 @@ void GCCoroAllocator::suspend_frame(void* frame) {
     CoroFrameMetadata* metadata = it->second;
     metadata->is_suspended = true;
     
-    // Notify GC that this frame should be scanned
-    // TODO: Call GC mark function
+    // v0.8.4: Frame roots will be scanned during next GC cycle
+    // (GC calls scan_frames() during minor_gc/major_gc mark phase)
 }
 
 void GCCoroAllocator::resume_frame(void* frame) {

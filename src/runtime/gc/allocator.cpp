@@ -456,6 +456,14 @@ void aria_gc_safepoint(void) {
     GCState::instance().safepoint();
 }
 
+void aria_gc_register_jit_root(void** root_addr) {
+    GCState::instance().register_jit_root(root_addr);
+}
+
+void aria_gc_unregister_jit_root(void** root_addr) {
+    GCState::instance().unregister_jit_root(root_addr);
+}
+
 } // extern "C"
 
 } // namespace runtime

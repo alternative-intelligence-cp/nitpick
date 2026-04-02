@@ -94,7 +94,7 @@ extern "C" {
 #define ARIA_VERSION_MAJOR 0
 #define ARIA_VERSION_MINOR 8
 #define ARIA_VERSION_PATCH 2
-#define ARIA_VERSION "0.8.3"
+#define ARIA_VERSION "0.8.4"
 
 // Compiler options
 struct CompilerOptions {
@@ -953,6 +953,31 @@ llvm::Module* compile_to_module(
     
     // Run type checking on entire module (activates generic specialization)
     type_checker.check(module_node.get());
+    
+    // v0.8.4: Inject derive-generated synthetic nodes into the AST for IR codegen
+    // Must be inserted BEFORE function declarations so impl methods are
+    // generated before function bodies that call them.
+    const auto& syntheticNodes = type_checker.getSyntheticNodes();
+    if (!syntheticNodes.empty()) {
+        if (module_node->type == aria::ASTNode::NodeType::PROGRAM) {
+            auto* program = static_cast<aria::ProgramNode*>(module_node.get());
+            // Find the first FUNC_DECL and insert before it
+            auto it = program->declarations.begin();
+            for (; it != program->declarations.end(); ++it) {
+                if (*it && (*it)->type == aria::ASTNode::NodeType::FUNC_DECL) break;
+            }
+            program->declarations.insert(it, syntheticNodes.begin(), syntheticNodes.end());
+            if (opts.verbose) {
+                std::cout << "  Injected " << syntheticNodes.size()
+                         << " synthetic derive node(s) into AST\n";
+            }
+        } else if (module_node->type == aria::ASTNode::NodeType::BLOCK) {
+            auto* block = static_cast<aria::BlockStmt*>(module_node.get());
+            for (const auto& node : syntheticNodes) {
+                block->statements.push_back(node);
+            }
+        }
+    }
     
     if (type_checker.hasErrors()) {
         for (const auto& err : type_checker.getErrors()) {
