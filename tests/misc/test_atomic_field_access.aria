@@ -5,11 +5,8 @@
 // Simplified inline implementation to test field access
 func:failsafe = int32(tbb32:err) { exit 1; };
 
-func:failsafe = int32(tbb32:err) { exit 1; };
-
 Type:TestAtomic = {
 
-func:failsafe = int32(tbb32:err) { exit 1; };
     func:create = TestAtomic(int32:value) {
         TestAtomic:a = TestAtomic{my_value: value};
         pass a;
@@ -40,5 +37,5 @@ func:main = int32() {
     int32:loaded = raw atomic.getValue();
     
     // Test: Should be 42 (exit 0 for success, 1 for failure)
-    pass loaded;  // Will return 42 if working, 0 if broken
+    exit loaded;  // Will return 42 if working, 0 if broken
 };

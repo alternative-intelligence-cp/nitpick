@@ -62,11 +62,11 @@ func:safe_increment = int32(int32:atomic_val) {
 };
 
 // Conditional update: only update if value meets criteria
-func:update_if_less_than = int32(int32:atomic_val, int32:new_val, int32:limit) {
+func:update_if_less_than = int32(int32:atomic_val, int32:new_val, int32:lim) {
     int32:current = raw atomic_load(atomic_val);
     
-    // Only update if current < limit
-    if (current >= limit) {
+    // Only update if current < lim
+    if (current >= lim) {
         fail 3i32;  // Condition not met
     }
     

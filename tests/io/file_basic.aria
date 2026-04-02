@@ -8,7 +8,7 @@ func:main = int32() {
     
     if (write_result != 0) {
         print("Failed to write file");
-        pass 1;
+        exit 1;
     }
     print("File written successfully");
     
@@ -20,7 +20,7 @@ func:main = int32() {
     bool:exists = raw fileExists("/tmp/aria_test.txt");//this should fail, assigning raw result to bool, no unwrap,  result object == {err:errCode OR NIL, val:returnVal OR NIL}
     if (!exists) {
         print("File exists check: FAIL");
-        pass 1;
+        exit 1;
     }
     print("File exists check: PASS");
     
@@ -28,7 +28,7 @@ func:main = int32() {
     int64:size = raw fileSize("/tmp/aria_test.txt"); //this should fail, assigning raw result to int64, no unwrap,  result object == {err:errCode OR NIL, val:returnVal OR NIL}
     if (size < 0) {
         print("Failed to get file size");
-        pass 1;
+        exit 1;
     }
     print("File size retrieved successfully");
     
@@ -36,7 +36,7 @@ func:main = int32() {
     int64:delete_result = raw deleteFile("/tmp/aria_test.txt");//this should fail, assigning raw result to int64, no unwrap,  result object == {err:errCode OR NIL, val:returnVal OR NIL}
     if (delete_result != 0) {
         print("Failed to delete file");
-        pass 1;
+        exit 1;
     }
     print("File deleted successfully");
     
@@ -44,7 +44,7 @@ func:main = int32() {
     bool:still_exists = raw fileExists("/tmp/aria_test.txt");//this should fail, assigning raw result to bool, no unwrap, result object == {err:errCode OR NIL, val:returnVal OR NIL}
     if (still_exists) {
         print("ERROR: File still exists after deletion");
-        pass 1;
+        exit 1;
     }
     print("File deletion verified");
     

@@ -29,20 +29,20 @@ func:main = int32() {
     int64:n = raw fill_points(points, 10i64);
 
     Point:p0 = points[0i64];
-    if (p0.x < -0.01 || p0.x > 0.01) { pass 1i32; }
-    if (p0.y < -0.01 || p0.y > 0.01) { pass 2i32; }
+    if (p0.x < -0.01 || p0.x > 0.01) { exit 1i32; }
+    if (p0.y < -0.01 || p0.y > 0.01) { exit 2i32; }
 
     Point:p9 = points[9i64];
-    if (p9.x < 13.4 || p9.x > 13.6) { pass 3i32; }
-    if (p9.y < 22.4 || p9.y > 22.6) { pass 4i32; }
+    if (p9.x < 13.4 || p9.x > 13.6) { exit 3i32; }
+    if (p9.y < 22.4 || p9.y > 22.6) { exit 4i32; }
 
     // Test 2: Overwrite element and verify it's stored
     Point:pm = Point { x: 999.0, y: 888.0 };
     points[5i64] = pm;
 
     Point:p5 = points[5i64];
-    if (p5.x < 998.9 || p5.x > 999.1) { pass 5i32; }
-    if (p5.y < 887.9 || p5.y > 888.1) { pass 6i32; }
+    if (p5.x < 998.9 || p5.x > 999.1) { exit 5i32; }
+    if (p5.y < 887.9 || p5.y > 888.1) { exit 6i32; }
 
     // Test 3: Line array — 4 elements
     wild Line[4]:lines;
@@ -52,11 +52,11 @@ func:main = int32() {
     lines[3i64] = l3;
 
     Line:last = lines[3i64];
-    if (last.x1 < 99.9 || last.x1 > 100.1) { pass 7i32; }
-    if (last.y2 < 399.9 || last.y2 > 400.1) { pass 8i32; }
+    if (last.x1 < 99.9 || last.x1 > 100.1) { exit 7i32; }
+    if (last.y2 < 399.9 || last.y2 > 400.1) { exit 8i32; }
 
     Line:first = lines[0i64];
-    if (first.x2 < 9.9 || first.x2 > 10.1) { pass 9i32; }
+    if (first.x2 < 9.9 || first.x2 > 10.1) { exit 9i32; }
 
     exit 0;
 };

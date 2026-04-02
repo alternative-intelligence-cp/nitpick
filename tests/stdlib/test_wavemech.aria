@@ -151,11 +151,11 @@ func:main = int32() {
     };
     nyte:packed = raw nyte_from_wave(w1);
     // Encoding: nit0=x, nit1=y, nit2=z, nit3=u, nit4=r
-    if (aria_nyte_get_nit(packed, 0) != wx) { pass 1i32; }
-    if (aria_nyte_get_nit(packed, 1) != wy) { pass 1i32; }
-    if (aria_nyte_get_nit(packed, 2) != wz) { pass 1i32; }
-    if (aria_nyte_get_nit(packed, 3) != wu) { pass 1i32; }
-    if (aria_nyte_get_nit(packed, 4) != wr) { pass 1i32; }
+    if (aria_nyte_get_nit(packed, 0) != wx) { exit 1i32; }
+    if (aria_nyte_get_nit(packed, 1) != wy) { exit 1i32; }
+    if (aria_nyte_get_nit(packed, 2) != wz) { exit 1i32; }
+    if (aria_nyte_get_nit(packed, 3) != wu) { exit 1i32; }
+    if (aria_nyte_get_nit(packed, 4) != wr) { exit 1i32; }
 
     // ── Test 2: wave_from_nyte — verify decoded dims match packed nits ───────
     nyte:src_nyte = aria_pack_nyte(
@@ -166,16 +166,16 @@ func:main = int32() {
         nit_from_int(-3)
     );
     Wave9:decoded = raw wave_from_nyte(src_nyte);
-    if (decoded.x != nit_from_int(3))  { pass 2i32; }
-    if (decoded.y != nit_from_int(-2)) { pass 2i32; }
-    if (decoded.z != nit_from_int(1))  { pass 2i32; }
-    if (decoded.u != nit_from_int(4))  { pass 2i32; }
-    if (decoded.r != nit_from_int(-3)) { pass 2i32; }
+    if (decoded.x != nit_from_int(3))  { exit 2i32; }
+    if (decoded.y != nit_from_int(-2)) { exit 2i32; }
+    if (decoded.z != nit_from_int(1))  { exit 2i32; }
+    if (decoded.u != nit_from_int(4))  { exit 2i32; }
+    if (decoded.r != nit_from_int(-3)) { exit 2i32; }
     // Discarded dims must be 0
-    if (decoded.s != 0) { pass 2i32; }
-    if (decoded.t != 0) { pass 2i32; }
-    if (decoded.v != 0) { pass 2i32; }
-    if (decoded.w != 0) { pass 2i32; }
+    if (decoded.s != 0) { exit 2i32; }
+    if (decoded.t != 0) { exit 2i32; }
+    if (decoded.v != 0) { exit 2i32; }
+    if (decoded.w != 0) { exit 2i32; }
 
     // ── Test 3: roundtrip wave → nyte → wave (x/y/z/u/r preserved) ──────────
     Wave9:original = Wave9 {
@@ -186,16 +186,16 @@ func:main = int32() {
     nyte:rt_nyte = raw nyte_from_wave(original);
     Wave9:restored = raw wave_from_nyte(rt_nyte);
     // Priority dims are preserved
-    if (restored.x != original.x) { pass 3i32; }
-    if (restored.y != original.y) { pass 3i32; }
-    if (restored.z != original.z) { pass 3i32; }
-    if (restored.u != original.u) { pass 3i32; }
-    if (restored.r != original.r) { pass 3i32; }
+    if (restored.x != original.x) { exit 3i32; }
+    if (restored.y != original.y) { exit 3i32; }
+    if (restored.z != original.z) { exit 3i32; }
+    if (restored.u != original.u) { exit 3i32; }
+    if (restored.r != original.r) { exit 3i32; }
     // Discarded dims come back as 0
-    if (restored.s != 0) { pass 3i32; }
-    if (restored.t != 0) { pass 3i32; }
-    if (restored.v != 0) { pass 3i32; }
-    if (restored.w != 0) { pass 3i32; }
+    if (restored.s != 0) { exit 3i32; }
+    if (restored.t != 0) { exit 3i32; }
+    if (restored.v != 0) { exit 3i32; }
+    if (restored.w != 0) { exit 3i32; }
 
     // ── Test 4: nyte_interfere — verify each nit is summed ──────────────────
     nit:one = nit_from_int(1);
@@ -204,22 +204,22 @@ func:main = int32() {
     nyte:nb = aria_pack_nyte(two, two, two, two, two);
     nyte:ni = raw nyte_interfere(na, nb);
     nit:three = nit_from_int(3);
-    if (aria_nyte_get_nit(ni, 0) != three) { pass 4i32; }
-    if (aria_nyte_get_nit(ni, 1) != three) { pass 4i32; }
-    if (aria_nyte_get_nit(ni, 2) != three) { pass 4i32; }
-    if (aria_nyte_get_nit(ni, 3) != three) { pass 4i32; }
-    if (aria_nyte_get_nit(ni, 4) != three) { pass 4i32; }
+    if (aria_nyte_get_nit(ni, 0) != three) { exit 4i32; }
+    if (aria_nyte_get_nit(ni, 1) != three) { exit 4i32; }
+    if (aria_nyte_get_nit(ni, 2) != three) { exit 4i32; }
+    if (aria_nyte_get_nit(ni, 3) != three) { exit 4i32; }
+    if (aria_nyte_get_nit(ni, 4) != three) { exit 4i32; }
 
     // ── Test 5: nyte_phase_shift — shift each dim by +2 ─────────────────────
     nit:shift_phase = nit_from_int(2);
     nyte:base = aria_pack_nyte(one, one, one, one, one);  // all nits = 1
     nyte:shifted = raw nyte_phase_shift(base, shift_phase);
     // Each nit should now be 1 + 2 = 3
-    if (aria_nyte_get_nit(shifted, 0) != three) { pass 5i32; }
-    if (aria_nyte_get_nit(shifted, 1) != three) { pass 5i32; }
-    if (aria_nyte_get_nit(shifted, 2) != three) { pass 5i32; }
-    if (aria_nyte_get_nit(shifted, 3) != three) { pass 5i32; }
-    if (aria_nyte_get_nit(shifted, 4) != three) { pass 5i32; }
+    if (aria_nyte_get_nit(shifted, 0) != three) { exit 5i32; }
+    if (aria_nyte_get_nit(shifted, 1) != three) { exit 5i32; }
+    if (aria_nyte_get_nit(shifted, 2) != three) { exit 5i32; }
+    if (aria_nyte_get_nit(shifted, 3) != three) { exit 5i32; }
+    if (aria_nyte_get_nit(shifted, 4) != three) { exit 5i32; }
 
     // ── Test 6: wave_kleene_and — elementwise min ────────────────────────────
     Wave9:ka = Wave9 {
@@ -235,29 +235,29 @@ func:main = int32() {
     Wave9:kand = raw wave_kleene_and(ka, kb);
     // min(2,-1)=-1, min(-1,2)=-1, min(3,-3)=-3, min(0,1)=0,
     // min(4,-4)=-4, min(-2,3)=-2, min(1,3)=1, min(-4,-2)=-4, min(2,-1)=-1
-    if (kand.r != nit_from_int(-1)) { pass 6i32; }
-    if (kand.s != nit_from_int(-1)) { pass 6i32; }
-    if (kand.t != nit_from_int(-3)) { pass 6i32; }
-    if (kand.u != nit_from_int(0))  { pass 6i32; }
-    if (kand.v != nit_from_int(-4)) { pass 6i32; }
-    if (kand.w != nit_from_int(-2)) { pass 6i32; }
-    if (kand.x != nit_from_int(1))  { pass 6i32; }
-    if (kand.y != nit_from_int(-4)) { pass 6i32; }
-    if (kand.z != nit_from_int(-1)) { pass 6i32; }
+    if (kand.r != nit_from_int(-1)) { exit 6i32; }
+    if (kand.s != nit_from_int(-1)) { exit 6i32; }
+    if (kand.t != nit_from_int(-3)) { exit 6i32; }
+    if (kand.u != nit_from_int(0))  { exit 6i32; }
+    if (kand.v != nit_from_int(-4)) { exit 6i32; }
+    if (kand.w != nit_from_int(-2)) { exit 6i32; }
+    if (kand.x != nit_from_int(1))  { exit 6i32; }
+    if (kand.y != nit_from_int(-4)) { exit 6i32; }
+    if (kand.z != nit_from_int(-1)) { exit 6i32; }
 
     // ── Test 7: wave_kleene_or — elementwise max ─────────────────────────────
     Wave9:kor = raw wave_kleene_or(ka, kb);
     // max(2,-1)=2, max(-1,2)=2, max(3,-3)=3, max(0,1)=1,
     // max(4,-4)=4, max(-2,3)=3, max(1,3)=3, max(-4,-2)=-2, max(2,-1)=2
-    if (kor.r != nit_from_int(2))  { pass 7i32; }
-    if (kor.s != nit_from_int(2))  { pass 7i32; }
-    if (kor.t != nit_from_int(3))  { pass 7i32; }
-    if (kor.u != nit_from_int(1))  { pass 7i32; }
-    if (kor.v != nit_from_int(4))  { pass 7i32; }
-    if (kor.w != nit_from_int(3))  { pass 7i32; }
-    if (kor.x != nit_from_int(3))  { pass 7i32; }
-    if (kor.y != nit_from_int(-2)) { pass 7i32; }
-    if (kor.z != nit_from_int(2))  { pass 7i32; }
+    if (kor.r != nit_from_int(2))  { exit 7i32; }
+    if (kor.s != nit_from_int(2))  { exit 7i32; }
+    if (kor.t != nit_from_int(3))  { exit 7i32; }
+    if (kor.u != nit_from_int(1))  { exit 7i32; }
+    if (kor.v != nit_from_int(4))  { exit 7i32; }
+    if (kor.w != nit_from_int(3))  { exit 7i32; }
+    if (kor.x != nit_from_int(3))  { exit 7i32; }
+    if (kor.y != nit_from_int(-2)) { exit 7i32; }
+    if (kor.z != nit_from_int(2))  { exit 7i32; }
 
     // ── Test 8: wave_err_guard — clean wave → false ──────────────────────────
     Wave9:clean = Wave9 {
@@ -266,7 +266,7 @@ func:main = int32() {
         x: nit_from_int(2), y: 0, z: nit_from_int(-3)
     };
     bool:is_err_clean = raw wave_err_guard(clean);
-    if (is_err_clean) { pass 8i32; }
+    if (is_err_clean) { exit 8i32; }
 
     // ── Test 9: wave_err_guard — wave with ERR nit → true ────────────────────
     nit:big = nit_from_int(4);
@@ -277,7 +277,7 @@ func:main = int32() {
         x: err_nit, y: 0, z: 0
     };
     bool:is_err_dirty = raw wave_err_guard(err_wave);
-    if (!is_err_dirty) { pass 9i32; }
+    if (!is_err_dirty) { exit 9i32; }
 
     // ── Test 10: nyte_is_err — clean nyte → false ────────────────────────────
     nyte:clean_nyte = aria_pack_nyte(
@@ -285,7 +285,7 @@ func:main = int32() {
         nit_from_int(-1), nit_from_int(2)
     );
     bool:ny_clean = raw nyte_is_err(clean_nyte);
-    if (ny_clean) { pass 10i32; }
+    if (ny_clean) { exit 10i32; }
 
     // ── Test 11: nyte_is_err — ERR nyte → true ───────────────────────────────
     nit:err_nit2 = nit_from_int(4) + nit_from_int(4);  // overflow → ERR
@@ -294,7 +294,7 @@ func:main = int32() {
         nit_from_int(0), nit_from_int(0)
     );
     bool:ny_err = raw nyte_is_err(err_nyte);
-    if (!ny_err) { pass 11i32; }
+    if (!ny_err) { exit 11i32; }
 
     // ── All tests passed ─────────────────────────────────────────────────────
     exit 0;

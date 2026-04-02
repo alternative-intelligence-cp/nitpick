@@ -11,7 +11,7 @@ func:main = int32() {
     int64:write_result = raw writeFile("/tmp/aria_test.txt", content);
     if (write_result != 0i64) {
         print("FAIL: Could not write file\n");
-        pass 1i32;
+        exit 1i32;
     }
     print("SUCCESS: File written\n");
 
@@ -20,7 +20,7 @@ func:main = int32() {
     bool:exists_result = raw fileExists("/tmp/aria_test.txt");
     if (!exists_result) {
         print("FAIL: File does not exist after write\n");
-        pass 1i32;
+        exit 1i32;
     }
     print("SUCCESS: File exists\n");
 
@@ -29,7 +29,7 @@ func:main = int32() {
     int64:size_result = raw fileSize("/tmp/aria_test.txt");
     if (size_result < 0i64) {
         print("FAIL: fileSize returned error\n");
-        pass 1i32;
+        exit 1i32;
     }
     print("File size OK\n");
 
@@ -44,7 +44,7 @@ func:main = int32() {
     int64:delete_result = raw deleteFile("/tmp/aria_test.txt");
     if (delete_result != 0i64) {
         print("FAIL: Could not delete file\n");
-        pass 1i32;
+        exit 1i32;
     }
     print("SUCCESS: File deleted\n");
 
@@ -53,7 +53,7 @@ func:main = int32() {
     bool:exists2_result = raw fileExists("/tmp/aria_test.txt");
     if (exists2_result) {
         print("FAIL: File still exists after delete\n");
-        pass 1i32;
+        exit 1i32;
     }
     print("SUCCESS: File confirmed deleted\n");
 

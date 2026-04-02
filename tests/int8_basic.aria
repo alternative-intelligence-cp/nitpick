@@ -22,10 +22,10 @@ func:main = int32() {
     int8:quot_i8 = b / 2;        // 10
     
     // Validate int8 arithmetic
-    if (sum_i8 != 30) { pass 1; }
-    if (diff_i8 != 10) { pass 2; }
-    if (prod_i8 != 30) { pass 3; }
-    if (quot_i8 != 10) { pass 4; }
+    if (sum_i8 != 30) { exit 1; }
+    if (diff_i8 != 10) { exit 2; }
+    if (prod_i8 != 30) { exit 3; }
+    if (quot_i8 != 10) { exit 4; }
     
     // Test uint8 arithmetic
     uint8:x = 100;
@@ -36,26 +36,26 @@ func:main = int32() {
     uint8:quot_u8 = x / 2;       // 50
     
     // Validate uint8 arithmetic
-    if (sum_u8 != 150) { pass 5; }
-    if (diff_u8 != 50) { pass 6; }
-    if (prod_u8 != 150) { pass 7; }
-    if (quot_u8 != 50) { pass 8; }
+    if (sum_u8 != 150) { exit 5; }
+    if (diff_u8 != 50) { exit 6; }
+    if (prod_u8 != 150) { exit 7; }
+    if (quot_u8 != 50) { exit 8; }
     
     // Test int8 comparisons
     int8:c = -10;
     int8:d = 5;
-    if (c >= d) { pass 9; }     // -10 < 5
-    if (d <= c) { pass 10; }    // 5 > -10
-    if (c == d) { pass 11; }    // -10 != 5
-    if (c > d) { pass 12; }     // -10 < 5
+    if (c >= d) { exit 9; }     // -10 < 5
+    if (d <= c) { exit 10; }    // 5 > -10
+    if (c == d) { exit 11; }    // -10 != 5
+    if (c > d) { exit 12; }     // -10 < 5
     
     // Test uint8 comparisons
     uint8:m = 200;
     uint8:n = 100;
-    if (m < n) { pass 13; }     // 200 > 100
-    if (n > m) { pass 14; }     // 100 < 200
-    if (m == n) { pass 15; }    // 200 != 100
-    if (m <= n) { pass 16; }    // 200 > 100
+    if (m < n) { exit 13; }     // 200 > 100
+    if (n > m) { exit 14; }     // 100 < 200
+    if (m == n) { exit 15; }    // 200 != 100
+    if (m <= n) { exit 16; }    // 200 > 100
     
     // Test int8 overflow (wraps or traps depending on design)
     int8:overflow_test = 127;
@@ -64,25 +64,25 @@ func:main = int32() {
     // Test uint8 overflow (wraps)
     uint8:uoverflow_test = 255;
     uint8:uoverflow_result = uoverflow_test + 1;  // Should wrap to 0
-    if (uoverflow_result != 0) { pass 17; }
+    if (uoverflow_result != 0) { exit 17; }
     
     // Test binary literals with bytes
     uint8:byte1 = 0b11111111;    // 255
     uint8:byte2 = 0b10101010;    // 170
     uint8:byte3 = 0b01010101;    // 85
     
-    if (byte1 != 255) { pass 18; }
-    if (byte2 != 170) { pass 19; }
-    if (byte3 != 85) { pass 20; }
+    if (byte1 != 255) { exit 18; }
+    if (byte2 != 170) { exit 19; }
+    if (byte3 != 85) { exit 20; }
     
     // Test hex literals with bytes
     uint8:hex1 = 0xFF;           // 255
     uint8:hex2 = 0xAA;           // 170
     uint8:hex3 = 0x55;           // 85
     
-    if (hex1 != 255) { pass 21; }
-    if (hex2 != 170) { pass 22; }
-    if (hex3 != 85) { pass 23; }
+    if (hex1 != 255) { exit 21; }
+    if (hex2 != 170) { exit 22; }
+    if (hex3 != 85) { exit 23; }
     
     // Test ASCII values
     uint8:ascii_A = 65;          // 'A'
@@ -90,10 +90,10 @@ func:main = int32() {
     uint8:ascii_0 = 48;          // '0'
     uint8:ascii_9 = 57;          // '9'
     
-    if (ascii_A != 65) { pass 24; }
-    if (ascii_Z != 90) { pass 25; }
-    if (ascii_0 != 48) { pass 26; }
-    if (ascii_9 != 57) { pass 27; }
+    if (ascii_A != 65) { exit 24; }
+    if (ascii_Z != 90) { exit 25; }
+    if (ascii_0 != 48) { exit 26; }
+    if (ascii_9 != 57) { exit 27; }
     
     // Test byte array (simulating IP address)
     uint8:ip0 = 192;
@@ -101,10 +101,10 @@ func:main = int32() {
     uint8:ip2 = 1;
     uint8:ip3 = 1;
     
-    if (ip0 != 192) { pass 28; }
-    if (ip1 != 168) { pass 29; }
-    if (ip2 != 1) { pass 30; }
-    if (ip3 != 1) { pass 31; }
+    if (ip0 != 192) { exit 28; }
+    if (ip1 != 168) { exit 29; }
+    if (ip2 != 1) { exit 30; }
+    if (ip3 != 1) { exit 31; }
     
     exit 0;  // All tests passed!
 };

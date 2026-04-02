@@ -32,12 +32,12 @@ func:main = int32() {
     buf.data[3] = 40i32;
     buf.data[4] = 50i32;
 
-    if (buf.data[0] != 10i32) { pass 1i32; }
-    if (buf.data[1] != 20i32) { pass 2i32; }
-    if (buf.data[2] != 30i32) { pass 3i32; }
-    if (buf.data[3] != 40i32) { pass 4i32; }
-    if (buf.data[4] != 50i32) { pass 5i32; }
-    if (buf.size != 5i32) { pass 6i32; }
+    if (buf.data[0] != 10i32) { exit 1i32; }
+    if (buf.data[1] != 20i32) { exit 2i32; }
+    if (buf.data[2] != 30i32) { exit 3i32; }
+    if (buf.data[3] != 40i32) { exit 4i32; }
+    if (buf.data[4] != 50i32) { exit 5i32; }
+    if (buf.size != 5i32) { exit 6i32; }
 
     // --- Test 2: Array of structs field; nested member access ---
     PointCloud:cloud;
@@ -55,23 +55,23 @@ func:main = int32() {
     cloud.pts[2].y = 8i32;
     cloud.pts[2].z = 9i32;
 
-    if (cloud.pts[0].x != 1i32) { pass 7i32; }
-    if (cloud.pts[0].y != 2i32) { pass 8i32; }
-    if (cloud.pts[0].z != 3i32) { pass 9i32; }
-    if (cloud.pts[1].x != 4i32) { pass 10i32; }
-    if (cloud.pts[1].y != 5i32) { pass 11i32; }
-    if (cloud.pts[1].z != 6i32) { pass 12i32; }
-    if (cloud.pts[2].x != 7i32) { pass 13i32; }
-    if (cloud.pts[2].y != 8i32) { pass 14i32; }
-    if (cloud.pts[2].z != 9i32) { pass 15i32; }
-    if (cloud.count != 3i32) { pass 16i32; }
+    if (cloud.pts[0].x != 1i32) { exit 7i32; }
+    if (cloud.pts[0].y != 2i32) { exit 8i32; }
+    if (cloud.pts[0].z != 3i32) { exit 9i32; }
+    if (cloud.pts[1].x != 4i32) { exit 10i32; }
+    if (cloud.pts[1].y != 5i32) { exit 11i32; }
+    if (cloud.pts[1].z != 6i32) { exit 12i32; }
+    if (cloud.pts[2].x != 7i32) { exit 13i32; }
+    if (cloud.pts[2].y != 8i32) { exit 14i32; }
+    if (cloud.pts[2].z != 9i32) { exit 15i32; }
+    if (cloud.count != 3i32) { exit 16i32; }
 
     // --- Test 3: Overwrite an element and verify isolation ---
     buf.data[2] = 99i32;
-    if (buf.data[2] != 99i32) { pass 17i32; }
+    if (buf.data[2] != 99i32) { exit 17i32; }
     // neighbours must be unchanged
-    if (buf.data[1] != 20i32) { pass 18i32; }
-    if (buf.data[3] != 40i32) { pass 19i32; }
+    if (buf.data[1] != 20i32) { exit 18i32; }
+    if (buf.data[3] != 40i32) { exit 19i32; }
 
     exit 0;
 };

@@ -19,13 +19,13 @@ func:main = int32() {
     // Test 1: Sum 1..100 = 5050
     int64:s100 = raw sum_range(1i64, 100i64);
     if (s100 != 5050i64) {
-        pass 1i32;
+        exit 1i32;
     }
 
     // Test 2: Sum 1..1000 = 500500
     int64:s1000 = raw sum_range(1i64, 1000i64);
     if (s1000 != 500500i64) {
-        pass 2i32;
+        exit 2i32;
     }
 
     // Test 3: 500 iterations of i32 add
@@ -36,7 +36,7 @@ func:main = int32() {
         i = i + 1i64;
     }
     if (acc != 500i32) {
-        pass 3i32;
+        exit 3i32;
     }
 
     // Test 4: Build uint64 bitmask of all 64 bits
@@ -51,7 +51,7 @@ func:main = int32() {
     }
     uint64:max_val = 18446744073709551615u64;
     if (mask != max_val) {
-        pass 4i32;
+        exit 4i32;
     }
 
     // Test 5: Alternating +3/-1 for 2000 iterations = 4000
@@ -63,7 +63,7 @@ func:main = int32() {
         k = k + 1i64;
     }
     if (val != 4000i64) {
-        pass 5i32;
+        exit 5i32;
     }
 
     exit 0;
