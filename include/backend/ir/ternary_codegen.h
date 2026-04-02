@@ -166,9 +166,10 @@ private:
     /**
      * @brief Get or declare a runtime intrinsic function
      * @param name Function name (e.g., "aria_tryte_add")
-     * @param isBinaryOp True for binary ops (i16, i16) -> i16, false for unary (i16) -> i16
+     * @param isBinaryOp True for binary ops, false for unary
+     * @param isAtomic True for trit/nit (i8), false for tryte/nyte (i16)
      */
-    llvm::Function* getOrDeclareIntrinsic(const std::string& name, bool isBinaryOp);
+    llvm::Function* getOrDeclareIntrinsic(const std::string& name, bool isBinaryOp, bool isAtomic = false);
 
     /**
      * @brief Clamp value to valid range for the type (for trit/nit inline ops)

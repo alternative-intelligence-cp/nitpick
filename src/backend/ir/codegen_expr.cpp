@@ -1766,6 +1766,10 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         
         // Call aria_int64_to_str(intVal, buffer)
         // Returns length directly - no need for strlen()
+        // Widen to i64 if needed (e.g., int32 values)
+        if (intVal->getType() != llvm::Type::getInt64Ty(context)) {
+            intVal = builder.CreateSExt(intVal, llvm::Type::getInt64Ty(context), "int_to_i64");
+        }
         llvm::Value* length = builder.CreateCall(toStrFn, { intVal, bufferPtr });
         
         // Create AriaString struct
@@ -2361,8 +2365,10 @@ llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* code
             llvm::Value* resultVal = codegenExpressionNode(unwrap->result.get(), codegen);
             if (!resultVal) return nullptr;
             
-            // Extract is_error field (field 2)
-            llvm::Value* isError = codegen->builder.CreateExtractValue(resultVal, 2, "is_error");
+            // Extract is_error field (field 2) — stored as i8, must compare to get i1 for branch
+            llvm::Value* isErrorRaw = codegen->builder.CreateExtractValue(resultVal, 2, "is_error");
+            llvm::Value* isError = codegen->builder.CreateICmpNE(isErrorRaw,
+                llvm::ConstantInt::get(isErrorRaw->getType(), 0), "is_error_bool");
             
             // Create blocks for control flow
             llvm::Function* currentFunc = codegen->builder.GetInsertBlock()->getParent();
@@ -2782,6 +2788,22 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     std::cerr << ", right type = ";
     right->getType()->print(llvm::errs());
     std::cerr << ", isFloat = " << isFloat << std::endl;
+    
+    // Coerce integer operands to matching types
+    // Integer literals default to i64 but variables may be i8/i16/i32
+    if (!isFloat && !leftIsVector && !rightIsVector &&
+        left->getType()->isIntegerTy() && right->getType()->isIntegerTy() &&
+        left->getType() != right->getType()) {
+        unsigned leftBits = left->getType()->getIntegerBitWidth();
+        unsigned rightBits = right->getType()->getIntegerBitWidth();
+        if (leftBits < rightBits) {
+            // Widen left to match right (preserves literal precision)
+            right = builder.CreateTrunc(right, left->getType(), "trunc_rhs");
+        } else {
+            // Widen right to match left
+            left = builder.CreateTrunc(left, right->getType(), "trunc_lhs");
+        }
+    }
     
     // ARITHMETIC OPERATORS
     if (op == TokenType::TOKEN_PLUS) {
@@ -3701,7 +3723,8 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                     }
                     
                     llvm::Value* order = llvm::ConstantInt::get(builder.getInt32Ty(), 4);
-                    return builder.CreateCall(store_func, {atomic_ptr, value_arg, order}, "atomic_store");
+                    builder.CreateCall(store_func, {atomic_ptr, value_arg, order});
+                    return nullptr;
                 }
                 else if (method_name == "swap") {
                     // atomic.swap(value) → aria_atomic_TYPE_exchange(atomic_ptr, value, SEQCST)
@@ -7046,6 +7069,11 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         llvm::Value* str_ptr = codegenExpressionNode(expr->arguments[0].get(), this);
         llvm::Value* start = codegenExpressionNode(expr->arguments[1].get(), this);
         llvm::Value* end = codegenExpressionNode(expr->arguments[2].get(), this);
+        // Widen index args to i64 if needed
+        if (start->getType() != builder.getInt64Ty())
+            start = builder.CreateSExt(start, builder.getInt64Ty(), "substr_start_i64");
+        if (end->getType() != builder.getInt64Ty())
+            end = builder.CreateSExt(end, builder.getInt64Ty(), "substr_end_i64");
         return builder.CreateCall(func, {str_ptr, start, end}, "substr_result");
     }
     
@@ -9168,6 +9196,11 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, 
                                          "map_new", module);
         }
+        // Widen arguments to i64 if needed (literals default to i32)
+        if (key_size->getType() != builder.getInt64Ty() && key_size->getType()->isIntegerTy())
+            key_size = builder.CreateSExt(key_size, builder.getInt64Ty(), "map_key_sz");
+        if (value_size->getType() != builder.getInt64Ty() && value_size->getType()->isIntegerTy())
+            value_size = builder.CreateSExt(value_size, builder.getInt64Ty(), "map_val_sz");
         return builder.CreateCall(func, {key_size, value_size}, "map");
     }
     
@@ -11052,6 +11085,17 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                     }
                 }
 
+                // Integer type coercion: widen/narrow integer args to match function signature
+                if (arg_value->getType() != param_type &&
+                    arg_value->getType()->isIntegerTy() && param_type->isIntegerTy()) {
+                    unsigned argBits = arg_value->getType()->getIntegerBitWidth();
+                    unsigned paramBits = param_type->getIntegerBitWidth();
+                    if (argBits < paramBits)
+                        arg_value = builder.CreateSExt(arg_value, param_type, "arg_sext");
+                    else if (argBits > paramBits)
+                        arg_value = builder.CreateTrunc(arg_value, param_type, "arg_trunc");
+                }
+
                 // v0.2.36: dyn Trait coercion — package concrete value into fat pointer
                 // When a concrete typed value (e.g., int32) is passed to a dyn Trait
                 // parameter, construct { ptr_to_data, ptr_to_vtable }.
@@ -11095,8 +11139,9 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                                     builder.CreateStore(arg_value, dataAlloca);
 
                                     // Build fat pointer: { ptr data, ptr vtable }
-                                    llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
-                                    llvm::StructType* fatPtrTy = llvm::StructType::get(context, {ptrTy, ptrTy});
+                                    // Use the actual parameter type (named %struct.DynTraitObj)
+                                    // instead of anonymous { ptr, ptr } to avoid type mismatch
+                                    llvm::StructType* fatPtrTy = llvm::cast<llvm::StructType>(param_type);
                                     llvm::Value* fat = llvm::UndefValue::get(fatPtrTy);
                                     fat = builder.CreateInsertValue(fat, dataAlloca, 0, "dyn_fat.data");
                                     fat = builder.CreateInsertValue(fat, vtableGV, 1, "dyn_fat.vtable");
@@ -11132,7 +11177,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         if (is_extern && return_type->isPointerTy()) {
             // FFI-STRING-RETURN FIX: If this extern returns a string type,
             // wrap the raw char* into a proper AriaString struct before
-            // Optional-wrapping. Without this, the raw char* is stored as-is
+            // returning. Without this, the raw char* is stored as-is
             // but later code treats it as an AriaString*, reading string data
             // bytes as struct fields (causing segfaults).
             std::string callee_name = direct_func->getName().str();
@@ -11179,28 +11224,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 return call_result;
             }
 
-            // Wrap NULL-possible pointer in Optional { i1 hasValue, T* value }
-            // This enforces null checks at the Aria boundary
-            
-            // Create null pointer constant for comparison
-            llvm::Constant* null_ptr = llvm::ConstantPointerNull::get(
-                llvm::cast<llvm::PointerType>(return_type)
-            );
-            
-            // Check if result is NULL
-            llvm::Value* is_null = builder.CreateICmpEQ(call_result, null_ptr, "ffi_is_null");
-            llvm::Value* has_value = builder.CreateNot(is_null, "ffi_has_value");
-            
-            // Create Optional struct: { i1, T* }
-            std::vector<llvm::Type*> optional_fields = { builder.getInt1Ty(), return_type };
-            llvm::StructType* optional_type = llvm::StructType::get(context, optional_fields);
-            
-            // Build Optional value
-            llvm::Value* optional_val = llvm::UndefValue::get(optional_type);
-            optional_val = builder.CreateInsertValue(optional_val, has_value, 0, "optional_hasval");
-            optional_val = builder.CreateInsertValue(optional_val, call_result, 1, "optional_ptr");
-            
-            return optional_val;
+            // User-declared extern functions return the declared type directly.
+            // Don't wrap in Optional — the user explicitly chose the return type.
+            // If null safety is needed, the user should declare Optional<T> return.
+            return call_result;
         }
         
         // PIPELINE OPERATOR FIX: Auto-unwrap Result<T> → T for pipeline call return values
@@ -11491,6 +11518,16 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
         }
 
         // Create GEP to access arr[index]
+        // But first: if elemType is a vector (SIMD alloca), load the vector
+        // and extractelement instead of GEP-based element access
+        if (elemType->isVectorTy()) {
+            llvm::Value* vecVal = builder.CreateLoad(elemType, arrayVal, "vec.load");
+            if (!indexVal->getType()->isIntegerTy(32)) {
+                indexVal = builder.CreateIntCast(indexVal, builder.getInt32Ty(), true, "idx.i32");
+            }
+            return builder.CreateExtractElement(vecVal, indexVal, "vec.elem");
+        }
+
         llvm::Value* elemPtr = builder.CreateGEP(elemType, arrayVal, indexVal, "array.index.ptr");
 
         // Load the value from the pointer

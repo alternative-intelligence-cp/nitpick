@@ -2513,8 +2513,14 @@ void StmtCodegen::codegenBlock(BlockStmt* stmt) {
     // Push new defer scope for this block
     defer_stack.push_back(std::vector<BlockStmt*>());
     
+    // Save named_values snapshot for scope restoration after block
+    auto saved_named_values = named_values;
+    auto saved_var_aria_types = var_aria_types;
+    
     // Generate code for each statement in the block
     for (const auto& statement : stmt->statements) {
+        // Stop emitting code after a terminator (e.g., exit's unreachable)
+        if (builder.GetInsertBlock()->getTerminator()) break;
         std ::cerr << "[DEBUG BLOCK] Processing statement type: " << (int)statement->type << std::endl;
         codegenStatement(statement.get());
     }
@@ -2524,6 +2530,10 @@ void StmtCodegen::codegenBlock(BlockStmt* stmt) {
     
     // Pop defer scope
     defer_stack.pop_back();
+    
+    // Restore outer scope's named_values (undoes any shadowing from this block)
+    named_values = saved_named_values;
+    var_aria_types = saved_var_aria_types;
 }
 
 // ============================================================================
@@ -2538,6 +2548,11 @@ void StmtCodegen::codegenBlock(BlockStmt* stmt) {
  */
 void StmtCodegen::executeScopeDefers() {
     if (defer_stack.empty()) {
+        return;
+    }
+
+    // Don't emit defer code after a terminator (e.g., exit's unreachable)
+    if (builder.GetInsertBlock()->getTerminator()) {
         return;
     }
     
@@ -2561,6 +2576,11 @@ void StmtCodegen::executeScopeDefers() {
  * are executed before returning, maintaining LIFO order.
  */
 void StmtCodegen::executeFunctionDefers() {
+    // Don't emit defer code after a terminator (e.g., exit's unreachable)
+    if (builder.GetInsertBlock()->getTerminator()) {
+        return;
+    }
+
     // Execute all scopes' defers in reverse order (inside-out)
     // Note: Execute statements directly, not via codegenBlock to avoid recursive defer scoping
     for (auto scope_it = defer_stack.rbegin(); scope_it != defer_stack.rend(); ++scope_it) {

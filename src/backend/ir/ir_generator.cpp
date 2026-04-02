@@ -1486,6 +1486,19 @@ llvm::Value* IRGenerator::generateSafeSub(llvm::Value* L, llvm::Value* R, const 
     
     unsigned bitWidth = intType->getBitWidth();
     
+    // CRITICAL FIX: Ensure R has the same type as L
+    // Integer literals default to i64, but intrinsics require matching types
+    if (L->getType() != R->getType()) {
+        if (R->getType()->isIntegerTy()) {
+            llvm::IntegerType* RIntTy = llvm::cast<llvm::IntegerType>(R->getType());
+            if (RIntTy->getBitWidth() > bitWidth) {
+                R = builder.CreateTrunc(R, intType, "trunc_rhs");
+            } else if (RIntTy->getBitWidth() < bitWidth) {
+                R = builder.CreateSExt(R, intType, "sext_rhs");
+            }
+        }
+    }
+    
     // Get the overflow intrinsic: llvm.ssub.with.overflow
     llvm::Function* ssubIntrinsic = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::ssub_with_overflow, {intType});
@@ -1607,6 +1620,12 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     // Arrays are represented as pointers in the type system
     if (type_name.size() >= 1 && type_name.back() == '@') {
         // Pointer type (including arrays)
+        return llvm::PointerType::get(context, 0);
+    }
+    
+    // Check for C-style pointer types (e.g., "int64*", "void*")
+    // Used in extern function declarations: extern func:f = void(int64*:h)
+    if (type_name.size() >= 2 && type_name.back() == '*') {
         return llvm::PointerType::get(context, 0);
     }
     
@@ -2434,11 +2453,14 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
         if (varDecl->initializer && varDecl->initializer->type == ASTNode::NodeType::LITERAL) {
             LiteralExpr* lit = static_cast<LiteralExpr*>(varDecl->initializer.get());
             if (std::holds_alternative<bool>(lit->value)) {
-                initVal = llvm::ConstantInt::get(varType, std::get<bool>(lit->value) ? 1 : 0);
+                if (varType->isIntegerTy())
+                    initVal = llvm::ConstantInt::get(varType, std::get<bool>(lit->value) ? 1 : 0);
             } else if (std::holds_alternative<int64_t>(lit->value)) {
-                initVal = llvm::ConstantInt::get(varType, (uint64_t)std::get<int64_t>(lit->value), true);
+                if (varType->isIntegerTy())
+                    initVal = llvm::ConstantInt::get(varType, (uint64_t)std::get<int64_t>(lit->value), true);
             } else if (std::holds_alternative<double>(lit->value)) {
-                initVal = llvm::ConstantFP::get(varType, std::get<double>(lit->value));
+                if (varType->isFloatingPointTy())
+                    initVal = llvm::ConstantFP::get(varType, std::get<double>(lit->value));
             } else if (std::holds_alternative<std::string>(lit->value)) {
                 const std::string& s = std::get<std::string>(lit->value);
                 if (s != "unknown" && s != "ERR") {
@@ -2471,13 +2493,52 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             if (unary->op.type == TokenType::TOKEN_MINUS
                 && unary->operand && unary->operand->type == ASTNode::NodeType::LITERAL) {
                 LiteralExpr* lit = static_cast<LiteralExpr*>(unary->operand.get());
-                if (std::holds_alternative<int64_t>(lit->value)) {
+                if (std::holds_alternative<int64_t>(lit->value) && varType->isIntegerTy()) {
                     int64_t val = -std::get<int64_t>(lit->value);
                     initVal = llvm::ConstantInt::get(varType, (uint64_t)val, true);
-                } else if (std::holds_alternative<double>(lit->value)) {
+                } else if (std::holds_alternative<double>(lit->value) && varType->isFloatingPointTy()) {
                     double val = -std::get<double>(lit->value);
                     initVal = llvm::ConstantFP::get(varType, val);
                 }
+            }
+        }
+        // Build LBIM struct constant for global int128/int256/etc. variables
+        if (!initVal && varType->isStructTy()) {
+            auto* st = llvm::cast<llvm::StructType>(varType);
+            std::string sn = st->hasName() ? st->getName().str() : "";
+            if ((sn.find("struct.int") == 0 || sn.find("struct.uint") == 0) &&
+                st->getNumElements() == 1 && st->getElementType(0)->isArrayTy()) {
+                auto* arrTy = llvm::cast<llvm::ArrayType>(st->getElementType(0));
+                unsigned numLimbs = arrTy->getNumElements();
+                auto* i64Ty = llvm::Type::getInt64Ty(context);
+                
+                // Extract the numeric value from whichever variant/raw_value_string is populated
+                uint64_t val = 0;
+                bool gotValue = false;
+                LiteralExpr* lit2 = nullptr;
+                if (varDecl->initializer && varDecl->initializer->type == ASTNode::NodeType::LITERAL)
+                    lit2 = static_cast<LiteralExpr*>(varDecl->initializer.get());
+                if (lit2) {
+                    if (std::holds_alternative<int64_t>(lit2->value)) {
+                        val = (uint64_t)std::get<int64_t>(lit2->value);
+                        gotValue = true;
+                    } else if (std::holds_alternative<bool>(lit2->value)) {
+                        val = std::get<bool>(lit2->value) ? 1 : 0;
+                        gotValue = true;
+                    }
+                    if (!gotValue && !lit2->raw_value_string.empty()) {
+                        try { val = std::stoull(lit2->raw_value_string); gotValue = true; }
+                        catch (...) { val = 0; gotValue = true; }
+                    }
+                }
+                
+                // Build constant limb array: value in limb[0], zero in higher limbs
+                std::vector<llvm::Constant*> limbs;
+                limbs.push_back(llvm::ConstantInt::get(i64Ty, val));
+                for (unsigned i = 1; i < numLimbs; i++)
+                    limbs.push_back(llvm::ConstantInt::get(i64Ty, 0));
+                auto* arr = llvm::ConstantArray::get(arrTy, limbs);
+                initVal = llvm::ConstantStruct::get(st, {arr});
             }
         }
         if (!initVal) {
@@ -3738,8 +3799,14 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 defer_stack.push_back(std::vector<BlockStmt*>());
             }
 
+            // Save named_values snapshot for scope restoration after block
+            auto saved_named_values = named_values;
+            auto saved_var_aria_types = var_aria_types;
+
             llvm::Value* lastVal = nullptr;
             for (const auto& s : block->statements) {
+                // Stop emitting code after a terminator (e.g., exit's unreachable)
+                if (builder.GetInsertBlock()->getTerminator()) break;
                 std::cerr << "[DEBUG IR_GEN] BLOCK: processing statement type " << static_cast<int>(s->type) << std::endl;
                 lastVal = codegenStatement(s.get());
             }
@@ -3751,6 +3818,10 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 // Pop defer scope
                 defer_stack.pop_back();
             }
+
+            // Restore outer scope's named_values (undoes any shadowing from this block)
+            named_values = saved_named_values;
+            var_aria_types = saved_var_aria_types;
 
             return lastVal;
         }
@@ -4633,6 +4704,12 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     return nullptr;
                 }
                 
+                // Determine iterator LLVM type from the type annotation (default: i64)
+                llvm::Type* iterType = builder.getInt64Ty();
+                if (!forStmt->iteratorType.empty()) {
+                    iterType = mapTypeFromName(forStmt->iteratorType);
+                }
+                
                 // Extract range components: {start, end, isExclusive}
                 llvm::Type* rangeType = llvm::StructType::get(
                     context,
@@ -4647,8 +4724,14 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 llvm::Value* endVal = builder.CreateLoad(builder.getInt64Ty(), endPtr, "range.end");
                 llvm::Value* isExclusive = builder.CreateLoad(builder.getInt1Ty(), exclusivePtr, "range.exclusive");
                 
-                // Create iterator variable
-                llvm::Value* iteratorVar = builder.CreateAlloca(builder.getInt64Ty(), nullptr, forStmt->iteratorName);
+                // Truncate/extend range values to match iterator type
+                if (iterType != builder.getInt64Ty() && iterType->isIntegerTy()) {
+                    startVal = builder.CreateIntCast(startVal, iterType, true, "range.start.cast");
+                    endVal = builder.CreateIntCast(endVal, iterType, true, "range.end.cast");
+                }
+                
+                // Create iterator variable with proper type
+                llvm::Value* iteratorVar = builder.CreateAlloca(iterType, nullptr, forStmt->iteratorName);
                 builder.CreateStore(startVal, iteratorVar);
                 
                 // Add iterator to symbol table
@@ -4658,7 +4741,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 llvm::Value* limit = builder.CreateSelect(
                     isExclusive,
                     endVal,
-                    builder.CreateAdd(endVal, llvm::ConstantInt::get(builder.getInt64Ty(), 1)),
+                    builder.CreateAdd(endVal, llvm::ConstantInt::get(iterType, 1)),
                     "loop.limit"
                 );
                 
@@ -4678,7 +4761,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 
                 // Generate condition: iterator < limit
                 builder.SetInsertPoint(condBB);
-                llvm::Value* currentVal = builder.CreateLoad(builder.getInt64Ty(), iteratorVar, forStmt->iteratorName);
+                llvm::Value* currentVal = builder.CreateLoad(iterType, iteratorVar, forStmt->iteratorName);
                 llvm::Value* condVal = builder.CreateICmpSLT(currentVal, limit, "forrange.cond");
                 builder.CreateCondBr(condVal, bodyBB, afterBB);
                 
@@ -4694,8 +4777,8 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 function->insert(function->end(), updateBB);
                 builder.SetInsertPoint(updateBB);
                 llvm::Value* nextVal = builder.CreateAdd(
-                    builder.CreateLoad(builder.getInt64Ty(), iteratorVar, forStmt->iteratorName),
-                    llvm::ConstantInt::get(builder.getInt64Ty(), 1),
+                    builder.CreateLoad(iterType, iteratorVar, forStmt->iteratorName),
+                    llvm::ConstantInt::get(iterType, 1),
                     "forrange.next"
                 );
                 builder.CreateStore(nextVal, iteratorVar);
@@ -6701,6 +6784,41 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return result;
                     }
                     
+                    // LBIM struct negation: struct { [N x i64] } → two's complement across limbs
+                    if (operand->getType()->isStructTy()) {
+                        llvm::StructType* st = llvm::cast<llvm::StructType>(operand->getType());
+                        std::string sn = st->hasName() ? st->getName().str() : "";
+                        if ((sn.find("struct.int") == 0 || sn.find("struct.uint") == 0) &&
+                            st->getNumElements() == 1 && st->getElementType(0)->isArrayTy()) {
+                            auto* arrTy = llvm::cast<llvm::ArrayType>(st->getElementType(0));
+                            unsigned numLimbs = arrTy->getNumElements();
+                            
+                            // Extract, NOT, and add-with-carry each limb
+                            std::vector<llvm::Value*> negLimbs(numLimbs);
+                            for (unsigned j = 0; j < numLimbs; j++) {
+                                llvm::Value* limb = builder.CreateExtractValue(operand, {0, j}, "limb");
+                                negLimbs[j] = builder.CreateNot(limb, "nlimb");
+                            }
+                            
+                            // Add 1 with carry propagation (two's complement)
+                            llvm::Value* carry = builder.getInt64(1);
+                            for (unsigned j = 0; j < numLimbs; j++) {
+                                llvm::Value* sum = builder.CreateAdd(negLimbs[j], carry, "neg.add");
+                                // carry = (sum < carry) ? 1 : 0
+                                llvm::Value* cmp = builder.CreateICmpULT(sum, carry, "neg.carry");
+                                negLimbs[j] = sum;
+                                carry = builder.CreateZExt(cmp, builder.getInt64Ty(), "neg.c");
+                            }
+                            
+                            // Rebuild struct
+                            llvm::Value* result = llvm::UndefValue::get(st);
+                            for (unsigned j = 0; j < numLimbs; j++) {
+                                result = builder.CreateInsertValue(result, negLimbs[j], {0, j}, "neg.limb");
+                            }
+                            return result;
+                        }
+                    }
+                    
                     // Standard negation for non-numeric types
                     if (operand->getType()->isFloatingPointTy()) {
                         return builder.CreateFNeg(operand, "fnegtmp");
@@ -8074,6 +8192,19 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 ARIA_DBG_STREAM << "[DEBUG] Auto-unwrapped Result<T> on right operand" << std::endl;
             }
 
+            // Coerce integer operands to matching types
+            // Integer literals default to i64 but variables may be i8/i16/i32
+            if (L->getType()->isIntegerTy() && R->getType()->isIntegerTy() &&
+                L->getType() != R->getType()) {
+                unsigned leftBits = L->getType()->getIntegerBitWidth();
+                unsigned rightBits = R->getType()->getIntegerBitWidth();
+                if (leftBits < rightBits) {
+                    R = builder.CreateTrunc(R, L->getType(), "trunc_rhs");
+                } else {
+                    L = builder.CreateTrunc(L, R->getType(), "trunc_lhs");
+                }
+            }
+
             // Generate appropriate operation based on operator
             switch (binop->op.type) {
                 // Arithmetic operators
@@ -8244,6 +8375,20 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                   << expr->line << std::endl;
                         return builder.CreateAdd(L, R, "addtmp");
                     }
+                    // Vector types: use direct add (no overflow intrinsic for vectors)
+                    if (L->getType()->isVectorTy() || R->getType()->isVectorTy()) {
+                        // Splat scalar to vector if needed
+                        if (L->getType()->isVectorTy() && !R->getType()->isVectorTy()) {
+                            auto* vecTy = llvm::cast<llvm::FixedVectorType>(L->getType());
+                            R = builder.CreateVectorSplat(vecTy->getNumElements(), R, "scalar.splat");
+                        } else if (!L->getType()->isVectorTy() && R->getType()->isVectorTy()) {
+                            auto* vecTy = llvm::cast<llvm::FixedVectorType>(R->getType());
+                            L = builder.CreateVectorSplat(vecTy->getNumElements(), L, "scalar.splat");
+                        }
+                        if (L->getType()->isFPOrFPVectorTy())
+                            return builder.CreateFAdd(L, R, "vec.addtmp");
+                        return builder.CreateAdd(L, R, "vec.addtmp");
+                    }
                     return generateSafeAdd(L, R, "addtmp");
                 case frontend::TokenType::TOKEN_MINUS:
                     // Check if either operand is a vector
@@ -8328,6 +8473,22 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         return generateLBIMSub(L, R, numLimbs);
                     }
+                    if (unsigned numLimbs = isLBIMType(R->getType())) {
+                        // R is LBIM but L is scalar (e.g., 0 - big)
+                        // Convert L to LBIM first, then subtract
+                        llvm::Type* structType = R->getType();
+                        llvm::Type* i64Ty = builder.getInt64Ty();
+                        llvm::Value* lConverted = llvm::UndefValue::get(structType);
+                        if (L->getType()->isIntegerTy()) {
+                            if (L->getType() != i64Ty)
+                                L = builder.CreateZExtOrTrunc(L, i64Ty, "l.to_i64");
+                            lConverted = builder.CreateInsertValue(lConverted, L, {0, 0}, "l.limb0");
+                            for (unsigned i = 1; i < numLimbs; ++i)
+                                lConverted = builder.CreateInsertValue(lConverted, builder.getInt64(0), {0, i});
+                            L = lConverted;
+                        }
+                        return generateLBIMSub(L, R, numLimbs);
+                    }
                     // ARIA-025: fix256 deterministic fixed-point subtraction
                     if (isFix256Type(L->getType())) {
                         llvm::Type* fix256Type = L->getType();
@@ -8364,21 +8525,51 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                   << expr->line << std::endl;
                         return builder.CreateSub(L, R, "subtmp");
                     }
+                    // Vector types: use direct sub (no overflow intrinsic for vectors)
+                    if (L->getType()->isVectorTy() || R->getType()->isVectorTy()) {
+                        if (L->getType()->isVectorTy() && !R->getType()->isVectorTy()) {
+                            auto* vecTy = llvm::cast<llvm::FixedVectorType>(L->getType());
+                            R = builder.CreateVectorSplat(vecTy->getNumElements(), R, "scalar.splat");
+                        } else if (!L->getType()->isVectorTy() && R->getType()->isVectorTy()) {
+                            auto* vecTy = llvm::cast<llvm::FixedVectorType>(R->getType());
+                            L = builder.CreateVectorSplat(vecTy->getNumElements(), L, "scalar.splat");
+                        }
+                        if (L->getType()->isFPOrFPVectorTy())
+                            return builder.CreateFSub(L, R, "vec.subtmp");
+                        return builder.CreateSub(L, R, "vec.subtmp");
+                    }
                     return generateSafeSub(L, R, "subtmp");
                 case frontend::TokenType::TOKEN_STAR:
-                    // Check if either operand is a vector
+                    // Check if either operand is a vector (semantic type info)
                     if (leftType && leftType->getKind() == TypeKind::VECTOR) {
                         // Vector multiplication
                         VectorType* vec_type = static_cast<VectorType*>(leftType);
-                        if (rightType && rightType->getKind() != TypeKind::VECTOR) {
-                            R = builder.CreateVectorSplat(vec_type->getDimension(), R, "scalar.splat");
+                        if (!rightType || rightType->getKind() != TypeKind::VECTOR) {
+                            if (!R->getType()->isVectorTy())
+                                R = builder.CreateVectorSplat(vec_type->getDimension(), R, "scalar.splat");
                         }
                         return builder.CreateFMul(L, R, "vec.multmp");
                     }
                     if (rightType && rightType->getKind() == TypeKind::VECTOR) {
                         VectorType* vec_type = static_cast<VectorType*>(rightType);
-                        L = builder.CreateVectorSplat(vec_type->getDimension(), L, "scalar.splat");
+                        if (!L->getType()->isVectorTy())
+                            L = builder.CreateVectorSplat(vec_type->getDimension(), L, "scalar.splat");
                         return builder.CreateFMul(L, R, "vec.multmp");
+                    }
+                    // Fallback: LLVM-level vector-scalar splatting when semantic type info is missing
+                    if (L->getType()->isVectorTy() && !R->getType()->isVectorTy()) {
+                        auto* vecTy = llvm::cast<llvm::FixedVectorType>(L->getType());
+                        R = builder.CreateVectorSplat(vecTy->getNumElements(), R, "scalar.splat");
+                        if (L->getType()->getScalarType()->isFloatingPointTy())
+                            return builder.CreateFMul(L, R, "vec.multmp");
+                        return builder.CreateMul(L, R, "vec.multmp");
+                    }
+                    if (R->getType()->isVectorTy() && !L->getType()->isVectorTy()) {
+                        auto* vecTy = llvm::cast<llvm::FixedVectorType>(R->getType());
+                        L = builder.CreateVectorSplat(vecTy->getNumElements(), L, "scalar.splat");
+                        if (R->getType()->getScalarType()->isFloatingPointTy())
+                            return builder.CreateFMul(L, R, "vec.multmp");
+                        return builder.CreateMul(L, R, "vec.multmp");
                     }
                     
                     if (isTBB && tbbType) {
@@ -9501,8 +9692,17 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     return builder.CreateXor(L, R, "xortmp");
                 case frontend::TokenType::TOKEN_SHIFT_LEFT:
+                    if (isLBIMType(L->getType())) {
+                        // TODO: Implement LBIM shift via runtime function
+                        // For now, return L unchanged to avoid LLVM verification failure
+                        return L;
+                    }
                     return builder.CreateShl(L, R, "shltmp");
                 case frontend::TokenType::TOKEN_SHIFT_RIGHT: {
+                    if (isLBIMType(L->getType())) {
+                        // TODO: Implement LBIM shift via runtime function
+                        return L;
+                    }
                     // BUG-3 fix: signed types now reach codegen, need arithmetic shift.
                     // Determine signedness from Aria type to pick AShr vs LShr.
                     bool shiftSigned = false;
@@ -9659,8 +9859,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // Field 1: error (ptr)
                 // Field 2: is_error (i1)
                 
-                // Extract the is_error field (field 2)
-                llvm::Value* isError = builder.CreateExtractValue(leftVal, 2, "is_error");
+                // Extract the is_error field (field 2) — stored as i8, must compare to get i1 for branch
+                llvm::Value* isErrorRaw = builder.CreateExtractValue(leftVal, 2, "is_error");
+                llvm::Value* isError = builder.CreateICmpNE(isErrorRaw,
+                    llvm::ConstantInt::get(isErrorRaw->getType(), 0), "is_error_bool");
                 
                 // Create basic blocks for control flow
                 llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
@@ -9686,6 +9888,14 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 // Merge block: use PHI to select between default and value
                 builder.SetInsertPoint(mergeBlock);
+                // Coerce types to match for PHI node
+                if (defaultVal->getType() != valueField->getType()) {
+                    if (defaultVal->getType()->isIntegerTy() && valueField->getType()->isIntegerTy()) {
+                        defaultVal = builder.CreateIntCast(defaultVal, valueField->getType(), true, "default_cast");
+                    } else if (defaultVal->getType()->isFloatingPointTy() && valueField->getType()->isFloatingPointTy()) {
+                        defaultVal = builder.CreateFPCast(defaultVal, valueField->getType(), "default_fpcast");
+                    }
+                }
                 llvm::PHINode* phi = builder.CreatePHI(valueField->getType(), 2, "unwrap_result");
                 phi->addIncoming(defaultVal, errorExitBlock);
                 phi->addIncoming(valueField, successExitBlock);
@@ -10855,6 +11065,13 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     llvm::Value* elem_ptr = builder.CreateInBoundsGEP(
                         alloc_ty, array_ptr, gep_indices, "arrayidx");
                     return builder.CreateLoad(elem_type, elem_ptr, "elem");
+                } else if (alloc_ty->isVectorTy()) {
+                    // SIMD vector alloca: load vector, then extractelement
+                    llvm::Value* vecVal = builder.CreateLoad(alloc_ty, array_ptr, "vec.load");
+                    if (!index_value->getType()->isIntegerTy(32)) {
+                        index_value = builder.CreateIntCast(index_value, builder.getInt32Ty(), true, "idx.i32");
+                    }
+                    return builder.CreateExtractElement(vecVal, index_value, "vec.elem");
                 } else {
                     elem_type = alloc_ty;
                 }
@@ -10904,6 +11121,15 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             // Create GEP to access element at index (flat pointer / non-array alloca)
+            // But first: if elem_type is a vector (SIMD), load and extractelement
+            if (elem_type && elem_type->isVectorTy()) {
+                llvm::Value* vecVal = builder.CreateLoad(elem_type, array_ptr, "vec.load");
+                if (!index_value->getType()->isIntegerTy(32)) {
+                    index_value = builder.CreateIntCast(index_value, builder.getInt32Ty(), true, "idx.i32");
+                }
+                return builder.CreateExtractElement(vecVal, index_value, "vec.elem");
+            }
+
             llvm::Value* elem_ptr = builder.CreateGEP(elem_type, array_ptr, index_value, "arrayidx");
             
             // Load and return the element value
@@ -11349,6 +11575,11 @@ void aria::IRGenerator::executeScopeDefers() {
         return;
     }
 
+    // Don't emit defer code after a terminator (e.g., exit's unreachable)
+    if (builder.GetInsertBlock()->getTerminator()) {
+        return;
+    }
+
     // ARIA-023: Set flag to prevent defer_stack modification during iteration
     bool was_executing = executing_defers;
     executing_defers = true;
@@ -11368,6 +11599,11 @@ void aria::IRGenerator::executeScopeDefers() {
 }
 
 void aria::IRGenerator::executeFunctionDefers() {
+    // Don't emit defer code after a terminator (e.g., exit's unreachable)
+    if (builder.GetInsertBlock()->getTerminator()) {
+        return;
+    }
+
     // ARIA-023: Set flag to prevent defer_stack modification during iteration
     bool was_executing = executing_defers;
     executing_defers = true;

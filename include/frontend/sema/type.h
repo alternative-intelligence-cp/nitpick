@@ -706,6 +706,7 @@ public:
     StructType* getStructType(const std::string& name);
     StructType* createStructType(const std::string& name, const std::vector<StructType::Field>& fields,
                                 int size = 0, int alignment = 0, bool isPacked = false);
+    void registerStructAlias(const std::string& alias, StructType* type);
     
     UnionType* getUnionType(const std::string& name);
     UnionType* createUnionType(const std::string& name, const std::vector<UnionType::Variant>& variants,

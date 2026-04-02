@@ -765,6 +765,17 @@ ASTNodePtr Monomorphizer::cloneAST(ASTNode* node) {
             return std::make_unique<SimpleType>(simpleType->typeName, simpleType->line, simpleType->column);
         }
 
+        case ASTNode::NodeType::GENERIC_TYPE: {
+            aria::GenericType* genericType = static_cast<aria::GenericType*>(node);
+            std::vector<ASTNodePtr> clonedArgs;
+            for (const auto& arg : genericType->typeArgs) {
+                clonedArgs.push_back(cloneAST(arg.get()));
+            }
+            return std::make_shared<aria::GenericType>(
+                genericType->baseName, clonedArgs,
+                genericType->line, genericType->column);
+        }
+
         // === Pass/Fail Statements (Result types) ===
         case ASTNode::NodeType::PASS: {
             PassStmt* passStmt = static_cast<PassStmt*>(node);
@@ -1114,7 +1125,22 @@ std::string Monomorphizer::requestStructSpecialization(
     }
     
     // Create the struct type in TypeSystem
-    typeSystem->createStructType(mangledName, fields, 0, 0, false);
+    StructType* createdType = typeSystem->createStructType(mangledName, fields, 0, 0, false);
+    
+    // Register a simple alias (e.g. "complex_int64") so mapTypeFromName can find it
+    // without needing the full hash-based mangled name
+    {
+        std::string simpleAlias = structDecl->structName;
+        std::vector<std::pair<std::string, Type*>> sortedBindings(
+            substitution.begin(), substitution.end());
+        std::sort(sortedBindings.begin(), sortedBindings.end());
+        for (const auto& [paramName, type] : sortedBindings) {
+            simpleAlias += "_" + resolver->canonicalizeTypeName(type);
+        }
+        if (simpleAlias != mangledName) {
+            typeSystem->registerStructAlias(simpleAlias, createdType);
+        }
+    }
     
     // Clean up the cloned AST (it's no longer needed after registration)
     delete specialized;

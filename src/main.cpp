@@ -4732,11 +4732,6 @@ llvm::Module* compile_to_module(
  * Emit LLVM IR to file
  */
 bool emit_llvm_ir(llvm::Module* module, const std::string& output_file) {
-    // DEBUG: Dump module to stderr before writing to file
-    std::cerr << "\n=== MODULE DUMP BEFORE WRITE ===\n";
-    module->print(llvm::errs(), nullptr);
-    std::cerr << "=== END MODULE DUMP ===\n\n";
-    
     std::error_code ec;
     llvm::raw_fd_ostream out(output_file, ec, llvm::sys::fs::OF_None);
     
