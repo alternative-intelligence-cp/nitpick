@@ -4668,6 +4668,15 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             builder.SetInsertPoint(bodyBB);
             codegenStatement(whileStmt->body.get());
             if (!builder.GetInsertBlock()->getTerminator()) {
+                // v0.8.1: GC safepoint at loop back-edge
+                {
+                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    if (!safepoint_fn) {
+                        llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    }
+                    builder.CreateCall(safepoint_fn);
+                }
                 builder.CreateBr(condBB);  // Loop back to condition
             }
             
@@ -4782,6 +4791,15 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     "forrange.next"
                 );
                 builder.CreateStore(nextVal, iteratorVar);
+                // v0.8.1: GC safepoint at loop back-edge
+                {
+                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    if (!safepoint_fn) {
+                        llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    }
+                    builder.CreateCall(safepoint_fn);
+                }
                 builder.CreateBr(condBB);
                 
                 // Pop loop context
@@ -4921,6 +4939,15 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 std::cout << "[FOR DEBUG] Update expression complete\n" << std::flush;
             } else {
                 std::cout << "[FOR DEBUG] NO UPDATE EXPRESSION!\n" << std::flush;
+            }
+            // v0.8.1: GC safepoint at loop back-edge
+            {
+                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                if (!safepoint_fn) {
+                    llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                }
+                builder.CreateCall(safepoint_fn);
             }
             builder.CreateBr(condBB);  // Loop back
             
@@ -5737,6 +5764,15 @@ skip_comparison:
             llvm::Value* currentVal = builder.CreateLoad(counterType, dollarAlloca, "$");
             llvm::Value* nextVal = builder.CreateAdd(currentVal, stepVal, "$.next");
             counterPhi->addIncoming(nextVal, incBB);
+            // v0.8.1: GC safepoint at loop back-edge
+            {
+                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                if (!safepoint_fn) {
+                    llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                }
+                builder.CreateCall(safepoint_fn);
+            }
             builder.CreateBr(condBB);
             
             // Pop loop context
@@ -5830,6 +5866,15 @@ skip_comparison:
             llvm::Value* currentVal = builder.CreateLoad(counterType, dollarAlloca, "$");
             llvm::Value* nextVal = builder.CreateAdd(currentVal, stepVal, "$.next");
             counterPhi->addIncoming(nextVal, incBB);
+            // v0.8.1: GC safepoint at loop back-edge
+            {
+                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                if (!safepoint_fn) {
+                    llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                }
+                builder.CreateCall(safepoint_fn);
+            }
             builder.CreateBr(condBB);
             
             // Pop loop context
@@ -5898,6 +5943,15 @@ skip_comparison:
             if (!builder.GetInsertBlock()->getTerminator()) {
                 // Mark body ran at least once before looping
                 builder.CreateStore(builder.getInt1(true), completedFlag);
+                // v0.8.1: GC safepoint at loop back-edge
+                {
+                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    if (!safepoint_fn) {
+                        llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    }
+                    builder.CreateCall(safepoint_fn);
+                }
                 builder.CreateBr(condBB);
             }
             

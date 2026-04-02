@@ -82,7 +82,7 @@ private:
  * Provides synthetic children for gc_ptr<T> to expose:
  * - The actual value (dereferenced pointer)
  * - Object header metadata (at -8 bytes offset):
- *   - mark_bit: GC marking status
+ *   - color: Tri-color marking (WHITE/GRAY/BLACK)
  *   - pinned_bit: Pin status (prevents moving)
  *   - forwarded_bit: Forwarding pointer status
  *   - is_nursery: Young generation flag

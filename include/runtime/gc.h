@@ -32,22 +32,32 @@ extern "C" {
  * supporting essential GC operations (marking, pinning, forwarding).
  * 
  * Layout (64 bits total):
- * - mark_bit (1): Set during major GC to identify reachable objects
+ * - color (2): Tri-color marking state (WHITE/GRAY/BLACK)
  * - pinned_bit (1): Object cannot be moved (for wild pointer safety)
  * - forwarded_bit (1): Object has been evacuated, payload is forwarding address
  * - is_nursery (1): Object is in young generation
  * - size_class (8): Allocator bucket index for fast size lookup
  * - type_id (16): Runtime type identifier for precise scanning
- * - padding (36): Reserved for future use (identity hash, thin locks)
+ * - padding (35): Reserved for future use (identity hash, thin locks)
+ *
+ * Tri-color invariant (v0.8.1):
+ * - WHITE (0): Unmarked — candidate for collection
+ * - GRAY  (1): Marked, but children not yet traced
+ * - BLACK (2): Marked and all children traced
  */
+
+#define GC_COLOR_WHITE 0
+#define GC_COLOR_GRAY  1
+#define GC_COLOR_BLACK 2
+
 typedef struct {
-    uint64_t mark_bit : 1;        // Mark-sweep status
+    uint64_t color : 2;           // Tri-color mark (WHITE/GRAY/BLACK)
     uint64_t pinned_bit : 1;      // Address stability flag (#operator)
     uint64_t forwarded_bit : 1;   // Relocation flag (nursery evacuation)
     uint64_t is_nursery : 1;      // Generational tag
     uint64_t size_class : 8;      // Allocator bucket (256 size classes)
     uint64_t type_id : 16;        // Runtime type ID (65536 types)
-    uint64_t padding : 36;        // Reserved
+    uint64_t padding : 35;        // Reserved
 } ObjHeader;
 
 // Compile-time assertion to ensure header is exactly 64 bits
@@ -141,6 +151,12 @@ typedef struct {
     uint64_t num_minor_collections; // Minor GC count
     uint64_t num_major_collections; // Major GC count
     size_t num_pinned_objects;     // Currently pinned objects
+    // v0.8.1: Concurrent & incremental metrics
+    uint64_t num_concurrent_marks; // Concurrent mark cycles completed
+    uint64_t num_incremental_sweeps; // Incremental sweep cycles completed
+    uint64_t total_pause_time_ns;  // Total STW pause time in nanoseconds
+    uint64_t max_pause_time_ns;    // Maximum single STW pause time
+    uint64_t last_pause_time_ns;   // Most recent STW pause time
 } GCStats;
 
 void aria_gc_get_stats(GCStats* stats);
@@ -340,6 +356,26 @@ void aria_gc_register_finalizer(uint16_t type_id, AriaFinalizer finalizer);
  * @param num_refs Number of entries in ref_offsets
  */
 void aria_gc_register_type_layout(uint16_t type_id, const size_t* ref_offsets, size_t num_refs);
+
+// =============================================================================
+// v0.8.1: Concurrent Collection & Safepoints
+// =============================================================================
+
+/**
+ * Enable or disable concurrent mark phase.
+ * When enabled, major GC mark phase runs concurrently with the mutator
+ * using SATB (snapshot-at-the-beginning) write barrier.
+ * Default: disabled (STW mark).
+ */
+void aria_gc_enable_concurrent(uint8_t enable);
+
+/**
+ * GC safepoint poll.
+ * Inserted by the compiler at loop back-edges and function entry.
+ * If the GC is requesting a STW pause, blocks until released.
+ * When no collection is pending, this is a single atomic load (fast path).
+ */
+void aria_gc_safepoint(void);
 
 #ifdef __cplusplus
 }

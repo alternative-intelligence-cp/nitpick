@@ -415,6 +415,15 @@ static void aria_gc_print_stats_at_exit(void) {
     fprintf(stderr, "[GC STATS] Minor GCs:  %" PRIu64 "\n", stats.num_minor_collections);
     fprintf(stderr, "[GC STATS] Major GCs:  %" PRIu64 "\n", stats.num_major_collections);
     fprintf(stderr, "[GC STATS] Pinned:     %zu objects\n", stats.num_pinned_objects);
+    fprintf(stderr, "[GC STATS] ── Concurrent (v0.8.1) ──────────────────\n");
+    fprintf(stderr, "[GC STATS] Conc Marks: %" PRIu64 "\n", stats.num_concurrent_marks);
+    fprintf(stderr, "[GC STATS] Inc Sweeps: %" PRIu64 "\n", stats.num_incremental_sweeps);
+    fprintf(stderr, "[GC STATS] Pause Tot:  %" PRIu64 " ns (%.3f ms)\n",
+            stats.total_pause_time_ns, stats.total_pause_time_ns / 1000000.0);
+    fprintf(stderr, "[GC STATS] Pause Max:  %" PRIu64 " ns (%.3f ms)\n",
+            stats.max_pause_time_ns, stats.max_pause_time_ns / 1000000.0);
+    fprintf(stderr, "[GC STATS] Pause Last: %" PRIu64 " ns (%.3f ms)\n",
+            stats.last_pause_time_ns, stats.last_pause_time_ns / 1000000.0);
     fprintf(stderr, "[GC STATS] ═══════════════════════════════════════\n");
 }
 
@@ -437,6 +446,14 @@ void aria_gc_register_finalizer(uint16_t type_id, AriaFinalizer finalizer) {
 
 void aria_gc_register_type_layout(uint16_t type_id, const size_t* ref_offsets, size_t num_refs) {
     GCState::instance().register_type_layout(type_id, ref_offsets, num_refs);
+}
+
+void aria_gc_enable_concurrent(uint8_t enable) {
+    GCState::instance().enable_concurrent(enable != 0);
+}
+
+void aria_gc_safepoint(void) {
+    GCState::instance().safepoint();
 }
 
 } // extern "C"

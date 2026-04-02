@@ -173,6 +173,9 @@ public:
     // Helper: Get or declare aria_gc_free runtime function (AUDIT FIX BUG-10)
     llvm::Function* getOrDeclareGCFree();
     
+    // v0.8.1: Get or declare aria_gc_safepoint for loop back-edge insertion
+    llvm::Function* getOrDeclareGCSafepoint();
+    
     // Helper: Get or declare aria.alloc runtime function (wild memory)
     llvm::Function* getOrDeclareWildAlloc();
     
