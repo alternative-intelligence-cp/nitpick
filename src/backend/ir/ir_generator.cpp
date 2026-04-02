@@ -6410,8 +6410,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // String literal - check for special literals first
                 const std::string& str = std::get<std::string>(lit->value);
                 
-                // Phase 5.1: Handle special unknown literal
-                if (str == "unknown") {
+                // Phase 5.1: Handle special unknown KEYWORD (not "unknown" string literal)
+                if (str == "unknown" && lit->explicit_type == "UNKNOWN") {
                     // unknown sentinel (opposite of ERR, uses max value)
                     llvm::Type* target_type = llvm::Type::getInt32Ty(context);
                     unsigned width = target_type->getIntegerBitWidth();
@@ -6419,8 +6419,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     return llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
                 }
                 
-                // Phase 5.1: Handle special ERR literal
-                if (str == "ERR") {
+                // Phase 5.1: Handle special ERR KEYWORD (not "ERR" string literal)
+                if (str == "ERR" && lit->explicit_type == "ERR") {
                     // ERR sentinel (minimum signed value)
                     llvm::Type* target_type = llvm::Type::getInt32Ty(context);
                     unsigned width = target_type->getIntegerBitWidth();

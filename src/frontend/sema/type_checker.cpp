@@ -622,6 +622,16 @@ Type* TypeChecker::inferLiteral(LiteralExpr* expr) {
             return typeSystem->getUnknownType();  // Will be resolved in context
         }
         
+        if (expr->explicit_type == "UNKNOWN") {
+            // unknown keyword sentinel: represents indeterminate value
+            return typeSystem->getUnknownType();
+        }
+        
+        if (expr->explicit_type == "ERR") {
+            // ERR keyword sentinel: represents TBB error value
+            return typeSystem->getPrimitiveType("tbb32");
+        }
+        
         // Convert type suffix to type system name
         std::string type_name = typeSuffixToSystemName(expr->explicit_type);
         

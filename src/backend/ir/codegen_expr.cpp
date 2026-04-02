@@ -1479,9 +1479,9 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         const std::string& str = std::get<std::string>(expr->value);
         ARIA_DBG_STREAM << "[DEBUG] String literal detected: \"" << str << "\"" << std::endl;
         
-        // Check for special literals: ERR and unknown
-        // These are represented as string literals by the parser but need special handling
-        if (str == "ERR") {
+        // Check for special literals: ERR and unknown KEYWORDS (not string literals)
+        // Only treat as sentinels if explicit_type is set (keyword form, not "quoted string")
+        if (str == "ERR" && expr->explicit_type == "ERR") {
             // ERR sentinel - need to know target type from context
             // For now, default to int32 (will be handled better with type inference)
             llvm::Type* target_type = llvm::Type::getInt32Ty(context);
@@ -1491,7 +1491,7 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
             return getTBBSentinel(target_type);
         }
         
-        if (str == "unknown") {
+        if (str == "unknown" && expr->explicit_type == "UNKNOWN") {
             // unknown sentinel - similar to ERR but uses max value instead of min
             llvm::Type* target_type = llvm::Type::getInt32Ty(context);
             ARIA_DBG_STREAM << "[DEBUG] unknown literal - generating sentinel for type: ";
