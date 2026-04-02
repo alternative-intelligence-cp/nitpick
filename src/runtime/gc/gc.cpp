@@ -100,7 +100,7 @@ void GCState::init(size_t nursery_size, size_t old_gen_threshold) {
     // Initialize stats
     stats = {};
     stats.nursery_size = nursery_size;
-    stats.old_gen_size = 0;
+    stats.old_gen_size = old_gen_threshold;
     
     initialized = true;
 }
@@ -147,6 +147,20 @@ void* GCState::alloc(size_t size, uint16_t type_id) {
         stats.total_allocated += size;
         stats.nursery_used = nursery->used;
         return ptr;
+    }
+    
+    // Check max heap limit before major GC promotion
+    if (max_heap > 0) {
+        size_t current_total = stats.nursery_used + stats.old_gen_used;
+        if (current_total + size > max_heap) {
+            // Try major GC to free old gen space first
+            major_gc();
+            current_total = stats.nursery_used + stats.old_gen_used;
+            if (current_total + size > max_heap) {
+                std::cerr << "Aria GC: Max heap limit exceeded (" << max_heap << " bytes)\n";
+                return nullptr;
+            }
+        }
     }
     
     // Still failing - trigger major GC
@@ -245,6 +259,9 @@ void GCState::minor_gc() {
     // Scan roots
     auto roots = shadow_stack.get_all_roots();
     
+    // Worklist for Cheney-style breadth-first evacuation
+    std::vector<void*> worklist;
+    
     for (void** root_addr : roots) {
         void* obj_ptr = *root_addr;
         
@@ -259,6 +276,7 @@ void GCState::minor_gc() {
         if (header->pinned_bit) {
             // Pinned object - mark as live but don't move
             header->mark_bit = 1;
+            worklist.push_back(obj_ptr);
             continue;
         }
         
@@ -268,6 +286,67 @@ void GCState::minor_gc() {
         if (new_ptr) {
             // Update root to point to new location
             *root_addr = new_ptr;
+            worklist.push_back(new_ptr);
+        }
+    }
+    
+    // Also scan dirty card table entries for old→young references
+    auto dirty_cards = card_table->get_dirty_cards();
+    for (void* card_addr : dirty_cards) {
+        // Scan the 512-byte card region for pointers into nursery
+        for (size_t off = 0; off < CardTable::CARD_SIZE; off += sizeof(void*)) {
+            void** slot = (void**)((char*)card_addr + off);
+            void* ref = *slot;
+            if (ref && nursery->contains(ref)) {
+                ObjHeader* ref_header = get_header(ref);
+                if (ref_header && !ref_header->forwarded_bit) {
+                    if (ref_header->pinned_bit) {
+                        ref_header->mark_bit = 1;
+                        worklist.push_back(ref);
+                    } else {
+                        void* new_ptr = evacuate_object(ref);
+                        if (new_ptr) {
+                            *slot = new_ptr;
+                            worklist.push_back(new_ptr);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Process worklist: trace references from evacuated objects
+    // to find and evacuate any nursery objects they point to
+    for (size_t i = 0; i < worklist.size(); ++i) {
+        void* obj = worklist[i];
+        ObjHeader* header = get_header(obj);
+        if (!header) continue;
+        
+        auto layout_it = type_ref_offsets.find(header->type_id);
+        if (layout_it == type_ref_offsets.end()) continue;
+        
+        for (size_t offset : layout_it->second) {
+            void** field_addr = (void**)((char*)obj + offset);
+            void* ref = *field_addr;
+            
+            if (!ref || !nursery->contains(ref)) continue;
+            
+            ObjHeader* ref_header = get_header(ref);
+            if (!ref_header) continue;
+            
+            if (ref_header->forwarded_bit) {
+                // Already evacuated — update field to new location
+                *field_addr = *(void**)ref;
+            } else if (ref_header->pinned_bit) {
+                ref_header->mark_bit = 1;
+                worklist.push_back(ref);
+            } else {
+                void* new_ptr = evacuate_object(ref);
+                if (new_ptr) {
+                    *field_addr = new_ptr;
+                    worklist.push_back(new_ptr);
+                }
+            }
         }
     }
     
@@ -382,13 +461,9 @@ void GCState::mark_object(void* ptr) {
     /**
      * Mark phase: Recursively mark reachable objects
      * 
-     * This is a simplified implementation that marks objects
-     * but doesn't trace their references (would require type information).
-     * 
-     * A full implementation would:
-     * 1. Use type_id to look up object layout
-     * 2. Scan fields for references
-     * 3. Recursively mark referenced objects
+     * Uses type_ref_offsets registry to trace reference fields.
+     * If a type has no registered layout, we conservatively mark
+     * only the object itself (no field tracing).
      */
     
     if (!ptr) return;
@@ -402,8 +477,20 @@ void GCState::mark_object(void* ptr) {
     // Mark this object
     header->mark_bit = 1;
     
-    // TODO: Trace references (requires type information)
-    // For now, we just mark the object itself
+    // Trace reference fields using registered type layout
+    auto it = type_ref_offsets.find(header->type_id);
+    if (it != type_ref_offsets.end()) {
+        for (size_t offset : it->second) {
+            // Read the pointer at the given offset within the object payload
+            void** field_addr = (void**)((char*)ptr + offset);
+            void* ref = *field_addr;
+            
+            // Only trace if it looks like a valid heap pointer
+            if (ref && is_heap_pointer(ref)) {
+                mark_object(ref);
+            }
+        }
+    }
 }
 
 void GCState::sweep_old_gen() {
@@ -435,9 +522,15 @@ void GCState::sweep_old_gen() {
             header->mark_bit = 0;
             ++i;
         } else {
-            // Dead object - free it
+            // Dead object - run finalizer if registered, then free
             size_t obj_size = header->size_class * 8;
             bytes_freed += obj_size;
+            
+            // Call finalizer if one is registered for this type
+            auto it = finalizers.find(header->type_id);
+            if (it != finalizers.end() && it->second) {
+                it->second(obj_ptr);
+            }
             
             // Free memory
             void* alloc_ptr = (char*)obj_ptr - sizeof(ObjHeader);
@@ -515,6 +608,21 @@ void GCState::get_stats(GCStats* stats_out) const {
     
     std::lock_guard<std::mutex> lock(gc_mutex);
     *stats_out = stats;
+}
+
+void GCState::set_max_heap(size_t max_bytes) {
+    std::lock_guard<std::mutex> lock(gc_mutex);
+    max_heap = max_bytes;
+}
+
+void GCState::register_finalizer(uint16_t type_id, AriaFinalizer finalizer) {
+    std::lock_guard<std::mutex> lock(gc_mutex);
+    finalizers[type_id] = finalizer;
+}
+
+void GCState::register_type_layout(uint16_t type_id, const size_t* ref_offsets, size_t num_refs) {
+    std::lock_guard<std::mutex> lock(gc_mutex);
+    type_ref_offsets[type_id] = std::vector<size_t>(ref_offsets, ref_offsets + num_refs);
 }
 
 } // namespace runtime

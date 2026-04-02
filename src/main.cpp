@@ -91,9 +91,9 @@ extern "C" {
 
 // Version information
 #define ARIA_VERSION_MAJOR 0
-#define ARIA_VERSION_MINOR 7
-#define ARIA_VERSION_PATCH 4
-#define ARIA_VERSION "0.7.4"
+#define ARIA_VERSION_MINOR 8
+#define ARIA_VERSION_PATCH 0
+#define ARIA_VERSION "0.8.0"
 
 // Compiler options
 struct CompilerOptions {
@@ -146,6 +146,10 @@ struct CompilerOptions {
     bool guard_pages = false;         // --guard-pages: Enable guard pages around wild allocations
     bool wildx_audit = false;         // --wildx-audit: Log WildX alloc/seal/exec/free events
     bool wildx_guard_pages = false;   // --wildx-guard-pages: Guard pages around exec regions
+    bool gc_stats = false;            // --gc-stats: Print GC statistics at program exit
+    size_t gc_nursery_size = 0;       // --gc-nursery-size=N: Nursery size in bytes (0=default 4MB)
+    size_t gc_threshold = 0;          // --gc-threshold=N: Major GC trigger threshold (0=default 64MB)
+    size_t gc_max_heap = 0;           // --gc-max-heap=N: Maximum heap size in bytes (0=unlimited)
     int smt_timeout = 5000;           // --smt-timeout=N: Per-query Z3 solver timeout in ms (default: 5000)
 };
 
@@ -219,7 +223,11 @@ void print_help() {
     std::cout << "  --wild-stats      Print wild memory statistics at program exit\n";
     std::cout << "  --guard-pages     Enable guard pages around wild allocations (debug)\n";
     std::cout << "  --wildx-audit     Log WildX alloc/seal/exec/free events to stderr\n";
-    std::cout << "  --wildx-guard-pages Enable guard pages around executable regions\n\n";
+    std::cout << "  --wildx-guard-pages Enable guard pages around executable regions\n";
+    std::cout << "  --gc-stats        Print GC statistics at program exit\n";
+    std::cout << "  --gc-nursery-size=N Nursery size in bytes (default: 4MB, suffixes: K/M/G)\n";
+    std::cout << "  --gc-threshold=N  Major GC trigger threshold (default: 64MB)\n";
+    std::cout << "  --gc-max-heap=N   Maximum total heap size (default: unlimited)\n\n";
     std::cout << "GPU Target Options (NVIDIA CUDA/PTX):\n";
     std::cout << "  --emit-ptx        Emit PTX assembly for GPU execution\n";
     std::cout << "  --target=<arch>   Target architecture (cpu, gpu, gpu+cpu)\n";
@@ -382,6 +390,38 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.wildx_audit = true;
         } else if (arg == "--wildx-guard-pages") {
             opts.wildx_guard_pages = true;
+        } else if (arg == "--gc-stats") {
+            opts.gc_stats = true;
+        } else if (arg.substr(0, 18) == "--gc-nursery-size=") {
+            std::string val = arg.substr(18);
+            size_t multiplier = 1;
+            if (!val.empty()) {
+                char suffix = val.back();
+                if (suffix == 'K' || suffix == 'k') { multiplier = 1024; val.pop_back(); }
+                else if (suffix == 'M' || suffix == 'm') { multiplier = 1024*1024; val.pop_back(); }
+                else if (suffix == 'G' || suffix == 'g') { multiplier = 1024ULL*1024*1024; val.pop_back(); }
+            }
+            opts.gc_nursery_size = std::stoull(val) * multiplier;
+        } else if (arg.substr(0, 15) == "--gc-threshold=") {
+            std::string val = arg.substr(15);
+            size_t multiplier = 1;
+            if (!val.empty()) {
+                char suffix = val.back();
+                if (suffix == 'K' || suffix == 'k') { multiplier = 1024; val.pop_back(); }
+                else if (suffix == 'M' || suffix == 'm') { multiplier = 1024*1024; val.pop_back(); }
+                else if (suffix == 'G' || suffix == 'g') { multiplier = 1024ULL*1024*1024; val.pop_back(); }
+            }
+            opts.gc_threshold = std::stoull(val) * multiplier;
+        } else if (arg.substr(0, 14) == "--gc-max-heap=") {
+            std::string val = arg.substr(14);
+            size_t multiplier = 1;
+            if (!val.empty()) {
+                char suffix = val.back();
+                if (suffix == 'K' || suffix == 'k') { multiplier = 1024; val.pop_back(); }
+                else if (suffix == 'M' || suffix == 'm') { multiplier = 1024*1024; val.pop_back(); }
+                else if (suffix == 'G' || suffix == 'g') { multiplier = 1024ULL*1024*1024; val.pop_back(); }
+            }
+            opts.gc_max_heap = std::stoull(val) * multiplier;
         } else if (arg.substr(0, 14) == "--smt-timeout=") {
             opts.smt_timeout = std::stoi(arg.substr(14));
             if (opts.smt_timeout < 0) opts.smt_timeout = 5000;
@@ -4661,8 +4701,12 @@ llvm::Module* compile_to_module(
     }
 
     // v0.7.0+: Inject wild/wildx memory flags into main() entry block
+    // v0.8.0+: Inject GC configuration flags
     llvm::Module* mod = ir_gen.getModule();
-    if (mod && (opts.wild_stats || opts.guard_pages || opts.wildx_audit || opts.wildx_guard_pages)) {
+    bool has_runtime_flags = opts.wild_stats || opts.guard_pages || opts.wildx_audit || 
+                             opts.wildx_guard_pages || opts.gc_stats ||
+                             opts.gc_nursery_size || opts.gc_threshold || opts.gc_max_heap;
+    if (mod && has_runtime_flags) {
         llvm::Function* main_func = mod->getFunction("main");
         if (main_func && !main_func->empty()) {
             llvm::BasicBlock& entry = main_func->getEntryBlock();
@@ -4720,6 +4764,48 @@ llvm::Module* compile_to_module(
                 llvm::FunctionCallee enable_wildx_guards = mod->getOrInsertFunction(
                     "aria_wildx_enable_guard_pages", void_bool_ty);
                 inject_builder.CreateCall(enable_wildx_guards, {inject_builder.getInt8(1)});
+            }
+            
+            // v0.8.0: GC configuration injection
+            if (opts.gc_nursery_size || opts.gc_threshold) {
+                // Replace default aria_gc_init with custom parameters
+                // Find and update the existing aria_gc_init call
+                for (auto& inst : entry) {
+                    if (auto* call = llvm::dyn_cast<llvm::CallInst>(&inst)) {
+                        llvm::Function* callee = call->getCalledFunction();
+                        if (callee && callee->getName() == "aria_gc_init") {
+                            // Replace operands with user-specified values
+                            if (opts.gc_nursery_size) {
+                                call->setArgOperand(0, llvm::ConstantInt::get(
+                                    llvm::Type::getInt64Ty(ctx), opts.gc_nursery_size));
+                            }
+                            if (opts.gc_threshold) {
+                                call->setArgOperand(1, llvm::ConstantInt::get(
+                                    llvm::Type::getInt64Ty(ctx), opts.gc_threshold));
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (opts.gc_max_heap) {
+                llvm::FunctionType* void_i64_ty = llvm::FunctionType::get(
+                    llvm::Type::getVoidTy(ctx),
+                    {llvm::Type::getInt64Ty(ctx)},
+                    false
+                );
+                llvm::FunctionCallee set_max_heap = mod->getOrInsertFunction(
+                    "aria_gc_set_max_heap", void_i64_ty);
+                inject_builder.CreateCall(set_max_heap, {
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), opts.gc_max_heap)
+                });
+            }
+            
+            if (opts.gc_stats) {
+                llvm::FunctionCallee enable_gc_stats = mod->getOrInsertFunction(
+                    "aria_gc_enable_stats_at_exit", void_bool_ty);
+                inject_builder.CreateCall(enable_gc_stats, {inject_builder.getInt8(1)});
             }
         }
     }

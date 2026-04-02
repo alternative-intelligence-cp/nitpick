@@ -17,6 +17,8 @@
 #include "gc_internal.h"
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
+#include <cinttypes>
 #include <algorithm>
 #include <sys/mman.h>  // For mmap (nursery allocation)
 
@@ -388,6 +390,53 @@ void aria_gc_free(void* ptr) {
     if (ptr) {
         ::free(ptr);
     }
+}
+
+// =============================================================================
+// v0.8.0: GC Statistics at Exit & Max Heap
+// =============================================================================
+
+static bool gc_stats_at_exit_enabled = false;
+
+static void aria_gc_print_stats_at_exit(void) {
+    if (!gc_stats_at_exit_enabled) return;
+    
+    GCStats stats;
+    aria_gc_get_stats(&stats);
+    
+    fprintf(stderr, "\n[GC STATS] ═══════════════════════════════════════\n");
+    fprintf(stderr, "[GC STATS] Nursery:    %zu / %zu bytes (%.1f%% used)\n",
+            stats.nursery_used, stats.nursery_size,
+            stats.nursery_size ? (100.0 * stats.nursery_used / stats.nursery_size) : 0.0);
+    fprintf(stderr, "[GC STATS] Old Gen:    %zu / %zu bytes\n",
+            stats.old_gen_used, stats.old_gen_size);
+    fprintf(stderr, "[GC STATS] Allocated:  %zu bytes total\n", stats.total_allocated);
+    fprintf(stderr, "[GC STATS] Collected:  %zu bytes total\n", stats.total_collected);
+    fprintf(stderr, "[GC STATS] Minor GCs:  %" PRIu64 "\n", stats.num_minor_collections);
+    fprintf(stderr, "[GC STATS] Major GCs:  %" PRIu64 "\n", stats.num_major_collections);
+    fprintf(stderr, "[GC STATS] Pinned:     %zu objects\n", stats.num_pinned_objects);
+    fprintf(stderr, "[GC STATS] ═══════════════════════════════════════\n");
+}
+
+void aria_gc_enable_stats_at_exit(uint8_t enable) {
+    if (enable && !gc_stats_at_exit_enabled) {
+        gc_stats_at_exit_enabled = true;
+        atexit(aria_gc_print_stats_at_exit);
+    } else if (!enable) {
+        gc_stats_at_exit_enabled = false;
+    }
+}
+
+void aria_gc_set_max_heap(uint64_t max_bytes) {
+    GCState::instance().set_max_heap(max_bytes);
+}
+
+void aria_gc_register_finalizer(uint16_t type_id, AriaFinalizer finalizer) {
+    GCState::instance().register_finalizer(type_id, finalizer);
+}
+
+void aria_gc_register_type_layout(uint16_t type_id, const size_t* ref_offsets, size_t num_refs) {
+    GCState::instance().register_type_layout(type_id, ref_offsets, num_refs);
 }
 
 } // extern "C"

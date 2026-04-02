@@ -296,6 +296,51 @@ void aria_gc_shutdown(void);
  */
 void aria_gc_free(void* ptr);
 
+// =============================================================================
+// v0.8.0: GC Configuration & Statistics
+// =============================================================================
+
+/**
+ * Enable printing GC statistics at program exit (via atexit).
+ * Called by --gc-stats compiler flag injection.
+ */
+void aria_gc_enable_stats_at_exit(uint8_t enable);
+
+/**
+ * Set maximum total heap size. Allocations that would exceed this
+ * limit trigger major GC; if still over limit, return NULL.
+ * Set to 0 for unlimited (default).
+ */
+void aria_gc_set_max_heap(uint64_t max_bytes);
+
+/**
+ * Finalizer callback type.
+ * Called with pointer to the object payload before the GC reclaims it.
+ * Finalizers must not allocate GC memory or trigger collection.
+ */
+typedef void (*AriaFinalizer)(void* obj);
+
+/**
+ * Register a finalizer function for a given type_id.
+ * During major GC sweep, dead objects with registered finalizers
+ * have their finalizer called before memory is freed.
+ *
+ * @param type_id Runtime type identifier
+ * @param finalizer Function to call on object death
+ */
+void aria_gc_register_finalizer(uint16_t type_id, AriaFinalizer finalizer);
+
+/**
+ * Register type layout for reference tracing.
+ * The GC uses this to trace pointer fields during mark phase.
+ *
+ * @param type_id Runtime type identifier
+ * @param ref_offsets Array of byte offsets within the object payload
+ *                    where GC-managed pointers are stored
+ * @param num_refs Number of entries in ref_offsets
+ */
+void aria_gc_register_type_layout(uint16_t type_id, const size_t* ref_offsets, size_t num_refs);
+
 #ifdef __cplusplus
 }
 #endif

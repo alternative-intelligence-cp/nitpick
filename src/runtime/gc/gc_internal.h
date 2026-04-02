@@ -21,6 +21,7 @@
 #include "runtime/gc.h"
 #include <vector>
 #include <unordered_set>
+#include <unordered_map>
 #include <mutex>
 
 namespace aria {
@@ -224,13 +225,22 @@ public:
     // Write barrier
     void write_barrier(void* obj, void* ref);
     
+    // Configuration
+    void set_max_heap(size_t max_bytes);
+    
+    // Finalizers
+    void register_finalizer(uint16_t type_id, AriaFinalizer finalizer);
+    
+    // Type layout registration (for reference tracing)
+    void register_type_layout(uint16_t type_id, const size_t* ref_offsets, size_t num_refs);
+    
     // Queries
     bool is_heap_pointer(void* ptr) const;
     ObjHeader* get_header(void* ptr) const;
     void get_stats(GCStats* stats) const;
     
 private:
-    GCState() : initialized(false), collecting(false) {}
+    GCState() : initialized(false), collecting(false), max_heap(0) {}
     ~GCState() { shutdown(); }
     
     // No copy/move
@@ -239,6 +249,7 @@ private:
     
     bool initialized;
     bool collecting;  // GC in progress flag
+    size_t max_heap;  // Maximum heap size (0 = unlimited)
     
     Nursery* nursery;
     OldGeneration* old_gen;
@@ -246,6 +257,13 @@ private:
     
     // Thread-local shadow stacks (for now, single-threaded)
     ShadowStack shadow_stack;
+    
+    // Finalizer registry: type_id → finalizer function
+    std::unordered_map<uint16_t, AriaFinalizer> finalizers;
+    
+    // Type layout registry: type_id → list of byte offsets containing GC references
+    // Used by mark_object to trace through object fields
+    std::unordered_map<uint16_t, std::vector<size_t>> type_ref_offsets;
     
     // Statistics
     GCStats stats;
