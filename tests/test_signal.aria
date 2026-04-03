@@ -1,0 +1,44 @@
+// test_signal.aria — Test signal module (v0.10.0 port)
+use "signal.aria".*;
+
+func:failsafe = int32(tbb32:err_code) {
+    println("FAILSAFE triggered");
+    exit(1);
+};
+
+func:main = int32() {
+    // Test register — register SIGUSR1 handler
+    int32:r1 = raw Signal.register(SIGUSR1);
+    if (r1 != 0i32) {
+        println("FAIL: signal register returned non-zero");
+        exit(1);
+    }
+    println("OK: register");
+
+    // Test pending — nothing pending yet
+    int32:p1 = raw Signal.pending(SIGUSR1);
+    if (p1 != 0i32) {
+        println("FAIL: signal pending returned non-zero before raise");
+        exit(1);
+    }
+    println("OK: pending (no signal)");
+
+    // Test ignore
+    int32:r2 = raw Signal.ignore(SIGTERM);
+    if (r2 != 0i32) {
+        println("FAIL: signal ignore returned non-zero");
+        exit(1);
+    }
+    println("OK: ignore");
+
+    // Test restore
+    int32:r3 = raw Signal.restore(SIGTERM);
+    if (r3 != 0i32) {
+        println("FAIL: signal restore returned non-zero");
+        exit(1);
+    }
+    println("OK: restore");
+
+    println("PASS: all signal tests passed");
+    exit(0);
+};

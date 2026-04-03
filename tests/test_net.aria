@@ -1,0 +1,58 @@
+// test_net.aria — Network module tests (no remote connections needed)
+use "../stdlib/net.aria".*;
+
+func:failsafe = int32(tbb32:err_code) {
+    println("FAILSAFE triggered");
+    exit(1);
+};
+
+func:main = int32() {
+    // resolve localhost
+    string:ip = raw net_resolve("localhost");
+    println("OK: resolve");
+
+    // listen on ephemeral port
+    int64:srv = raw net_listen(19876i32, 1i32);
+    if (srv < 0i64) {
+        println("FAIL: listen");
+        exit(1);
+    }
+    println("OK: listen");
+
+    // connect to the server
+    int64:cli = raw net_connect("127.0.0.1", 19876i32);
+    if (cli < 0i64) {
+        println("FAIL: connect");
+        exit(1);
+    }
+    println("OK: connect");
+
+    // accept the connection
+    int64:acc = raw net_accept(srv);
+    if (acc < 0i64) {
+        println("FAIL: accept");
+        exit(1);
+    }
+    println("OK: accept");
+
+    // send from client
+    int64:sent = raw net_send(cli, "hello aria net");
+    if (sent < 1i64) {
+        println("FAIL: send");
+        exit(1);
+    }
+    println("OK: send");
+
+    // recv on accepted socket
+    string:msg = raw net_recv(acc, 256i64);
+    println("OK: recv");
+
+    // close all
+    drop raw net_close(cli);
+    drop raw net_close(acc);
+    drop raw net_server_close(srv);
+    println("OK: close");
+
+    println("PASS: all net tests passed");
+    exit(0);
+};

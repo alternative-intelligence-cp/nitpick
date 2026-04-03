@@ -1,46 +1,104 @@
-// DEPRECATED: This module uses direct extern FFI calls.
-// Future versions will migrate to aria-libc shims for ABI safety.
-// See: docs/STDLIB.md for migration status.
+// stdlib/net.aria — Network I/O (v0.10.0 — ported to aria-libc)
+//
+// TCP socket operations for Aria programs.
+// Import with: use "net.aria".*;
+//
+// All handles are int64 file descriptors (not opaque pointers).
+//
+// v0.10.0: Ported from inline extern func to aria-libc shims.
+//          0 direct extern calls; backed by libaria_libc_net.so
 
-// stdlib/net.aria
-// Network I/O Module — TCP Client/Server
-//
-// Provides TCP socket operations for Aria programs.
-// Import with: use "stdlib/net.aria".*;
-//
+// ── aria-libc shims ──────────────────────────────────────────────────────────
+extern "aria_libc_net" {
+    func:aria_libc_net_socket_tcp     = int64();
+    func:aria_libc_net_socket_udp     = int64();
+    func:aria_libc_net_close          = int32(int64:fd);
+    func:aria_libc_net_bind           = int32(int64:fd, string:addr, int32:port);
+    func:aria_libc_net_listen         = int32(int64:fd, int32:backlog);
+    func:aria_libc_net_accept         = int64(int64:fd);
+    func:aria_libc_net_setsockopt_reuse = int32(int64:fd);
+}
+
+extern "aria_libc_net" {
+    func:aria_libc_net_connect        = int32(int64:fd, string:addr, int32:port);
+    func:aria_libc_net_send_str       = int64(int64:fd, string:s);
+    func:aria_libc_net_recv           = string(int64:fd, int64:maxlen);
+    func:aria_libc_net_resolve        = string(string:hostname);
+    func:aria_libc_net_set_nonblocking = int32(int64:fd);
+    func:aria_libc_net_set_blocking   = int32(int64:fd);
+    func:aria_libc_net_errno          = int32();
+}
+
 // ── TCP Client ───────────────────────────────────────────────────────
-//   net_connect(host, port)              → handle   connect to host:port
-//   net_send(h, data)                    → int64    send string, returns bytes
-//   net_recv(h, max_bytes)               → string   receive up to N bytes
-//   net_recv_timeout(h, max, timeout_ms) → string   recv with timeout
-//   net_close(h)                         → void     close socket
-//
+
+// net_connect(host, port) → fd, or -1 on error
+pub func:net_connect = int64(string:host, int32:port) {
+    int64:fd = aria_libc_net_socket_tcp();
+    if (fd < 0i64) { pass 0i64 - 1i64; }
+    int32:rc = aria_libc_net_connect(fd, host, port);
+    if (rc != 0i32) {
+        _ = aria_libc_net_close(fd);
+        pass 0i64 - 1i64;
+    }
+    pass fd;
+};
+
+// net_send(fd, data) → bytes sent
+pub func:net_send = int64(int64:fd, string:data) {
+    pass aria_libc_net_send_str(fd, data);
+};
+
+// net_recv(fd, max_bytes) → received string
+pub func:net_recv = string(int64:fd, int64:max_bytes) {
+    pass aria_libc_net_recv(fd, max_bytes);
+};
+
+// net_close(fd) → close socket
+pub func:net_close = NIL(int64:fd) {
+    _ = aria_libc_net_close(fd);
+    pass NIL;
+};
+
 // ── TCP Server ───────────────────────────────────────────────────────
-//   net_listen(port, backlog)            → handle   bind + listen
-//   net_accept(h)                        → handle   accept connection
-//   net_server_close(h)                  → void     close server socket
-//
+
+// net_listen(port, backlog) → server fd, or -1 on error
+pub func:net_listen = int64(int32:port, int32:backlog) {
+    int64:fd = aria_libc_net_socket_tcp();
+    if (fd < 0i64) { pass 0i64 - 1i64; }
+    _ = aria_libc_net_setsockopt_reuse(fd);
+    int32:rc = aria_libc_net_bind(fd, "0.0.0.0", port);
+    if (rc != 0i32) {
+        _ = aria_libc_net_close(fd);
+        pass 0i64 - 1i64;
+    }
+    rc = aria_libc_net_listen(fd, backlog);
+    if (rc != 0i32) {
+        _ = aria_libc_net_close(fd);
+        pass 0i64 - 1i64;
+    }
+    pass fd;
+};
+
+// net_accept(server_fd) → client fd
+pub func:net_accept = int64(int64:fd) {
+    pass aria_libc_net_accept(fd);
+};
+
+// net_server_close(server_fd) → close server socket
+pub func:net_server_close = NIL(int64:fd) {
+    _ = aria_libc_net_close(fd);
+    pass NIL;
+};
+
 // ── Info ─────────────────────────────────────────────────────────────
-//   net_peer_addr(h)                     → string   remote IP address
-//   net_peer_port(h)                     → int32    remote port
-//   net_is_connected(h)                  → int32    1 if connected
-//   net_set_nonblocking(h)               → void     set non-blocking mode
 
-// ── TCP Client ───────────────────────────────────────────────────────
-extern func:net_connect = wild int8*(string:host, int32:port);
-extern func:net_send = int64(wild int8*:h, string:data);
-extern func:net_recv = string(wild int8*:h, int64:max_bytes);
-extern func:net_recv_timeout = string(wild int8*:h, int64:max_bytes, int32:timeout_ms);
-extern func:net_close = void(wild int8*:h);
+// net_resolve(hostname) → IP address string
+pub func:net_resolve = string(string:hostname) {
+    pass aria_libc_net_resolve(hostname);
+};
 
-// ── TCP Server ───────────────────────────────────────────────────────
-extern func:net_listen = wild int8*(int32:port, int32:backlog);
-extern func:net_accept = wild int8*(wild int8*:h);
-extern func:net_server_close = void(wild int8*:h);
-
-// ── Info ─────────────────────────────────────────────────────────────
-extern func:net_peer_addr = string(wild int8*:h);
-extern func:net_peer_port = int32(wild int8*:h);
-extern func:net_is_connected = int32(wild int8*:h);
-extern func:net_valid = int32(wild int8*:h);
-extern func:net_set_nonblocking = void(wild int8*:h);
+// net_set_nonblocking(fd) → set non-blocking mode
+pub func:net_set_nonblocking = NIL(int64:fd) {
+    _ = aria_libc_net_set_nonblocking(fd);
+    pass NIL;
+};

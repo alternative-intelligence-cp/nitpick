@@ -1,51 +1,94 @@
-// DEPRECATED: This module uses direct extern FFI calls.
-// Future versions will migrate to aria-libc shims for ABI safety.
-// See: docs/STDLIB.md for migration status.
+// stdlib/arena.aria — Arena allocator (v0.10.0 — ported to aria-libc)
+//
+// Fast bump allocation with bulk free.
+// Import with: use "arena.aria".*;
+//
+// Arena layout (3 int64 header + data buffer):
+//   slot 0 = capacity (total bytes)
+//   slot 1 = used     (bytes allocated so far)
+//   slot 2 = data_ptr (pointer to data buffer, stored as int64)
+//
+// v0.10.0: Ported from inline extern func to aria-libc shims.
+//          0 direct extern calls; backed by libaria_libc_mem.so
 
-// stdlib/arena.aria
-// Arena allocator — fast bump allocation with bulk free
-// Uses handle-based shim (os/os_shim.c)
+// ── aria-libc shims ──────────────────────────────────────────────────────────
+extern "aria_libc_mem" {
+    func:aria_libc_mem_malloc      = int64(int64:size);
+    func:aria_libc_mem_calloc      = int64(int64:count, int64:size);
+    func:aria_libc_mem_free        = void(int64:ptr);
+    func:aria_libc_mem_read_i64    = int64(int64:ptr, int64:offset);
+    func:aria_libc_mem_write_i64   = void(int64:ptr, int64:offset, int64:val);
+    func:aria_libc_mem_zero        = void(int64:ptr, int64:nbytes);
+}
 
-extern func:aria_shim_arena_create = int64(int64:capacity);
-extern func:aria_shim_arena_destroy = int32(int64:handle);
-extern func:aria_shim_arena_alloc = int64(int64:handle, int64:nbytes);
-extern func:aria_shim_arena_reset = int32(int64:handle);
-extern func:aria_shim_arena_used = int64(int64:handle);
-extern func:aria_shim_arena_remaining = int64(int64:handle);
-extern func:aria_shim_arena_write_int64 = int32(int64:handle, int64:offset, int64:value);
-extern func:aria_shim_arena_read_int64 = int64(int64:handle, int64:offset);
+// Header size: 3 int64 slots = 24 bytes
+int64:ARENA_HDR = 24i64;
 
 Type:Arena = {
+    // create(capacity) — allocate arena with given byte capacity
     func:create = int64(int64:capacity) {
-        pass aria_shim_arena_create(capacity);
+        int64:hdr = aria_libc_mem_malloc(ARENA_HDR);
+        if (hdr == 0i64) { pass 0i64; }
+        int64:data = aria_libc_mem_calloc(capacity, 1i64);
+        if (data == 0i64) {
+            aria_libc_mem_free(hdr);
+            pass 0i64;
+        }
+        aria_libc_mem_write_i64(hdr, 0i64, capacity);
+        aria_libc_mem_write_i64(hdr, 8i64, 0i64);
+        aria_libc_mem_write_i64(hdr, 16i64, data);
+        pass hdr;
     };
 
+    // destroy(arena) — free arena and its data buffer
     func:destroy = int32(int64:arena) {
-        pass aria_shim_arena_destroy(arena);
+        int64:data = aria_libc_mem_read_i64(arena, 16i64);
+        aria_libc_mem_free(data);
+        aria_libc_mem_free(arena);
+        pass 0i32;
     };
 
+    // alloc(arena, nbytes) — bump-allocate nbytes, returns offset
     func:alloc = int64(int64:arena, int64:nbytes) {
-        pass aria_shim_arena_alloc(arena, nbytes);
+        int64:cap  = aria_libc_mem_read_i64(arena, 0i64);
+        int64:used = aria_libc_mem_read_i64(arena, 8i64);
+        if (used + nbytes > cap) { pass 0i64 - 1i64; }
+        aria_libc_mem_write_i64(arena, 8i64, used + nbytes);
+        pass used;
     };
 
+    // reset(arena) — reset usage to 0 (bulk free)
     func:reset = int32(int64:arena) {
-        pass aria_shim_arena_reset(arena);
+        int64:cap  = aria_libc_mem_read_i64(arena, 0i64);
+        int64:data = aria_libc_mem_read_i64(arena, 16i64);
+        aria_libc_mem_write_i64(arena, 8i64, 0i64);
+        aria_libc_mem_zero(data, cap);
+        pass 0i32;
     };
 
+    // used(arena) — bytes currently allocated
     func:used = int64(int64:arena) {
-        pass aria_shim_arena_used(arena);
+        pass aria_libc_mem_read_i64(arena, 8i64);
     };
 
+    // remaining(arena) — bytes available
     func:remaining = int64(int64:arena) {
-        pass aria_shim_arena_remaining(arena);
+        int64:cap  = aria_libc_mem_read_i64(arena, 0i64);
+        int64:used = aria_libc_mem_read_i64(arena, 8i64);
+        pass cap - used;
     };
 
+    // write_int64(arena, offset, value) — write int64 at data offset
     func:write_int64 = int32(int64:arena, int64:offset, int64:value) {
-        pass aria_shim_arena_write_int64(arena, offset, value);
+        int64:data = aria_libc_mem_read_i64(arena, 16i64);
+        aria_libc_mem_write_i64(data, offset, value);
+        pass 0i32;
     };
 
+    // read_int64(arena, offset) — read int64 from data offset
     func:read_int64 = int64(int64:arena, int64:offset) {
-        pass aria_shim_arena_read_int64(arena, offset);
+        int64:data = aria_libc_mem_read_i64(arena, 16i64);
+        pass aria_libc_mem_read_i64(data, offset);
     };
 
     struct:interface = {
